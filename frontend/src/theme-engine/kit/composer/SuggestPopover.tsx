@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type TransitionEvent } from "react";
 
 import type { ComposerSuggest } from "../../../hooks/useComposerSuggest";
 import type { Completion, CompletionKind } from "../../../lib/composer";
@@ -19,6 +19,10 @@ import { useUISlice } from "../../../store/ui";
 // `inert`, NOT `aria-hidden`: inert takes it out of tab order AND the a11y tree, where `aria-hidden` over
 // focusable rows is precisely the `aria-hidden-focus` violation. (React 19 exposes `inert` as a real boolean
 // prop; BottomSheet sets the same thing imperatively on its below-the-fold content.)
+
+/** The empty row set as ONE stable reference — returning it from the release updater lets React bail out
+ *  of a re-render when there is nothing left to release (see `releaseRows`). */
+const NO_ROWS: Completion[] = [];
 
 /** Row-set equality by VALUE — `getCompletions` builds a fresh array per call, so a reference check would
  *  re-set state on every keystroke. Tiny lists (a handful of rows); cheaper than reconciling the DOM. */
@@ -48,19 +52,40 @@ export function SuggestPopover({ suggest }: { suggest: ComposerSuggest }) {
   // rendering `items` would play the slide on a bare shell). Both edges are React's documented "adjust
   // state while rendering" pattern: the re-render happens before paint, so neither shows a stale or empty
   // frame, and no effect/ref is read during render.
-  const [rows, setRows] = useState<Completion[]>([]);
+  const [rows, setRows] = useState<Completion[]>(NO_ROWS);
   if (open && !sameRows(rows, items)) setRows(items);
   // The retained rows are RELEASED once the exit is over (Codex, LOW) — the composer re-renders on every
   // keystroke, so rows kept forever after a dismissal are a permanent per-keystroke reconcile cost, real on
-  // Fennec with a large discovered skill/agent registry. Normally `transitionend` (below) releases them.
-  // But when there is no slide to wait for — reduced motion, or another overlay displaced us and kit.css
-  // snapped us out so we can't ghost over it — the transition is `none` and `transitionend` NEVER fires, so
-  // those two paths release synchronously at the close edge instead of leaning on a timer.
+  // Fennec with a large discovered skill/agent registry. Normally the shell's own transition event releases
+  // them (`releaseRows` below). But when there is no slide to wait for AT THE CLOSE ITSELF — reduced motion,
+  // or another overlay already displaced us and kit.css snapped us out so we can't ghost over it — the
+  // transition is `none` and no transition event ever fires, so those two paths release synchronously at the
+  // close edge instead of leaning on a timer.
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (!open && (reducedMotion || displaced)) setRows([]);
+    if (!open && (reducedMotion || displaced)) setRows(NO_ROWS);
   }
+  // The exit is over → drop the rows. Wired to BOTH `transitionend` and `transitioncancel`: a LATE
+  // displacement (another overlay opens INSIDE the 200ms exit) flips this shell to `transition: none` via
+  // the kit.css handoff snap, which CANCELS the running fade — `end` never fires, and the close-edge
+  // release above was already spent on a close that legitimately had a slide (Codex verify round, LOW).
+  // `transitioncancel` is the platform's signal for exactly that, dispatched by both engines we ship on
+  // (Blink + Gecko); flipping the motion switch mid-exit is the same kill and rides the same event.
+  // Identical guards on both: this shell's OWN opacity leg — a bubbled row transition, or the transform
+  // leg (which settles/cancels in the same batch), must not drop the rows mid-slide — and only while
+  // closed. Idempotent by construction: the functional update returns the SAME `NO_ROWS` reference when
+  // there is nothing to release, so a stray second event is a no-op React bails out of.
+  //
+  // `propertyName` comes off the NATIVE event, not the synthetic one: React maps only `transitionend` to
+  // `SyntheticTransitionEvent` (react-dom's SimpleEventPlugin switch — `transitioncancel`/`run`/`start`
+  // fall through to the BASE synthetic event, which carries no `propertyName`), so filtering on
+  // `e.propertyName` would make the cancel branch a permanent no-op. The DOM event itself carries it for
+  // all four per spec, so one uniform read keeps the two branches' guards genuinely identical.
+  const releaseRows = (e: TransitionEvent<HTMLUListElement>) => {
+    if (e.nativeEvent.propertyName !== "opacity" || e.target !== e.currentTarget || open) return;
+    setRows((prev) => (prev.length ? NO_ROWS : prev));
+  };
 
   // Keep the keyboard-active row visible in the scrolling list (jsdom has no scrollIntoView — guarded).
   useEffect(() => {
@@ -79,11 +104,8 @@ export function SuggestPopover({ suggest }: { suggest: ComposerSuggest }) {
       role="listbox"
       aria-label="command suggestions"
       inert={!open}
-      onTransitionEnd={(e) => {
-        // the SHELL's own opacity leg only: a bubbled row transition — or the transform leg, which can
-        // settle first — would drop the retained rows mid-slide.
-        if (e.propertyName === "opacity" && e.target === e.currentTarget && !open) setRows([]);
-      }}
+      onTransitionEnd={releaseRows}
+      onTransitionCancel={releaseRows}
     >
       {rows.map((item, i) => (
         <li

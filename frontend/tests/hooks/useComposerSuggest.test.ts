@@ -411,6 +411,30 @@ describe("SuggestPopover in a real Kit composer", () => {
     expect(rowValues(container)).toEqual([]); // …and the closed shell now reconciles zero rows
   });
 
+  // Codex verify round, LOW — the LATE displacement: the popover closes normally (a slide IS running, so
+  // the close edge deliberately retained), and only THEN does another overlay open. kit.css's handoff snap
+  // flips this shell to `transition: none`, which KILLS the running fade — `transitionend` never arrives
+  // and the close-edge release was already spent, so the rows used to live forever. `transitioncancel` is
+  // the platform's signal for exactly that kill, and it releases through the same handler.
+  it("releases them when a LATE displacement cancels the running exit transition", () => {
+    const { container } = renderComposer();
+    const ta = container.querySelector<HTMLTextAreaElement>("#cmd-input")!;
+    fireEvent.change(ta, { target: { value: "/cle" } });
+    fireEvent.keyDown(ta, { key: "Escape" }); // a normal close — the slide starts, rows retained
+    expect(rowValues(container)).toEqual(["clear"]);
+
+    const list = container.querySelector<HTMLElement>("ul#composer-suggest")!;
+    act(() => setComposerOverlay("menu")); // …and INSIDE the exit window, another overlay opens
+    expect(rowValues(container)).toEqual(["clear"]); // still retained — no event has fired yet
+    fireEvent.transitionCancel(list, { propertyName: "transform" }); // the other leg releases NOTHING
+    expect(rowValues(container)).toEqual(["clear"]);
+    fireEvent.transitionCancel(list, { propertyName: "opacity" }); // the snap killed the fade
+    expect(rowValues(container)).toEqual([]);
+    // a stray trailing event on the already-released shell is a no-op, not a crash or a re-render loop
+    fireEvent.transitionEnd(list, { propertyName: "opacity" });
+    expect(rowValues(container)).toEqual([]);
+  });
+
   // …and where there is NO transition to wait for, the release is synchronous: `transitionend` never fires
   // under `transition: none`, so keying the release on it alone would leak the rows for the session.
   it("releases them synchronously under reduced motion (no transition, no transitionend)", () => {
