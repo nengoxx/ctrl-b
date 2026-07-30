@@ -27,12 +27,37 @@
 > first-writer-wins, and a sleep-vs-grace margin inverted; the PRODUCT invariant held) → rewritten
 > scheduling-independent `638ce7f` (`_HeldTurn` event choreography · invariant-not-winner pins ·
 > two latent same-class 14b flakes fixed; 15/15 repeat + 5/5 under 10× CPU starvation).
-> **▶ NEXT SESSION:** 1. **Owner device round of A3 on PROD** (create via chat → confirm → the
-> card → run-now → the `automation_done` notification → unread badge → open-thread) — ask for the
-> result. 2. **v1.5.0 remains reserved** (owner's call when). 3. Carried: the F1 Fennec-delivery
-> mystery (observe in daily use). 4. Backlog unchanged (sendIcon/gradient fills · Web Push · ntfy ·
-> host up/down notify — the last needs the D2-A/A3 monitor loop, whose lifecycle convention the
-> runner now demonstrates).
+> **A3 device testing = PENDING VIA NORMAL USE (owner ruling at session close):** no formal round —
+> the owner will exercise automations in daily use (create via chat → confirm → card → run-now →
+> `automation_done` notification → unread → open-thread) and report anything off. Same posture as
+> the F1 Fennec-delivery mystery, which that use will also probe. **v1.5.0 stays RESERVED.**
+>
+> ## ▶ NEXT SESSION — pick from the OPEN OPTIONS (owner will choose in a clean session)
+> Phases 0–14 are ALL COMPLETE and live. Nothing is in flight; the next move is a fresh pick.
+> The live menu, by likely value (each links to its design home — re-read it before proposing):
+> 1. **F1 channel 2 — Web Push** (ROADMAP F1; custom SW + VAPID): survives a closed app, fixes the
+>    SW-tap-doesn't-navigate limit, and is the prime suspect-resolver for the Fennec delivery
+>    mystery. Pairs naturally with deep-links into automation run threads (recorded in
+>    AUTOMATIONS_PLAN §Out of v1).
+> 2. **D2-A monitor loop** (ROADMAP D2, ~§442): the tailscale-status poll → wake-on-connection's
+>    second half + unlocks the host up/down notify toggle (F1) — the A3 runner now demonstrates the
+>    exact lifespan-loop convention it should reuse.
+> 3. **A4 slash commands** (ROADMAP §A4; TODO future row): the composer-as-console registry +
+>    custom commands.
+> 4. **A3 tails** (AUTOMATIONS_PLAN §Out of v1): notify-and-wait question policy (the A1+A2+F1
+>    bridge — needs park/resume design) · `pinned` thread mode · rolling takeover/detach.
+> 5. **D3 Slice 1 — multi-homed addressing** (ROADMAP §D3, designed 2026-06-30; flagged near-term
+>    since 2026-07-16).
+> 6. **A8 composer attachments** (owner-noted 2026-07-11) · **C3 chunked TTS** (owner-noted
+>    2026-06-26) · **C2 wake word**.
+> 7. **H1 "gacha" theme** (owner wants a design conversation, 2026-07-21) · the **vapor-assimilation
+>    ladder** (THEME_ENGINE §14.15.3 — Phase 11's only remaining work).
+> 8. **G security hardening** (known_hosts pinning · per-action tokens · secrets encryption-at-rest)
+>    · **B1 memory backends** (vector MemoryProvider on the built 4f embeddings client) ·
+>    **E0a per-tool settings** · **E1 bots**.
+> 9. LOW backlog: sendIcon/gradient-accent fills (the QoL cluster's unreached item 4).
+> *(Parked/declined stay parked: ROADMAP §P · I1 worktree deploy · I2 env credentials · E2 facade ·
+> A9 model indicator · vault/wiki spec.)*
 >
 > ## ▶ PREVIOUS STATE (2026-07-30 night — 🏁 **PHASE 14 / A3 AUTOMATIONS COMPLETE**: 14c + 14d built + review-clean same day; 14a–14c PUSHED CI-GREEN, 14d + docs UNPUSHED — since released, see above)
 > **The whole automations feature is BUILT.** This session: pushed the 14a/14b stack (first CI run

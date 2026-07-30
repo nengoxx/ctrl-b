@@ -1142,7 +1142,10 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
       A1+A3+F1).
 - [ ] **Slash commands** registry + custom/extensible commands (A4). *(Basic `!`/`/` prefix routing
       + markdown/copy is in Phase 4 above.)*
-- [ ] **Scheduled automations**: `Automation` table + cron runner + headless agent runs (A3).
+- [x] **Scheduled automations**: `Automation` table + cron runner + headless agent runs (A3).
+      **✅ SHIPPED as Phase 14 (D49), LIVE on prod in v1.4.4 (2026-07-30).** *Still open (recorded
+      in AUTOMATIONS_PLAN §Out of v1): `pinned` thread mode · notify-and-wait question policy ·
+      rolling takeover/detach · pause-after-N-failures.*
 - [x] **Streaming, decoupled per-transport (C1, 2026-06-16):** chat = `AgentCfg.streaming` auto|on|off
       (decided D17); TTS = own chunked-playback knob (Phase 6); STT = always buffered, no toggle. **Not**
       one global toggle. **✅ SHIPPED 2026-06-21 (`3fb6603`, D17)** — `session.collect_turn()` drains the
@@ -1158,6 +1161,10 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
 - [ ] **Notifications** (F1): master toggle + per-event; default PWA-native (foreground
       Notifications API via SSE + **Web Push**/VAPID when closed, auto); optional **ntfy** /
       **Telegram-Discord** channels. **Discord/Telegram bots** as thin API clients (E1).
+      *Channel 1 (foreground) ✅ SHIPPED 2026-07-29 + the `automation_done` class in v1.4.4;
+      OPEN = Web Push (channel 2, custom SW + VAPID — also the fix for the SW-tap-doesn't-navigate
+      limit and the suspect for the Fennec delivery mystery) · ntfy · bots (E1) · host up/down
+      (needs the D2-A monitor loop).*
 - [ ] **Security hardening**: known_hosts pinning, per-action tokens, secret encryption-at-rest (G).
 
 ## Phase 14 — Scheduled agent automations (A3) — **design LOCKED 2026-07-30 (owner-signed) · spec = [`AUTOMATIONS_PLAN.md`](./AUTOMATIONS_PLAN.md) + [`DECISIONS.md` D49](./DECISIONS.md) (build against those, NOT this list)**
