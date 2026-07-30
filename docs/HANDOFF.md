@@ -40,8 +40,9 @@
 > otherwise): react-dom wraps ONLY `transitionend` as SyntheticTransitionEvent — `transitioncancel`
 > arrives as the BASE synthetic with NO `propertyName`; read `e.nativeEvent.propertyName`.** Gate 6/6
 > on every commit; both engines live-verified (Chromium + Gecko dispatch `transitioncancel` on the
-> snap). Dev units RUNNING (:5434 + Vite :5173). ~~Next release carries this slice~~ → **shipped in
-> v1.4.1 (above).**
+> snap). ~~Next release carries this slice~~ → **shipped in v1.4.1 (above), OWNER-APPROVED on
+> device 2026-07-30.** Dev units STOPPED at session close (on-demand — start when iterating:
+> `systemctl --user start ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`).
 >
 > ## ▶ PREVIOUS STATE (2026-07-29 — the QUICK QoL CLUSTER was COMPLETE + review-CLEAN, since released as v1.4.0)
 > **All four cluster items BUILT, SIX Codex rounds closed, final verdict WAVE CLEAN (zero open
@@ -59,20 +60,30 @@
 > entries. ACA core twice confirmed regression-free under adversarial scrutiny.
 >
 > ## ▶ NEXT SESSION — the checklist, in order
-> 1. ~~Owner device eyeball~~ + ~~release~~ — **✅ DONE 2026-07-30** (v1.4.0 then v1.4.1, both via
->    the plain-form updater). The popover slice still wants an owner eyeball — now live on the PROD
->    PWA too: open/close the `/` popover + tools menu (0.2s slide both ways), switch overlays
->    mid-exit (instant snap, no ghosting), flip the four skins (frontier=bezel).
-> 3. **Post-release: the F1 device round** (paper-verified only so far, flagged by the builder): on
+> 1. ~~Owner device eyeball~~ + ~~release~~ + ~~popover eyeball~~ — **✅ ALL DONE 2026-07-30**
+>    (v1.4.0 then v1.4.1, both via the plain-form updater; **popovers OWNER-APPROVED on device**).
+> 2. **A3 automations = THE DESIGN CONVERSATION (owner-locked, prose-first — likely THIS session's
+>    work).** The owner flagged he doesn't remember the full spec — open with a recap. The primer:
+>    **ROADMAP §A3 (lines ~116–128)** — automations invoke the agent on a schedule with a saved
+>    prompt + privilege level (cron + prompt + privilege → unattended run; "2am: sleep idle GPU
+>    boxes"). Sketched shape: `Automation { id, name, cron, prompt, privilege_level, target_thread,
+>    enabled, last_run, last_status }` in SQLite + an async cron runner in the FastAPI process,
+>    reusing the SAME agent loop + action registry headless; results land in the Event log + a
+>    thread. **Open questions (the conversation):** what a headless run does at a `question`/
+>    `confirm` gate (per-automation policy: skip / default / notify-and-wait — F1 notifications can
+>    now carry the "waiting" ping) · concurrency limits · scheduler mechanism (APScheduler vs own
+>    loop) · UI (Conf list per ROADMAP ~763). **Seams already built for it:** the F1 notification
+>    engine · D2-B's wake service + `Actor` system actor (event-log attribution) · A5 `task_plan`
+>    (makes headless runs legible) · D8 one-file tool registry · ACA routing/retry (D43). Also
+>    weigh ROADMAP's "Notify when blocked" (A1+A3+F1 tie, ~line 76) and the D2-A monitor-loop tie
+>    (~462, ~664). Do NOT start coding without the design conversation + owner sign-off.
+> 3. **The F1 device round — owner tests the afternoon of 2026-07-30** (paper-verified only): on
 >    the installed PWA via https://emma.lobster-vector.ts.net — enable Notifications in Conf (the
 >    permission prompt rides the toggle gesture), background the app, trigger a confirm-gated action;
 >    a notification should land (Android delivers via the SW registration — the constructor throws
 >    there by platform design, handled). Known limit: the tap informs but doesn't navigate (custom SW
 >    arrives with the Web Push slice). Also sanity-check wake-on-connect cooldown vs real reconnects.
-> 4. **Then: A3 automations = the NEXT DESIGN CONVERSATION (owner-locked, prose-first).** Biggest
->    unlocked capability; needs the full design treatment (ROADMAP §A3 seam: scheduler subsystem,
->    Automation model, headless agent runs; the F1 engine + D2's `wake:` section + Actor.AUTOMATION
->    are the seams it composes with). Do NOT start coding without the design conversation.
+> 4. *(folded into item 2 above)*
 > 5. *(Backlog, owner-deferred, recorded):* the `sendIcon` setting + gradient-accent fills
 >    (the cluster's item 4, never reached) · Web Push channel (custom SW, VAPID) · ntfy/bot channels ·
 >    host up/down notify toggle (needs the D2-A/A3 monitor loop).
