@@ -1176,12 +1176,19 @@ Codex round → owner pause.
       attribution reads [`unknown` = read-side-only sentinel]). Carried to 14b: strict
       `Actor`/`RunState` reads in `recent()` (same rollback-fragility class) · the line-keyed
       SYS-16 waiver tax on db.py edits.**
-- [ ] **14b — Engine (migration v5):** schema + `AutomationRepo` + `cronsim`/`tzdata` pins + the
+- [x] **14b — Engine (migration v5):** schema + `AutomationRepo` + `cronsim`/`tzdata` pins + the
       atomic claim protocol (misfire-grace, rev check, snapshot) + turn-machinery integration
       (reserve/drain/cancel, honest terminals incl. `interrupted`) + the headless session options
       object (message_actor, reflection disarmed, strict agent resolution) + `question_policy`
       (additive `QuestionInput.choices/default` + bubble chips) + boot orphan sweep + `keep_runs`
-      retention + the `automations:` config section.
+      retention + the `automations:` config section. **✅ SHIPPED 2026-07-30 (five commits:
+      `22c102d`+`f3d0317` build → `508f20a` wave 1 → `573bad6` wave 2 → `3d0ce03` micro-wave;
+      Codex R1 DO-NOT-SHIP 4H/4M/2L → R2 7/10 → R3 9/10 → R4 WAVE CLEAN; tests 1109→1162 BE /
+      798→801 FE; gate 6/6 every commit). As-built deltas recorded in AUTOMATIONS_PLAN §As-built.
+      Ruled residuals: the unattended question's audit Event reads `awaiting_answer` (subagent-
+      precedent-consistent; fix needs an invoke signature change — Codex confirmed no concrete
+      harm) · the post-cancel timeout wait is deliberately unbounded (honest wedge; tools are
+      deadline-bounded; shutdown stays bounded).**
 - [ ] **14c — Surface:** `/api/automations` CRUD + run-now (409 busy) + runs/mark-read +
       schedule-preview; Conf "Automations" group (list) + sheet editor (presets + raw-cron escape
       hatch + live preview, agent picker, privilege chip, policy/results segs, history).

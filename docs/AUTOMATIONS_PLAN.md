@@ -206,6 +206,27 @@ keep_runs: 50}` — all tunables, no magic numbers. Records in SQLite (rationale
 - Convergent independent findings (question contract, turn-machinery bypass, strict agent
   resolution, run-now arbiter, reflection proxy, origin propagation) are treated as confirmed.
 
+## As-built deltas (slices 1–2, 2026-07-30 — the spec above stands; these are the concrete forms)
+
+- **Slice 1 (14a):** `decision` also stamps `policy` on DENY (NULL = written outside the gate) ·
+  subagent `origin.id` = the child agent's name · migration application made **atomic per
+  migration** in the runner (rider — closes a pre-existing crash-window class) · events reads are
+  **lenient**: `EventOriginKind`'s `unknown` is a structurally read-side-only sentinel;
+  `Actor`/`RunState` pass raw text through on unrecognized values.
+- **Slice 2 (14b):** `schedule.py` filters cron candidates to **strictly-greater epoch** (the DST
+  fold otherwise regresses `next_run_at` — R7's trap in live form) · 5-field cron ONLY (cronsim's
+  6-field seconds form refused) · the runner's post-cancel deadline wait is **unbounded** (honest
+  wedge; shutdown stays bounded → `interrupted`) · thread deletion (retention/delete) reserves the
+  thread's turn marker via a non-task-bearing **`prune` TurnKind**, released only after COMMIT;
+  interactive endpoints **revalidate existence + rolling ownership after reserving** · mode
+  switches take the same marker · unknown stored privilege floors to **READONLY** · the question
+  offer rides `result.data`; `choices` capped 8×60 chars, FE trims/dedupes · `run_now` lives at
+  the service level (14c wires the endpoint onto the shared arbiter) · shielded claim/finalizer
+  drains consume **repeated** raw cancels (asyncio does NOT queue cancels — two `cancel()` before
+  a resume collapse into one delivery; tests must space them by a scheduling step) ·
+  `AutomationService.turns` is a required dependency. Ruled residual: the unattended question's
+  audit Event reads `awaiting_answer` (subagent-consistent; no concrete harm — Codex-confirmed).
+
 ## Out of v1 (recorded, additive later)
 
 `pinned` thread mode (+ its pre-bought failure semantics: deleted destination → fail loudly,
