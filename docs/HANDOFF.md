@@ -12,7 +12,47 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-30 — ✅ v1.4.1 LIVE; both releases today ran the PLAIN-FORM updater clean)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-30 evening — A3 AUTOMATIONS: design LOCKED + slices 14a/14b SHIPPED review-clean; ELEVEN commits on main, NOT PUSHED)
+> **The A3 design conversation ran end-to-end and the feature is half-built.** Full arc: owner
+> rulings (question policy skip|use_default · concurrency 1 · misfire skip · fresh-per-run +
+> rolling option, `pinned` future · agent tool in v1 · agent-as-scope) → THREE research dossiers
+> (**R7** scheduler: hand-rolled poll-and-claim + `cronsim`, APScheduler/croniter rejected on
+> evidence; **R8** authoring + the per-task-placement addendum; **R9** attribution: 8/8 systems
+> ADD an initiator dimension, never overwrite actor) + a codebase seam map → **council round**
+> (Codex 15 findings + Opus-architecture 12, both SHIP-WITH-CHANGES; all folded; 2 overrules
+> recorded) → **D49 LOCKED, owner-signed** · spec authority = **`AUTOMATIONS_PLAN.md`** (build
+> against it + its §As-built deltas; TODO Phase 14).
+> **✅ 14a — attribution (R3 WAVE CLEAN):** `3dd2d3b`→`262c9d5`→`b1ff4fb` + close-out `4c59fc7`.
+> Events gain origin/origin_id/run_id/decision; REQUIRED `origin` kwarg at the invoke chokepoint;
+> propagated through subagents; riders = **atomic-per-migration runner** (closed a pre-existing
+> stranded-service crash window) + lenient event reads (`unknown` = read-side-only sentinel).
+> **✅ 14b — the engine (R4 WAVE CLEAN, after R1 DO-NOT-SHIP 4H/4M/2L):** `22c102d`+`f3d0317`→
+> `508f20a`→`573bad6`→`3d0ce03` + close-out `998ad48`. Migration v5, the atomic claim
+> (misfire-grace, rev check, frozen snapshot), the runner driving headless turns THROUGH the turn
+> machinery (reserve kind="automation" → `_build_session` → `_spawn_drain_task`; cancel/watch/caps
+> work; honest terminals incl. `interrupted`), session options (message_actor=AUTOMATION,
+> reflection re-keyed off origin), question_policy + choice chips, retention + orphan sweep +
+> `automations:` config. Review caught real ones: the **DST-fold epoch regression** (cron next-fire
+> must filter strictly-greater EPOCH), timeout releasing the arbiter early, thread-delete vs live
+> turns (new non-task-bearing `prune` TurnKind; markers released only AFTER commit; endpoints
+> revalidate AFTER reserve), and the **asyncio collapsed-cancels test trap** (two `cancel()` before
+> a resume = ONE delivery — space test cancels by a scheduling step). Gate 6/6 on every commit;
+> tests **1085→1162 BE / 801 FE**. Ruled residuals in the TODO 14b row (awaiting_answer audit row ·
+> unbounded post-cancel wait). The `a3-automations-progress` memory carries the gotchas.
+> **▶ NEXT SESSION, in order:** 1. **Push** (eleven commits `d4b82ff`…`998ad48` — owner
+> confirmation, then first CI run over the stack). 2. **14c — REST + Conf UI**: `/api/automations`
+> CRUD + run-now (409 via `runner.busy`) + runs/mark-read + schedule-preview; Conf "Automations"
+> ConfGroup (list) + SHEET editor (presets + raw-cron escape hatch + live next-fires, agent picker,
+> privilege chip, policy/results segs, history w/ unread). Seams are 1:1 ready: `AutomationDraft`
+> IS the request body; errors NotFound|Invalid|CapReached|Busy|AgentMissing → 404/422/409/409/422;
+> everything on `app.state` (`automations`/`automation_service`/`automation_runner`). Method
+> unchanged: pinned Opus brief → main-seat audit → detached Codex round → waves to WAVE CLEAN →
+> close-out. Start the dev units for the owner's eyeball when the UI lands. 3. **14d — the tools**
+> (`create_automation` confirm-gated create-only + `list_automations` + created-card + F1 polish).
+> 4. Carried: **the F1 notifications device round** — owner was to test PM 2026-07-30, result never
+> reported; ASK. 5. Backlog unchanged (sendIcon/gradient fills · Web Push · ntfy · host up/down).
+>
+> ## ▶ PREVIOUS STATE (2026-07-30 morning — ✅ v1.4.1 LIVE; both releases today ran the PLAIN-FORM updater clean)
 > **✅ v1.4.1 RELEASED + LIVE same day** (tag @ `5a6faed`; release gate green run 30526099548 incl.
 > e2e; the plain-form updater's SECOND clean run, 1.4.0→1.4.1; health/pid/HTTPS verified; DB snapshot
 > `ctrlb-20260730-102239.db.gz`; rollback = `update.sh v1.4.0`, no config-shape change). It carries
@@ -62,8 +102,9 @@
 > ## ▶ NEXT SESSION — the checklist, in order
 > 1. ~~Owner device eyeball~~ + ~~release~~ + ~~popover eyeball~~ — **✅ ALL DONE 2026-07-30**
 >    (v1.4.0 then v1.4.1, both via the plain-form updater; **popovers OWNER-APPROVED on device**).
-> 2. **A3 automations = THE DESIGN CONVERSATION (owner-locked, prose-first — likely THIS session's
->    work).** The owner flagged he doesn't remember the full spec — open with a recap. The primer:
+> 2. ~~A3 automations = THE DESIGN CONVERSATION~~ — **✅ DONE 2026-07-30 evening (see the top
+>    block): design LOCKED as D49 + AUTOMATIONS_PLAN.md, slices 14a/14b BUILT review-clean.** The
+>    original primer (kept for provenance):
 >    **ROADMAP §A3 (lines ~116–128)** — automations invoke the agent on a schedule with a saved
 >    prompt + privilege level (cron + prompt + privilege → unattended run; "2am: sleep idle GPU
 >    boxes"). Sketched shape: `Automation { id, name, cron, prompt, privilege_level, target_thread,
