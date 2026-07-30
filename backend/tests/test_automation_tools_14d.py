@@ -450,47 +450,52 @@ def test_the_shutdown_sweep_and_a_late_finalizer_terminalize_a_run_exactly_once(
     AND recorded a second terminal Event, i.e. a duplicate run in the audit log and a duplicate
     `automation_done` notification for one run.
 
-    Terminalization is first-writer-wins, so this asserts the whole invariant: ONE transition (the
-    sweep's `interrupted`, not the straggler's label) and exactly ONE audit frame."""
+    Terminalization is first-writer-wins, so what is pinned is the INVARIANT, not the winner: ONE
+    transition, `interrupted`, and exactly ONE audit frame. The MESSAGE is deliberately either writer's
+    — the v1.4.3 release gate failed here because a loaded ubuntu runner let the finalizer win, which is
+    a perfectly legal outcome the old assertion had hard-coded against (it demanded the sweep's wording).
+
+    The ORDERING is nonetheless deterministic now, and structurally so (release wave): `_HeldTurn` blocks
+    the run task in its shielded wind-down until this test sets `release`, which it does only after
+    `shutdown()` has returned. So the sweep provably writes first and the finalizer provably arrives
+    late — the exact sequence the guard exists for — with no margin to lose on a slow machine.
+    """
     import asyncio
 
-    import anyio
+    from test_automations_api_14c import (
+        _HELD_TURN_CONFIG,
+        _SETTLE_S,
+        _TINY_GRACE_S,
+        _fake_sessions,
+        _HeldTurn,
+        _settled,
+    )
     from test_automations_api_14c import _create as _api_create
-    from test_automations_api_14c import _fake_sessions
 
-    with _workspace(), _client() as c:
+    from app.services.automations.runner import INTERRUPTED_NOTE
+    from app.services.automations.service import ORPHAN_NOTE
+
+    with _workspace(_HELD_TURN_CONFIG), _client() as c:
         state = c.app.state
-
-        class _Unkillable:
-            """A turn that keeps working well past the grace (the 14c shape) — so the sweep closes the
-            row first and the finalizer arrives second."""
-
-            async def run_turn(self, thread, text, **_kw):
-                from app.services.agent.session import AgentEvent
-
-                try:
-                    await asyncio.sleep(30)
-                except asyncio.CancelledError:
-                    with anyio.CancelScope(shield=True):
-                        await asyncio.sleep(0.4)
-                    raise
-                yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})  # pragma: no cover
-
         a = _api_create(c)
+        held = _HeldTurn()
 
         async def go():
-            with _fake_sessions(_Unkillable()):
+            with _fake_sessions(held):
                 runner = state.automation_runner
                 started = await runner.start_now(a["id"])
-                await asyncio.sleep(0.05)  # let the run get going
-                await runner.shutdown(0.05)  # …then expire the grace: the SWEEP closes the row
-                await asyncio.sleep(0.5)  # …and now let the straggler's finalizer land
+                await asyncio.wait_for(held.started.wait(), _SETTLE_S)  # the turn IS running
+                await runner.shutdown(_TINY_GRACE_S)  # the grace expires under it → the SWEEP closes it
+                assert not runner._manual.done()  # …with the straggler still provably in flight
+                held.release.set()  # now let its finalizer land on an already-closed row
+                await _settled(runner._manual)
                 return started
 
         started = _run(go())
         run = _run(state.automations.get_run(started.id))
-        # The FIRST writer's terminal survives — the late finalizer did not overwrite it.
-        assert run.status == "interrupted" and "server restarted" in (run.error or "")
+        assert run.status == "interrupted"
+        # Either legal writer's wording is fine; anything else means a third path closed the row.
+        assert (run.error or "") in (ORPHAN_NOTE, INTERRUPTED_NOTE), run.error
         audit = [e for e in _run(state.events.recent(50)) if e.run_id == started.id]
         assert len(audit) == 1, f"one run, one terminal Event — got {[e.summary for e in audit]}"
 

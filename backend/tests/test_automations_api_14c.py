@@ -115,6 +115,86 @@ class _FakeSession:
         yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})
 
 
+#: The "hangs until cancelled" sleep inside a stand-in turn. A duration only because a coroutine has to
+#: await SOMETHING; nothing is ever ordered against it (every wait below is signalled).
+_FOREVER_S = 30
+
+#: A shutdown grace we WANT to expire. Safe at any machine speed because the turn it waits on is HELD by
+#: the test — it provably cannot finish inside any window, so this is not a margin, it is a formality.
+_TINY_GRACE_S = 0.05
+
+#: The outer bound on a wait that is released by an explicit signal — the only real-time coupling left in
+#: these tests, and it exists solely so a genuine deadlock fails the suite instead of hanging it.
+_SETTLE_S = 10.0
+
+#: `agent.turns.shutdown_grace_s` (the bound on the runner's post-cancel wait for the TURN's drain task)
+#: pushed far out of the way, so the one thing a slow runner could otherwise change — that wait expiring
+#: on its own and releasing the finalizer early — cannot happen while a test holds a turn on purpose.
+_HELD_TURN_CONFIG = "server:\n  port: 5433\nagent:\n  turns:\n    shutdown_grace_s: 30\n"
+
+
+def _running_loop():
+    """The loop this caller is on, or None when it is a plain (sync) test body."""
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
+
+class _HeldTurn:
+    """A turn that ignores its cancel until the TEST lets go — the structural stand-in for "still
+    unwinding when the grace expires" (release wave: the release-by-`sleep(0.4)`-vs-grace-`0.05` shape
+    this replaces is a MARGIN, and the v1.4.3 release gate proved the margin does not hold on a loaded
+    ubuntu runner — its own proof-guard fired).
+
+    Three signals, so a caller never sleeps to sequence anything:
+      * `started`   — the turn is genuinely executing (replaces "sleep a bit to let it get going").
+      * `cancelled` — the cancel has been delivered and the shielded wind-down has begun.
+      * `release`   — set by the test, and the ONLY thing that lets the wind-down finish. Until then the
+                      run task cannot reach its finalizer, which is what makes "the grace expired under a
+                      live turn" a property of the code rather than of the clock.
+    """
+
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.cancelled = asyncio.Event()
+        self.release = asyncio.Event()
+        #: The loop the turn actually ran on — captured because a TestClient drives the app on ITS OWN
+        #: loop in a portal thread, so a sync test body releasing the hold is cross-thread.
+        self.loop: asyncio.AbstractEventLoop | None = None
+
+    def release_now(self) -> None:
+        """Set `release` from ANY thread. `asyncio.Event.set` is not thread-safe, and a sync test body
+        (TestClient) is on a different thread from the loop the turn is parked on — so hop through the
+        loop when we know it, and set directly when the caller is already on it."""
+        loop = self.loop
+        if loop is None or loop is _running_loop():
+            self.release.set()
+        else:
+            loop.call_soon_threadsafe(self.release.set)
+
+    async def run_turn(self, thread, text, **_kw):
+        from app.services.agent.session import AgentEvent
+
+        try:
+            self.loop = asyncio.get_running_loop()
+            self.started.set()
+            await asyncio.sleep(_FOREVER_S)
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            with anyio.CancelScope(shield=True):
+                await self.release.wait()  # still doing real work AFTER the cancel — until the test says stop
+            raise
+        yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})  # pragma: no cover
+
+
+async def _settled(task) -> None:
+    """Wait for a (usually cancelled) task to finish WITHOUT re-raising its outcome into the test — the
+    `asyncio.wait` shape the runner itself uses. Bounded only so a deadlock fails loudly."""
+    _, pending = await asyncio.wait([task], timeout=_SETTLE_S)
+    assert not pending, "a released turn never settled — it is wedged, not slow"
+
+
 @contextlib.contextmanager
 def _fake_sessions(session):
     import app.api.agent as agent_api
@@ -307,11 +387,17 @@ def test_a_second_run_now_and_a_delete_are_refused_while_a_run_is_active() -> No
     thread and its finalizer's write target — both are 409, from the same arbiter/open-run truth the
     engine already keeps. The list says `busy`/`running` in the same window, so the UI can grey the
     button instead of discovering the refusal."""
-    with _workspace(), _client() as c:
-        a = _create(c, timeout_s=1)  # the hung turn is cancelled by its own deadline, fast
+    with _workspace(_HELD_TURN_CONFIG), _client() as c:
+        a = _create(c, timeout_s=1)  # its own deadline is what labels the run `timed_out`
         b = _create(c, name="other")
-        with _fake_sessions(_FakeSession(hang=True)):
+        held = _HeldTurn()
+        with _fake_sessions(held):
             assert c.post(f"/api/automations/{a['id']}/run-now").status_code == 202
+            # The run is HELD open (release wave): every refusal below is asserted against a run that
+            # provably cannot finish, instead of racing the 1s deadline that used to be the only thing
+            # keeping the window open — six TestClient round-trips inside one second is a margin, and
+            # margins are what the v1.4.3 gate broke. The deadline may fire mid-window; that only starts
+            # the runner's (unbounded) wait for the turn, so `busy` stays true either way.
             views = _views(c)
             assert views["_doc"]["busy"] is True
             assert views[a["id"]]["running"] is True and views[b["id"]]["running"] is False
@@ -321,6 +407,7 @@ def test_a_second_run_now_and_a_delete_are_refused_while_a_run_is_active() -> No
             r = c.delete(f"/api/automations/{a['id']}")
             assert r.status_code == 409 and "active" in r.json()["detail"]
 
+            held.release_now()  # let the deadline-cancelled turn finish unwinding
             finished = _wait_terminal(c, a["id"])
         assert finished["status"] == "timed_out"
         assert c.get("/api/automations").json()["busy"] is False
@@ -488,45 +575,39 @@ def test_a_run_task_cancelled_before_it_starts_still_leaves_no_running_row() -> 
 def test_a_run_still_unwinding_past_the_grace_warns_and_is_swept() -> None:
     """The other half: the task DID start but is still winding down when the bounded grace expires.
     Shutdown must not hang systemd, so the wait stays bounded — and the row is closed here rather than
-    left `running` for the next boot's sweep."""
-    with _workspace(), _client() as c:
+    left `running` for the next boot's sweep.
+
+    "Still unwinding past the grace" is now STRUCTURAL, not a stopwatch (release wave): the turn blocks
+    in its shielded wind-down on an Event this test sets only after `shutdown()` has returned, so the
+    grace cannot fail to expire and the straggler cannot fail to be late. Everything the assertions
+    depend on is signalled; the only durations left are a formality (`_TINY_GRACE_S`) and a
+    deadlock-catcher (`_SETTLE_S`).
+    """
+    with _workspace(_HELD_TURN_CONFIG), _client() as c:
         state = c.app.state
-
-        class _Unkillable:
-            """A turn that ignores the cancel for far longer than the grace (the 14b `_StubbornSession`
-            shape, trimmed to what this assertion needs)."""
-
-            async def run_turn(self, thread, text, **_kw):
-                from app.services.agent.session import AgentEvent
-
-                try:
-                    await asyncio.sleep(30)
-                except asyncio.CancelledError:
-                    with anyio.CancelScope(shield=True):
-                        await asyncio.sleep(0.4)  # still working AFTER the cancel
-                    raise
-                yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})  # pragma: no cover
-
         a = _create(c)
+        held = _HeldTurn()
 
         async def go():
-            with _fake_sessions(_Unkillable()):
+            with _fake_sessions(held):
                 runner = state.automation_runner
                 started = await runner.start_now(a["id"])
-                await asyncio.sleep(0.05)  # let the run actually get going
-                await runner.shutdown(0.05)  # …then expire the grace out from under it
-                # Read INSIDE the window: the point is that shutdown closed the row itself, not that
-                # the straggler eventually got round to it.
-                still_running = runner._manual is not None and not runner._manual.done()
+                await asyncio.wait_for(held.started.wait(), _SETTLE_S)  # the turn IS running
+                await runner.shutdown(_TINY_GRACE_S)  # …and cannot finish, so the grace expires
+                # Read INSIDE the window, with the run task still provably held: a terminal row here is
+                # one SHUTDOWN wrote, not one the straggler got round to.
+                assert runner._manual is not None and not runner._manual.done()
+                assert held.cancelled.is_set(), "the turn was never cancelled — the test proves nothing"
                 run = await state.automations.get_run(started.id)
                 open_runs = await state.automations.open_runs()
-                await asyncio.sleep(0.5)  # let the straggler land while the DB is still open
-                return still_running, run, open_runs
+                held.release.set()  # now let the straggler land, while the DB is still open
+                await _settled(runner._manual)
+                return run, open_runs, await state.automations.get_run(started.id)
 
-        still_running, run, open_runs = _run(go())
-        assert still_running, "the grace did not expire under a live turn — the test proves nothing"
+        run, open_runs, after = _run(go())
         assert run.status == "interrupted"
         assert open_runs == []
+        assert after.status == "interrupted"  # the late straggler did not rewrite the closed row
 
 
 if __name__ == "__main__":

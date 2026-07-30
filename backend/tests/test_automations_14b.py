@@ -686,16 +686,22 @@ def test_a_repeatedly_cancelled_claim_still_hands_off_and_keeps_the_cancellation
         a = _run(svc.create(_draft(schedule="*/5 * * * *")))
         _due_now(c, a)
         real_claim = svc.claim
+        # Signalled, not timed (release wave): the cancel below must land while the claim is IN FLIGHT,
+        # and `sleep(0.01)`-vs-`sleep(0.05)` is a margin a loaded CI runner can invert — the shape that
+        # failed the v1.4.3 gate elsewhere in this suite. `entered` is the same idiom
+        # `test_two_further_cancels_during_cleanup_cannot_abandon_terminalization` below already uses.
+        entered = asyncio.Event()
 
         async def _slow_claim(*args, **kw):
-            await asyncio.sleep(0.05)  # the window a shutdown cancel lands in
+            entered.set()  # the claim is now running…
+            await asyncio.sleep(0.05)  # …and stays in flight for the window the cancel lands in
             return await real_claim(*args, **kw)
 
         svc.claim = _slow_claim  # type: ignore[assignment]
 
         async def go():
             task = asyncio.ensure_future(_runner(c)._claim(a.id, expected_rev=a.rev))
-            await asyncio.sleep(0.01)
+            await asyncio.wait_for(entered.wait(), timeout=5)
             task.cancel()
             await asyncio.sleep(0)  # let the cleanup begin…
             task.cancel()  # …and cancel it AGAIN, mid-handoff
@@ -769,15 +775,18 @@ def test_a_claim_that_raises_during_cancellation_never_replaces_the_cancellation
     with _workspace(), _client() as c:
         svc = _svc(c)
 
+        entered = asyncio.Event()  # signalled, not timed — see the sibling test above
+
         async def _boom(*_a, **_kw):
-            await asyncio.sleep(0.05)
+            entered.set()
+            await asyncio.sleep(0.05)  # in flight while the cancel lands
             raise RuntimeError("the claim blew up while we were unwinding")
 
         svc.claim = _boom  # type: ignore[assignment]
 
         async def go():
             task = asyncio.ensure_future(_runner(c)._claim("whatever"))
-            await asyncio.sleep(0.01)
+            await asyncio.wait_for(entered.wait(), timeout=5)
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
