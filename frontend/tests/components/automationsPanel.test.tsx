@@ -130,6 +130,13 @@ afterEach(() => {
 });
 
 describe("the list", () => {
+  it("a MALFORMED doc renders the loading placeholder, never a crash (v1.4.2 release-gate catch)", () => {
+    h.doc = {} as AutomationsDoc; // an unmocked-GET `{}` / proxy error body — no `automations` array
+    const { container } = render(<AutomationsPanel />);
+    expect(container.querySelector(".conf-card")).not.toBeNull();
+    expect(container.querySelectorAll(".confrow")).toHaveLength(0);
+  });
+
   it("shows the human schedule, the next fire and the last run's status chip", () => {
     setDoc([
       mkView({ last_run: mkRun({ status: "error", error: "boom" }), unread_runs: 2 }),

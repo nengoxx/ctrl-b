@@ -243,6 +243,18 @@ const ROUTES: Record<string, unknown> = {
     verbs: ["llamacpp", "openrouter"],
     warnings: [],
   },
+  // A3 14c — the automations list envelope (empty roster; the feature-level facts the editor reads).
+  // Mocked so Conf renders the real group rather than the catch-all `{}` — which is ALSO defended in
+  // code now (automationsSummary/the panel array-prove the payload), because that `{}` once crashed
+  // the whole Conf tab at the v1.4.2 release gate.
+  "/api/automations": {
+    automations: [],
+    enabled: true,
+    busy: false,
+    max_count: 20,
+    server_tz: "UTC",
+    default_timeout_s: 300,
+  },
   "/api/agents": { agents: [], default: "" },
   "/api/skills": [],
   "/api/integrations/status": { mcp: [], openapi: [], dirty: false },

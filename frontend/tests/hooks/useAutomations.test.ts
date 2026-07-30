@@ -190,6 +190,15 @@ describe("automationsSummary · what the collapsed group says", () => {
     expect(automationsSummary(undefined)).toBeUndefined();
   });
 
+  it("degrades to no summary on a MALFORMED payload — never a throw in ConfTab's render", () => {
+    // The v1.4.2 release-gate catch: an `{}` answer (a mock's unmocked-GET default, a proxy error
+    // body) reached `.reduce` on undefined and crashed the ENTIRE Conf tab behind the error screen.
+    expect(automationsSummary({} as AutomationsDoc)).toBeUndefined();
+    expect(
+      automationsSummary({ automations: "nope" } as unknown as AutomationsDoc),
+    ).toBeUndefined();
+  });
+
   it("counts automations while everything is read", () => {
     expect(automationsSummary(doc({ automations: [view(0), view(0)] }))).toBe("2 automations");
     expect(automationsSummary(doc({ automations: [view(0)] }))).toBe("1 automation");

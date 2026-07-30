@@ -611,7 +611,9 @@ export function AutomationsPanel() {
   //: two sheets can never be open at once (they are the same component with a different seed).
   const [editing, setEditing] = useState<string | null>(null);
 
-  if (!data) return <div className="conf-card" />;
+  // Array-proved like `automationsSummary` (the v1.4.2 release-gate catch): a malformed list payload
+  // renders the same placeholder as "still loading" instead of crashing the Conf tab.
+  if (!data || !Array.isArray(data.automations)) return <div className="conf-card" />;
   const views = data.automations;
   const current = editing
     ? (views.find((v) => v.automation.id === editing)?.automation ?? null)

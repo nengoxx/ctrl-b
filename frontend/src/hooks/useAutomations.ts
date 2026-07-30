@@ -115,7 +115,11 @@ export interface SchedulePreview {
  *
  *  The counts are already in the list envelope, so this costs no extra request. */
 export function automationsSummary(doc: AutomationsDoc | undefined): string | undefined {
-  if (!doc) return undefined;
+  // Array-proved, not just truthy-proved: this dereferences a NETWORK payload, and a malformed doc
+  // (a proxy error body, a mock that answers `{}`) must degrade to "no summary" — not throw inside
+  // ConfTab's render and take every Conf group down with it (the v1.4.2 release-gate catch: the e2e
+  // mock's unmocked-GET default did exactly that).
+  if (!doc || !Array.isArray(doc.automations)) return undefined;
   const unread = doc.automations.reduce((n, v) => n + v.unread_runs, 0);
   if (unread > 0) return `${unread} new`;
   if (!doc.enabled) return "scheduler off";
