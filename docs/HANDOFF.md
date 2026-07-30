@@ -12,7 +12,31 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-30 evening — A3 AUTOMATIONS: design LOCKED + slices 14a/14b SHIPPED review-clean; ELEVEN commits on main, NOT PUSHED)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-30 night — 🏁 **PHASE 14 / A3 AUTOMATIONS COMPLETE**: 14c + 14d built + review-clean same day; 14a–14c PUSHED CI-GREEN, 14d + docs UNPUSHED)
+> **The whole automations feature is BUILT.** This session: pushed the 14a/14b stack (first CI run
+> GREEN) → **14c surface** (`c4bc9fa`+docs `d3da383`, R3 WAVE CLEAN after Codex R1 DO-NOT-SHIP
+> 4H/4M: REST router w/ 202-DETACHED run-now · Conf group 14 list + PromptModal-shell sheet on its
+> own `auto-pm` z-45 layer · `openThread`+`loadGen`+`openSeq` in the chat store · shared
+> `modalKeyDown` focus trap) → **PUSHED with the spinner/seg/F1-note commits, CI GREEN** →
+> **14d tools** (one big commit, R2 WAVE CLEAN after R1 5×MED all accepted: `create_automation`
+> confirm-gated create-only w/ the in-tool non-interactive DENY · `list_automations` headless-ok ·
+> `Deps.automations` seam · EVERY run terminal records ONE Event via first-writer-wins
+> `finish_run` · the headless confirm→DENIED conversion now AUDITED (`record_policy_denial`,
+> decision="policy") · `automation_done` 4th notify class + stream-driven Conf invalidation ·
+> the persisted created-card w/ Open-in-Conf jump). Live-smoked TWICE on dev incl. a REAL headless
+> run (LLM turn → `ok` → exactly one terminal Event matching the FE predicate). Tests
+> **1199 BE / 886 FE**. Gate 6/6 on every commit. As-builts: AUTOMATIONS_PLAN §As-built slices 3–4;
+> TODO Phase 14 all ✅. Also this session: the STT transcribing spinner (`26fd1a7`, owner-requested,
+> all four composers) · the `.mform` seg hug fix (`4bac951`, owner device round) · the F1
+> Fennec-not-delivering note (`f5c93bc`, note-and-observe, ROADMAP F1).
+> **▶ NEXT SESSION:** 1. Push the 14d + docs commits (owner confirmation). 2. Owner device
+> eyeball of 14c/14d end-to-end (create via chat → confirm → card → run-now → notification →
+> unread → open-thread), then **release when the owner wants A3 live** (runbook §Release; next
+> tag likely v1.5.0 — migration v4+v5 fold on prod's first boot). 3. Carried: the F1 device
+> mystery (Fennec delivers nothing — observe in daily use) · backlog unchanged (sendIcon/gradient
+> fills · Web Push · ntfy · host up/down notify).
+>
+> ## ▶ PREVIOUS STATE (2026-07-30 evening — A3 AUTOMATIONS: design LOCKED + slices 14a/14b SHIPPED review-clean; ELEVEN commits on main, NOT PUSHED)
 > **The A3 design conversation ran end-to-end and the feature is half-built.** Full arc: owner
 > rulings (question policy skip|use_default · concurrency 1 · misfire skip · fresh-per-run +
 > rolling option, `pinned` future · agent tool in v1 · agent-as-scope) → THREE research dossiers

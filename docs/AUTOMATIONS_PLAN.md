@@ -249,6 +249,29 @@ keep_runs: 50}` — all tunables, no magic numbers. Records in SQLite (rationale
   ticket too). Presets (hourly/daily/weekly/custom) are a pure VIEW over the one stored cron
   (`lib/cronPreset.ts`); a non-representable expression shows a standing note.
 
+- **Slice 4 (14d):** the tools live in ONE file (`services/agent/automation_tools.py`, the
+  planning/question template) reaching the service via a new `Deps.automations` handle (back-filled
+  in the lifespan) — never `app.state`. `create_automation` input = {name, schedule, prompt,
+  thread_mode, agent?, tz?} ONLY (privilege/question_policy/timeout are owner-only in Conf);
+  `enabled=True` on create; retry-UNSAFE; the guard is `if not ctx.interactive → DENIED`, first.
+  The created-card rides `result.data.automation` (id/name/schedule_text/tz/next_fire from the
+  STORED `next_run_at`/thread_mode/enabled/agent), shape-validated in the bubble with a
+  tz-formatting backstop; Open-in-Conf = `openConfGroup` (both theme Roots honor an armed scroll
+  target). **Every run terminal now records ONE Event** (was interrupted-only; `missed` stays
+  event-less — written inside the claim's transaction) via **first-writer-wins terminalization**
+  (`finish_run` transitions only a `running` row inside BEGIN IMMEDIATE and returns whether it won;
+  the shutdown sweep and a late finalizer can no longer double-write; `sweep_orphans` closes through
+  the same op). **The headless confirm→DENIED conversion is audited** at its one session chokepoint
+  through `ActionService.record_policy_denial` (`decision="policy"`, full origin/run_id) — placed in
+  the SESSION, not `invoke`, because `decide()` documents the headless mapping as the caller's.
+  FE: `automation_done` = the additive 4th `NotificationEventsCfg` field (default true) + Conf row;
+  the run-terminal predicate is `action=="automation_run" AND run_id AND status ∈ {ok,error,timeout,
+  cancelled}` (the action name is load-bearing — tool calls inside a run carry the same run_id);
+  key `run:<run_id>`; one notification per run, never also `action_failed` (tool failures INSIDE
+  runs keep riding `action_failed` as before); the stream invalidates `["automations"]` +
+  `["automation-runs", id]` off the same predicate, invalidation-first; the group header shows the
+  unread sum. Tool description states recurring-only (decline one-shots) and standing-consent-at-FULL.
+
 ## Out of v1 (recorded, additive later)
 
 `pinned` thread mode (+ its pre-bought failure semantics: deleted destination → fail loudly,

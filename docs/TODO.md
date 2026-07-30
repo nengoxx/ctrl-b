@@ -1200,8 +1200,15 @@ Codex round → owner pause.
       trap). Ruled residuals: the list's four reads are not one snapshot (self-heals on refetch) ·
       preview validates tz before schedule (cosmetic) · PUT is last-writer-wins (single-user;
       `expected_rev` = future arm).**
-- [ ] **14d — Tools:** `create_automation` (confirm-gated, create-only, capped, non-interactive
+- [x] **14d — Tools:** `create_automation` (confirm-gated, create-only, capped, non-interactive
       DENY) + `list_automations` + the created-automation card + F1/unread polish.
+      **✅ 2026-07-30 — built + R2 WAVE CLEAN (Opus build → main-seat audit + live headless-run
+      smoke → Codex R1 SHIP-WITH-FIXES 5 MED, all accepted → fix wave → R2 5/5 CLOSED zero new).
+      As-built in AUTOMATIONS_PLAN §As-built slice 4: every run terminal records ONE Event
+      (first-writer-wins `finish_run`) · the headless confirm→DENIED conversion is AUDITED
+      (`record_policy_denial`, decision="policy") · `automation_done` = the additive 4th
+      notification class · the created-card rides `result.data.automation` (shape-validated) with
+      an Open-in-Conf jump. PHASE 14 COMPLETE.**
 
 ## Cross-cutting / don't-forget
 
