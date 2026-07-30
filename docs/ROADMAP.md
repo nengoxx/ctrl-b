@@ -113,19 +113,21 @@ kinds, streaming-or-not endpoint, a settings/policy layer) so these slot in with
   configurable command sigil storage. *(Popover styling — CLOSED 2026-07-30: the Kit shell recipe +
   the `composerSkin` per-skin blocks above; vapor stays verb-only with no popover at all, D7.)*
 
-### A3. Scheduled agent automations (cron triggers)
+### A3. Scheduled agent automations (cron triggers) — **✏️ design LOCKED 2026-07-30 (D49) · spec = [`AUTOMATIONS_PLAN.md`](./AUTOMATIONS_PLAN.md) · build = TODO Phase 14**
 
 - **What:** define automations that **invoke the agent on a schedule with a configurable prompt**
-  (the "openclaw"-style pattern: cron + a saved prompt + a privilege level → the agent runs the
-  task unattended). E.g. "every night at 2am, check the fleet and sleep idle GPU boxes," "on
-  Monday 8am summarize the week's events."
-- **Design implication:** a new **scheduler subsystem** — stored `Automation { id, name, cron,
-  prompt, privilege_level, target_thread, enabled, last_run, last_status }` in SQLite; a runner
-  (APScheduler-style or a simple async cron loop in the FastAPI process). Reuses the same agent +
-  action registry as interactive chat, just headless. Results land in the Event log + a thread.
-- **Open:** what happens when an automation hits a `question` (A2) or a `confirm` action with no
-  human → per-automation policy (skip / use default / notify and wait). Concurrency limits. This is
-  a sizeable module — likely its own post-v1 phase.
+  (cron + a saved prompt + an agent/privilege → the agent runs the task unattended). E.g. "every
+  night at 2am, check the fleet and sleep idle GPU boxes," "Monday 8am summarize the week's events."
+- **Locked shape (supersedes the earlier sketch here):** `automations` + `automation_runs` in
+  SQLite (v4/v5 migrations) · hand-rolled poll-and-claim lifespan loop + `cronsim` (R7) · runs
+  ride the existing turn machinery (reserve/drain/cancel) headless via the subagent pattern ·
+  question policy `skip|use_default` per automation, confirms follow the privilege/approvals
+  ladder · concurrency 1 (one arbiter incl. run-now) · misfire = skip (`misfire_grace_s`) ·
+  fresh-thread-per-run default + `rolling` mode (`pinned` future) · origin/run_id attribution
+  (R9) · create-only `create_automation` agent tool (R8) · Conf list + sheet editor with cron
+  presets + escape hatch. All open questions from the old sketch are ruled in D49/the plan.
+- **Still-future extensions (recorded in the plan §Out of v1):** `pinned` thread mode ·
+  notify-and-wait (the A1+A3+F1 tie below) · rolling-thread takeover · pause-after-N-failures.
 
 ### A5. Agent runtime: compaction · built-in tools (task/plan) · skills
 

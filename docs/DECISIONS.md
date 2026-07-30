@@ -3636,3 +3636,45 @@ C1–C11 above; the design is **CLOSED pending owner sign-off**.
   probe > None + ModelRef call config), D43 (failover generator + per-provider retry override + typed retry
   visibility), and D45/D46 (`api_mode` wire-dialect enum + `max_tokens_field` derivation). `core.failover`
   stays the ONE walker.
+
+## D49 — Scheduled agent automations (A3): SQLite records + poll-and-claim runner + origin attribution ✏️ LOCKED 2026-07-30 (owner-signed same day)
+
+**Spec authority = [`AUTOMATIONS_PLAN.md`](./AUTOMATIONS_PLAN.md) (design v2, post-council) — build
+against it, not this summary.** Evidence: R7/R8/R9 dossiers + seam map; council = Codex (15
+findings) + Opus architecture (12) both SHIP-WITH-CHANGES, all folded; confirm round clean.
+
+**Locked shape:**
+- **Records in SQLite** (`automations` + `automation_runs`, migrations v4/v5 split per the
+  append-only rule; v4 = attribution only). Rationale: agent-writable records must never brick the
+  config-validated boot. Config gets only the `automations:` tunables section.
+- **Scheduler = hand-rolled lifespan poll-and-claim loop + `cronsim`** (new pinned dep, +
+  `tzdata`). Claim = one BEGIN IMMEDIATE txn (verify enabled+rev, misfire-classify against
+  `misfire_grace_s` → `missed` row without invoking, advance `next_run_at` from now, freeze an
+  execution snapshot). APScheduler/croniter rejected on R7 evidence.
+- **Owner rulings:** question policy `skip|use_default` (default use_default; confirms ALWAYS
+  follow the privilege/approvals ladder — a stored prompt is not consent) · concurrency 1 via one
+  global arbiter shared with run-now (409 when busy) · misfire = skip · fresh thread per run
+  default + per-automation `rolling` mode (`pinned` = future arm, single `thread_id` column) ·
+  create tool ships in v1.
+- **Runs ride the existing turn machinery** (reserve kind="automation" → `_build_session` →
+  `_spawn_drain_task`; timeout via `cancel_turn`; honest terminals incl. `interrupted`; boot
+  orphan sweep; `keep_runs` retention pruning runs + their threads).
+- **Headless session options object:** `message_actor=AUTOMATION`, reflection disarmed (the
+  depth>0 proxy re-expressed), explicit compaction/steer/routing state, strict agent resolution
+  at claim (a missing named agent FAILS the run — never falls back to the default agent).
+- **Attribution (R9):** `events` gains `origin` (required kwarg at the invoke chokepoint) +
+  `origin_id` + `run_id` + `decision`; `actor` semantics unchanged; origin propagates through
+  `run_subagent` in v1; ancestry predicate = non-null `run_id`.
+- **`create_automation`** builtin: create-only (delete/edit withheld from the model — field
+  consensus), `confirm=True`, cap in the shared write service (TOCTOU-closed), in-tool DENY for
+  any non-interactive context (deliberately covers chat subagents too; interactivity is the
+  predicate, not ancestry). FULL auto-allow accepted as standing consent (no new confirm
+  mechanism).
+- **UI:** Conf "Automations" group = list; editor in a sheet; presets + raw-cron escape hatch
+  with server-side cronsim preview; dedicated `/api/automations` CRUD (MachineEditor hook
+  pattern, SQLite write path).
+
+**Supersedes** the ROADMAP §A3 sketch (`target_thread`, "APScheduler-style", last_run/last_status
+fields → the runs table). **Preserves** D8 (one-file tools), D14/D15 (agents folder-only — the
+automation's agent IS its blast radius), D44 (approvals ladder unchanged, gains the `decision`
+column its marker lacked), the D2-B wake service (`origin=system`).

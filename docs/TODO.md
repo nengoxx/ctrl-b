@@ -1160,6 +1160,29 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
       **Telegram-Discord** channels. **Discord/Telegram bots** as thin API clients (E1).
 - [ ] **Security hardening**: known_hosts pinning, per-action tokens, secret encryption-at-rest (G).
 
+## Phase 14 — Scheduled agent automations (A3) — **design LOCKED 2026-07-30 (owner-signed) · spec = [`AUTOMATIONS_PLAN.md`](./AUTOMATIONS_PLAN.md) + [`DECISIONS.md` D49](./DECISIONS.md) (build against those, NOT this list)**
+
+Cron-scheduled headless agent runs: SQLite `automations`/`automation_runs`, a poll-and-claim
+lifespan loop + `cronsim`, runs riding the existing turn machinery, origin attribution, a Conf
+group + sheet editor, and a create-only agent tool. Each slice: pinned Opus brief → gate 6/6 →
+Codex round → owner pause.
+
+- [ ] **14a — Attribution (migration v4):** `events` gains `origin`/`origin_id`/`run_id`/
+      `decision`; `origin` = REQUIRED kwarg at the `ActionService.invoke` chokepoint +
+      `InvocationContext`; propagated through `run_subagent`; wake service passes `system`.
+      Zero behavior change; tests.
+- [ ] **14b — Engine (migration v5):** schema + `AutomationRepo` + `cronsim`/`tzdata` pins + the
+      atomic claim protocol (misfire-grace, rev check, snapshot) + turn-machinery integration
+      (reserve/drain/cancel, honest terminals incl. `interrupted`) + the headless session options
+      object (message_actor, reflection disarmed, strict agent resolution) + `question_policy`
+      (additive `QuestionInput.choices/default` + bubble chips) + boot orphan sweep + `keep_runs`
+      retention + the `automations:` config section.
+- [ ] **14c — Surface:** `/api/automations` CRUD + run-now (409 busy) + runs/mark-read +
+      schedule-preview; Conf "Automations" group (list) + sheet editor (presets + raw-cron escape
+      hatch + live preview, agent picker, privilege chip, policy/results segs, history).
+- [ ] **14d — Tools:** `create_automation` (confirm-gated, create-only, capped, non-interactive
+      DENY) + `list_automations` + the created-automation card + F1/unread polish.
+
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.
