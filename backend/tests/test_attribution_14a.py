@@ -16,8 +16,9 @@ that arrives in slice 2 has nothing to invent. What's pinned here:
   6. Subagents  — a child session runs as `origin=subagent` named after the child agent, with the
                   parent's `run_id` PRESERVED — the transitive "descended from an automation" predicate.
   7. Reads      — a row this build can't interpret (a rollback reading what a newer build wrote)
-                  degrades to `unknown`/None instead of failing the whole history read; the write path
-                  stays strict, and `unknown` is never emitted by the gate.
+                  degrades to `unknown`/None instead of failing the whole history read, while the write
+                  path stays strict: the sentinel is unwritable BY TYPE (`Origin.kind` takes only the
+                  four writable kinds; `Event.origin` takes the wider read vocabulary).
 
 Runs as `python tests/test_attribution_14a.py` from backend/ (plain asserts + a __main__ runner) or
 under pytest. Every test works in an isolated `$CTRLB_HOME`/`CTRLB_CONFIG`/`CTRLB_DB` temp workspace —
@@ -33,6 +34,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import get_args
 
 from _async import run_async
 
@@ -428,6 +430,15 @@ def test_spawn_subagents_forwards_the_context_origin_as_the_parent_origin() -> N
 # ── 7. lenient reads (post-14a review, LOW) ─────────────────────────────────────────────────────
 
 
+def _literal_values(tp: object) -> set[str]:
+    """The member strings of a `Literal`, or of a union of them (`EventOriginKind` is the latter — the
+    runtime keeps `Literal[…] | Literal["unknown"]` as a two-arm union rather than collapsing it)."""
+    values: set[str] = set()
+    for arg in get_args(tp):
+        values |= {arg} if isinstance(arg, str) else _literal_values(arg)
+    return values
+
+
 def _insert_row(c, *, event_id: str, origin: str, decision: str | None) -> None:
     """Write an events row straight through SQLite, bypassing the domain model — the only way to stage
     what a NEWER build (or a corrupted row) would leave behind for this one to read."""
@@ -484,8 +495,6 @@ def test_an_unknown_origin_degrades_instead_of_failing_the_whole_history() -> No
 def test_the_coercion_is_derived_from_the_domain_vocabulary() -> None:
     """The known-value sets come off the `Literal`s via `get_args`, so adding a kind can never leave a
     hand-maintained copy behind (which would silently coerce a brand-new, perfectly valid kind)."""
-    from typing import get_args
-
     from app.domain.event import DecisionReason, OriginKind
     from app.services.events import _DECISIONS, _ORIGIN_KINDS, _decision, _origin_kind
 
@@ -499,20 +508,34 @@ def test_the_coercion_is_derived_from_the_domain_vocabulary() -> None:
     assert _decision("nope") is None and _decision(None) is None
 
 
-def test_unknown_is_a_read_side_sentinel_the_gate_can_never_write() -> None:
-    """The asymmetry that keeps the audit trail honest: leniency belongs to the READ. Nothing in `app/`
-    constructs an `unknown` origin, so the sentinel can only ever mean "this build could not read what
-    was stored" — never "the gate did not know who was calling"."""
-    app_dir = Path(__file__).resolve().parents[1] / "app"
-    writers = [
-        str(p.relative_to(app_dir))
-        for p in sorted(app_dir.rglob("*.py"))
-        if any(marker in (src := p.read_text(encoding="utf-8")) for marker in ('kind="unknown"', "'unknown'"))
-        and "Origin(" in src
-    ]
-    assert writers == []
+def test_the_sentinel_is_unwritable_by_construction_not_by_convention() -> None:
+    """The asymmetry that keeps the audit trail honest, carried by the TYPES rather than by a source scan
+    (post-14a verify, LOW): `Origin.kind` takes only the four writable kinds, so no code path — present or
+    future, in `app/` or anywhere else — can mint an `unknown` origin, while the read type accepts it.
+    `unknown` can therefore only ever mean "this build could not read what was stored", never "the gate
+    did not know who was calling"."""
+    from pydantic import ValidationError
 
-    # And end-to-end: a real invocation records the kind it was given, never the sentinel.
+    from app.domain.event import UNKNOWN_ORIGIN, EventOriginKind, OriginKind
+
+    # The write type refuses the sentinel…
+    try:
+        Origin(kind=UNKNOWN_ORIGIN)  # type: ignore[arg-type] — pyright rejects this statically too
+    except ValidationError:
+        pass
+    else:
+        raise AssertionError("Origin accepted the read-side sentinel — it must be unwritable")
+
+    # …while the read type accepts it, and the two vocabularies differ by exactly that one member.
+    stored = Event.model_validate({"actor": "user", "action": "x", "status": "ok", "origin": UNKNOWN_ORIGIN})
+    assert stored.origin == UNKNOWN_ORIGIN
+    assert set(get_args(OriginKind)) == set(_KINDS)
+    assert _literal_values(EventOriginKind) == set(_KINDS) | {UNKNOWN_ORIGIN}
+
+
+def test_a_real_invocation_records_the_kind_it_was_given() -> None:
+    """The end-to-end half of the same asymmetry: the gate stamps what the caller declared, so no
+    recorded row can read as the sentinel."""
     from app.domain.enums import Privilege
 
     with _workspace(), _client() as c:

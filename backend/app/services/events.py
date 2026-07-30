@@ -16,25 +16,28 @@ from typing import cast, get_args
 from app.core.events import EventBus
 from app.db import Database
 from app.domain.enums import Actor, RunState
-from app.domain.event import DecisionReason, Event, OriginKind
+from app.domain.event import UNKNOWN_ORIGIN, DecisionReason, Event, EventOriginKind, OriginKind
 
 #: The attribution vocabularies this build understands, derived from the domain Literals so there is no
-#: second list to drift out of sync when a kind is added.
+#: second list to drift out of sync when a kind is added. `OriginKind` (not `EventOriginKind`) on purpose:
+#: these are the values a build can have WRITTEN — anything else, sentinel included, lands in the
+#: `UNKNOWN_ORIGIN` arm below, which is where a stored `unknown` belongs anyway.
 _ORIGIN_KINDS: frozenset[str] = frozenset(get_args(OriginKind))
 _DECISIONS: frozenset[str] = frozenset(get_args(DecisionReason))
 
 
-def _origin_kind(value: object) -> OriginKind:
-    """A stored `origin` narrowed to the vocabulary this build knows, anything else → `unknown`.
+def _origin_kind(value: object) -> EventOriginKind:
+    """A stored `origin` narrowed to the vocabulary this build knows, anything else → `UNKNOWN_ORIGIN`.
 
     Why lenient here and nowhere else (post-14a review, LOW): `Event`'s fields are Literals, so a single
     row carrying a kind from a NEWER build would raise inside the list comprehension and fail the whole
     `GET /api/events` response — the audit trail going dark on the one occasion you most want to read it.
     Rollback is by tag (D32), so that row is a realistic artifact of a downgrade, not corruption. Degrade
-    the one field, keep the history readable. Deliberately NOT symmetric: the WRITE path stays strict
-    (the gate can only stamp a kind it has in its own vocabulary).
+    the one field, keep the history readable. Deliberately NOT symmetric, and the types say so: this
+    returns the wider `EventOriginKind`, while `Origin.kind` only accepts `OriginKind` — so the gate
+    cannot stamp a sentinel even by mistake.
     """
-    return cast(OriginKind, value) if isinstance(value, str) and value in _ORIGIN_KINDS else "unknown"
+    return cast(OriginKind, value) if isinstance(value, str) and value in _ORIGIN_KINDS else UNKNOWN_ORIGIN
 
 
 def _decision(value: object) -> DecisionReason | None:

@@ -333,7 +333,8 @@ class Database:
         transaction control must be added to sql_script". SQLite's DDL is fully transactional, so the
         rollback really does undo the `CREATE`/`ALTER`s (pinned by
         `test_db_migration_atomicity.py`, which crashes a migration mid-script and asserts both the
-        version and the partial columns are gone, then that a clean boot applies it in full).
+        version and the partial columns are gone, then that a clean boot applies it in full — including
+        with a cancel delivered while the cleanup rollback is in flight).
 
         The script is composed, never split: v3's FTS triggers carry semicolons inside `BEGIN … END`
         bodies, so any statement-splitting would corrupt them. `version` is interpolated (executescript
@@ -350,12 +351,19 @@ class Database:
         try:
             await self.conn.executescript(script)
         except BaseException:
-            # Leave nothing half-open on the shared connection: a failed script leaves its transaction
-            # active, and an abandoned BEGIN poisons every later transaction on this connection. A
-            # rollback that itself fails (the failure was the BEGIN, so no transaction is active) is not
-            # interesting — the original error is what the operator needs to see.
-            with contextlib.suppress(Exception):
-                await self.conn.rollback()
+            # Clean up through the SAME cancellation-safe rollback `transaction()` uses (C3-H1) rather
+            # than a plain `rollback()`: a failed script leaves its transaction ACTIVE, and a cancel
+            # landing mid-rollback (a shutdown racing a failing startup migration) would otherwise
+            # abandon the open BEGIN on the shared connection — poisoning every later transaction on it.
+            # `_shielded_rollback` guarantees the rollback COMPLETES before anything propagates.
+            #
+            # Its outcome is deliberately discarded, including the `CancelledError` it re-raises: the
+            # bare `raise` below must re-raise the MIGRATION failure, which is the diagnosis the operator
+            # needs (a cancel in its place would report a shutdown and hide the broken migration). Safe
+            # to swallow here specifically because this path always ends in that `raise` — the caller is
+            # `connect()`, so startup fails either way; nothing continues believing it was not cancelled.
+            with contextlib.suppress(BaseException):
+                await self._shielded_rollback()
             raise
 
     async def schema_version(self) -> int:

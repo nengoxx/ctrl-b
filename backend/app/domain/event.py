@@ -22,16 +22,22 @@ from pydantic import BaseModel, Field
 
 from app.domain.enums import Actor, RunState
 
-#: Who set an invocation in motion. Records the IMMEDIATE initiator only — an automation's
-#: subagent's calls read `subagent`, not `automation` (D-4 "ancestry semantics"): the authoritative
-#: "descended from an automation" predicate is a non-null `run_id`, preserved through descendants.
+#: Who set an invocation in motion — the WRITABLE vocabulary: exactly what a caller may declare at the
+#: gate. Records the IMMEDIATE initiator only — an automation's subagent's calls read `subagent`, not
+#: `automation` (D-4 "ancestry semantics"): the authoritative "descended from an automation" predicate
+#: is a non-null `run_id`, preserved through descendants.
+OriginKind = Literal["user_chat", "automation", "subagent", "system"]
+#: What a STORED origin may read as: the writable kinds plus the `unknown` sentinel. Two types rather
+#: than one wider one (post-14a verify, LOW) so "read-only" is carried by the type system instead of a
+#: convention: `Origin.kind` takes `OriginKind`, so `Origin(kind="unknown")` is a `ValidationError` and
+#: no code path can mint one — while `Event.origin` and the read coercion accept it.
 #:
-#: `unknown` is a READ-SIDE SENTINEL, never written by the gate (post-14a review, LOW): rollback is by
-#: tag (D32), so a downgraded build can legitimately read rows a newer one wrote with an origin kind
-#: this build has never heard of. The events read boundary coerces those to `unknown` rather than
-#: raising — one strange row in the audit trail must not take `GET /api/events` down with it. Nothing
-#: in `app/` ever constructs it (pinned by `test_attribution_14a.py`).
-OriginKind = Literal["user_chat", "automation", "subagent", "system", "unknown"]
+#: Why the sentinel exists: rollback is by tag (D32), so a downgraded build can legitimately read rows a
+#: newer one wrote with an origin kind it has never heard of. The events read boundary degrades those to
+#: `unknown` rather than raising — one strange row must not take `GET /api/events` down with it.
+EventOriginKind = OriginKind | Literal["unknown"]
+#: The sentinel itself, named once (the read boundary and its tests are its only users).
+UNKNOWN_ORIGIN: EventOriginKind = "unknown"
 #: Why the permission gate let an invocation through (or, for `policy`, why it didn't): `auto` = the
 #: risk/privilege decision allowed it outright · `confirmed` = it executed against a confirm token ·
 #: `approval` = a persisted D44 approval rule matched · `policy` = the gate DENIED it. The
@@ -75,8 +81,9 @@ class Event(BaseModel):
     summary: str | None = None
     output: str | None = None  # redacted + truncated upstream
     #: The `Origin` flattened onto the audit row (one column each, matching migration 4) — the shape
-    #: a history query filters on. The defaults are exactly what a legacy row backfills to.
-    origin: OriginKind = "user_chat"
+    #: a history query filters on. The defaults are exactly what a legacy row backfills to. `origin`
+    #: is the WIDER read type: a stored row may degrade to `UNKNOWN_ORIGIN`, which an `Origin` cannot be.
+    origin: EventOriginKind = "user_chat"
     origin_id: str | None = None
     run_id: str | None = None
     decision: DecisionReason | None = None  # NULL for a record written outside the permission gate
