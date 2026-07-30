@@ -5028,7 +5028,13 @@ body[data-perf="lite"] .kit .navmenu-pop {
   overflow-wrap: anywhere;
 }
 /* Parity with extras.css's `.mform .seg`: a Seg in the narrow .mform value column must wrap, or the
- * five-option privilege picker overflows a phone. */
+ * five-option privilege picker overflows a phone — and it must HUG its chips: a grid item stretches
+ * to its track by default, which painted the capsule across the whole column with the chips pinned
+ * right by the base seg's `justify-content: flex-end` and an empty track running left (owner device
+ * round 2026-07-30). End-anchored it shrinks to content (the `.confrow .seg` right-anchor
+ * convention); max-width keeps the wrap when the options outgrow the column. */
 .kit .mform .seg {
   flex-wrap: wrap;
+  justify-self: end;
+  max-width: 100%;
 }

@@ -1894,6 +1894,13 @@ body {
    harmless for the short Backend/Privilege segs (3–4 options never reach the wrap width). */
 .mform .seg {
   flex-wrap: wrap;
+  /* A grid item STRETCHES to its track by default, so the seg painted its capsule across the whole
+     value column — an empty track running past the options (owner device round 2026-07-30). End-
+     anchored it shrinks to the chips it holds (non-stretch alignment sizes to content), which is the
+     `.confrow .seg` right-anchor convention applied to the grid; max-width keeps the wrap working
+     when the options genuinely outgrow the column. */
+  justify-self: end;
+  max-width: 100%;
 }
 
 /* ── Conf → Skills · SKILL.md editor (Phase 7d-c, net-new) ────────────────────────────────────
