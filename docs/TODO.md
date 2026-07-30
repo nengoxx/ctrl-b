@@ -1167,10 +1167,15 @@ lifespan loop + `cronsim`, runs riding the existing turn machinery, origin attri
 group + sheet editor, and a create-only agent tool. Each slice: pinned Opus brief → gate 6/6 →
 Codex round → owner pause.
 
-- [ ] **14a — Attribution (migration v4):** `events` gains `origin`/`origin_id`/`run_id`/
+- [x] **14a — Attribution (migration v4):** `events` gains `origin`/`origin_id`/`run_id`/
       `decision`; `origin` = REQUIRED kwarg at the `ActionService.invoke` chokepoint +
       `InvocationContext`; propagated through `run_subagent`; wake service passes `system`.
-      Zero behavior change; tests.
+      Zero behavior change; tests. **✅ SHIPPED 2026-07-30 (`3dd2d3b` + wave `262c9d5` + micro-wave
+      `b1ff4fb`; Codex R1 SHIP-WITH-FIXES → R2 2×CLOSED+3 LOW → R3 WAVE CLEAN; tests 1085→1109;
+      riders: atomic per-migration application in the runner [the whole class] + lenient
+      attribution reads [`unknown` = read-side-only sentinel]). Carried to 14b: strict
+      `Actor`/`RunState` reads in `recent()` (same rollback-fragility class) · the line-keyed
+      SYS-16 waiver tax on db.py edits.**
 - [ ] **14b — Engine (migration v5):** schema + `AutomationRepo` + `cronsim`/`tzdata` pins + the
       atomic claim protocol (misfire-grace, rev check, snapshot) + turn-machinery integration
       (reserve/drain/cancel, honest terminals incl. `interrupted`) + the headless session options

@@ -757,8 +757,15 @@ class NotificationChannel(Protocol):
 ## 8. Persistence (SQLite)
 
 Tables: `threads`, `messages` (parts as JSON column; **+ a nullable `agent` column**, D15 #5),
-`memory` (**reserved for the later vector store — unused in v1**, D14/D15), `events`, `automations`,
+`memory` (**reserved for the later vector store — unused in v1**, D14/D15), `events` (**+ the D49
+attribution quartet since migration v4: `origin` [immediate initiator, NOT NULL default
+`user_chat`] · `origin_id` · `run_id` [the transitive automation-ancestry key] · `decision` [why
+the gate allowed/denied]; reads coerce unknown values — `EventOriginKind`'s `unknown` sentinel is
+read-side only**), `automations`,
 `push_subscriptions`, `pending_actions` (for suspended confirms / notify-park), `schema_version`.
+Migration application is **atomic per migration** (script + version stamp in one explicit
+transaction composed inside the script text; migrations author DDL/DML only — the runner owns
+transaction control, pinned by a statement-aware invariant test).
 A **`messages_fts` FTS5 virtual table** (+ sync triggers) backs `session_search`, indexed over
 **redacted** message text, covering live **and** compacted rows (D15 #7).
 
