@@ -833,6 +833,16 @@
     animation: micrec 1.2s ease-in-out infinite;
   }
   @keyframes micrec { 50% { transform: scale(0.92); } }
+  /* STT in flight: the mask swaps to the 8-bar spinner (the shared SpinnerIcon geometry, stroke 2.4)
+     and rolls — steps(8) advances one bar per tick. Rotating the button rotates mask + gradient
+     together; at 28px the gradient shift is invisible, and the button is disabled while sending so
+     no :active/press transform competes. */
+  .composer .mic.sending {
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v4'/><path d='m16.2 7.8 2.9-2.9'/><path d='M18 12h4'/><path d='m16.2 16.2 2.9 2.9'/><path d='M12 18v4'/><path d='m4.9 19.1 2.9-2.9'/><path d='M2 12h4'/><path d='m4.9 4.9 2.9 2.9'/></svg>") center/28px no-repeat;
+            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v4'/><path d='m16.2 7.8 2.9-2.9'/><path d='M18 12h4'/><path d='m16.2 16.2 2.9 2.9'/><path d='M12 18v4'/><path d='m4.9 19.1 2.9-2.9'/><path d='M2 12h4'/><path d='m4.9 4.9 2.9 2.9'/></svg>") center/28px no-repeat;
+    animation: micspin 1s steps(8, end) infinite;
+  }
+  @keyframes micspin { to { transform: rotate(360deg); } }
 
   /* (peek + meta-row removed for compact composer) */
 

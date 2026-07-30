@@ -51,6 +51,37 @@ export function SendArrowheadIcon({ size = 24 }: { size?: number }) {
   );
 }
 
+/** The transcribing spinner (owner ask 2026-07-30): the classic 8-bar radial activity glyph (lucide
+ *  `loader` geometry), swapped in for the mic glyph while a recorded clip awaits its transcript
+ *  (`useDictation` status `sending`). The rotation lives in CSS off the button's `.sending` class
+ *  (kit.css / vapor.css), stepped per-bar so it reads as the dial "rolling around". */
+export function SpinnerIcon({ size = 26 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {/* 2.4 (between the arrowhead's 2.2 and the mic's 2.6): eight short bars at equal weight read
+          thinner than the mic's long strokes, so they get a touch more. */}
+      <path d="M12 2v4" />
+      <path d="m16.2 7.8 2.9-2.9" />
+      <path d="M18 12h4" />
+      <path d="m16.2 16.2 2.9 2.9" />
+      <path d="M12 18v4" />
+      <path d="m4.9 19.1 2.9-2.9" />
+      <path d="M2 12h4" />
+      <path d="m4.9 4.9 2.9 2.9" />
+    </svg>
+  );
+}
+
 /** The vapor stroke mic glyph (round caps/joins, stroke 2.6). Size via width/height (CSS may override). */
 export function MicIcon({ size = 26 }: { size?: number }) {
   return (

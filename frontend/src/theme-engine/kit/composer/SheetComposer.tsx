@@ -3,7 +3,7 @@ import { useRef } from "react";
 import { useComposer } from "../../../hooks/useComposer";
 import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
-import { MicIcon, SendArrowheadIcon, StopSquareIcon } from "./icons";
+import { MicIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
@@ -62,6 +62,7 @@ export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
                 className={
                   "kit-cbtn mic" +
                   (mic.status === "recording" ? " rec" : "") +
+                  (mic.status === "sending" ? " sending" : "") +
                   (micPressed ? " press" : "") +
                   (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
                 }
@@ -78,7 +79,7 @@ export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
                 {/* vapor's stroke mic glyph at vapor's proportion (~26px in the 40px hit target) — owner
                     eyeball 2026-07-11: the docked variant keeps vapor's icon language, theme-colored.
                     Graduated to the shared `MicIcon` at its second consumer (Phase E's LineComposer). */}
-                <MicIcon size={26} />
+                {mic.status === "sending" ? <SpinnerIcon size={26} /> : <MicIcon size={26} />}
               </button>
             )}
           </div>

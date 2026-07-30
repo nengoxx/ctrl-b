@@ -3,7 +3,7 @@ import { useRef } from "react";
 import { useComposer } from "../../../hooks/useComposer";
 import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
-import { MicIcon, SendArrowheadIcon, StopSquareIcon } from "./icons";
+import { MicIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
@@ -81,6 +81,7 @@ export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {
             className={
               "kit-cbtn mic line-btn" +
               (mic.status === "recording" ? " rec" : "") +
+              (mic.status === "sending" ? " sending" : "") +
               (micPressed ? " press" : "") +
               (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
             }
@@ -94,7 +95,7 @@ export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {
             onPointerLeave={releaseMic}
             onClick={mic.toggle}
           >
-            <MicIcon size={22} />
+            {mic.status === "sending" ? <SpinnerIcon size={22} /> : <MicIcon size={22} />}
           </button>
         )}
         {showSend && (

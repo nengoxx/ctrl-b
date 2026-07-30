@@ -87,6 +87,7 @@ export function Composer() {
             className={
               "mic" +
               (mic.status === "recording" ? " rec" : "") +
+              (mic.status === "sending" ? " sending" : "") +
               (micPressed ? " press" : "") +
               // Grey for both blocked states; `insecure` stays tappable (not disabled) so a tap can
               // re-explain the HTTPS fix instead of reading as a dead/stuck control.

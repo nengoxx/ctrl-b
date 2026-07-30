@@ -479,6 +479,20 @@ body[data-perf="lite"] .kit-composer {
 .kit-cbtn.mic.unavail {
   opacity: 0.4;
 }
+/* STT in flight (owner ask 2026-07-30): the glyph is the 8-bar SpinnerIcon and it ROLLS — steps(8)
+ * advances exactly one bar per tick, the classic segmented activity spinner, as a transform-only
+ * animation (§14.11). One rule covers all three variants (stacked/sheet `.mic`, line `.line-btn`). */
+.kit-cbtn.mic.sending svg {
+  animation: kit-spin 1s steps(8, end) infinite;
+}
+@keyframes kit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+body[data-motion="reduced"] .kit-cbtn.mic.sending svg {
+  animation: none; /* §14.11: the swapped-in spinner glyph alone says "transcribing" */
+}
 .kit-send {
   all: unset;
   cursor: pointer;

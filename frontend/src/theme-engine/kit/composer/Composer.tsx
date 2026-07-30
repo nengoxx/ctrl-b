@@ -5,7 +5,7 @@ import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
 import { useUISlice } from "../../../store/ui";
 import { useComposerSkin } from "../axes";
-import { SendArrowheadIcon, StopSquareIcon } from "./icons";
+import { SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
 import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
@@ -79,6 +79,7 @@ export function KitComposer({
               className={
                 "kit-cbtn mic" +
                 (mic.status === "recording" ? " rec" : "") +
+                (mic.status === "sending" ? " sending" : "") +
                 (micPressed ? " press" : "") +
                 (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
               }
@@ -92,9 +93,13 @@ export function KitComposer({
               onPointerLeave={releaseMic}
               onClick={mic.toggle}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z" />
-              </svg>
+              {mic.status === "sending" ? (
+                <SpinnerIcon size={16} />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z" />
+                </svg>
+              )}
             </button>
           )}
           {/* While a turn streams the send button becomes a Stop control (D39) — same swap as the
