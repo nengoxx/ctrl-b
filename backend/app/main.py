@@ -38,6 +38,7 @@ from app.api import (
 from app.api import (
     actions,
     agent,
+    automations,
     events,
     health,
     hosts,
@@ -337,6 +338,10 @@ async def lifespan(app: FastAPI):
         app.state.automation_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.automation_task
+        # …and the one execution that does NOT live on that task: a detached run-now (14c). Its
+        # shielded finalizer still has a terminal status to write, so it is drained here — after the
+        # turn drain that cancelled its turn, and still well before the DB closes below.
+        await app.state.automation_runner.shutdown(turns_cfg.shutdown_grace_s)
         app.state.memory_sweep_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.memory_sweep_task
@@ -486,6 +491,7 @@ def create_app() -> FastAPI:
     app.include_router(integrations.router, prefix="/api")
     app.include_router(voice_api.router, prefix="/api")
     app.include_router(access_api.router, prefix="/api")
+    app.include_router(automations.router, prefix="/api")
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
     if _FRONTEND_DIST.is_dir():

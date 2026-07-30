@@ -1680,7 +1680,7 @@ body[data-perf="lite"] .kit .pm-backdrop {
 .kit .pm-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 60; /* above .modal-backdrop (50) — never co-open, but keep the order explicit */
+  z-index: 60; /* the top of the overlay ladder — see .kit .pm-backdrop.auto-pm below */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4969,4 +4969,66 @@ body[data-perf="lite"] .kit .navmenu-pop {
  * no `.navhome` node → this doesn't match → the player keeps its left:14px launcher-only clearance. */
 .kit:has(.navhome):has(.navmenu:not(.docked)) .mini-player {
   left: calc(64px + env(safe-area-inset-left));
+}
+
+/* The automations editor sheet's own layer.
+   The OVERLAY LADDER, now that three layers really can co-exist (A3/14c): the automations editor
+   sheet (`.pm-backdrop.auto-pm`, 45) < ConfirmDialog (`.modal-backdrop`, 50) < PromptModal
+   (`.pm-backdrop`, 60). The sheet BORROWS this shell's look but must sit UNDER the confirm dialog it
+   opens (its delete asks for confirmation), which is why it takes its own z-index rather than the 60
+   below. PromptModal stays on top: it is opened FROM the other two, never under them. */
+.kit .pm-backdrop.auto-pm {
+  z-index: 45;
+}
+
+/* ── A3 (14c) — Conf › Automations (list rows + the editor sheet) ─────────────────────────────────
+ * The kit half of the extras.css block: the same five net-new pieces on kit tokens. Everything else
+ * the panel renders (`.conf-card`/`.confrow`/`.mconf`/`.mform`/`.mfoot`/`.svc-*`/`.pm-*`) is already
+ * styled above. */
+.kit .pm-body.pm-scroll {
+  display: block;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* The row's chevron is a real <button> (D25 — the row contains a Switch, so it can't be role=button);
+ * `all: unset` clears the button chrome, so `.kit .confrow .chev`'s look is re-declared here. */
+.kit .confrow button.chev {
+  all: unset;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+}
+.kit .auto-sw {
+  display: inline-flex;
+  align-items: center;
+}
+.kit .confrow .badge.auto-unread {
+  margin-left: 8px;
+}
+.kit .auto-run-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.kit .auto-run-when {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.kit .auto-run-err {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+/* Parity with extras.css's `.mform .seg`: a Seg in the narrow .mform value column must wrap, or the
+ * five-option privilege picker overflows a phone. */
+.kit .mform .seg {
+  flex-wrap: wrap;
 }

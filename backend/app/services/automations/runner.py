@@ -104,7 +104,8 @@ async def _shielded(coro: Coroutine[Any, Any, None]) -> None:
 
 class AutomationRunner:
     """Owns the loop, the arbiter, and one run at a time. Constructed in the lifespan after the
-    orphan sweep; `loop()` is the task, `tick()`/`run_now()` are the two entry points."""
+    orphan sweep; `loop()` is the task, `tick()`/`start_now()` are the two entry points (`run_now()` is
+    `start_now` awaited), and `shutdown()` drains a detached manual run."""
 
     def __init__(self, app: "FastAPI", service: AutomationService) -> None:
         self._app = app
@@ -116,6 +117,11 @@ class AutomationRunner:
         self._arbiter = asyncio.Lock()
         #: The snapshot of the run currently executing, for diagnostics + 14c's status reads.
         self._active: AutomationSnapshot | None = None
+        #: The DETACHED run-now task (14c). At most one exists at a time — the arbiter guarantees it —
+        #: and the lifespan drains it through `shutdown()`, exactly as it cancels the poll loop: a
+        #: manual run is the one execution that does not live on `loop()`'s task, so without this its
+        #: shielded finalizer could still be writing when the DB closes.
+        self._manual: asyncio.Task[None] | None = None
 
     @property
     def arbiter(self) -> asyncio.Lock:
@@ -176,23 +182,120 @@ class AutomationRunner:
                 await self._service.prune_runs(row.id)  # retention, in the same loop (§D-1)
         return ran
 
-    async def run_now(self, automation_id: str) -> AutomationRun | None:
-        """Run one automation immediately (14c's run-now, and the arbiter's second citizen).
+    async def start_now(self, automation_id: str) -> AutomationRun:
+        """Claim one manual run and execute it DETACHED — 14c's run-now endpoint (§D-6).
 
         Refuses with `AutomationBusy` while ANY run is active — 409 "runner busy" — rather than queueing:
-        concurrency 1 is a global property, so the honest answer is "not now". A currently-due slot is
-        consumed atomically by the claim, so pressing the button exactly when the loop would have fired
-        cannot double-run; otherwise the schedule is untouched.
+        concurrency 1 is a global property (owner ruling 2), so the honest answer is "not now". A
+        currently-due slot is consumed atomically by the claim, so pressing the button exactly when the
+        loop would have fired cannot double-run; otherwise the schedule is untouched.
+
+        **The claim is inline, the execution is not.** The claim is what decides 409-vs-started and it is
+        the row the response carries, so the caller must wait for it. The RUN is a full agent turn
+        bounded by `timeout_s` (300s by default) — awaiting that inside a request handler is precisely
+        what D39's durable-turn machinery exists to avoid, since a client that navigates away (or a proxy
+        that times the socket out) would cancel the handler mid-run and turn an ordinary run into an
+        `interrupted` one.
+
+        **The arbiter is acquired here and released by the detached task.** `asyncio.Lock` has no owner
+        check, and that hand-off is what makes concurrency 1 hold across the request boundary: `tick()`
+        sees `locked()` for the whole detached run, exactly as it does for an awaited one.
+
+        **Refused once shutdown has begun**, on the same `shutting_down` flag `tick()` reads. Starting a
+        run past that point would race a snapshot into a closing DB, and — because `_manual` holds ONE
+        task — a start landing during `shutdown()`'s drain would replace the handle being drained with a
+        run nothing is waiting for. Uvicorn stops serving before the lifespan unwinds, so this gate is a
+        backstop rather than a hot path; the poll loop is gated identically.
         """
+        if getattr(self._app.state, "shutting_down", False):
+            raise AutomationBusy("the server is shutting down — no new automation runs are being started")
         if self._arbiter.locked():
             raise AutomationBusy("the automation runner is busy with another run — try again shortly")
-        async with self._arbiter:
+        # Uncontended `acquire()` completes without yielding, so the `locked()` check above and this are
+        # atomic under the single-threaded loop (the same `reserve()` discipline the turn registry uses).
+        await self._arbiter.acquire()
+        try:
             snapshot = await self._claim(automation_id, trigger="manual")
             if snapshot is None:
                 raise AutomationNotFound(f"no automation {automation_id!r}")
+        except BaseException:
+            # Nothing was claimed, so nobody else will release the lock. `_claim` already terminalizes
+            # a run it managed to commit before a cancel landed, so there is no orphan to close here.
+            self._arbiter.release()
+            raise
+        # From here the claim OWNS a `running` row, and EVERY exit hands it to the detached task — which
+        # is the only thing that can terminalize it and release the arbiter. So the read below sits in a
+        # `try/finally` rather than the `except` shape above: a failing read must not become the reason a
+        # claimed run is left `running` until the next boot's orphan sweep (the `_claim` handoff class).
+        try:
+            run = await self._service.repo.get_run(snapshot.run_id)
+        finally:
+            self._manual = asyncio.create_task(self._run_detached(snapshot))
+        if run is None:  # the claim committed it in the same database — belt, not braces
+            raise AutomationNotFound(f"no automation {automation_id!r}")
+        return run
+
+    async def _run_detached(self, snapshot: AutomationSnapshot) -> None:
+        """The body `start_now` hands off: the SAME `_execute` the poll loop uses, plus retention, plus
+        the arbiter release that closes the hand-off. Never raises — `_execute` already terminalizes the
+        run in a shielded finalizer, and a detached task's exception has nowhere to go but the logs."""
+        try:
             await self._execute(snapshot)
-            await self._service.prune_runs(automation_id)
-            return await self._service.repo.get_run(snapshot.run_id)
+            await self._service.prune_runs(snapshot.automation_id)
+        except asyncio.CancelledError:
+            raise  # shutdown: `_execute` has already written the `interrupted` terminal
+        except Exception:  # noqa: BLE001 — a detached run must not die silently
+            log.exception("detached automation run %s failed", snapshot.run_id)
+        finally:
+            self._arbiter.release()
+
+    async def run_now(self, automation_id: str) -> AutomationRun | None:
+        """`start_now`, awaited to completion — the in-process entry point (and the tests').
+
+        One execution path with the endpoint's: this only adds the rendezvous. `asyncio.wait` rather than
+        a bare `await`, so the detached task stays the sole owner of the run's outcome and a failure
+        there is reported where it happened, not re-raised into an unrelated caller.
+
+        **Cancelling this coroutine no longer cancels the RUN** — deliberate, and a real change from the
+        pre-14c shape. The run lives on the detached task `start_now` created, which only `shutdown()`
+        cancels; a cancel here abandons the *rendezvous*, exactly as a client disconnecting from the 202
+        endpoint does. Anything that needs the run itself stopped goes through `cancel_turn` on its turn,
+        which is the one sanctioned cancel (§D-2).
+        """
+        started = await self.start_now(automation_id)
+        task = self._manual
+        if task is not None:
+            await asyncio.wait([task])
+        return await self._service.repo.get_run(started.id)
+
+    async def shutdown(self, grace_s: float) -> None:
+        """Cancel + drain a detached run-now, bounded (the lifespan's `shutdown_grace_s`).
+
+        The poll loop's task is cancelled by the lifespan directly; this is its counterpart for the one
+        execution that does not live on it. Bounded for the same reason the turn drain is: shutdown must
+        not hang systemd, and the terminal a cancel produces (`interrupted` — "cut off, effects may be
+        incomplete") stays true even if the turn is still unwinding when the process goes.
+
+        **The sweep is the backstop, and it is not optional** (post-14c review, HIGH). A task cancelled
+        before its FIRST scheduling step never runs its body at all — so neither `_execute`'s shielded
+        finalizer nor `_run_detached`'s `finally` ever executes, and the `running` row the claim committed
+        survives with nobody to close it. The same is true of a task still pending when the grace expires.
+        In both cases we call `sweep_orphans()` — the EXISTING chokepoint that marks stale `running` rows
+        `interrupted`, the one the boot path uses — while the DB is still open, instead of leaving the row
+        for the next boot to find. The arbiter is deliberately NOT reasoned about here: a held lock is
+        immaterial to a process that is exiting; the durable row is not.
+        """
+        task = self._manual
+        if task is None or task.done():
+            return
+        task.cancel()
+        _, pending = await asyncio.wait([task], timeout=grace_s)
+        if pending:
+            log.warning("a manual automation run did not drain within %.1fs", grace_s)
+        if pending or task.cancelled():
+            # Did not terminalize itself (never started, or still unwinding past the grace) — close the
+            # row here rather than leaving it `running` until the next boot's sweep finds it.
+            await self._service.sweep_orphans()
 
     async def _claim(self, automation_id: str, **kw) -> AutomationSnapshot | None:
         """`AutomationService.claim`, made uninterruptible ACROSS THE OWNERSHIP HANDOFF (post-14b review,

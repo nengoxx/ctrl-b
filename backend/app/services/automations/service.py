@@ -166,9 +166,26 @@ class AutomationService:
             raise AutomationAgentMissing(name)
         return agent
 
-    def _validated(self, draft: AutomationDraft) -> tuple[str, str]:
-        """Every cross-field write rule, in one place: the cron parses AND fires, the zone loads on THIS
-        host, and a named agent exists. Returns the normalized `(schedule, tz)` to store."""
+    def _validated(self, draft: AutomationDraft) -> tuple[str, str, str]:
+        """Every cross-field write rule, in one place: the name and prompt say something, the cron parses
+        AND fires, the zone loads on THIS host, and a named agent exists. Returns the normalized
+        `(name, schedule, tz)` to store.
+
+        The whitespace rules live HERE rather than on `AutomationDraft` because `min_length` counts
+        characters, not content: `"   "` passes a pydantic `min_length=1` and would store an automation
+        with a blank name and an empty instruction (post-14c review, MED). Being in the shared service
+        means the agent tool (14d) inherits them without restating anything — the same reason the cap
+        and the cron live here.
+
+        The NAME is normalized (stripped) and returned, so both writers store the same value rather than
+        each remembering to `.strip()`. The PROMPT is only *checked*, never trimmed: leading indentation
+        and trailing newlines are formatting the owner chose for an instruction the model will read.
+        """
+        name = draft.name.strip()
+        if not name:
+            raise AutomationInvalid("name", "a name is required")
+        if not draft.prompt.strip():
+            raise AutomationInvalid("prompt", "a prompt is required — say what the run should do")
         try:
             schedule = validate_cron(draft.schedule)
         except ScheduleError as exc:
@@ -182,16 +199,16 @@ class AutomationService:
                 self.resolve_agent_strict(draft.agent)
             except AutomationAgentMissing as exc:
                 raise AutomationInvalid("agent", str(exc)) from exc
-        return schedule, tz
+        return name, schedule, tz
 
     async def create(self, draft: AutomationDraft) -> Automation:
         """Validate, cap-check and insert — the count and the INSERT in ONE transaction, so two
         concurrent creates (the owner's form and the agent's tool) cannot both pass a cap with one slot
         left (§D-1 TOCTOU-closed)."""
-        schedule, tz = self._validated(draft)
+        name, schedule, tz = self._validated(draft)
         now = _now()
         automation = Automation(
-            name=draft.name.strip(),
+            name=name,
             schedule=schedule,
             tz=tz,
             prompt=draft.prompt,
@@ -230,12 +247,12 @@ class AutomationService:
         writing into a conversation the automation now owns (or, the other way, leave the guard armed for
         a thread nothing owns any more). Ownership therefore only ever changes while the thread is idle,
         and — like every other marker here — it is held past COMMIT."""
-        schedule, tz = self._validated(draft)
+        name, schedule, tz = self._validated(draft)
         now = _now()
         markers: list[TurnHandle] = []
         try:
             return await self._update(
-                automation_id, draft, schedule=schedule, tz=tz, now=now, markers=markers
+                automation_id, draft, name=name, schedule=schedule, tz=tz, now=now, markers=markers
             )
         finally:
             for marker in markers:
@@ -246,6 +263,7 @@ class AutomationService:
         automation_id: str,
         draft: AutomationDraft,
         *,
+        name: str,
         schedule: str,
         tz: str,
         now: datetime,
@@ -279,7 +297,7 @@ class AutomationService:
                 next_at = current.next_run_at
             updated = current.model_copy(
                 update={
-                    "name": draft.name.strip(),
+                    "name": name,
                     "schedule": schedule,
                     "tz": tz,
                     "prompt": draft.prompt,

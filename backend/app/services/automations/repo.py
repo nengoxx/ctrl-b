@@ -238,18 +238,52 @@ class AutomationRepo:
         sql += " ORDER BY started_at ASC, rowid ASC"
         return [self._run_row(r) for r in await self._db.query(sql, params)]
 
-    async def mark_run_read(self, run_id: str, when: datetime) -> bool:
-        """Clear a run's unread marker (idempotent — an already-read run keeps its first `read_at`)."""
+    async def latest_runs(self) -> dict[str, AutomationRun]:
+        """The newest run of EVERY automation, keyed by automation id — the 14c list's last-status chip.
+
+        One window query rather than a `runs(id, limit=1)` per row: the list is refetched on every Conf
+        entry, and a query-per-automation would make the payload's cost scale with `max_count` for data
+        SQLite can group in a single pass. The `ORDER BY` inside the partition is deliberately the same
+        `started_at DESC, rowid DESC` the history read uses, so the chip can never disagree with the row
+        at the top of the history it links to.
+        """
         rows = await self._db.query(
-            "SELECT read_at FROM automation_runs WHERE id = ?",
-            (run_id,),
+            "SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY automation_id "
+            "ORDER BY started_at DESC, rowid DESC) AS rn FROM automation_runs) WHERE rn = 1"
         )
+        return {r["automation_id"]: self._run_row(r) for r in rows}
+
+    async def unread_counts(self) -> dict[str, int]:
+        """Per automation, how many FINISHED runs the owner has not opened yet (the 14c unread badge).
+
+        Only terminal runs count: a run that is still going is not a result to read. The filter is
+        `status <> 'running'` rather than a list of the five terminal names on purpose — it matches
+        `_run_row`'s lenient narrowing, where a status this build does not recognise degrades to `error`
+        (terminal). A row a newer build wrote therefore counts as unread rather than silently vanishing
+        from the badge.
+        """
+        rows = await self._db.query(
+            "SELECT automation_id, COUNT(*) AS n FROM automation_runs "
+            "WHERE read_at IS NULL AND status <> 'running' GROUP BY automation_id"
+        )
+        return {r["automation_id"]: int(r["n"]) for r in rows}
+
+    async def mark_run_read(self, run_id: str, when: datetime) -> bool:
+        """Clear a run's unread marker (idempotent — an already-read run keeps its FIRST `read_at`).
+
+        First-writer-wins in ONE statement (post-14c review, MED): `COALESCE` makes the "only if unread"
+        decision inside the write, so two marks racing — the history's open-sweep and a refetch behind
+        it — cannot both read NULL and have the second overwrite the first timestamp. The existence
+        probe stays a separate read only because the caller needs 404-vs-200, which an UPDATE cannot
+        report on its own here.
+        """
+        rows = await self._db.query("SELECT id FROM automation_runs WHERE id = ?", (run_id,))
         if not rows:
             return False
-        if rows[0]["read_at"] is None:
-            await self._db.execute(
-                "UPDATE automation_runs SET read_at = ? WHERE id = ?", (_epoch(when), run_id)
-            )
+        await self._db.execute(
+            "UPDATE automation_runs SET read_at = COALESCE(read_at, ?) WHERE id = ?",
+            (_epoch(when), run_id),
+        )
         return True
 
     async def excess_runs(self, automation_id: str, keep: int) -> list[AutomationRun]:

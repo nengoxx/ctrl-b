@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
+import { modalKeyDown } from "../lib/focusTrap";
 import { resolvePrompt, usePrompt } from "../store/prompt";
 
 // Phase 7e-b — the one reusable full-page prompt editor. Opened imperatively via
@@ -15,7 +16,8 @@ import { resolvePrompt, usePrompt } from "../store/prompt";
 // restore focus on close, Escape cancels, keydown scoped to the backdrop (not window). The focus
 // trap cycles through the live focusable set (close ✕ → textarea → footer buttons → back); we
 // query it each Tab because, unlike ConfirmDialog's fixed two buttons, the footer button count
-// varies (Load/Restore only show when `defaultText` is set).
+// varies (Load/Restore only show when `defaultText` is set). Both halves now live in
+// `lib/focusTrap` — extracted so the A3 automations sheet reuses them instead of copying them.
 //
 // Save semantics are the caller's (see store/prompt.ts): Save resolves with the edited text, Cancel
 // resolves with null. The modal never hits the backend.
@@ -59,30 +61,14 @@ export function PromptModal() {
       : `${count.toLocaleString()} chars`;
   const overCap = cap != null && count > cap;
 
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      resolvePrompt(null);
-    } else if (e.key === "Tab") {
-      // Trap focus within the panel — cycle the live focusable set deterministically (Tab in a
-      // textarea moves focus by default, so without this it could escape once more items change).
-      const panel = panelRef.current;
-      if (!panel) return;
-      const items = Array.from(panel.querySelectorAll<HTMLElement>("textarea, button")).filter(
-        (el) => !el.hasAttribute("disabled"),
-      );
-      if (!items.length) return;
-      e.preventDefault();
-      const i = items.indexOf(document.activeElement as HTMLElement);
-      const next = e.shiftKey
-        ? items[(i - 1 + items.length) % items.length]
-        : items[(i + 1) % items.length];
-      next.focus();
-    }
-  };
-
+  // Escape closes, Tab cycles the panel's LIVE focusable set — both from `lib/focusTrap`, which the
+  // automations editor sheet shares (A3 slice 3). The behaviour is the one this modal has always had;
+  // it just no longer lives here alone.
   return (
-    <div className="pm-backdrop" onKeyDown={onKeyDown}>
+    <div
+      className="pm-backdrop"
+      onKeyDown={(e) => modalKeyDown(e, panelRef.current, () => resolvePrompt(null))}
+    >
       <div className="pm" ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={labelId}>
         <div className="pm-head">
           <h3 id={labelId}>{req.title}</h3>

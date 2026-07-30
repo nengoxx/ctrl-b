@@ -34,6 +34,27 @@ let state: ChatState = {
   sessionPrivilege: null,
 };
 let loaded = false;
+//: The chat view's LOAD GENERATION — app-owned cross-generation state (the D39/ACA precedent).
+//:
+//: Three loaders can be in flight against this one view at once: `initChat` (first Agent-tab mount),
+//: `reloadChat` (F16, on every SSE reconnect) and `openThread` (14c, from the automations run
+//: history). Each of them `await`s a fetch and then writes `threadId`/`messages`/`loaded` — so without
+//: a generation, a slow one lands AFTER a newer one and wins by arriving last: a stale `initChat`
+//: overwrites the thread the owner just opened, an in-flight `reloadChat` writes the OLD thread's
+//: messages under the NEW `threadId`, and a stale `initChat`'s `catch` resets `loaded` so the next
+//: mount reloads over a deliberate open.
+//:
+//: The rule is one line at each site: capture `gen` on entry, and discard every post-`await` write
+//: unless it still matches. Only an explicit `openThread` BUMPS it — it is the only load that is a
+//: user decision rather than a reconciliation, so it is the only one allowed to invalidate the others.
+let loadGen = 0;
+//: The explicit-navigation ticket (R2 verify, M5). `loadGen` orders loads by COMPLETION — whichever
+//: swap happens last owns the view — which is right for reconciliations but wrong between two USER
+//: decisions: of two rapid "open thread" taps, the LATER intent must win even if its fetch resolves
+//: first. Every `openThread` claims a ticket at ENTRY (same-thread opens included — re-opening the
+//: current thread is also a decision that supersedes a pending open), `/clear` claims one too, and a
+//: swap is abandoned when its ticket has been superseded.
+let openSeq = 0;
 const { emit, useStore } = createStore();
 // Confirm tokens from `tool.permission`, keyed by callId — sent back on resume(execute).
 const confirmTokens: Record<string, string> = {};
@@ -418,30 +439,113 @@ export function getChatStatus(): ChatStatus {
   return state.status;
 }
 
+/** Fetch one thread's persisted history. Split from the state write so a caller can decide what to do
+ *  with a FAILED fetch before it has touched the view (see `openThread`). */
+async function fetchMessages(threadId: string): Promise<ChatMessage[]> {
+  return (await (await fetch(`/api/threads/${threadId}/messages`)).json()) as ChatMessage[];
+}
+
+/** Hydrate ONE thread into the chat view: its persisted history, then the D39/M4 re-attach probe.
+ *
+ *  The single load seam. The last turn of the thread we are opening may still be running detached (the
+ *  mobile app-kill headline case — the socket died, the server-owned task did not), so the probe runs
+ *  AFTER the initial paint (non-blocking, snapshot path, so a live turn resumes streaming instead of
+ *  looking dead). Both entry points below go through here — cold load and an explicit open — so a
+ *  thread opened from anywhere gets the same re-attach guarantee.
+ *
+ *  `gen` is the caller's load generation: the write is DISCARDED if a newer load has started since (see
+ *  `loadGen`), so a slow fetch can never land on top of a view that has moved on. */
+async function loadThread(threadId: string, gen: number): Promise<void> {
+  const msgs = await fetchMessages(threadId);
+  if (gen !== loadGen) return; // superseded mid-fetch — this result belongs to a view that is gone
+  set({ threadId, messages: msgs });
+  void probeAndReattach(threadId);
+}
+
+/** Open a SPECIFIC thread in the chat view — the automations run history's "open thread" (14c/§D-6).
+ *
+ *  Deliberately built from the SAME parts as `loadThread` (`fetchMessages` + the post-swap
+ *  `probeAndReattach`) rather than as a second loader stack: an automation's run thread is an ordinary
+ *  (archived) thread, and it must arrive with the same history + re-attach behaviour as the one
+ *  `initChat` picks. It cannot call `loadThread` itself — fetch-first-swap-second and the cache drops
+ *  have to happen BETWEEN those two parts. The per-thread client caches are dropped when the swap
+ *  actually happens, exactly
+ *  as `startNewThread` drops them, because every one is keyed to the conversation being left (TTS blobs,
+ *  the turn-event ordering, harvested raw lines, the last harvest receipt).
+ *
+ *  **Fetch first, swap second** (post-14c review): the earlier shape cleared the view and then fetched,
+ *  so an unreachable backend left the owner staring at an emptied chat they had not asked to lose. The
+ *  current view is only touched once the replacement is in hand.
+ *
+ *  Refuses while a turn is streaming (ACA-10/S2-C) — checked BEFORE the fetch and again after it, since
+ *  a turn can start during the round-trip. Returns whether the thread was opened, so the caller can skip
+ *  the tab switch it would otherwise make. */
+export async function openThread(threadId: string): Promise<boolean> {
+  // Claimed unconditionally at entry — even an open that goes on to be refused supersedes an older
+  // pending one (the owner's newest intent is the one that counts).
+  const ticket = ++openSeq;
+  // `getChatStatus()` rather than `state.status`: the same check runs again after the fetch, and a
+  // direct read would let the compiler narrow the first one across the `await` — which is exactly the
+  // change this is here to notice.
+  if (getChatStatus() === "streaming") {
+    pushSystemNote("// a turn is running — stop it or wait before opening another thread");
+    return false;
+  }
+  if (state.threadId === threadId) {
+    // Already here, so no reload and no cache churn — but DO re-probe: an automation's rolling thread
+    // can have gone live since the owner last looked at it, and the probe is what re-attaches to it.
+    void probeAndReattach(threadId);
+    return true;
+  }
+  try {
+    const msgs = await fetchMessages(threadId);
+    if (ticket !== openSeq) return false; // a newer open (or /clear) superseded this one mid-fetch
+    if (getChatStatus() === "streaming") {
+      // A turn started during the fetch — the pre-check above is not enough on its own.
+      pushSystemNote("// a turn is running — stop it or wait before opening another thread");
+      return false;
+    }
+    // An explicit open is the one load that is a user DECISION, so it is the one that invalidates any
+    // reconciliation in flight (a slow initChat/reloadChat landing after this must be discarded).
+    const gen = ++loadGen;
+    clearAudioCache();
+    lastTurnId = null;
+    lastSeq = 0;
+    dropAllRaw();
+    lastHarvestSig = null;
+    set({ threadId, messages: msgs, status: "idle", streamingId: null });
+    loaded = true; // a later `initChat` must not replace this with the most-recent thread
+    if (gen === loadGen) void probeAndReattach(threadId);
+    return true;
+  } catch {
+    // Nothing was cleared — the view the owner was looking at is still intact. The note only speaks
+    // for the CURRENT intent (R3, L2): a superseded open failing late must not drop a misleading
+    // "unreachable" note into the view of the open that won.
+    if (ticket === openSeq) {
+      pushSystemNote("// could not open that thread — the backend is unreachable");
+    }
+    return false;
+  }
+}
+
 /** Load the most-recent thread + its history once (on first Agent-tab mount). */
 export async function initChat(): Promise<void> {
   if (loaded) return;
   loaded = true;
+  const gen = loadGen;
   // Don't clobber a session already in flight (e.g. local-only /help notes or a send that beat the
   // first Agent-tab mount) — only hydrate history into an empty log.
   if (state.messages.length || state.threadId) return;
   try {
     const threads = (await (await fetch("/api/threads")).json()) as Thread[];
-    if (!threads.length) return;
-    const t = threads[0];
-    const msgs = (await (await fetch(`/api/threads/${t.id}/messages`)).json()) as ChatMessage[];
-    set({ threadId: t.id, messages: msgs });
-    // D39/M4 cold-load re-attach: the last turn may still be running detached (the mobile
-    // app-kill headline case — the socket died, the server-owned task did not). Probe + re-attach
-    // AFTER the initial paint (non-blocking, snapshot path so a live turn resumes streaming instead
-    // of looking dead). There is NO separate thread-switch path in this SPA (single active thread,
-    // most-recent; `initChat` is the only load), so this one seam covers cold load + switch.
-    void probeAndReattach(t.id);
+    if (gen !== loadGen || !threads.length) return; // an explicit open won the race — leave it alone
+    await loadThread(threads[0].id, gen);
   } catch {
     // Backend was down at load time. Reset `loaded` so the next initChat (or the F16
     // reconnect-triggered reloadChat) can retry — otherwise the chat would be stuck empty
-    // until a full page refresh.
-    loaded = false;
+    // until a full page refresh. NOT if a thread was opened while we were failing: that reset would
+    // let the next mount reload over a deliberate open.
+    if (gen === loadGen) loaded = false;
   }
 }
 
@@ -456,11 +560,14 @@ export async function initChat(): Promise<void> {
  *  `stopTurn`'s stream-already-gone fallback also forces a settle-from-durable reconcile. */
 export async function reloadChat(force = false): Promise<void> {
   if (!force && state.status === "streaming") return;
+  const gen = loadGen;
   try {
     if (state.threadId) {
-      const msgs = (await (
-        await fetch(`/api/threads/${state.threadId}/messages`)
-      ).json()) as ChatMessage[];
+      const threadId = state.threadId;
+      const msgs = await fetchMessages(threadId);
+      // Discard if the view moved on mid-fetch: without this, an in-flight reconcile writes the OLD
+      // thread's messages under the NEW `threadId` — a chat log belonging to a different conversation.
+      if (gen !== loadGen || state.threadId !== threadId) return;
       set({ messages: msgs });
     } else {
       loaded = false;
@@ -508,6 +615,7 @@ export function startNewThread(): void {
     pushSystemNote("// a turn is running — stop it or wait before clearing");
     return;
   }
+  openSeq++; // a /clear supersedes any pending explicit open — its fetch must not swap in afterwards
   clearAudioCache(); // 6b-2: revoke this thread's TTS blobs + stop any playback
   lastTurnId = null; // D39: a fresh thread view starts a fresh per-turn event ordering
   lastSeq = 0;

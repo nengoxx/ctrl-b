@@ -1937,7 +1937,7 @@ body {
 .pm-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 60; /* above .modal-backdrop (50) — single-user, never co-open, but keep the order explicit */
+  z-index: 60; /* the top of the overlay ladder — see .pm-backdrop.auto-pm below */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2884,6 +2884,71 @@ body {
   text-transform: uppercase;
   font-weight: 600;
   color: rgba(var(--danger-rgb), 0.85);
+}
+
+/* The automations editor sheet's own layer.
+   The OVERLAY LADDER, now that three layers really can co-exist (A3/14c): the automations editor
+   sheet (`.pm-backdrop.auto-pm`, 45) < ConfirmDialog (`.modal-backdrop`, 50) < PromptModal
+   (`.pm-backdrop`, 60). The sheet BORROWS this shell's look but must sit UNDER the confirm dialog it
+   opens (its delete asks for confirmation), which is why it takes its own z-index rather than the 60
+   below. PromptModal stays on top: it is opened FROM the other two, never under them. */
+.pm-backdrop.auto-pm {
+  z-index: 45;
+}
+
+/* ── A3 (14c) — Conf › Automations (list rows + the editor sheet) ─────────────────────────────────
+   Almost everything here is REUSE: the rows are `.conf-card`/`.confrow`, the sheet is the PromptModal
+   shell (`.pm-backdrop`/`.pm`), and the form inside it is the machine-editor's `.mconf`/`.mform`/
+   `.mfoot`/`.svc-edit` recipe. These are the only net-new rules. vapor.css untouched (D7). */
+
+/* The sheet body holds a whole FORM, not PromptModal's single flex-1 textarea, so it scrolls as a
+   normal block instead of stretching one child. */
+.pm-body.pm-scroll {
+  display: block;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* The automation row carries an enable Switch, so its header stays a plain `<div onClick>` (D25: a
+   role=button containing a switch is nested-interactive) and the chevron is the real <button> that
+   makes it keyboard-operable — the DeviceRow shape. The look is re-declared because `all: unset`
+   (button-chrome reset) clears vapor's `.confrow .chev` first. */
+.confrow button.chev {
+  all: unset;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: var(--magenta);
+  font-size: 16px;
+  line-height: 1;
+}
+/* the Switch's stop-propagation wrapper — a flex cell so the toggle keeps its row alignment */
+.auto-sw {
+  display: inline-flex;
+  align-items: center;
+}
+/* unread-run count, inline after the row's name (the `.badge` recipe, nudged off the text) */
+.badge.auto-unread {
+  margin-left: 8px;
+}
+/* one run in the history: a `.svc-card` whose head is a wrapping status/when/action line */
+.auto-run-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.auto-run-when {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.auto-run-err {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
 }
 }
 /* end @scope ([data-skin="vapor"]) */

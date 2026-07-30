@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { AgentsEditor } from "../components/AgentsEditor";
+import { AutomationsPanel } from "../components/AutomationsPanel";
 import { ConfGroup } from "../components/ConfGroup";
 import { JsonField } from "../components/JsonField";
 import { MachineEditor } from "../components/MachineEditor";
@@ -16,6 +17,7 @@ import { Swatches } from "../components/Swatches";
 import { Switch } from "../components/Switch";
 import { useAccessStatus, useSetServe } from "../hooks/useAccess";
 import { useAppChrome } from "../hooks/useAppChrome";
+import { useAutomations } from "../hooks/useAutomations";
 import { useSections } from "../hooks/useSections";
 import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
 import { agentModeOf, useActionSpecs } from "../hooks/useActions";
@@ -920,6 +922,17 @@ export function ConfTab({ active }: Props) {
   // (default agent, default title, subagent limits) come off the settings doc.
   const { data: agentList } = useAgentList();
   const agentCount = (agentList?.agents.length ?? 0) + 1; // specialists + the default/root agent
+  // A3 — the Automations group's header summary. Reads the SAME `["automations"]` query the panel
+  // does (TanStack dedupes it), so the count can't disagree with the list underneath. The master
+  // switch is surfaced here because an "off" scheduler is the one state where a row that says
+  // "next: 03:00" would otherwise be lying.
+  const { data: automations } = useAutomations();
+  const automationCount = automations?.automations.length ?? 0;
+  const automationsRight = !automations
+    ? undefined
+    : !automations.enabled
+      ? "scheduler off"
+      : `${automationCount} automation${automationCount === 1 ? "" : "s"}`;
   const agentSection = settings?.agent as Partial<AgentSectionCfg> | undefined;
   // v1.3.1 — the projection is shared with the AgentsEditor (`pickAgentSection`), which re-uses it to
   // project its own save echo into the exact shape this prop takes.
@@ -2143,9 +2156,23 @@ export function ConfTab({ active }: Props) {
         />
       </ConfGroup>
 
+      {/* A3 / D49 §D-6 — scheduled automations. The group is the LIST; the editor opens in a sheet the
+          panel owns (ConfTab is long enough, and phone width is the primary viewport). The records live
+          in SQLite behind `AutomationService`, NOT in config.yaml — so this group has no draft and no
+          save bar: every row edit is its own request. */}
+      <ConfGroup
+        id="automations"
+        num="14"
+        title="Automations"
+        right={automationsRight}
+        defaultCollapsed
+      >
+        <AutomationsPanel />
+      </ConfGroup>
+
       <ConfGroup
         id="skills"
-        num="14"
+        num="15"
         title="Skills"
         right={`${skillNames.length} discovered`}
         defaultCollapsed
@@ -2155,7 +2182,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="memory"
-        num="15"
+        num="16"
         title="Memory"
         right={memoryCfg.enabled ? "on" : "off"}
         defaultCollapsed
@@ -2165,7 +2192,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="16"
+        num="17"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
@@ -2178,12 +2205,12 @@ export function ConfTab({ active }: Props) {
           shifts to 18 while hosted); the standalone UtilsTab is unmounted in this layout, so its
           "agent-tools" child group has no duplicate DOM id. */}
       {hostsUtils && (
-        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="17" title="Tools" right="utility tools">
+        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="18" title="Tools" right="utility tools">
           <UtilsContent />
         </ConfGroup>
       )}
 
-      <ConfGroup id="appearance" num={hostsUtils ? "18" : "17"} title="Appearance">
+      <ConfGroup id="appearance" num={hostsUtils ? "19" : "18"} title="Appearance">
         {/* Every row uses the shared `SettingRow` (label + desc + trailing control) so the group has one
             consistent shape; the Palette axis uses the `Swatches` color-chip radiogroup. */}
         <div className="conf-card">
