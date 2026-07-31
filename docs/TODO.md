@@ -1152,7 +1152,11 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
       one `run_turn`/`resume` generator into a buffered payload (loop not forked); the signal is the
       `stream` body field, `AgentCfg.streaming` authoritative. *(ROADMAP C3 chunked TTS synthesis remains
       the open sibling; the OpenAI `/v1/chat/completions` facade stays deferred — ROADMAP E2.)*
-- [ ] **Wake word** (client-side, openWakeWord/Porcupine WASM, off by default) (C2).
+- [ ] **Wake word** (C2 — researched 2026-07-31, R14; owner: someday, possibly both tiers): **C2a**
+      foreground pure-web (AudioWorklet + openWakeWord-onnx ~3.7 MB or sherpa-onnx `wasm/kws` ~19 MB
+      no-training; Porcupine is DEAD — free tier revoked 2026-06-30) · **C2b** always-listening =
+      Capacitor WebView wrapper + mic-typed FGS + native microWakeWord (≈1 week; Firefox background
+      is structurally impossible). See ROADMAP §C2.
 - [ ] **Idle sleep → OS-native (decided 2026-06-16, D1):** let each host's own OS power plan
       suspend on idle; ctrl-b builds nothing for now (no remote idle detection). **Compute-aware idle**
       (don't sleep during GPU jobs) is a deferred future maybe — the only variant the OS can't do.

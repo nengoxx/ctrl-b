@@ -378,15 +378,43 @@ back to the analysis.
   D19 follow-ups, each with its own pre-flight. The measured STT cold-start lag is fixed *server-side*
   (keep the whisper model warm), independent of streaming.
 
-### C2. Wake word
+### C2. Wake word — **feasibility RESEARCHED 2026-07-31 ([R14](./research/R14-wake-word-android-browser.md)); owner: not now, someday possibly BOTH tiers**
 
-- **What:** optional always-listening **wake word** ("hey ctrl-b") to start dictation hands-free.
-- **Design implication:** runs **client-side in the browser** (e.g. openWakeWord / Porcupine WASM)
-  so **no audio leaves the device** until the wake word fires — then it opens the mic and routes to
-  the existing STT path. Off by default; a settings toggle + sensitivity.
-- **Open:** browser background-listening reliability on Android (tab must be foregrounded / PWA
-  active); battery; secure-context still required (same Tailscale-Serve HTTPS need as the mic).
-  Feasibility flagged — "if possible."
+The 2026-07-31 research pass replaced the old single-feature sketch. Two facts reshape it:
+**Porcupine is ruled out** (Picovoice revoked its free tier 2026-06-30 — verified in their FAQ;
+enterprise-only now), and **the background ceiling is an Android OS rule, not a web-platform one**
+(a background app needs a `microphone`-typed foreground service to capture; a web page can't create
+one — only the browser binary can). That splits C2 into two features that must be sized separately:
+
+- **C2a — foreground wake word (pure web; SHIP-VIABLE in both browsers).** Client-side detection in
+  an **AudioWorklet** (never main-thread timers — Chrome throttles hidden timers to 1/min), WASM
+  inference, **one** `getUserMedia` stream fanned out to the detector worklet + the existing
+  `useDictation` MediaRecorder (a wake word is a new *trigger* for the existing dictation flow, not
+  a parallel flow). Screen Wake Lock while armed; **disarm on `document.hidden`** (honest UX — never
+  pretend to listen). Covers "phone docked showing the dashboard". Off by default + sensitivity, per
+  the original sketch. Engine options (post-Porcupine): **openWakeWord via onnxruntime-web**
+  (~3.7 MB models, community ports, needs a Colab-trained "hey ctrl-b" classifier; models
+  CC BY-NC-SA — fine for homelab) or **sherpa-onnx official `wasm/kws` build** (~19 MB, arbitrary
+  keyword `@hey_ctrl_b` with ZERO training — the no-training-pipeline property may decide it).
+  Constraints: single-threaded WASM+SIMD (no COOP/COEP for the whole PWA); read
+  `audioCtx.sampleRate` and resample, never assume 16 kHz (the one known Gecko divergence).
+- **C2b — true always-listening (screen off) → needs the native wrapper.** Firefox Android is
+  **structurally DEAD** for background capture (the Fenix manifest declares no FOREGROUND_SERVICE
+  permission at all — re-verified in source); Chrome is architected for it (mic-typed FGS +
+  freeze exemption) but field-unproven vs OEM battery policy. The wrapper the owner prefers is the
+  proven shape (Home Assistant 2026, still "experimental"): a **Capacitor WebView shell** pointing
+  at the existing tailnet HTTPS URL + a **mic-typed foreground service** running a native engine
+  (**microWakeWord**, 52–60 KB — HA's pick) that foregrounds the WebView / signals `?wake=1` on
+  detection. **≈1 week** + ~1 day/yr Android SDK tax; the wrapper stays dumb — all UI keeps
+  shipping via `update.sh`. Gotchas already known: Android 14+ forbids mic-FGS start from
+  `BOOT_COMPLETED` (re-arm by opening the app once after reboot, or a notification action);
+  `microphone` FGS has **no** Android 15 timeout. Battery mitigation = HA's: gate listening on a
+  condition — we already own the R12 presence signal + D2-A monitor to arm/disarm it.
+- **Pre-build device round (cheap, gates both tiers):** which Firefox build the owner runs · does
+  Firefox's mic grant survive an app restart (evidence conflicts — R14 §4) · optionally the
+  5-minute Chrome screen-lock capture test (decides how much C2b must rely on the wrapper).
+- **Open:** engine pick (train-a-classifier vs 19 MB no-training); C2a arming UX (manual toggle vs
+  presence-gated); whether C2b is ever wanted given C2a + the docked scenario.
 
 ### C3. Chunked TTS synthesis (split the reply, play it progressively) — **noted 2026-06-26 (owner)**
 
