@@ -211,6 +211,18 @@ def test_flapping_that_never_confirms_produces_nothing() -> None:
     assert fired == []  # the initial baseline is silent, and nothing since has 3 consecutive misses
 
 
+def test_thresholds_of_one_are_the_degenerate_but_legal_edge() -> None:
+    """`ge=1` makes 1 the floor, so the machine must be exact there (15a review, Q7): the FIRST
+    confirmed sample installs the baseline — still silently — and each single opposing sample after
+    it is a full transition."""
+    state, fired = _drive(["up", "down", "up"], up_after=1, down_after=1)
+    assert fired == ["down", "up"]  # the first "up" was the silent baseline
+    assert state.reported == "up"
+    # UNKNOWN still gates it: one sample, a gap, then the same state is NOT a new report.
+    _, fired = _drive(["up", "unknown", "up"], up_after=1, down_after=1)
+    assert fired == []
+
+
 def test_a_check_that_failed_is_unknown_not_down() -> None:
     """`HostStatus.error` is HA's `unavailable`, not `off` (R13 §9). Collapsing it would report the
     whole fleet down the moment the server's own `ping` binary breaks."""
@@ -370,15 +382,18 @@ def test_a_dead_socket_is_unknown_and_never_raises() -> None:
 
 
 def test_a_malformed_whois_body_is_unknown() -> None:
-    """A body that parses as JSON but is not an object (or does not parse at all) is a broken read,
-    not a presence claim."""
+    """A body that parses as JSON but is not an object, or does not parse at all, is a broken read,
+    not a presence claim — both shapes of malformed, same UNKNOWN."""
+    for content in (b"[]", b"not json at all {"):
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        if "/status" in request.url.path:
-            return httpx.Response(200, json=_HEALTHY)
-        return httpx.Response(200, content=b"[]")
+        def handler(request: httpx.Request, body: bytes = content) -> httpx.Response:
+            if "/status" in request.url.path:
+                return httpx.Response(200, json=_HEALTHY)
+            return httpx.Response(200, content=body)
 
-    assert _reader(handler)[_IP].state == "unknown"
+        reading = _reader(handler)[_IP]
+        assert reading.state == "unknown", content
+        assert reading.reason, content
 
 
 def test_no_configured_devices_costs_nothing_and_reads_nothing() -> None:
@@ -529,23 +544,37 @@ def test_targets_are_reconciled_live() -> None:
     assert events.recorded == []  # beta only ever baselined
 
 
-def test_a_failing_audit_write_does_not_abort_the_sweep() -> None:
-    """The audit row is best-effort: a DB hiccup on one host must not cost the other hosts their
-    observation, and the state is already committed so nothing re-fires forever."""
+def test_a_failing_audit_write_retries_on_the_next_sample_and_never_aborts_the_sweep() -> None:
+    """A DB hiccup on one host must not cost the other hosts their observation — and it must not cost
+    the AUDIT LOG the incident either (15a review, MED): the report is un-committed on a failed write,
+    so the next matching sample confirms again and retries, until the row lands."""
 
     class _Boom(_FakeEvents):
+        def __init__(self, failures: int) -> None:
+            super().__init__()
+            self.failures = failures
+
         async def record(self, event):
             self.recorded.append(event)
-            raise RuntimeError("db is gone")
+            if self.failures > 0:
+                self.failures -= 1
+                raise RuntimeError("db is gone")
+            return event
 
-    svc, _ = _service([_sweep(alpha=True, beta=True)] * 2 + [_sweep(alpha=False, beta=True)] * 3)
-    boom = _Boom()
+    svc, _ = _service([_sweep(alpha=True, beta=True)] * 2 + [_sweep(alpha=False, beta=True)] * 5)
+    boom = _Boom(failures=1)
     svc._events = boom  # type: ignore[assignment]
-    for _ in range(5):
+    for _ in range(5):  # 2 up (baseline) + 3 down = the first confirmation, whose write fails
         run_async(svc.tick())
-    assert len(boom.recorded) == 1  # it tried…
-    assert svc.state.hosts["alpha"].reported == "down"  # …the state is committed regardless…
-    assert svc.state.hosts["beta"].reported == "up"  # …and beta was still observed
+    assert [e.action for e in boom.recorded] == ["host_down"]  # it tried…
+    assert svc.state.hosts["alpha"].reported == "up"  # …and the report was un-committed on failure
+    assert svc.state.hosts["beta"].reported == "up"  # …without costing beta its observation
+    run_async(svc.tick())
+    # Tick 6's matching sample re-confirmed off the clamped streak and the retry landed.
+    assert [e.action for e in boom.recorded] == ["host_down", "host_down"]
+    assert svc.state.hosts["alpha"].reported == "down"
+    run_async(svc.tick())
+    assert len(boom.recorded) == 2  # steady state: the landed row is not re-reported
 
 
 def test_the_presence_half_observes_the_edge_and_invokes_nothing() -> None:
@@ -565,6 +594,42 @@ def test_the_presence_half_observes_the_edge_and_invokes_nothing() -> None:
     # steady online that follows — one edge per absence.
     assert armed == [True, True, False, False]
     assert events.recorded == []  # an observation the owner cannot act on yet is not an audit record
+
+
+def _presence_fence_service(mutate) -> MonitorService:
+    """A service whose presence read flips the config MID-AWAIT (15a review, MED): the device is
+    armed, the in-flight read will return ONLINE, and `mutate(svc)` runs between the read starting
+    and its result being consumed — exactly the Conf-save window the fence guards."""
+    import app.services.monitor as monitor_module
+
+    svc, _ = _service([_sweep()], wake={"presence_device_ips": [_IP], "presence_offline_after_s": 0})
+    svc.state.devices[_IP] = ArmState(armed=True, offline_since=0.0)
+
+    async def read_then_mutate(socket_path, ips, **kw):
+        mutate(svc)
+        return {ip: tailnet.DeviceReading(ip=ip, state="online") for ip in ips}
+
+    monitor_module_real = monitor_module.read_presence
+    monitor_module.read_presence = read_then_mutate  # type: ignore[assignment]
+    try:
+        run_async(svc.tick())
+    finally:
+        monitor_module.read_presence = monitor_module_real  # type: ignore[assignment]
+    return svc
+
+
+def test_a_disable_landing_mid_read_fences_the_stale_edge() -> None:
+    """The master switch must win the race with an in-flight read: the stale ONLINE may not emit the
+    edge 15b will fire behind, and the state is cleared exactly as a synchronous disable would."""
+    svc = _presence_fence_service(lambda s: setattr(s._settings.monitor, "enabled", False))
+    assert svc.state.devices == {}  # reset — no armed ghost survives the window
+
+
+def test_a_device_removed_mid_read_cannot_be_resurrected_by_its_stale_reading() -> None:
+    """Same window, other edit: the reading came back for a device the config no longer names, and
+    consuming it would re-create the pruned state (and its armed flag) from beyond the grave."""
+    svc = _presence_fence_service(lambda s: s._settings.wake.presence_device_ips.clear())
+    assert svc.state.devices == {}
 
 
 def test_a_device_removed_from_the_config_loses_its_state() -> None:

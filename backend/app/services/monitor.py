@@ -122,8 +122,10 @@ class ArmState:
     """A watched device's arming state (D50 H1).
 
     `offline_since` is the monotonic instant the CURRENT continuous run of healthy OFFLINE readings
-    began — monotonic because an NTP step or a suspend must not be able to arm or un-arm a device
-    (R13 §7 flags exactly this as where Kuma's wall-clock arithmetic goes wrong).
+    began — monotonic because an NTP step must not be able to arm or un-arm a device (R13 §7 flags
+    exactly this as where Kuma's wall-clock arithmetic goes wrong). On Linux — the deployed profile,
+    D32 — CLOCK_MONOTONIC also excludes suspend time; Windows' QPC counts standby, so a
+    suspends-and-resumes server deploy would need a resume guard before trusting long gaps.
     """
 
     armed: bool = False
@@ -230,25 +232,32 @@ class MonitorService:
         for gone in [hid for hid in self._state.hosts if hid not in live]:
             del self._state.hosts[gone]
         for status in statuses:
-            state = self._state.hosts.get(status.host_id, TargetState())  # an addition baselines
+            before = self._state.hosts.get(status.host_id, TargetState())  # an addition baselines
             seen = observe(status)
             state, transitioned = step(
-                state, seen, up_after=cfg.up_after_checks, down_after=cfg.down_after_checks
+                before, seen, up_after=cfg.up_after_checks, down_after=cfg.down_after_checks
             )
             self._state.hosts[status.host_id] = state
             if transitioned:
                 checks = cfg.up_after_checks if state.reported == "up" else cfg.down_after_checks
-                await self._record(status.host_id, state.reported, checks)
+                if not await self._record(status.host_id, state.reported, checks):
+                    # A lost write must not lose the transition (15a review, MED): reverting
+                    # `reported` makes the NEXT matching sample confirm again — the streak is
+                    # already clamped at threshold — so the write retries naturally, sample by
+                    # sample, until it lands. No queue, and a recovered host stops the retry by
+                    # confirming the other direction instead.
+                    state.reported = before.reported
 
-    async def _record(self, host_id: str, reported: Liveness, checks: int) -> None:
-        """One audit row per CONFIRMED host transition (D50 M5).
+    async def _record(self, host_id: str, reported: Liveness, checks: int) -> bool:
+        """One audit row per CONFIRMED host transition (D50 M5) → whether the write landed.
 
         `actor=SYSTEM` + `origin=system` is D-4's semantics for "nobody typed this, the app itself
         observed it" — the same attribution the D2-B automatic wake carries. The timestamp is DETECTION
         time, not the moment the host actually went, and the summary says how many checks it took so
-        the row is honest about that lag. Best-effort: a failing audit write must not abort the rest of
-        the sweep, and the state is already committed, so a lost row cannot make the monitor re-report
-        the same transition forever.
+        the row is honest about that lag. A failing write must not abort the rest of the sweep — but it
+        must not be SILENT either: the caller un-commits the report so the next matching sample retries
+        it (15a review, MED — the old shape committed first and swallowed, losing the incident from the
+        audit log forever).
         """
         try:
             await self._events.record(
@@ -263,6 +272,8 @@ class MonitorService:
             )
         except Exception:  # noqa: BLE001 — audit must not break the sweep
             log.exception("failed to record the %s transition for host %s", reported, host_id)
+            return False
+        return True
 
     # ── the presence half ─────────────────────────────────────────────────────────────────────────
 
@@ -281,8 +292,21 @@ class MonitorService:
         if not ips:
             return
         readings = await read_presence(wake.tailscale_socket_path, ips)
+        # The await above is a reconfiguration window (15a review, MED): a Conf save lands between the
+        # read starting and returning, so re-check the LIVE config before the readings drive anything.
+        # Without this, a stale reading could emit the edge 15b fires behind DESPITE the master switch,
+        # or resurrect state for a device the prune above just removed — and a disable/re-enable inside
+        # one window would then keep that ghost armed indefinitely.
+        if not self.cfg.enabled:
+            self.reset()
+            return
+        fresh = self._settings.wake.presence_device_ips
+        for gone in [ip for ip in self._state.devices if ip not in fresh]:
+            del self._state.devices[gone]
         now = time.monotonic()
-        for ip in ips:
+        for ip in fresh:
+            # A device ADDED mid-window has no reading yet — an UNKNOWN tick, which correctly
+            # baselines it disarmed rather than trusting a read it was not part of.
             reading = readings.get(ip) or DeviceReading(ip=ip, state="unknown", reason="not read")
             state, edge = arm(
                 self._state.devices.get(ip, ArmState()),
