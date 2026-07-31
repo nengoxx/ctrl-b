@@ -1238,7 +1238,17 @@ Codex round → owner pause.
       pattern; `presence_cooldown_s: 3600` global + `wake_presence_cooldown_s` per-host override) ·
       `WakeCfg` gains `device_ips` + `presence_cooldown_s` + `tailscale_socket` · MachineEditor
       per-host fields + Conf copy · ROADMAP F1 host-up/down residual note updated.
-      **✅ 2026-07-31 — built. As-built:** `MonitorService` takes `ActionService` by constructor
+      **✅ 2026-07-31 — built + WAVE CLEAN after FOUR review rounds** (build `c82dbc9` → Codex R1
+      SHIP-WITH-FIXES 1M/1L → wave `b66633c` two-phase awaitless reservation + digits-only cooldown
+      input (helper-extraction OVERRULED, cross-refs instead) → **R3 verify caught the REVERSE
+      interleaving** — dashboard-first still double-woke because the D50 amendment had dropped the
+      "checks both maps" half of the design finding (condensation lesson recorded inline in D50 M3)
+      → wave 2 `0cd25b8`: the reservation READS the shared 300 s floor, which now bounds even a
+      `wake_presence_cooldown_s: 0` host (only `cooldown_s: 0` removes it — tested as a pair) → R4:
+      product logic CLEAN, zero new; the residual test-hang LOW closed as prescribed, `109d359`.
+      Both interleavings pinned by deterministic tests driving the REAL sibling trigger parked
+      mid-invoke. Backend 1254 / FE 897; gate 6/6 every commit. **PHASE 15 COMPLETE.** As-built:
+      `MonitorService` takes `ActionService` by constructor
       injection (the 15a fleet/events style) and `_tick_presence` COLLECTS the tick's edges, then
       fans out ONCE (`_wake_on_presence`) — several devices arriving together are one arrival.
       Eligibility = the D2-B order verbatim (flag · `mac` · `cached_online_ids()` · cooldown); the
