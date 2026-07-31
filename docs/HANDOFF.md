@@ -12,7 +12,37 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-30 night — 🏁 **PHASE 14 / A3 COMPLETE and ✅ LIVE ON PROD as v1.4.4**)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-31 — 🏁 **PHASE 15 / D2-A MONITOR + PRESENCE WAKE COMPLETE (15a·15b·15c all WAVE CLEAN) + WEB PUSH RESEARCHED-THEN-PARKED; PUSHED through `2fbddee`, push CI pending at close**)
+> **The session's arc:** owner picked Web Push (F1 ch.2) → two research dossiers (R10 stack · R11
+> peers) → **PARKED by owner** after R10 showed it terminates in the SAME `showNotification()` that
+> failed the channel-1 device round (park record + resume checks = ROADMAP §F1; both owner concerns
+> dissolved on evidence — no real contact address needed, a +0-dep path exists). Pivoted to **D2-A**:
+> two more dossiers (R12 tailscale presence — which KILLED the specced trigger for an always-on
+> phone; owner's real usage = Tailscale OFF until wanted, so the plain edge is right and R12's
+> home-endpoint predicate was deliberately dropped · R13 monitor-loop craft — the 12-line core,
+> 3/2 damping, record≠notify) → **D50 LOCKED + Codex-amended** (phone ARMING machine · tailnet
+> health gate · pinned transition fn · silent boot baseline · Event vocab status=OK both ways) →
+> built in three slices, every one through the full method (Opus build → main-seat audit → Codex →
+> waves): **15a** monitor+fleet Events (`4dbdcad`+`a583f59`), **15b** armed wake (`c82dbc9`+
+> `b66633c`+`0cd25b8`+`109d359` — FOUR rounds; R3 caught the REVERSE dashboard-first double-wake
+> after the D50 amendment CONDENSED AWAY the "checks both maps" half of the design finding — lesson
+> recorded inline in D50 M3: keep BOTH halves of a read-and-write rule) · **15c** Conf UI in the
+> SERVER group (owner ruling: no new section; `d31fbb1`+`f172c0c` — blank≠0 coercion, field-wise
+> fallbacks, the floor's dual-role label). **Owner directive pinned by test: every machine defaults
+> OFF** (`wake_on_presence`); per-host cooldown override; the shared 300 s map = the automatic-wake
+> dedupe floor across BOTH triggers (only `cooldown_s: 0` removes it). Plus an owner device round
+> mid-session: wrapped-seg line-fill · kit `.mrow-switch` layout · tcat 13px + full ModeSeg
+> (`c67d7a2`) · the hosted-utils DOUBLE-MARGIN pair (nested confgroup + `.util` page inset — the
+> host owns the inline inset; `f172c0c`+`2fbddee`, owner-verified). Tests **1199→1254 BE /
+> 890→904 FE**; gate 6/6 on all 15 commits; dossiers R10–R13 banked + indexed.
+> **▶ NEXT SESSION:** 1. Check the push CI result (run 30629070586) if not yet confirmed. 2. Owner
+> exercises D2-A in daily use (set the phone IP in Conf → Server → "My device IPs", flip per-host
+> switches; the wake edge + host up/down Events observe-verified on dev only so far). 3. Release
+> when the owner wants D2-A live (runbook §Release; next tag = owner's call, v1.5.0 still RESERVED).
+> 4. Dev units were RUNNING at close — stop them if the owner is done
+> (`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`).
+>
+> ## ▶ PREVIOUS STATE (2026-07-30 night — 🏁 **PHASE 14 / A3 COMPLETE and ✅ LIVE ON PROD as v1.4.4**)
 > **✅ v1.4.4 RELEASED + LIVE on emma 2026-07-30 night** (v1.4.1 → v1.4.4; the plain-form updater's
 > THIRD clean run; DB snapshot `ctrlb-20260730-221525.db.gz`; **migrations v4+v5 folded on prod's
 > first boot — health reports schema 5**; tag pinned + pid==MainPID + HTTPS verified; the
@@ -35,13 +65,12 @@
 > ## ▶ NEXT SESSION — pick from the OPEN OPTIONS (owner will choose in a clean session)
 > Phases 0–14 are ALL COMPLETE and live. Nothing is in flight; the next move is a fresh pick.
 > The live menu, by likely value (each links to its design home — re-read it before proposing):
-> 1. **F1 channel 2 — Web Push** (ROADMAP F1; custom SW + VAPID): survives a closed app, fixes the
->    SW-tap-doesn't-navigate limit, and is the prime suspect-resolver for the Fennec delivery
->    mystery. Pairs naturally with deep-links into automation run threads (recorded in
->    AUTOMATIONS_PLAN §Out of v1).
-> 2. **D2-A monitor loop** (ROADMAP D2, ~§442): the tailscale-status poll → wake-on-connection's
->    second half + unlocks the host up/down notify toggle (F1) — the A3 runner now demonstrates the
->    exact lifespan-loop convention it should reuse.
+> 1. ~~**F1 channel 2 — Web Push**~~ → **RESEARCHED-THEN-PARKED 2026-07-31 (owner)** — R10/R11
+>    banked; resume = the two phone checks in the ROADMAP §F1 park record (Fennec "Site
+>    notifications" channel · which Firefox build).
+> 2. ~~**D2-A monitor loop**~~ → **✅ SHIPPED 2026-07-31 as Phase 15 (D50)** — see the top block.
+>    The F1 host-up/down notify toggle is now UNBLOCKED (the FE classifier gains the class when
+>    F1 next moves).
 > 3. **A4 slash commands** (ROADMAP §A4; TODO future row): the composer-as-console registry +
 >    custom commands.
 > 4. **A3 tails** (AUTOMATIONS_PLAN §Out of v1): notify-and-wait question policy (the A1+A2+F1
