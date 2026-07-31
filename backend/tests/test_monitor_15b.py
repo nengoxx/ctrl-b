@@ -281,11 +281,19 @@ def test_a_dashboard_connect_landing_mid_fan_out_cannot_double_wake() -> None:
             # Bounded rendezvous (verify round, LOW): if a regression makes the fan-out invoke
             # NOTHING, `entered` never sets — racing it against the task turns that hang into a
             # visible assertion failure instead.
-            await asyncio.wait(
+            # Bounded in BOTH failure directions (R4): FIRST_COMPLETED covers a fan-out that
+            # finishes without invoking; the timeout covers one that STALLS before invoking — the
+            # assert then fails visibly instead of the rendezvous pending forever. Never reached on
+            # the pass path (the rendezvous resolves within the same scheduler pass).
+            done, pending = await asyncio.wait(
                 [asyncio.ensure_future(blocking.entered.wait()), fan_out],
                 return_when=asyncio.FIRST_COMPLETED,
+                timeout=5.0,
             )
-            assert blocking.entered.is_set(), "the fan-out finished without ever invoking"
+            for p_ in pending:
+                if p_ is not fan_out:
+                    p_.cancel()  # drop the rendezvous waiter; the subject task is awaited/asserted below
+            assert blocking.entered.is_set(), "the fan-out never invoked (finished empty or stalled)"
             await wake_on_connect.wake_flagged_hosts(app)  # the interleaved dashboard connect
             blocking.gate.set()
             await fan_out
@@ -324,11 +332,15 @@ def test_a_presence_edge_landing_mid_dashboard_fan_out_cannot_double_wake_either
         with _scripted_presence(["offline", "online"]):
             await svc.tick()  # arms — no edge yet, so nothing invoked
             dashboard = asyncio.create_task(wake_on_connect.wake_flagged_hosts(app))
-            await asyncio.wait(
+            done, pending = await asyncio.wait(
                 [asyncio.ensure_future(blocking.entered.wait()), dashboard],
                 return_when=asyncio.FIRST_COMPLETED,
+                timeout=5.0,  # same both-directions bound as the mirror test above (R4)
             )
-            assert blocking.entered.is_set(), "the dashboard fan-out finished without invoking"
+            for p_ in pending:
+                if p_ is not dashboard:
+                    p_.cancel()
+            assert blocking.entered.is_set(), "the dashboard fan-out never invoked (empty or stalled)"
             await svc.tick()  # the presence edge lands while D2-B is parked at alpha's invoke
             blocking.gate.set()
             await dashboard
