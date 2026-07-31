@@ -3678,3 +3678,116 @@ findings) + Opus architecture (12) both SHIP-WITH-CHANGES, all folded; confirm r
 fields → the runs table). **Preserves** D8 (one-file tools), D14/D15 (agents folder-only — the
 automation's agent IS its blast radius), D44 (approvals ladder unchanged, gains the `decision`
 column its marker lacked), the D2-B wake service (`origin=system`).
+
+## D50 — D2-A fleet monitor loop + owner-device wake trigger: poll-and-count, plain edge, per-host wake fields ✏️ LOCKED 2026-07-31 (owner-signed in conversation; research = R12+R13)
+
+**What:** the backend's first self-owned periodic monitor: ONE `MonitorService` lifespan loop (the
+A3 `runner.loop()` shape verbatim — sleep-then-work so overlap is structurally impossible, config
+re-read per tick so the master switch is live, blanket guard, cancelled+awaited at shutdown) doing
+two cheap reads per tick, feeding two consumers: **fleet host up/down transitions → Events** (later
+the F1 `host_up_down` notify class) and **the owner-device tailnet-presence edge → `wake_host`**
+(D2-A, the second half of D2-B).
+
+- **Tailnet reads = LocalAPI `whois` over the unix socket via httpx-over-UDS** (R12: 0.16 ms/1.2 KB,
+  30× cheaper than the CLI subprocess; read needs no root/operator; socket path = config with the
+  Linux default; `Host: local-tailscaled.sock`, no Origin/Referer). The **`watch-ipn-bus` stream is
+  REJECTED** on evidence (unstable by its own doc, mid-rewrite at main, unknown mask bits fail
+  silently, no heartbeat, cannot push endpoint changes). Config keys on the **tailnet IP** (what
+  `whois` takes) — never nodekey/NodeID (rotate).
+- **Fleet reads = `FleetService.status_all()`**, never raw `ping_host` (one sweep shared with the
+  UI; monitor interval ≥ `server.poll_seconds` so the TTL cache dedupes).
+- **State = two consecutive-counters + reported ∈ {unknown, up, down} per target, in-memory on the
+  service** (R13: the field's whole machine; Gatus's asymmetric damping — down after 3, up after 2,
+  both config). **UNKNOWN is sticky and first-class**: a failed CHECK (tailscaled restarting, empty
+  peer map, `Self.Online=false`, ping tool error — `HostStatus.error` preserved) never counts
+  toward a streak and never produces an edge. **Boot baseline is SILENT** (owner-confirmed): the
+  first observation after a backend restart sets state without Events — a restart is not an
+  incident. No backoff, no jitter, no per-target tasks, no queue, no reminders (R13 §5
+  scale-artifact table).
+- **Record ≠ notify:** transitions pass two PURE predicates (Kuma's `isImportantBeat` split) —
+  "worth an Event row" and "worth notifying" — unit-testable; a flap that never confirms produces
+  nothing.
+- **The wake trigger (owner-ruled semantics, 2026-07-31):** the owner's phone keeps Tailscale OFF
+  until they want the servers, so the connect itself carries intent. Fire on the device's
+  **confirmed OFFLINE→ONLINE edge only** — never level-triggered ("phone online AND host down" is
+  NOT a wake condition: a deliberately shut-down PC stays down), never on UNKNOWN→ONLINE (backend/
+  tailscaled restarts fire nothing; D2-B's ruled first-connect behavior is separate and unchanged).
+  At most one fire per cooldown window (default **3600 s**, distinct from D2-B's 300 s). Accepted
+  corner (owner, eyes-open): a genuine reconnect after the window re-wakes a deliberately-downed
+  PC — correct, since a fresh connect means "I want my servers". **R12's home-endpoint predicate is
+  DROPPED** — it answers "got home", but the owner's intent is "wants servers, home or away".
+- **Per-host wake config (owner directive this session):** additive optional fields on the unified
+  `ComputerCfg` (the `wake_on_connect` precedent; never sibling maps) — `wake_on_presence: bool =
+  False` (participates in the phone trigger) + `wake_presence_cooldown_s: int | None = None`
+  (per-host override; None ⇒ the global). Global tunables join `WakeCfg` as its docstring always
+  planned: `device_ips: []`, `presence_cooldown_s: 3600`, `tailscale_socket` (Linux default).
+  Monitor tunables = new `monitor:` section: `enabled`, `interval_s: 30`, `down_after: 3`,
+  `up_after: 2`.
+- **Slices:** 15a = MonitorService + fleet up/down state/Events (+ presence state observed +
+  logged, wake DISARMED). 15b = the wake edge armed through the existing audited
+  `ActionService.invoke("wake_host", actor=SYSTEM, origin=system)` chokepoint + Conf/MachineEditor
+  per-host fields + ROADMAP F1 residual unlock note.
+
+**Preserves** D2-B (`wake_on_connect` untouched, its cooldown map pattern reused), the OS-branch
+allowlist (`fleet._ping_cmd` untouched; the socket path is config, not an OS branch), D-4 actor
+semantics (SYSTEM actor + system origin). **Supersedes** ROADMAP D2-A's sketched
+"`tailscale status --json` poll / owner device node(s)" mechanism wording (CLI → LocalAPI whois;
+node ids → tailnet IPs) and its offline→online-debounce framing (→ the edge + cooldown semantics
+above). Research: [R12](./research/R12-tailscale-presence.md) ·
+[R13](./research/R13-monitor-loop-patterns.md).
+
+**AMENDED 2026-07-31 — Codex design round R1 (SHIP-WITH-CHANGES: 2H/5M/2L, all folded; 2 recorded
+overrules).** The lean core (one loop, shared sweep, in-memory state, 3/2 damping, silent baseline,
+no jitter/backoff/queue) was endorsed as-is; the amendments close concrete false-edge paths:
+
+- **The phone gets its own ARMING machine, not the fleet's 3/2 counters (H1):** per-device
+  `armed: bool` — healthy OFFLINE observed continuously ≥ `wake.presence_offline_after_s`
+  (default 120, from the R12 watchdog floor) ARMS; the first healthy `Online: true` tick FIRES
+  (cooldowns permitting) and disarms; **any UNKNOWN tick, monitor disable, or device reconfig
+  DISARMS**; ONLINE while unarmed baselines silently. This is what makes "a tailscaled restart
+  fires nothing" and "a genuine edge fires" simultaneously true — without it, a phone connecting
+  during a daemon outage fires on recovery. One-tick offline blips can never fire.
+- **The tailnet health gate is explicit (H2):** with devices configured, each tick first reads
+  `/localapi/v0/status?peers=false` and requires `BackendState == "Running"` AND
+  `Self.Online == true`; otherwise the whole tailnet side is UNKNOWN this tick (whois' cached peer
+  Node is stale evidence, per R12 §4). A whois 404 logs "stale config" only when the gate is
+  healthy; during restarts it is ordinary UNKNOWN. Real per-tick cost: one sweep + one health read
+  + N tiny whois reads.
+- **The fleet transition function is pinned, pure (M1):** UNKNOWN **resets both counters** (never
+  pauses — pausing lets non-consecutive samples cross a threshold) and preserves the last
+  *confirmed* `reported`; a baseline must itself meet the threshold and installs silently;
+  confirmed UP after an observation gap whose last confirmed state was DOWN **is** a recovery
+  Event; no prior confirmed baseline ⇒ no Event.
+- **Live-config reconciliation (M2):** enabled→disabled clears counters/baselines and disarms
+  (cooldown stamps are RETAINED — they gate actions, not observations); re-enable re-baselines
+  silently; every tick prunes state for removed targets and silently baselines additions; phone
+  state keys on the normalized IP, never reused across different IPs.
+- **Cross-trigger wake dedupe (M3):** a presence fire stamps BOTH the existing shared 300 s
+  `wake_cooldowns` map AND its own presence map before awaiting, so a dashboard-open seconds after
+  a phone edge cannot write duplicate wake Events; D2-B is unchanged. Multi-device edges in one
+  tick coalesce into ONE host fan-out; the presence cooldown is per-HOST, shared across devices
+  (a per-device cooldown would reintroduce the duplicate).
+- **Config, final names + validation (M4/L1):** `monitor.poll_seconds: 30` (cross-field validated
+  `>= server.poll_seconds` — a shorter interval would count one cached sweep as several
+  "consecutive checks"), `monitor.down_after_checks: 3`, `monitor.up_after_checks: 2`;
+  `wake.presence_device_ips: []` (valid, normalized, unique), `wake.presence_offline_after_s: 120`,
+  `wake.presence_cooldown_s: 3600`, `wake.tailscale_socket_path` (Linux default). The LocalAPI
+  read timeout is a code constant (transport property, the `SW_READY_TIMEOUT` precedent), not a
+  knob. **Overrule ①:** Codex's hard `>= 120` validation floor on `presence_offline_after_s` is
+  softened to default-plus-docstring — single-owner app, prefer-configurable; the rationale lives
+  in the doc, not a 422.
+- **Host-transition Event vocabulary (M5):** `action = "host_up" | "host_down"`,
+  `target = <host_id>`, `actor = SYSTEM`, `origin = system`, **`status = OK` for both directions**
+  — the monitor successfully observed a transition; DOWN is not a failed action, and `status=ERROR`
+  would make the LIVE frontend classifier misfile host-downs under the `action_failed`
+  notification class today. Event time is DETECTION time and the summary says so ("detected down
+  after 3 consecutive misses"). **Overrule ② (of D50's own original text):** the backend "worth
+  notifying" predicate is CUT as premature — record-vs-notify stays split across the stack (the
+  backend's pure record predicate + the frontend's existing pure Event classifier, which gains the
+  `host_up_down` class when F1 consumes it). No dead backend policy code.
+- **Lifecycle (L2):** started unconditionally after fleet/events/actions (disabled = idle tick, so
+  the Conf switch is live); re-check `shutting_down` after each sleep; `CancelledError` escapes,
+  ordinary `Exception` is caught per tick; cancelled AND awaited before the DB closes; the UDS
+  httpx client is built per tick (0.16 ms — a live socket-path edit applies next tick, and there
+  is no persistent client to leak). None of A3's arbiter/claim/shield machinery is copied — that
+  solves durable run ownership, which monitoring does not have.

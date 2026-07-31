@@ -451,18 +451,27 @@ back to the analysis.
 - **What:** (from the old README TODO) auto-wake chosen hosts when the phone/owner joins the
   LAN/tailnet — walk in the door, the boxes are already coming up.
 - **Mechanism (✅ decided 2026-06-16 — A primary, B as MVP; both reuse `wake_host`, no public surface):**
-  - **A (the real feature) — Tailscale-status poll.** The backend (already on the tailnet, always-on)
-    polls `tailscale status --json` / the local tailscaled API for the owner's **known device**
-    transitioning offline→online, then fires `wake_host` on the configured targets. Reuses the tailnet
-    (answers the "no public surface" worry — the check is local to the backend host) and the existing
-    fleet **monitor-loop pattern**. Config: owner device node(s), wake targets, debounce/cooldown.
+  - **A (the real feature) — tailnet-presence trigger. ✏️ design LOCKED 2026-07-31 as [`D50`](./DECISIONS.md)
+    (owner-signed; research = R12+R13 in `docs/research/`) — build = TODO Phase 15.** The backend's
+    first self-owned monitor loop (A3 `runner.loop()` shape) polls the **LocalAPI `whois`** over the
+    tailscaled unix socket (httpx-over-UDS; 0.16 ms/1.2 KB — the CLI subprocess and the unstable
+    `watch-ipn-bus` are both rejected in D50) for the owner device's **confirmed OFFLINE→ONLINE
+    edge** — the owner keeps Tailscale OFF until they want the servers, so the connect itself is the
+    intent signal (home or away; R12's home-endpoint predicate deliberately dropped). Strictly
+    edge-triggered (a deliberately shut-down PC stays down), UNKNOWN never edges (restarts fire
+    nothing), one fire per `presence_cooldown_s` (3600 default). Per-host participation +
+    cooldown override = additive `ComputerCfg` fields (`wake_on_presence`,
+    `wake_presence_cooldown_s`). The same loop is the **fleet up/down monitor** (3-down/2-up
+    damping, silent boot baseline, record≠notify predicates) that unlocks the F1 host-up/down
+    notify toggle.
   - **B (near-free MVP, can ship first) — PWA-connect trigger.** When the owner's client opens its SSE
     stream (existing connect path), an endpoint wakes the configured hosts. Trivial, no new deps; weaker
     semantics ("wake when I *open the dashboard*," not "when I get home"). Not mutually exclusive with A.
   - **Rejected — C, LAN ARP/ping presence:** Android suppresses ping (battery), phone IPs churn,
     LAN-only. Strictly worse than A.
-- **Timing:** post-v1; the **A** build pairs with the **A3 scheduler / monitor subsystem** (none exists
-  yet). **B** can ship independently of the scheduler. Detection (A) reuses `tailscale`, never a public surface.
+- **Timing:** post-v1; ~~the **A** build pairs with the A3 scheduler / monitor subsystem (none exists
+  yet)~~ → the A3 loop convention shipped in Phase 14; **A is D50, next up as Phase 15.** **B**
+  shipped 2026-07-29. Detection (A) reuses the tailnet locally, never a public surface.
 
 ### D3. Multi-homed host addressing (LAN + VPN) — **designed 2026-06-30 (external_audit: Corsair shutdown)**
 
@@ -671,6 +680,26 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 > `showNotification` path, or Android page throttling. **Owner ruling: note-and-observe** — they'll
 > watch whether it fires in some cases during daily use; revisit with the Web Push channel (2), whose
 > custom worker replaces this path anyway.
+>
+> **CHANNEL 2 (Web Push) — RESEARCHED, then PARKED 2026-07-31 (owner).** The design research is
+> bought and banked: **R10** (stack/standards) + **R11** (peer field pass) in `docs/research/`.
+> The owner's two stated concerns both dissolved on evidence (no real contact address needed — the
+> VAPID `sub` is unverified, a `mailto:…@localhost` literal is fine; and a **+0-dependency** path
+> exists — ~65 lines of RFC 8291 on the already-installed `cryptography`+`PyJWT`, R10 §1.3).
+> **Parked because of what R10 found instead:** Web Push terminates in the SAME `showNotification()`
+> call that failed the channel-1 device round, so it does not route around that mystery — and the two
+> 30-second on-device checks that decide viability are still unanswered: (1) Android → Apps →
+> Firefox → Notifications → **"Site notifications" channel importance** (a Mozilla engineer's own
+> diagnosis of our exact symptom; plus open Bugzilla **1807379**), (2) **which Firefox build** the
+> owner runs — official (rides FCM like Chrome → clean win) vs F-Droid/relan Fennec (rides
+> **UnifiedPush** → needs a distributor app, typically ntfy, + an open swiped-away bug → channel 3
+> is likely the better spend there). **Resume =** do those two checks, then read R10 §9 + R11 §7;
+> the sketched rulings (main-seat, not yet council-reviewed): vendored 65-line encryptor or
+> `webpush==1.0.6` · `injectManifest` custom `sw.ts` (typed, in the gate) over LibreChat's
+> `importScripts` trick · dedupe = same `tag` (`NotifySignal.key`) both channels + SW skips only on
+> a *focused* client (the one suppression web.dev sanctions) · endpoint-PK SQLite table (ntfy's
+> schema) · prune on 404/410 · ntfy's push-service host allowlist on subscribe (SSRF) · VAPID PEM
+> once into `$CTRLB_HOME` fd-0600, never regenerated implicitly · a **test-push button in slice 1**.
 
 - **What:** notify when a host wakes/dies, an automation finishes, an action fails, or — key —
   **the agent needs input it can't get** (a `question` or a `confirm` it lacks privilege for, while

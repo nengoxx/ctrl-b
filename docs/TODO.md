@@ -1217,6 +1217,28 @@ Codex round → owner pause.
       notification class · the created-card rides `result.data.automation` (shape-validated) with
       an Open-in-Conf jump. PHASE 14 COMPLETE.**
 
+## Phase 15 — D2-A monitor loop + owner-device wake trigger — **design LOCKED 2026-07-31 ([`D50`](./DECISIONS.md) · research R12+R13; build against D50, not this list)**
+
+- [x] **15a — MonitorService + fleet up/down:** the lifespan loop (A3 shape) · `monitor:` config
+      section (as-built names: `poll_seconds: 30` cross-field-validated `>= server.poll_seconds`,
+      `down_after_checks: 3`, `up_after_checks: 2`) · per-target two-counter tri-state (sticky
+      UNKNOWN, `HostStatus.error` preserved) · silent boot baseline · up/down transitions → Events
+      (SYSTEM actor, system origin, **status OK both directions** — D50 M5) · the LocalAPI `whois`
+      reader (`adapters/tailnet.py`, httpx-over-UDS, health gate first, full R12 §4 taxonomy →
+      UNKNOWN-with-reason) with presence ARMING tracked + logged, wake DISARMED.
+      **✅ 2026-07-31 — built + WAVE CLEAN (Opus build `4dbdcad` → main-seat audit → Codex R1
+      SHIP-WITH-FIXES 2M/1L → main-seat wave `a583f59` (un-commit-on-failed-Event-write retry ·
+      post-await presence config fence · clock-comment narrowing; tests 37→40) → Codex R2 verify
+      3/3 CLOSED, zero new). Backend tests 1199→1239. Codex ruling kept: the
+      `poll_seconds` boot-refusal validator stands for a UI-managed single-user config.
+      The record≠notify backend predicate was CUT per D50 overrule ② (FE classifier owns notify
+      when F1's `host_up_down` class lands).**
+- [ ] **15b — the wake edge, armed:** confirmed OFFLINE→ONLINE edge → `wake_host` through
+      `ActionService.invoke` for each `wake_on_presence` host (per-host cooldown, D2-B map
+      pattern; `presence_cooldown_s: 3600` global + `wake_presence_cooldown_s` per-host override) ·
+      `WakeCfg` gains `device_ips` + `presence_cooldown_s` + `tailscale_socket` · MachineEditor
+      per-host fields + Conf copy · ROADMAP F1 host-up/down residual note updated.
+
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.
