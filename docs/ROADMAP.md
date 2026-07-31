@@ -671,8 +671,13 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 > SW registration (`Notification` constructor throws there; SW-path taps inform but don't navigate —
 > the click handler belongs to channel 2's custom worker). **Recorded residuals:** cross-device prefs
 > staleness on a hidden page (PUT-echo seeding fixed same-device; polling/SSE-invalidation declined) ·
-> id-less-transport turns share a thread-scoped dedupe key (bounded, tested) · host up/down events need
-> the D2-A/A3 monitor loop before that toggle can exist. Channels 2/3 (Web Push · ntfy/bot) stay future.
+> id-less-transport turns share a thread-scoped dedupe key (bounded, tested) · ~~host up/down events need
+> the D2-A/A3 monitor loop before that toggle can exist~~ → **UNBLOCKED 2026-07-31 (D50 / TODO Phase 15):**
+> the monitor emits `host_up`/`host_down` Events (SYSTEM actor, system origin, **status OK both
+> directions** — a host going down is an observation, not a failed action). The residual is now purely
+> frontend: F1's pure Event classifier gains a `host_up_down` class + its Conf toggle, and it must key
+> on the ACTION name, never on `status` (D50 M5 / overrule ② — the backend deliberately owns no notify
+> policy). Channels 2/3 (Web Push · ntfy/bot) stay future.
 > **Device round 2026-07-30 (owner, Fennec/Android): NOT delivering.** A reboot-confirm (the flagship
 > `agent_input` case) produced no notification — including a retest that backgrounded the app only
 > seconds before the confirm, which rules out the long-background freeze theory. Cause unconfirmed

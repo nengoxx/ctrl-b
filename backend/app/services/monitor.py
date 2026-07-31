@@ -1,8 +1,8 @@
 """MonitorService — the backend's own periodic watcher (D2-A / D50, research R12 + R13).
 
 ONE lifespan loop doing two cheap reads per tick and feeding two consumers: confirmed fleet up/down
-transitions become Events, and the owner-device tailnet edge arms the D2-A wake (15a OBSERVES and
-logs that edge; 15b is what fires `wake_host`). The loop is `AutomationRunner.loop()`'s shape verbatim
+transitions become Events, and the owner-device tailnet edge fires the D2-A wake (15b) for every host
+flagged `wake_on_presence`. The loop is `AutomationRunner.loop()`'s shape verbatim
 — sleep-then-work so overlap is structurally impossible, config re-read per tick so the master switch
 is live, blanket guard per tick, cancelled and awaited at shutdown. None of A3's arbiter/claim/shield
 machinery is copied: that solves durable run ownership, which monitoring does not have.
@@ -43,8 +43,10 @@ from typing import TYPE_CHECKING, Literal
 from app.adapters.tailnet import DeviceReading, PresenceState, read_presence
 from app.config import MonitorCfg, Settings
 from app.domain.enums import Actor, RunState
-from app.domain.event import Event
+from app.domain.event import Event, Origin
 from app.domain.host import HostStatus
+from app.services import wake_on_connect
+from app.services.action_service import ActionService
 from app.services.events import EventService
 from app.services.fleet import FleetService
 
@@ -161,12 +163,26 @@ class MonitorService:
     """Owns the loop and the in-memory observation state. Constructed in the lifespan after fleet +
     events exist; `loop()` is the task and `tick()` is the single unit of work."""
 
-    def __init__(self, app: "FastAPI", settings: Settings, fleet: FleetService, events: EventService) -> None:
+    def __init__(
+        self,
+        app: "FastAPI",
+        settings: Settings,
+        fleet: FleetService,
+        events: EventService,
+        actions: ActionService,
+    ) -> None:
         self._app = app
         self._settings = settings
         self._fleet = fleet
         self._events = events
+        self._actions = actions
         self._state = MonitorState()
+        #: `{host_id: monotonic instant of the last presence-driven wake}`. Deliberately OUTSIDE
+        #: `MonitorState` (D50 M2): `reset()` forgets OBSERVATIONS, and a cooldown gates ACTIONS — so
+        #: toggling the monitor off and on again must not hand back a free second wake for a host that
+        #: was woken a minute ago. On the instance, never a module global, for `wake_on_connect`'s
+        #: reason: two `TestClient` apps in one process must not share cooldowns.
+        self._presence_marks: dict[str, float] = {}
 
     @property
     def cfg(self) -> MonitorCfg:
@@ -278,12 +294,12 @@ class MonitorService:
     # ── the presence half ─────────────────────────────────────────────────────────────────────────
 
     async def _tick_presence(self) -> None:
-        """Observe the owner's devices and drive their arming machines.
+        """Observe the owner's devices, drive their arming machines, and wake the flagged hosts on an
+        arrival.
 
-        **15a stops at the edge.** The transition is detected, logged and disarmed exactly as it will
-        be in 15b; what 15b adds is the `wake_host` fan-out behind it (per-host `wake_on_presence` +
-        the presence cooldown). Nothing here invokes an action, and nothing here writes an Event —
-        an observation the owner cannot yet act on is not an audit record.
+        Edges are COLLECTED across the device loop and fanned out ONCE (D50 M3): the owner walking in
+        with a phone and a laptop is one arrival, and a fan-out per device would write duplicate wake
+        Events for it. The device loop only OBSERVES; every decision about hosts lives in the fan-out.
         """
         wake = self._settings.wake
         ips = wake.presence_device_ips
@@ -304,6 +320,7 @@ class MonitorService:
         for gone in [ip for ip in self._state.devices if ip not in fresh]:
             del self._state.devices[gone]
         now = time.monotonic()
+        arrived: list[str] = []
         for ip in fresh:
             # A device ADDED mid-window has no reading yet — an UNKNOWN tick, which correctly
             # baselines it disarmed rather than trusting a read it was not part of.
@@ -315,19 +332,88 @@ class MonitorService:
                 offline_after_s=wake.presence_offline_after_s,
             )
             self._state.devices[ip] = state
-            self._log_presence(reading, state, edge=edge)
+            if edge:
+                arrived.append(ip)
+            self._log_presence(reading, state)
+        if arrived:
+            await self._wake_on_presence(arrived)
 
-    def _log_presence(self, reading: DeviceReading, state: ArmState, *, edge: bool) -> None:
-        """The 15a observation trail. The edge is INFO — it is the event the owner is waiting to see
-        proven before 15b arms it — and everything else is DEBUG, because a line per device per 30 s
-        at INFO would drown the journal."""
-        if edge:
-            log.info("tailnet: %s came back online — this is the wake edge (not armed until 15b)", reading.ip)
-            return
+    def _log_presence(self, reading: DeviceReading, state: ArmState) -> None:
+        """The per-device observation trail, DEBUG: a line per device per 30 s at INFO would drown the
+        journal. An arrival gets its own INFO line from the fan-out, which is where the interesting
+        part — what it actually did — is known."""
         log.debug(
             "tailnet: %s is %s%s (armed=%s)",
             reading.ip,
             reading.state,
             f" — {reading.reason}" if reading.reason else "",
             state.armed,
+        )
+
+    async def _wake_on_presence(self, arrived: list[str]) -> None:
+        """Fan ONE owner arrival out over the hosts flagged `wake_on_presence` (D50, 15b).
+
+        Deliberately the D2-B `wake_flagged_hosts` shape, because it is the same decision with a
+        different trigger: same eligibility order (flag, `mac`, the fleet's cached sweep, the
+        cooldown), same `ActionService.invoke` chokepoint, same SYSTEM/`system` attribution — so an
+        automatic wake is privilege-gated and lands in the Event log exactly like a button press, and
+        the two triggers cannot drift into two policies.
+
+        What is specific to this trigger:
+
+        * **The cooldown is the presence one** (`wake.presence_cooldown_s`, per-host overridable via
+          `wake_presence_cooldown_s`). A dashboard open is cheap and frequent; a fresh tailnet connect
+          is rare and deliberate, so the two windows are different by design (D50).
+        * **Both cooldown maps are stamped, BEFORE the await** (D50 M3). The presence map is what
+          bounds this trigger; the shared D2-B map is stamped so that opening the dashboard seconds
+          after walking in — the overwhelmingly likely next thing the owner does — cannot write a
+          second wake Event for a host we just woke. Stamping first also means the stamp is committed
+          even if the invoke fails: this is a "we already tried" mark, not a success receipt, and
+          re-firing on the next tick is the failure mode it exists to prevent.
+        * **One bad host must not cost the others their wake**, so a failing invoke is logged and the
+          fan-out continues (the fleet loop's `_record` rule, applied to actions).
+        """
+        # The LAST gate before anything is invoked (D50 M2 — recheck before ACTING). The tick's read
+        # fence above covers the reconfiguration window around the LocalAPI read; this one covers the
+        # acting boundary itself, so no code added between the two can ever fire past the master
+        # switch. A disable landing mid-fan-out still lets the remaining hosts through — same as the
+        # D2-B detached task, and the edge that started it was genuine.
+        if not self.cfg.enabled:
+            return
+        wake = self._settings.wake
+        shared = wake_on_connect.cooldowns(self._app)  # D2-B's map — stamped, never read here
+        online = self._fleet.cached_online_ids()  # cheap + probe-free; empty when the cache is cold
+        now = time.monotonic()
+        fired = 0
+        for host in self._fleet.hosts():
+            if not host.wake_on_presence or not host.mac:
+                continue  # a MAC-less host would only DENY — noise nobody asked for at this instant
+            if host.id in online:
+                continue
+            cooldown_s = (
+                wake.presence_cooldown_s
+                if host.wake_presence_cooldown_s is None
+                else host.wake_presence_cooldown_s
+            )
+            last = self._presence_marks.get(host.id)
+            if last is not None and (now - last) < cooldown_s:
+                continue
+            self._presence_marks[host.id] = now
+            shared[host.id] = now
+            fired += 1
+            try:
+                await self._actions.invoke(
+                    "wake_host",
+                    {"host_id": host.id},
+                    # Nobody typed this — the app itself observed the owner arriving (D-4).
+                    origin=Origin(kind="system"),
+                    actor=Actor.SYSTEM,
+                    interactive=False,
+                )
+            except Exception:  # noqa: BLE001 — one host's failure is not the arrival's failure
+                log.exception("presence wake failed for host %s", host.id)
+        log.info(
+            "tailnet: %s arrived — %s",
+            ", ".join(arrived),
+            f"firing wake for {fired} host(s)" if fired else "no eligible hosts",
         )

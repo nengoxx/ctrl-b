@@ -136,3 +136,76 @@ describe("MachineEditor — wake_on_connect (D2-B)", () => {
     expect(h.create.mock.calls[0][0].wake_on_connect).toBe(false);
   });
 });
+
+// D2-A/D50 — the presence pair (`wake_on_presence` + its optional per-host cooldown override) rides
+// the same Draft → PUT path. The owner directive is the load-bearing one: EVERY machine defaults off,
+// and a new machine must send neither field armed.
+describe("MachineEditor — wake_on_presence + cooldown override (D2-A/D50)", () => {
+  const SW = "Wake when my phone connects";
+
+  it("renders both rows, seeded from the host", () => {
+    render(
+      <MachineEditor hosts={[mkHost({ wake_on_presence: true, wake_presence_cooldown_s: 900 })]} />,
+    );
+    openRow("corsair");
+    expect(screen.getByRole("switch", { name: SW }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByLabelText<HTMLInputElement>("Presence cooldown (seconds)").value).toBe(
+      "900",
+    );
+  });
+
+  it("an unset cooldown renders blank — the field means 'use the global'", () => {
+    render(<MachineEditor hosts={[mkHost({ wake_on_presence: true })]} />);
+    openRow("corsair");
+    expect(screen.getByLabelText<HTMLInputElement>("Presence cooldown (seconds)").value).toBe("");
+  });
+
+  it("round-trips a toggle + an override into the PUT payload", () => {
+    render(<MachineEditor hosts={[mkHost()]} />);
+    openRow("corsair");
+    fireEvent.click(screen.getByRole("switch", { name: SW }));
+    fireEvent.change(screen.getByLabelText("Presence cooldown (seconds)"), {
+      target: { value: "60" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+
+    const payload = h.update.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.wake_on_presence).toBe(true);
+    expect(payload.wake_presence_cooldown_s).toBe(60);
+  });
+
+  it("a blank cooldown serializes to null, and 0 survives as a real value", () => {
+    render(<MachineEditor hosts={[mkHost({ wake_presence_cooldown_s: 900 })]} />);
+    openRow("corsair");
+    const field = screen.getByLabelText("Presence cooldown (seconds)");
+    fireEvent.change(field, { target: { value: "  " } });
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    expect(h.update.mock.calls[0][0].payload.wake_presence_cooldown_s).toBeNull();
+
+    fireEvent.change(field, { target: { value: "0" } }); // not null — "no cooldown on this host"
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    expect(h.update.mock.calls[1][0].payload.wake_presence_cooldown_s).toBe(0);
+  });
+
+  it("SENDS a loaded host's existing values on an untouched save (omit-preserves regression)", () => {
+    render(
+      <MachineEditor hosts={[mkHost({ wake_on_presence: true, wake_presence_cooldown_s: 900 })]} />,
+    );
+    openRow("corsair");
+    fireEvent.click(screen.getByRole("button", { name: "save" }));
+    const payload = h.update.mock.calls[0][0].payload as Record<string, unknown>;
+    expect(payload.wake_on_presence).toBe(true);
+    expect(payload.wake_presence_cooldown_s).toBe(900);
+  });
+
+  it("a new machine is created with the presence wake OFF and no override", () => {
+    render(<MachineEditor hosts={[]} />);
+    openRow("add machine");
+    expect(screen.getByRole("switch", { name: SW }).getAttribute("aria-checked")).toBe("false");
+    fireEvent.change(screen.getByLabelText("Hostname"), { target: { value: "pegasus" } });
+    fireEvent.change(screen.getByLabelText("IP or DNS name"), { target: { value: "10.0.0.9" } });
+    fireEvent.click(screen.getByRole("button", { name: "add machine" }));
+    expect(h.create.mock.calls[0][0].wake_on_presence).toBe(false);
+    expect(h.create.mock.calls[0][0].wake_presence_cooldown_s).toBeNull();
+  });
+});

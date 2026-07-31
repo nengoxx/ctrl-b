@@ -1233,11 +1233,25 @@ Codex round → owner pause.
       `poll_seconds` boot-refusal validator stands for a UI-managed single-user config.
       The record≠notify backend predicate was CUT per D50 overrule ② (FE classifier owns notify
       when F1's `host_up_down` class lands).**
-- [ ] **15b — the wake edge, armed:** confirmed OFFLINE→ONLINE edge → `wake_host` through
+- [x] **15b — the wake edge, armed:** confirmed OFFLINE→ONLINE edge → `wake_host` through
       `ActionService.invoke` for each `wake_on_presence` host (per-host cooldown, D2-B map
       pattern; `presence_cooldown_s: 3600` global + `wake_presence_cooldown_s` per-host override) ·
       `WakeCfg` gains `device_ips` + `presence_cooldown_s` + `tailscale_socket` · MachineEditor
       per-host fields + Conf copy · ROADMAP F1 host-up/down residual note updated.
+      **✅ 2026-07-31 — built. As-built:** `MonitorService` takes `ActionService` by constructor
+      injection (the 15a fleet/events style) and `_tick_presence` COLLECTS the tick's edges, then
+      fans out ONCE (`_wake_on_presence`) — several devices arriving together are one arrival.
+      Eligibility = the D2-B order verbatim (flag · `mac` · `cached_online_ids()` · cooldown); the
+      fan-out re-checks `monitor.enabled` as the last gate before acting (D50 M2) and stamps BOTH the
+      presence map and the shared D2-B `wake_cooldowns` map before the await (M3), so a dashboard-open
+      seconds later can't double-write. The presence stamps live on the SERVICE, outside
+      `MonitorState`, so `reset()` (a disable) keeps them — they gate actions, not observations.
+      A failing invoke logs and the fan-out continues. Hosts API: both fields get `wake_on_connect`'s
+      omit-when-default + omit-preserves treatment (the nullable int via `_set_or_del`, so `0` — "no
+      cooldown on this host" — survives). MachineEditor: a switch row + an optional cooldown input
+      (blank = the global), both always sent, **both OFF/blank for a new machine (owner directive:
+      every machine defaults off)**. Backend tests 1239→1251 (new `test_monitor_15b.py`), frontend
+      890→896.
 
 ## Cross-cutting / don't-forget
 

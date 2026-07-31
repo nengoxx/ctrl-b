@@ -422,7 +422,9 @@ def test_an_empty_socket_path_is_unknown_not_a_crash() -> None:
 
 
 class _FakeFleet:
-    """Stands in for `FleetService`, serving a scripted sweep per tick."""
+    """Stands in for `FleetService`, serving a scripted sweep per tick. The two reads 15b's presence
+    fan-out makes answer EMPTY here: this file is about observation, and a fleet with no flagged host
+    is exactly the config in which the fan-out must do nothing (pinned in `test_monitor_15b`)."""
 
     def __init__(self, sweeps: list[list[HostStatus]]) -> None:
         self._sweeps = sweeps
@@ -432,6 +434,12 @@ class _FakeFleet:
         sweep = self._sweeps[min(self.calls, len(self._sweeps) - 1)]
         self.calls += 1
         return sweep
+
+    def hosts(self) -> list[Any]:
+        return []
+
+    def cached_online_ids(self) -> set[str]:
+        return set()
 
 
 class _FakeEvents:
@@ -449,7 +457,10 @@ def _service(sweeps: list[list[HostStatus]], **cfg: Any) -> tuple[MonitorService
     settings = Settings.model_validate(cfg or {})
     events = _FakeEvents()
     app = SimpleNamespace(state=SimpleNamespace(shutting_down=False))
-    svc = MonitorService(app, settings, _FakeFleet(sweeps), events)  # type: ignore[arg-type]
+    # `actions` is 15b's fan-out handle; against this file's empty fleet it is never reached, and a
+    # bare namespace makes that a hard failure rather than a silent call if it ever is.
+    actions = SimpleNamespace()
+    svc = MonitorService(app, settings, _FakeFleet(sweeps), events, actions)  # type: ignore[arg-type]
     return svc, events
 
 
@@ -577,10 +588,10 @@ def test_a_failing_audit_write_retries_on_the_next_sample_and_never_aborts_the_s
     assert len(boom.recorded) == 2  # steady state: the landed row is not re-reported
 
 
-def test_the_presence_half_observes_the_edge_and_invokes_nothing() -> None:
-    """15a's whole contract: the arming machine runs end-to-end against the real reader and reaches
-    the edge, and NOTHING is fired or recorded for it. 15b adds the fan-out behind exactly this point.
-    """
+def test_the_presence_half_drives_the_arming_machine_end_to_end() -> None:
+    """The arming machine running inside the tick, not just as a pure function: armed by the offline
+    run, consumed by the edge, and no Event written for any of it — an observation is not an audit
+    record (the WAKE the edge fires is 15b's, and has its own file)."""
     svc, events = _service(
         [_sweep()],
         wake={"presence_device_ips": [_IP], "presence_offline_after_s": 0},

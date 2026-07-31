@@ -15,7 +15,7 @@ import socket
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.config import (
     ComputerCfg,
@@ -61,6 +61,10 @@ class HostIn(BaseModel):
     vpn_host: str | None = None  # D47: VPN/overlay address (MagicDNS name preferred) — Conf editor is Slice 2
     ssh_prefer_vpn: bool = False  # D47: VPN-first SSH failover toggle
     wake_on_connect: bool = False  # D2-B: wake this machine when a client opens the live stream
+    wake_on_presence: bool = False  # D2-A/D50: wake it when the owner's device joins the tailnet
+    # Per-host override of `wake.presence_cooldown_s`; None ⇒ the global. `ge=0` mirrors `ComputerCfg`
+    # so a negative lands as a 422 on the FIELD rather than on the whole candidate entry later.
+    wake_presence_cooldown_s: int | None = Field(default=None, ge=0)
     tags: list[str] = []
     services: list[ServiceIn] = []
 
@@ -94,6 +98,10 @@ def _host_dto(host: Host, status: HostStatus | None, cfg: ComputerCfg | None) ->
         "vpn_host": host.vpn_host,  # D47 — exposed for Slice-2's vantage-aware service links
         "ssh_prefer_vpn": host.ssh_prefer_vpn,
         "wake_on_connect": host.wake_on_connect,  # D2-B — the editor's "Wake when I connect" row
+        # D2-A/D50 — the editor's presence row + its optional per-host cooldown override (null ⇒ the
+        # global `wake.presence_cooldown_s`).
+        "wake_on_presence": host.wake_on_presence,
+        "wake_presence_cooldown_s": host.wake_presence_cooldown_s,
         "tags": host.tags,
         "has_password": bool(cfg and cfg.ssh_password),  # never the value — just whether one is set
         "services": _services_dto(cfg),
@@ -148,6 +156,10 @@ def _host_entry(body: HostIn, *, password: str | None) -> dict[str, Any]:
         e["ssh_prefer_vpn"] = True
     if body.wake_on_connect:  # D2-B — same omit-when-default bool shape
         e["wake_on_connect"] = True
+    if body.wake_on_presence:  # D2-A/D50 — likewise
+        e["wake_on_presence"] = True
+    if body.wake_presence_cooldown_s is not None:  # optional override — omit-when-unset, like mac
+        e["wake_presence_cooldown_s"] = body.wake_presence_cooldown_s
     if body.tags:
         e["tags"] = list(body.tags)
     svcs = {s.name.strip(): _svc_entry(s) for s in body.services}
@@ -228,6 +240,13 @@ def _apply_fields(node: Any, body: HostIn, *, password: str | None) -> None:
     # the guard is what keeps a third body — a script, an older tab still open — harmless.
     if "wake_on_connect" in sent:
         _set_or_del_flag(node, "wake_on_connect", body.wake_on_connect)
+    # D2-A/D50's pair takes the same treatment. The cooldown override is a nullable NUMBER, so it uses
+    # `_set_or_del` (None clears the key) rather than the flag helper — and `0` survives that path,
+    # which matters: `0` is a real value meaning "no cooldown on this host", not an absent one.
+    if "wake_on_presence" in sent:
+        _set_or_del_flag(node, "wake_on_presence", body.wake_on_presence)
+    if "wake_presence_cooldown_s" in sent:
+        _set_or_del(node, "wake_presence_cooldown_s", body.wake_presence_cooldown_s)
     if body.tags:
         node["tags"] = list(body.tags)
 

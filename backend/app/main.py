@@ -311,11 +311,14 @@ async def lifespan(app: FastAPI):
     # switch is live from Conf instead of needing a restart (an off switch just idles the poll).
     app.state.automation_task = asyncio.create_task(app.state.automation_runner.loop())
 
-    # The fleet monitor (D2-A/D50). Started here because it needs fleet + events already built, and
-    # unconditionally for the same reason as the automation loop above: the loop re-reads
+    # The fleet monitor (D2-A/D50). Started here because it needs fleet + events + actions already
+    # built (15b's presence wake goes through the SAME `ActionService.invoke` chokepoint as the Wake
+    # button), and unconditionally for the same reason as the automation loop above: the loop re-reads
     # `monitor.enabled` every iteration, so the master switch is live from Conf instead of needing a
     # restart (off just idles the tick and clears its counters).
-    app.state.monitor = MonitorService(app, app.state.settings, app.state.fleet, app.state.events)
+    app.state.monitor = MonitorService(
+        app, app.state.settings, app.state.fleet, app.state.events, app.state.actions
+    )
     app.state.monitor_task = asyncio.create_task(app.state.monitor.loop())
 
     try:

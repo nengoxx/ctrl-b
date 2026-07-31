@@ -34,6 +34,8 @@ interface Draft {
   vpn_host: string; // D3 slice 2 — VPN/overlay address (MagicDNS name preferred); "" clears it
   ssh_prefer_vpn: boolean; // D3 slice 2 — try the VPN address first for SSH
   wake_on_connect: boolean; // D2-B — WOL this machine when a client opens the live stream
+  wake_on_presence: boolean; // D2-A/D50 — WOL it when my device joins the tailnet
+  wake_presence_cooldown_s: string; // D2-A/D50 — per-host cooldown override; "" = use the global
   mac: string;
   ssh_username: string;
   ssh_password: string; // "" = unchanged (keep stored) on an existing host
@@ -62,6 +64,9 @@ function draftFromHost(h: Host): Draft {
     vpn_host: h.vpn_host ?? "",
     ssh_prefer_vpn: !!h.ssh_prefer_vpn,
     wake_on_connect: !!h.wake_on_connect,
+    wake_on_presence: !!h.wake_on_presence,
+    wake_presence_cooldown_s:
+      h.wake_presence_cooldown_s == null ? "" : String(h.wake_presence_cooldown_s),
     mac: h.mac ?? "",
     ssh_username: h.ssh_username ?? "",
     ssh_password: "",
@@ -80,6 +85,10 @@ function blankDraft(): Draft {
     vpn_host: "",
     ssh_prefer_vpn: false,
     wake_on_connect: false,
+    // Every machine defaults OFF for the presence wake (owner directive) — a new entry must never
+    // arrive armed, and no other seam may flip this.
+    wake_on_presence: false,
+    wake_presence_cooldown_s: "",
     mac: "",
     ssh_username: "",
     ssh_password: "",
@@ -102,6 +111,17 @@ function toServiceCfg(s: SvcDraft): HostServiceCfg {
   };
 }
 
+/** The optional per-host presence-cooldown override → what the API takes: `null` means "use the
+ *  global `wake.presence_cooldown_s`". Blank or unparseable clears it; `0` is a REAL value ("no
+ *  cooldown on this host"), which is why this can't be the `Number(x) || fallback` shape `ssh_port`
+ *  uses. Negatives clear too — the backend's `ge=0` would 422 them, and this form has no error slot. */
+function cooldownOverride(raw: string): number | null {
+  const t = raw.trim();
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
+}
+
 function toPayload(d: Draft) {
   return {
     name: d.name.trim(),
@@ -113,6 +133,9 @@ function toPayload(d: Draft) {
     // Always sent, like the vpn fields: the backend's omit-preserves guard exists for bodies that
     // don't model the field at all, so an explicit false from THIS editor is what clears the flag.
     wake_on_connect: d.wake_on_connect,
+    // Same contract for the D2-A pair: this editor manages them, so it always sends them.
+    wake_on_presence: d.wake_on_presence,
+    wake_presence_cooldown_s: cooldownOverride(d.wake_presence_cooldown_s),
     mac: d.mac.trim() || null,
     ssh_username: d.ssh_username.trim() || null,
     ssh_password: d.ssh_password, // "" → keep (existing) / null-ish (new)
@@ -282,6 +305,29 @@ function MachineForm(props: {
           />
           <span className="mrow-hint">needs the MAC above</span>
         </div>
+
+        {/* D2-A/D50 — wake-on-presence: the monitor loop watches my device on the tailnet and fires
+            this machine's wake on its confirmed offline→online edge (the connect itself is the
+            intent). Same MAC caveat as the row above. Off for every machine until switched on here.
+            The cooldown below is optional: blank uses the global `wake.presence_cooldown_s`. */}
+        <label>Wake when my phone connects</label>
+        <div className="mrow-switch">
+          <Switch
+            on={d.wake_on_presence}
+            onToggle={() => set({ wake_on_presence: !d.wake_on_presence })}
+            label="Wake when my phone connects"
+          />
+          <span className="mrow-hint">needs the MAC · on tailnet arrival</span>
+        </div>
+
+        <label>Presence cooldown</label>
+        <input
+          aria-label="Presence cooldown (seconds)"
+          value={d.wake_presence_cooldown_s}
+          placeholder="blank = use the global"
+          inputMode="numeric"
+          onChange={(e) => set({ wake_presence_cooldown_s: e.target.value })}
+        />
 
         <label>SSH user</label>
         <input

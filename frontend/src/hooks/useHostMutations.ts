@@ -115,19 +115,26 @@ const APPLY_LABEL: Record<VpnApplyStatus, string> = {
 };
 
 /** Full `HostIn` body from a loaded Host DTO. The hosts PUT is NOT a PATCH — `_apply_fields`
- *  omit-preserves ONLY vpn_host/ssh_prefer_vpn (D47); every other omitted field would reset to its
+ *  omit-preserves only the vpn (D47) and wake (D2-B/D50) fields; every other omitted field would reset to its
  *  HostIn default (os_type→linux, mac/ssh_username/role/services DELETED, ssh_port→22). So a fill
  *  must send the whole host back. Blank ssh_password = keep the stored secret; tags [] = leave tags
  *  untouched — both per the editor's own toPayload contract. */
-function hostToPayload(
-  h: Host,
-): HostPayload & { vpn_host: string | null; ssh_prefer_vpn: boolean; wake_on_connect: boolean } {
+function hostToPayload(h: Host): HostPayload & {
+  vpn_host: string | null;
+  ssh_prefer_vpn: boolean;
+  wake_on_connect: boolean;
+  wake_on_presence: boolean;
+  wake_presence_cooldown_s: number | null;
+} {
   return {
     name: h.name,
     ip: h.ip,
     vpn_host: h.vpn_host ?? null,
     ssh_prefer_vpn: h.ssh_prefer_vpn ?? false,
     wake_on_connect: h.wake_on_connect ?? false, // D2-B — carried, so a VPN fill can't clear the flag
+    // D2-A/D50 — carried for the same reason (this body is a full PUT, not a PATCH).
+    wake_on_presence: h.wake_on_presence ?? false,
+    wake_presence_cooldown_s: h.wake_presence_cooldown_s ?? null,
     mac: h.mac ?? null,
     ssh_username: h.ssh_username ?? null,
     ssh_password: "", // "" → keep existing secret

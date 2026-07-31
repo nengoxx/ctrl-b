@@ -28,6 +28,11 @@ export interface Host {
   // D2-B: WOL this machine when a client opens the live event stream (i.e. when the dashboard is
   // opened). Needs `mac`; the wake itself degrades to a clean DENIED without one.
   wake_on_connect?: boolean;
+  // D2-A/D50: WOL this machine when the owner's device joins the tailnet (the monitor loop's presence
+  // edge). Needs `mac`, like wake_on_connect. `wake_presence_cooldown_s` is the optional per-host
+  // override of the global `wake.presence_cooldown_s` — null/absent = use the global.
+  wake_on_presence?: boolean;
+  wake_presence_cooldown_s?: number | null;
   tags: string[];
   status: HostStatus | null;
   has_password?: boolean; // Phase 7b: whether an ssh_password is stored (the value is never sent)
