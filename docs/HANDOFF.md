@@ -12,7 +12,36 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-31 — 🏁 **PHASE 15 / D2-A MONITOR + PRESENCE WAKE COMPLETE (15a·15b·15c all WAVE CLEAN) + WEB PUSH RESEARCHED-THEN-PARKED; PUSHED through `2fbddee`, push CI pending at close**)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-31 evening — **NEXT PHASE PICKED: Phase 16 VAPOR ASSIMILATION (plan drafted, design NOT locked) + C2 wake word researched & shelved; three docs commits on main, UNPUSHED**)
+> **The session's arc (a planning/design session — zero code):** full project-map review → the owner
+> picked two threads. **① Wake word (C2):** one Opus research pass → dossier **R14** banked +
+> indexed (main seat re-verified the two load-bearing claims in primary sources). The verdict that
+> reshaped §C2: the background ceiling is ANDROID's (a mic needs a `microphone`-typed foreground
+> service; a web page can't create one) — Firefox background = structurally impossible (Fenix
+> manifest declares no FGS permission), Chrome = architected-but-unproven; **Porcupine is DEAD**
+> (free tier revoked 2026-06-30). ROADMAP §C2 split into **C2a** foreground pure-web (ship-viable,
+> AudioWorklet + openWakeWord ~3.7 MB or sherpa-onnx `wasm/kws` ~19 MB zero-training) and **C2b**
+> always-listening (= Capacitor WebView wrapper + mic FGS + native microWakeWord, ≈1 week — the
+> Home Assistant shape). **Owner ruling: NOT now; someday possibly BOTH.** Commits `9258628`
+> (dossier) + `ffdd230` (ROADMAP/TODO). **② Vapor assimilation = THE NEXT PHASE (16).** Owner
+> rulings: **COMPLETE migration** (port component-by-component onto the kit, EXTEND the kit where
+> vapor's look demands — brand-lozenge AppBar slot, kit `sheet` composer, chat via 3-gate/
+> ChatSurface — then DELETE each legacy piece; no permanent bespoke remainder) and **cosmos becomes
+> `DEFAULT_THEME`** (new V0 slice; fresh boots + heal target only, persisted choices untouched).
+> Main-seat verification sweep: all six §14.15.3 hooks confirmed live, vapor.css refs 58/107/113/162
+> still EXACT, B2 waiver constant at `themeContract.test.ts:53`, `extras.css` (~3000 vapor-scoped
+> lines styling the shared components) identified as the deletion iceberg. Everything pinned in
+> **[`VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md)** (slices V0–V5 + §4 kit
+> extensions + §5 owner questions); TODO Phase 16 added; CLAUDE.md doc map updated.
+> **▶ NEXT SESSION (the lock session):** 1. **Collect the owner's device-round answers** (plan §5:
+> the Agent-tab port-vs-switch list · what simply DROPS · lozenge spin? · cosmos first-boot
+> mode/accent — the owner is checking vapor on device meanwhile). 2. **Council round on the plan**
+> (Codex + review per the method), fold, **lock the D-entry** in DECISIONS.md. 3. Build **V0**
+> (cosmos default) then **V1+V2**, owner eyeball between slices. 4. Push the three docs commits
+> with the owner's go-ahead. Prod stays v1.4.6; dev units stopped; the D2-A daily-use watch +
+> Phase-15 open items carry unchanged from the block below.
+>
+> ## ▶ PREVIOUS STATE (2026-07-31 — 🏁 **PHASE 15 / D2-A MONITOR + PRESENCE WAKE COMPLETE (15a·15b·15c all WAVE CLEAN) + WEB PUSH RESEARCHED-THEN-PARKED; PUSHED through `2fbddee`, push CI pending at close**)
 > **The session's arc:** owner picked Web Push (F1 ch.2) → two research dossiers (R10 stack · R11
 > peers) → **PARKED by owner** after R10 showed it terminates in the SAME `showNotification()` that
 > failed the channel-1 device round (park record + resume checks = ROADMAP §F1; both owner concerns

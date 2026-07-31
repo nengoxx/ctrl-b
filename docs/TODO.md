@@ -1287,6 +1287,23 @@ Codex round → owner pause.
       (new `tests/tabs/confMonitor.test.tsx` + the 422-surface case in `useSaveSettings.test.ts`);
       backend 1254 unchanged; gate 6/6. **PHASE 15 COMPLETE.**
 
+## Phase 16 — Vapor assimilation: COMPLETE migration onto the kit + cosmos default — **plan DRAFTED 2026-07-31 · spec = [`VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md) (build against it once LOCKED, not this list) · design NOT yet locked**
+
+Owner rulings 2026-07-31: vapor migrates COMPLETELY (port each component onto the kit, extend the
+kit where vapor's look demands it — brand-lozenge AppBar slot, sheet composer, chat via the D31
+3-gate/ChatSurface if needed — then DELETE the legacy piece), and **cosmos becomes `DEFAULT_THEME`**
+(the new V0 slice). Amends THEME_ENGINE §14.15.3's end-state bar; the ladder V0→V5 + verified
+touchpoints + open questions live in the plan.
+
+- [ ] **Pre-lock:** owner device round over vapor (the §5 port-vs-switch list, esp. the Agent tab)
+      → council round on the plan → D-entry lock in DECISIONS.md.
+- [ ] **V0** cosmos default + eager-CSS rework (fresh boots + heal target; persisted choices untouched).
+- [ ] **V1** file/keyframe hygiene (`theme/` → `themes/vapor/`, `vapor-*` prefixes, allowlist shrink).
+- [ ] **V2** accent axis — ONE atomic commit, five touchpoints (refs re-verified 2026-07-31).
+- [ ] **V3** semantic-token mapping (+ Waveform read re-point).
+- [ ] **V4** per-component graduation, LOW-divergence first; each port deletes its legacy block.
+- [ ] **V5** the deletion sweep — parallel chrome dies; B2 vapor waiver list hits `[]`.
+
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.
