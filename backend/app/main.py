@@ -93,6 +93,7 @@ from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.deps import Deps
 from app.services.events import EventService
 from app.services.fleet import FleetService
+from app.services.monitor import MonitorService
 from app.services.svc import ServiceService
 
 # backend/app/main.py -> repo-root/frontend/dist
@@ -310,6 +311,13 @@ async def lifespan(app: FastAPI):
     # switch is live from Conf instead of needing a restart (an off switch just idles the poll).
     app.state.automation_task = asyncio.create_task(app.state.automation_runner.loop())
 
+    # The fleet monitor (D2-A/D50). Started here because it needs fleet + events already built, and
+    # unconditionally for the same reason as the automation loop above: the loop re-reads
+    # `monitor.enabled` every iteration, so the master switch is live from Conf instead of needing a
+    # restart (off just idles the tick and clears its counters).
+    app.state.monitor = MonitorService(app, app.state.settings, app.state.fleet, app.state.events)
+    app.state.monitor_task = asyncio.create_task(app.state.monitor.loop())
+
     try:
         yield
     finally:
@@ -346,6 +354,12 @@ async def lifespan(app: FastAPI):
         # shielded finalizer still has a terminal status to write, so it is drained here — after the
         # turn drain that cancelled its turn, and still well before the DB closes below.
         await app.state.automation_runner.shutdown(turns_cfg.shutdown_grace_s)
+        # D50 L2: cancelled AND awaited before the DB closes — a tick caught mid-sweep may still be
+        # writing a host-transition Event through `app.state.db`. It holds nothing else (no claim, no
+        # durable row), so a plain cancel is the whole shutdown protocol.
+        app.state.monitor_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.monitor_task
         app.state.memory_sweep_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.memory_sweep_task

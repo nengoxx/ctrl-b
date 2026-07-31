@@ -20,6 +20,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -727,6 +728,13 @@ class ComputerCfg(BaseModel):
     #: list beside it (CLAUDE.md hard rule); the next per-host automation dimension joins here too.
     #: Needs a `mac` to do anything (the wake itself DENIES without one, same as the button).
     wake_on_connect: bool = False
+    #: Wake-on-presence (D2-A / D50): this machine participates in the owner-device tailnet edge — the
+    #: phone's confirmed OFFLINE→ONLINE transition wakes it. The next dimension on the SAME object, per
+    #: the `wake_on_connect` precedent. Observed but never fired in 15a; armed in 15b.
+    wake_on_presence: bool = False
+    #: Per-host override of `wake.presence_cooldown_s` (D50). `None` ⇒ the global value — one optional
+    #: field rather than a second cooldown map beside the global one.
+    wake_presence_cooldown_s: int | None = Field(default=None, ge=0)
     tags: list[str] = []
     services: dict[str, ServiceCfg] = Field(default_factory=dict)
     #: Per-host, per-theme presentation override (Phase 11 / D28 §9.9) — an OPEN pass-through blob the
@@ -869,21 +877,96 @@ class NotificationsCfg(BaseModel):
 
 
 class WakeCfg(BaseModel):
-    """Fleet wake automation (ROADMAP D2). Today it holds only the shared cooldown consumed by
+    """Fleet wake automation (ROADMAP D2) — BOTH triggers' tunables, as this section's original
+    docstring planned.
+
     **D2-B wake-on-connect** (`ComputerCfg.wake_on_connect`): the SSE stream connect fires `wake_host`
-    for each flagged, offline host, and this bounds how often one host can be re-woken by reconnects
-    (a phone walking in and out of wifi range reopens the stream constantly).
+    for each flagged, offline host, and `cooldown_s` bounds how often one host can be re-woken by
+    reconnects (a phone walking in and out of wifi range reopens the stream constantly).
 
-    Deliberately a SECTION, not a scalar on `server`: D2-A (the Tailscale-status poll — owner device
-    nodes, the offline→online debounce) is the same feature reached by a different trigger, and it
-    lands here as additional optional fields on THIS object rather than a second wake-ish section.
+    **D2-A wake-on-presence** (D50, `ComputerCfg.wake_on_presence`): the monitor loop watches the
+    owner's device(s) on the tailnet and fires on their confirmed OFFLINE→ONLINE edge — the connect
+    itself carries the intent, since the phone keeps Tailscale off until the owner wants their
+    servers. The `presence_*` fields below are that trigger's half; they are additional optional
+    fields on THIS object rather than a second wake-ish section.
 
-    `cooldown_s=0` disables the cooldown (every connect may wake). WOL is idempotent, so the cooldown
-    is Event-log noise reduction, not a safety property."""
+    - `presence_device_ips`: the watched devices, keyed on their **tailnet IP** — what the LocalAPI
+      `whois` call takes, and the only stable-enough handle (a node key rotates on re-auth, a NodeID
+      changes on re-registration; R12 §4). Validated, normalized and de-duplicated below. Empty ⇒ the
+      whole tailnet half of the monitor is inert and costs nothing.
+    - `presence_offline_after_s`: how long a device must be CONTINUOUSLY observed offline (healthy
+      reads only) before its next online tick counts as a genuine arrival. This is what makes a
+      one-tick radio blip unable to fire a wake, and 120 s is R12's watchdog floor. Deliberately NOT
+      floor-validated (D50 overrule ①) — a single-owner app prefers configurable over a 422; `0`
+      means "arm on the first offline observation", which is a blip away from firing.
+    - `presence_cooldown_s`: per-HOST seconds between presence-driven wakes. Distinct from
+      `cooldown_s` because the two triggers mean different things: a dashboard open is cheap and
+      frequent, a fresh tailnet connect is rare and deliberate.
+    - `tailscale_socket_path`: where tailscaled's LocalAPI socket lives. **Config, not an OS branch**
+      (ARCHITECTURE §6): the default is the Linux path, and Synology/QNAP/macOS simply set their own
+      (R12 §4 lists them) instead of this file growing a server-OS-sniffing ladder.
+
+    `cooldown_s=0` disables the connect cooldown (every connect may wake). WOL is idempotent, so a
+    cooldown is Event-log noise reduction, not a safety property."""
 
     model_config = {"extra": "allow"}
 
     cooldown_s: int = Field(default=300, ge=0)  # per-host seconds between wake-on-connect fires
+    presence_device_ips: list[str] = Field(default_factory=list)
+    presence_offline_after_s: int = Field(default=120, ge=0)
+    presence_cooldown_s: int = Field(default=3600, ge=0)
+    tailscale_socket_path: str = "/var/run/tailscale/tailscaled.sock"
+
+    @field_validator("presence_device_ips")
+    @classmethod
+    def _normalize_device_ips(cls, v: list[str]) -> list[str]:
+        """Valid, normalized, unique (D50 M4/L1). A typo'd address must 422 at the config boundary
+        rather than become a device that is permanently UNKNOWN — the reader cannot tell the two
+        apart, and a wake that silently never fires is the worst failure mode this feature has.
+        Normalizing through `ipaddress` also makes the monitor's per-device state key canonical, so
+        `100.64.0.5` and ` 100.64.0.5 ` cannot become two entries with two arming machines."""
+        out: list[str] = []
+        for raw in v:
+            text = (raw or "").strip()
+            if not text:
+                continue
+            try:
+                normalized = str(ipaddress.ip_address(text))
+            except ValueError:
+                raise ValueError(
+                    f"wake.presence_device_ips entry {raw!r} is not an IP address — use the device's "
+                    "tailnet IP (100.x.y.z), never a node key or MagicDNS name"
+                ) from None
+            if normalized not in out:
+                out.append(normalized)
+        return out
+
+
+class MonitorCfg(BaseModel):
+    """The fleet monitor loop (D2-A/D50 §15a) — the tunables of the backend's own periodic watcher.
+
+    The loop reads `FleetService.status_all()` (never `ping_host`: one sweep shared with the UI) and
+    turns confirmed up/down transitions into Events. Damping is asymmetric on purpose — the two
+    directions have different costs: a false DOWN is noise in the audit log, a false UP is harmless,
+    so we damp down hard and recover fast (Gatus's 3/2, R13 §1.3).
+
+    `enabled=True` is a safe default because it arms nothing: 15a only records host transitions, and
+    the presence half stays inert until `wake.presence_device_ips` is populated. Turning it OFF is the
+    master switch — the loop keeps idling and applies the change with no restart (and clears its
+    counters, so re-enabling re-baselines silently instead of replaying a stale incident).
+
+    - `poll_seconds`: the tick interval. Cross-field validated `>= server.poll_seconds` on `Settings`
+      (see there for why a shorter one would be actively wrong).
+    - `down_after_checks` / `up_after_checks`: consecutive same-direction observations before a
+      transition is CONFIRMED and recorded. A check that could not be made at all (`HostStatus.error`)
+      is UNKNOWN — it resets both counters and never produces a transition."""
+
+    model_config = {"extra": "allow"}
+
+    enabled: bool = True
+    poll_seconds: int = Field(default=30, ge=1, le=3600)
+    down_after_checks: int = Field(default=3, ge=1, le=100)
+    up_after_checks: int = Field(default=2, ge=1, le=100)
 
 
 class AutomationsCfg(BaseModel):
@@ -946,8 +1029,10 @@ class Settings(BaseModel):
     #: Foreground notification preferences (F1) — read by the client through the thin
     #: `GET /api/notifications`; the backend never sends a notification itself.
     notifications: NotificationsCfg = Field(default_factory=NotificationsCfg)
-    #: Fleet wake automation (ROADMAP D2) — today the wake-on-connect cooldown (D2-B).
+    #: Fleet wake automation (ROADMAP D2) — the D2-B connect cooldown + the D2-A presence tunables.
     wake: WakeCfg = Field(default_factory=WakeCfg)
+    #: The fleet monitor loop (D2-A/D50) — interval + the asymmetric up/down damping thresholds.
+    monitor: MonitorCfg = Field(default_factory=MonitorCfg)
     #: Scheduled agent automations (A3/D49) — runner tunables only; the definitions live in SQLite.
     automations: AutomationsCfg = Field(default_factory=AutomationsCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
@@ -1002,6 +1087,23 @@ class Settings(BaseModel):
         data.pop("tool_descriptions", None)
         return data
 
+    @model_validator(mode="after")
+    def _monitor_interval_covers_the_fleet_cache(self) -> "Settings":
+        """`monitor.poll_seconds >= server.poll_seconds` (D50 M4) — a cross-field rule, so it lives
+        here rather than on either section.
+
+        Not a style preference: the monitor counts CONSECUTIVE CHECKS, and its checks come from
+        `FleetService.status_all()`, whose TTL cache is keyed on `server.poll_seconds`. Ticking faster
+        than that TTL serves the SAME cached sweep to several ticks, and the damping would then count
+        one observation as two or three — confirming a transition off a single ping."""
+        if self.monitor.poll_seconds < self.server.poll_seconds:
+            raise ValueError(
+                f"monitor.poll_seconds ({self.monitor.poll_seconds}) must be >= server.poll_seconds "
+                f"({self.server.poll_seconds}) — a shorter interval would count one cached fleet "
+                "sweep as several consecutive checks"
+            )
+        return self
+
     @field_validator("providers")
     @classmethod
     def _validate_provider_and_model_names(cls, v: dict[str, ProviderCfg]) -> dict[str, ProviderCfg]:
@@ -1038,6 +1140,8 @@ class Settings(BaseModel):
                 vpn_host=cfg.vpn_host,
                 ssh_prefer_vpn=cfg.ssh_prefer_vpn,
                 wake_on_connect=cfg.wake_on_connect,
+                wake_on_presence=cfg.wake_on_presence,
+                wake_presence_cooldown_s=cfg.wake_presence_cooldown_s,
                 tags=cfg.tags,
             )
             for name, cfg in self.computers.items()

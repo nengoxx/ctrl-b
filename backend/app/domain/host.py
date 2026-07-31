@@ -32,6 +32,10 @@ class Host(BaseModel):
     ssh_prefer_vpn: bool = False
     #: Wake-on-connect (ROADMAP D2-B). See `ComputerCfg.wake_on_connect`.
     wake_on_connect: bool = False
+    #: Wake-on-presence (D2-A / D50). See `ComputerCfg.wake_on_presence`.
+    wake_on_presence: bool = False
+    #: Per-host override of `wake.presence_cooldown_s`; `None` ⇒ the global. See `ComputerCfg`.
+    wake_presence_cooldown_s: int | None = None
     tags: list[str] = []
 
 
