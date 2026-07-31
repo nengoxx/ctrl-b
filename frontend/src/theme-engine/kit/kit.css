@@ -4373,6 +4373,14 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   background: var(--surface);
   overflow: hidden;
 }
+/* Hosted-in-Conf parity for the run-cards (owner device round 2026-07-31, second finding): the 18px
+ * above is the STANDALONE tab's page inset, where no group margin exists. Inside the Conf "Tools"
+ * group it stacked on `.confgroup`'s own 18px — the same doubled gutter the nested agent-tools group
+ * had, fixed the same way: the host owns the inline inset, the card keeps only its vertical rhythm. */
+.kit .confgroup .util {
+  margin-left: 0;
+  margin-right: 0;
+}
 .kit .util .uhead {
   padding: 12px 14px;
   display: flex;

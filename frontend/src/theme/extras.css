@@ -1414,8 +1414,11 @@ body {
 }
 /* Kit parity (owner device round 2026-07-31): a group hosted inside another (the utils-in-Conf
    pair) must not re-apply vapor.css's own `.confgroup` horizontal margin — nested, the insets
-   stacked into a visibly narrower content column. Inline margins only; vertical rhythm stays. */
-.confgroup .confgroup {
+   stacked into a visibly narrower content column. Inline margins only; vertical rhythm stays.
+   The `.util` run-cards carry the same standalone-tab inset (vapor: 14px 16px) and double the same
+   way when hosted — the host owns the inline inset for them too (second owner finding, same day). */
+.confgroup .confgroup,
+.confgroup .util {
   margin-left: 0;
   margin-right: 0;
 }
