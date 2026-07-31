@@ -1503,6 +1503,14 @@ body[data-composer-skin="sleek"] .kit .tools-sheet {
   font-weight: 600;
   color: var(--text-3);
   transition: color 0.15s, background 0.15s;
+  /* A WRAPPED seg's lines must fill the capsule (owner device round 2026-07-31): the container
+   * cannot shrink below its widest line once flex wraps, so fixed-width chips left a dead gutter
+   * beside the shorter line. Growing chips fill each line instead — and on the common single-line
+   * seg this is a NO-OP, because the container hugs its content (inline-flex sizes to max-content
+   * when it fits), leaving grow nothing to distribute. Centered so a grown chip's label doesn't
+   * lean left inside its stretched capsule. */
+  flex: 1 1 auto;
+  text-align: center;
 }
 .kit .seg button.active {
   background: var(--accent-fill);
@@ -2356,12 +2364,22 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   color: var(--text-3);
 }
 /* D2-B — inline caveat beside a switch in the machine form (the mform grid has no desc slot). Net-new
- * class, mirroring extras.css; `.mrow-switch` itself is deliberately left alone here (vapor-only
- * today) so this can't shift the existing SSH-via-VPN row. */
+ * class, mirroring extras.css. */
 .kit .mconf .mform .mrow-hint {
   font-size: 11px;
   letter-spacing: 0.02em;
   color: var(--text-3);
+}
+/* The switch cell itself, mirrored from extras.css (owner device round 2026-07-31): the kit copy had
+ * NO layout rules — an earlier note here kept it "vapor-only" to avoid shifting the SSH-via-VPN row —
+ * so the hint hugged the toggle with no gap and the cell sat under input-row height, reading as
+ * clipped. One flex cell fixes every switch-plus-hint row in the form, the new presence rows
+ * included, and shifts the VPN row only into alignment. */
+.kit .mconf .mform .mrow-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
 }
 .kit .mconf .mform .split {
   display: grid;
@@ -4544,7 +4562,11 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
 }
 .kit .tcat-name {
   font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 12px;
+  /* 13px, up from 12 (owner device round 2026-07-31): the catalog ran a size below every neighboring
+   * section's 14px label rhythm, and with the 10px chips beside it the whole card read "too small".
+   * Mono stays (tool names are identifiers); one point closes most of the gap without breaking the
+   * name/badge line's fit at 390px. */
+  font-size: 13px;
   letter-spacing: 0.02em;
   color: var(--text);
   min-width: 0;

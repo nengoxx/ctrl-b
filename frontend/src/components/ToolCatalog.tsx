@@ -168,13 +168,16 @@ export function ToolCatalog() {
                   <span className={"tcat-risk r-" + s.risk}>{s.risk}</span>
                   {s.confirm && <span className="tcat-risk confirm">confirm</span>}
                   {modeDeviates && <span className="tcat-mod">modified</span>}
-                  {/* The tri-state agent-access seg sits at the right of the name row, mirroring the
-                      Section-A run-card title row (`.util-title-row`) — `.tcat-seg` is pushed right. */}
+                  {/* The tri-state agent-access seg sits at the right of the name row — `.tcat-seg`
+                      is pushed right. FULL-SIZE, not `small` (owner device round 2026-07-31): the
+                      compact variant belongs to the run-card title row it was made for; here it
+                      shrank the section's main control below every other section's seg size and the
+                      catalog read "too small". On a narrow phone the standard seg wraps onto its own
+                      right-anchored line, which is the confrow convention, not a regression. */}
                   <ModeSeg
                     value={mode}
                     def={s.default_agent_mode ?? agentModeOf(s)}
                     readOnly={isShell}
-                    small
                     onPick={(m) => setEdit(s.name, { mode: m })}
                   />
                 </div>

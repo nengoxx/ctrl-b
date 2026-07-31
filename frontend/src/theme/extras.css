@@ -1902,6 +1902,13 @@ body {
   justify-self: end;
   max-width: 100%;
 }
+/* The wrapped-line companion to the hug above (owner device round 2026-07-31, kit parity): once the
+   seg wraps, its box cannot shrink below the widest line, so fixed chips left a dead gutter beside
+   the shorter line. Grown chips fill each line; a single-line seg hugs, so grow is a no-op there. */
+.mform .seg button {
+  flex: 1 1 auto;
+  text-align: center;
+}
 
 /* ── Conf → Skills · SKILL.md editor (Phase 7d-c, net-new) ────────────────────────────────────
    A standalone raw-markdown editor (rendered above the .mfoot buttons, not inside the .mform grid),
