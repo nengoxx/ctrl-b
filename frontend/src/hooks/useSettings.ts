@@ -135,6 +135,25 @@ export interface SettingsDoc {
   // read (`useNotificationPrefs`); edited here through the ordinary settings draft/PUT, since there
   // is exactly one write path for config.
   notifications: { enabled: boolean; events: NotificationEvents };
+  // D2-A / D50 — the backend's own monitor loop (`MonitorCfg`): the master switch, the tick interval
+  // (cross-field validated `>= server.poll_seconds`, which is why the Conf rows sit in ONE group with
+  // it) and the asymmetric consecutive-check damping.
+  monitor: {
+    enabled: boolean;
+    poll_seconds: number;
+    down_after_checks: number;
+    up_after_checks: number;
+  };
+  // ROADMAP D2 / D50 — fleet wake automation (`WakeCfg`): BOTH triggers' global tunables on the one
+  // object (never a sibling `presence:` map). `cooldown_s` is the shared automatic-wake floor;
+  // the `presence_*` fields are the D2-A owner-device edge's half.
+  wake: {
+    cooldown_s: number;
+    presence_device_ips: string[];
+    presence_offline_after_s: number;
+    presence_cooldown_s: number;
+    tailscale_socket_path: string;
+  };
   mcp_servers: McpServer[]; // Phase 7c-b — managed via the integrations CRUD endpoints, read here
   openapi_servers: OpenApiServer[];
   [k: string]: unknown; // other sections (agent, …) — managed elsewhere

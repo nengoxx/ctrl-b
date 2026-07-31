@@ -57,6 +57,22 @@ describe("useSaveSettings · 409 handling (FX15)", () => {
     await waitFor(() => expect(h.toast).toHaveBeenCalled());
     expect(h.toast.mock.calls[0][0]).toBe("agent is busy — try again in a moment");
   });
+
+  // 15c/D50 — a cross-field 422 is the ONE failure this form can walk into by accident: raising
+  // `server.poll_seconds` above `monitor.poll_seconds` (both now edited in the Server group) is
+  // rejected by `Settings`, not by any single field. The rejection reaches the owner as the
+  // backend's own sentence — the toast must not flatten it to "Save failed".
+  it("a 422 surfaces the validator's message verbatim (the cross-field monitor/server rule)", async () => {
+    const msg =
+      "monitor.poll_seconds (30) must be >= server.poll_seconds (60) — a shorter interval " +
+      "would count one cached fleet sweep as several consecutive checks";
+    h.put.mockRejectedValue(new ApiError(msg, 422));
+    const { result } = renderHook(() => useSaveSettings(), { wrapper });
+    result.current.mutate({ server: { poll_seconds: 60 } });
+    await waitFor(() => expect(h.toast).toHaveBeenCalled());
+    expect(h.toast.mock.calls[0][0]).toBe(msg);
+    expect(h.toast.mock.calls[0][1]).toBe("err");
+  });
 });
 
 // SYS-9.2: a save may change the default-agent selection (edited through PUT /api/settings), so the

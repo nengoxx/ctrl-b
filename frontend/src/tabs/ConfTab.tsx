@@ -706,6 +706,8 @@ type Draft = Pick<
   | "shell"
   | "voice"
   | "notifications"
+  | "monitor"
+  | "wake"
   | "providers"
 >;
 
@@ -719,6 +721,24 @@ const NOTIFICATIONS_FALLBACK: SettingsDoc["notifications"] = {
   events: { agent_input: true, turn_done: true, action_failed: true, automation_done: true },
 };
 
+// D2-A/D50 (15c) — same defensive seeds as NOTIFICATIONS_FALLBACK above, for the same reason: the
+// live backend always dumps both sections (`Settings` defaults them), so these only bite against a
+// doc from an older/mismatched build — but the draft, the changed-section diff and the rows all
+// assume a well-formed object. Values mirror `MonitorCfg` / `WakeCfg` defaults.
+const MONITOR_FALLBACK: SettingsDoc["monitor"] = {
+  enabled: true,
+  poll_seconds: 30,
+  down_after_checks: 3,
+  up_after_checks: 2,
+};
+const WAKE_FALLBACK: SettingsDoc["wake"] = {
+  cooldown_s: 300,
+  presence_device_ips: [],
+  presence_offline_after_s: 120,
+  presence_cooldown_s: 3600,
+  tailscale_socket_path: "/var/run/tailscale/tailscaled.sock",
+};
+
 function pickDraft(s: SettingsDoc): Draft {
   return {
     server: s.server,
@@ -730,7 +750,24 @@ function pickDraft(s: SettingsDoc): Draft {
     shell: s.shell,
     voice: s.voice,
     notifications: s.notifications ?? NOTIFICATIONS_FALLBACK,
+    monitor: s.monitor ?? MONITOR_FALLBACK,
+    wake: s.wake ?? WAKE_FALLBACK,
   };
+}
+
+/** The watched-device list renders as ONE comma/space-separated text field, and the draft carries
+ *  the RAW text while the user types — the same shape this form already uses for numbers (the draft
+ *  holds the typed string, `onSave` coerces). Round-tripping through `join(", ")` on every keystroke
+ *  instead would eat a separator the moment it's typed. Untouched, the draft still holds the doc's
+ *  own array, so the coerced section diffs equal and stays out of the patch. */
+function ipsText(v: string[] | string | undefined): string {
+  return Array.isArray(v) ? v.join(", ") : (v ?? "");
+}
+/** Parse that text back to the wire list: split on commas/whitespace, drop the empties (so a blank
+ *  field is `[]` — "the presence trigger is off"). Entries are NOT validated here — `WakeCfg`
+ *  normalizes and rejects them at the config boundary, and its 422 surfaces on the save. */
+function parseIps(v: string[] | string | undefined): string[] {
+  return Array.isArray(v) ? v : (v ?? "").split(/[\s,]+/).filter(Boolean);
 }
 
 const RISKS = [
@@ -1138,6 +1175,15 @@ export function ConfTab({ active }: Props) {
   function setSearx<K extends keyof Draft["searxng"]>(key: K, val: Draft["searxng"][K]) {
     setDraft((d) => (d ? { ...d, searxng: { ...d.searxng, [key]: val } } : d));
   }
+  // D2-A/D50 (15c) — the monitor + wake sections are edited from the Server group (they are cadence
+  // siblings of `server.poll_seconds`, and the cross-field rule binds them), through the ordinary
+  // per-section setters. `wake` keeps BOTH triggers' knobs on one object — no sibling map.
+  function setMon<K extends keyof Draft["monitor"]>(key: K, val: Draft["monitor"][K]) {
+    setDraft((d) => (d ? { ...d, monitor: { ...d.monitor, [key]: val } } : d));
+  }
+  function setWake<K extends keyof Draft["wake"]>(key: K, val: Draft["wake"][K]) {
+    setDraft((d) => (d ? { ...d, wake: { ...d.wake, [key]: val } } : d));
+  }
   function setEmb<K extends keyof Draft["embeddings"]>(key: K, val: Draft["embeddings"][K]) {
     setDraft((d) => (d ? { ...d, embeddings: { ...d.embeddings, [key]: val } } : d));
   }
@@ -1226,6 +1272,8 @@ export function ConfTab({ active }: Props) {
   const vstt = draft?.voice.stt;
   const vtts = draft?.voice.tts;
   const notif = draft?.notifications;
+  const mon = draft?.monitor;
+  const wk = draft?.wake;
 
   // A11/D48 B2 + R19 — the reference-guard. Collect every config-held ModelRef (the draft's inference
   // primary/fallbacks + the settings doc's agent.defaults.model / summarizer[s] / routing.lead), resolve
@@ -1447,6 +1495,21 @@ export function ConfTab({ active }: Props) {
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
+      // D2-A/D50 (15c). `presence_device_ips` coerces like the numbers beside it: the draft holds what
+      // was typed, this turns it into the wire list (blank → `[]` = the presence trigger is inert).
+      monitor: {
+        ...draft.monitor,
+        poll_seconds: Number(draft.monitor.poll_seconds),
+        down_after_checks: Number(draft.monitor.down_after_checks),
+        up_after_checks: Number(draft.monitor.up_after_checks),
+      },
+      wake: {
+        ...draft.wake,
+        cooldown_s: Number(draft.wake.cooldown_s),
+        presence_device_ips: parseIps(draft.wake.presence_device_ips),
+        presence_offline_after_s: Number(draft.wake.presence_offline_after_s),
+        presence_cooldown_s: Number(draft.wake.presence_cooldown_s),
+      },
     };
     // Send ONLY the sections that actually changed. Sending everything made every scalar save a
     // resolution-relevant patch (the backend strict-resolves any patch touching providers / inference /
@@ -1747,6 +1810,79 @@ export function ConfTab({ active }: Props) {
           <SettingRow label="Debug" desc="verbose errors — off in prod · restart to apply">
             <Switch on={!!srv?.debug} onToggle={() => setSrv("debug", !srv?.debug)} label="Debug" />
           </SettingRow>
+        </div>
+        {/* D2-A/D50 (15c) — the monitor loop's own knobs. They live in THIS group, not a new one
+            (owner ruling 2026-07-31: avoid growing the section list), and the placement earns its
+            keep: `monitor.poll_seconds` is cross-field validated `>= server.poll_seconds` above, so
+            the two cadences are visible together and the 422 that a raised poll cadence earns names a
+            field the owner can see. No sub-heading — the house look for a second card in a group is
+            the first row's label carrying the block (the access card below does exactly that). */}
+        <div className="conf-card">
+          <SettingRow
+            label="Fleet monitor"
+            desc="watches every machine up/down and drives the presence wake · applies live"
+          >
+            <Switch
+              on={!!mon?.enabled}
+              onToggle={() => setMon("enabled", !mon?.enabled)}
+              label="Fleet monitor"
+            />
+          </SettingRow>
+          <Field
+            label="Monitor cadence"
+            desc="seconds between checks — must be ≥ the poll cadence above"
+            value={String(mon?.poll_seconds ?? "")}
+            onChange={(v) => setMon("poll_seconds", v as unknown as number)}
+          />
+          <Field
+            label="Down after"
+            desc="consecutive missed checks before a host is recorded down"
+            value={String(mon?.down_after_checks ?? "")}
+            onChange={(v) => setMon("down_after_checks", v as unknown as number)}
+          />
+          <Field
+            label="Up after"
+            desc="consecutive good checks before it's recorded back up"
+            value={String(mon?.up_after_checks ?? "")}
+            onChange={(v) => setMon("up_after_checks", v as unknown as number)}
+          />
+        </div>
+        {/* The presence-wake half of the same loop: which device's arrival on the tailnet counts as
+            "I want my servers", and how often that may act. WHICH machines answer it is per-host
+            (Computers → "Wake when my phone connects"); these are the global tunables. */}
+        <div className="conf-card">
+          <Field
+            label="My device IPs"
+            desc="your phone's tailnet IP (100.x…) · comma-separated · blank = no presence wake · bad entries are rejected on save"
+            value={ipsText(wk?.presence_device_ips)}
+            onChange={(v) => setWake("presence_device_ips", v as unknown as string[])}
+            placeholder="100.64.0.5"
+          />
+          <Field
+            label="Arm after"
+            desc="seconds continuously offline before the next connect counts as an arrival"
+            value={String(wk?.presence_offline_after_s ?? "")}
+            onChange={(v) => setWake("presence_offline_after_s", v as unknown as number)}
+          />
+          <Field
+            label="Presence cooldown"
+            desc="seconds — at most one presence wake per machine per window"
+            value={String(wk?.presence_cooldown_s ?? "")}
+            onChange={(v) => setWake("presence_cooldown_s", v as unknown as number)}
+          />
+          <Field
+            label="Wake cooldown floor"
+            desc="seconds — the automatic-wake dedupe floor across both triggers · 0 disables"
+            value={String(wk?.cooldown_s ?? "")}
+            onChange={(v) => setWake("cooldown_s", v as unknown as number)}
+          />
+          <Field
+            label="tailscaled socket"
+            desc="the tailscaled LocalAPI socket — rarely changed"
+            value={wk?.tailscale_socket_path ?? ""}
+            onChange={(v) => setWake("tailscale_socket_path", v)}
+            placeholder="/var/run/tailscale/tailscaled.sock"
+          />
         </div>
         {/* HTTPS access (Tailscale Serve) — a live toggle (acts immediately, not part of the saved
             fields). Sits above the save bar so it reads as a control, not an afterthought (6c-2). */}

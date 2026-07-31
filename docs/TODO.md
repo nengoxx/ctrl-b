@@ -1247,7 +1247,7 @@ Codex round → owner pause.
       `wake_presence_cooldown_s: 0` host (only `cooldown_s: 0` removes it — tested as a pair) → R4:
       product logic CLEAN, zero new; the residual test-hang LOW closed as prescribed, `109d359`.
       Both interleavings pinned by deterministic tests driving the REAL sibling trigger parked
-      mid-invoke. Backend 1254 / FE 897; gate 6/6 every commit. **PHASE 15 COMPLETE.** As-built:
+      mid-invoke. Backend 1254 / FE 897; gate 6/6 every commit. **15a+15b COMPLETE.** As-built:
       `MonitorService` takes `ActionService` by constructor
       injection (the 15a fleet/events style) and `_tick_presence` COLLECTS the tick's edges, then
       fans out ONCE (`_wake_on_presence`) — several devices arriving together are one arrival.
@@ -1262,6 +1262,26 @@ Codex round → owner pause.
       (blank = the global), both always sent, **both OFF/blank for a new machine (owner directive:
       every machine defaults off)**. Backend tests 1239→1251 (new `test_monitor_15b.py`), frontend
       890→896.
+- [x] **15c — the D2-A global knobs get a Conf surface:** `monitor.*` (master switch · cadence ·
+      down/up damping) + the `wake.presence_*` tunables + `wake.cooldown_s` (which had no UI at all
+      before) join the **existing Server group** as two more `conf-card` blocks between the server
+      card and the Tailscale access card — **owner ruling 2026-07-31: NOT a new section** ("avoid
+      having too many sections"). The placement also earns its keep: `monitor.poll_seconds` is
+      cross-field validated `>= server.poll_seconds`, so the two cadences are now adjacent and the
+      422 a raised poll cadence earns names a field the owner can see.
+      **✅ 2026-07-31 — frontend only, zero backend change** (the sections already round-trip through
+      `GET/PUT /api/settings`; `Settings.model_validate` + `WakeCfg._normalize_device_ips` stay the
+      single source of truth for what a valid value is, and their 422 surfaces through the existing
+      save toast). As-built: `monitor`/`wake` join the ONE Conf draft (`Draft`/`pickDraft` +
+      `setMon`/`setWake`, defensive fallbacks like `NOTIFICATIONS_FALLBACK`) and the ONE `onSave`
+      patch, so the per-section "send only what changed" diff covers them for free. Numeric rows use
+      the Server group's own `Field` convention (draft holds the typed text, `onSave` coerces) rather
+      than MachineEditor's digits-only input — no third style. `presence_device_ips` renders as ONE
+      comma/space-separated field on the same raw-text-then-coerce shape (`ipsText`/`parseIps`), so a
+      separator survives a keystroke and blank saves `[]` (the feature's off switch); a typo'd entry
+      rides to the backend validator verbatim rather than being silently dropped. FE tests 895→902
+      (new `tests/tabs/confMonitor.test.tsx` + the 422-surface case in `useSaveSettings.test.ts`);
+      backend 1254 unchanged; gate 6/6. **PHASE 15 COMPLETE.**
 
 ## Cross-cutting / don't-forget
 
