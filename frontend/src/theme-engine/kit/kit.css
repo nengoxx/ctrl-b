@@ -2126,6 +2126,15 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 .kit .confgroup {
   margin: 8px 18px 0;
 }
+/* A group HOSTED inside another group (today: the one curated pair — UtilsContent's "agent tools"
+ * inside Conf's "Tools", D35 Axis B) must not re-apply the horizontal inset: nested, the two 18px
+ * margins stacked to a 36px gutter — visibly narrower content than every sibling group (owner device
+ * round 2026-07-31). Zeroing only the INLINE margins keeps the vertical rhythm and leaves the
+ * standalone Utils tab (no outer .confgroup) untouched by construction. */
+.kit .confgroup .confgroup {
+  margin-left: 0;
+  margin-right: 0;
+}
 .kit .conftitle {
   padding: 18px 0 8px;
   font-size: 12px;
@@ -2181,6 +2190,12 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
+}
+/* Stacked sibling cards in one group breathe (15c review, LOW — generalizing what `.access-card`
+ * carried alone): without it the Server group's three cards butt their rounded borders together.
+ * Same 10px the access card always had, so nothing shifts where the spacing already existed. */
+.kit .conf-card + .conf-card {
+  margin-top: 10px;
 }
 .kit .conf-card.access-card {
   margin-top: 10px;

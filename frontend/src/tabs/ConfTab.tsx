@@ -750,8 +750,12 @@ function pickDraft(s: SettingsDoc): Draft {
     shell: s.shell,
     voice: s.voice,
     notifications: s.notifications ?? NOTIFICATIONS_FALLBACK,
-    monitor: s.monitor ?? MONITOR_FALLBACK,
-    wake: s.wake ?? WAKE_FALLBACK,
+    // Field-wise seeding, not `?? FALLBACK` (15c review, MED): a PARTIAL section from an older doc
+    // (`extra=allow` keeps whatever was written) would bypass a section-level fallback entirely,
+    // rendering blank rows whose missing numerics then coerce to NaN → JSON null on an UNRELATED
+    // save. The spread fills only the holes and never overrides a present value.
+    monitor: { ...MONITOR_FALLBACK, ...s.monitor },
+    wake: { ...WAKE_FALLBACK, ...s.wake },
   };
 }
 
@@ -768,6 +772,14 @@ function ipsText(v: string[] | string | undefined): string {
  *  normalizes and rejects them at the config boundary, and its 422 surfaces on the save. */
 function parseIps(v: string[] | string | undefined): string[] {
   return Array.isArray(v) ? v : (v ?? "").split(/[\s,]+/).filter(Boolean);
+}
+/** Blank-aware numeric coercion for fields where `0` is a MEANINGFUL saved value (the wake timings:
+ *  "no cooldown", "arm immediately"). Blank/whitespace → `null` on the wire → the backend's 422 with
+ *  a visible toast — never a silent zero; a typed `"0"` stays a real zero. (`Number(null)` would be
+ *  0 again, so the null is produced AFTER the emptiness test, not by coercion.) */
+function numOrNull(v: number | string): number | null {
+  const t = String(v).trim();
+  return t === "" ? null : Number(t);
 }
 
 const RISKS = [
@@ -1497,18 +1509,23 @@ export function ConfTab({ active }: Props) {
       notifications: draft.notifications, // all booleans — nothing to coerce
       // D2-A/D50 (15c). `presence_device_ips` coerces like the numbers beside it: the draft holds what
       // was typed, this turns it into the wire list (blank → `[]` = the presence trigger is inert).
+      // The numerics coerce through `numOrNull`, NOT bare `Number` (15c review, MED): `Number("")` is
+      // 0, and for the wake timings 0 is a MEANINGFUL value ("no cooldown"/"arm immediately") the
+      // backend accepts — a cleared field would silently disable a cooldown instead of earning the
+      // visible 422 every other cleared numeric in this form earns (blank → null → 422, typed "0"
+      // stays a real zero).
       monitor: {
         ...draft.monitor,
-        poll_seconds: Number(draft.monitor.poll_seconds),
-        down_after_checks: Number(draft.monitor.down_after_checks),
-        up_after_checks: Number(draft.monitor.up_after_checks),
+        poll_seconds: numOrNull(draft.monitor.poll_seconds),
+        down_after_checks: numOrNull(draft.monitor.down_after_checks),
+        up_after_checks: numOrNull(draft.monitor.up_after_checks),
       },
       wake: {
         ...draft.wake,
-        cooldown_s: Number(draft.wake.cooldown_s),
+        cooldown_s: numOrNull(draft.wake.cooldown_s),
         presence_device_ips: parseIps(draft.wake.presence_device_ips),
-        presence_offline_after_s: Number(draft.wake.presence_offline_after_s),
-        presence_cooldown_s: Number(draft.wake.presence_cooldown_s),
+        presence_offline_after_s: numOrNull(draft.wake.presence_offline_after_s),
+        presence_cooldown_s: numOrNull(draft.wake.presence_cooldown_s),
       },
     };
     // Send ONLY the sections that actually changed. Sending everything made every scalar save a
@@ -1871,8 +1888,10 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setWake("presence_cooldown_s", v as unknown as number)}
           />
           <Field
-            label="Wake cooldown floor"
-            desc="seconds — the automatic-wake dedupe floor across both triggers · 0 disables"
+            label="Wake cooldown"
+            // Both of `cooldown_s`'s roles, per D50 (15c review, LOW): naming only the floor hid
+            // that this is ALSO the wake-on-connect (dashboard-open) cooldown that predates D2-A.
+            desc="seconds — the wake-on-connect cooldown AND the shared floor under presence wakes · 0 removes both"
             value={String(wk?.cooldown_s ?? "")}
             onChange={(v) => setWake("cooldown_s", v as unknown as number)}
           />

@@ -312,8 +312,12 @@ body[data-perf="lite"] .composer {
 
 /* ── Phase 6c-2 — HTTPS access card (Tailscale Serve) in the Server conf group. The URL wraps; the
    copy button is a small vapor-token pill. Built from existing conf classes; vapor.css untouched (D7). */
-/* When a second conf-card follows the saved-fields card in a group (the HTTPS access card in Server),
-   give it the same 10px gap the save bar uses, so cards don't touch. */
+/* When a second conf-card follows another in a group, give it the same 10px gap the save bar uses,
+   so cards don't butt their borders. Generalized from the access card (15c review, LOW — the Server
+   group now stacks three cards); the access-card rule below stays for when it opens a group alone. */
+.conf-card + .conf-card {
+  margin-top: 10px;
+}
 .conf-card.access-card {
   margin-top: 10px;
 }
@@ -1407,6 +1411,13 @@ body {
   line-height: 1;
   transition: transform 0.2s;
   transform: rotate(90deg); /* expanded: points down */
+}
+/* Kit parity (owner device round 2026-07-31): a group hosted inside another (the utils-in-Conf
+   pair) must not re-apply vapor.css's own `.confgroup` horizontal margin — nested, the insets
+   stacked into a visibly narrower content column. Inline margins only; vertical rhythm stays. */
+.confgroup .confgroup {
+  margin-left: 0;
+  margin-right: 0;
 }
 .confgroup.collapsed .conf-chev {
   transform: rotate(0deg); /* collapsed: points right */

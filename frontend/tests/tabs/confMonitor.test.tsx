@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // D2-A / D50 (15c) — the monitor + presence-wake knobs live INSIDE the Server group (owner ruling:
@@ -192,7 +192,7 @@ describe("ConfTab · monitor + presence wake (15c / D50)", () => {
     expect(field("My device IPs").value).toBe("");
     expect(field("Arm after").value).toBe("120");
     expect(field("Presence cooldown").value).toBe("3600");
-    expect(field("Wake cooldown floor").value).toBe("300");
+    expect(field("Wake cooldown").value).toBe("300");
     expect(field("tailscaled socket").value).toBe("/var/run/tailscale/tailscaled.sock");
     // the cadence it is cross-field validated against is the neighbour, which is the whole point
     expect(field("Poll cadence").value).toBe("5");
@@ -235,6 +235,50 @@ describe("ConfTab · monitor + presence wake (15c / D50)", () => {
       tailscale_socket_path: "/var/run/tailscale/tailscaled.sock",
     });
     expect(patch.monitor).toBeUndefined();
+  });
+
+  it("a success echo re-baselines typed IPs to the normalized list; the next save omits wake", () => {
+    // The 15c review's named missing test: the draft holds a raw STRING once edited, the PUT echo
+    // holds the normalized ARRAY — the per-call onSuccess must converge the two, or the section
+    // reads dirty forever and every later save drags `wake` back into the patch.
+    render(<ConfTab active />);
+    fireEvent.change(field("My device IPs"), { target: { value: "100.64.0.5 100.64.0.9" } });
+    fireEvent.click(saveButton());
+    const [patch, opts] = h.save.mock.calls[0] as [
+      { wake?: { presence_device_ips?: unknown } },
+      { onSuccess: (res: unknown) => void; onSettled: () => void },
+    ];
+    expect(patch.wake?.presence_device_ips).toEqual(["100.64.0.5", "100.64.0.9"]);
+    const echoed = makeSettings();
+    echoed.wake.presence_device_ips = ["100.64.0.5", "100.64.0.9"];
+    // drive the callbacks the way the real mutation does: success, then the settled release
+    act(() => {
+      opts.onSuccess({ settings: echoed, providers_rev: "revA" });
+      opts.onSettled();
+    });
+    // the echo is now the baseline: rendered joined, and clean
+    expect(field("My device IPs").value).toBe("100.64.0.5, 100.64.0.9");
+    fireEvent.change(field("Monitor cadence"), { target: { value: "60" } });
+    fireEvent.click(saveButton());
+    expect(patchOf(1).monitor?.poll_seconds).toBe(60);
+    expect(patchOf(1).wake).toBeUndefined(); // the echoed baseline diffs equal — wake stays home
+  });
+
+  it("a CLEARED wake timing saves null (a visible 422), never a silent zero", () => {
+    // 15c review MED: Number("") is 0, and 0 is a MEANINGFUL wake value ("no cooldown") the backend
+    // accepts — a cleared field must earn the same visible 422 every other cleared numeric earns.
+    render(<ConfTab active />);
+    fireEvent.change(field("Presence cooldown"), { target: { value: "" } });
+    fireEvent.click(saveButton());
+    expect(patchOf().wake?.presence_cooldown_s).toBeNull();
+
+    cleanup();
+    h.save.mockClear();
+    h.settings = makeSettings();
+    render(<ConfTab active />);
+    fireEvent.change(field("Wake cooldown"), { target: { value: "0" } });
+    fireEvent.click(saveButton());
+    expect(patchOf().wake?.cooldown_s).toBe(0); // a TYPED zero stays a real zero
   });
 
   it("clearing the device IPs saves an EMPTY list — the feature's off switch", () => {
