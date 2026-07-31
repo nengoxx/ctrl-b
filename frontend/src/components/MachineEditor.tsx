@@ -112,9 +112,10 @@ function toServiceCfg(s: SvcDraft): HostServiceCfg {
 }
 
 /** The optional per-host presence-cooldown override → what the API takes: `null` means "use the
- *  global `wake.presence_cooldown_s`". Blank or unparseable clears it; `0` is a REAL value ("no
- *  cooldown on this host"), which is why this can't be the `Number(x) || fallback` shape `ssh_port`
- *  uses. Negatives clear too — the backend's `ge=0` would 422 them, and this form has no error slot. */
+ *  global `wake.presence_cooldown_s`"; `0` is a REAL value ("no cooldown on this host"), which is
+ *  why this can't be the `Number(x) || fallback` shape `ssh_port` uses. The input filters to digits
+ *  at the keystroke (15b review, LOW), so via the editor only blank ever reaches the `null` arm —
+ *  the guard below stays as the belt for a programmatic draft, not a path a keyboard can take. */
 function cooldownOverride(raw: string): number | null {
   const t = raw.trim();
   if (!t) return null;
@@ -326,7 +327,12 @@ function MachineForm(props: {
           value={d.wake_presence_cooldown_s}
           placeholder="blank = use the global"
           inputMode="numeric"
-          onChange={(e) => set({ wake_presence_cooldown_s: e.target.value })}
+          // Digits-only AT THE KEYSTROKE (15b review, LOW): letting arbitrary text sit in the draft
+          // meant `-1`/`abc` parsed to null on save and silently CLEARED a stored override — and the
+          // editor has no save-gating to refuse it (`disabled` is busy-only, deliberately). Filtered
+          // input can only ever be a non-negative integer or blank, and blank stays the one explicit
+          // "use the global" spelling. Cheaper than growing a validation slot for one field.
+          onChange={(e) => set({ wake_presence_cooldown_s: e.target.value.replace(/[^0-9]/g, "") })}
         />
 
         <label>SSH user</label>

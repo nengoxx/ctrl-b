@@ -187,6 +187,21 @@ describe("MachineEditor — wake_on_presence + cooldown override (D2-A/D50)", ()
     expect(h.update.mock.calls[1][0].payload.wake_presence_cooldown_s).toBe(0);
   });
 
+  it("the cooldown field filters to digits, so junk cannot silently clear a stored override", () => {
+    // 15b review LOW: `-1`/`abc` used to sit in the draft and parse to null on save — deleting a
+    // real 900 with zero feedback. Filtered at the keystroke, the junk never enters the draft; only
+    // an EXPLICIT blank means "use the global".
+    render(<MachineEditor hosts={[mkHost({ wake_presence_cooldown_s: 900 })]} />);
+    openRow("corsair");
+    const field = screen.getByLabelText<HTMLInputElement>("Presence cooldown (seconds)");
+    fireEvent.change(field, { target: { value: "-1" } });
+    expect(field.value).toBe("1"); // the sign is stripped, the digit stays visible
+    fireEvent.change(field, { target: { value: "abc" } });
+    expect(field.value).toBe(""); // all junk → empty field the owner can SEE is now blank
+    fireEvent.change(field, { target: { value: "1.5" } });
+    expect(field.value).toBe("15"); // no dot — what is shown is exactly what will save
+  });
+
   it("SENDS a loaded host's existing values on an untouched save (omit-preserves regression)", () => {
     render(
       <MachineEditor hosts={[mkHost({ wake_on_presence: true, wake_presence_cooldown_s: 900 })]} />,

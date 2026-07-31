@@ -60,7 +60,12 @@ async def wake_flagged_hosts(app: "FastAPI") -> None:
     Skipped, in order: no `mac` (the action's own DENIED outcome is correct but pure log noise for an
     automatic fire — the owner never asked for it at this instant), known-online per the fleet's cached
     sweep, and inside the per-host cooldown. The cooldown is stamped BEFORE the await so a burst of
-    near-simultaneous connects can't all pass the check and fan out N packets."""
+    near-simultaneous connects can't all pass the check and fan out N packets.
+
+    The D2-A presence fan-out (`MonitorService._wake_on_presence`) deliberately copies this
+    eligibility policy AND stamps this module's `cooldowns` map for its whole host set in an
+    awaitless pass — change the policy here and change it there, or the two triggers drift (D50 M3;
+    15b review)."""
     settings = app.state.settings
     fleet = app.state.fleet
     actions = app.state.actions

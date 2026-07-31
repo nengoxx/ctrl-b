@@ -224,6 +224,48 @@ def test_a_presence_fire_also_stamps_the_shared_wake_on_connect_map() -> None:
     assert actions2.woken == ["alpha"]
 
 
+def test_a_dashboard_connect_landing_mid_fan_out_cannot_double_wake() -> None:
+    """15b review MED, reproduced upstream before the fix: stamping each host beside its own await
+    left the LATER hosts unstamped while the loop yielded, so a D2-B connect interleaving at that
+    await woke one of them through the shared path and the resumed fan-out woke it AGAIN
+    (["alpha", "beta", "beta"]). The awaitless reservation pass is the fix under test: by the FIRST
+    invoke's await, every eligible host is stamped in BOTH maps, so the interleaved real
+    `wake_flagged_hosts` finds nothing to do. Deterministic: the block is an explicit event inside
+    the fake invoke, released by the test — no sleeps, no clock."""
+    import asyncio
+
+    class _Blocking(_FakeActions):
+        def __init__(self) -> None:
+            super().__init__()
+            self.gate = asyncio.Event()
+            self.entered = asyncio.Event()  # set the instant invoke #1 blocks — the test's rendezvous
+
+        async def invoke(self, name, raw_args, **kw):
+            out = await super().invoke(name, raw_args, **kw)
+            if len(self.calls) == 1:
+                self.entered.set()
+                await self.gate.wait()  # hold the fan-out at its first await, mid-flight
+            return out
+
+    hosts = [_h("alpha", on_connect=True), _h("beta", on_connect=True)]
+    svc, _actions, app = _service(hosts)
+    blocking = _Blocking()
+    svc._actions = blocking  # type: ignore[assignment]  # both paths must share ONE recorder
+    app.state.actions = blocking
+
+    async def scenario() -> None:
+        with _scripted_presence(["offline", "online"]):
+            await svc.tick()  # arms
+            fan_out = asyncio.create_task(svc.tick())  # the edge — blocks inside invoke #1
+            await blocking.entered.wait()  # the fan-out is provably mid-flight
+            await wake_on_connect.wake_flagged_hosts(app)  # the interleaved dashboard connect
+            blocking.gate.set()
+            await fan_out
+
+    run_async(scenario())
+    assert sorted(blocking.woken) == ["alpha", "beta"]  # each host exactly once, whoever fired it
+
+
 def test_two_devices_arriving_in_one_tick_are_one_fan_out() -> None:
     """The owner walking in with a phone AND a laptop is ONE arrival (D50 M3): the presence cooldown
     is per-HOST, shared across devices, so the coalescing is what keeps it from writing a duplicate

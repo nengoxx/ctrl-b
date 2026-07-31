@@ -384,7 +384,15 @@ class MonitorService:
         shared = wake_on_connect.cooldowns(self._app)  # D2-B's map — stamped, never read here
         online = self._fleet.cached_online_ids()  # cheap + probe-free; empty when the cache is cold
         now = time.monotonic()
-        fired = 0
+        # TWO PHASES, deliberately (15b review, MED — reproduced): eligibility + BOTH stamps for the
+        # WHOLE set first, with no await anywhere in the pass — then the invokes. Stamping each host
+        # just before its own await left the not-yet-reached hosts unstamped while the loop yielded,
+        # so a dashboard connect landing mid-fan-out (the overwhelmingly likely next thing) woke a
+        # later host through D2-B and this loop then woke it AGAIN. An awaitless first pass makes the
+        # reservation atomic under cooperative scheduling — no lock needed, same guarantee. (Codex's
+        # shared-reservation-helper extraction was overruled as the heavier fix: the copied policy is
+        # these few lines, cross-referenced here and in `wake_flagged_hosts`.)
+        eligible: list[str] = []
         for host in self._fleet.hosts():
             if not host.wake_on_presence or not host.mac:
                 continue  # a MAC-less host would only DENY — noise nobody asked for at this instant
@@ -400,20 +408,21 @@ class MonitorService:
                 continue
             self._presence_marks[host.id] = now
             shared[host.id] = now
-            fired += 1
+            eligible.append(host.id)
+        for host_id in eligible:
             try:
                 await self._actions.invoke(
                     "wake_host",
-                    {"host_id": host.id},
+                    {"host_id": host_id},
                     # Nobody typed this — the app itself observed the owner arriving (D-4).
                     origin=Origin(kind="system"),
                     actor=Actor.SYSTEM,
                     interactive=False,
                 )
             except Exception:  # noqa: BLE001 — one host's failure is not the arrival's failure
-                log.exception("presence wake failed for host %s", host.id)
+                log.exception("presence wake failed for host %s", host_id)
         log.info(
             "tailnet: %s arrived — %s",
             ", ".join(arrived),
-            f"firing wake for {fired} host(s)" if fired else "no eligible hosts",
+            f"firing wake for {len(eligible)} host(s)" if eligible else "no eligible hosts",
         )
