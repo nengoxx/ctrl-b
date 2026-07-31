@@ -91,7 +91,13 @@
 > 8. **G security hardening** (known_hosts pinning · per-action tokens · secrets encryption-at-rest)
 >    · **B1 memory backends** (vector MemoryProvider on the built 4f embeddings client) ·
 >    **E0a per-tool settings** · **E1 bots**.
-> 9. LOW backlog: sendIcon/gradient-accent fills (the QoL cluster's unreached item 4).
+> 9. LOW backlog / polish: sendIcon/gradient-accent fills (the QoL cluster's unreached item 4) ·
+>    **`SwUpdatePrompt.tsx`'s `onNeedRefresh` is DEAD CODE under `registerType:"autoUpdate"`**
+>    (verified from installed plugin source, R10 §3.5 — the F26 "new version" toast can never fire;
+>    fix = drop it or switch strategies, NOT a drive-by) · the F13 eslint-warning backlog
+>    (Compiler prep, 40 warns) · e2e `fixtures.ts` carries no `notifications`/`monitor`/`wake`
+>    blocks (degrades via FE fallbacks by design — extend when e2e next grows) ·
+>    **F1 channel 3 (ntfy)** is the natural notifications continuation while Web Push sits parked.
 > *(Parked/declined stay parked: ROADMAP §P · I1 worktree deploy · I2 env credentials · E2 facade ·
 > A9 model indicator · vault/wiki spec.)*
 >
