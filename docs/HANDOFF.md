@@ -35,11 +35,18 @@
 > (`c67d7a2`) · the hosted-utils DOUBLE-MARGIN pair (nested confgroup + `.util` page inset — the
 > host owns the inline inset; `f172c0c`+`2fbddee`, owner-verified). Tests **1199→1254 BE /
 > 890→904 FE**; gate 6/6 on all 15 commits; dossiers R10–R13 banked + indexed.
-> **▶ NEXT SESSION:** 1. Check the push CI result (run 30629070586) if not yet confirmed. 2. Owner
-> exercises D2-A in daily use (set the phone IP in Conf → Server → "My device IPs", flip per-host
-> switches; the wake edge + host up/down Events observe-verified on dev only so far). 3. Release
-> when the owner wants D2-A live (runbook §Release; next tag = owner's call, v1.5.0 still RESERVED).
-> 4. Dev units were RUNNING at close — stop them if the owner is done
+> **✅ RELEASED + LIVE ON PROD as v1.4.6, same day** (runbook §Release via the ops agent; DB snapshot
+> `ctrlb-20260731-143659.db.gz`; schema stays 5, no config migration; rollback = `update.sh v1.4.4`).
+> **v1.4.5 BURNED** — its tag gate (the only e2e pipeline) went red on the a3 run-now sequencing
+> test flake (the arbiter releases AFTER the history row terminalizes — the 409 was the server being
+> right; same class as v1.4.3's); fixed `c33db18` (`_run_now_accepted` accept-when-idle, the 638ce7f
+> invariant-not-winner rule); never deployed, NOT a rollback target. **The owner's phone (h20,
+> `100.64.151.87`) is SET in prod `wake.presence_device_ips` via the settings API; every per-host
+> `wake_on_presence` switch is OFF — the owner enables machines themselves. v1.5.0 stays RESERVED
+> for the owner's next theme.**
+> **▶ NEXT SESSION:** 1. Owner exercises D2-A in daily use on prod (per-host switches in the machine
+> editor; watch for host up/down Events + the presence wake on a real arrival). 2. Dev units were
+> RUNNING at close — stop them if the owner is done
 > (`systemctl --user stop ctrl-b-dashboard-dev ctrl-b-dashboard-dev-web`).
 >
 > ## ▶ PREVIOUS STATE (2026-07-30 night — 🏁 **PHASE 14 / A3 COMPLETE and ✅ LIVE ON PROD as v1.4.4**)
