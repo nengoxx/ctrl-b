@@ -100,6 +100,29 @@ def _wait_terminal(c, automation_id: str, *, timeout_s: float = 10.0) -> dict:
     raise AssertionError(f"the run of {automation_id} never terminalized within {timeout_s}s")
 
 
+def _run_now_accepted(c, automation_id: str, *, timeout_s: float = 10.0) -> None:
+    """POST run-now until the runner actually ACCEPTS it (202) — for tests that sequence runs.
+
+    A 409 right after the previous run's history row turned terminal is legal, not a failure: the
+    detached task terminalizes the row inside `_execute`'s shielded finalizer but releases the
+    arbiter only in `_run_detached`'s `finally`, several awaits later — so "the newest row is
+    terminal" (all `_wait_terminal` can honestly observe from out here) is NOT "the runner is
+    idle". On a starved runner that window is real: it turned the v1.4.5 release gate red (pytest
+    beside the FE build and e2e on two cores) while the same sha passed everywhere else. Retrying
+    pins the PRODUCT invariant — refused while busy, accepted once released — instead of racing
+    the release (the `638ce7f` rule: pin the invariant, never the winner). Any status other than
+    202/409 is a real failure and asserts immediately.
+    """
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        r = c.post(f"/api/automations/{automation_id}/run-now")
+        if r.status_code == 202:
+            return
+        assert r.status_code == 409, r.text
+        time.sleep(0.02)
+    raise AssertionError(f"run-now for {automation_id} was still refused after {timeout_s}s")
+
+
 class _FakeSession:
     """The 14b session stand-in, re-used verbatim in shape: everything BELOW `_build_session` (reserve,
     the drain task, the terminal fold, the finalizer) stays the real machinery."""
@@ -512,7 +535,9 @@ def test_the_runs_listing_is_newest_first_and_honours_a_limit() -> None:
         a = _create(c)
         with _fake_sessions(_FakeSession()):
             for _ in range(3):
-                assert c.post(f"/api/automations/{a['id']}/run-now").status_code == 202
+                # `_run_now_accepted`, not a bare 202 assert: after `_wait_terminal` the arbiter can
+                # still be held for a few awaits (see the helper) — the v1.4.5 gate flake.
+                _run_now_accepted(c, a["id"])
                 _wait_terminal(c, a["id"])
 
         runs = c.get(f"/api/automations/{a['id']}/runs").json()
