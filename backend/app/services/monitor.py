@@ -364,12 +364,14 @@ class MonitorService:
         * **The cooldown is the presence one** (`wake.presence_cooldown_s`, per-host overridable via
           `wake_presence_cooldown_s`). A dashboard open is cheap and frequent; a fresh tailnet connect
           is rare and deliberate, so the two windows are different by design (D50).
-        * **Both cooldown maps are stamped, BEFORE the await** (D50 M3). The presence map is what
-          bounds this trigger; the shared D2-B map is stamped so that opening the dashboard seconds
-          after walking in — the overwhelmingly likely next thing the owner does — cannot write a
-          second wake Event for a host we just woke. Stamping first also means the stamp is committed
-          even if the invoke fails: this is a "we already tried" mark, not a success receipt, and
-          re-firing on the next tick is the failure mode it exists to prevent.
+        * **Both cooldown maps are CHECKED and stamped, before any await** (D50 M3, completed by the
+          15b verify round). The presence map bounds this trigger; the shared D2-B map is the
+          cross-trigger dedupe floor and needs BOTH halves: stamped, so a dashboard open seconds
+          after walking in cannot re-wake a host this pass woke — and read, so this pass cannot
+          re-wake a host D2-B stamped and is mid-way through waking (the reverse interleaving).
+          Stamping first also means the stamp is committed even if the invoke fails: this is a "we
+          already tried" mark, not a success receipt, and re-firing on the next tick is the failure
+          mode it exists to prevent.
         * **One bad host must not cost the others their wake**, so a failing invoke is logged and the
           fan-out continues (the fleet loop's `_record` rule, applied to actions).
         """
@@ -381,7 +383,13 @@ class MonitorService:
         if not self.cfg.enabled:
             return
         wake = self._settings.wake
-        shared = wake_on_connect.cooldowns(self._app)  # D2-B's map — stamped, never read here
+        # D2-B's map — READ and stamped (15b verify round): the stamp alone only covered the
+        # presence-first interleaving. Dashboard-first — D2-B stamps a host and parks at its invoke,
+        # THEN the presence edge lands — needs the read too, or this pass re-wakes the host D2-B is
+        # mid-way through waking. The window for the read is `cooldown_s` (the cross-trigger dedupe
+        # floor, per the D50 M3 design finding), not the presence window: the shared map means "an
+        # automatic wake tried recently", whichever trigger tried.
+        shared = wake_on_connect.cooldowns(self._app)
         online = self._fleet.cached_online_ids()  # cheap + probe-free; empty when the cache is cold
         now = time.monotonic()
         # TWO PHASES, deliberately (15b review, MED — reproduced): eligibility + BOTH stamps for the
@@ -406,6 +414,9 @@ class MonitorService:
             last = self._presence_marks.get(host.id)
             if last is not None and (now - last) < cooldown_s:
                 continue
+            shared_last = shared.get(host.id)
+            if shared_last is not None and (now - shared_last) < wake.cooldown_s:
+                continue  # the other trigger just tried this host — the dedupe floor covers us both
             self._presence_marks[host.id] = now
             shared[host.id] = now
             eligible.append(host.id)

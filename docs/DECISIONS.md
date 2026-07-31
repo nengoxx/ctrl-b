@@ -3762,11 +3762,18 @@ no jitter/backoff/queue) was endorsed as-is; the amendments close concrete false
   (cooldown stamps are RETAINED — they gate actions, not observations); re-enable re-baselines
   silently; every tick prunes state for removed targets and silently baselines additions; phone
   state keys on the normalized IP, never reused across different IPs.
-- **Cross-trigger wake dedupe (M3):** a presence fire stamps BOTH the existing shared 300 s
-  `wake_cooldowns` map AND its own presence map before awaiting, so a dashboard-open seconds after
-  a phone edge cannot write duplicate wake Events; D2-B is unchanged. Multi-device edges in one
-  tick coalesce into ONE host fan-out; the presence cooldown is per-HOST, shared across devices
-  (a per-device cooldown would reintroduce the duplicate).
+- **Cross-trigger wake dedupe (M3):** a presence fire **CHECKS and stamps** BOTH the existing
+  shared 300 s `wake_cooldowns` map AND its own presence map, in an awaitless reservation pass, so
+  neither interleaving can double-wake: the stamp covers presence-first (a dashboard-open seconds
+  after the edge), the READ covers dashboard-first (D2-B stamps a host and parks at its invoke,
+  then the edge lands); D2-B is unchanged. The shared map is the automatic-wake dedupe FLOOR across
+  both triggers — it bounds even a `wake_presence_cooldown_s: 0` host to one automatic wake per
+  `cooldown_s`, and only `cooldown_s: 0` removes it. Multi-device edges in one tick coalesce into
+  ONE host fan-out; the presence cooldown is per-HOST, shared across devices (a per-device cooldown
+  would reintroduce the duplicate). *(As first written this bullet said only "stamps" — the checks
+  half of the underlying review finding was dropped in condensation and the 15b build faithfully
+  implemented the incomplete text; the 15b verify round caught it. Recorded as a lesson: an
+  amendment that condenses a reviewer's fix must keep BOTH halves of a read-and-write rule.)*
 - **Config, final names + validation (M4/L1):** `monitor.poll_seconds: 30` (cross-field validated
   `>= server.poll_seconds` — a shorter interval would count one cached sweep as several
   "consecutive checks"), `monitor.down_after_checks: 3`, `monitor.up_after_checks: 2`;

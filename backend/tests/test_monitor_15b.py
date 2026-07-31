@@ -20,6 +20,7 @@ socket), and elapsed time is simulated by REWINDING a cooldown stamp rather than
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -168,12 +169,15 @@ def test_a_second_arrival_inside_the_cooldown_fires_nothing() -> None:
     """A tailnet that flaps (the phone toggling wifi) must not re-wake per reconnect. Elapsed time is
     simulated by rewinding the STAMP — no sleep, no monkeypatched clock: the same arithmetic the
     service does, driven from the only value it reads."""
-    svc, actions, _ = _service([_h("alpha")], presence_cooldown_s=3600)
+    svc, actions, app = _service([_h("alpha")], presence_cooldown_s=3600)
     _arrive(svc)
     _arrive(svc)
     assert actions.woken == ["alpha"]  # the second arrival was inside the window
 
-    svc._presence_marks["alpha"] -= 3601  # …and once the window has passed it wakes again
+    # …and once the window has passed it wakes again. Real elapsed time advances past BOTH stamps —
+    # the presence window and the shared cross-trigger floor — so the rewind moves both.
+    svc._presence_marks["alpha"] -= 3601
+    wake_on_connect.cooldowns(app)["alpha"] -= 3601
     _arrive(svc)
     assert actions.woken == ["alpha", "alpha"]
 
@@ -181,11 +185,17 @@ def test_a_second_arrival_inside_the_cooldown_fires_nothing() -> None:
 def test_the_per_host_cooldown_override_wins_in_both_directions() -> None:
     """`wake_presence_cooldown_s` is per-host precisely because the global is a compromise: a machine
     that costs nothing to wake can have a short window, a heavy one a long window. `None` ⇒ the global,
-    and the override must be able to make it BOTH shorter and longer than that."""
+    and the override must be able to make it BOTH shorter and longer than that.
+
+    `cooldown_s=0` here disables the SHARED cross-trigger floor by its own documented meaning ("every
+    connect may wake") — otherwise its 300 s dedupe would mask exactly the per-host semantics under
+    test. With the floor live, even a `wake_presence_cooldown_s: 0` host re-wakes no more than once
+    per 300 s across both triggers — that interaction has its own test below."""
     # A long global: only the host that overrode it to 0 wakes again immediately.
     svc, actions, _ = _service(
         [_h("quick", cooldown=0), _h("slow")],
         presence_cooldown_s=3600,
+        cooldown_s=0,
     )
     _arrive(svc)
     _arrive(svc)
@@ -195,10 +205,22 @@ def test_the_per_host_cooldown_override_wins_in_both_directions() -> None:
     svc2, actions2, _ = _service(
         [_h("guarded", cooldown=3600), _h("free")],
         presence_cooldown_s=0,
+        cooldown_s=0,
     )
     _arrive(svc2)
     _arrive(svc2)
     assert actions2.woken == ["guarded", "free", "free"]
+
+
+def test_the_shared_floor_bounds_even_a_zero_override() -> None:
+    """The 15b verify-round read, as PRODUCT behavior: the shared map is an automatic-wake dedupe
+    floor across BOTH triggers, so a host that set its presence cooldown to 0 still re-wakes at most
+    once per `wake.cooldown_s`. Only the floor's own knob (`cooldown_s: 0`) removes it — the test
+    above does exactly that, which is why the two exist as a pair."""
+    svc, actions, _ = _service([_h("quick", cooldown=0)], presence_cooldown_s=3600)
+    _arrive(svc)
+    _arrive(svc)  # inside the 300 s floor — suppressed despite the per-host 0
+    assert actions.woken == ["quick"]
 
 
 # ── 2. dedupe ───────────────────────────────────────────────────────────────────────────────────
@@ -232,7 +254,6 @@ def test_a_dashboard_connect_landing_mid_fan_out_cannot_double_wake() -> None:
     invoke's await, every eligible host is stamped in BOTH maps, so the interleaved real
     `wake_flagged_hosts` finds nothing to do. Deterministic: the block is an explicit event inside
     the fake invoke, released by the test — no sleeps, no clock."""
-    import asyncio
 
     class _Blocking(_FakeActions):
         def __init__(self) -> None:
@@ -257,10 +278,60 @@ def test_a_dashboard_connect_landing_mid_fan_out_cannot_double_wake() -> None:
         with _scripted_presence(["offline", "online"]):
             await svc.tick()  # arms
             fan_out = asyncio.create_task(svc.tick())  # the edge — blocks inside invoke #1
-            await blocking.entered.wait()  # the fan-out is provably mid-flight
+            # Bounded rendezvous (verify round, LOW): if a regression makes the fan-out invoke
+            # NOTHING, `entered` never sets — racing it against the task turns that hang into a
+            # visible assertion failure instead.
+            await asyncio.wait(
+                [asyncio.ensure_future(blocking.entered.wait()), fan_out],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            assert blocking.entered.is_set(), "the fan-out finished without ever invoking"
             await wake_on_connect.wake_flagged_hosts(app)  # the interleaved dashboard connect
             blocking.gate.set()
             await fan_out
+
+    run_async(scenario())
+    assert sorted(blocking.woken) == ["alpha", "beta"]  # each host exactly once, whoever fired it
+
+
+def test_a_presence_edge_landing_mid_dashboard_fan_out_cannot_double_wake_either() -> None:
+    """The REVERSE interleaving (15b verify round — reproduced upstream as ["alpha","alpha","beta"]):
+    D2-B stamps a host and parks at its invoke, THEN the presence edge lands. The stamp alone could
+    not cover this order — the presence reservation must also READ the shared map (within the
+    `cooldown_s` dedupe floor) or it re-wakes the host D2-B is mid-way through waking. D2-B's own
+    per-host stamps-before-await then keeps it off the hosts presence reserved meanwhile."""
+
+    class _Blocking(_FakeActions):
+        def __init__(self) -> None:
+            super().__init__()
+            self.gate = asyncio.Event()
+            self.entered = asyncio.Event()
+
+        async def invoke(self, name, raw_args, **kw):
+            out = await super().invoke(name, raw_args, **kw)
+            if len(self.calls) == 1:
+                self.entered.set()
+                await self.gate.wait()
+            return out
+
+    hosts = [_h("alpha", on_connect=True), _h("beta", on_connect=True)]
+    svc, _actions, app = _service(hosts)
+    blocking = _Blocking()
+    svc._actions = blocking  # type: ignore[assignment]
+    app.state.actions = blocking
+
+    async def scenario() -> None:
+        with _scripted_presence(["offline", "online"]):
+            await svc.tick()  # arms — no edge yet, so nothing invoked
+            dashboard = asyncio.create_task(wake_on_connect.wake_flagged_hosts(app))
+            await asyncio.wait(
+                [asyncio.ensure_future(blocking.entered.wait()), dashboard],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            assert blocking.entered.is_set(), "the dashboard fan-out finished without invoking"
+            await svc.tick()  # the presence edge lands while D2-B is parked at alpha's invoke
+            blocking.gate.set()
+            await dashboard
 
     run_async(scenario())
     assert sorted(blocking.woken) == ["alpha", "beta"]  # each host exactly once, whoever fired it
