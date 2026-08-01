@@ -2,10 +2,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// Theme-engine CSS entry (Phase 11 / D28; layering as-built = §14.6). Loads vapor.css + extras.css
-// at `layer(theme)` under vapor's `@scope` — and since D51 they are being ASSIMILATED slice by slice
-// (keyframes prefixed V1, the accent axis shared V2, …), no longer a frozen verbatim lift. §9.6's
-// original "@layer frozen, untouched" wording is historical.
+// Theme-engine CSS entry (Phase 11 / D28; layering as-built = §14.6). Loads the kit sheets plus vapor's
+// tokens.css/vapor.css/extras.css at `layer(theme)` under vapor's `@scope`. D51 ASSIMILATED vapor onto the
+// kit (V0–V6, complete 2026-08-02): the two big sheets are the Fleet residue now, not a frozen verbatim
+// lift, and §9.6's original "@layer frozen, untouched" wording is historical.
 import "./themes/vapor/vapor-fonts.css"; // self-hosted JetBrains Mono + Major Mono Display (vapor is eager)
 import "./theme/index.css";
 import App from "./App";

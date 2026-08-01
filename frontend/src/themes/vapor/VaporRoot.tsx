@@ -11,8 +11,10 @@ import type { Skyline } from "./index";
 // **DefaultRoot**, which now owns every piece of shell plumbing VaporRoot used to hand-roll — the `.kit`
 // dvh flex column, the scroller (`#app-scroll`) + its scroll-reset/group-scroll handoff + scrollKeep, the
 // keep-mounted `active`-gated section bodies, the lazy-Conf latch with its ErrorBoundary/Suspense fallbacks,
-// the `--appbar-h`/`--composer-h` measurements, the Conf-chunk prefetch, the four-tab coercion, and the
-// overlays (MiniPlayer/Toasts/Confirm/Prompt/SwUpdate). This file is what stays VAPOR:
+// the `--appbar-h`/`--composer-h` measurements, the Conf-chunk prefetch, the SECTION LAYOUT partition
+// (bar/menu/hosted + the hosted-section boot coercion — vapor honors all three presets since D51 V6
+// retired its `layouts:["4-tab"]` waiver; nothing coerces a layout any more), and the overlays
+// (MiniPlayer/Toasts/Confirm/Prompt/SwUpdate). This file is what stays VAPOR:
 //
 //   • the Root-pinned **FleetTab** — vapor's bespoke Fleet (hero, skyline, waveform, device rows) is
 //     bespoke-by-right under D31/§1.1 (owner §5 Q2: "Fleet stays as-is"), injected through DefaultRoot's

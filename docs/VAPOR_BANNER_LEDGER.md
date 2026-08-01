@@ -1,10 +1,13 @@
 # The vapor CSS banner ledger — the classified deletion inventory (D51 · Phase 16)
 
-> **Status: FROZEN at slice V3, 2026-08-01 · EXECUTED at slice V5, 2026-08-01.** The ladder has run:
-> every `port-owned:V5` and `kit-duplicate` row below is deleted, `extras.css` is **2981 → 205 ln** and
-> `vapor.css` **1023 → 702 ln**. What is left in extras.css is EXACTLY the six frozen `vapor-keeps`
-> banners (§5) plus the un-bannered keeps-adjacent plan-pin fidelity block (row 15's carve-out) — i.e.
-> **V6's equality target is already met**; V6 only has to flip the assertion and close the tail.
+> **Status: ✅ CLOSED 2026-08-02 (slice V6) — MAINTENANCE MODE.** Frozen at V3, executed at V5, closed at
+> V6. Every `port-owned:V5` and `kit-duplicate` row below is deleted; across the phase (V3 baseline → V6)
+> `extras.css` went **3028 → 204 ln** and `vapor.css` **1178 → 692 ln**. What is left in extras.css is EXACTLY the six frozen `vapor-keeps`
+> banners (§5) plus the un-bannered keeps-adjacent plan-pin fidelity block (row 15's carve-out), and
+> `vaporAssimilation.test.ts` now asserts that set by **EQUALITY**, not shrink-only.
+> **This ledger is no longer a work queue — it is the record + the fence.** Nothing here is left to
+> execute; the only live obligations are (a) don't delete a `vapor-keeps` row, (b) don't ADD a banner
+> (that needs a D51-successor ruling, not a ledger tick). Close-out record: **§8**.
 > Produced by [`VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md)
 > §3 **V3** (council findings R4 · R21), under [`DECISIONS.md`](./DECISIONS.md) **D51**. On conflict:
 > **D51 wins**, then the plan, then this ledger.
@@ -14,10 +17,12 @@
 > (the drift vector R21 names). Every `/* ── … ── */` banner in `frontend/src/themes/vapor/extras.css`
 > and every major section of `vapor.css` is bucketed here **once**.
 >
-> **Enforced, not just written:** `frontend/tests/theme-engine/vaporAssimilation.test.ts` mirrors the
-> extras.css banner set (shrink-only ratchet), pins the frozen **vapor-keeps** subset so no port can
-> delete it, and fails loudly with the instructions for whoever is deleting. V6 flips the last assertion
-> to *equality* — extras.css's residue must EQUAL the vapor-keeps list.
+> **Enforced, not just written:** `frontend/tests/theme-engine/vaporAssimilation.test.ts` held the
+> extras.css banner set to a shrink-only ratchet through V3–V5 and pinned the frozen **vapor-keeps**
+> subset so no port could delete it. ✅ **At V6 it flipped to EQUALITY** — the residue must BE the
+> vapor-keeps list — and gained the two source pins for the end state (VaporRoot renders `DefaultRoot`;
+> `components/{AppBar,Composer,TabBar}` are deleted AND unreferenced). The third leg,
+> `CONTRACT_WAIVERS === {}`, is asserted in `themeContract.test.ts`.
 
 ## Buckets
 
@@ -92,7 +97,8 @@ The drop was DELIBERATELY left on the kit's anchoring (`left:0; right:0`, panel-
 **Sub-block carve-outs** (a banner whose bucket differs for part of its body — 4): row 12's `.conn-badge` (V4 appbar) · row 13's L638–677 app-shell box model (V4) · row 15's `.plan-pin-wrap` :1034 (V4) · **row 15's KEPT-FIDELITY carve-out (V4 close-out): the `.plan-pin-panel` geometry override + the `.plan-pin-head`/`.chev`/`.plan-title`/`.plan-count` paint survive V5+V6 (vapor's centered flush hanging-tab on kit markup — see the row).** Plus row 4's `::-webkit-scrollbar*` tail (keeps).
 **Genuine kit gaps: 2** (rows 24, 36 — see §4) **+ 1 found while executing** (`.conf-foot a`, §4).
 
-**AS OF V5 (2026-08-01): 39 → 6 banners in the file (2981 → 205 ln).** All 31 `port-owned:V5` rows and
+**AS OF V5 (2026-08-01): 39 → 6 banners in the file (2981 → 204 ln — this slice's own delta; the
+phase total is 3028 → 204).** All 31 `port-owned:V5` rows and
 both remaining `kit-duplicate` rows (4, 31) deleted; row 15 deleted except its keeps-adjacent fidelity
 carve-out (which carries no `──` banner, so the banner key went with the rest). Live buckets left:
 `vapor-keeps` **6** — the frozen §5 list, nothing else. Seven `@keyframes` went with their last consumer:
@@ -301,3 +307,61 @@ position (~34px), so the panel rests lower than the rule assumes. It is kit geom
 `top` + the 46px constant), it affects every kit theme identically, and V5 strictly IMPROVED vapor's case
 (before, the player sat at +10px, i.e. fully over the tab). Fixing it means re-deriving the clearance from
 the panel's real box — an independent kit-chrome slice with its own eyeball, NOT a deletion-ladder change.
+
+## 8. Close-out (V6, 2026-08-02) — what the machinery actually bought
+
+**The arithmetic** (V3 baseline → V6, the PHASE total; V5's own slice delta is −2911, see the plan's V5
+as-built). `extras.css` **41 → 6 banners** (3028 → **204** ln) · `vapor.css` **1178 → 692 ln** ·
+`kit.css` **5107 → 5304 ln** (three genuine gaps filled: VPN-discovery, the approvals editor, `.conf-foot a`)
+· net **−3113 CSS lines**, and `components/{AppBar,Composer,TabBar}.tsx` + `AgentTab`'s `PinnedPlan` deleted
+outright. The six survivors are the frozen `vapor-keeps` list (§5) — the Root-pinned VaporFleet's decoration
+— plus the un-bannered plan-pin fidelity block. Every ladder waiver retired: `keyframe-prefix` (V1) ·
+`accent-axis` (V2) · `semantic-tokens` (V3) · `kit-structure` (V4) · the `layouts:["4-tab"]` section waiver
+(V6). `CONTRACT_WAIVERS` is `{}`.
+
+**The three REFUSALS — the ledger's real value.** A classification made *before* deleting is only useful if
+it is allowed to be wrong out loud, and three times it was:
+
+1. **Row 31 (wide-control wrap), V4 phase 2.** Correctly bucketed `kit-duplicate` — and still not safe to
+   delete, because the kit's twin sits in `@layer base` UNDER a *surviving* vapor rule in `@layer theme`
+   (`.confrow .k { min-width: 0 }`). Measured: deleting it alone dropped the computed `min-width` from
+   `min(140px, 45%)` to `0px`, resurrecting the v1.4.x label crush. Moved to V5 and deleted with its
+   partner. → **`kit-duplicate` means the kit IMPLEMENTS it, never on its own that the kit will WIN it.**
+2. **Row 15 (plan panel), V4 device round.** Bucketed "delete it all at V5". The owner rejected the pinned
+   plan's geometry, and the offending geometry turned out to be **the KIT'S own** — so the planned deletion
+   would have made it worse, not better. The row SPLIT: the fidelity rules became keeps-adjacent theme CSS
+   on shared kit hooks (the §15 route), only the dead selectors died. → **A bucket is a claim about the
+   REPLACEMENT; verify the replacement, don't infer it from the bucket.**
+3. **§3.1 #2 (the page-scroll reset), V4 phase 2.** Marked `port-owned:V4` on the assumption DefaultRoot
+   supersedes it — but nothing in the kit resets html/body overflow. Settled by MEASUREMENT instead:
+   cosmos/frontier carry no such rule and still cannot window-scroll (`.kit` is one viewport tall and clips
+   itself), so vapor's containment was deleted rather than re-homed, and vapor now measures identically.
+
+**The lessons worth carrying past this ledger.**
+- **A ratchet you can edit in the same commit as the violation is not a ratchet.** The V3 build shipped a
+  hand-maintained mirror list; Codex (R28) pointed out a deleter could "fix" a rename by editing the mirror.
+  Replaced with an IMMUTABLE baseline + subset assertions. It earned its keep on its first live run: the
+  tombstone comments were drafted opening with `/* ── `, which reads as three ADDED banners, and the test
+  refused them.
+- **A class-name lookup does not cover descendant/element selectors.** The classification method extracted
+  CLASS names and looked them up in kit.css — which is why `.conf-foot a` (UA-blue on every kit theme,
+  already) was invisible to it. Diff the full innermost SELECTOR sets, not the class sets.
+- **Deleting a duplicate can change a state that looked untouched**, because layers win PER PROPERTY. The
+  mini-player's three defeated `:has()` repositioners were a real, reachable bug (in `minimal` chrome both
+  its controls were buried) that the V5 deletion FIXED — the deletion was the functional fix, not a risk to
+  it. Always ask: *what does the kit rule underneath set that the theme does not?*
+- **Port and delete in separate commits** (V4 `873f85c` → `9b7fcfd`) so a failed eyeball reverts the delete
+  alone — and **retarget the tests at the port**, or the pins keep covering the corpse (Codex's V4 finding:
+  `composerSteer.test.tsx` still aimed at the bespoke Composer; retargeting it at SheetComposer passed all
+  three cases unchanged, which is also how we proved there was no port gap).
+
+**One finding left open, deliberately** (not a V5/V6 regression): in `appbarMode: minimal` the pinned-plan
+header and the mini-player overlap on EVERY kit theme (cosmos −26px · frontier −24px · vapor −17px). It is
+kit geometry — a fixed `--appbar-h + 46px` clearance calibrated for the panel's `--appbar-h + 8px` rest
+position — and needs its own kit-chrome slice with its own eyeball. Full record: §7.1.
+
+**One dead rule swept at V6**: `vapor.css`'s `.dev .kvgrid .v.os-win::before` had matched nothing since the
+class went dynamic (`os-${host.os_type}`, and `OSType` is `windows|linux|macos`) — fixed to `.os-windows`,
+so the ⊞ glyph is back on Windows hosts. Also deleted: `--vapor-glow-filter-soft` (3 palette declarations,
+its last consumer died at V5). Still declared but unread: `--red`, kept as the raw palette's named literal
+red — the sanctioned always-red escape hatch R26 documents in `tokens.css`.

@@ -1,8 +1,15 @@
 // The vapor theme module (Phase 11 v2 / D29). vapor is a normal theme now (no longer "frozen +
 // separate") — it owns its whole presentation via `VaporRoot`. It is NO LONGER the default (D51 V0 handed
 // that to cosmos), but it is still the one EAGER theme: its CSS is statically imported (theme/index.css,
-// §14.6) so `loadStyles` is a no-op, and its fonts come from main.tsx. (The lazy flip is D51's V6.) Palette = the named accents (dark/aqua/
-// ember) on the SHARED `body[data-accent]` axis (D51 V2); no `mode` axis (vapor is dark-only).
+// §14.6) so `loadStyles` is a no-op, and its fonts come from main.tsx. **The lazy flip was DROPPED at
+// D51 V6, on measurement, not preference:** vapor's whole eager slice (tokens+vapor+extras+the 10
+// @font-face blocks) is 26.5 KB raw / **5.3 KB gzipped** of the built entry CSS after V5's deletions, and
+// the woff2 files are already usage-lazy (a browser fetches a face only when text needs it). Codex #3's
+// preconditions — an internal @layer wrap, a font loader that awaits faces, a first-paint test on the
+// persisted-vapor path — are real NEW MECHANISM for that; "no legacy seams / no mechanism for trivial
+// bytes" wins, and vapor is the owner's daily driver, i.e. the path the flip would make SLOWER.
+// Palette = the named accents (dark/aqua/ember) on the SHARED `body[data-accent]` axis (D51 V2); no
+// `mode` axis (vapor is dark-only).
 
 import { composerSkinSetting, outlinesSetting } from "../../theme-engine/kit/axes";
 import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/placement";
@@ -28,16 +35,18 @@ export const vapor: ThemeDef = {
     ],
     defaultAccent: "dark",
   },
-  // Section-layout capability (D35 §F0): vapor waivers to its native 4-tab set ONLY — a visible,
-  // ladder-owned waiver (assimilation ladder, THEME_ENGINE §14.15.3).
-  // D51 V4 (R22) UPDATE: the old rationale ("VaporRoot is bespoke and never consumes the section registry")
-  // is FALSE since the DefaultRoot pivot — vapor consumes the shared registry/presets like every kit theme,
-  // so nothing STRUCTURAL forces four tabs any more. The waiver is now plain FORCED COERCION (a 3-/2-tab
-  // pick bounces back to 4-tab) held until its V6 re-exam, which retires it only once real 2-/3-tab
-  // navigation tests replace the forced-four-tab assertions (Codex #11). Do not widen it here.
+  // Section-layout capability (D35 §F0). The `layouts: ["4-tab"]` WAIVER IS RETIRED (D51 V6, R13/Codex #11):
+  // vapor declares no `layouts` field at all, so — like cosmos and frontier — ALL presets stay on offer (the
+  // D35 ideal, "themes default, never restrict"). Nothing vapor-specific ever needed the restriction once the
+  // V4 pivot put it on DefaultRoot: `fleet` is on the bar in every preset, so the Root-pinned FleetTab body
+  // override is preset-independent, and the one hosted pair (utils→conf) lands in the SHARED ConfTab body,
+  // whose vapor CSS died at V5. `defaultLayout` stays `4-tab` (vapor's native shape, and the value the
+  // e2e contrast matrix's `bar` is drift-guarded against); 3-/2-tab are real, tested picks now
+  // (tests/hooks/useSections.test.ts + e2e/layout.spec.ts drive vapor through both).
   defaultLayout: "4-tab",
-  layouts: ["4-tab"],
-  loadStyles: () => Promise.resolve(), // vapor.css is eager (static import in main.tsx), already loaded
+  // Eager by RULING (D51 V6 — the lazy flip measured + dropped, see the header): the three sheets are
+  // static @imports in theme/index.css, so there is nothing for switchTheme to load.
+  loadStyles: () => Promise.resolve(),
   // Per-theme settings (§14.3) — auto-rendered in the Appearance picker, between the global Palette and the
   // global Motion/Blur levers. Two groups:
   //

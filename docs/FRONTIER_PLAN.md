@@ -234,9 +234,12 @@ placement varies.** The plan-pill (D30 slots) is the one-level-down precedent.
    supported set; unsupported picks coerce to nearest supported via a **dedicated layout-coercion
    resolver keyed on the ThemeDef declaration** (warn-first) — this is NOT hardening item ⑦'s
    `resolveThemeSetting`, which only guards per-theme seg/switch settings. Ideal held: **all
-   themes can offer all modes**; frontier merely *defaults* to 3-tab, vapor to 4 (vapor waivers to
+   themes can offer all modes**; frontier merely *defaults* to 3-tab, vapor to 4 ~~(vapor waivers to
    its native set while frozen — ladder-owned; VaporRoot never consumes the registry, so its
-   byte-identity under F0 is structural, not incidental).
+   byte-identity under F0 is structural, not incidental)~~. **HISTORICAL as of D51 V6 (2026-08-02):**
+   the waiver retired and its rationale is now false — VaporRoot renders `DefaultRoot`, so vapor
+   consumes the registry/presets like every kit theme and offers all three. The ideal holds with **no
+   exception**: no registered theme restricts `layouts`.
 
 **Edges the spec must own:** keep-mounted state per module across relocation (utils keeps state
 when it moves between own-section and Conf-group) · active-id space in hosted mode (deep-link
@@ -344,8 +347,10 @@ declaration · the generalized menu-affordance rule (off-bar ⇒ menu) · the ut
 slice rewrites):* the `useComposerLayout()` read (also a `--composer-h` effect dep), the
 `usePlanPlacement()`→`composerAddons` inline-plan composition, and the `ThemedComposer layout={…}`
 render — see COMPOSER_SURFACE_PLAN §0 (as-built) + THEME_ENGINE §14.15.4's constraint list.
-*Acceptance:* all existing themes render byte-identical in `4-tab`/`auto` (vapor structurally
-untouched — its Root never consumes the registry); 3-tab relocates utils into Conf — **query-backed
+*Acceptance:* all existing themes render byte-identical in `4-tab`/`auto` (~~vapor structurally
+untouched — its Root never consumes the registry~~ — **HISTORICAL as of D51 V6:** vapor's Root is
+`DefaultRoot` now and it consumes the registry, so its 4-tab render is the shared partition's, not a
+bypass); 3-tab relocates utils into Conf — **query-backed
 data survives (external caches); local input state (typed args, in-flight results) legitimately
 resets**, since relocation is a rare, user-initiated layout switch and React remounts on
 tree-position change (no portal machinery for it — honest trade, adversarial review 2026-07-07);

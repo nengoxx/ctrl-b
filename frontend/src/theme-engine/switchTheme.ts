@@ -56,9 +56,11 @@ export class ThemeLoadError extends Error {
   }
 }
 
-/** Ensure the theme's CSS bundle + fonts are loaded & applied. vapor is always-loaded (layer frozen)
- *  + index.html fonts → resolves immediately. Must complete BEFORE the flushSync so the snapshot
- *  captures the styled frame (§9.12). */
+/** Ensure the theme's CSS bundle + fonts are loaded & applied. vapor is always-loaded — its three sheets
+ *  are static `@import`s in `theme/index.css` at `layer(theme)` (the old `layer(frozen)` is long gone) and
+ *  its fonts are a static `import` in main.tsx (never index.html) — so its `loadStyles` resolves
+ *  immediately, permanently, by the D51 V6 measurement ruling. Must complete BEFORE the flushSync so the
+ *  snapshot captures the styled frame (§9.12). */
 export function ensureThemeLoaded(id: ThemeId): Promise<void> {
   let p = loaded.get(id);
   if (!p) {

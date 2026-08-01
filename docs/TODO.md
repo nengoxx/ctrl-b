@@ -1287,22 +1287,41 @@ Codex round → owner pause.
       (new `tests/tabs/confMonitor.test.tsx` + the 422-surface case in `useSaveSettings.test.ts`);
       backend 1254 unchanged; gate 6/6. **PHASE 15 COMPLETE.**
 
-## Phase 16 — Vapor assimilation: COMPLETE migration onto the kit + cosmos default — **plan DRAFTED 2026-07-31 · spec = [`VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md) (build against it once LOCKED, not this list) · design NOT yet locked**
+## Phase 16 — Vapor assimilation: COMPLETE migration onto the kit + cosmos default — ✅ **COMPLETE 2026-08-02** (D51 · spec = [`VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md), which holds the per-slice as-built records)
 
 Owner rulings 2026-07-31: vapor migrates COMPLETELY (port each component onto the kit, extend the
 kit where vapor's look demands it — brand-lozenge AppBar slot, sheet composer, chat via the D31
 3-gate/ChatSurface if needed — then DELETE the legacy piece), and **cosmos becomes `DEFAULT_THEME`**
-(the new V0 slice). Amends THEME_ENGINE §14.15.3's end-state bar; the ladder V0→V5 + verified
-touchpoints + open questions live in the plan.
+(the new V0 slice). Locked as **D51** 2026-08-01 after a council round; the ladder was re-cut V0→V6
+(the V4 DefaultRoot pivot replaced the per-component chrome ports, and ChatSurface was STRUCK — the
+chat already renders one shared DOM). Amends THEME_ENGINE §14.15.3's end-state bar, whose banner now
+reads ✅ DONE.
 
-- [ ] **Pre-lock:** owner device round over vapor (the §5 port-vs-switch list, esp. the Agent tab)
-      → council round on the plan → D-entry lock in DECISIONS.md.
-- [ ] **V0** cosmos default + eager-CSS rework (fresh boots + heal target; persisted choices untouched).
-- [ ] **V1** file/keyframe hygiene (`theme/` → `themes/vapor/`, `vapor-*` prefixes, allowlist shrink).
-- [ ] **V2** accent axis — ONE atomic commit, five touchpoints (refs re-verified 2026-07-31).
-- [ ] **V3** semantic-token mapping (+ Waveform read re-point).
-- [ ] **V4** per-component graduation, LOW-divergence first; each port deletes its legacy block.
-- [ ] **V5** the deletion sweep — parallel chrome dies; B2 vapor waiver list hits `[]`.
+**End state:** vapor renders `<DefaultRoot/>` over `themes/vapor/tokens.css` + a Root-pinned bespoke
+VaporFleet. Phase total (V3 baseline → V6): `extras.css` **3028 → 204 ln** (41 → **6** banners = the
+frozen `vapor-keeps` list, now asserted by EQUALITY) · `vapor.css` **1178 → 692 ln** · `kit.css`
+**5107 → 5304 ln** (three real gaps filled) · net **−3113 CSS lines** · `CONTRACT_WAIVERS` `{}` ·
+every ladder waiver retired.
+
+- [x] **Pre-lock:** owner device round over vapor (the §5 port-vs-switch list, esp. the Agent tab)
+      → council round on the plan → D-entry lock in DECISIONS.md. *(2026-08-01: §5 answered + code-verified;
+      Codex + Opus lenses, both LOCK WITH CHANGES, reconciled as R1–R30; D51 locked.)*
+- [x] **V0** cosmos becomes `DEFAULT_THEME` — the flip only, incl. the documented default-mirror allowlist
+      (`381250b`).
+- [x] **V1** file/component/keyframe hygiene (`theme/` → `themes/vapor/`, vapor-only components moved,
+      20 keyframes prefixed `vapor-`, stylelint override retargeted) (`9c9d718`).
+- [x] **V2** accent axis `data-theme` → the shared `data-accent`, ONE atomic commit + the second-pass sweep
+      (`5f70a16`, `930a5e7`, `239449f`).
+- [x] **V3** semantic-token mapping (`themes/vapor/tokens.css`) + **the banner ledger + the shrink-only
+      ratchet** (+ Waveform read re-point) (`7668a1d`).
+- [x] **V4** THE PIVOT — VaporRoot → DefaultRoot hosting (port `873f85c` → delete `9b7fcfd` → the
+      plan-pin fidelity wave + sweep `16d4412`); `components/{AppBar,Composer,TabBar}` + `PinnedPlan`
+      deleted; the `kit-structure` waiver retired here (R25).
+- [x] **V5** the deletion ladder — the iceberg melts (`3456c03`): all 31 `port-owned:V5` rows + both
+      remaining `kit-duplicate` rows deleted, three kit gaps filled first.
+- [x] **V6** THE TAIL *(this slice)* — the end state ENFORCED (banner EQUALITY + the R22 source pins +
+      `CONTRACT_WAIVERS === {}`), the `layouts:["4-tab"]` **section waiver RETIRED** with real 2-/3-tab
+      navigation+hosting tests, the **lazy flip measured (5.3 KiB gz) and DROPPED**, ledgers + docs closed.
 
 ## Cross-cutting / don't-forget
 

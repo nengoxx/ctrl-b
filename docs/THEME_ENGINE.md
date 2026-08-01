@@ -826,8 +826,9 @@ struck; the remaining rows stay live contract until their D51 ledger slice.)* Or
 vapor.css gated its aqua/ember palettes on bare `[data-theme="aqua"|"ember"]`, so overloading
 `data-theme` with the ThemeId would silently kill 2 of vapor's 3 palettes — hence the ThemeId on a
 new dedicated skin attribute (as built: `html[data-skin]`, on `<html>`).
-**vapor's frozen attribute contract** (rows retire per the D51 ledger — plan §3.1; CSS refs live in
-`themes/vapor/` since V1):
+**vapor's attribute contract — ✅ CLOSED at D51 V6 (2026-08-02)**; every row has reached its final state
+(plan §3.1). What is left is not "frozen", it is vapor's two live axes: `data-skyline` (Fleet decoration,
+Root-written) and the two SHARED axes it never owned. CSS refs live in `themes/vapor/` since V1:
 
 | Attribute | Element | Used for | Status |
 |---|---|---|---|
@@ -1017,34 +1018,33 @@ never leaks into vapor — **follow it for every future theme:**
 2. `themes/<id>/index.tsx` — a `ThemeDef`: `Root` = a thin wrapper that reads its settings and renders `<DefaultRoot hideAppbar=… />` (STRUCTURAL settings → `DefaultRoot` props; COSMETIC settings → a `body[data-*]` attr its `tokens.css` scopes, e.g. minimal's `data-density`); `palettes`; `loadStyles: () => import("./tokens.css")`; optional `loadFonts` (Fontsource, awaited via `document.fonts.load`); optional `settings`; optional `present` (spatial themes only).
 3. Register it in `theme-engine/registry.ts`. The Conf Appearance picker auto-renders its modes/accents/settings; `ThemeProvider` loads its lazy CSS/fonts on activation (and on cold-load if it's the persisted theme). Its Fleet view is the one surface it composes itself (from Kit `device-row`/`NowMonitoring` pieces); everything else is the shared Kit chrome + editors, skinned entirely by its tokens.
 
-> **⚠️ The two-CSS-trees invariant — ✏️ AMENDED at D51 V4 (2026-08-01); it now bites HARDER, not less.**
+> **⚠️ The two-CSS-trees invariant — ✅ CLOSED at D51 V6 (2026-08-02). What is left is the LAW OF
+> CO-APPLICATION, which is permanent and applies to every theme.**
 > *Original (2026-07-06, D34):* the SHARED components — `tabs/AgentTab` (the whole chat), the Conf editors,
-> the shared overlays — are styled by two INDEPENDENT trees, the Kit's (`kit/kit.css`, under `.kit`) and
+> the shared overlays — were styled by two INDEPENDENT trees, the Kit's (`kit/kit.css`, under `.kit`) and
 > vapor's (`themes/vapor/{vapor,extras}.css`, under `[data-skin=vapor]`), only one of which could ever match
-> — so a markup/class change had to update both, and a missed tree left an unstyled-but-live element.
-> *Since the V4 pivot the two trees are no longer mutually exclusive: **they CO-APPLY**.* vapor renders
-> `.kit`, so kit.css matches its DOM and vapor's sheet layers OVER it (`@layer base` < `@layer theme`).
-> The consequences to hold in your head until the V5 ladder finishes deleting vapor's shared-component CSS:
-> - **A cascade layer wins PER PROPERTY, not per rule.** Where the two sheets style the same element with
+> — so a markup/class change had to update BOTH, and a missed tree left an unstyled-but-live element.
+> **That duplicate tree no longer exists.** The V4 pivot put vapor inside `.kit` (so the sheets began to
+> co-apply) and V5 deleted vapor's copy of every shared surface; at V6 vapor's residual CSS styles its own
+> bespoke Fleet DOM plus a short, deliberate list of SHARED kit hooks (the `brandMark` lozenge, the
+> plan-pin panel's geometry/paint, page chrome/scrollbars) — the §15 reskin route, not a duplicate.
+> **A shared component's markup/class change now updates ONE tree, the kit's.**
+>
+> What survives as standing guidance, because it governs any theme that overrides a kit rule:
+> - **A cascade layer wins PER PROPERTY, not per rule.** Where two sheets style the same element with
 >   DIFFERENT properties, both apply. The V4 build hit exactly this: kit.css slides the `.switch` knob with
 >   `transform: translateX(20px)` while vapor.css slid it with `left: 22px` — vapor won `left`, the kit's
 >   `transform` still applied, and the knob moved TWICE, landing outside its 42px track on every Conf
->   toggle. Fixed by adopting one recipe (vapor now uses the transform too). **When you delete or edit a
->   vapor rule, check what the kit rule underneath it sets that vapor does NOT.**
+>   toggle. Fixed by adopting one recipe. **When you add, edit or delete a theme rule, check what the kit
+>   rule underneath it sets that the theme does NOT.**
 > - **The same mechanism silently vetoes kit BEHAVIOUR.** A kit rule that repositions a shared overlay
->   contextually (`.kit:has(.tab.active .plan-pin-panel) .mini-player { top: … }`) loses to vapor's flat
->   `.mini-player { top: … }` in `@layer theme` — the overlay simply doesn't yield. These are not render
->   errors; only the eyeball or the deletion finds them.
-> - The original obligation stands where it stood: a shared component's markup/class change updates BOTH
->   trees and is eyeballed on vapor AND one Kit theme. Prune a surface from this note when its vapor rules
->   are gone (the §14.15.3 / D51 V5 ladder); at V6 the note dies with them.
-> - **PRUNED at D51 V4 phase 2:** the CHROME surfaces (appbar · tab bar · composer · the app-shell box
->   model) no longer have a vapor tree at all — their rules are deleted. What remains dual-styled: the chat,
->   the Conf editors, the shared overlays, Utils, and the plan family. One more lesson from that pass, worth
->   stating as a rule: **"the kit has an equivalent rule" is not sufficient grounds to delete a vapor rule —
->   check which LAYER wins.** A kit rule in `@layer base` can sit under a *different*, surviving vapor rule
->   in `@layer theme` (extras.css's wide-control wrap vs vapor.css's `.confrow .k { min-width: 0 }`), so
->   deleting the vapor duplicate silently hands the property to the wrong declaration.
+>   contextually (`.kit:has(.tab.active .plan-pin-panel) .mini-player { top: … }`) lost to vapor's flat
+>   `.mini-player { top: … }` in `@layer theme` — the overlay simply didn't yield. These are not render
+>   errors; only the eyeball or the deletion finds them. (All three such repositioners came back at V5.)
+> - **"The kit has an equivalent rule" is not sufficient grounds to delete a theme rule — check which
+>   LAYER wins.** A kit rule in `@layer base` can sit under a *different*, surviving theme rule in
+>   `@layer theme` (extras.css's wide-control wrap vs vapor.css's `.confrow .k { min-width: 0 }`), so
+>   deleting the duplicate silently hands the property to the wrong declaration.
 
 ## 14.5 The core invariant — state ownership (prevents future refactors)
 
@@ -1074,9 +1074,13 @@ remounts only presentation — no refetch, no lost draft/featured/scroll, instan
   selectors, double-prefix `@keyframes`). Verified: vapor renders byte-identical (e2e asserts the computed page background).
 - **`@layer base, theme`** still orders Kit-vs-theme overrides (theme wins). Composes with `@scope` (orthogonal: layer =
   cascade order, scope = which elements match).
-- **Default theme (vapor) CSS eager** (static import → blocking `<link>`, no first-paint FOUC); others lazy (Vite
+- **One theme's CSS is eager** (static import → blocking `<link>`, no first-paint FOUC); others lazy (Vite
   guarantees async-chunk CSS before chunk eval). Inline `<body>`-top script sets `data-skin` early (T0, kept). A
-  non-default returning user gets **one** View-Transition switch on cold load (accepted; single user, PWA-cached).
+  non-eager returning user gets **one** View-Transition switch on cold load (accepted; single user, PWA-cached).
+  *(✏️ As-built since D51: the eager theme is **vapor**, and it is **no longer the default** — cosmos took
+  `DEFAULT_THEME` at V0, and cosmos's CSS is lazy like everyone else's, so a FRESH boot now flashes browser
+  canvas → kit base → cosmos, the accepted V0 trade. Vapor stays eager by the **V6 measurement ruling** — its
+  whole slice is 5.3 KiB gz — not because it is the default.)*
 - **M1 build-verify gate:** confirm the bundler preserves `@scope` (+ vapor byte-identical scoped) before scoping any
   other theme — mirrors T0's `@layer` gate.
 
@@ -1451,7 +1455,7 @@ Three on abstraction. Full rationale: **DECISIONS.md D31**.)
 |---|---|---|---|
 | **Tokens** | the semantic contract (`tokens.css` under `.kit`, §14.4.1) | the difference is **cosmetic** — color, spacing, type, radius, elevation, motion | a `tokens.css` |
 | **Surface (variant)** | a registry of interchangeable components over ONE headless controller | the difference is **structural** — different DOM/layout/interaction — AND ≥2 real impls | register a variant + list it |
-| **Bespoke** | the theme owns the markup (escape hatch) | a genuine one-off (vapor's frozen hero/composer; a single-theme snowflake) | the theme's own file |
+| **Bespoke** | the theme owns the markup (escape hatch) | a genuine one-off (vapor's hero/skyline/waveform Fleet; cosmos's orbital Fleet; a single-theme snowflake) | the theme's own file |
 
 **Tokens re-skin; they cannot restructure.** A token is a name→value for a *visual* decision; nothing in token-space
 can add/remove a DOM part, change layout topology, or alter behavior. The moment a theme difference crosses into
@@ -1544,10 +1548,12 @@ composer.register("docked", SheetComposer);                            // stable
 
 ### vapor & frontier (and any bespoke Root)
 A bespoke theme registers its OWN variants and renders `<surface.Themed/>` in its Root → first-class participation, no
-special-casing. **vapor** registers its frozen composer/fleet as variants so it joins the switch UI **without touching
-its frozen look**. Letting vapor host the *Kit* variants is a deferred, additive opt-in (vapor maps its vocabulary onto
-the contract — `--accent: var(--magenta)`, … — and marks the subtree `.kit`); it's a small step, not a refactor,
-because everything already reads the contract.
+special-casing. **✏️ vapor's row is HISTORY (D51 V4, 2026-08-01):** the "deferred, additive opt-in" this paragraph
+described — map the vocabulary onto the contract (`--accent: var(--magenta)`, …) and mark the subtree `.kit` — was
+TAKEN, and it was indeed a small step rather than a refactor. vapor now hosts the KIT variants (it renders
+`<DefaultRoot/>`, its `tokens.css` carries the contract, its `ThemeDef.settings` declares the four axis/seg
+descriptors) and registers **no** bespoke composer variant; the one surface it still owns is its Root-pinned
+Fleet, bespoke-by-right. The bespoke-Root seam itself is unchanged and still available — frontier uses it.
 
 ### Invariants & runtime safety (audit-hardened, 2026-06-29 — external_audit B4/D1/H3)
 
@@ -1762,12 +1768,39 @@ the industry-standard pattern, named and sourced in the session record.
 
 ## 14.15.3 Vapor assimilation ladder (owner directive 2026-07-06: frozen = a phase, not an identity)
 
-> **⏫ AMENDED + SUPERSEDED IN SEQUENCING by [D51 / `VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md)
-> (LOCKED 2026-08-01, builds as TODO Phase 16).** The six hooks below stay the correct inventory
-> and the waiver machinery stays the tracker, but the ladder's rungs are re-cut as slices V0–V6
-> there (cosmos becomes `DEFAULT_THEME`; end state = "vapor takes cosmos's shape"; the V4
-> DefaultRoot pivot replaces the per-component chrome ports; keyframe count corrected to 20; this
-> section's ui.ts:198 ref has drifted to ~:218). Read the plan first; this section is background.
+> ## ✅ DONE — 2026-08-02 (D51, TODO Phase 16, slices V0–V6 all shipped)
+>
+> **The ladder is COMPLETE. Vapor is a kit theme.** It renders `<DefaultRoot/>` (kit app bar with its
+> `brandMark` lozenge · kit tab bar · the `sheet` composer · `pinned` plan · shared chat/Conf/Utils/overlays)
+> over `themes/vapor/tokens.css`, plus a Root-pinned **bespoke VaporFleet** — hero, skyline, waveform, device
+> rows — which is bespoke-BY-RIGHT under D31/§1.1, not a leftover. Across the phase `extras.css` went
+> **3028 → 204 ln** (41 → 6 banners, exactly the frozen `vapor-keeps` list) and `vapor.css` **1178 → 692 ln**
+> (`kit.css` **5107 → 5304**; net **−3113** CSS lines); the
+> `CONTRACT_WAIVERS` list is `{}`. Superseded in sequencing by
+> [`VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md) (LOCKED 2026-08-01) — read it, plus
+> [`VAPOR_BANNER_LEDGER.md`](./VAPOR_BANNER_LEDGER.md), for the as-built record. **The six hooks and their
+> retirement slices:**
+>
+> | Hook | Retired at |
+> |---|---|
+> | ① accent on `body[data-theme]` | **V2** — the shared `body[data-accent]` axis; `applyBodyAttrs` has one arm |
+> | ② non-contract token vocabulary | **V3** — `themes/vapor/tokens.css` maps the full semantic contract |
+> | ③ unprefixed `@keyframes` | **V1** — all prefixed `vapor-*`; the `src/theme/` stylelint override is gone |
+> | ④ parallel chrome (`components/{AppBar,Composer,TabBar}`) | **V4** — the DefaultRoot pivot; the files are DELETED |
+> | ⑤ the `isVapor` PinnedPlan gate | **V4** — `planPlacement: "pinned"` + the kit's `PinnedPlanPanel` |
+> | ⑥ CSS living in `theme/` | **V1** — everything is under `themes/vapor/` |
+>
+> Two things settled at **V6** beyond the hooks: the `layouts: ["4-tab"]` **section waiver RETIRED** (vapor
+> offers all presets; real 2-/3-tab navigation + hosting tests replaced the forced-coercion assertions), and
+> the **vapor lazy flip was MEASURED and DROPPED** — the whole eager slice is 26.5 KB raw / **5.3 KB gzipped**
+> after V5, against real new mechanism (an internal `@layer` wrap, a face-awaiting font loader, a first-paint
+> test on the persisted-vapor path) on the owner's daily-driver theme.
+>
+> The end state is ENFORCED, not reviewed: `tests/theme-engine/vaporAssimilation.test.ts` asserts the
+> extras.css banner set **equals** the frozen keeps list and pins "VaporRoot renders DefaultRoot" + "the
+> bespoke chrome is deleted and unreferenced"; `themeContract.test.ts` asserts `CONTRACT_WAIVERS === {}`;
+> `tests/theme-engine/layout.test.ts` asserts no registered theme restricts `layouts`. **The section below
+> is HISTORY** — the original 2026-07-06 inventory and rung plan, kept for provenance.
 
 Vapor is already IN the engine (registered ThemeDef, bespoke Root — a legitimate D31 band; behavior extracted
 to shared controllers in M2). "Frozen" = exactly **six legacy hooks**: ① accent rides `body[data-theme]`
@@ -1830,8 +1863,11 @@ territory (runtime-resolved).
 **Reviewed and REJECTED (do not resurrect without a new trigger):** storage-event/BroadcastChannel listener
 (uncovered fields are per-device BY DESIGN; synced fields already reconcile) · woff2 SW precache/runtime-cache
 (app is dead offline — no tailnet → no backend) · @scope boot probe / `@supports` vapor duplicate ·
-per-theme-eager-CSS rework (vapor is default + flagship; revisit only if the owner permanently settles on
-another theme) · screenshot diffing · **tab BODY registry — ✅ BUILT 2026-07-12 as frontier F0 / D35 (the
+per-theme-eager-CSS rework ~~(vapor is default + flagship; revisit only if the owner permanently settles on
+another theme)~~ — **✏️ the REASONING is superseded, the verdict RE-EARNED (D51 V6, 2026-08-02): vapor is
+NOT the default any more (cosmos is, since V0) and it stays eager on its own merits — the flip was measured
+(the whole slice is 26.5 KB raw / 5.3 KiB gzipped, and vapor's woff2 files are usage-lazy regardless) against
+real new mechanism, and DROPPED. Revisit only if that ratio changes.** · screenshot diffing · **tab BODY registry — ✅ BUILT 2026-07-12 as frontier F0 / D35 (the
 SECTION LAYOUT SYSTEM v1; commits `b7f63d4…76c0d74`). As-built: `TabDef` stayed PURE DATA (gains only
 `lazy?`) — the id→body defaults live in kit space (DefaultRoot's `DEFAULT_BODIES`) and per-theme overrides
 ride the generalized `bodies` prop (the `Fleet={…}` fold resolved as data-fold + prop-injection, D35's
@@ -1893,7 +1929,8 @@ F4 extracts the log core into `components/ChatThread.tsx` with an `emptyState` s
 (`theme-engine/kit/composer/plan/*`). This section PINS that tree's class hooks + the tokens they consume
 as the styling contract: a theme reskins the chat by (a) its `tokens.css` values and (b) theme-scoped CSS
 targeting THESE hooks — never by forking the DOM. The names are the legacy vapor idiom **formalized
-AS-IS** (renaming would touch frozen vapor; any future rename is D34-ladder-owned, V1). Styling home:
+AS-IS** — kept that way now for churn reasons only (D51 finished vapor's assimilation, so a rename would
+touch every theme's CSS, not just vapor's, for zero behavior). Styling home:
 `kit.css` BUCKET-A.3a (base conversation) · A.3b (markdown) · A.3c (command/question/TTS). Enforcement:
 hardening ⑧'s `themeContract.test.ts` grows contract assertions on these hooks when warranted; until then
 this table is the pin.
@@ -1911,7 +1948,7 @@ this table is the pin.
 | Gate/approve actions | `.actions` → `.exec`/`.edit`/`.dismiss` (shared by confirm-gate · proposed-write · question) |
 | Question bubble | `.q-prompt` · `.q-input-wrap` · `.q-input` |
 | Markdown | `.md` (the A.3b block/inline element set) · `.md-code` → `.md-code-bar` (`.lang`/`.acts`) + `pre>code` |
-| Plan | `.plan-note` · kit `.plan-pin-panel`/`.plan-pin-head`/`.plan-pin-drop` · shared `.plan-steps`/`.plan-step`[`.pending`/`.active`/`.done`]/`.tick`(`.tick-btn`)/`.txt` · composer `.plan-pill`/`.plan-sheet` (vapor's frozen in-tab `.plan-pin`/`.plan-pin-wrap`/`.plan-drop` live in extras.css, outside this contract) |
+| Plan | `.plan-note` · kit `.plan-pin-panel`/`.plan-pin-head`/`.plan-pin-drop` · shared `.plan-steps`/`.plan-step`[`.pending`/`.active`/`.done`]/`.tick`(`.tick-btn`)/`.txt` · composer `.plan-pill`/`.plan-sheet`. (vapor's old in-tab `.plan-pin`/`.plan-pin-wrap`/`.plan-drop` are **DELETED** — D51 V4/V5; vapor now reskins the KIT panel's `.plan-pin-panel`/`.plan-pin-head` hooks, the §15 route, so its centered flush hanging tab is theme CSS over shared markup) |
 | Composer popovers | `.kit-suggest` (A2 — `li`[`.active`] → `.sg-val`/`.sg-kind`) · `.tools-sheet` (A6 — `.tools-sec`/`.tools-lbl`/`.tools-list`/`.tools-row`[`.on`]/`.tools-radio`/`.tools-tick`/`.tools-name`/`.tools-tag`/`.tools-empty`/`.tools-clear`; trigger `.kit-cbtn.tools`[`.open`] → `.tools-dot`). Both carry `.open` (mounted-when-closed + `inert`, like `.plan-sheet`) and share ONE shell recipe with `.priv-menu`; the two composer-anchored ones ALSO take per-skin chrome from the `composerSkin` axis (§14.16) — `.priv-menu` deliberately does not |
 | Chat section header | `.sec` (`.num`/`.right`) · the privilege family `.priv-chip-wrap`/`.priv-chip`(`.set`)/`.priv-dot`/`.priv-lbl`/`.priv-backdrop`/`.priv-menu` |
 | Notices | `.notice` (+ `.heart`) |

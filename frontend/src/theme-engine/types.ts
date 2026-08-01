@@ -136,8 +136,9 @@ export interface ThemeDef {
   // Section-layout capability declaration (D35 §F0) — additive, purely a per-theme capability list the
   // global `ui.layout` lever is resolved against (NOT synced state). `defaultLayout` = the preset `auto`
   // adopts (omit → `4-tab`). `layouts` = the supported set the picker's pick is coerced into (omit → ALL
-  // presets — the ratified ideal "all themes can offer all modes"). vapor waivers to `["4-tab"]` while
-  // frozen (ladder-owned — VaporRoot never consumes the registry). Resolved by `layout.ts#resolveLayout`.
+  // presets — the ratified ideal "all themes can offer all modes"). NO registered theme restricts the set
+  // today: vapor's ladder-owned `["4-tab"]` waiver retired at D51 V6, so the field is a seam for a future
+  // theme whose presentation genuinely can't express a preset. Resolved by `layout.ts#resolveLayout`.
   defaultLayout?: LayoutId;
   layouts?: LayoutId[];
 }

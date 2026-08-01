@@ -65,8 +65,8 @@ export const frontier: ThemeDef = {
     outlines: outlinesSetting(false),
   },
   // Section-layout capability (D35 §F0): frontier DEFAULTS to `3-tab` (utils hosted in Conf) and declares NO
-  // `layouts` field, so ALL presets stay on offer — the D35 ideal ("themes default, never restrict"; vapor's
-  // `["4-tab"]` waiver is the only restriction).
+  // `layouts` field, so ALL presets stay on offer — the D35 ideal ("themes default, never restrict"), which
+  // EVERY registered theme now follows (vapor's `["4-tab"]` waiver, the last restriction, retired at D51 V6).
   defaultLayout: "3-tab",
   // Per-host badlands-MAP encoding (§9.9) — R2-scattered beacon position + indexed rig art + plate. The
   // bespoke FrontierFleet (F2, injected via FrontierRoot → DefaultRoot's `fleet` slot) consumes it.

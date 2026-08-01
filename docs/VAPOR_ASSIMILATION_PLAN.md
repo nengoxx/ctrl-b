@@ -1,5 +1,14 @@
 # Vapor assimilation — the complete-migration plan (vapor → kit, legacy deleted)
 
+> ## ✅ BUILT — slices V0–V6 all shipped; **Phase 16 is COMPLETE (2026-08-02)**
+> Vapor is a kit theme: `<DefaultRoot/>` + `themes/vapor/tokens.css` + a Root-pinned bespoke VaporFleet.
+> Phase total (V3 baseline → V6): `extras.css` **3028 → 204 ln** (41 → 6 banners = the frozen keeps
+> list) · `vapor.css` **1178 → 692 ln** · `kit.css` **5107 → 5304 ln** · net **−3113 CSS lines** ·
+> `CONTRACT_WAIVERS` `{}` · every ladder waiver retired, the `layouts` section waiver included (V6).
+> The lazy flip was measured (5.3 KiB gz) and **dropped**. Per-slice as-built records are inline below
+> (V3 · V4 phases 1–3 · V5 · **V6**); the durable machinery record is
+> [`VAPOR_BANNER_LEDGER.md`](./VAPOR_BANNER_LEDGER.md) §8.
+>
 > **Status: ✏️ LOCKED 2026-08-01 as [D51](./DECISIONS.md)** (owner-signed in conversation; push +
 > lock + build go-ahead same day). Drafted 2026-07-31 from the owner's rulings; council round
 > DONE 2026-08-01 (Codex `gpt-5.6-sol` correctness lens + one Opus 5 architecture lens, both
@@ -303,8 +312,10 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
 **Shape.** Two PLANNED kit additions first (the §4 gaps) plus one DISCOVERED at execution
 (`.conf-foot a` — UA-blue on every kit theme; the ledger's class-level method couldn't see it),
 then one deletion pass over the classified inventory.
-`extras.css` **2981 → 205 ln**, `vapor.css` **1023 → 702 ln**, `kit.css` **5107 → 5304 ln**
-(net −3113 CSS lines). Banners: **39 → 6**, and those six ARE the frozen `vapor-keeps` list — V6's
+**This slice's own delta** (from the post-V4 state): `extras.css` **2981 → 204 ln**, `vapor.css`
+**1023 → 692 ln**, `kit.css` **5107 → 5304 ln** — net **−2911** CSS lines *in V5*. (The often-quoted
+**−3113** is the PHASE total, V3 baseline → V6: extras 3028 → 204 · vapor.css 1178 → 692 · kit +197.)
+Banners: **39 → 6**, and those six ARE the frozen `vapor-keeps` list — V6's
 equality target is met ahead of the flip. Deleted: all 31 `port-owned:V5` rows, both remaining
 `kit-duplicate` rows (4 focus-ring, 31 wide-control-wrap), the dead half of row 15, and vapor.css's
 `.sec` · CHAT(+`.notice`) · UTILS · SETTINGS sections. Seven `@keyframes` left with their last consumer;
@@ -355,7 +366,74 @@ its own slice. Full record: ledger §7.1.
 - Close the ledgers (§3.1) and the doc retirements; `VAPOR_PATTERNS.md` gains a banner pointing
   net-new-UI guidance at the kit/THEME_ENGINE (it is written in vapor's idiom — Opus Q7).
 
-### 3.1 The retirement ledgers (kept current every slice; close at V6)
+#### V6 — AS BUILT (2026-08-02) ✅ COMPLETE — **PHASE 16 CLOSES HERE**
+
+**1. The end state is ENFORCED.** `vaporAssimilation.test.ts`'s banner assertion flipped shrink-only →
+**EQUALITY** (`current === VAPOR_KEEPS`, both directions in ONE test so a stray and a lost keep report
+together); `V3_BASELINE_BANNERS` stays as the provenance record and the keeps ⊆ baseline self-consistency
+check. Its failure text is rewritten for the maintenance era: *vapor is DONE — a new banner is a
+D51-SUCCESSOR RULING, not a ledger tick.* Added the R22 source pins — **VaporRoot imports + renders
+`DefaultRoot`**, and `components/{AppBar,Composer,TabBar}.tsx` are **absent AND unreferenced** (a
+recursive scan of `src/` + `tests/` + `e2e/`; the existence half matters because a *resurrected* file
+would typecheck fine). The third leg, `CONTRACT_WAIVERS === {}`, is asserted in `themeContract.test.ts`
+where the constant lives — a cross-import between test files would have re-registered that whole suite.
+
+**2. The `sections` waiver: RETIRED — it "just works", verified, not assumed.** `layouts: ["4-tab"]` is
+gone from `themes/vapor/index.tsx`; vapor declares NO `layouts` field, exactly like cosmos and frontier
+(`defaultLayout: "4-tab"` stays — vapor's native shape, and what the e2e contrast matrix's `bar` is
+drift-guarded against). **Why nothing was needed:** `fleet` is on the bar in EVERY preset, so vapor's one
+per-theme piece — the Root-pinned `FleetTab` `bodies` override — is preset-independent; the single hosted
+pair (utils→conf) lands in the SHARED `ConfTab` body, whose vapor CSS died at V5; and vapor's residual CSS
+contains no tab-count assumption (the `.tabbar[data-tab]` selector table went with the V4 delete). **Probed
+on the live dev instance at 393px, five seeds** (4-tab · 3-tab · 2-tab · 2-tab+stale-`utils`-deep-link ·
+2-tab+`appbarMode:off`): correct bar sets, `--tab-count`/`--tab-i` correct, `#utils-hosted` present and
+visible inside Conf, the docked (and floating, under `off`) direct button, the boot coercion off the stale
+deep link, the bespoke hero + device rows intact throughout — **zero page errors, zero console warnings**
+(the coercion warn is simply gone). Screenshots taken at 3-tab and 2-tab for the owner. Codex #11's bar —
+real navigation/hosting tests replacing the waiver assertions — is met by: `useSections.test.ts` (three new
+vapor cases: honored 3-tab partition · `navigate("utils")` → Conf + the scroll-to-group handoff · the
+2-tab bar/menu/hosted split with fleet still on-bar), `e2e/layout.spec.ts` (the forced-four-tab test
+REPLACED by two real specs driving vapor's 3-tab and 2-tab relocations incl. the docked direct button and
+`.kit-brand .vapor-mark` coexisting with it), and `layout.test.ts`'s new end-state assertion that **no
+registered theme restricts `layouts`** (with the one-time-warn dedupe test moved into the mocked-registry
+block, since no real theme can coerce any more).
+
+**3. The lazy flip: MEASURED and DROPPED.** Two-build delta on the real `vite build` (entry CSS, gzip -9):
+full **112,432 raw / 19,668 gz** → minus vapor's three sheets **88,397 / 14,644** → minus `vapor-fonts.css`
+as well **85,893 / 14,241**. So vapor's ENTIRE eager slice is **26,539 raw / 5,427 gzipped ≈ 5.3 KiB**
+(of which the 10 `@font-face` blocks are 2,504 raw / 408 gz). The four vapor-exclusive woff2 files
+(jetbrains-mono 600 latin+latin-ext, major-mono-display 400 latin+latin-ext = 63,268 B) are **already
+usage-lazy** — a browser fetches a face only when text needs it, so a cosmos/minimal/frontier session never
+downloads them, flip or no flip. Against that: Codex #3's preconditions are real NEW MECHANISM (an internal
+`@layer theme` wrap in each sheet — a dynamically-imported sheet loses the `@import … layer(theme)` wrapper
+and its rules become UNLAYERED, i.e. STRONGER; a font loader that awaits faces; a first-paint test on the
+persisted-vapor path), and the path it would make slower is the OWNER'S DAILY DRIVER. **Ruling: DROPPED**
+(no-legacy-seams / no mechanism for trivial bytes) — recorded in `themes/vapor/index.tsx`, `vapor-fonts.css`
+and `theme/index.css` so the question doesn't get re-opened by inference. *(Out of scope, noted: making
+vapor's ROOT lazy like cosmos's is a different axis — measured at −27 KB gz off the entry chunk but +0 total
+bytes, since it just splits `DefaultRoot` into its own chunk. Not a V6 item.)*
+
+**4. Docs + the dead-rule sweep.** THEME_ENGINE §14.15.3 flipped to **✅ DONE** with the six hooks' retirement
+slices in a table; §14.4.1's two-trees box CLOSED (the duplicate tree is gone — what survives is the
+permanent *law of co-application*: layers win per PROPERTY, "the kit has an equivalent rule" is not grounds
+to delete); §14.14's bespoke-band row and its "vapor registers its frozen composer/fleet" paragraph rewritten
+to the as-built; §15's "renaming would touch frozen vapor" rationale and its plan row corrected.
+`VAPOR_PATTERNS.md` gained the historical-reference banner (what it is still good for: the KEPT Fleet
+recipes + vapor's palette/identity + the design's *why*; where to go instead for anything net-new).
+`VAPOR_BANNER_LEDGER.md` → status CLOSED + a §8 close-out (the arithmetic, the three REFUSALS, the lessons).
+Sweep: `theme/` holds only the shared `index.css` (its two "inert under vapor" notes were stale → fixed);
+no orphan `@keyframes` and no dangling `animation:` names in either direction; **one genuinely dead rule
+found** — `.dev .kvgrid .v.os-win::before` could never match (`os-${host.os_type}`, `OSType =
+windows|linux|macos`), fixed to `.os-windows` so the ⊞ glyph returns — plus `--vapor-glow-filter-soft`
+(3 palette declarations, last consumer died at V5) deleted. `--red` is declared-but-unread; KEPT as the raw
+palette's named literal red (R26's sanctioned always-red escape hatch, documented in `tokens.css`).
+
+### 3.1 The retirement ledgers — ✅ **CLOSED at V6 (2026-08-02)**
+> Every row below has reached its final state and was verified in code at the V6 close-out: `data-theme`
+> and `data-loz` are absent from the tree, `data-skyline` is written by `VaporRoot` for the kept Fleet,
+> and the only `data-tab` writer is the shared `store/ui.ts` stamp (+ the kit's own `.kit-tabbar[data-tab]`).
+> Nothing here is outstanding. The doc-retirement line below is likewise discharged.
+
 | Vapor body attr | Retires at |
 |---|---|
 | `data-theme` (accent) | ✅ **RETIRED at V2** (`5f70a16`, 2026-08-01) |
@@ -363,8 +441,11 @@ its own slice. Full record: ledger §7.1.
 | `data-skyline` | ✅ **RULED at V3: `vapor-keeps`** — Fleet decoration, the Root-pinned VaporFleet owns it; nothing to execute (ledger §2) |
 | `data-tab` | ✅ **RETIRED at V4** for the vapor-private half (`.tabbar[data-tab]` — the kit `KitNavBar` drives its own `.kit-tabbar[data-tab]`/`--tab-i`); the BODY `data-tab` stamp stays (a SHARED axis in `store/ui.ts`, never vapor-private). The `layouts:["4-tab"]` waiver comment was updated in the same commit (R22) |
 
-Doc retirements: §13.1 frozen-attr table (V2, V4) · §14.4.1 two-trees invariant (V4) · §15 rule 3
-(V4) · §14.14 / D31 / D36 vapor-frozen phrasing (V6). Each slice's brief names its rows.
+Doc retirements — ✅ **ALL DISCHARGED**: §13.1 frozen-attr table (V2, V4; header closed at V6) ·
+§14.4.1 two-trees invariant (amended V4, **CLOSED V6** — what survives is the permanent law of
+co-application) · §15 rule 3 (V4; §15's preamble + plan row corrected at V6) · §14.14 / D31 / D36
+vapor-frozen phrasing (**V6**) · §14.15.3 banner → **✅ DONE (V6)** with the six hooks' retirement table ·
+`VAPOR_PATTERNS.md` historical banner (**V6**).
 
 ## 4. Kit extensions this plan creates (council-tightened)
 1. **AppBar `brandMark?: ReactNode` slot** — following the existing `brandMeta` precedent two

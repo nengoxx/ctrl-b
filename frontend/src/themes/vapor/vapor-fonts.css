@@ -1,7 +1,9 @@
-/* vapor's webfonts, self-hosted (FE efficiency pass). vapor is EAGER (it stays so until D51's V6, even
- * though cosmos is the default since V0), so unlike the
+/* vapor's webfonts, self-hosted (FE efficiency pass). vapor is EAGER — permanently, since D51 V6 measured
+ * the lazy flip and DROPPED it (these @font-face blocks are 2.5 KB raw / 0.4 KB gzipped of the entry CSS,
+ * and the woff2 files they point at are already usage-lazy: a browser downloads a face only when text
+ * actually needs it, so a cosmos/minimal/frontier session never fetches Major Mono Display). Unlike the
  * lazy themes (minimal/cosmos use a dynamic-import `fonts.ts`, loaded by switchTheme on the flip) its
- * fonts must ship with the initial bundle — statically imported in main.tsx. This replaces the
+ * fonts ship with the initial bundle — statically imported in main.tsx. This replaces the
  * render-blocking Google Fonts <link> that was in index.html: now the @font-face files are bundled +
  * fingerprinted by Vite (offline-capable PWA, no third-party request, no CDN round-trip on first paint).
  *

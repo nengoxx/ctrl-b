@@ -1837,8 +1837,13 @@ removes functionality, only placement varies.
   NOT in the appearance sync doc; sync = a possible later additive promotion). `auto` = the active theme's
   declared default. Picker = a Seg row beside App bar in Conf → Appearance's global levers.
 - **`ThemeDef` capability declaration (additive)**: `defaultLayout?` (omit → `4-tab`) + `layouts?` (omit →
-  all presets — the ratified ideal "all themes can offer all modes"). **vapor declares `layouts: ["4-tab"]`**
-  — a visible, ladder-owned waiver (VaporRoot never consumes the registry; byte-identity is structural).
+  all presets — the ratified ideal "all themes can offer all modes"). ~~**vapor declares `layouts: ["4-tab"]`**
+  — a visible, ladder-owned waiver (VaporRoot never consumes the registry; byte-identity is structural).~~
+  ✅ **RETIRED at D51 V6 (2026-08-02): NO registered theme restricts `layouts` any more** — the V4 pivot put
+  vapor on `DefaultRoot`, so it consumes the registry/presets like every kit theme (`fleet` is on the bar in
+  every preset, so its Root-pinned Fleet body is preset-independent; hosted utils lands in the shared ConfTab).
+  vapor keeps `defaultLayout: "4-tab"` (its native shape). The `layouts` field stays as the seam for a future
+  theme that genuinely can't express a preset; `tests/theme-engine/layout.test.ts` asserts none does today.
   Unsupported picks coerce to the nearest supported via a **dedicated warn-first layout-coercion resolver**
   keyed on the ThemeDef declaration — NOT `resolveThemeSetting` (that guards per-theme seg/switch settings;
   this guards a global lever against a per-theme capability list).
@@ -3845,3 +3850,31 @@ slices V0–V6, reconciliation R1–R24); this entry pins the rulings that survi
   waves to WAVE CLEAN → owner D7 eyeball → pause. New default-boot e2e must await CONTENT
   selectors (the v1.4.5 flake class). Standing guarantees: nothing new depends on a legacy hook;
   waiver lists only shrink.
+
+### D51 — BUILT ✅ (2026-08-02): slices V0–V6 all shipped; outcome deltas vs the letter above
+- **Delivered end state = the §1.1 bar, enforced by EQUALITY** (extras.css ≡ the 6 frozen keeps +
+  the plan-pin fidelity carve-out; VaporRoot-renders-DefaultRoot + no-resurrection pins;
+  `CONTRACT_WAIVERS === {}`). Phase total, V3 baseline → V6: extras.css **3028 → 204 ln** ·
+  vapor.css **1178 → 692 ln** · kit.css **5107 → 5304 ln** · net **−3113 CSS lines**. *(The
+  "2981 → 205 / 1023 → 702" figures in the plan's V5 as-built were that slice's own start point,
+  and two of them were mistranscribed — corrected + labelled slice-local at V6.)*
+- **The lazy flip: MEASURED AND DROPPED** (vapor's whole eager slice = 5.3 KiB gz incl. fonts CSS;
+  the 4 vapor woff2 files are usage-lazy regardless). The Codex-#3 preconditions would be real new
+  mechanism on the owner's daily-driver path for trivial bytes — the "IF still worth it" clause
+  resolves NO. Vapor stays eager permanently; numbers in the plan V6 as-built.
+- **The `sections` waiver: RETIRED at V6 — the presets Just Work** (vapor declares no `layouts`
+  restriction; fleet is on the bar in every preset so the Root-pinned body is preset-independent;
+  live-verified at 4/3/2-tab incl. hosted-utils + stale-deep-link coercion; real 2/3-tab tests
+  replaced the forced-coercion assertions per the council's Codex-#11 bar). The owner's tab-count
+  setting is functional under vapor for the first time.
+- **Owner-driven fidelity addendum (V4 close-out, §15-sanctioned theme CSS on kit hooks):** vapor
+  keeps its centered flush hanging plan-pin tab (3 declarations + click-through) — the kit's own
+  left-inset+8px geometry was the thing the owner rejected, so the ledgered delete-only plan was
+  corrected. Precedent class: the brand mark.
+- **Known deferral (kit-wide, pre-existing):** the `minimal`-chrome plan/mini-player overlap
+  (~−17..−26px on all three kit themes) needs a kit-geometry slice of its own — recorded in
+  VAPOR_BANNER_LEDGER §7.1; NOT a vapor issue.
+- Commits: V0 `381250b` · V1 `9c9d718` · V2 `5f70a16`+`930a5e7`+`239449f` · V3 `7668a1d` ·
+  V4 `873f85c`+`9b7fcfd`+`16d4412` · V5 `3456c03` · V6 = the close-out commit. Method note for
+  successors: 100% of the review rounds (council, per-slice Codex, confirm passes, owner-requested
+  sweeps) produced at least one accepted finding — the cadence carried the phase.

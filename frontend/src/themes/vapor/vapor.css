@@ -31,7 +31,6 @@
     /* FILTER values (drop-shadow), NOT the contract's box-shadow-valued --accent-glow — renamed at D51
        V3 so the two can't collide (kit.css reads --accent-glow as a box-shadow). */
     --vapor-glow-filter: drop-shadow(0 0 10px rgba(255,82,212,0.65));
-    --vapor-glow-filter-soft: drop-shadow(0 0 6px rgba(255,82,212,0.45));
     /* Destructive actions — red in vapor, swaps to the vapor accent (pink/violet) in aqua */
     --danger-grad: linear-gradient(180deg, #ff9ec8 0%, #ff3b7a 35%, #b8204a 75%, #5c0a2a 100%);
     --danger-glow: drop-shadow(0 0 9px rgba(255, 59, 122, 0.6));
@@ -78,7 +77,6 @@
     --t-glow: 0 0 8px rgba(126, 255, 150, 0.6);
     --accent-grad: linear-gradient(180deg, #c6f4ff 0%, #5ce6ff 30%, #6e7bff 70%, #233a96 100%);
     --vapor-glow-filter: drop-shadow(0 0 10px rgba(92, 230, 255, 0.65));
-    --vapor-glow-filter-soft: drop-shadow(0 0 6px rgba(92, 230, 255, 0.45));
     /* In aqua, destructive uses the vapor accent (pink/violet) for contrast against cool UI */
     --danger-grad: linear-gradient(180deg, #ffb3ec 0%, #ff52d4 30%, #a55cff 70%, #5e2eb8 100%);
     --danger-glow: drop-shadow(0 0 10px rgba(255, 82, 212, 0.65));
@@ -131,7 +129,6 @@
     --t-glow: 0 0 8px rgba(255, 94, 108, 0.6);
     --accent-grad: linear-gradient(180deg, #ffe2b3 0%, #ffb04f 30%, #ff7a3d 70%, #a82912 100%);
     --vapor-glow-filter: drop-shadow(0 0 10px rgba(255, 138, 61, 0.65));
-    --vapor-glow-filter-soft: drop-shadow(0 0 6px rgba(255, 138, 61, 0.45));
     /* Ember keeps stop/mic.rec a true crimson — it already pops against warm orange UI */
     --danger-grad: linear-gradient(180deg, #ffb09e 0%, #ff3b3b 35%, #8a1a1a 75%, #3a0808 100%);
     --danger-glow: drop-shadow(0 0 9px rgba(255, 59, 59, 0.6));
@@ -584,7 +581,10 @@
   .dev .kvgrid .k { color: var(--ink-faint); letter-spacing: 1.2px; text-transform: uppercase; font-size: 9px; align-self: center; }
   .dev .kvgrid .v { color: var(--ink); font-family: "JetBrains Mono"; }
   .dev .kvgrid .v.mac { letter-spacing: 1px; }
-  .dev .kvgrid .v.os-win::before { content: "⊞ "; color: var(--teal); }
+  /* `os-${host.os_type}` (DeviceRow.tsx) and OSType is `windows|linux|macos` — so this selector was
+     `.os-win` and had matched NOTHING since the class went dynamic. Fixed at D51 V6's dead-rule sweep
+     (the glyph is back); `macos` intentionally has no glyph, as in the original. */
+  .dev .kvgrid .v.os-windows::before { content: "⊞ "; color: var(--teal); }
   .dev .kvgrid .v.os-linux::before { content: "◆ "; color: var(--violet); }
   .dev .dropfoot {
     display: flex; gap: 6px; margin: 10px 8px 0; padding-top: 10px;

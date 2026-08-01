@@ -65,6 +65,27 @@ function isWaived(id: ThemeId, w: ContractWaiver): boolean {
   return CONTRACT_WAIVERS[id]?.includes(w) ?? false;
 }
 
+// The THIRD leg of the D51 V6 end state (R22/R25 — the other two, "VaporRoot renders DefaultRoot" and "the
+// bespoke chrome is deleted + unreferenced", are pinned in vaporAssimilation.test.ts). Asserted HERE because
+// this is where the constant lives: importing a `.test.ts` into another would re-register this whole suite.
+describe("D51 V6 — the contract-waiver list is EMPTY (the assimilation is complete)", () => {
+  it("no theme is exempt from any group in this suite", () => {
+    expect(
+      CONTRACT_WAIVERS,
+      "CONTRACT_WAIVERS must stay `{}`. It is the §14.15.3 assimilation tracker and it burned all the way\n" +
+        "  down across D51 V1–V4 (keyframe-prefix · accent-axis · semantic-tokens · kit-structure). A waiver\n" +
+        "  re-added here means a theme has stopped satisfying the shared contract and is SKIPPING gates —\n" +
+        "  the token-list, behavioral, structural-hooks and Fleet-a11y groups all key off it, and the e2e\n" +
+        "  contrast matrix's `kitShell` flag is drift-guarded to it. Fix the theme, or get an explicit\n" +
+        "  D51-successor ruling first (DECISIONS.md D51 §3 V6).\n" +
+        "  · WITH an approved ruling, the mechanical path is: add the waiver to CONTRACT_WAIVERS **and**\n" +
+        '    re-scope THIS assertion to exactly the ruled set (e.g. `toEqual({ <theme>: ["<waiver>"] })`),\n' +
+        "    so the fence still fails on anything the ruling did not authorize. The `isWaived` gates below\n" +
+        "    keep working untouched — they read the constant, not this test. **Do not delete the fence.**",
+    ).toEqual({});
+  });
+});
+
 // The semantic contract every non-waived Kit-consuming theme MUST declare (THEME_ENGINE §14.13 #1). These
 // are the color/shape tokens the Kit reads; a theme that ships them fully reskins. NOT listed: `--accent-ink`
 // (conditionally required — see the light-mode-MUST rule below), the base fallbacks the theme may inherit

@@ -21,9 +21,10 @@ export type Perf = "full" | "lite";
 /** Top-bar / navigation chrome mode (global, per-device). `visible` = appbar + bottom tab bar; `transparent`
  *  = the SAME appbar + tab bar but the bar paints NOTHING (no fill/border/shadow/backdrop-filter — it floats
  *  over the page like the prototype, with squared icon buttons); `off` = no appbar, tab bar only; `minimal` =
- *  no appbar in layout + no tab bar, navigation via the floating NavMenu. DefaultRoot themes honor all four;
- *  bespoke Roots (vapor) honor visible/transparent/off and treat minimal as off for now (THEME_ENGINE §14.13 —
- *  the bespoke-Root minimal contract + the vapor TODO). */
+ *  no appbar in layout + no tab bar, navigation via the floating NavMenu. **Every registered theme honors all
+ *  four** since D51 V4 put vapor on DefaultRoot too — the old "bespoke Roots (vapor) treat minimal as off"
+ *  carve-out is GONE (vapor gets the floating NavMenu + NavHome for free). The bespoke-Root minimal contract
+ *  (THEME_ENGINE §14.13) still governs any FUTURE Root that hand-rolls its own chrome. */
 export type AppbarMode = "visible" | "transparent" | "off" | "minimal";
 
 /** Whether a top app bar is PRESENT (rendered + measured into `--appbar-h`) for a given mode. True for

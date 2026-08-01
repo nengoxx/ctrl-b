@@ -6,9 +6,10 @@ import { expect, seedUI, test } from "./fixtures";
 // migration chain is skipped), then asserts the layout partition the way the user experiences it: which tab
 // buttons exist, whether the NavMenu launcher is present, and that hosted utils lands inside Conf.
 //
-// Themes: `minimal` (a registered Kit theme that supports ALL presets → an explicit 3-/2-tab pick is honored)
-// exercises the real relocation; `vapor` (`layouts:["4-tab"]`) proves the waiver coerces a 2-tab pick back
-// to four tabs (a plain forced coercion since D51 V4 — vapor consumes the registry now, R22).
+// Themes: `minimal` (a plain Kit theme) exercises the relocation on kit-default bodies; `vapor` — the theme
+// with a Root-PINNED bespoke body (FleetTab) and its own eager CSS — repeats the two relocations for real
+// since D51 V6 retired its `layouts:["4-tab"]` waiver (R13/Codex #11: the waiver's replacement had to be
+// real 2-/3-tab navigation+hosting tests, not a forced-coercion assertion).
 
 test("minimal · 3-tab: utils leaves the bar and is hosted in Conf; no NavMenu (menu empty)", async ({
   page,
@@ -152,17 +153,62 @@ test("minimal · 2-tab: a stale `utils` deep-link boots coerced onto Conf with t
   await expect(page.locator("#utils-hosted")).toBeVisible();
 });
 
-test("vapor · 2-tab: the frozen waiver coerces back to 4-tab — all four tab buttons render", async ({
+// ── vapor · the waiver's replacement (D51 V6) ─────────────────────────────────────────────────────────
+// vapor declared `layouts:["4-tab"]` from D35 until D51 V6; the test here used to assert the coercion. The
+// retirement's bar (R13 / Codex #11) was REAL relocation tests, so these two drive the same partitions
+// minimal does — with vapor's distinguishing feature in shot: the Root-PINNED bespoke `FleetTab` body
+// (`.hero` + `.dev` rows), which must keep rendering on the bar under every preset. `defaultLayout` is
+// still `4-tab` (vapor's native shape — the 4-tab arm is covered by every other vapor spec).
+
+test("vapor · 3-tab: the pick is HONORED — utils leaves the bar, hosted in Conf; pinned Fleet intact", async ({
   page,
+  pageErrors,
 }) => {
-  // vapor declares `layouts:["4-tab"]`; a 2-tab pick coerces to 4-tab (a one-time console.warn, harmless).
-  // Since D51 V4 vapor DOES consume the section registry (DefaultRoot hosting), so this is a real coercion
-  // test now, not a structural tautology: the four buttons come from `resolveLayout`'s coerced preset, and
-  // they are the same `#tabbtn-<id>` ids every other skin renders.
+  await seedUI(page, { theme: "vapor", accent: "dark", layout: "3-tab", v: 1 });
+  await page.goto("/");
+
+  // Bar = fleet + agent + conf. The old waiver would have rendered FOUR buttons here.
+  await expect(page.locator("#tabbtn-fleet")).toBeVisible();
+  await expect(page.locator("#tabbtn-agent")).toBeVisible();
+  await expect(page.locator("#tabbtn-conf")).toBeVisible();
+  await expect(page.locator("#tabbtn-utils")).toHaveCount(0);
+  await expect(page.locator(".navmenu")).toHaveCount(0); // menu empty in 3-tab
+
+  // vapor's Root-pinned bespoke Fleet still owns the primary section under the narrowed bar.
+  await expect(page.locator("#tab-fleet .hero")).toBeVisible();
+  await expect(page.locator("#tab-fleet .dev").first()).toBeVisible();
+
+  // Conf hosts the Tools group.
+  await page.locator("#tabbtn-conf").click();
+  await expect(page.locator("#utils-hosted")).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test("vapor · 2-tab: conf via the DOCKED direct button; utils hosted; pinned Fleet intact", async ({
+  page,
+  pageErrors,
+}) => {
+  // Default appbarMode "visible" → the nav affordance docks into vapor's kit appbar (beside its brand mark)
+  // rather than floating — the same collapse ladder minimal gets, on the theme that owns the appbar's
+  // `brandMark` slot.
   await seedUI(page, { theme: "vapor", accent: "dark", layout: "2-tab", v: 1 });
   await page.goto("/");
 
-  for (const id of ["fleet", "agent", "utils", "conf"]) {
-    await expect(page.locator(`#tabbtn-${id}`)).toBeVisible();
-  }
+  await expect(page.locator("#tabbtn-fleet")).toBeVisible();
+  await expect(page.locator("#tabbtn-agent")).toBeVisible();
+  await expect(page.locator("#tabbtn-utils")).toHaveCount(0);
+  await expect(page.locator("#tabbtn-conf")).toHaveCount(0); // off-bar → the menu
+
+  // vapor's own brand mark and the docked launcher coexist in the one appbar.
+  await expect(page.locator(".kit-appbar .kit-brand .vapor-mark")).toBeVisible();
+  const launch = page.locator(".kit-appbar .navmenu-launch");
+  await expect(launch).toBeVisible();
+  await expect(page.locator(".kit-appbar .navmenu-launch[aria-haspopup]")).toHaveCount(0); // direct form
+
+  await expect(page.locator("#tab-fleet .hero")).toBeVisible();
+
+  await launch.click();
+  await expect(page.locator("#tab-conf")).toBeVisible();
+  await expect(page.locator("#utils-hosted")).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });

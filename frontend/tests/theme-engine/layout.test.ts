@@ -7,19 +7,19 @@ import {
   partitionSections,
   resolveLayout,
 } from "../../src/theme-engine/layout";
+import { registeredThemes } from "../../src/theme-engine/registry";
 import { STANDARD_TABS } from "../../src/theme-engine/tabs";
 import type { LayoutPreset, TabDef } from "../../src/theme-engine/types";
 
 // theme-engine/layout — the SECTION LAYOUT SYSTEM v1 (D35 / FRONTIER_PLAN §6-F0): the curated presets, the
 // warn-first layout-coercion resolver (a global lever resolved against a per-theme capability set), and the
-// pure partition. `resolveLayout` reads the REAL registry at call time (vapor waivers to `["4-tab"]`, minimal
-// omits `layouts` → supports all, an unregistered id → falls to ALL_LAYOUTS); `partitionSections` is pure.
+// pure partition. `resolveLayout` reads the REAL registry at call time; `partitionSections` is pure.
 //
 // ⚠ MODULE-LEVEL STATE: `resolveLayout`'s one-time-warn `warned` Set persists across the tests in THIS file.
-// So the ONLY test that coerces a real theme (vapor) is the dedupe test below — no other case triggers a warn
-// on the real registry, so its first assertion is guaranteed to see a virgin `${theme}:${lever}` key. The
-// nearest-math cases run against an ISOLATED module (`vi.resetModules` + `vi.doMock` on the registry, the
-// switchTheme.test.ts / App.test.tsx precedent), which gets its OWN fresh `warned` Set.
+// Since D51 V6 NO registered theme restricts `layouts` (vapor's `["4-tab"]` waiver retired), so the
+// real-registry block below can no longer trigger a coercion warn at all — every warn assertion, including
+// the one-time DEDUPE, lives in the ISOLATED-module block (`vi.resetModules` + `vi.doMock` on the registry,
+// the switchTheme.test.ts / App.test.tsx precedent), which gets a FRESH `warned` Set per test.
 
 describe("LAYOUT_PRESETS + constants", () => {
   it("declares the curated 4-/3-/2-tab presets (bar count + hosted utils→conf)", () => {
@@ -45,8 +45,11 @@ describe("LAYOUT_PRESETS + constants", () => {
 });
 
 describe("resolveLayout (real registry)", () => {
-  it("`auto` adopts the theme's declared default (vapor → 4-tab)", () => {
+  it("`auto` adopts the theme's declared default (vapor → 4-tab, frontier → 3-tab)", () => {
+    // vapor's `defaultLayout` survived its `layouts` waiver's V6 retirement: four tabs is vapor's NATIVE
+    // shape (what `auto` should land on), which is a different claim from "four tabs is all it can do".
     expect(resolveLayout("vapor", "auto")).toBe("4-tab");
+    expect(resolveLayout("frontier", "auto")).toBe("3-tab");
   });
 
   it("an unregistered/omitted theme resolves `auto` to the 4-tab fallback", () => {
@@ -63,22 +66,25 @@ describe("resolveLayout (real registry)", () => {
     expect(resolveLayout("phosphor", "2-tab")).toBe("2-tab"); // omitted layouts → honored, not coerced
   });
 
-  it("coerces an unsupported pick to the nearest supported preset, warning ONCE per (theme, lever)", () => {
-    // THE only real-registry coercion in this file (see the module-level-state note at the top). vapor's
-    // waiver `layouts:["4-tab"]` coerces every 3-/2-tab pick back to 4-tab.
+  it("EVERY registered theme honors every preset — no theme restricts `layouts` (D51 V6)", () => {
+    // The end-state assertion the vapor waiver's retirement earns (D51 V6 / R13). vapor used to be the one
+    // restriction (`layouts: ["4-tab"]`, which bounced a 3-/2-tab pick back to four); it now consumes the
+    // shared registry/presets like every other kit theme, so a pick is a pick everywhere. A theme that
+    // re-adds a `layouts` restriction fails HERE, with the reason — it is a capability regression, not a
+    // detail: it silently overrides the user's Conf → Layout choice.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
-    expect(resolveLayout("vapor", "2-tab")).toBe("4-tab");
-    expect(warn).toHaveBeenCalledTimes(1); // first "vapor:2-tab" → one dev-console line
-
-    // A SECOND identical call is deduped by the module-level `warned` Set — no second warn.
-    expect(resolveLayout("vapor", "2-tab")).toBe("4-tab");
-    expect(warn).toHaveBeenCalledTimes(1);
-
-    // A DIFFERENT lever key ("vapor:3-tab") warns again (once).
-    expect(resolveLayout("vapor", "3-tab")).toBe("4-tab");
-    expect(warn).toHaveBeenCalledTimes(2);
-
+    for (const { id } of registeredThemes()) {
+      for (const preset of ALL_LAYOUTS) {
+        expect(
+          resolveLayout(id, preset),
+          `theme "${id}" coerced the "${preset}" pick — it declares a restricted ThemeDef.layouts. Since ` +
+            `D51 V6 no theme restricts the set (the D35 ideal, "themes default, never restrict"); a theme ` +
+            `that genuinely cannot express a preset needs an explicit ruling before re-adding the field.`,
+        ).toBe(preset);
+      }
+    }
+    // …and therefore nothing warned: a coercion warn IS the restriction's fingerprint.
+    expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 
@@ -115,6 +121,27 @@ describe("resolveLayout — nearest-supported math (isolated module, mocked regi
   afterEach(() => {
     vi.doUnmock("../../src/theme-engine/registry");
     vi.resetModules();
+  });
+
+  it("warns ONCE per (theme, lever) — the one-time dev-console line, deduped", async () => {
+    // Moved here from the real-registry block at D51 V6: with vapor's waiver retired NO real theme coerces,
+    // so the dedupe can only be exercised against the mocked capability sets. The isolated module carries a
+    // virgin `warned` Set (fresh per `beforeEach`), which is what makes the counts assertable.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { resolveLayout: resolve } = await import("../../src/theme-engine/layout");
+
+    expect(resolve("observatory", "4-tab")).toBe("3-tab");
+    expect(warn).toHaveBeenCalledTimes(1); // first "observatory:4-tab" → one line
+
+    // A SECOND identical call is deduped by the module-level `warned` Set — no second warn.
+    expect(resolve("observatory", "4-tab")).toBe("3-tab");
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    // A DIFFERENT lever key ("phosphor:3-tab") warns again (once).
+    expect(resolve("phosphor", "3-tab")).toBe("4-tab");
+    expect(warn).toHaveBeenCalledTimes(2);
+
+    warn.mockRestore();
   });
 
   it("breaks a distance tie toward the LARGER tab count", async () => {

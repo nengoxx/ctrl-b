@@ -1,5 +1,35 @@
 # Vapor design language — the pattern reference (D7 companion)
 
+> ## ⚠️ HISTORICAL REFERENCE — do NOT follow this doc for net-new UI (D51 V6, 2026-08-02)
+>
+> **Phase 16 assimilated vapor onto the kit.** Vapor is now a normal kit theme: it renders
+> `<DefaultRoot/>` and its shared-component CSS (chat · Conf editors · plan · markdown · Utils ·
+> overlays · app bar/composer/tab bar) was **deleted**, not ported — 41 extras.css banners went to 6.
+> This doc is written in that deleted idiom (`extras.css` for net-new components, per-component recipes
+> copied out of `vapor.css`), so following it now **re-creates exactly what D51 removed**. Note the
+> guard is narrower than that: `vaporAssimilation.test.ts` enforces **banner-taxonomy equality** — it
+> holds the BANNER SET, so a new `/* ── … ── */` section is rejected outright, but CSS added *inside* an
+> existing keeps banner is a review-era concern, not a machine-caught one. The reason not to follow this
+> doc is the architecture, not the fence.
+>
+> **Where to go instead:**
+> | You want to… | Read |
+> |---|---|
+> | style a NET-NEW shared component | [`THEME_ENGINE.md`](./THEME_ENGINE.md) §14.4.1 (the 3-band recipe) + §15 (chat hooks) — write it in `kit/kit.css` on the semantic tokens, so every theme gets it |
+> | know which token to use | THEME_ENGINE §9.7 (the semantic contract) — never a vapor-private name (`--magenta`/`--ink*`) from §1 below |
+> | reskin an existing kit surface for one theme | THEME_ENGINE §14.14 (the 3-band + 3-gate) — theme CSS on the SHARED hooks, the §15 route |
+> | know what vapor still owns | [`VAPOR_BANNER_LEDGER.md`](./VAPOR_BANNER_LEDGER.md) §5 — the frozen `vapor-keeps` list |
+>
+> **What this doc is still GOOD for**, and why it is kept: (a) the KEPT bespoke Fleet surface — hero, sun,
+> skyline, waveform, device rows, services, kvgrid, the mini equalizer — which is still vapor's own markup
+> and still styled by these recipes; (b) vapor's **palette + identity** (§1 tokens, §2's on-gradient ink,
+> the glow/gradient vocabulary), which `themes/vapor/tokens.css` maps onto the contract; (c) the design's
+> *why* (§13's per-component decisions from the prototype chats). Section-by-section, treat anything about
+> a SHARED component as a record of what vapor used to look like, not as instructions.
+>
+> Note the paths below are pre-D51-V1: `theme/vapor.css` + `theme/extras.css` are now
+> `themes/vapor/vapor.css` + `themes/vapor/extras.css`.
+
 **Read this before building or styling any component.** It distills the *rules* behind
 `frontend/src/theme/vapor.css` (the verbatim lift of `design/prototypes/variations/vapor.html`) so new
 components are consistent by construction instead of by guesswork. `vapor.css` stays **verbatim**;

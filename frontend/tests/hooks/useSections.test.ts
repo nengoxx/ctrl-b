@@ -32,10 +32,44 @@ describe("useSections", () => {
 
   it("defaults (vapor, layout auto) are render-identical to the old shape: bar = all four, menu/hosted empty", () => {
     const { result } = renderHook(() => useSections());
-    expect(result.current.layout).toBe("4-tab"); // vapor's waivered default
+    expect(result.current.layout).toBe("4-tab"); // vapor's declared DEFAULT (not a restriction — D51 V6)
     expect(result.current.bar.map((s) => s.id)).toEqual(["fleet", "agent", "utils", "conf"]);
     expect(result.current.menu).toEqual([]);
     expect(result.current.hosted).toEqual({});
+  });
+
+  // ── vapor at 3-/2-tab — the REAL partition tests that replaced the forced-four-tab waiver assertions
+  //    (D51 V6 / R13, Codex #11: "kit chrome alone does not make it just work" → prove it does). vapor's
+  //    only per-theme piece here is the Root-pinned FleetTab BODY, and `fleet` is on the bar in every
+  //    preset — so what these pin is that the relocation vapor now honors is the same one minimal gets.
+  it("vapor · 3-tab: the pick is HONORED (no coercion) — bar of three, utils hosted in Conf", () => {
+    setUI({ layout: "3-tab" }); // theme is vapor (beforeEach)
+    const { result } = renderHook(() => useSections());
+    expect(result.current.layout).toBe("3-tab"); // ← the waiver would have bounced this to "4-tab"
+    expect(result.current.bar.map((s) => s.id)).toEqual(["fleet", "agent", "conf"]);
+    expect(result.current.menu).toEqual([]); // utils is hosted, conf is on-bar
+    expect(result.current.hosted).toEqual({ utils: "conf" });
+  });
+
+  it("vapor · 3-tab: navigate(utils) lands on Conf + arms the scroll-to-group handoff", () => {
+    setUI({ layout: "3-tab" });
+    const { result } = renderHook(() => useSections());
+    act(() => result.current.navigate("utils"));
+    expect(result.current.active).toBe("conf");
+    expect(result.current.hasComposer).toBe(false); // the HOST's flag, not the hosted section's
+    expect(getGroupScrollTarget()).toBe(HOSTED_UTILS_GROUP_ID);
+  });
+
+  it("vapor · 2-tab: bar of two, conf falls to the menu, utils still hosted — and Fleet stays on-bar", () => {
+    setUI({ layout: "2-tab" });
+    const { result } = renderHook(() => useSections());
+    expect(result.current.layout).toBe("2-tab");
+    expect(result.current.bar.map((s) => s.id)).toEqual(["fleet", "agent"]);
+    expect(result.current.menu.map((s) => s.id)).toEqual(["conf"]); // off-bar AND unhosted
+    expect(result.current.hosted).toEqual({ utils: "conf" });
+    // The Root-pinned VaporFleet's section is on the bar under EVERY preset — the reason vapor's bespoke
+    // body override is preset-independent and needed no waiver.
+    expect(result.current.bar[0].id).toBe("fleet");
   });
 
   it("navigate() switches the active section and re-derives hasComposer", () => {

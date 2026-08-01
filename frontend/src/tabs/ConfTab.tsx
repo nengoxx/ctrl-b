@@ -2441,8 +2441,8 @@ export function ConfTab({ active }: Props) {
             />
           </SettingRow>
           {/* Global, per-device (local — not synced like motion/perf): every theme's Root honors it.
-              minimal = no app bar + no tab bar; nav via the floating orbit menu (DefaultRoot themes;
-              vapor treats minimal as off for now). */}
+              minimal = no app bar + no tab bar; nav via the floating orbit menu — on EVERY theme since
+              D51 V4 put vapor on DefaultRoot (it used to fall back to `off`). */}
           <SettingRow
             label="App bar"
             desc="on · clear (transparent bar) · off (more screen) · minimal (orbit-menu nav)"
