@@ -90,11 +90,14 @@ Council-verified additions that reshape the plan:
   before the Root mounts) and must not use fixed waits. e2e only runs at the tag gate and v1.4.5
   burned on exactly this flake class — name this in the V0 brief.
 - `migrateLegacyTheme` + the FOUC twin keep their meaning (old `dark/aqua/ember` → vapor, NOT cosmos).
-- **No eager/lazy changes**: vapor stays eager (unchanged); cosmos keeps its lazy Root — a fresh
-  boot behaves exactly like today's cosmos-by-choice boot (FOUC script paints correct bg/skin
-  pre-paint; content appears when the chunk lands). Accepted trade on a single-user box where
-  fresh boots are rare; **owner eyeballs a cold fresh boot at V0** and we escalate only if it
-  offends (the escalation path — inline critical tokens, theme-agnostic — is recorded, not built).
+- **No eager/lazy changes**: vapor stays eager (unchanged); cosmos keeps its lazy Root and lazy
+  CSS — a fresh boot behaves exactly like today's cosmos-by-choice boot. **Stated accurately**
+  (Codex confirm — the FOUC script stamps attributes only; cosmos's background lives in its lazy
+  CSS): a cold fresh boot can show browser canvas → kit-base styling → cosmos style + content
+  when the chunks land — a background/style flash PLUS the content pop, not a correctly-painted
+  wait. Accepted trade on a single-user box where fresh boots are rare; **owner eyeballs a cold
+  fresh boot at V0** (§5 Q6) and we escalate only if it offends (the escalation — an inline
+  critical bg/text token block keyed off `data-skin`, theme-agnostic — is recorded, not built).
 - Sanity: SW precache manifest inspected; cold-boot into BOTH fresh-default and persisted-vapor
   paths eyeballed on device.
 
@@ -168,8 +171,8 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
   `Composer.tsx`, `TabBar.tsx`, `PinnedPlan` once unreferenced; their kit-duplicate extras.css
   banners (per the V3 classification).
 - Device checks pinned in the brief: Fennec keyboard/visualViewport, long-draft, autocomplete,
-  plan, tools menu, Stop, the no-composer-tab case (Codex #6's list); both vapor accents ×
-  light/dark.
+  plan, tools menu, Stop, the no-composer-tab case (Codex #6's list); **all THREE vapor accents**
+  (`dark`/`aqua`/`ember` — vapor has no mode axis) plus the applicable appbar/perf/motion cases.
 
 ### V5 — the deletion ladder (per-banner, port-verify → delete)
 - Work through the classified banners: chat (tokens/theme-CSS fidelity per the owner's §5 list —
@@ -234,9 +237,11 @@ Doc retirements: §13.1 frozen-attr table (V2, V4) · §14.4.1 two-trees invaria
 3. **Lozenge:** is the spinning-ring behavior wanted (as vapor's `brandMark` content)?
 4. **Cosmos first-boot defaults:** which mode/accent should a fresh cosmos boot show?
 5. **Existing devices:** confirm persisted vapor choices stay until manually switched.
-6. **NEW — the fresh-boot trade (V0):** a fresh cosmos-default boot paints the right background
-   instantly but content pops in when the lazy Root chunk lands (identical to picking cosmos
-   today). Acceptable, or should the escalation path (inline critical tokens) be built?
+6. **NEW — the fresh-boot trade (V0):** a fresh cosmos-default cold boot can flash browser canvas
+   → kit-base styling before cosmos's lazy CSS + Root land (identical to picking cosmos today; a
+   style flash plus a content pop, NOT a correctly-painted wait). Rare — fresh boots only.
+   Acceptable, or should the escalation (an inline critical bg/text block keyed off `data-skin`)
+   be built at V0?
 
 ## 6. Method (unchanged) + the confirm step
 Per slice: pinned Opus build brief → main-seat audit → Codex round → waves to WAVE CLEAN → owner
@@ -280,3 +285,13 @@ Codex lens = correctness/failure-modes (13 findings); Opus lens = architecture/m
 | R20 | MED: the new default-boot e2e must await content selectors, never bg/`data-skin` (the v1.4.5 flake class) | **ACCEPT** → V0 |
 | R21 | MED: vapor-keeps = enumerated list frozen at V3, V6 asserts residue EQUALS it; `data-skyline` resolved at V3 | **ACCEPT** → V3/V6/§3.1 |
 | R22 | LOW: V6 end state enforced mechanically (DefaultRoot render + no bespoke-chrome imports); `layouts:["4-tab"]` comment updated at V4 | **ACCEPT** → V4/V6 |
+
+**Codex confirm round (2026-08-01): R7 deferral + the R9 V4 pivot CONFIRMED against code**
+(DefaultRoot supplies the full #6 shell contract; no current VaporRoot behavior lost — scroll
+handoff, `body[data-tab]`, keep-mounted Fleet, four-tab coercion all survive). Two objections,
+both verified and folded:
+
+| # | Finding | Ruling |
+|---|---|---|
+| R23 | MED: the V0 trade was misstated — the FOUC script stamps attributes only; a fresh cosmos boot flashes browser canvas → kit base before cosmos lands | **ACCEPT** → V0 + §5 Q6 restated accurately; R5's ruling stands, on true facts |
+| R24 | MED: V4's device matrix said "both accents × light/dark" — vapor has THREE accents and no mode axis | **ACCEPT** → V4 matrix corrected |
