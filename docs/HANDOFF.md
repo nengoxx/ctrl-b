@@ -12,7 +12,37 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-07-31 evening — **NEXT PHASE PICKED: Phase 16 VAPOR ASSIMILATION (plan drafted, design NOT locked) + C2 wake word researched & shelved; three docs commits on main, UNPUSHED**)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-02 — 🏁 **PHASE 16 / D51 VAPOR ASSIMILATION COMPLETE, ALL PUSHED through `b4c2db6`**)
+> **The session's arc (one continuous lock→build session, 2026-08-01→02):** council round on the
+> draft plan (Codex correctness + Opus architecture lenses, both LOCK WITH CHANGES → reconciliation
+> R1–R30 in the plan §7, both confirm rounds clean) → owner §5 answers code-verified (chat = kit
+> look; Fleet stays as-is; **the prod logo 404 found + fixed `e28c590`** — a real bug behind the
+> owner's "logo isn't visible") → **D51 LOCKED** → built V0–V6, every slice through the full method
+> (Opus build → main-seat audit → Codex round → waves → owner D7 eyeball; **100% of review rounds
+> produced ≥1 accepted finding**). Slices: V0 `381250b` cosmos=DEFAULT_THEME (flip-only + mirror
+> matrix + PWA colors) · V1 `9c9d718` hygiene (9 git-mv, 20 keyframes, Waveform→safeRafLoop) · V2
+> `5f70a16`+ shared data-accent (+ the PRE-EXISTING confrow label-crush fix `930a5e7`, reproduced
+> on prod v1.4.6 — not a phase regression) · V3 `7668a1d` tokens.css + the 41-banner LEDGER
+> (`VAPOR_BANNER_LEDGER.md`) + ratchet · V4 `873f85c`/`9b7fcfd`/`16d4412` THE PIVOT (VaporRoot=56
+> ln on DefaultRoot; kit `brandMark` slot; bespoke chrome DELETED; owner-driven plan-pin fidelity —
+> centered flush hanging-tab on kit hooks) · V5 `3456c03` the deletion ladder (extras.css 3028→204;
+> 3 kit gaps filled incl. `.conf-foot a` broken on ALL kit themes; mini-player yields fixed) · V6
+> `b4c2db6` equality fences + **sections waiver RETIRED (tab-count now works under vapor)** + lazy
+> flip measured (5.3 KiB gz) → DROPPED + `.os-windows` glyph restored. **End state, test-enforced:**
+> vapor = thin Root + pinned bespoke VaporFleet + tokens.css + ~900 CSS ln; net **−3113 CSS lines**;
+> `CONTRACT_WAIVERS === {}`. Tests grew to **BE 1254 / FE unit 932 / e2e 144**; gate 6/6 on all 11
+> commits + 3 docs commits.
+> **▶ NEXT SESSION:** 1. **Owner's final V6 eyeball** if not done in-session (tab-count 3/2-tab under
+> vapor · the ⊞ glyph on Windows hosts · daily use). 2. **The v1.5.0 conversation** — this phase is
+> the natural candidate for the RESERVED tag (release = runbook §Release; prod still v1.4.6, rollback
+> unchanged). 3. Backlog seeds from the phase: the kit-wide `minimal`-chrome plan/mini-player overlap
+> (VAPOR_BANNER_LEDGER §7.1 — needs a kit-geometry slice) · owner ruling pending on wanting the old
+> TTS toast back as a kit capability (died with vapor's bespoke appbar; flagged at the V4 eyeball,
+> no objection so far) · **emma's 511M swap exhausted AGAIN this session (4 background review
+> processes killed)** — the standing tmpfs/swap review item bites now. 4. `design/prototypes/gacha/`
+> appeared untracked (owner's material for the future H1 gacha conversation) — left uncommitted.
+>
+> ## ▶ PREVIOUS STATE (2026-07-31 evening — **NEXT PHASE PICKED: Phase 16 VAPOR ASSIMILATION (plan drafted, design NOT locked) + C2 wake word researched & shelved; three docs commits on main, UNPUSHED**)
 > **The session's arc (a planning/design session — zero code):** full project-map review → the owner
 > picked two threads. **① Wake word (C2):** one Opus research pass → dossier **R14** banked +
 > indexed (main seat re-verified the two load-bearing claims in primary sources). The verdict that
