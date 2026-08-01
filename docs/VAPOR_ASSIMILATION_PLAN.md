@@ -240,6 +240,34 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
   in `themeContract.test.ts` dropped its `, #composer` alternative: the bespoke bar carries that id too, so
   the gate could have passed on DEAD DOM; it now requires `.kit-composer`, the node DefaultRoot measures.
 
+- **AS-BUILT — PHASE 2, THE DELETIONS (2026-08-01, uncommitted at hand-off; port = `873f85c`).** Worked
+  strictly from the ledger's §6 checklist — the first live exercise of the V3 machinery.
+  **Deleted:** `components/{AppBar,Composer,TabBar}.tsx` (git rm; the only non-comment reference anywhere
+  was micSending's vapor row, deleted with them) · `AgentTab`'s `PinnedPlan` + the four imports only it
+  used · vapor.css §Top bar (with `@keyframes vapor-tts-glow`), §Bottom tab bar, §Shared chat composer
+  (with `vapor-brew`/`vapor-micrec`/`vapor-micspin`), and the `padding-bottom` carve-out · extras.css row 6
+  (perf-lite bar list), row 8 (mic states), row 12's `.conn-badge` half (with `vapor-conn-pulse`), row 13's
+  app-shell box model, row 15's `.plan-pin-wrap` · the five ported selectors in the KEPT motion-gate list.
+  Every keyframe removed was verified single-consumer by grep; `vapor-spin` (shared with the kept device
+  spinner) had already moved to the kept §KIT CHROME block at the port.
+  **The window-scroll handoff (§3.1 #2) was decided by MEASUREMENT, not assumption:** cosmos/frontier carry
+  no html/body height/overflow rule and still cannot window-scroll (`.kit` is one viewport tall and clips
+  itself), so vapor's containment was deleted rather than re-homed — and vapor now measures identically.
+  **One deletion was REFUSED and the ledger corrected:** extras row 31 (wide-control wrap) was bucketed
+  `kit-duplicate`/V4, but removing it drops the computed `.confrow .k` min-width from `min(140px,45%)` to
+  **0px** — vapor.css's surviving SETTINGS rule (`min-width: 0`, `@layer theme`) outranks the kit's twin in
+  `@layer base`, so the deletion would have resurrected the v1.4.x label-crush bug. Moved to V5, bound to
+  the SETTINGS block. **The durable rule this yields: `kit-duplicate` means the kit IMPLEMENTS it — never,
+  on its own, that the kit will WIN it.**
+  **The banner ratchet passed UNTOUCHED (41 → 39), the machinery's first live proof — and it earned its
+  keep immediately:** the first draft of the tombstone comments opened with `/* ── `, which the ratchet
+  reads as three ADDED banners; it would have failed until they were rewritten without the box rule and
+  row 12's surviving first line restored verbatim.
+  **Correction to a V4 expectation:** the pinned-plan hybrid is NOT resolved by this slice. Only row 15's
+  `.plan-pin-wrap` was V4; the `.plan-pin-head`/`.plan-title`/`.plan-count` rules that CAUSE it are the
+  row's `port-owned:V5` body, and `.plan-pin-head` still computes `border-radius: 0 0 13px 13px`. The kit
+  panel's own look returns at V5.
+
 ### V5 — the deletion ladder (per-banner, port-verify → delete)
 - Work through the classified banners: chat (tokens/theme-CSS fidelity per the owner's §5 list —
   pulse, `▸/▾`, terminal gestalt survive as vapor theme-CSS on the §15 hooks) · Conf editors ·

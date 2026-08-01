@@ -3,7 +3,6 @@ import { cleanup, render } from "@testing-library/react";
 import { createElement, type ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Composer as VaporComposer } from "../../src/components/Composer";
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
@@ -13,6 +12,9 @@ import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer
 // SpinnerIcon and gains `.sending` (the CSS hook that rolls it). Lives in its OWN file because the
 // pin needs BOTH mocks the other harnesses deliberately avoid: sttReady=true (so the mic mounts at
 // all) AND a dictation hook frozen at `sending` (unreachable without driving MediaRecorder).
+//
+// D51 V4 phase 2: the fourth row — the bespoke `components/Composer` ("vapor: the CSS-masked button…") —
+// was DELETED with the component it pinned. Vapor renders the `sheet` variant now, already covered above.
 vi.mock("../../src/hooks/useVoiceStatus", () => ({
   useVoiceStatus: () => ({ data: { stt: true, tts: false }, dataUpdatedAt: 1 }),
 }));
@@ -45,17 +47,4 @@ describe("mic button while transcribing (status `sending`)", () => {
       expect(btn!.querySelector("svg rect")).toBeNull();
     },
   );
-
-  // ⚠️ DIES IN PHASE 2 (D51 V4) — this row pins the BESPOKE `components/Composer`, which no theme renders
-  // any more: vapor resolves the kit `sheet` variant since the DefaultRoot pivot, so the component is dead
-  // code awaiting the pivot's delete commit. Deliberately left in place until then (port ≠ delete: the port
-  // must stay revertible on its own). Delete this case WITH the component — do not retarget it; the three
-  // live variants are already covered by the `it.each` above.
-  it("vapor (DEAD COMPONENT, dies Phase 2): the CSS-masked button gains `.sending`", () => {
-    const { container } = renderWith(VaporComposer);
-    const btn = container.querySelector<HTMLButtonElement>("button.mic");
-    expect(btn).not.toBeNull();
-    expect(btn!.classList.contains("sending")).toBe(true);
-    expect(btn!.disabled).toBe(true);
-  });
 });

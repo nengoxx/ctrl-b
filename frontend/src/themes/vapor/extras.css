@@ -100,9 +100,11 @@ textarea:focus-visible {
    the now-dots active-morph (which dot is featured), and short entrance transitions
    (<300ms) on toasts/confirm dialog. vapor.css stays verbatim per D7; this overrides
    via cascade (extras.css loads after vapor.css). */
+/* D51 V4 phase 2 removed the selectors whose surfaces died with the chrome ports — `.brand .lozenge`
+   (superseded by `.vapor-mark`), `.tts-btn`, `.composer .send.brewing`, `.composer .mic.rec`,
+   `.conn-badge.reconnecting .dot`; the kit gates its own equivalents. The banner and every KEPT selector
+   stay (ledger §3: a port takes its selectors, never the block). */
 body[data-motion="reduced"] .vapor-mark[data-loz="ring"],
-body[data-motion="reduced"] [data-loz="ring"] .brand .lozenge,
-body[data-motion="reduced"] .tts-btn:not(.muted),
 body[data-motion="reduced"] .hero .sun,
 body[data-motion="reduced"] .hero .sun::after,
 body[data-motion="reduced"] .hero .sky::before,
@@ -111,27 +113,14 @@ body[data-motion="reduced"] .now .name,
 body[data-motion="reduced"] .dev.on .led,
 body[data-motion="reduced"] .dev.on .eq i,
 body[data-motion="reduced"] .plan-step.active .tick,
-body[data-motion="reduced"] .mini-player .mp-wave i,
-body[data-motion="reduced"] .composer .send.brewing,
-body[data-motion="reduced"] .composer .mic.rec,
-body[data-motion="reduced"] .conn-badge.reconnecting .dot {
+body[data-motion="reduced"] .mini-player .mp-wave i {
   animation: none !important;
 }
 
-/* ── Performance (lite) mode — Conf → Appearance → Blur (mirrored to body[data-perf], like data-motion).
-   `backdrop-filter: blur()` is by far the heaviest effect on Firefox-Android: the sticky appbar (and the
-   fixed tab bar + composer) re-blur the page scrolling underneath them EVERY frame, and Mozilla's own
-   tracker calls CSS blur ~10× slower than Chrome. Lite mode drops the blur on these three always-present,
-   scroll-overlapping bars and makes them opaque (they leaned on the blur to stay legible over moving
-   content). Full mode is untouched — pixel-exact vapor (D7). Other frosted surfaces (modals, plan panel,
-   mini-player) are transient / not over a live scroll, so they keep the look. Overrides via cascade. */
-body[data-perf="lite"] .appbar,
-body[data-perf="lite"] .tabbar,
-body[data-perf="lite"] .composer {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  background: var(--bg);
-}
+/* (BANNER DELETED at D51 V4 phase 2 — deliberately no `──` rule on this line: the ratchet keys on it.)
+   Performance (lite) mode — the `body[data-perf="lite"]`
+   `.appbar`/`.tabbar`/`.composer` de-blur list. All three are kit chrome now and kit.css carries
+   the same gate on `.kit-appbar`/`.kit-tabbar`/`.kit-composer`. A pure kit-duplicate. */
 
 /* ── Firefox smoothness, full effects ON — containment/layer hints (NO visual change). The goal is to
    stop a continuously-animated element from forcing work on its neighbours:
@@ -149,30 +138,11 @@ body[data-perf="lite"] .composer {
   will-change: transform;
 }
 
-/* ── Phase 6b-1 — mic "unavailable" state. A recording attempt 502'd (the STT primary + fallback
-   both failed), so the mic greys out + goes inert with a tooltip (reactive detection, owner-locked
-   2026-06-22 — no proactive liveness probe). Overrides the vapor `.mic` background/glow via cascade
-   (extras.css loads after vapor.css); vapor.css stays verbatim (D7). The idle/recording looks are
-   pure vapor (`.mic` / `.mic.rec`). */
-.composer .mic.unavail {
-  background: var(--ink-faint);
-  filter: none;
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Mic press feedback (fix 2026-06-26). vapor uses `:active { transform: scale(.88) }`, but
-   Firefox-Android (Fennec) leaves `:active` WEDGED after a tap — so once recording stopped the
-   button stayed shrunk (during recording the `.rec` pulse masks it; it only shows after). Drive the
-   press from a JS-toggled `.press` class instead (Composer: pointerdown → up/cancel/leave, plus a
-   safety auto-release) and neutralize the sticky `:active`, so the button reliably snaps back to full
-   size when idle. Overrides vapor.css via cascade (extras.css loads after); vapor.css verbatim (D7). */
-.composer .mic:active {
-  transform: none;
-}
-.composer .mic.press {
-  transform: scale(0.88);
-}
+/* (BANNER DELETED at D51 V4 phase 2 — no `──` rule on this line, see above.)
+   Phase 6b-1 — the composer mic `.unavail` + the Fennec
+   `:active`-wedge `.press` fix. Both states are kit chrome now (`.kit-cbtn.mic.press` /
+   `.kit-cbtn.mic.unavail`, verified at the port); the rules here were `.composer`-scoped and
+   already inert. */
 
 /* ── Phase 6b-2 — TTS read-aloud. A per-bubble trigger (speaker in the assistant who-line) + a docked
    mini-player (one at a time, scrubber). Net-new components (no vapor.html markup) built entirely from
@@ -380,49 +350,11 @@ body[data-perf="lite"] .composer {
 }
 
 /* ── F16 — Live SSE connection badge in the appbar.
-   Renders only when the connection is NOT "connected" (driven by store/connection.ts via
-   hooks/useEvents.ts). Compact pill that sits between `.brand` (which has flex: 1 and
-   shrinks to accommodate) and the TTS button. Vapor-token colors only; vapor.css stays
-   verbatim (D7). The pulsing dot in "reconnecting" state is also gated by the global
-   Motion preference above. */
-.conn-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 9px;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  background: rgba(var(--accent-rgb), 0.08);
-  border: 1px solid rgba(var(--accent-rgb), 0.22);
-  flex-shrink: 0;
-}
-.conn-badge .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.conn-badge.reconnecting .dot {
-  background: var(--magenta);
-  box-shadow: 0 0 6px var(--magenta);
-  animation: vapor-conn-pulse 1.4s ease-in-out infinite;
-}
-.conn-badge.disconnected {
-  border-color: rgba(var(--danger-rgb), 0.4);
-  color: rgb(var(--danger-rgb));
-}
-.conn-badge.disconnected .dot {
-  background: rgb(var(--danger-rgb));
-  box-shadow: 0 0 6px rgb(var(--danger-rgb));
-}
-@keyframes vapor-conn-pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
+   ⚠️ MIXED BLOCK — banner first line kept VERBATIM (it is the ratchet + ledger key; the block survives).
+   The `.conn-badge` HALF was DELETED at D51 V4 phase 2 (with `@keyframes vapor-conn-pulse`, its only consumer) — the kit
+   AppBar renders `.kit-conn`, so nothing emitted `.conn-badge` any more. The App-level overlays
+   below (`.toasts`/`.toast`/`.modal-backdrop`/`.modal`, and the SHARED `@keyframes
+   vapor-modal-fade` row 28 still consumes) are `port-owned:V5` and STAY. */
 
 /* Activity toasts — transient, top-center below the appbar (clear of the top-right tts-toast). Rides the
    measured `--appbar-h` so it re-pins to the top when the app bar is hidden (the global hideAppbar lever). */
@@ -636,46 +568,22 @@ body[data-perf="lite"] .composer {
    net-new bits vapor has no markup for: a thinking model's reasoning disclosure, the streaming
    caret, and a chat-level error line. All built from vapor tokens. */
 
-/* App-shell layout (Phase 4a mobile fix). Replaces vapor's window-scroll + `position:fixed` bottom
-   bars — which broke on Android Firefox (the dynamic toolbar shrinks the visual viewport, leaving
-   the fixed bars and the body's bottom padding misaligned: colored gaps / vanishing tab icons at
-   the bottom of the chat). Here the whole app is a `100dvh` flex column: a scrolling content pane,
-   then the composer + tab bar in NORMAL FLOW at the bottom. `100dvh` tracks the toolbar, so the
-   bars are always at the visible bottom and the chat pane scrolls within — no body padding, no
-   fixed/viewport mismatch. Appearance is unchanged (D7); only the box model moves. */
-:scope,
-body { /* :scope = <html> (scope root); `html` wouldn't match inside @scope */
-  height: 100%;
-  overflow: hidden; /* the shell owns scrolling, not the window */
-}
-#root {
-  height: 100%;
-}
-body {
-  padding-bottom: 0; /* override vapor's fixed-bar padding — bars are in-flow now */
-}
-.app-shell {
-  height: 100dvh; /* fallback before JS + on browsers without visualViewport */
-  height: var(--app-h, 100dvh); /* App sizes this to the visual viewport so the keyboard shrinks it */
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.app-scroll {
-  flex: 1 1 auto;
-  min-height: 0; /* let the flex child actually shrink + scroll */
-  overflow-y: auto;
-  overflow-x: hidden; /* the shell scrolls vertically only — a too-wide child must never add a horizontal
-                         scrollbar (without this, overflow-y:auto makes the x-axis compute to auto too) */
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain; /* no scroll-chaining bounce that re-shows the toolbar oddly */
-}
-/* Composer + tab bar: in-flow flex children at the bottom of the shell (was position:fixed). */
-.composer,
-.tabbar {
-  position: static;
-  flex-shrink: 0;
-}
+/* App-shell layout DELETED at D51 V4 phase 2 (row 13's `port-owned:V4` carve-out — the rest of this
+   banner is V5 and stays). It held the pre-kit box model: `:scope, body { height:100%; overflow:hidden }`,
+   `#root { height:100% }`, `body { padding-bottom: 0 }`, `.app-shell`, `.app-scroll`, and
+   `.composer/.tabbar { position: static }`. DefaultRoot's `.kit` IS that column now
+   (`height: var(--app-h, 100dvh); overflow: hidden`, with `.kit-scroll` carrying the
+   overflow/overscroll-contain), and `.app-shell`/`.app-scroll` are no longer rendered at all.
+
+   TWO ledger §3.1 obligations discharged here, both VERIFIED rather than assumed:
+   1. ATOMIC PAIR — `body { padding-bottom: 0 }` was the override for vapor.css's legacy
+      `body { padding-bottom: 116px }`. Both were deleted in the SAME commit; dropping this half alone
+      would have restored the 116px (the kit's `html, body { padding: 0 }` is @layer base and loses to
+      vapor's @layer theme).
+   2. WINDOW-SCROLL CONTAINMENT — measured, not assumed. cosmos/frontier ship with NO html/body
+      height/overflow rule (computed `overflow: visible` on both) and still cannot window-scroll:
+      `.kit` is exactly one viewport tall and clips its own overflow, so `documentElement.scrollHeight
+      === clientHeight`. vapor now matches that shape. */
 
 /* Reasoning ("thinking") — a collapsible scratchpad above the answer. Stays after the turn ends
    (collapsed) as a clear little dropdown chip so the chain-of-thought is never lost. */
@@ -1032,10 +940,12 @@ body {
   justify-content: center;
   pointer-events: none; /* the empty sides stay click-through to the chat; the tab re-enables */
 }
-.plan-pin-wrap {
-  position: relative; /* anchors the dropdown */
-  pointer-events: auto;
-}
+/* `.plan-pin-wrap` DELETED at D51 V4 phase 2 (row 15's `port-owned:V4` carve-out): it anchored the
+   dropdown of the vapor-only in-tab `PinnedPlan`, which this slice deleted from `tabs/AgentTab.tsx`.
+   The kit's `PinnedPlanPanel` has different markup (`.plan-pin-panel`/`.plan-pin-drop`), so this was
+   dead CSS, not a kit gap (D51 R29). The REST of this banner is `port-owned:V5` and stays — including
+   `.plan-pin-head`/`.plan-title`/`.plan-count`, which the kit panel DOES share, so the hybrid look
+   documented in the ledger persists until V5 deletes them. */
 .plan-pin-head {
   all: unset;
   cursor: pointer;

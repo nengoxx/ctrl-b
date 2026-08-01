@@ -1037,6 +1037,13 @@ never leaks into vapor — **follow it for every future theme:**
 > - The original obligation stands where it stood: a shared component's markup/class change updates BOTH
 >   trees and is eyeballed on vapor AND one Kit theme. Prune a surface from this note when its vapor rules
 >   are gone (the §14.15.3 / D51 V5 ladder); at V6 the note dies with them.
+> - **PRUNED at D51 V4 phase 2:** the CHROME surfaces (appbar · tab bar · composer · the app-shell box
+>   model) no longer have a vapor tree at all — their rules are deleted. What remains dual-styled: the chat,
+>   the Conf editors, the shared overlays, Utils, and the plan family. One more lesson from that pass, worth
+>   stating as a rule: **"the kit has an equivalent rule" is not sufficient grounds to delete a vapor rule —
+>   check which LAYER wins.** A kit rule in `@layer base` can sit under a *different*, surviving vapor rule
+>   in `@layer theme` (extras.css's wide-control wrap vs vapor.css's `.confrow .k { min-width: 0 }`), so
+>   deleting the vapor duplicate silently hands the property to the wrong declaration.
 
 ## 14.5 The core invariant — state ownership (prevents future refactors)
 

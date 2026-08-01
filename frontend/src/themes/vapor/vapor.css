@@ -166,8 +166,11 @@
     font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; line-height: 1.5;
     -webkit-font-smoothing: antialiased; min-height: 100%;
   }
-  body { padding-bottom: 116px; overflow-x: hidden; position: relative; }
-  body.no-composer { padding-bottom: 80px; }
+  /* D51 V4: `padding-bottom: 116px` + `body.no-composer { padding-bottom: 80px }` DELETED here — the
+     pre-shell fixed-bar model. Deleted ATOMICALLY with their extras.css override (`body{padding-bottom:0}`),
+     per the ledger §3.1 pair: dropping the override alone would have brought the 116px back, since the kit's
+     own `html, body { padding: 0 }` reset is @layer base and loses to this sheet's @layer theme. */
+  body { overflow-x: hidden; position: relative; }
 
   /* ══ KIT CHROME · vapor's brand mark (D51 V4 — the DefaultRoot pivot, plan §4.1) ═══════════════════
      The ONE piece of kit chrome vapor styles, and a KEEP (ledger §2): the node <VaporMark/> hands to the
@@ -208,127 +211,19 @@
     font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
   }
 
-  /* Top bar */
-  .appbar {
-    position: sticky; top: 0; z-index: 20;
-    backdrop-filter: blur(14px);
-    background: color-mix(in oklch, var(--bg) 70%, transparent);
-    display: flex; align-items: center; gap: 10px;
-    padding: 12px 18px;
-    border-bottom: 1px solid var(--line);
-  }
-  /* TRANSPARENT variant (global appbarMode="transparent", owner F4 addition) — the ADDITIVE ladder rule: the
-     bar still renders + measures into --appbar-h, but paints NOTHING (no fill / frost / bottom hairline), so
-     it floats over the page like the prototype. Byte-identical when the mode isn't transparent (no
-     `.appbar.transparent` element). vapor's only appbar button is the mask-icon `.tts-btn` (borderless, no
-     box) — there is no bordered icon pill to "square" here, so the squaring is a no-op for this skin. */
-  .appbar.transparent {
-    background: transparent;
-    border-bottom: 0;
-    box-shadow: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  /* Clear-mode legibility (additive, transparent-only — matches the rule above): with no bar fill the `.mark`
-     wordmark + `.meta` subtitle float over scrolling content, so lift them with a soft halo. A `--bg`-COLORED
-     shadow (not a literal) is MODE-PROOF: dark page → dark halo, light day → light halo. text-shadow inherits,
-     so this one rule on `.brand` covers both text children; the `.lozenge` badge isn't text, so it's untouched. */
-  .appbar.transparent .brand {
-    text-shadow:
-      0 1px 2px var(--bg),
-      0 0 8px var(--bg);
-  }
-  .brand { display: flex; align-items: center; gap: 10px; flex: 1; }
-  .brand .lozenge {
-    width: 36px; height: 36px; border-radius: 50%;
-    background: conic-gradient(from 0deg, var(--magenta), var(--violet), var(--teal), var(--magenta));
-    box-shadow: var(--m-glow);
-    position: relative;
-  }
-  .brand .lozenge::after {
-    content: ""; position: absolute; inset: 4px; border-radius: 50%;
-    /* ROOT-ABSOLUTE on purpose: logo.png lives in public/ (served at /logo.png). A relative url()
-       resolves against the BUILT stylesheet (/assets/…css) in prod → /assets/logo.png → 404, while
-       dev injects CSS as <style> (document base) and masks the bug. */
-    background: var(--bg) url("/logo.png") center/130% no-repeat;
-  }
-  /* classic ring variant — spinning gradient ring, no logo */
-  body[data-loz="ring"] .brand .lozenge { animation: vapor-spin 8s linear infinite; }
-  body[data-loz="ring"] .brand .lozenge::after { inset: 6px; background: var(--bg); }
-  /* `@keyframes vapor-spin` MOVED UP to the kept §KIT CHROME block (it is shared with the device-row busy
-     spinner, ledger §3 — the V4 delete commit must not take it with this section). */
-  .brand .mark {
-    font-family: "Major Mono Display", monospace;
-    font-size: 16px; letter-spacing: 2px;
-    color: var(--ink);
-  }
-  .brand .meta { font-size: 9px; color: var(--ink-soft); letter-spacing: 1.5px; text-transform: uppercase; }
-  /* TTS toggle — outline icon, mask-based, sized like the composer mic */
-  .tts-btn {
-    all: unset; cursor: pointer;
-    width: 40px; height: 40px;
-    flex-shrink: 0;
-    background: linear-gradient(180deg, color-mix(in oklch, var(--teal) 75%, white) 0%, var(--teal) 55%, color-mix(in oklch, var(--teal) 60%, var(--violet)) 100%);
-    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13L7.5 14.5H4z'/><path d='M15.5 9.5c1.2 1.4 1.2 5.6 0 7'/><path d='M18 7c2.6 2.6 2.6 7.4 0 10'/></svg>") center/26px no-repeat;
-            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13L7.5 14.5H4z'/><path d='M15.5 9.5c1.2 1.4 1.2 5.6 0 7'/><path d='M18 7c2.6 2.6 2.6 7.4 0 10'/></svg>") center/26px no-repeat;
-    filter: drop-shadow(0 0 6px color-mix(in oklch, var(--teal) 45%, transparent));
-    transition: transform .12s;
-  }
-  .tts-btn:active { transform: scale(0.9); }
-  /* muted: switch to slashed-speaker mask + desaturated fill */
-  .tts-btn.muted {
-    background: linear-gradient(180deg, color-mix(in oklch, var(--ink-soft) 70%, white) 0%, var(--ink-soft) 55%, var(--ink-faint) 100%);
-    filter: none; opacity: .85;
-    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13L7.5 14.5H4z'/><path d='M15.5 9.5l5.5 5.5'/><path d='M21 9.5l-5.5 5.5'/></svg>") center/26px no-repeat;
-            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13L7.5 14.5H4z'/><path d='M15.5 9.5l5.5 5.5'/><path d='M21 9.5l-5.5 5.5'/></svg>") center/26px no-repeat;
-  }
-  .tts-btn:not(.muted) { animation: vapor-tts-glow 2.4s ease-in-out infinite; }
-  @keyframes vapor-tts-glow {
-    0%, 100% { filter: drop-shadow(0 0 4px color-mix(in oklch, var(--teal) 35%, transparent)); }
-    50%      { filter: drop-shadow(0 0 10px color-mix(in oklch, var(--teal) 60%, transparent)); }
-  }
-  /* tiny toast */
-  .tts-toast {
-    position: fixed; top: 64px; right: 16px; z-index: 30;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
-    padding: 6px 10px; border-radius: 999px;
-    background: color-mix(in oklch, var(--bg-2) 88%, transparent);
-    border: 1px solid var(--line-2);
-    color: var(--ink-soft);
-    opacity: 0; transform: translateY(-4px); pointer-events: none;
-    transition: opacity .18s, transform .18s;
-  }
-  .tts-toast.show { opacity: 1; transform: translateY(0); }
-  .tts-toast b { color: var(--teal); font-weight: 600; }
-  .tts-toast.off b { color: var(--ink); }
+  /* §Top bar DELETED at D51 V4 phase 2 — `.appbar`(+`.transparent`) · `.brand`/`.lozenge`/`.mark`/
+     `.meta` · `.tts-btn`(+`.muted`) · `.tts-toast` · `@keyframes vapor-tts-glow`. The kit AppBar +
+     the `brandMark` slot (kept §KIT CHROME block above) own this now; `@keyframes vapor-spin` was
+     already moved there at the port. NOTE the `.tts-toast` auto-tts flash had no kit counterpart
+     and is GONE (a recorded V4 delta, ledger §2). */
 
-  /* Bottom tab bar with sliding indicator — 4 tabs */
-  .tabbar {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 12;
-    background: color-mix(in oklch, var(--bg) 92%, transparent);
-    backdrop-filter: blur(14px);
-    border-top: 1px solid var(--line);
-    display: grid; grid-template-columns: repeat(4, 1fr);
-    padding: 0;
-  }
-  .tabbar::before {
-    content: ""; position: absolute; top: 0; left: 0;
-    width: 25%; height: 3px;
-    background: linear-gradient(90deg, var(--magenta), var(--violet));
-    box-shadow: var(--m-glow);
-    transition: transform 0.4s cubic-bezier(.25,1,.4,1);
-  }
-  .tabbar[data-tab="agent"]::before { transform: translateX(100%); }
-  .tabbar[data-tab="utils"]::before { transform: translateX(200%); }
-  .tabbar[data-tab="conf"]::before  { transform: translateX(300%); }
-  .tabbtn { all: unset; cursor: pointer; padding: 12px 6px 14px; text-align: center; color: var(--ink-faint); transition: color 0.25s; }
-  .tabbtn.active { color: var(--ink); }
-  .tabbtn .glyph { font-size: 16px; line-height: 1; display: block; margin-bottom: 4px; font-family: "Major Mono Display"; }
-  .tabbtn .lbl { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; font-weight: 600; }
-
-  .tab { display: none; }
-  .tab.active { display: block; }
+  /* §Bottom tab bar DELETED at D51 V4 phase 2 — `.tabbar`(+`::before` indicator + its per-tab
+     `[data-tab]` transforms) · `.tabbtn`/`.glyph`/`.lbl`. The kit `KitNavBar` renders `.kit-tabbar`
+     with its own data-driven `--tab-i` indicator (N columns, not vapor's fixed 4).
+     ⚠️ HANDOFF, not a zero-ref: the `.tab { display: none } / .tab.active { display: block }` pair
+     that lived here styles LIVE DOM (every tab body still renders `.tab`). It is handed to
+     kit.css's `.kit .tab` / `.kit .tab.active` (which vapor is inside since the pivot) — that rule
+     also adds the `kit-fade` entrance, the accepted delta in ledger §7. */
 
   /* HERO: sun + horizon + now-monitoring */
   .hero {
@@ -788,104 +683,10 @@
   .summary .s.cyan .v { color: var(--teal); text-shadow: var(--t-glow); }
   .summary .s.violet .v { color: var(--violet); text-shadow: var(--v-glow); }
 
-  /* Shared chat composer (fleet + chat tabs only) */
-  .composer {
-    position: fixed; bottom: 60px; left: 0; right: 0; z-index: 11;
-    background: color-mix(in oklch, var(--bg) 94%, transparent);
-    backdrop-filter: blur(14px);
-    border-top: 1px solid var(--line-2);
-    border-left: 1px solid var(--line-2);
-    border-right: 1px solid var(--line-2);
-    border-radius: 14px 14px 0 0;
-    padding: 0;
-    display: flex; align-items: stretch; gap: 0;
-    box-shadow: 0 -6px 18px rgba(0,0,0,0.35);
-  }
-  /* Field wraps textarea + mic, both share the same input background
-     so the mic looks like an embedded icon inside the field. */
-  .composer .field {
-    flex: 1;
-    display: flex; align-items: center;
-    background: var(--bg-2);
-    border-radius: 14px 0 0 0;
-    position: relative;
-  }
-  .composer .field:focus-within {
-    box-shadow: inset 0 0 0 1px var(--magenta), 0 0 12px rgba(var(--accent-rgb), 0.3);
-  }
-  .composer textarea {
-    all: unset; flex: 1;
-    padding: 13px 6px 11px 14px;
-    border-radius: 14px 0 0 0;
-    background: transparent;
-    color: var(--ink); font: inherit; font-size: 12px;
-    border: 0;
-    min-height: 22px; max-height: 96px;
-    resize: none; line-height: 1.45;
-    overflow-y: auto;
-  }
-  .composer textarea::placeholder { color: var(--ink-faint); }
-  .composer textarea:focus { outline: 0; }
-  /* Send button: on the far right, flush with composer edge */
-  .composer .send {
-    all: unset; cursor: pointer;
-    width: 50px;
-    border-radius: 0 14px 0 0;
-    flex-shrink: 0;
-    background: linear-gradient(135deg, var(--magenta), var(--violet));
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
-    display: inline-flex; align-items: center; justify-content: center;
-    position: relative;
-    transition: transform 0.12s, filter 0.15s;
-  }
-  .composer .send:active { transform: scale(0.94); filter: brightness(1.1); }
-  .composer .send.brewing { animation: vapor-brew 1s ease-in-out infinite; }
-  @keyframes vapor-brew { 50% { filter: brightness(1.35) saturate(1.2); } }
-  .composer .send::before {
-    content: "";
-    width: 24px; height: 24px;
-    background: var(--bg-2);
-    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M3 11.5 L21 3 L13 21 L11 13 Z' fill='black'/></svg>") center/contain no-repeat;
-            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M3 11.5 L21 3 L13 21 L11 13 Z' fill='black'/></svg>") center/contain no-repeat;
-    transform: translate(-1px, 1px);
-  }
-  /* Stop control (D39): while a turn streams, `.send.stop` swaps the arrow glyph for a square. */
-  .composer .send.stop::before {
-    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='6' width='12' height='12' rx='2' fill='black'/></svg>") center/contain no-repeat;
-            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='6' y='6' width='12' height='12' rx='2' fill='black'/></svg>") center/contain no-repeat;
-    transform: none;
-  }
-  /* Mic sits inside the field, between textarea and send button */
-  .composer .mic {
-    all: unset; cursor: pointer;
-    width: 44px;
-    height: 44px;
-    margin-right: 4px;
-    flex-shrink: 0;
-    background: var(--accent-grad);
-    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='3' width='6' height='11' rx='3'/><path d='M5 11a7 7 0 0 0 14 0'/><path d='M12 18v3'/></svg>") center/28px no-repeat;
-            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='3' width='6' height='11' rx='3'/><path d='M5 11a7 7 0 0 0 14 0'/><path d='M12 18v3'/></svg>") center/28px no-repeat;
-    filter: var(--vapor-glow-filter-soft);
-  }
-  .composer .mic:active { transform: scale(0.88); }
-  .composer .mic.rec {
-    background: var(--danger-grad);
-    filter: var(--danger-glow);
-    animation: vapor-micrec 1.2s ease-in-out infinite;
-  }
-  @keyframes vapor-micrec { 50% { transform: scale(0.92); } }
-  /* STT in flight: the mask swaps to the 8-bar spinner (the shared SpinnerIcon geometry, stroke 2.4)
-     and rolls — steps(8) advances one bar per tick. Rotating the button rotates mask + gradient
-     together; at 28px the gradient shift is invisible, and the button is disabled while sending so
-     no :active/press transform competes. */
-  .composer .mic.sending {
-    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v4'/><path d='m16.2 7.8 2.9-2.9'/><path d='M18 12h4'/><path d='m16.2 16.2 2.9 2.9'/><path d='M12 18v4'/><path d='m4.9 19.1 2.9-2.9'/><path d='M2 12h4'/><path d='m4.9 4.9 2.9 2.9'/></svg>") center/28px no-repeat;
-            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v4'/><path d='m16.2 7.8 2.9-2.9'/><path d='M18 12h4'/><path d='m16.2 16.2 2.9 2.9'/><path d='M12 18v4'/><path d='m4.9 19.1 2.9-2.9'/><path d='M2 12h4'/><path d='m4.9 4.9 2.9 2.9'/></svg>") center/28px no-repeat;
-    animation: vapor-micspin 1s steps(8, end) infinite;
-  }
-  @keyframes vapor-micspin { to { transform: rotate(360deg); } }
-
-  /* (peek + meta-row removed for compact composer) */
+  /* §Shared chat composer DELETED at D51 V4 phase 2 — `.composer` · `.field` · `textarea` ·
+     `.send`(+`.brewing`/`.stop`) · `.mic`(+`.rec`/`.sending`) and the three keyframes only they
+     consumed (`vapor-brew`, `vapor-micrec`, `vapor-micspin`). vapor resolves the kit `sheet`
+     variant (SheetComposer, which IS this dock rebuilt on the semantic tokens). */
 
   /* CHAT */
   .chat-log { padding: 6px 16px 12px; display: flex; flex-direction: column; gap: 14px; }
