@@ -109,18 +109,22 @@ function AutomationRowView({ view, onOpen }: { view: AutomationView; onOpen: () 
         </div>
         <div className="desc">{desc}</div>
       </div>
-      {status && <span className={chipClass(status)}>{RUN_LABEL[status]}</span>}
-      {/* The switch acts on its own row without also opening the sheet (the DeviceRow `act` shape). */}
-      <span className="auto-sw" onClick={(e) => e.stopPropagation()}>
-        <Switch
-          on={a.enabled}
-          label={`${a.name} enabled`}
-          onToggle={() => setEnabled.mutate({ id: a.id, enabled: !a.enabled })}
-        />
+      {/* One right-anchored group so a narrow-viewport row wrap moves chip+switch+chevron together —
+          never a lone control orphaned onto its own line (`.confrow` wraps since the D51 V2 round). */}
+      <span className="row-acts">
+        {status && <span className={chipClass(status)}>{RUN_LABEL[status]}</span>}
+        {/* The switch acts on its own row without also opening the sheet (the DeviceRow `act` shape). */}
+        <span className="auto-sw" onClick={(e) => e.stopPropagation()}>
+          <Switch
+            on={a.enabled}
+            label={`${a.name} enabled`}
+            onToggle={() => setEnabled.mutate({ id: a.id, enabled: !a.enabled })}
+          />
+        </span>
+        <button type="button" className="chev" aria-label={`edit ${a.name}`} onClick={onOpen}>
+          ›
+        </button>
       </span>
-      <button type="button" className="chev" aria-label={`edit ${a.name}`} onClick={onOpen}>
-        ›
-      </button>
     </div>
   );
 }

@@ -36,7 +36,12 @@ the D-entry — and the residual `vapor.css` styles only it. Everything else por
 copy dies. (`tabs/FleetTab.tsx` is already vapor-only by its own comment; it and Hero/Waveform/
 `heroScene.ts` move into `themes/vapor/` at V1 — vapor-only components stop squatting shared dirs.)
 
-## 2. Verified as-is state (main-seat sweep 2026-07-31; council corrections 2026-08-01)
+## 2. Verified as-is state — **the PRE-V0 BASELINE** (main-seat sweep 2026-07-31; council corrections 2026-08-01)
+
+> Frozen as the starting inventory — rows retire as slices land, tracked here: hook ③ keyframes
+> **DEAD at V1** · hook ⑥ CSS-home **DEAD at V1** (all files in `themes/vapor/`) · hook ① accent
+> axis **DEAD at V2** (shared `data-accent`; `applyBodyAttrs` has ONE arm now). Live remainder:
+> hooks ② (tokens, → V3) · ④ (parallel chrome, → V4) · ⑤ (isVapor PinnedPlan gate, → V4).
 
 | Hook | Where (verified) |
 |---|---|
@@ -211,7 +216,7 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
 ### 3.1 The retirement ledgers (kept current every slice; close at V6)
 | Vapor body attr | Retires at |
 |---|---|
-| `data-theme` (accent) | V2 |
+| `data-theme` (accent) | ✅ **RETIRED at V2** (`5f70a16`, 2026-08-01) |
 | `data-loz` | V4 (becomes a theme setting driving the kit `brandMark` slot) |
 | `data-skyline` | ruled at V3's classification (vapor-keeps or not); executed V5/V6 |
 | `data-tab` | V4 (DefaultRoot's mechanism; the `layouts` waiver comment updates here too) |

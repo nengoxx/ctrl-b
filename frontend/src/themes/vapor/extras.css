@@ -2250,6 +2250,16 @@ body {
 .confrow .seg {
   flex-wrap: wrap;
   justify-content: flex-end;
+  margin-left: auto; /* right-anchored beside the label AND when wrapped onto its own line (kit parity) */
+}
+
+/* Trailing-control group (chip + switch + chevron ride as ONE right-anchored unit, so a wrap can
+   never orphan a lone chevron/switch onto its own line — the automations row's shape). */
+.confrow .row-acts {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+  margin-left: auto;
 }
 
 

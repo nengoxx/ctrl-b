@@ -495,7 +495,8 @@ export const FALLBACK: ThemeId = "minimal";     // slot fallback when a theme om
 ### 9.6 CSS strategy — per-theme bundle, `[data-skin]`-scoped, lazy, **isolated by CSS `@layer`**
 
 > **⚠️ Corrected by the final review (§13).** The isolation mechanism is **CSS Cascade Layers**, and the
-> theme-identity attribute is **`data-skin`**, NOT `data-theme` (which stays vapor's frozen accent axis). The
+> theme-identity attribute is **`data-skin`**, NOT `data-theme` (at the time vapor's frozen accent axis;
+> **that axis is RETIRED since D51 V2, 2026-08-01** — vapor's accent rides the shared `data-accent`). The
 > earlier "scope under `[data-theme]` + rely on specificity" idea is superseded — see §13.1–13.3.
 
 **Chosen (web-cited):** per-theme **plain `.css`** bundles, **dynamic-`import()`'d** (Vite `cssCodeSplit`
@@ -661,7 +662,10 @@ ETag/412, no Background Sync** (all over-engineering for one writer behind one a
   query hook (a plain `useQuery`, NOT `useScopedQuery` — it must fetch on mount regardless of the active tab)**;
   the `ui` store reconciles against it (compare-then-set). Writes still go through the Conf picker's
   `PUT /api/settings {appearance}` (the picker lives in Conf where the settings doc is loaded).
-- **Load sequence (no-flash).** (1) An **inline script at the TOP of `<body>`** (NOT `<head>` — `document.body`
+- **Load sequence (no-flash).** *(Original design text — as built, `data-skin` moved to `<html>` (§10
+  AS-BUILT) and since D51 V2 the script stamps the shared `data-mode`/`data-accent` for every skin; the
+  `data-theme` mention below is the retired vapor axis.)* (1) An **inline script at the TOP of `<body>`**
+  (NOT `<head>` — `document.body`
   is null there; a script at the start of `<body>` runs with `body` present, before `#root` paints) reads
   `localStorage["ctrlb.ui"]` and sets **`body[data-skin]`/`data-theme`/`data-mode`** — keeping the attrs on
   `body` so vapor's existing `body[data-*]` selectors + the §10 `body[data-skin="x"]` scoping stay consistent.
@@ -1026,7 +1030,8 @@ remounts only presentation — no refetch, no lost draft/featured/scroll, instan
   The prototypes share class names (`.composer/.seg/.switch/.device/.hero`), so scoping (not bare globals) is required.
 - **AS-BUILT (M1):** `data-skin` lives on **`<html>`** (`documentElement`), so the scope is rooted at the document
   root — vapor's `:root`/`html,body`/page-background rules all sit inside the scope, and its `body[data-*]` accent/
-  skyline/etc. rules match `<body>` as a descendant. The sheet is wrapped **verbatim** in `@scope ([data-skin="vapor"])
+  skyline/etc. rules match `<body>` as a descendant (the accent rules ride the shared `body[data-accent]` since
+  D51 V2 — the private `data-theme` axis is retired). The sheet is wrapped **verbatim** in `@scope ([data-skin="vapor"])
   { … }` with only these scope-root selector edits (⚠️ **the critical gotcha — empirically caught in M1**: *scoped
   selectors match DESCENDANTS of the scope root, NOT the root itself*, so selectors targeting `<html>` silently don't
   apply unless they use `:scope`):

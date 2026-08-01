@@ -33,8 +33,9 @@ import type { Loz, Skyline } from "./index";
 // (MiniPlayer/Toasts/…) stay inside `.app-shell` for byte-identical DOM — they become Kit/token-driven
 // + hoisted to App in the Kit slice.
 //
-// Vapor CSS keys off body data-attrs (theme/tab/skyline/loz) + body.no-composer (written synchronously
-// by store/ui.ts). Fleet/Agent/Utils are always mounted (`.tab` CSS shows only the active one); Conf is
+// Vapor CSS keys off body data-attrs — the SHARED accent/tab axes (written by store/ui.ts; the private
+// data-theme axis retired at D51 V2) plus skyline/loz and body.no-composer, which THIS component owns
+// (theme-owned settings, M3 §14.3). Fleet/Agent/Utils are always mounted (`.tab` CSS shows only the active one); Conf is
 // lazy — mounted after its first activation, once-and-stays so its draft state survives tab switches.
 
 export function VaporRoot() {

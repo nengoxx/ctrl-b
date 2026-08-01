@@ -2,9 +2,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// Theme-engine CSS entry (Phase 11 / D28). Loads vapor.css + extras.css (the frozen canonical
-// stylesheet, lifted verbatim from vapor.html — D7) caged in `@layer frozen` so future non-vapor
-// themes win by cascade order, not specificity. The frozen files themselves are untouched. §9.6.
+// Theme-engine CSS entry (Phase 11 / D28; layering as-built = §14.6). Loads vapor.css + extras.css
+// at `layer(theme)` under vapor's `@scope` — and since D51 they are being ASSIMILATED slice by slice
+// (keyframes prefixed V1, the accent axis shared V2, …), no longer a frozen verbatim lift. §9.6's
+// original "@layer frozen, untouched" wording is historical.
 import "./themes/vapor/vapor-fonts.css"; // self-hosted JetBrains Mono + Major Mono Display (vapor is eager)
 import "./theme/index.css";
 import App from "./App";

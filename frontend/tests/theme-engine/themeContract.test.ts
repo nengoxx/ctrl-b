@@ -48,7 +48,8 @@ export type ContractWaiver =
   //   now runs vapor through the SAME expectations as every other skin); the arm stays as the vocabulary.
   | "kit-structure"; // §14.15.3 hook ④: parallel chrome (components/AppBar·Composer·TabBar vs the Kit's) →
 //   no `.kit-appbar`/`.kit-composer`, and its bespoke hero/waveform canvases are e2e territory (flows.spec
-//   boots vapor for real). So the render-based structural + Fleet-a11y group is waived. Retires at V4/V5.
+//   boots vapor for real). So the render-based structural + Fleet-a11y group is waived. Retires at V6
+//   (D51: the V4 DefaultRoot pivot lands the kit chrome; the waiver list must only hit [] at the V6 tail).
 
 export const CONTRACT_WAIVERS: Partial<Record<ThemeId, ContractWaiver[]>> = {
   vapor: ["semantic-tokens", "kit-structure"],

@@ -2223,6 +2223,14 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 .kit .confrow .seg {
   margin-left: auto;
 }
+/* Trailing-control group (the automations row's chip + switch + chevron): one right-anchored flex
+ * unit, so a narrow-viewport wrap can never orphan a lone control onto its own line. */
+.kit .confrow .row-acts {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+  margin-left: auto;
+}
 .kit .confrow .k .label {
   font-size: 14px;
   color: var(--text);
