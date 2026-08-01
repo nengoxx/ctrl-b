@@ -1,6 +1,4 @@
-import type { Page } from "@playwright/test";
-
-import { expect, test } from "./fixtures";
+import { expect, seedUI, test } from "./fixtures";
 
 // The SECTION LAYOUT SYSTEM v1 lever (D35 / FRONTIER_PLAN §6-F0) driven end-to-end on the REAL built app. A
 // SMOKE (no axe, no screenshots) that rides the existing e2e projects — it seeds the device-local `ui.layout`
@@ -9,17 +7,8 @@ import { expect, test } from "./fixtures";
 // buttons exist, whether the NavMenu launcher is present, and that hosted utils lands inside Conf.
 //
 // Themes: `minimal` (a registered Kit theme that supports ALL presets → an explicit 3-/2-tab pick is honored)
-// exercises the real relocation; `vapor` (the frozen default, `layouts:["4-tab"]`) proves the waiver coerces a
-// 2-tab pick back to its untouched 4-tab markup.
-
-/** Seed the persisted UI blob before any page script (the flows/kit-render pattern). `v:1` = current schema
- *  (skip migrations); the appearance server-mock is unseeded so the reconcile round-trip HOLDS the local pick,
- *  and `ui.layout` is device-local so it's never reconciled away. */
-async function seedUI(page: Page, ui: Record<string, unknown>): Promise<void> {
-  await page.addInitScript((blob) => {
-    localStorage.setItem("ctrlb.ui", JSON.stringify(blob));
-  }, ui);
-}
+// exercises the real relocation; `vapor` (frozen, `layouts:["4-tab"]`) proves the waiver coerces a 2-tab pick
+// back to its untouched 4-tab markup.
 
 test("minimal · 3-tab: utils leaves the bar and is hosted in Conf; no NavMenu (menu empty)", async ({
   page,

@@ -1,7 +1,7 @@
 // The vapor theme module (Phase 11 v2 / D29). vapor is a normal theme now (no longer "frozen +
-// separate") — it owns its whole presentation via `VaporRoot` and stays the DEFAULT until each other
-// theme is verified. Its CSS is loaded eagerly (theme/index.css, the default — see §14.6), so
-// `loadStyles` is a no-op; its fonts come from index.html. Palette = the named accents (dark/aqua/
+// separate") — it owns its whole presentation via `VaporRoot`. It is NO LONGER the default (D51 V0 handed
+// that to cosmos), but it is still the one EAGER theme: its CSS is statically imported (theme/index.css,
+// §14.6) so `loadStyles` is a no-op, and its fonts come from main.tsx. (The lazy flip is D51's V6.) Palette = the named accents (dark/aqua/
 // ember) on the `body[data-theme]` axis; no `mode` axis (vapor is dark-only).
 
 import type { ThemeDef } from "../../theme-engine/types";
@@ -31,7 +31,7 @@ export const vapor: ThemeDef = {
   // this declaration merely makes the picker coerce any 3-/2-tab pick back to 4-tab while frozen.
   defaultLayout: "4-tab",
   layouts: ["4-tab"],
-  loadStyles: () => Promise.resolve(), // vapor.css is eager (the default theme), already loaded
+  loadStyles: () => Promise.resolve(), // vapor.css is eager (static import in main.tsx), already loaded
   // Per-theme settings (§14.3) — vapor's hero decoration, auto-rendered in the Appearance picker. The
   // Appearance group renders these between the global Palette and the global Motion/Blur levers. seg →
   // body[data-skyline]/[data-loz] (written by VaporRoot); switch → gates the hero/waveform JSX subtree.

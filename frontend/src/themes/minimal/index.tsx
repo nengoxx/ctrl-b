@@ -3,7 +3,7 @@
 // prototypes/project/variations/minimal.html. Unlike vapor (bespoke Root), minimal's whole presentation is
 // the Kit's `DefaultRoot`; it supplies only a `tokens.css`, self-hosted fonts, a palette, and settings.
 //
-// CSS + fonts are LAZY (loaded by switchTheme before the skin flips); vapor stays the eager default.
+// CSS + fonts are LAZY (loaded by switchTheme before the skin flips); vapor stays eager.
 
 import { composerSkinSetting, outlinesSetting } from "../../theme-engine/kit/axes";
 import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/placement";

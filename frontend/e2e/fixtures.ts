@@ -270,12 +270,14 @@ const ROUTES: Record<string, unknown> = {
  *  and `GET /api/appearance` returns it — so the theme-engine's optimistic-write→reconcile round-trip is
  *  deterministic (a static mock would let the always-on reconcile revert a just-made change). */
 export async function mockApi(page: Page): Promise<void> {
-  // Mirrors the backend AppearanceCfg shape (M3 §14.3: + motion/perf/theme_settings). They default null
-  // ("unseeded") like the real backend — a write spreads concrete values in (and stamps updated_at).
+  // Mirrors the backend AppearanceCfg shape (M3 §14.3: + motion/perf/theme_settings) — including its
+  // unwritten skin triple (cosmos/dark/violet since D51 V0). The M3 fields default null ("unseeded") like
+  // the real backend — a write spreads concrete values in (and stamps updated_at). While `updated_at` is
+  // null the reconcile keeps LOCAL, so a spec's seeded pick always wins over these.
   let appearance: Record<string, unknown> = {
-    theme: "vapor",
+    theme: "cosmos",
     mode: "dark",
-    accent: "dark",
+    accent: "violet",
     motion: null,
     perf: null,
     theme_settings: null,
@@ -312,6 +314,21 @@ export async function mockApi(page: Page): Promise<void> {
     return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
 }
+
+/** Seed the persisted `ctrlb.ui` blob BEFORE any page script — the one place the addInitScript pattern
+ *  every spec used inline now lives. Pass `v: 1` (the current persisted-schema version) so the migration
+ *  chain is skipped and the blob applies verbatim. Since D51 V0 a spec that wants VAPOR (or any non-default
+ *  skin) must seed it explicitly: an unseeded boot lands on the cosmos default. The appearance server-mock
+ *  is unseeded (`updated_at: null`), so the reconcile round-trip HOLDS the seeded pick. */
+export async function seedUI(page: Page, ui: Record<string, unknown>): Promise<void> {
+  await page.addInitScript((blob) => {
+    localStorage.setItem("ctrlb.ui", JSON.stringify(blob));
+  }, ui);
+}
+
+/** The vapor skin triple, for the specs that drive vapor's bespoke chrome (its Fleet rows/waveform, its
+ *  `.composer`, its frozen `data-theme` accent axis). Spread into a `seedUI` blob with the wanted `tab`. */
+export const VAPOR_UI = { theme: "vapor", mode: "dark", accent: "dark", v: 1 } as const;
 
 /** Spec base. The API mock is applied via a `page` override so EVERY test gets it (a fixture that only
  *  runs when destructured would miss specs that take just `{ page }` — e.g. the a11y scans). `pageErrors`

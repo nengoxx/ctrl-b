@@ -809,7 +809,8 @@ class AppearanceCfg(BaseModel):
     Backend-authoritative, server-stamped last-write-wins: the client writes the whole selection
     through the normal `PUT /api/settings` deep-merge; the server stamps `updated_at` on its own clock
     (no cross-device skew). Read back cheaply via `GET /api/appearance` (the full settings doc is
-    Conf-tab-scoped, so it can't drive first-paint / reconcile). Defaults mirror the frontend `ui` store.
+    Conf-tab-scoped, so it can't drive first-paint / reconcile). Defaults mirror the frontend `ui` store
+    (cosmos/dark/violet since D51 V0 — see the field comment below).
 
     `theme_settings` is an OPEN per-theme options map (`{themeId: {key: value}}`, D29 §14.3) — the theme
     owns the schema, so the server is a pass-through (no per-theme Pydantic union that would force a
@@ -824,9 +825,13 @@ class AppearanceCfg(BaseModel):
     the client keep local until the first real appearance write seeds these (the patch sends the full
     selection). Same unseeded-until-written contract as `updated_at`."""
 
-    theme: str = "vapor"
+    # The unseeded selection = the frontend's first-boot triple. A DOCUMENTED MIRROR (D51 allowlist) of
+    # `DEFAULT_THEME` in `frontend/src/theme-engine/resolve.ts` plus that theme's declared ThemeDef defaults
+    # (cosmos: dark/violet) — another process can't import the TS constant, so `tests/
+    # test_arch_invariants_sys10.py` pins this field to that declaration and fails if the two drift.
+    theme: str = "cosmos"
     mode: str = "dark"
-    accent: str = "dark"
+    accent: str = "violet"
     motion: str | None = None  # ambient animations: "full" | "reduced"; None = unseeded → client keeps local
     perf: str | None = None  # frosted-bar blur: "full" | "lite"; None = unseeded → client keeps local
     theme_settings: dict[str, dict[str, Any]] | None = None  # open per-theme options (§14.3); None = unseeded

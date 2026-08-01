@@ -272,7 +272,7 @@ describe("ui store", () => {
       // (verification F5, 2026-07-10); the merge helper now rejects non-plain-object blobs outright.
       seed(["junk"]);
       const s = loadUIState();
-      expect(s.theme).toBe("vapor");
+      expect(s.theme).toBe("cosmos"); // DEFAULTS' first-boot skin (D51 V0)
       expect("0" in s).toBe(false);
     });
   });
@@ -287,9 +287,9 @@ describe("ui store", () => {
       act(() => setUI({ theme: "nope" as never, mode: "light", accent: "indigo" }));
       act(() => coerceBootTheme());
       const s = getUI();
-      expect(s.theme).toBe(DEFAULT_THEME); // "vapor"
-      expect(s.mode).toBe("dark"); // vapor declares no mode axis → the "dark" fallback
-      expect(s.accent).toBe("dark"); // vapor's defaultAccent
+      expect(s.theme).toBe(DEFAULT_THEME); // "cosmos" (D51 V0)
+      expect(s.mode).toBe("dark"); // cosmos's declared defaultMode
+      expect(s.accent).toBe("violet"); // cosmos's declared defaultAccent
       // self-heals the persisted blob for the next boot
       expect(JSON.parse(localStorage.getItem(KEY)!).theme).toBe(DEFAULT_THEME);
     });

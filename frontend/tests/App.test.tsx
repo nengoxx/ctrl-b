@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // host of headless engines (event stream, appearance sync, chat init, auto-TTS, fleet cycle) that each need
 // a QueryClient/SSE; those are mocked to no-ops so this file exercises ONLY the boundary + the fallback's two
 // actions. `useActiveRoot` is mocked to a controllable Root (throws / renders on demand); `switchTheme` and
-// the appearance mutation are spies. `resolve` stays REAL so DEFAULT_THEME is the genuine "vapor" literal and
+// the appearance mutation are spies. `resolve` stays REAL so DEFAULT_THEME is the genuine "cosmos" literal and
 // the Reset target is the real `defaultSwitchTarget` (its `registry` read is the only registry dep → mocked
 // minimally, keeping cosmos's canvas imports out of jsdom).
 
@@ -23,10 +23,11 @@ const hoisted = vi.hoisted(() => ({
 vi.mock("../src/theme-engine/ThemeProvider", () => ({ useActiveRoot: () => hoisted.root }));
 vi.mock("../src/theme-engine/switchTheme", () => ({ switchTheme: hoisted.switchTheme }));
 vi.mock("../src/theme-engine/registry", () => ({
-  // vapor stays minimal (its palettes drive the real `defaultSwitchTarget` in the Reset tests). frontier +
-  // cosmos carry the `outlines` + `composerSkin` axis settings so AppEngines' D37 stamps resolve against their
-  // real defaults (frontier outlines OFF / skin `bezel`, cosmos outlines ON / skin `outline`) without dragging
-  // the theme modules' canvas imports into jsdom.
+  // vapor stays minimal. cosmos mirrors its REAL declared palettes (dark/violet) because it's DEFAULT_THEME
+  // (D51 V0) and so drives the real `defaultSwitchTarget` in the Reset tests. frontier + cosmos carry the
+  // `outlines` + `composerSkin` axis settings so AppEngines' D37 stamps resolve against their real defaults
+  // (frontier outlines OFF / skin `bezel`, cosmos outlines ON / skin `outline`) without dragging the theme
+  // modules' canvas imports into jsdom.
   registry: {
     vapor: { palettes: {} },
     frontier: {
@@ -42,7 +43,7 @@ vi.mock("../src/theme-engine/registry", () => ({
       },
     },
     cosmos: {
-      palettes: {},
+      palettes: { modes: ["dark"], defaultMode: "dark", defaultAccent: "violet" },
       settings: {
         outlines: { type: "switch", label: "Outlines", default: true },
         composerSkin: {
@@ -102,7 +103,7 @@ function ThrowingRoot(): ReactNode {
 }
 
 beforeEach(() => {
-  setUI({ theme: "vapor" }); // default skin; individual cases override
+  setUI({ theme: "cosmos" }); // the default skin (DEFAULT_THEME); individual cases override
   hoisted.root = null;
   hoisted.chat.currentPlan = null; // reset the A4 probe
   setPlanSheetOpen(false); // reset the shared flag (module singleton persists across tests)
@@ -149,11 +150,11 @@ describe("App theme-fault boundary (item ②)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset theme to default" }));
 
     // Reset reconstructs pickTheme's two-step toward the real DEFAULT_THEME + its default axes.
-    expect(hoisted.switchTheme).toHaveBeenCalledWith("vapor", { mode: "dark", accent: "dark" });
+    expect(hoisted.switchTheme).toHaveBeenCalledWith("cosmos", { mode: "dark", accent: "violet" });
     // Write-through (§14.15.2): the optimistic appearance PUT carries the DEFAULT_THEME target.
     expect(hoisted.mutate).toHaveBeenCalledTimes(1);
     expect(hoisted.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ theme: "vapor", mode: "dark", accent: "dark" }),
+      expect.objectContaining({ theme: "cosmos", mode: "dark", accent: "violet" }),
     );
     // The epoch bump remounts the boundary → the (now-healthy) Root renders; the fallback clears.
     expect(screen.getByTestId("root-ok")).toBeTruthy();
@@ -161,7 +162,7 @@ describe("App theme-fault boundary (item ②)", () => {
   });
 
   it("Reset still remounts when the faulty skin already IS DEFAULT_THEME (epoch, not id)", () => {
-    // theme stays "vapor" (== DEFAULT_THEME): the key's id part can't change, so only the epoch forces the
+    // theme stays "cosmos" (== DEFAULT_THEME): the key's id part can't change, so only the epoch forces the
     // remount — the M4 no-op trap the resetEpoch counter exists to defeat.
     hoisted.root = FlakyRoot;
     render(<App />);

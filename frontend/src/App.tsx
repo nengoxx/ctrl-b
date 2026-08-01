@@ -11,6 +11,7 @@ import { useAutoTts } from "./hooks/useAutoTts";
 import { useEventStream } from "./hooks/useEvents";
 import { useFleetCycle } from "./hooks/useFleet";
 import { useForegroundNotifications } from "./hooks/useForegroundNotifications";
+import { crashBtn, crashBtnQuiet, crashMessage, crashShell } from "./lib/crashScreen";
 import { isAnyDirty } from "./store/dirty";
 import { usePlanOpenAutoClose } from "./store/planSheet";
 import { useUISlice } from "./store/ui";
@@ -73,10 +74,11 @@ export default function App() {
   return (
     <>
       <AppEngines />
-      {/* The active theme's Root may be a lazy chunk (non-default themes — keeps a bespoke theme's
-          canvas/Fleet out of the default bundle). switchTheme preloads it before the flip, so this
-          Suspense only ever shows on a cold load with a non-default theme persisted (brief, §14.6);
-          the eager default (vapor) never suspends. fallback=null → the page bg shows during the blip.
+      {/* The active theme's Root may be a lazy chunk (every theme but vapor — keeps a bespoke theme's
+          canvas/Fleet out of the initial bundle). switchTheme preloads it before the flip, so this
+          Suspense only ever shows on a COLD load with a lazy-Root theme active (brief, §14.6) — which
+          since D51 V0 includes the cosmos DEFAULT (accepted trade, plan §3 V0); only vapor never
+          suspends. fallback=null → the page bg shows during the blip.
           The ErrorBoundary sits ABOVE the Suspense (item ②): a Root chunk that fails to import throws
           the rejected promise to the nearest boundary above `<Suspense>` — this one. */}
       <ErrorBoundary
@@ -97,9 +99,11 @@ export default function App() {
 // crashed): the F23 classes all live under `@scope ([data-skin="vapor"])`, and this boundary's COMMON case is
 // a crashed NON-vapor lazy skin — `html[data-skin]` still names that skin, so vapor's rules can't match and a
 // class-styled fallback would render unstyled exactly when it matters (ruling 2026-07-10, supersedes the
-// reuse-F23-classes assumption; F23 itself is unchanged — it fires under vapor, where its classes resolve).
-// The F23 class names + markup shape are KEPT for identity continuity; `var(--token, literal)` fallbacks let
-// the unscoped base tokens enrich the palette when they resolve. Deliberately theme-neutral — this is the
+// reuse-F23-classes assumption). The style primitives are shared with the F23 global net, which adopted the
+// same idiom at D51 V0 once cosmos became the default skin (`lib/crashScreen`).
+// The F23 class names + markup shape are KEPT for identity/legacy continuity only — inline beats any
+// stylesheet, so the shared objects are the canonical look wherever the two overlap. Deliberately
+// theme-neutral (the buttons are neutral literals; only the shell + border read tokens) — this is the
 // "the theme is broken" screen. Two actions, ordered by likely fix:
 //   • Reload = PRIMARY — `reload()` (window.location.reload) picks up a new build (the common stale-chunk-
 //     after-deploy case) AND is the backstop for the browser module-map cached-FETCH case eviction can't
@@ -110,35 +114,9 @@ export default function App() {
 //     silent no-op), just ordered second.
 // `data-fault="theme"` is a stable, non-styling hook so the ⑩ kit-render e2e can distinguish this fallback
 // from the F23 global one (both use `.root-error`).
-const faultBtn = {
-  padding: "10px 16px",
-  border: "1px solid var(--accent, #7a7a8c)",
-  borderRadius: 8,
-  background: "var(--accent-fill, #26262e)",
-  color: "var(--text, #e8e8ea)",
-  font: "inherit",
-  cursor: "pointer",
-} as const;
-
 function themeFaultFallback(error: Error, reload: () => void, onReset: () => void): ReactNode {
   return (
-    <div
-      className="root-error"
-      data-fault="theme"
-      style={{
-        minHeight: "100dvh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        gap: 16,
-        padding: 24,
-        maxWidth: 480,
-        margin: "0 auto",
-        background: "var(--bg, #101014)",
-        color: "var(--text, #e8e8ea)",
-        fontFamily: "ui-monospace, monospace",
-      }}
-    >
+    <div className="root-error" data-fault="theme" style={crashShell}>
       <div className="sec">
         <span className="num" aria-hidden>
           !!
@@ -146,17 +124,15 @@ function themeFaultFallback(error: Error, reload: () => void, onReset: () => voi
         <b>ctrl·b</b> <span className="right">// the theme crashed</span>
       </div>
       <div className="root-error-body">
-        <p style={{ opacity: 0.8, overflowWrap: "anywhere" }}>
-          // {error.message || "unknown error"}
-        </p>
+        <p style={crashMessage}>// {error.message || "unknown error"}</p>
         <div
           className="root-error-actions"
           style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}
         >
-          <button style={faultBtn} onClick={reload}>
+          <button style={crashBtn} onClick={reload}>
             Reload page
           </button>
-          <button style={{ ...faultBtn, background: "transparent" }} onClick={onReset}>
+          <button style={crashBtnQuiet} onClick={onReset}>
             Reset theme to default
           </button>
         </div>

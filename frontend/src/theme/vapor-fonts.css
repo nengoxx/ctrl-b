@@ -1,4 +1,5 @@
-/* vapor's webfonts, self-hosted (FE efficiency pass). vapor is the EAGER default theme, so unlike the
+/* vapor's webfonts, self-hosted (FE efficiency pass). vapor is EAGER (it stays so until D51's V6, even
+ * though cosmos is the default since V0), so unlike the
  * lazy themes (minimal/cosmos use a dynamic-import `fonts.ts`, loaded by switchTheme on the flip) its
  * fonts must ship with the initial bundle — statically imported in main.tsx. This replaces the
  * render-blocking Google Fonts <link> that was in index.html: now the @font-face files are bundled +

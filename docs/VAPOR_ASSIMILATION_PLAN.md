@@ -78,7 +78,10 @@ Council-verified additions that reshape the plan:
 - Flip `DEFAULT_THEME` to `"cosmos"` in resolve.ts (+ heal + `defaultSwitchTarget` follow), plus
   the **default-mirror matrix** (Codex #2): `index.html` static `data-skin` stamp / bootstrap
   default / corrupt-storage fallback · `ui.ts` first-boot triple (derived from cosmos's declared
-  ThemeDef defaults — dark/violet, §5 Q4) · backend `AppearanceCfg` default · e2e fixture defaults. The §14.15.3 "no theme literal
+  ThemeDef defaults — dark/violet, §5 Q4) · backend `AppearanceCfg` default · e2e fixture defaults
+  · **the PWA color surfaces** (`index.html` `theme-color` meta + the manifest
+  `theme_color`/`background_color` in vite.config.ts — static mirrors of the default theme's
+  `--bg`; added to the matrix at build after Codex found the list omitted them). The §14.15.3 "no theme literal
   outside resolve.ts" guarantee is AMENDED to a **documented-mirror allowlist** (those exact spots —
   the FOUC twin was always one).
 - **Test retarget table** (Codex #10): `flows.spec.ts` implicitly boots vapor throughout — seed

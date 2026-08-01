@@ -8,12 +8,21 @@ import { getUI, setUI } from "../store/ui";
 import { registry } from "./registry";
 import type { Mode, ThemeId } from "./types";
 
-// The default theme (vapor) — the fallback when a persisted/served theme id isn't registered (e.g. a
-// theme removed between builds). Exported as the single shared constant for the standing
-// no-"vapor"-literals guarantee: every "reset/coerce to the default skin" path (this module, item ②'s
-// boundary Reset, ⑥'s boot coercion) reads it from here rather than hardcoding "vapor". vapor is always
-// registered, so `rootFor` never returns undefined in practice.
-export const DEFAULT_THEME: ThemeId = "vapor";
+// The default theme (cosmos since D51/V0 — vapor held this through v1.4) — the fresh-boot skin AND the
+// fallback when a persisted/served theme id isn't registered (e.g. a theme removed between builds).
+// Exported as the single shared constant: every "reset/coerce to the default skin" path (this module,
+// item ②'s boundary Reset, ⑥'s boot coercion) reads it from here rather than hardcoding an id.
+//
+// D51 AMENDED the standing "no theme literal outside this module" guarantee to a **documented-mirror
+// allowlist** — the three spots that CANNOT import this constant, each carrying a comment naming D51:
+//   • `index.html`'s FOUC script (pre-JS: the static `html[data-skin]` stamp, the bootstrap default, and
+//     the corrupt-storage fallback) — it runs before any module loads;
+//   • `store/ui.ts` DEFAULTS (the first-boot triple) — the store can't import the registry/this module's
+//     graph (the module-eval cycle documented on `coerceBootTheme` below);
+//   • backend `AppearanceCfg` (another process) — pinned to THIS declaration by
+//     `backend/tests/test_arch_invariants_sys10.py`, so the two can only move together.
+// cosmos is always registered, so `rootFor` never returns undefined in practice.
+export const DEFAULT_THEME: ThemeId = "cosmos";
 
 export function rootFor(theme: ThemeId): ComponentType {
   return (registry[theme] ?? registry[DEFAULT_THEME])!.Root;

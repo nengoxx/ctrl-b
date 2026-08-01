@@ -122,7 +122,8 @@ export interface ThemeDef {
   // Lazy-load the Root COMPONENT module, so a non-active theme's presentation — esp. a bespoke theme's
   // canvas / orbital Fleet — never enters the default user's initial bundle. `switchTheme` preloads it
   // (alongside loadStyles/loadFonts) before the skin flips, so the `lazy(Root)` resolves with no Suspense
-  // flash. OMIT for the eager default theme (vapor) — its Root must render on first paint without Suspense.
+  // flash. OMIT for an EAGER theme whose Root must render on first paint without Suspense (vapor — still
+  // eager after D51 V0 made cosmos the default; cosmos itself keeps its lazy Root, plan §3 V0/V6).
   loadRoot?: () => Promise<unknown>;
   present?: Present; // §9.9 — per-host visual encoding (cosmos/frontier); omit → no spatial layout
   settings?: ThemeSettingsSpec; // §14.3 — theme-namespaced options auto-rendered by the Appearance picker
@@ -141,6 +142,6 @@ export interface ThemeDef {
   layouts?: LayoutId[];
 }
 
-// Only BUILT themes appear here (a Partial record) — `rootFor` falls back to the default (vapor) for an
+// Only BUILT themes appear here (a Partial record) — `rootFor` falls back to `DEFAULT_THEME` for an
 // unregistered id. Adding a theme = one row here + its module (D29 §14). M0 = `{ vapor }`.
 export type ThemeRegistry = Partial<Record<ThemeId, ThemeDef>>;

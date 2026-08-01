@@ -755,7 +755,9 @@ describe("ConfTab · pre-release audit regressions", () => {
     // class open through the other five registrants.
     render(<ConfTab active />);
     setDirty("skill:deploy", true); // some other editor has unsaved work
-    const themeBtn = screen.queryByRole("button", { name: /^cosmos$/i });
+    // Pick a NON-ACTIVE skin: since D51 V0 the store boots on cosmos, and `pickTheme` no-ops on a re-pick
+    // of the active skin — clicking Cosmos would pass this test for the wrong reason.
+    const themeBtn = screen.queryByRole("button", { name: /^vapor$/i });
     expect(themeBtn).toBeTruthy();
     fireEvent.click(themeBtn!);
     expect(h.saveAppearance).not.toHaveBeenCalled();
@@ -768,7 +770,7 @@ describe("ConfTab · pre-release audit regressions", () => {
   it("refuses a theme switch while Conf is dirty (the switch unmounts the tab and its draft)", () => {
     render(<ConfTab active />);
     fireEvent.change(baseInput("Poll cadence"), { target: { value: "9" } });
-    const themeBtn = screen.queryByRole("button", { name: /^cosmos$/i });
+    const themeBtn = screen.queryByRole("button", { name: /^vapor$/i });
     expect(themeBtn).toBeTruthy();
     fireEvent.click(themeBtn!);
     // The switch is refused, so the tab is still mounted with the edit intact. (`switchTheme` is async
@@ -946,7 +948,7 @@ describe("ConfTab · a refused theme switch is not persisted (Fix 3)", () => {
     // other devices adopt it. The persist is now gated on the "applied" outcome.
     h.switchOutcome = "refused-dirty";
     render(<ConfTab active />); // clean draft → pickTheme's top guard passes and calls switchTheme
-    fireEvent.click(screen.getByRole("button", { name: /^cosmos$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^vapor$/i })); // a NON-ACTIVE skin (boot = cosmos)
     await waitFor(() => expect(h.switchTheme).toHaveBeenCalled()); // the caller DID attempt the switch …
     await act(async () => {
       await Promise.resolve(); // flush the .then microtask

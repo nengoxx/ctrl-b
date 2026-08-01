@@ -1,17 +1,19 @@
 import AxeBuilder from "@axe-core/playwright";
 import { type Page } from "@playwright/test";
 
-import { test, expect } from "./fixtures";
+import { seedUI, test, expect, VAPOR_UI } from "./fixtures";
 
 // D24 — a11y gate. axe-core scans each tab (WCAG 2.0/2.1 A + AA) in the real built app; this is what
 // locks in the F14–F27 a11y work against regression. The inactive tab panels are `display:none`, which
 // axe ignores, so scanning the page covers the active tab + the always-on appbar/composer/tabbar.
 //
-// TWO arms: the DEFAULT boot (vapor) across its 4-tab bar, and a frontier-booted arm across its 3-tab bar
-// (utils hosted in Conf → off-bar; the valid dark/coral combo per CONTRAST_MATRIX). The frontier arm
-// machine-enforces the F5 Gate A semantics on the kit surface — A1 (the focus ring is markup-invisible to
-// axe, but A3/A5 roles+names, the seg `role="group"`/`aria-pressed`, the sheet grip's label — all axe-
-// visible) — the vapor arm alone would never scan a kit theme (vapor is a bespoke escape hatch).
+// THREE arms: the DEFAULT boot — cosmos since D51 V0 — across its 4-tab bar, a seeded VAPOR arm across the
+// same bar (vapor is a bespoke escape hatch with its own chrome + Fleet, and it stays a shipping skin until
+// Phase 16 finishes assimilating it, so it keeps its own scan now that it is no longer the default), and a
+// frontier-booted arm across its 3-tab bar (utils hosted in Conf → off-bar; the valid dark/coral combo per
+// CONTRAST_MATRIX). The two kit arms machine-enforce the F5 Gate A semantics on the kit surface — A1 (the
+// focus ring is markup-invisible to axe, but A3/A5 roles+names, the seg `role="group"`/`aria-pressed`, the
+// sheet grip's label — all axe-visible).
 
 /** Scan one active tab panel for WCAG A/AA violations, scoped to that panel. */
 async function scanTab(page: Page, id: string): Promise<void> {
@@ -34,21 +36,40 @@ async function scanTab(page: Page, id: string): Promise<void> {
   expect(violations, `\n${summary}`).toEqual([]);
 }
 
-// ── Default boot (vapor) — its 4-tab bar ──
-const VAPOR_TABS = [
+// ── Default boot (cosmos) — its 4-tab bar ──
+// The fleet arm's settle marker is a SELECTOR, not text: cosmos's Fleet renders hosts as orbital coins
+// whose name lives in `aria-label`, not in text content.
+const FOUR_TABS = [
   { id: "fleet", label: "Fleet", content: "vault" },
   { id: "agent", label: "Agent", content: null },
   { id: "utils", label: "Tools", content: "Yt Captions" },
   { id: "conf", label: "Conf", content: "Inference" },
 ] as const;
 
-for (const t of VAPOR_TABS) {
-  test(`vapor ${t.label} tab — no WCAG A/AA axe violations`, async ({ page }) => {
+for (const t of FOUR_TABS) {
+  test(`cosmos ${t.label} tab — no WCAG A/AA axe violations`, async ({ page }) => {
     await page.goto("/");
+    // FLAKE RULE (R20): the default skin's Root is a LAZY chunk since D51 V0, so gate on kit CONTENT before
+    // touching the bar — never on `data-skin`/the background, which the pre-JS FOUC script stamps first.
+    await expect(page.locator(".kit-appbar")).toBeVisible();
     await page.locator(`#tabbtn-${t.id}`).click();
     await expect(page.locator(`#tab-${t.id}`)).toHaveClass(/active/);
     // Wait for the tab's real content to settle before scanning — scanning a transient loading state
     // (e.g. Conf's "// loading…" before the lazy chunk + settings resolve) produces flaky violations.
+    if (t.id === "fleet") await expect(page.locator(".cosmos-planet.on").first()).toBeVisible();
+    else if (t.content)
+      await expect(page.getByText(t.content, { exact: false }).first()).toBeVisible();
+    await scanTab(page, t.id);
+  });
+}
+
+// ── vapor boot — the same 4-tab bar, its own bespoke chrome/Fleet (seeded: no longer the default) ──
+for (const t of FOUR_TABS) {
+  test(`vapor ${t.label} tab — no WCAG A/AA axe violations`, async ({ page }) => {
+    await seedUI(page, { ...VAPOR_UI, tab: "fleet" });
+    await page.goto("/");
+    await page.locator(`#tabbtn-${t.id}`).click();
+    await expect(page.locator(`#tab-${t.id}`)).toHaveClass(/active/);
     if (t.content) await expect(page.getByText(t.content, { exact: false }).first()).toBeVisible();
     await scanTab(page, t.id);
   });

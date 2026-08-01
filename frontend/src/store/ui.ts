@@ -40,7 +40,7 @@ export function appbarShown(m: AppbarMode): boolean {
 export type ThemeSettingsMap = Record<string, Record<string, ThemeSettingValue>>;
 
 export interface UIState {
-  theme: ThemeId; // the active SKIN ("vapor" in v1) — drives slot resolution + body[data-skin]
+  theme: ThemeId; // the active SKIN (cosmos on a fresh boot, D51 V0) — drives slot resolution + data-skin
   mode: Mode; // light/dark axis — vapor is dark-only (unused for vapor); non-vapor sets body[data-mode]
   accent: string; // named palette OR hue id — vapor: "dark"|"aqua"|"ember" on body[data-theme]
   tab: Tab;
@@ -80,9 +80,14 @@ function defaultMotion(): Motion {
 }
 
 const DEFAULTS: UIState = {
-  theme: "vapor",
+  // The FIRST-BOOT skin triple — a DOCUMENTED MIRROR (D51 allowlist, see `resolve.ts` DEFAULT_THEME) of
+  // `DEFAULT_THEME` + that theme's declared ThemeDef defaults (cosmos: `palettes.defaultMode:"dark"` /
+  // `defaultAccent:"violet"`, themes/cosmos/index.tsx). Deriving it from the registry is impossible here:
+  // `registry.ts` → `themes/vapor` → components → back to this store would be a module-eval import cycle
+  // (this file runs at module scope), which is the same reason `coerceBootTheme` lives in resolve.ts.
+  theme: "cosmos",
   mode: "dark",
-  accent: "dark", // vapor's default accent = the bare :root (vapor.css), matching the old `theme:"dark"`
+  accent: "violet",
   tab: "fleet",
   ttsAuto: true,
   motion: defaultMotion(),

@@ -1,6 +1,7 @@
 /* Theme-engine CSS entry (Phase 11 v2 / D29 §14.6). Loads the active theme's stylesheet(s). The
- * DEFAULT theme (vapor) is eager (statically imported here → blocking <link>, no first-paint FOUC);
- * non-default themes are lazy (dynamic import, added per Tn slice).
+ * vapor is eager (statically imported here → blocking <link>, no first-paint FOUC); every other theme is
+ * lazy (dynamic import, added per Tn slice) — including cosmos, the DEFAULT since D51 V0, whose CSS
+ * therefore lands after first paint on a fresh boot (the accepted V0 trade; the lazy/eager swap is V6).
  *
  * Skin isolation = each theme's CSS is wrapped in `@scope ([data-skin=<theme>]) { … }` (inside the file
  * itself), so only the active skin's rules match — themes can't bleed into each other even if bundles

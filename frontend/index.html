@@ -1,15 +1,20 @@
 <!doctype html>
-<html lang="en" data-skin="vapor">
+<html lang="en" data-skin="cosmos">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <!-- iOS adds-to-home-screen icon (Apple ignores the PWA manifest's icons for this). -->
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#15171c" />
+    <!-- Browser UI chrome color. A D51 DOCUMENTED MIRROR of the DEFAULT theme's `--bg`
+         (cosmos, `src/themes/cosmos/tokens.css`) — static, like the manifest pair in vite.config.ts it
+         must agree with. Deliberately NOT wired to the live skin: a theme-switch-driven theme-color is
+         recorded as later polish, not built (V0 = the flip only). -->
+    <meta name="theme-color" content="#0a0a0d" />
     <!-- Fonts (JetBrains Mono + Major Mono Display) are self-hosted via @fontsource, bundled by Vite
-         from src/theme/vapor-fonts.css (eager default theme). No Google Fonts CDN → offline PWA + no
-         third-party request / render-blocking <link> on first paint. -->
+         from src/theme/vapor-fonts.css (vapor stays EAGER — D51 keeps the lazy flip for V6 — even though
+         cosmos is now the default). No Google Fonts CDN → offline PWA + no third-party request /
+         render-blocking <link> on first paint. -->
     <title>ctrl-b</title>
   </head>
   <body>
@@ -18,17 +23,21 @@
          palette-determining data-attrs from persisted ui state BEFORE #root paints, so first paint
          already has the right colors. `data-skin` (the @scope identity) lives on <html>; vapor's accent
          axis (data-theme) + non-vapor mode/accent live on <body>. The `ui` store re-applies the full attr
-         set when it loads (idempotent). Mirrors store/ui.ts applyBodyAttrs + migrateLegacyTheme. -->
+         set when it loads (idempotent). Mirrors store/ui.ts applyBodyAttrs + migrateLegacyTheme.
+         The three defaults below (the static <html> stamp, this script's fallback triple, and the catch
+         fallback) are the D51 DOCUMENTED-MIRROR allowlist entry for pre-JS code — they can't import
+         `DEFAULT_THEME`, so they carry cosmos/dark/violet literally; move them with resolve.ts. -->
     <script>
       (function () {
         try {
           var h = document.documentElement,
             b = document.body;
           var s = JSON.parse(localStorage.getItem("ctrlb.ui") || "null");
-          var theme = (s && s.theme) || "vapor";
+          var theme = (s && s.theme) || "cosmos";
           var mode = (s && s.mode) || "dark";
-          var accent = (s && s.accent) || "dark";
-          // Legacy persisted shape: `theme` held the vapor accent (dark/aqua/ember).
+          var accent = (s && s.accent) || "violet";
+          // Legacy persisted shape: `theme` held the vapor accent (dark/aqua/ember) — those values keep
+          // mapping to VAPOR (never to the new default), the twin of store/ui.ts migrateLegacyTheme.
           if (theme === "dark" || theme === "aqua" || theme === "ember") {
             accent = theme;
             theme = "vapor";
@@ -42,7 +51,7 @@
             b.dataset.accent = accent;
           }
         } catch (e) {
-          /* private-mode / corrupt value — fall back to the static html[data-skin="vapor"] */
+          /* private-mode / corrupt value — fall back to the static html[data-skin="cosmos"] */
         }
       })();
     </script>

@@ -4,7 +4,8 @@
 // theme switch — the §14.5 invariant); for M0 it's a passthrough.
 //
 // Lazy CSS/fonts are loaded by the `switchTheme` path (switchTheme.ts) BEFORE the active theme flips,
-// so the Root model needs no suspense here. The default theme (vapor) CSS is eager (§14.6).
+// so the Root model needs no suspense here. Only vapor's CSS is eager (§14.6) — the cosmos DEFAULT
+// (D51 V0) loads through the cold-load effect below, like any other lazy theme.
 
 import { type ReactNode, useEffect } from "react";
 
@@ -15,10 +16,10 @@ import { ensureThemeLoaded, ThemeLoadError } from "./switchTheme";
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   // Ensure the ACTIVE theme's lazy CSS + fonts are loaded. `switchTheme` only loads on a user pick, so
-  // without this a COLD LOAD with a non-default theme persisted (e.g. a returning minimal user) would boot
-  // with `data-skin=minimal` but no minimal stylesheet → unstyled. Idempotent: `ensureThemeLoaded` caches
-  // per theme, so the switchTheme path never double-loads; vapor (the eager default) resolves to a no-op.
-  // A returning non-default user gets one brief style-in on cold load (accepted — single user, PWA-cached,
+  // without this a COLD LOAD (e.g. a returning minimal user, or ANY fresh boot since cosmos became the
+  // default) would boot with `data-skin=<theme>` but no stylesheet → unstyled. Idempotent:
+  // `ensureThemeLoaded` caches per theme, so the switchTheme path never double-loads; vapor (eager)
+  // resolves to a no-op. The cold load costs one brief style-in (accepted — single user, PWA-cached,
   // §14.6). (M2 will also wrap `children` in the feature-controller providers here.)
   const theme = useUISlice((s) => s.theme);
   useEffect(() => {

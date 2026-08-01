@@ -1,8 +1,9 @@
 import { CONTRAST_MATRIX } from "./contrast-matrix";
 import { expect, test } from "./fixtures";
 
-// The KIT-RENDER smoke (§14.15.1 item ⑩ — "the coverage hole"). No test in ANY layer boots DefaultRoot /
-// kit.css: the three pre-existing e2e specs (flows/contrast/a11y) all boot the eager default (vapor). This
+// The KIT-RENDER smoke (§14.15.1 item ⑩ — "the coverage hole"). Written when no test in ANY layer booted
+// DefaultRoot / kit.css, because the pre-existing e2e specs all booted the then-default vapor (D51 V0 has
+// since made cosmos the default, so flows/render/a11y boot the kit too — this stays the per-theme sweep). It
 // rides the existing e2e projects (mobile + desktop) as a SPEC, NOT a new Playwright project — a project
 // would re-run the axe scans per theme (combinatorial, ⑩). It boots the REAL built app per theme combo and
 // checks ONE thing: the kit shell renders and stays up across a full tab sweep. Deliberately NOT here:
@@ -38,10 +39,11 @@ for (const c of COMBOS) {
     page,
     pageErrors, // fixture: collects every uncaught page exception AND reportError() (rider (c)'s rAF sink)
   }) => {
-    // Seed the persisted UI blob BEFORE any page script (the flows.spec / contrast.spec addInitScript
-    // pattern). `v:1` stamps the current persisted-schema version so the migration chain is skipped and
-    // theme/mode/accent apply directly; the server appearance mock is unseeded ("vapor") so the reconcile
-    // round-trip HOLDS the local pick (fixtures.ts §mockApi). `tab:"fleet"` = the boot section.
+    // Seed the persisted UI blob BEFORE any page script (the contrast.spec addInitScript pattern; the
+    // shared `seedUI` helper does the same). `v:1` stamps the current persisted-schema version so the
+    // migration chain is skipped and theme/mode/accent apply directly; the server appearance mock is
+    // UNSEEDED (`updated_at: null`) so the reconcile round-trip HOLDS the local pick (fixtures.ts
+    // §mockApi). `tab:"fleet"` = the boot section.
     await page.addInitScript(
       (ui) => {
         localStorage.setItem("ctrlb.ui", JSON.stringify(ui));

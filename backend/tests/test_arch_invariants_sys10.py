@@ -17,8 +17,9 @@ from app.config import AppearanceCfg
 BACKEND = Path(__file__).resolve().parents[1]
 _FE_RESOLVE = BACKEND.parent / "frontend" / "src" / "theme-engine" / "resolve.ts"
 
-# `export const DEFAULT_THEME: ThemeId = "vapor";` — pinned to that exact declaration so a rename or a
-# moved constant fails loudly here rather than silently skipping the comparison.
+# `export const DEFAULT_THEME: ThemeId = "cosmos";` (vapor until D51 V0) — pinned to that exact
+# declaration so a rename or a moved constant fails loudly here rather than silently skipping the
+# comparison. The VALUE is read from source, never hardcoded: this guard only asserts the two agree.
 _DEFAULT_THEME_RE = re.compile(r'\bDEFAULT_THEME\s*:\s*ThemeId\s*=\s*"([^"]+)"')
 
 

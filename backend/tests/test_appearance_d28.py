@@ -2,7 +2,7 @@
 
 Runs two ways like the rest of the suite: `python tests/test_appearance_d28.py` from `backend/`, or
 under pytest. Covers (§9.11/§9.9):
-- `AppearanceCfg` defaults mirror the frontend `ui` store (vapor/dark/dark, no timestamp).
+- `AppearanceCfg` defaults mirror the frontend `ui` store (cosmos/dark/violet, no timestamp).
 - `GET /api/appearance` returns just the selection block; `PUT /api/settings {appearance}` round-trips,
   server-stamps `updated_at`, persists it to YAML (survives restart), and applies live.
 - `ComputerCfg.appearance` (the open per-host override blob) round-trips through save/load unchanged
@@ -22,9 +22,9 @@ from app.config import Settings, load_settings, save_settings_comment_stripping_
 
 def test_appearance_defaults_config_layer() -> None:
     s = Settings()
-    assert s.appearance.theme == "vapor"
+    assert s.appearance.theme == "cosmos"  # D51 V0 — mirrors the FE DEFAULT_THEME (was vapor)
     assert s.appearance.mode == "dark"
-    assert s.appearance.accent == "dark"
+    assert s.appearance.accent == "violet"
     assert s.appearance.motion is None  # M3: unseeded → client keeps local until first authored
     assert s.appearance.perf is None
     assert s.appearance.theme_settings is None  # M3: open per-theme options map, unseeded until written
@@ -82,9 +82,9 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
             # Defaults before any write.
             got = c.get("/api/appearance").json()
             assert got == {
-                "theme": "vapor",
+                "theme": "cosmos",
                 "mode": "dark",
-                "accent": "dark",
+                "accent": "violet",
                 "motion": None,  # unseeded → client keeps local until first authored
                 "perf": None,
                 "theme_settings": None,

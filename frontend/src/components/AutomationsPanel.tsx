@@ -52,8 +52,8 @@ import { setUI } from "../store/ui";
 // already styled for vapor (extras.css) AND every kit theme (kit.css).
 //
 // NOT the `<BottomSheet>` primitive, deliberately: its CSS lives under the `.kit` marker
-// (`kit.css` — `.kit .bs-sheet` et al.), so on VAPOR, which is the default theme and frozen (D7), a
-// BottomSheet renders completely unstyled. Conf is a token-themed region shared by every theme
+// (`kit.css` — `.kit .bs-sheet` et al.), so on VAPOR — frozen (D7), and still a shipping skin even though
+// D51 V0 made cosmos the default — a BottomSheet renders completely unstyled. Conf is a token-themed region shared by every theme
 // (§14.14), so its overlay has to be one that exists in both stylesheets — and PromptModal's already
 // is, having solved the same problem (a full-height panel sized to the `--app-h` viewport shell, so
 // the Android keyboard shrinks it rather than covering the fields). What it borrows from the kit
