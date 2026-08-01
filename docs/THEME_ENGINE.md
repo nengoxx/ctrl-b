@@ -1722,6 +1722,13 @@ the industry-standard pattern, named and sourced in the session record.
 
 ## 14.15.3 Vapor assimilation ladder (owner directive 2026-07-06: frozen = a phase, not an identity)
 
+> **⏫ AMENDED + SUPERSEDED IN SEQUENCING by [D51 / `VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md)
+> (LOCKED 2026-08-01, builds as TODO Phase 16).** The six hooks below stay the correct inventory
+> and the waiver machinery stays the tracker, but the ladder's rungs are re-cut as slices V0–V6
+> there (cosmos becomes `DEFAULT_THEME`; end state = "vapor takes cosmos's shape"; the V4
+> DefaultRoot pivot replaces the per-component chrome ports; keyframe count corrected to 20; this
+> section's ui.ts:198 ref has drifted to ~:218). Read the plan first; this section is background.
+
 Vapor is already IN the engine (registered ThemeDef, bespoke Root — a legitimate D31 band; behavior extracted
 to shared controllers in M2). "Frozen" = exactly **six legacy hooks**: ① accent rides `body[data-theme]`
 (branches in `applyBodyAttrs` ui.ts:198 + the index.html FOUC script — the tracked exceptions to the

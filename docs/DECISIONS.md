@@ -3798,3 +3798,50 @@ no jitter/backoff/queue) was endorsed as-is; the amendments close concrete false
   httpx client is built per tick (0.16 ms — a live socket-path edit applies next tick, and there
   is no persistent client to leak). None of A3's arbiter/claim/shield machinery is copied — that
   solves durable run ownership, which monitoring does not have.
+
+## D51 — Vapor assimilation (Phase 16): complete migration onto the kit + cosmos default ✏️ LOCKED 2026-08-01 (owner-signed in conversation; plan = VAPOR_ASSIMILATION_PLAN.md v2; council = Codex + Opus lenses, both rounds clean)
+
+**What:** vapor stops being a bespoke escape hatch and migrates COMPLETELY onto the kit, slice by
+slice, each port deleting its legacy copy; **cosmos becomes `DEFAULT_THEME`**. The executable spec
+of record is [`VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md) (v2, council-amended —
+slices V0–V6, reconciliation R1–R24); this entry pins the rulings that survive the plan document.
+
+- **The end state (the bar for "done"): vapor takes cosmos's shape.** A thin Root on DefaultRoot
+  hosting (kit AppBar/TabBar/`sheet` composer/Conf/chat) + a **Root-pinned bespoke VaporFleet**
+  (hero/skyline/waveform — bespoke-by-right under D31, owner-confirmed "Fleet stays as-is") +
+  `themes/vapor/tokens.css` + a residual vapor sheet styling ONLY the frozen vapor-keeps list.
+  "No bespoke remainder" means **no bespoke duplicate of a kit capability**, enforced mechanically
+  at V6 (banner-set equality + VaporRoot-renders-DefaultRoot + waiver list `[]`), not by review.
+- **Slice architecture:** V0 default flip (flip-only + the default-mirror allowlist — the
+  "no theme literal outside resolve.ts" guarantee is AMENDED to that documented list) → V1 file/
+  component hygiene (vapor-only components leave shared dirs; 20 keyframes prefixed) → V2 accent
+  axis (`data-theme` → `data-accent`, atomic) → V3 tokens (real `tokens.css`, aliases on `body`
+  below the accent overrides, `--accent-glow` renamed, banner classification + shrink-only
+  ratchet) → **V4 the pivot: VaporRoot moves onto DefaultRoot in ONE slice** (the `.kit` marker
+  lights up exactly once, owner-eyeballed once; vapor DECLARES the four kit axis/seg descriptors;
+  Codex code-verified no VaporRoot behavior is lost) → V5 per-banner deletion ladder (port≠delete
+  commits, rg zero-ref gates) → V6 tail (residue enforcement, waiver retirements, the lazy flip
+  IF still worth it, behind `@layer`-wrap + font-loader + first-paint preconditions).
+- **ChatSurface is NOT authorized.** ChatThread already renders one shared DOM for all themes;
+  vapor's chat divergence was CSS + a 35-line PinnedPlan, and the owner confirmed the kit look
+  (the kit's own working indicators / chevron disclosures / `planPlacement:"pinned"` +
+  `PinnedPlanPanel` cover everything). A whole-surface variant would be a registry-of-one failing
+  D31's own ≥2-implementations gate; if a future theme genuinely needs one, it gets its own
+  design + council round.
+- **Kit extensions constrained:** the AppBar gains **`brandMark?: ReactNode`** (the `brandMeta`
+  slot precedent) — no `loz` enum, no ring knowledge in the kit; vapor passes its logo/ring in
+  (the `loz` seg setting survives as-is). Any new composer skin must be **look-named, offered to
+  every theme** — never theme-named (the D37-authority trap).
+- **Recorded overrules (lean over mechanism):** cosmos stays lazy-Root at V0 — a fresh-default
+  cold boot may flash browser canvas → kit base before cosmos lands (owner accepted, "no new
+  weird code or seams"; the inline critical-token escalation is recorded, not built). Vapor stays
+  EAGER until V6 (kills the lazy-flip cold-flash + unlayered-CSS hazards without a cold-load
+  gate). First-boot mode/accent DERIVE from cosmos's declared ThemeDef (dark/violet) — no new
+  triple anywhere.
+- **Non-events:** the owner's live appearance selection is backend-synced (`AppearanceCfg`) and
+  untouched by the flip — no device migration exists or is needed. `migrateLegacyTheme` + its
+  FOUC twin keep mapping old `dark/aqua/ember` → vapor.
+- **Method per slice (unchanged):** pinned Opus build brief → main-seat audit → Codex round →
+  waves to WAVE CLEAN → owner D7 eyeball → pause. New default-boot e2e must await CONTENT
+  selectors (the v1.4.5 flake class). Standing guarantees: nothing new depends on a legacy hook;
+  waiver lists only shrink.

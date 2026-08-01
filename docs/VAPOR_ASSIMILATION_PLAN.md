@@ -1,13 +1,13 @@
 # Vapor assimilation — the complete-migration plan (vapor → kit, legacy deleted)
 
-> **Status: DRAFT — design NOT locked, but LOCK-READY.** Drafted 2026-07-31 from the owner's
-> rulings; **council round DONE 2026-08-01** (Codex `gpt-5.6-sol` correctness lens + one Opus 5
-> architecture lens, both **LOCK WITH CHANGES**; both confirm rounds clean) — reconciliation
-> record §7 (R1–R24). **Owner's §5 round ANSWERED + code-verified 2026-08-01** (chat = kit look;
-> Fleet stays bespoke; the prod logo 404 found + fixed). **Remaining before build: the D-entry
-> lock in `DECISIONS.md`.** Build = TODO **Phase 16**. This plan AMENDS `THEME_ENGINE.md`
-> §14.15.3 (the ladder survives; its end-state bar and sequencing change per §1). On conflict
-> after the lock: DECISIONS wins.
+> **Status: ✏️ LOCKED 2026-08-01 as [D51](./DECISIONS.md)** (owner-signed in conversation; push +
+> lock + build go-ahead same day). Drafted 2026-07-31 from the owner's rulings; council round
+> DONE 2026-08-01 (Codex `gpt-5.6-sol` correctness lens + one Opus 5 architecture lens, both
+> **LOCK WITH CHANGES**; both confirm rounds clean) — reconciliation record §7 (R1–R24). Owner's
+> §5 round ANSWERED + code-verified 2026-08-01 (chat = kit look; Fleet stays bespoke; the prod
+> logo 404 found + fixed). Build = TODO **Phase 16**, slices V0–V6 below. This plan AMENDS
+> `THEME_ENGINE.md` §14.15.3 (the ladder survives; its end-state bar and sequencing change per
+> §1). On conflict: **D51/DECISIONS wins**, then this plan.
 
 ## 1. Owner rulings (2026-07-31 — supersede the ladder's hedges)
 
