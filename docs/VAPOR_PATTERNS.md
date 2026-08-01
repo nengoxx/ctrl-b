@@ -23,8 +23,9 @@ decisions from those chats. The design is **mobile-first for a 412×892 Android 
 ## 1. Color tokens & semantic roles
 
 All color comes from CSS variables on `:root` (the default **vapor/"dark"** palette), overridden by
-`[data-theme="aqua"]` and `[data-theme="ember"]` on `<body>`. Never hardcode a hex except the two
-sanctioned ink-on-gradient constants below.
+`[data-accent="aqua"]` and `[data-accent="ember"]` on `<body>` (the SHARED accent axis — vapor's
+private `data-theme` retired at D51 V2). Never hardcode a hex except the two sanctioned
+ink-on-gradient constants below.
 
 | Token | Role |
 |---|---|

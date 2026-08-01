@@ -982,9 +982,10 @@ never leaks into vapor — **follow it for every future theme:**
   `DefaultRoot`.
 - **One shared Kit stylesheet, scoped under a `.kit` marker** that `DefaultRoot` puts on its shell — this is precisely
   Radix Themes' `.radix-themes` root-class scoping. Kit CSS lives in **`@layer base`** as `.kit .confrow { … }` /
-  `.kit-appbar { … }`, reading semantic tokens. Because vapor's Root never renders `.kit`, the Kit stylesheet **cannot
-  leak into vapor** (and the new chrome uses fresh `.kit-*` class names anyway, so no name collision). A bespoke theme
-  that wants to reuse a Kit piece adds the marker itself — opt-in reuse.
+  `.kit-appbar { … }`, reading semantic tokens. The marker is what confines it: kit CSS applies exactly where a
+  Root renders `.kit` — **since D51 V4 that includes vapor** (DefaultRoot hosting), whose `@layer theme` sheet
+  wins any shared property while its remaining blocks await the V5 ladder. A bespoke Root without the marker
+  gets no kit CSS at all — opt-in reuse.
 - ~~**vapor = the bespoke escape hatch:** its own Root + its own CSS, no marker.~~ **AMENDED at D51 V4:**
   vapor's Root hosts `DefaultRoot`, so vapor renders the `.kit` marker like every other theme and kit.css
   applies to it. Its sheet (`themes/vapor/{vapor,extras}.css`, `@layer theme`, scoped `[data-skin="vapor"]`)

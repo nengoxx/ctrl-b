@@ -2,8 +2,9 @@
 //
 // Sources one logo (any aspect), centers it on a square transparent canvas, exports the sizes
 // the manifest references (into public/). The in-app logo itself is untouched — since D51 V4 it is a
-// BUNDLED asset (`src/assets/vapor-logo.png`, imported by themes/vapor/VaporMark.tsx → hashed +
-// precached) rather than a bare public/ file, so this generator sources it from there.
+// BUNDLED asset (`src/assets/vapor-logo.png`, imported by themes/vapor/VaporMark.tsx → hashed, and
+// SW-precached via the targeted `assets/vapor-logo-*.png` workbox glob in vite.config.ts) rather
+// than a bare public/ file, so this generator sources it from there.
 // Cross-platform (Linux/macOS/Windows) — sharp ships per-platform native binaries via npm.
 //
 // Run from frontend/:  npm run icons   (or `node scripts/gen-pwa-icons.mjs`)

@@ -927,6 +927,9 @@ body[data-motion="reduced"] .mini-player .mp-wave i {
    Each task_plan call also drops a dim `.plan-note` breadcrumb in the timeline. The model rewrites
    the whole list each call, so the tab always reflects the most-recent one. */
 
+/* NOTE (no box-rule on this line — the banner ratchet keys on `/* ─`): `.plan-pin` below is the OLD
+   vapor container, DEAD since the V4 pivot (the kit renders `.plan-pin-panel`); it dies at V5 with the
+   rest of this banner. The LIVE fidelity rules are the `.plan-pin-panel` block right after it. */
 /* The sticky tab "hangs" from the top edge (rounded bottom); centered, lets chat scroll past on the
    sides. Collapsed by default — the dropdown below is the expanded view. */
 .plan-pin {
@@ -941,11 +944,48 @@ body[data-motion="reduced"] .mini-player .mp-wave i {
   pointer-events: none; /* the empty sides stay click-through to the chat; the tab re-enables */
 }
 /* `.plan-pin-wrap` DELETED at D51 V4 phase 2 (row 15's `port-owned:V4` carve-out): it anchored the
-   dropdown of the vapor-only in-tab `PinnedPlan`, which this slice deleted from `tabs/AgentTab.tsx`.
-   The kit's `PinnedPlanPanel` has different markup (`.plan-pin-panel`/`.plan-pin-drop`), so this was
-   dead CSS, not a kit gap (D51 R29). The REST of this banner is `port-owned:V5` and stays — including
-   `.plan-pin-head`/`.plan-title`/`.plan-count`, which the kit panel DOES share, so the hybrid look
-   documented in the ledger persists until V5 deletes them. */
+   dropdown of the vapor-only in-tab `PinnedPlan`, which that slice deleted from `tabs/AgentTab.tsx`.
+   The kit's `PinnedPlanPanel` has different markup (`.plan-pin-panel`/`.plan-pin-drop`), so it was
+   dead CSS, not a kit gap (D51 R29). */
+
+/* ══ PLAN-PIN FIDELITY (owner device round, 2026-08-01) — vapor's tab on the KIT panel ═════════════
+   The owner's V4 round rejected the pinned plan: "not well pinned to the top/app bar; on the left
+   instead of in the middle; a small gap between the app bar and the pinned task list."
+   DIAGNOSIS: that geometry is the KIT'S OWN design, not a leftover — `.kit .plan-pin-panel` is
+   `top: calc(--appbar-h + 8px)` with `margin: 0 14px` and a block box, so the inline-flex head lands
+   at the LEFT edge, 8px below the bar. So the V5 deletion of this banner would NOT have fixed it;
+   what the owner wants is vapor's ORIGINAL geometry — a CENTERED tab hanging FLUSH off the bar.
+   This is therefore theme CSS on the SHARED kit hooks — the §15-sanctioned reskin route (same class
+   of thing as the brand mark), NOT a bespoke duplicate — and it SURVIVES the V5 deletion of the rest
+   of this banner. Three declarations, no new markup, no new class:
+     · `top` — drop the kit's +8px so the tab's flat top edge meets the bar's bottom edge (the whole
+       point of a "hanging" tab; its `border-top: 0` + `0 0 13px 13px` radius already say so).
+     · `display:flex; justify-content:center` — centers the head. The `.plan-pin-drop` is ABSOLUTE, so
+       it is not a flex item and its `left:0; right:0` panel-wide anchoring is untouched (deliberate:
+       the drop stays the kit's full-width sheet under the tab, which is what V5/V6 keeps — vapor's old
+       `min(86vw,360px)` centered drop is NOT recreated).
+   The kit's corner clearances compose safely: in `minimal` chrome BOTH fire (`:has(.navhome)` → 60px
+   left and `:has(.navmenu:not(.docked))` → 60px right) because the plan only exists on the AGENT
+   section, where NavHome always mounts — symmetric, so the head stays centered. In visible/transparent
+   the menu is DOCKED in the appbar and NavHome never mounts, so neither fires.
+   The paint itself is the existing `.plan-pin-head` block below, adjusted IN PLACE. */
+.plan-pin-panel {
+  top: var(--appbar-h, 0px);
+  display: flex;
+  justify-content: center;
+  /* Click-through sides (the old .plan-pin-wrap behavior, restored per the V4 close-out sweep M1):
+     the panel spans the content width at z 4, so without this its empty flanks would swallow taps
+     on transcript links passing beneath mid-scroll. The head re-enables itself below; the kit's
+     .plan-pin-drop already manages its own none→auto on open (kit.css) — nothing else to re-arm. */
+  pointer-events: none;
+}
+.plan-pin-panel .plan-pin-head {
+  pointer-events: auto;
+}
+/* KEPT FIDELITY (see the block above): the hanging-tab paint — flat top, bottom-rounded, no top
+   border — is what makes the centered+flush geometry read as a tab hanging off the app bar. This
+   rule and its `.chev`/`.plan-title`/`.plan-count` companions SURVIVE V5; only the dead `.plan-pin`
+   /`.plan-drop` selectors and the plan-note/steps styling around them die with the banner. */
 .plan-pin-head {
   all: unset;
   cursor: pointer;

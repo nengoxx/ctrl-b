@@ -205,7 +205,7 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
   plan, tools menu, Stop, the no-composer-tab case (Codex #6's list); **all THREE vapor accents**
   (`dark`/`aqua`/`ember` — vapor has no mode axis) plus the applicable appbar/perf/motion cases.
 
-- **AS-BUILT — PHASE 1, THE PORT (2026-08-01, uncommitted at hand-off):** `VaporRoot` is 56 lines: it reads
+- **AS-BUILT — PHASE 1, THE PORT (2026-08-01, committed `873f85c`):** `VaporRoot` is 56 lines: it reads
   `appbarMode`, stamps `body[data-skyline]`, and renders
   `<DefaultRoot appbarMode bodies={{ fleet: FleetTab }} brandMark={<VaporMark/>} />`. Kit AppBar gained
   `brandMark?: ReactNode` (threaded through DefaultRoot exactly like `brandMeta`; default = the kit's own
@@ -240,7 +240,8 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
   in `themeContract.test.ts` dropped its `, #composer` alternative: the bespoke bar carries that id too, so
   the gate could have passed on DEAD DOM; it now requires `.kit-composer`, the node DefaultRoot measures.
 
-- **AS-BUILT — PHASE 2, THE DELETIONS (2026-08-01, uncommitted at hand-off; port = `873f85c`).** Worked
+- **AS-BUILT — PHASE 2, THE DELETIONS (2026-08-01, committed `9b7fcfd`; port = `873f85c`; the plan-pin
+  fidelity wave + this sweep's M1/M2 fixes ride the V4 closing commit).** Worked
   strictly from the ledger's §6 checklist — the first live exercise of the V3 machinery.
   **Deleted:** `components/{AppBar,Composer,TabBar}.tsx` (git rm; the only non-comment reference anywhere
   was micSending's vapor row, deleted with them) · `AgentTab`'s `PinnedPlan` + the four imports only it
@@ -265,8 +266,24 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
   row 12's surviving first line restored verbatim.
   **Correction to a V4 expectation:** the pinned-plan hybrid is NOT resolved by this slice. Only row 15's
   `.plan-pin-wrap` was V4; the `.plan-pin-head`/`.plan-title`/`.plan-count` rules that CAUSE it are the
-  row's `port-owned:V5` body, and `.plan-pin-head` still computes `border-radius: 0 0 13px 13px`. The kit
-  panel's own look returns at V5.
+  row's `port-owned:V5` body.
+- **AS-BUILT — PHASE 3, THE PLAN-PIN FIDELITY WAVE (2026-08-01, owner device round).** The owner passed
+  everything at V4 EXCEPT the pinned plan: *"not well pinned to the top/app bar; on the left instead of in
+  the middle; a small gap between the app bar and the pinned task list."* Main-seat diagnosis, verified:
+  that geometry is **the kit's own** (`.kit .plan-pin-panel` = `top: calc(--appbar-h + 8px)` + `margin: 0
+  14px` + a block box), so the planned V5 deletion of vapor's rules would have made it WORSE, not better —
+  the owner is asking for vapor's ORIGINAL geometry. Pulled forward as vapor FIDELITY on the shared kit
+  hooks (the §15-sanctioned route, the brand-mark precedent), **three declarations** in extras.css:
+  `.plan-pin-panel { top: var(--appbar-h, 0px); display: flex; justify-content: center }`. The hanging-tab
+  paint was already there (`.plan-pin-head`), adjusted in place. Measured at 393px: bar-bottom→head-top gap
+  **0.0px**, head centre error **0.0px**, drop opens 6px under the head at panel width, chat scroll and the
+  mini-player yield rule (`:has(.plan-pin-panel)`) unaffected. The kit's corner clearances COMPOSE: in
+  `minimal` both fire (60px each side, because the plan only exists on the agent section where NavHome
+  always mounts) so the head stays centred; in visible/transparent neither fires (the menu docks, NavHome
+  never mounts). `@scope` keeps it vapor-only — cosmos/frontier still measure the kit geometry exactly
+  (gap 8px, head at left:14, `display: block`, radius 10px). Ledger row 15 is SPLIT accordingly: the
+  fidelity rules are keeps-adjacent and survive V5/V6; only the dead `.plan-pin`/`.plan-drop` selectors and
+  the shared plan-steps styling still die with the banner.
 
 ### V5 — the deletion ladder (per-banner, port-verify → delete)
 - Work through the classified banners: chat (tokens/theme-CSS fidelity per the owner's §5 list —

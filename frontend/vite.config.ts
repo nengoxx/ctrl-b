@@ -56,6 +56,11 @@ export default defineConfig({
       workbox: {
         // Never cache /api responses — they're live state and mutations.
         navigateFallbackDenylist: [/^\/api\//],
+        // The plugin default (js/css/html) PLUS vapor's bundled logo (D51 V4 close-out, sweep M2):
+        // with cosmos the default, a fresh PWA gone offline may never have fetched the logo before
+        // the first switch to vapor — without this entry the mark renders blank. Targeted glob, not
+        // image-wide: the cosmos art set stays runtime-cached, not precached.
+        globPatterns: ["**/*.{js,css,html}", "assets/vapor-logo-*.png"],
       },
     }),
   ],
