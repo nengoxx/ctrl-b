@@ -40,6 +40,10 @@
       --radius-sm: 8px;
       --density-pad: 1;
       --font-body: "JetBrains Mono", ui-monospace, monospace;
+      /* The optional DISPLAY face (kit.css reads `var(--font-display, inherit)` for the nav glyphs; the
+       * cosmos/frontier idiom). vapor's own bar drew its ◆▲⌬● marks in Major Mono Display, so declaring it
+       * hands the kit nav bar vapor's glyph face with no component CSS at all (D51 V4). */
+      --font-display: "Major Mono Display", monospace;
 
       /* ── The three contract-NAMED palette values (moved here verbatim from vapor.css's palette blocks
        *    at V3 — same literals, same effective cascade position; vapor.css now owns only private

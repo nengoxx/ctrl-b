@@ -832,9 +832,9 @@ new dedicated skin attribute (as built: `html[data-skin]`, on `<html>`).
 | Attribute | Element | Used for | Status |
 |---|---|---|---|
 | ~~`data-theme=aqua\|ember`~~ | body | vapor palette swap | **RETIRED D51 V2** → shared `data-accent` (vapor.css selectors flipped) |
-| `data-loz=ring` | body | lozenge variant | live; retires at V4 (kit `brandMark` slot) |
+| ~~`data-loz=ring`~~ | body | lozenge variant | **RETIRED D51 V4** → the `loz` setting drives `<VaporMark/>`, the kit AppBar's `brandMark` slot content, and the value is stamped on the MARK node (`.vapor-mark[data-loz]`), not on body |
 | `data-skyline=city\|mountains` | body | skyline show/hide | live; **RULED at V3: Fleet decoration → `vapor-keeps`** (the Root-pinned VaporFleet keeps it — [`VAPOR_BANNER_LEDGER.md`](./VAPOR_BANNER_LEDGER.md) §2) |
-| `data-tab=…` | **`.tabbar`** + body | tab indicator slide | live; retires at V4 (DefaultRoot) |
+| ~~`data-tab=…` on **`.tabbar`**~~ | `.tabbar` | tab indicator slide | **RETIRED D51 V4** — vapor renders the kit `KitNavBar`, which drives its own `.kit-tabbar[data-tab]` + `--tab-i`. The BODY `data-tab` stamp is unaffected: it is a shared axis (`store/ui.ts`), not vapor-private |
 | `data-motion=reduced` | body | motion kill | live (shared UIState axis, not vapor-private) |
 
 **13.2 — Token-name collision, solved by `@layer` (✅ CLOSED at D51 V3, 2026-08-01).** *As-built:* the
@@ -985,8 +985,12 @@ never leaks into vapor — **follow it for every future theme:**
   `.kit-appbar { … }`, reading semantic tokens. Because vapor's Root never renders `.kit`, the Kit stylesheet **cannot
   leak into vapor** (and the new chrome uses fresh `.kit-*` class names anyway, so no name collision). A bespoke theme
   that wants to reuse a Kit piece adds the marker itself — opt-in reuse.
-- **vapor = the bespoke escape hatch:** its own Root + its own CSS (`@layer theme`, scoped `[data-skin="vapor"]`), no
-  marker. Its rules are independent selectors, **not** "overrides" of the Kit.
+- ~~**vapor = the bespoke escape hatch:** its own Root + its own CSS, no marker.~~ **AMENDED at D51 V4:**
+  vapor's Root hosts `DefaultRoot`, so vapor renders the `.kit` marker like every other theme and kit.css
+  applies to it. Its sheet (`themes/vapor/{vapor,extras}.css`, `@layer theme`, scoped `[data-skin="vapor"]`)
+  is now a residual OVERRIDE layer over the kit — shrinking, per the V5 deletion ladder, to the Root-pinned
+  VaporFleet + the brand mark. A bespoke theme is still entitled to structural CSS (§14.14); what D51 removed
+  is the *duplicate chrome tree*.
 - **Cascade layers order it:** `@layer base, theme` → a theme *may* override a Kit rule in `@layer theme` (the rare
   escape hatch), but the norm is token-only. **Component tokens** (`--kit-appbar-bg: var(--surface)`) are introduced
   only where a theme must diverge beyond what semantic tokens allow — never speculatively (YAGNI).
@@ -1012,14 +1016,27 @@ never leaks into vapor — **follow it for every future theme:**
 2. `themes/<id>/index.tsx` — a `ThemeDef`: `Root` = a thin wrapper that reads its settings and renders `<DefaultRoot hideAppbar=… />` (STRUCTURAL settings → `DefaultRoot` props; COSMETIC settings → a `body[data-*]` attr its `tokens.css` scopes, e.g. minimal's `data-density`); `palettes`; `loadStyles: () => import("./tokens.css")`; optional `loadFonts` (Fontsource, awaited via `document.fonts.load`); optional `settings`; optional `present` (spatial themes only).
 3. Register it in `theme-engine/registry.ts`. The Conf Appearance picker auto-renders its modes/accents/settings; `ThemeProvider` loads its lazy CSS/fonts on activation (and on cold-load if it's the persisted theme). Its Fleet view is the one surface it composes itself (from Kit `device-row`/`NowMonitoring` pieces); everything else is the shared Kit chrome + editors, skinned entirely by its tokens.
 
-> **⚠️ The two-CSS-trees invariant (final review 2026-07-06, D34).** The SHARED components — `tabs/AgentTab`
-> (the whole chat), the Conf editors, and the shared overlays — are styled by **two independent CSS trees**:
-> the Kit tree (`kit/kit.css`, under `.kit`) AND vapor's bespoke tree (`theme/vapor.css` + `extras.css`,
-> under `[data-skin=vapor]`). **Any change to a shared component's markup or class names must update BOTH
-> trees and be eyeballed on vapor AND one Kit theme before landing** (a missed tree renders an unstyled-but-
-> live element — no crash, no test failure; only the eyeball catches it). This obligation shrinks to zero as
-> each surface graduates up the §14.15 assimilation ladder — prune a surface from this note when its vapor
-> rules are gone.
+> **⚠️ The two-CSS-trees invariant — ✏️ AMENDED at D51 V4 (2026-08-01); it now bites HARDER, not less.**
+> *Original (2026-07-06, D34):* the SHARED components — `tabs/AgentTab` (the whole chat), the Conf editors,
+> the shared overlays — are styled by two INDEPENDENT trees, the Kit's (`kit/kit.css`, under `.kit`) and
+> vapor's (`themes/vapor/{vapor,extras}.css`, under `[data-skin=vapor]`), only one of which could ever match
+> — so a markup/class change had to update both, and a missed tree left an unstyled-but-live element.
+> *Since the V4 pivot the two trees are no longer mutually exclusive: **they CO-APPLY**.* vapor renders
+> `.kit`, so kit.css matches its DOM and vapor's sheet layers OVER it (`@layer base` < `@layer theme`).
+> The consequences to hold in your head until the V5 ladder finishes deleting vapor's shared-component CSS:
+> - **A cascade layer wins PER PROPERTY, not per rule.** Where the two sheets style the same element with
+>   DIFFERENT properties, both apply. The V4 build hit exactly this: kit.css slides the `.switch` knob with
+>   `transform: translateX(20px)` while vapor.css slid it with `left: 22px` — vapor won `left`, the kit's
+>   `transform` still applied, and the knob moved TWICE, landing outside its 42px track on every Conf
+>   toggle. Fixed by adopting one recipe (vapor now uses the transform too). **When you delete or edit a
+>   vapor rule, check what the kit rule underneath it sets that vapor does NOT.**
+> - **The same mechanism silently vetoes kit BEHAVIOUR.** A kit rule that repositions a shared overlay
+>   contextually (`.kit:has(.tab.active .plan-pin-panel) .mini-player { top: … }`) loses to vapor's flat
+>   `.mini-player { top: … }` in `@layer theme` — the overlay simply doesn't yield. These are not render
+>   errors; only the eyeball or the deletion finds them.
+> - The original obligation stands where it stood: a shared component's markup/class change updates BOTH
+>   trees and is eyeballed on vapor AND one Kit theme. Prune a surface from this note when its vapor rules
+>   are gone (the §14.15.3 / D51 V5 ladder); at V6 the note dies with them.
 
 ## 14.5 The core invariant — state ownership (prevents future refactors)
 
@@ -1530,11 +1547,12 @@ because everything already reads the contract.
    `if (theme === "cosmos")`. A Surface resolves a variant by reading the **per-theme setting** + the registry —
    theme identity flows in only as the *key* into the generic settings map, never as a `switch`. (Verified:
    `DefaultRoot` has zero theme branches.) This is what lets a new theme slot in without editing shared code.
-   *"No theme ID conditionals inside `DefaultRoot`. Ever."* (audit D1 / agent-rule #2). **One grandfathered
-   exception (documented 2026-07-06):** `AgentTab.tsx`'s `isVapor` gate on the in-tab `PinnedPlan` — vapor's
-   frozen plan location vs the Kit's composer plan-pill (D30). It stays until chat graduates (a 2nd structural
-   chat impl runs the 3-gate, §14.15), at which point plan-location becomes the variant's choice and the
-   branch dies. Do NOT cite it as precedent for a second theme-id branch.
+   *"No theme ID conditionals inside `DefaultRoot`. Ever."* (audit D1 / agent-rule #2). ~~**One grandfathered
+   exception (documented 2026-07-06):** `AgentTab.tsx`'s `isVapor` gate on the in-tab `PinnedPlan`.~~
+   **✅ RETIRED at D51 V4 (2026-08-01)** — and note it did NOT take the ChatSurface route this text predicted:
+   vapor simply declared the existing `planPlacement: "pinned"` setting, so plan location became "the setting's
+   choice" exactly as designed and the branch deleted itself. The invariant now holds with **zero** exceptions
+   anywhere in the shared tree.
 2. **Per-theme settings are VALIDATED at read, not cast.** `useThemeSetting` runs the raw (persisted/synced/possibly
    stale) value through `resolveThemeSetting(themeId, key, raw)`: a `seg` value must be one of the spec's `options`
    (else → `default`); a `switch` value must be boolean (else → `default`); an unknown key → `undefined`. Non-negotiable
@@ -1731,8 +1749,8 @@ the industry-standard pattern, named and sourced in the session record.
   an unstyled shell** (kit-based themes degrade to neutral base tokens). Accepted for owner-controlled
   evergreen browsers; a boot probe/`@supports` duplicate was reviewed and rejected. Note: the View-Transition
   floor (FF144) sits BELOW the @scope floor → no version window renders themes but breaks the switch.
-- **Two-CSS-trees rule** for shared markup (§14.4.1 box) + the **grandfathered `isVapor` exception**
-  (§14.14 invariant #1) — both temporary, both retired by the ladder below.
+- **Two-CSS-trees rule** for shared markup (§14.4.1 box — AMENDED at D51 V4: the trees CO-APPLY now, so read
+  the amended box) + ~~the **grandfathered `isVapor` exception** (§14.14 invariant #1)~~ **RETIRED at D51 V4**.
 
 ## 14.15.3 Vapor assimilation ladder (owner directive 2026-07-06: frozen = a phase, not an identity)
 
@@ -1901,8 +1919,10 @@ bubble fill), never a new contract token; promotion needs a second consumer.
 2. **Per-element escalation only**: an element that provably can't reach D7 fidelity via CSS escalates
    through the 3-gate (§14.14) at the slice review; a second theme needing a structurally different log
    is what births a ChatSurface (D34 ladder V4 rider) — not before.
-3. **Grandfathered**: `AgentTab`'s `isVapor` branch (vapor's frozen in-tab `.plan-pin`) — the one
-   sanctioned theme-ID gate (§14.15.3 hooks ①/⑤).
+3. ~~**Grandfathered**: `AgentTab`'s `isVapor` branch (vapor's frozen in-tab `.plan-pin`) — the one
+   sanctioned theme-ID gate.~~ **RETIRED at D51 V4:** vapor declares `planPlacement: "pinned"` and takes the
+   shared `PinnedPlanPanel` path, so `AgentTab` has NO theme-ID branch left. There is now **zero** sanctioned
+   theme-ID gate in the shared tree (§14.14's no-`if (theme === …)` invariant holds everywhere).
 4. **Growth rule**: ACA Phase 12 chat features (Stop/steering/approvals) land INSIDE the shared tree and
    ADD their hooks to this table in the same change.
 5. **Always-mounted chat engines live in `<AppEngines/>`** (§14.5): `useChatInit` · `useAutoTts` ·

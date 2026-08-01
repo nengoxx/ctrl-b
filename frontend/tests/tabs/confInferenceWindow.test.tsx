@@ -157,7 +157,10 @@ vi.mock("../../src/hooks/useAutomations", async (importActual) => ({
   ...(await importActual<typeof import("../../src/hooks/useAutomations")>()),
   useAutomations: () => ({ data: undefined }),
 }));
-vi.mock("../../src/tabs/UtilsTab", () => ({ UtilsContent: () => null }));
+// Both exports are stubbed: `UtilsContent` is what ConfTab hosts, and `UtilsTab` is read at MODULE-EVAL
+// time by the kit DefaultRoot's `DEFAULT_BODIES` map — which this tree now reaches, because vapor's eager
+// Root hosts DefaultRoot since D51 V4 (a mock missing the name throws on the binding access, not on render).
+vi.mock("../../src/tabs/UtilsTab", () => ({ UtilsContent: () => null, UtilsTab: () => null }));
 
 vi.mock("../../src/hooks/useSettings", () => ({
   useSettings: () => ({ data: h.settings }),

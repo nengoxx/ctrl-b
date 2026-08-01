@@ -41,8 +41,10 @@ copy dies. (`tabs/FleetTab.tsx` is already vapor-only by its own comment; it and
 > Frozen as the starting inventory — rows retire as slices land, tracked here: hook ③ keyframes
 > **DEAD at V1** · hook ⑥ CSS-home **DEAD at V1** (all files in `themes/vapor/`) · hook ① accent
 > axis **DEAD at V2** (shared `data-accent`; `applyBodyAttrs` has ONE arm now) · hook ② non-contract
-> tokens **DEAD at V3** (`themes/vapor/tokens.css`; the `semantic-tokens` waiver retired). Live
-> remainder: hooks ④ (parallel chrome, → V4) · ⑤ (isVapor PinnedPlan gate, → V4).
+> tokens **DEAD at V3** (`themes/vapor/tokens.css`; the `semantic-tokens` waiver retired) · hook ④
+> parallel chrome **DEAD at V4** (VaporRoot hosts DefaultRoot; `components/{AppBar,Composer,TabBar}` are
+> unreferenced, deleted in V4's delete commit) · hook ⑤ isVapor gate **DEAD at V4** (`planPlacement:"pinned"`).
+> **The table below is now history — every hook has retired; the remaining work is DELETION (V5) + the tail (V6).**
 
 | Hook | Where (verified) |
 |---|---|
@@ -203,6 +205,41 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
   plan, tools menu, Stop, the no-composer-tab case (Codex #6's list); **all THREE vapor accents**
   (`dark`/`aqua`/`ember` — vapor has no mode axis) plus the applicable appbar/perf/motion cases.
 
+- **AS-BUILT — PHASE 1, THE PORT (2026-08-01, uncommitted at hand-off):** `VaporRoot` is 56 lines: it reads
+  `appbarMode`, stamps `body[data-skyline]`, and renders
+  `<DefaultRoot appbarMode bodies={{ fleet: FleetTab }} brandMark={<VaporMark/>} />`. Kit AppBar gained
+  `brandMark?: ReactNode` (threaded through DefaultRoot exactly like `brandMeta`; default = the kit's own
+  `.dot`, so no other theme changes). `themes/vapor/VaporMark.tsx` renders the lozenge and carries `data-loz`
+  ON THE MARK — `body[data-loz]` retired (§3.1). The logo became a Vite-imported `src/assets/vapor-logo.png`
+  (hashed; `scripts/gen-pwa-icons.mjs` re-pointed at it) whose URL rides an inline `--vapor-logo` custom
+  property into vapor.css (CSS can't read a JS import). Declared descriptors: `composer:"sheet"` ·
+  `composerSkin:"outline"` (of the four skins only `outline` KEEPS a border, and vapor's dock draws a real
+  1px `--line-2` one — glass/bezel/sleek all strip it; no new skin born) · `planPlacement:"pinned"` ·
+  `outlines:true` (vapor's chat surfaces all carry resting borders: user 1px teal, bot 1px accent, `.b.sys`
+  dashed, `.b.cmd` panel + `$`-pre + action dividers). Also declared `--font-display: "Major Mono Display"`,
+  which hands the kit nav its glyph face for free. Waivers: `CONTRACT_WAIVERS` is `{}` and
+  `CONTRAST_MATRIX`'s `kitShell:false` is gone (the drift-guarded pair, R25) — the structural + Fleet-a11y
+  group and the kit-render sweep now run vapor. **Nothing deleted** (D51 port≠delete): `components/
+  {AppBar,Composer,TabBar}`, `AgentTab`'s `PinnedPlan` (exported so `noUnusedLocals` tolerates the corpse)
+  and every doomed banner stay for the Phase-2 delete commits.
+  **THE DURABLE FINDING — the two CSS trees CO-APPLY now, per PROPERTY** (THEME_ENGINE §14.4.1's box was
+  amended): vapor renders `.kit`, so kit.css matches its DOM and `@layer theme` only wins the properties
+  vapor actually sets. Two live cases found by eyeball: the Conf `.switch` knob moved TWICE (vapor's
+  `left: 22px` + the kit's `transform: translateX(20px)` = 42px out of a 42px track) — fixed by adopting the
+  kit's transform recipe in the doomed block; and the kit's contextual `:has()` repositioners for the
+  mini-player lose to vapor's flat `top`/`left` (documented in the ledger, fixed by the V5 delete). Every
+  V5 deletion must ask "what does the kit rule underneath set that vapor does not?".
+  **Codex round on the port (2026-08-01): shared components · Root survivors · axis declarations · dead
+  hooks all CLEAN; FIX FIRST on TEST FIDELITY** — a port that leaves its pins aimed at the corpse stops
+  covering production. Applied: `tests/components/composerSteer.test.tsx` (D41 Enter-steers / button-stops)
+  RETARGETED from the bespoke `components/Composer` to **SheetComposer** — all three cases pass unchanged,
+  so there is **no port gap**: Enter-to-steer rides `useComposerChrome`'s handler through the autocomplete
+  wrapper's fall-through into the un-gated `useComposer().send`, and Stop is `isStreaming ? stopTurn : send`
+  (only the two labels differ, "stop the running turn" vs "stop turn"). `micSending.test.ts`'s legacy vapor
+  row STAYS, marked "dies Phase 2" — it pins the component the delete commit takes. And the structural gate
+  in `themeContract.test.ts` dropped its `, #composer` alternative: the bespoke bar carries that id too, so
+  the gate could have passed on DEAD DOM; it now requires `.kit-composer`, the node DefaultRoot measures.
+
 ### V5 — the deletion ladder (per-banner, port-verify → delete)
 - Work through the classified banners: chat (tokens/theme-CSS fidelity per the owner's §5 list —
   pulse, `▸/▾`, terminal gestalt survive as vapor theme-CSS on the §15 hooks) · Conf editors ·
@@ -241,9 +278,9 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
 | Vapor body attr | Retires at |
 |---|---|
 | `data-theme` (accent) | ✅ **RETIRED at V2** (`5f70a16`, 2026-08-01) |
-| `data-loz` | V4 (becomes a theme setting driving the kit `brandMark` slot) |
+| `data-loz` | ✅ **RETIRED at V4** (2026-08-01, the port commit) — the `loz` setting drives `<VaporMark/>`, the kit AppBar's `brandMark` content, and the value is stamped on the MARK node (`.vapor-mark[data-loz]`); VaporRoot no longer writes body. The two dead `body[data-loz]` rules in vapor.css's §Top bar die with that section's V4 delete commit |
 | `data-skyline` | ✅ **RULED at V3: `vapor-keeps`** — Fleet decoration, the Root-pinned VaporFleet owns it; nothing to execute (ledger §2) |
-| `data-tab` | V4 (DefaultRoot's mechanism; the `layouts` waiver comment updates here too) |
+| `data-tab` | ✅ **RETIRED at V4** for the vapor-private half (`.tabbar[data-tab]` — the kit `KitNavBar` drives its own `.kit-tabbar[data-tab]`/`--tab-i`); the BODY `data-tab` stamp stays (a SHARED axis in `store/ui.ts`, never vapor-private). The `layouts:["4-tab"]` waiver comment was updated in the same commit (R22) |
 
 Doc retirements: §13.1 frozen-attr table (V2, V4) · §14.4.1 two-trees invariant (V4) · §15 rule 3
 (V4) · §14.14 / D31 / D36 vapor-frozen phrasing (V6). Each slice's brief names its rows.

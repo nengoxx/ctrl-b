@@ -100,6 +100,7 @@ textarea:focus-visible {
    the now-dots active-morph (which dot is featured), and short entrance transitions
    (<300ms) on toasts/confirm dialog. vapor.css stays verbatim per D7; this overrides
    via cascade (extras.css loads after vapor.css). */
+body[data-motion="reduced"] .vapor-mark[data-loz="ring"],
 body[data-motion="reduced"] [data-loz="ring"] .brand .lozenge,
 body[data-motion="reduced"] .tts-btn:not(.muted),
 body[data-motion="reduced"] .hero .sun,
@@ -1632,8 +1633,10 @@ body {
   width: 13px;
   height: 13px;
 }
+/* D51 V4 — the small-switch slide follows the base switch onto `transform` (vapor.css §SETTINGS): under
+   the kit marker, kit.css's own `translateX(17px)` composes with a `left` slide and moves the knob twice. */
 .svc-auto .switch.on .knob::after {
-  left: 19px;
+  transform: translateX(17px);
 }
 /* remove = outline danger (§7) — red in vapor/ember, purple in aqua via --danger-rgb (§10) */
 .svc-rm {

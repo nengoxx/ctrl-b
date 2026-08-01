@@ -4,10 +4,11 @@ import { seedUI, test, expect, VAPOR_UI } from "./fixtures";
 // POST mocked. These catch "the UI wired up wrong / a flow throws" regressions the logic tests can't.
 //
 // SKIN (D51 V0): a plain `goto("/")` now boots the COSMOS default, so the flows that drive vapor's bespoke
-// chrome — its Fleet rows (`.dev`)/shutdown buttons/waveform, its `.composer` textarea, its accent palettes
-// (on the shared `data-accent` axis since V2) — seed `VAPOR_UI` first. The rest (Tools cards, Conf groups
-// + editor forms) run on shared components that render identically under either skin, so they keep booting
-// the default.
+// surface — its Fleet rows (`.dev`)/shutdown buttons/waveform and its accent palettes (on the shared
+// `data-accent` axis since V2) — seed `VAPOR_UI` first. The rest (Tools cards, Conf groups + editor forms)
+// run on shared components that render identically under either skin, so they keep booting the default.
+// D51 V4 shrank that list: vapor's CHROME is the kit's now (DefaultRoot hosting), so the composer/appbar/
+// tab-bar selectors are `.kit-*` under every skin — only the Root-pinned Fleet is still vapor-specific.
 
 test("Boot — a device with no persisted UI lands on the cosmos default (D51 V0)", async ({
   page,
@@ -19,7 +20,7 @@ test("Boot — a device with no persisted UI lands on the cosmos default (D51 V0
   // are stamped by index.html's pre-JS FOUC script, so asserting those alone would pass before the lazy
   // Root/CSS ever landed — the flake class that burned v1.4.5. No fixed waits either; these are
   // auto-retrying content assertions.
-  await expect(page.locator(".kit-appbar")).toBeVisible(); // DefaultRoot chrome (vapor renders `.app-shell`)
+  await expect(page.locator(".kit-appbar")).toBeVisible(); // DefaultRoot chrome
   const planet = page.locator(".cosmos-planet.on").first(); // CosmosFleet's orbital host coin
   await expect(planet).toBeVisible();
   await expect(planet).toHaveAttribute("aria-label", /^vault — online/); // …driven by the mocked fleet
@@ -116,11 +117,13 @@ test("Agent — sending a message shows the user's bubble", async ({ page }) => 
       body: JSON.stringify({ thread_id: "t1", messages: [] }),
     }),
   );
-  await seedUI(page, { ...VAPOR_UI, tab: "fleet" }); // `.composer` is vapor's (the kit renders `.kit-composer`)
+  // Seeded vapor deliberately: since D51 V4 vapor's composer IS the kit's (the `sheet`/"Docked" variant),
+  // so this drives the SheetComposer under vapor's tokens — the kit-render sweep covers the other skins.
+  await seedUI(page, { ...VAPOR_UI, tab: "fleet" });
   await page.goto("/");
   await page.locator("#tabbtn-agent").click();
 
-  await page.locator(".composer textarea").fill("hello agent");
+  await page.locator(".kit-composer textarea").fill("hello agent");
   await page.locator("#cmd-send").click();
 
   await expect(page.getByText("hello agent").first()).toBeVisible();

@@ -1,207 +1,56 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect } from "react";
 
-import { AppBar } from "../../components/AppBar";
-import { Composer } from "../../components/Composer";
-import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { ErrorBoundary } from "../../components/ErrorBoundary";
-import { MiniPlayer } from "../../components/MiniPlayer";
-import { PromptModal } from "../../components/PromptModal";
-import { SwUpdatePrompt } from "../../components/SwUpdatePrompt";
-import { TabBar } from "../../components/TabBar";
-import { Toasts } from "../../components/Toasts";
-import { useSections } from "../../hooks/useSections";
-import { getGroupScrollTarget } from "../../store/groupScroll";
-import { appbarShown, useUISlice } from "../../store/ui";
-import { prefetchOnIdle } from "../../lib/prefetch";
-import { AgentTab } from "../../tabs/AgentTab";
-import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
-import { UtilsTab } from "../../tabs/UtilsTab";
-import { useScrollKeep } from "../../theme-engine/scrollKeep";
+import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
 import { useThemeSetting } from "../../theme-engine/settings";
+import { useUISlice } from "../../store/ui";
 import { FleetTab } from "./FleetTab";
-import type { Loz, Skyline } from "./index";
+import { VaporMark } from "./VaporMark";
+import type { Skyline } from "./index";
 
-// The vapor theme's Root (Phase 11 v2 / D29 §14.7 M0). This is today's App body verbatim — the
-// `.app-shell` dvh flex column (a scrolling `.app-scroll` with the appbar + tabs, then composer +
-// tab bar in-flow at the bottom) — extracted out of App.tsx so the theme owns its whole presentation.
-// App is now a thin host that renders the active theme's Root + runs app-global effects.
+// The vapor theme's Root (D29 §14.7 · D51 V4 — THE PIVOT). Vapor took cosmos's shape: a THIN Root over
+// **DefaultRoot**, which now owns every piece of shell plumbing VaporRoot used to hand-roll — the `.kit`
+// dvh flex column, the scroller (`#app-scroll`) + its scroll-reset/group-scroll handoff + scrollKeep, the
+// keep-mounted `active`-gated section bodies, the lazy-Conf latch with its ErrorBoundary/Suspense fallbacks,
+// the `--appbar-h`/`--composer-h` measurements, the Conf-chunk prefetch, the four-tab coercion, and the
+// overlays (MiniPlayer/Toasts/Confirm/Prompt/SwUpdate). This file is what stays VAPOR:
 //
-// M0 = pure extraction: vapor's rendered DOM + behaviour are UNCHANGED (the byte-identical acceptance
-// test). vapor's components are rendered directly here (no slot indirection). The layout-specific
-// effects (lazy-Conf latch, scroll-reset, `--appbar-h`) live here (theme-owned layout); the app-global
-// effects (event stream, appearance sync, `--app-h` viewport, beforeunload) stay in App. The overlays
-// (MiniPlayer/Toasts/…) stay inside `.app-shell` for byte-identical DOM — they become Kit/token-driven
-// + hoisted to App in the Kit slice.
+//   • the Root-pinned **FleetTab** — vapor's bespoke Fleet (hero, skyline, waveform, device rows) is
+//     bespoke-by-right under D31/§1.1 (owner §5 Q2: "Fleet stays as-is"), injected through DefaultRoot's
+//     `bodies` body-override map exactly as cosmos pins CosmosFleet. Agent/Utils/Conf are the SHARED bodies.
+//   • the **brandMark** slot content (`<VaporMark/>` — the gradient-ring lozenge), the kit AppBar's
+//     theme-fillable leading mark (D51 §4.1).
+//   • `body[data-skyline]` — vapor's decorative horizon axis (a `ThemeDef.settings` value, M3 §14.3), which
+//     the KEPT Fleet's CSS keys off. Root-owned like MinimalRoot's `data-density`: written before paint,
+//     cleared on unmount so a switched-to skin can't inherit it. (`data-loz` moved to the mark node itself
+//     at this slice — the component that renders the lozenge owns its own setting.)
+//   • the composer/plan/skin/outlines choices, which are DATA now: vapor declares the four kit axis/seg
+//     descriptors in its ThemeDef (index.tsx, R19), so the `sheet` composer + the `pinned` plan resolve
+//     through the shared resolvers with no code here.
 //
-// Vapor CSS keys off body data-attrs — the SHARED accent/tab axes (written by store/ui.ts; the private
-// data-theme axis retired at D51 V2) plus skyline/loz and body.no-composer, which THIS component owns
-// (theme-owned settings, M3 §14.3). Fleet/Agent/Utils are always mounted (`.tab` CSS shows only the active one); Conf is
-// lazy — mounted after its first activation, once-and-stays so its draft state survives tab switches.
-
+// Gone with the pivot (their legacy copies are deleted in the follow-up commit, D51 §3 V4): vapor's bespoke
+// `components/{AppBar,Composer,TabBar}`, the in-tab `PinnedPlan` + its `isVapor` gate in AgentTab, and the
+// `body.no-composer` padding hook (the kit shell is an in-flow flex column — an absent composer just reflows
+// the column, so there is no bottom-padding bookkeeping to do).
 export function VaporRoot() {
-  // Active section + composer-visibility from the headless sections controller (D29 §14.2). `active` is
-  // aliased to `tab` (vapor's local vocabulary) since the whole body keys off it; `showComposer` is the
-  // active section's composer flag (was the `tab==='fleet'||'agent'` hardcode).
-  const { active: tab, hasComposer: showComposer } = useSections();
-  // The global chrome lever (visible/transparent/off/minimal). vapor renders its OWN AppBar, so it maps the
-  // mode here: the appbar shows when a bar is present (`appbarShown` = visible OR transparent — transparent
-  // renders the SAME bar, null-painted via the additive `.appbar.transparent` rule in vapor.css). vapor's
-  // `minimal` is DEFERRED — it behaves like `off` (no appbar) and keeps vapor's bottom TabBar (no floating
-  // NavMenu yet — THEME_ENGINE §14.13, the bespoke-Root TODO).
+  // The global chrome lever (visible/transparent/off/minimal) — read here and handed down, the cosmos
+  // shape. Under DefaultRoot vapor gets `minimal` (the floating NavMenu) for free; it used to fall back
+  // to `off` because its bespoke bar had no menu.
   const appbarMode = useUISlice((s) => s.appbarMode);
-  const showAppbar = appbarShown(appbarMode);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Lazy Conf tab: conditional mount, strictly false→true, stays mounted to preserve form drafts.
-  const [confMounted, setConfMounted] = useState(() => tab === "conf");
-  useEffect(() => {
-    if (tab === "conf" && !confMounted) setConfMounted(true);
-  }, [tab, confMounted]);
-
-  // Keep the scroller's position across a theme-Root remount (a skin pick rebuilds this whole tree —
-  // scrollKeep restores the old Root's position in the mount layout-effect, before the VT snapshot).
-  const restoredScrollRef = useScrollKeep(scrollRef);
-
-  // Reset the content pane to the top on tab switch (Agent is the exception — it scrolls itself).
-  // SKIP when a scroll-to-group handoff is pending — the DefaultRoot guard, which vapor was missing
-  // (post-14d review, MED): this parent effect runs AFTER the host body's child effect, so on a WARM Conf
-  // tab (already mounted, so nothing re-suspends) it landed last and cancelled the group scroll outright.
-  // A deep link into a Conf group (`openConfGroup`, e.g. the chat's created-automation card) is therefore
-  // silently inert on the default theme without it. Read via the getter (a peek), not a subscription.
-  // Skip the ONE mount-run that follows a scrollKeep restore (a theme switch, not a tab switch).
-  useEffect(() => {
-    if (restoredScrollRef.current) {
-      restoredScrollRef.current = false;
-      return;
-    }
-    if (tab !== "agent" && !getGroupScrollTarget()) scrollRef.current?.scrollTo(0, 0);
-    // `restoredScrollRef` is a stable ref (lint can't see through the custom hook) — a dep for hygiene only.
-  }, [tab, restoredScrollRef]);
-
-  // Expose vapor's sticky appbar height as `--appbar-h` so the Agent plan tab pins just below it.
-  // vapor's Root definitively renders `.appbar`, so a direct query is correct (no cross-theme concern —
-  // a different skin unmounts this Root). A wrapper-ref is unusable (the appbar is position:sticky).
-  useEffect(() => {
-    const bar = scrollRef.current?.querySelector<HTMLElement>(".appbar");
-    if (!bar) {
-      // appbar hidden → pin content at the top (0), not a stale height (matches DefaultRoot).
-      document.documentElement.style.setProperty("--appbar-h", "0px");
-      return;
-    }
-    const set = () =>
-      document.documentElement.style.setProperty("--appbar-h", `${bar.offsetHeight}px`);
-    set();
-    const ro = new ResizeObserver(set);
-    ro.observe(bar);
-    return () => ro.disconnect();
-  }, [appbarMode]);
-
-  // Warm the Conf chunk after first paint so the first Conf click is typically zero-wait.
-  useEffect(() => {
-    const cancel = prefetchOnIdle(preloadConfTab);
-    return cancel;
-  }, []);
-
-  // Tab → preload map (Conf is the only lazy tab). Stable reference for TabBar.
-  const prefetch = useCallback((t: string): void => {
-    if (t === "conf") void preloadConfTab();
-  }, []);
-
-  // `.no-composer` is vapor's OWN layout hook (vapor.css `body.no-composer { padding-bottom }`) — theme-
-  // owned now, not written by the core store. useLayoutEffect so the padding flips before paint (no flash
-  // on a tab switch / first load), in the same commit the composer mounts/unmounts below.
-  useLayoutEffect(() => {
-    document.body.classList.toggle("no-composer", !showComposer);
-  }, [showComposer]);
-
-  // vapor's decorative `body[data-skyline]`/`body[data-loz]` axes are THEME-OWNED (M3 §14.3): they come
-  // from vapor's `ThemeDef.settings`, written here (not by the core ui store) so the core stops knowing
-  // vapor-specific attrs. useLayoutEffect → set before paint (the CSS keys hard off both values, so a
-  // missing attr would show both skylines for a frame). Cleared on unmount so a switched-to skin can't
-  // inherit a stale vapor attr.
+  // vapor's decorative `body[data-skyline]` axis is THEME-OWNED (M3 §14.3): it comes from vapor's
+  // `ThemeDef.settings`, written here (not by the core ui store) so the core stops knowing vapor-specific
+  // attrs. useLayoutEffect → set before paint (the CSS keys hard off the value, so a missing attr would
+  // show both skylines for a frame). Cleared on unmount so a switched-to skin can't inherit a stale attr.
   const skyline = useThemeSetting<Skyline>("vapor", "skyline");
-  const loz = useThemeSetting<Loz>("vapor", "loz");
   useLayoutEffect(() => {
     const b = document.body;
     b.dataset.skyline = skyline;
-    b.dataset.loz = loz;
     return () => {
       delete b.dataset.skyline;
-      delete b.dataset.loz;
     };
-  }, [skyline, loz]);
+  }, [skyline]);
 
   return (
-    <div className="app-shell">
-      <div className="app-scroll" id="app-scroll" ref={scrollRef}>
-        {showAppbar && <AppBar transparent={appbarMode === "transparent"} />}
-        <FleetTab active={tab === "fleet"} />
-        <AgentTab active={tab === "agent"} />
-        <UtilsTab active={tab === "utils"} />
-        {confMounted && (
-          <ErrorBoundary fallback={confErrorFallback}>
-            <Suspense fallback={<ConfLoading />}>
-              <ConfTabLazy active={tab === "conf"} />
-            </Suspense>
-          </ErrorBoundary>
-        )}
-      </div>
-      {/* Floating TTS mini-player (6b-2): fixed-position pill just below the appbar (its own CSS),
-          so JSX placement here doesn't affect layout. Self-hides when nothing's playing. */}
-      <MiniPlayer />
-      {showComposer && <Composer />}
-      <TabBar onPrefetch={prefetch} />
-      <Toasts />
-      <ConfirmDialog />
-      <PromptModal />
-      <SwUpdatePrompt />
-    </div>
-  );
-}
-
-// Vapor-styled Suspense fallback for the Conf chunk. Shape mirrors the real Conf tab's section header
-// so there's no layout shift when the chunk resolves. Only rendered once Conf is the active tab.
-function ConfLoading() {
-  return (
-    <div
-      className="tab active"
-      id="tab-conf"
-      data-screen-label="04 Conf"
-      role="tabpanel"
-      aria-labelledby="tabbtn-conf"
-    >
-      <div className="sec">
-        <span className="num">04</span>
-        <b>Conf</b>
-        <span className="right">// loading…</span>
-      </div>
-    </div>
-  );
-}
-
-// Error fallback for the lazy Conf chunk (most common: a stale chunk URL after a deploy → 404).
-// React.lazy caches its rejection, so only a page reload recovers — the button does exactly that.
-function confErrorFallback(error: Error, reload: () => void) {
-  return (
-    <div
-      className="tab active"
-      id="tab-conf"
-      data-screen-label="04 Conf"
-      role="tabpanel"
-      aria-labelledby="tabbtn-conf"
-    >
-      <div className="sec">
-        <span className="num">04</span>
-        <b>Conf</b>
-        <span className="right">// failed to load</span>
-      </div>
-      <div className="no-svc" style={{ padding: "16px 14px" }}>
-        // {error.message || "unknown error"}
-        <br />
-        <button className="conf-save" style={{ marginTop: 12 }} onClick={reload}>
-          Reload page
-        </button>
-      </div>
-    </div>
+    <DefaultRoot appbarMode={appbarMode} bodies={{ fleet: FleetTab }} brandMark={<VaporMark />} />
   );
 }

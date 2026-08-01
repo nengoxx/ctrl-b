@@ -12,8 +12,13 @@ import {
 // Slice A — the Kit-wide `outlines` axis (promoted out of frontier's F4 no-outlines chat sweep). The factory
 // is the shared spec themes spread into `ThemeDef.settings` (per-theme default); `useOutlines` resolves the
 // EFFECTIVE boolean through the generic `useThemeSetting`/`resolveThemeSetting` (no duplicated validation),
-// defaulting an UNDECLARED theme (vapor / any frozen theme) to ON. Reads the REAL registry, so the per-theme
-// defaults asserted below are the ones each ThemeDef declares (minimal/cosmos ON, frontier OFF).
+// defaulting an UNDECLARED theme to ON. Reads the REAL registry, so the per-theme defaults asserted below
+// are the ones each ThemeDef declares (minimal/cosmos/vapor ON, frontier OFF).
+//
+// The UNDECLARED arm used to be vapor — until D51 V4, when the DefaultRoot pivot made it declare all four
+// kit axis/seg descriptors (R19). Every REGISTERED theme declares them now, so the arm uses `phosphor`: a
+// valid `ThemeId` with no registry row, which is exactly the shape the fallback exists for (an unregistered/
+// stale id from a synced blob).
 
 beforeEach(() => {
   setUI({ themeSettings: {} }); // clear overrides (module state persists between tests)
@@ -31,9 +36,10 @@ describe("outlinesSetting factory", () => {
 });
 
 describe("useOutlines", () => {
-  it("resolves each theme's DECLARED default (minimal/cosmos ON, frontier OFF)", () => {
+  it("resolves each theme's DECLARED default (minimal/cosmos/vapor ON, frontier OFF)", () => {
     expect(renderHook(() => useOutlines("minimal")).result.current).toBe(true);
     expect(renderHook(() => useOutlines("cosmos")).result.current).toBe(true);
+    expect(renderHook(() => useOutlines("vapor")).result.current).toBe(true); // D51 V4 — declared ON
     expect(renderHook(() => useOutlines("frontier")).result.current).toBe(false);
   });
 
@@ -44,18 +50,18 @@ describe("useOutlines", () => {
     expect(renderHook(() => useOutlines("minimal")).result.current).toBe(false);
   });
 
-  it("an undeclared theme (vapor / frozen) resolves to ON — it keeps its native chrome", () => {
-    expect(renderHook(() => useOutlines("vapor")).result.current).toBe(true);
+  it("an UNDECLARED theme (unregistered id) resolves to ON — it keeps the kit's native chrome", () => {
+    expect(renderHook(() => useOutlines("phosphor")).result.current).toBe(true);
     // a stray non-boolean override for an undeclared key can't force it off (resolveThemeSetting → undefined)
-    setThemeSetting("vapor", "outlines", false);
-    expect(renderHook(() => useOutlines("vapor")).result.current).toBe(true);
+    setThemeSetting("phosphor", "outlines", false);
+    expect(renderHook(() => useOutlines("phosphor")).result.current).toBe(true);
   });
 });
 
 // Slice B — the `composerSkin` axis (the COMPOSER's chrome, orthogonal to the composer LAYOUT). Same shape as
 // `outlines`: a shared seg factory + a `useComposerSkin` resolver on the generic `useThemeSetting`, defaulting
 // an UNDECLARED theme to the kit-native `outline` skin. Reads the REAL registry (frontier declares `bezel`,
-// minimal/cosmos `outline`).
+// minimal/cosmos/vapor `outline`; the undeclared arm uses the unregistered `phosphor` — see above).
 
 describe("composerSkinSetting factory", () => {
   it("builds a seg spec (options Outline/Glass/Bezel/Sleek, default from the arg)", () => {
@@ -80,10 +86,13 @@ describe("composerSkinSetting factory", () => {
 });
 
 describe("useComposerSkin", () => {
-  it("resolves each theme's DECLARED default (frontier→bezel, minimal/cosmos→outline)", () => {
+  it("resolves each theme's DECLARED default (frontier→bezel, minimal/cosmos/vapor→outline)", () => {
     expect(renderHook(() => useComposerSkin("frontier")).result.current).toBe("bezel");
     expect(renderHook(() => useComposerSkin("minimal")).result.current).toBe("outline");
     expect(renderHook(() => useComposerSkin("cosmos")).result.current).toBe("outline");
+    // D51 V4 — vapor DECLARES `outline` now (its dock is the kit's bordered bar), so this is its declared
+    // default, not the undeclared fallback that used to answer here.
+    expect(renderHook(() => useComposerSkin("vapor")).result.current).toBe("outline");
   });
 
   it("a valid user override wins over the declared default", () => {
@@ -93,11 +102,11 @@ describe("useComposerSkin", () => {
     expect(renderHook(() => useComposerSkin("minimal")).result.current).toBe("glass");
   });
 
-  it("an undeclared theme (vapor / frozen) resolves to the kit-native `outline`", () => {
-    expect(renderHook(() => useComposerSkin("vapor")).result.current).toBe("outline");
+  it("an UNDECLARED theme (unregistered id) resolves to the kit-native `outline`", () => {
+    expect(renderHook(() => useComposerSkin("phosphor")).result.current).toBe("outline");
     // a stray override for an undeclared key can't take effect (resolveThemeSetting → undefined → default)
-    setThemeSetting("vapor", "composerSkin", "bezel");
-    expect(renderHook(() => useComposerSkin("vapor")).result.current).toBe("outline");
+    setThemeSetting("phosphor", "composerSkin", "bezel");
+    expect(renderHook(() => useComposerSkin("phosphor")).result.current).toBe("outline");
   });
 
   it("a corrupt/stale value degrades to the theme's declared default (validation via the option list)", () => {

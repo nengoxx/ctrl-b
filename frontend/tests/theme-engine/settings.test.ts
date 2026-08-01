@@ -70,9 +70,23 @@ describe("resolveThemeSetting", () => {
 });
 
 describe("themeSettingsSpec", () => {
-  it("exposes the active theme's declared schema (vapor → 4 decorative options)", () => {
+  it("exposes the active theme's declared schema, in declaration order (vapor → 4 kit axes + 4 decorative)", () => {
     const spec = themeSettingsSpec("vapor");
-    expect(Object.keys(spec ?? {})).toEqual(["loz", "heroOn", "skyline", "waveformOn"]);
+    // ORDER is the contract: the Appearance picker renders the keys as declared, and D51 V4 put the four
+    // SHARED kit axis/seg descriptors (R19 — the cosmos ordering: composer, skin, plan, outlines) ABOVE
+    // vapor's own decoration rows.
+    expect(Object.keys(spec ?? {})).toEqual([
+      "composer",
+      "composerSkin",
+      "planPlacement",
+      "outlines",
+      "loz",
+      "heroOn",
+      "skyline",
+      "waveformOn",
+    ]);
     expect(spec?.heroOn).toMatchObject({ type: "switch", default: true });
+    expect(spec?.composer).toMatchObject({ type: "seg", default: "sheet" });
+    expect(spec?.planPlacement).toMatchObject({ type: "seg", default: "pinned" });
   });
 });

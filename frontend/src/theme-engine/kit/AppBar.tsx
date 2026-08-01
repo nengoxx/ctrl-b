@@ -13,13 +13,19 @@ import type { AppbarMode } from "../../store/ui";
 
 // `brandMeta` = the theme-fillable brand subtitle slot (D30 slot composition; frontier's live rig count —
 // F1 pre-flight ruling 2026-07-12). Omitted → the static "dashboard" (the default every other theme shows).
+// `brandMark` = the same slot pattern one line up: the brand's LEADING MARK. Omitted → the Kit's own accent
+// dot (what every theme shows today). A theme passes a NODE — vapor's gradient-ring lozenge (D51 §4.1 / R15).
+// The Kit deliberately knows nothing about what the node is: no `loz` enum, no ring/logo/spin knowledge here;
+// whatever the theme renders, this slot just leads the brand row.
 // `appbarMode` is threaded so the `transparent` mode can stamp a `.transparent` modifier — kit.css null-paints
 // the bar (no fill/border/shadow/backdrop-filter) + squares its icon buttons in that mode only.
 export function KitAppBar({
   brandMeta,
+  brandMark,
   appbarMode,
 }: {
   brandMeta?: ReactNode;
+  brandMark?: ReactNode;
   appbarMode?: AppbarMode;
 }) {
   const { ttsAuto, ttsConfigured, toggleAutoTts } = useAppChrome();
@@ -31,7 +37,7 @@ export function KitAppBar({
   return (
     <div className={"kit-appbar" + (appbarMode === "transparent" ? " transparent" : "")}>
       <div className="kit-brand">
-        <span className="dot" aria-hidden />
+        {brandMark ?? <span className="dot" aria-hidden />}
         ctrl·b
         <span className="meta">{brandMeta ?? "dashboard"}</span>
       </div>

@@ -50,15 +50,16 @@ export type ContractWaiver =
   //   now runs vapor through the SAME expectations as every other skin); the arm stays as the vocabulary.
   | "kit-structure"; // §14.15.3 hook ④: parallel chrome (components/AppBar·Composer·TabBar vs the Kit's) →
 //   no `.kit-appbar`/`.kit-composer`, and its bespoke hero/waveform canvases are e2e territory (flows.spec
-//   boots vapor for real). So the render-based structural + Fleet-a11y group is waived. **Retires at V4**
-//   (the DefaultRoot pivot lands `.kit-appbar`; the structural + Fleet-a11y group then runs vapor). A
-//   waiver retires the moment its capability exists — skipping the structural group during the riskiest
-//   slice is backwards. The vapor waiver list therefore hits [] at V4, and V6 asserts it STAYS [] (main-
-//   seat ruling on the Codex V3 round, D51 §7 R25 — supersedes the earlier "retires at V6" note).
+//   boots vapor for real). So the render-based structural + Fleet-a11y group was waived. RETIRED at V4
+//   (the DefaultRoot pivot landed `.kit-appbar`/`.kit-composer`, so the structural + Fleet-a11y group now
+//   runs vapor — through the riskiest slice, which is the point: a waiver retires the moment its capability
+//   exists, never later). The arm stays as the waiver VOCABULARY, like its three retired siblings.
 
-export const CONTRACT_WAIVERS: Partial<Record<ThemeId, ContractWaiver[]>> = {
-  vapor: ["kit-structure"],
-};
+// EMPTY since D51 V4 — every ladder waiver has retired (V1 keyframe-prefix · V2 accent-axis · V3
+// semantic-tokens · V4 kit-structure), so the §14.15.3 tracker reads: vapor is measured by every group in
+// this suite, exactly like the three kit themes. V6 ASSERTS this list is still `[]` (D51 §7 R25); nothing
+// may be added back without an explicit D51 ruling.
+export const CONTRACT_WAIVERS: Partial<Record<ThemeId, ContractWaiver[]>> = {};
 
 function isWaived(id: ThemeId, w: ContractWaiver): boolean {
   return CONTRACT_WAIVERS[id]?.includes(w) ?? false;
@@ -258,10 +259,14 @@ describe.each(registeredThemes().map((d) => [d.id, d] as const))(
         try {
           // #app-scroll — the scroller DefaultRoot + AgentTab query by id.
           expect(document.getElementById("app-scroll"), `${id}: no #app-scroll`).not.toBeNull();
-          // composer — `.kit-composer` (Kit) OR `#composer` (id), the fleet section has one.
+          // composer — `.kit-composer`, the class DefaultRoot's `--composer-h` ResizeObserver queries.
+          // The `, #composer` half of this selector was DROPPED at D51 V4: the bespoke
+          // `components/Composer` also carries that id, so the gate would have gone on passing for a theme
+          // that rendered the DEAD chrome instead of the kit's. Every composer variant keeps the
+          // `.kit-composer` class (SheetComposer edge #5), so this is strictly the measurable node.
           expect(
-            container.querySelector(".kit-composer, #composer"),
-            `${id}: no composer node on a composer-bearing section`,
+            container.querySelector(".kit-composer"),
+            `${id}: no .kit-composer on a composer-bearing section`,
           ).not.toBeNull();
           // .kit-appbar — the class CosmosFleet cross-queries for its stage sizing.
           expect(container.querySelector(".kit-appbar"), `${id}: no .kit-appbar`).not.toBeNull();
@@ -537,9 +542,12 @@ describe("root-owned attr lifecycle (mounted Root) — MinimalRoot data-density"
 //    hosted-navigate, the chat's created-automation card) silently inert. vapor shipped without the guard
 //    the kit Root had. A source-level check, deliberately: the alternative is an effect-ORDERING test
 //    across two component trees, which is exactly the flaky shape this repo avoids — and the failure mode
-//    is a MISSING line, which reading the source proves and a render test would only prove by accident. ──
+//    is a MISSING line, which reading the source proves and a render test would only prove by accident.
+//    D51 V4 dropped `themes/vapor/VaporRoot.tsx` from this list — not because the guard stopped mattering,
+//    but because VaporRoot stopped OWNING a scroller: it hosts DefaultRoot now, so the one implementation
+//    below is the one every theme runs (exactly the duplication this ladder exists to remove). ──
 describe("theme Roots ↔ the group-scroll handoff", () => {
-  it.each([["src/theme-engine/kit/DefaultRoot.tsx"], ["src/themes/vapor/VaporRoot.tsx"]])(
+  it.each([["src/theme-engine/kit/DefaultRoot.tsx"]])(
     "%s guards its scroll-reset on a pending group-scroll target",
     (file) => {
       const src = readFileSync(resolve(process.cwd(), file), "utf8");

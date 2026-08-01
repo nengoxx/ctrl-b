@@ -44,13 +44,21 @@ describe("planPlacementSetting", () => {
 });
 
 describe("usePlanPlacement", () => {
-  it("undeclared theme (vapor) → inline (frozen, never declares the key)", () => {
-    // vapor is permanently undeclared — a synced/stale override must not resolve: `resolveThemeSetting`
-    // returns undefined for the unknown key → the hook's fallback holds.
-    setUI({ theme: "vapor", themeSettings: {} });
-    setThemeSetting("vapor", "planPlacement", "pinned");
+  it("undeclared theme (an unregistered id) → inline", () => {
+    // A theme with no registry row declares nothing — a synced/stale override must not resolve:
+    // `resolveThemeSetting` returns undefined for the unknown key → the hook's fallback holds. (This arm
+    // used to be vapor; D51 V4 made vapor DECLARE `pinned`, so the undeclared case moved to `phosphor`, a
+    // valid ThemeId with no registry row.)
+    setUI({ theme: "phosphor", themeSettings: {} });
+    setThemeSetting("phosphor", "planPlacement", "pinned");
     const { result } = renderHook(() => usePlanPlacement());
     expect(result.current).toBe("inline");
+  });
+
+  it("vapor resolves its DECLARED `pinned` (D51 V4 — the kit PinnedPlanPanel replaced its in-tab plan)", () => {
+    setUI({ theme: "vapor", themeSettings: {} });
+    const { result } = renderHook(() => usePlanPlacement());
+    expect(result.current).toBe("pinned");
   });
 
   it("declaring theme (cosmos) resolves its declared default → inline", () => {

@@ -1,8 +1,10 @@
-// Generate PWA icon fan-out from public/logo.png.
+// Generate PWA icon fan-out from src/assets/vapor-logo.png.
 //
 // Sources one logo (any aspect), centers it on a square transparent canvas, exports the sizes
-// the manifest references. The in-app logo (public/logo.png) is untouched. Cross-platform
-// (Linux/macOS/Windows) — sharp ships per-platform native binaries via npm.
+// the manifest references (into public/). The in-app logo itself is untouched — since D51 V4 it is a
+// BUNDLED asset (`src/assets/vapor-logo.png`, imported by themes/vapor/VaporMark.tsx → hashed +
+// precached) rather than a bare public/ file, so this generator sources it from there.
+// Cross-platform (Linux/macOS/Windows) — sharp ships per-platform native binaries via npm.
 //
 // Run from frontend/:  npm run icons   (or `node scripts/gen-pwa-icons.mjs`)
 
@@ -13,7 +15,7 @@ import sharp from "sharp";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, "..", "public");
-const src = join(publicDir, "logo.png");
+const src = join(__dirname, "..", "src", "assets", "vapor-logo.png");
 
 await stat(src).catch(() => {
   throw new Error(`missing source icon: ${src}`);

@@ -46,7 +46,12 @@ describe("mic button while transcribing (status `sending`)", () => {
     },
   );
 
-  it("vapor: the CSS-masked button gains `.sending` (the mask + roll live in vapor.css)", () => {
+  // ⚠️ DIES IN PHASE 2 (D51 V4) — this row pins the BESPOKE `components/Composer`, which no theme renders
+  // any more: vapor resolves the kit `sheet` variant since the DefaultRoot pivot, so the component is dead
+  // code awaiting the pivot's delete commit. Deliberately left in place until then (port ≠ delete: the port
+  // must stay revertible on its own). Delete this case WITH the component — do not retarget it; the three
+  // live variants are already covered by the `it.each` above.
+  it("vapor (DEAD COMPONENT, dies Phase 2): the CSS-masked button gains `.sending`", () => {
     const { container } = renderWith(VaporComposer);
     const btn = container.querySelector<HTMLButtonElement>("button.mic");
     expect(btn).not.toBeNull();

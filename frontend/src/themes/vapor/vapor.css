@@ -169,6 +169,45 @@
   body { padding-bottom: 116px; overflow-x: hidden; position: relative; }
   body.no-composer { padding-bottom: 80px; }
 
+  /* ══ KIT CHROME · vapor's brand mark (D51 V4 — the DefaultRoot pivot, plan §4.1) ═══════════════════
+     The ONE piece of kit chrome vapor styles, and a KEEP (ledger §2): the node <VaporMark/> hands to the
+     kit AppBar's `brandMark` slot. It is vapor's IDENTITY — the kit has no lozenge and deliberately knows
+     nothing about one (no `loz` enum in the kit, R15) — not a bespoke duplicate of a kit capability.
+     `data-loz` lives on the MARK, not on <body>: the component that renders the lozenge owns its own
+     setting (the D51 §3.1 `data-loz` retirement). Reduced-motion gating for the ring is in extras.css's
+     F15 ambient-animation list, with every other vapor ambient animation. */
+  .kit-brand .vapor-mark {
+    width: 36px; height: 36px; border-radius: 50%; flex: none;
+    background: conic-gradient(from 0deg, var(--magenta), var(--violet), var(--teal), var(--magenta));
+    box-shadow: var(--m-glow);
+    position: relative;
+  }
+  /* The inner disc carries the logo: a VITE-IMPORTED, content-hashed asset whose resolved URL arrives as
+     the inline `--vapor-logo` custom property (CSS can't read a JS import). This is what retires the old
+     bare `public/logo.png` + relative `url()` pair that 404'd in production (owner §5 Q3). */
+  .kit-brand .vapor-mark::after {
+    content: ""; position: absolute; inset: 4px; border-radius: 50%;
+    background: var(--bg) var(--vapor-logo, none) center/130% no-repeat;
+  }
+  /* classic ring variant — spinning gradient ring, no logo */
+  .kit-brand .vapor-mark[data-loz="ring"] { animation: vapor-spin 8s linear infinite; }
+  .kit-brand .vapor-mark[data-loz="ring"]::after { inset: 6px; background: var(--bg); }
+  /* SHARED KEYFRAME (ledger §3): also drives the device-row busy spinner (:617), a KEPT surface — so it is
+     MOVED here, out of the §Top bar block the V4 delete commit takes, exactly as the ledger prescribes. */
+  @keyframes vapor-spin { to { transform: rotate(360deg); } }
+  /* The wordmark keeps vapor's display face + letterspacing (the kit brand is font-agnostic and would
+     otherwise render "ctrl·b" in the bold body face); `.meta` goes back to vapor's small uppercase
+     mono caption. Two rules, tokens only — the §4.1 "small vapor-scoped addition", not a chrome fork. */
+  .kit-appbar .kit-brand {
+    font-family: var(--font-display);
+    letter-spacing: 2px;
+    font-weight: 400;
+  }
+  .kit-appbar .kit-brand .meta {
+    font-family: var(--font-body);
+    font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+  }
+
   /* Top bar */
   .appbar {
     position: sticky; top: 0; z-index: 20;
@@ -216,7 +255,8 @@
   /* classic ring variant — spinning gradient ring, no logo */
   body[data-loz="ring"] .brand .lozenge { animation: vapor-spin 8s linear infinite; }
   body[data-loz="ring"] .brand .lozenge::after { inset: 6px; background: var(--bg); }
-  @keyframes vapor-spin { to { transform: rotate(360deg); } }
+  /* `@keyframes vapor-spin` MOVED UP to the kept §KIT CHROME block (it is shared with the device-row busy
+     spinner, ledger §3 — the V4 delete commit must not take it with this section). */
   .brand .mark {
     font-family: "Major Mono Display", monospace;
     font-size: 16px; letter-spacing: 2px;
@@ -1065,17 +1105,21 @@
     transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
     border: 1px solid var(--line-2);
   }
-  /* Inner circle slides left:2px → left:22px on `.on` and recolors. Note: animating `left`
-     triggers layout (not compositor-friendly). A future polish could refactor to
-     `transform: translateX(20px)` for compositor-only motion — out of scope here. */
+  /* Inner circle slides 20px right on `.on` and recolors.
+     D51 V4 — the recipe CHANGED from `left: 22px` to `transform: translateX(20px)`, which is both the
+     §14.11 polish this comment used to defer AND a required CO-APPLICATION fix: under the kit marker,
+     kit.css's `.kit .switch.on .knob::after { transform: translateX(20px) }` applies too (vapor's
+     @layer theme only outranks it property-by-property), so a `left`-based slide MOVED THE KNOB TWICE —
+     42px out of a 42px track, the knob landing outside the pill on every Conf toggle. One recipe, one
+     move. (This whole SETTINGS section is `port-owned:V5` and dies with the Conf port.) */
   .switch .knob::after {
     content: ""; position: absolute;
     left: 2px; top: 2px; width: 16px; height: 16px;
     border-radius: 50%; background: var(--ink-soft);
-    transition: left 0.2s, background 0.2s;
+    transition: transform 0.2s, background 0.2s;
   }
   .switch.on .knob { background: linear-gradient(135deg, var(--magenta), var(--violet)); border-color: var(--magenta); box-shadow: var(--m-glow); }
-  .switch.on .knob::after { left: 22px; background: #fff; }
+  .switch.on .knob::after { transform: translateX(20px); background: #fff; }
   .confrow input[type=text], .confrow input[type=password] {
     all: unset; flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px; background: var(--bg-3);
     color: var(--ink); font: inherit; font-size: 11px; max-width: 62%;

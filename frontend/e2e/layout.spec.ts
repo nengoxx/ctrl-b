@@ -7,8 +7,8 @@ import { expect, seedUI, test } from "./fixtures";
 // buttons exist, whether the NavMenu launcher is present, and that hosted utils lands inside Conf.
 //
 // Themes: `minimal` (a registered Kit theme that supports ALL presets → an explicit 3-/2-tab pick is honored)
-// exercises the real relocation; `vapor` (frozen, `layouts:["4-tab"]`) proves the waiver coerces a 2-tab pick
-// back to its untouched 4-tab markup.
+// exercises the real relocation; `vapor` (`layouts:["4-tab"]`) proves the waiver coerces a 2-tab pick back
+// to four tabs (a plain forced coercion since D51 V4 — vapor consumes the registry now, R22).
 
 test("minimal · 3-tab: utils leaves the bar and is hosted in Conf; no NavMenu (menu empty)", async ({
   page,
@@ -156,8 +156,9 @@ test("vapor · 2-tab: the frozen waiver coerces back to 4-tab — all four tab b
   page,
 }) => {
   // vapor declares `layouts:["4-tab"]`; a 2-tab pick coerces to 4-tab (a one-time console.warn, harmless).
-  // VaporRoot never consumes the registry, so its four-tab markup is byte-identical. vapor tab buttons are
-  // the same `#tabbtn-<id>` ids the vapor flows.spec drives.
+  // Since D51 V4 vapor DOES consume the section registry (DefaultRoot hosting), so this is a real coercion
+  // test now, not a structural tautology: the four buttons come from `resolveLayout`'s coerced preset, and
+  // they are the same `#tabbtn-<id>` ids every other skin renders.
   await seedUI(page, { theme: "vapor", accent: "dark", layout: "2-tab", v: 1 });
   await page.goto("/");
 

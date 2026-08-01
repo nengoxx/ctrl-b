@@ -74,6 +74,9 @@ interface Props {
   /** The appbar brand-subtitle slot (D30 slot composition), threaded to KitAppBar — a theme's live/bespoke
    *  subtitle (frontier's rig count). Omitted → the Kit default ("dashboard"). */
   brandMeta?: ReactNode;
+  /** The appbar brand-MARK slot (D51 §4.1), threaded to KitAppBar — the theme's leading brand mark (vapor's
+   *  gradient-ring lozenge). Omitted → the Kit default (its accent dot). */
+  brandMark?: ReactNode;
 }
 
 // The Kit's DEFAULT id→body map (component space — this is the "lazy COMPONENTS" home the pure `tabs.ts`
@@ -87,7 +90,13 @@ const DEFAULT_BODIES: Record<TabId, ComponentType<{ active: boolean }>> = {
   conf: ConfTabLazy,
 };
 
-export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots, brandMeta }: Props) {
+export function DefaultRoot({
+  appbarMode = "visible",
+  bodies,
+  composerSlots,
+  brandMeta,
+  brandMark,
+}: Props) {
   // The headless sections controller (D35): the full section list (mount loop), the resolved layout, the
   // on-/off-bar/hosted partitions, the active section, and the shared `navigate` chokepoint. `active` is
   // aliased to `tab` (the body-mount vocabulary); `layout` (the SECTION layout) is aliased to
@@ -238,7 +247,9 @@ export function DefaultRoot({ appbarMode = "visible", bodies, composerSlots, bra
         ref={mainRef}
       >
         <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
-          {appbarShown(appbarMode) && <KitAppBar brandMeta={brandMeta} appbarMode={appbarMode} />}
+          {appbarShown(appbarMode) && (
+            <KitAppBar brandMeta={brandMeta} brandMark={brandMark} appbarMode={appbarMode} />
+          )}
           {/* Data-driven body mount (D35): every non-hosted section stays keep-mounted + `active`-gated;
               hosted sections (utils→conf) render inside their host body, not here. A `lazy` body mounts only
               after first activation (the latch) and wraps in ErrorBoundary+Suspense. Index in the FULL list

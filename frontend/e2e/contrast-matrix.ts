@@ -12,9 +12,9 @@
 //
 // vapor JOINED at D51 V3 (2026-08-01), when `themes/vapor/tokens.css` landed and the `semantic-tokens`
 // waiver retired: its three accents now resolve the same semantic contract every other skin does, so the
-// WCAG gate measures them. It still carries the `kit-structure` waiver (bespoke chrome, no `.kit` marker
-// until the V4 DefaultRoot pivot) → `kitShell: false` keeps it out of the kit-render sweep only. BOTH
-// retire at V4 (D51 §7 R25), not at the V6 tail.
+// WCAG gate measures them. At D51 V4 the DefaultRoot pivot gave it real kit chrome, so its `kitShell: false`
+// line went with the `kit-structure` waiver (they were drift-guarded as a pair) — vapor is now swept by
+// e2e/kit-render.spec.ts like every other theme, and NO row here carries the flag.
 
 export interface ThemeMatrix {
   theme: string;
@@ -25,12 +25,12 @@ export interface ThemeMatrix {
   // fewer here (utils/conf move off-bar into Conf/the menu). Drift-guarded against the registry-resolved bar
   // in tests/theme-engine/themeContract.test.ts, so a `defaultLayout` change breaks the GUARD, not the sweep.
   bar: string[];
-  /** `false` while the theme still ships BESPOKE chrome (= CONTRACT_WAIVERS "kit-structure"): the
-   *  kit-render sweep waits on `.kit-appbar`, which such a theme never renders, so it skips those rows.
-   *  The TOKEN-level gate (contrast.spec) still runs — it only needs <body> + `#app-scroll`. Omitted =
-   *  true. Drift-guarded against CONTRACT_WAIVERS in tests/theme-engine/themeContract.test.ts: both flip
-   *  together at **D51 V4**, when the DefaultRoot pivot gives vapor real kit chrome (drop this line and
-   *  retire the waiver in the same commit — the guard fails until they agree). */
+  /** `false` while a theme still ships BESPOKE chrome (= CONTRACT_WAIVERS "kit-structure"): the kit-render
+   *  sweep waits on `.kit-appbar`, which such a theme never renders, so it skips those rows. The
+   *  TOKEN-level gate (contrast.spec) still runs — it only needs <body> + `#app-scroll`. Omitted = true,
+   *  which is EVERY row today (vapor's `false` retired with its waiver at D51 V4). Kept as the seam for a
+   *  future bespoke-chrome theme, and drift-guarded against CONTRACT_WAIVERS in
+   *  tests/theme-engine/themeContract.test.ts — the flag and the waiver must always agree. */
   kitShell?: boolean;
 }
 
@@ -59,12 +59,11 @@ export const CONTRAST_MATRIX: ThemeMatrix[] = [
   },
   {
     // vapor: no mode axis (dark-only) → its one implicit mode; three accents on the shared
-    // body[data-accent] axis (D51 V2), all measured against themes/vapor/tokens.css (V3).
+    // body[data-accent] axis (D51 V2), all measured against themes/vapor/tokens.css (V3). Kit-shelled
+    // since V4 (DefaultRoot hosting), so it sweeps like the rest — no `kitShell` flag.
     theme: "vapor",
     modes: ["dark"],
     accents: ["dark", "aqua", "ember"],
     bar: FULL_BAR,
-    kitShell: false, // bespoke chrome until the V4 DefaultRoot pivot — no `.kit-appbar` to wait on;
-    // delete this line at V4 together with the `kit-structure` waiver (they are drift-guarded as a pair)
   },
 ];

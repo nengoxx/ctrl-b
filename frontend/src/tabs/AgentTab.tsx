@@ -6,22 +6,23 @@ import { PrivilegeChip } from "../components/PrivilegeChip";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { advanceStep } from "../lib/plan";
 import { editPlan } from "../store/chat";
-import { useUISlice } from "../store/ui";
 import { PinnedPlanPanel } from "../theme-engine/kit/composer/plan/PinnedPlanPanel";
 import { usePlanPlacement } from "../theme-engine/kit/composer/plan/placement";
 import type { Plan } from "../types";
 
 // Agent chat tab (Phase 4a + 4b). The chat LOG itself lives in the reusable `<ChatThread/>` (F4) — this tab
-// composes it with the vapor/kit plan chrome + the section header. AgentTab owns: the tab wrapper, the `.sec`
-// header + PrivilegeChip, the vapor-only FROZEN in-tab `PinnedPlan`, and the kit `PinnedPlanPanel`
-// first-in-flow mount rule (DESIGN §12, vapor.html:1934).
+// composes it with the kit plan chrome + the section header. AgentTab owns: the tab wrapper, the `.sec`
+// header + PrivilegeChip, and the kit `PinnedPlanPanel` first-in-flow mount rule (DESIGN §12,
+// vapor.html:1934). There is NO theme branching left here — D51 V4 moved vapor onto the shared
+// `planPlacement` axis (it declares `"pinned"`), so every theme takes the same code path.
 
-/** VAPOR-ONLY (D30): the in-tab pinned plan — a minimized tab hanging from the top of the chat that drops
- *  the checklist down when tapped. Kit themes moved the plan into the composer (the `plan-pill` + peek
- *  `plan-sheet`) so the Agent tab can run its `kit-fade` entrance without a frosted surface inside it; vapor
- *  keeps this frozen (extras.css styles `.plan-pin`/`.plan-drop`). Sticky so it stays reachable while the
- *  transcript scrolls; collapsed by default (the dropdown overlays the chat, so it doesn't reflow messages). */
-function PinnedPlan({ plan }: { plan: Plan }) {
+/** DEAD SINCE D51 V4 — kept, unreferenced, for the pivot's follow-up DELETE commit (port ≠ delete, plan §3
+ *  V4 / R16: a failed owner eyeball must be able to revert the port alone). It was VAPOR-ONLY (D30): the
+ *  in-tab pinned plan, a minimized tab hanging from the top of the chat that dropped the checklist down when
+ *  tapped, styled by extras.css's `.plan-pin`/`.plan-drop`. Vapor now renders the kit `PinnedPlanPanel`
+ *  below like every other theme, via `planPlacement: "pinned"`. Exported ONLY so `noUnusedLocals` tolerates
+ *  the corpse until the delete commit takes it (and its `.plan-pin-wrap` CSS with it). Do not use. */
+export function PinnedPlan({ plan }: { plan: Plan }) {
   const total = plan.steps.length;
   const done = plan.steps.filter((s) => s.status === "done").length;
   const [open, setOpen] = useState(false);
@@ -69,11 +70,10 @@ export function AgentTab({ active }: Props) {
   // replaces this tab can never lose the reset.)
   const chat = useAgentChat();
   const currentPlan = chat.currentPlan;
-  // Plan placement (D30/A4). Vapor keeps its FROZEN in-tab `PinnedPlan`. Kit themes choose per the
-  // `planPlacement` setting: `inline` → the pill+sheet in the composer (DefaultRoot owns that composition);
-  // `pinned` → the kit-tokened `PinnedPlanPanel` here at the top of the tab (mutually exclusive — inline
-  // never mounts a panel, pinned passes the composer NO plan slots).
-  const isVapor = useUISlice((s) => s.theme === "vapor");
+  // Plan placement (D30/A4) — ONE code path for every theme since D51 V4 (the `isVapor` gate is gone):
+  // `inline` → the pill+sheet in the composer (DefaultRoot owns that composition); `pinned` → the
+  // kit-tokened `PinnedPlanPanel` here at the top of the tab (mutually exclusive — inline never mounts a
+  // panel, pinned passes the composer NO plan slots). Vapor declares `pinned`.
   const planPlacement = usePlanPlacement();
 
   return (
@@ -89,7 +89,7 @@ export function AgentTab({ active }: Props) {
           would TRAVEL ~44px between scroll-top (natural) and scrolled (stuck), and no fixed mini-player slot
           can dodge a traveling band (owner eyeball 2026-07-12: the header slid under the player at
           scroll-top). First-in-flow kills the travel: a "pinned" element sits at one spot, always. */}
-      {!isVapor && planPlacement === "pinned" && currentPlan && currentPlan.steps.length > 0 && (
+      {planPlacement === "pinned" && currentPlan && currentPlan.steps.length > 0 && (
         <PinnedPlanPanel />
       )}
       <div className="sec">
@@ -99,7 +99,6 @@ export function AgentTab({ active }: Props) {
           <PrivilegeChip />
         </span>
       </div>
-      {isVapor && currentPlan && currentPlan.steps.length > 0 && <PinnedPlan plan={currentPlan} />}
       <ChatThread active={active} chat={chat} />
     </div>
   );

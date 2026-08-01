@@ -20,7 +20,7 @@ import { registeredThemes } from "../../src/theme-engine/registry";
 // COMPOSER_SURFACE_PLAN §7 — composer Surface characterization tests, grown slice by slice: A1 locked the
 // mechanism (registry identity, the layout resolver's per-theme default + fallbacks, the shared setting
 // spec); A2 made `sheet` a REAL docked variant (SheetComposer, shared `useComposerChrome`); A3 declared the
-// setting on minimal+cosmos (default stacked; vapor stays permanently undeclared); Phase E added `line` (its
+// setting on minimal+cosmos (default stacked; vapor declared `sheet` at D51 V4); Phase E added `line` (its
 // mic/send morph is covered in lineMorph.test.ts — it needs an sttReady mock this file's shared harness
 // deliberately avoids). F5 slice B SPLIT the old CSS-only `borderless`/`ghost` LAYOUT variants out into the
 // `composerSkin` axis (glass/sleek skins; the axis + its resolver are pinned in axes.test.ts), so the LAYOUT
@@ -57,21 +57,30 @@ describe("composerVariants registry", () => {
 });
 
 describe("useComposerLayout", () => {
+  // Each theme resolves ITS OWN declared default out of the box. minimal/cosmos/frontier declare `stacked`;
+  // vapor declares `sheet` since D51 V4 (the DefaultRoot pivot — its rounded dock IS the sheet variant), so
+  // this is a per-theme expectation now rather than one shared "stacked" constant.
+  const DECLARED_DEFAULT: Record<string, string> = { vapor: "sheet" };
   it.each(registeredThemes().map((d) => [d.id] as const))(
-    "%s resolves to stacked out of the box (declared default — minimal/cosmos since A3 — or fallback)",
+    "%s resolves its DECLARED default out of the box (and maps to the right variant component)",
     (id) => {
       setUI({ theme: id, themeSettings: {} });
+      const expected = DECLARED_DEFAULT[id] ?? "stacked";
       const { result } = renderHook(() => useComposerLayout());
-      expect(result.current).toBe("stacked");
-      expect(composerVariants[result.current]).toBe(KitComposer);
+      expect(result.current).toBe(expected);
+      expect(composerVariants[result.current]).toBe(
+        expected === "sheet" ? SheetComposer : KitComposer,
+      );
     },
   );
 
-  it("keeps falling back to stacked when a value is stored for an UNDECLARED setting (vapor never declares it)", () => {
-    // vapor is the permanently-undeclared theme (frozen, D7/Phase D) — a synced/stale override must not
-    // resolve: `resolveThemeSetting` returns undefined for the unknown key → the hook's fallback holds.
-    setUI({ theme: "vapor", themeSettings: {} });
-    setThemeSetting("vapor", "composer", "sheet");
+  it("keeps falling back to stacked when a value is stored for an UNDECLARED setting", () => {
+    // A theme with no registry row declares nothing — a synced/stale override must not resolve:
+    // `resolveThemeSetting` returns undefined for the unknown key → the hook's fallback holds. (This arm
+    // used to be vapor, the permanently-undeclared theme; D51 V4 made it declare `sheet`, so it moved to
+    // `phosphor` — a valid ThemeId with no registry row.)
+    setUI({ theme: "phosphor", themeSettings: {} });
+    setThemeSetting("phosphor", "composer", "sheet");
     const { result } = renderHook(() => useComposerLayout());
     expect(result.current).toBe("stacked");
   });

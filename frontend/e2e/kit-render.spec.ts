@@ -9,11 +9,12 @@ import { expect, test } from "./fixtures";
 // checks ONE thing: the kit shell renders and stays up across a full tab sweep. Deliberately NOT here:
 // screenshot diffing (rejected in the plan — flaky, over-engineered) and axe (the a11y suite owns a11y).
 //
-// It parametrizes over every KIT-SHELLED theme in CONTRAST_MATRIX (`kitShell !== false` — vapor joined the
-// matrix at D51 V3 for the token gates but still renders bespoke chrome until V4, so it is filtered out
-// here and only here) — minimal, cosmos AND frontier (each a
-// distinct Surface impl: CosmosFleet's starfield canvas + orbital, FrontierFleet's badlands map — all must
-// boot). Sourced from CONTRAST_MATRIX so the theme/mode set can never silently drift from the registry (that
+// It parametrizes over every KIT-SHELLED theme in CONTRAST_MATRIX (`kitShell !== false` — the filter now
+// passes ALL of them: vapor joined the matrix at D51 V3 for the token gates and became kit-shelled at V4's
+// DefaultRoot pivot, so it is swept here too) — minimal, cosmos, frontier AND vapor (each a
+// distinct Surface impl: CosmosFleet's starfield canvas + orbital, FrontierFleet's badlands map, vapor's
+// Root-pinned hero/device rows — all must boot). Sourced from CONTRAST_MATRIX so the theme/mode set can
+// never silently drift from the registry (that
 // list has a drift guard against the real palettes); one representative accent per theme (the first = each
 // theme's defaultAccent) keeps this a SMOKE, not the contrast matrix. (frontier's bespoke SURFACES — the
 // map/beacon→sheet flow, the rig-stack, the Gate A a11y locks — get their deep drive in frontier-render.spec.ts.)
@@ -62,11 +63,11 @@ for (const c of COMBOS) {
     await expect
       .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme))
       .not.toBe("normal");
-    //  2) A KIT-ONLY chrome node has mounted. `.kit-appbar` is rendered by DefaultRoot's KitAppBar (the
-    //     default appbarMode is "visible") and is the class CosmosFleet itself cross-queries — vapor uses
-    //     `.app-shell`, never `.kit`, so this positively identifies "DefaultRoot booted, not the eager
-    //     default". (The `.kit` root marker would also be kit-only; `.kit-appbar` additionally proves the
-    //     chrome sub-tree rendered, so it's the stronger LIVE signal.)
+    //  2) The kit chrome has mounted. `.kit-appbar` is rendered by DefaultRoot's KitAppBar (the default
+    //     appbarMode is "visible") and is the class CosmosFleet itself cross-queries. (The `.kit` root
+    //     marker would also do; `.kit-appbar` additionally proves the chrome sub-tree rendered, so it's the
+    //     stronger LIVE signal. Since D51 V4 vapor renders it too — the `.app-shell` it used to render
+    //     instead is gone.)
     await page.waitForSelector(".kit-appbar");
 
     // ── Render/tab smoke: drive the theme's on-bar sections, asserting the kit is intact after each nav ──
