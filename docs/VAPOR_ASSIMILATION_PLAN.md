@@ -84,6 +84,11 @@ Council-verified additions that reshape the plan:
   vapor explicitly for vapor-specific cases (`.dev`, composer textarea, shutdown-on-Fleet,
   Waveform, the :139 accent flip), add a dedicated fresh-cosmos-default boot test; retarget
   `a11y.spec.ts`'s default arm, `App.test.tsx` reset expectations, heal tests.
+- **Flake guard on the new default-boot tests** (Opus confirm, MED): the fresh-default boot is now
+  the only path whose CONTENT is gated on a lazy chunk — the fresh-cosmos test and the retargeted
+  a11y arm must await a *content* selector (never bg/`data-skin`, which the FOUC script paints
+  before the Root mounts) and must not use fixed waits. e2e only runs at the tag gate and v1.4.5
+  burned on exactly this flake class — name this in the V0 brief.
 - `migrateLegacyTheme` + the FOUC twin keep their meaning (old `dark/aqua/ember` → vapor, NOT cosmos).
 - **No eager/lazy changes**: vapor stays eager (unchanged); cosmos keeps its lazy Root — a fresh
   boot behaves exactly like today's cosmos-by-choice boot (FOUC script paints correct bg/skin
@@ -131,6 +136,10 @@ Council-verified additions that reshape the plan:
   test** in the existing waiver idiom (themeContract.test.ts holds the precedent) that must reach
   ∅-minus-vapor-keeps by V6. Shared keyframes/selectors (`modal-fade`, `tag-pulse`, motion/perf
   globals) get explicit ownership so no port deletes behavior another component still uses.
+  **The vapor-keeps bucket is an ENUMERATED banner list frozen here** (Opus confirm — "decoration"
+  as a re-made category judgement is the drift vector); it is amendable only by an explicit
+  ruling, and V6 asserts the residue EQUALS the list. The `data-skyline` ledger row is resolved
+  here too (it lands in vapor-keeps or it doesn't — not decided at the tail).
 
 ### V4 — the shell graduation (the pivot slice): VaporRoot → DefaultRoot hosting
 ONE slice, the cosmos-proven shape (this replaces the old per-component TabBar/AppBar/Composer
@@ -142,6 +151,15 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
   kit TabBar, kit **`sheet`** composer (tokens first; a new skin only if needed, §4.2),
   **Root-pinned VaporFleet** body (the §1.1 bespoke-by-right surface), `planPlacement: "pinned"`
   (deletes `PinnedPlan` + the `isVapor` gate — hook ⑤ dies).
+- **Vapor DECLARES the kit axis/seg settings — no silent resolver defaults** (Opus confirm,
+  HIGH): its `ThemeDef.settings` gains the four descriptors cosmos already declares
+  (`composerLayoutSetting("sheet")` · `composerSkinSetting(…)` · `planPlacementSetting("pinned")` ·
+  `outlinesSetting(…)`, cosmos precedent `themes/cosmos/index.tsx:67-76`) with explicit defaults
+  chosen at the port and their Appearance rows eyeballed in the same round. Undeclared, the
+  resolvers default vapor to kit-native (outlines ON, skin `outline`) with no picker rows to
+  change it. Also update the `layouts: ["4-tab"]` waiver comment (`themes/vapor/index.tsx:28`) —
+  "VaporRoot never consumes the section registry" becomes false at this slice; the waiver turns
+  from structural into plain forced-coercion until its V6 retirement (ledger row).
 - The `.kit` marker arrives here **once**, and the owner's D7 eyeball covers the ENTIRE kit
   co-application surface (chat, Conf, overlays, plan, markdown light up together — bounded to this
   slice by design, Opus A2). Vapor's extras.css `@scope` blocks still override via the theme layer,
@@ -167,8 +185,11 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
   silently dropped).
 
 ### V6 — the tail: residue, waivers, ledgers, lazy
-- `vapor.css` shrinks to the Fleet/decoration residue (§1.1); dead `theme/` remnants die;
-  VaporRoot is audited as "thin Root + pinned Fleet" against the D-entry's end-state definition.
+- `vapor.css` shrinks to the frozen vapor-keeps residue; dead `theme/` remnants die. The end
+  state is ENFORCED, not just reviewed (Opus confirm): the banner-set test asserts the residue
+  **equals** the V3-frozen vapor-keeps list, and a mechanical source assertion pins "VaporRoot
+  renders `DefaultRoot` and imports none of `components/{AppBar,Composer,TabBar}`" (the waiver
+  list hitting `[]` is the third leg).
 - B2 waiver retires `kit-structure` → the vapor waiver list hits `[]`; the §14.15.3 banner flips
   DONE. The `sections` waiver retires ONLY once vapor consumes the shared body/layout partition,
   with real 2/3-tab navigation tests replacing the forced-four-tab assertions (Codex #11 — kit
@@ -185,8 +206,8 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
 |---|---|
 | `data-theme` (accent) | V2 |
 | `data-loz` | V4 (becomes a theme setting driving the kit `brandMark` slot) |
-| `data-skyline` | V5/V6 per the Fleet ruling (bespoke-by-right may keep it, recorded) |
-| `data-tab` | V4 (DefaultRoot's mechanism) |
+| `data-skyline` | ruled at V3's classification (vapor-keeps or not); executed V5/V6 |
+| `data-tab` | V4 (DefaultRoot's mechanism; the `layouts` waiver comment updates here too) |
 
 Doc retirements: §13.1 frozen-attr table (V2, V4) · §14.4.1 two-trees invariant (V4) · §15 rule 3
 (V4) · §14.14 / D31 / D36 vapor-frozen phrasing (V6). Each slice's brief names its rows.
@@ -249,3 +270,13 @@ Codex lens = correctness/failure-modes (13 findings); Opus lens = architecture/m
 | R16 | Opus A8: attribute/doc ledgers; port≠delete commits | **ACCEPT** → §3.1 + V4/V5 |
 | R17 | Opus Q7: vapor-only components in shared dirs; VAPOR_PATTERNS idiom | **ACCEPT** → V1 moves; V6 doc handover |
 | R18 | Codex sound-point: "hooks ①⑤" typo | **ACCEPT** → V2 retires ①; ⑤ dies at V4 |
+
+**Opus confirm round (2026-08-01): all three reshapes (V4 pivot · V0 flip-only-with-neither ·
+§1.1 end state) CONFIRMED**; four new items, all verified in code and folded:
+
+| # | Finding | Ruling |
+|---|---|---|
+| R19 | HIGH: vapor must declare the four kit axis/seg setting descriptors at V4 (cosmos precedent) or it silently inherits resolver defaults with no picker rows | **ACCEPT** → V4 |
+| R20 | MED: the new default-boot e2e must await content selectors, never bg/`data-skin` (the v1.4.5 flake class) | **ACCEPT** → V0 |
+| R21 | MED: vapor-keeps = enumerated list frozen at V3, V6 asserts residue EQUALS it; `data-skyline` resolved at V3 | **ACCEPT** → V3/V6/§3.1 |
+| R22 | LOW: V6 end state enforced mechanically (DefaultRoot render + no bespoke-chrome imports); `layouts:["4-tab"]` comment updated at V4 | **ACCEPT** → V4/V6 |
