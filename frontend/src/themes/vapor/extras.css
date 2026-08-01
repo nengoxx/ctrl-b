@@ -2232,6 +2232,26 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* ── Wide-control wrap (the kit.css :2203-2224 pattern, mirrored under vapor's scope) ─────────
+   A control wider than the space beside the label WRAPS BELOW it instead of crushing the label to
+   a letters-tall sliver (vapor.css has `.confrow` nowrap + `.k{min-width:0}`, so the 4-option
+   Theme seg — 283px min-content since frontier joined 2026-07-15 — squeezed `.k` to ~33px on a
+   390px phone). PRE-EXISTING, not a D51 V0-V2 regression: reproduced byte-identically on prod
+   v1.4.6 with the old data-theme stamping; the kit gained this wrap in the 2026-07-11 owner
+   round, vapor never did (its stadium-radius comment even anticipated wrapped segs). The label
+   min-width is what makes the wrap actually trigger; segs wrap right-anchored like the kit's.
+   Dies with this block at D51 V5 when vapor's Conf styling graduates. */
+.confrow {
+  flex-wrap: wrap;
+}
+.confrow .k {
+  min-width: min(140px, 45%);
+}
+.confrow .seg {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 
 /* ── Session privilege chip (A1/D16) ──────────────────────────────────────────────────────────
    Lives in the chat section-header `.right` slot: shows the active session privilege override (or
