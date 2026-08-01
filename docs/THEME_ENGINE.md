@@ -833,11 +833,16 @@ new dedicated skin attribute (as built: `html[data-skin]`, on `<html>`).
 |---|---|---|---|
 | ~~`data-theme=aqua\|ember`~~ | body | vapor palette swap | **RETIRED D51 V2** → shared `data-accent` (vapor.css selectors flipped) |
 | `data-loz=ring` | body | lozenge variant | live; retires at V4 (kit `brandMark` slot) |
-| `data-skyline=city\|mountains` | body | skyline show/hide | live; ruled at V3 classification |
+| `data-skyline=city\|mountains` | body | skyline show/hide | live; **RULED at V3: Fleet decoration → `vapor-keeps`** (the Root-pinned VaporFleet keeps it — [`VAPOR_BANNER_LEDGER.md`](./VAPOR_BANNER_LEDGER.md) §2) |
 | `data-tab=…` | **`.tabbar`** + body | tab indicator slide | live; retires at V4 (DefaultRoot) |
 | `data-motion=reduced` | body | motion kill | live (shared UIState axis, not vapor-private) |
 
-**13.2 — Token-name collision, solved by `@layer` (NEEDS-MITIGATION).** The contract reuses 3 names vapor
+**13.2 — Token-name collision, solved by `@layer` (✅ CLOSED at D51 V3, 2026-08-01).** *As-built:* the
+collision no longer exists — `themes/vapor/tokens.css` (V3) took over `--line`/`--line-2`, vapor's
+`--accent-glow` (a `drop-shadow()` **filter**, the type-mismatched one) was renamed `--vapor-glow-filter`,
+and vapor.css now declares **vapor-private names only**, pinned by
+`tests/theme-engine/vaporAssimilation.test.ts`. Every contract name has exactly one home per theme. The
+original analysis, for provenance: The contract reuses 3 names vapor
 defines in its always-loaded `:scope` block: `--line`, `--line-2`, `--accent-glow` (vapor.css:24,25,31). Without
 isolation, a theme that *forgets* to redefine one silently inherits vapor's value (pink `--line`, a
 `drop-shadow()` where a `box-shadow` was meant). **`@layer` (§9.6) fixes it by cascade order** — vapor's

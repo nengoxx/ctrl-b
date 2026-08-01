@@ -7,7 +7,6 @@
   /* :root → :scope: inside @scope, the document root (:root/html) is the scope ROOT, which scoped
      selectors don't match as a descendant — :scope matches it, so the vars land on <html> + inherit. */
   :scope {
-    --bg: #0a0316;
     --bg-2: #150828;
     --bg-3: #1f0d3f;
     --ink: #ffe6f7;
@@ -22,15 +21,17 @@
     --sun-3: #a55cff;
     --green: #7eff96;
     --red: #ff3b7a;
-    --line: rgba(255, 230, 247, 0.08);
-    --line-2: rgba(255, 230, 247, 0.2);
+    /* --bg / --line / --line-2 are CONTRACT names → declared in tokens.css (D51 V3), not here. This
+       sheet declares vapor-PRIVATE names only; see tokens.css for the semantic map. */
     --m-glow: 0 0 14px rgba(255, 82, 212, 0.55);
     --v-glow: 0 0 14px rgba(165, 92, 255, 0.5);
     --t-glow: 0 0 8px rgba(92, 230, 255, 0.6);
     /* Themed accent — used by wake/stop/mic-rec icons, save buttons, etc */
     --accent-grad: linear-gradient(180deg, #ffb3ec 0%, #ff52d4 30%, #a55cff 70%, #5e2eb8 100%);
-    --accent-glow: drop-shadow(0 0 10px rgba(255,82,212,0.65));
-    --accent-glow-soft: drop-shadow(0 0 6px rgba(255,82,212,0.45));
+    /* FILTER values (drop-shadow), NOT the contract's box-shadow-valued --accent-glow — renamed at D51
+       V3 so the two can't collide (kit.css reads --accent-glow as a box-shadow). */
+    --vapor-glow-filter: drop-shadow(0 0 10px rgba(255,82,212,0.65));
+    --vapor-glow-filter-soft: drop-shadow(0 0 6px rgba(255,82,212,0.45));
     /* Destructive actions — red in vapor, swaps to the vapor accent (pink/violet) in aqua */
     --danger-grad: linear-gradient(180deg, #ff9ec8 0%, #ff3b7a 35%, #b8204a 75%, #5c0a2a 100%);
     --danger-glow: drop-shadow(0 0 9px rgba(255, 59, 122, 0.6));
@@ -57,7 +58,6 @@
   }
   /* Alt dark palette — cyan/aqua dominant, deep ocean blacks */
   [data-accent="aqua"] {
-    --bg: #02101a;
     --bg-2: #06202e;
     --bg-3: #0b3148;
     --ink: #d8f6ff;
@@ -72,14 +72,13 @@
     --sun-3: #6e7bff;
     --green: #7eff96;
     --red: #ff6b8e;
-    --line: rgba(216, 246, 255, 0.08);
-    --line-2: rgba(216, 246, 255, 0.2);
+    /* --bg / --line / --line-2 → tokens.css (contract names, D51 V3) */
     --m-glow: 0 0 14px rgba(92, 230, 255, 0.55);
     --v-glow: 0 0 14px rgba(110, 123, 255, 0.5);
     --t-glow: 0 0 8px rgba(126, 255, 150, 0.6);
     --accent-grad: linear-gradient(180deg, #c6f4ff 0%, #5ce6ff 30%, #6e7bff 70%, #233a96 100%);
-    --accent-glow: drop-shadow(0 0 10px rgba(92, 230, 255, 0.65));
-    --accent-glow-soft: drop-shadow(0 0 6px rgba(92, 230, 255, 0.45));
+    --vapor-glow-filter: drop-shadow(0 0 10px rgba(92, 230, 255, 0.65));
+    --vapor-glow-filter-soft: drop-shadow(0 0 6px rgba(92, 230, 255, 0.45));
     /* In aqua, destructive uses the vapor accent (pink/violet) for contrast against cool UI */
     --danger-grad: linear-gradient(180deg, #ffb3ec 0%, #ff52d4 30%, #a55cff 70%, #5e2eb8 100%);
     --danger-glow: drop-shadow(0 0 10px rgba(255, 82, 212, 0.65));
@@ -112,7 +111,6 @@
   /* 3rd palette — Ember. Full Miami-sunset: amber/gold primary, coral danger,
      warm brown-black backgrounds. Distinct from cool-violet vapor and cool-cyan aqua. */
   [data-accent="ember"] {
-    --bg: #110603;
     --bg-2: #1f0d05;
     --bg-3: #2e1a0a;
     --ink: #ffe8c8;
@@ -127,14 +125,13 @@
     --sun-3: #c8324a;
     --green: #b3e36c;
     --red: #ff3b3b;
-    --line: rgba(255, 232, 200, 0.08);
-    --line-2: rgba(255, 232, 200, 0.2);
+    /* --bg / --line / --line-2 → tokens.css (contract names, D51 V3) */
     --m-glow: 0 0 14px rgba(255, 138, 61, 0.55);
     --v-glow: 0 0 14px rgba(255, 215, 92, 0.5);
     --t-glow: 0 0 8px rgba(255, 94, 108, 0.6);
     --accent-grad: linear-gradient(180deg, #ffe2b3 0%, #ffb04f 30%, #ff7a3d 70%, #a82912 100%);
-    --accent-glow: drop-shadow(0 0 10px rgba(255, 138, 61, 0.65));
-    --accent-glow-soft: drop-shadow(0 0 6px rgba(255, 138, 61, 0.45));
+    --vapor-glow-filter: drop-shadow(0 0 10px rgba(255, 138, 61, 0.65));
+    --vapor-glow-filter-soft: drop-shadow(0 0 6px rgba(255, 138, 61, 0.45));
     /* Ember keeps stop/mic.rec a true crimson — it already pops against warm orange UI */
     --danger-grad: linear-gradient(180deg, #ffb09e 0%, #ff3b3b 35%, #8a1a1a 75%, #3a0808 100%);
     --danger-glow: drop-shadow(0 0 9px rgba(255, 59, 59, 0.6));
@@ -724,7 +721,7 @@
     background: var(--accent-grad);
     -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 2L3 14h6l-1 8 8-12h-6l1-8z' fill='black' stroke='black' stroke-width='1.2' stroke-linejoin='round'/></svg>");
             mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 2L3 14h6l-1 8 8-12h-6l1-8z' fill='black' stroke='black' stroke-width='1.2' stroke-linejoin='round'/></svg>");
-    filter: var(--accent-glow);
+    filter: var(--vapor-glow-filter);
   }
   .dev .act.stop {
     background: var(--danger-grad);
@@ -828,7 +825,7 @@
     background: var(--accent-grad);
     -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='3' width='6' height='11' rx='3'/><path d='M5 11a7 7 0 0 0 14 0'/><path d='M12 18v3'/></svg>") center/28px no-repeat;
             mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='3' width='6' height='11' rx='3'/><path d='M5 11a7 7 0 0 0 14 0'/><path d='M12 18v3'/></svg>") center/28px no-repeat;
-    filter: var(--accent-glow-soft);
+    filter: var(--vapor-glow-filter-soft);
   }
   .composer .mic:active { transform: scale(0.88); }
   .composer .mic.rec {

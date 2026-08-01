@@ -1,0 +1,130 @@
+/* vapor theme tokens (D29 §14.4 / §14.13 · D51 slice V3) — vapor's PRIVATE vocabulary mapped onto the
+ * Kit's semantic contract. vapor is a BESPOKE theme: `vapor.css` + `extras.css` are its own component
+ * tree (no `.kit` marker until D51 V4), so today this file is almost entirely FORWARD-LOOKING — it makes
+ * vapor MEASURABLE by the contract suites (themeContract's token-list group + the e2e WCAG matrix, both
+ * of which the `semantic-tokens` waiver used to skip) and it is what the Kit chrome will read the moment
+ * the marker arrives at V4.
+ *
+ * THE TWO TIERS (§14.4.1's three-tier model):
+ *   global/raw  → `vapor.css`'s palette blocks: `--magenta`/`--ink*`/`--bg-2`/`--green`/… , declared on
+ *                 `:scope` (= <html>) and overridden per palette on `body[data-accent=aqua|ember]`.
+ *   semantic    → THIS FILE. No contract-named token is declared in vapor.css any more (V3 moved `--bg`/
+ *                 `--line`/`--line-2` here and renamed the `--accent-glow` FILTER out of the way — see
+ *                 below), so the §13.2 shared-name collision class is closed: one name, one home.
+ *
+ * ⚠️ THE §14.4.1 FORMULA-TOKEN TRAP (the V3 hazard, council-verified). vapor's raw tokens live on
+ * `:scope` = <html>, but the aqua/ember palettes override them on <body>. A `var()` formula is
+ * substituted at COMPUTED-VALUE time on the element that DECLARES it — so `:scope { --accent:
+ * var(--magenta) }` would compute once on <html>, from <html>'s BASE magenta, and merely inherit down:
+ * every Kit surface would stay vapor-pink under Aqua/Ember while vapor's own rules recolored. Hence the
+ * split below: only palette-INDEPENDENT statics + the three literal-valued palette tokens <html> itself
+ * paints with sit on `:scope`; EVERY alias over a palette-overridable input is declared on `body`, at/
+ * below the accent overrides, so each re-derives against the resolved palette. (Flat literals per
+ * `body[data-accent]` — `--bg`, `--accent-fill` — are immune to the trap by construction; they're
+ * grouped with the accent blocks for locality, the cosmos/frontier idiom.)
+ *
+ * Guarded by: `tests/theme-engine/vaporAssimilation.test.ts` (static placement + no-contract-names-in-
+ * vapor.css), `e2e/vapor-tokens.spec.ts` (the real-browser split-palette probe, all three accents) and
+ * the e2e WCAG matrix (vapor joined it at V3). */
+@layer theme {
+  @scope ([data-skin="vapor"]) {
+    :scope {
+      /* vapor is dark-only (no mode axis). Declaring it also gives the UA dark scrollbars/form controls
+       * on a near-black page — the one rendering delta V3 accepts, and what every other theme declares. */
+      color-scheme: dark;
+
+      /* Shape / density / type — palette-independent statics. Radii read off vapor's own geometry:
+       * cards+panels (`.conf-card`/`.util`/`.summary`) are 14px, small controls (chips, inputs, seg
+       * buttons) 8px — tighter than the Kit's neutral 16/11 default, which is the vapor look. */
+      --radius: 14px;
+      --radius-sm: 8px;
+      --density-pad: 1;
+      --font-body: "JetBrains Mono", ui-monospace, monospace;
+
+      /* ── The three contract-NAMED palette values (moved here verbatim from vapor.css's palette blocks
+       *    at V3 — same literals, same effective cascade position; vapor.css now owns only private
+       *    names). They must exist on `:scope` because <html> itself paints with them: vapor.css's
+       *    `:scope, body { background: var(--bg) }` fills the canvas/overscroll area from <html>. The
+       *    per-palette overrides live on `body[data-accent]` below, exactly where vapor.css had them. ── */
+      --bg: #0a0316;
+      --line: rgba(255, 230, 247, 0.08);
+      --line-2: rgba(255, 230, 247, 0.2);
+
+      /* Ink painted ON --accent-fill surfaces. vapor's DOCUMENTED sanctioned constant for exactly this
+       * ("#1a0428 — dark ink for text *on* the magenta→violet gradient", VAPOR_PATTERNS §2), so the Kit's
+       * filled controls will wear the ink vapor's own filled controls already wear. An explicit literal
+       * also sidesteps the Kit's `--accent-ink: var(--bg)` base fallback, which is declared on :root and
+       * would therefore freeze at the BASE page black for all three accents (§14.4.1, one level up).
+       * Palette-independent → :scope. Verified ≥5.11:1 (WCAG floor 4.5) against the worst stop of all
+       * three accent fills; the e2e ⑧ gate measures it every run. */
+      --accent-ink: #1a0428;
+    }
+
+    /* ── The semantic map — on `body`, NOT `:scope` (the trap above). Every declaration here is a var()
+     *    formula over a per-accent input, so it must be declared at/below the `body[data-accent]`
+     *    overrides to re-derive. ── */
+    body {
+      /* surfaces: vapor's bg ladder (page → panel → raised panel) */
+      --surface: var(--bg-2);
+      --surface-2: var(--bg-3);
+      /* text ladder: vapor's ink ladder */
+      --text: var(--ink);
+      --text-2: var(--ink-soft);
+      --text-3: var(--ink-faint);
+
+      /* accent — the §14.15.1 ⑨ TWO-CHANNEL contract:
+       *   --accent      a true <color> (borders, focus ring, every color-mix over it) = vapor's primary
+       *                 hue, which the palettes swap wholesale (magenta → cyan → orange).
+       *   --accent-fill the BACKGROUND channel, which may be an <image> → vapor's identity gradient.
+       * The fill mirrors each accent's ThemeDef `accents[].swatch` stops/angle 1:1 (index.tsx) — the
+       * frontier K2 precedent, so the picker chip IS the live preview. SINGLE SOURCE: edit both or the
+       * chip lies. It is deliberately NOT vapor's 4-stop `--accent-grad` (the mask-icon gradient, which
+       * runs from a near-white tint down to a near-black shade): no ink color can clear WCAG 4.5:1
+       * against BOTH ends of that ramp, so an `--accent-fill: var(--accent-grad)` would make the ⑧
+       * contrast gate unsatisfiable by construction. `--accent-grad` stays vapor-private for the icons
+       * that use it as a MASK fill (where nothing is painted on top of it). */
+      --accent: var(--magenta);
+      --accent-fill: linear-gradient(135deg, #ff52d4, #a55cff);
+      --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+      /* --accent-glow is the Kit's optional BOX-SHADOW layer (kit.css `.kit-tab-ind .bar`). vapor's
+       * same-named token was a `drop-shadow()` FILTER value — a type collision that would have silently
+       * killed the tab-line shadow — so V3 renamed vapor's to `--vapor-glow-filter` (vapor.css) and the
+       * contract name now carries vapor's real shadow-valued glow, `--m-glow`, per palette. */
+      --accent-glow: var(--m-glow);
+
+      /* status — vapor's semantic hues. `--warn` has no dedicated vapor private; `--sun-1` is the warm
+       * top stop of the hero sun and reads amber in all three palettes (#ffb04f / #ffd75c / #ffe98c),
+       * so it is the palette-tracking warn hue. The -soft tints follow the cosmos/frontier idiom.
+       *
+       * ⚠️ `--danger` maps from the `--danger-rgb` CHANNEL, not from `--red`. The contract's `--danger`
+       * is what DESTRUCTIVE controls wear, and vapor's destructive hue is an owner ruling, not a color
+       * ladder (VAPOR_PATTERNS §"The danger color is a deliberate per-theme decision"): red in Vapor,
+       * crimson in Ember, but **PURPLE/accent in Aqua** — which is exactly what `--danger-rgb` (and
+       * `--danger-grad`) already encode per palette, while `--red` stays the literal red. `rgb()` takes
+       * the bare `R, G, B` triplet through var() substitution, the same way vapor's own
+       * `rgba(var(--danger-rgb), …)` rules do. Always-red STATUS indicators must read `--red` directly,
+       * never this token. */
+      --ok: var(--green);
+      --ok-soft: color-mix(in srgb, var(--ok) 16%, transparent);
+      --warn: var(--sun-1);
+      --warn-soft: color-mix(in srgb, var(--warn) 16%, transparent);
+      --danger: rgb(var(--danger-rgb));
+      --danger-soft: color-mix(in srgb, var(--danger) 16%, transparent);
+    }
+
+    /* ── Per-palette literals (flat values → immune to the formula trap; the aliases above re-derive
+     *    from vapor.css's private overrides on these same elements). ── */
+    body[data-accent="aqua"] {
+      --bg: #02101a;
+      --line: rgba(216, 246, 255, 0.08);
+      --line-2: rgba(216, 246, 255, 0.2);
+      --accent-fill: linear-gradient(135deg, #5ce6ff, #6e7bff);
+    }
+    body[data-accent="ember"] {
+      --bg: #110603;
+      --line: rgba(255, 232, 200, 0.08);
+      --line-2: rgba(255, 232, 200, 0.2);
+      --accent-fill: linear-gradient(135deg, #ff8a3d, #ffd75c);
+    }
+  }
+}

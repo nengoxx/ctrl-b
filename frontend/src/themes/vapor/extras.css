@@ -229,7 +229,7 @@ body[data-perf="lite"] .composer {
   height: 26px;
   flex-shrink: 0;
   background: var(--accent-grad);
-  filter: var(--accent-glow-soft);
+  filter: var(--vapor-glow-filter-soft);
   -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
           mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black'/></svg>") center/contain no-repeat;
 }
@@ -1364,14 +1364,14 @@ body {
 
 /* ── Reboot button (Phase: reboot action). Net-new device-row action: a restart sibling of the
    verbatim vapor `.act.stop` (power). Owner's spec: same accent color & gradient as the wake icon
-   (var(--accent-grad)/--accent-glow), shown beside the power icon only while the host is online
+   (var(--accent-grad)/--vapor-glow-filter), shown beside the power icon only while the host is online
    (offline shows wake only). vapor.css stays verbatim (D7); the rotate glyph is net-new here.
    Clockwise circular-arrow with an OPEN gap (the arrowhead at top does not meet the arc tail). */
 .dev .act.reboot {
   background: var(--accent-grad);
   -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='black' stroke='black' stroke-width='0.9' stroke-linejoin='round'><path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/><path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z'/></svg>");
           mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='black' stroke='black' stroke-width='0.9' stroke-linejoin='round'><path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/><path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z'/></svg>");
-  filter: var(--accent-glow);
+  filter: var(--vapor-glow-filter);
 }
 
 /* ── Interactive plan dots (plan-edit): in the pinned/live panel each step's tick is clickable to
@@ -1739,7 +1739,7 @@ body {
   letter-spacing: 0.5px;
 }
 .vpn-discover-line.err {
-  color: var(--danger, #ff6b6b);
+  color: var(--red);
 }
 .vpn-dh {
   color: var(--ink-soft);
@@ -1757,7 +1757,7 @@ body {
   color: var(--warn, #e0a94f);
 }
 .vpn-ds.failed {
-  color: var(--danger, #ff6b6b);
+  color: var(--red);
 }
 
 /* ── Conf → Agent tools · per-tool description overrides (Phase 7d-a, net-new) ─────────────────
@@ -2199,7 +2199,7 @@ body {
   color: var(--ink-faint);
 }
 .mem-count.over {
-  color: var(--danger, var(--magenta));
+  color: var(--red);
 }
 
 /* ── Conf sizing refine (Phase 7e-b) ──────────────────────────────────────────────────────────
@@ -2506,8 +2506,8 @@ body {
   flex: none; /* the badge never shrinks/wraps when the name column steals the width (mirrors Kit) */
 }
 .tcat-risk.r-high {
-  color: var(--danger, #ff5c8a);
-  border-color: color-mix(in srgb, var(--danger, #ff5c8a) 50%, transparent);
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 50%, transparent);
 }
 .tcat-risk.confirm {
   color: var(--violet);
@@ -2631,7 +2631,7 @@ body {
   padding: 0 4px;
 }
 .tcat-appr-revoke:hover {
-  color: var(--danger, #ff5c8a);
+  color: var(--red);
 }
 .tcat-appr-form {
   margin-top: 6px;

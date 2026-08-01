@@ -40,7 +40,9 @@ function readThemeTokens(theme: string): string {
 //    the §14.15.3 assimilation tracker). Each id maps to a §14.15.3 legacy hook vapor can't yet satisfy. ──
 export type ContractWaiver =
   | "semantic-tokens" // §14.15.3 hook ②: non-contract token vocab (--magenta/--ink*) and no
-  //   themes/vapor/tokens.css → the token-list group cannot measure it. Retires at ladder stage V3.
+  //   themes/vapor/tokens.css → the token-list group could not measure it. RETIRED at V3 (vapor's
+  //   tokens.css maps the private vocabulary onto the full contract; retiring it also activates the
+  //   e2e contrast-matrix drift guard below, which vapor now satisfies); the arm stays as vocabulary.
   | "keyframe-prefix" // §14.15.3 hook ③: unprefixed @keyframes — enforced by stylelint (item ⑨), gating the
   //   P2 meta-guard below. RETIRED at V1 (vapor prefixes `vapor-`); the arm stays as the waiver vocabulary.
   | "accent-axis" // §14.15.3 hook ①: accent rode the vapor-private body[data-theme] instead of the shared
@@ -48,11 +50,14 @@ export type ContractWaiver =
   //   now runs vapor through the SAME expectations as every other skin); the arm stays as the vocabulary.
   | "kit-structure"; // §14.15.3 hook ④: parallel chrome (components/AppBar·Composer·TabBar vs the Kit's) →
 //   no `.kit-appbar`/`.kit-composer`, and its bespoke hero/waveform canvases are e2e territory (flows.spec
-//   boots vapor for real). So the render-based structural + Fleet-a11y group is waived. Retires at V6
-//   (D51: the V4 DefaultRoot pivot lands the kit chrome; the waiver list must only hit [] at the V6 tail).
+//   boots vapor for real). So the render-based structural + Fleet-a11y group is waived. **Retires at V4**
+//   (the DefaultRoot pivot lands `.kit-appbar`; the structural + Fleet-a11y group then runs vapor). A
+//   waiver retires the moment its capability exists — skipping the structural group during the riskiest
+//   slice is backwards. The vapor waiver list therefore hits [] at V4, and V6 asserts it STAYS [] (main-
+//   seat ruling on the Codex V3 round, D51 §7 R25 — supersedes the earlier "retires at V6" note).
 
 export const CONTRACT_WAIVERS: Partial<Record<ThemeId, ContractWaiver[]>> = {
-  vapor: ["semantic-tokens", "kit-structure"],
+  vapor: ["kit-structure"],
 };
 
 function isWaived(id: ThemeId, w: ContractWaiver): boolean {
@@ -93,6 +98,7 @@ const TOKENS_RAW: Partial<Record<ThemeId, string>> = {
   minimal: readThemeTokens("minimal"),
   cosmos: readThemeTokens("cosmos"),
   frontier: readThemeTokens("frontier"),
+  vapor: readThemeTokens("vapor"), // D51 V3 — the semantic map over vapor's private vocabulary
 };
 
 /** The set of custom-property NAMES a stylesheet DECLARES (`--x:` … — a `:` follows the name). A `var(--x)`
@@ -335,6 +341,21 @@ describe("e2e contrast matrix ↔ registry palettes (drift guard)", () => {
   // bar, sourced from `CONTRAST_MATRIX.bar`. Guard that hand-maintained list against the registry-resolved
   // bar so a theme changing its `defaultLayout` (frontier's future 3-tab) breaks HERE — not the sweep, which
   // would otherwise silently keep clicking a stale tab set (D35 §F0 punch-list).
+  // The matrix's `kitShell` flag decides whether the KIT-RENDER sweep drives a row (it waits on
+  // `.kit-appbar`). That is exactly the `kit-structure` waiver's meaning, hand-copied into a plain e2e
+  // list — so pin the two together: when V4/V6 retires the waiver, this fails until the flag follows.
+  it.each(measurable.map((d) => [d.id] as const))(
+    "%s's matrix `kitShell` flag matches its `kit-structure` waiver",
+    (id) => {
+      const row = CONTRAST_MATRIX.find((t) => t.theme === id);
+      expect(
+        row!.kitShell === false,
+        `${id}: CONTRAST_MATRIX.kitShell must be false IFF the theme carries the "kit-structure" ` +
+          `waiver (it has no .kit-appbar for e2e/kit-render.spec.ts to wait on) — update the matrix`,
+      ).toBe(isWaived(id, "kit-structure"));
+    },
+  );
+
   it.each(measurable.map((d) => [d.id] as const))(
     "%s's matrix `bar` = the registry-resolved default-layout bar",
     (id) => {

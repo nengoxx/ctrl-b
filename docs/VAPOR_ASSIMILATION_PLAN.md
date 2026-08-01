@@ -40,8 +40,9 @@ copy dies. (`tabs/FleetTab.tsx` is already vapor-only by its own comment; it and
 
 > Frozen as the starting inventory — rows retire as slices land, tracked here: hook ③ keyframes
 > **DEAD at V1** · hook ⑥ CSS-home **DEAD at V1** (all files in `themes/vapor/`) · hook ① accent
-> axis **DEAD at V2** (shared `data-accent`; `applyBodyAttrs` has ONE arm now). Live remainder:
-> hooks ② (tokens, → V3) · ④ (parallel chrome, → V4) · ⑤ (isVapor PinnedPlan gate, → V4).
+> axis **DEAD at V2** (shared `data-accent`; `applyBodyAttrs` has ONE arm now) · hook ② non-contract
+> tokens **DEAD at V3** (`themes/vapor/tokens.css`; the `semantic-tokens` waiver retired). Live
+> remainder: hooks ④ (parallel chrome, → V4) · ⑤ (isVapor PinnedPlan gate, → V4).
 
 | Hook | Where (verified) |
 |---|---|
@@ -130,7 +131,7 @@ Council-verified additions that reshape the plan:
   `migrateLegacyTheme` + FOUC twin stay. B2 waiver retires `accent-axis`; **hook ① dies here**
   (the old "①⑤" was a typo — ⑤ dies at V4's plan port).
 
-### V3 — semantic-token mapping (council-hardened)
+### V3 — semantic-token mapping (council-hardened) — **✅ BUILT 2026-08-01** (ledger: [`VAPOR_BANNER_LEDGER.md`](./VAPOR_BANNER_LEDGER.md))
 - Create **`themes/vapor/tokens.css`** (loaded with vapor + a `TOKENS_RAW.vapor` entry — required
   by the conformance-test contract, Codex #5) carrying the COMPLETE contract token set, not just
   accent/text aliases.
@@ -152,6 +153,25 @@ Council-verified additions that reshape the plan:
   as a re-made category judgement is the drift vector); it is amendable only by an explicit
   ruling, and V6 asserts the residue EQUALS the list. The `data-skyline` ledger row is resolved
   here too (it lands in vapor-keeps or it doesn't — not decided at the tail).
+- **AS-BUILT (2026-08-01):** `themes/vapor/tokens.css` maps the full contract — statics + the three
+  contract-NAMED palette values (`--bg`/`--line`/`--line-2`, MOVED out of vapor.css so each name has one
+  home) on `:scope`, every palette-derived alias on `body`. `--accent-glow` (a filter) renamed
+  `--vapor-glow-filter`; the contract token now carries `var(--m-glow)`. `--accent-fill` = each accent's
+  **swatch** two-stop gradient, not the 4-stop `--accent-grad` (no ink can clear 4.5:1 against BOTH ends
+  of that ramp — the ⑧ gate would be unsatisfiable by construction; the frontier K2 "fill mirrors the
+  swatch" precedent). Waveform's two vapor-private reads → `--accent`/`--text-3`. Guards:
+  `tests/theme-engine/vaporAssimilation.test.ts` (banner ratchet + static trap placement + one-home-per-
+  contract-name) and `e2e/vapor-tokens.spec.ts` (the real-browser split-palette probe — jsdom replays
+  neither `@scope` nor `@layer` nor the body-formula substitution, so the "computed-style unit test" had
+  to be a browser spec). vapor joined `CONTRAST_MATRIX` (3 rows, every pair passes with margin;
+  `kitShell:false` keeps it out of the kit-render sweep until V4). **`data-skyline` → `vapor-keeps`.**
+  `--danger` maps from the **`--danger-rgb` channel** (which encodes the owner's Aqua-is-purple ruling),
+  `--accent-ink` = vapor's documented `#1a0428` on-gradient ink (R26/R27).
+  Two accepted deltas, both palette-CORRECTING: `color-scheme: dark` on `<html>` (UA scrollbars/controls,
+  what every other theme declares), and the 7 defensive `var(--danger, …)`/`var(--warn, …)` reads in
+  extras.css that were silently resolving to the KIT's neutral `#e07a6b`/`#e8c069` — the six always-red
+  STATUS ones now read `var(--red)` directly (R26) and the one warn read resolves to vapor's amber, so
+  both finally track aqua/ember.
 
 ### V4 — the shell graduation (the pivot slice): VaporRoot → DefaultRoot hosting
 ONE slice, the cosmos-proven shape (this replaces the old per-component TabBar/AppBar/Composer
@@ -202,8 +222,12 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
   **equals** the V3-frozen vapor-keeps list, and a mechanical source assertion pins "VaporRoot
   renders `DefaultRoot` and imports none of `components/{AppBar,Composer,TabBar}`" (the waiver
   list hitting `[]` is the third leg).
-- B2 waiver retires `kit-structure` → the vapor waiver list hits `[]`; the §14.15.3 banner flips
-  DONE. The `sections` waiver retires ONLY once vapor consumes the shared body/layout partition,
+- **`kit-structure` retires at V4, NOT here (R25).** A waiver retires the moment its capability
+  lands, so the DefaultRoot pivot takes it: the vapor waiver list hits `[]` **at V4** and the
+  structural + Fleet-a11y group runs vapor through the riskiest slice instead of skipping it.
+  V6 ASSERTS the list is still `[]` (its third leg above) and flips the §14.15.3 banner DONE.
+  `e2e/contrast-matrix.ts`'s `kitShell:false` is drift-guarded to that same waiver → both flip in
+  the V4 commit or the guard fails. The `sections` waiver retires ONLY once vapor consumes the shared body/layout partition,
   with real 2/3-tab navigation tests replacing the forced-four-tab assertions (Codex #11 — kit
   chrome alone does not make it "just work").
 - **The vapor lazy flip happens here (or is dropped if the residue is trivial)** — preconditions
@@ -218,7 +242,7 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
 |---|---|
 | `data-theme` (accent) | ✅ **RETIRED at V2** (`5f70a16`, 2026-08-01) |
 | `data-loz` | V4 (becomes a theme setting driving the kit `brandMark` slot) |
-| `data-skyline` | ruled at V3's classification (vapor-keeps or not); executed V5/V6 |
+| `data-skyline` | ✅ **RULED at V3: `vapor-keeps`** — Fleet decoration, the Root-pinned VaporFleet owns it; nothing to execute (ledger §2) |
 | `data-tab` | V4 (DefaultRoot's mechanism; the `layouts` waiver comment updates here too) |
 
 Doc retirements: §13.1 frozen-attr table (V2, V4) · §14.4.1 two-trees invariant (V4) · §15 rule 3
@@ -320,3 +344,14 @@ both verified and folded:
 |---|---|---|
 | R23 | MED: the V0 trade was misstated — the FOUC script stamps attributes only; a fresh cosmos boot flashes browser canvas → kit base before cosmos lands | **ACCEPT** → V0 + §5 Q6 restated accurately; R5's ruling stands, on true facts |
 | R24 | MED: V4's device matrix said "both accents × light/dark" — vapor has THREE accents and no mode axis | **ACCEPT** → V4 matrix corrected |
+
+**Codex round on the V3 diff (2026-08-01): FIX FIRST, 4 MED + 1 LOW — all applied in the V3 wave.**
+
+| # | Finding | Ruling |
+|---|---|---|
+| R25 | **MAIN-SEAT RULING** (raised by the `kitShell` flag's lifecycle): `kit-structure` retirement moved **V6 → V4** — coherence with the `kitShell` drift guard, and a waiver retires when the capability lands, never later. V6 keeps only the ASSERTION that the list stays `[]` | **ACCEPT** → V4/V6 bullets + the waiver annotation + the matrix comment |
+| R26 | MED: `--danger` mapped from `--red`, breaking the owner's Aqua rule (destructive = PURPLE under Aqua, VAPOR_PATTERNS) | **ACCEPT** → `--danger: rgb(var(--danger-rgb))`, the channel that already encodes the ruling; the six always-red legacy STATUS reads point at `--red` directly |
+| R27 | MED: `--accent-ink: var(--bg)` ignored vapor's documented on-gradient ink | **ACCEPT** → `#1a0428` (VAPOR_PATTERNS §2's sanctioned constant), worst case 5.11:1 |
+| R28 | MED: the banner ratchet's editable mirror list wasn't genuinely shrink-only (a rename could be "fixed" in the same commit) | **ACCEPT** → an IMMUTABLE `V3_BASELINE_BANNERS` + `baseline ⊇ current ⊇ vapor-keeps`; the mirror + count constant deleted as redundant |
+| R29 | MED: ledger mis-called two kit gaps | **ACCEPT** → `.root-error` is owned by `lib/crashScreen.tsx`'s inline styles (plain V5 delete); `.plan-pin-wrap` styles the vapor `PinnedPlan` V4 deletes (→ port-owned:V4). VPN-discovery + approvals remain the genuine gaps |
+| R30 | LOW: the static trap guard derived overridable inputs from vapor.css only | **ACCEPT** → unioned with every `body`-rooted declaration in tokens.css, so a contract-token formula moved to `:scope` is caught too |

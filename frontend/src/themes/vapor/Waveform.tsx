@@ -189,11 +189,17 @@ export function Waveform({ online, ping }: Props) {
     <div className="waveform">
       <canvas ref={canvasRef} />
       <div className="legend">// live ping · ICMP echo</div>
+      {/* CONTRACT tokens, not vapor privates (D51 V3): `--accent` aliases `--magenta` and `--text-3`
+          aliases `--ink-faint`, both declared on <body> in themes/vapor/tokens.css — so each resolves
+          to the IDENTICAL per-accent value these reads had before (the aliases sit at/below the
+          body[data-accent] palette overrides, and this span inherits from <body>). The canvas's
+          `--accent-rgb`/`-2` getComputedStyle reads above stay vapor-private: they're rgb-TRIPLE
+          tokens with no contract equivalent (their promotion is the V4 rider). */}
       <div className="legend-r">
         {online ? (
-          <span style={{ color: "var(--magenta)" }}>● rec</span>
+          <span style={{ color: "var(--accent)" }}>● rec</span>
         ) : (
-          <span style={{ color: "var(--ink-faint)" }}>○ idle</span>
+          <span style={{ color: "var(--text-3)" }}>○ idle</span>
         )}
       </div>
     </div>

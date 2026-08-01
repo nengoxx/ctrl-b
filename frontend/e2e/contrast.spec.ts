@@ -22,8 +22,9 @@ import { expect, test } from "./fixtures";
 // GATES (WCAG 2.1, FAIL the spec) + APCA (advisory, report-only, never gates — ⑧).
 
 // ── The matrix — expanded from CONTRAST_MATRIX (the shared list the jsdom drift guard verifies against the
-//    registry palettes; vapor is waived there, so it never appears). minimal → dark+light × 4 hues (8);
-//    cosmos → dark × 4 accents (4). ──
+//    registry palettes). minimal → dark+light × 4 hues (8); cosmos → dark × 4 accents (4); frontier →
+//    dark+light × 4 (8); vapor → dark × 3 accents (3, joined at D51 V3 with themes/vapor/tokens.css —
+//    it has bespoke chrome but the probe only needs <body> + `#app-scroll`, both of which VaporRoot has). ──
 interface Combo {
   theme: string;
   mode: string;

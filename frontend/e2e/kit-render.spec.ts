@@ -9,7 +9,9 @@ import { expect, test } from "./fixtures";
 // checks ONE thing: the kit shell renders and stays up across a full tab sweep. Deliberately NOT here:
 // screenshot diffing (rejected in the plan — flaky, over-engineered) and axe (the a11y suite owns a11y).
 //
-// It parametrizes over every non-waived theme in CONTRAST_MATRIX — minimal, cosmos AND frontier (each a
+// It parametrizes over every KIT-SHELLED theme in CONTRAST_MATRIX (`kitShell !== false` — vapor joined the
+// matrix at D51 V3 for the token gates but still renders bespoke chrome until V4, so it is filtered out
+// here and only here) — minimal, cosmos AND frontier (each a
 // distinct Surface impl: CosmosFleet's starfield canvas + orbital, FrontierFleet's badlands map — all must
 // boot). Sourced from CONTRAST_MATRIX so the theme/mode set can never silently drift from the registry (that
 // list has a drift guard against the real palettes); one representative accent per theme (the first = each
@@ -21,7 +23,7 @@ interface Combo {
   accent: string;
   bar: string[]; // the theme's DEFAULT-layout on-bar sections (D35 §F0) — the tab buttons to sweep
 }
-const COMBOS: Combo[] = CONTRAST_MATRIX.flatMap((t) =>
+const COMBOS: Combo[] = CONTRAST_MATRIX.filter((t) => t.kitShell !== false).flatMap((t) =>
   // One representative accent per theme×mode (accents[0] = defaultAccent: minimal→cyan, cosmos→violet).
   t.modes.map((mode) => ({ theme: t.theme, mode, accent: t.accents[0], bar: t.bar })),
 );

@@ -38,7 +38,7 @@ sanctioned ink-on-gradient constants below.
 | `--line`, `--line-2` | Hairline borders: subtle (`--line`) vs visible (`--line-2`). |
 | `--m-glow`, `--v-glow`, `--t-glow` | Ready-made **box-shadow** glows for magenta / violet / teal. |
 | `--accent-rgb`, `--accent-rgb-2`, `--danger-rgb` | Bare `R, G, B` triplets for `rgba(var(--x), a)`. |
-| `--accent-grad`, `--danger-grad`, `--accent-glow`, `--danger-glow` | **Mask-icon only** (see §3/§4). |
+| `--accent-grad`, `--danger-grad`, `--vapor-glow-filter`, `--danger-glow` | **Mask-icon only** (see §3/§4). `--vapor-glow-filter` was `--accent-glow` until D51 V3 — that name is now the CONTRACT's box-shadow glow (`themes/vapor/tokens.css`), so never use it in a `filter:`. |
 
 Sanctioned constants: **`#1a0428`** (dark ink for text *on* the magenta→violet gradient) and
 **white** (`#fff`) for text on saturated fills like `.seg.active`. Nothing else hardcoded.
@@ -87,7 +87,7 @@ Subtle tint backgrounds (card headers, chat bubbles, hero panels) use low-alpha 
   inset 0 1px 0 rgba(255,255,255,0.18)` (utils, the biggest filled button). Smaller filled buttons
   scale it down: `.mfoot .save` uses `0 2px 10px … 0.35`, `.seg.active` uses `0 2px 8px … 0.4`. The
   **inset top highlight** `inset 0 1px 0 rgba(255,255,255,0.18)` is part of the filled-button look.
-- **Drop-shadow filters** (`filter: drop-shadow(...)` / `--accent-glow`/`--danger-glow`) are for
+- **Drop-shadow filters** (`filter: drop-shadow(...)` / `--vapor-glow-filter`/`--danger-glow`) are for
   **mask icons** (no box), not boxes.
 - **Focus glow (inputs):** `border-color: var(--magenta)` + `box-shadow: 0 0 0 1px var(--magenta),
   0 0 12px rgba(var(--accent-rgb), 0.3)` (or simply `var(--m-glow)` on compact rows).
@@ -134,7 +134,7 @@ There are **four** button kinds in vapor. Pick the one whose role matches; copy 
    var(--magenta) }`. **Danger variant is OUTLINE, not filled:** `.danger { color:
    rgba(var(--danger-rgb), .85); border-color: rgba(var(--danger-rgb), .3) }`, `:active → var(--red)`.
 3. **Mask-icon action** (icon-only): a `width/height` box, `-webkit-mask` SVG, `background:
-   var(--accent-grad)` (or `--danger-grad`), `filter: var(--accent-glow|--danger-glow)`, `:active {
+   var(--accent-grad)` (or `--danger-grad`), `filter: var(--vapor-glow-filter|--danger-glow)`, `:active {
    transform: scale(0.85–0.9) }`. → `.dev .act.*`, `.tts-btn`.
 4. **Segmented / toggle** (`.seg`, `.switch`): pill track `--bg-3` + border; the active segment/knob
    gets the `135deg` fill + a small glow.

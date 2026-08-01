@@ -6,12 +6,13 @@
  * token-driven component CSS (built in the Bucket-A slice) always resolves. Each theme's own `tokens.css`
  * redefines these in `@layer theme`, which wins by CASCADE-LAYER ORDER (not specificity).
  *
- * ⚠️ Collision note (verified): vapor ALSO declares `--line`/`--line-2`/`--accent-glow` (vapor.css, in
- * `@layer theme`, scoped to `[data-skin=vapor]`). On a vapor page both the base default (here) and vapor's
- * value target <html>; the THEME layer beats the BASE layer on the same element, so vapor's value wins and
- * vapor stays byte-identical. The base defaults only ever "show through" for a skin that declares none.
- * vapor's other tokens (`--bg`/`--magenta`/`--accent-grad`/`--accent-rgb`) are vapor-private names not in
- * this contract, so they never interact with it. */
+ * Collision note — RESOLVED at D51 V3 (kept as the vocabulary): vapor USED to declare `--line`/`--line-2`/
+ * `--accent-glow` in vapor.css beside this contract, one of them (`--accent-glow`) with a different value
+ * TYPE (a `drop-shadow()` filter vs the box-shadow this contract means). V3 gave vapor a real
+ * `themes/vapor/tokens.css`: `--line`/`--line-2` moved there, the filter token was renamed
+ * `--vapor-glow-filter`, and vapor.css now declares vapor-PRIVATE names only (`--magenta`/`--ink*`/`--bg-2`/
+ * `--accent-grad`/`--accent-rgb`/…), which never interact with this set. Every contract name therefore has
+ * exactly ONE home per theme; these base defaults only "show through" for a skin that declares none. */
 
 /* Global reset (base layer). vapor's `html,body{margin:0}` is scoped to [data-skin=vapor], so a non-vapor
  * skin would otherwise inherit the browser's default `body { margin: 8px }` — insetting the whole shell and

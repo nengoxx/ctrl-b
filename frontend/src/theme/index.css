@@ -22,8 +22,9 @@
 @layer base, theme, axes, reset;
 
 /* Kit semantic-token contract — neutral fallbacks in @layer base; each theme's tokens.css overrides them
- * in @layer theme (wins by cascade-layer order). vapor's private tokens don't intersect this set; the
- * three shared names (--line/--line-2/--accent-glow) are won by vapor's theme-layer rules on a vapor page. */
+ * in @layer theme (wins by cascade-layer order). Since D51 V3 vapor has a real tokens.css too, so the old
+ * shared-name collision (--line/--line-2/--accent-glow declared by BOTH sheets) is CLOSED: every contract
+ * name has exactly one home per theme, and vapor.css declares only vapor-private names. */
 @import "../theme-engine/kit/tokens.css" layer(base);
 
 /* Kit component CSS — token-driven chrome (.kit-*) scoped under DefaultRoot's `.kit` marker (= Radix
@@ -36,6 +37,16 @@
  * beats a theme's own chrome) but below @layer reset. Scoped under `.kit` → inert on vapor. */
 @import "../theme-engine/kit/axes.css" layer(axes);
 
+/* vapor (eager, §14.6). tokens.css FIRST — the semantic map vapor.css/extras.css are consumers of (the
+   kit/tokens.css → kit.css ordering, mirrored). Order is not load-bearing for the VALUES (a var() alias
+   resolves against the winning value of its input on the declaring element, whatever the source order),
+   but it keeps "contract first, components after" readable.
+   ⚠️ NO `layer(theme)` on this one, deliberately: unlike its two siblings, vapor's tokens.css declares
+   `@layer theme { … }` INSIDE the file — the self-contained shape every other theme's tokens.css uses
+   (they're lazily imported from JS, which has no @import wrapper; it also makes vapor's V6 lazy flip a
+   no-op here, Codex #3). Adding `layer(theme)` back would nest it as `theme.theme`, a SUB-layer that
+   loses to vapor.css's unlayered-within-`theme` rules. Pinned by tests/theme-engine/vaporAssimilation.test.ts. */
+@import "../themes/vapor/tokens.css";
 @import "../themes/vapor/vapor.css" layer(theme);
 @import "../themes/vapor/extras.css" layer(theme);
 
