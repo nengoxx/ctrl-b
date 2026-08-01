@@ -210,7 +210,10 @@
   }
   .brand .lozenge::after {
     content: ""; position: absolute; inset: 4px; border-radius: 50%;
-    background: var(--bg) url("logo.png") center/130% no-repeat;
+    /* ROOT-ABSOLUTE on purpose: logo.png lives in public/ (served at /logo.png). A relative url()
+       resolves against the BUILT stylesheet (/assets/…css) in prod → /assets/logo.png → 404, while
+       dev injects CSS as <style> (document base) and masks the bug. */
+    background: var(--bg) url("/logo.png") center/130% no-repeat;
   }
   /* classic ring variant — spinning gradient ring, no logo */
   body[data-loz="ring"] .brand .lozenge { animation: spin 8s linear infinite; }

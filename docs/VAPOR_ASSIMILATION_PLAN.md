@@ -1,12 +1,13 @@
 # Vapor assimilation — the complete-migration plan (vapor → kit, legacy deleted)
 
-> **Status: DRAFT — design NOT locked.** Drafted 2026-07-31 from the owner's rulings; **council
-> round DONE 2026-08-01** (Codex `gpt-5.6-sol` correctness lens + one Opus 5 architecture lens,
-> both verdicts **LOCK WITH CHANGES**) — all findings reconciled by the main seat and folded into
-> this v2; the ruling-by-ruling record is §7. **Before build:** (1) the owner's device round (§5),
-> (2) reviewer confirm rounds on this amended draft, (3) the D-entry lock in `DECISIONS.md`.
-> Build = TODO **Phase 16**. This plan AMENDS `THEME_ENGINE.md` §14.15.3 (the ladder survives; its
-> end-state bar and sequencing change per §1). On conflict after the lock: DECISIONS wins.
+> **Status: DRAFT — design NOT locked, but LOCK-READY.** Drafted 2026-07-31 from the owner's
+> rulings; **council round DONE 2026-08-01** (Codex `gpt-5.6-sol` correctness lens + one Opus 5
+> architecture lens, both **LOCK WITH CHANGES**; both confirm rounds clean) — reconciliation
+> record §7 (R1–R24). **Owner's §5 round ANSWERED + code-verified 2026-08-01** (chat = kit look;
+> Fleet stays bespoke; the prod logo 404 found + fixed). **Remaining before build: the D-entry
+> lock in `DECISIONS.md`.** Build = TODO **Phase 16**. This plan AMENDS `THEME_ENGINE.md`
+> §14.15.3 (the ladder survives; its end-state bar and sequencing change per §1). On conflict
+> after the lock: DECISIONS wins.
 
 ## 1. Owner rulings (2026-07-31 — supersede the ladder's hedges)
 
@@ -76,8 +77,8 @@ Council-verified additions that reshape the plan:
 ### V0 — cosmos becomes the default: **the flip only** (no CSS pipeline rework)
 - Flip `DEFAULT_THEME` to `"cosmos"` in resolve.ts (+ heal + `defaultSwitchTarget` follow), plus
   the **default-mirror matrix** (Codex #2): `index.html` static `data-skin` stamp / bootstrap
-  default / corrupt-storage fallback · `ui.ts` first-boot triple (mode/accent per the owner's §5
-  answer) · backend `AppearanceCfg` default · e2e fixture defaults. The §14.15.3 "no theme literal
+  default / corrupt-storage fallback · `ui.ts` first-boot triple (derived from cosmos's declared
+  ThemeDef defaults — dark/violet, §5 Q4) · backend `AppearanceCfg` default · e2e fixture defaults. The §14.15.3 "no theme literal
   outside resolve.ts" guarantee is AMENDED to a **documented-mirror allowlist** (those exact spots —
   the FOUC twin was always one).
 - **Test retarget table** (Codex #10): `flows.spec.ts` implicitly boots vapor throughout — seed
@@ -228,20 +229,36 @@ Doc retirements: §13.1 frozen-attr table (V2, V4) · §14.4.1 two-trees invaria
    element can't reach fidelity it escalates **per-element**; a whole-surface variant requires its
    own design + council round.
 
-## 5. Open questions → the owner's device round (bring answers to the design-lock session)
-1. **Agent tab:** which vapor-chat elements must survive verbatim (pulse? `▸/▾` disclosure?
-   terminal gestalt? in-tab pinned plan?) vs adopt the kit chat look? (Decides the V5 chat-CSS
-   fidelity bar — NOT a ChatSurface, per §4.3.)
-2. **Port-vs-drop list:** anything vapor-only that should simply DROP (skyline? hero scene?
-   lozenge spin?) — deletion is cheaper than porting.
-3. **Lozenge:** is the spinning-ring behavior wanted (as vapor's `brandMark` content)?
-4. **Cosmos first-boot defaults:** which mode/accent should a fresh cosmos boot show?
-5. **Existing devices:** confirm persisted vapor choices stay until manually switched.
-6. **NEW — the fresh-boot trade (V0):** a fresh cosmos-default cold boot can flash browser canvas
-   → kit-base styling before cosmos's lazy CSS + Root land (identical to picking cosmos today; a
-   style flash plus a content pop, NOT a correctly-painted wait). Rare — fresh boots only.
-   Acceptable, or should the escalation (an inline critical bg/text block keyed off `data-skin`)
-   be built at V0?
+## 5. The owner's round — ANSWERED 2026-08-01 (verified in code by the main seat same day)
+1. **Agent tab → the kit look, full stop.** Owner: "I think they are already covered by the kit"
+   — verified TRUE for every named element: the *pulse* (= `tag-pulse`, a 1.3 s opacity pulse on
+   chat status tags, extras.css :810/:888/:1137) is matched by the kit's own streaming/working
+   indicators (kit.css ~:2595); the `▸/▾` *disclosures* are SHARED DOM (`<details>/<summary>` in
+   ChatThread) that kit.css already styles with the same chevron idiom (:2721/:3038/:3161); the
+   *pinned plan* is `planPlacement:"pinned"` + `PinnedPlanPanel` (§2). **V5's chat fidelity bar =
+   the kit look + vapor tokens; vapor's chat CSS blocks classify port-none/delete** — no verbatim
+   ports, no per-element escalation expected.
+2. **Fleet → stays as-is, bespoke.** Owner wants the Fleet tab essentially unchanged — exactly
+   §1.1's Root-pinned VaporFleet (the cosmos/frontier shape). Hero scene, skyline, waveform are
+   Fleet's decoration → the vapor-keeps bucket at V3's classification.
+3. **Lozenge:** the spin DOES exist — the "ring" variant of vapor's "App mark" seg setting
+   (`loz: logo | ring`, default `logo`; ring spins 8 s, vapor.css :216). Keep the seg as-is (it
+   ports through `theme_settings` untouched). **And the owner's report "the logo isn't visible in
+   production" was a REAL BUG, found + fixed on main:** vapor.css used a relative
+   `url("logo.png")`, which the built stylesheet resolves to `/assets/logo.png` → 404 (the file
+   is `public/logo.png` → `/logo.png`, 200 — verified live against prod); dev masks it because
+   Vite injects CSS at document base. Fixed to a root-absolute url; the V4 `brandMark` port then
+   implements the logo PROPERLY (a Vite-imported `src/assets/` asset — hashed + precached — not a
+   bare public file).
+4. **Cosmos first-boot defaults → the theme's own declaration.** Cosmos declares
+   `modes: ["dark"]` / `defaultMode: "dark"` / `defaultAccent: "violet"` — the V0 first-boot
+   values DERIVE from the registered ThemeDef (no new choice, no hardcoded triple).
+5. **Existing devices → DISSOLVED.** Appearance is backend-synced (`AppearanceCfg`,
+   server-authoritative last-write-wins, `GET /api/appearance` — config.py :805): there is ONE
+   synced selection for all the owner's browsers, and the default flip touches only the
+   unseeded/fresh state + the heal target. The owner's live selection is untouched by V0.
+6. **Fresh-boot flash → ACCEPTED.** Owner: "just the default changed to cosmos, no new weird
+   code or seams." The R5 lean ruling stands; the critical-token escalation stays recorded-only.
 
 ## 6. Method (unchanged) + the confirm step
 Per slice: pinned Opus build brief → main-seat audit → Codex round → waves to WAVE CLEAN → owner
