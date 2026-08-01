@@ -461,20 +461,6 @@
   /* The .active morph: dot grows into a pill, recolors, and gains a glow. All four properties
      are part of the intentional animation. Explicit list (Slice 3) so a future style addition
      can't accidentally start animating something paint-expensive like a `filter`. */
-  .now-dots div {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--ink-faint); cursor: pointer;
-    transition: width 0.2s, border-radius 0.2s, background-color 0.2s, box-shadow 0.2s;
-  }
-  .now-dots div.active { background: var(--magenta); width: 22px; border-radius: 3px; box-shadow: var(--m-glow); }
-
-  /* Section header */
-  .sec { padding: 18px 18px 8px; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-soft); display: flex; align-items: baseline; gap: 8px; }
-  .sec .num { color: var(--magenta); font-weight: 600; }
-  .sec b { color: var(--ink); font-weight: 600; }
-  .sec::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-2), transparent); align-self: center; }
-  .sec .right { color: var(--ink-faint); }
-
   /* Compact device rows */
   .devs { padding: 0 18px; display: flex; flex-direction: column; gap: 6px; }
   .dev {
@@ -597,7 +583,6 @@
   }
   .dev .kvgrid .k { color: var(--ink-faint); letter-spacing: 1.2px; text-transform: uppercase; font-size: 9px; align-self: center; }
   .dev .kvgrid .v { color: var(--ink); font-family: "JetBrains Mono"; }
-  .dev .kvgrid .v.dim { color: var(--ink-soft); }
   .dev .kvgrid .v.mac { letter-spacing: 1px; }
   .dev .kvgrid .v.os-win::before { content: "⊞ "; color: var(--teal); }
   .dev .kvgrid .v.os-linux::before { content: "◆ "; color: var(--violet); }
@@ -618,8 +603,6 @@
   .dev .dropfoot button:active,
   .dev .dropfoot a.open:active { background: var(--bg-3); color: var(--magenta); border-color: var(--magenta); }
   .dev .dropfoot a.open { color: var(--magenta); border-color: color-mix(in oklch, var(--magenta) 40%, transparent); flex: 2; font-family: "JetBrains Mono", ui-monospace, monospace; letter-spacing: 1px; text-transform: none; }
-  .dev .dropfoot button.danger { color: rgba(var(--danger-rgb), 0.85); }
-  .dev .dropfoot button.danger:active { color: var(--red); border-color: var(--red); }
 
   /* mini equalizer */
   .eq { display: flex; gap: 3px; align-items: flex-end; height: 26px; }
@@ -688,336 +671,22 @@
      consumed (`vapor-brew`, `vapor-micrec`, `vapor-micspin`). vapor resolves the kit `sheet`
      variant (SheetComposer, which IS this dock rebuilt on the semantic tokens). */
 
-  /* CHAT */
-  .chat-log { padding: 6px 16px 12px; display: flex; flex-direction: column; gap: 14px; }
-  .b .who { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
-  .b .who::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); }
-  .b.user .who::before { background: var(--teal); box-shadow: var(--t-glow); }
-  .b.bot .who::before { background: var(--magenta); box-shadow: var(--m-glow); }
-  .b .body { font-size: 13px; line-height: 1.5; color: var(--ink); }
-  .b.user { align-self: flex-end; max-width: 88%; }
-  .b.user .body {
-    background: linear-gradient(135deg, rgba(92,230,255,0.14), rgba(92,230,255,0.04));
-    border: 1px solid rgba(92,230,255,0.3);
-    padding: 9px 13px; border-radius: 16px 16px 4px 16px;
-  }
-  /* D41 — queued steer: muted bubble + a teal-tinted "queued" chip, right-aligned under the body */
-  .b.user.queued .body { opacity: 0.5; }
-  .b.user .steer-chip {
-    display: block; width: fit-content; margin: 5px 0 0 auto;
-    padding: 1px 9px; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
-    color: var(--ink-faint);
-    background: rgba(92,230,255,0.1); border: 1px solid rgba(92,230,255,0.28);
-    border-radius: 999px; cursor: pointer;
-  }
-  .b.user .steer-chip:active { background: rgba(92,230,255,0.2); }
-  .b.bot { max-width: 92%; }
-  .b.bot .body {
-    background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.10), rgba(var(--accent-rgb-2), 0.04));
-    border: 1px solid rgba(var(--accent-rgb), 0.25);
-    padding: 9px 13px; border-radius: 16px 16px 16px 4px;
-  }
-  .b.sys { align-self: center; max-width: 90%; }
-  .b.sys .body {
-    font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
-    color: var(--ink-faint); text-align: center;
-    padding: 8px 12px;
-    border: 1px dashed var(--line-2); border-radius: 8px;
-  }
+  /* §Section header (`.sec`) · §CHAT · §UTILS · §SETTINGS all DELETED at D51 V5 (2026-08-01) — the
+     shared surfaces graduate to kit.css under vapor's tokens. The atomic pair the ledger flagged went
+     together: this section's `.confrow .k { min-width: 0 }` died in the same edit as extras.css's
+     wide-control-wrap mirror, so the kit's `min-width: min(140px, 45%)` (@layer base) is the winner
+     again and the v1.4.x label-crush stays fixed. The add-machine `+`/`−` TEXT glyph died with its
+     extras.css drawn-bars override in the same edit, for the same reason. */
 
-  /* Command bubble: bot suggests a $ command to review and execute */
-  .b.cmd { max-width: 92%; }
-  .b.cmd .body {
-    padding: 0;
-    border-radius: 12px;
-    background: rgba(126,255,150,0.04);
-    border: 1px solid rgba(126,255,150,0.32);
-    overflow: hidden;
-  }
-  .b.cmd .preamble {
-    padding: 8px 12px 0;
-    font-size: 12px; line-height: 1.4; color: var(--ink);
-  }
-  .b.cmd pre {
-    margin: 8px 12px 10px;
-    padding: 10px 12px;
-    background: var(--bg);
-    border: 1px solid rgba(126,255,150,0.25);
-    border-radius: 6px;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 11.5px; line-height: 1.5;
-    color: var(--green);
-    white-space: pre-wrap; word-break: break-all;
-    overflow-x: auto;
-  }
-  .b.cmd pre::before {
-    content: "$"; color: var(--ink-faint); margin-right: 6px; font-weight: 600;
-  }
-  .b.cmd .actions {
-    display: flex; gap: 0;
-    border-top: 1px solid rgba(126,255,150,0.2);
-  }
-  .b.cmd .actions button {
-    all: unset; cursor: pointer;
-    flex: 1; text-align: center;
-    padding: 9px 0;
-    font-size: 9px; letter-spacing: 1.8px; text-transform: uppercase; font-weight: 600;
-    color: var(--ink-soft);
-    border-right: 1px solid rgba(126,255,150,0.2);
-  }
-  .b.cmd .actions button:last-child { border-right: 0; }
-  .b.cmd .actions button:active { background: rgba(126,255,150,0.08); }
-  .b.cmd .actions .exec { color: var(--green); }
-  .b.cmd .actions .exec:active { background: rgba(126,255,150,0.15); }
-  .b.cmd .actions .edit { color: var(--teal); }
-  .b.cmd .actions .dismiss { color: var(--ink-faint); }
-  .b.cmd.done .body { background: rgba(var(--accent-rgb-2), 0.04); border-color: rgba(var(--accent-rgb-2), 0.32); }
-  .b.cmd.done pre { color: var(--ink-soft); border-color: rgba(var(--accent-rgb-2), 0.2); }
-  .b.cmd.done pre::before { color: var(--violet); }
-  .b.cmd.done .actions { display: none; }
-  .b.cmd.done .body::after {
-    content: "// dispatched · cmd window opened";
-    display: block;
-    padding: 6px 12px 10px;
-    font-size: 8.5px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--violet);
-  }
-
-  .notice {
-    margin: 8px 16px;
-    padding: 9px 12px;
-    font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
-    color: var(--ink-soft);
-    border-radius: 6px;
-    background: rgba(var(--accent-rgb-2), 0.08);
-    border-left: 2px solid var(--violet);
-  }
-  .notice .heart { color: var(--violet); }
-
-  /* UTILS — tool cards */
-  .util {
-    margin: 14px 16px;
-    border: 1px solid var(--line-2);
-    border-radius: 14px;
-    background: var(--bg-2);
-    overflow: hidden;
-  }
-  .util .uhead {
-    padding: 12px 14px;
-    display: flex; align-items: center; gap: 10px;
-    border-bottom: 1px solid var(--line);
-    background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.08), transparent);
-  }
-  .util .uhead .glyph {
-    width: 42px; height: 42px;
-    display: inline-flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-    position: relative;
-  }
-  .util .uhead .glyph .ico {
-    width: 36px; height: 36px;
-    background: linear-gradient(135deg, var(--magenta), var(--violet));
-    filter: drop-shadow(0 0 10px rgba(var(--accent-rgb), 0.45));
-    flex-shrink: 0;
-  }
-  .util .uhead .glyph .ico.yt {
-    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M23.5 6.5s-.2-1.6-.9-2.3c-.9-.9-1.9-1-2.4-1C16.8 3 12 3 12 3h0s-4.8 0-8.2.3c-.5 0-1.5.1-2.4 1C.7 4.9.5 6.5.5 6.5S.3 8.4.3 10.3v1.7c0 1.9.2 3.8.2 3.8s.2 1.6.9 2.3c.9.9 2 .9 2.5 1 1.8.2 7.6.3 7.6.3s4.8 0 8.2-.3c.5-.1 1.5-.1 2.4-1 .7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.7c0-1.9-.2-3.8-.2-3.8zM9.6 14.6V7.9l6.3 3.4-6.3 3.3z' fill='black'/></svg>") center/contain no-repeat;
-            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M23.5 6.5s-.2-1.6-.9-2.3c-.9-.9-1.9-1-2.4-1C16.8 3 12 3 12 3h0s-4.8 0-8.2.3c-.5 0-1.5.1-2.4 1C.7 4.9.5 6.5.5 6.5S.3 8.4.3 10.3v1.7c0 1.9.2 3.8.2 3.8s.2 1.6.9 2.3c.9.9 2 .9 2.5 1 1.8.2 7.6.3 7.6.3s4.8 0 8.2-.3c.5-.1 1.5-.1 2.4-1 .7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.7c0-1.9-.2-3.8-.2-3.8zM9.6 14.6V7.9l6.3 3.4-6.3 3.3z' fill='black'/></svg>") center/contain no-repeat;
-  }
-  .util .uhead .glyph .ico.globe {
-    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'><circle cx='12' cy='12' r='9'/><ellipse cx='12' cy='12' rx='4' ry='9'/><path d='M3 12 h18'/><path d='M4.5 7 h15'/><path d='M4.5 17 h15'/></svg>") center/contain no-repeat;
-            mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'><circle cx='12' cy='12' r='9'/><ellipse cx='12' cy='12' rx='4' ry='9'/><path d='M3 12 h18'/><path d='M4.5 7 h15'/><path d='M4.5 17 h15'/></svg>") center/contain no-repeat;
-  }
-  .util .uhead .t { flex: 1; }
-  .util .uhead .t .nm { font-family: "Major Mono Display"; font-size: 16px; letter-spacing: 1.5px; color: var(--ink); }
-  .util .uhead .t .desc { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-faint); margin-top: 2px; }
-  .util .ubody { padding: 12px 14px 14px; }
-  .util .field { display: flex; gap: 0; align-items: stretch; }
-  .util .field input {
-    all: unset; flex: 1; padding: 9px 12px;
-    border-radius: 8px 0 0 8px;
-    background: var(--bg-3); color: var(--ink); font: inherit; font-size: 12px;
-    border: 1px solid var(--line-2);
-    border-right: 0;
-  }
-  .util .field input:focus {
-    border-color: var(--magenta);
-    box-shadow: 0 0 0 1px var(--magenta), 0 0 12px rgba(var(--accent-rgb), 0.3);
-    position: relative; z-index: 1;
-  }
-  .util .field input::placeholder { color: var(--ink-faint); }
-  .util .field button {
-    all: unset; cursor: pointer; padding: 0 16px;
-    border-radius: 0 8px 8px 0;
-    background: linear-gradient(135deg, var(--magenta), var(--violet));
-    color: #1a0428; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 800;
-    box-shadow: 0 3px 12px rgba(var(--accent-rgb), 0.4), inset 0 1px 0 rgba(255,255,255,0.18);
-    display: inline-flex; align-items: center; justify-content: center;
-  }
-  .util .field button:active { transform: scale(0.96); filter: brightness(1.1); }
-  .util .result {
-    margin-top: 12px; padding: 10px 12px;
-    background: var(--bg-3);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    font-size: 11px; line-height: 1.55;
-  }
-  .util .result.empty {
-    color: var(--ink-faint); font-style: italic; text-align: center;
-    background: transparent; border-style: dashed;
-  }
-  .util .result .kv { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; font-size: 11px; }
-  .util .result .kv .k { color: var(--ink-faint); font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase; align-self: center; }
-  .util .result .kv .v { color: var(--ink); }
-  .util .result .vtitle { font-family: "Major Mono Display"; font-size: 13px; color: var(--magenta); letter-spacing: 1px; margin-bottom: 6px; }
-  .util .result .download {
-    margin-top: 10px; display: inline-flex; align-items: center; gap: 6px;
-    font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
-    color: var(--green); text-decoration: none;
-    border: 1px dashed rgba(126,255,150,0.4);
-    padding: 6px 10px; border-radius: 6px;
-  }
-
-  /* SETTINGS */
-  .confgroup { margin: 8px 16px 0; }
-  .conftitle { padding: 16px 0 8px; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-soft); display: flex; align-items: baseline; gap: 8px; }
-  .conftitle .num { color: var(--magenta); }
-  .conftitle b { color: var(--ink); }
-  .conftitle::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-2), transparent); align-self: center; }
-  .conftitle .right { color: var(--ink-faint); font-size: 8px; letter-spacing: 1.2px; }
-
-  .conf-card { background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 14px; overflow: hidden; }
-  .confrow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; min-height: 52px; border-top: 1px solid var(--line); }
-  .conf-card .confrow:first-child { border-top: 0; }
-  .confrow .k { flex: 1; min-width: 0; }
-  .confrow .k .label { font-size: 13px; color: var(--ink); }
-  .confrow .k .desc { font-size: 9px; color: var(--ink-faint); margin-top: 2px; letter-spacing: 1.2px; text-transform: uppercase; word-break: break-all; }
-  .confrow .k .desc.code { font-family: "JetBrains Mono"; text-transform: none; letter-spacing: 0.5px; color: var(--ink-soft); }
-  /* the line-composer STADIUM TRICK (owner round 2, 2026-07-21): radius ≈ half the one-row height (~31px) — a single-row seg clamps to a true capsule, a wrapped one relaxes into a rounded rect. No JS. */
-  .seg { display: inline-flex; border-radius: 16px; padding: 3px; background: var(--bg-3); border: 1px solid var(--line); }
-  .seg button { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 999px; font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-soft); font-weight: 600; }
-  .seg button.active { background: linear-gradient(135deg, var(--magenta), var(--violet)); color: #fff; box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.4); }
-  .switch { display: inline-flex; align-items: center; cursor: pointer; }
-  /* Toggle: explicit transition lists (Slice 3) — narrows from `0.2s` shorthand. Browsers don't
-     transition solid→gradient backgrounds smoothly (the gradient snaps); border-color + box-shadow
-     are the properties that actually carry the motion. */
-  .switch .knob {
-    width: 42px; height: 22px; border-radius: 999px;
-    background: var(--bg-3); position: relative;
-    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
-    border: 1px solid var(--line-2);
-  }
-  /* Inner circle slides 20px right on `.on` and recolors.
-     D51 V4 — the recipe CHANGED from `left: 22px` to `transform: translateX(20px)`, which is both the
-     §14.11 polish this comment used to defer AND a required CO-APPLICATION fix: under the kit marker,
-     kit.css's `.kit .switch.on .knob::after { transform: translateX(20px) }` applies too (vapor's
-     @layer theme only outranks it property-by-property), so a `left`-based slide MOVED THE KNOB TWICE —
-     42px out of a 42px track, the knob landing outside the pill on every Conf toggle. One recipe, one
-     move. (This whole SETTINGS section is `port-owned:V5` and dies with the Conf port.) */
-  .switch .knob::after {
-    content: ""; position: absolute;
-    left: 2px; top: 2px; width: 16px; height: 16px;
-    border-radius: 50%; background: var(--ink-soft);
-    transition: transform 0.2s, background 0.2s;
-  }
-  .switch.on .knob { background: linear-gradient(135deg, var(--magenta), var(--violet)); border-color: var(--magenta); box-shadow: var(--m-glow); }
-  .switch.on .knob::after { transform: translateX(20px); background: #fff; }
-  .confrow input[type=text], .confrow input[type=password] {
-    all: unset; flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px; background: var(--bg-3);
-    color: var(--ink); font: inherit; font-size: 11px; max-width: 62%;
-    border: 1px solid var(--line);
-  }
-  .confrow input:focus { border-color: var(--magenta); box-shadow: var(--m-glow); }
-  .confrow .chev { color: var(--magenta); font-size: 16px; transition: transform 0.2s; line-height: 1; }
-
-  /* Expandable machine row: header (.confrow) + dropdown (.mconf) */
-  .mwrap { border-top: 1px solid var(--line); }
-  .conf-card .mwrap:first-child { border-top: 0; }
-  .mwrap > .confrow { border-top: 0; cursor: pointer; user-select: none; }
-  .mwrap.open > .confrow { background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.08), transparent); }
-  .mwrap.open > .confrow .chev { transform: rotate(90deg); }
-  .mwrap .mconf { display: none; padding: 4px 14px 14px; background: rgba(10,3,22,0.4); border-top: 1px dashed var(--line); }
-  .mwrap.open .mconf { display: block; }
-  .mconf .mform { display: grid; grid-template-columns: 90px 1fr; gap: 8px 12px; align-items: center; }
-  .mconf .mform label {
-    font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
-    color: var(--ink-faint); align-self: center;
-  }
-  .mconf .mform input, .mconf .mform select {
-    all: unset; box-sizing: border-box;
-    width: 100%; padding: 8px 10px; border-radius: 8px;
-    background: var(--bg-3); color: var(--ink);
-    font: inherit; font-size: 11px; font-family: "JetBrains Mono", ui-monospace, monospace;
-    border: 1px solid var(--line); letter-spacing: 0.3px;
-  }
-  .mconf .mform input:focus, .mconf .mform select:focus {
-    border-color: var(--magenta); box-shadow: 0 0 0 1px var(--magenta), 0 0 10px rgba(var(--accent-rgb), 0.25);
-  }
-  .mconf .mform input::placeholder { color: var(--ink-faint); }
-  /* compact 2-col split for port + scan */
-  .mconf .mform .split { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
-  .mconf .mform .split button {
-    all: unset; cursor: pointer;
-    padding: 7px 10px; border-radius: 7px;
-    font-size: 8.5px; letter-spacing: 1.5px; text-transform: uppercase;
-    color: var(--teal); border: 1px solid rgba(92,230,255,0.3);
-  }
-  .mconf .mform .split button:active { background: rgba(92,230,255,0.1); }
-  .mconf .mform .pw {
-    position: relative;
-    display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
-  }
-  .mconf .mform .pw button.reveal {
-    all: unset; cursor: pointer;
-    padding: 7px 10px; border-radius: 7px;
-    font-size: 8.5px; letter-spacing: 1.5px; text-transform: uppercase;
-    color: var(--ink-soft); border: 1px solid var(--line-2);
-  }
-  .mconf .mform .pw button.reveal.on { color: var(--magenta); border-color: var(--magenta); }
-  .mconf .mfoot {
-    display: flex; gap: 8px; margin-top: 12px; padding-top: 12px;
-    border-top: 1px dashed var(--line);
-  }
-  .mconf .mfoot button {
-    all: unset; cursor: pointer; flex: 1; text-align: center;
-    padding: 9px 0; font-size: 9px; letter-spacing: 1.8px; text-transform: uppercase; font-weight: 600;
-    border-radius: 8px; border: 1px solid var(--line-2); color: var(--ink-soft);
-  }
-  .mconf .mfoot button:active { background: var(--bg-3); }
-  .mconf .mfoot button.save { color: #1a0428; background: linear-gradient(135deg, var(--magenta), var(--violet)); border-color: transparent; box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.35); }
-  .mconf .mfoot button.danger { color: rgba(var(--danger-rgb), 0.85); border-color: rgba(var(--danger-rgb), 0.3); }
-  .mconf .mfoot button.danger:active { color: var(--red); border-color: var(--red); background: rgba(var(--danger-rgb), 0.08); }
-
-  /* Add-machine row — magenta plus, expands to empty form */
-  .mwrap.add > .confrow .label { color: var(--magenta); display: flex; align-items: center; gap: 8px; }
-  .mwrap.add > .confrow .label::before {
-    content: "+"; display: inline-flex; align-items: center; justify-content: center;
-    width: 18px; height: 18px; border-radius: 50%;
-    border: 1px solid var(--magenta); color: var(--magenta);
-    font-size: 14px; line-height: 1; font-weight: 600;
-    box-shadow: var(--m-glow);
-  }
-  .mwrap.add.open > .confrow .label::before { content: "−"; }
-  .confrow .badge {
-    font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase;
-    padding: 3px 8px; border-radius: 999px;
-    background: rgba(126,255,150,0.12);
-    color: var(--green); border: 1px solid rgba(126,255,150,0.3);
-  }
-  .confrow .badge.stale { background: rgba(255,90,90,0.12); color: var(--red); border-color: rgba(255,90,90,0.3); }
-  .confrow .badge.dim { background: var(--bg-3); color: var(--ink-faint); border-color: var(--line); }
-
-  .conf-foot {
-    margin: 18px 16px 0;
-    padding: 14px;
-    text-align: center;
-    font-size: 8px; letter-spacing: 2px; text-transform: uppercase;
-    color: var(--ink-faint);
-    border-top: 1px dashed var(--line);
-  }
-  .conf-foot a { color: var(--violet); text-decoration: none; }
-
-  ::-webkit-scrollbar { width: 4px; }
+  /* ── PAGE CHROME (KEPT · vapor-keeps) — the thin magenta scroller + the selection tint. The two
+     `::-webkit-scrollbar` rules below the thumb were RE-HOMED here from extras.css's F25 banner at
+     D51 V5 (ledger §3: the scrollbar tail is a keep, so it could not leave with the focus-ring block
+     it happened to share a banner with). One home for the whole treatment now. ── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-thumb { background: var(--magenta); border-radius: 2px; }
+  /* Chrome paints a light box where a horizontal and vertical scrollbar meet — a white flash against
+     the dark theme at the end of any stray horizontal scrollbar. Make it transparent. */
+  ::-webkit-scrollbar-corner { background: transparent; }
   ::selection { background: var(--magenta); color: #fff; }
 }
 /* end @scope ([data-skin="vapor"]) */

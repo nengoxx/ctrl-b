@@ -4,7 +4,7 @@ import { resolveConfirm, useConfirm } from "../store/confirm";
 
 // The single confirm dialog host (Phase 2: gates shutdown; now also remove-agent /
 // remove-skill / remove-server via the editors). Driven by store/confirm's
-// requestConfirm(); styling in themes/vapor/extras.css.
+// requestConfirm(); styling = the shared kit rules (kit.css `.modal-*` — vapor's copy died at D51 V5).
 //
 // F17 — focus management (UI_AUDIT.md §6c). The five fixes the audit called out:
 //

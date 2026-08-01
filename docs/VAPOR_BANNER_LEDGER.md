@@ -1,6 +1,11 @@
 # The vapor CSS banner ledger — the classified deletion inventory (D51 · Phase 16)
 
-> **Status: FROZEN at slice V3, 2026-08-01.** Produced by [`VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md)
+> **Status: FROZEN at slice V3, 2026-08-01 · EXECUTED at slice V5, 2026-08-01.** The ladder has run:
+> every `port-owned:V5` and `kit-duplicate` row below is deleted, `extras.css` is **2981 → 205 ln** and
+> `vapor.css` **1023 → 702 ln**. What is left in extras.css is EXACTLY the six frozen `vapor-keeps`
+> banners (§5) plus the un-bannered keeps-adjacent plan-pin fidelity block (row 15's carve-out) — i.e.
+> **V6's equality target is already met**; V6 only has to flip the assertion and close the tail.
+> Produced by [`VAPOR_ASSIMILATION_PLAN.md`](./VAPOR_ASSIMILATION_PLAN.md)
 > §3 **V3** (council findings R4 · R21), under [`DECISIONS.md`](./DECISIONS.md) **D51**. On conflict:
 > **D51 wins**, then the plan, then this ledger.
 >
@@ -36,56 +41,66 @@ Line spans are as-of the V3 freeze; the banner TEXT (first line) is the stable k
 
 | # | Banner (key) | Lines | Bucket | Dies | Notes |
 |---|---|---|---|---|---|
-| 1 | Net-new v2 components (Phase 2): activity toasts + confirm dialog. | 4–8 | `port-owned:V5` | V5 | **Comment-only** — a preamble for the toast/confirm CSS that actually lives in row 12. Delete with it. |
-| 2 | F23 — Root error boundary fallback… | 9–32 | `port-owned:V5` | V5 | **Not a kit gap** — `lib/crashScreen.tsx` is self-contained by design: every element carries an inline style object (`crashShell`/`crashMessage`/`crashBtn`, contract tokens with hard fallbacks), because the screen renders when the app tree is dead. This block only DECORATES it under vapor → plain delete, nothing to add. |
+| 1 | Net-new v2 components (Phase 2): activity toasts + confirm dialog. | ~~4–8~~ | `port-owned:V5` | ✅ **DELETED at V5** | **Comment-only** — a preamble for the toast/confirm CSS that actually lives in row 12. Delete with it. |
+| 2 | F23 — Root error boundary fallback… | ~~9–32~~ | `port-owned:V5` | ✅ **DELETED at V5** | **Not a kit gap** — `lib/crashScreen.tsx` is self-contained by design: every element carries an inline style object (`crashShell`/`crashMessage`/`crashBtn`, contract tokens with hard fallbacks), because the screen renders when the app tree is dead. This block only DECORATES it under vapor → plain delete, nothing to add. |
 | 3 | F14 — Hero now-dots are `<button>`s now… | 33–52 | **`vapor-keeps`** | — | Hero NowPanel dots (`.now-dots button`) — Fleet decoration. |
-| 4 | F25 — Global keyboard focus indicator (WCAG 2.4.7)… | 53–87 | `kit-duplicate` | V5 | Kit has the same ring at `kit.css` `.kit :focus-visible` (+ the input/select/textarea suppression). **Ownership:** delete ONLY after the marker is live and the ring is verified on the kept Fleet — vapor's version is scope-wide, the kit's is `.kit`-descendant. **Carve-out:** the trailing `::-webkit-scrollbar`/`-corner` rules in this block are NOT a kit duplicate (vapor's own thin magenta scrollbar) → re-home them under a keeps banner before deleting. |
+| 4 | F25 — Global keyboard focus indicator (WCAG 2.4.7)… | ~~53–87~~ | `kit-duplicate` | ✅ **DELETED at V5** | Kit has the same ring at `kit.css` `.kit :focus-visible` (+ the input/select/textarea suppression). **Ownership:** delete ONLY after the marker is live and the ring is verified on the kept Fleet — vapor's version is scope-wide, the kit's is `.kit`-descendant. **Carve-out:** the trailing `::-webkit-scrollbar`/`-corner` rules in this block are NOT a kit duplicate (vapor's own thin magenta scrollbar) → re-home them under a keeps banner before deleting. |
 | 5 | F15 / Appearance · Motion — ambient-animation gate. | 88–119 | **`vapor-keeps`** | — | One shared selector LIST spanning both worlds (hero sun/sky/grid, lozenge, `.dev` led/eq **keep**; `.plan-step`, `.mini-player`, `.composer .send/.mic`, `.conn-badge`, `.tts-btn` **go**). **Each port removes only its own selectors** — never the banner. |
 | 6 | Performance (lite) mode — Conf → Appearance → Blur… | ~~120–134~~ | `kit-duplicate` | ✅ **DELETED at V4** | Targets `.appbar`/`.tabbar`/`.composer` — all three become kit chrome at V4, and kit.css already has `body[data-perf="lite"] .kit-appbar` & co. |
 | 7 | Firefox smoothness, full effects ON — containment/layer hints… | 135–150 | **`vapor-keeps`** | — | `.eq` containment + `.dev.on .led` layer hint — Fleet perf. |
 | 8 | Phase 6b-1 — mic "unavailable" state… | ~~151–175~~ | `port-owned:V4` | ✅ **DELETED at V4** | Composer mic (`.unavail` / the Fennec `:active`-wedge `.press` fix). ✅ **CHECKED at the V4 port:** `SheetComposer` emits both classes and kit.css carries both states (`.kit-cbtn.mic.press{transform:scale(.92)}` :476 · `.kit-cbtn.mic.unavail{opacity:.4}` :479) — safe to delete. The block is already INERT (it is `.composer`-scoped and no `.composer` renders). |
-| 9 | Phase 6b-2 — TTS read-aloud (bubble trigger + mini-player) | 176–312 | `port-owned:V5` | V5 | Chat trigger + the App-level MiniPlayer overlay; kit styles both (`kit.css .mini-player`). Owns `@keyframes vapor-mp-bar` (single consumer). ⚠️ **V4 CO-APPLICATION — THREE defeated kit rules.** vapor's flat `.mini-player { top / left / transform }` (extras.css ~:207) sits in `@layer theme` and therefore outranks EVERY contextual kit repositioner, which all key off `:has()` in `@layer base`: (1) `.kit:has(.tab.active .plan-pin-panel) .mini-player { top }` (kit.css ~:1984 — yield below the pinned plan) → the player does not yield and lands ON the plan header; (2) `.kit:has(.navmenu:not(.docked)) .mini-player { left/right/width/transform }` (~:1972 — clear the floating launcher) → the player stays centered under the launcher; (3) `.kit:has(.navhome):has(.navmenu:not(.docked)) .mini-player { left }` (~:5023 — clear the top-left NavHome too) → also defeated by the same `left: 50%`. **Concrete failure for (2)+(3):** `appbarMode: minimal` + TTS playing on a non-primary section — NavHome buries the player's play control on the left while the NavMenu launcher buries its ✕ on the right, i.e. BOTH controls unreachable. All three are conditional (TTS playing × a live plan / a non-default chrome mode), and **the V5 deletion of this block is the functional fix** — do not patch the kit rules to out-specify vapor. |
-| 10 | Phase 6c-2 — HTTPS access card (Tailscale Serve)… | 313–346 | `port-owned:V5` | V5 | Conf › Server. |
-| 11 | D18 — inference fallbacks list editor… | 347–380 | `port-owned:V5` | V5 | Conf › Inference. |
-| 12 | F16 — Live SSE connection badge in the appbar. | 381–633 | `port-owned:V5` | V5 (carve-out ✅ **DELETED at V4**) | **Mixed block (253 ln)**: `.conn-badge` is APPBAR chrome (V4's port makes it kit-styled) while `.toasts`/`.toast`/`.modal-backdrop`/`.modal` are App-level overlays (V5). Split the deletion; owns `@keyframes vapor-conn-pulse`, `vapor-toast-in` and **`vapor-modal-fade` (SHARED — see §3)**. |
-| 13 | Agent chat (Phase 4a)… | 634–817 | `port-owned:V5` | V5 (carve-out ✅ **DELETED at V4**) | **Mixed block**: L638–677 is the **app-shell box model** (`:scope,body{overflow}`, `#root`, `.app-shell`, `.app-scroll`, `.composer/.tabbar{position:static}`) → that sub-block is `port-owned:V4`, DefaultRoot owns it. The rest (think-disclosure, caret, chat error) is V5. Owns `@keyframes vapor-caret-blink` + **`vapor-tag-pulse` (SHARED — §3)**. |
-| 14 | Command/action bubbles (Phase 4b)… | 818–1014 | `port-owned:V5` | V5 | Consumes `vapor-tag-pulse`. |
-| 15 | Plan panel (Phase 4d)… | 1015–1174 | `port-owned:V5` | V5 (carve-out ✅ **DELETED at V4**) | V4 switches vapor to `planPlacement:"pinned"` (kit `PinnedPlanPanel`); this CSS dies at V5. Owns `vapor-plan-drop-in`; consumes `vapor-tag-pulse`. **Sub-block `.plan-pin-wrap` (:1034) is `port-owned:V4`** — it styles the vapor-only in-tab `PinnedPlan` (`tabs/AgentTab.tsx:36`) that the V4 pivot DELETES; the kit panel has different markup, so it is dead CSS after the pivot, not a kit gap. ⚠️ **V4 CO-APPLICATION (found at the port):** the kit's `PinnedPlanPanel` DOES share three class names with this block — `.plan-pin-head` · `.plan-title` · `.plan-count` — so vapor's `@layer theme` paint (the magenta hanging tab, `border-radius: 0 0 13px 13px`, `border-top: 0`) currently wins on the kit's LEFT-INSET sticky panel: a flat-topped tab floating 8px below the bar instead of hanging off it. **⛔ SUPERSEDED by the owner's V4 device round (2026-08-01) — this row is now SPLIT, and the V5 "delete it all" plan is WRONG.** The owner rejected the pinned plan ("not well pinned to the top/app bar; on the left instead of in the middle; a small gap"), and the main seat verified the offending geometry is **the KIT'S OWN** (`.kit .plan-pin-panel`: `top: calc(--appbar-h + 8px)`, `margin: 0 14px`, block box → the inline-flex head lands left, 8px low) — so deleting vapor's rules would NOT have satisfied him. What he wants is vapor's ORIGINAL look: a CENTERED tab hanging FLUSH off the bar. That is now theme CSS on the SHARED kit hooks (the §15 reskin route), so this banner splits three ways:
+| 9 | Phase 6b-2 — TTS read-aloud (bubble trigger + mini-player) | ~~176–312~~ | `port-owned:V5` | ✅ **DELETED at V5** | Chat trigger + the App-level MiniPlayer overlay; kit styles both (`kit.css .mini-player`). Owns `@keyframes vapor-mp-bar` (single consumer). ⚠️ **V4 CO-APPLICATION — THREE defeated kit rules.** vapor's flat `.mini-player { top / left / transform }` (extras.css ~:207) sits in `@layer theme` and therefore outranks EVERY contextual kit repositioner, which all key off `:has()` in `@layer base`: (1) `.kit:has(.tab.active .plan-pin-panel) .mini-player { top }` (kit.css ~:1984 — yield below the pinned plan) → the player does not yield and lands ON the plan header; (2) `.kit:has(.navmenu:not(.docked)) .mini-player { left/right/width/transform }` (~:1972 — clear the floating launcher) → the player stays centered under the launcher; (3) `.kit:has(.navhome):has(.navmenu:not(.docked)) .mini-player { left }` (~:5023 — clear the top-left NavHome too) → also defeated by the same `left: 50%`. **Concrete failure for (2)+(3):** `appbarMode: minimal` + TTS playing on a non-primary section — NavHome buries the player's play control on the left while the NavMenu launcher buries its ✕ on the right, i.e. BOTH controls unreachable. All three are conditional (TTS playing × a live plan / a non-default chrome mode), and **the V5 deletion of this block is the functional fix** — do not patch the kit rules to out-specify vapor. |
+| 10 | Phase 6c-2 — HTTPS access card (Tailscale Serve)… | ~~313–346~~ | `port-owned:V5` | ✅ **DELETED at V5** | Conf › Server. |
+| 11 | D18 — inference fallbacks list editor… | ~~347–380~~ | `port-owned:V5` | ✅ **DELETED at V5** | Conf › Inference. |
+| 12 | F16 — Live SSE connection badge in the appbar. | ~~381–633~~ | `port-owned:V5` | ✅ **DELETED at V5** (V4 carve-out already gone) | **Mixed block (253 ln)**: `.conn-badge` is APPBAR chrome (V4's port makes it kit-styled) while `.toasts`/`.toast`/`.modal-backdrop`/`.modal` are App-level overlays (V5). Split the deletion; owns `@keyframes vapor-conn-pulse`, `vapor-toast-in` and **`vapor-modal-fade` (SHARED — see §3)**. |
+| 13 | Agent chat (Phase 4a)… | ~~634–817~~ | `port-owned:V5` | ✅ **DELETED at V5** (V4 carve-out already gone) | **Mixed block**: L638–677 is the **app-shell box model** (`:scope,body{overflow}`, `#root`, `.app-shell`, `.app-scroll`, `.composer/.tabbar{position:static}`) → that sub-block is `port-owned:V4`, DefaultRoot owns it. The rest (think-disclosure, caret, chat error) is V5. Owns `@keyframes vapor-caret-blink` + **`vapor-tag-pulse` (SHARED — §3)**. |
+| 14 | Command/action bubbles (Phase 4b)… | ~~818–1014~~ | `port-owned:V5` | ✅ **DELETED at V5** | Consumes `vapor-tag-pulse`. |
+| 15 | Plan panel (Phase 4d)… | ~~1015–1174~~ | `port-owned:V5` | ✅ **PARTLY DELETED at V5** (the kept-fidelity carve-out survives — see the row) | V4 switches vapor to `planPlacement:"pinned"` (kit `PinnedPlanPanel`); this CSS dies at V5. Owns `vapor-plan-drop-in`; consumes `vapor-tag-pulse`. **Sub-block `.plan-pin-wrap` (:1034) is `port-owned:V4`** — it styles the vapor-only in-tab `PinnedPlan` (`tabs/AgentTab.tsx:36`) that the V4 pivot DELETES; the kit panel has different markup, so it is dead CSS after the pivot, not a kit gap. ⚠️ **V4 CO-APPLICATION (found at the port):** the kit's `PinnedPlanPanel` DOES share three class names with this block — `.plan-pin-head` · `.plan-title` · `.plan-count` — so vapor's `@layer theme` paint (the magenta hanging tab, `border-radius: 0 0 13px 13px`, `border-top: 0`) currently wins on the kit's LEFT-INSET sticky panel: a flat-topped tab floating 8px below the bar instead of hanging off it. **⛔ SUPERSEDED by the owner's V4 device round (2026-08-01) — this row is now SPLIT, and the V5 "delete it all" plan is WRONG.** The owner rejected the pinned plan ("not well pinned to the top/app bar; on the left instead of in the middle; a small gap"), and the main seat verified the offending geometry is **the KIT'S OWN** (`.kit .plan-pin-panel`: `top: calc(--appbar-h + 8px)`, `margin: 0 14px`, block box → the inline-flex head lands left, 8px low) — so deleting vapor's rules would NOT have satisfied him. What he wants is vapor's ORIGINAL look: a CENTERED tab hanging FLUSH off the bar. That is now theme CSS on the SHARED kit hooks (the §15 reskin route), so this banner splits three ways:
 · **KEEPS-adjacent FIDELITY (survives V5 + V6):** the new `.plan-pin-panel` geometry block (`top: var(--appbar-h)`, `display:flex`, `justify-content:center`) **and** the existing `.plan-pin-head` paint (`all:unset` inline-flex, `0 0 13px 13px`, `border-top: 0`, accent gradient + frost + shadow) with its `.chev`/`.chev` rotation and the `.plan-title`/`.plan-count` type. These are vapor's look on kit markup — the brand-mark precedent — not a duplicate of a kit capability.
 · **DEAD NOW, dies at V5 with the banner:** `.plan-pin` (the old vapor container — the kit renders `.plan-pin-panel`), `.plan-drop` (the kit renders `.plan-pin-drop`) and `@keyframes vapor-plan-drop-in` (its only consumer). Annotated in-file.
 · **Still `port-owned:V5`:** the plan-steps/tick/`.plan-note` styling (shared chat DOM — the owner's §5 Q1 "kit look" ruling governs it).
 The drop was DELIBERATELY left on the kit's anchoring (`left:0; right:0`, panel-wide, 6px under the head); vapor's old `min(86vw,360px)` centered drop was NOT recreated. `.plan-pin`/`.plan-drop` do NOT collide (kit uses `.plan-pin-panel`/`.plan-pin-drop`). |
-| 16 | Markdown bot replies (Phase 4c)… | 1175–1364 | `port-owned:V5` | V5 | Owns `@keyframes vapor-dot-bounce`. |
+| 16 | Markdown bot replies (Phase 4c)… | ~~1175–1364~~ | `port-owned:V5` | ✅ **DELETED at V5** | Owns `@keyframes vapor-dot-bounce`. |
 | 17 | Reboot button (Phase: reboot action)… | 1365–1376 | **`vapor-keeps`** | — | `.dev .act.reboot` — device-row action. |
-| 18 | Interactive plan dots (plan-edit)… | 1377–1387 | `port-owned:V5` | V5 | Plan (row 15's sibling). |
+| 18 | Interactive plan dots (plan-edit)… | ~~1377–1387~~ | `port-owned:V5` | ✅ **DELETED at V5** | Plan (row 15's sibling). |
 | 19 | Device-row action area… | 1388–1400 | **`vapor-keeps`** | — | `.dev .acts` / `.dev.on .top`. |
-| 20 | Conf section collapse (Phase 7c polish) | 1401–1436 | `port-owned:V5` | V5 | |
-| 21 | Conf tab — settings forms (Phase 7a) | 1437–1501 | `port-owned:V5` | V5 | |
-| 22 | Conf → Computers · services sub-editor (Phase 7b) | 1502–1656 | `port-owned:V5` | V5 | |
-| 23 | Conf → Integrations · MCP/OpenAPI server editor (7c-b) | 1657–1723 | `port-owned:V5` | V5 | |
-| 24 | Conf → Computers · VPN-discovery results (D3 s3) | 1724–1762 | `port-owned:V5` | V5 | **KIT GAP (§4)** — `.vpn-discover-*`/`.vpn-ds` exist only in vapor CSS. |
-| 25 | Conf → Agent tools · per-tool description overrides (7d-a) | 1763–1788 | `port-owned:V5` | V5 | |
-| 26 | Conf → Agents · definitions editor (7d-b) | 1789–1926 | `port-owned:V5` | V5 | |
-| 27 | Conf → Skills · SKILL.md editor (7d-c) | 1927–1959 | `port-owned:V5` | V5 | |
-| 28 | PromptModal · full-page prompt/markdown editor (7e-b) | 1960–2184 | `port-owned:V5` | V5 | App-level overlay. **Consumes `vapor-modal-fade`, which row 12 DEFINES — last one out takes the keyframe (§3).** |
-| 29 | Memory panel (7e-d-3) | 2185–2204 | `port-owned:V5` | V5 | |
-| 30 | Conf sizing refine (7e-b) | 2205–2234 | `port-owned:V5` | V5 | |
-| 31 | Wide-control wrap (the kit.css :2203-2224 pattern, mirrored…) | 2235–2265 | `kit-duplicate` | ⚠️ **V5 (was V4 — CORRECTED 2026-08-01)** | **Self-declared mirror of kit.css**, but NOT yet safe to delete — the V4 phase-2 deletion pass caught it. The mirror's load-bearing half is `.confrow .k { min-width: min(140px, 45%) }` ("the label min-width is what makes the wrap actually trigger"), and vapor.css's SETTINGS block (§2, `port-owned:V5`) declares `.confrow .k { min-width: 0 }` in the SAME `@layer theme` — so with the mirror gone the winner is vapor's `0`, not the kit's `min(140px,45%)` in `@layer base`. **Measured in the browser: removing the mirror drops the computed min-width from `min(140px, 45%)` to `0px`**, i.e. it would resurrect the v1.4.x label-crush bug this block fixed. It dies WITH the vapor.css SETTINGS block at V5 — exactly what the block's own in-file comment always said ("Dies with this block at D51 V5"); the `Dies` column here was wrong. |
-| 32 | Session privilege chip (A1/D16) | 2266–2354 | `port-owned:V5` | V5 | Appbar-adjacent popover; kit styles `.priv-*`. |
-| 33 | Question bubble (A2) | 2355–2411 | `port-owned:V5` | V5 | Chat. |
-| 34 | Tools tab (Phase 8) — owner-directed font fix | 2412–2464 | `port-owned:V5` | V5 | Utils. |
-| 35 | Tools tab · Section B — the agent-tool catalog (8b, D22) | 2465–2575 | `port-owned:V5` | V5 | Utils. |
-| 36 | Approvals ('always allow') editor (Phase 8 / D44 W3) | 2576–2696 | `port-owned:V5` | V5 | **KIT GAP (§4)** — `.tcat-appr-*` exists only in vapor CSS. |
+| 20 | Conf section collapse (Phase 7c polish) | ~~1401–1436~~ | `port-owned:V5` | ✅ **DELETED at V5** | |
+| 21 | Conf tab — settings forms (Phase 7a) | ~~1437–1501~~ | `port-owned:V5` | ✅ **DELETED at V5** | |
+| 22 | Conf → Computers · services sub-editor (Phase 7b) | ~~1502–1656~~ | `port-owned:V5` | ✅ **DELETED at V5** | |
+| 23 | Conf → Integrations · MCP/OpenAPI server editor (7c-b) | ~~1657–1723~~ | `port-owned:V5` | ✅ **DELETED at V5** | |
+| 24 | Conf → Computers · VPN-discovery results (D3 s3) | ~~1724–1762~~ | `port-owned:V5` | ✅ **DELETED at V5** (kit CSS written first — §4) | **KIT GAP (§4)** — `.vpn-discover-*`/`.vpn-ds` exist only in vapor CSS. |
+| 25 | Conf → Agent tools · per-tool description overrides (7d-a) | ~~1763–1788~~ | `port-owned:V5` | ✅ **DELETED at V5** | |
+| 26 | Conf → Agents · definitions editor (7d-b) | ~~1789–1926~~ | `port-owned:V5` | ✅ **DELETED at V5** | |
+| 27 | Conf → Skills · SKILL.md editor (7d-c) | ~~1927–1959~~ | `port-owned:V5` | ✅ **DELETED at V5** | |
+| 28 | PromptModal · full-page prompt/markdown editor (7e-b) | ~~1960–2184~~ | `port-owned:V5` | ✅ **DELETED at V5** | App-level overlay. **Consumes `vapor-modal-fade`, which row 12 DEFINES — last one out takes the keyframe (§3).** |
+| 29 | Memory panel (7e-d-3) | ~~2185–2204~~ | `port-owned:V5` | ✅ **DELETED at V5** | |
+| 30 | Conf sizing refine (7e-b) | ~~2205–2234~~ | `port-owned:V5` | ✅ **DELETED at V5** | |
+| 31 | Wide-control wrap (the kit.css :2203-2224 pattern, mirrored…) | ~~2235–2265~~ | `kit-duplicate` | ✅ **DELETED at V5** (with its vapor.css partner — see the row) | **Self-declared mirror of kit.css**, but NOT yet safe to delete — the V4 phase-2 deletion pass caught it. The mirror's load-bearing half is `.confrow .k { min-width: min(140px, 45%) }` ("the label min-width is what makes the wrap actually trigger"), and vapor.css's SETTINGS block (§2, `port-owned:V5`) declares `.confrow .k { min-width: 0 }` in the SAME `@layer theme` — so with the mirror gone the winner is vapor's `0`, not the kit's `min(140px,45%)` in `@layer base`. **Measured in the browser: removing the mirror drops the computed min-width from `min(140px, 45%)` to `0px`**, i.e. it would resurrect the v1.4.x label-crush bug this block fixed. It dies WITH the vapor.css SETTINGS block at V5 — exactly what the block's own in-file comment always said ("Dies with this block at D51 V5"); the `Dies` column here was wrong. |
+| 32 | Session privilege chip (A1/D16) | ~~2266–2354~~ | `port-owned:V5` | ✅ **DELETED at V5** | Appbar-adjacent popover; kit styles `.priv-*`. |
+| 33 | Question bubble (A2) | ~~2355–2411~~ | `port-owned:V5` | ✅ **DELETED at V5** | Chat. |
+| 34 | Tools tab (Phase 8) — owner-directed font fix | ~~2412–2464~~ | `port-owned:V5` | ✅ **DELETED at V5** | Utils. |
+| 35 | Tools tab · Section B — the agent-tool catalog (8b, D22) | ~~2465–2575~~ | `port-owned:V5` | ✅ **DELETED at V5** | Utils. |
+| 36 | Approvals ('always allow') editor (Phase 8 / D44 W3) | ~~2576–2696~~ | `port-owned:V5` | ✅ **DELETED at V5** (kit CSS written first — §4) | **KIT GAP (§4)** — `.tcat-appr-*` exists only in vapor CSS. |
 | 37 | DeviceRow chevron toggle as a real `<button>` (D25, a11y) | 2697–2717 | **`vapor-keeps`** | — | `.dev button.chev`. |
-| 38 | Add-row +/− glyph centering (override of vapor.css's text glyph) | 2718–2733 | `port-owned:V5` | V5 | Dies with the Conf add-row port (row 21/§2 SETTINGS). |
-| 39 | A11 / D48 — Providers registry + the provider→model picker | 2734–2956 | `port-owned:V5` | V5 | Conf. |
-| 40 | A3 (14c) — Conf › Automations | 2957–3011 | `port-owned:V5` | V5 | Conf. |
-| 41 | A3 (14d) — the created-automation card in the CHAT log | 3012–3029 | `port-owned:V5` | V5 | Chat. |
+| 38 | Add-row +/− glyph centering (override of vapor.css's text glyph) | ~~2718–2733~~ | `port-owned:V5` | ✅ **DELETED at V5** | Dies with the Conf add-row port (row 21/§2 SETTINGS). |
+| 39 | A11 / D48 — Providers registry + the provider→model picker | ~~2734–2956~~ | `port-owned:V5` | ✅ **DELETED at V5** | Conf. |
+| 40 | A3 (14c) — Conf › Automations | ~~2957–3011~~ | `port-owned:V5` | ✅ **DELETED at V5** | Conf. |
+| 41 | A3 (14d) — the created-automation card in the CHAT log | ~~3012–3029~~ | `port-owned:V5` | ✅ **DELETED at V5** | Chat. |
 
 **Counts (banner-level):** `vapor-keeps` **6** · `kit-duplicate` **3** · `port-owned:V4` **1** · `port-owned:V5` **31** · `owner-drop` **0**.
 **AS OF V4 phase 2 (2026-08-01): 41 → 39 banners in the file.** Deleted: row 6 (`kit-duplicate`) + row 8 (the single `port-owned:V4`). The remaining `kit-duplicate` pair is row 4 (always V5) and row 31 (**moved to V5**, see its row). Live buckets left: `vapor-keeps` **6** · `kit-duplicate` **2** · `port-owned:V5` **31**.
 **Sub-block carve-outs** (a banner whose bucket differs for part of its body — 4): row 12's `.conn-badge` (V4 appbar) · row 13's L638–677 app-shell box model (V4) · row 15's `.plan-pin-wrap` :1034 (V4) · **row 15's KEPT-FIDELITY carve-out (V4 close-out): the `.plan-pin-panel` geometry override + the `.plan-pin-head`/`.chev`/`.plan-title`/`.plan-count` paint survive V5+V6 (vapor's centered flush hanging-tab on kit markup — see the row).** Plus row 4's `::-webkit-scrollbar*` tail (keeps).
-**Genuine kit gaps: 2** (rows 24, 36 — see §4).
+**Genuine kit gaps: 2** (rows 24, 36 — see §4) **+ 1 found while executing** (`.conf-foot a`, §4).
+
+**AS OF V5 (2026-08-01): 39 → 6 banners in the file (2981 → 205 ln).** All 31 `port-owned:V5` rows and
+both remaining `kit-duplicate` rows (4, 31) deleted; row 15 deleted except its keeps-adjacent fidelity
+carve-out (which carries no `──` banner, so the banner key went with the rest). Live buckets left:
+`vapor-keeps` **6** — the frozen §5 list, nothing else. Seven `@keyframes` went with their last consumer:
+`vapor-mp-bar` (row 9) · `vapor-toast-in` + `vapor-modal-fade` (rows 12/28 — last one out, §3) ·
+`vapor-caret-blink` + `vapor-tag-pulse` (rows 13/14/15 — three owners, all three deleted, §3) ·
+`vapor-dot-bounce` (row 16) · `vapor-plan-drop-in` (row 15's dead half). The eight that remain
+(`vapor-spin`/`float`/`sun-stripes-static`/`twinkle`/`gridmove`/`shimmer`/`heartbeat`/`eq`) all drive kept
+Fleet/mark surfaces and are all still referenced — verified by grep, no orphans either way.
 
 ## 2. `frontend/src/themes/vapor/vapor.css` — major sections (1178 ln)
 
@@ -104,13 +119,13 @@ ratcheted by the test. V6's target: only the `vapor-keeps` rows below survive.
 | ~~266–291~~ | Bottom tab bar + sliding indicator (+ `.tab`/`.tab.active` panel visibility, :289) | `port-owned:V4` | ✅ **DELETED at V4** | kit TabBar + DefaultRoot's panel switching. |
 | 293–475 | HERO — sun, retrowave stripes, HORIZON SCENE (`body[data-skyline]`: mountains + city), neon grid | **`vapor-keeps`** | — | **The `data-skyline` ruling (plan §3.1, due here): `data-skyline` is Fleet decoration → `vapor-keeps`.** The Root-pinned VaporFleet keeps writing it; the ledger row retires as "kept", not as "executed at V5/V6". |
 | 476–535 | Now-monitoring panel, live waveform canvas, now-dots morph | **`vapor-keeps`** | — | |
-| 536–542 | Section header `.sec` | `kit-duplicate` | V5 | kit styles `.sec` too — but the KEPT `VaporFleet` renders `.sec` as well, so this deletion is Fleet-visible: verify the Fleet's headers under kit's `.sec` in the same eyeball. |
+| ~~536–542~~ | Section header `.sec` | `kit-duplicate` | ✅ **DELETED at V5** | kit styles `.sec` too — but the KEPT `VaporFleet` renders `.sec` as well, so this deletion is Fleet-visible: verify the Fleet's headers under kit's `.sec` in the same eyeball. |
 | 543–733 | Compact device rows, busy spinner, machine-details dropdown, services list, kvgrid, mini equalizer | **`vapor-keeps`** | — | The "device/service presentation" §1.1 names. |
 | 734–750 | Fleet summary | **`vapor-keeps`** | — | |
 | ~~751–849~~ | Shared chat composer — `.composer`, `.field`, `.send`/`.stop`, `.mic` (+ STT spinner) | `port-owned:V4` | ✅ **DELETED at V4** | kit `sheet` composer. |
-| 850–954 | CHAT — `.b` bubbles, queued steer (D41), command bubble | `port-owned:V5` | V5 | Owner §5 Q1: the fidelity bar is **the kit look + vapor tokens**, so these classify delete, not port-verbatim. |
-| 955–1038 | UTILS — tool cards | `port-owned:V5` | V5 | |
-| 1039–1177 | SETTINGS — `.confrow`, `.switch`, `.seg`, `.mconf`, add-machine row | `port-owned:V5` | V5 | ⚠️ **CO-APPLICATION FIX at V4:** `.switch.on .knob::after` moved from `left: 22px` to `transform: translateX(20px)` (and the small `.svc-auto` variant, extras row 22, to `translateX(17px)`) because kit.css slides the same knob with `transform` — vapor won `left`, the kit's `transform` ALSO applied, and the knob moved twice, out of its track. See THEME_ENGINE §14.4.1's amended two-trees box. |
+| ~~850–954~~ | CHAT — `.b` bubbles, queued steer (D41), command bubble (+ `.notice`) | `port-owned:V5` | ✅ **DELETED at V5** | Owner §5 Q1: the fidelity bar is **the kit look + vapor tokens**, so these classify delete, not port-verbatim. |
+| ~~955–1038~~ | UTILS — tool cards | `port-owned:V5` | ✅ **DELETED at V5** | |
+| ~~1039–1177~~ | SETTINGS — `.confrow`, `.switch`, `.seg`, `.mconf`, add-machine row, `.conf-foot` | `port-owned:V5` | ✅ **DELETED at V5** | ⚠️ **CO-APPLICATION FIX at V4:** `.switch.on .knob::after` moved from `left: 22px` to `transform: translateX(20px)` (and the small `.svc-auto` variant, extras row 22, to `translateX(17px)`) because kit.css slides the same knob with `transform` — vapor won `left`, the kit's `transform` ALSO applied, and the knob moved twice, out of its track. See THEME_ENGINE §14.4.1's amended two-trees box. |
 
 ## 3. Shared ownership — what a deletion may NOT take with it
 
@@ -119,14 +134,14 @@ first port to leave must NOT take it. Verified by grep at the V3 freeze.
 
 | Shared thing | Defined in | Also used by | Rule |
 |---|---|---|---|
-| `@keyframes vapor-modal-fade` | extras row 12 (`.modal-backdrop`, :592) | extras row 28 `.pm-backdrop` (:1975) | **Last one out** takes the keyframe. If row 12 goes first, MOVE the `@keyframes` into row 28's block. |
-| `@keyframes vapor-tag-pulse` | extras row 13 (:812) | extras row 14 `.b.cmd` status tags (:888) · row 15 plan (:1137) | Three owners — keyframe leaves with the LAST of the three. |
+| `@keyframes vapor-modal-fade` | extras row 12 (`.modal-backdrop`, :592) | extras row 28 `.pm-backdrop` (:1975) | ✅ **RESOLVED at V5 — both owners deleted in the same pass, so the keyframe went with them** (kit.css drives `kit-modal-fade` for both overlays). |
+| `@keyframes vapor-tag-pulse` | extras row 13 (:812) | extras row 14 `.b.cmd` status tags (:888) · row 15 plan (:1137) | ✅ **RESOLVED at V5 — all three owners deleted in the same pass**; kit.css drives `kit-tag-pulse` for the status tag, the running result and the active plan tick. |
 | `@keyframes vapor-spin` | ✅ **MOVED at V4** into the new kept §KIT CHROME block (it drives the `data-loz="ring"` mark there) | vapor.css §Device rows busy spinner — a **kept** surface | RESOLVED: the definition now lives in a kept section, so the V4 appbar delete commit cannot take it. |
-| `:focus-visible` global ring | extras row 4 | every vapor surface incl. the kept Fleet | Delete only once the kit ring is live under `.kit` AND the Fleet is inside it (V4's marker), never earlier. |
-| `body[data-motion="reduced"]` selector list | extras row 5 (**kept**) | hero/**mark**/dev-led/eq (kept) + plan/mini-player/composer/conn-badge/tts (ported) | Ports remove THEIR selectors from the list. The banner + the kept selectors stay to V6. **V4 ADDED one kept selector** (`.vapor-mark[data-loz="ring"]`, the ring's spin gate); **V4 phase 2 then REMOVED the five ported ones** (`.brand .lozenge` · `.tts-btn` · `.composer .send.brewing` · `.composer .mic.rec` · `.conn-badge.reconnecting .dot`) — banner and kept selectors untouched, per this rule. |
+| `:focus-visible` global ring | extras row 4 | every vapor surface incl. the kept Fleet | ✅ **RESOLVED at V5** — the V4 pivot put the whole vapor tree (Fleet included) inside `.kit`, so `.kit :focus-visible` (0,2,0, `--accent` = vapor magenta) is the ring everywhere; the only vapor DOM outside `.kit` is `lib/crashScreen.tsx`, which is inline-styled by design. |
+| `body[data-motion="reduced"]` selector list | extras row 5 (**kept**) | hero/**mark**/dev-led/eq (kept) + plan/mini-player/composer/conn-badge/tts (ported) | Ports remove THEIR selectors from the list. The banner + the kept selectors stay to V6. **V4 ADDED one kept selector** (`.vapor-mark[data-loz="ring"]`, the ring's spin gate); **V4 phase 2 then REMOVED the five ported ones** (`.brand .lozenge` · `.tts-btn` · `.composer .send.brewing` · `.composer .mic.rec` · `.conn-badge.reconnecting .dot`). ✅ **V5 removed the last two** (`.plan-step.active .tick` · `.mini-player .mp-wave i`) — kit.css carries both gates. The list is now exactly the eight KEPT Fleet/mark selectors; banner untouched throughout. |
 | `body[data-perf="lite"]` bar list | ~~extras row 6~~ | — | ✅ **RESOLVED — whole block deleted at V4 phase 2**; kit.css gates `.kit-appbar`/`.kit-tabbar`/`.kit-composer`. |
-| `::-webkit-scrollbar*` | extras row 4's tail | vapor page scroller (kept) | Re-home under a keeps banner before row 4 dies. |
-| `.sec` | vapor.css §536 | shared DOM: App, AgentTab, UtilsTab, DefaultRoot **and the kept VaporFleet** | See §2 — Fleet-visible deletion. |
+| `::-webkit-scrollbar*` | extras row 4's tail | vapor page scroller (kept) | ✅ **DONE at V5 — re-homed into vapor.css's kept §PAGE CHROME block** (beside the `width`/`thumb`/`::selection` rules that were already there), so the whole scrollbar treatment now has ONE home. Not re-bannered in extras.css: a new `──` banner would fail the ratchet's frozen baseline. |
+| `.sec` | vapor.css §536 | shared DOM: App, AgentTab, UtilsTab, DefaultRoot **and the kept VaporFleet** | ✅ **DELETED at V5, Fleet eyeballed** — the kept VaporFleet's own "01 FLEET" header now renders through `.kit .sec` (12px/0.04em, flat `--line` rule, `--accent` numeral) instead of vapor's 9px/2px gradient-rule version. Different, not broken; the §7 delta list records it. |
 
 ### 3.1 PHASE-2 ATOMICITY — the carve-outs are VERIFIED HANDOFFS, not inert blocks
 
@@ -174,7 +189,24 @@ These vapor blocks style class names **no kit stylesheet implements** — the ki
 unstyled today. Their V5 row is not "port-verify → delete" but "**write the kit CSS → verify → delete**".
 
 - `.vpn-discover-results` / `.vpn-discover-line` / `.vpn-dh` / `.vpn-ds` (extras row 24).
+  ✅ **FILLED at V5** — `kit.css` "Computers · VPN-discovery results" (between the `.svc-*` sub-editor and
+  the fallbacks list). Tokens: `--text-2` host · `--text-3` status · `--accent` filled · `--warn` differs ·
+  `--danger` failed/err. Deliberately NOT a verbatim port: the line WRAPS (`flex-wrap`, host `flex: 0 0 auto`
+  + `max-width: 100%`, status `flex: 1 1 auto; min-width: 0`) because the device probe showed vapor's
+  fixed two-column shape breaking a hostname mid-word once the status ran long.
 - `.tcat-appr-*` — the whole approvals editor (extras row 36).
+  ✅ **FILLED at V5** — `kit.css` "Approvals (\"always allow\") editor", at the end of the `.tcat-*` section.
+  Reuses the section's own conventions (the `.svc-edit` dashed hairline, the chip fill of `.tick-grid .tick`,
+  the mono identifier face, `--ok` outline for the add action) rather than porting vapor's sizes; adds the
+  `:focus-visible` restore the kit's other `all: unset` controls carry (P3) — which vapor's copy never had.
+
+**A THIRD gap, found while executing (the classification method's blind spot):** `.conf-foot a`. The §Method
+above extracts CLASS NAMES and looks them up in kit.css — so `.conf-foot` matched and the row passed, while
+the footer's `<a>` (`.conf-foot a { color: var(--violet) }`, vapor.css §SETTINGS) had no kit counterpart at
+all. Deleting vapor's copy would have left the repo link as the UA's blue+underline; it had ALREADY been
+doing that on cosmos/frontier/minimal. Filled with one rule (`.kit .conf-foot a { color: var(--accent);
+text-decoration: none }`). **Lesson for V6: a class-name lookup does not cover descendant/element selectors
+(`.foo a`, `.foo pre`, `.foo input`) — diff the full innermost SELECTOR sets, not the class sets.**
 
 *Ruled OUT as gaps by the Codex V3 round (R29):* `.root-error` (row 2 — `lib/crashScreen.tsx` is
 self-contained via inline styles, by design; the vapor rules only decorate) and `.plan-pin-wrap`
@@ -184,7 +216,10 @@ pivot, not a surface anything must reimplement).
 ## 5. The frozen `vapor-keeps` list (extras.css) — R21
 
 Exactly these six banner keys. `vaporAssimilation.test.ts` asserts they still exist after every slice;
-**V6 flips that to equality** (the extras.css residue must be exactly this list).
+**V6 flips that to equality** (the extras.css residue must be exactly this list). ✅ **As of V5 the file
+already IS exactly this list** — `grep -c '/\* ─' extras.css` = 6, in this order. The one thing V6's
+equality flip must account for: the keeps-adjacent PLAN-PIN FIDELITY block (row 15's carve-out) survives
+too, but carries a `══` heading rather than a `──` banner, so it is invisible to the ratchet by design.
 
 1. `F14 — Hero now-dots are <button>s now (so keyboard tab reaches them).`
 2. `F15 / Appearance · Motion — user-controlled ambient-animation gate.`
@@ -231,3 +266,38 @@ compensating vapor rules (each is either self-resolving as the V5 ladder deletes
 
 Anything NOT on this list that looks wrong is a finding, not an accepted delta — the two that were NOT accepted
 (the double-moved `.switch` knob, the defeated mini-player repositioners) are recorded in §2/§1 row 9.
+
+### 7.1 V5 outcomes (2026-08-01) — what the ladder actually changed
+
+**One of the three §7 delta classes SELF-RESOLVED** (the combined press states: vapor's
+`.conf-save`/`.pm-save` transforms died with rows 21/28, so only the kit's opacity press remains).
+The other two — `kit-fade` + `kit-navmenu-in` — REMAIN, as accepted kit chrome, not duplicates
+(they were never expected to resolve).
+
+**The mini-player fix landed.** All three defeated `:has()` repositioners now fire (probed on the real build,
+393px):
+- visible chrome + a pinned plan → `top: 110px` = `--appbar-h(64) + 46` (was `+10`, i.e. ON the plan header);
+- minimal chrome + plan + TTS → `top: 46px`, `left: 64px`, `right: 64px`, `transform: none`, `width: 265px`
+  — the play control clears NavHome and the ✕ clears the NavMenu launcher. The ledger row 9 "both controls
+  unreachable" failure is closed.
+
+**The row-31 guard holds.** `getComputedStyle('.confrow .k').minWidth === "min(140px, 45%)"` after the
+mirror + `vapor.css`'s `.confrow .k { min-width: 0 }` died together — the kit's `@layer base` rule is the
+winner again, no label crush.
+
+**New accepted deltas (kit look under vapor tokens — the owner's §5 Q1 ruling, so these are the POINT, not
+regressions):** the chat command bubble is a neutral `--surface` card instead of vapor's green terminal ·
+the assistant bubble is borderless · `.sec`/`.conftitle` headers are 12px with a flat rule instead of 9px
+with a gradient rule · modal buttons split into `cancel` (outline) + `go` (accent fill) instead of two
+gradient pills · `.md` headings are the body face (vapor's `--font-body` IS JetBrains Mono, so the whole
+chat stays mono — vapor's own voice survives through the token).
+
+**⚠️ ONE FINDING, INVESTIGATED AND LEFT ALONE — pre-existing, KIT-WIDE, not a V5 regression.** In
+`appbarMode: minimal` (no app bar) the pinned plan header and the mini-player overlap. Measured
+head-bottom → player-top gap at 393px: **cosmos −26px · frontier −24px · vapor −17px** (vapor is the least
+bad). Cause: the kit's clearance is a fixed `--appbar-h + 46px`, calibrated for the panel sitting at
+`--appbar-h + 8px`; with no bar `--appbar-h` is 0, the sticky threshold falls above the panel's FLOW
+position (~34px), so the panel rests lower than the rule assumes. It is kit geometry (`.kit .plan-pin-panel`
+`top` + the 46px constant), it affects every kit theme identically, and V5 strictly IMPROVED vapor's case
+(before, the player sat at +10px, i.e. fully over the tab). Fixing it means re-deriving the clearance from
+the panel's real box — an independent kit-chrome slice with its own eyeball, NOT a deletion-ladder change.

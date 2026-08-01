@@ -10,7 +10,7 @@ import { resolvePrompt, usePrompt } from "../store/prompt";
 //
 // Reuses the app's `--app-h` viewport shell (App.tsx sizes it to visualViewport.height), so the
 // Android keyboard shrinks the modal correctly — the same reason the composer sits in normal flow.
-// Net-new CSS lives in themes/vapor/extras.css (`.pm-*`); vapor.css stays untouched (D7).
+// Styling = the shared kit rules (kit.css `.pm-*`; vapor's extras.css copy died at D51 V5).
 //
 // Focus management mirrors ConfirmDialog (F17): capture the trigger on open, focus the textarea,
 // restore focus on close, Escape cancels, keydown scoped to the backdrop (not window). The focus

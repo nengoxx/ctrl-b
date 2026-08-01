@@ -298,6 +298,42 @@ VaporRoot only to delete it again would violate fix-in-the-owning-phase):
   re-scope→verify-nested→hoist ordering; MiniPlayer/Toasts/Confirm/Prompt/`.auto-pm` never
   silently dropped).
 
+#### V5 — AS BUILT (2026-08-01) ✅ COMPLETE
+
+**Shape.** Two PLANNED kit additions first (the §4 gaps) plus one DISCOVERED at execution
+(`.conf-foot a` — UA-blue on every kit theme; the ledger's class-level method couldn't see it),
+then one deletion pass over the classified inventory.
+`extras.css` **2981 → 205 ln**, `vapor.css` **1023 → 702 ln**, `kit.css` **5107 → 5304 ln**
+(net −3113 CSS lines). Banners: **39 → 6**, and those six ARE the frozen `vapor-keeps` list — V6's
+equality target is met ahead of the flip. Deleted: all 31 `port-owned:V5` rows, both remaining
+`kit-duplicate` rows (4 focus-ring, 31 wide-control-wrap), the dead half of row 15, and vapor.css's
+`.sec` · CHAT(+`.notice`) · UTILS · SETTINGS sections. Seven `@keyframes` left with their last consumer;
+the eight that remain are all still referenced (grep-verified both directions — no orphan definitions,
+no dangling `animation:` names).
+
+**Kit additions (§4 gaps + one found while executing).** `.vpn-*` discovery lines and the whole
+`.tcat-appr-*` approvals editor, both written in the kit's idiom on contract tokens — NOT ports of
+vapor's sizes; plus `.kit .conf-foot a`, a third gap the ledger's class-name method structurally could
+not see (it was already broken on cosmos/frontier/minimal). Details + the method lesson: ledger §4.
+
+**Verified, not assumed.** The three §3/§3.1 obligations were discharged with measurements, not
+reasoning: the shared keyframes (all owners deleted in one pass), the `::-webkit-scrollbar*` tail
+(re-homed into vapor.css's kept page-chrome block — it could not get a new extras.css banner without
+failing the ratchet), and the row-31 atomic pair (`.confrow .k` computed `min-width` is
+`min(140px, 45%)` after, i.e. the kit rule won and the v1.4.x label crush stays fixed). **The
+mini-player's three defeated `:has()` repositioners now all fire** — the functional fix ledger row 9
+predicted (visible: `top` = `--appbar-h + 46`; minimal: `top 46 / left 64 / right 64 / transform none`,
+both controls reachable).
+
+**Outcome.** Chat/Conf/Utils/overlays render in the KIT look with vapor's tokens (owner §5 Q1); the
+Fleet, hero, skyline, waveform and the plan-pin fidelity tab are untouched. One of the three §7
+co-application delta classes self-resolved (the press states); `kit-fade`/`kit-navmenu-in` remain
+as accepted kit chrome. **One finding, investigated and deliberately not fixed here:** in
+`appbarMode: minimal` the pinned-plan header and the mini-player overlap — pre-existing, KIT-WIDE
+(cosmos −26px, frontier −24px, vapor −17px), caused by the kit's fixed 46px clearance vs the panel's
+flow position when there is no app bar. V5 improved vapor's case; the real fix is kit chrome and needs
+its own slice. Full record: ledger §7.1.
+
 ### V6 — the tail: residue, waivers, ledgers, lazy
 - `vapor.css` shrinks to the frozen vapor-keeps residue; dead `theme/` remnants die. The end
   state is ENFORCED, not just reviewed (Opus confirm): the banner-set test asserts the residue

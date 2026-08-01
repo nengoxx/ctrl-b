@@ -37,7 +37,9 @@ function fmt(sec: number): string {
 
 export function MiniPlayer() {
   // All transport state + actions come from the headless now-playing controller (D29 §14.2); this
-  // component is pure vapor presentation. Self-hides when nothing's docked.
+  // component is pure presentation, styled by the shared kit rules (kit.css `.mini-player*` — vapor's
+  // flat-positioned copy died at D51 V5, which is what let the kit's :has() yields fire). Self-hides
+  // when nothing's docked.
   const np = useNowPlaying();
   if (!np.active) return null;
 
