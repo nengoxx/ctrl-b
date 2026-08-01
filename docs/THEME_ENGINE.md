@@ -566,17 +566,18 @@ the owner's Android), tints/shades/alpha via `color-mix(in oklch, …)`. minimal
 ### 9.8 Palette model + `ui` store change
 
 `ui` store: `{ theme: ThemeId }` generalizes to `{ theme: ThemeId; mode: Mode; accent: string }`.
-**`applyBodyAttrs` writes a NEW identity attribute `body[data-skin] = theme`** (vapor/minimal/…) for slot +
-CSS scoping, and **leaves `body[data-theme]` meaning exactly what it does today — vapor's frozen accent axis
-(`dark`|`aqua`|`ember`)**, set only when `theme==="vapor"` (from the `accent` value) — and **actively cleared
-(`delete body.dataset.theme`) when skin≠vapor**, since `applyBodyAttrs` rebuilds attrs each call and a stale
-`aqua` would otherwise leak. (`mode` and the vapor accent named "dark" are *different axes* that coincidentally
-share the string "dark" — benign: vapor declares no `mode` axis, so its `data-mode` is unused.) For non-vapor
-themes it additionally sets `body[data-mode]` and `body[data-accent]` (the prototypes scope palettes by attribute) and
-may inject `--accent`/`--accent-fill` for computed-OKLCH accents. `ThemeDef.palettes` declares which axes the
+*(As-built + D51 V2, 2026-08-01:)* **`applyBodyAttrs` writes the identity attribute
+`html[data-skin] = theme`** (on `<html>` — the `@scope` identity) **plus the shared
+`body[data-mode]`/`body[data-accent]` axes for EVERY skin** — vapor included since D51 V2 retired
+its private `body[data-theme]` accent axis (values unchanged: `dark` inert / `aqua` / `ember`, now
+as `data-accent`; the retired attr is defensively `delete`d on every apply). (`mode` and the vapor
+accent named "dark" are *different axes* that coincidentally share the string "dark" — benign:
+vapor declares no `mode` axis, its stamped `data-mode="dark"` matches no rule.) Themes may inject
+`--accent`/`--accent-fill` for computed-OKLCH accents. `ThemeDef.palettes` declares which axes the
 Conf picker renders (vapor → named accents only; minimal → mode toggle + 4 hues; phosphor → amber/green; etc.).
-Existing vapor attrs (`data-theme`/`data-skyline`/`data-loz`/`data-motion`/`data-tab`) keep their current
-meaning — they're vapor's frozen attribute contract (full list in §13.1).
+Existing vapor attrs (`data-skyline`/`data-loz`/`data-tab`; `data-motion` is shared) keep their
+current meaning until their D51 ledger slice — vapor's frozen attribute contract, §13.1
+(`data-theme` RETIRED at D51 V2 → the shared `data-accent` axis).
 
 > **Note — a trivial one-time persisted-shape remap (single user, low-stakes).** The persisted field splits
 > from one conflated `theme:"dark"|"aqua"|"ember"` into `{theme,accent}`. `loadPersisted` only *fills missing
@@ -813,21 +814,24 @@ consolidated as the build checklist in §13. The one external addition that mate
 
 Each item is a confirmed fix from the review; build T0/T1 against these, not the pre-review wording.
 
-**13.1 — `data-skin` ≠ `data-theme` (CRITICAL — would break vapor).** vapor.css gates its **aqua/ember
-palettes entirely on bare `[data-theme="aqua"|"ember"]`** (vapor.css:58/107/113/162; "dark" = the bare
-`:root`/`:scope` default, no `[data-theme="dark"]` rule). Overloading `data-theme` with the ThemeId silently kills 2 of
-vapor's 3 palettes. **Fix:** ThemeId lives on a NEW `body[data-skin]`; `body[data-theme]` keeps meaning
-vapor's accent (`dark`|`aqua`|`ember`), set only when skin=vapor; non-vapor bundles scope under `[data-skin]`.
-**vapor's full frozen attribute contract** (all must keep current meaning; CSS line refs refreshed 2026-07-07
-post-`@scope`-wrap — they drift with the frozen files' headers, the selectors are the stable contract):
+**13.1 — `data-skin` ≠ `data-theme` (CRITICAL — would break vapor).** *(HISTORICAL RATIONALE as of
+D51 V2, 2026-08-01: `body[data-theme]` is RETIRED — vapor's accent now rides the SHARED
+`body[data-accent]` axis like every theme, values unchanged (`dark` inert / `aqua` / `ember`), and
+the `data-skin`-carries-ThemeId design this section forced remains exactly right. The row below is
+struck; the remaining rows stay live contract until their D51 ledger slice.)* Original finding:
+vapor.css gated its aqua/ember palettes on bare `[data-theme="aqua"|"ember"]`, so overloading
+`data-theme` with the ThemeId would silently kill 2 of vapor's 3 palettes — hence the ThemeId on a
+new dedicated skin attribute (as built: `html[data-skin]`, on `<html>`).
+**vapor's frozen attribute contract** (rows retire per the D51 ledger — plan §3.1; CSS refs live in
+`themes/vapor/` since V1):
 
-| Attribute | Element | Used for | Where |
+| Attribute | Element | Used for | Status |
 |---|---|---|---|
-| `data-theme=aqua\|ember` (absent→`:scope`) | body | vapor palette swap + `.hero` overrides | vapor.css:58,107,113,162 |
-| `data-loz=ring` | body | lozenge variant | vapor.css:195–196; extras.css:103 |
-| `data-skyline=city\|mountains` | body | skyline show/hide | vapor.css:405–406 |
-| `data-tab=…` | **`.tabbar`** + body | tab indicator slide | vapor.css:260–262; TabBar.tsx / ui.ts |
-| `data-motion=reduced` | body | motion kill | extras.css:103+ (the reduced-motion block) |
+| ~~`data-theme=aqua\|ember`~~ | body | vapor palette swap | **RETIRED D51 V2** → shared `data-accent` (vapor.css selectors flipped) |
+| `data-loz=ring` | body | lozenge variant | live; retires at V4 (kit `brandMark` slot) |
+| `data-skyline=city\|mountains` | body | skyline show/hide | live; ruled at V3 classification |
+| `data-tab=…` | **`.tabbar`** + body | tab indicator slide | live; retires at V4 (DefaultRoot) |
+| `data-motion=reduced` | body | motion kill | live (shared UIState axis, not vapor-private) |
 
 **13.2 — Token-name collision, solved by `@layer` (NEEDS-MITIGATION).** The contract reuses 3 names vapor
 defines in its always-loaded `:scope` block: `--line`, `--line-2`, `--accent-glow` (vapor.css:24,25,31). Without

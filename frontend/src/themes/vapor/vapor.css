@@ -1,7 +1,8 @@
 /* Phase 11 v2 / D29 §14.6: the whole sheet is wrapped in `@scope ([data-skin="vapor"])` so vapor's
-   rules only apply under the vapor skin (data-skin lives on <html>, so :root/html,body/[data-theme]
-   all resolve naturally). Content is otherwise VERBATIM — the bundler keeps @keyframes inside @scope
-   (M1 gate). Adding/removing this wrapper is the only edit; do not reindent the body. */
+   rules only apply under the vapor skin (data-skin lives on <html>, so :root/html,body/[data-accent]
+   all resolve naturally). The palette blocks ride the SHARED `body[data-accent]` axis since D51 V2 —
+   the vapor-private `[data-theme]` axis is retired. The bundler keeps @keyframes inside @scope (M1
+   gate); do not reindent the body. */
 @scope ([data-skin="vapor"]) {
   /* :root → :scope: inside @scope, the document root (:root/html) is the scope ROOT, which scoped
      selectors don't match as a descendant — :scope matches it, so the vars land on <html> + inherit. */
@@ -55,7 +56,7 @@
     --city-window-fore: #ffb88a;
   }
   /* Alt dark palette — cyan/aqua dominant, deep ocean blacks */
-  [data-theme="aqua"] {
+  [data-accent="aqua"] {
     --bg: #02101a;
     --bg-2: #06202e;
     --bg-3: #0b3148;
@@ -104,13 +105,13 @@
     --city-window-fore: #ffe48a;
   }
   /* Aqua hero — flip the warm sunset to a cool oceanic sky */
-  [data-theme="aqua"] .hero {
+  [data-accent="aqua"] .hero {
     background: linear-gradient(180deg, #02101a 0%, #0a2a3a 35%, #144860 55%, #0b3148 75%, #02101a 100%) !important;
   }
 
   /* 3rd palette — Ember. Full Miami-sunset: amber/gold primary, coral danger,
      warm brown-black backgrounds. Distinct from cool-violet vapor and cool-cyan aqua. */
-  [data-theme="ember"] {
+  [data-accent="ember"] {
     --bg: #110603;
     --bg-2: #1f0d05;
     --bg-3: #2e1a0a;
@@ -159,7 +160,7 @@
     --city-window-fore: #ff8e5c;
   }
   /* Ember hero — deep dusk gradient, brown-red-gold layered */
-  [data-theme="ember"] .hero {
+  [data-accent="ember"] .hero {
     background: linear-gradient(180deg, #110603 0%, #3a1208 35%, #6a1f10 55%, #2e1a0a 75%, #110603 100%) !important;
   }
   * { box-sizing: border-box; }

@@ -4,9 +4,10 @@ import { seedUI, test, expect, VAPOR_UI } from "./fixtures";
 // POST mocked. These catch "the UI wired up wrong / a flow throws" regressions the logic tests can't.
 //
 // SKIN (D51 V0): a plain `goto("/")` now boots the COSMOS default, so the flows that drive vapor's bespoke
-// chrome — its Fleet rows (`.dev`)/shutdown buttons/waveform, its `.composer` textarea, its frozen
-// `data-theme` accent axis — seed `VAPOR_UI` first. The rest (Tools cards, Conf groups + editor forms) run
-// on shared components that render identically under either skin, so they keep booting the default.
+// chrome — its Fleet rows (`.dev`)/shutdown buttons/waveform, its `.composer` textarea, its accent palettes
+// (on the shared `data-accent` axis since V2) — seed `VAPOR_UI` first. The rest (Tools cards, Conf groups
+// + editor forms) run on shared components that render identically under either skin, so they keep booting
+// the default.
 
 test("Boot — a device with no persisted UI lands on the cosmos default (D51 V0)", async ({
   page,
@@ -26,7 +27,9 @@ test("Boot — a device with no persisted UI lands on the cosmos default (D51 V0
   // Only NOW the identity attrs — proven to be the mounted skin's, not the bootstrap script's guess.
   await expect(page.locator("html")).toHaveAttribute("data-skin", "cosmos");
   await expect(page.locator("body")).toHaveAttribute("data-accent", "violet"); // cosmos's defaultAccent
-  await expect(page.locator("body")).not.toHaveAttribute("data-theme"); // vapor's frozen axis stays cleared
+  await expect(page.locator("body")).toHaveAttribute("data-mode", "dark"); // cosmos's defaultMode
+  // The vapor-private accent axis was RETIRED at D51 V2 — nothing may write it on any skin ever again.
+  await expect(page.locator("body")).not.toHaveAttribute("data-theme");
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 
@@ -152,8 +155,8 @@ test("Conf — an editor form's inputs are findable by their label (D25 associat
   await expect(page.getByLabel("IP or DNS name", { exact: true })).toBeVisible();
 });
 
-test("Conf — changing the vapor palette updates body[data-theme]", async ({ page }) => {
-  await seedUI(page, { ...VAPOR_UI, tab: "fleet" }); // the frozen accent axis is vapor-only
+test("Conf — changing the vapor palette updates body[data-accent]", async ({ page }) => {
+  await seedUI(page, { ...VAPOR_UI, tab: "fleet" }); // vapor's own palette set (dark/aqua/ember)
   await page.goto("/");
 
   // @scope proof (M1): vapor's CSS is wrapped in `@scope ([data-skin=vapor])` rooted at <html>. The dark
@@ -164,10 +167,11 @@ test("Conf — changing the vapor palette updates body[data-theme]", async ({ pa
   await page.locator("#tabbtn-conf").click();
 
   // Appearance group is expanded by default. Theme-engine model (D28): the skin is "Vapor"; the
-  // "Palette" swatch picker (a radiogroup of color chips) switches vapor's frozen accent axis
-  // (Vapor/Aqua/Ember → body[data-theme]). Each chip is a role=radio named by the palette.
+  // "Palette" swatch picker (a radiogroup of color chips) switches vapor's accent on the SHARED axis
+  // (Vapor/Aqua/Ember → body[data-accent], D51 V2). Each chip is a role=radio named by the palette.
   await page.getByRole("radio", { name: "Aqua", exact: true }).click();
-  await expect(page.locator("body")).toHaveAttribute("data-theme", "aqua"); // accent axis on <body>
+  await expect(page.locator("body")).toHaveAttribute("data-accent", "aqua"); // the shared accent axis
+  await expect(page.locator("body")).not.toHaveAttribute("data-theme"); // the retired vapor-private axis
   await expect(page.locator("html")).toHaveAttribute("data-skin", "vapor"); // @scope identity on <html>
 });
 

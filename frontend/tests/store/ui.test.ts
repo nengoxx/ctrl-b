@@ -18,8 +18,9 @@ const KEY = "ctrlb.ui";
 const seed = (blob: unknown) => localStorage.setItem(KEY, JSON.stringify(blob));
 
 // store/ui — UI-only state, persisted to localStorage and mirrored onto <body> data-attrs. Theme-engine
-// model (Phase 11 / D28 §9.8): {theme(skin), mode, accent}. `body[data-skin]` is the skin identity;
-// `body[data-theme]` keeps vapor's frozen accent axis (dark/aqua/ember), set only when skin=vapor.
+// model (Phase 11 / D28 §9.8): {theme(skin), mode, accent}. `html[data-skin]` is the skin identity;
+// `body[data-mode]`/`body[data-accent]` are the SHARED palette axes every skin writes — vapor included
+// since D51 V2 (its dark/aqua/ember accents moved off the retired vapor-private `body[data-theme]`).
 
 beforeEach(() => {
   setUI({ theme: "vapor", mode: "dark", accent: "dark", tab: "fleet" }); // baseline (module state persists)
@@ -34,23 +35,31 @@ describe("ui store", () => {
     expect(result.current).toBe("aqua");
   });
 
-  it("vapor: mirrors accent onto body[data-theme] + sets html[data-skin] (@scope identity)", () => {
+  it("vapor: mirrors accent onto the shared body[data-accent] + sets html[data-skin] (@scope identity)", () => {
     setUI({ theme: "vapor", accent: "ember", tab: "agent" });
     expect(document.documentElement.dataset.skin).toBe("vapor");
-    expect(document.body.dataset.theme).toBe("ember"); // vapor's accent axis on <body>
+    expect(document.body.dataset.accent).toBe("ember"); // the SHARED accent axis (D51 V2), not data-theme
     expect(document.body.dataset.tab).toBe("agent");
-    expect(document.body.dataset.mode).toBeUndefined(); // vapor declares no mode axis
-    expect(document.body.dataset.accent).toBeUndefined();
+    expect(document.body.dataset.mode).toBe("dark"); // vapor declares no mode axis → always dark, inert
+    expect(document.body.dataset.theme).toBeUndefined(); // the retired vapor-private axis
   });
 
-  it("non-vapor skin: clears the stale vapor data-theme, sets data-mode/data-accent (§13.1)", () => {
-    setUI({ theme: "vapor", accent: "aqua" }); // leave a vapor accent behind
-    expect(document.body.dataset.theme).toBe("aqua");
+  it("a skin switch rewrites data-mode/data-accent with no stale value (§13.1)", () => {
+    setUI({ theme: "vapor", accent: "aqua" });
+    expect(document.body.dataset.accent).toBe("aqua");
     setUI({ theme: "minimal", mode: "light", accent: "indigo" });
     expect(document.documentElement.dataset.skin).toBe("minimal");
-    expect(document.body.dataset.theme).toBeUndefined(); // vapor's accent must not leak onto another skin
     expect(document.body.dataset.mode).toBe("light");
-    expect(document.body.dataset.accent).toBe("indigo");
+    expect(document.body.dataset.accent).toBe("indigo"); // vapor's accent must not leak onto another skin
+  });
+
+  it("clears a stale body[data-theme] residue on the next apply (D51 V2 cleanup)", () => {
+    // DEFENSIVE cleanup of the retired vapor axis: no shipped path stamps it any more (the SW update is
+    // atomic — old/new builds never mix), but `applyBodyAttrs` rebuilds attrs each call, so the
+    // unconditional delete guards any stale or manually-set stamp for free.
+    document.body.dataset.theme = "ember";
+    setUI({ theme: "vapor", accent: "aqua" });
+    expect(document.body.dataset.theme).toBeUndefined();
   });
 
   // (`body.no-composer` is no longer written here — it moved to the theme `Root` (VaporRoot), driven by

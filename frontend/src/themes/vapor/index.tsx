@@ -2,7 +2,7 @@
 // separate") — it owns its whole presentation via `VaporRoot`. It is NO LONGER the default (D51 V0 handed
 // that to cosmos), but it is still the one EAGER theme: its CSS is statically imported (theme/index.css,
 // §14.6) so `loadStyles` is a no-op, and its fonts come from main.tsx. (The lazy flip is D51's V6.) Palette = the named accents (dark/aqua/
-// ember) on the `body[data-theme]` axis; no `mode` axis (vapor is dark-only).
+// ember) on the SHARED `body[data-accent]` axis (D51 V2); no `mode` axis (vapor is dark-only).
 
 import type { ThemeDef } from "../../theme-engine/types";
 import { VaporRoot } from "./VaporRoot";

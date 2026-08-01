@@ -5,10 +5,10 @@
 //
 // Theme-engine generalization (Phase 11 / D28 §9.8): the single conflated `theme` field splits into
 // **{theme, mode, accent}** — `theme` is the SKIN id ("vapor"|"minimal"|…, the slot+CSS identity),
-// `mode` the light/dark axis, `accent` the named-palette/hue id. `applyBodyAttrs` writes the NEW
-// `body[data-skin]` identity (§13.1) and keeps `body[data-theme]` meaning vapor's FROZEN accent axis
-// (dark/aqua/ember) — set only when skin=vapor, cleared otherwise. Non-vapor themes additionally get
-// `body[data-mode]`/`body[data-accent]` (the prototypes scope palettes by attribute).
+// `mode` the light/dark axis, `accent` the named-palette/hue id. `applyBodyAttrs` writes the
+// `html[data-skin]` identity (§13.1) plus `body[data-mode]`/`body[data-accent]` for EVERY skin —
+// since D51 V2 vapor has no private axis: its accents (dark/aqua/ember) ride the same `data-accent`
+// attribute as every other theme's (the legacy `body[data-theme]` axis is RETIRED, only cleared).
 
 import type { LayoutId, Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
 import { createStore } from "./createStore";
@@ -41,8 +41,8 @@ export type ThemeSettingsMap = Record<string, Record<string, ThemeSettingValue>>
 
 export interface UIState {
   theme: ThemeId; // the active SKIN (cosmos on a fresh boot, D51 V0) — drives slot resolution + data-skin
-  mode: Mode; // light/dark axis — vapor is dark-only (unused for vapor); non-vapor sets body[data-mode]
-  accent: string; // named palette OR hue id — vapor: "dark"|"aqua"|"ember" on body[data-theme]
+  mode: Mode; // light/dark axis → body[data-mode]; vapor is dark-only (declares no `modes`, always "dark")
+  accent: string; // named palette OR hue id → body[data-accent] (vapor: "dark"|"aqua"|"ember", D51 V2)
   tab: Tab;
   ttsAuto: boolean;
   // ambient animations (LED pulse, equalizer, sun bob, grid scroll, …). SYNCED via the appearance
@@ -210,10 +210,13 @@ let state: UIState = loadUIState();
 
 // Mirror the UI store onto <html>/<body> data-attrs. Theme-engine model:
 // - `html[data-skin]` = the SKIN id (the `@scope ([data-skin=…])` identity for theme CSS isolation, §14.6).
-// - `body[data-theme]` keeps its FROZEN vapor meaning — the accent axis (dark/aqua/ember) — and is set
-//   ONLY when skin=vapor (from `accent`), and actively CLEARED for non-vapor skins (attrs are rebuilt
-//   each call, so a stale `aqua` would otherwise leak and re-tint a non-vapor theme).
-// - Non-vapor skins additionally get `body[data-mode]`/`body[data-accent]` (their palettes scope by attr).
+// - `body[data-mode]`/`body[data-accent]` = the SHARED palette axes, written for EVERY skin (each theme's
+//   sheet scopes its palettes by attribute under its own `data-skin`, so the values never collide).
+// - `body[data-theme]` is the RETIRED vapor-private accent axis (D51 V2 moved vapor onto `data-accent`).
+//   Nothing writes it any more; it is DELETED on every apply as DEFENSIVE cleanup against any stale or
+//   manually-set stamp (the SW update path can't actually produce one — Workbox installs the old/new build
+//   atomically and reloads on activation — but attrs are rebuilt each call, so the delete costs nothing and
+//   is the same idiom the cross-skin cleanup always used; asserted by the themeContract switch-chain test).
 // - motion/tab keep their current (global) meaning. The vapor-specific `data-skyline`/`data-loz` attrs
 //   are now THEME-OWNED — VaporRoot writes them from its `themeSettings` (M3 §14.3), like `.no-composer`.
 //
@@ -225,15 +228,9 @@ function applyBodyAttrs(s: UIState): void {
   // `data-skin` (the @scope identity, §14.6) lives on <html> so a theme's `:root`/`html,body`/
   // page-background rules all sit inside its scope. The accent axis + the other global attrs stay on <body>.
   document.documentElement.dataset.skin = s.theme;
-  if (s.theme === "vapor") {
-    b.dataset.theme = s.accent; // dark/aqua/ember — "dark" is inert (no [data-theme=dark] rule → :root)
-    delete b.dataset.mode;
-    delete b.dataset.accent;
-  } else {
-    delete b.dataset.theme; // clear vapor's stale accent so it can't leak onto a non-vapor skin
-    b.dataset.mode = s.mode;
-    b.dataset.accent = s.accent;
-  }
+  delete b.dataset.theme; // the retired vapor axis — clear any pre-V2 residue (see the header note)
+  b.dataset.mode = s.mode; // vapor is dark-only, so its value is always "dark" (and it styles nothing)
+  b.dataset.accent = s.accent; // vapor: dark/aqua/ember — "dark" is inert (no rule → the :scope defaults)
   b.dataset.tab = s.tab;
   b.dataset.motion = s.motion;
   b.dataset.perf = s.perf;

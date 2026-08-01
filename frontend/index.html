@@ -21,9 +21,11 @@
     <!-- No-FOUC theme bootstrap (Phase 11 / D29 §14.6). A synchronous inline script at the TOP of
          <body> (where document.body exists — <head> can't, body is null there) sets the
          palette-determining data-attrs from persisted ui state BEFORE #root paints, so first paint
-         already has the right colors. `data-skin` (the @scope identity) lives on <html>; vapor's accent
-         axis (data-theme) + non-vapor mode/accent live on <body>. The `ui` store re-applies the full attr
-         set when it loads (idempotent). Mirrors store/ui.ts applyBodyAttrs + migrateLegacyTheme.
+         already has the right colors. `data-skin` (the @scope identity) lives on <html>; the shared
+         mode/accent axes live on <body> — ONE arm for every skin since D51 V2 retired vapor's private
+         `data-theme` axis. The `ui` store re-applies the full attr set when it loads (idempotent; it also
+         defensively clears the retired `data-theme` attr). Mirrors store/ui.ts applyBodyAttrs +
+         migrateLegacyTheme.
          The three defaults below (the static <html> stamp, this script's fallback triple, and the catch
          fallback) are the D51 DOCUMENTED-MIRROR allowlist entry for pre-JS code — they can't import
          `DEFAULT_THEME`, so they carry cosmos/dark/violet literally; move them with resolve.ts. -->
@@ -38,18 +40,15 @@
           var accent = (s && s.accent) || "violet";
           // Legacy persisted shape: `theme` held the vapor accent (dark/aqua/ember) — those values keep
           // mapping to VAPOR (never to the new default), the twin of store/ui.ts migrateLegacyTheme.
+          // They now feed the SAME shared stamping below (vapor's accent is a `data-accent` value).
           if (theme === "dark" || theme === "aqua" || theme === "ember") {
             accent = theme;
             theme = "vapor";
             mode = "dark";
           }
           h.dataset.skin = theme; // the @scope identity, on <html>
-          if (theme === "vapor") {
-            b.dataset.theme = accent; // vapor's accent axis (dark is inert → :root)
-          } else {
-            b.dataset.mode = mode;
-            b.dataset.accent = accent;
-          }
+          b.dataset.mode = mode; // the shared axes — every skin, vapor included (D51 V2)
+          b.dataset.accent = accent;
         } catch (e) {
           /* private-mode / corrupt value — fall back to the static html[data-skin="cosmos"] */
         }

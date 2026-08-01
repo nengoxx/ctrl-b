@@ -327,7 +327,7 @@ export async function seedUI(page: Page, ui: Record<string, unknown>): Promise<v
 }
 
 /** The vapor skin triple, for the specs that drive vapor's bespoke chrome (its Fleet rows/waveform, its
- *  `.composer`, its frozen `data-theme` accent axis). Spread into a `seedUI` blob with the wanted `tab`. */
+ *  `.composer`, its dark/aqua/ember palettes). Spread into a `seedUI` blob with the wanted `tab`. */
 export const VAPOR_UI = { theme: "vapor", mode: "dark", accent: "dark", v: 1 } as const;
 
 /** Spec base. The API mock is applied via a `page` override so EVERY test gets it (a fixture that only

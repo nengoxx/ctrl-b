@@ -6,9 +6,10 @@
 // asserts this matches `registeredThemes()` palettes exactly — so it can never silently drift (item 8: "a
 // hand-duplicated palette table needs a drift meta-test").
 //
-// vapor is WAIVED (CONTRACT_WAIVERS.vapor ⊇ ["semantic-tokens","accent-axis"]): its accent rides
-// body[data-theme] over a non-contract token vocabulary, so it isn't the surface the Kit contrast gate
-// measures — it contributes no rows here (the drift guard skips waived themes too).
+// vapor is WAIVED (CONTRACT_WAIVERS.vapor ⊇ ["semantic-tokens"]): its accents ride the shared
+// body[data-accent] axis since D51 V2, but over a non-contract token vocabulary, so it still isn't the
+// surface the Kit contrast gate measures — it contributes no rows here (the drift guard skips waived
+// themes too). It joins this matrix when the `semantic-tokens` waiver retires at V3.
 
 export interface ThemeMatrix {
   theme: string;

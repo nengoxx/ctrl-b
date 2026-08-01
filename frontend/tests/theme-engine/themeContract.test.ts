@@ -43,14 +43,15 @@ export type ContractWaiver =
   //   themes/vapor/tokens.css → the token-list group cannot measure it. Retires at ladder stage V3.
   | "keyframe-prefix" // §14.15.3 hook ③: unprefixed @keyframes — enforced by stylelint (item ⑨), gating the
   //   P2 meta-guard below. RETIRED at V1 (vapor prefixes `vapor-`); the arm stays as the waiver vocabulary.
-  | "accent-axis" // §14.15.3 hook ①: accent rides body[data-theme], not data-mode/data-accent — TRACKED
-  //   here; the attr-cleanup chain below encodes vapor's frozen axis as its expected behavior. Retires at V2.
+  | "accent-axis" // §14.15.3 hook ①: accent rode the vapor-private body[data-theme] instead of the shared
+  //   data-mode/data-accent. RETIRED at V2 (vapor takes the shared stamping; the attr-cleanup chain below
+  //   now runs vapor through the SAME expectations as every other skin); the arm stays as the vocabulary.
   | "kit-structure"; // §14.15.3 hook ④: parallel chrome (components/AppBar·Composer·TabBar vs the Kit's) →
 //   no `.kit-appbar`/`.kit-composer`, and its bespoke hero/waveform canvases are e2e territory (flows.spec
 //   boots vapor for real). So the render-based structural + Fleet-a11y group is waived. Retires at V4/V5.
 
 export const CONTRACT_WAIVERS: Partial<Record<ThemeId, ContractWaiver[]>> = {
-  vapor: ["semantic-tokens", "accent-axis", "kit-structure"],
+  vapor: ["semantic-tokens", "kit-structure"],
 };
 
 function isWaived(id: ThemeId, w: ContractWaiver): boolean {
@@ -271,38 +272,41 @@ describe.each(registeredThemes().map((d) => [d.id, d] as const))(
   },
 );
 
-// ── Behavioral group (b): attr cleanup across a real vapor↔minimal↔cosmos switch chain (§14.15.1 item 8).
-//    Drives applyBodyAttrs through real `setUI` and asserts NO stale data-theme/data-mode/data-accent leaks
-//    in either direction. This encodes vapor's frozen `accent-axis` (body[data-theme]) as expected behavior
-//    — a single explicit sequence, not a per-theme skip, so no waiver branch is needed. ──
+// ── Behavioral group (b): attr conformance + cleanup across a real vapor↔minimal↔cosmos switch chain
+//    (§14.15.1 item 8). Drives applyBodyAttrs through real `setUI` and asserts every skin — vapor included
+//    since the `accent-axis` waiver RETIRED at V2 — stamps the SAME shared `data-mode`/`data-accent` axes,
+//    with no stale value surviving a switch and no write of the retired `data-theme` axis. ──
 describe("applyBodyAttrs cleanup across a vapor↔minimal↔cosmos switch chain", () => {
-  it("never leaks a stale accent/mode/accent-hue attr between skins", () => {
+  it("stamps the shared axes for every skin and leaks no stale value", () => {
     const html = document.documentElement;
     const body = document.body;
+    // A pre-V2 residue on the retired axis (a cached index.html could have stamped it) must not survive
+    // the first apply — the cleanup `delete` in applyBodyAttrs is unconditional.
+    body.dataset.theme = "aqua";
 
     setUI({ theme: "vapor", mode: "dark", accent: "aqua" });
     expect(html.dataset.skin).toBe("vapor");
-    expect(body.dataset.theme).toBe("aqua"); // vapor's frozen accent axis
-    expect(body.dataset.mode).toBeUndefined();
-    expect(body.dataset.accent).toBeUndefined();
+    expect(body.dataset.mode).toBe("dark"); // vapor is dark-only, but takes the identical path
+    expect(body.dataset.accent).toBe("aqua"); // the shared accent axis
+    expect(body.dataset.theme).toBeUndefined(); // the retired axis: cleared, never written
 
     setUI({ theme: "minimal", mode: "light", accent: "iris" });
     expect(html.dataset.skin).toBe("minimal");
-    expect(body.dataset.theme).toBeUndefined(); // vapor's accent must be cleared
     expect(body.dataset.mode).toBe("light");
-    expect(body.dataset.accent).toBe("iris");
+    expect(body.dataset.accent).toBe("iris"); // vapor's accent must be gone
+    expect(body.dataset.theme).toBeUndefined();
 
     setUI({ theme: "cosmos", mode: "dark", accent: "violet" });
     expect(html.dataset.skin).toBe("cosmos");
-    expect(body.dataset.theme).toBeUndefined();
     expect(body.dataset.mode).toBe("dark");
     expect(body.dataset.accent).toBe("violet");
+    expect(body.dataset.theme).toBeUndefined();
 
     setUI({ theme: "vapor", mode: "dark", accent: "ember" });
     expect(html.dataset.skin).toBe("vapor");
-    expect(body.dataset.theme).toBe("ember");
-    expect(body.dataset.mode).toBeUndefined(); // minimal/cosmos axes must be cleared
-    expect(body.dataset.accent).toBeUndefined();
+    expect(body.dataset.mode).toBe("dark");
+    expect(body.dataset.accent).toBe("ember"); // minimal/cosmos values must be gone
+    expect(body.dataset.theme).toBeUndefined();
   });
 });
 
