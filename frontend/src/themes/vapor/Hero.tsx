@@ -1,7 +1,7 @@
 import { memo } from "react";
 
-import { SKY_INNER_HTML } from "../theme/heroScene";
-import type { Host } from "../types";
+import type { Host } from "../../types";
+import { SKY_INNER_HTML } from "./heroScene";
 import { Waveform } from "./Waveform";
 
 // The hero: animated scene (sun/grid/skyline) + the "now monitoring" panel for the featured

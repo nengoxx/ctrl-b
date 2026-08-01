@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
-import { useUISlice } from "../store/ui";
+import { useUISlice } from "../../store/ui";
+import { safeRafLoop } from "../../theme-engine/safeRafLoop";
 
 // Live ping waveform — the canvas draw loop ported verbatim from vapor.html. Reads themed RGB
 // from CSS custom properties each frame so it tracks theme switches. Latest online/ping are held
@@ -42,7 +43,8 @@ export function Waveform({ online, ping }: Props) {
     // work vs vsync (~60fps). `t` advances proportionally more per drawn frame so the wave keeps the
     // same on-screen speed as the old 60fps loop (Firefox-Android especially feels the saved frames).
     const FRAME_MS = 1000 / 30;
-    let raf = 0;
+    // `running` = "the canvas is on screen" (the IntersectionObserver gate below), NOT "the loop is
+    // ticking" — under reduced-motion we're on-screen with no loop, and `repaintRef` keys off that.
     let running = false;
     let last = 0; // last drawn-frame timestamp (FPS throttle)
     let frame = 0; // drawn-frame counter (colors refresh cadence)
@@ -120,14 +122,14 @@ export function Waveform({ online, ping }: Props) {
       t += 0.12;
     }
 
-    function draw(now: number) {
-      if (!running) return; // a pause (stop) canceled us — don't reschedule
-      raf = requestAnimationFrame(draw);
+    // Crash-safe loop (§14.15.1-A rider c): a throwing frame stops + reports once instead of erroring per
+    // frame (an error boundary can't catch a rAF fault). Throttle-skips return void → keep scheduling.
+    const loop = safeRafLoop((now: number) => {
       if (now - last < FRAME_MS) return; // skip this vsync frame — throttle to ~30fps
       last = now;
       if (frame++ % 30 === 0) readColors(); // refresh themed colors ~1×/s, not every frame (style flush)
       paint();
-    }
+    });
 
     function start() {
       if (running) return;
@@ -139,7 +141,7 @@ export function Waveform({ online, ping }: Props) {
         return;
       }
       last = 0;
-      raf = requestAnimationFrame(draw);
+      loop.start();
     }
 
     // Published for the reduced-motion prop-change effect: redraw a single frame from current state,
@@ -151,7 +153,7 @@ export function Waveform({ online, ping }: Props) {
     };
     function stop() {
       running = false;
-      cancelAnimationFrame(raf);
+      loop.stop();
     }
 
     // Only run the loop while the canvas is actually on screen. The Fleet tab is ALWAYS mounted (just

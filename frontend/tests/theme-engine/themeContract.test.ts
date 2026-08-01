@@ -39,10 +39,10 @@ function readThemeTokens(theme: string): string {
 // ── CONTRACT_WAIVERS — the single source of every theme-conditional skip in this suite (§14.15.1 item 8;
 //    the §14.15.3 assimilation tracker). Each id maps to a §14.15.3 legacy hook vapor can't yet satisfy. ──
 export type ContractWaiver =
-  | "semantic-tokens" // §14.15.3 hook ②: non-contract token vocab (--magenta/--ink*) + CSS in theme/, not
+  | "semantic-tokens" // §14.15.3 hook ②: non-contract token vocab (--magenta/--ink*) and no
   //   themes/vapor/tokens.css → the token-list group cannot measure it. Retires at ladder stage V3.
-  | "keyframe-prefix" // §14.15.3 hook ③: unprefixed @keyframes — enforced by stylelint (item ⑨), TRACKED
-  //   here (no assertion in this suite reads it). Retires at V1.
+  | "keyframe-prefix" // §14.15.3 hook ③: unprefixed @keyframes — enforced by stylelint (item ⑨), gating the
+  //   P2 meta-guard below. RETIRED at V1 (vapor prefixes `vapor-`); the arm stays as the waiver vocabulary.
   | "accent-axis" // §14.15.3 hook ①: accent rides body[data-theme], not data-mode/data-accent — TRACKED
   //   here; the attr-cleanup chain below encodes vapor's frozen axis as its expected behavior. Retires at V2.
   | "kit-structure"; // §14.15.3 hook ④: parallel chrome (components/AppBar·Composer·TabBar vs the Kit's) →
@@ -50,7 +50,7 @@ export type ContractWaiver =
 //   boots vapor for real). So the render-based structural + Fleet-a11y group is waived. Retires at V4/V5.
 
 export const CONTRACT_WAIVERS: Partial<Record<ThemeId, ContractWaiver[]>> = {
-  vapor: ["semantic-tokens", "keyframe-prefix", "accent-axis", "kit-structure"],
+  vapor: ["semantic-tokens", "accent-axis", "kit-structure"],
 };
 
 function isWaived(id: ThemeId, w: ContractWaiver): boolean {

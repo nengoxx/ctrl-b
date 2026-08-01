@@ -1,9 +1,9 @@
-import { DeviceRow } from "../components/DeviceRow";
-import { FleetSummary } from "../components/FleetSummary";
-import { Hero } from "../components/Hero";
-import { useFleet } from "../hooks/useFleet";
-import { useThemeSetting } from "../theme-engine/settings";
-import type { Service } from "../types";
+import { useFleet } from "../../hooks/useFleet";
+import { useThemeSetting } from "../../theme-engine/settings";
+import type { Service } from "../../types";
+import { DeviceRow } from "./DeviceRow";
+import { FleetSummary } from "./FleetSummary";
+import { Hero } from "./Hero";
 
 // Stable empty-services ref — a fresh `[]` per render would be a changing prop and defeat `memo(DeviceRow)`
 // for every host with no services. One shared array (never mutated — DeviceRow only reads it).

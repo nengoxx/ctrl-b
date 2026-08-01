@@ -22,7 +22,7 @@
 }
 
 /* ── Keyboard focus indicator (WCAG 2.4.7 Focus Visible) · F5 Gate A1 ──────────────────────────
- * The vapor global ring (`theme/extras.css` `:focus-visible`) is wrapped in `@scope([data-skin="vapor"])`,
+ * The vapor global ring (`themes/vapor/extras.css` `:focus-visible`) is wrapped in `@scope([data-skin="vapor"])`,
  * so it NEVER reaches a kit theme — leaving every `all: unset` kit control (`.kit-tabbtn`/`.kit-cbtn`/
  * `.kit-send`/`.kit-iconbtn`/seg buttons/plan pill/frontier beacons+rigs/the bottom-sheet grip…) with NO
  * keyboard focus indicator (a real 2.4.7 failure the F5 pre-flight caught). Restore a kit-wide ring in the

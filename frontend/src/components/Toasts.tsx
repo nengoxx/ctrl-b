@@ -1,6 +1,6 @@
 import { dismissToast, useToasts } from "../store/toast";
 
-// Renders the transient activity-toast stack (action outcomes). Styling in theme/extras.css.
+// Renders the transient activity-toast stack (action outcomes). Styling in themes/vapor/extras.css.
 //
 // F26 — toasts can carry an optional `action` button (e.g. "refresh" for the SW update prompt).
 // The action's onClick stops propagation so the body-click dismiss handler doesn't also fire;

@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 //
 // SELF-CONTAINED BY CONTRACT: a crash screen may assume NO theme CSS loaded — "never depend on the styling
 // of the thing that crashed". Every class these screens wear is vapor-`@scope`d (`.root-error`/
-// `.root-error-body`/`.conf-save` in `theme/extras.css`; `.sec`/`.num`/`.right` in `theme/vapor.css`), so
+// `.root-error-body`/`.conf-save` in `themes/vapor/extras.css`; `.sec`/`.num`/`.right` in `themes/vapor/vapor.css`), so
 // they resolve for exactly ONE skin — and since D51 V0 that skin is no longer the default. The contract is a
 // READABLE BASELINE, not pixel uniformity: these inline objects own every readability-critical property
 // (both halves of each color pair, layout, wrap), and inline beats any stylesheet where they overlap. A skin

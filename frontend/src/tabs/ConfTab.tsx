@@ -60,7 +60,7 @@ import { UtilsContent } from "./UtilsTab";
 // Conf tab. Appearance is wired to the live UI store (client display state). Phase 7a wires the
 // **Inference** + **Server** groups to the YAML-backed settings API (GET masked / PUT partial
 // patch). Computers stays read-only here (hosts CRUD is Phase 7b); prompts/memory/integrations
-// land in later 7 slices. vapor.css is untouched (D7) — net-new pixels live in theme/extras.css.
+// land in later 7 slices. vapor.css is untouched (D7) — net-new pixels live in themes/vapor/extras.css.
 
 interface Props {
   active: boolean;

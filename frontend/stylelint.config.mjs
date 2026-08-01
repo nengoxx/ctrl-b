@@ -73,26 +73,21 @@ export default {
       },
     },
     {
+      files: ["src/themes/vapor/**/*.css"],
+      rules: {
+        "keyframes-name-pattern": [
+          "^vapor-",
+          { severity: "warning", message: "vapor's @keyframes must be prefixed `vapor-`" },
+        ],
+      },
+    },
+    {
       files: ["src/theme-engine/kit/**/*.css"],
       rules: {
         "keyframes-name-pattern": [
           "^kit-",
           { severity: "warning", message: "the Kit's @keyframes must be prefixed `kit-`" },
         ],
-      },
-    },
-
-    // ── VAPOR V1 WAIVER (§14.15.3 ladder stage V1 — hook ③ + hook ⑥) ─────────────────────────────
-    // vapor's CSS still lives in `src/theme/` (not `src/themes/vapor/`) and its @keyframes are
-    // UNPREFIXED (`spin`/`float`/`shimmer`/… + extras.css's `mp-bar`/`toast-in`/…). Both are frozen
-    // legacy hooks retired together at ladder stage V1 (file move + `vapor-*` keyframe prefix). Until
-    // then the keyframe-prefix rule is disabled for the whole vapor dir. THIS ALLOWLIST ENTRY IS THE
-    // V1 TRACKER — delete it (and this override) when V1 lands. Mirrors the B2 CONTRACT_WAIVERS
-    // `keyframe-prefix` entry in tests/theme-engine/themeContract.test.ts.
-    {
-      files: ["src/theme/**/*.css"],
-      rules: {
-        "keyframes-name-pattern": null,
       },
     },
   ],

@@ -216,9 +216,9 @@
     background: var(--bg) url("/logo.png") center/130% no-repeat;
   }
   /* classic ring variant — spinning gradient ring, no logo */
-  body[data-loz="ring"] .brand .lozenge { animation: spin 8s linear infinite; }
+  body[data-loz="ring"] .brand .lozenge { animation: vapor-spin 8s linear infinite; }
   body[data-loz="ring"] .brand .lozenge::after { inset: 6px; background: var(--bg); }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes vapor-spin { to { transform: rotate(360deg); } }
   .brand .mark {
     font-family: "Major Mono Display", monospace;
     font-size: 16px; letter-spacing: 2px;
@@ -244,8 +244,8 @@
     -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13L7.5 14.5H4z'/><path d='M15.5 9.5l5.5 5.5'/><path d='M21 9.5l-5.5 5.5'/></svg>") center/26px no-repeat;
             mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13L7.5 14.5H4z'/><path d='M15.5 9.5l5.5 5.5'/><path d='M21 9.5l-5.5 5.5'/></svg>") center/26px no-repeat;
   }
-  .tts-btn:not(.muted) { animation: ttsGlow 2.4s ease-in-out infinite; }
-  @keyframes ttsGlow {
+  .tts-btn:not(.muted) { animation: vapor-tts-glow 2.4s ease-in-out infinite; }
+  @keyframes vapor-tts-glow {
     0%, 100% { filter: drop-shadow(0 0 4px color-mix(in oklch, var(--teal) 35%, transparent)); }
     50%      { filter: drop-shadow(0 0 10px color-mix(in oklch, var(--teal) 60%, transparent)); }
   }
@@ -313,17 +313,17 @@
     background: radial-gradient(circle at 50% 45%, var(--sun-1), var(--sun-2) 55%, var(--sun-3) 80%, transparent 90%);
     border-radius: 50%;
     filter: drop-shadow(0 0 40px var(--sun-aura));
-    animation: float 8s ease-in-out infinite;
+    animation: vapor-float 8s ease-in-out infinite;
     overflow: hidden; /* clip stripes to the sun's circle */
     will-change: transform; /* force a single compositor layer so the stripe pseudo-element tracks 1:1 */
   }
-  @keyframes float {
+  @keyframes vapor-float {
     0%, 100% { transform: translateX(-50%) translateY(0); }
     50% { transform: translateX(-50%) translateY(-5px); }
   }
   /* counter-animation on the stripe pseudo-element so it stays visually static
      while the parent .sun bobs. translateY here cancels out the parent's float. */
-  @keyframes sun-stripes-static {
+  @keyframes vapor-sun-stripes-static {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(5px); }
   }
@@ -364,7 +364,7 @@
       black 64px,
       black 136px,
       transparent 144px);
-    animation: sun-stripes-static 8s ease-in-out infinite;
+    animation: vapor-sun-stripes-static 8s ease-in-out infinite;
   }
   /* HORIZON SCENE — two interchangeable styles, switched via body[data-skyline].
      Both implemented as multi-layer SVGs for depth + neon outline control.
@@ -438,9 +438,9 @@
       radial-gradient(1px 1px at 85% 32%, var(--magenta-2), transparent),
       radial-gradient(1px 1px at 92% 14%, #fff, transparent);
     opacity: 0.7;
-    animation: twinkle 3s ease-in-out infinite;
+    animation: vapor-twinkle 3s ease-in-out infinite;
   }
-  @keyframes twinkle { 0%, 100% { opacity: 0.7; } 50% { opacity: 0.35; } }
+  @keyframes vapor-twinkle { 0%, 100% { opacity: 0.7; } 50% { opacity: 0.35; } }
   .hero .horizon {
     position: absolute; bottom: 0; left: 0; right: 0; height: 80px;
     background: linear-gradient(0deg, var(--bg) 10%, transparent);
@@ -468,9 +468,9 @@
       linear-gradient(var(--magenta) 1px, transparent 1px),
       linear-gradient(90deg, var(--magenta) 1px, transparent 1px);
     background-size: 40px 30px;
-    animation: gridmove 4s linear infinite;
+    animation: vapor-gridmove 4s linear infinite;
   }
-  @keyframes gridmove {
+  @keyframes vapor-gridmove {
     from { transform: translateY(0); }
     to   { transform: translateY(30px); }
   }
@@ -494,9 +494,9 @@
     background: linear-gradient(90deg, var(--ink), var(--magenta-2), var(--teal));
     background-size: 200% 100%;
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-    animation: shimmer 4s ease-in-out infinite;
+    animation: vapor-shimmer 4s ease-in-out infinite;
   }
-  @keyframes shimmer {
+  @keyframes vapor-shimmer {
     0%, 100% { background-position: 0% 0%; }
     50% { background-position: 100% 0%; }
   }
@@ -582,8 +582,8 @@
   }
 
   .dev .led { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); }
-  .dev.on .led { background: var(--magenta); box-shadow: var(--m-glow); animation: heartbeat 1.6s ease-in-out infinite; }
-  @keyframes heartbeat {
+  .dev.on .led { background: var(--magenta); box-shadow: var(--m-glow); animation: vapor-heartbeat 1.6s ease-in-out infinite; }
+  @keyframes vapor-heartbeat {
     0%, 100% { transform: scale(1); }
     20% { transform: scale(1.4); }
     40% { transform: scale(1); }
@@ -616,7 +616,7 @@
     -webkit-mask: radial-gradient(circle, transparent 48%, black 52%);
             mask: radial-gradient(circle, transparent 48%, black 52%);
     filter: drop-shadow(0 0 4px var(--magenta));
-    animation: spin 0.9s linear infinite;
+    animation: vapor-spin 0.9s linear infinite;
   }
 
   .dev .chev { color: var(--ink-faint); font-size: 14px; transition: transform 0.2s; line-height: 1; text-align: center; }
@@ -694,7 +694,7 @@
     display: block; width: 5px; background: var(--magenta);
     box-shadow: 0 0 5px var(--magenta);
     border-radius: 1px;
-    animation: eq 0.9s ease-in-out infinite alternate;
+    animation: vapor-eq 0.9s ease-in-out infinite alternate;
   }
   .dev.off .eq i { background: var(--ink-faint); box-shadow: none; height: 4px !important; animation: none; }
   .eq i:nth-child(1) { animation-delay: 0.00s; }
@@ -705,7 +705,7 @@
   .eq i:nth-child(6) { animation-delay: 0.40s; }
   .eq i:nth-child(7) { animation-delay: 0.48s; }
   .eq i:nth-child(8) { animation-delay: 0.56s; }
-  @keyframes eq {
+  @keyframes vapor-eq {
     from { height: 4px; opacity: 0.5; }
     to   { height: 24px; opacity: 1; }
   }
@@ -801,8 +801,8 @@
     transition: transform 0.12s, filter 0.15s;
   }
   .composer .send:active { transform: scale(0.94); filter: brightness(1.1); }
-  .composer .send.brewing { animation: brew 1s ease-in-out infinite; }
-  @keyframes brew { 50% { filter: brightness(1.35) saturate(1.2); } }
+  .composer .send.brewing { animation: vapor-brew 1s ease-in-out infinite; }
+  @keyframes vapor-brew { 50% { filter: brightness(1.35) saturate(1.2); } }
   .composer .send::before {
     content: "";
     width: 24px; height: 24px;
@@ -833,9 +833,9 @@
   .composer .mic.rec {
     background: var(--danger-grad);
     filter: var(--danger-glow);
-    animation: micrec 1.2s ease-in-out infinite;
+    animation: vapor-micrec 1.2s ease-in-out infinite;
   }
-  @keyframes micrec { 50% { transform: scale(0.92); } }
+  @keyframes vapor-micrec { 50% { transform: scale(0.92); } }
   /* STT in flight: the mask swaps to the 8-bar spinner (the shared SpinnerIcon geometry, stroke 2.4)
      and rolls — steps(8) advances one bar per tick. Rotating the button rotates mask + gradient
      together; at 28px the gradient shift is invisible, and the button is disabled while sending so
@@ -843,9 +843,9 @@
   .composer .mic.sending {
     -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v4'/><path d='m16.2 7.8 2.9-2.9'/><path d='M18 12h4'/><path d='m16.2 16.2 2.9 2.9'/><path d='M12 18v4'/><path d='m4.9 19.1 2.9-2.9'/><path d='M2 12h4'/><path d='m4.9 4.9 2.9 2.9'/></svg>") center/28px no-repeat;
             mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2v4'/><path d='m16.2 7.8 2.9-2.9'/><path d='M18 12h4'/><path d='m16.2 16.2 2.9 2.9'/><path d='M12 18v4'/><path d='m4.9 19.1 2.9-2.9'/><path d='M2 12h4'/><path d='m4.9 4.9 2.9 2.9'/></svg>") center/28px no-repeat;
-    animation: micspin 1s steps(8, end) infinite;
+    animation: vapor-micspin 1s steps(8, end) infinite;
   }
-  @keyframes micspin { to { transform: rotate(360deg); } }
+  @keyframes vapor-micspin { to { transform: rotate(360deg); } }
 
   /* (peek + meta-row removed for compact composer) */
 

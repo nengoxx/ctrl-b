@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DeviceRow } from "../../src/components/DeviceRow";
+import { DeviceRow } from "../../src/themes/vapor/DeviceRow";
 import type { Host } from "../../src/types";
 
 // DeviceRow — D3 slice 2: the expanded kv-detail shows a `vpn` row when the host has a vpn_host, and

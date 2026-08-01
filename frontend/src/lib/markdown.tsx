@@ -209,7 +209,7 @@ function blocks(src: string): ReactNode[] {
   return out;
 }
 
-/** Render a markdown string as themed React nodes (see `.md` in theme/extras.css + kit.css).
+/** Render a markdown string as themed React nodes (see `.md` in themes/vapor/extras.css + kit.css).
  *  Memoized on `text`: during streaming the whole chat-log re-renders per token, but a COMPLETED bubble's
  *  text is byte-stable, so it skips the full from-scratch re-parse (the LibreChat / Vercel-AI-SDK
  *  block-memoization pattern at the message grain). Only the still-growing streaming bubble re-parses. */

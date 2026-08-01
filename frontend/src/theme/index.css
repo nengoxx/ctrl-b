@@ -36,8 +36,8 @@
  * beats a theme's own chrome) but below @layer reset. Scoped under `.kit` → inert on vapor. */
 @import "../theme-engine/kit/axes.css" layer(axes);
 
-@import "./vapor.css" layer(theme);
-@import "./extras.css" layer(theme);
+@import "../themes/vapor/vapor.css" layer(theme);
+@import "../themes/vapor/extras.css" layer(theme);
 
 /* App-like text-selection model (owner directive 2026-06-28 — the Ionic/native pattern), in a LAST-ordered
  * layer so it wins over any theme's `all: unset` with NO `!important`. Nothing is selectable by DEFAULT: this

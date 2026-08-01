@@ -1,8 +1,8 @@
 import { memo, type MouseEvent } from "react";
 
-import type { FleetAction } from "../hooks/useActions";
-import { rebaseServiceUrl, serviceBase } from "../lib/serviceBase";
-import type { Host, Service } from "../types";
+import type { FleetAction } from "../../hooks/useActions";
+import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
+import type { Host, Service } from "../../types";
 
 // One fleet row + its expandable dropdown (services + kv detail + wake/stop buttons), ported from
 // vapor.html renderDevices(). Phase 3 fills the dropdown's service list: each service is the

@@ -266,9 +266,9 @@ body[data-perf="lite"] .composer {
 /* Gentle traveling shimmer WHILE PLAYING — bars scaleY-pulse (GPU-cheap, §14.11), staggered via a
    per-bar negative animationDelay (MiniPlayer) for a wave. Gated on the Motion toggle below. */
 .mini-player .mp-wave.playing i {
-  animation: mp-bar 1.1s ease-in-out infinite;
+  animation: vapor-mp-bar 1.1s ease-in-out infinite;
 }
-@keyframes mp-bar {
+@keyframes vapor-mp-bar {
   0%,
   100% {
     transform: scaleY(0.7);
@@ -407,7 +407,7 @@ body[data-perf="lite"] .composer {
 .conn-badge.reconnecting .dot {
   background: var(--magenta);
   box-shadow: 0 0 6px var(--magenta);
-  animation: conn-pulse 1.4s ease-in-out infinite;
+  animation: vapor-conn-pulse 1.4s ease-in-out infinite;
 }
 .conn-badge.disconnected {
   border-color: rgba(var(--danger-rgb), 0.4);
@@ -417,7 +417,7 @@ body[data-perf="lite"] .composer {
   background: rgb(var(--danger-rgb));
   box-shadow: 0 0 6px rgb(var(--danger-rgb));
 }
-@keyframes conn-pulse {
+@keyframes vapor-conn-pulse {
   50% {
     opacity: 0.35;
   }
@@ -452,7 +452,7 @@ body[data-perf="lite"] .composer {
   font-size: 12px;
   line-height: 1.35;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
-  animation: toast-in 0.22s ease;
+  animation: vapor-toast-in 0.22s ease;
 }
 .toast::before {
   content: "";
@@ -507,7 +507,7 @@ body[data-perf="lite"] .composer {
   transform: scale(0.96);
   filter: brightness(1.1);
 }
-@keyframes toast-in {
+@keyframes vapor-toast-in {
   from {
     opacity: 0;
     transform: translateY(-8px);
@@ -529,7 +529,7 @@ body[data-perf="lite"] .composer {
   padding: 24px;
   background: rgba(5, 1, 12, 0.66);
   backdrop-filter: blur(4px);
-  animation: modal-fade 0.18s ease;
+  animation: vapor-modal-fade 0.18s ease;
 }
 .modal {
   width: 100%;
@@ -589,7 +589,7 @@ body[data-perf="lite"] .composer {
   box-shadow: 0 3px 12px rgba(var(--danger-rgb), 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
-@keyframes modal-fade {
+@keyframes vapor-modal-fade {
   from {
     opacity: 0;
   }
@@ -742,9 +742,9 @@ body {
   display: inline-block;
   margin-left: 1px;
   color: var(--magenta);
-  animation: caret-blink 1s steps(2, start) infinite;
+  animation: vapor-caret-blink 1s steps(2, start) infinite;
 }
-@keyframes caret-blink {
+@keyframes vapor-caret-blink {
   to {
     opacity: 0;
   }
@@ -807,9 +807,9 @@ body {
   color: var(--magenta);
   border: 1px solid rgba(var(--accent-rgb), 0.4);
   background: rgba(var(--accent-rgb), 0.08);
-  animation: tag-pulse 1.3s ease-in-out infinite;
+  animation: vapor-tag-pulse 1.3s ease-in-out infinite;
 }
-@keyframes tag-pulse {
+@keyframes vapor-tag-pulse {
   50% {
     opacity: 0.45;
   }
@@ -885,7 +885,7 @@ body {
 }
 .b.cmd .cmd-result.running {
   color: var(--teal);
-  animation: tag-pulse 1.3s ease-in-out infinite;
+  animation: vapor-tag-pulse 1.3s ease-in-out infinite;
 }
 /* Resolved bubble: dim the command + lozenge to read as "done" (no actions are rendered). Mirrors
    vapor's `.cmd.done` tones via the accent-2/violet palette, minus the hardcoded ::after. */
@@ -1071,9 +1071,9 @@ body {
   border: 1px solid rgba(var(--accent-rgb), 0.35);
   backdrop-filter: blur(14px);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
-  animation: plan-drop-in 0.16s ease;
+  animation: vapor-plan-drop-in 0.16s ease;
 }
-@keyframes plan-drop-in {
+@keyframes vapor-plan-drop-in {
   from {
     opacity: 0;
     transform: translate(-50%, -6px);
@@ -1134,7 +1134,7 @@ body {
 .plan-step.active .tick {
   border-color: var(--teal);
   box-shadow: var(--t-glow);
-  animation: tag-pulse 1.3s ease-in-out infinite;
+  animation: vapor-tag-pulse 1.3s ease-in-out infinite;
 }
 .plan-step.active .tick::after {
   content: "";
@@ -1341,7 +1341,7 @@ body {
   border-radius: 50%;
   background: var(--magenta);
   box-shadow: var(--m-glow);
-  animation: dot-bounce 1.2s ease-in-out infinite;
+  animation: vapor-dot-bounce 1.2s ease-in-out infinite;
 }
 .b.bot .dots i:nth-child(2) {
   animation-delay: 0.18s;
@@ -1349,7 +1349,7 @@ body {
 .b.bot .dots i:nth-child(3) {
   animation-delay: 0.36s;
 }
-@keyframes dot-bounce {
+@keyframes vapor-dot-bounce {
   0%,
   70%,
   100% {
@@ -1972,7 +1972,7 @@ body {
   padding: 14px;
   background: rgba(5, 1, 12, 0.72);
   backdrop-filter: blur(4px);
-  animation: modal-fade 0.18s ease;
+  animation: vapor-modal-fade 0.18s ease;
 }
 .pm {
   display: flex;

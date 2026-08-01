@@ -15,10 +15,10 @@ import { appbarShown, useUISlice } from "../../store/ui";
 import { prefetchOnIdle } from "../../lib/prefetch";
 import { AgentTab } from "../../tabs/AgentTab";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
-import { FleetTab } from "../../tabs/FleetTab";
 import { UtilsTab } from "../../tabs/UtilsTab";
 import { useScrollKeep } from "../../theme-engine/scrollKeep";
 import { useThemeSetting } from "../../theme-engine/settings";
+import { FleetTab } from "./FleetTab";
 import type { Loz, Skyline } from "./index";
 
 // The vapor theme's Root (Phase 11 v2 / D29 §14.7 M0). This is today's App body verbatim — the

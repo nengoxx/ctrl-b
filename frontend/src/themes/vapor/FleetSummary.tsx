@@ -1,6 +1,6 @@
 import { memo, useMemo } from "react";
 
-import type { Host } from "../types";
+import type { Host } from "../../types";
 
 // Fleet summary strip — awake count, average ping over online hosts, poll cycle.
 //

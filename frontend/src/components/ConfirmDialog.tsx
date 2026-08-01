@@ -4,7 +4,7 @@ import { resolveConfirm, useConfirm } from "../store/confirm";
 
 // The single confirm dialog host (Phase 2: gates shutdown; now also remove-agent /
 // remove-skill / remove-server via the editors). Driven by store/confirm's
-// requestConfirm(); styling in theme/extras.css.
+// requestConfirm(); styling in themes/vapor/extras.css.
 //
 // F17 — focus management (UI_AUDIT.md §6c). The five fixes the audit called out:
 //
