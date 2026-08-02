@@ -173,11 +173,30 @@
       --gc-dot-on: #ffffff;
       --gc-dot-shadow: 0 2px 8px #ff6cae99;
 
+      /* A capsule card: its own drop shadow + inset hairline, the bottom scrim that carries the plate, the
+       * notched-corner MASK (the prototype's 315° cut, which is why the notch is a mask and not a radius),
+       * and the shine sweep. */
+      --gc-card-shadow: 0 16px 34px #0008, inset 0 0 0 1px #ffffff1f;
+      --gc-card-mask: linear-gradient(315deg, transparent 0 20px, #000 20px);
+      --gc-card-scrim: linear-gradient(#0000 42%, #0a0817e6 92%);
+      --gc-shine: linear-gradient(112deg, transparent 34%, #ffffff40 48%, transparent 60%);
+      --gc-plate-shadow: 0 2px 10px #000;
+      /* Under the wallpaper the prototype gives each card `#14172fcc` PLUS a `backdrop-filter: blur(2px)`.
+       * The blur is DELETED by design (§10.3: many blurred surfaces re-blurring per scroll frame over a
+       * static wallpaper is the #1 Fennec jank class), and the alpha is raised to compensate — over
+       * already-scrimmed art the visual delta is near zero. */
+      --gc-card-wall: #14172fe6;
+
       /* Stars (§6.2): gold for the lower rungs, rose-gold for the top TWO in 5★ mode (the ★3 in 3★ mode). */
       --gc-star: #ffd464;
       --gc-star-hi: #ff9e8a;
       --gc-star-glow: #ffb63f88;
       --gc-star-dim: #b9b3d6; /* sleeping cards de-saturate */
+      /* The rarity row's two shadows: a lit one on a live card, a flat one on a sleeping card (the
+       * prototype drops the glow with the colour). Composed over `--gc-star-glow` rather than re-typing it,
+       * so the glow has ONE home. */
+      --gc-star-shadow: 0 2px 6px #000, 0 0 12px var(--gc-star-glow);
+      --gc-star-shadow-dim: 0 2px 6px #000;
 
       /* The ONLINE state ribbon + its ink. */
       --gc-online-fill: linear-gradient(92deg, #74f3ad, #54e5ff);

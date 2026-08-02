@@ -793,6 +793,213 @@
       letter-spacing: 0.14em;
     }
 
+    /* ── THE CAPSULE TRACK (G1 — the prototype's `.track-head` + `.capsule-track`, theme.css:44-70) ──
+     * The head is a serif 編成 over its Latin gloss, with the online/total counter aligned to its baseline. */
+    .gc-track-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 22px 14px 10px;
+    }
+    .gc-track-head h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 29px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 0.04em;
+    }
+    .gc-track-head h1 em {
+      display: block;
+      margin-top: 7px;
+      font-family: var(--font-body);
+      font-style: normal;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: var(--gc-heading);
+    }
+    .gc-track-head .count {
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      opacity: 0.45;
+      /* Tabular figures so the counter cannot re-wobble the head as machines wake (the prototype's fixed
+       * `04 / 04` never had to). */
+      font-variant-numeric: tabular-nums;
+    }
+    .gc-msg {
+      padding: 4px 14px 8px;
+      color: var(--text-3);
+      font-size: 11px;
+    }
+    .gc-track {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 0 12px;
+    }
+
+    /* A capsule card. The notch is a MASK, not a border-radius: the prototype cuts the bottom-left corner
+     * off at 315 degrees, which no radius expresses. `aspect-ratio` (not a height) is what lets the three
+     * shapes share one rule and stay correct at every viewport width. */
+    .gc-card {
+      position: relative;
+      overflow: hidden;
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--gc-card-shadow);
+      color: inherit;
+      cursor: pointer;
+      aspect-ratio: 3/4;
+      -webkit-mask: var(--gc-card-mask);
+      mask: var(--gc-card-mask);
+    }
+    .gc-card.feat {
+      grid-column: 1/-1;
+      aspect-ratio: 5/4;
+    }
+    .gc-card.wide {
+      grid-column: 1/-1;
+      aspect-ratio: 16/9;
+    }
+    body[data-wallpaper="on"] .gc-card {
+      background: var(--gc-card-wall);
+    }
+    .gc-card img,
+    .gc-card-blank {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 50% 16%;
+      transition: transform 600ms var(--gc-ease-out);
+    }
+    .gc-card.feat img {
+      object-position: 50% 6%;
+    }
+    .gc-card.wide img {
+      object-position: 50% 46%;
+    }
+    .gc-card.sleep img {
+      filter: grayscale(0.75) brightness(0.72);
+    }
+    .gc-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: var(--gc-card-scrim);
+    }
+    .gc-card .rar {
+      position: absolute;
+      left: 9px;
+      top: 8px;
+      z-index: 3;
+      display: flex;
+      font-size: 12px;
+      letter-spacing: 2px;
+      color: var(--gc-star);
+      text-shadow: var(--gc-star-shadow);
+    }
+    .gc-card .rar i {
+      font-style: normal;
+    }
+    /* The top rungs of the ladder in rose-gold (§6.2) — `isHighStar` decides WHICH, this decides how it
+     * looks, so the mode switch re-tints without a second rule. */
+    .gc-card .rar i.hi {
+      color: var(--gc-star-hi);
+    }
+    .gc-card.sleep .rar {
+      color: var(--gc-star-dim);
+      text-shadow: var(--gc-star-shadow-dim);
+    }
+    .gc-card .state {
+      position: absolute;
+      right: 0;
+      top: 9px;
+      z-index: 3;
+      padding: 4px 9px;
+      border: 1px solid var(--line-2);
+      border-right: 0;
+      background: var(--gc-pill-bg);
+      color: var(--gc-chip-ink);
+      font-size: 7px;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+    }
+    .gc-card .state.on {
+      border-color: transparent;
+      border-radius: 99px 0 0 99px;
+      background: var(--gc-online-fill);
+      color: var(--gc-online-ink);
+    }
+    .gc-card .plate {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 3;
+      display: grid;
+      gap: 3px;
+      padding: 10px 12px 12px;
+      text-align: left;
+    }
+    .gc-card .plate b {
+      font-size: 20px;
+      font-weight: 900;
+      font-style: italic;
+      letter-spacing: 0.01em;
+      text-shadow: var(--gc-plate-shadow);
+      /* The prototype's names are four fixed words; a real fleet's are not (the long-name matrix row). */
+      overflow-wrap: anywhere;
+    }
+    .gc-card.feat .plate b {
+      font-size: 27px;
+    }
+    .gc-card .plate small {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--gc-caption);
+    }
+    /* The SHINE. The prototype sweeps it on `:hover`, which never fires on the owner's phone (§10.3), so
+     * the sweep is ALSO a keyframe animation armed on pointerdown — a tap gets the same highlight a mouse
+     * does. Both forms are transform-only; the resting position is off-canvas, so an un-animated shine is
+     * simply invisible. */
+    .gc-card .shine {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      background: var(--gc-shine);
+      transform: translateX(-120%);
+    }
+    .gc-card .shine.go {
+      animation: gacha-shine 760ms ease;
+    }
+    @keyframes gacha-shine {
+      to {
+        transform: translateX(120%);
+      }
+    }
+    @media (hover: hover) {
+      .gc-card:hover img {
+        transform: scale(1.05);
+      }
+      .gc-card:hover .shine {
+        transform: translateX(120%);
+        transition: transform 760ms ease;
+      }
+    }
+    /* Reduced motion keeps the press FEEDBACK (a state change the user asked for) but drops the sweep and
+     * the zoom, which are ambient decoration. */
+    body[data-motion="reduced"] .gc-card .shine {
+      animation: none;
+    }
+    body[data-motion="reduced"] .gc-card img {
+      transition: none;
+    }
+
     /* The kit's own section entrance (`kit-fade`, 0.25 s) is re-tuned to nothing under gacha (§10.1
      * riders): the prototype has no per-screen fade, the reel IS the transition, and leaving both in
      * would double-animate the swap — visibly so if the M2 spike promotes a root cross-fade on top. */

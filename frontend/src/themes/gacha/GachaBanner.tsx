@@ -22,7 +22,7 @@ import {
   type CarouselState,
 } from "./carousel";
 import { GACHA_COPY } from "./copy";
-import { promoCopy } from "./fleet";
+import { openLabel, promoCopy } from "./fleet";
 import { safeRafLoop, type SafeRafLoop } from "../../theme-engine/safeRafLoop";
 import type { ResolvedArt } from "./roster";
 
@@ -359,7 +359,7 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
                 <button
                   type="button"
                   className="gc-slide-hit"
-                  aria-label={`open ${host.name} dossier`}
+                  aria-label={openLabel(host.name, s.online)}
                   onClick={() => onOpenHost(host.id)}
                 >
                   {body}

@@ -70,6 +70,17 @@ export function plateSub(host: Host): string {
   return state === null ? role : `${role} ${GACHA_COPY.sep} ${state}`;
 }
 
+/** The accessible name for the two surfaces that OPEN a machine — a capsule card and its promo slide. One
+ *  function because they are one action (the shared `openHost` seam), and their names must not drift apart.
+ *
+ *  It carries the liveness because an `aria-label` REPLACES an element's content: the card's ONLINE /
+ *  SLEEPING chip is real text inside the button, and labelling the button "open X dossier" alone would
+ *  silently drop it from the accessible name. The frontier fleet's own `name — online/asleep` labels are the
+ *  in-repo precedent for spelling the state out. */
+export function openLabel(name: string, online: boolean): string {
+  return `open ${name} dossier, ${online ? "online" : "sleeping"}`;
+}
+
 /** A promo slide's templated copy (§6.4 / the R8 amendment): the tag pill and the JP caption are per-STATE
  *  templates, and the display line is the host's own name. The exact strings are frozen in `copy.ts` — the
  *  owner's pick at the G1 eyeball is a value edit there, not a change here. */

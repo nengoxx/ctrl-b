@@ -1,9 +1,11 @@
 import { useFleet } from "../../hooks/useFleet";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { GachaBanner, type BannerSlide } from "./GachaBanner";
+import { GachaCard } from "./GachaCard";
 import { HERO_KEY } from "./carousel";
-import { hostsResolved, rateText } from "./fleet";
-import { defaultRoster, heroArt, wideArtForHost } from "./roster";
+import { GACHA_COPY } from "./copy";
+import { cardShapes, counterText, hostsResolved, rateText } from "./fleet";
+import { artForHost, defaultRoster, heroArt, wideArtForHost } from "./roster";
 import { MAX_STARS, toStarMode } from "./stars";
 
 // The gacha bespoke FLEET (D52 / GACHA_PLAN §6) — the prototype's capsule-arcade fleet screen, injected into
@@ -40,6 +42,10 @@ export function GachaFleet({ active }: { active: boolean }) {
   // reads as a held value, never as a confident "0".
   const resolved = hostsResolved(isLoading, error, hosts.length);
 
+  // The card geometry (the main seat's Q8.10 ruling): host[0] featured, the rest in 3/4 pairs, a trailing
+  // odd host wide. A pure function of the COUNT, so a poll can never re-shuffle the track's shape.
+  const shapes = cardShapes(hosts.length);
+
   // The §6.4 slide set: the fixed hero, then ONE promo per host — online AND sleeping (the ruled membership;
   // a sleeping promo renders dimmed, which keeps its click useful: open the dossier, then wake).
   const slides: BannerSlide[] = [
@@ -66,6 +72,39 @@ export function GachaFleet({ active }: { active: boolean }) {
         rate={rateText(MAX_STARS[starMode], onlineCount, resolved)}
         onOpenHost={openHostDossier}
       />
+
+      {/* THE CAPSULE TRACK. The head is the prototype's 編成 / "Select a unit" / counter row; the grid is
+          its two-column track, with the geometry rule deciding which cards span the full width. */}
+      <div className="gc-track-head">
+        <h1>
+          {GACHA_COPY.trackHead}
+          <em>Select a unit</em>
+        </h1>
+        <span className="count">{counterText(onlineCount, hosts.length, resolved)}</span>
+      </div>
+
+      {/* The three explicit states (the frontier/cosmos precedent): an error replaces the track, an
+          answered-but-empty fleet says so, and while the FIRST poll is in flight nothing renders below the
+          head — an empty grid under "Select a unit" would be dishonest chrome. The banner above always
+          stands, so the surface never blanks. */}
+      {error ? (
+        <div className="gc-msg">backend unreachable: {error.message}</div>
+      ) : hosts.length === 0 ? (
+        !isLoading && <div className="gc-msg">no hosts in config.yaml</div>
+      ) : (
+        <div className="gc-track">
+          {shapes.map((shape, i) => (
+            <GachaCard
+              key={hosts[i].id}
+              host={hosts[i]}
+              art={artForHost(ROSTER, i)}
+              shape={shape}
+              mode={starMode}
+              onOpen={openHostDossier}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

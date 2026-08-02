@@ -68,9 +68,9 @@ describe("the slide set (§6.4)", () => {
     const found = slides(container);
     expect(found).toHaveLength(3);
     expect(found[0].textContent).toContain("PRIZE POOL");
-    expect(container.querySelector('[aria-label="open pegasus dossier"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="open pegasus dossier, online"]')).not.toBeNull();
     // the SLEEPING host still gets a promo — the membership ruling, not implementer latitude
-    expect(container.querySelector('[aria-label="open atlas dossier"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="open atlas dossier, sleeping"]')).not.toBeNull();
   });
 
   it("marks a sleeping promo with the sleep treatment and its own frozen caption", () => {
@@ -172,6 +172,143 @@ describe("carousel semantics", () => {
     const { container } = render(<GachaFleet active />);
     const copy = slides(container)[1].querySelector(".gc-banner-copy b")!;
     expect(copy.textContent).toHaveLength(60);
+  });
+});
+
+describe("the capsule track (§6.1/§6.2)", () => {
+  const cards = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-card")];
+
+  it("renders one card per host, in the ruled geometry", () => {
+    setFleet({ hosts: [host("a", true), host("b", true), host("c", false), host("d", true)] });
+    const { container } = render(<GachaFleet active />);
+    expect(cards(container).map((el) => el.className)).toEqual([
+      "gc-card feat",
+      "gc-card pair",
+      "gc-card pair sleep",
+      "gc-card wide",
+    ]);
+  });
+
+  it("gives every card the SAME roster entry its promo slide got", () => {
+    const { container } = render(<GachaFleet active />);
+    const cardArt = [...container.querySelectorAll<HTMLImageElement>(".gc-card img")].map((i) =>
+      i.getAttribute("src"),
+    );
+    const promoArt = [...container.querySelectorAll<HTMLImageElement>(".gc-slide img")]
+      .slice(1)
+      .map((i) => i.getAttribute("src"));
+    // The bundled roster has no `wide` variants, so both crops resolve to the same file — which is exactly
+    // the agreement the one-resolver ruling is about.
+    expect(cardArt).toEqual(promoArt);
+  });
+
+  it("cycles the roster when there are MORE hosts than entries (never a placeholder)", () => {
+    setFleet({ hosts: Array.from({ length: 6 }, (_, i) => host(`h${i}`, true)) });
+    const { container } = render(<GachaFleet active />);
+    const srcs = [...container.querySelectorAll<HTMLImageElement>(".gc-card img")].map(
+      (i) => i.src,
+    );
+    expect(srcs).toHaveLength(6);
+    expect(srcs[4]).toBe(srcs[0]); // 4 bundled characters → host 4 wraps back to host 0's
+    expect(new Set(srcs).size).toBe(4);
+  });
+
+  it("draws stars from CONFIGURED services, and re-draws the ladder when the mode changes", () => {
+    const svc = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        name: `s${i}`,
+        kind: null,
+        port: null,
+        path: "/",
+        autostart: false,
+        cmd: {},
+      }));
+    setFleet({ hosts: [host("a", true, { services: svc(4) }), host("b", true, { services: [] })] });
+    const { container, rerender } = render(<GachaFleet active />);
+    const rarity = () =>
+      [...container.querySelectorAll(".gc-card .rar")].map((el) => el.textContent?.length);
+    // 5-star mode: 4 services → 4 stars; zero services → the ruled ★1 floor
+    expect(rarity()).toEqual([4, 1]);
+
+    act(() => {
+      setUI({ themeSettings: { gacha: { starMode: "three" } } });
+    });
+    rerender(<GachaFleet active />);
+    // 3-star mode compresses the middle: 4 services → 3, and the floor still holds
+    expect(rarity()).toEqual([3, 1]);
+  });
+
+  it("paints only the TOP rungs of the ladder in rose-gold (§6.2)", () => {
+    const svc = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        name: `s${i}`,
+        kind: null,
+        port: null,
+        path: "/",
+        autostart: false,
+        cmd: {},
+      }));
+    setFleet({
+      hosts: [host("a", true, { services: svc(5) }), host("b", true, { services: svc(2) })],
+    });
+    const { container } = render(<GachaFleet active />);
+    const [five, two] = [...container.querySelectorAll(".gc-card .rar")];
+    expect(five.querySelectorAll("i.hi")).toHaveLength(2); // ★4 and ★5
+    expect(two.querySelectorAll("i.hi")).toHaveLength(0); // a ★2 card is all gold
+  });
+
+  it("states the machine on the chip AND in the button's accessible name", () => {
+    const { container } = render(<GachaFleet active />);
+    const [awake, asleep] = cards(container);
+    expect(awake.querySelector(".state")!.textContent).toBe("ONLINE");
+    expect(asleep.querySelector(".state")!.textContent).toBe("SLEEPING");
+    expect(awake.getAttribute("aria-label")).toBe("open pegasus dossier, online");
+    expect(asleep.getAttribute("aria-label")).toBe("open atlas dossier, sleeping");
+  });
+
+  it("carries the plate's ROLE line, with the frozen standing-by copy while asleep", () => {
+    const { container } = render(<GachaFleet active />);
+    const [awake, asleep] = cards(container);
+    expect(awake.querySelector(".plate small")!.textContent).toContain("18 ms");
+    expect(asleep.querySelector(".plate small")!.textContent).toContain(GACHA_COPY.cardSleeping);
+  });
+
+  it("counts online / total in the head, held until the fleet resolves", () => {
+    const { container, unmount } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-track-head .count")!.textContent).toBe("01 / 02");
+    unmount();
+
+    setFleet({ hosts: [], isLoading: true });
+    const pending = render(<GachaFleet active />);
+    expect(pending.container.querySelector(".gc-track-head .count")!.textContent).not.toContain(
+      "0",
+    );
+  });
+
+  it("replaces the track with an honest message on error — but keeps the banner standing", () => {
+    setFleet({ hosts: [], error: new Error("nope") });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-track")).toBeNull();
+    expect(container.querySelector(".gc-msg")!.textContent).toContain("nope");
+    expect(container.querySelector(".gc-banner")).not.toBeNull();
+  });
+
+  it("renders nothing under the head while the FIRST poll is still in flight", () => {
+    setFleet({ hosts: [], isLoading: true });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-track")).toBeNull();
+    expect(container.querySelector(".gc-msg")).toBeNull();
+  });
+
+  it("opens through the SHARED seam — the same handler the promo slides use", () => {
+    const { container } = render(<GachaFleet active />);
+    // The seam is a stub until G2; what G1 owns is that pressing a card is a real, named button action
+    // that does not throw and does not navigate anywhere yet.
+    expect(() =>
+      act(() => {
+        fireEvent.click(cards(container)[0]);
+      }),
+    ).not.toThrow();
   });
 });
 
