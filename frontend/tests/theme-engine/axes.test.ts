@@ -66,7 +66,7 @@ describe("useOutlines", () => {
 // minimal/cosmos/vapor `outline`; the undeclared arm uses the unregistered `phosphor` — see above).
 
 describe("composerSkinSetting factory", () => {
-  it("builds a seg spec (options Outline/Glass/Bezel/Sleek, default from the arg)", () => {
+  it("builds a seg spec (options Outline/Glass/Bezel/Sleek/Arcade, default from the arg)", () => {
     const spec = composerSkinSetting();
     expect(spec).toMatchObject({
       type: "seg",
@@ -78,29 +78,37 @@ describe("composerSkinSetting factory", () => {
         { val: "glass", label: "Glass" },
         { val: "bezel", label: "Bezel" },
         { val: "sleek", label: "Sleek" },
+        // D52 G3 — the catalog's fifth value, LOOK-named (never `gacha`): every theme's picker gains it,
+        // which is the budgeted cross-theme cost of keeping composer chrome shared (D37).
+        { val: "arcade", label: "Arcade" },
       ],
     });
-    expect(spec.type === "seg" && spec.options).toHaveLength(4);
+    expect(spec.type === "seg" && spec.options).toHaveLength(5);
     expect(composerSkinSetting("bezel").default).toBe("bezel");
     expect(composerSkinSetting("glass").default).toBe("glass");
     expect(composerSkinSetting("sleek").default).toBe("sleek");
+    expect(composerSkinSetting("arcade").default).toBe("arcade");
   });
 });
 
 describe("useComposerSkin", () => {
-  it("resolves each theme's DECLARED default (frontier→bezel, minimal/cosmos/vapor→outline)", () => {
+  it("resolves each theme's DECLARED default (frontier→bezel, gacha→arcade, the rest→outline)", () => {
     expect(renderHook(() => useComposerSkin("frontier")).result.current).toBe("bezel");
     expect(renderHook(() => useComposerSkin("minimal")).result.current).toBe("outline");
     expect(renderHook(() => useComposerSkin("cosmos")).result.current).toBe("outline");
     // D51 V4 — vapor DECLARES `outline` now (its dock is the kit's bordered bar), so this is its declared
     // default, not the undeclared fallback that used to answer here.
     expect(renderHook(() => useComposerSkin("vapor")).result.current).toBe("outline");
-    // D52 G0 — gacha rides the kit-native bar until G3 authors the look-named shared `arcade` skin (D37:
-    // composer chrome is a SHARED catalog value, never theme CSS). Flip this arm when that lands.
-    expect(renderHook(() => useComposerSkin("gacha")).result.current).toBe("outline");
+    // D52 G3 — gacha declares the look-named shared `arcade` skin it brought to the catalog.
+    expect(renderHook(() => useComposerSkin("gacha")).result.current).toBe("arcade");
   });
 
-  it("a valid user override wins over the declared default", () => {
+  it("a valid user override wins over the declared default (the new value included, in ANY theme)", () => {
+    // the cross-theme half of the D37 contract: a catalog value is offered — and applies — everywhere
+    setThemeSetting("cosmos", "composerSkin", "arcade");
+    expect(renderHook(() => useComposerSkin("cosmos")).result.current).toBe("arcade");
+    setThemeSetting("gacha", "composerSkin", "outline");
+    expect(renderHook(() => useComposerSkin("gacha")).result.current).toBe("outline");
     setThemeSetting("frontier", "composerSkin", "sleek");
     expect(renderHook(() => useComposerSkin("frontier")).result.current).toBe("sleek");
     setThemeSetting("minimal", "composerSkin", "glass");
@@ -121,5 +129,7 @@ describe("useComposerSkin", () => {
     expect(renderHook(() => useComposerSkin("minimal")).result.current).toBe("outline");
     setThemeSetting("frontier", "composerSkin", "not-a-skin");
     expect(renderHook(() => useComposerSkin("frontier")).result.current).toBe("bezel");
+    setThemeSetting("gacha", "composerSkin", "cabinet"); // a plausible-but-wrong name for the new value
+    expect(renderHook(() => useComposerSkin("gacha")).result.current).toBe("arcade");
   });
 });

@@ -1265,6 +1265,62 @@ body[data-composer-skin="sleek"] .kit .tools-sheet {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
 }
 
+/* ── skin · ARCADE (body[data-composer-skin="arcade"]) — the flat CABINET PANEL (D52 G3) ───────────────────
+ * The fifth catalog value, and the first minted since the axis itself. Where `outline` floats a frosted,
+ * softly-lifted bar, arcade is a PANEL BOLTED TO THE MACHINE: an opaque fill, a hairline edge, no frost and
+ * no elevation at all, tighter corners than the kit's 20px lozenge, and controls squared off to match. The
+ * look is the one it is named for — a cabinet's control plate — not a theme: gacha ships it as its default
+ * (its prototype's composer is `#15172e`, a 1px `#ffffff1a` edge, a 14px radius and 9px of padding, with no
+ * shadow at all — four of the five properties differ from every existing skin, which is what earned a new
+ * value rather than a reuse), and it renders sanely anywhere because every value below is a SEMANTIC token:
+ * `--surface`, `--line-2`, `--radius`, `--radius-sm`, `--density-pad`. No theme-private token is legible
+ * from here, by design (D37/D51 — a catalog skin belongs to every theme's picker).
+ *
+ * The gates come out FREE, which is part of why this skin is cheap: there is no blur to drop under
+ * perf-lite (the base `body[data-perf="lite"] .kit-composer` re-asserts the very `--surface` fill this skin
+ * already uses), nothing animates, and the popovers already wear the flat, bordered, opaque language the
+ * bar does (`.kit .kit-suggest`/`.tools-sheet` — `--surface` + `--line-2` + `--radius-sm`), so they need no
+ * rule at all. What DOES need care is the same specificity fight the other skins document: the geometry
+ * overrides are `.stacked`-scoped so the docked sheet's `padding: 0` / top-only radius and the line
+ * variant's 24px stadium are never clobbered by a (0,2,1) skin rule. */
+body[data-composer-skin="arcade"] .kit-composer {
+  /* opaque: the panel is a surface, not a window. (0,2,1) beats the base fill + border + shadow (0,1,0). */
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: var(--line-2); /* the hairline STAYS — unlike glass/bezel/sleek, which all drop it */
+  box-shadow: none;
+}
+/* the base light-mode rule (`body[data-mode="light"] .kit-composer`, (0,2,1)) re-adds a drop shadow and
+ * ties this section on specificity — win it at (0,3,1) rather than by source order alone. */
+body[data-mode="light"][data-composer-skin="arcade"] .kit-composer {
+  box-shadow: none;
+}
+/* the DOCKED sheet's own upward lift ((0,2,0)) and its light re-assert ((0,3,1)) both have to go flat too,
+ * or the skin would be shadowless in one layout and lifted in another. */
+body[data-composer-skin="arcade"] .kit-composer.sheet,
+body[data-mode="light"][data-composer-skin="arcade"] .kit-composer.sheet {
+  box-shadow: none;
+}
+/* STACKED-only geometry: the theme's own corner radius instead of the kit's lozenge, and a tighter, even
+ * gutter. The sheet (`padding: 0`, top-only radius) and the line stadium (24px, concentric with its 36px
+ * buttons) own geometry that this must not touch. */
+body[data-composer-skin="arcade"] .kit-composer.stacked {
+  border-radius: var(--radius);
+  padding: calc(9px * var(--density-pad)) 9px;
+}
+/* …and the controls square off with it: a cabinet's buttons are plates, not pills. Both faces of the
+ * mic⇄send morph, so the swap stays one control. (0,3,1) beats the base `.kit-cbtn`/`.kit-send` (0,1,0);
+ * the recording ring and every fill/state stay exactly the kit's. */
+body[data-composer-skin="arcade"] .kit-composer.stacked .kit-cbtn,
+body[data-composer-skin="arcade"] .kit-composer.stacked .kit-send {
+  border-radius: var(--radius-sm);
+}
+/* the plan pill follows the same corner language (the glass skin's own 8px-rect precedent). */
+body[data-composer-skin="arcade"] .kit-composer.stacked .plan-pill {
+  border-radius: var(--radius-sm);
+}
+
 /* ── Fleet view (KitFleet) — device list + 3-stat summary; ported from the minimal prototype. Inner class
  * names are generic (.led/.name/.role/.act/…), so every rule is scoped under a `.kit-*` container to avoid
  * colliding with vapor (skin-scoped) or the shared Bucket-A classes. ── */

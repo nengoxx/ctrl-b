@@ -50,8 +50,11 @@ export function useOutlines(themeId: ThemeId): boolean {
 /** The composer chrome skins (D37 catalog): `outline` = the Kit's native bordered bar (the base kit.css
  *  chrome — no stamp keying, so pre-mount/no-stamp renders it); `glass` = the old Borderless look (frost +
  *  deep elevation + icon-forward stacked controls); `bezel` = frontier's F4 composer sweep; `sleek` = the old
- *  Ghost (fully transparent bar + extended readability scrim). */
-export type ComposerSkin = "outline" | "glass" | "bezel" | "sleek";
+ *  Ghost (fully transparent bar + extended readability scrim); `arcade` = a flat, opaque CABINET PANEL —
+ *  no frost, no elevation, a hairline edge, tight corners and squared-off controls (D52 G3, born of gacha's
+ *  prototype, but LOOK-NAMED and authored on semantic tokens so it is a real catalog member every theme can
+ *  wear — never a theme-scoped bypass of D37). */
+export type ComposerSkin = "outline" | "glass" | "bezel" | "sleek" | "arcade";
 
 // The SHARED `composerSkin` setting spec (D29 §14.3). Themes spread it into `ThemeDef.settings` with their own
 // default — one source of the option list. A `seg` → the Appearance picker auto-renders a Seg (ConfTab), synced
@@ -66,6 +69,7 @@ export function composerSkinSetting(def: ComposerSkin = "outline"): ThemeSetting
       { val: "glass", label: "Glass" },
       { val: "bezel", label: "Bezel" },
       { val: "sleek", label: "Sleek" },
+      { val: "arcade", label: "Arcade" },
     ],
     default: def,
   };

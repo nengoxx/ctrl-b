@@ -875,3 +875,84 @@ test("gacha · M7: the oracle ghosts as ONE SURFACE — art and copy together �
   expect(overflow).toBeLessThanOrEqual(0);
   expect(pageErrors).toEqual([]);
 });
+
+test("gacha · the ARCADE composer skin: a flat cabinet panel here, and the same value in another theme", async ({
+  page,
+  pageErrors,
+}) => {
+  // D37/D51's shared-catalog rule made concrete (GACHA_PLAN §4.9 ledger + §10.5): composer chrome is never
+  // theme CSS, so gacha's prototype bar entered the catalog as the LOOK-named `arcade` value — which every
+  // theme's picker offers and every theme can wear. Both halves are measured here, because both are the
+  // deal: the skin has to be faithful in gacha AND sane in a theme that never asked for it.
+  const chrome = () =>
+    page.locator(".kit-composer").evaluate((el) => {
+      const s = getComputedStyle(el);
+      const btn = document.querySelector(".kit-send") ?? document.querySelector(".kit-cbtn");
+      return {
+        stamp: document.body.dataset.composerSkin,
+        bg: s.backgroundColor,
+        backdrop: s.backdropFilter,
+        borderWidth: s.borderTopWidth,
+        borderColor: s.borderTopColor,
+        radius: s.borderTopLeftRadius,
+        padding: `${s.paddingTop} ${s.paddingLeft}`,
+        shadow: s.boxShadow,
+        ctrlRadius: btn ? getComputedStyle(btn).borderTopLeftRadius : null,
+      };
+    });
+
+  // ── gacha, on its DECLARED default ──
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab: "agent", v: 1 });
+  await page.goto("/");
+  await expect(page.locator(".kit-composer")).toBeVisible();
+  const gacha = await chrome();
+  expect(gacha.stamp).toBe("arcade"); // the theme declares it; no user override involved
+  // the panel: OPAQUE (no frost), a visible hairline, the theme's own tight radius, an even gutter, flat
+  expect(gacha.bg).toBe("rgb(20, 23, 47)"); // --surface, opaque — the prototype's #15172e within 1/255
+  expect(gacha.backdrop).toBe("none");
+  expect(gacha.borderWidth).toBe("1px");
+  expect(gacha.borderColor).not.toBe("rgba(0, 0, 0, 0)"); // unlike glass/bezel/sleek, the edge STAYS
+  expect(gacha.radius).toBe("14px"); // gacha's --radius = the prototype's own 14px (kit default is 20)
+  expect(gacha.padding).toBe("9px 9px"); // the prototype's even 9px gutter
+  expect(gacha.shadow).toBe("none"); // a panel bolted on, not a bar floating above
+  expect(gacha.ctrlRadius).toBe("10px"); // --radius-sm: the controls square off with the bar
+
+  // ── cosmos wearing the same catalog value ──
+  // The cross-theme cost the plan budgeted. Every value in the skin is a SEMANTIC token, so the look
+  // travels while the palette and geometry stay the host theme's.
+  await seedUI(page, {
+    theme: "cosmos",
+    mode: "dark",
+    accent: "violet",
+    tab: "agent",
+    themeSettings: { cosmos: { composerSkin: "arcade" } },
+    v: 1,
+  });
+  await page.goto("/");
+  await expect(page.locator(".kit-composer")).toBeVisible();
+  const cosmos = await chrome();
+  expect(cosmos.stamp).toBe("arcade");
+  expect(cosmos.backdrop).toBe("none");
+  expect(cosmos.shadow).toBe("none");
+  expect(cosmos.padding).toBe("9px 9px");
+  // …its OWN surface and its OWN corner radius — no gacha value leaked into the shared catalog
+  expect(cosmos.bg).not.toBe(gacha.bg);
+  expect(cosmos.radius).not.toBe(gacha.radius);
+
+  // ── and the picker offers it everywhere (the D37 contract's visible half) ──
+  await seedUI(page, { theme: "cosmos", mode: "dark", accent: "violet", tab: "conf", v: 1 });
+  await page.goto("/");
+  const row = page.locator(".confrow", { hasText: "Composer skin" }).first();
+  await expect(row).toBeVisible();
+  const labels = await row.evaluate((el) =>
+    [...el.querySelectorAll("button")].map((b) => b.textContent),
+  );
+  expect(labels).toEqual(["Outline", "Glass", "Bezel", "Sleek", "Arcade"]);
+  // five options still fit ONE row at the mobile width — the seg must not wrap into a second line
+  const rows = await row.evaluate(
+    (el) =>
+      new Set([...el.querySelectorAll("button")].map((b) => b.getBoundingClientRect().top)).size,
+  );
+  expect(rows).toBe(1);
+  expect(pageErrors).toEqual([]);
+});

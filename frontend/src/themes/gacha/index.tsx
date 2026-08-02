@@ -55,10 +55,11 @@ export const gacha: ThemeDef = {
   // kit axes first (composer pair adjacent, the round-2 convention), then gacha's own three.
   settings: {
     composer: composerLayoutSetting("stacked"),
-    // The prototype's composer is a floating rounded bar with a filled GO button. The look-named shared
-    // `arcade` skin that captures it is G3 scope (D37: composer chrome is a SHARED catalog value, never
-    // theme CSS) — until then gacha rides the kit-native bordered bar.
-    composerSkin: composerSkinSetting("outline"),
+    // The prototype's composer is a flat, opaque panel with a hairline edge, tight corners and no shadow
+    // at all — measured against every existing skin at G3, four of its five defining properties differ
+    // from the closest (`outline`), so the CATALOG gained the look-named `arcade` value (D37: composer
+    // chrome is a SHARED catalog value, never theme CSS) and gacha declares it as its default.
+    composerSkin: composerSkinSetting("arcade"),
     planPlacement: planPlacementSetting("inline"),
     // The prototype's chat bubbles are borderless (fill + a hard offset shadow, no outline), so gacha takes
     // the kit's no-outlines chat; the toggle restores the bordered chrome live. Confirmed at the G3 eyeball.
