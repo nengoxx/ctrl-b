@@ -235,6 +235,16 @@
       --gc-dossier-ink: #17172c;
       --gc-dossier-card: #ffffff;
       --gc-dossier-line: #c9d0ef;
+      /* The sheet's own elevation — a violet halo rather than black, so the light panel reads as LIT from
+       * the arcade behind it instead of cut out of the page (`.detail-panel`'s `0 -20px 80px #5c6aff55`). */
+      --gc-dossier-shadow: 0 -20px 80px #5c6aff55;
+      /* The portrait's contact shadow, and the dark lozenge its rarity badge sits in — the two places the
+       * night palette still shows through on the light surface (`.detail-avatar` / `.art-rar`). */
+      --gc-dossier-art-shadow: 0 10px 22px #3f426a55;
+      --gc-dossier-badge: #17172ce6;
+      /* The blank-portrait fill when the roster has no usable art for this machine: a flat step off the
+       * sheet, so the frame still reads as a frame (the capsule card's `--gc-card-blank` analogue). */
+      --gc-dossier-blank: #e7e9fa;
     }
 
     /* Page text color. The page BACKGROUND lives in the bespoke gacha.css (the cosmos/frontier precedent:

@@ -1,7 +1,14 @@
+import { useCallback, useEffect, useId, useState } from "react";
+
+import { BottomSheet, type SheetDetent } from "../../components/BottomSheet";
 import { useFleet } from "../../hooks/useFleet";
+import { setPlanSheetOpen } from "../../store/planSheet";
+import { getSheetSnap, setSheetSnap } from "../../store/sheetSnap";
 import { useThemeSetting } from "../../theme-engine/settings";
+import type { Host } from "../../types";
 import { GachaBanner, type BannerSlide } from "./GachaBanner";
 import { GachaCard } from "./GachaCard";
+import { GachaHostDetail } from "./GachaHostDetail";
 import { ART } from "./art";
 import { HERO_KEY, SCENE_KEY_PREFIX } from "./carousel";
 import { GACHA_COPY } from "./copy";
@@ -23,19 +30,14 @@ import { MAX_STARS, toStarMode } from "./stars";
  *  this one line with its query; nothing downstream moves, which is the point of the resolver. */
 const ROSTER = defaultRoster();
 
-/** THE SHARED OPEN-HOST SEAM (main-seat ruling) — one handler behind both the capsule cards and the promo
- *  slides, so there is exactly one "open this machine" concept in the theme.
- *
- *  It is a STUB at G1 and that is deliberate: the unit dossier is G2's slice, and building an interim sheet
- *  here would be a surface G2 has to delete (fix-in-the-owning-phase). The buttons, their accessible names
- *  and their press feedback are real NOW so the interaction design is reviewable at the G1 eyeball; only the
- *  destination is missing. */
-function openHostDossier(_hostId: string): void {
-  // G2: open the unit dossier for this host.
-}
+/** The dossier sheet's persisted detent — a stable key into the shared, theme-agnostic `sheetSnap` store,
+ *  with a module-level setter so `onSnapChange` keeps a constant identity per the prop's contract (the
+ *  cosmos/frontier precedent). */
+const SHEET_KEY = "gacha-host-detail";
+const persistSheetSnap = (snap: SheetDetent) => setSheetSnap(SHEET_KEY, snap);
 
 export function GachaFleet({ active }: { active: boolean }) {
-  const { hosts, hasData, isLoading, error } = useFleet();
+  const { hosts, svcByHost, hasData, isLoading, error } = useFleet();
   const starMode = toStarMode(useThemeSetting<string>("gacha", "starMode"));
 
   const onlineCount = hosts.filter((h) => h.status?.online).length;
@@ -46,6 +48,47 @@ export function GachaFleet({ active }: { active: boolean }) {
   // The card geometry (the main seat's Q8.10 ruling): host[0] featured, the rest in 3/4 pairs, a trailing
   // odd host wide. A pure function of the COUNT, so a poll can never re-shuffle the track's shape.
   const shapes = cardShapes(hosts.length);
+
+  // ── THE UNIT DOSSIER (G2). The seam the capsule cards and the promo slides have shared since G1 now has
+  //    its destination: one selected host id, one sheet. COMPONENT state rather than a store (the frontier/
+  //    cosmos selection stores exist because their maps and grids select each other two ways — here nothing
+  //    outside this body reads the selection, and a store would be state living further from its only user).
+  const [selected, setSelected] = useState<string | null>(null);
+  const openHostDossier = useCallback((hostId: string) => setSelected(hostId), []);
+  // Drop a selection whose machine has left the fleet (a config edit, a removal) so the sheet can never
+  // reference a gone host — the cosmos/frontier precedent.
+  useEffect(() => {
+    if (selected && !hosts.some((h) => h.id === selected)) setSelected(null);
+  }, [selected, hosts]);
+
+  const selIndex = selected ? hosts.findIndex((h) => h.id === selected) : -1;
+  const selHost = selIndex >= 0 ? hosts[selIndex] : null;
+  const sheetOpen = active && !!selHost;
+  const titleId = useId();
+  // Retain the last selection through the slide-OUT so the sheet doesn't blank while it eases closed
+  // (`selected` → null the instant it starts). Keyed on the host OBJECT, which TanStack's structural
+  // sharing keeps stable across no-change polls, so this settles rather than looping.
+  const [shown, setShown] = useState<{ host: Host; index: number } | null>(null);
+  useEffect(() => {
+    if (selHost) setShown({ host: selHost, index: selIndex });
+  }, [selHost, selIndex]);
+  // `body[data-sheet=open]` is the kit's own sheet-open composer yield (kit.css, K1) — the STAMP stays
+  // host-owned, so the theme that owns the sheet sets it.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (sheetOpen) document.body.dataset.sheet = "open";
+    else delete document.body.dataset.sheet;
+    return () => {
+      delete document.body.dataset.sheet;
+    };
+  }, [sheetOpen]);
+  // Collapse the composer's plan sheet when the dossier opens (D30) — otherwise it pokes out above it.
+  useEffect(() => {
+    if (sheetOpen) setPlanSheetOpen(false);
+  }, [sheetOpen]);
+  const closeDossier = useCallback(() => setSelected(null), []);
+  // The LIVE selection while open (so polls update the sheet), the retained one through the slide-out.
+  const detail = selHost ? { host: selHost, index: selIndex } : shown;
 
   // The §6.4 slide set, in its ruled order: the fixed hero, then the owner's banner SCENES (G1 eyeball
   // round 3 — art-only slides, the owner's pick over cycling the hero's art), then ONE promo per host —
@@ -122,6 +165,32 @@ export function GachaFleet({ active }: { active: boolean }) {
           ))}
         </div>
       )}
+
+      {/* THE UNIT DOSSIER — the shared C3 primitive, skinned by gacha.css into the theme's one light
+          surface. `catchOutside={false}` (the owner-ruled precedent): the track stays interactive, so
+          tapping another capsule SWAPS the dossier instead of costing a close-then-open; flick-down,
+          Escape or a tap on the sr-only close still dismiss it. The prototype's 520 ms spring is the
+          shared 420 ms lifecycle here (the §4.9 ledger's accepted deviation). */}
+      <BottomSheet
+        open={sheetOpen}
+        onClose={closeDossier}
+        labelledBy={titleId}
+        closeLabel="Close unit dossier"
+        catchOutside={false}
+        initialSnap={getSheetSnap(SHEET_KEY)}
+        onSnapChange={persistSheetSnap}
+      >
+        {detail && (
+          <GachaHostDetail
+            host={detail.host}
+            services={svcByHost.get(detail.host.id) ?? []}
+            art={artForHost(ROSTER, detail.index)}
+            mode={starMode}
+            index={detail.index}
+            titleId={titleId}
+          />
+        )}
+      </BottomSheet>
     </div>
   );
 }

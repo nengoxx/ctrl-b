@@ -41,11 +41,13 @@ export function hostsResolved(isLoading: boolean, error: unknown, hasData: boole
   return hasData || (!isLoading && !error);
 }
 
-/** What an unresolved number reads as. An ASCII hyphen rather than the kit's usual em dash, and that is a
- *  FENCE consequence, not a style choice: gacha's TypeScript may contain no non-ASCII outside `copy.ts`
- *  (`gachaChrome.test.ts`), and an em dash cannot join `copy.ts` without growing the frozen font subset —
- *  which means regenerating all twelve committed woff2 files for one dash. */
-const PENDING = "-";
+/** What an unresolved or absent value reads as — the rate pill and the counter while the fleet is still
+ *  loading (§6.3), and the dossier's deferred/unknown metrics (§4.8). An ASCII hyphen rather than the kit's
+ *  usual em dash, and that is a FENCE consequence, not a style choice: gacha's TypeScript may contain no
+ *  non-ASCII outside `copy.ts` (`gachaChrome.test.ts`), and an em dash cannot join `copy.ts` without
+ *  growing the frozen font subset — which means regenerating all twelve committed woff2 files for one dash.
+ *  ONE constant so every held value in the theme reads identically. */
+export const PENDING = "-";
 
 /** The rate pill (§6.3): the star mode's ceiling + the live count of ONLINE hosts as a gacha drop rate.
  *  The prototype's own format, `★3 RATE 3.0%` (index.html:7), with the mode and the count made live. */
@@ -69,9 +71,21 @@ export function counterText(onlineCount: number, total: number, resolved: boolea
 export function plateSub(host: Host): string {
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms;
-  const role = (host.role ?? host.os_type).toUpperCase();
   const state = online ? (ping == null ? null : `${ping} ms`) : GACHA_COPY.cardSleeping;
-  return state === null ? role : `${role} ${GACHA_COPY.sep} ${state}`;
+  return state === null ? roleLabel(host) : `${roleLabel(host)} ${GACHA_COPY.sep} ${state}`;
+}
+
+/** The unit DOSSIER's subtitle (G2) — the prototype's `Workstation · ONLINE` line under the machine name
+ *  (index.html:28, `${role} · ${status}`). Same role fallback as a capsule plate, and the state spelled in
+ *  the same two words the card's chip uses, so the two surfaces describe a machine identically. */
+export function dossierSub(host: Host, online: boolean): string {
+  return `${roleLabel(host)} ${GACHA_COPY.sep} ${online ? "ONLINE" : "SLEEPING"}`;
+}
+
+/** A machine's role in the arcade's voice: its configured role, falling back to the OS when it declares
+ *  none — the same pair the Kit's own device row uses. Upper-case because every gacha caption is. */
+function roleLabel(host: Host): string {
+  return (host.role ?? host.os_type).toUpperCase();
 }
 
 /** The accessible name for the two surfaces that OPEN a machine — a capsule card and its promo slide. One

@@ -1048,6 +1048,247 @@
       transition: none;
     }
 
+    /* ── THE UNIT DOSSIER (G2 — the prototype's `.detail-panel` family, theme.css:112-129 + base.css
+     *    :34-55) ──────────────────────────────────────────────────────────────────────────────────
+     * The theme's ONE light surface, and the only place in gacha where the ink is dark. It is a SURFACE,
+     * not a light MODE: gacha declares `modes: ["dark"]`, so nothing here is reachable from the mode axis
+     * and none of it can leak onto another kit surface (the whole block sits under `.bs-sheet` /
+     * `.gc-dossier`, inside gacha's own @scope).
+     *
+     * TWO PROTOTYPE DEVIATIONS, both inherited from the shared C3 primitive rather than chosen here:
+     * the sheet DOCKS at the shell's bottom (the prototype floats it 84px up, above its nav bar) and
+     * there is NO backdrop scrim (the kit's ruled no-scrim, no-dim sheet). Everything inside the panel is
+     * the prototype's own measured geometry. */
+    .bs-sheet {
+      /* the prototype's own ceiling — a dossier never becomes a full-screen page */
+      max-height: min(68dvh, 620px);
+      border: 0;
+      border-radius: 24px 24px 0 0;
+      background: linear-gradient(var(--gc-dossier-from), var(--gc-dossier-to));
+      color: var(--gc-dossier-ink);
+      box-shadow: var(--gc-dossier-shadow);
+    }
+    /* The tri-gradient top strip — the one piece of the night palette that survives the inversion, and the
+     * sheet's tie back to the wordmark. `--gc-brand-fill` is the same trio the prototype paints here. */
+    .bs-sheet::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 4px;
+      border-radius: 24px 24px 0 0;
+      background: var(--gc-brand-fill);
+      /* above the sheet's own background box, below the in-flow handle/body content */
+      z-index: 0;
+      pointer-events: none;
+    }
+    /* The grab bar inverts with the surface: the kit's translucent-white grip is invisible on a light
+     * panel (the prototype's own dark handle at 30%). */
+    .bs-grip {
+      background: var(--gc-dossier-ink);
+      opacity: 0.3;
+    }
+
+    .gc-dossier {
+      padding-bottom: calc(2px + env(safe-area-inset-bottom));
+    }
+    /* Head — the portrait beside the kicker/name/role stack. `align-items: flex-start` (the prototype's
+     * own override of the shared centred rule): the title block hangs from the top of a 138px portrait. */
+    .gc-dossier-head {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      padding: 0 16px 14px;
+    }
+    .gc-dossier .art-frame {
+      position: relative;
+      flex: 0 0 104px;
+      width: 104px;
+    }
+    .gc-dossier .avatar {
+      display: block;
+      width: 104px;
+      height: 138px;
+      flex: none;
+      object-fit: cover;
+      /* the prototype's portrait crop — faces sit high in this art; a roster entry that declares its own
+       * focal point overrides it inline (the ONE resolver's `focus`, as on the cards) */
+      object-position: 50% 14%;
+      border-radius: 16px;
+      box-shadow: var(--gc-dossier-art-shadow);
+    }
+    .gc-dossier .avatar.blank {
+      background: var(--gc-dossier-blank);
+    }
+    /* The rarity lozenge, tucked into the portrait's bottom-left. Dark on the light sheet — it is the
+     * capsule card's badge, kept identical so the same stars read the same way on both surfaces. */
+    .gc-dossier .art-rar {
+      position: absolute;
+      left: 6px;
+      bottom: 6px;
+      display: flex;
+      gap: 1px;
+      background: var(--gc-dossier-badge);
+      border-radius: 99px;
+      padding: 2px 8px;
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--gc-star);
+    }
+    .gc-dossier .art-rar i {
+      font-style: normal;
+    }
+    .gc-dossier .art-rar i.hi {
+      color: var(--gc-star-hi);
+    }
+    .gc-dossier-title {
+      min-width: 0;
+      flex: 1;
+      padding-top: 4px;
+    }
+    .gc-dossier-title .unit-no {
+      display: block;
+      font-size: 8px;
+      letter-spacing: 0.22em;
+      font-weight: 900;
+      color: var(--gc-unit-no);
+    }
+    .gc-dossier-title h2 {
+      margin: 7px 0 0;
+      font-size: 27px;
+      line-height: 1;
+      font-weight: 900;
+      font-style: italic;
+      color: var(--gc-dossier-ink);
+      /* a real fleet's names are not the prototype's four short words (the long-name matrix row) */
+      overflow-wrap: anywhere;
+    }
+    .gc-dossier-title p {
+      margin: 7px 0 0;
+      font-size: 9px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--gc-dossier-ink);
+      opacity: 0.6;
+    }
+
+    /* The RULED metric grid (§4.8): Ping / Uptime / Services / Seen — four equal white cards. `min-width: 0`
+     * on the cells is what lets a long value wrap instead of blowing the 4-up grid out sideways. */
+    .gc-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      padding: 0 14px 14px;
+    }
+    .gc-metric {
+      min-width: 0;
+      padding: 12px 8px;
+      text-align: center;
+      background: var(--gc-dossier-card);
+      border: 1px solid var(--gc-dossier-line);
+      border-radius: 14px;
+    }
+    .gc-metric b {
+      display: block;
+      font-size: 16px;
+      font-weight: 900;
+      color: var(--gc-dossier-ink);
+      overflow-wrap: anywhere;
+    }
+    .gc-metric span {
+      display: block;
+      margin-top: 5px;
+      opacity: 0.56;
+      /* the prototype's own 7px caption (its theme.css tightens base.css's 8px), and the bilingual label
+       * wraps rather than overflowing on a narrow phone */
+      font-size: 7px;
+      line-height: 1.5;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    /* The live service rows. The left rule is the host's ACCENT PAIR (see `[data-pair]` below) — the port
+     * of the prototype fixture's per-host `color`/`color2`, which no live host carries. */
+    .gc-svcs {
+      display: grid;
+      gap: 7px;
+      padding: 0 14px 16px;
+    }
+    .gc-svc {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      background: var(--gc-dossier-card);
+      border: 1px solid var(--gc-dossier-line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    /* The prototype's `border-left: 3px solid var(--host)`, as a gradient bar so BOTH halves of the host's
+     * pair paint (a flat border can carry only one). Same 3px, same edge, inside the row's radius. */
+    .gc-svc::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: linear-gradient(var(--gc-host), var(--gc-host-2));
+    }
+    .gc-svc i {
+      flex: none;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      /* down is the prototype's amber, not a danger red: a service that is off on a sleeping machine is
+       * the expected state, and the whole list goes amber when the unit is asleep. */
+      background: var(--warn);
+    }
+    .gc-svc.on i {
+      background: var(--ok);
+    }
+    .gc-svc strong {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .gc-svc small {
+      flex: none;
+      /* the prototype leaves `small` at the UA's ~13px, which reads LARGER than the 12px name beside it;
+       * subordinated here to the caption scale the rest of the theme uses */
+      font-size: 11px;
+      opacity: 0.55;
+    }
+    .gc-svc-empty {
+      padding: 11px 12px;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      opacity: 0.5;
+    }
+
+    /* THE PER-HOST ACCENT PAIRS. The prototype's fixture hand-assigned each host a `color`/`color2`; live
+     * hosts have no such field, so the port deals the pairs from the TRI-ACCENT by display index
+     * (`i % 3`, in GachaHostDetail) — deterministic, so a poll can never re-tint an open dossier, and
+     * authored entirely from the brand tokens, so a G6 palette variant re-tints these with everything
+     * else. Three rotations of the same trio: pink→violet, violet→cyan, cyan→pink. */
+    .gc-dossier[data-pair="0"] {
+      --gc-host: var(--gc-brand-1);
+      --gc-host-2: var(--gc-brand-2);
+    }
+    .gc-dossier[data-pair="1"] {
+      --gc-host: var(--gc-brand-2);
+      --gc-host-2: var(--gc-brand-3);
+    }
+    .gc-dossier[data-pair="2"] {
+      --gc-host: var(--gc-brand-3);
+      --gc-host-2: var(--gc-brand-1);
+    }
+
     /* The kit's own section entrance (`kit-fade`, 0.25 s) is re-tuned to nothing under gacha (§10.1
      * riders): the prototype has no per-screen fade, the reel IS the transition, and leaving both in
      * would double-animate the swap — visibly so if the M2 spike promotes a root cross-fade on top. */

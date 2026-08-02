@@ -750,13 +750,99 @@ describe("the capsule track (§6.1/§6.2)", () => {
 
   it("opens through the SHARED seam — the same handler the promo slides use", () => {
     const { container } = render(<GachaFleet active />);
-    // The seam is a stub until G2; what G1 owns is that pressing a card is a real, named button action
-    // that does not throw and does not navigate anywhere yet.
-    expect(() =>
-      act(() => {
-        fireEvent.click(cards(container)[0]);
-      }),
-    ).not.toThrow();
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    expect(dossier()).not.toBeNull();
+  });
+});
+
+// ── THE UNIT DOSSIER's wiring (G2) — the seam's destination. The sheet CONTENT is pinned in
+//    `gachaDossier.test.tsx`; what belongs here is that both surfaces open it, that it tracks the live
+//    selection, and that the kit stamps ride along.
+const dossier = (): HTMLElement | null => document.querySelector<HTMLElement>(".gc-dossier");
+const dossierName = (): string | undefined =>
+  dossier()?.querySelector("h2")?.textContent ?? undefined;
+
+describe("the unit dossier (G2)", () => {
+  const cards = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-card")];
+
+  it("stays closed until something opens it", () => {
+    render(<GachaFleet active />);
+    expect(dossier()).toBeNull();
+    expect(document.body.dataset.sheet).toBeUndefined();
+  });
+
+  it("a capsule card opens ITS machine's dossier, inside the shared sheet", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[1]);
+    });
+    const sheet = document.querySelector('[role="dialog"]')!;
+    expect(sheet.contains(dossier())).toBe(true);
+    expect(dossierName()).toBe("atlas");
+    // the sheet is labelled by the name it renders (the non-modal a11y contract)
+    expect(sheet.getAttribute("aria-labelledby")).toBe(dossier()!.querySelector("h2")!.id);
+    // …and the machine's DISPLAY index picks its accent pair
+    expect(dossier()!.getAttribute("data-pair")).toBe("1");
+  });
+
+  it("a banner PROMO opens the same dossier — one seam, two surfaces", () => {
+    const { container } = render(<GachaFleet active />);
+    // navigate to the first promo the way a user would (its dot), then press the slide itself
+    act(() => {
+      fireEvent.click(container.querySelectorAll<HTMLButtonElement>(".gc-dot")[SCENERY]);
+    });
+    act(() => {
+      fireEvent.click(promos(container)[0].querySelector<HTMLButtonElement>(".gc-slide-hit")!);
+    });
+    expect(dossierName()).toBe("pegasus");
+  });
+
+  it("tapping another capsule SWAPS the open dossier (catchOutside=false, the ruled precedent)", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    expect(dossierName()).toBe("pegasus");
+    act(() => {
+      fireEvent.click(cards(container)[1]);
+    });
+    expect(dossierName()).toBe("atlas");
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  });
+
+  it("stamps body[data-sheet=open] while it is up (the kit's composer yield), and clears it off-tab", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    expect(document.body.dataset.sheet).toBe("open");
+    // leaving the Fleet tab closes the sheet — a dossier over the Agent screen would be a ghost
+    rerender(<GachaFleet active={false} />);
+    expect(document.body.dataset.sheet).toBeUndefined();
+  });
+
+  it("drops a selection whose machine has left the fleet", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[1]);
+    });
+    expect(dossierName()).toBe("atlas");
+    setFleet({ hosts: [host("pegasus", true)] });
+    rerender(<GachaFleet active />);
+    expect(document.body.dataset.sheet).toBeUndefined();
+  });
+
+  it("follows the LIVE host through a poll — the sheet is never a frozen snapshot", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[1]); // atlas, asleep
+    });
+    expect(dossier()!.querySelector(".gc-dossier-title p")?.textContent).toContain("SLEEPING");
+    setFleet({ hosts: [host("pegasus", true), host("atlas", true)] });
+    rerender(<GachaFleet active />);
+    expect(dossier()!.querySelector(".gc-dossier-title p")?.textContent).toContain("ONLINE");
   });
 });
 
