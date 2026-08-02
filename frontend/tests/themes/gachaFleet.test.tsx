@@ -211,8 +211,8 @@ describe("carousel semantics", () => {
     // Every kind announces the thing it actually is — a scene has no machine to name, so it names its art.
     expect(dots.map((d) => d.getAttribute("aria-label"))).toEqual([
       "show the prize pool",
-      "show banner art b2",
-      "show banner art b3",
+      "show CAPSULE FESTIVAL",
+      "show MIDNIGHT UPLINK",
       "show pegasus",
       "show atlas",
     ]);

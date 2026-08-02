@@ -67,7 +67,9 @@ export type BannerSlide =
 /** A dot's accessible name. Each kind announces the thing it actually is. */
 function dotLabel(s: BannerSlide): string {
   if (s.kind === "promo") return `show ${s.host.name}`;
-  if (s.kind === "scene") return `show banner art ${s.name}`;
+  // A scene's dot announces its VISIBLE title, not its filename — an AT user hears what a sighted user
+  // reads on the slide. The filename stays in the KEY (stable per file; titles shift if the pool does).
+  if (s.kind === "scene") return `show ${sceneTitle(s.position)}`;
   return "show the prize pool";
 }
 
