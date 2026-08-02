@@ -183,7 +183,12 @@ export function GachaFleet({ active }: { active: boolean }) {
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented) return;
       const target = e.target instanceof Element ? e.target : null;
-      if (target?.closest(".bs-root, .gc-card, .gc-slide-hit")) return;
+      // The sheet, the two things that OPEN one — and any modal layer standing ABOVE it: the dossier's
+      // own shutdown button raises the shared ConfirmDialog, and dismissing the sheet under a dialog it
+      // spawned (on Cancel, no less) would be the wrong reading of "outside". Same cooperative posture
+      // the primitive's Escape handler takes toward a layer above it.
+      if (target?.closest(".bs-root, .gc-card, .gc-slide-hit, .modal-backdrop, .pm-backdrop"))
+        return;
       closeDossier();
     };
     document.addEventListener("click", onClick);

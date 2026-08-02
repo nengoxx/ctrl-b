@@ -1110,6 +1110,22 @@ describe("dismissing the dossier", () => {
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
   });
 
+  it("a MODAL above the sheet is not `outside` it (the dossier's own confirm dialog)", () => {
+    // The dossier's shutdown button raises the shared ConfirmDialog; a click on its Cancel would
+    // otherwise dismiss the sheet that spawned it.
+    const { container } = render(<GachaFleet active />);
+    open(container);
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = '<div class="modal"><button>Cancel</button></div>';
+    document.body.appendChild(modal);
+    act(() => {
+      fireEvent.click(modal.querySelector("button")!);
+    });
+    expect(document.body.dataset.sheet).toBe("open");
+    modal.remove();
+  });
+
   it("ignores a click a handler has already consumed (the banner's drag-derived one)", () => {
     const { container } = render(<GachaFleet active />);
     open(container);
