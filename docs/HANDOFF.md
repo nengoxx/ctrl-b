@@ -12,7 +12,46 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-02 — **🔒 GACHA DESIGN LOCKED: D52 RECORDED; NEXT = BUILD G0 per GACHA_PLAN §7**)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-02 evening — **🔒 D52 LOCKED + ✅ G0 BUILT AND OWNER-SIGNED; NEXT = G1, the banner + capsule track**)
+> **One continuous owner-attended session: the LOCK, then the whole G0 slice through four owner
+> eyeball rounds. Everything committed `eaa89e0..c26d1eb` (17 commits), tree clean, NOT pushed —
+> ask the owner before pushing.** Read the lock record in the next block down (all §8 ruled →
+> council §11 → D52); this block is the BUILD record + what G1 needs.
+> **G0 as-built = GACHA_PLAN §7.1 (read it first)** — the short form: the kit seams unit
+> (`brandText` · `TabDef.subLabel` · `runViewTransition` extraction+hardening) landed as one
+> commit; gacha registers as the 5th theme (3-tab, JP sub-labels, `starMode` 5★, wallpaper +
+> sticky-oracle ON); 70-glyph frozen fonts 192,856 B/12 woff2 (+guard, proven live); the reel
+> mechanism + the FENCED VT spike at `useSections` (default OFF); the roster resolver + star
+> ladders (37 tests); riders (stats.html precache, ConfTab resolve, boot-mirror `--bg`).
+> **Four eyeball rounds made the chrome prototype-exact** (§7.1 has the full cause list —
+> highlights: content scrolls UNDER the floating 68px nav pill; `--accent-fill` two-stop swept
+> all 14 filled controls in one token edit; the appbar's excess height was an inherited
+> `line-height`, the clear-mode illegibility was the kit's inherited text-shadow painting
+> INSIDE the gradient-clipped wordmark; the bar→content gap is now the prototype's literal
+> 0px, e2e-pinned; chat bubbles pulled FORWARD from G3 by owner ask — white/pink-hard-shadow
+> + the prototype's 12.5px type; the composer says コマンド入力… via the NEW
+> `ComposerSlots.placeholder` seam, D52 addendum `c26d1eb`). **Review record**: fresh-lens
+> Opus council LOCK + Codex rounds 4→7 (slice SHIP WITH FIXES → wave NOT READY → closed →
+> READY FOR OWNER EYEBALL); every finding ruled in plan §11 / folded; owner signed G0 at
+> round 4.
+> **▶ NEXT SESSION = G1 (the theme's face):** pin the Opus brief from **§7's G1 row + §6.4
+> (the banner CONTRACT — slide identity by key, gesture state machine, timer matrix, inert
+> slides, all owner-ruled) + §10.3/§10.4 recipes + §5.3's one shared resolver (already built,
+> reuse it)**. Owner checkpoints riding G1: the promo-click→dossier proposal + all-hosts
+> membership (veto-able), the katakana wordmark copy pick, promo JP caption picks, card
+> geometry (feat/wide/counter/NEW ribbon) by eyeball, the zero-services ★1 floor confirm.
+> Method unchanged (Opus build → main-seat audit → Codex → eyeball; expect fidelity WAVES —
+> G0 took four rounds, that is the cadence working, budget for it).
+> **Carried threads:** ① the **VT spike is UNTESTED** — owner runs
+> `localStorage.setItem("ctrlb.spike.navVT","1")` on Fennec under gacha when convenient; it
+> gates only G4's M2 (the observed swap-before-reel-covers is WHAT M2 masks; body-only
+> deferred-display fallback pre-designed in §10.1). ② Chat 12.5px read-comfort check on
+> device at G3. ③ The TTS-flash device eyeball (pre-gacha thread) — **dev units LEFT
+> RUNNING** (:5434 + :5173), stop when done. ④ v1.5.0 = this theme's release; prod stays
+> v1.4.6. ⑤ G6 = owner picks two accent-shift palettes (§4.4: ember/glacier REC'd over
+> nebula/eridu).
+>
+> ## ▶ PREVIOUS BLOCK, same session (2026-08-02 — **🔒 GACHA DESIGN LOCKED: D52 RECORDED**)
 > **The LOCK session ran exactly as prescribed.** ① The owner answered the seven open §8 items
 > (reel every-switch · **default 5★** — emma carries 5–6 services · palettes = the 3 base-ramp
 > variants PLUS **2 accent-SHIFTING variants** · JP sub-labels kept, must be REAL Japanese ·

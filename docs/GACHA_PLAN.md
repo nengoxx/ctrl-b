@@ -485,18 +485,64 @@ for the "04 / 04" counter.
 
 ## 7. Slice ladder (firmed at the lock session — council-amended)
 
+> **✅ G0 COMPLETE + OWNER-SIGNED 2026-08-02 (evening) — as-built record (§7.1 below the
+> ladder). G1 is next.** The G3 row is amended: the chat-bubble reskin was PULLED FORWARD
+> into G0 on the owner's request (values + type metrics shipped; only bubble POLISH remains
+> at G3 beside the oracle/composer work).
+
 | Slice | Contents | Gate |
 |---|---|---|
 | G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps five palette variants a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
 | G1 | Bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + **the §6.4 slide set: fixed hero + live per-host promos, clickable + swipeable**) + capsule track (cards/states/plates/shine + **the stars on cards**, §6.1/6.2) + wallpaper + the card-geometry rules (Q8.10 ruling) + the promo-copy owner pick | owner eyeball |
 | G2 | Dossier sheet (light inversion + the ruled frontier grid w/ §4.8's pinned values + services list + **the host ACTION BAR** — council H3, a named fidelity design checkpoint) — **reuses G1's star engine**, extracts the shared host-detail derivation to `lib/` (council M6), adds the sheet-timing call (§4.9 ledger) | eyeball + contrast probe |
-| G3 | Agent tab: GachaAgent body (oracle + §4.2 scroll mechanics) + chat-hooks reskin + composer skin — **the M7 blur ramp gets its own Fennec/Chrome device check here**, not deferred to G6. **Owner emphasis (G0 eyeball, twice): the USER bubble must be exact — white, ink `#16162c`, the hard `5px 5px 0 #ff6cae` offset shadow (the same signature treatment as the nav indicator); bot `#222541`** (prototype theme.css:88) | eyeball + device check |
+| G3 | Agent tab: GachaAgent body (oracle + §4.2 scroll mechanics) + composer skin — **the M7 blur ramp gets its own Fennec/Chrome device check here**, not deferred to G6. ~~Chat-hooks reskin~~ **BUBBLES SHIPPED AT G0 (owner pull-forward, `04003d9`+`6db92cc`: white/`#16162c`/`5px 5px 0 #ff6cae` + bot `#222541` + the prototype's 12.5px/1.45 type)** — G3 carries only bubble POLISH + the owner's 12.5px read-comfort check on device | eyeball + device check |
 | G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + M2/M3 VT enhancement per the spike verdict + Gecko tuning (the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape) |
 | G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
 | G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) + polish + full §14.15.1 hardening pass + the on-device Gecko round | owner sign-off |
 
 Each slice: Opus build from a pinned brief → main-seat audit → Codex round → owner eyeball
 (the D51 cadence). The theme joins `themeContract.test.ts` + the e2e structural/a11y groups at G0.
+
+**§7.1 — G0 AS-BUILT (✅ owner-signed 2026-08-02).** Fifteen build commits
+`835850a..0bb0b51` (+ the D52 addendum `c26d1eb`); full gate green on every one; end state
+1254 BE / ~1022+ FE unit / 177 e2e (14+ gacha arms). **Four owner eyeball rounds** drove four
+fidelity waves — the record for successors:
+- **Round 1** (chrome missing): appbar glass dissolve (NO shadow — theme.css:8) · switch
+  two-stop `#ff6cae→#725bff` · floating nav pill + white indicator w/ `5px 5px 0 #ff6cb1`.
+- **Round 2** (geometry + gradients): content scrolls UNDER the bar (`.kit{position:relative}`
+  **without z-index** — deliberately NOT a stacking context, the reel/modal rungs stay
+  document-level; `--gc-nav-zone` scroller pad; both kit edge veils nulled) · bar slimmed to
+  the prototype's metrics (its real computed height is **68px**, the prototype's own number —
+  border-box 52+14+2) · `--accent-fill` → the two-stop, ONE token edit sweeping all 14 filled
+  controls (fill uses brand `#805cff` not the switch's `#725bff` — the 4.5:1 ink gate;
+  the switch itself keeps the prototype-exact value, it carries no ink) · the trio now paints
+  only wordmark + palette chip (`--gc-brand-fill`).
+- **Round 3**: appbar 67→~57px (the cause was the brand row inheriting `line-height:1.5`;
+  the prototype sets 1 — NOT padding) · clear-mode legibility (the kit's inherited
+  `text-shadow` halo painted INSIDE the gradient-clipped wordmark glyphs — nulled on the
+  wordmark; the mode gained the prototype dissolve as explicit backing).
+- **Round 4** (all MEASURED): appbar→content flush — the prototype's bar→content gap is
+  **0px**; ours was 22–26px of first-block top padding stacking (e2e-pinned flush now) ·
+  the user-bubble "font" was TYPE not family (family was already ZKGN, proven by advance-width
+  probes; the missing half was the prototype's `12.5px/1.45` — ported both sides; **owner
+  read-comfort check on device pending at G3**) · the composer placeholder speaks the
+  prototype's コマンド入力… via the NEW `ComposerSlots.placeholder` seam (owner-requested,
+  D52 addendum; last-defined-wins scalar through `mergeComposerSlots` — which DROPS unknown
+  fields, the trap that would have killed the seam silently).
+- **Review record**: Codex slice review SHIP WITH FIXES (7 findings — the ★-glyph guard gap,
+  roster `unusable` validity, exact token values + 31-row guard, stylelint fence to ERROR +
+  `color()`/`data:` bans, reel motion-reenable ghost, whole-page a11y scans, `themeRowValue`
+  extraction) → wave confirm NOT READY (satellite-overlay lifts + the minimal-mode phantom
+  nav zone) → both closed → final verdict READY; round-4 wave main-seat audited (the
+  placeholder seam diff read at the merge chokepoint).
+- **Standing G0 outputs**: fonts = 70 frozen glyphs, **192,856 B / 12 woff2** (guard proven:
+  it did NOT fire on コマンド入力… because the string was frozen at registration — correct) ·
+  the layer-trap fence now lists **7** members · `--appbar-h` is MEASURED (ResizeObserver;
+  ~57px bare / ~62–64 with TTS or 2-tab chrome — reference numbers only).
+- **OPEN, carried to G4: the VT spike is UNTESTED** — the owner tests
+  `localStorage.setItem("ctrlb.spike.navVT","1")` on Fennec later; the owner's observed
+  visible-swap-under-the-reel (§10.1 note) is the thing M2 masks, with the body-only
+  deferred-display fallback pre-designed if VT is dead.
 
 **Acceptance matrix (the lock session turns this into per-slice test obligations):** 0/1/many
 hosts · hosts>roster and roster>hosts · queries loading/error states (pill, counter) ·

@@ -1337,7 +1337,8 @@ then build G0–G6 per the plan's §7 ladder (G0 = the settle-everything slice: 
 v1.5.0 is RESERVED for this theme's release.
 
 - [x] Lock session: §8 answers → council (Opus LOCK + Codex R4, confirm rounds folded) → D52 recorded (2026-08-02)
-- [ ] G0–G6 per `GACHA_PLAN.md` §7 (each: Opus build → main-seat audit → Codex → owner eyeball)
+- [x] G0 — the settle-everything slice ✅ owner-signed 2026-08-02 (15 commits + 4 fidelity waves; as-built = GACHA_PLAN §7.1; the VT spike ships fenced, verdict pending the owner's Fennec)
+- [ ] G1–G6 per `GACHA_PLAN.md` §7 (each: Opus build → main-seat audit → Codex → owner eyeball); next = G1 banner + capsule track
 - [ ] Release as v1.5.0 (runbook §Release; prod currently v1.4.6 by owner ruling)
 
 ## Cross-cutting / don't-forget
