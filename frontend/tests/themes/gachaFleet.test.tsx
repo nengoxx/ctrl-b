@@ -106,6 +106,16 @@ describe("the slide set (§6.4)", () => {
     expect(slides(container)).toHaveLength(3);
   });
 
+  it("crops CHARACTER slides at face height, and leaves the hero scene alone (F9)", () => {
+    // theme.css:28-29 — the prototype states this per-slide (`:nth-child(2)`/`(3)`), which our live slide
+    // set cannot use: which positions hold characters changes with the fleet. The class carries it instead.
+    const { container } = render(<GachaFleet active />);
+    const found = slides(container);
+    expect(found[0].className).not.toContain("promo"); // the hero keeps the scene crop
+    expect(found[1].className).toContain("promo");
+    expect(found[2].className).toContain("promo");
+  });
+
   it("resolves promo art through the SHARED resolver, at the host's display index", () => {
     const { container } = render(<GachaFleet active />);
     const imgs = [...container.querySelectorAll<HTMLImageElement>(".gc-slide img")];

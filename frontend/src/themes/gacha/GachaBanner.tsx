@@ -382,7 +382,7 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
           );
           return (
             <div
-              className={"gc-slide" + (host && !s.online ? " sleep" : "")}
+              className={"gc-slide" + (host ? " promo" : "") + (host && !s.online ? " sleep" : "")}
               key={s.key}
               role="group"
               aria-roledescription="slide"
