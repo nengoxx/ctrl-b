@@ -24,7 +24,7 @@ import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
 import { UtilsTab } from "../../tabs/UtilsTab";
 import { useScrollKeep } from "../scrollKeep";
 import type { TabDef, TabId } from "../types";
-import { KitAppBar } from "./AppBar";
+import { KitAppBar, KitTtsFlash } from "./AppBar";
 import { mergeComposerSlots } from "./composer/mergeSlots";
 import { kitPlanComposerSlots } from "./composer/plan";
 import { usePlanPlacement } from "./composer/plan/placement";
@@ -290,6 +290,10 @@ export function DefaultRoot({
           visibility (minimal-only + self-hides on the primary section) given the chrome mode, so it mounts
           unconditionally here — the single source for "when is the home button shown". */}
       <NavHome appbarMode={appbarMode} />
+      {/* The auto-TTS echo mounts UNCONDITIONALLY (not inside KitAppBar): the Conf tab's TTS switch must
+          flash it even under `off`/`minimal` where no bar renders. Anchored via --appbar-h (0 when the
+          bar is hidden → it sits at the viewport top-right). */}
+      <KitTtsFlash />
       <Toasts />
       <ConfirmDialog />
       <PromptModal />

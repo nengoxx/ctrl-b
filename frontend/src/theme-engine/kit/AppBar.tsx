@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { NavMenu } from "../../components/NavMenu";
 import { useAppChrome } from "../../hooks/useAppChrome";
@@ -95,6 +95,44 @@ export function KitAppBar({
           the resolved layout partitions sections into the menu, the nav affordance docks HERE as the
           trailing action rather than floating — "the menu affordance docks to the chrome that exists". */}
       {menu.length > 0 && <NavMenu docked />}
+    </div>
+  );
+}
+
+// Auto-TTS flash — vapor's `.tts-toast` rebuilt kit-wide (owner ruling 2026-08-02; the original died
+// with the bespoke appbar at D51 V4). Flashes "auto-tts on/muted" for 1.1 s on toggles only, keyed on
+// the VALUE CHANGE (prev ref), not a first-run flag: a mounted-flag skip flashes once at load under
+// StrictMode's dev double-effect (refs survive the simulated remount — the old vapor code had that
+// latent quirk). Effect-driven rather than onClick-driven, and a SEPARATE component that DefaultRoot
+// mounts UNCONDITIONALLY in its overlay zone (not inside KitAppBar): every toggle source must echo —
+// the bar's button AND the Conf tab's TTS switch — including under the `off`/`minimal` appbar modes
+// where the bar (and its button) doesn't render at all (Codex R1 on the rebuild slice).
+export function KitTtsFlash() {
+  const { ttsAuto } = useAppChrome();
+  const [flash, setFlash] = useState<{ on: boolean } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevTts = useRef<boolean | null>(null);
+  useEffect(() => {
+    const prev = prevTts.current;
+    prevTts.current = ttsAuto;
+    if (prev === null || prev === ttsAuto) return;
+    setFlash({ on: ttsAuto });
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setFlash(null), 1100);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [ttsAuto]);
+
+  return (
+    // Stay-mounted (the kit overlay contract) so the fade transition can run; pointer-events:none in
+    // kit.css. aria-hidden: a purely visual echo of the toggle's own state reporting (the button's
+    // aria-pressed / the Conf switch) — announcing it too would double the SR feedback.
+    <div
+      className={"kit-tts-toast" + (flash ? " show" : "") + (flash && !flash.on ? " off" : "")}
+      aria-hidden="true"
+    >
+      <b>auto-tts</b> {flash?.on === false ? "muted" : "on"}
     </div>
   );
 }

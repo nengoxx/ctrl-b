@@ -49,6 +49,10 @@ async function writeIcon(size, scale, outName) {
   console.log(`wrote ${outName.padEnd(28)} (${size}x${size})  ${bytes.toLocaleString()} bytes`);
 }
 
+// 48px: Chrome-Android's bookmark/home-screen shortcut tiles want explicit PNG `rel=icon` sizes
+// (48 + 192, multiples of 48 per the Chrome guidance) — it ignores the .ico for those tiles
+// (Firefox uses the .ico, which is why the gap only showed in Chrome). Declared in index.html.
+await writeIcon(48, 0.96, "icon-48.png");
 await writeIcon(192, 0.96, "icon-192.png");
 await writeIcon(256, 0.96, "icon-256.png");
 await writeIcon(512, 0.96, "icon-512.png");

@@ -240,6 +240,59 @@ body[data-motion="reduced"] .kit .tab.active {
   background: var(--danger);
 }
 
+/* ── appbar: auto-TTS flash — the toggle's transient confirmation pill (vapor's `.tts-toast`
+ *    assimilated kit-wide, owner ruling 2026-08-02). Stay-mounted + pointer-events:none (the kit
+ *    overlay contract); a purely visual echo of the button's aria-pressed (aria-hidden in the TSX).
+ *    Anchored below the trailing edge of the bar, riding `--appbar-h` like `.toasts`; solid kit
+ *    surface (no blur to gate), the kit's uppercase micro-label voice (`.kit-tabbtn .lbl` metrics). */
+.kit-tts-toast {
+  position: fixed;
+  top: calc(var(--appbar-h, 56px) + 8px);
+  right: 16px;
+  /* one above `.toasts` (40): a wide activity toast shares this top edge on narrow viewports and
+   * would otherwise paint over the 1.1 s echo; the pill is pointer-events:none, so winning the
+   * paint order can never block a toast's action button. */
+  z-index: 41;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition:
+    opacity 0.18s,
+    transform 0.18s;
+}
+.kit-tts-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* the global Motion lever (gated on data-motion, never the raw OS query): reduced → the pill fades
+ * in place — no slide; the fade itself stays (presence is the information). */
+body[data-motion="reduced"] .kit-tts-toast {
+  transform: none;
+}
+/* the floating-launcher yield (the mini-player/plan-pin `:has` family): under off/minimal the orbit
+ * launcher owns this corner (10px top + 44px icon, z 30) and the pill (z 41) would sit ON it for its
+ * 1.1 s — drop the echo just below the launcher zone instead (Codex confirm-round LOW). Keyed on the
+ * launcher actually rendering, so visible/transparent (docked menu) keep the below-the-bar anchor. */
+.kit:has(.navmenu:not(.docked)) .kit-tts-toast {
+  top: calc(62px + env(safe-area-inset-top));
+}
+.kit-tts-toast b {
+  color: var(--accent);
+  font-weight: 600;
+}
+.kit-tts-toast.off b {
+  color: var(--text);
+}
+
 /* ── app bar · TRANSPARENT variant (global appbarMode="transparent", owner F4 addition) ──────────────────
  * The bar RENDERS + measures into `--appbar-h` (so the scroll/layout math is unchanged) but paints NOTHING —
  * it floats over the page like the prototype's `.appbar` (design/prototypes/variations/frontier.html): the
