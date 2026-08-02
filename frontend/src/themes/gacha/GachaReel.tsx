@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { setGachaReelRunning } from "../../store/gachaReel";
 import { useUISlice } from "../../store/ui";
 
 // The gacha TAB REEL (M1) — five vertical slats sweeping top→bottom over the whole shell on every section
@@ -40,6 +41,11 @@ export function GachaReel() {
   return <GachaReelSweep />;
 }
 
+/** The sweep's total on-screen life: the 520 ms slat animation plus the last slat's 120 ms stagger (the
+ *  `.gc-reel` block in gacha.css). Kept beside the component that mounts the node rather than in the store,
+ *  because it is a property of THIS animation — a second reel-shaped effect would bring its own. */
+const REEL_TOTAL_MS = 640;
+
 function GachaReelSweep() {
   const tab = useUISlice((s) => s.tab);
   const [bootTab] = useState(tab);
@@ -49,7 +55,24 @@ function GachaReelSweep() {
     if (tab !== bootTab) setEverSwitched(true);
   }, [tab, bootTab]);
 
-  if (!everSwitched && tab === bootTab) return null;
+  const sweeping = everSwitched || tab !== bootTab;
+
+  // Publish the sweep to the rest of the theme (G1): the pickup banner holds its auto-advance and cancels
+  // any gesture while the slats are over the screen (§6.4 / the §10.3 "never coincide" line). Keyed on
+  // `tab` as well as `sweeping`, so a second switch DURING a sweep re-arms the window from zero — the same
+  // restart the `key={tab}` remount gives the animation itself. Both the timer and the flag are cleared on
+  // unmount, which is also the reduced-motion and theme-switch path (the §10.5 cleanup ledger).
+  useEffect(() => {
+    if (!sweeping) return;
+    setGachaReelRunning(true);
+    const t = setTimeout(() => setGachaReelRunning(false), REEL_TOTAL_MS);
+    return () => {
+      clearTimeout(t);
+      setGachaReelRunning(false);
+    };
+  }, [tab, sweeping]);
+
+  if (!sweeping) return null;
 
   return (
     // aria-hidden + pointer-events:none (gacha.css): a purely decorative layer that must never intercept a

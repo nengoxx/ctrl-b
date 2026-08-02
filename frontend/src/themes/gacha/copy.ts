@@ -35,6 +35,18 @@ export const GACHA_COPY = {
   /** 設定 (settei) — "settings". */
   tabConf: "設定",
 
+  // ── Shared glyphs (G1) ──────────────────────────────────────────────────────────────────────────
+  // Not words — single characters the Fleet composes strings from at runtime (a star ladder, a plate's
+  // separator). They live HERE because of the absolute non-ASCII fence (`gachaChrome.test.ts`): outside
+  // this module the theme's TypeScript contains no non-ASCII at all, so a glyph a component needs has to
+  // be a copy constant even when it carries no language. Neither ADDS to the frozen subset — ★ already
+  // rides `starModeFive` and · already rides `settingStarsDesc`, and `gachaGlyphSet()` is a SET, so the
+  // committed font manifest is untouched by these two keys.
+  /** ★ (U+2605) — one rarity star; the cards and the rate pill repeat it (§6.2/§6.3). */
+  star: "★",
+  /** · (U+00B7) — the prototype's separator inside a capsule plate (`ROLE · 18 ms`). */
+  sep: "·",
+
   // ── Fleet: banner + track (G1) ──
   /** 開催中 (kaisai-chū) — "now running"; the fixed hero's tag, with its Latin PICKUP. */
   heroTag: "開催中",

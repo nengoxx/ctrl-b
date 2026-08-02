@@ -135,6 +135,18 @@ describe("gacha chrome — the values live in tokens.css (council M7)", () => {
     ["--gc-nav-ink", "#17172b"],
     ["--gc-switch-off", "#ffffff15"],
     ["--gc-switch-fill", "linear-gradient(90deg, #ff6cae, #725bff)"],
+    // the fleet (G1) — the pickup banner + the capsule track
+    ["--gc-hair", "#ffffff14"], // .banner's own hairline rung
+    ["--gc-banner-shadow", "0 20px 50px #0009"],
+    ["--gc-banner-shadow-wall", "0 20px 50px #000c"],
+    ["--gc-tag-ink", "#161329"],
+    ["--gc-display-shadow", "0 3px 0 #1b1030, 0 10px 24px #000"],
+    ["--gc-pill-bg", "#0a0b19cc"],
+    ["--gc-pill-line", "#ffffff26"],
+    ["--gc-pill-ink", "#ffffffc4"],
+    ["--gc-chip-ink", "#ffffffb0"],
+    ["--gc-dot", "#ffffff4d"],
+    ["--gc-dot-shadow", "0 2px 8px #ff6cae99"],
     // stars (§6.2) + the ONLINE ribbon
     ["--gc-star", "#ffd464"],
     ["--gc-star-dim", "#b9b3d6"],

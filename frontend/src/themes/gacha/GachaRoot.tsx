@@ -4,6 +4,7 @@ import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { useUISlice } from "../../store/ui";
 import { GACHA_COPY } from "./copy";
+import { GachaFleet } from "./GachaFleet";
 import { GachaReel } from "./GachaReel";
 
 // gacha's Root ("Capsule Arcade", D52 / GACHA_PLAN §3). A scaffold Root at G0: it maps the arcade palette
@@ -28,6 +29,11 @@ import { GachaReel } from "./GachaReel";
 // fresh literal each render would re-merge (and re-render the composer) on every Root render for nothing.
 const COMPOSER_SLOTS = { placeholder: GACHA_COPY.composerPlaceholder };
 
+// The theme's bespoke section bodies (G1: Fleet; G3 adds Agent). MODULE-LEVEL for the same reason as the
+// composer slots above: DefaultRoot merges this map over its defaults, and a fresh literal per render would
+// rebuild the merge — and remount the body — on every Root render.
+const BODIES = { fleet: GachaFleet };
+
 export function GachaRoot() {
   const appbarMode = useUISlice((s) => s.appbarMode);
   // R6: both ship ON (the prototype defaults them OFF — a deliberate, owner-ruled flip).
@@ -51,6 +57,7 @@ export function GachaRoot() {
         brandText={<span className="gc-word">{GACHA_COPY.brandWordmark}</span>}
         brandMeta={GACHA_COPY.brandMeta}
         composerSlots={COMPOSER_SLOTS}
+        bodies={BODIES}
       />
       {/* The tab reel mounts as a Root SIBLING (the CosmosStarfield pattern) — AFTER DefaultRoot, because
           unlike the starfield it paints OVER the shell. Being outside `.kit` is what lets a

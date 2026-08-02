@@ -555,6 +555,244 @@
       border-color: var(--line);
     }
 
+    /* ── THE PICKUP BANNER (G1 — the prototype's `.banner` family, theme.css:24-41) ────────────────
+     * Full-bleed, fixed-height, and the Fleet tab's FIRST child — which is what makes the appbar→content
+     * seam land at the prototype's zero without a rule (the round-4 `:first-child` nulls exist for the
+     * kit's own heads; a full-bleed banner carries no top space to null).
+     *
+     * `touch-action: pan-y` is load-bearing, not decoration: it is what lets the §6.4 machine claim
+     * HORIZONTAL intent while leaving vertical scrolling entirely to the compositor. Without it the browser
+     * either fights the gesture or hands us both axes and the page stops scrolling over the banner. */
+    .gc-banner {
+      position: relative;
+      height: 232px;
+      overflow: hidden;
+      border-top: 1px solid var(--gc-hair);
+      border-bottom: 1px solid var(--gc-hair);
+      box-shadow: var(--gc-banner-shadow);
+      touch-action: pan-y;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    body[data-wallpaper="on"] .gc-banner {
+      box-shadow: var(--gc-banner-shadow-wall);
+    }
+    /* The strip. Its `transition-duration` is written by GachaBanner (0 while a finger is down, the
+     * prototype's 620 ms on release) — declared here as 0 so the FIRST paint never slides in from nowhere. */
+    .gc-banner-track {
+      display: flex;
+      height: 100%;
+      transition-property: transform;
+      transition-duration: 0ms;
+      transition-timing-function: var(--gc-ease-out);
+      will-change: transform;
+    }
+    .gc-slide {
+      position: relative;
+      flex: 0 0 100%;
+      height: 100%;
+    }
+    .gc-slide img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      /* The prototype's default banner crop; a roster entry with a `focus` overrides it inline. */
+      object-position: 52% 30%;
+    }
+    .gc-slide::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: var(--gc-slide-scrim);
+    }
+    /* A SLEEPING host's promo wears the capsule track's own sleep treatment, so the two surfaces read the
+     * same machine the same way (prototype `.capsule-card.sleep img`). */
+    .gc-slide.sleep img {
+      filter: grayscale(0.75) brightness(0.72);
+    }
+    /* The whole slide is the hit target for a promo (a real button); the hero renders the same box as a
+     * plain div. `text-align: left` + `font: inherit` undo the UA button defaults so the copy inside is
+     * identical in both. */
+    .gc-slide-hit {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: block;
+      width: 100%;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+    }
+    button.gc-slide-hit {
+      cursor: pointer;
+    }
+    .gc-banner-copy {
+      position: absolute;
+      left: 16px;
+      /* The prototype has no RIGHT bound — its copy is three fixed strings. Ours carries a host NAME, so
+       * the box is bounded and the display line wraps instead of running under the dot rail (the
+       * long-host-name row of the acceptance matrix). */
+      right: 16px;
+      bottom: 26px;
+    }
+    .gc-banner-copy .tag {
+      display: inline-block;
+      padding: 4px 11px;
+      border-radius: 99px;
+      background: var(--gc-brand-fill);
+      color: var(--gc-tag-ink);
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 0.16em;
+    }
+    .gc-banner-copy b {
+      display: block;
+      margin-top: 9px;
+      font-size: 27px;
+      line-height: 0.94;
+      font-weight: 900;
+      font-style: italic;
+      letter-spacing: -0.01em;
+      text-shadow: var(--gc-display-shadow);
+      overflow-wrap: anywhere;
+    }
+    .gc-banner-copy small {
+      display: block;
+      margin-top: 8px;
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      color: var(--gc-caption);
+    }
+    /* M5 — a STATIC element on an opacity-only loop (§10.3 keeps it; it is the cheap half of the blended
+     * pair, unlike the moving scanline). Both global axes gate it: `data-motion` stops the breath,
+     * `data-perf="lite"` removes the blended layer outright (the prototype's `.expensive-effect`, which
+     * this app expresses as hand-authored rules — §10.3). */
+    .gc-banner-glow {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: var(--gc-banner-glow);
+      mix-blend-mode: screen;
+      animation: gacha-banner-breathe 6s ease-in-out infinite;
+    }
+    @keyframes gacha-banner-breathe {
+      50% {
+        opacity: 0.45;
+      }
+    }
+    body[data-motion="reduced"] .gc-banner-glow {
+      animation: none;
+    }
+    body[data-perf="lite"] .gc-banner-glow {
+      display: none;
+    }
+    /* The rate + pity pair, cut off by the banner's right edge. `pointer-events: none` so the pills are
+     * never a dead zone in the swipe surface — they carry no interaction. */
+    .gc-banner-rate {
+      position: absolute;
+      right: 0;
+      top: 12px;
+      z-index: 3;
+      display: grid;
+      gap: 4px;
+      justify-items: end;
+      pointer-events: none;
+    }
+    .gc-banner-rate span {
+      padding: 4px 10px 4px 12px;
+      border: 1px solid var(--gc-pill-line);
+      border-right: 0;
+      border-radius: 99px 0 0 99px;
+      background: var(--gc-pill-bg);
+      color: var(--gc-pill-ink);
+      font-size: 8px;
+      letter-spacing: 0.14em;
+    }
+    /* The dots. §14.11 forbids the prototype's `transition: width` (an animated LAYOUT property), so the
+     * pill morph is a `scaleX` on a fixed-width box: every dot reserves the ACTIVE width and an inactive
+     * one is scaled down to the prototype's 7px (7/20 = 0.35). Nothing reflows, and the rail never
+     * re-flows the dots beside the one that changed. The visible trade is a wider rail than the
+     * prototype's — a fixed-width rail is the price of not animating layout. */
+    .gc-banner-dots {
+      position: absolute;
+      right: 14px;
+      bottom: 16px;
+      z-index: 3;
+      display: flex;
+      gap: 6px;
+    }
+    .gc-dot {
+      position: relative;
+      width: 20px;
+      height: 7px;
+      padding: 0;
+      border: 0;
+      background: none;
+      cursor: pointer;
+    }
+    /* An invisible 24px-tall hit area over a 7px dot — the visual stays the prototype's, the touch target
+     * is a real one. */
+    .gc-dot::before {
+      content: "";
+      position: absolute;
+      inset: -9px -2px;
+    }
+    .gc-dot .pip {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: 99px;
+      background: var(--gc-dot);
+      transform: scaleX(0.35);
+      transition:
+        transform 300ms var(--gc-ease-spring),
+        background 300ms ease;
+    }
+    .gc-dot.on .pip {
+      transform: scaleX(1);
+      background: var(--gc-dot-on);
+      box-shadow: var(--gc-dot-shadow);
+    }
+    body[data-motion="reduced"] .gc-dot .pip {
+      transition: none;
+    }
+    /* Past the dot bound (§6.4): a counter plus the two labelled buttons that keep the keyboard path the
+     * dots provided. Styled as one lozenge in the same glass as the rate pills. */
+    .gc-banner-nav {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px;
+      border: 1px solid var(--gc-pill-line);
+      border-radius: 99px;
+      background: var(--gc-pill-bg);
+    }
+    .gc-banner-nav button {
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border: 0;
+      border-radius: 99px;
+      background: none;
+      color: var(--gc-pill-ink);
+      cursor: pointer;
+    }
+    .gc-banner-nav span {
+      padding: 0 4px;
+      color: var(--gc-pill-ink);
+      font-size: 9px;
+      letter-spacing: 0.14em;
+    }
+
     /* The kit's own section entrance (`kit-fade`, 0.25 s) is re-tuned to nothing under gacha (§10.1
      * riders): the prototype has no per-screen fade, the reel IS the transition, and leaving both in
      * would double-animate the swap — visibly so if the M2 spike promotes a root cross-fade on top. */
