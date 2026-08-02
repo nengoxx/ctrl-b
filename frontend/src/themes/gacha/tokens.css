@@ -33,12 +33,15 @@
       /* ── semantic tier — the arcade night ────────────────────────────────────────────────────── */
       --bg: #0a0b19;
       --surface: #14172f; /* capsule cards */
-      --surface-2: #1a1d38; /* the lifted step: setting groups / nested panels */
+      --surface-2: #16182f; /* the lifted step — the prototype's `.setting-group` (Codex G0 #3) */
       --text: #f7f6ff;
       --text-2: #b4b2d0; /* the prototype's de-saturated secondary (its sleeping-card ink) */
       --text-3: #7d7a9e;
-      --line: rgba(255, 255, 255, 0.1);
-      --line-2: rgba(255, 255, 255, 0.18);
+      /* The prototype's own hairline LADDER, in its own notation: `#ffffff10`–`#ffffff2e` (theme.css). The
+       * hex-alpha form is kept verbatim rather than converted to rgba() percentages — the draft's 10%/18%
+       * were a paraphrase, and 0x10 is 6.3%, not 10% (Codex G0 #3). */
+      --line: #ffffff10;
+      --line-2: #ffffff2e;
 
       --ok: #74f3ad;
       --warn: #ffc76a;
@@ -87,17 +90,30 @@
       --gc-ind-fill: #ffffff;
       --gc-ind-shadow: 5px 5px 0 #ff6cb1;
 
-      /* Switches. The ON track is the TWO-STOP pink→violet (prototype `.switch[aria-checked="true"]`),
-       * NOT the tri-gradient brand fill — the prototype reserves the third (cyan) stop for brand surfaces
-       * (wordmark, tag pills, the dossier strip), and using it on every toggle is what read as "more
-       * colour heavy" at the owner's G0 eyeball. Kept as its own token rather than re-pointing
-       * `--accent-fill`, because `--accent-fill` is also the ink-bearing fill (seg buttons, send) that the
-       * §14.15.1-⑨ contrast gate measures `--accent-ink` against — and `#725bff` is darker than the
-       * tri-gradient's `#805cff`, so re-pointing it would drop that pair from 4.57 to 4.34 and FAIL. A
-       * switch track carries no ink, so it is free to be the darker, calmer gradient. */
+      /* Switches. The ON track is the prototype's EXACT two-stop pink→violet
+       * (`.switch[aria-checked="true"]`), kept as its own token because its violet `#725bff` is darker than
+       * the brand's `#805cff`: on an ink-BEARING surface that pair measures 4.34 against the 4.5 floor,
+       * while a switch track carries no ink and is free to be the darker one. Owner-approved at the
+       * round-1 eyeball — do not "unify" it with `--accent-fill` below. */
       --gc-switch-off: #ffffff15;
       --gc-switch-fill: linear-gradient(90deg, #ff6cae, #725bff);
       --gc-switch-knob: #ffffff;
+
+      /* ── The two accent FILLS, and which surface each belongs to (owner round 2, items C+D) ────────
+       * The prototype uses the full pink→violet→CYAN trio for BRAND surfaces only — the wordmark, the tag
+       * pills, the dossier's top strip. Pointing the kit's generic `--accent-fill` at it put that rainbow
+       * on every filled control in the app (seg buttons, send/mic, save buttons, mini-player, ticks),
+       * which is the "way too colour heavy" the owner named. So there are two:
+       *   --gc-brand-fill  the trio. Brand surfaces only. Also the Conf palette chip's swatch, so the
+       *                    picker previews the identity rather than the control fill (Codex G0 #4: the
+       *                    swatch string routes through this token instead of hard-coding the hexes in TSX).
+       *   --accent-fill    the two-stop pink→violet the kit paints controls with — ONE edit that sweeps
+       *                    every consumer, rather than a per-control chase. It uses the BRAND violet
+       *                    `--gc-brand-2` (#805cff), not the switch's #725bff: visually the same gradient,
+       *                    but it keeps the ink pair at the verified 4.57 instead of failing at 4.34.
+       * Both are DERIVED (var() formulas over the trio), so both are declared on `body` below — on
+       * `:scope` they would compute once from the base trio and never re-derive under a G6
+       * `body[data-accent]` override (§14.6). */
 
       /* The BRAND trio — pink → violet → cyan (brand text, tags, switch-on, the dossier strip). */
       --gc-brand-1: #ff6cae;
@@ -121,6 +137,30 @@
       /* The ONLINE state ribbon + its ink. */
       --gc-online-fill: linear-gradient(92deg, #74f3ad, #54e5ff);
       --gc-online-ink: #12172b;
+
+      /* ── Roles RESERVED for their G2/G3 consumers (Codex G0 #3) ────────────────────────────────
+       * Named now, before the bodies that paint them, for the same reason as everything above: the
+       * no-literals-outside-this-file rule means a body author would otherwise have to come back HERE
+       * anyway, and G6's five variants must be able to re-tint the whole theme from one place. The
+       * `tests/themes/gachaChrome.test.ts` value guard pins them so a fidelity value can't drift
+       * unnoticed between now and the slice that uses it. */
+
+      /* Composer surface (prototype `.composer`) — G3, when the look-named shared `arcade` skin lands. */
+      --gc-composer: #15172e;
+      /* Chat bubbles (prototype `.msg` / `.msg.user`) — G3, re-targeted onto the §15 chat hooks. The
+       * user bubble is WHITE with a hard pink offset shadow and near-black ink; the bot bubble is the
+       * lifted navy. */
+      --gc-bubble-bot: #222541;
+      --gc-bubble-user: #ffffff;
+      --gc-bubble-user-ink: #16162c;
+      --gc-bubble-user-shadow: 5px 5px 0 #ff6cae;
+      /* The dossier's INVERTED light sheet (prototype `.detail-panel`) — G2. A surface, not a light
+       * MODE: gacha stays `modes: ["dark"]`, so these never reach the mode axis. */
+      --gc-dossier-from: #f9f8ff;
+      --gc-dossier-to: #dfe4ff;
+      --gc-dossier-ink: #17172c;
+      --gc-dossier-card: #ffffff;
+      --gc-dossier-line: #c9d0ef;
     }
 
     /* Page text color. The page BACKGROUND lives in the bespoke gacha.css (the cosmos/frontier precedent:
@@ -135,14 +175,17 @@
       /* --accent is the flat <color> channel (focus ring, borders, accent text, the color-mix softs): the
        * brand PINK, the trio's leading hue and its most legible member on this bg. */
       --accent: var(--gc-brand-1);
-      /* --accent-fill is the <image>-capable channel: the prototype's own 92° brand gradient, the one that
-       * paints its tag pills, switch-on track and wordmark. The frontier K2 precedent. */
-      --accent-fill: linear-gradient(
+      /* The brand trio — wordmark, tag pills, the dossier strip, and the Conf palette chip. */
+      --gc-brand-fill: linear-gradient(
         92deg,
         var(--gc-brand-1),
         var(--gc-brand-2) 52%,
         var(--gc-brand-3)
       );
+      /* --accent-fill is the <image>-capable channel the KIT paints filled controls with: the two-stop
+       * pink→violet (see the note above — one edit sweeps seg/send/mic/save/mini-player/ticks). The
+       * frontier K2 precedent for a gradient fill beside a flat `--accent`. */
+      --accent-fill: linear-gradient(90deg, var(--gc-brand-1), var(--gc-brand-2));
       --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
       --ok-soft: color-mix(in srgb, var(--ok) 16%, transparent);
       --warn-soft: color-mix(in srgb, var(--warn) 16%, transparent);

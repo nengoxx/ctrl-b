@@ -58,12 +58,26 @@ describe("GachaReel", () => {
     expect(second).not.toBe(first); // a NEW node — a fresh CSS animation from frame 0
   });
 
-  it("renders nothing under reduced motion, and comes back when motion returns", () => {
+  it("renders nothing under reduced motion", () => {
     setUI({ motion: "reduced" });
     const { container } = render(<GachaReel />);
     act(() => setUI({ tab: "agent" }));
     expect(reel(container)).toBeNull();
+  });
+
+  it("re-enabling motion does NOT sweep for a switch made while it was off (Codex G0 #5)", () => {
+    // The leak this pins: the latch used to live beside the motion gate, so tab changes made under
+    // reduced motion still armed it — and turning motion back ON (an APPEARANCE toggle, not a
+    // navigation) mounted the overlay and swept for a switch that had happened minutes earlier. The gate
+    // now unmounts the latch, so motion returning re-boots it against the CURRENT tab.
+    setUI({ motion: "reduced" });
+    const { container } = render(<GachaReel />);
+    act(() => setUI({ tab: "agent" })); // a switch nobody saw
     act(() => setUI({ motion: "full" }));
+    expect(reel(container)).toBeNull(); // …and nobody sees a reel for it now, either
+
+    // The very next real navigation still reels — the gate suppresses the ghost, not the feature.
+    act(() => setUI({ tab: "conf" }));
     expect(reel(container)).not.toBeNull();
   });
 });

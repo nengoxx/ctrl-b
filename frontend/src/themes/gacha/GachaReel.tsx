@@ -26,9 +26,22 @@ import { useUISlice } from "../../store/ui";
 // moved off it. `everSwitched` then makes that sticky, so returning to the boot tab later still reels.
 // State, not a ref: the first switch is armed by the render-time comparison — the effect only records the
 // fact — so the reel still starts in the SAME commit as the tab change.
+//
+// The MOTION GATE is the outer component, and the latch lives in a child it mounts (Codex G0 #5). Keeping
+// both in one component leaked a reel: tab changes made under reduced motion still armed the latch, so the
+// moment the owner turned motion back ON — an appearance toggle, not a navigation — the overlay mounted and
+// swept for a tab switch that had happened minutes earlier. Unmounting the latch with the gate means motion
+// coming back re-boots it against the CURRENT tab: nothing animates until the user actually navigates.
 export function GachaReel() {
-  const tab = useUISlice((s) => s.tab);
+  // The app's OWN motion axis (`body[data-motion]`), never the OS media query — reduced motion removes the
+  // reel entirely rather than shortening it. gacha.css carries the same gate as a CSS belt.
   const motion = useUISlice((s) => s.motion);
+  if (motion === "reduced") return null;
+  return <GachaReelSweep />;
+}
+
+function GachaReelSweep() {
+  const tab = useUISlice((s) => s.tab);
   const [bootTab] = useState(tab);
   const [everSwitched, setEverSwitched] = useState(false);
 
@@ -36,9 +49,6 @@ export function GachaReel() {
     if (tab !== bootTab) setEverSwitched(true);
   }, [tab, bootTab]);
 
-  // The app's OWN motion axis (`body[data-motion]`), never the OS media query — reduced motion removes the
-  // reel entirely rather than shortening it. gacha.css carries the same gate as a CSS belt.
-  if (motion === "reduced") return null;
   if (!everSwitched && tab === bootTab) return null;
 
   return (

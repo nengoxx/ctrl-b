@@ -73,13 +73,23 @@ export const GACHA_COPY = {
   /** 最終確認 (saishū kakunin) — "last confirmed" (Seen). */
   metricSeen: "最終確認",
 
-  // ── Settings row flavour (the prototype's own bilingual row copy) ──
+  // ── The `ThemeDef.settings` descriptors (Codex G0 #1) ────────────────────────────────────────────
+  // These are PRODUCTION strings the Conf Appearance rows render, so they belong here for exactly the
+  // same reason the rest does: whatever is not in this file is not in the shipped font. ★ (U+2605) is
+  // the sharp case — it is not in any Latin subset, so before this move the seg read "5★" in a fallback
+  // face. The bilingual descriptions follow the prototype's own row copy (an English gloss · the JP word)
+  // and carry `·` (U+00B7), which the Latin subset does cover but which this file must still own so the
+  // no-non-ASCII-outside-copy guard can be absolute rather than a list of exceptions.
+  /** The 5★ rarity-scale seg option. */
+  starModeFive: "5★",
+  /** The 3★ rarity-scale seg option. */
+  starModeThree: "3★",
+  /** 星 (hoshi) — "star". */
+  settingStarsDesc: "rarity scale · 星",
   /** 壁紙 (kabegami) — "wallpaper". */
-  settingWallpaper: "壁紙",
+  settingWallpaperDesc: "pickup art fills the fleet background · 壁紙",
   /** 定着 (teichaku) — "fixing in place"; the sticky operator art. */
-  settingOracle: "定着",
-  /** 星 (hoshi) — "star"; the star-mode row. */
-  settingStars: "星",
+  settingOracleDesc: "the header fades in place instead of scrolling away · 定着",
 } as const;
 
 export type GachaCopyKey = keyof typeof GACHA_COPY;

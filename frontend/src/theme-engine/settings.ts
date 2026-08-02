@@ -9,7 +9,7 @@
 
 import { useUISlice } from "../store/ui";
 import { registry } from "./registry";
-import type { ThemeId, ThemeSettingsSpec, ThemeSettingValue } from "./types";
+import type { ThemeId, ThemeSettingField, ThemeSettingsSpec, ThemeSettingValue } from "./types";
 
 /** The active theme's declared settings schema (or undefined if it has none) — drives the Appearance
  *  picker's auto-render. */
@@ -33,6 +33,23 @@ export function resolveThemeSetting(
   if (spec.type === "switch") return typeof raw === "boolean" ? raw : spec.default;
   // seg: keep the raw value only if it names a declared option, else the default
   return typeof raw === "string" && spec.options.some((o) => o.val === raw) ? raw : spec.default;
+}
+
+/** The value the Conf Appearance picker DISPLAYS for one declared settings row — the same resolution the
+ *  app itself uses, so a row can never report a state the app isn't in.
+ *
+ *  Extracted from ConfTab's render loop (Codex G0 #7) so it is testable as a value rather than as the
+ *  presence of a call: the bug it fixes is a corrupt or stale synced override (a seg id this build no
+ *  longer declares, a string where a switch belongs) being rendered RAW while every consumer had already
+ *  coerced it to the default. The `?? field.default` tail is a belt for the impossible case of an
+ *  undeclared key reaching the loop — `resolveThemeSetting` returns `undefined` only then. */
+export function themeRowValue(
+  themeId: ThemeId,
+  key: string,
+  raw: ThemeSettingValue | undefined,
+  field: ThemeSettingField,
+): ThemeSettingValue {
+  return resolveThemeSetting(themeId, key, raw) ?? field.default;
 }
 
 /** Resolve one per-theme setting: the stored override validated against the theme's spec, else the theme's

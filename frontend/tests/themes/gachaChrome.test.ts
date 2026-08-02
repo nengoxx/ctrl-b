@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // ^ this file reads gacha's stylesheets from disk (fs/path/process); the tests tsconfig pins
 //   `types:["vitest"]`, so node's globals are pulled in explicitly (the themeContract precedent).
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -68,9 +68,9 @@ describe("gacha chrome — the @layer trap re-declarations", () => {
 });
 
 describe("gacha chrome — the values live in tokens.css (council M7)", () => {
-  // The chrome wave added nine color/shadow roles. The stylelint override already makes a literal in
-  // gacha.css an ERROR; this asserts the other half — that the roles were actually DECLARED rather than
-  // silently inherited from the kit's neutral fallbacks, which is what G6's palette variants re-tint.
+  // The stylelint override already makes a literal in gacha.css an ERROR; this asserts the other half —
+  // that the role was actually DECLARED here rather than silently inherited from the kit's neutral
+  // fallbacks, which is what G6's five palette variants re-tint in one place.
   it.each([
     ["--gc-bar-grad"],
     ["--gc-bar-grad-wall"],
@@ -81,18 +81,111 @@ describe("gacha chrome — the values live in tokens.css (council M7)", () => {
     ["--gc-switch-off"],
     ["--gc-switch-fill"],
     ["--gc-switch-knob"],
-  ])("declares %s", (token) => {
+    ["--gc-brand-fill"],
+  ])("declares %s, and gacha.css or a token actually consumes it", (token) => {
     expect(tokens).toContain(`${token}:`);
-    expect(rules, `${token} is declared but never used`).toContain(`var(${token})`);
+    expect(
+      rules.includes(`var(${token})`) || tokens.includes(`var(${token})`),
+      `${token} is declared but never used`,
+    ).toBe(true);
+  });
+
+  // The EXPECTED-VALUE guard (Codex G0 #3): the generic contract arm in themeContract.test.ts only proves
+  // a token EXISTS. These are prototype values with a fidelity mandate on them, and several are consumed
+  // by slices that have not been built yet — so without this a drift (or a well-meaning "cleanup") between
+  // now and G2/G3 would land silently. Each entry is the prototype's own literal, cited to its source.
+  it.each([
+    // theme.css — the semantic tier
+    ["--bg", "#0a0b19"],
+    ["--surface", "#14172f"], // .capsule-card
+    ["--surface-2", "#16182f"], // .setting-group
+    ["--text", "#f7f6ff"],
+    ["--line", "#ffffff10"], // the hairline ladder's floor, in the prototype's own hex-alpha notation
+    ["--line-2", "#ffffff2e"], // …and its ceiling
+    ["--ok", "#74f3ad"],
+    ["--warn", "#ffc76a"],
+    // the brand trio + the deliberately-near-trio siblings (§1: tokened separately, never unified)
+    ["--gc-brand-1", "#ff6cae"],
+    ["--gc-brand-2", "#805cff"],
+    ["--gc-brand-3", "#54e5ff"],
+    ["--gc-reel-slat", "linear-gradient(#ff6caf, #755cff, #57e7ff)"],
+    ["--gc-ind-shadow", "5px 5px 0 #ff6cb1"],
+    // chrome
+    ["--gc-bar", "#11142ee8"],
+    ["--gc-bar-line", "#ffffff18"],
+    ["--gc-nav-shadow", "0 18px 45px #0009"],
+    ["--gc-nav-ink", "#17172b"],
+    ["--gc-switch-off", "#ffffff15"],
+    ["--gc-switch-fill", "linear-gradient(90deg, #ff6cae, #725bff)"],
+    // stars (§6.2) + the ONLINE ribbon
+    ["--gc-star", "#ffd464"],
+    ["--gc-star-dim", "#b9b3d6"],
+    ["--gc-online-fill", "linear-gradient(92deg, #74f3ad, #54e5ff)"],
+    // RESERVED for G2/G3 — the ones most at risk of drifting, since nothing paints them yet
+    ["--gc-composer", "#15172e"],
+    ["--gc-bubble-bot", "#222541"],
+    ["--gc-bubble-user-shadow", "5px 5px 0 #ff6cae"],
+    ["--gc-dossier-from", "#f9f8ff"],
+    ["--gc-dossier-to", "#dfe4ff"],
+    ["--gc-dossier-ink", "#17172c"],
+    ["--gc-dossier-line", "#c9d0ef"],
+    ["--gc-unit-no", "#c8438b"],
+    ["--gc-caption", "#9ff0ff"],
+    ["--gc-heading", "#ff8ec2"],
+  ])("%s is the prototype's %s", (token, value) => {
+    expect(
+      tokens,
+      `${token} drifted from the prototype's ${value} — the fidelity mandate is on these values`,
+    ).toContain(`${token}: ${value}`);
   });
 
   it("keeps the switch's two-stop OFF the ink-bearing --accent-fill (the contrast pair)", () => {
-    // `--accent-ink` (the var(--bg) fallback) on `--accent-fill`'s worst stop measures 4.57 against a
-    // 4.5 floor. The switch's darker `#725bff` would drop that to 4.34 and FAIL the e2e gate, so the two
-    // gradients stay separate tokens — a switch track carries no ink and is free to be the darker one.
+    // `--accent-ink` (the var(--bg) fallback) on `--accent-fill`'s worst stop measures 4.57 against a 4.5
+    // floor. The switch's darker `#725bff` would drop it to 4.34 and FAIL the e2e gate, so the control
+    // fill uses the BRAND violet instead — visually the same gradient, verified contrast.
     expect(tokens).toContain("--gc-switch-fill: linear-gradient(90deg, #ff6cae, #725bff)");
-    const accentFill = /--accent-fill:\s*linear-gradient\(([\s\S]*?)\);/.exec(tokens)?.[1] ?? "";
-    expect(accentFill).toContain("--gc-brand-3"); // the tri-gradient keeps its cyan stop
+    const accentFill = /--accent-fill:\s*linear-gradient\(([^;]*?)\);/.exec(tokens)?.[1] ?? "";
+    expect(accentFill).toContain("--gc-brand-2");
     expect(accentFill).not.toContain("725bff");
+    // …and the owner's round-2 item C/D: the generic control fill is the TWO-stop, so the cyan third stop
+    // is reserved for BRAND surfaces (`--gc-brand-fill`) and no longer paints every seg/send/save button.
+    expect(accentFill).not.toContain("--gc-brand-3");
+    expect(tokens).toMatch(/--gc-brand-fill:[\s\S]*?--gc-brand-3/);
+  });
+});
+
+// ── The NON-ASCII FENCE (Codex G0 #1) ────────────────────────────────────────────────────────────────
+// gacha ships a FROZEN font subset derived from `copy.ts`. A non-ASCII character that lives anywhere else
+// in the theme is therefore a character the shipped font cannot draw — it silently falls back to the
+// system face, mid-string, at the wrong weight. That is exactly what happened to the ★ in the star-mode
+// seg labels and to the JP words in the settings descriptions, and the glyph guard could not see it
+// because it only ever looked at copy.ts.
+//
+// The fence is absolute rather than a list of allowed exceptions: outside `copy.ts`, gacha's TypeScript
+// contains no non-ASCII at all. Comments are stripped first — prose about 編成 or a `→` in a diagram is
+// documentation, not shipped text.
+describe("gacha sources — no non-ASCII outside copy.ts", () => {
+  const dir = resolve(process.cwd(), "src/themes/gacha");
+  const files = readdirSync(dir, { recursive: true, encoding: "utf8" })
+    .filter((f) => /\.tsx?$/.test(f) && f !== "copy.ts")
+    .sort();
+
+  it("finds the theme's source files (the fence is not vacuously passing)", () => {
+    expect(files.length).toBeGreaterThanOrEqual(6);
+    expect(files).toContain("index.tsx");
+  });
+
+  it.each(files.map((f) => [f] as const))("%s carries no non-ASCII outside comments", (file) => {
+    const src = readFileSync(resolve(dir, file), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const offenders = [...new Set([...src].filter((c) => c.codePointAt(0)! > 0x7f))];
+    expect(
+      offenders,
+      `${file} contains non-ASCII outside comments: ${offenders.join(" ")}\n` +
+        `  Every shipped non-ASCII character must live in src/themes/gacha/copy.ts, or the frozen font\n` +
+        `  subset will not contain it and it will render in the system fallback face.\n` +
+        `  Fix: move the string into GACHA_COPY, then run \`npm run fonts:gacha\` and commit the outputs.`,
+    ).toEqual([]);
   });
 });

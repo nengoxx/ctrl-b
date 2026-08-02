@@ -37,6 +37,54 @@ async function scanTab(page: Page, id: string): Promise<void> {
   expect(violations, `\n${summary}`).toEqual([]);
 }
 
+/** Scan the WHOLE PAGE (Codex G0 #6). The per-tab scans above are scoped to `#tab-<id>`, which by
+ *  construction never sees the chrome the theme actually re-skins — the app bar, the tab bar and its
+ *  indicator, the composer, the floating overlays. A theme could ship an unlabelled bar control, or a
+ *  reel overlay that steals focus, and every scoped scan would still pass. Inactive tab panels are
+ *  `display:none`, which axe ignores, so this adds the chrome without adding cross-tab noise. */
+async function scanPage(page: Page): Promise<void> {
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .disableRules(["color-contrast"]) // same D24 palette exemption as the scoped scans
+    .analyze();
+  const summary = violations
+    .map((v) => `${v.id} (${v.impact}, ${v.nodes.length} nodes)`)
+    .join("\n");
+  expect(violations, `\n${summary}`).toEqual([]);
+}
+
+/** Seed a theme's persisted appearance before any page script (the flows/contrast/kit-render pattern). */
+async function bootTheme(page: Page, ui: Record<string, unknown>): Promise<void> {
+  await page.addInitScript((seed) => {
+    localStorage.setItem("ctrlb.ui", JSON.stringify(seed));
+  }, ui);
+}
+
+// ── Whole-page scans, one per shipping theme, on Fleet ──
+// One arm each rather than one per tab: the point is the CHROME, which is identical across tabs, so a
+// second tab would re-scan the same bars for a third of the suite's runtime.
+const PAGE_ARMS = [
+  { theme: "cosmos", ui: { theme: "cosmos", mode: "dark", accent: "violet", tab: "fleet", v: 1 } },
+  { theme: "vapor", ui: { ...VAPOR_UI, tab: "fleet" } },
+  {
+    theme: "frontier",
+    ui: { theme: "frontier", mode: "dark", accent: "coral", tab: "fleet", v: 1 },
+  },
+  { theme: "gacha", ui: { theme: "gacha", mode: "dark", accent: "arcade", tab: "fleet", v: 1 } },
+] as const;
+
+for (const arm of PAGE_ARMS) {
+  test(`${arm.theme} — whole page (chrome included) has no WCAG A/AA axe violations`, async ({
+    page,
+  }) => {
+    await bootTheme(page, arm.ui);
+    await page.goto("/");
+    await expect(page.locator(".kit-appbar, .appbar").first()).toBeVisible();
+    await expect(page.locator("#tab-fleet")).toHaveClass(/active/);
+    await scanPage(page);
+  });
+}
+
 // ── Default boot (cosmos) — its 4-tab bar ──
 // The fleet arm's settle marker is a SELECTOR, not text: cosmos's Fleet renders hosts as orbital coins
 // whose name lives in `aria-label`, not in text content.

@@ -77,6 +77,62 @@ describe("entryForHost / artForHost — positional assignment over the display o
   });
 });
 
+// ── UNUSABLE entries (Codex G0 #2) — the case the schema could not express before ──────────────────────
+// The roster's ORDER is the host assignment, so an entry whose file is broken must keep its slot in the
+// list. Dropping it would re-deal every host after it: one bad upload and half the fleet silently changes
+// character. It is flagged instead, and only its own position falls back to the placeholder.
+describe("unusable entries hold their position", () => {
+  it("a MIDDLE entry going bad does not shift the hosts after it", () => {
+    const good = roster([entry("a"), entry("b"), entry("c"), entry("d")]);
+    const broken = roster([entry("a"), entry("b", { unusable: true }), entry("c"), entry("d")]);
+
+    expect(assignArt(good, 4).map((x) => x?.url)).toEqual(["a.webp", "b.webp", "c.webp", "d.webp"]);
+    // Only host 1 loses its art; 2 and 3 keep exactly the characters they had.
+    expect(assignArt(broken, 4).map((x) => x?.url ?? null)).toEqual([
+      "a.webp",
+      null,
+      "c.webp",
+      "d.webp",
+    ]);
+    // …and the entry itself is still in the list, still at index 1 (the gallery can warn about it).
+    expect(entryForHost(broken, 1)?.name).toBe("b");
+  });
+
+  it("keeps the CYCLE length intact, so the wrap-around lands on the same entries", () => {
+    const r = roster([entry("a"), entry("b", { unusable: true }), entry("c")]);
+    expect(assignArt(r, 6).map((x) => x?.url ?? null)).toEqual([
+      "a.webp",
+      null,
+      "c.webp",
+      "a.webp",
+      null,
+      "c.webp",
+    ]);
+  });
+
+  it("an unusable entry cannot serve a slot — the slot falls back instead", () => {
+    const r = roster([entry("a", { wide: "a-wide.webp", unusable: true }), entry("b")], {
+      wallpaper: "a",
+      oracle: "a",
+    });
+    expect(slotEntry(r, "wallpaper")?.name).toBe("a"); // it is still FOUND…
+    expect(wallpaperArt(r)).toEqual({ url: ART.banner }); // …but not painted
+    expect(oracleArt(r)).toEqual({ url: ART.oracle });
+  });
+
+  it("an unusable cutout is skipped for the reel figure, in favour of a usable one", () => {
+    const r = roster([
+      entry("a", { cutout: "a-cut.webp", unusable: true }),
+      entry("b", { cutout: "b-cut.webp" }),
+    ]);
+    expect(reelFigureArt(r)).toEqual({ url: "b-cut.webp" });
+    // …and with no usable cutout at all, no figure (the slats carry the reel alone).
+    expect(
+      reelFigureArt(roster([entry("a", { cutout: "a-cut.webp", unusable: true })])),
+    ).toBeNull();
+  });
+});
+
 describe("slots — pins, and what happens when a pin dangles", () => {
   it("resolves a pin to its entry", () => {
     const r = roster([entry("a"), entry("b", { wide: "b-wide.webp" })], { wallpaper: "b" });

@@ -94,9 +94,13 @@ export default {
     {
       files: ["src/themes/gacha/**/*.css"],
       rules: {
+        // ERROR, not the warn-first severity its four siblings carry (Codex G0 #4): those predate the
+        // warn-first adoption and are grandfathered, but a NEW theme has zero violations to burn down, and
+        // an unprefixed keyframe collides document-wide with every other skin's (§14.13 #4) — a real
+        // cross-theme break, not an inventory item.
         "keyframes-name-pattern": [
           "^gacha-",
-          { severity: "warning", message: "gacha's @keyframes must be prefixed `gacha-`" },
+          { message: "gacha's @keyframes must be prefixed `gacha-`" },
         ],
         "color-no-hex": [
           true,
@@ -112,16 +116,30 @@ export default {
               "gacha authors colors ONLY in src/themes/gacha/tokens.css — use a var(--…) token (council M7)",
           },
         ],
+        // `color()` closes the last literal-color syntax the list above missed (Codex G0 #4); the rest are
+        // the ordinary color functions. `color-mix()`/`var()` stay legal — they operate ON tokens.
         "function-disallowed-list": [
-          ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch"],
+          ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color"],
           {
             message:
               "gacha authors colors ONLY in src/themes/gacha/tokens.css — use a var(--…) token (council M7)",
           },
         ],
+        // An inline `data:` URL is an asset smuggled past the art manifest: unhashed, un-cacheable,
+        // invisible to the build's asset accounting, and (for an SVG) active content. Art enters this
+        // theme through `art.ts`'s glob or the G5 media mount, never through a stylesheet.
+        "function-url-scheme-disallowed-list": [
+          ["data"],
+          {
+            message:
+              "no inline data: URLs in gacha CSS — assets go through art.ts's manifest or the media mount",
+          },
+        ],
       },
     },
     {
+      // tokens.css is the ONE place literals belong; a later override wins, so this re-exempts it from the
+      // three color rules above (the `data:` and keyframe rules still apply — a token file has neither).
       files: ["src/themes/gacha/tokens.css"],
       rules: {
         "color-no-hex": null,

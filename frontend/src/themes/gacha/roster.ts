@@ -33,6 +33,15 @@ export interface RosterEntry {
   wide?: string;
   /** Optional `object-position` focal point; absent → the theme's default crop. */
   focus?: string;
+  /** The entry exists in the roster but its file cannot be used — missing on disk, an unreadable or
+   *  disallowed format, a zero-byte upload (the G5 index endpoint's magic-byte reader decides).
+   *
+   *  It is a FLAG rather than an omission on purpose (Codex G0 #2): the roster's order IS the host
+   *  assignment, so dropping a broken entry from the list would silently RE-DEAL every host after it —
+   *  one bad file and half the fleet changes character. Flagged, the entry keeps its position and only
+   *  its own slot falls back to the placeholder. The Conf gallery is where the owner is told about it
+   *  (§5.3: "placeholder + a Conf gallery warning; render stays silent"). */
+  unusable?: boolean;
 }
 
 /** Optional pinned bindings. Each names an ENTRY; an unpinned (or dangling) slot falls back — never a hole. */
@@ -111,7 +120,7 @@ export function slotEntry(roster: Roster, slot: keyof RosterSlots): RosterEntry 
 /** Landscape art for a wide-consuming slot: the entry's `wide` variant when it has one, else its `image`
  *  with the entry's focal crop — never a hole (§5.2). */
 function toWideArt(entry: RosterEntry | undefined): ResolvedArt | null {
-  if (!entry) return null;
+  if (!entry || entry.unusable) return null;
   return {
     url: entry.wide ?? entry.image,
     ...(entry.focus !== undefined && { focus: entry.focus }),
@@ -119,7 +128,7 @@ function toWideArt(entry: RosterEntry | undefined): ResolvedArt | null {
 }
 
 function toArt(entry: RosterEntry | null | undefined): ResolvedArt | null {
-  if (!entry) return null;
+  if (!entry || entry.unusable) return null;
   return { url: entry.image, ...(entry.focus !== undefined && { focus: entry.focus }) };
 }
 
@@ -144,7 +153,8 @@ export function oracleArt(roster: Roster): ResolvedArt {
  *  transition alone, which is the design's own posture — the reel must be complete without the figure). */
 export function reelFigureArt(roster: Roster): ResolvedArt | null {
   const pinned = slotEntry(roster, "reel_figure");
-  const entry = pinned?.cutout !== undefined ? pinned : roster.entries.find((e) => e.cutout);
+  const usable = (e: RosterEntry | undefined) => e?.cutout !== undefined && !e.unusable;
+  const entry = usable(pinned) ? pinned : roster.entries.find(usable);
   if (!entry?.cutout) return null;
   return { url: entry.cutout, ...(entry.focus !== undefined && { focus: entry.focus }) };
 }

@@ -42,7 +42,10 @@
       font-weight: 900;
       font-size: 15px;
       letter-spacing: 0.16em;
-      background: var(--accent-fill);
+      /* The BRAND trio, not the control fill: the wordmark is the one surface the prototype paints with
+       * all three stops (owner round 2, items C+D — `--accent-fill` is now the calmer two-stop the kit's
+       * buttons use). */
+      background: var(--gc-brand-fill);
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
@@ -154,15 +157,35 @@
       transform: translateX(17px);
     }
 
-    /* ── Bottom nav — the FLOATING pill ───────────────────────────────────────────────────────────
-     * Inset 12px, rounded, bordered, blurred, with the prototype's deep drop shadow. It stays an IN-FLOW
-     * flex child of the shell (margins, not `position: absolute`): the kit's whole bottom-edge geometry —
-     * `--app-h` keyboard sizing, the scroller's `--composer-h` padding, and the composer's own anchor —
-     * is measured off the bar occupying that row, and taking it out of flow would move the composer on
-     * top of it. See the report's deviation note: content therefore ENDS above the nav instead of
-     * scrolling behind it; that half of the prototype's floating nav lands with the composer at G3. */
+    /* ── Bottom nav — the FLOATING pill, OVER the scroller ────────────────────────────────────────
+     * Round 1 made the bar look inset but left it IN FLOW, so content stopped dead above it. The owner's
+     * round-2 note is precise: it should behave like the kit's floating COMPOSER — content visible
+     * through the side gaps and running under the translucent bar. That is what the prototype does
+     * (`.nav` is `position: absolute` over the scroll area), and the kit already owns the exact idiom
+     * one element up: `.kit-composer` is absolute over `.kit-scroll`, and the scroller pads its bottom by
+     * the measured `--composer-h` so the last content can still scroll clear.
+     *
+     * gacha mirrors that for the bar, in four coupled moves (`--gc-nav-zone` is the shared measurement so
+     * they can never drift apart):
+     *   1. `.kit` gets `position: relative` — WITHOUT a z-index, so it stays a non-stacking-context
+     *      ancestor. That distinction is load-bearing: §10.1 bans the cosmos `position:relative;z-index:1`
+     *      idiom precisely because the z-index would trap the reel (45) and the modals (50/60) inside the
+     *      shell's own layer. `position` alone creates no stacking context and changes nothing else.
+     *   2. the bar goes absolute against it, so `--app-h` keyboard sizing and the safe-area inset still
+     *      drive its position (it moves WITH the shell, not the viewport).
+     *   3. the scroller pads its bottom by the nav zone, so the last row can still scroll clear.
+     *   4. the composer lifts to sit ABOVE the nav rather than under it. Geometry only — the composer's
+     *      CHROME (fill, border, radius) remains the shared skin catalog's, per D37. */
+    .kit {
+      position: relative;
+      --gc-nav-zone: calc(66px + max(14px, env(safe-area-inset-bottom)));
+    }
     .kit-tabbar {
-      margin: 0 12px max(14px, env(safe-area-inset-bottom));
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: max(14px, env(safe-area-inset-bottom));
+      z-index: 6; /* over the composer (4) and the edge scrims (3) */
       min-height: 66px;
       padding: 7px;
       align-items: center;
@@ -172,6 +195,22 @@
       box-shadow: var(--gc-nav-shadow);
       -webkit-backdrop-filter: blur(12px);
       backdrop-filter: blur(12px);
+    }
+    .kit-scroll {
+      padding-bottom: calc(var(--composer-h, 0px) + var(--gc-nav-zone) + 16px);
+      /* SC 2.4.11 — keyboard focus must land clear of BOTH floating layers, not just the composer. */
+      scroll-padding-bottom: calc(var(--composer-h, 64px) + var(--gc-nav-zone) + 16px);
+    }
+    .kit-composer {
+      bottom: calc(var(--gc-nav-zone) + 10px);
+    }
+    /* The kit's BOTTOM edge veil — a `--bg` band at the shell's bottom edge, which with the bar now
+     * floating over the scroller is exactly the "shadow, and they cut" the owner saw: content faded out
+     * into a dark band instead of passing under the translucent pill. Nulled, like its `::before` twin
+     * above (the documented cosmos/frontier per-theme scrim null); the pill's own blur + fill is what
+     * separates it from the content it now overlaps. */
+    .kit-main.has-composer::after {
+      background: none;
     }
     /* The indicator: the kit's own sliding TRACK mechanism, restyled from a 3px top line into the
      * prototype's full-height white pill. The track is one grid column wide and translates by
@@ -203,9 +242,18 @@
     /* The buttons must paint ABOVE the indicator now that it is a full-height pill. DOM order does not
      * settle this: the indicator is POSITIONED and the buttons are static, so without an explicit rung
      * the pill would paint over its own label. (The kit needs no such rule — its 3px line barely overlaps.) */
+    /* The buttons carry the prototype's SLIM metrics: a 52px min-height inside the bar's 66px − 14px of
+     * padding, centred, with a 2px stack gap and no vertical padding of their own. The kit's own
+     * `max(8px, 12px×density)` top/bottom pads plus a 4px gap made the bar read far too thick at the
+     * round-1 eyeball ("very slim and short, pretty much like the prototype"). */
     .kit-tabbtn {
       position: relative;
       z-index: 2;
+      min-height: 52px;
+      justify-content: center;
+      gap: 2px;
+      padding: 0 6px;
+      border-radius: 18px;
       color: var(--text);
       opacity: 0.48;
       transition:

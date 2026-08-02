@@ -15,6 +15,7 @@ import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
 import { assets } from "./art";
+import { GACHA_COPY } from "./copy";
 import { loadFonts } from "./fonts";
 
 // Code-split the Root so a non-gacha user never bundles gacha's presentation (the bespoke Fleet/Agent
@@ -38,11 +39,10 @@ export const gacha: ThemeDef = {
     modes: ["dark"],
     defaultMode: "dark",
     accents: [
-      {
-        id: "arcade",
-        label: "Arcade",
-        swatch: "linear-gradient(92deg, #ff6cae, #805cff 52%, #54e5ff)",
-      },
+      // The swatch READS THE TOKEN rather than re-typing the trio's hexes (Codex G0 #4): the chip is an
+      // inline background on an element inside gacha's own `@scope`, so `var()` resolves there — and the
+      // picker then previews the live brand identity instead of a copy that can silently drift from it.
+      { id: "arcade", label: "Arcade", swatch: "var(--gc-brand-fill)" },
     ],
     defaultAccent: "arcade",
   },
@@ -67,13 +67,15 @@ export const gacha: ThemeDef = {
     // The star ladder's SINGLE config home (council M5: nothing star-shaped lives in the roster YAML).
     // Default 5★ (ruled Q8.4): emma already carries 5–6 configured services, so the flagship rolls a full
     // row on day one; 3★ is one seg-tap away for a calmer track.
+    // Every non-ASCII string below comes from `copy.ts` — the descriptors are production copy, so their
+    // glyphs must ride the frozen subset (★ U+2605 is in no Latin subset; Codex G0 #1).
     starMode: {
       type: "seg",
       label: "Stars",
-      desc: "rarity scale · 星",
+      desc: GACHA_COPY.settingStarsDesc,
       options: [
-        { val: "five", label: "5★" },
-        { val: "three", label: "3★" },
+        { val: "five", label: GACHA_COPY.starModeFive },
+        { val: "three", label: GACHA_COPY.starModeThree },
       ],
       default: "five",
     },
@@ -81,13 +83,13 @@ export const gacha: ThemeDef = {
     wallpaper: {
       type: "switch",
       label: "Banner wallpaper",
-      desc: "pickup art fills the fleet background · 壁紙",
+      desc: GACHA_COPY.settingWallpaperDesc,
       default: true,
     },
     oracle: {
       type: "switch",
       label: "Sticky operator art",
-      desc: "the header fades in place instead of scrolling away · 定着",
+      desc: GACHA_COPY.settingOracleDesc,
       default: true,
     },
   },

@@ -1,12 +1,10 @@
-/// <reference types="node" />
-// ^ the ConfTab source-level guard below reads the file from disk (fs/path/process); the tests tsconfig
-//   pins `types:["vitest"]`, so node globals are pulled in explicitly here (the themeContract precedent).
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import {
   resolveThemeSetting,
+  themeRowValue,
   themeSettingsSpec,
   useThemeSetting,
 } from "../../src/theme-engine/settings";
@@ -130,24 +128,35 @@ describe("themeSettingsSpec — gacha", () => {
   });
 });
 
-// ── The Conf auto-render must RESOLVE, not read raw (the pre-existing LOW found in the D52 §10.5 pass).
-//    A source-level check, deliberately: the failure mode is a MISSING call, which reading the source
-//    proves directly, whereas rendering the lazy Conf chunk with a corrupt persisted value to observe a
-//    stale label would be a heavy, flaky test of the same one line. Same shape (and same reasoning) as
-//    themeContract.test.ts's "theme Roots ↔ the group-scroll handoff" guard. ──
-describe("ConfTab's per-theme settings rows ↔ resolveThemeSetting", () => {
-  it("resolves the stored override through the validator instead of displaying it raw", async () => {
-    // Namespace imports, not destructured ones: pulling `readFileSync` off the module object trips
-    // @typescript-eslint/unbound-method.
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const src = fs.readFileSync(path.resolve(process.cwd(), "src/tabs/ConfTab.tsx"), "utf8");
-    expect(
-      /resolveThemeSetting\(\s*theme\s*,\s*key\s*,\s*themeVals\?\.\[key\]\s*\)/.test(src),
-      "ConfTab's theme-settings auto-render must read " +
-        "`resolveThemeSetting(theme, key, themeVals?.[key]) ?? field.default` — reading `themeVals?.[key]` " +
-        "raw DISPLAYS a corrupt/stale synced value while every consumer has already coerced it to the " +
-        "default, so the row lies about the state of the app.",
-    ).toBe(true);
+// ── `themeRowValue` — what the Conf Appearance picker DISPLAYS for one settings row (Codex G0 #7).
+//    This was an inline expression in ConfTab guarded by a source-level regex, which proved only that a
+//    call existed — and the `?? field.default` tail it also matched is unreachable for a declared key. It
+//    is a pure function now, so the claim is tested as a VALUE: a corrupt or stale synced override must
+//    display as the resolved default, never raw, or the row reports a state the app is not in. ──
+describe("themeRowValue", () => {
+  const spec = themeSettingsSpec("gacha")!;
+
+  it("displays a valid override as-is", () => {
+    expect(themeRowValue("gacha", "starMode", "three", spec.starMode)).toBe("three");
+    expect(themeRowValue("gacha", "wallpaper", false, spec.wallpaper)).toBe(false);
+  });
+
+  it("displays the declared default when there is no override", () => {
+    expect(themeRowValue("gacha", "starMode", undefined, spec.starMode)).toBe("five");
+    expect(themeRowValue("gacha", "oracle", undefined, spec.oracle)).toBe(true);
+  });
+
+  it("displays the RESOLVED value for a corrupt override — never the raw one (the whole point)", () => {
+    // A seg id this build no longer declares (a rolled-back newer option, a hand-edited sync blob): the
+    // app coerces it to `five`, so the row must say `five` too.
+    expect(themeRowValue("gacha", "starMode", "seven", spec.starMode)).toBe("five");
+    // A string where a switch belongs — truthy in JS, so reading it raw would have shown the switch ON.
+    expect(themeRowValue("gacha", "wallpaper", "off", spec.wallpaper)).toBe(true);
+    expect(themeRowValue("gacha", "oracle", "no", spec.oracle)).toBe(true);
+  });
+
+  it("falls back to the field's own default for an UNDECLARED key (the unreachable-in-practice belt)", () => {
+    // `resolveThemeSetting` returns undefined only here; the row still has to render something.
+    expect(themeRowValue("gacha", "nope", "whatever", spec.starMode)).toBe("five");
   });
 });
