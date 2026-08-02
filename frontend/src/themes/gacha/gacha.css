@@ -1589,5 +1589,158 @@
     .kit .tab.active {
       animation: none;
     }
+
+    /* ══ THE AGENT TAB (G3 — the prototype's `.screen[data-screen="agent"]`, theme.css:72-91) ═══════
+     * The bespoke body (`GachaAgent`) renders the ORACLE over the shared chat tree. Everything here is
+     * either the prototype's own rule or a kit hook the §15 contract sanctions — no forked chat DOM.
+     *
+     * ── The oracle block ──
+     * A full-bleed 300px art header. Full-bleed is free: `.kit .tab` carries no padding of its own (the
+     * kit's heads and the chat log bring their own), which is the same property G1's banner rides.
+     * `overflow: hidden` clips the art AND (G3 U2) the blurred ghost copy; it is safe on the element that
+     * later becomes `position: sticky` — the sticky ban is on ANCESTORS between `#app-scroll` and the
+     * sticky box, and this is the box itself. */
+    .gc-oracle {
+      position: relative;
+      height: var(--gc-oracle-h);
+      overflow: hidden;
+      /* The prototype's `#ffffff1a` bottom hairline, consciously unified onto the banner's own rung
+       * (`#ffffff14`): a 6/255 alpha delta on a 1px line at 6% opacity is not a visible value, and the
+       * §1 palette note asks for exactly this call rather than a fourth near-identical hairline token.
+       * Under the fade mode (the shipping default) the prototype makes this border transparent anyway —
+       * see the sticky block in the M7 section. */
+      border-bottom: 1px solid var(--gc-hair);
+    }
+    .gc-oracle-art {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: var(--gc-oracle-pos);
+    }
+    /* The scrim over the art (`.oracle::after`). A pseudo-element, not a layer div: it never animates and
+     * nothing needs to address it. */
+    .gc-oracle::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: var(--gc-oracle-scrim);
+    }
+    /* M6 — the scanline. Transform-only travel over a STATIC comb (§14.11), blended to screen like the
+     * banner's glow. Sits above the scrim, below the name plate. */
+    .gc-oracle-scan {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: var(--gc-scanline);
+      mix-blend-mode: screen;
+      animation: gacha-oracle-scan 7s linear infinite;
+    }
+    @keyframes gacha-oracle-scan {
+      to {
+        transform: translateY(var(--gc-scan-travel));
+      }
+    }
+    /* The two global axes, exactly as M5's glow is gated (§10.3: this app has no `.expensive-effect`
+     * class — the gates are hand-authored rules off the ui store's body stamps). `data-motion` stops the
+     * travel; `data-perf="lite"` removes the BLENDED layer outright, which is the expensive half. */
+    body[data-motion="reduced"] .gc-oracle-scan {
+      animation: none;
+    }
+    body[data-perf="lite"] .gc-oracle-scan {
+      display: none;
+    }
+    /* The name plate, bottom-left over the art (`.oracle-name`). */
+    .gc-oracle-name {
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      z-index: 2;
+    }
+    .gc-oracle-name .eyebrow {
+      margin: 0;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 0.24em;
+      /* The prototype's eyebrow pink is `#ff8fc6` where its `h1 em` is `#ff8ec2` — the §1 palette's
+       * "pink headings" pair. Consciously UNIFIED onto the existing role (a 1/1/4 delta), rather than
+       * minting a second heading pink G6 would then have to keep in step with the first. */
+      color: var(--gc-heading);
+    }
+    /* The display `h1`, shared with the fleet's track head — the prototype declares it GENERICALLY
+     * (theme.css:45-46) and then overrides only the oracle's size (`.oracle-name h1 { font-size: 26px }`),
+     * so the port mirrors that cascade instead of copying eight declarations into a second block. */
+    .gc-track-head h1,
+    .gc-oracle-name h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 29px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 0.04em;
+    }
+    .gc-track-head h1 em,
+    .gc-oracle-name h1 em {
+      display: block;
+      margin-top: 7px;
+      font-family: var(--font-body);
+      font-style: normal;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: var(--gc-heading);
+    }
+    .gc-oracle-name h1 {
+      margin-top: 6px;
+      font-size: 26px;
+    }
+
+    /* ── The privilege row ──
+     * The one thing the prototype's oracle-as-header has no answer for (A1/D16's session privilege chip is
+     * a control, not chrome). It takes the flow slot a `.sec` head would have had, right-aligned and
+     * unlabelled — the oracle above already names the screen. Deliberately OUTSIDE the oracle: the M7
+     * ghost would fade a live control to 28% and park it under the scrolling log. */
+    .gc-agent-bar {
+      display: flex;
+      justify-content: flex-end;
+      padding: 14px 14px 0;
+    }
+
+    /* ── The empty state (ChatThread's `emptyState` slot) ──
+     * NO heading (the oracle's own `<h1>` is permanently on screen); a hint line over a chip row that
+     * FILLS the composer. The chips wear the theme's dark-glass pill language — the same tokens as the
+     * banner's rate pills and a card's state chip. */
+    .gc-empty {
+      padding: 10px 0 4px;
+      text-align: center;
+    }
+    .gc-empty-hint {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-3);
+    }
+    .gc-empty .chips {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .gc-empty .gc-chip {
+      all: unset;
+      box-sizing: border-box;
+      cursor: pointer;
+      padding: 7px 12px;
+      border: 1px solid var(--gc-pill-line);
+      border-radius: 999px;
+      background: var(--gc-pill-bg);
+      color: var(--gc-pill-ink);
+      font-size: 10.5px;
+      letter-spacing: 0.04em;
+    }
+    .gc-empty .gc-chip:active {
+      background: var(--surface-2);
+      color: var(--text);
+    }
   }
 }

@@ -4,6 +4,7 @@ import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { useUISlice } from "../../store/ui";
 import { GACHA_COPY } from "./copy";
+import { GachaAgent } from "./GachaAgent";
 import { GachaFleet } from "./GachaFleet";
 import { GachaReel } from "./GachaReel";
 import { defaultRoster, wallpaperArt } from "./roster";
@@ -30,10 +31,10 @@ import { defaultRoster, wallpaperArt } from "./roster";
 // fresh literal each render would re-merge (and re-render the composer) on every Root render for nothing.
 const COMPOSER_SLOTS = { placeholder: GACHA_COPY.composerPlaceholder };
 
-// The theme's bespoke section bodies (G1: Fleet; G3 adds Agent). MODULE-LEVEL for the same reason as the
+// The theme's bespoke section bodies (G1: Fleet; G3: Agent). MODULE-LEVEL for the same reason as the
 // composer slots above: DefaultRoot merges this map over its defaults, and a fresh literal per render would
 // rebuild the merge — and remount the body — on every Root render.
-const BODIES = { fleet: GachaFleet };
+const BODIES = { fleet: GachaFleet, agent: GachaAgent };
 
 // The fleet wallpaper's resolved art (M10). Module-level for the same reason `GachaFleet`'s roster is: until
 // G5's media index lands the bundled default set cannot change at runtime, so resolving it once keeps the

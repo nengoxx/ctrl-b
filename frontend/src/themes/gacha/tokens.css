@@ -222,6 +222,22 @@
        * `tests/themes/gachaChrome.test.ts` value guard pins them so a fidelity value can't drift
        * unnoticed between now and the slice that uses it. */
 
+      /* ── THE ORACLE (G3 — the prototype's `.oracle`, theme.css:74-81) ────────────────────────────
+       * The agent tab's art header. Its geometry lives here beside its paint for the same reason the
+       * wallpaper's focal crop does: they are PROTOTYPE VALUES under the fidelity mandate, and a G6
+       * variant re-tints the scrim without hunting through gacha.css for the numbers beside it. */
+      --gc-oracle-h: 300px;
+      /* The art's focal crop (`.oracle-art { object-position: 50% 46% }`). The committed `oracle.webp` is a
+       * 1240x700 re-encode of a 1904x1073 source — the same 1.77 ratio, so the prototype's own crop
+       * transfers unchanged rather than having been baked in by the resize. */
+      --gc-oracle-pos: 50% 46%;
+      /* The scrim over the art (`.oracle::after`) — dark at the top so the appbar's glass has something to
+       * sit on, near-clear through the middle, dark again at the bottom to carry the name plate. */
+      --gc-oracle-scrim: linear-gradient(#0c0a1cd0, #0c0a1c26 40%, #120e26f2);
+      /* M6, the scanline: a 1-in-4px hairline comb on a 7s translate loop, blended to screen. */
+      --gc-scanline: repeating-linear-gradient(#ffffff12 0 1px, transparent 1px 4px);
+      --gc-scan-travel: 28px;
+
       /* Composer surface (prototype `.composer`) — G3, when the look-named shared `arcade` skin lands. */
       --gc-composer: #15172e;
       /* Chat bubbles (prototype `.msg` / `.msg.user`) — G3, re-targeted onto the §15 chat hooks. The

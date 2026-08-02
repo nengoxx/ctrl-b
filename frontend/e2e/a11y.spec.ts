@@ -132,12 +132,12 @@ const FRONTIER_TABS = [
 ] as const;
 
 // ── gacha boot — its 3-tab bar (fleet/agent/conf; utils hosted in Conf), D52 G0 ──
-// G0 renders the KIT default bodies under gacha's tokens (the bespoke Fleet/Agent land in G1/G3), so the
-// settle markers are the kit's own content, not theme art. The arm exists from G0 on purpose: the theme
-// joins the a11y gate the moment it registers, so every later slice is measured against it.
+// The arm exists from G0 on purpose: the theme joined the a11y gate the moment it registered, so every
+// later slice is measured against it. The settle markers track what each slice made real — G3's Agent tab
+// is the bespoke oracle body now, so it settles on the operator's own name plate rather than on nothing.
 const GACHA_TABS = [
   { id: "fleet", label: "Fleet", content: "vault" },
-  { id: "agent", label: "Agent", content: null },
+  { id: "agent", label: "Agent", content: "Lucky Relay" },
   { id: "conf", label: "Conf", content: "Inference" },
 ] as const;
 
