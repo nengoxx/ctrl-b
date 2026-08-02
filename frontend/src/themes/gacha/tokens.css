@@ -137,6 +137,12 @@
       --gc-heading: #ff8ec2; /* pink section eyebrows */
       --gc-unit-no: #c8438b; /* the dossier's UNIT DOSSIER kicker */
 
+      /* The FLEET WALLPAPER (M10): the prototype's four-stop scrim over the art, and the default focal
+       * crop its `.wallpaper img` uses. A roster entry that declares its own `focus` overrides the crop
+       * inline; the art URL itself is a runtime value the Root publishes as `--gc-wallpaper-img`. */
+      --gc-wallpaper-scrim: linear-gradient(#0a0b19f2 4%, #0a0b19c4 30%, #0a0b19e8 66%, #0a0b19);
+      --gc-wallpaper-pos: 56% 30%;
+
       /* ── The FLEET's own roles (G1 — the pickup banner + the capsule track) ──────────────────────
        * Every value below is the prototype's own literal (theme.css §"pickup banner" / §"roster"), in its
        * own hex-alpha notation, for the same reason the hairline ladder above kept its: a paraphrase into

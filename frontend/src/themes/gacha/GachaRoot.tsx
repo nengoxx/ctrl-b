@@ -6,6 +6,7 @@ import { useUISlice } from "../../store/ui";
 import { GACHA_COPY } from "./copy";
 import { GachaFleet } from "./GachaFleet";
 import { GachaReel } from "./GachaReel";
+import { defaultRoster, wallpaperArt } from "./roster";
 
 // gacha's Root ("Capsule Arcade", D52 / GACHA_PLAN §3). A scaffold Root at G0: it maps the arcade palette
 // onto the REUSED Kit shell (DefaultRoot, colored by gacha's tokens.css) and fills the two appbar brand
@@ -34,6 +35,11 @@ const COMPOSER_SLOTS = { placeholder: GACHA_COPY.composerPlaceholder };
 // rebuild the merge — and remount the body — on every Root render.
 const BODIES = { fleet: GachaFleet };
 
+// The fleet wallpaper's resolved art (M10). Module-level for the same reason `GachaFleet`'s roster is: until
+// G5's media index lands the bundled default set cannot change at runtime, so resolving it once keeps the
+// layout effect's dependency list honest (the attrs it stamps are the only things that vary).
+const WALLPAPER = wallpaperArt(defaultRoster());
+
 export function GachaRoot() {
   const appbarMode = useUISlice((s) => s.appbarMode);
   // R6: both ship ON (the prototype defaults them OFF — a deliberate, owner-ruled flip).
@@ -44,9 +50,19 @@ export function GachaRoot() {
     const b = document.body;
     b.dataset.wallpaper = wallpaper ? "on" : "off";
     b.dataset.oracle = oracle ? "fade" : "scroll";
+    // The fleet wallpaper's ART (M10). It is published as a custom property on `body` rather than rendered,
+    // because the layer itself is a BACKGROUND on `.kit-main` — a node DefaultRoot owns — and a custom
+    // property only reaches it from an ancestor. Same resolver as every other gacha surface, so a G5
+    // `wallpaper:` pin moves this with everything else. The focal crop is set only when the entry declares
+    // one; otherwise tokens.css's default (the prototype's own 56% 30%) stands.
+    b.style.setProperty("--gc-wallpaper-img", `url("${WALLPAPER.url}")`);
+    if (WALLPAPER.focus === undefined) b.style.removeProperty("--gc-wallpaper-pos");
+    else b.style.setProperty("--gc-wallpaper-pos", WALLPAPER.focus);
     return () => {
       delete b.dataset.wallpaper;
       delete b.dataset.oracle;
+      b.style.removeProperty("--gc-wallpaper-img");
+      b.style.removeProperty("--gc-wallpaper-pos");
     };
   }, [wallpaper, oracle]);
 

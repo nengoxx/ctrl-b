@@ -679,3 +679,59 @@ test("gacha · the composer placeholder is the theme's, in every composer layout
   );
   expect(pageErrors).toEqual([]);
 });
+
+test("gacha · the fleet WALLPAPER paints on .kit-main, only on the fleet tab, only when on", async ({
+  page,
+  pageErrors,
+}) => {
+  // M10 / §10.3. The ruling bans three hosting forms outright, so what is worth measuring is where the
+  // layer actually LANDS: on `.kit-main` (the non-scrolling positioning context) rather than on the
+  // scroller, and gated by BOTH of the prototype's conditions. Computed styles, because the whole point is
+  // the cascade — the art URL arrives as a custom property published on `body` by the Root.
+  const layer = () =>
+    page.locator(".kit-main").evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { image: s.backgroundImage, size: s.backgroundSize };
+    });
+
+  await seedUI(page, {
+    theme: "gacha",
+    mode: "dark",
+    accent: "arcade",
+    tab: "fleet",
+    themeSettings: { gacha: { wallpaper: true } },
+    v: 1,
+  });
+  await page.goto("/");
+  await expect(page.locator(".gc-banner")).toBeVisible();
+
+  const on = await layer();
+  expect(on.image).toContain("url("); // the resolved roster art
+  expect(on.image).toContain("gradient"); // …under the prototype's four-stop scrim
+  expect(on.size).toContain("cover");
+  // The SCROLLER must stay transparent, or the layer below it would never show (and a background there
+  // would repaint per scroll frame — the trap kit.css:63-68 documents).
+  const scroll = await page
+    .locator("#app-scroll")
+    .evaluate((el) => getComputedStyle(el).backgroundImage);
+  expect(scroll).toBe("none");
+
+  // Off-tab: the same rule's `[data-tab="fleet"]` half.
+  await page.locator("#tabbtn-conf").click();
+  await expect(page.locator("#tab-conf")).toBeVisible();
+  expect((await layer()).image).toBe("none");
+
+  // Setting off: the `[data-wallpaper="on"]` half.
+  await seedUI(page, {
+    theme: "gacha",
+    mode: "dark",
+    accent: "arcade",
+    tab: "fleet",
+    themeSettings: { gacha: { wallpaper: false } },
+    v: 1,
+  });
+  await page.goto("/");
+  await expect(page.locator(".gc-banner")).toBeVisible();
+  expect((await layer()).image).toBe("none");
+  expect(pageErrors).toEqual([]);
+});

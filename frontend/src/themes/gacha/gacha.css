@@ -555,6 +555,39 @@
       border-color: var(--line);
     }
 
+    /* ── THE FLEET WALLPAPER (G1 / M10 — the prototype's `.wallpaper`, theme.css:15-18) ────────────
+     * Hosted as a BACKGROUND on `.kit-main`, which is the §10.3 ruling's shape without any of its three
+     * banned forms: not `position: fixed` (breaks under a transformed ancestor), not an absolute child of
+     * the scroller (kit.css:63-68 documents that exact repaint trap), not `background-attachment: fixed`
+     * (the Gecko flicker bug). `.kit-main` is the non-scrolling positioning context that fills the shell,
+     * and `.kit-scroll` above it declares no background of its own — so the art sits exactly where the
+     * prototype puts it: over the app backdrop, under everything that scrolls.
+     *
+     * A BACKGROUND rather than an element because the kit owns `.kit-main`'s children (the theme reaches
+     * it from a Fleet body only through CSS) and because a negative-z pseudo-element would resolve against
+     * the ROOT stacking context — gacha deliberately keeps `.kit` from being a stacking context, so the
+     * pseudo would paint under the shell's own opaque backdrop.
+     *
+     * The prototype's 520 ms opacity fade and its `saturate(.85)` do not survive that choice: a
+     * background-image cannot transition, and a filter on `.kit-main` would filter the whole app. The fade
+     * costs nothing in practice — the only two ways this layer appears or disappears are a tab change
+     * (which the reel's slats cover completely) and the Conf toggle (which happens on a tab where the
+     * wallpaper is not visible at all).
+     *
+     * VISIBILITY is the prototype's own pair of conditions: the setting is on AND the fleet is the active
+     * tab. Both are body attributes the app already stamps — `data-wallpaper` by GachaRoot, `data-tab` by
+     * the ui store. The ART URL rides `--gc-wallpaper-img`, published on `body` by GachaRoot from the ONE
+     * shared resolver, because a custom property has to be declared on an ANCESTOR of `.kit-main` and a
+     * Fleet body sits below it. */
+    body[data-wallpaper="on"][data-tab="fleet"] .kit-main {
+      background-image: var(--gc-wallpaper-scrim), var(--gc-wallpaper-img, none);
+      background-size: auto, cover;
+      background-position:
+        0 0,
+        var(--gc-wallpaper-pos);
+      background-repeat: no-repeat;
+    }
+
     /* ── THE PICKUP BANNER (G1 — the prototype's `.banner` family, theme.css:24-41) ────────────────
      * Full-bleed, fixed-height, and the Fleet tab's FIRST child — which is what makes the appbar→content
      * seam land at the prototype's zero without a rule (the round-4 `:first-child` nulls exist for the
