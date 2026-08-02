@@ -18,6 +18,16 @@ import { GachaReel } from "./GachaReel";
 // pre-paint body attr → CSS), not as props: they change how things LOOK, never what is rendered. Both are
 // cleared on unmount so a switched-to skin can never inherit gacha's stale attrs (the §10.5 switch-out
 // cleanup ledger — `applyBodyAttrs` doesn't own these).
+// The theme's composer addons. gacha fills exactly one field: the input's PLACEHOLDER, which the prototype
+// writes in Japanese (index.html: `<input placeholder="コマンド入力…">`). It rides `composerSlots` rather
+// than a new Root prop because that object IS the theme's channel into whichever composer VARIANT is active,
+// so one string covers stacked/sheet/line with no per-variant table — and every other theme, filling nothing,
+// keeps its variant's own default byte-for-byte.
+//
+// MODULE-LEVEL, not an inline literal: DefaultRoot memoizes the slot MERGE on this object's identity, and a
+// fresh literal each render would re-merge (and re-render the composer) on every Root render for nothing.
+const COMPOSER_SLOTS = { placeholder: GACHA_COPY.composerPlaceholder };
+
 export function GachaRoot() {
   const appbarMode = useUISlice((s) => s.appbarMode);
   // R6: both ship ON (the prototype defaults them OFF — a deliberate, owner-ruled flip).
@@ -40,6 +50,7 @@ export function GachaRoot() {
         appbarMode={appbarMode}
         brandText={<span className="gc-word">{GACHA_COPY.brandWordmark}</span>}
         brandMeta={GACHA_COPY.brandMeta}
+        composerSlots={COMPOSER_SLOTS}
       />
       {/* The tab reel mounts as a Root SIBLING (the CosmosStarfield pattern) — AFTER DefaultRoot, because
           unlike the starfield it paints OVER the shell. Being outside `.kit` is what lets a

@@ -644,3 +644,38 @@ test("gacha · the appbar→content offset is the prototype's zero on every tab"
   }
   expect(pageErrors).toEqual([]);
 });
+
+test("gacha · the composer placeholder is the theme's, in every composer layout", async ({
+  page,
+  pageErrors,
+}) => {
+  // Owner round 4, item I. The placeholder is APP copy, hardcoded once per composer VARIANT; gacha fills
+  // it through the `placeholder` field on `ComposerSlots`. Driven across all three layouts because the
+  // LAYOUT is the user's pick, not the theme's — one string has to cover them all. The e2e (rather than a
+  // second unit test) is what proves the string survives the real DefaultRoot → mergeComposerSlots →
+  // ThemedComposer path with the theme's setting resolving the variant.
+  for (const composer of ["stacked", "sheet", "line"] as const) {
+    await seedUI(page, {
+      theme: "gacha",
+      mode: "dark",
+      accent: "arcade",
+      tab: "agent",
+      themeSettings: { gacha: { composer } },
+      v: 1,
+    });
+    await page.goto("/");
+    const field = page.locator("#cmd-input");
+    await expect(field).toBeVisible();
+    await expect(field, `${composer} layout`).toHaveAttribute("placeholder", "コマンド入力…");
+  }
+
+  // …and a kit theme in the same seat still renders the KIT's own copy — the seam's fallback is what keeps
+  // every other theme byte-identical.
+  await seedUI(page, { theme: "minimal", mode: "dark", accent: "cyan", tab: "agent", v: 1 });
+  await page.goto("/");
+  await expect(page.locator("#cmd-input")).toHaveAttribute(
+    "placeholder",
+    "How can I help you today?",
+  );
+  expect(pageErrors).toEqual([]);
+});

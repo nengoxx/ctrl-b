@@ -31,7 +31,7 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 //     6, supersedes the old vertical-center stadium). The emoji icon is DROPPED (we don't model emoji).
 // The root KEEPS the `.kit-composer` class (edge #5) so DefaultRoot's `querySelector(".kit-composer")`
 // --composer-h measurement still finds it; `.line` adds the stadium styling in kit.css.
-export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {
+export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSlots = {}) {
   const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
@@ -64,8 +64,9 @@ export function LineComposer({ controlsStart, overlay }: ComposerSlots = {}) {
           id="cmd-input"
           rows={1}
           // "Message" — the reference's own copy: the compact single-row bar wants a SHORT placeholder (a
-          // deliberate delta from the Kit's long "How can I help you today?").
-          placeholder="Message"
+          // deliberate delta from the Kit's long "How can I help you today?"). A theme that fills the
+          // `placeholder` slot overrides it; omitted → exactly this string, as before.
+          placeholder={placeholder ?? "Message"}
           value={draft}
           onChange={(e) => suggest.onDraftChange(e.target.value)}
           onKeyDown={suggest.onKeyDown}

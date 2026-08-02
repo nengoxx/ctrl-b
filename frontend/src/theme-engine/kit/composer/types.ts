@@ -21,6 +21,14 @@ export interface ComposerSlots {
   controlsStart?: ReactNode;
   /** A positioned sibling above the composer — e.g. the plan sheet peeking from the composer's top edge. */
   overlay?: ReactNode;
+  /** The input's PLACEHOLDER copy. Not a slot but a scalar override, and it lives on this object for the
+   *  reason the house rule gives (extend the one theme→composer contract with an optional field rather
+   *  than growing a second parallel channel beside it). Omitted → each variant's own default, unchanged:
+   *  the stacked composer's "How can I help you today?", the sheet/line row's short "Message". gacha is the
+   *  first filler (its prototype's `コマンド入力…`, D52 — an extension BEYOND D52's closed list, requested
+   *  by the owner at the round-4 eyeball). Merge semantics in `mergeComposerSlots`: last defined wins, and
+   *  the theme is the last source DefaultRoot passes. */
+  placeholder?: string;
 }
 
 /** A composer variant component (the STYLE axis). Receives the theme's chosen slots. */

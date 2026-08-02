@@ -32,6 +32,7 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 export function KitComposer({
   controlsStart,
   overlay,
+  placeholder,
   rootClass,
   sendIcon,
 }: ComposerSlots & { rootClass?: string; sendIcon?: ReactNode } = {}) {
@@ -60,7 +61,9 @@ export function KitComposer({
             ref={taRef}
             id="cmd-input"
             rows={1}
-            placeholder="How can I help you today?"
+            // The theme's `placeholder` slot wins when it fills it; omitted → the Kit's own greeting,
+            // byte-identical to what every theme but gacha renders.
+            placeholder={placeholder ?? "How can I help you today?"}
             value={draft}
             onChange={(e) => suggest.onDraftChange(e.target.value)}
             onKeyDown={suggest.onKeyDown}

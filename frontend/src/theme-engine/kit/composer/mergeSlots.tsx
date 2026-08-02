@@ -14,6 +14,9 @@ import type { ComposerSlots } from "./types";
 //   • `overlay`       — positioned SIBLINGS above the composer: sources are STACKED in argument order. They
 //     are mutually exclusive at runtime (store/composerOverlay opens one at a time), so DOM order only
 //     settles equal-z-index ties; earlier sources paint first.
+//   • `placeholder`   — a SCALAR override, so there is nothing to compose: the LAST source that defines it
+//     wins, which is the theme (DefaultRoot passes its `composerSlots` last). Undefined everywhere leaves
+//     it undefined, and each variant falls back to its own copy.
 //
 // A `null`-rendering node still counts as a contribution (the plan pill renders null with no plan) — that's
 // deliberate: variants gate on the SLOT being populated and collapse the empty wrapper in CSS
@@ -44,10 +47,12 @@ function joinSlot(nodes: Contribution[]): ReactNode {
 export function mergeComposerSlots(...sources: (ComposerSlots | undefined)[]): ComposerSlots {
   const controlsStart: Contribution[] = [];
   const overlay: Contribution[] = [];
+  let placeholder: string | undefined;
   sources.forEach((src, at) => {
     if (!src) return;
     if (src.controlsStart !== undefined) controlsStart.push([at, src.controlsStart]);
     if (src.overlay !== undefined) overlay.push([at, src.overlay]);
+    if (src.placeholder !== undefined) placeholder = src.placeholder;
   });
-  return { controlsStart: joinSlot(controlsStart), overlay: joinSlot(overlay) };
+  return { controlsStart: joinSlot(controlsStart), overlay: joinSlot(overlay), placeholder };
 }

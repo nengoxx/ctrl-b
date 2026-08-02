@@ -20,7 +20,7 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 //                        mirroring the embedded mic at the trailing edge; rendered only when populated.
 // The root KEEPS the `.kit-composer` class (edge #5) so DefaultRoot's `querySelector(".kit-composer")`
 // --composer-h measurement still finds it; `.sheet` adds the docked styling in kit.css.
-export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
+export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerSlots = {}) {
   const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
@@ -47,8 +47,9 @@ export function SheetComposer({ controlsStart, overlay }: ComposerSlots = {}) {
               rows={1}
               // "Message" — the LineComposer's copy, same rationale (owner eyeball r5): this field is a
               // SINGLE-LINE row, and the long stacked-composer greeting wraps below the fold (it had to be
-              // scrolled to read). A one-line bar wants a short placeholder.
-              placeholder="Message"
+              // scrolled to read). A one-line bar wants a short placeholder. A theme that fills the
+              // `placeholder` slot overrides it; omitted → exactly this string, as before.
+              placeholder={placeholder ?? "Message"}
               value={draft}
               onChange={(e) => suggest.onDraftChange(e.target.value)}
               onKeyDown={suggest.onKeyDown}
