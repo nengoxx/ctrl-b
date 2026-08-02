@@ -109,6 +109,49 @@ describe("FrontierHostDetail", () => {
     expect(statValue(container, "Seen")).toBe("now");
   });
 
+  // ── The meta + info LINES (M6 pinning, G2): frontier composes both from the same host facts cosmos
+  //    derives, so these pin the rendered strings before the shared derivation moves to lib/hostDetail.ts.
+  it("meta line: role · ip · vpn? · the live tail (ping when online)", () => {
+    const { container } = renderHD({ host: host({ vpn_host: "pegasus.tail.ts.net" }) });
+    expect(container.querySelector(".ro2")?.textContent).toBe(
+      "workstation · 10.0.0.7 · pegasus.tail.ts.net · 12 ms",
+    );
+  });
+
+  it("meta line offline: the tail reads WOL-ready with a mac, powered down without one", () => {
+    const off = (over: Partial<Host> = {}) =>
+      host({ status: { ...host().status!, online: false, ping_ms: null }, ...over });
+    const wol = renderHD({ host: off() });
+    expect(wol.container.querySelector(".ro2")?.textContent).toBe(
+      "workstation · 10.0.0.7 · wake-on-LAN ready",
+    );
+    cleanup();
+    const dead = renderHD({ host: off({ mac: null }) });
+    expect(dead.container.querySelector(".ro2")?.textContent).toBe(
+      "workstation · 10.0.0.7 · powered down",
+    );
+  });
+
+  it("info heading: the service tally when online, the WOL/power state when asleep", () => {
+    const services = [
+      svc({ id: "a" }),
+      svc({ id: "b", status: { service_id: "b", online: false, checked_at: "x", error: null } }),
+    ];
+    const up = renderHD({ services });
+    expect(up.container.querySelector(".svc-h")?.textContent).toBe("1/2 services up");
+    cleanup();
+    const bare = renderHD({ services: [] });
+    expect(bare.container.querySelector(".svc-h")?.textContent).toBe("no services parked");
+    cleanup();
+
+    const offHost = host({ status: { ...host().status!, online: false, ping_ms: null } });
+    const armed = renderHD({ host: offHost, services });
+    expect(armed.container.querySelector(".svc-h")?.textContent).toBe("Powered down · WOL armed");
+    cleanup();
+    const noMac = renderHD({ host: { ...offHost, mac: null }, services });
+    expect(noMac.container.querySelector(".svc-h")?.textContent).toBe("Powered down");
+  });
+
   it("offline stats: Ping — and Seen = relativeTime(last_seen) (not 'now')", () => {
     const lastSeen = new Date(Date.now() - 3 * 3600_000).toISOString(); // 3h ago
     const h = host({

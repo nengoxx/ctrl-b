@@ -1,5 +1,5 @@
 import type { FleetAction } from "../../hooks/useActions";
-import { relativeTime } from "../../lib/relativeTime";
+import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
 import type { Host, Service } from "../../types";
 import { assignBanners } from "./serviceBanners";
@@ -75,13 +75,13 @@ const IconChevRight = () => (
 );
 
 export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }: Props) {
-  const online = !!host.status?.online;
-  const ping = host.status?.ping_ms ?? null;
-  const upCount = services.filter((s) => s.status?.online).length;
+  // The values every theme's detail sheet derives the same way (council M6) — shared in lib/hostDetail.ts.
+  // Cosmos reads `lastSeen` rather than the shared `seen`, because its ONLINE branch shows the deferred
+  // uptime placeholder where frontier shows "now" — a real difference between the two sheets, kept.
+  const { online, ping, lastSeen, ratio: svcCount } = hostDetailFacts(host, services);
 
   // Online → "alive" (uptime, deferred → "—"); offline → last seen. Shown next to the status, no caption.
-  const aliveOrSeen = online ? ALIVE_PLACEHOLDER : relativeTime(host.status?.last_seen);
-  const svcCount = services.length > 0 ? `${upCount}/${services.length}` : null;
+  const aliveOrSeen = online ? ALIVE_PLACEHOLDER : lastSeen;
   // Distinct decorative banner per service (de-duped within this host so it never repeats — see assignBanners).
   const banners = assignBanners(services.map((s) => s.id));
 

@@ -1,5 +1,5 @@
 import type { FleetAction } from "../../hooks/useActions";
-import { relativeTime } from "../../lib/relativeTime";
+import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
 import type { Host, Service } from "../../types";
 
@@ -60,9 +60,9 @@ const IconArrow = () => (
 );
 
 export function FrontierHostDetail({ host, services, art, plate, busy, run, titleId }: Props) {
-  const online = !!host.status?.online;
-  const ping = host.status?.ping_ms ?? null;
-  const upCount = services.filter((s) => s.status?.online).length;
+  // The values every theme's detail sheet derives the same way (council M6) — shared in lib/hostDetail.ts;
+  // frontier's own WORDING (the meta tail, the services heading) composes from them right here.
+  const { online, ping, ratio, seen } = hostDetailFacts(host, services);
 
   // Meta line — role · ip, then a live tail: online adds the ping (only when a value exists); offline reads as
   // WOL-ready when the host has a MAC to wake it, else powered down. Segments joined by " · " (prototype .ro2).
@@ -77,8 +77,8 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
   // The services-section heading text (owner eyeball r4: re-homed off the action bar so the pills align as one
   // tidy row): honest service tally when online, the WOL/power state when asleep.
   const info = online
-    ? services.length
-      ? `${upCount}/${services.length} services up`
+    ? ratio
+      ? `${ratio} services up`
       : "no services parked"
     : host.mac
       ? "Powered down · WOL armed"
@@ -118,11 +118,11 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
           <div className="l">Uptime</div>
         </div>
         <div className="stat4">
-          <div className="v">{services.length ? `${upCount}/${services.length}` : "—"}</div>
+          <div className="v">{ratio ?? "—"}</div>
           <div className="l">Services</div>
         </div>
         <div className="stat4">
-          <div className="v">{online ? "now" : relativeTime(host.status?.last_seen)}</div>
+          <div className="v">{seen}</div>
           <div className="l">Seen</div>
         </div>
       </div>
