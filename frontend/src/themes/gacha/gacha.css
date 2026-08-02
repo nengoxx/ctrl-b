@@ -89,11 +89,16 @@
       border: 0;
       box-shadow: none;
       /* The prototype's own `.topbar` padding (base.css `14px 16px`), replacing the kit's 16/12 — the
-       * owner's round-3 item E ("too much space"). It trims the bar 67px → 61px, which lands it exactly on
-       * the prototype's own height: both stack a 15px wordmark over a 9px subtitle inside 28px of vertical
-       * padding. The content BELOW is already prototype-exact (`.kit-sec`'s 22px top pad matches the
-       * prototype's `.track-head`), so the bar was the whole difference and nothing shared needed touching.
-       * `--appbar-h` is MEASURED from offsetHeight, so the M7 oracle math (§10.2) simply follows it down. */
+       * owner's round-3 item E ("too much space"). Both designs then stack a 15px wordmark over a 9px
+       * subtitle inside those 28px of vertical padding.
+       *
+       * The bar's HEIGHT is not a constant anywhere: DefaultRoot MEASURES the rendered bar
+       * (`bar.offsetHeight`, re-measured by a ResizeObserver) into `--appbar-h`, and every consumer —
+       * the top scrim, the toast/TTS-flash anchors, the M7 oracle math (§10.2) — rides that variable.
+       * Reference numbers measured on the dev build at a Pixel-5 viewport, for orientation only:
+       * ~56.8px BARE (the 28.8px brand block + 28px padding), ~64px with the round 36px TTS toggle
+       * beside it, ~62px in `transparent` mode where the kit's icon buttons are 34px squared (the
+       * docked 2-tab launcher is the same button). Do not hardcode any of them. */
       padding: 14px 16px;
       -webkit-backdrop-filter: blur(14px);
       backdrop-filter: blur(14px);
@@ -110,6 +115,41 @@
      * gacha nulls it outright — the cosmos/frontier precedent, which does the same per-tab. */
     .kit-main::before {
       background: none;
+    }
+    /* ── The appbar → CONTENT offset (owner round 4, item G — "still too much space") ──────────────
+     * MEASURED rather than asserted this time. Pixel-5 viewport, dev build vs the standalone prototype
+     * loaded in the same engine, distance from the bar's bottom edge to the first painted content pixel:
+     *
+     *   prototype  fleet     `.topbar` bottom 66px → `.banner` top 66px         =  0px
+     *   prototype  agent     (no topbar at all)    → `.oracle` top 0px          =  0px
+     *   prototype  settings  (no topbar at all)    → `.settings-wrap` pad       = 22px
+     *   gacha G0   fleet     `.kit-appbar` bottom 64px → `.kit-sec .t` 86px     = 22px
+     *   gacha G0   agent/utils                     → `.sec .num` 86px           = 22px
+     *   gacha G0   conf                            → `.conftitle` ~90px         = 26px
+     *
+     * The round-3 note claiming the content below was "already prototype-exact — `.kit-sec`'s 22px top
+     * pad matches the prototype's `.track-head`" compared the wrong pair: the prototype's 22px track-head
+     * pad sits under the 232px BANNER, and what sits under its TOPBAR is the banner itself, at zero.
+     *
+     * The bar is not the source either. DefaultRoot renders KitAppBar INSIDE `#app-scroll` as a
+     * `position: sticky` child (exactly the prototype's `.topbar`), so it costs the same in-flow height
+     * in both and content scrolls under it in both. What is left is the first block's OWN top space,
+     * stacking on the bar's 14px bottom pad — 36px of dead air where the prototype has 14px.
+     *
+     * Closed at the FIRST block only: the inter-section rhythm below is untouched, and G1's full-bleed
+     * banner (a `:first-child` carrying no top space of its own) lands flush by construction. Three
+     * heads because the kit ships three — `.kit-sec` (Fleet), `.sec` (Agent/Utils, and the lazy-section
+     * fallback) and `.confgroup` + its `.conftitle` (Conf, whose 8px margin also collapses out through
+     * `.tab` and so has to go with it). */
+    .kit .tab > .kit-sec:first-child,
+    .kit .tab > .sec:first-child {
+      padding-top: 0;
+    }
+    .kit .tab > .confgroup:first-child {
+      margin-top: 0;
+    }
+    .kit .tab > .confgroup:first-child > .conftitle {
+      padding-top: 0;
     }
     /* ── The TRANSPARENT ("clear") appbar mode under gacha (owner round-3 item F) ──────────────────
      * REPORTED: the wordmark looked like it had "a shadow in the inside". MEASURED, it did — and it was

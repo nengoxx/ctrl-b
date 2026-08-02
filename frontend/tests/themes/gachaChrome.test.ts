@@ -14,15 +14,20 @@ import { describe, expect, it } from "vitest";
 // base rule that CONDITIONS one of those surfaces must therefore be re-declared inside the theme, or a
 // global lever silently stops working under gacha only:
 //   · the `transparent` appbar MODE would paint a bar,
-//   · perf-lite would keep its backdrop-filters (the §14.11 Fennec speed lever),
+//   · …and would get its dead air back (gacha's own `padding: 14px 16px` outranks the mode's slimmer pads),
+//   · perf-lite would keep its backdrop-filters (the §14.11 Fennec speed lever) — on the painted bar AND
+//     on the clear one, whose gate gacha's own `.kit-appbar.transparent` block re-arms the frost over,
 //   · reduced motion would slide the indicator instead of jumping it,
 //   · the small `.svc-auto` switch variant would inflate to the full 48×28 toggle.
 // Each of those is invisible in a screenshot of the DEFAULT state, which is exactly why it needs a test.
 // A source-level check, deliberately: the failure mode is a DELETED rule, which reading the sheet proves
-// directly, while the alternative (booting four axis combinations in Playwright to observe a computed
-// style) is a much heavier test of the same four lines. The VISUAL claims — the floating pill, the white
-// indicator, the two-stop switch, the dissolving bar — are measured on computed styles in
-// `e2e/layout.spec.ts`, the only place the @layer/@scope cascade actually runs.
+// directly, while the alternative (booting the axis combinations in Playwright to observe a computed
+// style) is a much heavier test of the same few lines. The VISUAL claims — the floating pill, the white
+// indicator, the two-stop switch, the dissolving bar, the flush appbar→content seam — are measured on
+// computed styles in `e2e/layout.spec.ts`, the only place the @layer/@scope cascade actually runs.
+//
+// A member is a SOURCE NEEDLE, not always a selector: the clear mode's slimmer pads are re-stated as
+// DECLARATIONS inside a selector this list already carries, so what can go missing is the declaration.
 
 const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8");
 const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
@@ -30,11 +35,17 @@ const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"
 /** Strip comments so a rule NAMED in prose can't satisfy a check for the rule itself. */
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
 
-const REDECLARED: [string, string, string][] = [
+const REDECLARED: [name: string, needle: string, why: string][] = [
   [
     "the transparent appbar mode",
     ".kit-appbar.transparent",
     "gacha's `.kit-appbar` fill would win on layer order and the `transparent` appbarMode would paint a bar",
+  ],
+  [
+    "the transparent mode's slimmer pads",
+    "padding: calc(8px * var(--density-pad)) 16px calc(6px * var(--density-pad))",
+    "gacha's own `padding: 14px 16px` would win on layer order and hand the clear bar back exactly the " +
+      "dead air the mode exists to remove (its `margin-bottom: -14px` rides the same declaration block)",
   ],
   [
     "the perf-lite frost gate",
@@ -45,6 +56,13 @@ const REDECLARED: [string, string, string][] = [
     "the perf-lite nav gate",
     'body[data-perf="lite"] .kit-tabbar',
     "the floating nav would keep its blur under perf-lite",
+  ],
+  [
+    "the CLEAR mode's perf-lite frost drop",
+    'body[data-perf="lite"] .kit-appbar.transparent',
+    "gacha gives the clear bar the prototype's dissolve BACKING plus its own blur, in a rule that also " +
+      "re-arms the frost the base perf-lite gate had dropped — without this second, narrower gate the " +
+      "clear bar would keep its backdrop-filter under perf-lite",
   ],
   [
     "the reduced-motion indicator",
@@ -59,10 +77,10 @@ const REDECLARED: [string, string, string][] = [
 ];
 
 describe("gacha chrome — the @layer trap re-declarations", () => {
-  it.each(REDECLARED)("re-declares %s", (_name, selector, why) => {
+  it.each(REDECLARED)("re-declares %s", (_name, needle, why) => {
     expect(
-      rules.includes(selector),
-      `gacha.css must re-declare \`${selector}\`: without it, ${why}.`,
+      rules.includes(needle),
+      `gacha.css must re-declare \`${needle}\`: without it, ${why}.`,
     ).toBe(true);
   });
 });

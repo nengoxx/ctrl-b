@@ -587,3 +587,31 @@ test("gacha · appbar: prototype padding in the default mode; a dissolve + no in
   expect(clear.metaShadow).not.toBe("none"); // the plain subtitle KEEPS its halo — real legibility
   expect(pageErrors).toEqual([]);
 });
+
+test("gacha · the appbar→content offset is the prototype's zero on every tab", async ({
+  page,
+  pageErrors,
+}) => {
+  // Owner round 4, item G. The prototype puts its first block FLUSH under the topbar (`.banner` at the
+  // bar's bottom edge on fleet; no topbar at all on agent/settings), while the kit's first `.kit-sec`/
+  // `.sec`/`.confgroup` each carry their own top space on TOP of the bar's 14px bottom pad. gacha nulls
+  // that space on the FIRST block of each tab only — so this measures the real distance the way the user
+  // sees it, and fails if a future slice re-introduces the stack.
+  for (const tab of ["fleet", "agent", "conf"] as const) {
+    await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab, v: 1 });
+    await page.goto("/");
+    await expect(page.locator(".kit-appbar")).toBeVisible();
+    await expect(page.locator(`#tab-${tab}`)).toBeVisible();
+
+    const gap = await page.evaluate((id) => {
+      const scroll = document.querySelector("#app-scroll")!;
+      scroll.scrollTop = 0;
+      const bar = document.querySelector(".kit-appbar")!.getBoundingClientRect();
+      const first = document.querySelector(`#tab-${id}`)!.firstElementChild!;
+      return first.getBoundingClientRect().top - bar.bottom;
+    }, tab);
+    // Sub-pixel tolerance only — the claim is FLUSH, not "small".
+    expect(Math.abs(gap), `${tab}: appbar→first-block gap`).toBeLessThan(1);
+  }
+  expect(pageErrors).toEqual([]);
+});
