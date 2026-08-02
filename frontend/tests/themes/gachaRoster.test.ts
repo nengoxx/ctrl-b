@@ -219,8 +219,10 @@ describe("reelFigureArt — the cutout slot is stricter than the crops", () => {
 describe("defaultRoster — the bundled fallback set (§5.5)", () => {
   const r = defaultRoster();
 
-  it("is the prototype's four characters, in its own order", () => {
-    expect(r.entries.map((e) => e.name)).toEqual(["pegasus", "atlas", "rook", "lyra"]);
+  it("is the dealt set the owner picked at the G1 eyeball: two prototype characters, the two drops, and the cutout-bearing tail", () => {
+    // `3`/`4` sit at display positions 2/3 — vault and g5 on the owner's fleet (round-3 swap); `lyra`
+    // stays LAST so the reel figure's cutout default survives without her being dealt to a host.
+    expect(r.entries.map((e) => e.name)).toEqual(["pegasus", "atlas", "3", "4", "lyra"]);
     expect(r.entries.every((e) => e.image.length > 0)).toBe(true);
   });
 

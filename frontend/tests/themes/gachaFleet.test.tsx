@@ -520,8 +520,8 @@ describe("the capsule track (§6.1/§6.2)", () => {
       (i) => i.src,
     );
     expect(srcs).toHaveLength(6);
-    expect(srcs[4]).toBe(srcs[0]); // 4 bundled characters → host 4 wraps back to host 0's
-    expect(new Set(srcs).size).toBe(4);
+    expect(srcs[5]).toBe(srcs[0]); // 5 bundled entries → host 5 wraps back to host 0's
+    expect(new Set(srcs).size).toBe(5);
   });
 
   it("draws stars from CONFIGURED services, and re-draws the ladder when the mode changes", () => {

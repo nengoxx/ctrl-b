@@ -78,8 +78,13 @@ export function defaultRoster(): Roster {
     entries: [
       { name: "pegasus", image: ART.characters[0] },
       { name: "atlas", image: ART.characters[1] },
-      { name: "rook", image: ART.characters[2] },
-      { name: "lyra", image: ART.characters[3], cutout: ART.cutout },
+      // The owner's own drops (G1 eyeball round 3): dealt to display positions 2 and 3 — vault and g5 on
+      // the owner's fleet. `rook` left the deal for them; the file stays bundled for the G5 gallery.
+      { name: "3", image: ART.characters[2] },
+      { name: "4", image: ART.characters[3] },
+      // The TAIL entry: never dealt on a four-host fleet, but still the one cutout-bearing entry — the G4
+      // reel figure's default rides on her staying in the roster (reelFigureArt scans for a cutout).
+      { name: "lyra", image: ART.characters[4], cutout: ART.cutout },
     ],
     slots: {},
   };

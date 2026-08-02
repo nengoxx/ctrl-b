@@ -50,8 +50,19 @@ function byName(name: string): string {
   return urls[key];
 }
 
-/** The four bundled CHARACTERS, in the order the default roster deals them. */
-export const CHARACTER_KEYS = ["pegasus", "atlas", "rook", "lyra"] as const;
+/** The bundled CHARACTERS, in the order the default roster deals them. `3`/`4` are the owner's own drops
+ *  (G1 eyeball round 3 — "change both vault and g5"), converted through the same one-shot targets:
+ *
+ *    ["chars/3.jpg","3.webp",640,854,72,"cover",false],
+ *    ["chars/4.png","4.webp",640,854,72,"cover",false],
+ *    ["banner images/b2.png","b2.webp",1240,700,70,"cover",false],
+ *    ["banner images/b3.png","b3.webp",1240,700,70,"cover",false]   // (b2/b3 = banner scene drops)
+ *
+ *  (sources under design/prototypes/gacha/). `lyra` stays LAST rather than leaving: with four hosts the
+ *  tail entry is never dealt, but she is still the one entry carrying a cutout — removing her would
+ *  silently kill the G4 reel figure's default. `rook` left the deal entirely; the file stays bundled for
+ *  the G5 gallery. */
+export const CHARACTER_KEYS = ["pegasus", "atlas", "3", "4", "lyra"] as const;
 
 export const ART = {
   characters: CHARACTER_KEYS.map(byName),
