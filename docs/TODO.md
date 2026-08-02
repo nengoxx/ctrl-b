@@ -1339,7 +1339,8 @@ v1.5.0 is RESERVED for this theme's release.
 - [x] Lock session: §8 answers → council (Opus LOCK + Codex R4, confirm rounds folded) → D52 recorded (2026-08-02)
 - [x] G0 — the settle-everything slice ✅ owner-signed 2026-08-02 (15 commits + 4 fidelity waves; as-built = GACHA_PLAN §7.1; the VT spike ships fenced, verdict pending the owner's Fennec)
 - [x] G1 banner + capsule track + scenes — ✅ built + owner-eyeballed 2026-08-02 (as-built §7.2; 3★ ladder re-ruled, role-scoped G5 media folders ruled, scene slides + `SCENE_TITLES` pool)
-- [ ] G2–G6 per `GACHA_PLAN.md` §7 (each: Opus build → main-seat audit → Codex → owner eyeball); next = G2 unit dossier (the `openHostDossier` seam is wired and waiting)
+- [x] G2 unit dossier — ✅ built + owner-eyeballed + pushed 2026-08-02/03 (as-built §7.3; M3 morph pulled from G4 + prototype-exact, swap morph, visible ×, tap-outside/nav close, full-screen art showcase, em-dash metrics, contrast THEME_PAIRS)
+- [ ] G3–G6 per `GACHA_PLAN.md` §7 (each: Opus build → main-seat audit → Codex → owner eyeball); next = G3 agent tab (oracle + composer skin; bubbles shipped at G0)
 - [ ] Release as v1.5.0 (runbook §Release; prod currently v1.4.6 by owner ruling)
 
 ## Cross-cutting / don't-forget

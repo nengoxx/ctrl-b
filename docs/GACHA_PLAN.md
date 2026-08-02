@@ -528,7 +528,7 @@ for the "04 / 04" counter.
 |---|---|---|
 | G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps five palette variants a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
 | ✅ G1 | **BUILT + OWNER-EYEBALLED 2026-08-02 (as-built §7.2)** — bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + the §6.4 slide set **incl. the eyeball-ruled SCENE slides**) + capsule track (cards/states/plates/shine + stars) + wallpaper + the geometry rule + the owner's own art in the bundled set | owner eyeball ✅ (3+ live rounds) |
-| G2 | Dossier sheet (light inversion + the ruled frontier grid w/ §4.8's pinned values + services list + **the host ACTION BAR** — council H3, a named fidelity design checkpoint) — **reuses G1's star engine**, extracts the shared host-detail derivation to `lib/` (council M6), adds the sheet-timing call (§4.9 ledger) | eyeball + contrast probe |
+| ✅ G2 | **BUILT + OWNER-EYEBALLED 2026-08-02 night (as-built §7.3)** — dossier sheet (light inversion + the ruled grid + live service rows + the H3 ACTION BAR) + **the M3 capsule→dossier morph, owner-PULLED from G4 and made to visibly work** + swap morph + visible × + tap-outside close + **the full-screen ART SHOWCASE (owner ask)** — M6 extraction to `lib/hostDetail.ts` landed first; contrast gate gained the dossier's THEME_PAIRS rows | owner eyeball ✅ ("looks good", pushed) + contrast probe ✅ (48-combo matrix) |
 | G3 | Agent tab: GachaAgent body (oracle + §4.2 scroll mechanics) + composer skin — **the M7 blur ramp gets its own Fennec/Chrome device check here**, not deferred to G6. ~~Chat-hooks reskin~~ **BUBBLES SHIPPED AT G0 (owner pull-forward, `04003d9`+`6db92cc`: white/`#16162c`/`5px 5px 0 #ff6cae` + bot `#222541` + the prototype's 12.5px/1.45 type)** — G3 carries only bubble POLISH + the owner's 12.5px read-comfort check on device | eyeball + device check |
 | G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + M2/M3 VT enhancement per the spike verdict + Gecko tuning (the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape) |
 | G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
@@ -651,6 +651,81 @@ e2e arms**, full gate green per commit. The record for successors:
   touch's implicit capture handoff reads as a cancel — test gestures with REAL touch (CDP
   `Input.dispatchTouchEvent`), not just mouse or jsdom.** ✅ Owner re-checked on the Fennec
   device: swipe works (2026-08-02 night) — G1 fully closed.
+
+**§7.3 — G2 AS-BUILT (✅ owner-eyeballed + PUSHED 2026-08-02 night, same owner-attended session
+as the G1 close).** Eleven commits `8c4c74f..294cc32`; end state
+**1323 FE unit (111 files) / 1254 BE**, full gate green per commit, pushed.
+- **Build (Opus, pinned brief `g2-brief.md`):** `8c4c74f` U1 — `lib/hostDetail.ts` (council M6;
+  pinning tests FIRST, both precedent themes refactored on, two REAL differences kept: frontier's
+  voice strings stay in-theme, the seen/lastSeen split) · `7504d42` U2 the light sheet (ruled
+  grid, svcByHost rows, `--host` accent pairs = i%3 over the tri-accent) · `526975e` U3 the
+  action bar (arcade tickets on kit `run` semantics; `--gc-dossier-danger` minted — the night
+  `--danger` measured 3.0 on white) · `a9c6567` U4 `host:` key namespace (the carried G1 LOW,
+  regression-tested against the old code) · agent finds: **`pingText` `<1 ms`** (emma pings
+  itself in fractions — changed the G1 plate too, flagged) · dossier JP labels were already
+  in the subset (no regen).
+- **Main-seat audit + owner round 1 (`57e106a`):** strip clip (4px box can't carry a 24px
+  radius — full-cover band pseudo) · ticket gradient fringe (`background-clip: padding-box`) ·
+  the CONTRAST PROBE finds: kicker 4.30 → `#b03578`, opacity-muted labels → real token
+  `--gc-dossier-ink-2 #565875` (alpha blends are invisible to the token gate), night ok/warn
+  dots ~1.5 on white → `--gc-dossier-ok/-warn` · **contrast.spec.ts gains THEME_PAIRS + the
+  in-subtree probe mount** (11 dossier rows; 48-combo matrix green locally).
+- **THE MORPH ARC (M3, owner-pulled from G4).** First pass shipped INVISIBLE on device. Parallel
+  Codex design analysis + Opus instrumented rework found the REAL cause: BottomSheet mounts via
+  a passive effect, so the VT's new capture held NO avatar at all (`flushSync` does not flush
+  another component's mount) — plus the moving-target rect underneath. Fix (`6b9188c`): opt-in
+  **`enterInstant`/`upkeepKey` seam on BottomSheet** (derived presence — sheet exists AT REST in
+  the very commit the transition updates; other themes pinned byte-identical) + the PROTOTYPE
+  composition (owner re-ruling: prototype-exact, morph > sheet-slide; `gacha-detail-in/out`
+  root keyframes, sheet does not slide under VT) + SWAP morph (inline avatar
+  `view-transition-name: none` suppression during the old capture) + visible × (theme markup,
+  `\d7` glyph in CSS — the ASCII fence) + tap-outside close (document listener, exemption list;
+  `d36bbb6` modals exempt) — **frame-proven on Chromium AND Firefox 151** (x11grab; Playwright
+  Gecko screenshots OMIT the ::view-transition layer — the durable verification gotcha).
+- **Codex rounds:** G2 review **NOT READY** (the async-callback HIGH → generation tickets) →
+  M3 confirm **READY WITH FIXES**, all five taken (`f25a0a2`): single-owner morph PREP +
+  `skipActiveViewTransition` on the shared wrapper · capture-critical body stamps → layout
+  effects · **close-on-navigation ruled** (a nav tap is "outside"; keyboard now matches) ·
+  claimed-focus guard on BottomSheet's restore · `upkeepKey` ends a per-poll forced layout.
+  `efffd96` closes LOW-5: the ruled EM DASH via copy.ts `metricPending` + one `fonts:gacha`
+  regen (70→71 glyphs) — **the "regen needed" premise was WRONG; latin faces carry U+2000-206F**.
+- **`c248260` the ART SHOWCASE (owner ask, same night):** portrait = button → full-screen
+  UNCROPPED art on the night backdrop, **z-46** (sheet 40 < showcase < confirm 50), REVERSE
+  morph both ways under `[data-transition="showcase"]`, Escape closes art-then-dossier
+  (defaultPrevented convention), Tab-trapped ×, tap-outside exempts the overlay; both-engine
+  probe evidence; showcase teardown funneled through every dossier teardown path.
+- **The G2-CLOSE SWEEP (Codex, on the showcase): CLOSABLE WITH FIXES → all four taken
+  (`294cc32`, mutation-checked):** the showcase's transitions take the same generation TICKETS
+  as the dossier morphs (`artGen` + prep-object ownership; a stale callback that closed over a
+  React-reused avatar can no longer claim it — `isConnected` guarded) · forced teardown SKIPS
+  the owned in-flight transition (settling VT snapshots float above z-indexed content — the
+  live render gate alone never excluded the reel) · focus restore is INTENT-flagged (only the
+  art's own dismissal restores to the portrait; teardown lets the closing owner handle focus —
+  a cleanup cannot trust post-commit state) · five adversarial race/teardown arms + a
+  skip-spying, never-settling VT mock. Two recorded residuals: `skipActiveViewTransition` is
+  global-not-per-layer (fine while both call sites run together on teardown; revisit if the
+  wrapper grows owners) · a same-frame whole-tree unmount can still momentarily target a
+  detaching portrait (falls to body, where it was going anyway — no machinery).
+- **Owner rulings this slice (D52 addendum):** morph = prototype-exact, IMAGE over sheet-slide
+  if forced · swaps morph too · visible × restored (overrides the kit no-visible-close for
+  gacha) · tap-outside closes (cards/promos/modals exempt; carousel dots close — flagged,
+  unvetoed) · close-on-navigation · the showcase itself · width-bound contain in the showcase
+  (unvetoed) · G4's M3 line is DONE early — G4 re-scopes to the reel figure + M2 only.
+- **OPEN at close:** kit sr-only sheet close duplicates the ×'s accessible name (kit-level
+  "host provides close" opt-out, follow-up) · a11y e2e never opens the dossier (axe misses the
+  × — tag-gate note) · the reel-vs-track guard publishes via the store's normal effect (a
+  first-painted-frame input gap, theoretical) · deliberate eslint warnings: set-state in
+  capture-critical layout effects (documented inline).
+- **Lessons banked (durable):** TWO WRITING AGENTS IN ONE WORKTREE COLLIDE — a concurrent
+  agent's git operation reset the other's index mid-commit, and the whole-tree pre-commit hook
+  blocks either on the other's WIP; parallel build waves get `isolation: worktree` from now
+  on · VERIFY ANIMATIONS WITH FRAMES, not end-state screenshots — and
+  never with Playwright-Gecko screenshots (they render without the VT layer) · anything a VT
+  capture must see is committed IN the update callback (layout effects / derived presence;
+  passive effects can land after the capture) · `startViewTransition`'s callback is async and
+  ALWAYS runs (even skipped) → generation tickets + single-owner DOM prep for names ·
+  `:scope[data-transition]::view-transition-*` matches fine inside `@scope` rooted on html ·
+  a token contrast gate cannot see `opacity` blends — mute with tokens, not alpha.
 
 **Acceptance matrix (the lock session turns this into per-slice test obligations):** 0/1/many
 hosts · hosts>roster and roster>hosts · queries loading/error states (pill, counter) ·

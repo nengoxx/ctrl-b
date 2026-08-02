@@ -12,7 +12,29 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-02 night — **✅ G1 BUILT + OWNER-EYEBALLED (banner + capsule track + scenes); NEXT = G2, the unit dossier**)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-03 — **✅ G2 BUILT + OWNER-EYEBALLED + PUSHED (unit dossier + the MORPH + the art showcase); NEXT = G3, the agent tab**)
+> **The same owner-attended session closed G1 AND G2. Ten G2 commits `8c4c74f..c248260`, ALL
+> PUSHED (origin @ `c248260` + the docs commit riding this handoff); FE 1309 / BE 1254, gate
+> green per commit. G2 as-built = GACHA_PLAN §7.3 (READ IT — the morph arc is the session's
+> big lesson: the first M3 pass shipped INVISIBLE and was caught only by the owner's device
+> round; frames-not-screenshots is now the animation verification bar).** Short form: the
+> light dossier (ruled grid, em-dash held metrics, action bar, live service rows, contrast
+> THEME_PAIRS gate rows) + M3 pulled from G4 and made prototype-exact (BottomSheet
+> `enterInstant`/`upkeepKey` seam — sheet at rest under VT) + swap morph + visible × +
+> tap-outside/navigation close + the full-screen ART SHOWCASE (z-46, reverse morph). Codex:
+> G2 round NOT READY → gen-ticket fix; M3 confirm READY WITH FIXES → all five taken; the
+> G2-close sweep CLOSABLE WITH FIXES → all four taken (`294cc32`) — G2 is CLOSED, FE 1323.
+> **▶ NEXT = G3 (agent tab):** GachaAgent body (oracle + §4.2 scroll mechanics) + the
+> `arcade` composer skin (D37 — shared catalog value, cross-theme picker cost budgeted) —
+> bubbles SHIPPED at G0; G3 carries bubble polish + the owner's 12.5px read-comfort device
+> check + the M7 blur-ramp Fennec/Chrome device check. **Carried:** VT spike for M2/root
+> (gates only G4's M2 now — M3 is DONE and device-proven) · owner picks: wordmark string ·
+> NEW ribbon · carousel dots close the dossier (unvetoed flag) · kit sr-only close vs the
+> visible × label (kit follow-up) · a11y e2e doesn't open the dossier · ~80 MB originals
+> UNTRACKED (REC never commit) · dev units RUNNING · v1.5.0 = this theme's release, prod
+> stays v1.4.6.
+>
+> ## ▶ PREVIOUS BLOCK (2026-08-02 night — **✅ G1 BUILT + OWNER-EYEBALLED (banner + capsule track + scenes); G2 was next**)
 > **One owner-attended session: the whole G1 slice — build, two review waves, and 3+ LIVE owner
 > eyeball rounds with rulings folded in real time. Fifteen commits `2898fad..4879f9e` on top of
 > G0's seventeen, tree clean except the docs commit riding this handoff, NOTHING PUSHED — ask the

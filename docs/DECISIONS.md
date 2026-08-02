@@ -3974,3 +3974,24 @@ then).
   eyeballed).
 - **The owner's art enters the bundled default set pre-G5** (roster recast; originals stay
   UNTRACKED pending an owner call on 80 MB in history — REC no).
+
+**✏️ G2-eyeball addendum (owner rulings, 2026-08-02 night — as-built GACHA_PLAN §7.3):**
+- **M3 (the capsule→dossier morph) PULLED FORWARD from G4 into G2, prototype-exact:** under a
+  live View Transition the sheet does NOT slide — the transition carries everything (the
+  prototype's own composition; the owner: image morph over sheet-slide if forced to choose).
+  The slide-up survives only as the no-VT/reduced-motion/plain-open fallback. G4 re-scopes to
+  the reel FIGURE + M2. Mechanism: the shared BottomSheet gains opt-in `enterInstant`+
+  `upkeepKey` (other themes byte-identical, test-pinned).
+- **Swaps morph too** (dossier open → tap another capsule): the mounted avatar is inline-
+  suppressed for the old capture — the single-owner prep discipline in GachaFleet.
+- **The visible × returns** (overrides the kit's no-visible-close for gacha — theme markup,
+  prototype `.close-detail`).
+- **Tap-outside closes the dossier** (cards/promos/modal layers exempt; carousel dots count as
+  outside — flagged, unvetoed) and — main-seat ruling off the Codex confirm round —
+  **navigation closes it too** (keyboard/programmatic now matches the pointer path; no
+  resurrect-on-return).
+- **The full-screen ART SHOWCASE** (owner ask): dossier portrait = button → uncropped art,
+  reverse morph both ways, z-46, Escape layers art-then-dossier.
+- **§4.8's held-metric dash is the literal em dash** (`metricPending` in copy.ts): the
+  "font regen needed" premise was verified WRONG (latin faces carry U+2000-206F); the G1
+  pill/counter keep their eyeballed ASCII hyphen.
