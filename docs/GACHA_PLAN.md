@@ -649,7 +649,8 @@ e2e arms**, full gate green per commit. The record for successors:
   lore said as much. The research pass stands as this fix's review round. **LESSON (durable,
   any pointer-gesture code): a bubbling `lostpointercapture` listener MUST target-guard, or
   touch's implicit capture handoff reads as a cancel — test gestures with REAL touch (CDP
-  `Input.dispatchTouchEvent`), not just mouse or jsdom.** Owner re-check on device pending.
+  `Input.dispatchTouchEvent`), not just mouse or jsdom.** ✅ Owner re-checked on the Fennec
+  device: swipe works (2026-08-02 night) — G1 fully closed.
 
 **Acceptance matrix (the lock session turns this into per-slice test obligations):** 0/1/many
 hosts · hosts>roster and roster>hosts · queries loading/error states (pill, counter) ·

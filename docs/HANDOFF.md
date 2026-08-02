@@ -30,7 +30,7 @@
 > fix:** the owner's device round found touch swipe DEAD (implicit-capture `lostpointercapture`
 > bubbling from the slide child read as a cancel — §7.2's post-close entry has the full
 > diagnosis + the durable lesson); one-line target guard + 2 tests, Chromium-touch-verified
-> live, **owner's on-device Fennec re-check pending**.
+> live, **✅ owner-confirmed working on the Fennec device**.
 > **OWNER RULINGS THIS SESSION (all recorded, D52 addendum + plan):** 3★ ladder ≥3→★3 (§6.1
 > re-rule) · 5★ stays 1:1 · **G5 media dir = ROLE-SCOPED folders** `{characters,banner,
 > wallpaper,reel}/`, drop-in = assignment (§5.4) · banner scenes = EXTRA SLIDES over cycling
