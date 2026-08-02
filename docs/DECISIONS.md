@@ -3911,7 +3911,11 @@ then).
   rejects the deviation) · the reel's z-rung = **45** on the kit ladder (over toasts/TTS
   flash, under modals; no `.kit` stacking-context copy) · gacha's `--bg` joins the boot-script
   default-mirror allowlist (no cold-boot FOUC). All shared edits except the composer skin land
-  as G0's ONE seams commit.
+  as G0's ONE seams commit. **ADDENDUM (owner-requested at the G0 round-4 eyeball, 2026-08-02
+  — beyond the original closed list): `ComposerSlots.placeholder?: string`** — a theme-fillable
+  composer hint (last-defined-wins scalar on the existing theme→composer contract object; each
+  variant's original string is the fallback, other themes byte-identical; gacha fills the
+  prototype's コマンド入力… from `GACHA_COPY`). Shipped `0bb0b51`.
 - **Config + data shape:** roster lives at **`themes: {gacha: {roster: […], slots: {…}}}`**
   — a FEATURE-named top-level map keyed by theme id (the D48 `providers` precedent; a
   `theme_gacha:` sibling key is the banned shape). One entry object per character
