@@ -281,15 +281,19 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
       role="group"
       aria-roledescription="carousel"
       aria-label="Pickup banner"
-      onPointerDown={(e) =>
+      onPointerDown={(e) => {
+        // Disarm the click suppressor at the START of every gesture. A drag does not always produce the
+        // synthetic click that would otherwise clear it (pointer capture can retarget it away), and a flag
+        // left armed would swallow the NEXT tap instead of the drag it was set for.
+        movedRef.current = false;
         dispatch({
           type: "down",
           pointerId: e.pointerId,
           primary: e.isPrimary,
           x: e.clientX,
           y: e.clientY,
-        })
-      }
+        });
+      }}
       onPointerMove={onMove}
       onPointerUp={(e) =>
         dispatch({

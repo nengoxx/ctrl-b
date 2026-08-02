@@ -175,6 +175,66 @@ describe("carousel semantics", () => {
   });
 });
 
+describe("the gesture, wired to the machine", () => {
+  // The reducer itself is exhaustively covered in gachaCarousel.test.ts; these prove the COMPONENT is
+  // actually driving it — the pointer sequence reaches the machine, its effects reach the strip, and the
+  // click the browser fires after a drag is the one that gets swallowed.
+  const drag = (banner: Element, dx: number, dy = 2): void => {
+    fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
+    fireEvent.pointerMove(banner, { pointerId: 1, clientX: 200 + dx / 2, clientY: 100 + dy });
+    fireEvent.pointerMove(banner, { pointerId: 1, clientX: 200 + dx, clientY: 100 + dy });
+    fireEvent.pointerUp(banner, { pointerId: 1 });
+  };
+
+  it("a leftward drag advances the strip, and the click that follows is swallowed", () => {
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    act(() => {
+      drag(banner, -100);
+    });
+    expect(slides(container)[1].hasAttribute("inert")).toBe(false);
+    // …and the promo the finger came to rest on must NOT open (the §6.4 `moved` flag, read in capture)
+    expect(fireEvent.click(slides(container)[1].querySelector("button")!)).toBe(false);
+  });
+
+  it("an under-slop press leaves the strip alone and lets the click through", () => {
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    act(() => {
+      drag(banner, -4, 1);
+    });
+    expect(slides(container)[0].hasAttribute("inert")).toBe(false); // still the hero
+    expect(fireEvent.click(slides(container)[0])).toBe(true);
+  });
+
+  it("VERTICAL intent never moves the strip (the page keeps scrolling)", () => {
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    act(() => {
+      fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
+      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 196, clientY: 160 });
+      fireEvent.pointerUp(banner, { pointerId: 1 });
+    });
+    expect(slides(container)[0].hasAttribute("inert")).toBe(false);
+  });
+
+  it("a pointercancel mid-drag resolves the gesture instead of stranding it", () => {
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    act(() => {
+      fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
+      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 120, clientY: 102 });
+      fireEvent.pointerCancel(banner, { pointerId: 1 });
+    });
+    expect(slides(container)[0].hasAttribute("inert")).toBe(false); // snapped back, not advanced
+    // and the machine is idle again: a fresh drag still works
+    act(() => {
+      drag(banner, -100);
+    });
+    expect(slides(container)[1].hasAttribute("inert")).toBe(false);
+  });
+});
+
 describe("the capsule track (§6.1/§6.2)", () => {
   const cards = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-card")];
 
