@@ -117,11 +117,19 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
   const loopRef = useRef<SafeRafLoop | null>(null);
   const dragIndexRef = useRef(0);
   const snapTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** The snap lock MIRRORED into a ref. `snapping` is captured state, so an effect reads whatever was true
+   *  at the render it was scheduled from — and a pointerdown landing between that render and its commit
+   *  would reconcile the strip out from under the finger. The ref is the value at COMMIT time, and it is
+   *  written in exactly the two places `setSnapping` is. */
+  const snapRef = useRef(false);
 
   // Reconcile membership BETWEEN interactions. Runs on every render and no-ops when the two orders already
   // agree, which is the honest way to keep `slides` (a fresh array each render) as a dependency.
   useEffect(() => {
     if (busy || liveSig === committedSig) return;
+    // …and re-check the LIVE machine at commit time, not the render's snapshot of it (F2): `busy` above is
+    // state, so a pointerdown or a snap that started after this effect was scheduled is invisible to it.
+    if (dragRef.current.phase !== "idle" || snapRef.current) return;
     setCommitted(slides);
     setCommittedSig(liveSig);
     setActiveKey((k) => reconcileActive(splitKeys(committedSig), splitKeys(liveSig), k));
@@ -144,14 +152,34 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
   }, [applyOffset, index, count, paintTick, snapAnimated, motion]);
 
   const beginSnap = useCallback((): void => {
+    snapRef.current = true;
     setSnapping(true);
     clearTimeout(snapTimer.current);
-    snapTimer.current = setTimeout(() => setSnapping(false), SNAP_MS);
+    snapTimer.current = setTimeout(() => {
+      snapRef.current = false;
+      setSnapping(false);
+    }, SNAP_MS);
   }, []);
+
+  /** THE one animated move (F1). Every deliberate slide change — a released drag, a dot, Prev/Next, the
+   *  autoplay tick, a snap-back to where we already were — goes through here, so all of them arm the snap
+   *  window rather than only the drag that happened to be written first. Owning the three writes together
+   *  is what makes `snapping` mean "the strip is in motion": reconciliation defers on it and a fresh
+   *  pointerdown is rejected while it holds, so nothing can re-key or zero the transition mid-flight. */
+  const moveTo = useCallback(
+    (key: string): void => {
+      setSnapAnimated(true);
+      setActiveKey(key);
+      setPaintTick((t) => t + 1);
+      beginSnap();
+    },
+    [beginSnap],
+  );
 
   useEffect(
     () => () => {
       clearTimeout(snapTimer.current);
+      snapRef.current = false;
       loopRef.current?.stop();
     },
     [],
@@ -185,17 +213,13 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
         case "abort":
           release();
           if (before.moved) movedRef.current = true;
-          setSnapAnimated(true);
-          setPaintTick((t) => t + 1);
-          beginSnap();
+          // Back to where we already were, which is still an animated move and still owns the window.
+          moveTo(activeKey);
           break;
         case "settle":
           release();
           movedRef.current = true;
-          setSnapAnimated(true);
-          setActiveKey(splitKeys(committedSig)[effect.index] ?? HERO_KEY);
-          setPaintTick((t) => t + 1);
-          beginSnap();
+          moveTo(splitKeys(committedSig)[effect.index] ?? HERO_KEY);
           break;
         case "tap":
           // Nothing moved, so the native click reaches the slide's button. The cadence restarts because the
@@ -206,7 +230,7 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
           break;
       }
     },
-    [beginSnap, committedSig],
+    [moveTo, activeKey, committedSig],
   );
 
   const onMove = useCallback(
@@ -249,29 +273,38 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
     return () => document.removeEventListener("visibilitychange", on);
   }, []);
 
-  const paused = !active || !docVisible || reeling || motion === "reduced" || count <= 1 || busy;
+  // `snapping` is deliberately NOT a pause condition (F6): §6.4's matrix restarts the FULL cadence at an
+  // interaction's END, and gating on the snap window would silently make that end + 620 ms. The gesture
+  // flag alone is the interaction; `busy` still guards reconciliation and the pointerdown rejection, and
+  // 5200 > 620 means the one-shot can never land mid-snap anyway.
+  const paused = !active || !docVisible || reeling || motion === "reduced" || count <= 1 || gesture;
   useEffect(() => {
     if (paused) return;
     const t = setTimeout(() => {
       const order = splitKeys(committedSig);
-      setSnapAnimated(true);
-      setActiveKey((k) => order[(Math.max(0, order.indexOf(k)) + 1) % order.length] ?? k);
+      const next = order[(Math.max(0, order.indexOf(activeKey)) + 1) % order.length];
+      if (next !== undefined) moveTo(next);
     }, AUTOPLAY_MS);
     return () => clearTimeout(t);
-  }, [paused, activeKey, restartTick, committedSig]);
+  }, [paused, activeKey, restartTick, committedSig, moveTo]);
 
-  /** Jump to a slide by KEY (a dot) — or, when it is already active, just restart the cadence. */
+  /** Jump to a slide by KEY (a dot) — or, when it is already active, just restart the cadence.
+   *
+   *  The target is validated against the CURRENT committed membership (F2): a dot rendered from a set that
+   *  has since been reconciled away would otherwise set an active key no slide answers to, which reads as
+   *  the strip jumping to slide 0. Clicks DURING a snap stay allowed — a CSS transition retargets smoothly
+   *  from wherever the strip currently is, and `moveTo` re-arms the window from this move. */
   const goTo = (key: string): void => {
-    setSnapAnimated(true);
+    if (!keys.includes(key)) return;
     if (key === activeKey) setRestartTick((t) => t + 1);
-    else setActiveKey(key);
+    else moveTo(key);
   };
 
   /** Step by one, WRAPPING at both ends so the buttons match the auto-advance cycle (Codex R4-7). */
   const step = (delta: number): void => {
     if (count === 0) return;
-    setSnapAnimated(true);
-    setActiveKey(keys[(index + delta + count) % count] ?? activeKey);
+    const next = keys[(index + delta + count) % count];
+    if (next !== undefined) moveTo(next);
   };
 
   return (
@@ -281,7 +314,12 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
       role="group"
       aria-roledescription="carousel"
       aria-label="Pickup banner"
+      inert={reeling}
       onPointerDown={(e) => {
+        // The banner REJECTS input while the reel sweeps (F3, §6.4) — the overlay is `pointer-events: none`
+        // so it cannot do that for us — and while a snap is still running (F1): starting a new gesture
+        // mid-animation zeroes the strip's transition-duration in flight and leaves it stranded.
+        if (reeling || snapRef.current) return;
         // Disarm the click suppressor at the START of every gesture. A drag does not always produce the
         // synthetic click that would otherwise clear it (pointer capture can retarget it away), and a flag
         // left armed would swallow the NEXT tap instead of the drag it was set for.
@@ -311,7 +349,10 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
       // HERE rather than on the next pointerdown: a drag that ends over a button must not open it, and the
       // very next tap must.
       onClickCapture={(e) => {
-        if (!movedRef.current) return;
+        // A KEYBOARD or AT activation carries no pointer sequence (`detail === 0`), so it can never be the
+        // click a drag produced — and must never be eaten by a suppression token that a drag which never
+        // yielded its synthetic click left armed (F5). Only a real pointer click is suppressible.
+        if (!movedRef.current || e.detail === 0) return;
         movedRef.current = false;
         e.preventDefault();
         e.stopPropagation();

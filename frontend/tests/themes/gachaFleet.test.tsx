@@ -14,9 +14,11 @@ const fleet = vi.hoisted(() => {
 });
 vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
 
+import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setUI } from "../../src/store/ui";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
+import { AUTOPLAY_MS, SNAP_MS } from "../../src/themes/gacha/carousel";
 import { defaultRoster, wideArtForHost } from "../../src/themes/gacha/roster";
 import type { Host } from "../../src/types";
 
@@ -49,6 +51,9 @@ function setFleet(over: Record<string, unknown> = {}): void {
     busy: new Set<string>(),
     isLoading: false,
     error: null,
+    // The query has ANSWERED (the additive `hasData` flag) — the default for these fixtures; the
+    // still-loading cases pass `hasData: false` explicitly.
+    hasData: true,
     ...over,
   };
 }
@@ -90,7 +95,7 @@ describe("the slide set (§6.4)", () => {
   });
 
   it("an unresolved fleet renders the hero alone — the one slide that needs no data", () => {
-    setFleet({ hosts: [], isLoading: true });
+    setFleet({ hosts: [], isLoading: true, hasData: false });
     const { container } = render(<GachaFleet active />);
     expect(slides(container)).toHaveLength(1);
   });
@@ -123,7 +128,7 @@ describe("the rate pill (§6.3)", () => {
   });
 
   it("never reads a false 0.0% while the first poll is in flight", () => {
-    setFleet({ hosts: [], isLoading: true });
+    setFleet({ hosts: [], isLoading: true, hasData: false });
     const { container } = render(<GachaFleet active />);
     expect(rate(container)).not.toContain("0.0");
   });
@@ -193,8 +198,29 @@ describe("the gesture, wired to the machine", () => {
       drag(banner, -100);
     });
     expect(slides(container)[1].hasAttribute("inert")).toBe(false);
-    // …and the promo the finger came to rest on must NOT open (the §6.4 `moved` flag, read in capture)
-    expect(fireEvent.click(slides(container)[1].querySelector("button")!)).toBe(false);
+    // …and the promo the finger came to rest on must NOT open (the §6.4 `moved` flag, read in capture).
+    // `detail: 1` is what makes this the POINTER-derived click a drag produces — jsdom defaults it to 0,
+    // which is the keyboard shape the suppressor deliberately lets through (F5, below).
+    expect(fireEvent.click(slides(container)[1].querySelector("button")!, { detail: 1 })).toBe(
+      false,
+    );
+  });
+
+  it("a KEYBOARD activation is never swallowed, even by a stale suppression token (F5)", () => {
+    // A drag whose synthetic click never arrives leaves the token armed. A keyboard/AT activation carries
+    // no pointer sequence (`detail === 0`) and no pointerdown to disarm it, so before the fix the very next
+    // Enter on a promo was eaten silently.
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    act(() => {
+      fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
+      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 120, clientY: 102 });
+      fireEvent.pointerUp(banner, { pointerId: 1 });
+    });
+    // …no click was delivered; the token is still armed. The keyboard path must still work.
+    expect(fireEvent.click(slides(container)[1].querySelector("button")!, { detail: 0 })).toBe(
+      true,
+    );
   });
 
   it("an under-slop press leaves the strip alone and lets the click through", () => {
@@ -219,19 +245,211 @@ describe("the gesture, wired to the machine", () => {
   });
 
   it("a pointercancel mid-drag resolves the gesture instead of stranding it", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(<GachaFleet active />);
+      const banner = container.querySelector(".gc-banner")!;
+      act(() => {
+        fireEvent.pointerDown(banner, {
+          pointerId: 1,
+          isPrimary: true,
+          clientX: 200,
+          clientY: 100,
+        });
+        fireEvent.pointerMove(banner, { pointerId: 1, clientX: 120, clientY: 102 });
+        fireEvent.pointerCancel(banner, { pointerId: 1 });
+      });
+      expect(slides(container)[0].hasAttribute("inert")).toBe(false); // snapped back, not advanced
+
+      // The snap-back is an animated move, so it OWNS the strip for its window: a pointerdown inside it is
+      // rejected outright rather than zeroing the transition mid-flight (F1).
+      act(() => {
+        drag(banner, -100);
+      });
+      expect(slides(container)[0].hasAttribute("inert")).toBe(false);
+
+      // Once the window closes the machine is idle again and a fresh drag works.
+      act(() => {
+        vi.advanceTimersByTime(SNAP_MS);
+      });
+      act(() => {
+        drag(banner, -100);
+      });
+      expect(slides(container)[1].hasAttribute("inert")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("snap ownership and the reconciliation lock (F1/F2)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const dots = (c: HTMLElement): HTMLButtonElement[] => [
+    ...c.querySelectorAll<HTMLButtonElement>(".gc-dot"),
+  ];
+
+  it("a membership change DURING a dot snap is buffered until the window ends", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(dots(container)[2]);
+    });
+    expect(slides(container)[2].hasAttribute("inert")).toBe(false);
+
+    // A poll drops a host WHILE the strip is still animating. The set must not re-key under the animation.
+    setFleet({ hosts: [host("pegasus", true)] });
+    rerender(<GachaFleet active />);
+    expect(slides(container)).toHaveLength(3);
+
+    // …and once the snap window closes, the reconciliation lands.
+    act(() => {
+      vi.advanceTimersByTime(SNAP_MS);
+    });
+    rerender(<GachaFleet active />);
+    expect(slides(container)).toHaveLength(2);
+  });
+
+  it("an AUTOPLAY advance owns the strip too — the same buffering applies", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => {
+      vi.advanceTimersByTime(AUTOPLAY_MS);
+    });
+    expect(slides(container)[1].hasAttribute("inert")).toBe(false);
+
+    setFleet({ hosts: [host("pegasus", true)] });
+    rerender(<GachaFleet active />);
+    expect(slides(container)).toHaveLength(3); // buffered: the tick armed the snap window
+
+    act(() => {
+      vi.advanceTimersByTime(SNAP_MS);
+    });
+    rerender(<GachaFleet active />);
+    expect(slides(container)).toHaveLength(2);
+  });
+
+  it("a pointerdown holds the reconciliation even when it lands after the render (F2)", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    // Arm the machine, then push a membership change through in the SAME turn: the effect that would
+    // reconcile it re-checks the live machine, not the `busy` value its render captured.
+    act(() => {
+      fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
+      setFleet({ hosts: [host("pegasus", true)] });
+    });
+    rerender(<GachaFleet active />);
+    expect(slides(container)).toHaveLength(3);
+
+    // Releasing resolves the gesture; the set reconciles from there.
+    act(() => {
+      fireEvent.pointerUp(banner, { pointerId: 1 });
+    });
+    rerender(<GachaFleet active />);
+    expect(slides(container)).toHaveLength(2);
+  });
+
+  it("restarts the FULL cadence at an interaction's end, not end + the snap window (F6)", () => {
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    // A drag that aborts: the release is the interaction's end, and the next auto-advance is due exactly
+    // AUTOPLAY_MS later — gating the timer on the snap window would silently make it AUTOPLAY_MS + SNAP_MS.
+    act(() => {
+      fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
+      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 196, clientY: 170 }); // vertical -> abort
+      fireEvent.pointerUp(banner, { pointerId: 1 });
+    });
+    expect(slides(container)[0].hasAttribute("inert")).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(AUTOPLAY_MS - 1);
+    });
+    expect(slides(container)[0].hasAttribute("inert")).toBe(false); // not yet
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(slides(container)[1].hasAttribute("inert")).toBe(false); // exactly on the cadence
+  });
+});
+
+describe("the reel REJECTS banner input (F3, §6.4)", () => {
+  afterEach(() => {
+    setGachaReelRunning(false);
+  });
+
+  it("marks the banner inert and ignores a tap or a dot click while the slats run", () => {
     const { container } = render(<GachaFleet active />);
     const banner = container.querySelector(".gc-banner")!;
     act(() => {
-      fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
-      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 120, clientY: 102 });
-      fireEvent.pointerCancel(banner, { pointerId: 1 });
+      setGachaReelRunning(true);
     });
-    expect(slides(container)[0].hasAttribute("inert")).toBe(false); // snapped back, not advanced
-    // and the machine is idle again: a fresh drag still works
+    expect(banner.hasAttribute("inert")).toBe(true);
+
+    // Belt-and-braces: the overlay is pointer-events:none, so a synthetic sequence still reaches the
+    // handlers — and must do nothing.
     act(() => {
-      drag(banner, -100);
+      fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
+      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 100, clientY: 102 });
+      fireEvent.pointerUp(banner, { pointerId: 1 });
     });
-    expect(slides(container)[1].hasAttribute("inert")).toBe(false);
+    expect(slides(container)[0].hasAttribute("inert")).toBe(false); // still the hero
+
+    // The DOTS are covered by `inert` alone rather than a second guard: a real engine does not dispatch a
+    // click into an inert subtree at all. jsdom does not implement that behaviour, so what is assertable
+    // here is the containment — every interactive control of the banner sits inside the inert root.
+    const controls = [...banner.querySelectorAll("button")];
+    expect(controls.length).toBeGreaterThan(0);
+    expect(controls.every((b) => banner.contains(b))).toBe(true);
+  });
+
+  it("lifts the block the moment the sweep ends", () => {
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    act(() => {
+      setGachaReelRunning(true);
+    });
+    act(() => {
+      setGachaReelRunning(false);
+    });
+    expect(banner.hasAttribute("inert")).toBe(false);
+    act(() => {
+      fireEvent.click(container.querySelectorAll<HTMLButtonElement>(".gc-dot")[2], { detail: 1 });
+    });
+    expect(slides(container)[2].hasAttribute("inert")).toBe(false);
+  });
+});
+
+describe("beyond the dot bound (§6.4's many-host presentation)", () => {
+  beforeEach(() => {
+    setFleet({ hosts: Array.from({ length: 11 }, (_, i) => host(`h${i}`, true)) });
+  });
+
+  it("swaps the rail for an announced counter flanked by labelled Prev/Next", () => {
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-banner-dots")).toBeNull();
+    const nav = container.querySelector(".gc-banner-nav")!;
+    expect(nav.querySelector("span")!.textContent).toBe("1 / 12");
+    expect(nav.querySelector("span")!.getAttribute("aria-live")).toBe("polite");
+    expect([...nav.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual([
+      "previous slide",
+      "next slide",
+    ]);
+  });
+
+  it("WRAPS at both ends, matching the auto-advance cycle", () => {
+    const { container } = render(<GachaFleet active />);
+    const [prev, next] = [
+      ...container.querySelectorAll<HTMLButtonElement>(".gc-banner-nav button"),
+    ];
+    const counter = () => container.querySelector(".gc-banner-nav span")!.textContent;
+
+    act(() => {
+      fireEvent.click(prev, { detail: 1 });
+    });
+    expect(counter()).toBe("12 / 12"); // wrapped backwards off the hero
+    act(() => {
+      fireEvent.click(next, { detail: 1 });
+    });
+    expect(counter()).toBe("1 / 12"); // …and forwards again
   });
 });
 
@@ -338,7 +556,7 @@ describe("the capsule track (§6.1/§6.2)", () => {
     expect(container.querySelector(".gc-track-head .count")!.textContent).toBe("01 / 02");
     unmount();
 
-    setFleet({ hosts: [], isLoading: true });
+    setFleet({ hosts: [], isLoading: true, hasData: false });
     const pending = render(<GachaFleet active />);
     expect(pending.container.querySelector(".gc-track-head .count")!.textContent).not.toContain(
       "0",
@@ -346,7 +564,7 @@ describe("the capsule track (§6.1/§6.2)", () => {
   });
 
   it("replaces the track with an honest message on error — but keeps the banner standing", () => {
-    setFleet({ hosts: [], error: new Error("nope") });
+    setFleet({ hosts: [], error: new Error("nope"), hasData: false });
     const { container } = render(<GachaFleet active />);
     expect(container.querySelector(".gc-track")).toBeNull();
     expect(container.querySelector(".gc-msg")!.textContent).toContain("nope");
@@ -354,7 +572,7 @@ describe("the capsule track (§6.1/§6.2)", () => {
   });
 
   it("renders nothing under the head while the FIRST poll is still in flight", () => {
-    setFleet({ hosts: [], isLoading: true });
+    setFleet({ hosts: [], isLoading: true, hasData: false });
     const { container } = render(<GachaFleet active />);
     expect(container.querySelector(".gc-track")).toBeNull();
     expect(container.querySelector(".gc-msg")).toBeNull();

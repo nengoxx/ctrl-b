@@ -662,6 +662,13 @@
     button.gc-slide-hit {
       cursor: pointer;
     }
+    /* The kit's global ring is `2px solid var(--accent)` at `outline-offset: 2px` — drawn OUTSIDE the
+     * element. A promo's hit target is edge-to-edge inside a banner that is `overflow: hidden`, so the ring
+     * lands entirely in the clipped region and a keyboard user sees nothing at all. Pulled inside; only the
+     * OFFSET changes, so the ring keeps the kit's width and its `--accent` token. */
+    .gc-slide-hit:focus-visible {
+      outline-offset: -3px;
+    }
     .gc-banner-copy {
       position: absolute;
       left: 16px;
