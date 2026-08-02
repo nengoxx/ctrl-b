@@ -88,11 +88,16 @@ describe("GachaAgent — the oracle block", () => {
     expect(container.querySelector(".gc-oracle-scan")?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("keeps the privilege chip OUTSIDE the oracle (the M7 ghost must never fade a live control)", () => {
+  it("renders the shared chat chrome in the KIT's own `.sec` header, not a bespoke strip", () => {
+    // Owner ruling, G3 round 2. The privilege chip (A1/D16) is a shared CONTROL: it lives in the same
+    // header slot under gacha as under AgentTab and FrontierAgent, so it renders, positions and stacks
+    // consistently. A theme-invented row is what displaced it and trapped its dropdown.
     const { container } = render(<GachaAgent active />);
-    const chip = container.querySelector(".priv-chip");
-    expect(chip).not.toBeNull();
-    expect(container.querySelector(".gc-agent-bar .priv-chip")).not.toBeNull();
+    const sec = container.querySelector("#tab-agent > .sec");
+    expect(sec).not.toBeNull();
+    expect(sec!.querySelector(".right .priv-chip")).not.toBeNull();
+    expect(container.querySelector(".gc-agent-bar")).toBeNull(); // the bespoke strip is gone for good
+    // …and never inside the art, which the M7 ghost fades to 28%
     expect(container.querySelector(".gc-oracle .priv-chip")).toBeNull();
   });
 

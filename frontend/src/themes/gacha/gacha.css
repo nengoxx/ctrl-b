@@ -1625,6 +1625,12 @@
     .gc-oracle-face {
       position: absolute;
       inset: 0;
+      /* M7's ZOOM lives here, on both faces alike, rather than on the block: see the block's own note —
+       * scaling the full-width block grows the SCROLLER's scroll area, while scaling inside its
+       * `overflow: hidden` is clipped. Both faces take the identical scale, so the crossfade never
+       * drifts out of register. */
+      transform: scale(calc(1 + var(--gc-oracle-p, 0) * var(--gc-oracle-zoom)));
+      will-change: transform;
     }
     .gc-oracle-art {
       position: absolute;
@@ -1679,21 +1685,29 @@
      * otherwise paint over both are already nulled theme-wide at the top of this file — no per-tab rule
      * needed here (§10.2 names them as the real pitfall).
      *
-     * `top: 0` parks the art under the sticky appbar exactly as the prototype's own topbar-less screen
-     * has it running to the top edge; the bar's blur then reads as glass over the art. `top:
-     * var(--appbar-h)` is the one-line alternative if the eyeball wants the art clear of the bar. */
+     * THE PIN IS THE APPBAR'S BOTTOM EDGE, not the viewport top (owner ruling, G3 round 2): no art slides
+     * under the bar. `--appbar-h` is the kit's own MEASURED height (DefaultRoot publishes it from a
+     * ResizeObserver on the rendered bar — the same variable the round-4 flush seam rides), so this is
+     * correct at every appbar mode without a mode list: it is 0px under `minimal`, where there is no bar
+     * to clear, and grows with the TTS toggle or the docked launcher on its own. The prototype pins at 0
+     * because its agent screen has no topbar at all — there was nothing to be under. */
     body[data-oracle="fade"] .gc-oracle {
       position: sticky;
-      top: 0;
+      top: var(--appbar-h, 0px);
       z-index: 0;
       border-bottom-color: transparent;
       /* 1 → --gc-oracle-floor. Written as "1 minus the walked distance" so the floor token IS the endpoint
-       * you read in tokens.css, rather than a .72 you have to subtract in your head. */
+       * you read in tokens.css, rather than a .72 you have to subtract in your head.
+       *
+       * The block carries ONLY the opacity. The zoom rides the FACES inside it (below) — a scale on this
+       * full-width box grows its border box by 6% of the viewport, and `overflow: hidden` on the SCROLLER
+       * hides that horizontally without removing it from `scrollWidth`: the pane gains real scrollable
+       * overflow the moment the ramp completes (caught by the bubble arm's own overflow assertion, which
+       * is exactly what it is there for). Scaling inside this block's `overflow: hidden` clips instead. */
       opacity: calc(1 - var(--gc-oracle-p, 0) * (1 - var(--gc-oracle-floor)));
-      transform: scale(calc(1 + var(--gc-oracle-p, 0) * var(--gc-oracle-zoom)));
-      /* Both are compositor properties and both change every ramp frame — the one place in this theme
-       * where the hint is earned rather than cargo-culted. */
-      will-change: opacity, transform;
+      /* A compositor property that changes every ramp frame — the one place in this theme where the hint
+       * is earned rather than cargo-culted. */
+      will-change: opacity;
     }
     /* The CROSSFADE (§10.2's mechanism ruling, promoted from the art to the WHOLE FACE by the owner's G3
      * ruling): the sharp face fades OUT while a STATICALLY blurred copy of the same face fades IN, both
@@ -1734,22 +1748,41 @@
       opacity: 1;
     }
     /* REDUCED MOTION drops the SCALE — movement is the part that axis is about. The opacity ghost stays:
-     * it is what keeps the thread legible over its own backdrop, and a fade is not motion. */
-    body[data-motion="reduced"][data-oracle="fade"] .gc-oracle {
+     * it is what keeps the thread legible over its own backdrop, and a fade is not motion. The ghost's
+     * own static over-scale is NOT touched: it hides the blur's transparent rim, which is a rendering
+     * artefact rather than motion, and it never changes across the ramp. */
+    body[data-motion="reduced"] .gc-oracle-face {
       transform: none;
     }
-    /* Everything after the oracle rides ABOVE it (the prototype's `.chat-log { z-index: 2 }`). The
-     * privilege row needs the same rung for the same reason: the oracle is a positioned z-0 box, so an
-     * unpositioned sibling would scroll UNDER it. The pinned plan panel (a non-default placement) takes
-     * the rung above both — a sticky panel of live steps must never be the thing that goes behind. */
-    body[data-oracle="fade"] .gc-agent-bar,
-    body[data-oracle="fade"] .kit #tab-agent .chat-log {
+    /* ── THE AGENT TAB'S Z-LADDER (one place, stated in full) ──────────────────────────────────────
+     *   oracle 0  — the sticky BACKDROP the thread scrolls over (the prototype's own `z: oracle 0`)
+     *   log    2  — the thread, over the art (the prototype's own `.chat-log { z-index: 2 }`)
+     *   header 4  — the `.sec` row, ABOVE the thread, because it carries the privilege chip and that
+     *               chip's DROPDOWN must clear every bubble beneath it
+     *   plan   5  — the pinned plan panel, when that placement is chosen: a sticky panel of live steps
+     *               is never the thing that goes behind
+     *
+     * The header rung is the fix for a real bug (owner ruling, G3 round 2): a positioned ancestor with a
+     * z-index is a STACKING CONTEXT, so the dropdown's own z 61 is resolved INSIDE its container's rung,
+     * not against the page. With the header and the log both at 2, the log won on source order and the
+     * menu opened UNDER the bubbles — `document.elementFromPoint` over the open menu returned `.who` and
+     * `.tts-play` in gacha where it returns the menu's own buttons everywhere else. Anything that raises
+     * the log above the flow has to raise the chat CHROME with it.
+     *
+     * Declared unconditionally rather than under `[data-oracle="fade"]`: in the `scroll` mode nothing
+     * overlaps, so the ladder is inert there — and one ladder that always holds is worth more than a
+     * conditional one that has to be re-derived per mode. */
+    .kit #tab-agent .chat-log {
       position: relative;
       z-index: 2;
     }
-    body[data-oracle="fade"] .kit #tab-agent .plan-pin-panel {
+    .kit #tab-agent .sec {
       position: relative;
-      z-index: 3;
+      z-index: 4;
+    }
+    .kit #tab-agent .plan-pin-panel {
+      position: relative;
+      z-index: 5;
     }
     /* The name plate, bottom-left over the art (`.oracle-name`). */
     .gc-oracle-name {
@@ -1794,17 +1827,6 @@
     .gc-oracle-name h1 {
       margin-top: 6px;
       font-size: 26px;
-    }
-
-    /* ── The privilege row ──
-     * The one thing the prototype's oracle-as-header has no answer for (A1/D16's session privilege chip is
-     * a control, not chrome). It takes the flow slot a `.sec` head would have had, right-aligned and
-     * unlabelled — the oracle above already names the screen. Deliberately OUTSIDE the oracle: the M7
-     * ghost would fade a live control to 28% and park it under the scrolling log. */
-    .gc-agent-bar {
-      display: flex;
-      justify-content: flex-end;
-      padding: 14px 14px 0;
     }
 
     /* ── The empty state (ChatThread's `emptyState` slot) ──

@@ -30,11 +30,11 @@ import {
 // prototype's agent screen has no section head, the oracle names the tab, and the round-4 measurement wave
 // established that the theme's first block sits FLUSH under the appbar.
 //
-// What the `.sec` head still owed is the PRIVILEGE CHIP (A1/D16) — a real control, not decoration. It cannot
-// ride the oracle: under `data-oracle="fade"` the whole art block ghosts to 28% as the thread scrolls over it
-// (M7, below), which would fade a functional affordance out of reach. So it takes its own slim row between
-// the art and the log — the same place in the flow a `.sec` head would have been, carrying only what the
-// prototype's design has no answer for.
+// The `.sec` HEADER stays, under the art (owner ruling, G3 round 2): it carries the PRIVILEGE CHIP (A1/D16),
+// which is a shared chat CONTROL rather than decoration, and shared chat chrome must render, position and
+// stack under gacha exactly as it does under every other theme — FrontierAgent is the precedent, down to the
+// `.right` slot. It cannot ride the oracle either way: under `data-oracle="fade"` the whole art block ghosts
+// to 28% as the thread scrolls over it (M7, below), which would fade a live affordance out of reach.
 
 /** Empty-state suggestion chips (theme DATA, the frontier/M3 pattern: generic prompts that FILL the composer,
  *  never auto-send). Fleet-agnostic — no invented machine names — and ASCII, because gacha's shipped font is
@@ -260,8 +260,17 @@ export function GachaAgent({ active }: { active: boolean }) {
         <PinnedPlanPanel />
       )}
       <GachaOracle fade={fade} oracleRef={oracleRef} anchorRef={anchorRef} />
-      <div className="gc-agent-bar">
-        <PrivilegeChip />
+      {/* The kit's own `.sec` header, exactly as AgentTab and FrontierAgent render it (owner ruling, G3
+          round 2). The first pass gave the privilege chip a bespoke right-aligned strip of its own, which
+          put a shared chat control somewhere it is in no other theme AND parked it in a z-context of its
+          own making — the dropdown then opened UNDER the thread. Shared chat chrome renders, positions
+          and stacks the same everywhere; the theme's contribution is paint, not placement. */}
+      <div className="sec">
+        <span className="num">02</span>
+        <b>Chat</b>
+        <span className="right">
+          <PrivilegeChip />
+        </span>
       </div>
       <ChatThread active={active} chat={chat} emptyState={<GachaEmptyState />} />
     </div>

@@ -811,11 +811,21 @@ test("gacha · M7: the oracle ghosts as ONE SURFACE — art and copy together �
         return n === null ? null : +o.toFixed(3);
       };
       const soft = q(".gc-oracle-face.soft");
+      const pane = document.getElementById("app-scroll")!;
       return {
         p: getComputedStyle(block).getPropertyValue("--gc-oracle-p").trim(),
         blockOpacity: +getComputedStyle(block).opacity,
-        transform: getComputedStyle(block).transform,
+        // the ZOOM rides the faces, not the block: a scale on the full-width block grows the PANE's
+        // scroll area, which `overflow-x: hidden` conceals without removing (asserted below).
+        transform: getComputedStyle(q(".gc-oracle-face.sharp")!).transform,
+        blockTransform: getComputedStyle(block).transform,
         position: getComputedStyle(block).position,
+        // the sticky pin: the art stops at the APPBAR's bottom edge, never under it (owner ruling)
+        oracleTop: Math.round(block.getBoundingClientRect().top),
+        barBottom: Math.round(
+          document.querySelector(".kit-appbar")!.getBoundingClientRect().bottom,
+        ),
+        paneOverflowX: pane.scrollWidth - pane.clientWidth,
         art: eff(q(".gc-oracle-face.sharp .gc-oracle-art")),
         words: eff(q(".gc-oracle-face.sharp .gc-oracle-name h1")),
         ghostWords: eff(q(".gc-oracle-face.soft .gc-oracle-name h1")),
@@ -839,7 +849,13 @@ test("gacha · M7: the oracle ghosts as ONE SURFACE — art and copy together �
   const deep = await sample(900); // well past the 240px ramp
   expect(deep.p).toBe("1.000");
   expect(deep.blockOpacity).toBeCloseTo(0.28, 3); // the prototype's own ghost endpoint
-  expect(deep.transform).not.toBe("none"); // …and its 1.06 scale
+  expect(deep.transform).not.toBe("none"); // …and its 1.06 scale, on the FACE
+  expect(deep.blockTransform).toBe("none"); // …never on the block, which would widen the pane
+  // THE PIN (owner ruling): the art stops flush under the measured appbar at every scroll position, and
+  // the pane never gains horizontal scroll area from the zoom.
+  expect(deep.oracleTop).toBe(deep.barBottom);
+  expect(top.oracleTop).toBe(top.barBottom);
+  expect(deep.paneOverflowX).toBe(0);
   // THE RULING: art and words are one surface. The sharp face has faded out entirely and the ghost — the
   // blurred copy — carries BOTH at the block's floor.
   expect(deep.art).toBe(0);
@@ -865,7 +881,7 @@ test("gacha · M7: the oracle ghosts as ONE SURFACE — art and copy together �
   // REDUCED MOTION drops the scale (movement) and keeps the ghost (legibility).
   await page.evaluate(() => document.body.setAttribute("data-motion", "reduced"));
   const reduced = await sample(900);
-  expect(reduced.transform).toBe("none");
+  expect(reduced.transform).toBe("none"); // the face's zoom drops
   expect(reduced.blockOpacity).toBeCloseTo(0.28, 3);
 
   // The whole ramp, in both engines, never widens the page (§14.11).
