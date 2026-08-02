@@ -841,6 +841,11 @@ describe("the unit dossier (G2)", () => {
     // leaving the Fleet tab closes the sheet — a dossier over the Agent screen would be a ghost
     rerender(<GachaFleet active={false} />);
     expect(document.body.dataset.sheet).toBeUndefined();
+    // …and CLOSED means closed (the M3-confirm ruling): navigation is "outside" under the owner's
+    // tap-outside wording, so coming back must not resurrect the dossier. (The retained content may
+    // still be easing out inside the stay-mounted primitive — the OPEN stamp is the honest signal.)
+    rerender(<GachaFleet active />);
+    expect(document.body.dataset.sheet).toBeUndefined();
   });
 
   it("drops a selection whose machine has left the fleet", () => {
@@ -989,6 +994,42 @@ describe("the image morph (M3)", () => {
     // Both callbacks still cleaned up after themselves, ticket or no ticket.
     expect(cardName(container, 0)).toBe("");
     expect(cardName(container, 1)).toBe("");
+  });
+
+  it("a STALE callback never strips the DOM prep a newer intent re-applied (M3-confirm M1)", () => {
+    // Taps can reuse the same nodes: every morph suppresses THE avatar, and re-taps re-stamp a card. The
+    // prep has one owner — a newer intent cleans and re-claims synchronously, and the older callback
+    // (which the spec guarantees still runs) must find it owns nothing rather than un-name the stage.
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false), host("vault", true)] });
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      // open a dossier PLAIN so an avatar is mounted (a promo open takes the plain branch)
+      fireEvent.click(container.querySelectorAll<HTMLButtonElement>(".gc-dot")[SCENERY]);
+    });
+    act(() => {
+      fireEvent.click(promos(container)[0].querySelector<HTMLButtonElement>(".gc-slide-hit")!);
+    });
+    expect(dossierName()).toBe("pegasus");
+
+    act(() => {
+      fireEvent.click(cards(container)[1]); // morph intent A (atlas)
+    });
+    act(() => {
+      fireEvent.click(cards(container)[2]); // morph intent B (vault) — cleans A's prep, re-claims
+    });
+    expect(cardName(container, 2)).toBe("capsule-shell");
+    expect(avatarName()).toBe("none");
+
+    vt.run(0); // stale A runs first — it must not touch B's stamps, nor the selection
+    expect(cardName(container, 2)).toBe("capsule-shell");
+    expect(avatarName()).toBe("none");
+    expect(dossierName()).toBe("pegasus");
+
+    vt.run(1); // B lands: selection applied, every stamp cleaned
+    expect(dossierName()).toBe("vault");
+    expect(cardName(container, 2)).toBe("");
+    expect(avatarName()).toBe("");
   });
 
   it("a close in the gap voids the pending open (and so does leaving the tab)", () => {

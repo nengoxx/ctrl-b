@@ -102,6 +102,11 @@ interface Props {
    *
    *  Unset (every other host) → the default two-step enter, unchanged. */
   enterInstant?: boolean;
+  /** With `enterInstant`: a STABLE identity for the sheet's content (e.g. the selected item's id). The
+   *  in-commit re-seat that serves a content SWAP keys on this instead of `children` — inline children
+   *  re-identify on every parent render, which would force a layout read per poll. Optional; without it
+   *  the effect falls back to `children` identity. */
+  upkeepKey?: unknown;
 }
 
 export function BottomSheet({
@@ -116,6 +121,7 @@ export function BottomSheet({
   initialSnap,
   onSnapChange,
   enterInstant,
+  upkeepKey,
 }: Props) {
   const [mounted, setMounted] = useState(open); // stays mounted through the slide-out
   // PRESENCE — "is the sheet in the tree". Normally that is exactly `mounted` (an effect mounts on open, a
@@ -292,7 +298,16 @@ export function BottomSheet({
       onHeightChange?.(0);
       exitTimer.current = setTimeout(() => {
         setMounted(false);
-        triggerRef.current?.focus?.();
+        // Restore focus to the opener ONLY if the user hasn't already claimed it elsewhere (Codex
+        // M3-confirm L1): a tap-outside dismissal puts focus on the control the user just activated,
+        // and yanking it back 420 ms later steals their next action. Focus still on <body> or inside
+        // the departing sheet means nothing claimed it — restore as before (Escape, the close buttons).
+        const focus = document.activeElement;
+        const claimed =
+          focus instanceof HTMLElement &&
+          focus !== document.body &&
+          !sheetRef.current?.contains(focus);
+        if (!claimed) triggerRef.current?.focus?.();
         triggerRef.current = null;
       }, SNAP_MS);
     }
@@ -358,8 +373,12 @@ export function BottomSheet({
     if (reopened) snap.current = openSnap();
     else if (full.current === prevFull && peek.current === prevPeek) return;
     placeAtRest();
+    // Keyed on `upkeepKey ?? children` (Codex M3-confirm L2): inline children have a fresh identity on
+    // EVERY parent render, so without a stable key this measures — a forced layout — on every poll while
+    // the sheet is up. A host that passes `upkeepKey` (gacha: the selected host id) scopes the in-commit
+    // re-seat to actual content swaps; ordinary growth still lands via the ResizeObserver below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, children]);
+  }, [open, upkeepKey ?? children]);
 
   // Track content/viewport resize: re-measure + re-apply the current snap (instant — not a slide on a poll
   // update) + re-report the revealed height. offsetHeight is transform-independent, so dragging is unaffected.

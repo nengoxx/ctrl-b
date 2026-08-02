@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { BottomSheet, type SheetDetent } from "../../components/BottomSheet";
 import { useFleet } from "../../hooks/useFleet";
-import { runViewTransition, viewTransitionsActive } from "../../lib/viewTransition";
+import {
+  runViewTransition,
+  skipActiveViewTransition,
+  viewTransitionsActive,
+} from "../../lib/viewTransition";
 import { useGachaReelRunning } from "../../store/gachaReel";
 import { setPlanSheetOpen } from "../../store/planSheet";
 import { getSheetSnap, setSheetSnap } from "../../store/sheetSnap";
@@ -84,11 +88,28 @@ export function GachaFleet({ active }: { active: boolean }) {
   //
   // Opens that stay PLAIN: a promo slide (no portrait to morph from) and anything on an engine/motion
   // setting where no transition will run at all — there the sheet's own slide-up is the entrance.
+  // The morph's DOM PREPARATION — the stamped card + the suppressed avatar — has exactly ONE owner
+  // (Codex M3-confirm M1). A stale callback is GUARANTEED to run even after its transition is skipped,
+  // and unguarded it would strip the styles a NEWER intent just re-applied to the very same nodes (taps
+  // can reuse both the avatar and the card). So: every new intent cleans the pending prep synchronously
+  // and takes ownership; a callback restores only while it still holds it.
+  const prep = useRef<{ card: HTMLImageElement; avatar: HTMLElement | null } | null>(null);
+  const cleanMorphPrep = useCallback(() => {
+    const p = prep.current;
+    if (!p) return;
+    prep.current = null;
+    p.card.style.removeProperty("view-transition-name");
+    p.avatar?.style.removeProperty("view-transition-name");
+    // …and end the superseded transition outright: a PLAIN open starts no transition of its own, so
+    // without this the old one would capture the plainly-opened dossier as its morph destination.
+    skipActiveViewTransition();
+  }, []);
   const openHostDossier = useCallback(
     (hostId: string, morphImg?: HTMLImageElement | null) => {
       if (reeling) return;
       // Every open takes a ticket, morph or not: a plain open must also void a morph still in flight.
       const mine = ++gen.current;
+      cleanMorphPrep();
       if (!morphImg || !viewTransitionsActive()) {
         setMorphOpen(false);
         setSelected(hostId);
@@ -97,42 +118,52 @@ export function GachaFleet({ active }: { active: boolean }) {
       const avatar = document.querySelector<HTMLElement>(".gc-dossier .avatar");
       avatar?.style.setProperty("view-transition-name", "none");
       morphImg.style.setProperty("view-transition-name", "capsule-shell");
+      const myPrep = { card: morphImg, avatar };
+      prep.current = myPrep;
       runViewTransition(() => {
-        // These two ALWAYS run, current ticket or not: a stray name (or a stuck suppression) would break
-        // the NEXT transition, which is a worse failure than a dropped selection.
-        morphImg.style.removeProperty("view-transition-name");
-        avatar?.style.removeProperty("view-transition-name");
+        // Restore ONLY while still the owner — a newer intent may have cleaned and RE-STAMPED these
+        // same nodes, and the stale callback must not undo its work (M1). Ownership lost ⇒ the newer
+        // intent already restored (or re-claimed) them; nothing here is leaked.
+        if (prep.current === myPrep) {
+          prep.current = null;
+          morphImg.style.removeProperty("view-transition-name");
+          avatar?.style.removeProperty("view-transition-name");
+        }
         if (gen.current !== mine) return; // a newer intent (or a close / tab change) owns the dossier now
         setMorphOpen(true);
         setSelected(hostId);
       }, "detail");
     },
-    [reeling],
+    [reeling, cleanMorphPrep],
   );
   // Drop a selection whose machine has left the fleet (a config edit, a removal) so the sheet can never
   // reference a gone host — the cosmos/frontier precedent.
   useEffect(() => {
     if (selected && !hosts.some((h) => h.id === selected)) {
       gen.current++;
+      cleanMorphPrep();
       setMorphOpen(false);
       setSelected(null);
     }
-  }, [selected, hosts]);
-  // Leaving the tab (or unmounting) voids any morph still in flight: its callback would otherwise re-open a
-  // dossier over a screen the user has already left.
+  }, [selected, hosts, cleanMorphPrep]);
+  // Leaving the tab (or unmounting) CLOSES the dossier — the M3-confirm ruling: a nav tap is "outside"
+  // under the owner's tap-outside wording, so the click listener already closes on pointer navigation;
+  // clearing here makes keyboard/programmatic navigation behave identically instead of resurrecting the
+  // sheet on return. It also voids any morph still in flight (its callback would otherwise re-open a
+  // dossier over a screen the user has already left).
   useEffect(() => {
     // The ref OBJECT is stable, so capturing it keeps the cleanup off a stale `.current` read.
     const ticket = gen;
     if (!active) {
       ticket.current++;
-      // …and the sheet that slid out with the tab must slide back IN when the tab returns: `morphOpen` is
-      // only ever true while a transition is carrying the entrance.
+      cleanMorphPrep();
       setMorphOpen(false);
+      setSelected(null);
     }
     return () => {
       ticket.current++;
     };
-  }, [active]);
+  }, [active, cleanMorphPrep]);
 
   const selIndex = selected ? hosts.findIndex((h) => h.id === selected) : -1;
   const selHost = selIndex >= 0 ? hosts[selIndex] : null;
@@ -146,8 +177,11 @@ export function GachaFleet({ active }: { active: boolean }) {
     if (selHost) setShown({ host: selHost, index: selIndex });
   }, [selHost, selIndex]);
   // `body[data-sheet=open]` is the kit's own sheet-open composer yield (kit.css, K1) — the STAMP stays
-  // host-owned, so the theme that owns the sheet sets it.
-  useEffect(() => {
+  // host-owned, so the theme that owns the sheet sets it. LAYOUT effects, both of these (Codex
+  // M3-confirm M2): a morph open commits inside a View Transition's update callback, and the new-state
+  // capture can land before passive effects run — a passive stamp/collapse would let the snapshot catch
+  // the composer (or the plan sheet) still un-yielded and ghost it through the root cross-fade.
+  useLayoutEffect(() => {
     if (typeof document === "undefined") return;
     if (sheetOpen) document.body.dataset.sheet = "open";
     else delete document.body.dataset.sheet;
@@ -156,14 +190,15 @@ export function GachaFleet({ active }: { active: boolean }) {
     };
   }, [sheetOpen]);
   // Collapse the composer's plan sheet when the dossier opens (D30) — otherwise it pokes out above it.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (sheetOpen) setPlanSheetOpen(false);
   }, [sheetOpen]);
   const closeDossier = useCallback(() => {
     gen.current++; // a pending morph must not re-open what the user just dismissed
+    cleanMorphPrep();
     setMorphOpen(false);
     setSelected(null);
-  }, []);
+  }, [cleanMorphPrep]);
   // TAP-OUTSIDE DISMISS (owner ruling 2026-08-02). The primitive's own catcher stays OFF: it is a
   // full-screen button, so it would eat the capsule tap that SWAPS the dossier before it ever reached the
   // card. This is the same dismissal expressed as a document listener that names its exemptions — the
@@ -289,6 +324,7 @@ export function GachaFleet({ active }: { active: boolean }) {
         initialSnap={getSheetSnap(SHEET_KEY)}
         onSnapChange={persistSheetSnap}
         enterInstant={morphOpen}
+        upkeepKey={detail?.host.id}
       >
         {detail && (
           <GachaHostDetail

@@ -33,6 +33,7 @@ const NAV_VT_KEY = "ctrlb.spike.navVT";
 interface ViewTransitionLike {
   ready: Promise<void>;
   finished: Promise<void>;
+  skipTransition?: () => void;
 }
 type VTDocument = Document & {
   startViewTransition?: (cb: () => void) => ViewTransitionLike;
@@ -50,6 +51,17 @@ let stampOwner: object | null = null;
  *  re-deriving them. gacha's M3 needs it: mounting the dossier at rest (rather than sliding it up) is only
  *  correct when a morph is about to carry the entrance; on the instant path the sheet must keep its slide.
  *  One predicate, read by the wrapper itself, so the two can never disagree. */
+/** The most recent transition this wrapper started. Held so a caller superseding one with a PLAIN update
+ *  (no new transition to auto-skip it) can end it explicitly — otherwise it would capture whatever DOM the
+ *  plain update just committed as its "new" state and animate toward it (Codex M3-confirm M1). */
+let activeTransition: ViewTransitionLike | null = null;
+
+/** Skip the wrapper's active transition, if one is still running. Safe always: skipping a settled
+ *  transition is a spec no-op, and the skipped transition's update callback is still guaranteed to run. */
+export function skipActiveViewTransition(): void {
+  activeTransition?.skipTransition?.();
+}
+
 export function viewTransitionsActive(): boolean {
   if (typeof document === "undefined") return false;
   return (
@@ -84,6 +96,7 @@ export function runViewTransition(update: () => void, type?: string): void {
     root.dataset.transition = type;
   }
   const t = start(apply);
+  activeTransition = t;
   // Swallow BOTH legs. `ready` rejects on the skip/TimeoutError path; `finished` rejects too when the
   // transition is skipped or aborted — the original block only caught `ready`, so a skipped transition
   // surfaced an unhandled rejection. Neither is a correctness signal: the callback has already run, so the
