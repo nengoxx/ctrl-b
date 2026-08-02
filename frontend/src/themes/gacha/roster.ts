@@ -108,6 +108,17 @@ export function assignArt(roster: Roster, hostCount: number): (ResolvedArt | nul
   return Array.from({ length: Math.max(0, hostCount) }, (_, i) => artForHost(roster, i));
 }
 
+/** The LANDSCAPE art for a host at `index` — the banner's per-host promo slide (§6.4).
+ *
+ *  Same entry as `artForHost` (same index basis, the fleet's display order): a host's capsule card and its
+ *  promo slide showing two different characters would read as a bug, which is the whole reason §5.3 rules
+ *  ONE resolver. Only the CROP differs — a promo is a wide slide, a card is a 3/4 portrait — so this walks
+ *  the same assignment through the wide ladder (`wide` variant, else `image` + the entry's focal point).
+ *  `null` → the consumer's placeholder treatment, on exactly the same terms as `artForHost`. */
+export function wideArtForHost(roster: Roster, index: number): ResolvedArt | null {
+  return toWideArt(entryForHost(roster, index) ?? undefined);
+}
+
 /** The entry a `slots` pin names, or `undefined` when the slot is unpinned OR names an entry that no longer
  *  exists (a deleted/renamed character). A dangling pin must degrade to the slot's default, never crash and
  *  never blank the surface (§5.3). */

@@ -11,6 +11,7 @@ import {
   reelFigureArt,
   slotEntry,
   wallpaperArt,
+  wideArtForHost,
   type Roster,
   type RosterEntry,
 } from "../../src/themes/gacha/roster";
@@ -130,6 +131,43 @@ describe("unusable entries hold their position", () => {
     expect(
       reelFigureArt(roster([entry("a", { cutout: "a-cut.webp", unusable: true })])),
     ).toBeNull();
+  });
+});
+
+// ── The per-host WIDE accessor (G1) — the banner's promo slides ───────────────────────────────────────
+// The promo slide and the capsule card are the SAME host and must therefore be the SAME character: §5.3's
+// one-resolver ruling exists precisely because a card showing Pegasus beside a promo showing Atlas reads as
+// a bug. Only the CROP differs, so these cases pin the agreement, not just the fallback ladder.
+describe("wideArtForHost — the promo crop of the SAME assignment", () => {
+  it("agrees with artForHost on the entry, at every index including the cycle wrap", () => {
+    const r = roster([entry("a", { wide: "a-wide.webp" }), entry("b")]);
+    for (const i of [0, 1, 2, 3, 7]) {
+      const card = entryForHost(r, i)!;
+      const promo = wideArtForHost(r, i)!;
+      // same entry → either its own wide variant or its own image, never the neighbour's
+      expect([card.wide, card.image]).toContain(promo.url);
+    }
+  });
+
+  it("prefers the entry's WIDE variant", () => {
+    const r = roster([entry("a", { wide: "a-wide.webp" })]);
+    expect(wideArtForHost(r, 0)).toEqual({ url: "a-wide.webp" });
+  });
+
+  it("falls back to the entry's image + its focal crop — never a hole (§5.2)", () => {
+    const r = roster([entry("a", { focus: "50% 12%" })]);
+    expect(wideArtForHost(r, 0)).toEqual({ url: "a.webp", focus: "50% 12%" });
+  });
+
+  it("carries the focus through the wide variant too", () => {
+    const r = roster([entry("a", { wide: "a-wide.webp", focus: "20% 80%" })]);
+    expect(wideArtForHost(r, 0)).toEqual({ url: "a-wide.webp", focus: "20% 80%" });
+  });
+
+  it("yields the placeholder on the same terms as the card art: empty roster, unusable entry, bad index", () => {
+    expect(wideArtForHost(roster([]), 0)).toBeNull();
+    expect(wideArtForHost(roster([entry("a", { unusable: true })]), 0)).toBeNull();
+    expect(wideArtForHost(roster([entry("a")]), -1)).toBeNull();
   });
 });
 
