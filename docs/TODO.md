@@ -1328,8 +1328,10 @@ every ladder waiver retired.
 The owner's FINISHED standalone prototype
 (`design/prototypes/gacha/uploads/prot/capsule-arcade/`, banked `37144c0`) becomes the 5th built
 kit theme. The prep session produced the full plan (prototype inventory + the owner's R1–R10
-requirements pinned + kit translation map, seam-verified + two Codex rounds). **The lock session
-runs first:** the owner's §8 answers (10 questions) → council round → **D52** in DECISIONS.md →
+requirements pinned + kit translation map, seam-verified + THREE Codex rounds + a four-agent
+deep-research round → the §10 implementation dossier; 5 of 10 owner questions RULED in-prep).
+**The lock session runs first:** the owner's §8 answers (7 open) → council round → **D52** in
+DECISIONS.md →
 then build G0–G6 per the plan's §7 ladder (G0 = the settle-everything slice: registration,
 3-tab layout, tokens, fonts spike, the tab-transition spike, roster schema, star config home).
 v1.5.0 is RESERVED for this theme's release.
