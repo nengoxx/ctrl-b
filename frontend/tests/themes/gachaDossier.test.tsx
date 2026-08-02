@@ -409,12 +409,20 @@ describe("the portrait button", () => {
   // numbers in a ladder nothing enforces) and the uncropped painting the whole surface exists for.
   it("stands on rung 46: above the sheet it was opened from, below the questions", () => {
     const rule = css.slice(css.indexOf(".gc-art-view {"));
-    const body = rule.slice(0, rule.indexOf("}"));
-    expect(body).toMatch(/z-index:\s*46/);
-    // the kit's ladder either side of it: `.bs-root` 40 < 46 < `.modal-backdrop` 50
+    const mine = /z-index:\s*(\d+)/.exec(rule.slice(0, rule.indexOf("}")))![1];
+    expect(Number(mine)).toBe(46);
+    // BOTH bounds, read from the kit's own ladder rather than restated: `.bs-root` 40 < 46 <
+    // `.modal-backdrop` 50. The upper one is the load-bearing half — a picture must never cover a
+    // question — and it is the one a future rung-shuffle would silently break.
     const kit = readFileSync(resolve(process.cwd(), "src/theme-engine/kit/kit.css"), "utf8");
-    const sheet = kit.slice(kit.indexOf(".kit .bs-root {"));
-    expect(sheet.slice(0, sheet.indexOf("}"))).toMatch(/z-index:\s*40/);
+    const rungOf = (selector: string): number => {
+      const at = kit.slice(kit.indexOf(selector));
+      return Number(/z-index:\s*(\d+)/.exec(at.slice(0, at.indexOf("}")))![1]);
+    };
+    expect(rungOf(".kit .bs-root {")).toBe(40);
+    expect(rungOf(".kit .modal-backdrop {")).toBe(50);
+    expect(rungOf(".kit .bs-root {")).toBeLessThan(Number(mine));
+    expect(Number(mine)).toBeLessThan(rungOf(".kit .modal-backdrop {"));
   });
 
   it("paints the UNCROPPED art on the shell's own backdrop, from tokens", () => {
@@ -431,10 +439,17 @@ describe("the portrait button", () => {
 
   it("names BOTH halves of the showcase morph under its own transition type", () => {
     // The portrait is the group's FROM going out and its TO coming back; the full-screen image is the
-    // other end. Both are named by CSS under the `showcase` stamp — the inline work GachaFleet does is
-    // only the suppression that keeps ONE of them named per capture.
-    expect(css).toContain('[data-transition="showcase"] .gc-dossier .avatar');
-    expect(css).toContain('[data-transition="showcase"] .gc-art-view img');
+    // other end. Both must actually DECLARE the name — a selector that merely mentions `showcase` proves
+    // nothing, and a morph with only one named end animates a lone `::view-transition-old` (i.e. nothing
+    // visible), which is the exact failure this pair exists to prevent.
+    const declaring = (selector: string): boolean =>
+      [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].some(
+        (m) => m[1].includes(selector) && /view-transition-name:\s*capsule-shell/.test(m[2]),
+      );
+    expect(declaring('[data-transition="showcase"] .gc-dossier .avatar')).toBe(true);
+    expect(declaring('[data-transition="showcase"] .gc-art-view img')).toBe(true);
+    // …and the capsule morph's own end keeps its declaration through the shared selector list
+    expect(declaring('[data-transition="detail"] .gc-dossier .avatar')).toBe(true);
     expect(css).toMatch(/\[data-transition="showcase"\]::view-transition-group\(capsule-shell\)/);
   });
 

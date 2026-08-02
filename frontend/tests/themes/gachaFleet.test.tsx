@@ -1201,16 +1201,25 @@ describe("the art showcase's morph", () => {
       .querySelector<HTMLElement>(".gc-dossier .avatar")!
       .style.getPropertyValue("view-transition-name");
 
+  /** The M3 mock, hardened for this layer (Codex G2-close L2): each handle carries its own
+   *  `skipTransition` spy and a `finished` that NEVER settles — an IN-FLIGHT transition, which is the
+   *  only state in which the teardown paths' skip is observable (a settled one would clear the stamp and
+   *  end itself). The un-settled `finished` also means `html[data-transition]` outlives the test, so the
+   *  stamp is swept in `afterEach` rather than left to leak into the next one. */
   function deferVT() {
     const pending: (() => void)[] = [];
+    const skips: ReturnType<typeof vi.fn>[] = [];
     const start = vi.fn((cb: () => void) => {
       pending.push(cb);
-      return { ready: Promise.resolve(), finished: Promise.resolve() };
+      const skipTransition = vi.fn();
+      skips.push(skipTransition);
+      return { ready: Promise.resolve(), finished: new Promise<void>(() => {}), skipTransition };
     });
     (document as { startViewTransition?: unknown }).startViewTransition = start;
     return {
       start,
       pending,
+      skips,
       run: (i: number) => {
         act(() => {
           pending[i]();
@@ -1220,6 +1229,7 @@ describe("the art showcase's morph", () => {
   }
   afterEach(() => {
     delete (document as { startViewTransition?: unknown }).startViewTransition;
+    delete document.documentElement.dataset.transition;
   });
 
   /** Open a dossier under the mock and land its callback, leaving a portrait to tap. */
@@ -1317,6 +1327,110 @@ describe("the art showcase's morph", () => {
     });
     expect(document.querySelector(".gc-art-view")).toBeNull();
     expect(avatarName()).toBe(""); // the retained dossier's portrait is clean for the next open
+  });
+
+  // ── THE OUT-OF-ORDER ARMS (Codex G2-close M1). The callbacks are async and a second transition SKIPS
+  //    the first, so a stale one is GUARANTEED to run — after the intent that queued it is void.
+  it("a stale OPEN callback, landing after a teardown, touches nothing at all", () => {
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    openDossier(container, vt);
+    act(() => {
+      fireEvent.click(portrait()); // the art's open transition — its callback has NOT landed
+    });
+    act(() => {
+      fireEvent.click(document.querySelector<HTMLElement>(".gc-dossier-close")!);
+    });
+    // The dossier's content is RETAINED through the sheet's exit slide, so the avatar the stale callback
+    // closed over is still right there to be wrongly suppressed — which is the whole hazard.
+    expect(document.querySelector(".gc-dossier .avatar")).not.toBeNull();
+    vt.run(1);
+    expect(document.querySelector(".gc-art-view")).toBeNull(); // no overlay over a dismissed dossier
+    expect(avatarName()).toBe(""); // …and no suppression on a portrait the next morph will need
+  });
+
+  it("a stale CLOSE callback never dismisses — or un-names — the showcase that REPLACED it", () => {
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    openDossier(container, vt);
+    act(() => {
+      fireEvent.click(portrait());
+    });
+    vt.run(1); // pegasus' art is up
+    act(() => {
+      fireEvent.click(document.querySelector<HTMLElement>(".gc-art-view")!); // close, callback pending
+    });
+    // …and before it lands, the user opens ANOTHER machine and its art. Both are new owners: a new
+    // generation, and a new prep object on (React re-uses it) the very same avatar node.
+    act(() => {
+      fireEvent.click(cards(container)[1]);
+    });
+    vt.run(3);
+    expect(dossierName()).toBe("atlas");
+    act(() => {
+      fireEvent.click(portrait());
+    });
+    vt.run(4);
+    expect(document.querySelector(".gc-art-view")).not.toBeNull();
+    expect(avatarName()).toBe("none");
+
+    vt.run(2); // the stale close finally lands
+    expect(document.querySelector(".gc-art-view")).not.toBeNull(); // still up
+    expect(avatarName()).toBe("none"); // still suppressed — its own close will need this
+  });
+
+  it("a teardown ENDS the transition it owns (a settling morph paints over everything, L1)", () => {
+    const vt = deferVT();
+    const { container, rerender } = render(<GachaFleet active />);
+    openDossier(container, vt);
+    act(() => {
+      fireEvent.click(portrait());
+    });
+    vt.run(1); // the art's open transition is now IN FLIGHT (its `finished` never settles)
+    expect(vt.skips[1]).not.toHaveBeenCalled();
+    rerender(<GachaFleet active={false} />); // leaving the tab: the reel starts in this same commit
+    expect(vt.skips[1]).toHaveBeenCalled();
+    expect(document.querySelector(".gc-art-view")).toBeNull();
+  });
+
+  it("a host vanishing mid-flight voids the art, and coming back does not resurrect it", () => {
+    const vt = deferVT();
+    const { container, rerender } = render(<GachaFleet active />);
+    openDossier(container, vt);
+    act(() => {
+      fireEvent.click(portrait()); // in flight
+    });
+    setFleet({ hosts: [host("atlas", false)] }); // pegasus leaves the fleet
+    rerender(<GachaFleet active />);
+    expect(vt.skips[1]).toHaveBeenCalled();
+    vt.run(1); // the stale open lands into a fleet its machine has left
+    expect(document.querySelector(".gc-art-view")).toBeNull();
+    rerender(<GachaFleet active={false} />);
+    rerender(<GachaFleet active />);
+    expect(document.querySelector(".gc-art-view")).toBeNull();
+    expect(document.body.dataset.sheet).toBeUndefined();
+  });
+
+  it("a TEARDOWN hands focus to nobody — the departing portrait must not keep it (M2)", () => {
+    // The regression this pins: the sheet retains its content for the 420 ms exit slide, so a
+    // "focus the portrait if it is still in the DOM" restore FINDS one and parks focus on a node about
+    // to be detached — from which focus falls to <body> anyway, having first defeated the BottomSheet's
+    // claimed-focus check (which reads focus-still-inside-the-departing-sheet as "nothing claimed it").
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    openDossier(container, vt);
+    act(() => {
+      fireEvent.click(portrait());
+    });
+    vt.run(1);
+    expect(document.activeElement).toBe(document.querySelector(".gc-art-close"));
+    act(() => {
+      fireEvent.click(document.querySelector<HTMLElement>(".gc-dossier-close")!);
+    });
+    const departing = document.querySelector<HTMLElement>(".gc-dossier .gc-art-btn");
+    expect(departing).not.toBeNull(); // it IS findable — the naive restore would have taken it
+    expect(document.activeElement).not.toBe(departing);
+    expect(document.activeElement).toBe(document.body);
   });
 });
 

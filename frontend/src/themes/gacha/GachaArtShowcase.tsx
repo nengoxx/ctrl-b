@@ -19,6 +19,9 @@ import type { ResolvedArt } from "./roster";
 // sheet's box AND under its stacking context. It mounts as a sibling of the `<BottomSheet>` instead, at
 // z-rung 46 (gacha.css) — above the sheet (40), below the confirm dialog (50).
 //
+// FOCUS is a two-party affair: this takes it on mount (the close button) and REPORTS its unmount through
+// `onClosed`, but does not decide where focus goes — see that prop.
+//
 // ── THE CO-OPERATIVE DISMISSAL CONTRACT ──────────────────────────────────────────────────────────────
 //   · ESCAPE is handled HERE, on a React handler, and `preventDefault()`s — so the BottomSheet's own
 //     document-level Escape listener (which respects `defaultPrevented`, the Radix dismissable-layer
@@ -35,6 +38,7 @@ export function GachaArtShowcase({
   art,
   fade,
   onClose,
+  onClosed,
 }: {
   hostName: string;
   art: ResolvedArt;
@@ -43,23 +47,30 @@ export function GachaArtShowcase({
    *  so the flag means "not morphing", never "animate anyway" (the GachaReel precedent). */
   fade: boolean;
   onClose: () => void;
+  /** Called as this unmounts, whatever took it down. The HOST decides what that means for focus — it is
+   *  the only one that can (Codex G2-close M2): a dossier on its way out keeps its content mounted for
+   *  the sheet's 420 ms exit slide, so "is the portrait still in the DOM" cannot tell an art dismissal
+   *  from a dossier teardown, and focusing a departing portrait parks focus on a node that is about to be
+   *  detached — from which it falls to `<body>`, defeating the sheet's own claimed-focus restore. Pass a
+   *  STABLE callback: this fires from a cleanup, which holds the previous render's closure. */
+  onClosed?: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  // The latest `onClosed`, without re-arming the mount effect below — which must run exactly once, while
+  // its cleanup must call whatever the host most recently handed us. Written in an effect rather than
+  // during render (the `useForegroundNotifications` precedent): a render-time ref write is the F13
+  // backlog's own flagged pattern, and this needs no such licence.
+  const closedRef = useRef(onClosed);
+  useLayoutEffect(() => {
+    closedRef.current = onClosed;
+  });
 
   // LAYOUT effects, both halves, for the same reason GachaFleet's sheet stamps are: this mounts and
   // unmounts INSIDE a View Transition's update callback, and the new-state capture can land before
   // passive effects run.
   useLayoutEffect(() => {
     closeRef.current?.focus({ preventScroll: true });
-    return () => {
-      // Focus goes back to the portrait that opened us — found by class, the same way GachaFleet finds
-      // the avatar it suppresses (the dossier is a singleton on screen). If the DOSSIER is closing too,
-      // the query finds nothing and we take no focus at all — which is precisely what the BottomSheet's
-      // claimed-focus guard needs in order to restore the sheet's own trigger.
-      document
-        .querySelector<HTMLElement>(".gc-dossier .gc-art-btn")
-        ?.focus({ preventScroll: true });
-    };
+    return () => closedRef.current?.();
   }, []);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {

@@ -1500,11 +1500,14 @@
      * Z-RUNG 46 — one above the reel, and the reasoning is the ladder's own (kit.css `.pm-backdrop.auto-pm`
      * documents the full one). It must be ABOVE the BottomSheet (40), whose portrait raised it, and it must
      * stay BELOW the ConfirmDialog (50) and the PromptModal (60) — a picture must never cover a question.
-     * That leaves 45/46, where the tab reel sits: the two can never co-exist (the overlay is gated on an
-     * OPEN dossier on the ACTIVE tab, and leaving the tab closes the dossier in the same commit that mounts
-     * the reel), so this is a statement of kind rather than a contested overlap — a SURFACE the user opened
-     * outranks a decorative sweep. Like the reel it is a document-level rung, because gacha deliberately
-     * does not make `.kit` a stacking context (§10.1).
+     * That leaves 45/46, where the tab reel sits — and the two can never co-exist, in TWO moves rather
+     * than one (Codex G2-close L1): the overlay is gated on an OPEN dossier on the ACTIVE tab, so leaving
+     * the tab unmounts it in the same commit that mounts the reel, AND the teardown SKIPS the View
+     * Transition it owns, because a settling reverse morph would otherwise keep painting its own
+     * `::view-transition-*` snapshots over the whole page for the rest of its flight no matter what the
+     * live DOM does. So 46 is a statement of kind rather than a contested overlap — a SURFACE the user
+     * opened outranks a decorative sweep. Like the reel it is a document-level rung, because gacha
+     * deliberately does not make `.kit` a stacking context (§10.1).
      *
      * GEOMETRY follows the reel's: `height: var(--app-h)` rather than `inset: 0`, so an open keyboard can
      * never push the art out of the visible shell. */

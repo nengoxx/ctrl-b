@@ -112,25 +112,47 @@ export function GachaFleet({ active }: { active: boolean }) {
   //    is flying the portrait; `fade` = the plain path, where the CSS opacity entrance stands in). Null is
   //    closed — one variable, so "open" and "how it opened" can never disagree.
   const [showArt, setShowArt] = useState<"morph" | "fade" | null>(null);
+  // THE SHOWCASE GENERATION — the dossier's `gen` discipline above, applied to this layer (Codex G2-close
+  // M1). Its two transitions carry the same async hazard: the update callback runs at the next rendering
+  // opportunity, so by the time it lands the intent that queued it may be void — the dossier closed, its
+  // host left the fleet, the tab changed, another machine was opened. Unguarded, a stale OPEN callback
+  // would suppress an avatar React has since re-used for a DIFFERENT dossier (and set the overlay back up
+  // over it), and a stale CLOSE callback would dismiss a NEWER showcase. Every intent takes a ticket and
+  // applies nothing without it.
+  const artGen = useRef(0);
   // The showcase's OWN inline suppression of the dossier avatar, with its own single owner — the mirror of
-  // `prep` above, and deliberately not folded into it: the two suppress the same node for opposite reasons
-  // (a morph hides the avatar for ONE capture; the showcase hides it for as long as the art is up, because
-  // the full-screen image is carrying the `capsule-shell` name in the meantime). A stray suppression left
-  // behind would give the NEXT dossier morph no destination at all, so every path that can close the art —
-  // the overlay's own dismissals, a dossier close, a host leaving the fleet, leaving the tab, unmount —
-  // goes through `dropShowcase`.
-  const artSuppressed = useRef<HTMLElement | null>(null);
+  // `prep` above (same prep-OBJECT identity, so a stale callback can tell "mine" from "the one a newer
+  // intent just applied"), and deliberately not folded into it: the two suppress the same node for
+  // opposite reasons. A morph hides the avatar for ONE capture; the showcase hides it for as long as the
+  // art is up, because the full-screen image is carrying the `capsule-shell` name in the meantime. A stray
+  // suppression left behind would give the NEXT dossier morph no destination at all, so every path that
+  // can close the art — the overlay's own dismissals, a dossier close, a host leaving the fleet, leaving
+  // the tab, an open of another dossier, unmount — goes through `releaseArtName` under that identity rule.
+  const artPrep = useRef<{ avatar: HTMLElement } | null>(null);
   const releaseArtName = useCallback(() => {
-    const el = artSuppressed.current;
-    if (!el) return;
-    artSuppressed.current = null;
-    el.style.removeProperty("view-transition-name");
+    const p = artPrep.current;
+    if (!p) return;
+    artPrep.current = null;
+    p.avatar.style.removeProperty("view-transition-name");
   }, []);
-  /** Take the art down with no transition of its own — for the paths where the DOSSIER is going away and
-   *  there is nothing left to morph back into. */
+  // Whether the NEXT unmount of the overlay should hand focus back to the portrait (M2). Set only by the
+  // art's own dismissal — where the dossier demonstrably stays — and cleared by every teardown, because a
+  // dossier on its way out keeps its content mounted for the sheet's 420 ms exit slide: the portrait is
+  // still findable there, and focusing it would park focus on a node about to be detached (from which it
+  // silently falls to <body>, defeating the BottomSheet's own claimed-focus restore). A ref rather than a
+  // prop, because the overlay's cleanup closes over the LAST RENDER's props and must read this live.
+  const artReturnFocus = useRef(false);
+  /** Take the art down with NO transition of its own — the teardown paths, where the dossier itself is
+   *  going away and there is nothing left to morph back into. It also ENDS the transition this body still
+   *  owns (L1): unmounting the overlay stops the LIVE DOM, but a settling reverse morph keeps painting its
+   *  `::view-transition-*` pseudos over the whole page for the rest of its flight — including over a tab
+   *  reel that started in the same commit. */
   const dropShowcase = useCallback(() => {
+    artGen.current++; // any callback still in flight is now void
+    artReturnFocus.current = false;
     releaseArtName();
     setShowArt(null);
+    skipActiveViewTransition();
   }, [releaseArtName]);
 
   const openHostDossier = useCallback(
@@ -195,10 +217,14 @@ export function GachaFleet({ active }: { active: boolean }) {
       setMorphOpen(false);
       setSelected(null);
     }
+    const artTicket = artGen;
     return () => {
       ticket.current++;
       // The art layer's suppression outlives React's own cleanup order otherwise: the avatar is going
-      // away with us, but the REF must not keep pointing at a detached node for a remount to inherit.
+      // away with us, but the REF must not keep pointing at a detached node for a remount to inherit —
+      // and its ticket must move so a callback landing after this can apply nothing.
+      artTicket.current++;
+      artReturnFocus.current = false;
       releaseArtName();
     };
   }, [active, cleanMorphPrep, dropShowcase, releaseArtName]);
@@ -258,9 +284,14 @@ export function GachaFleet({ active }: { active: boolean }) {
   //    Both legs commit INSIDE the update callback (`runViewTransition` flushSyncs), because the browser
   //    captures the new state one frame later: an overlay mounted by a passive effect would not be there
   //    for it (the same law the sheet's `enterInstant` exists to satisfy).
+  //
+  //    NOTHING is prepared before the call on either leg — the old capture's name comes from CSS — so a
+  //    stale callback owns no DOM to clean: it simply does nothing at all. That is the whole ownership
+  //    story here, and it is why the ticket check comes FIRST rather than after a restore step.
   const openShowcase = useCallback(() => {
     // already up (the portrait is behind it): never start a second transition
     if (showArt) return;
+    const mine = ++artGen.current;
     if (!viewTransitionsActive()) {
       // no transition to carry it: the CSS entrance stands in
       setShowArt("fade");
@@ -268,21 +299,51 @@ export function GachaFleet({ active }: { active: boolean }) {
     }
     const avatar = document.querySelector<HTMLElement>(".gc-dossier .avatar");
     runViewTransition(() => {
-      if (avatar) {
+      // Void intent: touch NOTHING. The avatar this closed over may now belong to a different machine's
+      // dossier (React re-uses the node across a swap) — suppressing it would leave that dossier's own
+      // morph without a destination, and re-raising the overlay would put the art back over a screen the
+      // user has moved on from.
+      if (artGen.current !== mine) return;
+      if (avatar?.isConnected) {
         avatar.style.setProperty("view-transition-name", "none");
-        artSuppressed.current = avatar;
+        artPrep.current = { avatar };
       }
       setShowArt("morph");
     }, "showcase");
   }, [showArt]);
   const closeShowcase = useCallback(() => {
     if (!showArt) return; // a second dismissal would start a second transition, skipping the first
+    const mine = ++artGen.current;
+    // The dossier is demonstrably staying (this is the ART's own dismissal), so the portrait gets its
+    // focus back when the overlay unmounts.
+    artReturnFocus.current = true;
     if (!viewTransitionsActive()) {
-      dropShowcase();
+      releaseArtName();
+      setShowArt(null);
       return;
     }
-    runViewTransition(dropShowcase, "showcase");
-  }, [showArt, dropShowcase]);
+    const myPrep = artPrep.current;
+    runViewTransition(() => {
+      // Release only what is still OURS: a teardown may have released it already, or a newer showcase may
+      // have re-suppressed the very same avatar — stripping that would put two `capsule-shell` nodes in
+      // its own closing capture.
+      if (myPrep && artPrep.current === myPrep) {
+        artPrep.current = null;
+        myPrep.avatar.style.removeProperty("view-transition-name");
+      }
+      if (artGen.current !== mine) return; // a teardown, or a newer showcase, owns this layer now
+      setShowArt(null);
+    }, "showcase");
+  }, [showArt, releaseArtName]);
+  /** Hand focus back to the portrait — called by the overlay as it unmounts, and honoured only for the
+   *  art's OWN dismissal (see `artReturnFocus`). Stable, and reads refs + live DOM, because the caller is
+   *  a cleanup function holding the previous render's closure. */
+  const restoreArtFocus = useCallback(() => {
+    if (!artReturnFocus.current) return;
+    artReturnFocus.current = false;
+    const btn = document.querySelector<HTMLElement>(".gc-dossier .gc-art-btn");
+    if (btn?.isConnected) btn.focus({ preventScroll: true });
+  }, []);
   // TAP-OUTSIDE DISMISS (owner ruling 2026-08-02). The primitive's own catcher stays OFF: it is a
   // full-screen button, so it would eat the capsule tap that SWAPS the dossier before it ever reached the
   // card. This is the same dismissal expressed as a document listener that names its exemptions — the
@@ -436,16 +497,22 @@ export function GachaFleet({ active }: { active: boolean }) {
 
       {/* THE ART SHOWCASE — a SIBLING of the sheet, never a child of it (`.bs-sheet` is a transformed
           containing block, so a fixed overlay inside it would be trapped in the sheet's box). Gated on the
-          dossier being genuinely OPEN, not merely retained: the art can then never outlive the portrait it
-          morphs back into, and — since leaving the tab closes the dossier in the same commit that mounts
-          the reel — the showcase and the reel sweep can never be on screen together, which is what makes
-          the z-rung above it (46) a statement of intent rather than a contested overlap. */}
+          dossier being genuinely OPEN, not merely retained, so the art can never outlive the portrait it
+          morphs back into.
+
+          That gate governs the LIVE DOM only (Codex G2-close L1): a View Transition already in flight
+          keeps painting its own `::view-transition-*` snapshots over the whole page for the rest of its
+          420 ms, whatever the tree underneath does — which is why `dropShowcase` skips the transition it
+          owns instead of relying on this line. The two together are what keep the overlay and the tab
+          reel off the screen at the same time, and what make the z-rung above it (46) a statement of
+          kind rather than a contested overlap. */}
       {showArt && sheetOpen && detail && detailArt && (
         <GachaArtShowcase
           hostName={detail.host.name}
           art={detailArt}
           fade={showArt === "fade"}
           onClose={closeShowcase}
+          onClosed={restoreArtFocus}
         />
       )}
     </div>
