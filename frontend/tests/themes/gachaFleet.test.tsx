@@ -563,12 +563,22 @@ describe("the capsule track (§6.1/§6.2)", () => {
     );
   });
 
-  it("replaces the track with an honest message on error — but keeps the banner standing", () => {
+  it("an error with NO data ever stands alone — the notice, no track, banner still up", () => {
     setFleet({ hosts: [], error: new Error("nope"), hasData: false });
     const { container } = render(<GachaFleet active />);
     expect(container.querySelector(".gc-track")).toBeNull();
     expect(container.querySelector(".gc-msg")!.textContent).toContain("nope");
     expect(container.querySelector(".gc-banner")).not.toBeNull();
+  });
+
+  it("a failed refetch over CACHED hosts reports itself AND keeps the track (F7)", () => {
+    // The two surfaces have to agree: the banner keeps its cached promos from TanStack's retained data, so
+    // deleting the track would have the same screen showing a live fleet above and "unreachable" below.
+    setFleet({ error: new Error("boom") });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-msg")!.textContent).toContain("boom");
+    expect(cards(container)).toHaveLength(2);
+    expect(slides(container)).toHaveLength(3);
   });
 
   it("renders nothing under the head while the FIRST poll is still in flight", () => {

@@ -111,6 +111,11 @@ export function useFleetCycle(): void {
 
 export interface FleetView {
   hosts: Host[];
+  /** Whether the hosts query has EVER produced a payload. Distinct from `!isLoading && !error`: a fleet that
+   *  answered with an empty list and then hit a background refetch error still has data, and a view that
+   *  infers "answered" from `hosts.length > 0` cannot tell that apart from "never answered". Additive — a
+   *  view that doesn't care simply ignores it. */
+  hasData: boolean;
   svcByHost: Map<string, Service[]>;
   featured: number; // clamped to the current host range
   open: ReadonlySet<string>;
@@ -131,7 +136,11 @@ export interface FleetView {
 export function useFleet(order: FleetOrder = "self-first"): FleetView {
   const { data: server } = useServerInfo();
   const poll = server?.poll_seconds ?? 5;
-  const { data: hosts = [], isLoading, error } = useHosts(poll, order);
+  // The raw query result is kept (rather than destructured to `data`) so the view can distinguish "answered
+  // with nothing" from "never answered" — `data === undefined` is the only honest source for that.
+  const hostsQ = useHosts(poll, order);
+  const hosts = hostsQ.data ?? [];
+  const { isLoading, error } = hostsQ;
   const { data: services = [] } = useServices(poll);
   const { run, busy } = useFleetActions();
   const featured = useFeatured();
@@ -152,6 +161,7 @@ export function useFleet(order: FleetOrder = "self-first"): FleetView {
 
   return {
     hosts,
+    hasData: hostsQ.data !== undefined,
     svcByHost,
     featured: clamped,
     open,

@@ -72,20 +72,30 @@ describe("cardShapes — the card-geometry rule (Q8.10)", () => {
 });
 
 describe("hostsResolved — has the fleet actually answered?", () => {
+  // The third argument is the QUERY's `hasData`, not a host count: the difference is the whole point of the
+  // last case below, which a count-based proxy gets wrong.
   it("the first poll in flight is UNRESOLVED", () => {
-    expect(hostsResolved(true, null, 0)).toBe(false);
+    expect(hostsResolved(true, null, false)).toBe(false);
   });
 
   it("a successful poll with ZERO hosts is resolved (an honest zero)", () => {
-    expect(hostsResolved(false, null, 0)).toBe(true);
+    expect(hostsResolved(false, null, false)).toBe(true);
   });
 
   it("a hard failure with no data ever is unresolved — that is also the hero-only case", () => {
-    expect(hostsResolved(false, new Error("backend unreachable"), 0)).toBe(false);
+    expect(hostsResolved(false, new Error("backend unreachable"), false)).toBe(false);
   });
 
   it("a background refetch error KEEPS the last successful set resolved (Codex R4-4)", () => {
-    expect(hostsResolved(false, new Error("boom"), 4)).toBe(true);
+    expect(hostsResolved(false, new Error("boom"), true)).toBe(true);
+  });
+
+  it("an EMPTY-but-successful fleet stays resolved once a refetch starts failing", () => {
+    // The case a host COUNT cannot express: the query answered (with nothing), then a poll errored. A
+    // count-based proxy reads 0 hosts + an error as "never answered" and blanks a pill that was correctly
+    // showing 0.0% a second earlier.
+    expect(hostsResolved(false, new Error("boom"), true)).toBe(true);
+    expect(hostsResolved(false, null, true)).toBe(true);
   });
 });
 

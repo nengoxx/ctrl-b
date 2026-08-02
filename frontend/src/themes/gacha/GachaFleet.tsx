@@ -34,13 +34,13 @@ function openHostDossier(_hostId: string): void {
 }
 
 export function GachaFleet({ active }: { active: boolean }) {
-  const { hosts, isLoading, error } = useFleet();
+  const { hosts, hasData, isLoading, error } = useFleet();
   const starMode = toStarMode(useThemeSetting<string>("gacha", "starMode"));
 
   const onlineCount = hosts.filter((h) => h.status?.online).length;
   // §6.3's loading semantics, shared by the rate pill and (G1's track) the counter: an unresolved fleet
   // reads as a held value, never as a confident "0".
-  const resolved = hostsResolved(isLoading, error, hosts.length);
+  const resolved = hostsResolved(isLoading, error, hasData);
 
   // The card geometry (the main seat's Q8.10 ruling): host[0] featured, the rest in 3/4 pairs, a trailing
   // odd host wide. A pure function of the COUNT, so a poll can never re-shuffle the track's shape.
@@ -83,15 +83,17 @@ export function GachaFleet({ active }: { active: boolean }) {
         <span className="count">{counterText(onlineCount, hosts.length, resolved)}</span>
       </div>
 
-      {/* The three explicit states (the frontier/cosmos precedent): an error replaces the track, an
-          answered-but-empty fleet says so, and while the FIRST poll is in flight nothing renders below the
-          head — an empty grid under "Select a unit" would be dishonest chrome. The banner above always
-          stands, so the surface never blanks. */}
-      {error ? (
-        <div className="gc-msg">backend unreachable: {error.message}</div>
-      ) : hosts.length === 0 ? (
-        !isLoading && <div className="gc-msg">no hosts in config.yaml</div>
-      ) : (
+      {/* The states, on the Kit Fleet's own shape (Fleet.tsx:52-55) rather than a ternary chain: the error
+          notice renders BESIDE whatever the last successful poll left, so a failed background refetch
+          reports itself without deleting a track the banner above is still showing promos for — the two
+          surfaces read the same fleet or they contradict each other. An error with no data ever is the only
+          case where the notice stands alone; while the FIRST poll is in flight nothing renders below the
+          head at all, because an empty grid under "Select a unit" would be dishonest chrome. */}
+      {error && <div className="gc-msg">backend unreachable: {error.message}</div>}
+      {!error && hosts.length === 0 && !isLoading && (
+        <div className="gc-msg">no hosts in config.yaml</div>
+      )}
+      {hosts.length > 0 && (
         <div className="gc-track">
           {shapes.map((shape, i) => (
             <GachaCard

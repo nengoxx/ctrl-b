@@ -29,12 +29,16 @@ export function cardShapes(hostCount: number): CapsuleShape[] {
 }
 
 /** Has the fleet query produced an answer yet? The §6.3 rule the pill and the counter share: while the first
- *  poll is in flight, "0 online" is a LIE, not a state — so it renders as "—" until something real arrives.
+ *  poll is in flight, "0 online" is a LIE, not a state — so it renders held until something real arrives.
  *  Cached data from a previous success counts as resolved even while a background refetch is erroring
  *  (TanStack keeps the data; the surface must not collapse — Codex R4-4). A hard failure with no data ever is
- *  unresolved, which is also the hero-only case. */
-export function hostsResolved(isLoading: boolean, error: unknown, hostCount: number): boolean {
-  return hostCount > 0 || (!isLoading && !error);
+ *  unresolved, which is also the hero-only case.
+ *
+ *  `hasData` is the QUERY's own fact (`useFleet.hasData`), not a host count: a fleet that legitimately
+ *  answered with zero machines and then hit a background refetch error has answered, and counting hosts
+ *  would call that unresolved and blank a pill that was reading a true 0.0% a second earlier. */
+export function hostsResolved(isLoading: boolean, error: unknown, hasData: boolean): boolean {
+  return hasData || (!isLoading && !error);
 }
 
 /** What an unresolved number reads as. An ASCII hyphen rather than the kit's usual em dash, and that is a
