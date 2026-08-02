@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { relativeTime } from "../../src/lib/relativeTime";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
 import { GachaHostDetail } from "../../src/themes/gacha/GachaHostDetail";
-import { CLOSE_DOSSIER_LABEL, PENDING, dossierSub } from "../../src/themes/gacha/fleet";
+import { CLOSE_DOSSIER_LABEL, dossierSub } from "../../src/themes/gacha/fleet";
 import { artForHost, defaultRoster } from "../../src/themes/gacha/roster";
 import { starsFor } from "../../src/themes/gacha/stars";
 import type { Host, HostServiceCfg, Service } from "../../src/types";
@@ -106,7 +106,7 @@ describe("the dossier's ruled metric grid (§4.8 / Codex R4-10)", () => {
     // configured 3 (the star input), never the live 1/2 tally frontier's grid shows.
     const { container } = renderD({ services: [svc()] });
     expect(metric(container, "Ping")).toBe("18 ms");
-    expect(metric(container, "Uptime")).toBe(PENDING);
+    expect(metric(container, "Uptime")).toBe(GACHA_COPY.metricPending);
     expect(metric(container, "Services")).toBe("3");
     expect(metric(container, "Seen")).toBe("now");
   });
@@ -128,13 +128,13 @@ describe("the dossier's ruled metric grid (§4.8 / Codex R4-10)", () => {
     const iso = new Date(Date.now() - 3 * 3600_000).toISOString();
     const h = host({ status: { ...host().status!, online: false, ping_ms: null, last_seen: iso } });
     const { container } = renderD({ host: h });
-    expect(metric(container, "Ping")).toBe(PENDING);
+    expect(metric(container, "Ping")).toBe(GACHA_COPY.metricPending);
     expect(metric(container, "Seen")).toBe(relativeTime(iso)); // "3h ago"
   });
 
   it("an online host with no ping measurement holds rather than inventing a number", () => {
     const { container } = renderD({ host: host({ status: { ...host().status!, ping_ms: null } }) });
-    expect(metric(container, "Ping")).toBe(PENDING);
+    expect(metric(container, "Ping")).toBe(GACHA_COPY.metricPending);
   });
 
   it("a machine with NO configured services renders a real 0, not a dash", () => {
@@ -147,11 +147,11 @@ describe("the dossier's ruled metric grid (§4.8 / Codex R4-10)", () => {
   });
 
   it("a never-polled host reads the theme's own placeholder in every live slot", () => {
-    // relativeTime's null case is an EM dash — a glyph the frozen subset does not carry, so the theme's
-    // ASCII placeholder stands in (and matches the Uptime tile beside it).
+    // relativeTime's null case is the same RULED em dash the Uptime tile shows (§4.8's literal,
+    // copy.ts `metricPending`), so a never-polled host reads one identical dash in every held slot.
     const { container } = renderD({ host: host({ status: null }) });
-    expect(metric(container, "Ping")).toBe(PENDING);
-    expect(metric(container, "Seen")).toBe(PENDING);
+    expect(metric(container, "Ping")).toBe(GACHA_COPY.metricPending);
+    expect(metric(container, "Seen")).toBe(GACHA_COPY.metricPending);
   });
 });
 

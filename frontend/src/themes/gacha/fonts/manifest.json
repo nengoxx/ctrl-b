@@ -2,8 +2,8 @@
   "generatedBy": "scripts/gen-theme-fonts.mjs",
   "source": "Google Fonts CSS2 API (text= subsetting for jp, the /* latin */ block for latin)",
   "glyphSource": "src/themes/gacha/copy.ts#gachaGlyphSet",
-  "glyphs": "·…★りアイカキクケコサスセッツトドネビプベマラリルレロワン・ー中井休催働入内出力品壁天定待応成所排日星景最案機残率眠着確稼答紙終編設認開限",
-  "glyphCount": 70,
+  "glyphs": "·—…★りアイカキクケコサスセッツトドネビプベマラリルレロワン・ー中井休催働入内出力品壁天定待応成所排日星景最案機残率眠着確稼答紙終編設認開限",
+  "glyphCount": 71,
   "faces": [
     {
       "family": "Zen Kaku Gothic New",
@@ -20,8 +20,8 @@
       "family": "Zen Kaku Gothic New",
       "weight": 400,
       "subset": "jp",
-      "bytes": 11120,
-      "unicodeRange": "U+b7, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
+      "bytes": 11144,
+      "unicodeRange": "U+b7, U+2014, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
     },
     {
       "file": "zen-kaku-gothic-new-400-latin.woff2",
@@ -36,8 +36,8 @@
       "family": "Zen Kaku Gothic New",
       "weight": 500,
       "subset": "jp",
-      "bytes": 11364,
-      "unicodeRange": "U+b7, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
+      "bytes": 11428,
+      "unicodeRange": "U+b7, U+2014, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
     },
     {
       "file": "zen-kaku-gothic-new-500-latin.woff2",
@@ -52,8 +52,8 @@
       "family": "Zen Kaku Gothic New",
       "weight": 700,
       "subset": "jp",
-      "bytes": 11156,
-      "unicodeRange": "U+b7, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
+      "bytes": 11132,
+      "unicodeRange": "U+b7, U+2014, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
     },
     {
       "file": "zen-kaku-gothic-new-700-latin.woff2",
@@ -68,8 +68,8 @@
       "family": "Zen Kaku Gothic New",
       "weight": 900,
       "subset": "jp",
-      "bytes": 10984,
-      "unicodeRange": "U+b7, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
+      "bytes": 10976,
+      "unicodeRange": "U+b7, U+2014, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
     },
     {
       "file": "zen-kaku-gothic-new-900-latin.woff2",
@@ -84,8 +84,8 @@
       "family": "Shippori Mincho B1",
       "weight": 600,
       "subset": "jp",
-      "bytes": 22428,
-      "unicodeRange": "U+b7, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
+      "bytes": 22500,
+      "unicodeRange": "U+b7, U+2014, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
     },
     {
       "file": "shippori-mincho-b1-600-latin.woff2",
@@ -100,8 +100,8 @@
       "family": "Shippori Mincho B1",
       "weight": 800,
       "subset": "jp",
-      "bytes": 22480,
-      "unicodeRange": "U+b7, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
+      "bytes": 22512,
+      "unicodeRange": "U+b7, U+2014, U+2026, U+2605, U+308a, U+3099-309a, U+30a2, U+30a4, U+30ab-30b6, U+30b9-30bc, U+30c3-30c5, U+30c8-30c9, U+30cd, U+30d2-30da, U+30de, U+30e9-30ed, U+30ef, U+30f3, U+30f7, U+30fb-30fc, U+4e2d, U+4e95, U+4f11, U+50ac, U+50cd, U+5165, U+5185, U+51fa, U+529b, U+54c1, U+58c1, U+5929, U+5b9a, U+5f85, U+5fdc, U+6210, U+6240, U+6392, U+65e5, U+661f, U+666f, U+6700, U+6848, U+6a5f, U+6b8b, U+7387, U+7720, U+7740, U+78ba, U+7a3c, U+7b54, U+7d19, U+7d42, U+7de8, U+8a2d, U+8a8d, U+958b, U+9650"
     },
     {
       "file": "shippori-mincho-b1-800-latin.woff2",
@@ -112,5 +112,5 @@
       "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD"
     }
   ],
-  "totalBytes": 192856
+  "totalBytes": 193016
 }

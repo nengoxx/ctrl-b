@@ -2,7 +2,7 @@ import type { FleetAction } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
-import { CLOSE_DOSSIER_LABEL, PENDING, dossierSub, pingText } from "./fleet";
+import { CLOSE_DOSSIER_LABEL, dossierSub, pingText } from "./fleet";
 import type { ResolvedArt } from "./roster";
 import { isHighStar, starsFor, type StarMode } from "./stars";
 
@@ -64,18 +64,17 @@ export function GachaHostDetail({
   const stars = starsFor(configured, mode);
 
   // Ping is real only while the machine answers; an online host with no measurement reads the placeholder
-  // rather than inventing a number (the frontier precedent).
-  const ping = online && facts.ping != null ? pingText(facts.ping) : PENDING;
-  // `relativeTime`'s own null case is an em dash — a glyph the frozen font subset does not carry (it would
-  // render in the fallback face beside the ASCII dash the tile above it uses). An unpolled host therefore
-  // reads the theme's own placeholder; a real timestamp reads its relative form.
-  const seen = online ? "now" : host.status?.last_seen ? facts.lastSeen : PENDING;
+  // rather than inventing a number (the frontier precedent). The placeholder is §4.8's RULED em dash
+  // (`metricPending` — from copy.ts, the ASCII fence's one non-ASCII home), which `relativeTime`'s own
+  // null case already matches, so an unpolled host reads one identical dash in every held slot.
+  const ping = online && facts.ping != null ? pingText(facts.ping) : GACHA_COPY.metricPending;
+  const seen = online ? "now" : facts.lastSeen;
 
   const metrics: [value: string, label: string, jp: string][] = [
     [ping, "Ping", GACHA_COPY.metricPing],
     // Uptime is DEFERRED (no backend boot time — the cosmos/frontier precedent): a VISIBLE dash, wired to
     // become additive the day the seam exists.
-    [PENDING, "Uptime", GACHA_COPY.metricUptime],
+    [GACHA_COPY.metricPending, "Uptime", GACHA_COPY.metricUptime],
     // A real 0 renders as "0", not a dash: a machine with no services configured is a fact, not a gap.
     [String(configured), "Services", GACHA_COPY.metricServices],
     [seen, "Seen", GACHA_COPY.metricSeen],

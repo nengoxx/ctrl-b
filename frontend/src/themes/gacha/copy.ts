@@ -92,6 +92,11 @@ export const GACHA_COPY = {
   metricServices: "サービス",
   /** 最終確認 (saishū kakunin) — "last confirmed" (Seen). */
   metricSeen: "最終確認",
+  /** The dossier's held/deferred metric value — the RULED em dash (§4.8's literal), not the ASCII hyphen
+   *  the G1 rate pill uses while loading. It lives here because gacha TS outside this file is
+   *  ASCII-fenced; the latin faces carry U+2014 in their `U+2000-206F` range, and joining this set puts
+   *  it in the JP subsets too, so it renders in-face in every family. */
+  metricPending: "—",
 
   // ── The `ThemeDef.settings` descriptors (Codex G0 #1) ────────────────────────────────────────────
   // These are PRODUCTION strings the Conf Appearance rows render, so they belong here for exactly the

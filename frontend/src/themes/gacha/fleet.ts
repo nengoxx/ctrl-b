@@ -41,12 +41,12 @@ export function hostsResolved(isLoading: boolean, error: unknown, hasData: boole
   return hasData || (!isLoading && !error);
 }
 
-/** What an unresolved or absent value reads as — the rate pill and the counter while the fleet is still
- *  loading (§6.3), and the dossier's deferred/unknown metrics (§4.8). An ASCII hyphen rather than the kit's
- *  usual em dash, and that is a FENCE consequence, not a style choice: gacha's TypeScript may contain no
- *  non-ASCII outside `copy.ts` (`gachaChrome.test.ts`), and an em dash cannot join `copy.ts` without
- *  growing the frozen font subset — which means regenerating all twelve committed woff2 files for one dash.
- *  ONE constant so every held value in the theme reads identically. */
+/** What the G1 chrome reads while the fleet is still loading — the rate pill and the counter (§6.3), both
+ *  owner-eyeballed with this ASCII hyphen. The DOSSIER's held metrics are different: §4.8 rules a literal
+ *  em dash there, which lives in `copy.ts` (`metricPending`) because gacha TS outside copy.ts is
+ *  ASCII-fenced. (The original claim that an em dash would force a font regen was wrong — the latin faces
+ *  carry U+2014 in their `U+2000-206F` range; the JP subsets gained it at the same regen that recorded
+ *  this.) */
 export const PENDING = "-";
 
 /** The rate pill (§6.3): the star mode's ceiling + the live count of ONLINE hosts as a gacha drop rate.
