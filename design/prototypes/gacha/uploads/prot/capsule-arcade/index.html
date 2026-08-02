@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>ctrl-b gacha prototype · Capsule Arcade</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Shippori+Mincho+B1:wght@600;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="../shared/base.css"><link rel="stylesheet" href="theme.css"></head><body data-tab="fleet" data-motion="full" data-perf="full"><div class="prototype-badge">Standalone prototype · no repo changes</div><main class="app"><div class="wallpaper" aria-hidden="true"><img src="../assets/gacha/bg-fleet.jpg" alt=""></div>
+<section class="screen active" data-screen="fleet"><div class="topbar"><div class="brand"><strong>CAPSULE ARCADE</strong><small>ネットワーク景品所</small></div><button class="icon-button">◈</button></div><div class="arcade">
+<div class="banner"><div class="banner-track">
+<div class="banner-slide"><img src="../assets/gacha/bg-fleet.jpg" alt=""><div class="banner-copy"><span class="tag">PICKUP 開催中</span><b>NETWORK<br>PRIZE POOL</b><small>残り 3日 21:14:08</small></div></div>
+<div class="banner-slide"><img src="../assets/gacha/pegasus.jpg" alt=""><div class="banner-copy"><span class="tag">確率アップ</span><b>PEGASUS<br>RELAY</b><small>★3 排出率 3.0% → 6.0%</small></div></div>
+<div class="banner-slide"><img src="../assets/gacha/atlas.jpg" alt=""><div class="banner-copy"><span class="tag">限定イベント</span><b>ATLAS<br>OVERDRIVE</b><small>負荷 62% · 討伐対象</small></div></div>
+</div><div class="banner-glow expensive-effect"></div><div class="banner-rate"><span>★3 RATE 3.0%</span><span>天井 200</span></div><div class="banner-dots"><i class="on"></i><i></i><i></i></div></div>
+<div class="track-head"><h1>編成<em>Select a unit</em></h1><span class="count">04 / 04</span></div>
+<div class="capsule-track">
+<button class="capsule-card feat" data-host="pegasus"><img src="../assets/gacha/pegasus.jpg" alt=""><span class="rar">★★★</span><span class="state on">ONLINE</span><span class="plate"><b>Pegasus</b><small>WORKSTATION · 18 ms</small></span><i class="shine"></i></button>
+<button class="capsule-card" data-host="atlas"><img src="../assets/gacha/atlas.jpg" alt=""><span class="rar">★★★</span><span class="state on">ONLINE</span><span class="plate"><b>Atlas</b><small>HOME SERVER · 7 ms</small></span><i class="shine"></i></button>
+<button class="capsule-card sleep" data-host="rook"><img src="../assets/gacha/rook.png" alt=""><span class="rar">★★</span><span class="state">SLEEPING</span><span class="plate"><b>Rook</b><small>MINI NODE · 待機中</small></span><i class="shine"></i></button>
+<button class="capsule-card wide" data-host="lyra"><img src="../assets/gacha/lyra.png" alt=""><span class="rar">★★★</span><span class="state on">NEW</span><span class="plate"><b>Lyra</b><small>MEDIA VAULT · 12 ms</small></span><i class="shine"></i></button>
+</div></div></section>
+<section class="screen" data-screen="agent"><div class="agent-wrap"><div class="oracle"><img class="oracle-art" src="../assets/gacha/bg-eye.png" alt=""><div class="oracle-scan expensive-effect"></div><div class="oracle-name"><p class="eyebrow">PRIZE OPERATOR</p><h1>Lucky Relay<em>ラッキーリレー</em></h1></div></div><div class="chat-log"><div class="msg bot">Welcome back, operator. Your prize pool holds two live units.</div><div class="msg user">Show me the noisiest machine.</div><div class="msg bot">Atlas wins today’s deeply unglamorous load contest at 62%.</div><div class="msg user">What is eating the load?</div><div class="msg bot">Three containers. The backup worker woke up at 02:10, ran a full snapshot, and never went back to idle.</div><div class="msg user">Can you put it back to sleep?</div><div class="msg bot">Done. Backup worker is idle again and load is drifting down — 54% and falling.</div><div class="msg user">And Pegasus?</div><div class="msg bot">Quiet. 18 ms, 37% load, 52°, up 12 days 08 hours. Nothing has restarted since the kernel patch.</div><div class="msg user">Wake Rook up for me.</div><div class="msg bot">Rook is a ★★ mini node — wake-on-LAN sent. It usually takes about 40 seconds to answer.</div><div class="msg user">Ping me when it does.</div><div class="msg bot">I will. Anything else while we wait, operator?</div></div></div></section>
+<section class="screen" data-screen="settings"><div class="settings-wrap">
+  <header><p class="eyebrow">APPEARANCE LAB</p><h1>設定<em>Theme controls</em></h1><p class="sub">These switches mimic ctrl-b’s existing motion and performance axes.</p></header>
+  <section class="setting-group"><div class="setting-title">Animation · 演出</div>
+    <div class="setting-row"><div class="copy"><strong>Expressive motion</strong><small>Shared elements, overshoot and ambient loops</small></div><button class="switch" data-setting="motion" role="switch" aria-checked="true" aria-label="Expressive motion"></button></div>
+    <div class="setting-row"><div class="copy"><strong>Full effects</strong><small>Blur, particles and filtered liquid connectors</small></div><button class="switch" data-setting="perf" role="switch" aria-checked="true" aria-label="Full effects"></button></div>
+  </section>
+  <section class="setting-group"><div class="setting-title">Navigation · 画面</div>
+    <div class="setting-row"><div class="copy"><strong>Sticky operator art</strong><small>Header fades in place instead of scrolling away 定着</small></div><button class="switch" data-setting="oracle" role="switch" aria-checked="false" aria-label="Sticky operator art"></button></div><div class="setting-row"><div class="copy"><strong>Banner wallpaper</strong><small>Pickup art fills the fleet background 壁紙</small></div><button class="switch" data-setting="wallpaper" role="switch" aria-checked="false" aria-label="Banner wallpaper"></button></div><div class="setting-row"><div class="copy"><strong>Three-tab layout</strong><small>Fleet · Agent · Settings, matching Frontier’s default</small></div><span>✓</span></div>
+    <div class="setting-row"><div class="copy"><strong>Composer skin</strong><small>Theme-specific visual shell over shared chat logic</small></div><span>Dynamic</span></div>
+  </section>
+  <p class="motion-note">Reduced motion removes spatial morphs and ambient loops while preserving immediate state changes. Lite effects keep the shape language but disable filtered goo, particles and heavy blur.</p>
+</div></section>
+<div class="detail-layer" aria-hidden="true"><div class="detail-backdrop"></div><article class="detail-panel"><div class="drag-handle"></div><div class="detail-head"><div class="art-frame"><img class="detail-avatar" data-detail-img alt=""><span class="art-rar" data-detail-rar>★★★</span></div><div class="detail-title"><span class="unit-no">UNIT DOSSIER</span><h2 data-detail-name></h2><p data-detail-role></p></div><button class="close-detail">×</button></div><div class="metrics">
+  <div class="metric"><b data-ping>18 ms</b><span>Ping 応答</span></div>
+  <div class="metric"><b data-load>37%</b><span>Load 負荷</span></div>
+  <div class="metric"><b data-temp>52°</b><span>Temp 温度</span></div>
+  <div class="metric"><b data-uptime>12d</b><span>Uptime 稼働</span></div>
+</div><div class="service-list">
+  <div class="service"><i style="background:#74f3ad"></i><strong>Agent bridge</strong><small>healthy</small></div>
+  <div class="service"><i style="background:#74f3ad"></i><strong>Open WebUI</strong><small>:8080</small></div>
+  <div class="service"><i style="background:#ffc76a"></i><strong>Backup worker</strong><small>idle</small></div>
+</div></article></div><nav class="nav" aria-label="Primary">
+  <span class="nav-indicator" aria-hidden="true"></span>
+  <button data-tab="fleet" aria-selected="true"><span class="ico">⌬</span><span class="lbl">Fleet<em>編成</em></span></button>
+  <button data-tab="agent" aria-selected="false"><span class="ico">▲</span><span class="lbl">Agent<em>案内</em></span></button>
+  <button data-tab="settings" aria-selected="false"><span class="ico">●</span><span class="lbl">Settings<em>設定</em></span></button>
+</nav><div class="composer"><input placeholder="コマンド入力…"><button>GO</button></div><div class="reel-transition" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><img class="reel-figure" src="../assets/gacha/lyra-cutout.png" alt=""></div></main><script src="../shared/common.js"></script><script src="theme.js"></script></body></html>

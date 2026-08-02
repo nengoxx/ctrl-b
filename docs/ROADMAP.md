@@ -809,10 +809,18 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
   never fork), D37 (axes own composer chrome — a gacha look = new *skins/tokens*, not new layouts).
   Reference art should come from real gacha-game UI references the owner points at (per the
   use-real-reference-images rule) — collect those at design time.
-- **Open (for the design session):** the actual visual direction (which gacha aesthetic — soft
-  pastel UI? holo-foil cards? SSR-banner chrome?); whether hosts get character-card treatment (the
-  cosmos planet precedent says a bespoke Fleet body is viable); art sourcing/licensing for any
-  baked-in imagery.
+- **Prototype BANKED (owner, 2026-08-02 — the look is settled):** the owner iterated the design
+  standalone and committed the result at `design/prototypes/gacha/`. **The FINAL prototype is
+  `design/prototypes/gacha/uploads/prot/capsule-arcade/index.html`** — everything else in the
+  folder (magical-guild, `ctrl-b-gacha-prototypes/`, loose reference art in `uploads/`) is a prior
+  iteration kept for provenance. The design session starts FROM the final prototype + the real
+  reference images beside it (per the use-real-reference-images rule). Reference-only like all of
+  `design/prototypes/` — don't import from it.
+- **Open (for the design session):** how the capsule-arcade look maps onto the kit (tokens + axes
+  vs any bespoke body layer, per the budget ceiling above); whether hosts get the character-card
+  treatment (the cosmos planet precedent says a bespoke Fleet body is viable); art
+  sourcing/licensing for any baked-in imagery. **v1.5.0 is RESERVED for this theme (owner ruling
+  re-confirmed 2026-08-02).**
 
 ## Settings tab — organized by functionality (informs v1 Conf layout)
 

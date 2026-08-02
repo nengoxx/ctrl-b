@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff78b7"></stop><stop offset="1" stop-color="#ffb36a"></stop></linearGradient><filter id="s"><feDropShadow dx="0" dy="12" stdDeviation="10" flood-opacity=".25"></feDropShadow></filter></defs>
+<path filter="url(#s)" fill="url(#g)" d="M96 20c38 0 67 34 67 75 0 50-31 74-67 74S29 145 29 95c0-41 29-75 67-75Z"></path>
+<ellipse cx="72" cy="74" rx="9" ry="13" fill="#201933"></ellipse><ellipse cx="120" cy="74" rx="9" ry="13" fill="#201933"></ellipse>
+<circle cx="68" cy="69" r="3" fill="#fff"></circle><circle cx="116" cy="69" r="3" fill="#fff"></circle><path d="M72 89 Q96 108 120 89" fill="none" stroke="#201933" stroke-width="7" stroke-linecap="round"></path>
+<path d="M52 46Q70 25 92 31" fill="none" stroke="#fff" stroke-opacity=".38" stroke-width="9" stroke-linecap="round"></path>
+<text x="96" y="151" text-anchor="middle" font-family="system-ui" font-size="15" font-weight="800" fill="#201933" opacity=".72">ATLAS</text>
+</svg>

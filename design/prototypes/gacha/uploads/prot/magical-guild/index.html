@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>ctrl-b gacha prototype · Magical Operator Guild</title><link rel="stylesheet" href="../shared/base.css"><link rel="stylesheet" href="theme.css"></head><body data-tab="fleet" data-motion="full" data-perf="full"><div class="prototype-badge">Standalone prototype · no repo changes</div><main class="app">
+<section class="screen active" data-screen="fleet"><div class="topbar"><div class="brand"><strong>Operator Guild</strong><small>Archive of bonded systems</small></div><button class="icon-button">✧</button></div><div class="guild-home"><p class="eyebrow">Unit archive</p><h1>The machines have paperwork now.</h1><p class="sub">A roster card transforms into a full dossier instead of opening a detached modal.</p><div class="guild-roster">
+<button class="unit-card" data-host="pegasus"><img src="../assets/guild/pegasus.svg" alt=""><div><span>WIND / WORKSTATION</span><strong>Pegasus</strong><small>Online · 18 ms</small></div></button>
+<button class="unit-card" data-host="atlas"><img src="../assets/guild/atlas.svg" alt=""><div><span>EMBER / SERVER</span><strong>Atlas</strong><small>Online · 7 ms</small></div></button>
+<button class="unit-card" data-host="rook"><img src="../assets/guild/rook.svg" alt=""><div><span>VERDANT / NODE</span><strong>Rook</strong><small>Sleeping</small></div></button></div></div></section>
+<section class="screen" data-screen="agent"><div class="agent-wrap"><p class="eyebrow">Guild oracle</p><h1>Aster, System Familiar</h1><div class="oracle"><div class="sigil expensive-effect"><i></i><i></i><i></i></div><img src="../assets/guild/agent.svg" alt="Aster familiar"></div><div class="chat-log"><div class="msg bot"><b>ASTER</b><br>The archive reports two bonded units in active service.</div><div class="msg user">Read the Atlas dossier and check its services.</div><div class="msg bot">Atlas is healthy. Backup worker is idle; the agent bridge and WebUI are active.</div></div><div class="composer"><input placeholder="Write an instruction…"><button>✦</button></div></div></section>
+<section class="screen" data-screen="settings"><div class="settings-wrap">
+  <header><p class="eyebrow">Appearance lab</p><h1>Theme controls</h1><p class="sub">These switches mimic ctrl-b’s existing motion and performance axes.</p></header>
+  <section class="setting-group"><div class="setting-title">Animation</div>
+    <div class="setting-row"><div class="copy"><strong>Expressive motion</strong><small>Shared elements, overshoot and ambient loops</small></div><button class="switch" data-setting="motion" role="switch" aria-checked="true" aria-label="Expressive motion"></button></div>
+    <div class="setting-row"><div class="copy"><strong>Full effects</strong><small>Blur, particles and filtered liquid connectors</small></div><button class="switch" data-setting="perf" role="switch" aria-checked="true" aria-label="Full effects"></button></div>
+  </section>
+  <section class="setting-group"><div class="setting-title">Navigation</div>
+    <div class="setting-row"><div class="copy"><strong>Three-tab layout</strong><small>Fleet · Agent · Settings, matching Frontier’s default</small></div><span>✓</span></div>
+    <div class="setting-row"><div class="copy"><strong>Composer skin</strong><small>Theme-specific visual shell over shared chat logic</small></div><span>Dynamic</span></div>
+  </section>
+  <p class="motion-note">Reduced motion removes spatial morphs and ambient loops while preserving immediate state changes. Lite effects keep the shape language but disable filtered goo, particles and heavy blur.</p>
+</div></section>
+<div class="dossier" aria-hidden="true"><div class="dossier-backdrop"></div><article class="dossier-page"><button class="close-detail">×</button><div class="dossier-hero"><img data-detail-img alt=""><div><p>BOUND UNIT DOSSIER</p><h2 data-detail-name></h2><span data-detail-role></span></div></div><div class="metrics">
+  <div class="metric"><b data-ping>18 ms</b><span>Ping</span></div>
+  <div class="metric"><b data-load>37%</b><span>Load</span></div>
+  <div class="metric"><b data-temp>52°</b><span>Temp</span></div>
+  <div class="metric"><b data-uptime>12d</b><span>Uptime</span></div>
+</div><div class="seal-row"><span>✦ REMOTE COMMAND</span><span>✧ TRUSTED HOST</span></div><div class="service-list">
+  <div class="service"><i style="background:#74f3ad"></i><strong>Agent bridge</strong><small>healthy</small></div>
+  <div class="service"><i style="background:#74f3ad"></i><strong>Open WebUI</strong><small>:8080</small></div>
+  <div class="service"><i style="background:#ffc76a"></i><strong>Backup worker</strong><small>idle</small></div>
+</div></article></div><nav class="nav" aria-label="Primary">
+  <span class="nav-indicator" aria-hidden="true"></span>
+  <button data-tab="fleet" aria-selected="true"><span class="ico">⌬</span><span class="lbl">Fleet</span></button>
+  <button data-tab="agent" aria-selected="false"><span class="ico">▲</span><span class="lbl">Agent</span></button>
+  <button data-tab="settings" aria-selected="false"><span class="ico">●</span><span class="lbl">Settings</span></button>
+</nav><div class="sigil-wipe expensive-effect" aria-hidden="true"><i></i><b>✦</b></div></main><script src="../shared/common.js"></script><script src="theme.js"></script></body></html>

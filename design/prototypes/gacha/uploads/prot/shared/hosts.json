@@ -1,0 +1,41 @@
+[
+  {
+    "id": "pegasus",
+    "name": "Pegasus",
+    "role": "Workstation",
+    "status": "ONLINE",
+    "ping": "18 ms",
+    "load": "37%",
+    "temp": "52\u00b0",
+    "uptime": "12d 08h",
+    "color": "#68e1ff",
+    "color2": "#8c7cff",
+    "glyph": "P"
+  },
+  {
+    "id": "atlas",
+    "name": "Atlas",
+    "role": "Home Server",
+    "status": "ONLINE",
+    "ping": "7 ms",
+    "load": "62%",
+    "temp": "47\u00b0",
+    "uptime": "31d 21h",
+    "color": "#ff78b7",
+    "color2": "#ffb36a",
+    "glyph": "A"
+  },
+  {
+    "id": "rook",
+    "name": "Rook",
+    "role": "Mini Node",
+    "status": "SLEEPING",
+    "ping": "\u2014",
+    "load": "0%",
+    "temp": "31\u00b0",
+    "uptime": "\u2014",
+    "color": "#a8ef6d",
+    "color2": "#4ad6a7",
+    "glyph": "R"
+  }
+]
