@@ -12,7 +12,44 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-02 evening — **🔒 D52 LOCKED + ✅ G0 BUILT AND OWNER-SIGNED; NEXT = G1, the banner + capsule track**)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-02 night — **✅ G1 BUILT + OWNER-EYEBALLED (banner + capsule track + scenes); NEXT = G2, the unit dossier**)
+> **One owner-attended session: the whole G1 slice — build, two review waves, and 3+ LIVE owner
+> eyeball rounds with rulings folded in real time. Fifteen commits `2898fad..4879f9e` on top of
+> G0's seventeen, tree clean except the docs commit riding this handoff, NOTHING PUSHED — ask the
+> owner before pushing.** End state: **1221 FE unit / 1254 BE / 33 gacha e2e arms**, full gate
+> green per commit.
+> **G1 as-built = GACHA_PLAN §7.2 (read it first)** — short form: the §6.4 banner CONTRACT
+> implemented (pure `carousel.ts` reducer, keyed+buffered membership, one-shot timer matrix,
+> inert offscreen slides, reel `inert` lock) + capsule track (geometry rule feat/pairs/
+> trailing-wide, stars, tap shine) + wallpaper on `.kit-main` + **the eyeball-born SCENE
+> slides** (owner drops b2/b3 → named event slides via the researched `SCENE_TITLES` pool —
+> hero-style templated copy, inert, filename-stable keys). Review: Codex R1 READY WITH FIXES
+> (4 MED/2 LOW) → 9-fix wave → confirm 8/9 → residual closed; scenes wave → its own Codex
+> round **READY FOR SLICE CLOSE** (one pre-existing LOW carried: a host named `hero` collides
+> with `HERO_KEY` — `host:`-prefix promo keys when G2 touches the slide plumbing).
+> **OWNER RULINGS THIS SESSION (all recorded, D52 addendum + plan):** 3★ ladder ≥3→★3 (§6.1
+> re-rule) · 5★ stays 1:1 · **G5 media dir = ROLE-SCOPED folders** `{characters,banner,
+> wallpaper,reel}/`, drop-in = assignment (§5.4) · banner scenes = EXTRA SLIDES over cycling
+> hero (§6.4) · scene copy = templated, named pool, never numbered · scrim/star-hi/focus value
+> picks (the owner-override-of-prototype-literals precedent). **The owner's own art is IN the
+> bundled set** (roster `[pegasus, atlas, 3, 4, lyra-tail]`; lyra guards the G4 cutout).
+> **▶ NEXT SESSION = G2 (the unit dossier):** pin the Opus brief from **§7's G2 row + §4.8
+> (pinned values + the ruled frontier metrics grid: Ping 応答 · Uptime 稼働 "—" · Services
+> サービス · Seen 最終確認) + the council-H3 host ACTION BAR (a named fidelity checkpoint) +
+> reuse G1's star engine + extract the shared host-detail derivation to `lib/` (council M6) +
+> the §4.9 sheet-timing call.** The click seam is WIRED AND WAITING: `openHostDossier` in
+> GachaFleet.tsx (cards + promos both route through it; fill it, delete the stub comment).
+> Gate: eyeball + contrast probe (light inversion!).
+> **Owner picks still open (carry to G2/G3 eyeballs):** wordmark string (カプセルアーケード
+> standing) · NEW ribbon (no data seam — needs owner semantics if wanted) · promo-click→dossier
+> destination formally unconfirmed (proposal unvetoed through three rounds — treat G2's first
+> eyeball as the confirm) · counter semantics implicitly accepted. **Housekeeping:** ~80 MB of
+> original drop images UNTRACKED in `design/prototypes/gacha/{chars,banner images}/` — owner
+> call, REC don't commit · dev units RUNNING (:5434/:5173) for the owner's checks — stop when
+> done · the G0 threads stand: VT spike untested (gates G4 M2) · chat 12.5px check at G3 ·
+> v1.5.0 = this theme's release, prod stays v1.4.6.
+>
+> ## ▶ PREVIOUS BLOCK, same day (2026-08-02 evening — **🔒 D52 LOCKED + ✅ G0 BUILT AND OWNER-SIGNED; G1 was next**)
 > **One continuous owner-attended session: the LOCK, then the whole G0 slice through four owner
 > eyeball rounds. Everything committed `eaa89e0..c26d1eb` (17 commits), tree clean, NOT pushed —
 > ask the owner before pushing.** Read the lock record in the next block down (all §8 ruled →

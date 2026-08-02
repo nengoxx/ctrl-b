@@ -381,6 +381,21 @@ frontend; `$CTRLB_HOME` has no media dir or route; the only upload endpoint is t
   **`$CTRLB_HOME/media/gacha/`** under a single `/api/media/{ns}/` route, so the next
   art-bearing theme is a path segment, not a new route. (Same ruled shape; the literal path
   changed from the draft's `art/gacha/` — flagged to the owner.)
+- **✅ RE-SHAPED at the G1 eyeball (owner, 2026-08-02 evening): ROLE-SCOPED subfolders,
+  drop-in = assignment.** The flat namespace dir gains role subdirectories —
+  `$CTRLB_HOME/media/gacha/{characters,banner,wallpaper,reel}/` (oracle's home = a G5-brief
+  detail; its own folder for symmetry is the default) — and a file dropped into a role folder
+  is ASSIGNED to that role with no pinning ceremony: `characters/` feeds the per-host deal,
+  `banner/` feeds the carousel's extra SCENE slides (each dropped image = one slide, the
+  owner's ruled pick over a cycling hero — §6.4 amendment below), `wallpaper/` the fleet
+  background (first/pinned wins; rotation = possible later), `reel/` the transition cutouts.
+  The owner's words: independent pools, "so it's more organized". This SUPERSEDES the
+  per-entry `wide`/`cutout` optional fields as the primary source of role art — the §5.2
+  entry schema keeps them for BUNDLED defaults, and `slots` pins survive as optional
+  overrides binding a character INTO a role (e.g. wallpaper: lyra). The G5 brief must spec
+  the index endpoint per-role (`{characters: […], banner: […], …}`) and the §10.4 hardening
+  applies per subfolder unchanged. Until G5, the bundled interim carries the same shapes in
+  code (`ART.scenes`, the roster) so G5 stays a source swap, not a redesign.
 
 **5.5 Fallback art:** the theme ships the prototype's asset set as the bundled default roster
 either way, so it looks right on first boot (art provenance: the owner's own picks — confirm at
@@ -439,6 +454,21 @@ for the "04 / 04" counter.
   (dots/controls, the a11y bullet below), never by silently narrowing membership; only the
   OWNER may narrow it at an eyeball. Promo art = the host's roster-resolved entry — the ONE
   shared resolver of §5.3 (cards, promos and dossier must agree).
+- **✅ AMENDED at the G1 eyeball (owner, 2026-08-02 evening): + SCENE slides.** The set is now
+  **hero → N scenes → per-host promos**: each image in the banner role pool (§5.4's `banner/`
+  folder at G5; the bundled `ART.scenes` — the owner's b2/b3 drops — until then) is its own
+  slide, ruled over the cycling-hero alternative. Scene slides are INERT non-buttons (nothing
+  to open) but CARRY the hero-style copy block with TEMPLATED defaults, owner-ruled ("good
+  default text… not just for the first one"): tag 限定イベント + caption 開催中 (both frozen
+  glyphs, `sceneTag`/`sceneCaption`) + a title from the **`SCENE_TITLES` ASCII pool** (copy.ts,
+  researched against the real gacha banner register — Genshin "Epitome Invocation", HSR
+  "Light Cone Event Warp", Arknights "Headhunting"): CAPSULE FESTIVAL · MIDNIGHT UPLINK ·
+  STARLIGHT RELAY · LUCKY CIRCUIT · NEON HEADHUNT · PACKET CARNIVAL · AURORA PROTOCOL ·
+  GOLDEN UPTIME, scene i → pool[i mod 8]. Keys `"scene:<name>"` — disjoint from host ids;
+  all carousel machinery (reconcile/inert/dots/gestures) is key-generic and unchanged. The
+  "hero-only: no dots, no autoplay" contract case now genuinely means no scenes AND no
+  hosts; scenes present ⇒ the carousel runs even on an empty fleet. Scenes take the base
+  52% 30% scene crop, never `.promo`'s face crop.
 - **Copy — the R8 amendment (owner-ruled via Q8.7):** the fixed hero keeps its frozen captions;
   promo slides are inherently TEMPLATED — tag pill = live state (ONLINE/SLEEPING treatments),
   display copy = the host name, JP caption from a small template set (draft: 稼働中 "in
@@ -497,7 +527,7 @@ for the "04 / 04" counter.
 | Slice | Contents | Gate |
 |---|---|---|
 | G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps five palette variants a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
-| G1 | Bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + **the §6.4 slide set: fixed hero + live per-host promos, clickable + swipeable**) + capsule track (cards/states/plates/shine + **the stars on cards**, §6.1/6.2) + wallpaper + the card-geometry rules (Q8.10 ruling) + the promo-copy owner pick | owner eyeball |
+| ✅ G1 | **BUILT + OWNER-EYEBALLED 2026-08-02 (as-built §7.2)** — bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + the §6.4 slide set **incl. the eyeball-ruled SCENE slides**) + capsule track (cards/states/plates/shine + stars) + wallpaper + the geometry rule + the owner's own art in the bundled set | owner eyeball ✅ (3+ live rounds) |
 | G2 | Dossier sheet (light inversion + the ruled frontier grid w/ §4.8's pinned values + services list + **the host ACTION BAR** — council H3, a named fidelity design checkpoint) — **reuses G1's star engine**, extracts the shared host-detail derivation to `lib/` (council M6), adds the sheet-timing call (§4.9 ledger) | eyeball + contrast probe |
 | G3 | Agent tab: GachaAgent body (oracle + §4.2 scroll mechanics) + composer skin — **the M7 blur ramp gets its own Fennec/Chrome device check here**, not deferred to G6. ~~Chat-hooks reskin~~ **BUBBLES SHIPPED AT G0 (owner pull-forward, `04003d9`+`6db92cc`: white/`#16162c`/`5px 5px 0 #ff6cae` + bot `#222541` + the prototype's 12.5px/1.45 type)** — G3 carries only bubble POLISH + the owner's 12.5px read-comfort check on device | eyeball + device check |
 | G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + M2/M3 VT enhancement per the spike verdict + Gecko tuning (the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape) |
@@ -547,6 +577,64 @@ fidelity waves — the record for successors:
   `localStorage.setItem("ctrlb.spike.navVT","1")` on Fennec later; the owner's observed
   visible-swap-under-the-reel (§10.1 note) is the thing M2 masks, with the body-only
   deferred-display fallback pre-designed if VT is dead.
+
+**§7.2 — G1 AS-BUILT (✅ owner-eyeballed 2026-08-02 evening, same session as the G0 sign-off).**
+Fifteen commits `2898fad..4879f9e`; end state **1221 FE unit (107 files) / 1254 BE / 33 gacha
+e2e arms**, full gate green per commit. The record for successors:
+- **Build (Opus, pinned brief `scratchpad/g1-brief.md` shape):** `2898fad` `wideArtForHost` (the
+  promo crop of the SAME assignment, +5 tests) · `9b057bd` the banner — pure `carousel.ts`
+  machine (idle→pending→drag, total over (state,event)) + `fleet.ts` derivations + the
+  `gachaReel` sweep-signal store + imperative-transform `GachaBanner` · `2a19553` the capsule
+  track (notch mask, stars, plates, tap-armed shine) · `5c4c7cc` wallpaper as a BACKGROUND on
+  `.kit-main` (kit owns its children; the fade was the price, practically unobservable) ·
+  `e0f1e2a` the agent's own self-review fix (suppressor disarm at gesture start).
+- **Review wave (Codex R1: READY WITH FIXES, 4 MED + 2 LOW; +2 main-seat finds; verdicts in
+  scratchpad codex-review/confirm.md):** `3f4f7c5` F1–F6 — ONE `moveTo` owns every animated
+  move; snap lock mirrored into a commit-time ref (the pointerdown-vs-effect race); banner
+  `inert` while the reel sweeps; focus ring pulled inside the clipped overflow
+  (`outline-offset: -3px`); `detail===0` bypasses click suppression; `snapping` OUT of the
+  autoplay gate (cadence restarts at interaction END) · `546a74c` F7 the kit-shaped error
+  state (notice BESIDE cached track — frontier's replace-shape contradicted the banner) + F8
+  additive `hasData` on `useFleet` (the honest "ever answered" fact; `hostCount>0` was a lying
+  proxy) · `1d20524` F9 the `.promo` face crop (the prototype's per-slide nth-child 50% 12%,
+  generalized as a class) · `92e508d` the confirm round's one residual (disarm BEFORE the
+  gesture rejections). Codex confirm: 8/9 RESOLVED → residual closed → ready.
+- **Owner eyeball rounds (live, the G0 cadence paying again):** `d03856e` slide scrim cut
+  hard (95/60/90% alphas → 55/30/50 — an OWNER OVERRIDE of prototype literals, the first;
+  copy legibility rides its text-shadow) · `e0afd5f` **3★ ladder RE-RULED ≥3→★3** (the lock
+  table read the owner's whole real fleet — 2/2/3/3 configured services — as flat ★2; §6.1
+  amended; and the lock premise "emma has 5–6 services" was optimistic: 3 dev / 4 prod) +
+  `--gc-star-hi` → `#ff8fa8` (the §6.2 device pick; salmon read barely-rosy) · `0411843` the
+  owner's OWN ART joins the bundled set (roster recast `[pegasus, atlas, 3, 4, lyra-tail]`;
+  lyra stays for her cutout — the G4 figure default; rook benched; 6.5 MB drops → 188 KB webp
+  via the documented one-shot) · `22e5577` entry-4 `focus: "50% 8%"` (the wide card's 46%
+  crop beheaded a full-body composition; value MEASURED against simulated 16:9 + banner
+  bands, not eyeballed) · `0b02a10` **the SCENE slides** (Opus wave, two owner amendments
+  folded MID-FLIGHT: hero-style copy, then the researched `SCENE_TITLES` pool; `BannerSlide`
+  became a discriminated union hero|scene|promo — the promo `host` is now compiler-enforced) ·
+  `4879f9e` scene dots announce the visible TITLE (the wave agent's own flag, accepted).
+- **Scenes-wave Codex round (folded post-eyeball): READY FOR SLICE CLOSE.** Union rendering
+  (buffering, inert offscreen, gestures, promo-only activation), the `count > 1` autoplay gate
+  (scenes run on an empty fleet; a true hero-only set stays paused), `sceneTitle()` cycling and
+  glyph coverage all judged SOUND. Two notes: (N) comment drift from `4879f9e` — two comments
+  still said the dot announces the scene's *name*; fixed in the handoff commit — and (L,
+  PRE-EXISTING, not scenes-caused) promo slide keys are bare host ids, so a host literally
+  named `hero` would collide with `HERO_KEY` (duplicate React keys); lean fix = `host:`-prefix
+  promo keys. Non-blocking on the real fleet — carried in OPEN below.
+- **Lessons banked:** an eyeball "bug" can be the ruled design meeting real data — CHECK THE
+  LIVE API before touching code (both star reports were data, not defects) · owner rulings
+  arriving mid-wave are deliverable to a running agent as amendments (two landed cleanly) ·
+  `vitest` from the repo ROOT silently runs without jsdom — cwd discipline on compound
+  commands · the wave agent's `git add -A` swept unrelated worktree state once (it caught and
+  rewrote itself; keep briefs explicit: stage by path).
+- **OPEN at slice close:** the ~80 MB of original drop files sit UNTRACKED in
+  `design/prototypes/gacha/{chars,banner images}/` — owner call whether they enter history
+  (REC: no; the converted webp set is committed and the originals live wherever the owner
+  keeps art) · owner picks not yet given: the wordmark string (カプセルアーケード stands) ·
+  NEW ribbon (unbuilt, no data seam) · promo-click→dossier destination (stub seam awaits G2;
+  proposal unvetoed so far) · counter semantics implicitly accepted (no complaint over three
+  rounds) · the Codex L above (`hero`-named host vs `HERO_KEY`): `host:`-prefix promo keys
+  when G2 next touches the slide plumbing — a one-line namespace fix, not worth its own wave.
 
 **Acceptance matrix (the lock session turns this into per-slice test obligations):** 0/1/many
 hosts · hosts>roster and roster>hosts · queries loading/error states (pill, counter) ·

@@ -66,7 +66,8 @@ export const CHARACTER_KEYS = ["pegasus", "atlas", "3", "4", "lyra"] as const;
 
 /** The owner's banner-art drops (G1 eyeball round 3), which ride the pickup carousel as EXTRA SLIDES
  *  beside the hero and the per-host promos — the owner's pick over cycling the hero's art. NAMED rather
- *  than a bare URL list because each one's dot has to announce itself, and a scene has no other name.
+ *  than a bare URL list because each one needs a stable slide KEY; what a scene's dot announces is its
+ *  VISIBLE title, picked from the `SCENE_TITLES` pool by position, not this name.
  *  When G5's role-scoped media folders land, its banner folder feeds this same list: a one-line source
  *  swap, exactly like the roster's. */
 export const SCENE_KEYS = ["b2", "b3"] as const;

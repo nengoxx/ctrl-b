@@ -3950,3 +3950,27 @@ then).
 - **Method per slice (the D51 cadence, unchanged):** pinned Opus build brief → main-seat
   audit → Codex round → waves to clean → owner eyeball → pause. The theme joins
   `themeContract`/e2e groups at G0; `CONTRACT_WAIVERS` stays `{}`.
+
+**✏️ G1-eyeball addendum (owner rulings, 2026-08-02 evening — as-built GACHA_PLAN §7.2):**
+- **The 3★ ladder's top rung re-ruled: ≥3 configured services → ★3** (supersedes the lock
+  table's "two or three → ★2", which read the owner's whole real fleet as flat ★2). 5★
+  re-confirmed 1:1/≥5-caps. Ladders remain design constants; `stars.ts` + plan §6.1 amended
+  together.
+- **The media directory is ROLE-SCOPED (amends this decision's flat-dir media seam):**
+  `$CTRLB_HOME/media/<ns>/{characters,banner,wallpaper,reel}/` — a dropped file is ASSIGNED
+  by its folder, no pinning ceremony; `slots` pins survive as optional overrides; the G5
+  index endpoint reports per-role. Full shape: plan §5.4. The §10.4 hardening/threat model
+  is unchanged and applies per subfolder.
+- **The banner slide set gains SCENE slides** (hero → N scenes → per-host promos): one slide
+  per image in the banner role pool (bundled `ART.scenes` until G5), inert non-buttons
+  wearing hero-style TEMPLATED copy — tag 限定イベント + caption 開催中 (frozen glyphs, no
+  font regen) + a title from the researched all-ASCII `SCENE_TITLES` pool (`i mod 8`;
+  Genshin/HSR/Arknights register × the app's network identity). Ruled over a cycling hero.
+  Slide keys stay filename-stable (`scene:<name>`); dots announce the visible title.
+- **Owner-override-of-prototype-literals precedent:** the slide scrim was cut well below the
+  prototype's near-opaque values at the owner's ask — fidelity is the DEFAULT, not a cage
+  once the owner has seen it on device. Same class: `--gc-star-hi` pinked to `#ff8fa8`
+  (the §6.2 device pick), entry-level `focus` used for the owner's own art (measured, not
+  eyeballed).
+- **The owner's art enters the bundled default set pre-G5** (roster recast; originals stay
+  UNTRACKED pending an owner call on 80 MB in history — REC no).

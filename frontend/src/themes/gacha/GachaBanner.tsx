@@ -55,8 +55,9 @@ import type { ResolvedArt } from "./roster";
  *   · `hero`  the fixed NETWORK PRIZE POOL slide. Frozen copy, no data dependency, nothing to open.
  *   · `scene` an owner banner-art drop (G1 eyeball round 3). Inert like the hero — a picture names no
  *             machine, so there is nothing to open — but it wears the same copy block, filled from a
- *             TEMPLATE: `position` picks its name out of the ruled `SCENE_TITLES` pool, so any future
- *             drop is titled without authoring a line per image, and `name` is what its dot announces.
+ *             TEMPLATE: `position` picks its TITLE out of the ruled `SCENE_TITLES` pool, so any future
+ *             drop is titled without authoring a line per image; `name` is just the stable per-file key
+ *             (the dot announces the title — see `dotLabel`).
  *   · `promo` one live machine. The only interactive kind, and the only one with a `host`, which the union
  *             makes the compiler's job rather than a `host &&` guard at every use. */
 export type BannerSlide =
