@@ -216,6 +216,29 @@ describe("the gesture, wired to the machine", () => {
     );
   });
 
+  it("a re-tap inside the snap window is not swallowed by the drag before it (F5 residual)", () => {
+    // The ordering bug: the reel/snap rejection ran BEFORE the token was disarmed, so a drag that never
+    // produced its synthetic click left the token armed, and the very next tap — rejected as a gesture
+    // because the snap was still running — had its OWN click eaten. The tap must still open the promo.
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    act(() => {
+      drag(banner, -100); // settles, arms the snap window, and delivers no synthetic click
+    });
+    expect(slides(container)[1].hasAttribute("inert")).toBe(false);
+
+    // Inside the 620ms window: the gesture is rejected (the strip must not move)…
+    act(() => {
+      fireEvent.pointerDown(banner, { pointerId: 2, isPrimary: true, clientX: 200, clientY: 100 });
+      fireEvent.pointerUp(banner, { pointerId: 2 });
+    });
+    expect(slides(container)[1].hasAttribute("inert")).toBe(false);
+    // …but the click that tap produces is a real one, and must reach the slide.
+    expect(fireEvent.click(slides(container)[1].querySelector("button")!, { detail: 1 })).toBe(
+      true,
+    );
+  });
+
   it("a KEYBOARD activation is never swallowed, even by a stale suppression token (F5)", () => {
     // A drag whose synthetic click never arrives leaves the token armed. A keyboard/AT activation carries
     // no pointer sequence (`detail === 0`) and no pointerdown to disarm it, so before the fix the very next

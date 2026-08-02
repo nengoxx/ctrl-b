@@ -316,14 +316,18 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
       aria-label="Pickup banner"
       inert={reeling}
       onPointerDown={(e) => {
+        // Disarm the click suppressor at the START of every pointer sequence — and BEFORE the rejections
+        // below, which is load-bearing. A drag does not always produce the synthetic click that would
+        // otherwise clear the token (pointer capture can retarget it away), so a re-tap inside the snap
+        // window used to be rejected before the disarm and have its OWN click swallowed. Disarming first
+        // is always safe: a fresh pointerdown means the previous sequence has ended, so there is no
+        // pending click left to suppress, and the next drag re-arms the token at capture/settle well
+        // before its own click can fire.
+        movedRef.current = false;
         // The banner REJECTS input while the reel sweeps (F3, §6.4) — the overlay is `pointer-events: none`
         // so it cannot do that for us — and while a snap is still running (F1): starting a new gesture
         // mid-animation zeroes the strip's transition-duration in flight and leaves it stranded.
         if (reeling || snapRef.current) return;
-        // Disarm the click suppressor at the START of every gesture. A drag does not always produce the
-        // synthetic click that would otherwise clear it (pointer capture can retarget it away), and a flag
-        // left armed would swallow the NEXT tap instead of the drag it was set for.
-        movedRef.current = false;
         dispatch({
           type: "down",
           pointerId: e.pointerId,
