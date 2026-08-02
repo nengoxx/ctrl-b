@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { relativeTime } from "../../src/lib/relativeTime";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
 import { GachaHostDetail } from "../../src/themes/gacha/GachaHostDetail";
-import { PENDING, dossierSub } from "../../src/themes/gacha/fleet";
+import { CLOSE_DOSSIER_LABEL, PENDING, dossierSub } from "../../src/themes/gacha/fleet";
 import { artForHost, defaultRoster } from "../../src/themes/gacha/roster";
 import { starsFor } from "../../src/themes/gacha/stars";
 import type { Host, HostServiceCfg, Service } from "../../src/types";
@@ -86,6 +86,7 @@ function renderD(props: Partial<Parameters<typeof GachaHostDetail>[0]> = {}) {
       busy={props.busy ?? false}
       run={run}
       titleId="dossier-title"
+      onClose={props.onClose}
     />,
   );
   return { container, run, h };
@@ -349,5 +350,30 @@ describe("the dossier's light surface reads from the dossier tokens", () => {
     expect(css).toContain("--gc-host: var(--gc-brand-1)");
     expect(css).toContain("--gc-host-2: var(--gc-brand-3)");
     expect(css).toContain("linear-gradient(var(--gc-host), var(--gc-host-2))");
+  });
+});
+
+// THE VISIBLE CLOSE CORNER (the prototype's `.close-detail`, owner-restored 2026-08-02). It is THEME
+// markup, not a kit change — the primitive's own sr-only close stays exactly as it is, and both carry the
+// same accessible name because they are the same action on the same sheet. Optional, so the content
+// renders standalone (every case above) with no dangling control.
+describe("the close corner", () => {
+  it("is absent without a handler, and calls it when tapped", () => {
+    expect(renderD().container.querySelector(".gc-dossier-close")).toBeNull();
+    cleanup();
+    const onClose = vi.fn();
+    const { container } = renderD({ onClose });
+    const close = container.querySelector<HTMLElement>(".gc-dossier-close")!;
+    expect(close.getAttribute("aria-label")).toBe(CLOSE_DOSSIER_LABEL);
+    fireEvent.click(close);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("is stacked ABOVE the handle's invisible drag strip (the cosmos chevron lesson)", () => {
+    // The corner sits exactly where `.bs-handle::after` (z-index 1) hangs into the body, so the rule that
+    // keeps it tappable is a z-index above it — asserted on the stylesheet, since jsdom paints nothing.
+    const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8");
+    const rule = css.slice(css.indexOf(".gc-dossier-close {"));
+    expect(rule.slice(0, rule.indexOf("}"))).toMatch(/z-index:\s*2/);
   });
 });

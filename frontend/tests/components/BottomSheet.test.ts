@@ -95,3 +95,43 @@ describe("data-settling stamp", () => {
     expect(sheet.dataset.settling).toBeUndefined();
   });
 });
+
+// `enterInstant` (M3's seam, D52 G2). OPT-IN: with the flag unset the enter is the primitive's two-step
+// (mount, then a rAF slides it up from the closed position) and every existing host keeps it. With the flag
+// the sheet must be PRESENT and SETTLED in the very commit that opened it — that is the whole point: gacha's
+// capsule→dossier morph is a View Transition, and the browser captures the new state one frame after the
+// update callback returns. A sheet that mounts an effect later has no avatar in that capture (nothing to
+// morph into); one that is mid-slide gives the morph an off-screen destination.
+//
+// jsdom reports offsetHeight 0, so the transform is 0 either way — OPACITY is the observable difference:
+// the two-step commits `0` and only reaches `1` in its rAF (which `act` does not run), the instant path is
+// at `1` immediately.
+describe("enterInstant", () => {
+  afterEach(cleanup);
+
+  const sheet = (open: boolean, enterInstant?: boolean) =>
+    createElement(BottomSheet, {
+      open,
+      enterInstant,
+      onClose: () => {},
+      children: createElement("div", null, "content"),
+    });
+
+  it("is present and settled in the commit that turned `open` true", () => {
+    const { container, rerender } = render(sheet(false, true));
+    expect(container.querySelector(".bs-sheet")).toBeNull();
+    rerender(sheet(true, true));
+    const el = container.querySelector<HTMLElement>(".bs-sheet")!;
+    expect(el).not.toBeNull();
+    expect(el.style.opacity).toBe("1");
+    expect(el.style.transform).toBe("translateY(0px)");
+  });
+
+  it("leaves the default enter untouched when the flag is unset", () => {
+    const { container, rerender } = render(sheet(false));
+    rerender(sheet(true));
+    const el = container.querySelector<HTMLElement>(".bs-sheet")!;
+    expect(el).not.toBeNull(); // mounted by the open effect…
+    expect(el.style.opacity).toBe("0"); // …but still at the START of its slide, waiting on the rAF
+  });
+});

@@ -45,6 +45,19 @@ type VTDocument = Document & {
 // Identity-based, so a stale value is harmless (the next stamp mints a fresh token).
 let stampOwner: object | null = null;
 
+/** Whether `runViewTransition` would ACTUALLY animate right now — the same two gates it applies (engine
+ *  support + the app's motion flag), exported so a caller can prepare the DOM *for* a transition without
+ *  re-deriving them. gacha's M3 needs it: mounting the dossier at rest (rather than sliding it up) is only
+ *  correct when a morph is about to carry the entrance; on the instant path the sheet must keep its slide.
+ *  One predicate, read by the wrapper itself, so the two can never disagree. */
+export function viewTransitionsActive(): boolean {
+  if (typeof document === "undefined") return false;
+  return (
+    getUI().motion !== "reduced" &&
+    typeof (document as VTDocument).startViewTransition === "function"
+  );
+}
+
 /** Apply `update` inside a View Transition when the browser supports one and motion is `full`; otherwise
  *  apply it instantly. Either way the update runs through `flushSync`, so React has committed by the time
  *  this returns. `type` (optional) stamps `html[data-transition]` for the duration so theme CSS can target
@@ -57,7 +70,7 @@ export function runViewTransition(update: () => void, type?: string): void {
   const doc = document as VTDocument;
   const start = doc.startViewTransition?.bind(doc);
   const apply = () => flushSync(update);
-  if (getUI().motion === "reduced" || !start) {
+  if (!viewTransitionsActive() || !start) {
     apply(); // reduced-motion or unsupported → instant swap
     return;
   }

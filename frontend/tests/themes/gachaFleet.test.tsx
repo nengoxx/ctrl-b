@@ -819,42 +819,6 @@ describe("the unit dossier (G2)", () => {
     expect(dossierName()).toBe("pegasus");
   });
 
-  it("a card open runs the VIEW-TRANSITION image morph, and leaves no stray name behind (M3)", () => {
-    // jsdom has no startViewTransition, so every other test exercises the instant fallback; this one
-    // mocks it to pin the morph discipline: the tapped portrait is named BEFORE the call (the old
-    // capture happens after it, and must see the name) and un-named INSIDE the update callback (so the
-    // new capture sees only the sheet avatar named, and no stray name dup-skips a later transition).
-    const start = vi.fn((cb: () => void) => {
-      expect(
-        [...document.querySelectorAll<HTMLElement>(".gc-card img")].some(
-          (img) => img.style.getPropertyValue("view-transition-name") === "capsule-shell",
-        ),
-      ).toBe(true);
-      cb();
-      return { ready: Promise.resolve(), finished: Promise.resolve() };
-    });
-    (document as { startViewTransition?: unknown }).startViewTransition = start;
-    try {
-      const { container } = render(<GachaFleet active />);
-      act(() => {
-        fireEvent.click(cards(container)[0]);
-      });
-      expect(start).toHaveBeenCalledTimes(1);
-      expect(dossierName()).toBe("pegasus");
-      for (const img of container.querySelectorAll<HTMLElement>(".gc-card img"))
-        expect(img.style.getPropertyValue("view-transition-name")).toBe("");
-      // A SWAP with the sheet already up opens PLAIN: the avatar holds the name, and a second named
-      // node in one capture would make the browser skip the whole transition.
-      act(() => {
-        fireEvent.click(cards(container)[1]);
-      });
-      expect(start).toHaveBeenCalledTimes(1);
-      expect(dossierName()).toBe("atlas");
-    } finally {
-      delete (document as { startViewTransition?: unknown }).startViewTransition;
-    }
-  });
-
   it("tapping another capsule SWAPS the open dossier (catchOutside=false, the ruled precedent)", () => {
     const { container } = render(<GachaFleet active />);
     act(() => {
@@ -899,6 +863,262 @@ describe("the unit dossier (G2)", () => {
     setFleet({ hosts: [host("pegasus", true), host("atlas", true)] });
     rerender(<GachaFleet active />);
     expect(dossier()!.querySelector(".gc-dossier-title p")?.textContent).toContain("ONLINE");
+  });
+});
+
+// ── M3, THE CAPSULE→DOSSIER IMAGE MORPH + its races (G2 rework, owner rulings 2026-08-02) ────────────
+// jsdom has no `startViewTransition`, so every test above exercises the instant fallback. These mock it
+// with a DEFERRED callback — the spec's own shape: the update callback runs at the next rendering
+// opportunity, NOT inside the call — which is the only way to drive the races the synchronous mock could
+// not express (a second tap before the first callback lands; a close in the gap).
+describe("the image morph (M3)", () => {
+  const cards = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-card")];
+  const cardName = (c: HTMLElement, i: number): string =>
+    cards(c)[i].querySelector<HTMLElement>("img")!.style.getPropertyValue("view-transition-name");
+  const avatarName = (): string =>
+    document
+      .querySelector<HTMLElement>(".gc-dossier .avatar")!
+      .style.getPropertyValue("view-transition-name");
+
+  /** A spec-shaped `startViewTransition`: it captures the callback and hands back a handle, and the
+   *  caller decides WHEN (and in which order) the pending callbacks run. */
+  function deferVT() {
+    const pending: (() => void)[] = [];
+    const start = vi.fn((cb: () => void) => {
+      pending.push(cb);
+      return { ready: Promise.resolve(), finished: Promise.resolve() };
+    });
+    (document as { startViewTransition?: unknown }).startViewTransition = start;
+    return {
+      start,
+      pending,
+      /** Run one pending callback (React state lands here, so it needs `act`). */
+      run: (i: number) => {
+        act(() => {
+          pending[i]();
+        });
+      },
+    };
+  }
+  afterEach(() => {
+    delete (document as { startViewTransition?: unknown }).startViewTransition;
+  });
+
+  it("names the tapped portrait for the OLD capture and clears it inside the callback", () => {
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    // The old capture happens AFTER the call returns, so the name has to be live right now — and the
+    // dossier must not have opened yet (the callback is what applies it).
+    expect(vt.start).toHaveBeenCalledTimes(1);
+    expect(cardName(container, 0)).toBe("capsule-shell");
+    expect(dossier()).toBeNull();
+
+    vt.run(0);
+    expect(dossierName()).toBe("pegasus");
+    // …and nothing keeps the name: a stray one would dup-skip the NEXT transition entirely.
+    expect(cardName(container, 0)).toBe("");
+    expect(avatarName()).toBe(""); // the avatar is named by CSS under the stamp, never inline
+  });
+
+  it("has the dossier mounted and SETTLED inside the update callback — the new capture's destination", () => {
+    // The bug this rework fixed. The browser captures the new state one frame after the callback returns:
+    // the sheet used to mount an effect LATER, so that capture held no `capsule-shell` at all and the
+    // browser animated a lone `::view-transition-old` — a portrait fading out in place over the live card,
+    // i.e. nothing visible. The assertions run INSIDE the callback's synchronous commit on purpose.
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    act(() => {
+      vt.pending[0]();
+      const sheet = document.querySelector<HTMLElement>(".bs-sheet")!;
+      expect(sheet).not.toBeNull();
+      expect(document.querySelector(".gc-dossier .avatar")).not.toBeNull();
+      expect(sheet.style.opacity).toBe("1"); // settled, not at the start of an enter slide
+    });
+  });
+
+  it("a SWAP morphs too: the mounted avatar is suppressed for the capture, then restored", () => {
+    // The owner's second ruling. Two `capsule-shell` nodes in one capture = the browser skips the whole
+    // transition, and the open sheet's avatar carries that name from CSS — so it is suppressed INLINE for
+    // the old capture and released inside the callback, where it becomes the morph's destination.
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    vt.run(0);
+    expect(dossierName()).toBe("pegasus");
+
+    act(() => {
+      fireEvent.click(cards(container)[1]);
+    });
+    expect(vt.start).toHaveBeenCalledTimes(2); // a swap is a morph now, not a plain switch
+    expect(cardName(container, 1)).toBe("capsule-shell"); // the FROM element, at capture time
+    expect(avatarName()).toBe("none"); // …and the only other candidate is suppressed
+    expect(dossierName()).toBe("pegasus"); // still the old host — the callback has not run
+
+    vt.run(1);
+    expect(dossierName()).toBe("atlas");
+    expect(cardName(container, 1)).toBe("");
+    expect(avatarName()).toBe(""); // released — the CSS name is the live one again
+  });
+
+  it("rapid A→B: the LAST intent wins even when the callbacks land in reverse order", () => {
+    // The Codex HIGH. The callback is async, and a second `startViewTransition` skips the first — so a
+    // stale callback can land after a newer one. The generation ticket is what makes the outcome the
+    // user's last tap rather than the scheduler's whim.
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[0]); // A
+    });
+    act(() => {
+      fireEvent.click(cards(container)[1]); // B, before A's callback ran
+    });
+    expect(vt.pending).toHaveLength(2);
+
+    vt.run(1); // B lands first…
+    expect(dossierName()).toBe("atlas");
+    vt.run(0); // …and A, now stale, must NOT reopen pegasus over it
+    expect(dossierName()).toBe("atlas");
+    // Both callbacks still cleaned up after themselves, ticket or no ticket.
+    expect(cardName(container, 0)).toBe("");
+    expect(cardName(container, 1)).toBe("");
+  });
+
+  it("a close in the gap voids the pending open (and so does leaving the tab)", () => {
+    const vt = deferVT();
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[0]); // open pegasus for real, so there is something to close
+    });
+    vt.run(0);
+    act(() => {
+      fireEvent.click(cards(container)[1]); // …then a swap whose callback has not landed yet
+    });
+    act(() => {
+      fireEvent.click(document.querySelector<HTMLElement>(".gc-dossier-close")!);
+    });
+    expect(document.body.dataset.sheet).toBeUndefined();
+    vt.run(1);
+    expect(document.body.dataset.sheet).toBeUndefined(); // the dismissed dossier stays dismissed
+
+    // …the same for a tab change landing between the tap and its callback.
+    act(() => {
+      fireEvent.click(cards(container)[1]);
+    });
+    rerender(<GachaFleet active={false} />);
+    vt.run(2);
+    rerender(<GachaFleet active />);
+    expect(document.body.dataset.sheet).toBeUndefined();
+  });
+
+  it("opens PLAIN when no transition can run (reduced motion) — the sheet keeps its own slide", () => {
+    deferVT();
+    setUI({ motion: "reduced" });
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    expect(dossierName()).toBe("pegasus"); // applied instantly, no callback to wait for
+    expect(cardName(container, 0)).toBe("");
+  });
+});
+
+// ── THE REEL BLOCKS THE TRACK (F3, extended to the capsules) ─────────────────────────────────────────
+describe("the reel REJECTS capsule input", () => {
+  const cards = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-card")];
+  afterEach(() => setGachaReelRunning(false));
+
+  it("inerts the track and refuses to open a dossier while the slats sweep", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      setGachaReelRunning(true);
+    });
+    expect(container.querySelector(".gc-track")!.hasAttribute("inert")).toBe(true);
+    // jsdom dispatches into inert subtrees where a real engine would not — so the handler's own
+    // rejection is what is assertable here, and it is the belt the banner already wears.
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    expect(dossier()).toBeNull();
+
+    act(() => {
+      setGachaReelRunning(false);
+    });
+    expect(container.querySelector(".gc-track")!.hasAttribute("inert")).toBe(false);
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    expect(dossierName()).toBe("pegasus");
+  });
+});
+
+// ── DISMISSAL: the visible corner + tap-outside (owner rulings 2026-08-02) ───────────────────────────
+describe("dismissing the dossier", () => {
+  const cards = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-card")];
+  const open = (c: HTMLElement, i = 0): void => {
+    act(() => {
+      fireEvent.click(cards(c)[i]);
+    });
+  };
+
+  it("renders the prototype's visible close corner, and it closes", () => {
+    const { container } = render(<GachaFleet active />);
+    open(container);
+    const close = document.querySelector<HTMLElement>(".gc-dossier-close")!;
+    expect(close).not.toBeNull();
+    // ONE name for the one action — the kit's sr-only close says the same thing about the same sheet.
+    expect(close.getAttribute("aria-label")).toBe(
+      document.querySelector(".bs-close-sr")!.textContent,
+    );
+    act(() => {
+      fireEvent.click(close);
+    });
+    expect(document.body.dataset.sheet).toBeUndefined();
+  });
+
+  it("a tap OUTSIDE closes it; a tap inside the sheet does not", () => {
+    const { container } = render(<GachaFleet active />);
+    open(container);
+    act(() => {
+      fireEvent.click(container.querySelector(".gc-track-head")!);
+    });
+    expect(document.body.dataset.sheet).toBeUndefined();
+
+    open(container);
+    act(() => {
+      fireEvent.click(document.querySelector(".gc-dossier-title h2")!);
+    });
+    expect(document.body.dataset.sheet).toBe("open"); // the sheet's own content is not "outside"
+  });
+
+  it("the tap that OPENS it never closes it, and a card tap SWAPS without a close in between", () => {
+    // The flicker case: if the outside-close listener did not exempt the capsules, tapping B with A open
+    // would close then reopen — two sheet lifecycles for one gesture. The dialog must survive as ONE.
+    const { container } = render(<GachaFleet active />);
+    open(container);
+    expect(dossierName()).toBe("pegasus");
+    open(container, 1);
+    expect(dossierName()).toBe("atlas");
+    expect(document.body.dataset.sheet).toBe("open");
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  });
+
+  it("ignores a click a handler has already consumed (the banner's drag-derived one)", () => {
+    const { container } = render(<GachaFleet active />);
+    open(container);
+    const consumed = new MouseEvent("click", { bubbles: true, cancelable: true });
+    act(() => {
+      consumed.preventDefault();
+      container.querySelector(".gc-track-head")!.dispatchEvent(consumed);
+    });
+    expect(document.body.dataset.sheet).toBe("open");
   });
 });
 

@@ -111,6 +111,11 @@ export function openLabel(name: string, online: boolean): string {
   return `open ${name} dossier, ${online ? "online" : "sleeping"}`;
 }
 
+/** The dossier's dismiss label. ONE string, two controls: the kit sheet's own sr-only close button and the
+ *  theme's visible corner (the prototype's `.close-detail`, owner-restored 2026-08-02). They do the same
+ *  thing to the same sheet, so they say the same thing — a second wording would read as a second action. */
+export const CLOSE_DOSSIER_LABEL = "Close unit dossier";
+
 /** A banner SCENE slide's display line: its name from the ruled `SCENE_TITLES` pool, picked by POSITION
  *  and never by filename. Cycling means a folder of any size is titled deterministically — the ninth drop
  *  wraps to the pool's head rather than falling back to a number — and the owner authors nothing per

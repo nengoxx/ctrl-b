@@ -88,6 +88,20 @@ interface Props {
   /** Fired when a drag SETTLES on a detent (not on dismiss) — the host persists it to feed `initialSnap` next
    *  open. Pass a STABLE callback. */
   onSnapChange?: (snap: SheetDetent) => void;
+  /** OPT-IN (gacha M3): skip the enter slide — appear at the resting detent, in the SAME commit that turns
+   *  `open` true, with no transition and no rAF. For a host whose ENTRANCE is animated by something else.
+   *
+   *  Why the primitive has to own this rather than the host CSS-ing the slide away: gacha's capsule→dossier
+   *  morph is a View Transition, and the browser captures the NEW state one frame after the update callback
+   *  returns. The default enter is a two-step (an effect mounts, a rAF then slides) — so at capture time the
+   *  sheet either does not exist yet (no destination for the morph: the browser animates a lone
+   *  `::view-transition-old`, i.e. nothing visible) or sits at its off-screen start (the morph flies at the
+   *  wrong rect). Mounting AT REST synchronously is the only shape that gives the transition a real
+   *  destination — the prototype makes the same trade (`html[data-transition="detail"] .detail-panel
+   *  { transition: none }`): under a morph the sheet is already there and the portrait carries the eye.
+   *
+   *  Unset (every other host) → the default two-step enter, unchanged. */
+  enterInstant?: boolean;
 }
 
 export function BottomSheet({
@@ -101,8 +115,15 @@ export function BottomSheet({
   onHeightChange,
   initialSnap,
   onSnapChange,
+  enterInstant,
 }: Props) {
   const [mounted, setMounted] = useState(open); // stays mounted through the slide-out
+  // PRESENCE — "is the sheet in the tree". Normally that is exactly `mounted` (an effect mounts on open, a
+  // timer unmounts after the exit slide). `enterInstant` adds the one case the effect cannot serve: the node
+  // must exist in the very commit that opened it, so a View Transition capturing the next frame finds it.
+  // Deriving presence instead of setting state during render keeps the open/close machine below untouched —
+  // with the flag unset `present === mounted`, so every other host runs the exact same code path.
+  const present = mounted || (!!enterInstant && open);
   const sheetRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const exitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -194,6 +215,20 @@ export function BottomSheet({
     applyInert(snap.current === "peek");
     syncGrip();
   };
+  // `enterInstant`'s one move: BE at the resting detent, now, with nothing animating — no rAF, no
+  // transition, inside whatever commit calls it. Assumes `measure()`/`snap.current` are already current.
+  const placeAtRest = () => {
+    const el = sheetRef.current;
+    if (!el) return;
+    delete el.dataset.dragging;
+    el.style.transition = "none";
+    setTransform(restTy(snap.current));
+    el.style.opacity = "1";
+    void el.offsetHeight; // commit the resting position with the transition still off
+    el.style.transition = "";
+    report();
+    settle(); // inert the below-fold at peek + prime the grip's label/focusability
+  };
   // SC 2.5.7 dragging alternative: a TAP anywhere on the handle (via endDrag's sub-slop branch) or
   // Enter/Space on the focused grip toggles peek⇄full (Material's BottomSheetDragHandleView precedent —
   // the whole handle is the tap target; the 44×5px grip alone would be a hopeless one). Only meaningful
@@ -267,11 +302,18 @@ export function BottomSheet({
   // On mount: measure, place fully closed (no transition), then next frame ease to the default snap (peek if
   // a detent exists, else full). The reflow between makes the transition play from the closed position.
   useLayoutEffect(() => {
-    if (!mounted) return;
+    if (!present) return;
     const el = sheetRef.current;
     if (!el) return;
     measure();
     snap.current = openSnap();
+    // `enterInstant`: no slide at all — place the sheet AT its resting detent, transition suppressed, before
+    // this commit is painted. Read once, at mount, and deliberately NOT a dep: a host that clears the flag
+    // while the sheet is up must not re-run the entrance.
+    if (enterInstant) {
+      placeAtRest();
+      return;
+    }
     // Mark the enter window: while sliding up, a content reflow (e.g. the Audiowide title's font swap) must
     // RE-TARGET the slide, not snap it (see onResize). Clears once the slide has had time to settle.
     entering.current = true;
@@ -291,13 +333,39 @@ export function BottomSheet({
       settle(); // inert the below-fold at peek + prime the grip's label/focusability
     });
     return () => cancelAnimationFrame(r);
-  }, [mounted]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [present]);
+
+  // `enterInstant` UPKEEP — the two moments the primitive normally settles a frame LATE, which an entrance
+  // driven by a single-frame capture cannot afford:
+  //   · a RE-OPEN that catches the sheet still easing out — the `[open]` effect below eases it back up, but
+  //     as a PASSIVE effect, so a capture would freeze the destination somewhere down the exit slide;
+  //   · a CONTENT SWAP that changes the sheet's height (gacha swapping one dossier for another under the
+  //     morph) — the ResizeObserver below re-seats it next frame, i.e. after the capture, so the morph
+  //     would land at the old rect and the sheet would then jump out from under it.
+  // Both are the moves those two already make, taken in the commit itself. A swap deliberately KEEPS the
+  // current detent (an `openSnap()` here would undo a drag the user has settled) and no-ops when the
+  // content box didn't actually move. Inert for every other host: the first condition returns.
+  const wasOpen = useRef(open);
+  useLayoutEffect(() => {
+    const reopened = open && !wasOpen.current;
+    wasOpen.current = open;
+    const el = sheetRef.current;
+    if (!enterInstant || !open || !mounted || !el || dragging.current) return;
+    const prevFull = full.current;
+    const prevPeek = peek.current;
+    measure();
+    if (reopened) snap.current = openSnap();
+    else if (full.current === prevFull && peek.current === prevPeek) return;
+    placeAtRest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, children]);
 
   // Track content/viewport resize: re-measure + re-apply the current snap (instant — not a slide on a poll
   // update) + re-report the revealed height. offsetHeight is transform-independent, so dragging is unaffected.
   useEffect(() => {
     const el = sheetRef.current;
-    if (!mounted || !el || typeof ResizeObserver === "undefined") return;
+    if (!present || !el || typeof ResizeObserver === "undefined") return;
     const onResize = () => {
       const prevFull = full.current;
       const prevPeek = peek.current;
@@ -324,7 +392,7 @@ export function BottomSheet({
     const ro = new ResizeObserver(onResize);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [mounted]);
+  }, [present]);
 
   useEffect(
     () => () => {
@@ -355,7 +423,7 @@ export function BottomSheet({
     return () => document.removeEventListener("keydown", onEsc);
   }, [open, onClose]);
 
-  if (!mounted) return null;
+  if (!present) return null;
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     const el = sheetRef.current;

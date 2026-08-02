@@ -2,7 +2,7 @@ import type { FleetAction } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
-import { PENDING, dossierSub, pingText } from "./fleet";
+import { CLOSE_DOSSIER_LABEL, PENDING, dossierSub, pingText } from "./fleet";
 import type { ResolvedArt } from "./roster";
 import { isHighStar, starsFor, type StarMode } from "./stars";
 
@@ -34,6 +34,9 @@ interface Props {
   busy: boolean;
   run: (action: FleetAction, host: Host) => Promise<void>;
   titleId: string; // aria-labelledby target the sheet points at (the host name)
+  /** Dismiss the dossier — the prototype's visible corner close (owner-restored 2026-08-02). Optional so
+   *  the content stays renderable standalone (the tests do); with no handler the corner is simply absent. */
+  onClose?: () => void;
 }
 
 /** How many accent pairs the tri-accent yields — pink→violet, violet→cyan, cyan→pink. The prototype's
@@ -42,7 +45,17 @@ interface Props {
  *  dossier, and the pairs themselves are token-authored in gacha.css (no per-host values anywhere). */
 const ACCENT_PAIRS = 3;
 
-export function GachaHostDetail({ host, services, art, mode, index, busy, run, titleId }: Props) {
+export function GachaHostDetail({
+  host,
+  services,
+  art,
+  mode,
+  index,
+  busy,
+  run,
+  titleId,
+  onClose,
+}: Props) {
   const facts = hostDetailFacts(host, services);
   const online = facts.online;
   // The ruled star + Services input (§6.1/§4.8): CONFIGURED services, the same count the capsule card
@@ -70,10 +83,23 @@ export function GachaHostDetail({ host, services, art, mode, index, busy, run, t
 
   return (
     <div className="gc-dossier" data-pair={index >= 0 ? index % ACCENT_PAIRS : 0}>
+      {/* THE VISIBLE CLOSE (the prototype's `.close-detail`). It sits in the corner the handle's invisible
+          16px drag hit-strip reaches into, so it carries the z-index that puts it ABOVE that strip — the
+          cosmos chevron lesson, applied deliberately rather than avoided. The kit's own sr-only close stays
+          (it is the primitive's, and gacha does not fork the primitive); both carry the SAME name, because
+          they are the same action on the same sheet. */}
+      {onClose && (
+        <button
+          type="button"
+          className="gc-dossier-close"
+          aria-label={CLOSE_DOSSIER_LABEL}
+          onClick={onClose}
+        />
+      )}
       {/* data-bs-peek: the PEEK detent ends here — the sheet opens showing the portrait, the rarity and the
-          name/role line; drag-up reveals the metrics + services. Nothing interactive lives in the top 16px,
-          which is where the handle's invisible drag hit-strip (`.bs-handle::after`, z 1) overlaps the body
-          — the cosmos chevron lesson: a control up there gets its taps eaten. */}
+          name/role line; drag-up reveals the metrics + services. The only interactive thing in the top 16px
+          — where the handle's invisible drag hit-strip (`.bs-handle::after`, z 1) overlaps the body — is the
+          close corner above, which is stacked over that strip on purpose (the cosmos chevron lesson). */}
       <div className="gc-dossier-head" data-bs-peek>
         <div className="art-frame">
           {art ? (

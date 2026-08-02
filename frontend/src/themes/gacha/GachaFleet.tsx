@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { BottomSheet, type SheetDetent } from "../../components/BottomSheet";
 import { useFleet } from "../../hooks/useFleet";
-import { runViewTransition } from "../../lib/viewTransition";
+import { runViewTransition, viewTransitionsActive } from "../../lib/viewTransition";
+import { useGachaReelRunning } from "../../store/gachaReel";
 import { setPlanSheetOpen } from "../../store/planSheet";
 import { getSheetSnap, setSheetSnap } from "../../store/sheetSnap";
 import { useThemeSetting } from "../../theme-engine/settings";
@@ -13,7 +14,7 @@ import { GachaHostDetail } from "./GachaHostDetail";
 import { ART } from "./art";
 import { HERO_KEY, HOST_KEY_PREFIX, SCENE_KEY_PREFIX } from "./carousel";
 import { GACHA_COPY } from "./copy";
-import { cardShapes, counterText, hostsResolved, rateText } from "./fleet";
+import { CLOSE_DOSSIER_LABEL, cardShapes, counterText, hostsResolved, rateText } from "./fleet";
 import { artForHost, defaultRoster, heroArt, wideArtForHost } from "./roster";
 import { MAX_STARS, toStarMode } from "./stars";
 
@@ -55,33 +56,83 @@ export function GachaFleet({ active }: { active: boolean }) {
   //    cosmos selection stores exist because their maps and grids select each other two ways — here nothing
   //    outside this body reads the selection, and a store would be state living further from its only user).
   const [selected, setSelected] = useState<string | null>(null);
-  // THE CAPSULE→DOSSIER IMAGE MORPH (M3's image half, owner-pulled from G4 at the G2 eyeball): a card
-  // hands over its portrait, which is view-transition-named for THIS transition only. The name is stamped
-  // before `startViewTransition` (the OLD capture happens after the call, at the next render step) and
-  // cleared INSIDE the update callback — after the old capture, before the new one — so the new snapshot
-  // sees only the sheet avatar carrying the name and no stray name survives to dup-skip a later
-  // transition (the viewTransition.ts warning). Fresh opens only: with the sheet already up the avatar
-  // holds the name, and a second named node would skip the transition anyway. The sheet keeps its own
-  // slide-up (the owner's ruling — only the IMAGE morphs); promos open plain (no portrait to morph from).
+  // Whether THIS open is being carried by the M3 morph — handed to the sheet as `enterInstant`. A morph
+  // needs the dossier mounted AT REST inside the update callback (see BottomSheet's prop doc); every other
+  // open keeps the primitive's slide-up.
+  const [morphOpen, setMorphOpen] = useState(false);
+  // The reel owns the screen while it sweeps (§6.4/F3): the banner already refuses input, and the capsule
+  // track must too — a dossier opening behind five full-width slats is a tap the user never sees land.
+  const reeling = useGachaReelRunning();
+  // THE OPEN GENERATION (Codex G2 HIGH). `startViewTransition`'s update callback is ASYNC by spec — it runs
+  // at the next rendering opportunity, and a SECOND call skips the first, so callbacks can land out of order
+  // or after the intent that queued them is void (a rapid A→B tap, a close, the tab going away, unmount).
+  // Every intent takes a ticket; a morph callback applies its selection only while it still holds the
+  // current one. It ALWAYS un-names its own portrait either way — a stray `view-transition-name` would
+  // dup-skip the next transition entirely (the viewTransition.ts warning).
+  const gen = useRef(0);
+  // THE CAPSULE→DOSSIER IMAGE MORPH (M3's image half, owner-pulled from G4 at the G2 eyeball). The tapped
+  // portrait is view-transition-named for THIS transition only: stamped BEFORE `startViewTransition` (the
+  // OLD capture happens after the call, at the next rendering step, and must see it) and cleared INSIDE the
+  // update callback — after the old capture, before the new one — so the new state has exactly one
+  // `capsule-shell`, the dossier avatar. One named node per capture is the whole contract: two would make
+  // the browser skip the transition outright (the viewTransition.ts warning).
+  //
+  // A dossier that is ALREADY on screen — a SWAP, or one still easing out from a close — carries that name
+  // from the CSS rule the `detail` stamp switches on, so it would be the second node in the old capture.
+  // Suppressing it inline for the capture window (and restoring it in the callback, where it is the
+  // destination) is what lets a swap morph too: old = the tapped card alone, new = the avatar alone.
+  //
+  // Opens that stay PLAIN: a promo slide (no portrait to morph from) and anything on an engine/motion
+  // setting where no transition will run at all — there the sheet's own slide-up is the entrance.
   const openHostDossier = useCallback(
     (hostId: string, morphImg?: HTMLImageElement | null) => {
-      if (morphImg && selected === null) {
-        morphImg.style.setProperty("view-transition-name", "capsule-shell");
-        runViewTransition(() => {
-          morphImg.style.removeProperty("view-transition-name");
-          setSelected(hostId);
-        }, "detail");
-      } else {
+      if (reeling) return;
+      // Every open takes a ticket, morph or not: a plain open must also void a morph still in flight.
+      const mine = ++gen.current;
+      if (!morphImg || !viewTransitionsActive()) {
+        setMorphOpen(false);
         setSelected(hostId);
+        return;
       }
+      const avatar = document.querySelector<HTMLElement>(".gc-dossier .avatar");
+      avatar?.style.setProperty("view-transition-name", "none");
+      morphImg.style.setProperty("view-transition-name", "capsule-shell");
+      runViewTransition(() => {
+        // These two ALWAYS run, current ticket or not: a stray name (or a stuck suppression) would break
+        // the NEXT transition, which is a worse failure than a dropped selection.
+        morphImg.style.removeProperty("view-transition-name");
+        avatar?.style.removeProperty("view-transition-name");
+        if (gen.current !== mine) return; // a newer intent (or a close / tab change) owns the dossier now
+        setMorphOpen(true);
+        setSelected(hostId);
+      }, "detail");
     },
-    [selected],
+    [reeling],
   );
   // Drop a selection whose machine has left the fleet (a config edit, a removal) so the sheet can never
   // reference a gone host — the cosmos/frontier precedent.
   useEffect(() => {
-    if (selected && !hosts.some((h) => h.id === selected)) setSelected(null);
+    if (selected && !hosts.some((h) => h.id === selected)) {
+      gen.current++;
+      setMorphOpen(false);
+      setSelected(null);
+    }
   }, [selected, hosts]);
+  // Leaving the tab (or unmounting) voids any morph still in flight: its callback would otherwise re-open a
+  // dossier over a screen the user has already left.
+  useEffect(() => {
+    // The ref OBJECT is stable, so capturing it keeps the cleanup off a stale `.current` read.
+    const ticket = gen;
+    if (!active) {
+      ticket.current++;
+      // …and the sheet that slid out with the tab must slide back IN when the tab returns: `morphOpen` is
+      // only ever true while a transition is carrying the entrance.
+      setMorphOpen(false);
+    }
+    return () => {
+      ticket.current++;
+    };
+  }, [active]);
 
   const selIndex = selected ? hosts.findIndex((h) => h.id === selected) : -1;
   const selHost = selIndex >= 0 ? hosts[selIndex] : null;
@@ -108,7 +159,36 @@ export function GachaFleet({ active }: { active: boolean }) {
   useEffect(() => {
     if (sheetOpen) setPlanSheetOpen(false);
   }, [sheetOpen]);
-  const closeDossier = useCallback(() => setSelected(null), []);
+  const closeDossier = useCallback(() => {
+    gen.current++; // a pending morph must not re-open what the user just dismissed
+    setMorphOpen(false);
+    setSelected(null);
+  }, []);
+  // TAP-OUTSIDE DISMISS (owner ruling 2026-08-02). The primitive's own catcher stays OFF: it is a
+  // full-screen button, so it would eat the capsule tap that SWAPS the dossier before it ever reached the
+  // card. This is the same dismissal expressed as a document listener that names its exemptions — the
+  // sheet itself, a capsule card, a promo slide's hit area — and closes on anything else.
+  //
+  // Three deliberate choices:
+  //   · CLICK, not pointerdown: a pointerdown listener would dismiss on the first touch of a page SCROLL
+  //     or a banner swipe, which is a gesture, not a tap.
+  //   · the exemptions are why the OPENING tap can never close the sheet it just opened — every opener is
+  //     a card or a promo, so it is exempt by construction; no timestamp guard, nothing to tune.
+  //   · `defaultPrevented` is respected (the BottomSheet Escape convention): the banner marks the
+  //     synthetic click a finished DRAG produces, and that click must not double as a dismissal.
+  // The carousel's own controls (dots, prev/next) are NOT exempt — under the owner's wording they are
+  // outside, so tapping one closes the dossier and moves the strip. Flagged for the eyeball round.
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented) return;
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest(".bs-root, .gc-card, .gc-slide-hit")) return;
+      closeDossier();
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [sheetOpen, closeDossier]);
   // The LIVE selection while open (so polls update the sheet), the retained one through the slide-out.
   const detail = selHost ? { host: selHost, index: selIndex } : shown;
 
@@ -176,7 +256,7 @@ export function GachaFleet({ active }: { active: boolean }) {
         <div className="gc-msg">no hosts in config.yaml</div>
       )}
       {hosts.length > 0 && (
-        <div className="gc-track">
+        <div className="gc-track" inert={reeling}>
           {shapes.map((shape, i) => (
             <GachaCard
               key={hosts[i].id}
@@ -199,10 +279,11 @@ export function GachaFleet({ active }: { active: boolean }) {
         open={sheetOpen}
         onClose={closeDossier}
         labelledBy={titleId}
-        closeLabel="Close unit dossier"
+        closeLabel={CLOSE_DOSSIER_LABEL}
         catchOutside={false}
         initialSnap={getSheetSnap(SHEET_KEY)}
         onSnapChange={persistSheetSnap}
+        enterInstant={morphOpen}
       >
         {detail && (
           <GachaHostDetail
@@ -214,6 +295,7 @@ export function GachaFleet({ active }: { active: boolean }) {
             busy={busy.has(detail.host.id)}
             run={run}
             titleId={titleId}
+            onClose={closeDossier}
           />
         )}
       </BottomSheet>

@@ -1095,24 +1095,85 @@
 
     /* ── M3's IMAGE MORPH, the `detail`-typed transition (owner-pulled from G4 at the G2 eyeball).
      * The scope root IS the html element (`data-skin` lives there), so `:scope` reaches the
-     * view-transition pseudos from inside gacha's own fence. Two choices, both the owner's ruling:
-     * the tapped portrait morphs into the sheet avatar at the prototype's 560 ms spring feel
-     * (CSS-approximated — a true spring isn't expressible), and the ROOT cross-fade is suppressed so
-     * nothing else flashes: the new root renders immediately (it is the LIVE capture, so the sheet's
-     * own slide-up shows through) and the portrait is the only thing that animates above it. */
-    :scope[data-transition="detail"]::view-transition-group(capsule-shell),
-    :scope[data-transition="detail"]::view-transition-old(capsule-shell),
-    :scope[data-transition="detail"]::view-transition-new(capsule-shell) {
+     * view-transition pseudos from inside gacha's own fence (verified live — both engines report our
+     * 560/280/200/300 ms on the generated pseudo animations, not the UA's 250 ms default). The
+     * composition is the PROTOTYPE's, exactly (owner ruling 2026-08-02): the tapped portrait morphs
+     * into the sheet avatar at the 560 ms spring feel (CSS-approximated — a true spring isn't
+     * expressible) over a root cross-fade, and the dossier does NOT slide up under a transition (see
+     * BottomSheet's `enterInstant`). A card open, a SWAP and a reopen mid-exit all morph; the sheet's own
+     * slide-up survives as the FALLBACK — a promo (no portrait to morph from), an engine without View
+     * Transitions, reduced motion. */
+    :scope[data-transition="detail"]::view-transition-group(capsule-shell) {
       animation-duration: 560ms;
       animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
     }
-    :scope[data-transition="detail"]::view-transition-old(root),
+    /* The two portraits cross-fade in HALF the flight (the prototype's own 280 ms, theme.css:152): the
+     * card crop has resolved into the dossier crop by mid-arc, and the rest of the arc lands the frame. */
+    :scope[data-transition="detail"]::view-transition-old(capsule-shell),
+    :scope[data-transition="detail"]::view-transition-new(capsule-shell) {
+      animation-duration: 280ms;
+    }
+    /* …and the page BEHIND it takes the prototype's own detail cross-fade (theme.css:149-150 — its
+     * `old-reel`/`new-reel` pair at the detail timings): the old page eases back to 96% as it goes, the new
+     * one — dossier already at rest, portrait extracted into the group above — comes in from 104%. This is
+     * what carries the sheet's ARRIVAL now that the sheet cannot slide under a transition (the capture is
+     * a single frame: a sliding sheet would freeze the morph's destination at its off-screen start). */
+    :scope[data-transition="detail"]::view-transition-old(root) {
+      animation: gacha-detail-out 200ms ease both;
+    }
     :scope[data-transition="detail"]::view-transition-new(root) {
-      animation: none;
+      animation: gacha-detail-in 300ms ease both;
+    }
+    @keyframes gacha-detail-out {
+      to {
+        transform: scale(0.96);
+        opacity: 0;
+      }
+    }
+    @keyframes gacha-detail-in {
+      from {
+        transform: scale(1.04);
+        opacity: 0;
+      }
     }
 
     .gc-dossier {
+      position: relative; /* anchors the close corner below */
       padding-bottom: calc(2px + env(safe-area-inset-bottom));
+    }
+    /* THE CLOSE CORNER (the prototype's `.close-detail`: a 34px dark-ink tile with a white glyph, tucked
+     * into the panel's top-right). Two things it must survive:
+     *   · the handle's transparent 16px drag strip, which hangs into exactly this corner at z-index 1 —
+     *     hence z-index 2 (the strip is a SIBLING subtree, so this is one stacking context, no isolation);
+     *   · a 34px visual box being a sub-44px touch target — the `::after` bleeds the hit area out to 44px
+     *     without moving a pixel of the paint (the same trick `.bs-handle::after` uses for the grip).
+     * The glyph is CSS `content` rather than markup: gacha's TypeScript is fenced ASCII-only (the frozen
+     * font subset guard), and a multiplication sign in a component would have to enter the JP subset. */
+    .gc-dossier-close {
+      position: absolute;
+      top: 0;
+      right: 12px;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 0;
+      border-radius: 12px;
+      background: var(--gc-dossier-ink);
+      color: var(--gc-dossier-from);
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .gc-dossier-close::before {
+      content: "\d7";
+    }
+    .gc-dossier-close::after {
+      content: "";
+      position: absolute;
+      inset: -5px;
     }
     /* Head — the portrait beside the kicker/name/role stack. `align-items: flex-start` (the prototype's
      * own override of the shared centred rule): the title block hangs from the top of a 138px portrait. */
@@ -1127,11 +1188,16 @@
       flex: 0 0 104px;
       width: 104px;
     }
+    /* M3's image half: the morph's TO element, named only INSIDE the `detail` transition. Scoped rather
+     * than constant so no unrelated transition (a theme switch, the tab reel's root cross-fade) ever
+     * captures the dossier avatar as a named group. Inside a `detail` transition it is the destination —
+     * and when a dossier is ALREADY on screen (a swap, or one still easing out) GachaFleet suppresses this
+     * name inline for the old capture, so the tapped card is the only `capsule-shell` in it. */
+    :scope[data-transition="detail"] .gc-dossier .avatar {
+      view-transition-name: capsule-shell;
+    }
     .gc-dossier .avatar {
       display: block;
-      /* M3's image half: the morph's TO element. Constant is safe — the only same-name risk is a card
-       * being stamped while the sheet is already up, and GachaFleet morphs on FRESH opens only. */
-      view-transition-name: capsule-shell;
       width: 104px;
       height: 138px;
       flex: none;
