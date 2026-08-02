@@ -64,6 +64,13 @@ function byName(name: string): string {
  *  the G5 gallery. */
 export const CHARACTER_KEYS = ["pegasus", "atlas", "3", "4", "lyra"] as const;
 
+/** The owner's banner-art drops (G1 eyeball round 3), which ride the pickup carousel as EXTRA SLIDES
+ *  beside the hero and the per-host promos — the owner's pick over cycling the hero's art. NAMED rather
+ *  than a bare URL list because each one's dot has to announce itself, and a scene has no other name.
+ *  When G5's role-scoped media folders land, its banner folder feeds this same list: a one-line source
+ *  swap, exactly like the roster's. */
+export const SCENE_KEYS = ["b2", "b3"] as const;
+
 export const ART = {
   characters: CHARACTER_KEYS.map(byName),
   /** The transparent cutout the reel figure uses (G4) — a different asset KIND, not a crop. */
@@ -71,6 +78,10 @@ export const ART = {
   /** Landscape scene art: the pickup banner / fleet wallpaper, and the agent oracle's backdrop. */
   banner: byName("banner"),
   oracle: byName("oracle"),
+  /** The banner's extra scene slides. PARTITIONED like `banner`/`oracle` and for the same reason: scene
+   *  art is never an entry in the per-host cycle, so it can never be dealt to a machine as its capsule
+   *  portrait (the frontier partition rule; the roster's own test pins it). */
+  scenes: SCENE_KEYS.map((name) => ({ name, url: byName(name) })),
 } as const;
 
 /** The raw name→url map for `ThemeDef.assets` (§9.3), keyed by bare filename. */

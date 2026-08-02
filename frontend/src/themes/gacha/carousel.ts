@@ -35,6 +35,11 @@ export const MAX_DOTS = 8;
  *  one key that is not a host id — it has no data dependency, so it survives every reconciliation. */
 export const HERO_KEY = "hero";
 
+/** Scene slides key off their art's name behind this prefix (`scene:b2`). The key space stays disjoint
+ *  from host ids by construction — a machine literally named `scene:b2` is not a case this design
+ *  entertains — so reconciliation, autoplay and the inert/gesture logic all stay key-generic. */
+export const SCENE_KEY_PREFIX = "scene:";
+
 export type CarouselPhase = "idle" | "pending" | "drag";
 
 export interface CarouselState {

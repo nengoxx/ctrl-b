@@ -238,10 +238,12 @@ describe("defaultRoster — the bundled fallback set (§5.5)", () => {
   });
 
   it("keeps the SCENE art out of the per-host cycle (the frontier partition rule)", () => {
-    // Every host, however many, gets a CHARACTER — never the banner or the oracle backdrop.
+    // Every host, however many, gets a CHARACTER — never the banner, the oracle backdrop, or one of the
+    // owner's banner SCENE drops (which ride the carousel as their own slides, G1 eyeball round 3).
     const dealt = assignArt(r, 12).map((a) => a!.url);
     expect(dealt).not.toContain(ART.banner);
     expect(dealt).not.toContain(ART.oracle);
+    for (const scene of ART.scenes) expect(dealt).not.toContain(scene.url);
     expect(new Set(dealt)).toEqual(new Set(ART.characters));
   });
 });

@@ -2,7 +2,8 @@ import { useFleet } from "../../hooks/useFleet";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { GachaBanner, type BannerSlide } from "./GachaBanner";
 import { GachaCard } from "./GachaCard";
-import { HERO_KEY } from "./carousel";
+import { ART } from "./art";
+import { HERO_KEY, SCENE_KEY_PREFIX } from "./carousel";
 import { GACHA_COPY } from "./copy";
 import { cardShapes, counterText, hostsResolved, rateText } from "./fleet";
 import { artForHost, defaultRoster, heroArt, wideArtForHost } from "./roster";
@@ -46,11 +47,25 @@ export function GachaFleet({ active }: { active: boolean }) {
   // odd host wide. A pure function of the COUNT, so a poll can never re-shuffle the track's shape.
   const shapes = cardShapes(hosts.length);
 
-  // The §6.4 slide set: the fixed hero, then ONE promo per host — online AND sleeping (the ruled membership;
-  // a sleeping promo renders dimmed, which keeps its click useful: open the dossier, then wake).
+  // The §6.4 slide set, in its ruled order: the fixed hero, then the owner's banner SCENES (G1 eyeball
+  // round 3 — art-only slides, the owner's pick over cycling the hero's art), then ONE promo per host —
+  // online AND sleeping (the ruled membership; a sleeping promo renders dimmed, which keeps its click
+  // useful: open the dossier, then wake).
+  //
+  // The body composes the list because it is the one place that knows all three sources. The scenes come
+  // from the bundled art PARTITION rather than the roster, which is what keeps them out of the per-host
+  // cycle; G5's banner media folder replaces that one expression and nothing downstream moves.
   const slides: BannerSlide[] = [
-    { key: HERO_KEY, host: null, art: heroArt(ROSTER), online: true },
+    { kind: "hero", key: HERO_KEY, art: heroArt(ROSTER) },
+    ...ART.scenes.map((scene, i) => ({
+      kind: "scene" as const,
+      key: SCENE_KEY_PREFIX + scene.name,
+      name: scene.name,
+      position: i,
+      art: { url: scene.url },
+    })),
     ...hosts.map((host, i) => ({
+      kind: "promo" as const,
       key: host.id,
       host,
       art: wideArtForHost(ROSTER, i),

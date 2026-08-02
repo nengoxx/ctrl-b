@@ -66,6 +66,14 @@ export const GACHA_COPY = {
   promoCaptionSleeping: "休眠中",
   /** 待機中 (taiki-chū) — "standing by"; the sleeping card's plate. */
   cardSleeping: "待機中",
+  /** 限定イベント (gentei ibento) — "limited event"; a banner SCENE slide's tag. Deliberately its own key
+   *  rather than a reference to `promoTagSleeping`, which happens to read the same today: they are
+   *  different surfaces with different reasons, and a future edit to one must not silently move the other.
+   *  Its glyphs already ride the frozen subset through that key, so the font manifest is untouched. */
+  sceneTag: "限定イベント",
+  /** 開催中 (kaisai-chū) — "now running"; a banner SCENE slide's caption. Same relationship to `heroTag`:
+   *  same value today, separate semantic home, no new glyphs. */
+  sceneCaption: "開催中",
   /** The track heading (編成 again — kept as its own key so the heading can move independently). */
   trackHead: "編成",
 
@@ -105,6 +113,30 @@ export const GACHA_COPY = {
 } as const;
 
 export type GachaCopyKey = keyof typeof GACHA_COPY;
+
+/** The banner SCENE slides' title pool (G1 eyeball round 3, owner-ruled) — what a dropped banner image is
+ *  called. Researched against how real gacha banners name themselves: Genshin's "Epitome Invocation" /
+ *  "Sparkling Steps", HSR's "Light Cone Event Warp", Arknights' "Headhunting" — a poetic-plus-system
+ *  two-word register — crossed with this app's own network identity, which is where UPLINK / RELAY /
+ *  CIRCUIT / PACKET / UPTIME come from.
+ *
+ *  Scene i takes `SCENE_TITLES[i % length]`, so ANY number of dropped images is titled, deterministically,
+ *  with no per-file authoring and never a bare number.
+ *
+ *  BESIDE `GACHA_COPY`, not inside it: `gachaGlyphSet()` walks that object's values as STRINGS, and an
+ *  array value would corrupt the glyph derivation the frozen font subset is generated from. It lives in
+ *  this module anyway because production copy has ONE home here — the font fence is the reason the module
+ *  exists, not the only thing it is for. All-ASCII by design, so the subset is untouched either way. */
+export const SCENE_TITLES = [
+  "CAPSULE FESTIVAL",
+  "MIDNIGHT UPLINK",
+  "STARLIGHT RELAY",
+  "LUCKY CIRCUIT",
+  "NEON HEADHUNT",
+  "PACKET CARNIVAL",
+  "AURORA PROTOCOL",
+  "GOLDEN UPTIME",
+] as const;
 
 /** The theme's frozen glyph set: every NON-ASCII character used by `GACHA_COPY`, sorted by code point.
  *  Pure + dependency-free so both the generator script and the guard test derive the SAME list from the

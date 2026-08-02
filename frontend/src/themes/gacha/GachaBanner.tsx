@@ -22,7 +22,7 @@ import {
   type CarouselState,
 } from "./carousel";
 import { GACHA_COPY } from "./copy";
-import { openLabel, promoCopy } from "./fleet";
+import { openLabel, promoCopy, sceneTitle } from "./fleet";
 import { safeRafLoop, type SafeRafLoop } from "../../theme-engine/safeRafLoop";
 import type { ResolvedArt } from "./roster";
 
@@ -49,12 +49,26 @@ import type { ResolvedArt } from "./roster";
 // key that still exists, so a committed set never shows stale liveness — only a host that vanished
 // mid-gesture keeps painting from its snapshot, and only until the next reconciliation.
 
-/** One banner slide. `host` is null on the fixed hero — the one slide that survives every data state. */
-export interface BannerSlide {
-  key: string;
-  host: Host | null;
-  art: ResolvedArt | null;
-  online: boolean;
+/** One banner slide, as a DISCRIMINATED UNION on `kind` — the single mechanism the render, the dot labels
+ *  and the interactivity all branch on, so nothing anywhere has to sniff a key to know what it is holding:
+ *
+ *   · `hero`  the fixed NETWORK PRIZE POOL slide. Frozen copy, no data dependency, nothing to open.
+ *   · `scene` an owner banner-art drop (G1 eyeball round 3). Inert like the hero — a picture names no
+ *             machine, so there is nothing to open — but it wears the same copy block, filled from a
+ *             TEMPLATE: `position` picks its name out of the ruled `SCENE_TITLES` pool, so any future
+ *             drop is titled without authoring a line per image, and `name` is what its dot announces.
+ *   · `promo` one live machine. The only interactive kind, and the only one with a `host`, which the union
+ *             makes the compiler's job rather than a `host &&` guard at every use. */
+export type BannerSlide =
+  | { kind: "hero"; key: string; art: ResolvedArt | null }
+  | { kind: "scene"; key: string; name: string; position: number; art: ResolvedArt | null }
+  | { kind: "promo"; key: string; host: Host; art: ResolvedArt | null; online: boolean };
+
+/** A dot's accessible name. Each kind announces the thing it actually is. */
+function dotLabel(s: BannerSlide): string {
+  if (s.kind === "promo") return `show ${s.host.name}`;
+  if (s.kind === "scene") return `show banner art ${s.name}`;
+  return "show the prize pool";
 }
 
 interface Props {
@@ -365,14 +379,23 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
       <div className="gc-banner-track" ref={trackRef}>
         {rendered.map((s, i) => {
           const inactive = i !== index;
-          const host = s.host;
-          const copy = host ? promoCopy(s.online) : null;
+          // One copy block, three sources: a promo's live state, a scene's TEMPLATE (so the Nth dropped
+          // image is captioned without a line authored for it), and the hero's frozen pair.
+          const copy =
+            s.kind === "promo"
+              ? promoCopy(s.online)
+              : s.kind === "scene"
+                ? { tag: GACHA_COPY.sceneTag, caption: GACHA_COPY.sceneCaption }
+                : { tag: `PICKUP ${GACHA_COPY.heroTag}`, caption: GACHA_COPY.heroCaption };
           const body = (
             <span className="gc-banner-copy">
-              <span className="tag">{copy ? copy.tag : `PICKUP ${GACHA_COPY.heroTag}`}</span>
+              <span className="tag">{copy.tag}</span>
               <b>
-                {host ? (
-                  host.name
+                {s.kind === "promo" ? (
+                  s.host.name
+                ) : s.kind === "scene" ? (
+                  // The hero's own two-line break, applied to the pool name (CAPSULE / FESTIVAL).
+                  sceneLines(s.position)
                 ) : (
                   <>
                     NETWORK
@@ -381,12 +404,16 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
                   </>
                 )}
               </b>
-              <small>{copy ? copy.caption : GACHA_COPY.heroCaption}</small>
+              <small>{copy.caption}</small>
             </span>
           );
           return (
             <div
-              className={"gc-slide" + (host ? " promo" : "") + (host && !s.online ? " sleep" : "")}
+              className={
+                "gc-slide" +
+                (s.kind === "promo" ? " promo" : "") +
+                (s.kind === "promo" && !s.online ? " sleep" : "")
+              }
               key={s.key}
               role="group"
               aria-roledescription="slide"
@@ -404,17 +431,18 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
                   style={s.art.focus === undefined ? undefined : { objectPosition: s.art.focus }}
                 />
               )}
-              {host ? (
+              {s.kind === "promo" ? (
                 <button
                   type="button"
                   className="gc-slide-hit"
-                  aria-label={openLabel(host.name, s.online)}
-                  onClick={() => onOpenHost(host.id)}
+                  aria-label={openLabel(s.host.name, s.online)}
+                  onClick={() => onOpenHost(s.host.id)}
                 >
                   {body}
                 </button>
               ) : (
-                // The fixed hero is inert by design (§6.4): it names no machine, so it has nothing to open.
+                // The hero and the scenes are inert by design (§6.4): neither names a machine, so neither
+                // has anything to open. Same box, same copy block, no button.
                 <div className="gc-slide-hit">{body}</div>
               )}
             </div>
@@ -439,7 +467,7 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
                 key={s.key}
                 type="button"
                 className={"gc-dot" + (i === index ? " on" : "")}
-                aria-label={s.host ? `show ${s.host.name}` : "show the prize pool"}
+                aria-label={dotLabel(s)}
                 aria-current={i === index ? "true" : undefined}
                 onClick={() => goTo(s.key)}
               >
@@ -463,6 +491,23 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
           </div>
         ))}
     </div>
+  );
+}
+
+/** A scene's title, broken across two lines at its first space — the hero's own display shape. Titles that
+ *  carry no space simply render as one line. */
+function sceneLines(position: number) {
+  const [head, ...rest] = sceneTitle(position).split(" ");
+  return (
+    <>
+      {head}
+      {rest.length > 0 && (
+        <>
+          <br />
+          {rest.join(" ")}
+        </>
+      )}
+    </>
   );
 }
 

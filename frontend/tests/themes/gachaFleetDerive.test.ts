@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { GACHA_COPY } from "../../src/themes/gacha/copy";
+import { GACHA_COPY, SCENE_TITLES } from "../../src/themes/gacha/copy";
 import {
   cardShapes,
   counterText,
@@ -8,6 +8,7 @@ import {
   plateSub,
   promoCopy,
   rateText,
+  sceneTitle,
 } from "../../src/themes/gacha/fleet";
 import type { Host } from "../../src/types";
 
@@ -154,6 +155,27 @@ describe("plateSub — a capsule's ROLE · state line", () => {
     expect(plateSub(host({ status: null }))).toBe(
       `WORKSTATION ${GACHA_COPY.sep} ${GACHA_COPY.cardSleeping}`,
     );
+  });
+});
+
+describe("sceneTitle — the banner scenes' named pool (owner-ruled)", () => {
+  it("names each drop from the pool, in order", () => {
+    expect(SCENE_TITLES.map((_, i) => sceneTitle(i))).toEqual([...SCENE_TITLES]);
+  });
+
+  it("CYCLES past the pool's end rather than falling back to a number", () => {
+    // A ninth dropped banner image wraps to the head — the whole point of a pool over `EVENT 09`.
+    expect(sceneTitle(SCENE_TITLES.length)).toBe(SCENE_TITLES[0]);
+    expect(sceneTitle(SCENE_TITLES.length + 3)).toBe(SCENE_TITLES[3]);
+  });
+
+  it("resolves a nonsense position to the first title rather than throwing on a render path", () => {
+    expect(sceneTitle(-1)).toBe(SCENE_TITLES[SCENE_TITLES.length - 1]);
+    expect(sceneTitle(Number.NaN)).toBe(SCENE_TITLES[0]);
+  });
+
+  it("is two words, so the hero's two-line break has something to break on", () => {
+    for (const t of SCENE_TITLES) expect(t.split(" ")).toHaveLength(2);
   });
 });
 

@@ -4,7 +4,7 @@
 // that has not resolved yet, a host with no role) are then ordinary unit tests rather than render assertions.
 
 import type { Host } from "../../types";
-import { GACHA_COPY } from "./copy";
+import { GACHA_COPY, SCENE_TITLES } from "./copy";
 
 /** A capsule card's shape in the track. The prototype's three: `pair` is the default 3/4 portrait (two per
  *  row), `feat` and `wide` both span the full width at their own aspect ratios. */
@@ -83,6 +83,16 @@ export function plateSub(host: Host): string {
  *  in-repo precedent for spelling the state out. */
 export function openLabel(name: string, online: boolean): string {
   return `open ${name} dossier, ${online ? "online" : "sleeping"}`;
+}
+
+/** A banner SCENE slide's display line: its name from the ruled `SCENE_TITLES` pool, picked by POSITION
+ *  and never by filename. Cycling means a folder of any size is titled deterministically — the ninth drop
+ *  wraps to the pool's head rather than falling back to a number — and the owner authors nothing per
+ *  image. A nonsense position resolves to the first title rather than throwing on a render path. */
+export function sceneTitle(position: number): string {
+  const n = SCENE_TITLES.length;
+  const i = Number.isFinite(position) ? ((Math.trunc(position) % n) + n) % n : 0;
+  return SCENE_TITLES[i];
 }
 
 /** A promo slide's templated copy (§6.4 / the R8 amendment): the tag pill and the JP caption are per-STATE

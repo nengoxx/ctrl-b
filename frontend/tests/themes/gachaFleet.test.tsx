@@ -17,8 +17,11 @@ vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
 import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setUI } from "../../src/store/ui";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
+import { GachaBanner } from "../../src/themes/gacha/GachaBanner";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
-import { AUTOPLAY_MS, SNAP_MS } from "../../src/themes/gacha/carousel";
+import { AUTOPLAY_MS, HERO_KEY, SNAP_MS } from "../../src/themes/gacha/carousel";
+import { ART } from "../../src/themes/gacha/art";
+import { sceneTitle } from "../../src/themes/gacha/fleet";
 import { defaultRoster, wideArtForHost } from "../../src/themes/gacha/roster";
 import type { Host } from "../../src/types";
 
@@ -59,6 +62,13 @@ function setFleet(over: Record<string, unknown> = {}): void {
 }
 
 const slides = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-slide")];
+/** The PROMO slides alone. The set is hero + the bundled scenes + one promo per host, so a promo's index
+ *  in the strip shifts with the scene count — queried by kind rather than counted from the hero. */
+const promos = (c: HTMLElement): HTMLElement[] => [
+  ...c.querySelectorAll<HTMLElement>(".gc-slide.promo"),
+];
+/** hero + the two bundled banner scenes — every slide that is not a machine. */
+const SCENERY = 1 + ART.scenes.length;
 const rate = (c: HTMLElement): string => c.querySelector(".gc-banner-rate span")!.textContent ?? "";
 
 beforeEach(() => {
@@ -68,10 +78,10 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("the slide set (§6.4)", () => {
-  it("is the fixed hero plus ONE promo per host — sleeping ones included", () => {
+  it("is the hero, then the banner SCENES, then ONE promo per host — sleeping ones included", () => {
     const { container } = render(<GachaFleet active />);
     const found = slides(container);
-    expect(found).toHaveLength(3);
+    expect(found).toHaveLength(SCENERY + 2);
     expect(found[0].textContent).toContain("PRIZE POOL");
     expect(container.querySelector('[aria-label="open pegasus dossier, online"]')).not.toBeNull();
     // the SLEEPING host still gets a promo — the membership ruling, not implementer latitude
@@ -80,30 +90,55 @@ describe("the slide set (§6.4)", () => {
 
   it("marks a sleeping promo with the sleep treatment and its own frozen caption", () => {
     const { container } = render(<GachaFleet active />);
-    const [, online, asleep] = slides(container);
+    const [online, asleep] = promos(container);
     expect(online.className).not.toContain("sleep");
     expect(asleep.className).toContain("sleep");
     expect(asleep.textContent).toContain(GACHA_COPY.promoCaptionSleeping);
     expect(online.textContent).toContain(GACHA_COPY.promoCaptionOnline);
   });
 
-  it("zero hosts → the hero ALONE, with no dots and nothing to autoplay", () => {
+  it("zero hosts → the hero and the scenes stand; only the promos are absent", () => {
+    // The scenes have no data dependency, so a fleet with nothing in it is still a carousel — dots and
+    // autoplay stay eligible. (The genuine hero-ONLY contract case is exercised directly on GachaBanner
+    // below, since GachaFleet always has the bundled scenes to show.)
     setFleet({ hosts: [] });
     const { container } = render(<GachaFleet active />);
-    expect(slides(container)).toHaveLength(1);
-    expect(container.querySelector(".gc-banner-dots")).toBeNull();
+    expect(slides(container)).toHaveLength(SCENERY);
+    expect(promos(container)).toHaveLength(0);
+    expect(container.querySelectorAll(".gc-dot")).toHaveLength(SCENERY);
   });
 
-  it("an unresolved fleet renders the hero alone — the one slide that needs no data", () => {
+  it("an unresolved fleet renders the scenery alone — the slides that need no data", () => {
     setFleet({ hosts: [], isLoading: true, hasData: false });
     const { container } = render(<GachaFleet active />);
-    expect(slides(container)).toHaveLength(1);
+    expect(slides(container)).toHaveLength(SCENERY);
   });
 
   it("a background refetch error KEEPS the cached promos (never collapses to hero-only)", () => {
     setFleet({ error: new Error("backend unreachable") });
     const { container } = render(<GachaFleet active />);
-    expect(slides(container)).toHaveLength(3);
+    expect(promos(container)).toHaveLength(2);
+  });
+
+  it("renders the SCENES with the TEMPLATED copy block, numbered, and with nothing to open", () => {
+    const { container } = render(<GachaFleet active />);
+    const scenery = slides(container).slice(1, SCENERY);
+    expect(scenery).toHaveLength(ART.scenes.length);
+    for (const [i, el] of scenery.entries()) {
+      expect(el.querySelector("img")!.getAttribute("src")).toBe(ART.scenes[i].url);
+      // The template generalizes: the Nth dropped image takes the Nth pool name, no line authored for it.
+      const copy = el.querySelector(".gc-banner-copy")!;
+      expect(copy.querySelector(".tag")!.textContent).toBe(GACHA_COPY.sceneTag);
+      // rendered across two lines, so the text content is the title with its space removed
+      expect(copy.querySelector("b")!.textContent).toBe(sceneTitle(i).replace(" ", ""));
+      expect(copy.querySelector("br")).not.toBeNull();
+      expect(copy.querySelector("small")!.textContent).toBe(GACHA_COPY.sceneCaption);
+      // …but a picture names no machine, so it stays inert: no button anywhere in the slide.
+      expect(el.querySelector("button")).toBeNull();
+      expect(el.className).not.toContain("promo"); // the face crop is for characters only
+    }
+    expect(sceneTitle(0)).toBe("CAPSULE FESTIVAL");
+    expect(sceneTitle(1)).toBe("MIDNIGHT UPLINK");
   });
 
   it("crops CHARACTER slides at face height, and leaves the hero scene alone (F9)", () => {
@@ -112,16 +147,17 @@ describe("the slide set (§6.4)", () => {
     const { container } = render(<GachaFleet active />);
     const found = slides(container);
     expect(found[0].className).not.toContain("promo"); // the hero keeps the scene crop
-    expect(found[1].className).toContain("promo");
-    expect(found[2].className).toContain("promo");
+    expect(found[1].className).not.toContain("promo"); // …and so do the banner scenes
+    expect(found[2].className).not.toContain("promo");
+    expect(promos(container)).toHaveLength(2);
   });
 
   it("resolves promo art through the SHARED resolver, at the host's display index", () => {
     const { container } = render(<GachaFleet active />);
     const imgs = [...container.querySelectorAll<HTMLImageElement>(".gc-slide img")];
     // slide 0 is the hero; the promos take the roster entries for host index 0 and 1
-    expect(imgs[1].getAttribute("src")).toBe(wideArtForHost(defaultRoster(), 0)!.url);
-    expect(imgs[2].getAttribute("src")).toBe(wideArtForHost(defaultRoster(), 1)!.url);
+    expect(imgs[SCENERY].getAttribute("src")).toBe(wideArtForHost(defaultRoster(), 0)!.url);
+    expect(imgs[SCENERY + 1].getAttribute("src")).toBe(wideArtForHost(defaultRoster(), 1)!.url);
   });
 });
 
@@ -159,34 +195,98 @@ describe("carousel semantics", () => {
     expect(found[0].hasAttribute("inert")).toBe(false);
     expect(found[1].hasAttribute("inert")).toBe(true);
     expect(found[1].getAttribute("aria-hidden")).toBe("true");
-    expect(found.map((s) => s.getAttribute("aria-label"))).toEqual(["1 of 3", "2 of 3", "3 of 3"]);
+    expect(found.map((s) => s.getAttribute("aria-label"))).toEqual([
+      "1 of 5",
+      "2 of 5",
+      "3 of 5",
+      "4 of 5",
+      "5 of 5",
+    ]);
   });
 
   it("dots are labelled buttons carrying aria-current, and move the active slide", () => {
     const { container } = render(<GachaFleet active />);
     const dots = [...container.querySelectorAll<HTMLButtonElement>(".gc-dot")];
-    expect(dots).toHaveLength(3);
+    expect(dots).toHaveLength(SCENERY + 2);
+    // Every kind announces the thing it actually is — a scene has no machine to name, so it names its art.
     expect(dots.map((d) => d.getAttribute("aria-label"))).toEqual([
       "show the prize pool",
+      "show banner art b2",
+      "show banner art b3",
       "show pegasus",
       "show atlas",
     ]);
     expect(dots[0].getAttribute("aria-current")).toBe("true");
 
     act(() => {
-      fireEvent.click(dots[2]);
+      fireEvent.click(dots[SCENERY + 1]);
     });
     const after = [...container.querySelectorAll<HTMLButtonElement>(".gc-dot")];
-    expect(after[2].getAttribute("aria-current")).toBe("true");
+    expect(after[SCENERY + 1].getAttribute("aria-current")).toBe("true");
     // …and the newly active slide is the one that is no longer inert
-    expect(slides(container)[2].hasAttribute("inert")).toBe(false);
+    expect(slides(container)[SCENERY + 1].hasAttribute("inert")).toBe(false);
   });
 
   it("a long host name wraps rather than overflowing (the plate is bounded, unlike the prototype's)", () => {
     setFleet({ hosts: [host("a".repeat(60), true)] });
     const { container } = render(<GachaFleet active />);
-    const copy = slides(container)[1].querySelector(".gc-banner-copy b")!;
+    const copy = promos(container)[0].querySelector(".gc-banner-copy b")!;
     expect(copy.textContent).toHaveLength(60);
+  });
+});
+
+describe("the scenes make a carousel out of an EMPTY fleet", () => {
+  beforeEach(() => setFleet({ hosts: [] }));
+
+  it("still auto-advances: the scenery alone is more than one slide", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(<GachaFleet active />);
+      expect(slides(container)[0].hasAttribute("inert")).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(AUTOPLAY_MS);
+      });
+      expect(slides(container)[1].hasAttribute("inert")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is still swipeable", () => {
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    act(() => {
+      fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
+      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 150, clientY: 102 });
+      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 100, clientY: 102 });
+      fireEvent.pointerUp(banner, { pointerId: 1 });
+    });
+    expect(slides(container)[1].hasAttribute("inert")).toBe(false);
+  });
+
+  it("but a set with NO scenes and NO hosts is still hero-only: no dots, no autoplay", () => {
+    // The preserved contract case (§6.4). GachaFleet always has the bundled scenes, so this is driven on
+    // the banner directly — the state a roster with no banner art at all would produce.
+    vi.useFakeTimers();
+    try {
+      const { container } = render(
+        <GachaBanner
+          slides={[{ kind: "hero", key: HERO_KEY, art: { url: "hero.webp" } }]}
+          active
+          rate="x"
+          onOpenHost={() => undefined}
+        />,
+      );
+      expect(container.querySelectorAll(".gc-slide")).toHaveLength(1);
+      expect(container.querySelector(".gc-banner-dots")).toBeNull();
+      expect(container.querySelector(".gc-banner-nav")).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(AUTOPLAY_MS * 3);
+      });
+      expect(container.querySelector(".gc-slide")!.hasAttribute("inert")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -211,9 +311,7 @@ describe("the gesture, wired to the machine", () => {
     // …and the promo the finger came to rest on must NOT open (the §6.4 `moved` flag, read in capture).
     // `detail: 1` is what makes this the POINTER-derived click a drag produces — jsdom defaults it to 0,
     // which is the keyboard shape the suppressor deliberately lets through (F5, below).
-    expect(fireEvent.click(slides(container)[1].querySelector("button")!, { detail: 1 })).toBe(
-      false,
-    );
+    expect(fireEvent.click(banner, { detail: 1 })).toBe(false);
   });
 
   it("a re-tap inside the snap window is not swallowed by the drag before it (F5 residual)", () => {
@@ -234,9 +332,7 @@ describe("the gesture, wired to the machine", () => {
     });
     expect(slides(container)[1].hasAttribute("inert")).toBe(false);
     // …but the click that tap produces is a real one, and must reach the slide.
-    expect(fireEvent.click(slides(container)[1].querySelector("button")!, { detail: 1 })).toBe(
-      true,
-    );
+    expect(fireEvent.click(banner, { detail: 1 })).toBe(true);
   });
 
   it("a KEYBOARD activation is never swallowed, even by a stale suppression token (F5)", () => {
@@ -251,9 +347,7 @@ describe("the gesture, wired to the machine", () => {
       fireEvent.pointerUp(banner, { pointerId: 1 });
     });
     // …no click was delivered; the token is still armed. The keyboard path must still work.
-    expect(fireEvent.click(slides(container)[1].querySelector("button")!, { detail: 0 })).toBe(
-      true,
-    );
+    expect(fireEvent.click(banner, { detail: 0 })).toBe(true);
   });
 
   it("an under-slop press leaves the strip alone and lets the click through", () => {
@@ -333,14 +427,14 @@ describe("snap ownership and the reconciliation lock (F1/F2)", () => {
     // A poll drops a host WHILE the strip is still animating. The set must not re-key under the animation.
     setFleet({ hosts: [host("pegasus", true)] });
     rerender(<GachaFleet active />);
-    expect(slides(container)).toHaveLength(3);
+    expect(promos(container)).toHaveLength(2);
 
     // …and once the snap window closes, the reconciliation lands.
     act(() => {
       vi.advanceTimersByTime(SNAP_MS);
     });
     rerender(<GachaFleet active />);
-    expect(slides(container)).toHaveLength(2);
+    expect(promos(container)).toHaveLength(1);
   });
 
   it("an AUTOPLAY advance owns the strip too — the same buffering applies", () => {
@@ -352,13 +446,13 @@ describe("snap ownership and the reconciliation lock (F1/F2)", () => {
 
     setFleet({ hosts: [host("pegasus", true)] });
     rerender(<GachaFleet active />);
-    expect(slides(container)).toHaveLength(3); // buffered: the tick armed the snap window
+    expect(promos(container)).toHaveLength(2); // buffered: the tick armed the snap window
 
     act(() => {
       vi.advanceTimersByTime(SNAP_MS);
     });
     rerender(<GachaFleet active />);
-    expect(slides(container)).toHaveLength(2);
+    expect(promos(container)).toHaveLength(1);
   });
 
   it("a pointerdown holds the reconciliation even when it lands after the render (F2)", () => {
@@ -371,14 +465,14 @@ describe("snap ownership and the reconciliation lock (F1/F2)", () => {
       setFleet({ hosts: [host("pegasus", true)] });
     });
     rerender(<GachaFleet active />);
-    expect(slides(container)).toHaveLength(3);
+    expect(promos(container)).toHaveLength(2);
 
     // Releasing resolves the gesture; the set reconciles from there.
     act(() => {
       fireEvent.pointerUp(banner, { pointerId: 1 });
     });
     rerender(<GachaFleet active />);
-    expect(slides(container)).toHaveLength(2);
+    expect(promos(container)).toHaveLength(1);
   });
 
   it("restarts the FULL cadence at an interaction's end, not end + the snap window (F6)", () => {
@@ -452,15 +546,18 @@ describe("the reel REJECTS banner input (F3, §6.4)", () => {
 });
 
 describe("beyond the dot bound (§6.4's many-host presentation)", () => {
+  /** Enough hosts that the set — the scenery included — runs past MAX_DOTS. */
+  const MANY = 11;
+  const TOTAL = SCENERY + MANY;
   beforeEach(() => {
-    setFleet({ hosts: Array.from({ length: 11 }, (_, i) => host(`h${i}`, true)) });
+    setFleet({ hosts: Array.from({ length: MANY }, (_, i) => host(`h${i}`, true)) });
   });
 
   it("swaps the rail for an announced counter flanked by labelled Prev/Next", () => {
     const { container } = render(<GachaFleet active />);
     expect(container.querySelector(".gc-banner-dots")).toBeNull();
     const nav = container.querySelector(".gc-banner-nav")!;
-    expect(nav.querySelector("span")!.textContent).toBe("1 / 12");
+    expect(nav.querySelector("span")!.textContent).toBe(`1 / ${TOTAL}`);
     expect(nav.querySelector("span")!.getAttribute("aria-live")).toBe("polite");
     expect([...nav.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual([
       "previous slide",
@@ -478,11 +575,11 @@ describe("beyond the dot bound (§6.4's many-host presentation)", () => {
     act(() => {
       fireEvent.click(prev, { detail: 1 });
     });
-    expect(counter()).toBe("12 / 12"); // wrapped backwards off the hero
+    expect(counter()).toBe(`${TOTAL} / ${TOTAL}`); // wrapped backwards off the hero
     act(() => {
       fireEvent.click(next, { detail: 1 });
     });
-    expect(counter()).toBe("1 / 12"); // …and forwards again
+    expect(counter()).toBe(`1 / ${TOTAL}`); // …and forwards again
   });
 });
 
@@ -505,9 +602,9 @@ describe("the capsule track (§6.1/§6.2)", () => {
     const cardArt = [...container.querySelectorAll<HTMLImageElement>(".gc-card img")].map((i) =>
       i.getAttribute("src"),
     );
-    const promoArt = [...container.querySelectorAll<HTMLImageElement>(".gc-slide img")]
-      .slice(1)
-      .map((i) => i.getAttribute("src"));
+    const promoArt = [...container.querySelectorAll<HTMLImageElement>(".gc-slide.promo img")].map(
+      (i) => i.getAttribute("src"),
+    );
     // The bundled roster has no `wide` variants, so both crops resolve to the same file — which is exactly
     // the agreement the one-resolver ruling is about.
     expect(cardArt).toEqual(promoArt);
@@ -611,7 +708,7 @@ describe("the capsule track (§6.1/§6.2)", () => {
     const { container } = render(<GachaFleet active />);
     expect(container.querySelector(".gc-msg")!.textContent).toContain("boom");
     expect(cards(container)).toHaveLength(2);
-    expect(slides(container)).toHaveLength(3);
+    expect(promos(container)).toHaveLength(2);
   });
 
   it("renders nothing under the head while the FIRST poll is still in flight", () => {
