@@ -62,16 +62,23 @@
 > read-only dir + gallery · stars = CONFIGURED services w/ exact ladders (§6.1 tables) ·
 > wordmark = KATAKANA (brandText committed) · card geometry + reel size = in-slice eyeballs.
 > §8 has SEVEN items left.
-> **▶ NEXT SESSION — the LOCK session (clean, per the owner's directive):** 1. Walk the owner
-> through **GACHA_PLAN §8's seven open items** (reel-per-switch policy · default star mode ·
-> palette variants · JP nav sub-labels · banner slide source · oracle entry state · dossier
-> metrics). 2. Council round on the plan (the D51 shape: Codex + an independent lens — note
-> Codex has already run THREE rounds; the council's fresh lens matters more than another Codex
-> pass). 3. Record **D52** in DECISIONS.md (incl. the §10.4 media hardening + the committed
-> kit extensions: brandText · look-named composer skin · shared VT helper). 4. Build **G0**
-> per the §7 ladder (recipes pre-pinned in §10), owner eyeball between slices. Carried owner
-> threads: the TTS-flash device eyeball (dev units running) · ledger §7.1 minimal-chrome
-> overlap · **v1.5.0 = this theme's release** (prod stays v1.4.6 until then, owner ruling).
+> **▶ NEXT SESSION — the LOCK session (clean, per the owner's directive):** 1. Collect the
+> owner's answers to **GACHA_PLAN §8's seven open items** — each now carries its elaborated
+> options + a standing REC inline (walked through in prose at close; **the owner left
+> deliberating**: reel frequency (REC every-switch, cooldown as the eyeball valve) · default
+> star mode (REC 3★) · palette variants (REC arcade/midnight/indigo, base-ramp only) · JP
+> sub-labels (REC keep via a `subLabel` kit extension, Utils = ツール) · banner slides (REC
+> the fixed faithful set) · oracle entry (REC accept the ghosted state) · dossier metrics
+> (REC the 4-real-facts grid: Ping·Services·Last-seen·Status)). 2. Council round on the plan
+> (the D51 shape — note Codex has already run THREE rounds; the council's FRESH lens matters
+> more than another Codex pass). 3. Record **D52** in DECISIONS.md (incl. the §10.4 media
+> hardening/threat-model + the committed kit extensions: brandText · look-named composer skin
+> per the D37 lock · shared runViewTransition helper · subLabel if kept). 4. Build **G0** per
+> the §7 ladder (recipes pre-pinned in §10; the one empirical spike = VT-new liveness on the
+> owner's Fennec), owner eyeball between slices. Carried owner threads: the TTS-flash device
+> eyeball (**dev units LEFT RUNNING for it** — stop them when done) · ledger §7.1
+> minimal-chrome overlap · **v1.5.0 = this theme's release** (prod stays v1.4.6 until then,
+> owner ruling).
 >
 > ## ▶ PREVIOUS STATE (2026-08-02 — 🏁 **PHASE 16 / D51 VAPOR ASSIMILATION COMPLETE, ALL PUSHED through `b4c2db6`**)
 > **The session's arc (one continuous lock→build session, 2026-08-01→02):** council round on the

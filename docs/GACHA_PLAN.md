@@ -399,25 +399,44 @@ tab switching (reel re-entrancy) · long host names on plates · Fennec AND Chro
   design work with owner checkpoints, not lock blockers. The COUNTER semantics and the `NEW`
   ribbon ride along as G1 eyeball decisions.
 
-**Open for the lock session:**
-1. **Reel behavior (the non-size half):** show on EVERY tab switch, or suppressed for some
-   (e.g. leaving Agent mid-conversation)?
-4. **Default star mode:** ship 5-star or 3-star as the default?
-5. **Palette variants:** which of §4.4's candidates (arcade/midnight/indigo/dusk — or others)
-   make the cut, and does a variant re-tint surfaces only or also the tri-accent?
-6b. **JP nav sub-labels** (編成/案内/設定 under the tab labels): keep (kit extension or CSS
-   trick) or drop?
-7. **Banner slides:** slide 1 is the wallpaper art + "NETWORK PRIZE POOL"; slides 2–3 are
-   per-host promos with flavor stats. Source the slide set from the roster (which entries?),
-   from the online hosts, or keep a fixed 3-slide set with roster art?
-8. **Oracle entry state:** entering the Agent tab with a populated thread starts with the
-   oracle already ghosted behind the log (the shared thread bottom-pins on activation; the
-   sticky art is a backdrop the chat scrolls over — §4.2). Confirm that's the wanted feel, or
-   should the oracle get a brief full-opacity beat on tab entry before settling?
-9. **Dossier metrics** — of the prototype's four (Ping/Load/Temp/Uptime) **only Ping is real
-   in the backend** (VERIFIED). Show the other three as "—" (the cosmos uptime precedent), or
-   drop the tiles to a Ping-only row? (Real metric collection is backend scope, out of this
-   phase — if wanted, it's a ROADMAP entry.)
+**Open for the lock session — each with the prep session's elaborated options + a standing
+recommendation (walked through with the owner in prose 2026-08-02; the owner is deliberating):**
+
+1. **Reel frequency:** every switch is faithful but fires constantly in fleet↔agent daily use.
+   (a) every switch · (b) every switch with a short cooldown (rapid re-switches skip — the
+   fluidity valve) · (c) only entering Fleet. **REC: ship (a); pre-agree (b) as the G4-eyeball
+   adjustment if it wears — a one-line change.** Reduced-motion kills it regardless.
+4. **Default star mode:** under the 5★ ladder a full row needs ≥5 configured services — a
+   1–3-service fleet looks permanently low-rolled; the prototype itself only ever shows ★★/★★★
+   (visually the 3★ mode), and the owner's stated instinct was clutter-aversion. **REC:
+   default 3★, 5★ one seg-tap away; the rate pill follows automatically.**
+5. **Palette variants:** structural half first — **REC: variants re-tint the BASE RAMP only**
+   (bg/surfaces/radial — literally "the dark blue-ish stuff") while the pink→violet→cyan trio
+   stays constant (it IS the brand); candidates arcade (as-is, default) · midnight (deeper
+   blacker navy) · indigo (bluer, colder) · dusk (warmer violet). Each = a tokens block
+   (cheap, additive later) but each multiplies the contrast-gate matrix. **REC: ship three —
+   arcade/midnight/indigo; add more later on demand.**
+6b. **JP nav sub-labels** (編成/案内/設定): the owner likes the captions → presumed keep. The
+   clean mechanism = an optional additive `subLabel` on the tab definition (a small kit
+   extension for the §4.9 ledger; other themes unaffected; the CSS-attr trick would break the
+   labels-are-data idiom). The layout fence means 4-tab mode needs a Utils sub-label too.
+   **REC: keep via `subLabel`; Utils = ツール (katakana, matching the wordmark direction).**
+7. **Banner slides:** (a) FIXED set — slide 1 the "NETWORK PRIZE POOL" hero, slides 2–3
+   roster-pinned art with the frozen stock captions; zero logic, fully faithful · (b) live
+   per-online-host promos — templated copy strains the captions-as-is ruling · (c) fully
+   roster-driven. **REC: (a) this phase; (b) recorded as a clean later upgrade. The rate pill
+   is live either way.**
+8. **Oracle entry state:** populated-thread entry lands bottom-pinned → the art starts
+   ghosted behind the log (full-strength when scrolling up, and always on an empty chat). The
+   alternative "full-opacity beat on entry" fights the scroll-derived model (a visible state
+   jump after the beat). **REC: accept the ghosted entry — the mechanism working honestly;
+   the empty-chat case, where the art matters most, always shows it fully.**
+9. **Dossier metrics:** only Ping is real (VERIFIED). (a) four tiles with three permanent
+   "—" dashes (reads broken) · (b) a Ping-only row (loses the grid) · (c) **keep the
+   four-tile geometry, fill with four REAL facts: Ping 応答 · Services サービス (the
+   configured count — doubles as the star explanation) · Last seen 最終確認 (`last_seen` is
+   in HostStatus) · Status 状態 (or OS). REC: (c).** Real load/temp/uptime collection = a
+   future ROADMAP entry if ever wanted (it would also un-dash the original tiles).
 
 ## 9. Verification record + remaining obligations for the lock session
 
