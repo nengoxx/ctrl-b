@@ -5275,11 +5275,14 @@ body[data-perf="lite"] .kit .navmenu-pop {
 }
 
 /* The automations editor sheet's own layer.
-   The OVERLAY LADDER, now that three layers really can co-exist (A3/14c): the automations editor
-   sheet (`.pm-backdrop.auto-pm`, 45) < ConfirmDialog (`.modal-backdrop`, 50) < PromptModal
-   (`.pm-backdrop`, 60). The sheet BORROWS this shell's look but must sit UNDER the confirm dialog it
-   opens (its delete asks for confirmation), which is why it takes its own z-index rather than the 60
-   below. PromptModal stays on top: it is opened FROM the other two, never under them. */
+   The OVERLAY LADDER, now that three layers really can co-exist (A3/14c): toasts (`.toasts`, 40) <
+   the auto-TTS flash (`.kit-tts-toast`, 41) < the automations editor sheet (`.pm-backdrop.auto-pm`, 45)
+   = a THEME's full-screen transition overlay (gacha's tab reel, D52 §10.1 — a document-level sibling of
+   `.kit`, deliberately at the same rung: the two can never co-exist, and both must sit under a question)
+   < ConfirmDialog (`.modal-backdrop`, 50) < PromptModal (`.pm-backdrop`, 60). The sheet BORROWS this
+   shell's look but must sit UNDER the confirm dialog it opens (its delete asks for confirmation), which
+   is why it takes its own z-index rather than the 60 below. PromptModal stays on top: it is opened FROM
+   the other two, never under them. */
 .kit .pm-backdrop.auto-pm {
   z-index: 45;
 }

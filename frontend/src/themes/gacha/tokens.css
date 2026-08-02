@@ -47,6 +47,10 @@
       --danger: #ff5a7a;
 
       --accent-glow: none;
+      /* The prototype's two easings (shared/base.css) — tokens so every gacha animation reads the same
+       * curve and a future tempo tweak is one edit. */
+      --gc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --gc-ease-spring: cubic-bezier(0.2, 1.25, 0.35, 1);
       --radius: 14px; /* the capsule card's own radius */
       --radius-sm: 10px;
       --density-pad: 1;

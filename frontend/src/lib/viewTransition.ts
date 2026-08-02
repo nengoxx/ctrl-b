@@ -24,6 +24,10 @@ import { flushSync } from "react-dom";
 
 import { getUI } from "../store/ui";
 
+/** The G0 spike's dev-only switch (see `runNavTransition`). localStorage, not a build flag, so the owner
+ *  can A/B it on the phone against the SAME build. */
+const NAV_VT_KEY = "ctrlb.spike.navVT";
+
 // Minimal structural type so this compiles regardless of the TS DOM lib version (the API may not be in
 // older lib.dom.d.ts). Compatible with the real typing where present.
 interface ViewTransitionLike {
@@ -78,4 +82,39 @@ export function runViewTransition(update: () => void, type?: string): void {
     delete root.dataset.transition;
   };
   void t.finished.then(clear, clear); // `.then(f, f)`, not `.finally(f)`: finally RE-THROWS the rejection
+}
+
+// ── ⚠ TEMPORARY — the G0 VIEW-TRANSITION SPIKE (D52 / GACHA_PLAN §10.1, risk #2) ────────────────────
+// DELETE OR PROMOTE AT G4. This exists to answer the ONE question paper could not: does
+// `::view-transition-new(root)` render LIVE on the owner's Fennec 144+? If it does, gacha's reel keeps
+// animating during a root View Transition and M2 (the prototype's tab cross-fade/scale under the reel) is
+// worth a real seam; if it does not, the reel freezes mid-sweep behind a static snapshot and M2 DIES
+// without ceremony — the reel alone must carry the transition, which is the plan's standing posture.
+//
+// It is deliberately the SMALLEST possible intrusion on the shared nav chokepoint:
+//   · DEFAULT OFF. With the flag unset this is `update()` — byte-identical to the direct `setUI` call it
+//     replaced, for every theme, in every build.
+//   · GACHA ONLY even when on. A root cross-fade on cosmos/frontier/vapor/minimal is not being spiked.
+//   · localStorage-flagged, so the owner toggles it in the browser console on the phone and A/Bs the same
+//     deployed build: `localStorage.setItem("ctrlb.spike.navVT", "1")` (and `removeItem` to go back).
+// After the device round: either the flag and this function are deleted (M2 dies), or the wrapper becomes
+// a real, unflagged navigation-transition decorator at this same chokepoint (M2 lives). Either way this
+// block does not survive G4.
+function navSpikeEnabled(): boolean {
+  if (getUI().theme !== "gacha") return false;
+  try {
+    return localStorage.getItem(NAV_VT_KEY) === "1";
+  } catch {
+    return false; // private mode / disabled storage — the spike is simply off
+  }
+}
+
+/** The nav chokepoint's transition wrapper. Off by default: applies `update` directly. */
+export function runNavTransition(update: () => void): void {
+  if (!navSpikeEnabled()) {
+    update();
+    return;
+  }
+  // `tab` stamps html[data-transition="tab"] so the theme can scope its root-VT keyframes to this kind.
+  runViewTransition(update, "tab");
 }

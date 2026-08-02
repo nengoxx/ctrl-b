@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runViewTransition } from "../../src/lib/viewTransition";
+import { runNavTransition, runViewTransition } from "../../src/lib/viewTransition";
 import { setUI } from "../../src/store/ui";
 
 // `lib/viewTransition.ts#runViewTransition` (D52 / GACHA_PLAN §10.1) — the ONE View-Transition wrapper,
@@ -185,5 +185,58 @@ describe("runViewTransition — hardening", () => {
     vt.transitions[0].settle();
     await flushMicrotasks();
     expect(document.documentElement.dataset.transition).toBeUndefined();
+  });
+});
+
+// ── The G0 nav SPIKE (D52 / GACHA_PLAN §10.1, risk #2) — a temporary, dev-only, default-OFF wrapper at the
+//    nav chokepoint so the owner can A/B `::view-transition-new(root)` liveness on Fennec against the same
+//    deployed build. These arms pin the two properties that make it safe to have in shared code at all:
+//    OFF is byte-identical to a direct update, and ON is scoped to gacha. It does not survive G4. ──
+describe("runNavTransition — the G0 spike gate", () => {
+  afterEach(() => {
+    localStorage.removeItem("ctrlb.spike.navVT");
+  });
+
+  it("is OFF by default — the update applies directly, no transition started", () => {
+    const vt = installFakeVT();
+    setUI({ theme: "gacha" });
+    const update = vi.fn();
+    runNavTransition(update);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(vt.calls).toBe(0);
+  });
+
+  it("stays off for every OTHER theme even when the flag is set", () => {
+    const vt = installFakeVT();
+    localStorage.setItem("ctrlb.spike.navVT", "1");
+    for (const theme of ["cosmos", "frontier", "vapor", "minimal"] as const) {
+      setUI({ theme });
+      runNavTransition(() => {});
+    }
+    expect(vt.calls).toBe(0);
+  });
+
+  it("wraps the update with the `tab` stamp when enabled ON GACHA", async () => {
+    const vt = installFakeVT();
+    localStorage.setItem("ctrlb.spike.navVT", "1");
+    setUI({ theme: "gacha" });
+    const update = vi.fn();
+    runNavTransition(update);
+    expect(vt.calls).toBe(1);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.dataset.transition).toBe("tab");
+    vt.transitions[0].settle();
+    await flushMicrotasks();
+    expect(document.documentElement.dataset.transition).toBeUndefined();
+  });
+
+  it("still respects reduced motion when enabled (the wrapper delegates, it does not re-implement)", () => {
+    const vt = installFakeVT();
+    localStorage.setItem("ctrlb.spike.navVT", "1");
+    setUI({ theme: "gacha", motion: "reduced" });
+    const update = vi.fn();
+    runNavTransition(update);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(vt.calls).toBe(0);
   });
 });

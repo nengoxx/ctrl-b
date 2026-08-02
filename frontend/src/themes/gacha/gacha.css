@@ -55,5 +55,77 @@
       letter-spacing: 0.2em;
       opacity: 0.75;
     }
+
+    /* ── The tab REEL (M1) — the mechanism; the figure is G4 ──────────────────────────────────────
+     * Five slats sweeping top→bottom over the whole shell, 520 ms each on a 30 ms stagger (last slat
+     * done at ~640 ms). `GachaReel` mounts the node only for the frames it should animate and remounts
+     * it on `key={tab}`, so there is no `.go` class to add/remove and no reflow poke — a fresh node's
+     * animation always starts at frame 0.
+     *
+     * GEOMETRY (§10.1): `position: fixed` + `height: var(--app-h)` rather than `inset: 0` — `--app-h`
+     * is the keyboard-aware shell height App maintains, so the sweep covers exactly what the user sees
+     * instead of running under an open keyboard. `overflow: hidden` contains the ±110% slat travel.
+     *
+     * Z-RUNG 45 (ruled, §10.1): above the toasts + the TTS flash it briefly covers, and BELOW the
+     * confirm (50) and prompt (60) modals — a decorative sweep must never cover a question. It sits
+     * outside `.kit` and gacha does not make `.kit` a stacking context, so 45 is a real document-level
+     * rung, not a number trapped inside the shell. */
+    .gc-reel {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--app-h, 100dvh);
+      z-index: 45;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .gc-reel i {
+      background: var(--gc-reel-slat);
+      /* Resting position is off-screen ABOVE, so the node is invisible before and after its animation
+       * (the keyframes end off-screen BELOW and then snap back here — either way, nothing to see). */
+      transform: translateY(-110%);
+      /* §14.11: transform-only, promoted, and `contain: layout` so a slat's animation can never invalidate
+       * layout outside itself. */
+      will-change: transform;
+      contain: layout;
+      animation: gacha-reel 520ms var(--gc-ease-out);
+    }
+    .gc-reel i:nth-child(2) {
+      animation-delay: 30ms;
+    }
+    .gc-reel i:nth-child(3) {
+      animation-delay: 60ms;
+    }
+    .gc-reel i:nth-child(4) {
+      animation-delay: 90ms;
+    }
+    .gc-reel i:nth-child(5) {
+      animation-delay: 120ms;
+    }
+    @keyframes gacha-reel {
+      45%,
+      62% {
+        transform: translateY(0);
+      }
+      100% {
+        transform: translateY(110%);
+      }
+    }
+    /* The CSS belt on the app's motion axis. GachaReel already returns null under reduced motion — this is
+     * the §14.11 rule that every animation is ALSO gated in CSS, never the OS media query, and never the
+     * prototype's global `.001ms` sledgehammer (base.css:78-80 is explicitly NOT ported). */
+    body[data-motion="reduced"] .gc-reel {
+      display: none;
+    }
+
+    /* The kit's own section entrance (`kit-fade`, 0.25 s) is re-tuned to nothing under gacha (§10.1
+     * riders): the prototype has no per-screen fade, the reel IS the transition, and leaving both in
+     * would double-animate the swap — visibly so if the M2 spike promotes a root cross-fade on top. */
+    .kit .tab.active {
+      animation: none;
+    }
   }
 }
