@@ -14,6 +14,7 @@ import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/place
 import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
+import { assets } from "./art";
 import { loadFonts } from "./fonts";
 
 // Code-split the Root so a non-gacha user never bundles gacha's presentation (the bespoke Fleet/Agent
@@ -96,4 +97,7 @@ export const gacha: ThemeDef = {
   // ideal every registered theme follows), and the JP sub-label for Utils exists precisely so the 4-tab
   // preset is a real, complete look rather than a fallback.
   defaultLayout: "3-tab",
+  // The bundled art manifest (the eager `import.meta.glob` URL map, §9.3) — the DEFAULT roster the theme
+  // resolves against until G5's owner directory exists, keyed by bare filename.
+  assets,
 };
