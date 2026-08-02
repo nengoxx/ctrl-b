@@ -39,6 +39,12 @@
     }
     .kit-brand .gc-word {
       white-space: nowrap;
+      /* The prototype sets its wordmark `line-height: 1` (base.css `.brand strong`). The kit shell's 1.5
+       * inherited instead, which is where the bar's extra height actually came from — the two paddings are
+       * a wash (kit 16+12 = prototype 14+14 = 28), so ONLY the brand's line boxes could give anything back.
+       * 15px at 1.5 → 22.5; at 1 → 15. With the subtitle tightened below, the bar drops ~10px onto the
+       * prototype's own height (round-3 item E). */
+      line-height: 1;
       font-weight: 900;
       font-size: 15px;
       letter-spacing: 0.16em;
@@ -53,6 +59,7 @@
     /* The JP subtitle rides the serif display face, letter-spaced wide like the prototype's `.brand small`. */
     .kit-brand .meta {
       flex-basis: 100%; /* its own line — the prototype's stacked `.brand small` */
+      line-height: 1.2; /* the prototype's subtitle sits tight under the wordmark (item E) */
       font-family: var(--font-display);
       font-size: 9px;
       font-weight: 600;
@@ -81,6 +88,13 @@
       background: var(--gc-bar-grad);
       border: 0;
       box-shadow: none;
+      /* The prototype's own `.topbar` padding (base.css `14px 16px`), replacing the kit's 16/12 — the
+       * owner's round-3 item E ("too much space"). It trims the bar 67px → 61px, which lands it exactly on
+       * the prototype's own height: both stack a 15px wordmark over a 9px subtitle inside 28px of vertical
+       * padding. The content BELOW is already prototype-exact (`.kit-sec`'s 22px top pad matches the
+       * prototype's `.track-head`), so the bar was the whole difference and nothing shared needed touching.
+       * `--appbar-h` is MEASURED from offsetHeight, so the M7 oracle math (§10.2) simply follows it down. */
+      padding: 14px 16px;
       -webkit-backdrop-filter: blur(14px);
       backdrop-filter: blur(14px);
     }
@@ -97,14 +111,40 @@
     .kit-main::before {
       background: none;
     }
-    /* RE-DECLARED from kit.css (the layer trap): the `transparent` appbar mode must still paint nothing,
-     * and perf-lite must still drop the frost for an opaque bar. Without these two, gacha's rule above
-     * would win on layer order and disable both levers. */
+    /* ── The TRANSPARENT ("clear") appbar mode under gacha (owner round-3 item F) ──────────────────
+     * REPORTED: the wordmark looked like it had "a shadow in the inside". MEASURED, it did — and it was
+     * not the missing bar. kit.css gives the clear mode's brand row a legibility halo
+     * (`text-shadow: 0 1px 2px var(--bg), 0 0 8px var(--bg)`), and text-shadow INHERITS. Gacha's wordmark
+     * is `background-clip: text` + `color: transparent`, so the paint order is: gradient clipped to the
+     * glyphs → the dark halo → a transparent glyph fill. The halo therefore lands ON TOP of the gradient,
+     * offset 1px down, inside every letter. Nulled on the wordmark only; the plain `.meta` beside it keeps
+     * the halo, which is real legibility.
+     *
+     * And the mode gets a BACKING rather than nothing: the prototype's own near-transparent dissolve (the
+     * same gradient its wallpaper variant uses). It still reads as a clear, borderless bar — content is
+     * visible right through it — but glyphs never float over arbitrary scrolled art with no contrast. The
+     * third selector is what makes this hold in every combination: `body[data-wallpaper="on"] .kit-appbar`
+     * above is (0,2,1) and would otherwise outrank a bare `.kit-appbar.transparent` (0,2,0). */
     .kit-appbar.transparent,
+    body[data-perf="lite"] .kit-appbar.transparent,
+    body[data-wallpaper="on"] .kit-appbar.transparent {
+      background: var(--gc-bar-grad-wall);
+      /* RE-DECLARED from kit.css (the layer trap): the clear mode's slimmer pads + the negative margin that
+       * pulls content up under the reserved strip. Gacha's `padding: 14px 16px` above would otherwise win
+       * on layer order and give the mode back the dead air it exists to remove. */
+      padding: calc(8px * var(--density-pad)) 16px calc(6px * var(--density-pad));
+      margin-bottom: -14px;
+      -webkit-backdrop-filter: blur(14px);
+      backdrop-filter: blur(14px);
+    }
+    /* RE-DECLARED (the layer trap): perf-lite still drops the frost — the §14.11 Fennec speed lever. The
+     * dissolve stays, so the mode keeps its legibility without the blur. */
     body[data-perf="lite"] .kit-appbar.transparent {
-      background: transparent;
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
+    }
+    .kit-appbar.transparent .gc-word {
+      text-shadow: none;
     }
     body[data-perf="lite"] .kit-appbar,
     body[data-perf="lite"] .kit-tabbar {
@@ -178,13 +218,27 @@
      *      CHROME (fill, border, radius) remains the shared skin catalog's, per D37. */
     .kit {
       position: relative;
-      --gc-nav-zone: calc(66px + max(14px, env(safe-area-inset-bottom)));
+      /* `--gc-nav-zone` = the vertical space the floating bar occupies, and the ONE number every formula
+       * below adds. It defaults to ZERO so each of those formulas collapses to exactly the kit's own
+       * value — which is what makes `appbarMode: "minimal"` correct: that mode renders NO `.kit-tabbar`
+       * at all, so an unconditional zone left a phantom ~80px gap under the content and floated the
+       * composer that far off the bottom (Codex G0 M2). The zone is switched on by the presence of the
+       * bar itself, one `:has()` on the shell (the kit's own established idiom — `.kit:has(.navmenu)`,
+       * `.kit-appbar:has(.navmenu.docked[data-open])`), so no mode list has to be kept in sync here. */
+      --gc-nav-zone: 0px;
+      /* Bottom inset, shared by the bar and the zone so the two can never disagree. */
+      --gc-nav-inset-b: max(14px, env(safe-area-inset-bottom));
+    }
+    .kit:has(> .kit-tabbar) {
+      --gc-nav-zone: calc(var(--gc-nav-bar-h) + var(--gc-nav-inset-b));
     }
     .kit-tabbar {
       position: absolute;
-      left: 12px;
-      right: 12px;
-      bottom: max(14px, env(safe-area-inset-bottom));
+      /* Horizontal safe-area insets (Codex G0 L2): in landscape on a notched phone the 12px inset alone
+       * would put the pill's edge under the cutout. `max()` keeps the design value everywhere else. */
+      left: max(12px, env(safe-area-inset-left));
+      right: max(12px, env(safe-area-inset-right));
+      bottom: var(--gc-nav-inset-b);
       z-index: 6; /* over the composer (4) and the edge scrims (3) */
       min-height: 66px;
       padding: 7px;
@@ -197,12 +251,46 @@
       backdrop-filter: blur(12px);
     }
     .kit-scroll {
-      padding-bottom: calc(var(--composer-h, 0px) + var(--gc-nav-zone) + 16px);
+      padding-bottom: calc(var(--composer-h, 0px) + 24px + var(--gc-nav-zone));
       /* SC 2.4.11 — keyboard focus must land clear of BOTH floating layers, not just the composer. */
-      scroll-padding-bottom: calc(var(--composer-h, 64px) + var(--gc-nav-zone) + 16px);
+      scroll-padding-bottom: calc(var(--composer-h, 64px) + 24px + var(--gc-nav-zone));
     }
     .kit-composer {
-      bottom: calc(var(--gc-nav-zone) + 10px);
+      bottom: calc(12px + var(--gc-nav-zone));
+    }
+    /* The SHEET composer layout docks flush at the shell's bottom (`bottom: 0`) — which, with the bar now
+     * floating there, means flush ABOVE the bar. Called out explicitly because the theme rule above would
+     * otherwise clobber it on layer order alone (the layer trap again) and give the docked variant a
+     * stray 12px gap it is designed not to have. */
+    .kit-composer.sheet {
+      bottom: var(--gc-nav-zone);
+    }
+    /* ── The composer's SATELLITE overlays (Codex G0 M1) ───────────────────────────────────────────
+     * `.kit-suggest` (@-mention autocomplete), `.tools-sheet` (the tools/skills menu) and `.plan-sheet`
+     * all anchor off `--composer-h` to sit just above the composer's top edge. Lifting the composer
+     * without lifting them left the first two overlapping it by the nav zone and the plan sheet's lower
+     * half behind the composer and the bar. Each of the kit's FOUR anchors — a base and a
+     * sheet-composer-layout variant for the suggest/tools pair and for the plan sheet — takes the same
+     * `+ var(--gc-nav-zone)`, which is zero under `minimal`, so this is one formula in four places rather
+     * than a new positioning scheme.
+     *
+     * SWEPT for the rest of the class, and these are the only members: `.toasts`, `.mini-player`,
+     * `.kit-tts-toast`, `.navmenu` and `.navhome` are all TOP-anchored; the modals are centred; and
+     * `.bs-sheet` (the shared BottomSheet) is a z-40 modal layer that deliberately covers the chrome
+     * while open — it is G2's dossier surface and not a composer satellite. */
+    .kit .kit-suggest,
+    .kit .tools-sheet {
+      bottom: calc(var(--composer-h, 64px) + 20px + var(--gc-nav-zone));
+    }
+    .kit-main:has(.kit-composer.sheet) .kit-suggest,
+    .kit-main:has(.kit-composer.sheet) .tools-sheet {
+      bottom: calc(var(--composer-h, 64px) + 8px + var(--gc-nav-zone));
+    }
+    .kit .plan-sheet {
+      bottom: calc(var(--composer-h, 64px) + 12px - 18px + var(--gc-nav-zone));
+    }
+    .kit-main:has(.kit-composer.sheet) .plan-sheet {
+      bottom: calc(var(--composer-h, 64px) - 18px + var(--gc-nav-zone));
     }
     /* The kit's BOTTOM edge veil — a `--bg` band at the shell's bottom edge, which with the bar now
      * floating over the scroller is exactly the "shadow, and they cut" the owner saw: content faded out
@@ -348,6 +436,55 @@
      * prototype's global `.001ms` sledgehammer (base.css:78-80 is explicitly NOT ported). */
     body[data-motion="reduced"] .gc-reel {
       display: none;
+    }
+
+    /* ── Chat bubbles (§15 chat-hooks reskin) ─────────────────────────────────────────────────────
+     * Pulled forward from G3 by owner ruling — the BUBBLES only; the oracle header, the composer skin
+     * and the M7 scroll mechanics stay G3.
+     *
+     * The §15 contract: there is ONE shared chat tree for every theme and a theme reskins it by
+     * targeting the PINNED hook classes, never by forking the DOM. The prototype's `.msg`/`.msg.user`
+     * names do not exist in this app — the kit paints BODIES, not rows, so the real hooks are
+     * `.b.user .body` / `.b.bot .body` (verified against the §15 table and ChatThread's markup).
+     *
+     * The kit's own aesthetic is deliberately the opposite of the prototype's on one axis: its
+     * assistant bubble is BORDERLESS quiet text so the prose reads as the main flow, while the
+     * prototype boxes both sides. Gacha takes the prototype's, which means adding a fill/padding/radius
+     * to `.b.bot .body` rather than only re-coloring one.
+     *
+     * The user bubble's hard offset shadow is the theme's signature — the same `5px 5px 0` idiom as the
+     * nav indicator. It cannot clip: `.kit .chat-log` carries 18px of side padding and the bubble stops
+     * at that content edge, leaving 13px for a 5px offset; `#app-scroll` is `overflow-x: hidden`, so
+     * even a mis-measure could never produce a horizontal scrollbar (§14.11). The e2e arm measures it. */
+    .kit .b.user,
+    .kit .b.bot {
+      max-width: 86%; /* the prototype's `.msg` — the kit ships 88%/92% */
+    }
+    .kit .b.user .body {
+      background: var(--gc-bubble-user);
+      color: var(--gc-bubble-user-ink);
+      box-shadow: var(--gc-bubble-user-shadow);
+      border-radius: 14px; /* uniform — the kit's flat bottom-right corner is not the prototype's shape */
+      padding: 12px 14px;
+    }
+    .kit .b.bot .body {
+      background: var(--gc-bubble-bot);
+      border-radius: 14px;
+      padding: 12px 14px;
+    }
+    /* A queued steer stays muted, but on the WHITE bubble the kit's opacity fade would grey the ink
+     * against its own fill — dim the whole bubble instead so the shadow fades with it. */
+    .kit .b.user.queued .body {
+      opacity: 0.55;
+    }
+    /* SYS bubbles: the prototype has NO system-message design, so this is a deliberate, minimal choice
+     * rather than a port — the kit's centred muted caption is kept (already token-driven, so it re-tints
+     * with the palette) with its DASHED rule swapped for a solid hairline: the arcade's line language is
+     * solid everywhere, and a dash was the one borrowed texture that read as another theme's. Flagged
+     * for the G3 eyeball, where the oracle + composer land and the whole tab is judged together. */
+    .kit .b.sys .body {
+      border-style: solid;
+      border-color: var(--line);
     }
 
     /* The kit's own section entrance (`kit-fade`, 0.25 s) is re-tuned to nothing under gacha (§10.1

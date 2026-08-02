@@ -235,18 +235,42 @@ test("gacha · chrome fidelity: floating nav pill, white indicator + pink hard s
   // …and the scroller RUNS BEHIND it: the bar must overlap the scroll area, and the scroller must pad
   // its bottom past the bar so the last row can still be reached. Both halves, or "floating" is just a
   // shadow over dead space.
-  const overlap = await page.evaluate(() => {
-    const bar = document.querySelector(".kit-tabbar")!.getBoundingClientRect();
+  //
+  // Measured on a NO-COMPOSER section (Codex G0 L1): on Fleet the composer alone contributes ~64px of
+  // padding, so a clearance assertion there passes even with the nav zone missing entirely. Conf has no
+  // composer, so `--composer-h` is 0 and the padding under test is purely the nav's.
+  await page.locator("#tabbtn-conf").click();
+  await expect(page.locator("#tab-conf")).toHaveClass(/active/);
+  const geo = await page.evaluate(() => {
+    const barEl = document.querySelector(".kit-tabbar")!;
+    const bar = barEl.getBoundingClientRect();
     const scroll = document.querySelector("#app-scroll")!;
-    const rect = scroll.getBoundingClientRect();
+    const s = getComputedStyle(scroll);
+    const shellEl = document.querySelector(".kit")!;
+    const shell = getComputedStyle(shellEl);
     return {
-      overlaps: rect.bottom > bar.top,
-      padBottom: parseFloat(getComputedStyle(scroll).paddingBottom),
+      overlaps: scroll.getBoundingClientRect().bottom > bar.top,
+      padBottom: parseFloat(s.paddingBottom),
+      scrollPadBottom: parseFloat(s.scrollPaddingBottom),
+      composerH: parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue("--composer-h"),
+      ),
       barHeight: bar.height,
+      declaredBarH: parseFloat(shell.getPropertyValue("--gc-nav-bar-h")),
+      // The REAL bottom inset, measured — a custom property holding `max(…, env(…))` comes back from
+      // getComputedStyle as the unevaluated token string, so it can't be parsed as a number.
+      insetB: shellEl.getBoundingClientRect().bottom - bar.bottom,
     };
   });
-  expect(overlap.overlaps).toBe(true);
-  expect(overlap.padBottom).toBeGreaterThan(overlap.barHeight);
+  expect(geo.overlaps).toBe(true);
+  expect(geo.composerH).toBe(0); // the arm really is on a composer-less section
+  // The bar's REAL height must match the arithmetic constant the zone reserves (Codex G0 L3): the
+  // declared `min-height: 66px` never binds — 52px buttons + 7px padding + 1px border, border-box.
+  expect(geo.barHeight).toBe(geo.declaredBarH);
+  expect(geo.barHeight).toBe(68);
+  // Clearance = the whole nav zone, not just "more than the bar".
+  expect(geo.padBottom).toBeGreaterThanOrEqual(geo.barHeight + geo.insetB);
+  expect(geo.scrollPadBottom).toBeGreaterThanOrEqual(geo.barHeight + geo.insetB);
 
   // 3. The indicator is a WHITE pill with the hard offset pink shadow (not the kit's accent line).
   const ind = await page.locator(".kit-tab-ind .bar").evaluate((el) => {
@@ -349,5 +373,217 @@ test("vapor · 2-tab: conf via the DOCKED direct button; utils hosted; pinned Fl
   await launch.click();
   await expect(page.locator("#tab-conf")).toBeVisible();
   await expect(page.locator("#utils-hosted")).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test("gacha · chat bubbles: white user bubble with the hard pink offset, filled bot bubble, no clip", async ({
+  page,
+  pageErrors,
+}) => {
+  // The §15 chat-hooks reskin (pulled forward from G3 by owner ruling — bubbles only). Measured on
+  // COMPUTED styles with a REAL seeded thread, because the claims are about painted `.body` elements and
+  // about geometry: the prototype's signature `5px 5px 0` hard shadow must have room to sit inside the
+  // log's padding rather than clipping or forcing a horizontal scrollbar.
+  const msg = (id: string, role: string, text: string) => ({
+    id,
+    thread_id: "t1",
+    role,
+    parts: [{ type: "text", text }],
+    actor: role,
+    ts: "2026-01-01T00:00:00Z",
+    tokens: null,
+    compacted: false,
+  });
+  // Route BEFORE the fixture's catch-all would answer these two with `{}`.
+  await page.route("**/api/threads", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          id: "t1",
+          title: "t",
+          agent: null,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          archived: false,
+        },
+      ]),
+    }),
+  );
+  await page.route("**/api/threads/t1/messages", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        msg("m1", "user", "wake rook for me"),
+        msg("m2", "assistant", "wake-on-LAN sent — it usually answers in about 40 seconds."),
+      ]),
+    }),
+  );
+
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab: "agent", v: 1 });
+  await page.goto("/");
+  await expect(page.locator("#tab-agent .b.user .body")).toBeVisible();
+
+  // The USER bubble: white fill, near-black ink, the hard offset (no blur radius) in the theme's pink.
+  const user = await page.locator("#tab-agent .b.user .body").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return {
+      bg: s.backgroundColor,
+      color: s.color,
+      shadow: s.boxShadow,
+      radius: s.borderTopLeftRadius,
+    };
+  });
+  expect(user.bg).toBe("rgb(255, 255, 255)");
+  expect(user.color).toBe("rgb(22, 22, 44)"); // #16162c
+  expect(user.shadow).toContain("5px 5px"); // hard — offset with no blur
+  expect(user.shadow).toContain("255, 108, 174"); // #ff6cae
+  expect(user.radius).toBe("14px");
+
+  // The BOT bubble is FILLED here, where the kit ships it borderless.
+  const bot = await page.locator("#tab-agent .b.bot .body").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { bg: s.backgroundColor, radius: s.borderTopLeftRadius };
+  });
+  expect(bot.bg).toBe("rgb(34, 37, 65)"); // #222541
+  expect(bot.radius).toBe("14px");
+
+  // The shadow has ROOM: the bubble's right edge plus the 5px offset stays inside the log's box, and the
+  // scroller never gains a horizontal overflow.
+  const fit = await page.evaluate(() => {
+    const body = document.querySelector("#tab-agent .b.user .body")!.getBoundingClientRect();
+    const log = document.querySelector("#tab-agent .chat-log")!.getBoundingClientRect();
+    const scroll = document.querySelector("#app-scroll")!;
+    return {
+      slack: log.right - (body.right + 5),
+      overflowX: scroll.scrollWidth - scroll.clientWidth,
+    };
+  });
+  expect(fit.slack).toBeGreaterThanOrEqual(0);
+  expect(fit.overflowX).toBe(0);
+
+  expect(pageErrors).toEqual([]);
+});
+
+test("gacha · appbarMode minimal: no tab bar → the nav zone collapses to the kit's own geometry", async ({
+  page,
+  pageErrors,
+}) => {
+  // Codex G0 M2. `minimal` renders NO `.kit-tabbar`, so an unconditional nav zone left a phantom gap
+  // under the content and floated the composer that far off the bottom. The zone is switched on by the
+  // BAR'S PRESENCE, so this asserts the collapse is exact — the kit's own numbers, not "smaller".
+  await seedUI(page, {
+    theme: "gacha",
+    mode: "dark",
+    accent: "arcade",
+    appbarMode: "minimal",
+    tab: "fleet",
+    v: 1,
+  });
+  await page.goto("/");
+  await expect(page.locator(".navmenu-launch")).toBeVisible();
+  await expect(page.locator(".kit-tabbar")).toHaveCount(0);
+
+  const geo = await page.evaluate(() => {
+    const shell = getComputedStyle(document.querySelector(".kit")!);
+    const scroll = document.querySelector("#app-scroll")!;
+    const composer = document.querySelector(".kit-composer")!;
+    const root = getComputedStyle(document.documentElement);
+    return {
+      zone: shell.getPropertyValue("--gc-nav-zone").trim(),
+      padBottom: parseFloat(getComputedStyle(scroll).paddingBottom),
+      composerBottom: parseFloat(getComputedStyle(composer).bottom),
+      composerH: parseFloat(root.getPropertyValue("--composer-h")),
+    };
+  });
+  expect(geo.zone).toBe("0px");
+  expect(geo.composerBottom).toBe(12); // the kit's own anchor, not lifted past a bar that isn't there
+  expect(geo.padBottom).toBe(geo.composerH + 24); // the kit's own formula exactly
+  expect(pageErrors).toEqual([]);
+});
+
+test("gacha · the composer's satellite overlays clear the floating nav", async ({
+  page,
+  pageErrors,
+}) => {
+  // Codex G0 M1. `.kit-suggest` / `.tools-sheet` / `.plan-sheet` anchor off `--composer-h` to sit just
+  // above the composer's top edge; lifting the composer without lifting them put the first two ON the
+  // composer and the plan sheet's lower half behind it and the bar. Driven through the real tools menu,
+  // which is the one satellite reachable without a live turn.
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab: "agent", v: 1 });
+  await page.goto("/");
+  await expect(page.locator(".kit-composer")).toBeVisible();
+
+  await page.locator(".kit-cbtn.tools").click();
+  const sheet = page.locator(".tools-sheet.open");
+  await expect(sheet).toBeVisible();
+  // Settle the .2s open slide before measuring — mid-transition the sheet is still translated 14px down,
+  // which reads as a 6px overlap that isn't there once it lands.
+  await expect(sheet).toHaveCSS("transform", "none");
+
+  const gap = await page.evaluate(() => {
+    const s = document.querySelector(".tools-sheet.open")!.getBoundingClientRect();
+    const c = document.querySelector(".kit-composer")!.getBoundingClientRect();
+    const bar = document.querySelector(".kit-tabbar")!.getBoundingClientRect();
+    return { sheetBottom: s.bottom, composerTop: c.top, barTop: bar.top };
+  });
+  // The sheet sits ABOVE the composer's top edge — not overlapping it, and therefore not the bar below.
+  expect(gap.sheetBottom).toBeLessThanOrEqual(gap.composerTop);
+  expect(gap.sheetBottom).toBeLessThan(gap.barTop);
+  expect(pageErrors).toEqual([]);
+});
+
+test("gacha · appbar: prototype padding in the default mode; a dissolve + no inner halo in clear mode", async ({
+  page,
+  pageErrors,
+}) => {
+  // Owner round-3, items E and F.
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab: "fleet", v: 1 });
+  await page.goto("/");
+  await expect(page.locator(".kit-appbar")).toBeVisible();
+
+  // E — the bar carries the prototype's own `14px 16px`, not the kit's 16/12, and lands on the
+  // prototype's height (a 15px wordmark over a 9px subtitle inside 28px of vertical padding).
+  const bar = await page.locator(".kit-appbar").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { pad: s.padding, height: el.getBoundingClientRect().height };
+  });
+  expect(bar.pad).toBe("14px 16px");
+  // 67px before the trim; ~57 after, which is the prototype's own bar height. The two paddings were a
+  // wash (kit 16+12 = prototype 14+14 = 28) — the height came from the brand's inherited 1.5 line boxes.
+  expect(bar.height).toBeLessThanOrEqual(58);
+  // `--appbar-h` is MEASURED, so everything anchored to it (the M7 oracle math, toasts, the mini-player)
+  // follows the trim rather than assuming the old number.
+  const appbarH = await page.evaluate(() =>
+    parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--appbar-h")),
+  );
+  // `offsetHeight` rounds, so compare to the fractional rect within a pixel.
+  expect(Math.abs(appbarH - bar.height)).toBeLessThan(1);
+
+  // F — the CLEAR mode. Two claims: the bar keeps a near-transparent dissolve as a backing (glyphs never
+  // float over arbitrary content with no contrast), and the kit's inherited legibility halo is nulled ON
+  // THE WORDMARK — with `background-clip: text` + `color: transparent` that dark halo paints on top of
+  // the gradient, inside every letter, which is the "shadow in the inside" the owner saw.
+  await seedUI(page, {
+    theme: "gacha",
+    mode: "dark",
+    accent: "arcade",
+    appbarMode: "transparent",
+    tab: "fleet",
+    v: 1,
+  });
+  await page.goto("/");
+  await expect(page.locator(".kit-appbar.transparent")).toBeVisible();
+
+  const clear = await page.evaluate(() => ({
+    barImage: getComputedStyle(document.querySelector(".kit-appbar")!).backgroundImage,
+    wordShadow: getComputedStyle(document.querySelector(".gc-word")!).textShadow,
+    metaShadow: getComputedStyle(document.querySelector(".kit-brand .meta")!).textShadow,
+  }));
+  expect(clear.barImage).toContain("linear-gradient");
+  expect(clear.wordShadow).toBe("none");
+  expect(clear.metaShadow).not.toBe("none"); // the plain subtitle KEEPS its halo — real legibility
   expect(pageErrors).toEqual([]);
 });

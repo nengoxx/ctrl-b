@@ -82,6 +82,15 @@
       --gc-bar: #11142ee8; /* the NAV pill's flat fill */
       --gc-bar-line: #ffffff18;
       --gc-nav-shadow: 0 18px 45px #0009;
+      /* The nav pill's REAL rendered height, which the floating geometry has to reserve. It is NOT the
+       * declared `min-height: 66px`: under the kit's global `box-sizing: border-box` the 52px buttons plus
+       * 7px of padding each side plus a 1px border each side come to 68 — so the min-height never binds
+       * (Codex G0 L3). The prototype computes identically (`.nav` min-height 66 + padding 7 + a 1px border
+       * from theme.css, over base.css's global border-box), so 68px is the prototype's own number too, not
+       * a kit artefact. There is no measured `--tabbar-h` to read — `--app-h`/`--appbar-h`/`--composer-h`
+       * are JS-measured by DefaultRoot and adding a fourth is a shared-kit change — so this is an
+       * ARITHMETIC constant, guarded by an e2e arm that measures the real bar and fails on drift. */
+      --gc-nav-bar-h: 68px;
       /* The selected nav button's ink — near-black, because the indicator behind it is white. */
       --gc-nav-ink: #17172b;
       /* The sliding indicator: a WHITE pill with a hard offset pink shadow. `#ff6cb1` is deliberately NOT
