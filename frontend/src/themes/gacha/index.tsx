@@ -14,6 +14,7 @@ import { planPlacementSetting } from "../../theme-engine/kit/composer/plan/place
 import { composerLayoutSetting } from "../../theme-engine/kit/composer/setting";
 import { preloadableRoot } from "../../theme-engine/lazyRoot";
 import type { ThemeDef } from "../../theme-engine/types";
+import { loadFonts } from "./fonts";
 
 // Code-split the Root so a non-gacha user never bundles gacha's presentation (the bespoke Fleet/Agent
 // surfaces + the reel overlay); `loadRoot` (= preload) warms the chunk in switchTheme before the skin flips.
@@ -47,6 +48,8 @@ export const gacha: ThemeDef = {
   // Two stylesheets: the token map (semantic contract) + gacha's bespoke structural CSS (the app backdrop,
   // the brand wordmark, the nav sub-label). Both are @scope([data-skin=gacha]) @layer theme.
   loadStyles: () => Promise.all([import("./tokens.css"), import("./gacha.css")]),
+  // The COMMITTED subsets (§10.4) — see fonts.ts. Awaited by `ensureThemeLoaded` before the skin flips.
+  loadFonts,
   // Per-theme settings (§14.3), auto-rendered by the Conf Appearance picker in DECLARATION order: the shared
   // kit axes first (composer pair adjacent, the round-2 convention), then gacha's own three.
   settings: {

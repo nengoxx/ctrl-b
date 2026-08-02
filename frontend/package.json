@@ -9,6 +9,7 @@
     "typecheck": "tsc -b --noEmit && tsc -p tests/tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit",
     "preview": "vite preview --host 0.0.0.0",
     "icons": "node scripts/gen-pwa-icons.mjs",
+    "fonts:gacha": "node scripts/gen-theme-fonts.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
