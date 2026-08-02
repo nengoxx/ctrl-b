@@ -34,6 +34,13 @@ type VTDocument = Document & {
   startViewTransition?: (cb: () => void) => ViewTransitionLike;
 };
 
+// The identity of the transition that currently OWNS the `html[data-transition]` stamp (the hardening
+// delta over the extracted block). Starting a second transition SKIPS the running one, and the skipped
+// one's `finished` settles LATER — so an unguarded cleanup would delete the newer transition's stamp
+// mid-flight, un-styling it. Whoever stamps last owns the attribute; an older owner's cleanup no-ops.
+// Identity-based, so a stale value is harmless (the next stamp mints a fresh token).
+let stampOwner: object | null = null;
+
 /** Apply `update` inside a View Transition when the browser supports one and motion is `full`; otherwise
  *  apply it instantly. Either way the update runs through `flushSync`, so React has committed by the time
  *  this returns. `type` (optional) stamps `html[data-transition]` for the duration so theme CSS can target
@@ -51,12 +58,24 @@ export function runViewTransition(update: () => void, type?: string): void {
     return;
   }
   const root = doc.documentElement;
-  if (type !== undefined) root.dataset.transition = type;
-  const t = start(apply);
-  t.ready.catch(() => {}); // swallow the skip/TimeoutError (the DOM is already applied)
+  // Stamp BEFORE starting, so the pseudo-element rules keyed on `html[data-transition]` are already in
+  // scope when the transition begins animating.
+  let token: object | null = null;
   if (type !== undefined) {
-    void t.finished.finally(() => {
-      delete root.dataset.transition;
-    });
+    token = {};
+    stampOwner = token;
+    root.dataset.transition = type;
   }
+  const t = start(apply);
+  // Swallow BOTH legs. `ready` rejects on the skip/TimeoutError path; `finished` rejects too when the
+  // transition is skipped or aborted — the original block only caught `ready`, so a skipped transition
+  // surfaced an unhandled rejection. Neither is a correctness signal: the callback has already run, so the
+  // DOM is applied either way (never gate state on `finished`).
+  t.ready.catch(() => {});
+  const clear = () => {
+    if (token === null || stampOwner !== token) return; // untyped, or a newer transition owns the stamp
+    stampOwner = null;
+    delete root.dataset.transition;
+  };
+  void t.finished.then(clear, clear); // `.then(f, f)`, not `.finally(f)`: finally RE-THROWS the rejection
 }

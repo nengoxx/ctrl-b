@@ -139,3 +139,51 @@ describe("runViewTransition — the supported path", () => {
     vt.transitions[0].settle();
   });
 });
+
+// ── The hardening delta over the extracted block (D52: "catch BOTH `.ready` AND `.finished`, and make the
+//    `data-transition` cleanup race-safe"). Both cases are real: starting a second transition SKIPS the
+//    running one, which rejects BOTH its promises and settles them AFTER the newer one has stamped. ──
+describe("runViewTransition — hardening", () => {
+  it("swallows a SKIPPED transition's `finished` rejection and still clears the stamp", async () => {
+    const vt = installFakeVT();
+    runViewTransition(() => {}, "tab");
+    expect(document.documentElement.dataset.transition).toBe("tab");
+    // `.finally()` would re-throw here → an unhandled rejection (vitest fails the run on one); `.then(f,f)`
+    // is what makes the cleanup total.
+    vt.transitions[0].rejectReady(new Error("AbortError"));
+    vt.transitions[0].rejectFinished(new Error("AbortError"));
+    await flushMicrotasks();
+    expect(document.documentElement.dataset.transition).toBeUndefined();
+  });
+
+  it("an OLDER transition settling late cannot delete the NEWER one's stamp (the token guard)", async () => {
+    const vt = installFakeVT();
+    runViewTransition(() => {}, "tab"); // T1 stamps "tab"
+    runViewTransition(() => {}, "detail"); // T2 supersedes → stamps "detail"
+    expect(document.documentElement.dataset.transition).toBe("detail");
+
+    // T1 is the one the browser skipped; its promises settle now, long after T2 took over.
+    vt.transitions[0].rejectReady(new Error("AbortError"));
+    vt.transitions[0].rejectFinished(new Error("AbortError"));
+    await flushMicrotasks();
+    expect(document.documentElement.dataset.transition).toBe("detail"); // T2's stamp survives
+
+    // …and T2's own settle still clears it (the guard doesn't strand the attribute).
+    vt.transitions[1].settle();
+    await flushMicrotasks();
+    expect(document.documentElement.dataset.transition).toBeUndefined();
+  });
+
+  it("an UNTYPED transition never touches a running typed transition's stamp", async () => {
+    const vt = installFakeVT();
+    runViewTransition(() => {}, "tab");
+    runViewTransition(() => {}); // no type → stamps nothing, owns nothing
+    expect(document.documentElement.dataset.transition).toBe("tab");
+    vt.transitions[1].settle();
+    await flushMicrotasks();
+    expect(document.documentElement.dataset.transition).toBe("tab");
+    vt.transitions[0].settle();
+    await flushMicrotasks();
+    expect(document.documentElement.dataset.transition).toBeUndefined();
+  });
+});
