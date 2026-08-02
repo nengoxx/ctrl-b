@@ -500,6 +500,34 @@
     .kit .b.bot {
       max-width: 86%; /* the prototype's `.msg` — the kit ships 88%/92% */
     }
+    /* ── The bubbles' TYPE (owner round 4, item H — "colors right, font wrong") ────────────────────
+     * DIAGNOSED FIRST, because the reported symptom and the actual defect were not the same thing.
+     * Measured in BOTH engines (Blink + Gecko, the dev build): `.b.user .body`, `.b.bot .body` and
+     * `.b.sys .body` already inherit `--font-body` from `.kit` and paint the real Zen Kaku Gothic New —
+     * each element's advance width for a fixed probe string is IDENTICAL to a forced-ZKGN probe at its
+     * own size/weight, and differs from both the `system-ui` and the Shippori probes. The family was
+     * never wrong, and the prototype's own user bubble is the same face on the same white fill.
+     *
+     * What HAD been left behind is the other half of the prototype's `.msg` rule. The wave ported its
+     * fill, ink, radius, padding, offset shadow and 86% width, but not its TYPE: the prototype sets
+     * `font-size: 12.5px` (theme.css:87) over base.css's `line-height: 1.45`, while the kit's chat body
+     * is 14px/1.5. At 14px the bubble is the largest running text in the theme and sits on its only
+     * dark-ink-on-white surface, where strokes read optically heavier — which is what makes the same
+     * face read as a different one. Ported here, on BOTH sides (the prototype styles `.msg`, not
+     * `.msg.user`), so the pair keeps one voice.
+     *
+     * The `font-family` pin is a FENCE, not a fix: the §15 contract is that themes reskin ONE shared
+     * chat tree through its pinned hook classes, so the family the tree resolves to should be stated by
+     * the theme rather than left to whatever the shell happens to pass down. It is asserted alongside
+     * the metrics in the e2e arm, on user + bot + sys. */
+    .kit .b .body {
+      font-family: var(--font-body);
+    }
+    .kit .b.user .body,
+    .kit .b.bot .body {
+      font-size: 12.5px;
+      line-height: 1.45;
+    }
     .kit .b.user .body {
       background: var(--gc-bubble-user);
       color: var(--gc-bubble-user-ink);

@@ -418,6 +418,9 @@ test("gacha · chat bubbles: white user bubble with the hard pink offset, filled
       body: JSON.stringify([
         msg("m1", "user", "wake rook for me"),
         msg("m2", "assistant", "wake-on-LAN sent — it usually answers in about 40 seconds."),
+        // A SYS bubble too — the third `.b` kind gacha restyles, and the third the round-4 item-H
+        // font-family fence has to cover.
+        msg("m3", "system", "context compacted"),
       ]),
     }),
   );
@@ -449,6 +452,32 @@ test("gacha · chat bubbles: white user bubble with the hard pink offset, filled
   });
   expect(bot.bg).toBe("rgb(34, 37, 65)"); // #222541
   expect(bot.radius).toBe("14px");
+
+  // Owner round 4, item H. The family claim first: the shared chat tree must resolve to the THEME's body
+  // face on every bubble kind, not to whatever the shell happened to pass down (§15 — one tree, reskinned
+  // through its pinned hooks). Then the prototype's own `.msg` type metrics, which the bubble port had
+  // left behind: 12.5px (theme.css:87) over base.css's 1.45, on BOTH sides.
+  const type = await page.evaluate(() => {
+    const of = (sel: string) => {
+      const s = getComputedStyle(document.querySelector(sel)!);
+      return { ff: s.fontFamily, size: s.fontSize, lh: s.lineHeight };
+    };
+    return {
+      shell: getComputedStyle(document.querySelector(".kit")!).fontFamily,
+      user: of("#tab-agent .b.user .body"),
+      bot: of("#tab-agent .b.bot .body"),
+      sys: of("#tab-agent .b.sys .body"),
+    };
+  });
+  expect(type.shell).toContain("Zen Kaku Gothic New");
+  for (const k of ["user", "bot", "sys"] as const) {
+    expect(type[k].ff, `${k} bubble font-family`).toBe(type.shell);
+  }
+  expect(type.user.size).toBe("12.5px");
+  expect(type.bot.size).toBe("12.5px");
+  // 12.5 x 1.45 = 18.125 — the prototype's own computed line box.
+  expect(parseFloat(type.user.lh)).toBeCloseTo(18.125, 2);
+  expect(parseFloat(type.bot.lh)).toBeCloseTo(18.125, 2);
 
   // The shadow has ROOM: the bubble's right edge plus the 5px offset stays inside the log's box, and the
   // scroller never gains a horizontal overflow.
