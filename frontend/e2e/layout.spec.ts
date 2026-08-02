@@ -197,6 +197,80 @@ test("gacha · 2-tab: conf via the DOCKED direct button; utils still hosted", as
   expect(pageErrors).toEqual([]);
 });
 
+test("gacha · chrome fidelity: floating nav pill, white indicator + pink hard shadow, dissolving appbar", async ({
+  page,
+  pageErrors,
+}) => {
+  // The owner's G0 eyeball wave, measured on COMPUTED styles in the real built app — the only place the
+  // @layer/@scope cascade actually runs (jsdom can't replay it, so this can't be a unit test). Each
+  // assertion is one of the five mismatches the owner flagged against the prototype.
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", v: 1 });
+  await page.goto("/");
+  await expect(page.locator(".kit-tabbar")).toBeVisible();
+
+  // 1 + 2. The nav FLOATS: inset, rounded, bordered, shadowed, blurred.
+  const nav = await page.locator(".kit-tabbar").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return {
+      radius: s.borderTopLeftRadius,
+      marginLeft: s.marginLeft,
+      marginRight: s.marginRight,
+      borderWidth: s.borderTopWidth,
+      shadow: s.boxShadow,
+      backdrop: s.backdropFilter,
+    };
+  });
+  expect(nav.radius).toBe("16px");
+  expect(nav.marginLeft).toBe("12px");
+  expect(nav.marginRight).toBe("12px");
+  expect(nav.borderWidth).toBe("1px");
+  expect(nav.shadow).not.toBe("none");
+  expect(nav.backdrop).toContain("blur");
+
+  // 3. The indicator is a WHITE pill with the hard offset pink shadow (not the kit's accent line).
+  const ind = await page.locator(".kit-tab-ind .bar").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { bg: s.backgroundColor, shadow: s.boxShadow, radius: s.borderTopLeftRadius };
+  });
+  expect(ind.bg).toBe("rgb(255, 255, 255)");
+  expect(ind.radius).toBe("12px");
+  expect(ind.shadow).toContain("5px 5px"); // the hard offset — no blur radius
+  expect(ind.shadow).toContain("255, 108, 177"); // #ff6cb1, the near-trio nav pink
+
+  // 4. The appbar DISSOLVES (a gradient, not a flat fill) and casts no shadow; the kit's top edge scrim —
+  //    what actually read as that shadow — is nulled.
+  const bar = await page.locator(".kit-appbar").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { image: s.backgroundImage, shadow: s.boxShadow, backdrop: s.backdropFilter };
+  });
+  expect(bar.image).toContain("linear-gradient");
+  expect(bar.shadow).toBe("none");
+  expect(bar.backdrop).toContain("blur");
+  const scrim = await page
+    .locator(".kit-main")
+    .evaluate((el) => getComputedStyle(el, "::before").backgroundImage);
+  expect(scrim).toBe("none");
+
+  // 5. The toggles: the TWO-stop pink→violet track, a white knob, the prototype's 48×28 geometry.
+  await page.locator("#tabbtn-conf").click();
+  const knob = page.locator(".kit .switch.on .knob").first();
+  await expect(knob).toBeVisible();
+  const sw = await knob.evaluate((el) => {
+    const s = getComputedStyle(el);
+    const k = getComputedStyle(el, "::after");
+    return { image: s.backgroundImage, w: s.width, h: s.height, knobBg: k.backgroundColor };
+  });
+  expect(sw.image).toContain("linear-gradient");
+  expect(sw.image).toContain("255, 108, 174"); // #ff6cae
+  expect(sw.image).toContain("114, 91, 255"); // #725bff — the two-stop, NOT the tri-gradient's cyan
+  expect(sw.image).not.toContain("229, 255"); // no #54e5ff stop
+  expect(sw.w).toBe("48px");
+  expect(sw.h).toBe("28px");
+  expect(sw.knobBg).toBe("rgb(255, 255, 255)");
+
+  expect(pageErrors).toEqual([]);
+});
+
 // ── vapor · the waiver's replacement (D51 V6) ─────────────────────────────────────────────────────────
 // vapor declared `layouts:["4-tab"]` from D35 until D51 V6; the test here used to assert the coercion. The
 // retirement's bar (R13 / Codex #11) was REAL relocation tests, so these two drive the same partitions

@@ -27,7 +27,18 @@
      * The wordmark is the prototype's gradient-clipped katakana: `--accent-fill` painted through the
      * glyphs. `color: transparent` is what reveals the clipped background — the text node itself stays in
      * the DOM, so the accessible name is unchanged. */
+    /* The prototype's brand is a two-LINE block — the wordmark over its JP subtitle (`.brand strong` +
+     * `.brand small`, both `display: block`) — where the kit's is a single flex row. Katakana at 15px with
+     * .16em tracking is wide enough that the row form wraps the WORDMARK itself the moment anything else
+     * claims appbar width (the connection badge, the docked nav button). Wrapping the flex line and giving
+     * `.meta` a full basis restores the prototype's stack without forking the brand markup: mark +
+     * wordmark on line one, subtitle on line two. */
+    .kit-appbar .kit-brand {
+      flex-wrap: wrap;
+      row-gap: 3px;
+    }
     .kit-brand .gc-word {
+      white-space: nowrap;
       font-weight: 900;
       font-size: 15px;
       letter-spacing: 0.16em;
@@ -38,6 +49,7 @@
     }
     /* The JP subtitle rides the serif display face, letter-spaced wide like the prototype's `.brand small`. */
     .kit-brand .meta {
+      flex-basis: 100%; /* its own line — the prototype's stacked `.brand small` */
       font-family: var(--font-display);
       font-size: 9px;
       font-weight: 600;
@@ -45,13 +57,182 @@
       color: var(--text-3);
     }
 
+    /* ── CHROME FIDELITY (the owner's G0 eyeball wave) ────────────────────────────────────────────
+     * G0 shipped tokens only, so the kit surfaces rendered generically and the owner flagged five
+     * mismatches against the prototype: the appbar's glass (and a shadow the prototype does not have),
+     * the toggle gradients, a non-floating tab bar, the tab buttons' color + the indicator's pink hard
+     * shadow. Everything below is §15-sanctioned theme CSS ON KIT HOOKS — it re-skins the kit's own
+     * elements and mechanisms (the sliding-indicator track especially) rather than building a parallel
+     * anything. The chat bubbles + composer are the same class of gap and are PINNED FOR G3.
+     *
+     * ⚠ A LAYER TRAP that governs every override here: `@layer theme` beats `@layer base` by LAYER
+     * ORDER, so a plain `.kit-appbar` rule in this file outranks kit.css's much more specific
+     * `.kit-appbar.transparent` and `body[data-perf="lite"] .kit-appbar`. Any base rule that CONDITIONS
+     * one of these surfaces therefore has to be re-declared here, or gacha would silently break the
+     * appbar-mode lever and the perf-lite frost gate. Those re-declarations are marked below.
+
+     * ── App bar ──────────────────────────────────────────────────────────────────────────────────
+     * The prototype's topbar is a gradient that DISSOLVES to transparent over its own height; that
+     * dissolve is the glass, and it is why the bar carries no border and no shadow. */
+    .kit-appbar {
+      background: var(--gc-bar-grad);
+      border: 0;
+      box-shadow: none;
+      -webkit-backdrop-filter: blur(14px);
+      backdrop-filter: blur(14px);
+    }
+    /* Wallpaper-on re-tint (prototype `body[data-wallpaper="on"] .topbar`). The wallpaper LAYER itself is
+     * G1; the attribute is already stamped by GachaRoot from the R6 setting, so wiring the bar's half now
+     * costs one rule and saves G1 a revisit. */
+    body[data-wallpaper="on"] .kit-appbar {
+      background: var(--gc-bar-grad-wall);
+    }
+    /* THE "SHADOW" the owner saw is not the bar — it is the kit's top edge scrim, a 30px flat `--bg` haze
+     * painted just BELOW the bar to seal the seam between it and scrolling content (kit.css says as much
+     * for the transparent mode: "reads as a stray SHADOW band"). A dissolving bar has no seam to seal, so
+     * gacha nulls it outright — the cosmos/frontier precedent, which does the same per-tab. */
+    .kit-main::before {
+      background: none;
+    }
+    /* RE-DECLARED from kit.css (the layer trap): the `transparent` appbar mode must still paint nothing,
+     * and perf-lite must still drop the frost for an opaque bar. Without these two, gacha's rule above
+     * would win on layer order and disable both levers. */
+    .kit-appbar.transparent,
+    body[data-perf="lite"] .kit-appbar.transparent {
+      background: transparent;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    body[data-perf="lite"] .kit-appbar,
+    body[data-perf="lite"] .kit-tabbar {
+      background: var(--bg);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+
+    /* ── Switches ─────────────────────────────────────────────────────────────────────────────────
+     * The prototype's toggle: 48×28 track, borderless, `#ffffff15` when off, the TWO-STOP pink→violet
+     * when on, with a WHITE 22px knob on a 260 ms spring. The kit's own recipe is 42×22 with a
+     * `--surface-2` track, a `--line-2` border and a `--text-3`/`--bg` knob — every one of those is a
+     * value, so this is a re-skin of the kit control, not a replacement. */
+    .kit .switch .knob {
+      width: 48px;
+      height: 28px;
+      border: 0;
+      background: var(--gc-switch-off);
+    }
+    .kit .switch .knob::after {
+      width: 22px;
+      height: 22px;
+      left: 3px;
+      top: 3px;
+      background: var(--gc-switch-knob);
+      transition:
+        transform 260ms var(--gc-ease-spring),
+        background 0.2s;
+    }
+    .kit .switch.on .knob {
+      background: var(--gc-switch-fill);
+    }
+    .kit .switch.on .knob::after {
+      /* 3px pad + 20px travel + 22px knob = 45 of a 48px track — the prototype's symmetric 3px margins. */
+      transform: translateX(20px);
+      background: var(--gc-switch-knob);
+    }
+    /* RE-DECLARED (the layer trap): kit.css ships a SMALL switch variant for the per-service auto rows.
+     * Its base rule only overrides width/height, so gacha's larger geometry above would swallow it —
+     * re-state it, scaled by the same ratio (40×23 track, 17px knob, 17px travel, 3px margins). */
+    .kit .svc-auto .switch .knob {
+      width: 40px;
+      height: 23px;
+    }
+    .kit .svc-auto .switch .knob::after {
+      width: 17px;
+      height: 17px;
+    }
+    .kit .svc-auto .switch.on .knob::after {
+      transform: translateX(17px);
+    }
+
+    /* ── Bottom nav — the FLOATING pill ───────────────────────────────────────────────────────────
+     * Inset 12px, rounded, bordered, blurred, with the prototype's deep drop shadow. It stays an IN-FLOW
+     * flex child of the shell (margins, not `position: absolute`): the kit's whole bottom-edge geometry —
+     * `--app-h` keyboard sizing, the scroller's `--composer-h` padding, and the composer's own anchor —
+     * is measured off the bar occupying that row, and taking it out of flow would move the composer on
+     * top of it. See the report's deviation note: content therefore ENDS above the nav instead of
+     * scrolling behind it; that half of the prototype's floating nav lands with the composer at G3. */
+    .kit-tabbar {
+      margin: 0 12px max(14px, env(safe-area-inset-bottom));
+      min-height: 66px;
+      padding: 7px;
+      align-items: center;
+      background: var(--gc-bar);
+      border: 1px solid var(--gc-bar-line);
+      border-radius: 16px;
+      box-shadow: var(--gc-nav-shadow);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+    }
+    /* The indicator: the kit's own sliding TRACK mechanism, restyled from a 3px top line into the
+     * prototype's full-height white pill. The track is one grid column wide and translates by
+     * `--tab-i × 100%`; with the bar's 7px padding the grid's content box is `100% - 14px`, so a track of
+     * `(100% - 14px) / --tab-count` inset 7px lands exactly on each column — the mechanism carries the
+     * N-column layouts (2-/3-/4-tab) unchanged, with no per-preset table. */
+    .kit-tab-ind {
+      top: 7px;
+      bottom: 7px;
+      left: 7px;
+      height: auto;
+      width: calc((100% - 14px) / var(--tab-count, 4));
+      z-index: 1;
+      transition:
+        transform 420ms var(--gc-ease-spring),
+        opacity 0.2s;
+    }
+    .kit-tab-ind .bar {
+      width: 100%; /* the kit caps its line at min(88px, 76%); the pill fills its column */
+      border-radius: 12px;
+      background: var(--gc-ind-fill);
+      box-shadow: var(--gc-ind-shadow);
+    }
+    /* RE-DECLARED (the layer trap): reduced motion must still make the indicator JUMP rather than slide —
+     * position is information, so it is never removed, only un-animated. */
+    body[data-motion="reduced"] .kit-tab-ind {
+      transition: opacity 0.2s;
+    }
+    /* The buttons must paint ABOVE the indicator now that it is a full-height pill. DOM order does not
+     * settle this: the indicator is POSITIONED and the buttons are static, so without an explicit rung
+     * the pill would paint over its own label. (The kit needs no such rule — its 3px line barely overlaps.) */
+    .kit-tabbtn {
+      position: relative;
+      z-index: 2;
+      color: var(--text);
+      opacity: 0.48;
+      transition:
+        color 0.25s,
+        opacity 0.25s;
+    }
+    .kit-tabbtn.active {
+      /* near-black ink, because the pill behind the selected tab is white */
+      color: var(--gc-nav-ink);
+      opacity: 1;
+    }
+    .kit-tabbtn .glyph {
+      font-size: 20px;
+    }
+    .kit-tabbtn .lbl {
+      font-weight: 800;
+      letter-spacing: 0.12em;
+    }
     /* ── Nav sub-label (the `TabDef.subLabel` seam) ───────────────────────────────────────────────
      * The prototype's `.nav button .lbl em`: the serif face, tiny, wide-tracked, sitting under the Latin
-     * label. Renders only for the sections that declare one — the kit emits no node otherwise. */
+     * label, and inheriting the button's ink so the selected one flips to near-black with it. Renders
+     * only for the sections that declare one — the kit emits no node otherwise. Weight 800 is the face
+     * the prototype actually renders (its label is 900 and only 600/800 are cut). */
     .kit-tabbtn .sub {
       font-family: var(--font-display);
       font-size: 8px;
-      font-weight: 600;
+      font-weight: 800;
       letter-spacing: 0.2em;
       opacity: 0.75;
     }

@@ -69,9 +69,35 @@
       --gc-backdrop: radial-gradient(circle at 30% 0, #3a205b, #11142d 48%, #080914);
       --gc-pinstripe: repeating-linear-gradient(115deg, #ffffff04 0 1px, transparent 1px 7px);
 
-      /* Bars (top + nav): the prototype's translucent navy over blur. */
-      --gc-bar: #11142ee8;
+      /* Bars (top + nav): the prototype's translucent navy over blur.
+       * The TOPBAR is a GRADIENT that dissolves to transparent, not a flat fill — that dissolve IS the
+       * prototype's glass (theme.css `.topbar`), and it is also why the bar carries no border and no
+       * shadow: there is no hard edge to seal. The wallpaper-on variant re-tints it to the page black so
+       * the art reads through (prototype `body[data-wallpaper="on"] .topbar`). */
+      --gc-bar-grad: linear-gradient(#11142eee, #11142e99 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#0a0b19e8, #0a0b1966 70%, transparent);
+      --gc-bar: #11142ee8; /* the NAV pill's flat fill */
       --gc-bar-line: #ffffff18;
+      --gc-nav-shadow: 0 18px 45px #0009;
+      /* The selected nav button's ink — near-black, because the indicator behind it is white. */
+      --gc-nav-ink: #17172b;
+      /* The sliding indicator: a WHITE pill with a hard offset pink shadow. `#ff6cb1` is deliberately NOT
+       * the brand pink `#ff6cae` — the prototype uses near-trio values for the nav shadow and the reel
+       * slats (§1 palette note), and they are tokened separately rather than silently unified. */
+      --gc-ind-fill: #ffffff;
+      --gc-ind-shadow: 5px 5px 0 #ff6cb1;
+
+      /* Switches. The ON track is the TWO-STOP pink→violet (prototype `.switch[aria-checked="true"]`),
+       * NOT the tri-gradient brand fill — the prototype reserves the third (cyan) stop for brand surfaces
+       * (wordmark, tag pills, the dossier strip), and using it on every toggle is what read as "more
+       * colour heavy" at the owner's G0 eyeball. Kept as its own token rather than re-pointing
+       * `--accent-fill`, because `--accent-fill` is also the ink-bearing fill (seg buttons, send) that the
+       * §14.15.1-⑨ contrast gate measures `--accent-ink` against — and `#725bff` is darker than the
+       * tri-gradient's `#805cff`, so re-pointing it would drop that pair from 4.57 to 4.34 and FAIL. A
+       * switch track carries no ink, so it is free to be the darker, calmer gradient. */
+      --gc-switch-off: #ffffff15;
+      --gc-switch-fill: linear-gradient(90deg, #ff6cae, #725bff);
+      --gc-switch-knob: #ffffff;
 
       /* The BRAND trio — pink → violet → cyan (brand text, tags, switch-on, the dossier strip). */
       --gc-brand-1: #ff6cae;
