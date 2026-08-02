@@ -1208,6 +1208,63 @@
       text-transform: uppercase;
     }
 
+    /* ── The HOST ACTION BAR (council H3 — designed here, not ported: the prototype has no action bar).
+     * Kit semantics (the same actions the cosmos/frontier dossiers run through the typed-action
+     * chokepoint), gacha language: arcade TICKETS. The primary is the brand two-stop on the kit's verified
+     * `--accent-ink` pair, at the prototype's own 12px button radius, carrying the hard offset shadow this
+     * theme gives anything that sits ON a surface; pressing it translates INTO its own shadow, which is
+     * the sticker-press the prototype's dormant `press()` helper was reaching for. Shut down stays a quiet
+     * white pill with a rose rule and the light-surface danger ink — destructive, not shouty. */
+    .gc-acts {
+      display: flex;
+      gap: 8px;
+      padding: 0 14px 14px;
+    }
+    .gc-act {
+      flex: 1;
+      min-width: 0;
+      appearance: none;
+      cursor: pointer;
+      padding: 12px 10px;
+      border-radius: 12px;
+      background: var(--gc-dossier-card);
+      border: 1px solid var(--gc-dossier-line);
+      color: var(--gc-dossier-ink);
+      font: inherit;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      /* transform + box-shadow only (§14.11) */
+      transition:
+        transform 160ms var(--gc-ease-out),
+        box-shadow 160ms var(--gc-ease-out);
+    }
+    .gc-act.primary {
+      background: var(--accent-fill);
+      border-color: transparent;
+      color: var(--accent-ink);
+      box-shadow: var(--gc-act-shadow);
+    }
+    .gc-act.danger {
+      color: var(--gc-dossier-danger);
+      border-color: color-mix(in srgb, var(--gc-dossier-danger) 45%, var(--gc-dossier-line));
+    }
+    .gc-act:active:not(:disabled) {
+      transform: translate(3px, 3px);
+      box-shadow: none;
+    }
+    /* In-flight: the bar dims and stops answering — `busy` is one host's action, so this is the whole bar
+     * (a reboot and a shutdown racing each other is not a state worth having). */
+    .gc-act:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    body[data-motion="reduced"] .gc-act {
+      transition: none;
+    }
+
     /* The live service rows. The left rule is the host's ACCENT PAIR (see `[data-pair]` below) — the port
      * of the prototype fixture's per-host `color`/`color2`, which no live host carries. */
     .gc-svcs {

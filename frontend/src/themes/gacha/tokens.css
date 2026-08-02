@@ -245,6 +245,15 @@
       /* The blank-portrait fill when the roster has no usable art for this machine: a flat step off the
        * sheet, so the frame still reads as a frame (the capsule card's `--gc-card-blank` analogue). */
       --gc-dossier-blank: #e7e9fa;
+      /* The dossier's DANGER ink (its Shut down pill). The night palette's `--danger` is tuned to read on
+       * `#0a0b19` and measures only 3.0 against this white card — under the 4.5 floor — so the light
+       * surface gets its own, deeper member of the same rose family: 6.0 on `--gc-dossier-card`. The two
+       * are one role in two lightings, not two colors. */
+      --gc-dossier-danger: #c2144e;
+      /* The action bar's hard offset shadow — the theme's "this sits ON the surface" motif (the nav
+       * indicator, the user chat bubble), here in the dossier's own ink so a filled ticket reads as
+       * printed onto the slip. Composed from the ink token so it re-tints with it. */
+      --gc-act-shadow: 3px 3px 0 var(--gc-dossier-ink);
     }
 
     /* Page text color. The page BACKGROUND lives in the bespoke gacha.css (the cosmos/frontier precedent:

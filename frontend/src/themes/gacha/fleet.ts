@@ -71,8 +71,20 @@ export function counterText(onlineCount: number, total: number, resolved: boolea
 export function plateSub(host: Host): string {
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms;
-  const state = online ? (ping == null ? null : `${ping} ms`) : GACHA_COPY.cardSleeping;
+  const state = online ? (ping == null ? null : pingText(ping)) : GACHA_COPY.cardSleeping;
   return state === null ? roleLabel(host) : `${roleLabel(host)} ${GACHA_COPY.sep} ${state}`;
+}
+
+/** A ping, as the arcade prints it — the ONE formatter behind the capsule plate and the dossier's Ping
+ *  tile, so a machine never reads two different latencies on two surfaces.
+ *
+ *  The prototype's fixture pings are tidy integers ("18 ms"); a real backend is not. The machine ctrl-b
+ *  runs on answers its own ping in FRACTIONS of a millisecond, and `${0.025} ms` is both ugly and
+ *  meaningless at plate size — so anything under a millisecond reads as the honest bound instead, and
+ *  everything else rounds to whole milliseconds (the resolution a ping poll actually carries). */
+export function pingText(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return PENDING;
+  return ms < 1 ? "<1 ms" : `${Math.round(ms)} ms`;
 }
 
 /** The unit DOSSIER's subtitle (G2) — the prototype's `Workstation · ONLINE` line under the machine name

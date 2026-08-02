@@ -4,8 +4,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { relativeTime } from "../../src/lib/relativeTime";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
@@ -73,6 +73,7 @@ const svc = (over: Partial<Service> = {}): Service => ({
 const ROSTER = defaultRoster();
 
 function renderD(props: Partial<Parameters<typeof GachaHostDetail>[0]> = {}) {
+  const run = props.run ?? vi.fn().mockResolvedValue(undefined);
   const h = props.host ?? host();
   const index = props.index ?? 0;
   const { container } = render(
@@ -82,10 +83,12 @@ function renderD(props: Partial<Parameters<typeof GachaHostDetail>[0]> = {}) {
       art={props.art !== undefined ? props.art : artForHost(ROSTER, index)}
       mode={props.mode ?? "five"}
       index={index}
+      busy={props.busy ?? false}
+      run={run}
       titleId="dossier-title"
     />,
   );
-  return { container, h };
+  return { container, run, h };
 }
 
 /** A metric card's value, found by the ENGLISH half of its bilingual label. */
@@ -195,6 +198,64 @@ describe("the dossier agrees with the capsule card", () => {
     expect(container.querySelector(".unit-no")?.textContent).toBe("UNIT DOSSIER");
     expect(container.querySelector(".gc-dossier-title p")?.textContent).toBe(dossierSub(h, true));
     expect(dossierSub(h, true)).toBe(`WORKSTATION ${GACHA_COPY.sep} ONLINE`);
+  });
+});
+
+// ── THE HOST ACTION BAR (council H3) — designed for gacha, but on KIT SEMANTICS: the same action set the
+//    precedent dossiers carry, over the same typed-action `run` (which owns the confirm dialog, the
+//    optimistic flip and the toast). No new execution path is introduced here, and these pin that.
+describe("the host action bar", () => {
+  const acts = (c: HTMLElement): HTMLButtonElement[] => [
+    ...c.querySelectorAll<HTMLButtonElement>(".gc-act"),
+  ];
+  const offline = (): Host => host({ status: { ...host().status!, online: false, ping_ms: null } });
+
+  it("a sleeping machine offers Wake alone, and Wake runs the typed action", () => {
+    const h = offline();
+    const { container, run } = renderD({ host: h });
+    expect(acts(container).map((b) => b.textContent)).toEqual(["Wake"]);
+    fireEvent.click(screen.getByRole("button", { name: "Wake" }));
+    expect(run).toHaveBeenCalledWith("wake", h);
+  });
+
+  it("an online machine offers Reboot + Shut down, each on its own typed action", () => {
+    const { container, run, h } = renderD();
+    expect(acts(container).map((b) => b.textContent)).toEqual(["Reboot", "Shut down"]);
+    fireEvent.click(screen.getByRole("button", { name: "Reboot" }));
+    expect(run).toHaveBeenCalledWith("reboot", h);
+    fireEvent.click(screen.getByRole("button", { name: "Shut down" }));
+    expect(run).toHaveBeenCalledWith("shutdown", h);
+    expect(screen.queryByRole("button", { name: "Wake" })).toBeNull();
+  });
+
+  it("busy disables the WHOLE bar and says so, so a second action can't race the first", () => {
+    const { container, run } = renderD({ busy: true });
+    const bar = container.querySelector(".gc-acts")!;
+    expect(bar.getAttribute("aria-busy")).toBe("true");
+    for (const b of acts(container)) {
+      expect(b.disabled).toBe(true);
+      fireEvent.click(b);
+    }
+    expect(run).not.toHaveBeenCalled();
+    cleanup();
+    // …and it is genuinely conditional — an idle dossier announces nothing.
+    const idle = renderD();
+    expect(idle.container.querySelector(".gc-acts")!.hasAttribute("aria-busy")).toBe(false);
+  });
+
+  it("paints the bar from tokens: the brand ticket, the light-surface danger ink", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
+    expect(css).toMatch(/\.gc-act\.primary\s*{[^}]*background: var\(--accent-fill\)/);
+    expect(css).toMatch(/\.gc-act\.primary\s*{[^}]*color: var\(--accent-ink\)/);
+    expect(css).toContain("box-shadow: var(--gc-act-shadow)");
+    expect(css).toContain("color: var(--gc-dossier-danger)");
+    // The night palette's --danger measures 3.0 on this white card; the deeper light-surface rose is 6.0.
+    expect(tokens).toContain("--gc-dossier-danger: #c2144e");
+    expect(tokens).toContain("--gc-act-shadow: 3px 3px 0 var(--gc-dossier-ink)");
   });
 });
 

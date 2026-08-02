@@ -1,7 +1,8 @@
+import type { FleetAction } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
-import { PENDING, dossierSub } from "./fleet";
+import { PENDING, dossierSub, pingText } from "./fleet";
 import type { ResolvedArt } from "./roster";
 import { isHighStar, starsFor, type StarMode } from "./stars";
 
@@ -10,9 +11,10 @@ import { isHighStar, starsFor, type StarMode } from "./stars";
 // surface: gacha stays `modes: ["dark"]`, so the inversion is a SURFACE, not a mode — an arcade prize
 // slip pulled out from under the night-time cabinet.
 //
-// A PURE presentation of `useFleet` data (the cosmos C3b / frontier F3 shape): host, its live services and
-// the resolved art all come from GachaFleet. No data fetching, no store reads, no star or roster logic — `starsFor` and the roster resolver stay the single sources,
-// so a machine's dossier shows the SAME character and the SAME rarity its capsule card does.
+// A PURE presentation of `useFleet` data (the cosmos C3b / frontier F3 shape): host, its live services,
+// the resolved art and the action handles all come from GachaFleet. No data fetching, no store reads, and
+// no star or roster logic of its own — `starsFor` and the roster resolver stay the single sources, so a
+// machine's dossier shows the SAME character and the SAME rarity its capsule card does.
 //
 // THE METRIC GRID IS RULED (§4.8, Codex R4-10) and is deliberately NOT frontier's: Ping is real, Uptime is
 // the deferred-seam dash, Services is the CONFIGURED count (the star input — not frontier's live up/total),
@@ -28,6 +30,9 @@ interface Props {
   mode: StarMode;
   /** The host's position in the fleet's DISPLAY order — picks its accent pair (see `data-pair` below). */
   index: number;
+  /** A host action is in flight (`useFleet().busy`) — disables the whole bar. */
+  busy: boolean;
+  run: (action: FleetAction, host: Host) => Promise<void>;
   titleId: string; // aria-labelledby target the sheet points at (the host name)
 }
 
@@ -37,7 +42,7 @@ interface Props {
  *  dossier, and the pairs themselves are token-authored in gacha.css (no per-host values anywhere). */
 const ACCENT_PAIRS = 3;
 
-export function GachaHostDetail({ host, services, art, mode, index, titleId }: Props) {
+export function GachaHostDetail({ host, services, art, mode, index, busy, run, titleId }: Props) {
   const facts = hostDetailFacts(host, services);
   const online = facts.online;
   // The ruled star + Services input (§6.1/§4.8): CONFIGURED services, the same count the capsule card
@@ -47,7 +52,7 @@ export function GachaHostDetail({ host, services, art, mode, index, titleId }: P
 
   // Ping is real only while the machine answers; an online host with no measurement reads the placeholder
   // rather than inventing a number (the frontier precedent).
-  const ping = online && facts.ping != null ? `${facts.ping} ms` : PENDING;
+  const ping = online && facts.ping != null ? pingText(facts.ping) : PENDING;
   // `relativeTime`'s own null case is an em dash — a glyph the frozen font subset does not carry (it would
   // render in the fallback face beside the ASCII dash the tile above it uses). An unpolled host therefore
   // reads the theme's own placeholder; a real timestamp reads its relative form.
@@ -110,6 +115,46 @@ export function GachaHostDetail({ host, services, art, mode, index, titleId }: P
             </span>
           </div>
         ))}
+      </div>
+
+      {/* THE HOST ACTION BAR (council H3) — the prototype has no design for one, so this is gacha's own
+          visual language on KIT SEMANTICS: the same action set the precedent dossiers carry, over the same
+          typed-action `run` (which owns the confirm dialog for reboot/shutdown, the optimistic flip and the
+          toast — no new execution path exists here). The PRIMARY action is a filled arcade ticket — the
+          brand two-stop with the kit's verified `--accent-ink`, on the prototype's own 12px button radius,
+          with the hard offset shadow this theme uses for anything that "sits on" a surface (the nav
+          indicator, the user bubble); pressing it sinks the ticket into its own shadow. Shut down is the
+          quiet white pill: a machine's power-off should never be the loudest thing on its dossier. */}
+      <div className="gc-acts" aria-busy={busy || undefined}>
+        {online ? (
+          <>
+            <button
+              type="button"
+              className="gc-act primary"
+              disabled={busy}
+              onClick={() => run("reboot", host)}
+            >
+              Reboot
+            </button>
+            <button
+              type="button"
+              className="gc-act danger"
+              disabled={busy}
+              onClick={() => run("shutdown", host)}
+            >
+              Shut down
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="gc-act primary"
+            disabled={busy}
+            onClick={() => run("wake", host)}
+          >
+            Wake
+          </button>
+        )}
       </div>
 
       <div className="gc-svcs">

@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { GACHA_COPY, SCENE_TITLES } from "../../src/themes/gacha/copy";
 import {
+  PENDING,
   cardShapes,
   counterText,
+  dossierSub,
   hostsResolved,
+  pingText,
   plateSub,
   promoCopy,
   rateText,
@@ -155,6 +158,42 @@ describe("plateSub — a capsule's ROLE · state line", () => {
     expect(plateSub(host({ status: null }))).toBe(
       `WORKSTATION ${GACHA_COPY.sep} ${GACHA_COPY.cardSleeping}`,
     );
+  });
+
+  it("prints a sub-millisecond ping as a bound — the plate and the dossier share the formatter", () => {
+    // The machine ctrl-b runs on pings ITSELF in fractions of a ms; `0.025 ms` on a nameplate is noise
+    // (caught on the live dev fleet at the G2 screenshot round).
+    const local = host({ status: { ...host().status!, ping_ms: 0.025 } });
+    expect(plateSub(local)).toBe(`WORKSTATION ${GACHA_COPY.sep} <1 ms`);
+  });
+});
+
+describe("pingText — the ONE ping format, shared by the plate and the dossier tile", () => {
+  it("rounds to whole milliseconds — the resolution a poll actually carries", () => {
+    expect(pingText(18)).toBe("18 ms");
+    expect(pingText(17.6)).toBe("18 ms");
+    expect(pingText(1.2)).toBe("1 ms");
+  });
+
+  it("reads anything under a millisecond as the honest bound, never as 0", () => {
+    expect(pingText(0.025)).toBe("<1 ms");
+    expect(pingText(0)).toBe("<1 ms");
+  });
+
+  it("holds rather than throwing on a nonsense value (it is a render path)", () => {
+    expect(pingText(Number.NaN)).toBe(PENDING);
+    expect(pingText(-1)).toBe(PENDING);
+  });
+});
+
+describe("dossierSub — the dossier's ROLE · STATE line", () => {
+  it("spells the state in the same two words the card's chip uses", () => {
+    expect(dossierSub(host(), true)).toBe(`WORKSTATION ${GACHA_COPY.sep} ONLINE`);
+    expect(dossierSub(host(), false)).toBe(`WORKSTATION ${GACHA_COPY.sep} SLEEPING`);
+  });
+
+  it("falls back to the OS when a machine declares no role — the plate's own pair", () => {
+    expect(dossierSub(host({ role: null }), true)).toBe(`LINUX ${GACHA_COPY.sep} ONLINE`);
   });
 });
 

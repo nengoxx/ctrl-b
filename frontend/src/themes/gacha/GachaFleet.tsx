@@ -37,7 +37,7 @@ const SHEET_KEY = "gacha-host-detail";
 const persistSheetSnap = (snap: SheetDetent) => setSheetSnap(SHEET_KEY, snap);
 
 export function GachaFleet({ active }: { active: boolean }) {
-  const { hosts, svcByHost, hasData, isLoading, error } = useFleet();
+  const { hosts, svcByHost, busy, run, hasData, isLoading, error } = useFleet();
   const starMode = toStarMode(useThemeSetting<string>("gacha", "starMode"));
 
   const onlineCount = hosts.filter((h) => h.status?.online).length;
@@ -187,6 +187,8 @@ export function GachaFleet({ active }: { active: boolean }) {
             art={artForHost(ROSTER, detail.index)}
             mode={starMode}
             index={detail.index}
+            busy={busy.has(detail.host.id)}
+            run={run}
             titleId={titleId}
           />
         )}
