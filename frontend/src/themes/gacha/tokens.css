@@ -155,9 +155,11 @@
       /* Under the wallpaper the banner has to separate itself from art rather than from flat page black,
        * so the prototype deepens the same shadow (`body[data-wallpaper="on"] .banner`). */
       --gc-banner-shadow-wall: 0 20px 50px #000c;
-      /* A slide's scrim: a hard left-to-right wash that carries the copy, plus a bottom fade. */
-      --gc-slide-scrim: linear-gradient(95deg, #0a0b19f2 4%, #0a0b1999 32%, transparent 60%),
-        linear-gradient(#0000 52%, #0a0b19e6);
+      /* A slide's scrim: a left-to-right wash that carries the copy, plus a bottom fade. Lightened WELL
+       * below the prototype's near-opaque corner (f2/99 + e6) at the owner's G1-eyeball ask — the copy
+       * keeps its own hard text-shadow, so legibility rides that rather than the wash. */
+      --gc-slide-scrim: linear-gradient(95deg, #0a0b198c 4%, #0a0b194d 32%, transparent 60%),
+        linear-gradient(#0000 52%, #0a0b1980);
       /* M5, the fleet's one blended ambient layer: a pink and a cyan bloom on a slow opacity breath. */
       --gc-banner-glow: radial-gradient(60% 40% at 15% 25%, #ff6cae4d, transparent 70%),
         radial-gradient(50% 40% at 85% 80%, #54e5ff3d, transparent 70%);
