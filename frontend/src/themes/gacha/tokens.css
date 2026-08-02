@@ -237,6 +237,14 @@
       /* M6, the scanline: a 1-in-4px hairline comb on a 7s translate loop, blended to screen. */
       --gc-scanline: repeating-linear-gradient(#ffffff12 0 1px, transparent 1px 4px);
       --gc-scan-travel: 28px;
+      /* M7's three tunables + its ramp, all of the prototype's own numbers (theme.js:20 — `opacity 1-p*.72`,
+       * `blur(p*5px)`, `scale(1+p*.06)` over `scrollTop/240`). They live HERE, not in the driver: the JS
+       * reads the ramp from this token, and CSS derives opacity/scale/crossfade from the one progress
+       * number, so a tempo change is one edit and G6's variants inherit it. */
+      --gc-oracle-ramp: 240px;
+      --gc-oracle-floor: 0.28; /* the ghost's opacity at full ramp (the prototype's 1 − .72) */
+      --gc-oracle-zoom: 0.06; /* the scale the art gains across the ramp */
+      --gc-oracle-blur: 5px; /* the STATIC blur of the ghost copy — never an animated filter (§10.2) */
 
       /* Composer surface (prototype `.composer`) — G3, when the look-named shared `arcade` skin lands. */
       --gc-composer: #15172e;

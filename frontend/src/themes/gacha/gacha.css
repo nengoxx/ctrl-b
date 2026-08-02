@@ -1614,15 +1614,30 @@
        * see the sticky block in the M7 section. */
       border-bottom: 1px solid var(--gc-hair);
     }
+    /* The measurement anchor (M7): zero-height, never sticky, so the driver can read the oracle's TRUE
+     * flow position at any scroll offset. It must stay out of the flow's own arithmetic. */
+    .gc-oracle-anchor {
+      height: 0;
+    }
+    /* A FACE is the oracle's whole visible surface — art + scrim + name plate. There are two of them,
+     * stacked, and the M7 crossfade runs BETWEEN them (owner ruling, G3: the prototype filters the entire
+     * `.oracle` block, so the words must degrade with the picture or they read as detached). */
+    .gc-oracle-face {
+      position: absolute;
+      inset: 0;
+    }
     .gc-oracle-art {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
       object-fit: cover;
       object-position: var(--gc-oracle-pos);
     }
-    /* The scrim over the art (`.oracle::after`). A pseudo-element, not a layer div: it never animates and
-     * nothing needs to address it. */
-    .gc-oracle::after {
+    /* The scrim over the art (`.oracle::after`). Inside the FACE rather than on the block, so it blurs and
+     * fades with the surface it belongs to — and so it still paints under the name plate rather than over
+     * it. A pseudo-element: it never animates and nothing needs to address it. */
+    .gc-oracle-face::after {
       content: "";
       position: absolute;
       inset: 0;
@@ -1633,7 +1648,7 @@
     .gc-oracle-scan {
       position: absolute;
       inset: 0;
-      z-index: 1;
+      z-index: 3; /* above BOTH faces (and above a face's own name plate at z 2) */
       pointer-events: none;
       background: var(--gc-scanline);
       mix-blend-mode: screen;
@@ -1652,6 +1667,89 @@
     }
     body[data-perf="lite"] .gc-oracle-scan {
       display: none;
+    }
+
+    /* ── M7 · the fade-on-scroll (the prototype's `body[data-oracle="fade"]` mode) ──────────────────
+     * The art becomes a sticky BACKDROP the thread scrolls over — not a header you scroll past — and
+     * ghosts as it goes. `GachaAgent`'s driver writes ONE number, `--gc-oracle-p` (0 → 1 over
+     * `--gc-oracle-ramp`), on this element; every channel below is a `calc()` over it, so a scroll frame
+     * costs one custom-property write plus compositor work.
+     *
+     * The stacking is the prototype's own (`z: oracle 0 / log 2`), and the two kit edge scrims that would
+     * otherwise paint over both are already nulled theme-wide at the top of this file — no per-tab rule
+     * needed here (§10.2 names them as the real pitfall).
+     *
+     * `top: 0` parks the art under the sticky appbar exactly as the prototype's own topbar-less screen
+     * has it running to the top edge; the bar's blur then reads as glass over the art. `top:
+     * var(--appbar-h)` is the one-line alternative if the eyeball wants the art clear of the bar. */
+    body[data-oracle="fade"] .gc-oracle {
+      position: sticky;
+      top: 0;
+      z-index: 0;
+      border-bottom-color: transparent;
+      /* 1 → --gc-oracle-floor. Written as "1 minus the walked distance" so the floor token IS the endpoint
+       * you read in tokens.css, rather than a .72 you have to subtract in your head. */
+      opacity: calc(1 - var(--gc-oracle-p, 0) * (1 - var(--gc-oracle-floor)));
+      transform: scale(calc(1 + var(--gc-oracle-p, 0) * var(--gc-oracle-zoom)));
+      /* Both are compositor properties and both change every ramp frame — the one place in this theme
+       * where the hint is earned rather than cargo-culted. */
+      will-change: opacity, transform;
+    }
+    /* The CROSSFADE (§10.2's mechanism ruling, promoted from the art to the WHOLE FACE by the owner's G3
+     * ruling): the sharp face fades OUT while a STATICALLY blurred copy of the same face fades IN, both
+     * inside the block's own walk to the floor. So the picture, the scrim and the words degrade as ONE
+     * surface — the prototype's `filter: blur()` on `.oracle` — while nothing animates a filter, which is
+     * what §14.11 explicitly converts away (Gecko blur ≈ 10x slower; no theme in this repo animates a
+     * filter anywhere). A crossfade WITHOUT the block's walk would end fully opaque and blurred rather
+     * than ghosted. */
+    body[data-oracle="fade"] .gc-oracle-face.sharp {
+      opacity: calc(1 - var(--gc-oracle-p, 0));
+    }
+    .gc-oracle-face.soft {
+      opacity: 0;
+      /* ONE static blur for the whole face — a single rasterization, not a per-frame filter, and not a
+       * second mechanism for the text (the owner's own constraint: blur on TEXT is the §14.11-sensitive
+       * case on Gecko, so it rides exactly the gates the art rides, below). */
+      filter: blur(var(--gc-oracle-blur));
+    }
+    body[data-oracle="fade"] .gc-oracle-face.soft {
+      opacity: var(--gc-oracle-p, 0);
+    }
+    /* The blur samples transparency from beyond the IMAGE's edges, which would vignette the block's
+     * borders. Over-scaling the ghost's art pushes that soft rim outside `overflow: hidden`. On the ART
+     * ONLY: scaling the whole face would offset its name plate from the sharp one underneath and the
+     * crossfade would read as double-vision. Static, so it never competes with the block's animated
+     * scale (the nested-wrapper rule). */
+    .gc-oracle-face.soft .gc-oracle-art {
+      transform: scale(1.08);
+    }
+    /* PERF-LITE drops the blurred face outright — it is the one paint-heavy thing here, even rasterized
+     * once, and it carries text — and the sharp face then stops crossfading so the block's walk carries
+     * the ghost alone ((0,4,1) beats the fade rule's (0,2,1)). The theme keeps its M7, minus the soft
+     * focus; the words fade and scale with the art either way. */
+    body[data-perf="lite"] .gc-oracle-face.soft {
+      display: none;
+    }
+    body[data-perf="lite"][data-oracle="fade"] .gc-oracle-face.sharp {
+      opacity: 1;
+    }
+    /* REDUCED MOTION drops the SCALE — movement is the part that axis is about. The opacity ghost stays:
+     * it is what keeps the thread legible over its own backdrop, and a fade is not motion. */
+    body[data-motion="reduced"][data-oracle="fade"] .gc-oracle {
+      transform: none;
+    }
+    /* Everything after the oracle rides ABOVE it (the prototype's `.chat-log { z-index: 2 }`). The
+     * privilege row needs the same rung for the same reason: the oracle is a positioned z-0 box, so an
+     * unpositioned sibling would scroll UNDER it. The pinned plan panel (a non-default placement) takes
+     * the rung above both — a sticky panel of live steps must never be the thing that goes behind. */
+    body[data-oracle="fade"] .gc-agent-bar,
+    body[data-oracle="fade"] .kit #tab-agent .chat-log {
+      position: relative;
+      z-index: 2;
+    }
+    body[data-oracle="fade"] .kit #tab-agent .plan-pin-panel {
+      position: relative;
+      z-index: 3;
     }
     /* The name plate, bottom-left over the art (`.oracle-name`). */
     .gc-oracle-name {

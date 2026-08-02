@@ -735,3 +735,143 @@ test("gacha · the fleet WALLPAPER paints on .kit-main, only on the fleet tab, o
   expect((await layer()).image).toBe("none");
   expect(pageErrors).toEqual([]);
 });
+
+test("gacha · M7: the oracle ghosts as ONE SURFACE — art and copy together — and both perf gates hold", async ({
+  page,
+  pageErrors,
+}) => {
+  // The G3 claim, measured rather than eyeballed (the G2 lesson: animations are verified with computed
+  // styles or frames, never an end-state screenshot). Three things are under test and each has been a real
+  // failure mode: the ramp measures from the ORACLE'S OWN OFFSET (not raw scrollTop — other tabs share
+  // `#app-scroll`), the WORDS degrade with the picture (the owner's ruling — a sharp title over blurring
+  // art reads as detached), and the blur half stays behind the perf gate (§14.11: blur on text on Gecko).
+  const msg = (id: string, role: string, text: string) => ({
+    id,
+    thread_id: "t1",
+    role,
+    parts: [{ type: "text", text }],
+    actor: role,
+    ts: "2026-01-01T00:00:00Z",
+    tokens: null,
+    compacted: false,
+  });
+  await page.route("**/api/threads", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          id: "t1",
+          title: "t",
+          agent: null,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          archived: false,
+        },
+      ]),
+    }),
+  );
+  // A long thread so the pane genuinely scrolls past the ramp.
+  await page.route("**/api/threads/t1/messages", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        Array.from({ length: 14 }, (_, i) =>
+          msg(`m${i}`, i % 2 ? "assistant" : "user", `line ${i} of the operator transcript`),
+        ),
+      ),
+    }),
+  );
+
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab: "agent", v: 1 });
+  await page.goto("/");
+  await expect(page.locator("#tab-agent .gc-oracle")).toBeVisible();
+
+  /** Everything the ramp touches, at a given scroll position — including the EFFECTIVE opacity of the
+   *  picture and of the words, which is the pair that has to move together. */
+  const sample = async (top: number) => {
+    await page.evaluate((t) => {
+      document.getElementById("app-scroll")!.scrollTop = t;
+    }, top);
+    // let the driver's single rAF land
+    await page.evaluate(
+      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+    );
+    return await page.evaluate(() => {
+      const block = document.querySelector<HTMLElement>("#tab-agent .gc-oracle")!;
+      const q = (sel: string) => document.querySelector<HTMLElement>(`#tab-agent ${sel}`);
+      const eff = (n: HTMLElement | null) => {
+        let o = 1;
+        let e: HTMLElement | null = n;
+        while (e && e !== block.parentElement) {
+          o *= parseFloat(getComputedStyle(e).opacity);
+          e = e.parentElement;
+        }
+        return n === null ? null : +o.toFixed(3);
+      };
+      const soft = q(".gc-oracle-face.soft");
+      return {
+        p: getComputedStyle(block).getPropertyValue("--gc-oracle-p").trim(),
+        blockOpacity: +getComputedStyle(block).opacity,
+        transform: getComputedStyle(block).transform,
+        position: getComputedStyle(block).position,
+        art: eff(q(".gc-oracle-face.sharp .gc-oracle-art")),
+        words: eff(q(".gc-oracle-face.sharp .gc-oracle-name h1")),
+        ghostWords: eff(q(".gc-oracle-face.soft .gc-oracle-name h1")),
+        ghostFilter: soft ? getComputedStyle(soft).filter : null,
+        ghostDisplay: soft ? getComputedStyle(soft).display : null,
+        logZ: getComputedStyle(q(".chat-log")!).zIndex,
+      };
+    });
+  };
+
+  const top = await sample(0);
+  expect(top.p).toBe("0.000");
+  expect(top.blockOpacity).toBe(1);
+  expect(top.position).toBe("sticky"); // a BACKDROP the log scrolls over, not a header scrolled past
+  expect(top.logZ).toBe("2"); // …and the log rides above it (the prototype's z: oracle 0 / log 2)
+
+  // The ramp does NOT start at scrollTop 0: it starts where the ORACLE does (below the appbar). One pixel
+  // of scroll therefore cannot already be ghosting it.
+  expect((await sample(1)).p).toBe("0.000");
+
+  const deep = await sample(900); // well past the 240px ramp
+  expect(deep.p).toBe("1.000");
+  expect(deep.blockOpacity).toBeCloseTo(0.28, 3); // the prototype's own ghost endpoint
+  expect(deep.transform).not.toBe("none"); // …and its 1.06 scale
+  // THE RULING: art and words are one surface. The sharp face has faded out entirely and the ghost — the
+  // blurred copy — carries BOTH at the block's floor.
+  expect(deep.art).toBe(0);
+  expect(deep.words).toBe(deep.art);
+  expect(deep.ghostWords).toBeCloseTo(0.28, 3);
+  expect(deep.ghostFilter).toContain("blur");
+
+  // Mid-ramp, the two still track each other exactly (the detached-title failure would show up here).
+  const mid = await sample(200);
+  expect(Number(mid.p)).toBeGreaterThan(0);
+  expect(Number(mid.p)).toBeLessThan(1);
+  expect(mid.words).toBe(mid.art);
+
+  // PERF-LITE drops the blurred face outright — text blur is the §14.11-sensitive case — and the sharp
+  // face stops crossfading, so the ghost is carried by the block's opacity walk alone.
+  await page.evaluate(() => document.body.setAttribute("data-perf", "lite"));
+  const lite = await sample(900);
+  expect(lite.ghostDisplay).toBe("none");
+  expect(lite.art).toBeCloseTo(0.28, 3);
+  expect(lite.words).toBe(lite.art);
+  await page.evaluate(() => document.body.setAttribute("data-perf", "full"));
+
+  // REDUCED MOTION drops the scale (movement) and keeps the ghost (legibility).
+  await page.evaluate(() => document.body.setAttribute("data-motion", "reduced"));
+  const reduced = await sample(900);
+  expect(reduced.transform).toBe("none");
+  expect(reduced.blockOpacity).toBeCloseTo(0.28, 3);
+
+  // The whole ramp, in both engines, never widens the page (§14.11).
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+  expect(pageErrors).toEqual([]);
+});
