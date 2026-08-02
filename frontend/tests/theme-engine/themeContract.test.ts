@@ -121,6 +121,7 @@ const TOKENS_RAW: Partial<Record<ThemeId, string>> = {
   cosmos: readThemeTokens("cosmos"),
   frontier: readThemeTokens("frontier"),
   vapor: readThemeTokens("vapor"), // D51 V3 — the semantic map over vapor's private vocabulary
+  gacha: readThemeTokens("gacha"), // D52 G0 — the arcade palette, no waiver
 };
 
 /** The set of custom-property NAMES a stylesheet DECLARES (`--x:` … — a `:` follows the name). A `var(--x)`

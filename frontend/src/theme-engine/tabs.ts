@@ -11,7 +11,13 @@
 // carries only its id/glyph/label/`hasComposer` + the generic `lazy` flag (no component field — the
 // "eager DATA, lazy COMPONENTS" ruling). Curated layout presets (`layout.ts`) recompose where these
 // sections live (on-bar / menu / hosted-in-Conf) without changing this set.
+//
+// The ONE cross-package import below is `themes/gacha/copy.ts` — a dependency-FREE string module (the
+// theme's frozen JP copy, which also derives its committed font subset). It pulls in no component and no
+// store, so the no-cycle invariant above is intact; the alternative (re-typing gacha's four sub-labels here)
+// would be a second source of truth the font-subset guard could not see.
 
+import { GACHA_COPY } from "../themes/gacha/copy";
 import type { TabDef, TabId, ThemeId } from "./types";
 
 // The standard 4-tab set, matching the frozen vapor TabBar (TabBar.tsx), plus the `hasComposer`
@@ -37,6 +43,25 @@ const TAB_SETS: Partial<Record<ThemeId, TabDef[]>> = {
     { id: "agent", glyph: "▲", lbl: "comms", hasComposer: true },
     { id: "utils", glyph: "◆", lbl: "tools", hasComposer: false },
     { id: "conf", glyph: "●", lbl: "settings", hasComposer: false, lazy: true },
+  ],
+  // gacha (D52 / Q8.6b) — themed labels PLUS the ruled Japanese `subLabel` line (the kit seam landed with
+  // G0's seams unit). All four are real words, kanji-first: 編成 hensei "formation" · 案内 annai "guidance" ·
+  // ツール tsūru, the standard katakana loanword for "tools" · 設定 settei "settings". Utils carries one even
+  // though gacha defaults to 3-tab (utils hosted in Conf) — the layout fence says every theme must genuinely
+  // honor EVERY preset, so the 4-tab bar has to be a complete look, not a fallback. Strings come from the
+  // theme's frozen-copy module so the committed font subset and this row can never disagree.
+  gacha: [
+    { id: "fleet", glyph: "⌬", lbl: "fleet", subLabel: GACHA_COPY.tabFleet, hasComposer: true },
+    { id: "agent", glyph: "▲", lbl: "agent", subLabel: GACHA_COPY.tabAgent, hasComposer: true },
+    { id: "utils", glyph: "◆", lbl: "tools", subLabel: GACHA_COPY.tabUtils, hasComposer: false },
+    {
+      id: "conf",
+      glyph: "●",
+      lbl: "settings",
+      subLabel: GACHA_COPY.tabConf,
+      hasComposer: false,
+      lazy: true,
+    },
   ],
 };
 

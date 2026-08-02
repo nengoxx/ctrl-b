@@ -7,11 +7,12 @@ import { seedUI, test, expect, VAPOR_UI } from "./fixtures";
 // locks in the F14–F27 a11y work against regression. The inactive tab panels are `display:none`, which
 // axe ignores, so scanning the page covers the active tab + the always-on appbar/composer/tabbar.
 //
-// THREE arms: the DEFAULT boot — cosmos since D51 V0 — across its 4-tab bar, a seeded VAPOR arm across the
+// FOUR arms: the DEFAULT boot — cosmos since D51 V0 — across its 4-tab bar, a seeded VAPOR arm across the
 // same bar (vapor is a bespoke escape hatch with its own chrome + Fleet, and it stays a shipping skin until
-// Phase 16 finishes assimilating it, so it keeps its own scan now that it is no longer the default), and a
+// Phase 16 finishes assimilating it, so it keeps its own scan now that it is no longer the default), a
 // frontier-booted arm across its 3-tab bar (utils hosted in Conf → off-bar; the valid dark/coral combo per
-// CONTRAST_MATRIX). The two kit arms machine-enforce the F5 Gate A semantics on the kit surface — A1 (the
+// CONTRAST_MATRIX), and a GACHA arm across its own 3-tab bar (D52 G0 — enrolled from registration, so every
+// later gacha slice is measured against it). The kit arms machine-enforce the F5 Gate A semantics — A1 (the
 // focus ring is markup-invisible to axe, but A3/A5 roles+names, the seg `role="group"`/`aria-pressed`, the
 // sheet grip's label — all axe-visible).
 
@@ -81,6 +82,33 @@ const FRONTIER_TABS = [
   { id: "agent", label: "Agent", content: "Frontier Comms" }, // the empty-state hero
   { id: "conf", label: "Conf", content: "Inference" },
 ] as const;
+
+// ── gacha boot — its 3-tab bar (fleet/agent/conf; utils hosted in Conf), D52 G0 ──
+// G0 renders the KIT default bodies under gacha's tokens (the bespoke Fleet/Agent land in G1/G3), so the
+// settle markers are the kit's own content, not theme art. The arm exists from G0 on purpose: the theme
+// joins the a11y gate the moment it registers, so every later slice is measured against it.
+const GACHA_TABS = [
+  { id: "fleet", label: "Fleet", content: "vault" },
+  { id: "agent", label: "Agent", content: null },
+  { id: "conf", label: "Conf", content: "Inference" },
+] as const;
+
+for (const t of GACHA_TABS) {
+  test(`gacha ${t.label} tab — no WCAG A/AA axe violations`, async ({ page }) => {
+    await page.addInitScript(
+      (ui) => {
+        localStorage.setItem("ctrlb.ui", JSON.stringify(ui));
+      },
+      { theme: "gacha", mode: "dark", accent: "arcade", tab: "fleet", v: 1 },
+    );
+    await page.goto("/");
+    await expect(page.locator(".kit-appbar")).toBeVisible();
+    await page.locator(`#tabbtn-${t.id}`).click();
+    await expect(page.locator(`#tab-${t.id}`)).toHaveClass(/active/);
+    if (t.content) await expect(page.getByText(t.content, { exact: false }).first()).toBeVisible();
+    await scanTab(page, t.id);
+  });
+}
 
 for (const t of FRONTIER_TABS) {
   test(`frontier ${t.label} tab — no WCAG A/AA axe violations`, async ({ page }) => {

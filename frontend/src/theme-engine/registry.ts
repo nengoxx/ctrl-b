@@ -4,6 +4,7 @@
 
 import { cosmos } from "../themes/cosmos";
 import { frontier } from "../themes/frontier";
+import { gacha } from "../themes/gacha";
 import { minimal } from "../themes/minimal";
 import { vapor } from "../themes/vapor";
 import type { ThemeDef, ThemeRegistry } from "./types";
@@ -13,6 +14,7 @@ export const registry: ThemeRegistry = {
   minimal,
   cosmos,
   frontier,
+  gacha,
 };
 
 /** The registered (built) themes, for the Conf Appearance picker. T0 = [vapor]; grows per Tn slice. */

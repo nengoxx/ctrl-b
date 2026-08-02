@@ -36,11 +36,13 @@ describe("outlinesSetting factory", () => {
 });
 
 describe("useOutlines", () => {
-  it("resolves each theme's DECLARED default (minimal/cosmos/vapor ON, frontier OFF)", () => {
+  it("resolves each theme's DECLARED default (minimal/cosmos/vapor ON, frontier/gacha OFF)", () => {
     expect(renderHook(() => useOutlines("minimal")).result.current).toBe(true);
     expect(renderHook(() => useOutlines("cosmos")).result.current).toBe(true);
     expect(renderHook(() => useOutlines("vapor")).result.current).toBe(true); // D51 V4 — declared ON
     expect(renderHook(() => useOutlines("frontier")).result.current).toBe(false);
+    // D52 G0 — the prototype's chat bubbles are borderless (fill + hard offset shadow, no outline).
+    expect(renderHook(() => useOutlines("gacha")).result.current).toBe(false);
   });
 
   it("a valid user override wins over the declared default", () => {
@@ -93,6 +95,9 @@ describe("useComposerSkin", () => {
     // D51 V4 — vapor DECLARES `outline` now (its dock is the kit's bordered bar), so this is its declared
     // default, not the undeclared fallback that used to answer here.
     expect(renderHook(() => useComposerSkin("vapor")).result.current).toBe("outline");
+    // D52 G0 — gacha rides the kit-native bar until G3 authors the look-named shared `arcade` skin (D37:
+    // composer chrome is a SHARED catalog value, never theme CSS). Flip this arm when that lands.
+    expect(renderHook(() => useComposerSkin("gacha")).result.current).toBe("outline");
   });
 
   it("a valid user override wins over the declared default", () => {

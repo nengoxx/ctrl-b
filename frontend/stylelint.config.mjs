@@ -81,6 +81,54 @@ export default {
         ],
       },
     },
+    // gacha (D52 / GACHA_PLAN council M7) — TWO rules, and the second is a genuine ERROR.
+    //  · the usual per-theme keyframe prefix (warning, like its four siblings);
+    //  · NO LITERAL COLORS outside `tokens.css`. Gacha ships five palette variants at G6, and every literal
+    //    authored into a body/overlay stylesheet between now and then is a place a variant would fail to
+    //    re-tint — a repaint, not a token edit. This is a correctness invariant with zero violations at
+    //    authoring time, so it runs as an ERROR (the same posture as the two ctrlb/accent-* rules), unlike
+    //    the warn-first inventory rules above. `color-no-hex` + `color-named` + the function ban together
+    //    cover every literal form; `color-mix()`/`var()` stay legal because they operate ON tokens.
+    // The tokens.css override AFTER this one re-disables the three (later overrides win) — tokens.css is
+    // exactly the file where the literals belong.
+    {
+      files: ["src/themes/gacha/**/*.css"],
+      rules: {
+        "keyframes-name-pattern": [
+          "^gacha-",
+          { severity: "warning", message: "gacha's @keyframes must be prefixed `gacha-`" },
+        ],
+        "color-no-hex": [
+          true,
+          {
+            message:
+              "gacha authors colors ONLY in src/themes/gacha/tokens.css — use a var(--…) token (council M7)",
+          },
+        ],
+        "color-named": [
+          "never",
+          {
+            message:
+              "gacha authors colors ONLY in src/themes/gacha/tokens.css — use a var(--…) token (council M7)",
+          },
+        ],
+        "function-disallowed-list": [
+          ["rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch"],
+          {
+            message:
+              "gacha authors colors ONLY in src/themes/gacha/tokens.css — use a var(--…) token (council M7)",
+          },
+        ],
+      },
+    },
+    {
+      files: ["src/themes/gacha/tokens.css"],
+      rules: {
+        "color-no-hex": null,
+        "color-named": null,
+        "function-disallowed-list": null,
+      },
+    },
     {
       files: ["src/theme-engine/kit/**/*.css"],
       rules: {

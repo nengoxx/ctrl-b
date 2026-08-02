@@ -1,0 +1,59 @@
+/* gacha bespoke structural CSS ("Capsule Arcade", D52 / GACHA_PLAN §3) — the parts that are not token
+ * VALUES: the app backdrop, the brand wordmark, and the nav sub-label line. gacha is a BESPOKE theme, so
+ * (like cosmos.css / frontier.css / vapor.css) it may ship structural CSS beyond the token map. Same
+ * envelope as tokens.css — @layer theme + @scope([data-skin="gacha"]) — so it can never leak into another
+ * skin and reliably wins over the Kit's @layer base rules (layer order base < theme), independent of
+ * stylesheet load order.
+ *
+ * ⚠ NO LITERAL COLORS IN THIS FILE (council M7, a stylelint ERROR): every color reads a token from
+ * tokens.css. Same for any @keyframes — they must be prefixed `gacha-` (keyframe names are document-global).
+ *
+ * G0 scope: the shell + the two kit seams gacha fills (`brandText`, `TabDef.subLabel`). The bespoke Fleet
+ * (G1), dossier (G2), agent/oracle (G3) and the reel figure (G4) add their own blocks here as they land. */
+@layer theme {
+  @scope ([data-skin="gacha"]) {
+    /* ── The app backdrop (the prototype's `.app`) ────────────────────────────────────────────────
+     * A top-biased violet radial fading into near-black, veiled by a 115° pinstripe. Both are TOKENS so
+     * G6's palette variants re-tint the whole shell without touching this rule. Hosted on `.kit` (the
+     * non-scrolling shell) rather than a `position: fixed` layer — the §10.3 wallpaper ruling: a fixed
+     * layer breaks under any transformed ancestor and an absolute one inside the scroller repaints on
+     * every scroll frame. `.kit` is neither: it's a static, viewport-sized flex column. */
+    .kit {
+      background-color: var(--bg);
+      background-image: var(--gc-pinstripe), var(--gc-backdrop);
+    }
+
+    /* ── Brand row (the appbar's `brandMark` / `brandText` / `brandMeta` slot family) ──────────────
+     * The wordmark is the prototype's gradient-clipped katakana: `--accent-fill` painted through the
+     * glyphs. `color: transparent` is what reveals the clipped background — the text node itself stays in
+     * the DOM, so the accessible name is unchanged. */
+    .kit-brand .gc-word {
+      font-weight: 900;
+      font-size: 15px;
+      letter-spacing: 0.16em;
+      background: var(--accent-fill);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    /* The JP subtitle rides the serif display face, letter-spaced wide like the prototype's `.brand small`. */
+    .kit-brand .meta {
+      font-family: var(--font-display);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.28em;
+      color: var(--text-3);
+    }
+
+    /* ── Nav sub-label (the `TabDef.subLabel` seam) ───────────────────────────────────────────────
+     * The prototype's `.nav button .lbl em`: the serif face, tiny, wide-tracked, sitting under the Latin
+     * label. Renders only for the sections that declare one — the kit emits no node otherwise. */
+    .kit-tabbtn .sub {
+      font-family: var(--font-display);
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      opacity: 0.75;
+    }
+  }
+}

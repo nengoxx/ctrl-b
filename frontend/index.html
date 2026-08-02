@@ -56,6 +56,16 @@
           h.dataset.skin = theme; // the @scope identity, on <html>
           b.dataset.mode = mode; // the shared axes — every skin, vapor included (D51 V2)
           b.dataset.accent = accent;
+          // Cold-boot backdrop (D52 → GACHA_PLAN §10.5 / risk #8). A lazy theme's tokens.css lands AFTER
+          // first paint, so until then the page shows the Kit's neutral base `--bg` (#1b1b1a). For gacha —
+          // whose identity IS its near-black arcade night — that grey flash is loud, so its `--bg` joins
+          // the D51 DOCUMENTED-MIRROR allowlist here as a pre-paint <html> background. This is a BACKDROP,
+          // not a token: `.kit` paints over it the moment the shell mounts, so it can never fight the
+          // cascade the way an inline `--bg` would. MOVE THIS LITERAL WITH `src/themes/gacha/tokens.css`.
+          // cosmos is deliberately NOT here: its own cold-load style-in is the accepted D51 V0 trade, and
+          // changing the DEFAULT theme's boot path is a separate, deliberate decision.
+          var bootBg = { gacha: "#0a0b19" }[theme];
+          if (bootBg) h.style.backgroundColor = bootBg;
         } catch (e) {
           /* private-mode / corrupt value — fall back to the static html[data-skin="cosmos"] */
         }

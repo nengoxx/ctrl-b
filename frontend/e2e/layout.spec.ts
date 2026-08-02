@@ -153,6 +153,50 @@ test("minimal · 2-tab: a stale `utils` deep-link boots coerced onto Conf with t
   await expect(page.locator("#utils-hosted")).toBeVisible();
 });
 
+// ── gacha · the layout fence, driven for real (D52 G0 / §10.5) ────────────────────────────────────────
+// gacha is the second theme to DEFAULT to a narrowed bar (3-tab), and the first to carry per-tab sub-labels.
+// The fence says a theme must genuinely honor EVERY preset — so these drive the two presets its default
+// isn't, and assert the sub-labels survive the relocation (a 4-tab gacha must be a complete look, not a
+// fallback). The 3-tab default itself is covered by the kit-render sweep + the jsdom arms.
+
+test("gacha · 4-tab: the pick is honored — utils returns to the bar WITH its Japanese sub-label", async ({
+  page,
+  pageErrors,
+}) => {
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", layout: "4-tab", v: 1 });
+  await page.goto("/");
+
+  await expect(page.locator("#tabbtn-utils")).toBeVisible(); // back on the bar, off its 3-tab default
+  await expect(page.locator(".kit-tabbar [role='tab']")).toHaveCount(4);
+  await expect(page.locator(".navmenu")).toHaveCount(0);
+  // All four sub-labels render (the exact-copy claim, driven in the real built app).
+  await expect(page.locator(".kit-tabbtn .sub")).toHaveCount(4);
+  await expect(page.locator("#tabbtn-utils .sub")).toHaveText("ツール");
+  expect(pageErrors).toEqual([]);
+});
+
+test("gacha · 2-tab: conf via the DOCKED direct button; utils still hosted", async ({
+  page,
+  pageErrors,
+}) => {
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", layout: "2-tab", v: 1 });
+  await page.goto("/");
+
+  await expect(page.locator("#tabbtn-fleet")).toBeVisible();
+  await expect(page.locator("#tabbtn-agent")).toBeVisible();
+  await expect(page.locator("#tabbtn-utils")).toHaveCount(0);
+  await expect(page.locator("#tabbtn-conf")).toHaveCount(0); // off-bar → the docked affordance
+
+  const launch = page.locator(".kit-appbar .navmenu-launch");
+  await expect(launch).toBeVisible();
+  await expect(page.locator(".kit-appbar .navmenu-launch[aria-haspopup]")).toHaveCount(0);
+
+  await launch.click();
+  await expect(page.locator("#tab-conf")).toBeVisible();
+  await expect(page.locator("#utils-hosted")).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
 // ── vapor · the waiver's replacement (D51 V6) ─────────────────────────────────────────────────────────
 // vapor declared `layouts:["4-tab"]` from D35 until D51 V6; the test here used to assert the coercion. The
 // retirement's bar (R13 / Codex #11) was REAL relocation tests, so these two drive the same partitions

@@ -11,7 +11,8 @@ import type { Tab } from "../store/ui";
 
 // The set of themes the picker/types know about. The *registry* only contains BUILT themes (T0 =
 // vapor); the rest are declared here so the palette picker + ui-store stay type-safe as they land.
-export type ThemeId = "vapor" | "minimal" | "phosphor" | "cosmos" | "frontier" | "observatory";
+export type ThemeId =
+  "vapor" | "minimal" | "phosphor" | "cosmos" | "frontier" | "observatory" | "gacha";
 
 // Light/dark axis — generalizes today's vapor dark-only default. A theme opts in via `palettes.modes`.
 export type Mode = "dark" | "light";

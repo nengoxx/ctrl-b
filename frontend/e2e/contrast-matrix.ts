@@ -66,4 +66,13 @@ export const CONTRAST_MATRIX: ThemeMatrix[] = [
     accents: ["dark", "aqua", "ember"],
     bar: FULL_BAR,
   },
+  {
+    // gacha (D52 G0): dark-only, and ONE accent for now — §4.4 rules five palette variants but they stay
+    // unexposed until G6, so the matrix describes exactly what ships. Like frontier it defaults to 3-tab
+    // (the prototype's Fleet/Agent/Settings shape), so utils is hosted in Conf → off-bar.
+    theme: "gacha",
+    modes: ["dark"],
+    accents: ["arcade"],
+    bar: ["fleet", "agent", "conf"],
+  },
 ];

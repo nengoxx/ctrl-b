@@ -1,0 +1,128 @@
+/* gacha theme tokens ("Capsule Arcade", D52 / GACHA_PLAN §4.4 + §9.7) — the SEMANTIC extraction of the
+ * owner's finished prototype (design/prototypes/gacha/uploads/prot/capsule-arcade/theme.css) onto the Kit's
+ * token contract. Gacha is a BESPOKE theme (bespoke Fleet/Agent bodies land in G1/G3), but its palette lives
+ * here so the REUSED Kit surfaces render in arcade colors from G0. Lazy-loaded → self-declares `@layer theme`
+ * + `@scope` (§14.6). `modes: ["dark"]` — the dossier's light sheet (G2) is a SURFACE, not a mode.
+ *
+ * ⚠ THIS FILE IS THE ONLY PLACE IN `src/themes/gacha/` WHERE A LITERAL COLOR MAY APPEAR (council M7,
+ * enforced as a stylelint ERROR — see the `src/themes/gacha/` overrides in stylelint.config.mjs). That fence
+ * is what makes G6's five palette variants a token edit instead of a repaint: every gacha rule elsewhere
+ * reads `var(--…)`. When you add a color role, add it HERE, named, with the accent block below in mind.
+ *
+ * §14.13 / §14.6 — static tokens on `:scope`; anything DERIVED from an accent-overridable input on `body`
+ * (a var() formula is substituted at computed-value time on the DECLARING element, so on `:scope` it would
+ * compute once from the base statics and never re-derive under `body[data-accent]`).
+ *
+ * PALETTE VARIANTS: §4.4 rules five (arcade · midnight · indigo · two accent-shifting picks), but they stay
+ * UNEXPOSED until G6 — only `arcade` is declared in `ThemeDef.palettes.accents` today, so the picker, the
+ * contrast matrix and this file all describe exactly what ships. A variant = one more `body[data-accent]`
+ * block here plus one row there.
+ *
+ * CONTRAST (the §14.15.1-⑨ e2e probe gates these pairs; ratios recomputed for this palette):
+ *   --accent-ink (= the var(--bg) fallback #0a0b19) on --accent-fill's WORST stop #805cff → 4.57 (min 4.5).
+ *     That is the tightest margin in the theme and it is DELIBERATE — #805cff is the prototype's own brand
+ *     violet and the fidelity mandate outranks headroom here. Any G6 variant that darkens --bg or lightens
+ *     the mid stop must re-check THIS pair first.
+ *   --text on --surface 16.7 · --text on --bg 18.2 · --text-2 on --surface 8.7 · --ok 12.9 · --warn 11.7 ·
+ *   --danger 6.0 — all far clear of their floors. */
+@layer theme {
+  @scope ([data-skin="gacha"]) {
+    :scope {
+      color-scheme: dark;
+
+      /* ── semantic tier — the arcade night ────────────────────────────────────────────────────── */
+      --bg: #0a0b19;
+      --surface: #14172f; /* capsule cards */
+      --surface-2: #1a1d38; /* the lifted step: setting groups / nested panels */
+      --text: #f7f6ff;
+      --text-2: #b4b2d0; /* the prototype's de-saturated secondary (its sleeping-card ink) */
+      --text-3: #7d7a9e;
+      --line: rgba(255, 255, 255, 0.1);
+      --line-2: rgba(255, 255, 255, 0.18);
+
+      --ok: #74f3ad;
+      --warn: #ffc76a;
+      /* The prototype ships no destructive color (it has no destructive surface) — this is the in-family
+       * rose the arcade would use: same pink hue family as the brand, pushed red enough to read as danger. */
+      --danger: #ff5a7a;
+
+      --accent-glow: none;
+      --radius: 14px; /* the capsule card's own radius */
+      --radius-sm: 10px;
+      --density-pad: 1;
+      --font-body: "Zen Kaku Gothic New", system-ui, sans-serif;
+      /* The serif JP accent face (subtitles, 編成/設定 headings, nav sub-labels) — the prototype's second
+       * family. The system-JP tail is what RUNTIME Japanese (host names, roster names) falls back to: the
+       * committed subset covers compile-time copy only (§10.4 degradation contract). */
+      --font-display: "Shippori Mincho B1", "Hiragino Mincho ProN", serif;
+
+      /* ── THEME-PRIVATE roles (§15 token rule: named here, never re-purposing a contract token) ──
+       * Every one is a role from the §1 palette inventory. They exist NOW, before their consumers, so the
+       * G1–G4 bodies never author a literal and G6 re-tints in one place. */
+
+      /* The app backdrop: the prototype's `.app` radial + its 115° pinstripe veil. The stripe's own 0.5
+       * opacity (a separate ::after there) is baked into the alpha here — one element, one paint. */
+      --gc-backdrop: radial-gradient(circle at 30% 0, #3a205b, #11142d 48%, #080914);
+      --gc-pinstripe: repeating-linear-gradient(115deg, #ffffff04 0 1px, transparent 1px 7px);
+
+      /* Bars (top + nav): the prototype's translucent navy over blur. */
+      --gc-bar: #11142ee8;
+      --gc-bar-line: #ffffff18;
+
+      /* The BRAND trio — pink → violet → cyan (brand text, tags, switch-on, the dossier strip). */
+      --gc-brand-1: #ff6cae;
+      --gc-brand-2: #805cff;
+      --gc-brand-3: #54e5ff;
+      /* The REEL trio is deliberately a hair off the brand trio (the prototype's own distinction, §1) —
+       * kept as its own token rather than unified, so the slats stay the prototype's colors. */
+      --gc-reel-slat: linear-gradient(#ff6caf, #755cff, #57e7ff);
+
+      /* Secondary accents from the §1 inventory. */
+      --gc-caption: #9ff0ff; /* cyan captions under display copy */
+      --gc-heading: #ff8ec2; /* pink section eyebrows */
+      --gc-unit-no: #c8438b; /* the dossier's UNIT DOSSIER kicker */
+
+      /* Stars (§6.2): gold for the lower rungs, rose-gold for the top TWO in 5★ mode (the ★3 in 3★ mode). */
+      --gc-star: #ffd464;
+      --gc-star-hi: #ff9e8a;
+      --gc-star-glow: #ffb63f88;
+      --gc-star-dim: #b9b3d6; /* sleeping cards de-saturate */
+
+      /* The ONLINE state ribbon + its ink. */
+      --gc-online-fill: linear-gradient(92deg, #74f3ad, #54e5ff);
+      --gc-online-ink: #12172b;
+    }
+
+    /* Page text color. The page BACKGROUND lives in the bespoke gacha.css (the cosmos/frontier precedent:
+     * keeping it out of the token map avoids a same-layer override race — both sheets load together). */
+    :scope,
+    body {
+      color: var(--text);
+    }
+
+    /* Derived accent tokens — on `body`, NOT `:scope`, so the per-accent blocks (G6) recompute them. */
+    body {
+      /* --accent is the flat <color> channel (focus ring, borders, accent text, the color-mix softs): the
+       * brand PINK, the trio's leading hue and its most legible member on this bg. */
+      --accent: var(--gc-brand-1);
+      /* --accent-fill is the <image>-capable channel: the prototype's own 92° brand gradient, the one that
+       * paints its tag pills, switch-on track and wordmark. The frontier K2 precedent. */
+      --accent-fill: linear-gradient(
+        92deg,
+        var(--gc-brand-1),
+        var(--gc-brand-2) 52%,
+        var(--gc-brand-3)
+      );
+      --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+      --ok-soft: color-mix(in srgb, var(--ok) 16%, transparent);
+      --warn-soft: color-mix(in srgb, var(--warn) 16%, transparent);
+      --danger-soft: color-mix(in srgb, var(--danger) 16%, transparent);
+    }
+
+    /* The one SHIPPING variant (§4.4 family 1, default). Declared explicitly rather than left implicit so
+     * the G6 siblings slot in beside it as pure additions. */
+    body[data-accent="arcade"] {
+      --accent: var(--gc-brand-1);
+    }
+  }
+}
