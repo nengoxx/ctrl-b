@@ -12,7 +12,36 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-02 late morning — **post-Phase-16 housekeeping + two owner asks SHIPPED; NEXT = the H1 GACHA DESIGN CONVERSATION**)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-02 — **🔒 GACHA DESIGN LOCKED: D52 RECORDED; NEXT = BUILD G0 per GACHA_PLAN §7**)
+> **The LOCK session ran exactly as prescribed.** ① The owner answered the seven open §8 items
+> (reel every-switch · **default 5★** — emma carries 5–6 services · palettes = the 3 base-ramp
+> variants PLUS **2 accent-SHIFTING variants** · JP sub-labels kept, must be REAL Japanese ·
+> banner = fixed hero **+ live per-host promos, clickable AND swipeable** · oracle ghosted entry
+> accepted · dossier = the frontier four) — all folded, §8 fully ruled. ② An Opus research pass
+> sourced real gacha-game UI palettes → **four accent-shift candidates in §4.4**
+> (ember/glacier/nebula/eridu, hexes + provenance; every contrast ratio re-computed by the main
+> seat and confirmed; default pick ember+glacier, **owner picks the final two at G6**). ③ The
+> council round: a FRESH Opus architecture lens (verdict **LOCK**; top finds: the roster config
+> home → `themes:{gacha:{…}}` + the media-index read path · the missing dossier ACTION BAR ·
+> `/api/media/{ns}/` namespacing) + **Codex round 4** delta (verdict READY WITH FIXES; top: the
+> §6.4 carousel hardened into contracts — slide identity by key, gesture state machine, one-shot
+> timer, inert offscreen slides). All 24 findings ruled in the plan's new **§11 reconciliation**;
+> BOTH confirm rounds ran and their residuals (assignment-stays-client-side wording, BottomSheet
+> 420 ms pinned, >8-slide prev/next keyboard path, zero-services ★1 ruled, stale-ref sweep) are
+> folded. ④ **D52 recorded in DECISIONS.md** (rulings + committed kit extensions + the media
+> threat model + rejections); plan/TODO/CLAUDE.md flipped to LOCKED.
+> **Owner-flagged items riding the build eyeballs (veto anytime):** promo click opens that
+> host's DOSSIER (proposed) · promos cover ALL hosts, sleeping dimmed ("for each pc" read
+> literally; online-only is a one-line owner call) · the owner-drop dir moved to
+> **`$CTRLB_HOME/media/gacha/`** (was `art/gacha/` — same ruled shape, namespace-generic
+> mount) · the katakana wordmark string + promo JP copy = G1 eyeball picks.
+> **▶ NEXT:** build **G0** (the settle-everything slice — the §7 row is the brief's spine,
+> recipes §10; the kit seams unit lands FIRST as one commit; the VT-liveness spike needs the
+> owner's Fennec at the checkpoint), then G1–G6, owner eyeball between slices. Carried threads:
+> the TTS-flash device eyeball (dev units still running for it) · ledger §7.1 minimal-chrome
+> overlap · **v1.5.0 = this theme's release** (prod stays v1.4.6 until then).
+>
+> ## ▶ PREVIOUS STATE (2026-08-02 late morning — **post-Phase-16 housekeeping + two owner asks SHIPPED; NEXT = the H1 GACHA DESIGN CONVERSATION**)
 > **A short owner-driven session (rulings + two small slices), all pushed:**
 > **① v1.5.0 RULED: stays RESERVED for the gacha theme (H1)** — Phase 16 does NOT take it; the owner
 > also **deferred any prod update until gacha lands** (prod stays v1.4.6; no tag cut — Phase 16 +

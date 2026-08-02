@@ -3878,3 +3878,71 @@ slices V0–V6, reconciliation R1–R24); this entry pins the rulings that survi
   V4 `873f85c`+`9b7fcfd`+`16d4412` · V5 `3456c03` · V6 = the close-out commit. Method note for
   successors: 100% of the review rounds (council, per-slice Codex, confirm passes, owner-requested
   sweeps) produced at least one accepted finding — the cadence carried the phase.
+
+## D52 — The gacha theme "Capsule Arcade" (Phase 17 / H1): kit port + JP identity + the media seam ✏️ LOCKED 2026-08-02 (owner §8 rulings in conversation; spec of record = GACHA_PLAN.md incl. its §11 council reconciliation; council = fresh Opus architecture lens LOCK + Codex round 4, both confirm rounds folded)
+
+**What:** the owner's finished standalone prototype (`design/prototypes/gacha/uploads/prot/
+capsule-arcade/`, banked `37144c0`, fidelity mandate = the Vapor bar) becomes the fifth built
+kit theme, built G0–G6 per [`GACHA_PLAN.md`](./GACHA_PLAN.md) §7. The plan (with its §8 ruled
+answers + §10 implementation dossier + §11 reconciliation) is the executable spec; this entry
+pins what must survive it. **v1.5.0 is this theme's release** (owner; prod stays v1.4.6 until
+then).
+
+- **The owner's §8 rulings (all ten, final):** roster serving = **(b) read-only owner
+  directory + Conf gallery** (order/pin only, no write API) · stars = **CONFIGURED services**
+  with the exact §6.1 ladders, **default 5★** (3★ one seg-tap away), zero-services floor ★1 ·
+  **katakana wordmark** (exact string = eyeball pick) · card geometry/reel size = in-slice
+  eyeballs · reel = **every tab switch** (cooldown pre-agreed as the eyeball valve) · palettes
+  = **two families, five variants** (arcade/midnight/indigo re-tint the base ramp only; TWO
+  accent-SHIFTING variants picked by the owner from the research candidates — ember/glacier/
+  nebula/eridu, §4.4) · JP nav sub-labels KEPT and must be **real Japanese** (編成/案内/設定 +
+  ツール) · banner = **fixed hero + live promos for EVERY host, clickable + swipeable**
+  (membership narrowing is owner-only; §6.4 is the contract) · oracle ghosted entry accepted ·
+  dossier = **the frontier grid** (Ping 応答 · Uptime 稼働 "—" · Services サービス =
+  configured count · Seen 最終確認) **plus the host action bar** (typed-action `run`).
+- **Committed SHARED-KIT extensions (closed list — anything else needs a new ruling):**
+  `brandText?: ReactNode` AppBar slot (fallback `ctrl·b`) · `subLabel?: string` on tab defs
+  (kit NavBar renders it; NavMenu stays icon-only) · `lib/viewTransition.ts` —
+  `runViewTransition` EXTRACTED from `switchTheme` behavior-identical first, the
+  `.finished`-catch + token-guarded `data-transition` cleanup as a labelled delta · the
+  composer catalog gains the **look-named shared skin `arcade`** (D37 holds; theme-scoped
+  composer CSS stays banned; skin authored on semantic tokens, cross-theme picker checks in
+  its own G3 commit) · `BottomSheet` stays 420 ms (a `durationMs` prop only if the G2 eyeball
+  rejects the deviation) · the reel's z-rung = **45** on the kit ladder (over toasts/TTS
+  flash, under modals; no `.kit` stacking-context copy) · gacha's `--bg` joins the boot-script
+  default-mirror allowlist (no cold-boot FOUC). All shared edits except the composer skin land
+  as G0's ONE seams commit.
+- **Config + data shape:** roster lives at **`themes: {gacha: {roster: […], slots: {…}}}`**
+  — a FEATURE-named top-level map keyed by theme id (the D48 `providers` precedent; a
+  `theme_gacha:` sibling key is the banned shape). One entry object per character
+  (image/cutout/wide/focus, extend-don't-migrate). The theme reads ONE endpoint (the media
+  index, entries + slots); **host→entry assignment is CLIENT-side in one shared resolver**
+  (positional over display order + `slots` pins + ordered cycling when hosts>roster;
+  placeholder only for empty/unusable). Star mode's single home = the `starMode` ThemeDef
+  setting. Per-host appearance overrides are OUT of this phase.
+- **The media seam + threat model (the §10.4 hardening, binding):** ONE namespace-generic
+  read-only mount — `/api/media/{ns}/files/…` + a `/api/media/{ns}` JSON index — over
+  **`$CTRLB_HOME/media/<ns>/`** (gacha first; frontier's art picker inherits). The app has
+  **NO app-layer auth — the tailnet IS the boundary** (SECURITY_MODEL), so no upload/delete
+  API ships this phase; anything writable later re-opens §5.4(c)'s full requirement list. The
+  mount SUBCLASSES StaticFiles: extension→Content-Type **allowlist** (png/jpg/webp; never
+  `guess_type` — an owner-dropped `evil.html` served same-origin would be stored XSS with
+  full API access), 404 otherwise, `X-Content-Type-Options: nosniff`, no symlink following,
+  ensure-dir before mount (`check_dir` raises), `Cache-Control: no-cache` revalidate, index
+  route split from the mount, backend tests for traversal/allowlist/304/route-order at G5.
+  SW `runtimeCaching` (the repo's first) also lands at G5: woff2 `CacheFirst`, `/api/media/`
+  `StaleWhileRevalidate` (never `CacheFirst` — owner-mutable files).
+- **Recorded rejections (lean over mechanism):** no backend load/temp/uptime collection (the
+  dossier's Uptime tile stays "—" until a real seam exists) · no `gen-theme-art.mjs` build
+  script (a documented one-shot `sharp` line; the FONT subset script + guard test stay on
+  their measured justification) · no naive @fontsource JP (757 KB/72 req → the frozen
+  62-glyph committed subset, ~140 KB est., compile-time-constants-only guard; runtime JP
+  falls back to the system stack by design) · per-card `backdrop-filter` deleted by design ·
+  the pre-nav transition hook dropped (passive same-frame start is prototype-faithful) · the
+  prototype's global `.001ms` reduced-motion sledgehammer not ported (axes rule).
+- **The one empirical unknown:** `::view-transition-new(root)` liveness on the owner's Fennec
+  144+ — the G0 device spike; M2 is progressive enhancement DROPPED WITHOUT CEREMONY if it
+  fights the reel (the reel alone must carry the transition).
+- **Method per slice (the D51 cadence, unchanged):** pinned Opus build brief → main-seat
+  audit → Codex round → waves to clean → owner eyeball → pause. The theme joins
+  `themeContract`/e2e groups at G0; `CONTRACT_WAIVERS` stays `{}`.

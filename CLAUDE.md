@@ -38,7 +38,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/UPDATE_PLAN.md`](./docs/UPDATE_PLAN.md) | The update/migration architecture (config-shape migration + `update.sh`) — **DESIGN v3, ready to build**. Read before touching `app/config_migration`, `install.sh` or the release path. |
   | [`docs/AUTOMATIONS_PLAN.md`](./docs/AUTOMATIONS_PLAN.md) | The A3 scheduled-automations design (D49, **LOCKED 2026-07-30, ready to build** — TODO Phase 14). Read before touching the scheduler, headless runs, or attribution. |
   | [`docs/VAPOR_ASSIMILATION_PLAN.md`](./docs/VAPOR_ASSIMILATION_PLAN.md) | Phase 16: vapor's COMPLETE migration onto the kit + cosmos default (**✅ COMPLETE 2026-08-02**, D51 — historical record + per-slice as-built appendix). |
-  | [`docs/GACHA_PLAN.md`](./docs/GACHA_PLAN.md) | Phase 17: the gacha theme ("Capsule Arcade") port plan (**DRAFT 2026-08-02 — design NOT locked**; owner §8 answers + council + D52 pending). Read with the FINAL prototype `design/prototypes/gacha/uploads/prot/capsule-arcade/`. |
+  | [`docs/GACHA_PLAN.md`](./docs/GACHA_PLAN.md) | Phase 17: the gacha theme ("Capsule Arcade") port plan (**✅ LOCKED 2026-08-02, D52** — §8 all ruled + §11 council reconciliation; building G0–G6). Read with the FINAL prototype `design/prototypes/gacha/uploads/prot/capsule-arcade/`. |
   | [`docs/UI_AUDIT.md`](./docs/UI_AUDIT.md) | Two-pass frontend audit (perf F1–F13 + a11y/resilience F14–F29). |
   | [`docs/SYSTEM_AUDIT.md`](./docs/SYSTEM_AUDIT.md) | Code-verified architecture audit (SYS-# findings; excludes the chat loop). |
   | [`docs/AGENT_CHAT_AUDIT.md`](./docs/AGENT_CHAT_AUDIT.md) | Agent-chat audit + 8-agent comparative analysis + the ACA improvement plan (Slices 0–8). |

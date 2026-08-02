@@ -1,11 +1,13 @@
 # The gacha theme ("Capsule Arcade") — port plan (H1 → Phase 17)
 
-> **Status: DRAFT 2026-08-02 — design NOT locked.** Produced by the prep session from the owner's
-> FINISHED prototype (`design/prototypes/gacha/uploads/prot/capsule-arcade/` — the owner's ruling
-> 2026-08-02: that file set is FINAL; every other tree under `design/prototypes/gacha/` is a prior
-> iteration kept for provenance). The lock session must: run the council round (Codex + an
-> independent lens per the method), settle §8's owner questions, then record the D-entry (next
-> free: **D52**) in DECISIONS.md. On conflict after the lock: the D-entry wins, then this plan.
+> **Status: ✅ LOCKED 2026-08-02 as [D52](./DECISIONS.md)** (the lock session: the owner's
+> seven remaining §8 answers → the council round — a FRESH Opus architecture lens, verdict
+> LOCK, + Codex round 4 delta, verdict READY WITH FIXES — → §11 reconciliation, all findings
+> + both confirm rounds folded → D52 recorded). Produced by the prep session from the owner's
+> FINISHED prototype (`design/prototypes/gacha/uploads/prot/capsule-arcade/` — the owner's
+> ruling 2026-08-02: that file set is FINAL; every other tree under `design/prototypes/gacha/`
+> is a prior iteration kept for provenance). **On conflict: D52 wins, then this plan.** Next:
+> build G0–G6 per §7.
 > **Fidelity mandate: the owner wants visuals, colors and transitions/animations AS CLOSE AS
 > POSSIBLE to the prototype** — same bar as the Vapor-fidelity mandate (ARCHITECTURE), applied to
 > a NEW build instead of a port-of-record.
@@ -21,7 +23,8 @@
 The owner iterated the gacha look OUTSIDE the repo to a finished standalone prototype, then gave
 a requirements round (2026-08-02, §2). This plan (a) inventories the prototype precisely, (b) pins
 the owner's requirements against it, (c) maps every piece onto the kit engine with the extension
-points named, and (d) leaves the genuinely-open choices as §8 questions for the design session.
+points named, and (d) records the owner's §8 rulings (ALL RULED as of the 2026-08-02 lock
+session) plus the council reconciliation (§11) — no choices remain open in this document.
 It was drafted by the main seat from a full read of all five prototype files (357 lines total) +
 the kit seams, with an Opus seam-verification pass and two Codex rounds over the draft.
 
@@ -111,7 +114,7 @@ requests) — see §4.6.
 | R5 | **5 stars optional** — a 3-star-max mode to avoid clutter, third star rosy-ish | prototype shows ★★/★★★ only, so 3-star mode ≈ the prototype's own look | §6 (a theme setting) |
 | R6 | **Banner wallpaper ON by default**; **sticky operator art (fade) ON by default** | both exist and default OFF (`aria-checked="false"`, index.html settings rows) | §4.5 defaults flip |
 | R7 | The banner "★3 RATE 3.0%" becomes **★N RATE M.0%** where M = count of PCs currently ON (4 on → 4.0%); N = the max-star mode (5 → "★5 RATE") | the pill is static markup (index.html banner-rate) | §6.3 |
-| R8 | Captions + Japanese characters: **keep as-is for now** | §1 catalogues them | copy freeze; Q8.6 for the brand wordmark |
+| R8 | Captions + Japanese characters: **keep as-is for now** *(amended by the Q8.7 ruling: live banner-promo slides carry TEMPLATED copy — §6.4; and by Q8.6b: all JP must be real Japanese, kanji-first)* | §1 catalogues them | copy freeze; §6.4; Q8.6 for the brand wordmark |
 | R9 | The palette "looks good" but wants **more options, especially for the dark blue-ish stuff** | §1 palette table isolates the blue-navy base ramp | §4.4 palette variants + Q8.5 |
 | R10 | Wants this planned thoroughly, corroborated against the prototype, kit translation checked, then handed to a clean session | this document | — |
 
@@ -131,13 +134,13 @@ dict.)*
 |---|---|---|
 | Palette + type + radii + line ladder | `themes/gacha/tokens.css` (the kit token contract, §9.7) — incl. the app-backdrop gradient + pinstripe as bg tokens | tokens only |
 | Topbar (brand gradient text, JP subtitle, blur bar) | kit AppBar: the **`brandText` slot (committed — §4.3 katakana ruling)** carries the gradient katakana wordmark, `brandMark` the leading mark, `brandMeta` the JP subtitle; bar surface via tokens + theme-layer polish | tokens + slots |
-| Nav (floating pill bar, white indicator w/ pink hard shadow, JP sub-labels) | kit NavBar on theme-layer CSS over kit hooks (`.kit-tabbtn`, indicator) — the sliding-indicator mechanism exists; JP sub-labels see Q8.6 | theme CSS on kit hooks |
+| Nav (floating pill bar, white indicator w/ pink hard shadow, JP sub-labels) | kit NavBar on theme-layer CSS over kit hooks (`.kit-tabbtn`, indicator) — the sliding-indicator mechanism exists; JP sub-labels RULED KEEP via the committed `subLabel` extension (Q8.6b, §4.9 ledger) | theme CSS on kit hooks |
 | Fleet (banner + capsule track + dossier) | **bespoke Fleet body** — the established bespoke-by-right pattern (vapor's Root-pinned VaporFleet, cosmos' planet fleet + its own detail sheet precedent) | bespoke body |
 | Banner rate pill (live) | inside the bespoke Fleet, derived from the same fleet query (online count is client-derivable) | bespoke body |
 | Stars | a small pure fn in the bespoke Fleet + dossier (shared source) — §6 | bespoke body |
 | Oracle header + fade-on-scroll | **a bespoke Agent BODY** (`bodies={{agent: GachaAgent}}`) — frontier's exact pattern (`FrontierAgent.tsx`: theme art rendered ABOVE the composed shared `<ChatThread/>`, plus its `emptyState` slot; §15 rule 5 — chat engines live in `<AppEngines/>`, a body swap can't lose them). The M7 fade observes the kit's SINGLE scroller — mechanics in §4.2 | bespoke body |
 | Chat bubbles (white+pink-shadow user, `#222541` bot) | the §15 chat-hooks reskin — the ONE shared chat tree, never forked; hook classes are `.chat-log` + `.b.user`/`.b.bot`/`.b.sys` etc. (THEME_ENGINE §15 table), NOT the prototype's `.msg` names — the port re-targets selectors 1:1. Chat-only colors become theme-private tokens (§15 token rule; never repurpose `--accent-fill`) | theme CSS on chat hooks |
-| Composer (rounded floating, GO) | `composerSkin` axis (D37) — a gacha skin over the shared composer logic (the axis-descriptor factories in `kit/axes.ts` / `kit/composer/`) | axis skin |
+| Composer (rounded floating, GO) | `composerSkin` axis (D37) — reuse an existing shared skin if faithful, else ONE **look-named shared catalog skin (`arcade`)** on semantic tokens, offered to every theme (the D37 rule; §10.5 is authoritative) | axis skin (shared scope) |
 | Detail dossier (light inverted sheet) | inside the bespoke Fleet over the shared `<BottomSheet>` — the pattern is established TWICE (`CosmosHostDetail`, `FrontierHostDetail`, both `{host, services, busy, run, titleId}` presentation over `useFleet()`); mind the drag-strip z-index gotcha | bespoke body |
 | Reel transition + figure | a Root-sibling overlay component — the cosmos-starfield mount pattern (`CosmosRoot.tsx`: `<><CosmosStarfield/><DefaultRoot/></>`), `position:fixed` + `pointer-events:none` (escapes the kit shell's overflow/isolation). **RESOLVED (§10.1):** passive same-frame start is prototype-faithful (its own no-VT path does exactly that) — class/`key` derived in JSX, no hook; the G0 device spike settles only the M2 VT-liveness question | theme component |
 | Capsule→dossier VT morph (M3) | inside the bespoke Fleet — self-contained, gated on support + motion axis | bespoke body |
@@ -172,8 +175,8 @@ scrollTop — other tabs share the scroller), sticky-pin + fade/blur/scale exact
 bottom when Agent activates — so entering a POPULATED thread starts with the oracle already
 ghosted behind the log, which is the design working as intended: the sticky art is a backdrop
 the chat scrolls over (`z: oracle 0 / log 2` in the prototype), not a header you must scroll
-past. Flagged to the owner as a §8 note, not a defect). Budget ceiling unchanged (frontier's
-Agent tab is the named precedent).
+past. **✅ RULED Q8.8 (owner, lock session): the ghosted entry is accepted as designed.**)
+Budget ceiling unchanged (frontier's Agent tab is the named precedent).
 
 **4.3 Brand text — ✅ RULED (owner, 2026-08-02, this prep session): the brand wordmark in
 Japanese KATAKANA.** This commits the small `brandText` extension of the D51 slot family (the
@@ -185,13 +188,36 @@ gradient treatment, with カプセルアーケード ("Capsule Arcade") as the a
 the owner prefers the prototype's brand over the app's; the JP subtitle ネットワーク景品所
 stays in `brandMeta` either way.
 
-**4.4 Palette variants (R9).** The registry models this natively: `ThemeDef.palettes.accents`
-(`{id, label, swatch}` list + `defaultAccent`) feeds the SHARED `data-accent` axis (D51 V2: one
-axis, every skin) — each gacha "accent" is a tokens.css block re-tinting BOTH the accent trio and
-the dark blue-ish base ramp (bg/surfaces), the way vapor's accents re-skin its whole feel. Draft
-candidates for the design session (Q8.5): **arcade** (the prototype as-is), **midnight** (deeper
-navy, less purple in the radial), **indigo** (bluer surfaces, colder trio), **dusk** (warmer
-violet). Each variant must pass the §14.15.1-⑨ contrast probe.
+**4.4 Palette variants (R9) — ✅ RULED Q8.5: two families, five variants.** The registry models
+this natively: `ThemeDef.palettes.accents` (`{id, label, swatch}` list + `defaultAccent`) feeds
+the SHARED `data-accent` axis (D51 V2: one axis, every skin) — each gacha "accent" is a
+tokens.css block. The ruled set:
+- **Family 1 — base-ramp variants (trio CONSTANT — it stays the brand):** **arcade** (the
+  prototype as-is, default) · **midnight** (deeper, blacker navy; less purple in the radial) ·
+  **indigo** (bluer, colder surfaces). These re-tint only bg/surfaces/radial ("the dark
+  blue-ish stuff").
+- **Family 2 — accent-SHIFTING variants (owner, lock session): TWO variants that move the
+  pink→violet→cyan trio too**, informed by a research pass over popular gacha games' real UI
+  palettes (Opus pass, 2026-08-02; main seat re-computed and CONFIRMED every quoted contrast
+  ratio). **The owner picks the final two from the four candidates below** (default pick if
+  none stated: ember + glacier — true warm/cold range). Field finding worth keeping: almost no
+  major gacha uses a three-color gradient brand — they run ONE hero hue on near-neutral dark
+  (Genshin/WuWa warm gold · Blue Archive/Arknights signal blue · HSR pastel violet · ZZZ
+  black/white+neon) — so each candidate is a monotonic hue walk re-derived around a field
+  identity, L≈60–72, ≥25° hue clearance from star gold `#ffd464` and warn `#ffc76a`.
+
+  | Candidate | Trio (pink→violet→cyan slots) | Base ramp (bg · card · radial) | Provenance / caution | Worst contrast |
+  |---|---|---|---|---|
+  | **ember** (warm) | `#ff6f52` `#ff4f93` `#c46bff` | `#120b18` · `#1e1433` · `#5b2350→#2a1330→#100810` | Genshin/WuWa warm-metal-on-dark + HSR Fire/Lightning; gold deliberately NOT in the trio (stars own it). Don't warm slot 1 past H 10° (warn-pill clearance) | 5.65 on card |
+  | **glacier** (cold) | `#7c6cff` `#2fb8ff` `#79f2e6` | `#070d1c` · `#101a33` · `#1d3f7a→#0d1730→#05080f` | Blue Archive logo blue `#128AFA` lifted + Arknights crystalline-clinical + HSR Quantum/Ice. Tightest hue walk (63°) — verify the tri-strip still reads as three colors at small size on device | 4.47 on card |
+  | nebula (soft) | `#eb77ea` `#9c96f4` `#5ec7db` | `#0c0a1c` · `#171634` · `#43276b→#141334→#08070f` | HSR's own in-UI element chips verbatim (Lightning/Quantum/Ice) — pastel-celestial. Weakest SHIFT: same hue arc as arcade, mainly desaturated — a calm-eyes option, not range | 6.73 on card |
+  | eridu (loud) | `#ff5cd0` `#3ff0ff` `#b4ff4a` | `#0a0a12` · `#12141f` · `#26305e→#0f1120→#06070c` | ZZZ black/white+neon signage + NIKKE HUD contrast. **Semantic blocker: the acid lime competes with ok-green `#74f3ad` for "host is up"** — only shippable if the trio never touches status chrome | 6.72 on card |
+
+  All four clear the 3.0 probe bar everywhere, and every candidate's WORST trio-on-card ratio
+  beats the shipped arcade trio's own weakest link (`#805cff` on card = 4.10, re-computed).
+  Gold stars + ok/warn status hexes stay constant across all variants.
+Every variant (all five shipping) must pass the §14.15.1-⑨ contrast probe; the G6 device round
+covers the full matrix.
 
 **4.5 Defaults (R6).** `wallpaper: on`, `oracle: fade` ship as the theme's defaults (prototype
 ships OFF — deliberate flip, owner-ruled). Both stay owner-togglable rows.
@@ -217,8 +243,19 @@ does; keep under the kit's tab model).
 - Online count: `hosts.filter(h => h.status?.online).length` — frontier already derives it for
   its brandMeta rig count. The rate pill is the same one-liner.
 - **Load / temp / uptime DO NOT EXIST in the backend** — of the prototype's four dossier metrics
-  only Ping is real. Q8.9 decides: "—" placeholders (the cosmos uptime precedent) or drop the
-  tiles. (Adding real metrics is backend scope, explicitly OUT of this theme phase.)
+  only Ping is real. **✅ RULED Q8.9: the frontier grid** — with the exact value semantics
+  pinned (Codex R4-10 — frontier's Services tile is live `up/total`, which is NOT the gacha
+  ruling): **Ping 応答** = `ping_ms` when online else "—" · **Uptime 稼働** = "—" (deferred-seam
+  placeholder) · **Services サービス** = `(host.services ?? []).length` — the CONFIGURED count,
+  the star input, visible `0` included · **Seen 最終確認** = "now" when online else
+  `relativeTime(last_seen)`. Load/Temp dropped. (Adding real metrics is backend scope,
+  explicitly OUT of this theme phase.) **The dossier also carries the host ACTION BAR**
+  (council H3): wake/power actions over the shared typed-action `run` — both precedent dossiers
+  have one, and §6.4's promo-click→wake flow depends on it; the prototype has no action-bar
+  design, so it's a named fidelity design checkpoint at G2 (gacha visual language, kit
+  semantics). The pure host-detail derivation (online/ping/upCount/seen/meta strings) is
+  EXTRACTED to `lib/` at G2 — gacha would be its third byte-similar copy (rule of three,
+  council M6); markup stays per-theme.
 - Per-host art override seam (roster §5): `host.appearance` is an open per-theme blob
   (`appearance.gacha.…`) the backend passes through untouched — frontier keys its per-host art
   off `appearance.frontier.image` today.
@@ -235,10 +272,11 @@ D51 discipline):
 | Extension | Scope | Posture |
 |---|---|---|
 | `brandText` slot (**committed** — the §4.3 katakana ruling needs it) | kit AppBar, the D51 `brandMark` idiom: `brandText ?? "ctrl·b"` | one prop + fallback; other themes byte-identical |
-| `composerSkin` gains a `gacha` value — **OR the theme-scoped alternative (§10.5), lock decides** | the axis catalog is CLOSED and shared (`kit/axes.ts`), and the skin CSS is body-keyed with NO theme scoping — a catalog value appears AND applies in every theme's picker | lean recommendation: theme-scoped CSS on the kit composer hooks, NO catalog change (§10.5) |
+| `subLabel` on the tab definition (**committed** — the Q8.6b keep ruling needs it) | `TAB_SETS`/tab-def shape + kit NavBar render | optional additive field; themes without it byte-identical; the CSS-attr alternative rejected (labels are data) |
+| `composerSkin` — **RULED (council H2/R4-2, per LOCKED D37): reuse an existing shared skin if faithful, else the catalog gains ONE look-named value `arcade`** (never `gacha`), authored on semantic tokens only | the axis catalog is CLOSED and shared (`kit/axes.ts`); a catalog value appears AND applies in every theme's picker — so G3 budgets the cross-theme cost: visual check in vapor/cosmos/frontier pickers + the `axes.test` arm | shared scope; the theme-scoped alternative is DELETED (it was a D37 bypass); any exception would need an explicit D52 amendment — not proposed |
 | ~~Pre-nav transition hook~~ | ~~`hooks/useSections.ts` chokepoint~~ | **DROPPED by the §10.1 research verdict** — passive start is prototype-faithful |
 | Shared VT helper `lib/viewTransition.ts` (**committed**) | extracts `switchTheme.ts:163-183`'s existing block; both callers use it | reuse-not-duplicate; §10.1 |
-| `BottomSheet` timing | shared lifecycle is 420 ms with a coupled JS timeout — the prototype's 520 ms spring can't be pure-CSS-overridden without truncating the unmount | either accept 420 ms (fidelity deviation, likely invisible) or a `durationMs` prop (tiny, shared) — eyeball decides |
+| `BottomSheet` timing | shared lifecycle is 420 ms with a coupled JS timeout — the prototype's 520 ms spring can't be pure-CSS-overridden without truncating the unmount | **RULED (lock): accept 420 ms** (fidelity deviation, likely invisible); the `durationMs` prop is added ONLY if the G2 eyeball rejects it — the last shared-kit change is thereby pinned |
 | Chat bubble selectors | paint lands on `.b.user .body` / `.b.bot .body` (the kit paints bodies, not rows) | selector-precision note for G3, no scope change |
 | `ThemeId` union + registry row | closed union in `types.ts` | the normal new-theme change |
 
@@ -252,28 +290,44 @@ card art (capsule cards, 3/4-ish crops), landscape art (wallpaper + banner slide
 the oracle art (wide), and the transparent CUTOUT (the reel figure — a different asset kind, not
 a crop). All VISUAL ONLY — never linked to a specific PC (R3).
 
-**5.2 The entry schema (extend-don't-migrate — one object per entry, extensible):**
+**5.2 The entry schema (extend-don't-migrate — one object per entry, extensible).**
+**Config home RULED at lock (council H1): `themes: {gacha: {…}}`** — one FEATURE-named
+top-level map keyed by theme id (the D48 `providers` precedent). A `theme_gacha:` top-level
+key would be the banned sibling-map shape: the next theme with art would mint a new top-level
+section + its own model/reader/writer, and renaming later costs a real config migration.
+**The read path, pinned:** the theme body does NOT read raw settings — the §10.4 media INDEX
+endpoint returns the roster DATA (`{entries: [{name, urls, valid…}], slots}`) so the theme
+has ONE query; **host→entry ASSIGNMENT (positional/cycling) stays in the §5.3 CLIENT
+resolver** — it depends on the client's display order (`useHosts` sorts `self` first), so it
+cannot live server-side without duplicating that ordering (Opus confirm). Conf gallery writes
+go through the normal `PUT /api/settings` path. (Until G5 lands, G1–G4 resolve against the
+bundled default set client-side — same resolver, no config.)
 
 ```yaml
-theme_gacha:                  # exact key/nesting per the config conventions at lock
-  roster:                     # ordered list — order IS the default assignment
-    - name: lyra              # display/reference name
-      image: lyra.png         # the main art (cards)
-      cutout: lyra-cutout.png # optional transparent cutout (reel-figure eligible)
-      wide: lyra-wide.jpg     # optional landscape variant (banner/wallpaper eligible; when a
+themes:
+  gacha:
+    roster:                   # ordered list — order IS the default assignment
+      - name: lyra            # display/reference name
+        image: lyra.png       # the main art (cards)
+        cutout: lyra-cutout.png # optional transparent cutout (reel-figure eligible)
+        wide: lyra-wide.jpg   # optional landscape variant (banner/wallpaper eligible; when a
                               # wide-consuming slot picks an entry WITHOUT one, the resolver
                               # falls back to `image` with the focal crop — never a hole)
-      focus: "50% 30%"        # optional focal point (the prototype hand-tunes object-position
+        focus: "50% 30%"      # optional focal point (the prototype hand-tunes object-position
                               # per image — a default center-top applies when absent)
-    - ...
-  slots:                      # optional pinned bindings (else positional / derived)
-    reel_figure: lyra         # must resolve to an entry WITH a cutout
-    oracle: ...
-    wallpaper: ...
-    banner: [lyra, pegasus]   # the slide set (Q8.7 decides its source semantics)
-  stars: { mode: five }       # §6.1's RULED ladders are design constants; a custom-threshold
-                              # field is a deferred optional extension of this object
+      - ...
+    slots:                    # optional pinned bindings (else positional / derived)
+      reel_figure: lyra       # must resolve to an entry WITH a cutout
+      oracle: ...
+      wallpaper: ...
+      hero: lyra              # the fixed hero slide's art (defaults to the wallpaper pick when
+                              # absent; RULED Q8.7 — the OTHER slides are live per-host promos
+                              # derived from each host's §5.3 assignment, so no slide-set slot)
 ```
+
+*(NO `stars:` key — the star MODE's single home is the `starMode` ThemeDef setting, §6.1;
+council M5/R4-8 killed the double home. If custom thresholds are ever wanted they extend the
+settings spec, not this map.)*
 
 **5.3 Assignment + fallback semantics (the "in order or something" conversation, Q8.2b):**
 positional over the fleet's display order is the default; `slots` pins specials. A per-host
@@ -282,10 +336,13 @@ appearance blob's WRITE path doesn't exist (`HostIn` has no `appearance` field; 
 editor round-trips an existing key only by omission; frontier's own picker was never built —
 `RIG_KEYS` has zero consumers). Per-host override is therefore OPTIONAL FUTURE scope (HostIn
 field + editor UI), not part of this phase — which suits R3's "not linked to a specific PC"
-anyway: **this phase ships positional + `slots` pins only.** Rules the session must fix: more hosts than roster
-entries (cycle, or a neutral placeholder card), fewer (unused entries just sit in the gallery),
-a `slots` reference to a missing/deleted entry (fall back to positional/default art, never
-crash), and a missing file on disk (placeholder + a Conf gallery warning, silently for render).
+anyway: **this phase ships positional + `slots` pins only.** Fallback rules — **RULED at lock
+(Codex R4-3: one deterministic behavior, one shared resolver consumed by cards, promos AND the
+dossier):** more hosts than roster entries → **ordered CYCLING** (host i gets entry i mod N);
+the neutral placeholder card is reserved for an EMPTY roster or an unusable file; fewer hosts
+than entries → unused entries just sit in the gallery; a `slots` reference to a
+missing/deleted entry → fall back to positional/default art, never crash; a missing file on
+disk → placeholder + a Conf gallery warning (render stays silent).
 
 **5.4 Where the bytes come from — the three honest options (Q8.2a):**
 
@@ -316,10 +373,14 @@ frontend; `$CTRLB_HOME` has no media dir or route; the only upload endpoint is t
   atomic writes, no symlink following, server-set Content-Type + `X-Content-Type-Options`,
   deletion semantics vs roster references. **A media threat-model paragraph goes INTO D52, not
   just a slice checklist.**
-- **✅ RULED (owner, 2026-08-02, this prep session): option (b).** The read-only
-  `$CTRLB_HOME/art/gacha/` directory + the phone-facing Conf gallery for ORDERING and PINNING
-  (the gallery selects/orders/pins; it never writes files — the owner drops files in from
-  another machine). Option (c) stays a possible later layer behind the same directory + schema.
+- **✅ RULED (owner, 2026-08-02, this prep session): option (b).** The read-only owner
+  directory + the phone-facing Conf gallery for ORDERING and PINNING (the gallery
+  selects/orders/pins; it never writes files — the owner drops files in from another machine).
+  Option (c) stays a possible later layer behind the same directory + schema. **Council
+  amendment (M9, mechanics not shape):** the mount is namespace-generic — the directory is
+  **`$CTRLB_HOME/media/gacha/`** under a single `/api/media/{ns}/` route, so the next
+  art-bearing theme is a path segment, not a new route. (Same ruled shape; the literal path
+  changed from the draft's `art/gacha/` — flagged to the owner.)
 
 **5.5 Fallback art:** the theme ships the prototype's asset set as the bundled default roster
 either way, so it looks right on first boot (art provenance: the owner's own picks — confirm at
@@ -344,34 +405,95 @@ a machine's services. The RULED ladders:
 | ≥5 | ★5 | ★3 |
 
 *(Verbatim owner ladder: 5★ = "1→1, 2→2, 3→3, 4→4, 5-or-more→5"; 3★ = "1 service→1, two or
-three→2, more than three→3".)* **Zero services is the one unruled cell** — proposed default:
-★1 floor (a unit never renders starless; gacha logic), confirm at the G1 eyeball.
-**Config home:** the ladders above are the DESIGN (constants with the shape to extend —
-`theme_gacha.stars` in §5.2 stays the seam if the owner ever wants custom thresholds); the Conf
-row exposes the MODE seg (5★/3★ — the ship default is still Q8.4).
+three→2, more than three→3".)* **Zero services — RULED at lock: the ★1 floor**
+(a unit never renders starless; gacha logic); the G1 eyeball reviews it like any visual.
+**Config home — ONE home (council M5/R4-8):** the ladders above are DESIGN CONSTANTS; the mode
+lives in a single authoritative `ThemeDef.settings` seg key **`starMode`** (default `five` —
+**ship default 5★, ruled Q8.4**: emma already carries 5–6 configured services, so the flagship
+rolls a full row day one; 3★ one tap away). Cards, dossier stars and the rate pill all consume
+the SAME resolved value (`useThemeSetting`); nothing star-shaped lives in the roster YAML.
+Tests: default 5★ · 3★ toggle/persistence · invalid-value fallback · pill coupling.
 
 **6.2 Star colors.** 5-star mode: ★1–3 gold (`#ffd464`), **★4–5 pink-gold** (draft: a
 `#ffd464→#ff9e8a`-family rose-gold; exact value picked on device at the eyeball). 3-star mode:
 ★1–2 gold, **★3 rosy**. Sleeping cards keep the de-saturation. Tokens, not hardcodes.
 
-**6.3 The rate pill.** `★{maxStars} RATE {onlineCount}.0%` — max-star mode (5 or 3) + the live
-count of ONLINE hosts (4 on → "4.0%"). 天井 200 stays as flavor copy (R8). Both derive from the
-fleet query the body already renders from — no new backend. **Loading/empty semantics:** while
-the hosts query is unresolved the pill must not read "0.0%" (a lie) — render "—%" or hold the
-pill; 0 hosts online legitimately reads "0.0%" only once resolved. Same rule for the "04 / 04"
-counter.
+**6.3 The rate pill.** `★{maxStars} RATE {onlineCount}.0%` — max-star mode (5★ default, ruled)
++ the live count of ONLINE hosts (4 on → "4.0%"). 天井 200 stays as flavor copy (R8). Both
+derive from the fleet query the body already renders from — no new backend. **Loading/empty
+semantics:** while the hosts query is unresolved the pill must not read "0.0%" (a lie) — render
+"—%" or hold the pill; 0 hosts online legitimately reads "0.0%" only once resolved. Same rule
+for the "04 / 04" counter.
 
-## 7. Slice ladder (draft — the lock session firms this)
+**6.4 Banner slides — the Q8.7 ruling (fixed hero + live promos + swipe), the design:**
+
+- **Slide set.** Slide 1 = the FIXED "NETWORK PRIZE POOL" hero — frozen prototype copy, roster
+  wallpaper/banner art, zero data dependency. Slides 2..N = **one live promo per host — ALL
+  hosts, online AND sleeping** (the owner's "for each pc"; a sleeping promo renders dimmed in
+  the sleep-card treatment, which keeps the click useful: open the dossier → wake). **Membership
+  is the RULING, not implementer latitude** (Codex R4-1): crowding is solved by presentation
+  (dots/controls, the a11y bullet below), never by silently narrowing membership; only the
+  OWNER may narrow it at an eyeball. Promo art = the host's roster-resolved entry — the ONE
+  shared resolver of §5.3 (cards, promos and dossier must agree).
+- **Copy — the R8 amendment (owner-ruled via Q8.7):** the fixed hero keeps its frozen captions;
+  promo slides are inherently TEMPLATED — tag pill = live state (ONLINE/SLEEPING treatments),
+  display copy = the host name, JP caption from a small template set (draft: 稼働中 "in
+  operation" / 休眠中 "dormant"; exact strings = an owner copy pick at the G1 eyeball, same
+  bar as the katakana wordmark pick).
+- **Click.** Promo slides are real `button`s (`aria-label`: "open <host> dossier") —
+  **proposed target: the host's UNIT DOSSIER sheet**, the same action as tapping its capsule
+  card (one handler, no new nav concept; wake/manage lives in the dossier). Owner-confirm at
+  the G1 eyeball. The fixed hero is inert (or cycles to the track — eyeball whim).
+- **Swipe + click coexist (feasibility CONFIRMED) — specified as a STATE MACHINE, not a
+  heuristic (Codex R4-5):** `idle → pending → horizontal-drag`. Primary pointer only; on
+  pointer-down enter `pending`; after the ~10 px slop, DIRECTION-LOCK via `abs(dx) > abs(dy)`
+  — horizontal intent captures the pointer and enters `horizontal-drag` (the strip follows the
+  finger, transform-only, rAF; release snaps to the nearest slide with the existing 620 ms
+  ease; edge drags clamp with resistance); vertical intent aborts cleanly (no capture —
+  `touch-action: pan-y` keeps page scroll native). Under-slop release = tap → the slide's
+  click action. Suppression of the post-drag native click happens in `onClickCapture` (a
+  `moved` flag must survive through the click event); native image dragging disabled.
+  `pointercancel`, lost capture, secondary pointers and unmount all resolve to `idle` with the
+  strip snapped and the timer state restored. Dots stay as labeled buttons (the non-gesture
+  and keyboard path).
+- **Slide identity + reconciliation (Codex R4-4):** the active slide is keyed **`"hero"` |
+  `host.id` — never an index**. Membership changes (poll adds/removes a host, initial promo
+  resolution) are BUFFERED while a gesture or snap animation is in flight and reconciled by
+  key between interactions; if the active host vanished, land on the nearest surviving
+  neighbor (or the hero) WITHOUT animation. Dots derive from the reconciled set.
+- **Timer semantics (extends §10.3) — the explicit matrix (Codex R4-6):** one-shot timeout,
+  not an interval. An actual manual slide CHANGE → restart at the full 5.2 s; a gesture that
+  ends with NO change (tap, cancel, under-slop, snap-back) → restart at the full cadence too
+  (one consistent rule, no stored remainders). Eligibility pauses kept: tab≠fleet,
+  `document.hidden`, and **during the reel the banner REJECTS new input** (the overlay is
+  `pointer-events:none`, so the banner disables itself on the reel signal: any active gesture
+  cancels + snaps, autoplay holds until the reel ends).
+- **A11y + many-host bounds (Codex R4-7):** carousel semantics on the strip; **inactive
+  slides are `inert`** (no tab stop, `aria-hidden`) — keyboard focus can never open an unseen
+  dossier; the active slide alone is interactive. Dot buttons carry host names +
+  `aria-current`. Hero-only state (zero hosts) renders no dots and no autoplay. Dots stay
+  fixed-size up to 8 slides; beyond that, a `3 / 12` counter replaces the rail **flanked by
+  labeled Previous/Next buttons (the keyboard path the dots provided must survive the swap —
+  Codex confirm MED); both WRAP at the ends, matching the auto-advance cycle**, and the
+  counter is announced — a bound the owner's ~5-host fleet won't hit, ruled so the design
+  has one.
+- **Loading/error states:** hosts unresolved → the fixed hero alone (it needs no data); promos
+  join by key on resolve (reconciled between interactions — no jitter mid-drag); zero hosts →
+  hero only. **A background refetch error keeps the last successful host set** (TanStack keeps
+  cached data; treating any `error` as hero-only would collapse the carousel needlessly —
+  Codex R4-4); hero-only applies only when NO successful data has ever arrived.
+
+## 7. Slice ladder (firmed at the lock session — council-amended)
 
 | Slice | Contents | Gate |
 |---|---|---|
-| G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10):** theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row · tokens.css (semantic extraction from theme.css) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors + R6 defaults · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; the passive reel + shared `runViewTransition` helper land here) · the roster schema + resolver (§5.2/5.3, resolving against the BUNDLED set first) · the star ladders (§6.1, ruled) · riders: the first `runtimeCaching` route + `stats.html` precache exclusion (§10.4) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
-| G1 | Bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics) + capsule track (cards/states/plates/shine + **the stars on cards**, §6.1/6.2) + wallpaper + the card-geometry rules (Q8.10 ruling) | owner eyeball |
-| G2 | Dossier sheet (light inversion + Ping + Q8.9-ruled metrics + services list) — **reuses G1's star engine**, adds the sheet-timing call (§4.9 ledger) | eyeball + contrast probe |
+| G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps five palette variants a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
+| G1 | Bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + **the §6.4 slide set: fixed hero + live per-host promos, clickable + swipeable**) + capsule track (cards/states/plates/shine + **the stars on cards**, §6.1/6.2) + wallpaper + the card-geometry rules (Q8.10 ruling) + the promo-copy owner pick | owner eyeball |
+| G2 | Dossier sheet (light inversion + the ruled frontier grid w/ §4.8's pinned values + services list + **the host ACTION BAR** — council H3, a named fidelity design checkpoint) — **reuses G1's star engine**, extracts the shared host-detail derivation to `lib/` (council M6), adds the sheet-timing call (§4.9 ledger) | eyeball + contrast probe |
 | G3 | Agent tab: GachaAgent body (oracle + §4.2 scroll mechanics) + chat-hooks reskin + composer skin — **the M7 blur ramp gets its own Fennec/Chrome device check here**, not deferred to G6 | eyeball + device check |
-| G4 | Reel transition overlay + figure (smaller default, tunable) on the G0 spike's mechanism + M2/M3 VT enhancement per the spike verdict | Fennec+Chrome device round (the Gate-B shape) |
-| G5 | Roster serving per the RULED option (b): the ensured `$CTRLB_HOME/art/gacha/` dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) | gate + the §5.4/§10.4 security requirements |
-| G6 | Palette variants (Q8.5 picks) + polish + full §14.15.1 hardening pass + the on-device Gecko round | owner sign-off |
+| G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + M2/M3 VT enhancement per the spike verdict + Gecko tuning (the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape) |
+| G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
+| G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) + polish + full §14.15.1 hardening pass + the on-device Gecko round | owner sign-off |
 
 Each slice: Opus build from a pinned brief → main-seat audit → Codex round → owner eyeball
 (the D51 cadence). The theme joins `themeContract.test.ts` + the e2e structural/a11y groups at G0.
@@ -382,61 +504,55 @@ no-services and many-services hosts · missing/corrupt/deleted art (file AND slo
 all appbar/layout modes · reduced-motion and perf-lite · VT unsupported (older Gecko) · rapid
 tab switching (reel re-entrancy) · long host names on plates · Fennec AND Chrome device rounds.
 
-## 8. Owner questions (the §5-of-vapor-plan analogue) — **rulings landed in the prep session (2026-08-02); SEVEN items remain open below**
+## 8. Owner questions (the §5-of-vapor-plan analogue) — **✅ ALL RULED (prep session + the lock session, both 2026-08-02); nothing remains open**
 
 **✅ Answered (rulings folded into the sections cited):**
 - ~~Q2 Roster serving~~ → **(b) read-only owner directory + the phone gallery for
-  ordering/pinning** (§5.4). The §5.3 assignment semantics (positional default + pins +
-  fallbacks) still get their confirm at lock, but the serving shape is settled.
+  ordering/pinning** (§5.4). The §5.3 assignment semantics are now FULLY ruled too
+  (positional + `slots` pins + ordered cycling — §5.3, lock session).
 - ~~Q3 Star ladder~~ → **CONFIGURED services, regardless of live status**, exact ladders in
-  §6.1 (5★: 1/2/3/4/≥5 → ★1..★5; 3★: 1 → ★1, 2–3 → ★2, >3 → ★3). Residual: the
-  zero-services floor (★1 proposed, eyeball confirm).
+  §6.1 (5★: 1/2/3/4/≥5 → ★1..★5; 3★: 1 → ★1, 2–3 → ★2, >3 → ★3). The zero-services
+  cell is ruled too: ★1 floor (lock session, §6.1).
 - ~~Q6 Brand wordmark~~ → **katakana wordmark** (§4.3; commits the `brandText` slot; exact
-  string = eyeball copy pick). Residual: the JP nav sub-labels half of the old question —
-  see open Q6b below.
+  string = eyeball copy pick). The JP nav sub-labels half — ruled Q6b in the lock block below.
 - ~~Q1 (size half) + Q10 Card geometry~~ → **specified DURING the build slices, by eyeball**
   ("to make sure it fits and looks good" — owner). The G1/G4 briefs carry them as in-slice
   design work with owner checkpoints, not lock blockers. The COUNTER semantics and the `NEW`
   ribbon ride along as G1 eyeball decisions.
 
-**Open for the lock session — each with the prep session's elaborated options + a standing
-recommendation (walked through with the owner in prose 2026-08-02; the owner is deliberating):**
+**✅ Ruled in the LOCK session (owner, 2026-08-02 — the seven formerly-open items):**
 
-1. **Reel frequency:** every switch is faithful but fires constantly in fleet↔agent daily use.
-   (a) every switch · (b) every switch with a short cooldown (rapid re-switches skip — the
-   fluidity valve) · (c) only entering Fleet. **REC: ship (a); pre-agree (b) as the G4-eyeball
-   adjustment if it wears — a one-line change.** Reduced-motion kills it regardless.
-4. **Default star mode:** under the 5★ ladder a full row needs ≥5 configured services — a
-   1–3-service fleet looks permanently low-rolled; the prototype itself only ever shows ★★/★★★
-   (visually the 3★ mode), and the owner's stated instinct was clutter-aversion. **REC:
-   default 3★, 5★ one seg-tap away; the rate pill follows automatically.**
-5. **Palette variants:** structural half first — **REC: variants re-tint the BASE RAMP only**
-   (bg/surfaces/radial — literally "the dark blue-ish stuff") while the pink→violet→cyan trio
-   stays constant (it IS the brand); candidates arcade (as-is, default) · midnight (deeper
-   blacker navy) · indigo (bluer, colder) · dusk (warmer violet). Each = a tokens block
-   (cheap, additive later) but each multiplies the contrast-gate matrix. **REC: ship three —
-   arcade/midnight/indigo; add more later on demand.**
-6b. **JP nav sub-labels** (編成/案内/設定): the owner likes the captions → presumed keep. The
-   clean mechanism = an optional additive `subLabel` on the tab definition (a small kit
-   extension for the §4.9 ledger; other themes unaffected; the CSS-attr trick would break the
-   labels-are-data idiom). The layout fence means 4-tab mode needs a Utils sub-label too.
-   **REC: keep via `subLabel`; Utils = ツール (katakana, matching the wordmark direction).**
-7. **Banner slides:** (a) FIXED set — slide 1 the "NETWORK PRIZE POOL" hero, slides 2–3
-   roster-pinned art with the frozen stock captions; zero logic, fully faithful · (b) live
-   per-online-host promos — templated copy strains the captions-as-is ruling · (c) fully
-   roster-driven. **REC: (a) this phase; (b) recorded as a clean later upgrade. The rate pill
-   is live either way.**
-8. **Oracle entry state:** populated-thread entry lands bottom-pinned → the art starts
-   ghosted behind the log (full-strength when scrolling up, and always on an empty chat). The
-   alternative "full-opacity beat on entry" fights the scroll-derived model (a visible state
-   jump after the beat). **REC: accept the ghosted entry — the mechanism working honestly;
-   the empty-chat case, where the art matters most, always shows it fully.**
-9. **Dossier metrics:** only Ping is real (VERIFIED). (a) four tiles with three permanent
-   "—" dashes (reads broken) · (b) a Ping-only row (loses the grid) · (c) **keep the
-   four-tile geometry, fill with four REAL facts: Ping 応答 · Services サービス (the
-   configured count — doubles as the star explanation) · Last seen 最終確認 (`last_seen` is
-   in HostStatus) · Status 状態 (or OS). REC: (c).** Real load/temp/uptime collection = a
-   future ROADMAP entry if ever wanted (it would also un-dash the original tiles).
+- ~~Q1 Reel frequency~~ → **(a) every switch** ("we can always tune the timings and such
+  later" — owner). The cooldown (b) stays the pre-agreed G4-eyeball valve if daily use wears
+  — a one-line change. Reduced-motion kills the reel regardless. → §4.1/§10.1 unchanged.
+- ~~Q4 Default star mode~~ → **5★ default** (overrides the 3★ REC — owner: emma already has
+  5–6 configured services, so the flagship rolls a full row day one). 3★ stays one seg-tap
+  away; the rate pill follows the mode (`★5 RATE` by default). → §6.1 config home, §6.3.
+- ~~Q5 Palette variants~~ → **BOTH families.** (i) The base-ramp set per the REC — arcade
+  (default) · midnight · indigo — trio constant. (ii) **PLUS two accent-SHIFTING variants**
+  (owner: "a couple more that also shift the accent trio"), derived from a research pass over
+  popular gacha games' real UI palettes (owner-directed; candidates + provenance in §4.4).
+  Five variants total; every one passes the §14.15.1-⑨ contrast probe. → §4.4, G6.
+- ~~Q6b JP nav sub-labels~~ → **KEEP, via the `subLabel` kit extension (now committed —
+  §4.9 ledger).** Owner constraint: **real Japanese** — kanji where it's the natural writing,
+  kana otherwise; never decorative pseudo-JP. The four labels verified as genuine words:
+  編成 (hensei, "formation" — Fleet) · 案内 (annai, "guidance" — Agent) · 設定 (settei,
+  "settings" — Conf) · **Utils = ツール** (tsūru — the standard katakana loanword for
+  "tools", matching the katakana wordmark). The 4-tab layout fence is thereby satisfied.
+- ~~Q7 Banner slides~~ → **(a) AND (b) — the union.** Slide 1 = the fixed "NETWORK PRIZE
+  POOL" hero with its frozen copy; then **live per-host promo slides**; promos are
+  **CLICKABLE** and the banner is **SWIPEABLE**. Swipe+click coexist — feasibility confirmed,
+  standard carousel tap-vs-drag discrimination; full design + the R8 copy amendment in
+  **§6.4** (new). → G1 scope grows accordingly.
+- ~~Q8 Oracle entry state~~ → **ghosted entry accepted** (per REC): a populated thread lands
+  bottom-pinned with the art ghosted behind the log; full-strength on scroll-up and always on
+  an empty chat. The §4.2 note is a ruling now, not a flag. → §4.2/§10.2 unchanged.
+- ~~Q9 Dossier metrics~~ → **the frontier grid — "same four as frontier" (owner):**
+  Ping 応答 · **Uptime 稼働 ("—" placeholder** — the frontier/cosmos deferred-seam precedent,
+  additive when a backend boot-time seam ever lands) · Services サービス (configured count —
+  doubles as the star explanation) · Seen 最終確認 (`last_seen`, real). The prototype's
+  Load 負荷 / Temp 温度 tiles are dropped (no seam feeds them — the same honest-grid ruling
+  frontier recorded in code). → §4.8, G2.
 
 ## 9. Verification record + remaining obligations for the lock session
 
@@ -456,8 +572,11 @@ only); no user-image serving path; `host.appearance` per-theme blob.
   progressive-enhancement: the owner's actual Fennec build must be ≥144 (device check at the
   G4 gate); `view-transition-types` availability in Gecko unverified — the port must not use it.
 
-**Still open for the lock session:**
-- §8's remaining owner answers → then the council round → then the D52 entry.
+**Lock-session record + post-lock obligations (nothing here is an open design question):**
+- ~~§8's remaining owner answers~~ ✅ ALL RULED (2026-08-02 lock session). ~~The council
+  round~~ ✅ RAN (Opus architecture lens LOCK WITH CHANGES + Codex R4 READY WITH FIXES — all
+  findings reconciled in §11 and folded; both confirm rounds' residuals folded too). The
+  D52 entry records the lock.
 - The prototype stays the fidelity reference: every G-slice eyeball compares against
   `capsule-arcade/index.html` opened locally (it is fully standalone).
 - The test-surface question is now ANSWERED in §10.5 (contract/e2e enrollment, verified).
@@ -519,12 +638,11 @@ such; the G0/G4 device rounds remain binding for everything Gecko-empirical.*
   bake the glow into the exported cutout asset; `will-change: transform` + `contain: layout`
   on the slats · geometry: `position:fixed` sibling, `height: var(--app-h)` NOT `inset:0`
   (the keyboard-aware shell height), bottom safe-area inset for the figure,
-  `pointer-events:none` + `aria-hidden` · **z-rung ruling for the lock session:** kit ladder
-  is toasts 40 / TTS flash 41 / modal 50 / prompt 60 — recommend the reel at ~45 (covers
-  toasts for its 1.1 s, NEVER covers confirm/prompt modals), and mind the cosmos
-  `.kit{position:relative;z-index:1}` idiom (copying it makes `.kit` a stacking context —
-  sibling z values then compare against `.kit` as a UNIT, so an over-`.kit` reel needs only
-  z>1, but it would then cover modals too; the ruling must pick one deliberate arrangement).
+  `pointer-events:none` + `aria-hidden` · **z-rung ✅ RULED (lock, → D52):** the reel sits at
+  **z 45** on the kit ladder (toasts 40 / TTS flash 41 / **reel 45** / modal 50 / prompt 60 —
+  covers toasts for its ~640 ms, NEVER covers confirm/prompt modals), and gacha does **NOT**
+  copy the cosmos `.kit{position:relative;z-index:1}` idiom (that would make `.kit` a unit
+  and put the reel over modals); the rung is recorded in the kit ladder comment.
 - **Reduced motion:** no reel at all + the VT bypass — via `body[data-motion]`, never the OS
   query, and never the prototype's global `.001ms` sledgehammer (`base.css:78-80` is
   explicitly NOT ported; §14.11 rule).
@@ -616,7 +734,9 @@ such; the G0/G4 device rounds remain binding for everything Gecko-empirical.*
   `themes/<t>/fonts.ts` pattern (cosmos/frontier — `loadFonts()` awaited by `switchTheme`
   before the skin flips → activation paints without FOUT; keep `font-display: swap`; skip
   `size-adjust` tuning). System-JP fallback stays in the font-stack only (Android has no
-  reliable Mincho 600/800).
+  reliable Mincho 600/800). **Degradation contract (council L12):** the guard test covers
+  COMPILE-TIME copy constants only — any runtime/user-supplied JP text (host names, roster
+  names) falls back to the system JP stack BY DESIGN.
 - **PWA/offline (verified from the built artifact):** the SW precaches zero woff2 today and
   the repo has NO `runtimeCaching` — vapor's fonts + cosmos art rely on the browser HTTP
   cache offline (the vite.config comment claiming cosmos art is runtime-cached is WRONG —
@@ -625,8 +745,10 @@ such; the G0/G4 device rounds remain binding for everything Gecko-empirical.*
   routes — **`CacheFirst` for `/assets/*.woff2` (hashed, immutable) but
   `StaleWhileRevalidate`/`NetworkFirst` for `/api/media/` (owner-MUTABLE files — CacheFirst
   would pin a replaced image forever against the mount's `no-cache` semantics)** — unused
-  themes cost zero install bytes but work offline once used (fixes vapor/cosmos too). G0
-  rider, small.
+  themes cost zero install bytes but work offline once used (fixes vapor/cosmos too).
+  **Council M8 re-slotted this: NOT a G0 rider — the routes land at G5 with their own gate**
+  (they touch the PWA update path; the media caching posture lives there anyway). Only the
+  `stats.html` precache exclusion stays a trivial G0 rider.
 - **Images:** target table — capsule portrait 640×854 WebP q72 (~60–90 KB) · feat/wide
   1160×930/655 · banner 1240×700 q70 · wallpaper 720×1560 q55 (it sits under a scrim —
   quality is cheap) · reel cutout 720×1000 lossy-WebP-with-alpha (the 468 KB PNG → ~50 KB;
@@ -637,9 +759,11 @@ such; the G0/G4 device rounds remain binding for everything Gecko-empirical.*
   below the fold lazy; width/height attrs belt-and-braces over the aspect-ratio boxes (CLS
   already contained). Fade-in-on-load: set the flag from a ref callback checking
   `img.complete` (cached images never fire onLoad late), gate on the UIState motion axis.
-  **Bundled art gets a build step**: `scripts/gen-theme-art.mjs` — a `sharp` twin of
-  `gen-pwa-icons.mjs` (sharp is already a devDependency; vite-imagetools rejected), sources
-  in `art/_src/`, outputs committed. **User roster files get NO server-side re-encode**
+  **Bundled art: NO maintained build script (council M8 — over-engineering for 7 fallback
+  images that change only when the owner swaps art):** a documented one-shot `sharp` CLI line
+  in the theme README produces the committed outputs; the owner's real art path is the runtime
+  directory with no re-encode anyway. (The FONT subset script + guard test stay — justified by
+  the measured 757 KB/72-req avoidance.) **User roster files get NO server-side re-encode**
   (Pillow = new runtime dep + an untrusted-decoder surface): a ~30-line stdlib magic-byte +
   dimension reader in the index endpoint gives the format allowlist AND lets the Conf gallery
   warn ("3000×4257, 3.6 MB — consider resizing").
@@ -651,17 +775,20 @@ such; the G0/G4 device rounds remain binding for everything Gecko-empirical.*
   StaticFiles: extension→type ALLOWLIST (png/jpg/webp only, never `guess_type`), 404
   everything else, `X-Content-Type-Options: nosniff`. Cache: `Cache-Control: no-cache`
   (revalidate — Starlette already emits ETag/Last-Modified and answers 304s at ~200 bytes);
-  `immutable` is reserved for hashed names. **Placement:** under `/api/media/gacha/`,
-  registered before the SPA fallback — the existing `/assets` mount is prod-only and the
-  Vite dev proxy forwards `/api` only, so this is the one placement that works in both
-  profiles with zero vite.config change. **Three build-critical details (Codex round 3):**
+  `immutable` is reserved for hashed names. **Placement (council M9: namespace-generic):**
+  under `/api/media/{ns}/` (gacha = the first namespace), registered before the SPA fallback —
+  the existing `/assets` mount is prod-only and the Vite dev proxy forwards `/api` only, so
+  this is the one placement that works in both profiles with zero vite.config change.
+  **Three build-critical details (Codex round 3):**
   ① Starlette's `StaticFiles(check_dir=True)` RAISES at construction when the directory is
-  missing — **ensure `$CTRLB_HOME/art/gacha/` exists before mounting** (the startup
+  missing — **ensure `$CTRLB_HOME/media/gacha/` exists before mounting** (the startup
   ensure-dir pattern the other `$CTRLB_HOME` workspaces use); ② split the prefix —
-  `/api/media/gacha` (the JSON index/metadata endpoint) vs `/api/media/gacha/files/…` (the
-  mount) — one shared prefix invites route-order collisions; ③ the slice ships backend tests
-  for: missing dir at boot, traversal attempts, the extension allowlist + nosniff header,
-  HEAD + 304 revalidation, and route ordering vs the SPA fallback.
+  `/api/media/{ns}` (the JSON index/metadata endpoint — it also returns the roster ENTRIES +
+  slots, the §5.2 read path; host→entry assignment stays client-side per §5.3) vs
+  `/api/media/{ns}/files/…` (the mount) — one shared prefix
+  invites route-order collisions; ③ the slice ships backend tests for: missing dir at boot,
+  traversal attempts, the extension allowlist + nosniff header, HEAD + 304 revalidation, and
+  route ordering vs the SPA fallback.
 
 ### 10.5 Kit-integration obligations (the fence list — all verified file:line)
 
@@ -670,23 +797,29 @@ such; the G0/G4 device rounds remain binding for everything Gecko-empirical.*
 - **Layouts:** `defaultLayout:"3-tab"` = bar `[fleet,agent,conf]` + utils HOSTED in conf — a
   `bodies.utils` override would silently never render under 3-tab. **The layout fence
   (`layout.test.ts:69-85`): every registered theme must honor EVERY preset** — gacha must
-  genuinely work under 2-tab (conf off-bar → floating NavMenu) and 4-tab (standalone Utils
+  genuinely work under 2-tab (conf off-bar → **a DOCKED direct button; it floats only under
+  the relevant appbar modes — Codex R4-9 corrected the draft's "floating NavMenu"; NavMenu
+  itself stays icon-only, no sub-label rendering required**) and 4-tab (standalone Utils
   under gacha chrome); the user's device-local layout override makes this real, not
-  theoretical. Boot coercion (utils→conf) exists. `TAB_SETS` gets a gacha row (the JP
-  sub-label question Q6b lands there).
+  theoretical. Boot coercion (utils→conf) exists. `TAB_SETS` gets a gacha row (carrying the
+  RULED JP `subLabel`s — 編成/案内/設定 + ツール for Utils, Q8.6b) **+ an exact-copy test
+  asserting all four sub-labels render in 4-tab mode** (Codex R4-9: existing layout tests
+  select by IDs and would pass with every sub-label missing).
 - **Composer skin — the D37 lock RULES this (a draft recommendation here was reversed on
   review):** D37 (DECISIONS) says themes must NOT style composer chrome directly — every new
   composer look becomes a SHARED, **look-named** catalog skin offered to every theme (D51
   reiterates; the plan-pin exception was narrow geometry fidelity, not a bypass of D37's
   composer authority). So: use an existing skin if fidelity permits; otherwise the catalog
-  gains a look-named value (e.g. `arcade` — named for the look, never `gacha`), authored on
-  semantic tokens only, and it legitimately appears in every theme's picker. A theme-scoped
+  gains the look-named value **`arcade`** (the exact name, ruled — named for the look, never
+  `gacha`), authored on semantic tokens only, and it legitimately appears in every theme's
+  picker. A theme-scoped
   exception would need an explicit D52 amendment to D37/D51 — not proposed. Per-theme
   settings persistence is clean (`themeSettings[themeId]` — no bleed).
 - **Lifecycle:** switch-IN is FOUC-safe (`ensureThemeLoaded` awaited before the flip) but
   **cold-boot into persisted gacha is NOT** (ThemeProvider loads in an unawaited effect; the
-  index.html no-FOUC script carries only cosmos colors) — lock decision: add gacha's `--bg`
-  to the documented-mirror allowlist in the boot script, or accept the flash. Switch-OUT
+  index.html no-FOUC script carries only cosmos colors) — **✅ RULED (lock, → D52): gacha's
+  `--bg` joins the documented default-mirror allowlist in the boot script** (the D51 V0
+  pattern; one line, no flash). Switch-OUT
   cleanup ledger: `body[data-wallpaper]`/`[data-oracle]` attrs (set+delete in
   `useLayoutEffect`, the VaporRoot pattern), the reel node, the `#app-scroll` listener, the
   carousel interval, and any lingering `view-transition-name` (a leftover `capsule-shell`
@@ -716,7 +849,45 @@ such; the G0/G4 device rounds remain binding for everything Gecko-empirical.*
 | 3 | M6 scanline: moving + blended on Gecko (the cosmos Gate-B class) | Gecko branch pre-designed; device round decides (§10.3) |
 | 4 | JP font weight (757 KB/72 req naive; 31 MB dist) | **Resolved by design — frozen subset ~140 KB** (§10.4) |
 | 5 | Stored XSS via media Content-Type on the art mount | **Resolved by design — allowlist subclass + nosniff** (§10.4) |
-| 6 | Reel × kit-fade double-animation; reel × banner timer; reel z-rung vs modals | Designed (§10.1/§10.3); z-rung = lock ruling |
+| 6 | Reel × kit-fade double-animation; reel × banner timer; reel z-rung vs modals | Designed (§10.1/§10.3); **z-rung RULED: 45, no `.kit` stacking copy** (§10.1) |
 | 7 | Phone-side image decode (3.6 MB source art ≈ 51 MB bitmap) | Pipeline + gallery warnings (§10.4) |
-| 8 | Cold-boot FOUC into persisted gacha | Lock decision: boot-script mirror vs accepted flash (§10.5) |
+| 8 | Cold-boot FOUC into persisted gacha | **RULED: gacha `--bg` joins the boot-script mirror allowlist** (§10.5) |
 | 9 | 2-tab/4-tab layout fence (must work outside the 3-tab default) | Named obligation + acceptance matrix (§10.5/§7) |
+
+## 11. Council reconciliation (the lock session, 2026-08-02) — every finding ruled
+
+*The council: ONE fresh Opus architecture lens over the full folded plan (verdict: **LOCK WITH
+CHANGES**) + Codex `gpt-5.6-sol` round 4, a delta pass over the newly folded ruling material
+(verdict: **READY WITH FIXES**). The two lenses conflicted nowhere material; both independently
+caught the composer-ledger contradiction. Main-seat rulings below; findings are cited in place
+throughout the plan as "council H#/M#/L#" (Opus) and "Codex R4-#".*
+
+| # | Finding | Ruling |
+|---|---|---|
+| H1 (Opus) | `theme_gacha:` top-level = the banned sibling-map shape; roster read path undefined | **ACCEPTED** — `themes: {gacha: {…}}` (D48 `providers` precedent) + the media index endpoint returns the RESOLVED roster (§5.2) |
+| H2 (Opus) = R4-2 (Codex) | §4.9 ledger still authorized a D37 bypass (theme-scoped composer CSS) vs §10.5's ruling | **ACCEPTED** — ledger row + §3 pinned to the look-named shared `arcade` skin; G3 budgets the cross-theme picker cost |
+| H3 (Opus) | The dossier lost the host ACTION BAR (unspecified UI on the fidelity path; promo-click→wake depends on it) | **ACCEPTED** — G2 gains the action bar as a named fidelity design checkpoint (§4.8) |
+| M4 (Opus) | Shared-kit edits scattered across slices | **ACCEPTED WITH NUANCE** — G0 opens with the kit seams unit (brandText·subLabel·runViewTransition, extraction-then-delta); the composer skin STAYS at G3 (self-contained catalog value; designing it needs the gacha tokens in place) but is ledgered shared-scope with its own review flag |
+| M5 (Opus) = R4-8 (Codex) | Star mode had two config homes | **ACCEPTED** — `starMode` ThemeDef setting is the single home; `stars:` deleted from the YAML (§5.2/§6.1) |
+| M6 (Opus) | Third byte-similar host-detail derivation | **ACCEPTED** — pure derivation extracted to `lib/` at G2; markup stays per-theme (D31 band intact) |
+| M7 (Opus) | Tokens authored across G0–G4 make G6's five variants a repaint | **ACCEPTED** — stylelint no-literal-colors-outside-tokens.css rule at G0 |
+| M8 (Opus) | Two over-engineered riders (SW runtimeCaching at G0; gen-theme-art.mjs) | **ACCEPTED** — routes move to G5 with their own gate; art script becomes a documented one-shot CLI line; font script + guard test STAY (measured justification) |
+| M9 (Opus) | Theme-shaped media mount won't age | **ACCEPTED** — `/api/media/{ns}/` over `$CTRLB_HOME/media/<ns>/`, gacha first; flagged to the owner (the ruled option-(b) SHAPE is unchanged; the literal path moved from `art/gacha/`) |
+| M10 (Opus) | G0/G4 both claimed the reel | **ACCEPTED** — G0 = mechanism/slats/spike; G4 = figure + composition |
+| L11 (Opus) | Reel z-rung must be a D52 ruling | **ACCEPTED** — z 45, no `.kit` stacking-context copy (§10.1) |
+| L12 (Opus) | JP-subset degradation contract unstated | **ACCEPTED** — compile-time constants only; runtime JP falls back to the system stack by design (§10.4) |
+| L13 (Opus) | Base-ramp variants overload `data-accent` slightly | **ACCEPTED AS-IS** — a second selection mechanism would be worse; the picker labels honestly |
+| R4-1 (Codex, HIGH) | The online-only "escape hatch" let an implementer narrow the ruled promo membership | **ACCEPTED, REWORDED rather than deleted** — membership (all hosts) is the ruling; crowding is solved by presentation; narrowing is an OWNER-only eyeball call (the owner explicitly offered to talk about it — deleting the knob entirely would over-rule the owner) |
+| R4-3 (Codex) | hosts>roster had no deterministic rule | **ACCEPTED** — ordered cycling; placeholder reserved for empty roster/unusable file; ONE shared resolver (§5.3) |
+| R4-4 (Codex) | Slide identity by index breaks under membership churn; error-state collapsed the carousel | **ACCEPTED** — key by `"hero"`\|`host.id`, buffered reconciliation, nearest-survivor; background errors keep the last good set (§6.4) |
+| R4-5 (Codex) | Gesture heuristic → full state machine | **ACCEPTED** — idle→pending→horizontal-drag, direction lock, pointercancel/capture-loss/unmount handling, onClickCapture suppression (§6.4) |
+| R4-6 (Codex) | Timer/reel semantics ambiguous | **ACCEPTED** — one-shot timeout, full-cadence restart on ANY interaction end (no stored remainders — leaner than the suggested matrix), banner rejects input during the reel (§6.4) |
+| R4-7 (Codex) | Offscreen promo buttons keyboard-reachable; dots unbounded | **ACCEPTED** — inert inactive slides, labeled dots + `aria-current`, hero-only = no dots/autoplay, >8 slides → counter (§6.4) |
+| R4-9 (Codex) | 2-tab NavMenu description inaccurate; sub-labels untested | **ACCEPTED** — docked-direct correction + the exact 4-tab sub-label test (§10.5) |
+| R4-10 (Codex) | "Frontier grid" reused literally would render live `up/total` Services | **ACCEPTED** — exact value table pinned; Services = CONFIGURED count (§4.8) |
+| R4-11 (Codex) | Stale open-question references survived the fold | **ACCEPTED** — swept (§0, §7 header, §8 residuals, §9); FOUC + z-rung recast as D52 rulings, both now RULED in §10.1/§10.5 |
+
+**Sound per both lenses (no action):** the bespoke-body routing, chat-hook reskin,
+`modes:["dark"]`, the layout-fence posture, the §10.5 contract/e2e enrollment list, the
+two-family palette structure on the shared accent axis, the 5★ fold's consistency, and the
+transform-only banner mechanics.
