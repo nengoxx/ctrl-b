@@ -10,7 +10,7 @@ import { GachaBanner, type BannerSlide } from "./GachaBanner";
 import { GachaCard } from "./GachaCard";
 import { GachaHostDetail } from "./GachaHostDetail";
 import { ART } from "./art";
-import { HERO_KEY, SCENE_KEY_PREFIX } from "./carousel";
+import { HERO_KEY, HOST_KEY_PREFIX, SCENE_KEY_PREFIX } from "./carousel";
 import { GACHA_COPY } from "./copy";
 import { cardShapes, counterText, hostsResolved, rateText } from "./fleet";
 import { artForHost, defaultRoster, heroArt, wideArtForHost } from "./roster";
@@ -109,7 +109,9 @@ export function GachaFleet({ active }: { active: boolean }) {
     })),
     ...hosts.map((host, i) => ({
       kind: "promo" as const,
-      key: host.id,
+      // NAMESPACED, like the scenes above: a bare host id would share the key space with the hero's own
+      // key, so a machine named `hero` collides with the fixed slide.
+      key: HOST_KEY_PREFIX + host.id,
       host,
       art: wideArtForHost(ROSTER, i),
       online: !!host.status?.online,

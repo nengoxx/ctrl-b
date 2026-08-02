@@ -40,6 +40,14 @@ export const HERO_KEY = "hero";
  *  entertains — so reconciliation, autoplay and the inert/gesture logic all stay key-generic. */
 export const SCENE_KEY_PREFIX = "scene:";
 
+/** Promo slides key off their host's id behind this prefix (`host:vault`) for the same reason scenes take
+ *  theirs: a BARE host id shares the key space with `HERO_KEY`, so a machine the owner happens to name
+ *  `hero` would collide with the fixed hero slide — duplicate React keys, and a reconciliation that
+ *  cannot tell the two apart (the Codex LOW carried out of G1's scenes wave, closed here because G2 is
+ *  the next slice to touch the slide plumbing). Namespacing every kind makes the disjointness structural
+ *  rather than a naming convention nobody enforces. */
+export const HOST_KEY_PREFIX = "host:";
+
 export type CarouselPhase = "idle" | "pending" | "drag";
 
 export interface CarouselState {

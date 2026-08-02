@@ -152,6 +152,26 @@ describe("the slide set (§6.4)", () => {
     expect(promos(container)).toHaveLength(2);
   });
 
+  it("a machine named `hero` gets its own slide — keys are NAMESPACED, not bare ids", () => {
+    // The carried Codex LOW from G1's scenes wave: promo keys were bare host ids, so a host literally
+    // named `hero` collided with HERO_KEY — duplicate React keys, and a reconciliation that could not tell
+    // the fixed hero from the machine. React reports the collision on console.error, so the absence of
+    // that report is the assertion, alongside both slides surviving.
+    const errors: unknown[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => {
+      errors.push(a);
+    });
+    setFleet({ hosts: [host("hero", true)] });
+    const { container } = render(<GachaFleet active />);
+    spy.mockRestore();
+
+    expect(errors).toEqual([]);
+    expect(slides(container)).toHaveLength(SCENERY + 1);
+    expect(promos(container)).toHaveLength(1);
+    expect(slides(container)[0].textContent).toContain("PRIZE POOL"); // the fixed hero still stands
+    expect(container.querySelector('[aria-label="open hero dossier, online"]')).not.toBeNull();
+  });
+
   it("resolves promo art through the SHARED resolver, at the host's display index", () => {
     const { container } = render(<GachaFleet active />);
     const imgs = [...container.querySelectorAll<HTMLImageElement>(".gc-slide img")];
