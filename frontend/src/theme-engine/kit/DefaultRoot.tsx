@@ -77,6 +77,9 @@ interface Props {
   /** The appbar brand-MARK slot (D51 §4.1), threaded to KitAppBar — the theme's leading brand mark (vapor's
    *  gradient-ring lozenge). Omitted → the Kit default (its accent dot). */
   brandMark?: ReactNode;
+  /** The appbar brand-TEXT slot (D52 / GACHA_PLAN §4.3), threaded to KitAppBar — the theme's own wordmark
+   *  (gacha's katakana). Omitted → the Kit default (the literal `ctrl·b`). */
+  brandText?: ReactNode;
 }
 
 // The Kit's DEFAULT id→body map (component space — this is the "lazy COMPONENTS" home the pure `tabs.ts`
@@ -96,6 +99,7 @@ export function DefaultRoot({
   composerSlots,
   brandMeta,
   brandMark,
+  brandText,
 }: Props) {
   // The headless sections controller (D35): the full section list (mount loop), the resolved layout, the
   // on-/off-bar/hosted partitions, the active section, and the shared `navigate` chokepoint. `active` is
@@ -248,7 +252,12 @@ export function DefaultRoot({
       >
         <div className="kit-scroll" id="app-scroll" ref={scrollRef}>
           {appbarShown(appbarMode) && (
-            <KitAppBar brandMeta={brandMeta} brandMark={brandMark} appbarMode={appbarMode} />
+            <KitAppBar
+              brandMeta={brandMeta}
+              brandMark={brandMark}
+              brandText={brandText}
+              appbarMode={appbarMode}
+            />
           )}
           {/* Data-driven body mount (D35): every non-hosted section stays keep-mounted + `active`-gated;
               hosted sections (utils→conf) render inside their host body, not here. A `lazy` body mounts only

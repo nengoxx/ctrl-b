@@ -29,6 +29,12 @@ export interface TabDef {
   id: TabId;
   glyph: string;
   lbl: string;
+  // Optional SECOND label line under `lbl` on the tab bar (D52 / GACHA_PLAN §4.9 ledger — gacha's ruled
+  // Japanese nav sub-labels 編成/案内/設定/ツール). Purely additive DATA, exactly like `lbl`: a theme that
+  // omits it renders byte-identically (KitNavBar emits no node at all), and the CSS-attribute alternative was
+  // rejected because labels are data, not decoration. The floating NavMenu stays icon-only — it does NOT
+  // render this.
+  subLabel?: string;
   hasComposer: boolean;
   // Generic lazy-mount flag (D35 §F0) — generalizes the one-off Conf latch. A `lazy` body is mounted only
   // after its section first becomes active, then kept mounted (draft state survives), and DefaultRoot wraps

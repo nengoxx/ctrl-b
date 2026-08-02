@@ -82,6 +82,10 @@ export function KitNavBar({ onPrefetch }: Props) {
               {t.glyph}
             </span>
             <span className="lbl">{t.lbl}</span>
+            {/* Optional per-theme SECOND label line (D52 — gacha's JP sub-labels). Emitted only when the
+                theme's TabDef declares one, so every other theme's bar DOM is unchanged. Not aria-hidden:
+                it is real label text, and the button's accessible name is its concatenated content. */}
+            {t.subLabel !== undefined && <span className="sub">{t.subLabel}</span>}
           </button>
         );
       })}

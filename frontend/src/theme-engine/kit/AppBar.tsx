@@ -17,15 +17,20 @@ import type { AppbarMode } from "../../store/ui";
 // dot (what every theme shows today). A theme passes a NODE — vapor's gradient-ring lozenge (D51 §4.1 / R15).
 // The Kit deliberately knows nothing about what the node is: no `loz` enum, no ring/logo/spin knowledge here;
 // whatever the theme renders, this slot just leads the brand row.
+// `brandText` = the THIRD member of the same slot family (D52 / GACHA_PLAN §4.3): the brand WORDMARK itself.
+// The kit row rendered the literal `ctrl·b` hardcoded; gacha's ruled katakana wordmark needs it fillable.
+// Omitted → that same literal, so every other theme renders byte-identically.
 // `appbarMode` is threaded so the `transparent` mode can stamp a `.transparent` modifier — kit.css null-paints
 // the bar (no fill/border/shadow/backdrop-filter) + squares its icon buttons in that mode only.
 export function KitAppBar({
   brandMeta,
   brandMark,
+  brandText,
   appbarMode,
 }: {
   brandMeta?: ReactNode;
   brandMark?: ReactNode;
+  brandText?: ReactNode;
   appbarMode?: AppbarMode;
 }) {
   const { ttsAuto, ttsConfigured, toggleAutoTts } = useAppChrome();
@@ -38,7 +43,7 @@ export function KitAppBar({
     <div className={"kit-appbar" + (appbarMode === "transparent" ? " transparent" : "")}>
       <div className="kit-brand">
         {brandMark ?? <span className="dot" aria-hidden />}
-        ctrl·b
+        {brandText ?? "ctrl·b"}
         <span className="meta">{brandMeta ?? "dashboard"}</span>
       </div>
       {conn !== "connected" && (

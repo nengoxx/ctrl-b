@@ -8,6 +8,8 @@
 // captured as both before+after → no animation); gated on the app's `ui.motion` flag (not the OS
 // media query — CLAUDE.md) so the cross-fade can't leak under reduced-motion; no view-transition-names
 // (a theme swap is a whole-page cross-fade — naming elements only adds cost + a duplicate-name skip).
+// Those mechanics now live in the SHARED `lib/viewTransition.ts#runViewTransition` (D52 / GACHA_PLAN
+// §10.1) — this module owns the switch POLICY (load, supersede, dirty-guard) and delegates the transition.
 //
 // NOTE: vapor, minimal, and cosmos are registered + selectable, so this path IS live — picking a
 // different skin in Conf runs the cross-fade. The Conf picker still guards re-picking the SAME skin
@@ -15,23 +17,13 @@
 // below captures the real new theme, not a Suspense fallback. Within-theme accent/mode changes are
 // instant `setUI` (not a skin switch → no cross-fade).
 
-import { flushSync } from "react-dom";
-
 import { stableStringify } from "../lib/stableStringify";
-import { getUI, setUI, type Motion, type Perf, type ThemeSettingsMap } from "../store/ui";
+import { runViewTransition } from "../lib/viewTransition";
+import { setUI, type Motion, type Perf, type ThemeSettingsMap } from "../store/ui";
 import { isAnyDirty } from "../store/dirty";
 import { pushToast } from "../store/toast";
 import { registry } from "./registry";
 import type { Mode, ThemeId } from "./types";
-
-// Minimal structural type so this compiles regardless of the TS DOM lib version (the API may not be in
-// older lib.dom.d.ts). Compatible with the real typing where present.
-interface ViewTransitionLike {
-  ready: Promise<void>;
-}
-type VTDocument = Document & {
-  startViewTransition?: (cb: () => void) => ViewTransitionLike;
-};
 
 // Cache the per-theme load promise so a CSS/font bundle is fetched+activated at most once.
 const loaded = new Map<ThemeId, Promise<void>>();
@@ -160,26 +152,19 @@ async function runSwitch(
     return "refused-dirty";
   }
 
-  const apply = () =>
-    flushSync(() =>
-      setUI({
-        theme: next,
-        mode: target.mode,
-        accent: target.accent,
-        ...(target.motion !== undefined && { motion: target.motion }),
-        ...(target.perf !== undefined && { perf: target.perf }),
-        ...(target.themeSettings !== undefined && { themeSettings: target.themeSettings }),
-      }),
-    );
-
-  const doc = document as VTDocument;
-  const start = doc.startViewTransition?.bind(doc);
-  if (getUI().motion === "reduced" || !start) {
-    apply(); // reduced-motion or unsupported → instant swap
-    return "applied";
-  }
-  const t = start(apply);
-  t.ready.catch(() => {}); // swallow the skip/TimeoutError (the DOM is already applied)
+  // The feature-detect + reduced-motion bypass + flushSync trio now lives in `lib/viewTransition.ts` (D52 —
+  // one shared wrapper, so the gacha tab transition can't grow a second hand-rolled copy). No `type` is
+  // passed: a theme swap is the UNSTAMPED default kind, exactly as this block behaved before the extraction.
+  runViewTransition(() =>
+    setUI({
+      theme: next,
+      mode: target.mode,
+      accent: target.accent,
+      ...(target.motion !== undefined && { motion: target.motion }),
+      ...(target.perf !== undefined && { perf: target.perf }),
+      ...(target.themeSettings !== undefined && { themeSettings: target.themeSettings }),
+    }),
+  );
   return "applied";
 }
 
