@@ -12,7 +12,34 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-02 — 🏁 **PHASE 16 / D51 VAPOR ASSIMILATION COMPLETE, ALL PUSHED through `b4c2db6`**)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-02 late morning — **post-Phase-16 housekeeping + two owner asks SHIPPED; NEXT = the H1 GACHA DESIGN CONVERSATION**)
+> **A short owner-driven session (rulings + two small slices), all pushed:**
+> **① v1.5.0 RULED: stays RESERVED for the gacha theme (H1)** — Phase 16 does NOT take it; the owner
+> also **deferred any prod update until gacha lands** (prod stays v1.4.6; no tag cut — Phase 16 +
+> this session ride the post-gacha release, which is the natural v1.5.0). **② Gacha prototypes
+> BANKED `37144c0`:** the owner's standalone round is FINISHED — the FINAL prototype is
+> `design/prototypes/gacha/uploads/prot/capsule-arcade/index.html` (the rest = prior iterations,
+> provenance); verified clean (no manifests/lockfiles — the Dependabot class stays dead; mock
+> hosts.json; reference-art screenshots only); ROADMAP §H1 pinned to it. **③ The TTS flash
+> rebuilt kit-wide `5c352ed`** (owner: "as it was"): `KitTtsFlash` in kit/AppBar.tsx — faithful
+> 1.1 s pill on kit tokens, prev-ref (kills the old latent StrictMode first-paint flash),
+> reduced-motion gate, mounted UNCONDITIONALLY in DefaultRoot's overlay zone (Codex R1 MED: the
+> Conf switch must echo under off/minimal too), z 41 + the floating-launcher `:has` yield (its
+> confirm-round LOW); 5 unit tests; the ledger's V4 "no kit counterpart" delta CLOSED. **④ The
+> Chrome-Android favicon fix, same commit:** bookmark/home-screen tiles ignore the .ico and need
+> PNG `rel=icon` 48+192 (Firefox reads the .ico — exactly the owner's symptom); `icon-48.png` via
+> the gen-pwa-icons fan-out + two index.html links. NOTE: reaches the owner's phone only at the
+> next deploy, and Chrome refreshes a bookmark's tile on the next visit — re-add the bookmark if
+> stale. **⑤ Swap/tmpfs review flag CLOSED by owner** (rebooted; don't re-raise unless it bites —
+> the TMPDIR discipline stands). Method: full FE gate green per commit (937 vitest, +5); Codex
+> round + confirm round on the slice (1 MED + 3 LOW, all folded).
+> **▶ NEXT SESSION (possibly THIS one continuing): the gacha design conversation** — start from the
+> final prototype + ROADMAP §H1 (kit-based, the frontier playbook: FRONTIER_PLAN as template, design
+> lock → slices → device gates) + THEME_ENGINE §14.11/§14.15.1/§15 + D37. Open owner threads
+> carried: the V6 eyeball ("everything seems to look good" — formal round optional) · the TTS-flash
+> device eyeball (dev units) · ledger §7.1 minimal-chrome overlap (needs a kit-geometry slice).
+>
+> ## ▶ PREVIOUS STATE (2026-08-02 — 🏁 **PHASE 16 / D51 VAPOR ASSIMILATION COMPLETE, ALL PUSHED through `b4c2db6`**)
 > **The session's arc (one continuous lock→build session, 2026-08-01→02):** council round on the
 > draft plan (Codex correctness + Opus architecture lenses, both LOCK WITH CHANGES → reconciliation
 > R1–R30 in the plan §7, both confirm rounds clean) → owner §5 answers code-verified (chat = kit
