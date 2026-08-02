@@ -816,6 +816,10 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
   iteration kept for provenance. The design session starts FROM the final prototype + the real
   reference images beside it (per the use-real-reference-images rule). Reference-only like all of
   `design/prototypes/` — don't import from it.
+- **Plan DRAFTED (2026-08-02): [`GACHA_PLAN.md`](./GACHA_PLAN.md)** — full prototype inventory +
+  the owner's requirements round (R1–R10) pinned + the kit translation map (seam-verified + two
+  Codex rounds). **This is now Phase 17 in TODO.md**; the lock session takes the plan's §8 owner
+  questions → council → D52.
 - **Open (for the design session):** how the capsule-arcade look maps onto the kit (tokens + axes
   vs any bespoke body layer, per the budget ceiling above); whether hosts get the character-card
   treatment (the cosmos planet precedent says a bespoke Fleet body is viable); art

@@ -1323,6 +1323,21 @@ every ladder waiver retired.
       `CONTRACT_WAIVERS === {}`), the `layouts:["4-tab"]` **section waiver RETIRED** with real 2-/3-tab
       navigation+hosting tests, the **lazy flip measured (5.3 KiB gz) and DROPPED**, ledgers + docs closed.
 
+## Phase 17 — The gacha theme ("Capsule Arcade", H1) — **plan DRAFTED 2026-08-02, design NOT locked · spec = [`GACHA_PLAN.md`](./GACHA_PLAN.md)**
+
+The owner's FINISHED standalone prototype
+(`design/prototypes/gacha/uploads/prot/capsule-arcade/`, banked `37144c0`) becomes the 5th built
+kit theme. The prep session produced the full plan (prototype inventory + the owner's R1–R10
+requirements pinned + kit translation map, seam-verified + two Codex rounds). **The lock session
+runs first:** the owner's §8 answers (10 questions) → council round → **D52** in DECISIONS.md →
+then build G0–G6 per the plan's §7 ladder (G0 = the settle-everything slice: registration,
+3-tab layout, tokens, fonts spike, the tab-transition spike, roster schema, star config home).
+v1.5.0 is RESERVED for this theme's release.
+
+- [ ] Lock session: §8 answers → council → D52 recorded
+- [ ] G0–G6 per `GACHA_PLAN.md` §7 (each: Opus build → main-seat audit → Codex → owner eyeball)
+- [ ] Release as v1.5.0 (runbook §Release; prod currently v1.4.6 by owner ruling)
+
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.

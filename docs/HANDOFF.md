@@ -33,11 +33,30 @@
 > stale. **⑤ Swap/tmpfs review flag CLOSED by owner** (rebooted; don't re-raise unless it bites —
 > the TMPDIR discipline stands). Method: full FE gate green per commit (937 vitest, +5); Codex
 > round + confirm round on the slice (1 MED + 3 LOW, all folded).
-> **▶ NEXT SESSION (possibly THIS one continuing): the gacha design conversation** — start from the
-> final prototype + ROADMAP §H1 (kit-based, the frontier playbook: FRONTIER_PLAN as template, design
-> lock → slices → device gates) + THEME_ENGINE §14.11/§14.15.1/§15 + D37. Open owner threads
-> carried: the V6 eyeball ("everything seems to look good" — formal round optional) · the TTS-flash
-> device eyeball (dev units) · ledger §7.1 minimal-chrome overlap (needs a kit-geometry slice).
+> **⑥ THE GACHA PREP SESSION RAN (same session, owner-directed): [`GACHA_PLAN.md`](./GACHA_PLAN.md)
+> DRAFTED — Phase 17 in TODO.** The owner gave the requirements round (pinned as the plan's §2
+> R1–R10: fidelity mandate · replaceable characters/background/transition-figure (smaller) · a
+> config ROSTER gallery not linked to PCs · services-driven 1–5 stars w/ pink-gold top tiers +
+> an optional 3-star mode · wallpaper + sticky-oracle ON by default · the rate pill live from
+> online-host count · captions/JP kept · more dark-blue palette options). Method: main seat read
+> ALL FIVE prototype files (357 ln) + drafted; ONE Opus seam pass (11 seams VERIFIED file:line —
+> key verdicts: bespoke agent BODY = the oracle-header answer, no kit extension; `svcByHost` =
+> the star input; only PING is real of the dossier's 4 metrics; NO user-image serving exists;
+> ThemeId is a closed union); Codex round 1 = **NOT READY, 4 HIGH** (reel ordering vs the kit nav
+> chokepoint + VT top-layer → now a G0 SPIKE; the single-scroller/bottom-pin oracle mechanics;
+> roster conflation → split §5.1–5.5 + the read-only-dir middle option; the FALSE "authenticated"
+> — the app has NO app-layer auth, tailnet = the boundary, media threat-model → D52) + 4 MED/LOW
+> (3-tab `defaultLayout` at G0 · star data semantics/config home · the shared-extension ledger
+> §4.9 · inventory precision) — ALL FOLDED; Codex confirm = 8/8 RESOLVED + 3 nits, fixed.
+> **▶ NEXT SESSION — the LOCK session (clean, per the owner's directive):** 1. Walk the owner
+> through **GACHA_PLAN §8's 10 questions** (roster serving (b) recommended · star ladder ·
+> palette variants · brand wordmark · card geometry · reel size …). 2. Council round on the
+> plan (the D51 shape: Codex + an independent lens). 3. Record **D52** in DECISIONS.md (incl.
+> the media threat-model paragraph if roster option (c) is chosen). 4. Build **G0** (the
+> settle-everything slice — registration/3-tab/tokens/fonts spike/transition spike/roster
+> schema/star config home) then G1+ per §7, owner eyeball between slices. Carried owner
+> threads: the TTS-flash device eyeball (dev units running) · ledger §7.1 minimal-chrome
+> overlap · **v1.5.0 = this theme's release** (prod stays v1.4.6 until then, owner ruling).
 >
 > ## ▶ PREVIOUS STATE (2026-08-02 — 🏁 **PHASE 16 / D51 VAPOR ASSIMILATION COMPLETE, ALL PUSHED through `b4c2db6`**)
 > **The session's arc (one continuous lock→build session, 2026-08-01→02):** council round on the
