@@ -1,3 +1,6 @@
+/// <reference types="node" />
+// ^ the ConfTab source-level guard below reads the file from disk (fs/path/process); the tests tsconfig
+//   pins `types:["vitest"]`, so node globals are pulled in explicitly here (the themeContract precedent).
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -88,5 +91,63 @@ describe("themeSettingsSpec", () => {
     expect(spec?.heroOn).toMatchObject({ type: "switch", default: true });
     expect(spec?.composer).toMatchObject({ type: "seg", default: "sheet" });
     expect(spec?.planPlacement).toMatchObject({ type: "seg", default: "pinned" });
+  });
+});
+
+// ── gacha's declared schema (D52 G0) — the shared kit axes first (the cosmos/vapor ordering convention),
+//    then the theme's own three. Order IS the contract: ConfTab auto-renders the keys as declared. ──
+describe("themeSettingsSpec — gacha", () => {
+  it("declares the four kit axes then starMode / wallpaper / oracle, in that order", () => {
+    expect(Object.keys(themeSettingsSpec("gacha") ?? {})).toEqual([
+      "composer",
+      "composerSkin",
+      "planPlacement",
+      "outlines",
+      "starMode",
+      "wallpaper",
+      "oracle",
+    ]);
+  });
+
+  it("ships the RULED defaults: 5★ (Q8.4) and R6's two flipped-ON switches", () => {
+    const spec = themeSettingsSpec("gacha");
+    // Q8.4 overrode the 3★ recommendation: emma already carries 5–6 configured services, so the flagship
+    // rolls a full row on day one. The rate pill follows the mode (`★5 RATE` by default).
+    expect(spec?.starMode).toMatchObject({ type: "seg", default: "five" });
+    expect(spec?.starMode.type === "seg" && spec.starMode.options.map((o) => o.val)).toEqual([
+      "five",
+      "three",
+    ]);
+    // R6: the PROTOTYPE ships both OFF; the theme flips them ON — a deliberate, owner-ruled difference.
+    expect(spec?.wallpaper).toMatchObject({ type: "switch", default: true });
+    expect(spec?.oracle).toMatchObject({ type: "switch", default: true });
+  });
+
+  it("resolves a corrupt persisted value back to the declared default", () => {
+    expect(resolveThemeSetting("gacha", "starMode", "seven")).toBe("five");
+    expect(resolveThemeSetting("gacha", "wallpaper", "on")).toBe(true); // string ≠ switch → default
+    expect(resolveThemeSetting("gacha", "starMode", "three")).toBe("three"); // a real value survives
+  });
+});
+
+// ── The Conf auto-render must RESOLVE, not read raw (the pre-existing LOW found in the D52 §10.5 pass).
+//    A source-level check, deliberately: the failure mode is a MISSING call, which reading the source
+//    proves directly, whereas rendering the lazy Conf chunk with a corrupt persisted value to observe a
+//    stale label would be a heavy, flaky test of the same one line. Same shape (and same reasoning) as
+//    themeContract.test.ts's "theme Roots ↔ the group-scroll handoff" guard. ──
+describe("ConfTab's per-theme settings rows ↔ resolveThemeSetting", () => {
+  it("resolves the stored override through the validator instead of displaying it raw", async () => {
+    // Namespace imports, not destructured ones: pulling `readFileSync` off the module object trips
+    // @typescript-eslint/unbound-method.
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(path.resolve(process.cwd(), "src/tabs/ConfTab.tsx"), "utf8");
+    expect(
+      /resolveThemeSetting\(\s*theme\s*,\s*key\s*,\s*themeVals\?\.\[key\]\s*\)/.test(src),
+      "ConfTab's theme-settings auto-render must read " +
+        "`resolveThemeSetting(theme, key, themeVals?.[key]) ?? field.default` — reading `themeVals?.[key]` " +
+        "raw DISPLAYS a corrupt/stale synced value while every consumer has already coerced it to the " +
+        "default, so the row lies about the state of the app.",
+    ).toBe(true);
   });
 });

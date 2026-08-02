@@ -59,8 +59,20 @@ export default defineConfig({
         // The plugin default (js/css/html) PLUS vapor's bundled logo (D51 V4 close-out, sweep M2):
         // with cosmos the default, a fresh PWA gone offline may never have fetched the logo before
         // the first switch to vapor — without this entry the mark renders blank. Targeted glob, not
-        // image-wide: the cosmos art set stays runtime-cached, not precached.
+        // image-wide.
+        //
+        // CORRECTION (D52 §10.4, verified against the built artifact): the old note here claimed the
+        // cosmos art set "stays runtime-cached". It is not — this repo has NO `runtimeCaching` rules at
+        // all, so every theme's art and woff2 rely on the plain browser HTTP cache when offline. The
+        // repo's first `runtimeCaching` routes (woff2 CacheFirst, `/api/media/` StaleWhileRevalidate —
+        // never CacheFirst, those files are owner-mutable) land at G5 with their own gate, per council M8.
+        //
+        // `dist/stats.html` is the rollup-visualizer BUILD REPORT (~290 KB), not part of the app — the
+        // bare `**/*.html` sweeps it into the precache manifest, where it costs every install its size
+        // for a file nothing ever requests. Excluded here rather than by narrowing the html glob, so a
+        // real future .html entry point is still picked up automatically.
         globPatterns: ["**/*.{js,css,html}", "assets/vapor-logo-*.png"],
+        globIgnores: ["**/stats.html"],
       },
     }),
   ],

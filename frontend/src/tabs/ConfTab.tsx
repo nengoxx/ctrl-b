@@ -52,6 +52,7 @@ import { pushToast } from "../store/toast";
 import { HOSTED_UTILS_GROUP_ID } from "../theme-engine/layout";
 import { registry, registeredThemes } from "../theme-engine/registry";
 import { defaultSwitchTarget } from "../theme-engine/resolve";
+import { resolveThemeSetting } from "../theme-engine/settings";
 import { switchTheme } from "../theme-engine/switchTheme";
 import type { LayoutId, Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
 import { setThemeSetting, setUI, useUISlice, type AppbarMode } from "../store/ui";
@@ -2405,7 +2406,13 @@ export function ConfTab({ active }: Props) {
               values resolve against the theme's declared defaults. A new theme's options appear here with
               zero Conf change. */}
           {settingsSpec.map(([key, field]) => {
-            const value = themeVals?.[key] ?? field.default;
+            // Route the stored override through the SAME validator the app resolves with
+            // (`resolveThemeSetting`) instead of reading it raw: a corrupt/stale synced value — a seg id
+            // this build no longer declares, a string where a switch is expected — otherwise DISPLAYED
+            // here while every consumer had already coerced it to the default, so the row lied about the
+            // state of the app (a pre-existing LOW found in the D52 §10.5 pass). The `?? field.default`
+            // tail stays for the impossible case of an undeclared key reaching this loop.
+            const value = resolveThemeSetting(theme, key, themeVals?.[key]) ?? field.default;
             return (
               <SettingRow key={key} label={field.label} desc={field.desc}>
                 {field.type === "switch" ? (
