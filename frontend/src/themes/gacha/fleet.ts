@@ -116,6 +116,24 @@ export function openLabel(name: string, online: boolean): string {
  *  thing to the same sheet, so they say the same thing — a second wording would read as a second action. */
 export const CLOSE_DOSSIER_LABEL = "Close unit dossier";
 
+/** The dossier PORTRAIT's own name, once it becomes a real button (the art showcase, owner request
+ *  2026-08-02). An ACTION, phrased like one — the sibling of `openLabel` above, and deliberately not the
+ *  same string as the surface it opens (`artViewLabel`): a control says what it does, a dialog says what
+ *  it is. It carries the machine's name for the same reason the capsule's does — a screen reader hearing
+ *  "show art full screen" alone could not tell WHICH unit's dossier it is in. */
+export function showArtLabel(name: string): string {
+  return `show ${name} art full screen`;
+}
+
+/** The full-screen art view's own accessible name (the `role="dialog"` label). */
+export function artViewLabel(name: string): string {
+  return `${name} art, full screen`;
+}
+
+/** The art view's dismiss label. Its own wording rather than `CLOSE_DOSSIER_LABEL`: this closes the ART,
+ *  and the dossier it stands on stays open behind it — one name per thing dismissed. */
+export const CLOSE_ART_LABEL = "Close art view";
+
 /** A banner SCENE slide's display line: its name from the ruled `SCENE_TITLES` pool, picked by POSITION
  *  and never by filename. Cycling means a folder of any size is titled deterministically — the ninth drop
  *  wraps to the pool's head rather than falling back to a number — and the owner authors nothing per

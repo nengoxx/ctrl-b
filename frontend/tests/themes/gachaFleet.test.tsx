@@ -22,7 +22,7 @@ import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
 import { AUTOPLAY_MS, HERO_KEY, SNAP_MS } from "../../src/themes/gacha/carousel";
 import { ART } from "../../src/themes/gacha/art";
 import { sceneTitle } from "../../src/themes/gacha/fleet";
-import { defaultRoster, wideArtForHost } from "../../src/themes/gacha/roster";
+import { artForHost, defaultRoster, wideArtForHost } from "../../src/themes/gacha/roster";
 import type { Host } from "../../src/types";
 
 const host = (id: string, online: boolean, over: Partial<Host> = {}): Host => ({
@@ -1068,6 +1068,255 @@ describe("the image morph (M3)", () => {
     });
     expect(dossierName()).toBe("pegasus"); // applied instantly, no callback to wait for
     expect(cardName(container, 0)).toBe("");
+  });
+});
+
+// ── THE ART SHOWCASE (owner request 2026-08-02) — the dossier portrait, full screen ──────────────────
+// The overlay's own markup + keyboard live in `GachaArtShowcase`; what is pinned here is everything that
+// is a RELATIONSHIP: it opens from the portrait, it dismisses without taking the dossier with it, it
+// cooperates with the two dismissal channels the sheet already owns (document Escape, the tap-outside
+// listener), and its View-Transition prep leaves nothing behind for the next capsule morph.
+describe("the art showcase", () => {
+  const cards = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-card")];
+  const view = (): HTMLElement | null => document.querySelector<HTMLElement>(".gc-art-view");
+  const portrait = (): HTMLElement => document.querySelector<HTMLElement>(".gc-art-btn")!;
+  const avatarName = (): string =>
+    document
+      .querySelector<HTMLElement>(".gc-dossier .avatar")!
+      .style.getPropertyValue("view-transition-name");
+  /** Open a dossier (plain — jsdom has no `startViewTransition` unless a test installs one) and tap the
+   *  portrait it renders. */
+  const openArt = (c: HTMLElement, i = 0): void => {
+    act(() => {
+      fireEvent.click(cards(c)[i]);
+    });
+    act(() => {
+      fireEvent.click(portrait());
+    });
+  };
+
+  it("opens from the portrait: a labelled dialog, focus on the close", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[1]);
+    });
+    expect(view()).toBeNull();
+    act(() => {
+      fireEvent.click(portrait());
+    });
+    const v = view()!;
+    expect(v.getAttribute("role")).toBe("dialog");
+    expect(v.getAttribute("aria-label")).toBe("atlas art, full screen");
+    // the SAME resolved entry the dossier's portrait is cropping — one resolver, two surfaces
+    expect(v.querySelector<HTMLImageElement>("img")!.src).toContain(
+      artForHost(defaultRoster(), 1)!.url,
+    );
+    // …and no focal crop: this surface exists to UNDO the portrait's
+    expect(v.querySelector<HTMLImageElement>("img")!.style.objectPosition).toBe("");
+    expect(document.activeElement).toBe(v.querySelector(".gc-art-close"));
+  });
+
+  it("a tap ANYWHERE closes the art — and leaves the dossier standing", () => {
+    // Two guarantees in one gesture: the overlay's own dismissal, and the dossier's tap-outside listener
+    // exempting it (without that exemption the same click would dismiss the sheet underneath).
+    const { container } = render(<GachaFleet active />);
+    openArt(container);
+    act(() => {
+      fireEvent.click(view()!);
+    });
+    expect(view()).toBeNull();
+    expect(document.body.dataset.sheet).toBe("open");
+    expect(dossierName()).toBe("pegasus");
+    // focus goes back to the control that opened it
+    expect(document.activeElement).toBe(portrait());
+  });
+
+  it("the close corner closes it exactly once, and the dossier survives that too", () => {
+    const { container } = render(<GachaFleet active />);
+    openArt(container);
+    act(() => {
+      fireEvent.click(document.querySelector<HTMLElement>(".gc-art-close")!);
+    });
+    expect(view()).toBeNull();
+    expect(document.body.dataset.sheet).toBe("open");
+  });
+
+  it("ESCAPE closes the ART, not the dossier under it (the sheet's defaultPrevented convention)", () => {
+    const { container } = render(<GachaFleet active />);
+    openArt(container);
+    act(() => {
+      fireEvent.keyDown(document.activeElement!, { key: "Escape", bubbles: true });
+    });
+    expect(view()).toBeNull();
+    expect(document.body.dataset.sheet).toBe("open"); // the sheet's own Escape listener stood down
+    // …and a SECOND Escape, with the art gone, now reaches the sheet — the layers unwind in order.
+    act(() => {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+    });
+    expect(document.body.dataset.sheet).toBeUndefined();
+  });
+
+  it("keeps the keyboard on its own layer, so that Escape can never miss", () => {
+    const { container } = render(<GachaFleet active />);
+    openArt(container);
+    const close = document.querySelector<HTMLElement>(".gc-art-close")!;
+    act(() => {
+      fireEvent.keyDown(close, { key: "Tab", bubbles: true });
+    });
+    expect(document.activeElement).toBe(close);
+  });
+
+  it("closing the DOSSIER takes the art with it", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    openArt(container);
+    act(() => {
+      fireEvent.click(document.querySelector<HTMLElement>(".gc-dossier-close")!);
+    });
+    expect(view()).toBeNull();
+    // …and so does leaving the tab, which is what keeps the overlay and the reel sweep off the screen at
+    // the same time (the z-rung's premise).
+    rerender(<GachaFleet active />);
+    openArt(container);
+    rerender(<GachaFleet active={false} />);
+    expect(view()).toBeNull();
+  });
+
+  it("opens with the CSS fade when no transition can carry it", () => {
+    // jsdom has no `startViewTransition` at all, so this is the plain path by construction — the flag the
+    // overlay reads must say so, and no morph prep may be applied to the avatar.
+    const { container } = render(<GachaFleet active />);
+    openArt(container);
+    expect(view()!.className).toContain("fade");
+    expect(avatarName()).toBe("");
+  });
+});
+
+// The showcase's MORPH — the capsule morph's machinery one link further along the chain (portrait →
+// full-screen art), driven through the same deferred `startViewTransition` the M3 races use.
+describe("the art showcase's morph", () => {
+  const cards = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-card")];
+  const portrait = (): HTMLElement => document.querySelector<HTMLElement>(".gc-art-btn")!;
+  const avatarName = (): string =>
+    document
+      .querySelector<HTMLElement>(".gc-dossier .avatar")!
+      .style.getPropertyValue("view-transition-name");
+
+  function deferVT() {
+    const pending: (() => void)[] = [];
+    const start = vi.fn((cb: () => void) => {
+      pending.push(cb);
+      return { ready: Promise.resolve(), finished: Promise.resolve() };
+    });
+    (document as { startViewTransition?: unknown }).startViewTransition = start;
+    return {
+      start,
+      pending,
+      run: (i: number) => {
+        act(() => {
+          pending[i]();
+        });
+      },
+    };
+  }
+  afterEach(() => {
+    delete (document as { startViewTransition?: unknown }).startViewTransition;
+  });
+
+  /** Open a dossier under the mock and land its callback, leaving a portrait to tap. */
+  const openDossier = (c: HTMLElement, vt: ReturnType<typeof deferVT>): void => {
+    act(() => {
+      fireEvent.click(cards(c)[0]);
+    });
+    vt.run(0);
+  };
+
+  it("mounts the overlay INSIDE the update callback and suppresses the avatar for the new capture", () => {
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    openDossier(container, vt);
+    act(() => {
+      fireEvent.click(portrait());
+    });
+    // The OLD capture happens after the call returns: the avatar must still be carrying the CSS name
+    // (nothing inline), and the overlay must not exist yet.
+    expect(vt.start).toHaveBeenCalledTimes(2);
+    expect(avatarName()).toBe("");
+    expect(document.querySelector(".gc-art-view")).toBeNull();
+
+    act(() => {
+      vt.pending[1]();
+      // …asserted INSIDE the commit, because the browser captures the new state one frame after this
+      // callback returns: the destination has to be there NOW, and it has to be the only `capsule-shell`.
+      expect(document.querySelector(".gc-art-view img")).not.toBeNull();
+      expect(avatarName()).toBe("none");
+    });
+    expect(document.querySelector(".gc-art-view")!.className).not.toContain("fade");
+  });
+
+  it("closes on the same type, releasing the avatar inside the callback (the reverse morph)", () => {
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    openDossier(container, vt);
+    act(() => {
+      fireEvent.click(portrait());
+    });
+    vt.run(1);
+    act(() => {
+      fireEvent.click(document.querySelector<HTMLElement>(".gc-art-view")!);
+    });
+    // The old capture of the CLOSE still sees the full-screen image named and the avatar suppressed…
+    expect(vt.start).toHaveBeenCalledTimes(3);
+    expect(document.querySelector(".gc-art-view")).not.toBeNull();
+    expect(avatarName()).toBe("none");
+    act(() => {
+      vt.pending[2]();
+      // …and its new state has the image gone and exactly one `capsule-shell` again: the portrait.
+      expect(document.querySelector(".gc-art-view")).toBeNull();
+      expect(avatarName()).toBe("");
+    });
+  });
+
+  it("leaves NO suppression behind after open/close cycles — the next capsule morph needs its destination", () => {
+    // The single-owner discipline. A stray `view-transition-name: none` on the avatar would give the next
+    // `detail` morph no destination at all (a lone `::view-transition-old`, i.e. nothing visible).
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    openDossier(container, vt);
+    for (let i = 0; i < 2; i++) {
+      act(() => {
+        fireEvent.click(portrait());
+      });
+      vt.run(vt.pending.length - 1);
+      act(() => {
+        fireEvent.click(document.querySelector<HTMLElement>(".gc-art-view")!);
+      });
+      vt.run(vt.pending.length - 1);
+      expect(avatarName()).toBe("");
+    }
+    // …and a SWAP still morphs afterwards: the avatar is suppressible again, and released again.
+    act(() => {
+      fireEvent.click(cards(container)[1]);
+    });
+    expect(avatarName()).toBe("none");
+    vt.run(vt.pending.length - 1);
+    expect(avatarName()).toBe("");
+    expect(dossierName()).toBe("atlas");
+  });
+
+  it("a dossier closed while the art is up leaves nothing stamped on the way out", () => {
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    openDossier(container, vt);
+    act(() => {
+      fireEvent.click(portrait());
+    });
+    vt.run(1);
+    expect(avatarName()).toBe("none");
+    act(() => {
+      fireEvent.click(document.querySelector<HTMLElement>(".gc-dossier-close")!);
+    });
+    expect(document.querySelector(".gc-art-view")).toBeNull();
+    expect(avatarName()).toBe(""); // the retained dossier's portrait is clean for the next open
   });
 });
 

@@ -1137,6 +1137,40 @@
       }
     }
 
+    /* ── THE ART SHOWCASE's transition, the `showcase` type (owner request 2026-08-02) ─────────────────
+     * The SAME machinery one link further along the chain: the capsule morphs into the dossier portrait
+     * (`detail`, above), and the portrait morphs into the full-screen art. Both legs — open AND close —
+     * ride this one type, because the naming is symmetric (see GachaFleet's `openShowcase`): the portrait
+     * is the group's FROM going out and its TO coming back, and the browser interpolates whichever pair a
+     * capture happens to hold.
+     *
+     * Faster than the dossier's 560 ms: this flight crosses the whole screen with nothing else moving, and
+     * at the dossier's pace it reads as slow rather than as weighty. The old/new pair cross-fades in half
+     * the flight (the `detail` block's own ratio) — the 104px crop has become the uncropped image by
+     * mid-arc, and the rest of the arc lands the frame. */
+    :scope[data-transition="showcase"]::view-transition-group(capsule-shell) {
+      animation-duration: 420ms;
+      animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    :scope[data-transition="showcase"]::view-transition-old(capsule-shell),
+    :scope[data-transition="showcase"]::view-transition-new(capsule-shell) {
+      animation-duration: 210ms;
+    }
+    /* The page behind it takes the UA's own root cross-fade (opacity only, §14.11) rather than the
+     * dossier's scale pair: the arcade-night backdrop simply comes UP around the flying portrait, and a
+     * scaling page under a full-screen image would read as a second, competing move. Only the DURATION is
+     * ours, so the veil and the flight land together. */
+    :scope[data-transition="showcase"]::view-transition-old(root),
+    :scope[data-transition="showcase"]::view-transition-new(root) {
+      animation-duration: 240ms;
+    }
+    /* The showcase's own half of the group name. It exists in exactly ONE of the two captures either way
+     * (mounted in the new state on open, gone from the new state on close), so it never needs the inline
+     * suppression its partner does. */
+    :scope[data-transition="showcase"] .gc-art-view img {
+      view-transition-name: capsule-shell;
+    }
+
     .gc-dossier {
       position: relative; /* anchors the close corner below */
       padding-bottom: calc(2px + env(safe-area-inset-bottom));
@@ -1188,13 +1222,29 @@
       flex: 0 0 104px;
       width: 104px;
     }
-    /* M3's image half: the morph's TO element, named only INSIDE the `detail` transition. Scoped rather
-     * than constant so no unrelated transition (a theme switch, the tab reel's root cross-fade) ever
-     * captures the dossier avatar as a named group. Inside a `detail` transition it is the destination —
-     * and when a dossier is ALREADY on screen (a swap, or one still easing out) GachaFleet suppresses this
-     * name inline for the old capture, so the tapped card is the only `capsule-shell` in it. */
-    :scope[data-transition="detail"] .gc-dossier .avatar {
+    /* M3's image half: the morph's TO element, named only INSIDE the two transitions that fly it. Scoped
+     * rather than constant so no unrelated transition (a theme switch, the tab reel's root cross-fade)
+     * ever captures the dossier avatar as a named group. Inside a `detail` transition it is the
+     * destination — and when a dossier is ALREADY on screen (a swap, or one still easing out) GachaFleet
+     * suppresses this name inline for the old capture, so the tapped card is the only `capsule-shell` in
+     * it. Inside a `showcase` transition it is the FROM going out and the TO coming back, suppressed
+     * inline for exactly the window where the full-screen image holds the name instead. */
+    :scope[data-transition="detail"] .gc-dossier .avatar,
+    :scope[data-transition="showcase"] .gc-dossier .avatar {
       view-transition-name: capsule-shell;
+    }
+    /* THE PORTRAIT BUTTON (the art showcase's opener). A bare wrapper: no box of its own, because the
+     * portrait's own 104x138 frame, radius and shadow are already the design — this only makes it
+     * pressable and gives the kit's global focus ring something to hug. Deliberately WITHOUT a press
+     * transform: it is the parent of the node a View Transition captures, and a transformed ancestor at
+     * capture time would offset the morph's start rect. */
+    .gc-dossier .gc-art-btn {
+      display: block;
+      padding: 0;
+      border: 0;
+      background: none;
+      border-radius: 16px;
+      cursor: zoom-in;
     }
     .gc-dossier .avatar {
       display: block;
@@ -1440,6 +1490,97 @@
     .gc-dossier[data-pair="2"] {
       --gc-host: var(--gc-brand-3);
       --gc-host-2: var(--gc-brand-1);
+    }
+
+    /* ── THE ART SHOWCASE (owner request 2026-08-02) — the unit's art, uncropped, on the arcade night ──
+     * The dossier portrait is a 104x138 `object-fit: cover` crop; this is the same file with nothing cut
+     * off. The backdrop is the SHELL's own recipe (`.kit`, top of this file — the violet radial under the
+     * 115-degree pinstripe), not a scrim: the art is being shown in the arcade, not dimmed behind glass.
+     *
+     * Z-RUNG 46 — one above the reel, and the reasoning is the ladder's own (kit.css `.pm-backdrop.auto-pm`
+     * documents the full one). It must be ABOVE the BottomSheet (40), whose portrait raised it, and it must
+     * stay BELOW the ConfirmDialog (50) and the PromptModal (60) — a picture must never cover a question.
+     * That leaves 45/46, where the tab reel sits: the two can never co-exist (the overlay is gated on an
+     * OPEN dossier on the ACTIVE tab, and leaving the tab closes the dossier in the same commit that mounts
+     * the reel), so this is a statement of kind rather than a contested overlap — a SURFACE the user opened
+     * outranks a decorative sweep. Like the reel it is a document-level rung, because gacha deliberately
+     * does not make `.kit` a stacking context (§10.1).
+     *
+     * GEOMETRY follows the reel's: `height: var(--app-h)` rather than `inset: 0`, so an open keyboard can
+     * never push the art out of the visible shell. */
+    .gc-art-view {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--app-h, 100dvh);
+      z-index: 46;
+      display: grid;
+      place-items: center;
+      /* The safe-area insets are the FLOOR, not an addition: the art is centred, so a notch or a home
+       * indicator must eat into the frame rather than shift it. */
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+        max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      background-color: var(--bg);
+      background-image: var(--gc-pinstripe), var(--gc-backdrop);
+      cursor: zoom-out; /* the whole layer dismisses (the owner's tap-anywhere wording) */
+    }
+    /* `max-*` rather than a full-bleed box: the image's own box then hugs the art at its natural ratio,
+     * which is both what the radius wants and what the morph wants — the View Transition group flies the
+     * portrait to the ART's rect, not to a screen-sized rect that happens to be mostly letterbox.
+     * `object-fit: contain` is the belt: whatever the box ends up being, nothing is cropped or stretched
+     * (and there is deliberately no `object-position` here — a focal crop is exactly what this surface
+     * exists to undo). */
+    .gc-art-view img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 14px;
+    }
+    /* The close corner, in the `.gc-dossier-close` family — the same tile, radius, CSS-content glyph and
+     * hit-area bleed, INVERTED for the night side: the dossier's is dark ink on a light sheet, this is the
+     * nav pill's own translucent fill on the dark backdrop. (The glyph is CSS `content` for the reason
+     * that one is: gacha's TypeScript is fenced ASCII-only.) */
+    .gc-art-close {
+      position: absolute;
+      top: max(12px, env(safe-area-inset-top));
+      right: max(12px, env(safe-area-inset-right));
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border: 1px solid var(--gc-bar-line);
+      border-radius: 12px;
+      background: var(--gc-bar);
+      color: var(--text);
+      font-size: 17px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .gc-art-close::before {
+      content: "\d7";
+    }
+    /* a 40px visual box is a sub-44px touch target — bleed the hit area without moving a pixel of paint */
+    .gc-art-close::after {
+      content: "";
+      position: absolute;
+      inset: -4px;
+    }
+    /* THE FALLBACK ENTRANCE (§14.11: transform/opacity only, no blur). Carried by the class GachaFleet
+     * sets only when NO View Transition is running the open — with one, the morph is the entrance and this
+     * would double it. The motion axis is the app's own lever, never the OS query, so reduced motion gets
+     * the art instantly rather than gets it slowly. */
+    .gc-art-view.fade {
+      animation: gacha-art-in 180ms ease both;
+    }
+    @keyframes gacha-art-in {
+      from {
+        opacity: 0;
+      }
+    }
+    body[data-motion="reduced"] .gc-art-view.fade {
+      animation: none;
     }
 
     /* The kit's own section entrance (`kit-fade`, 0.25 s) is re-tuned to nothing under gacha (§10.1

@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { relativeTime } from "../../src/lib/relativeTime";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
 import { GachaHostDetail } from "../../src/themes/gacha/GachaHostDetail";
-import { CLOSE_DOSSIER_LABEL, dossierSub } from "../../src/themes/gacha/fleet";
+import { CLOSE_DOSSIER_LABEL, dossierSub, showArtLabel } from "../../src/themes/gacha/fleet";
 import { artForHost, defaultRoster } from "../../src/themes/gacha/roster";
 import { starsFor } from "../../src/themes/gacha/stars";
 import type { Host, HostServiceCfg, Service } from "../../src/types";
@@ -87,6 +87,7 @@ function renderD(props: Partial<Parameters<typeof GachaHostDetail>[0]> = {}) {
       run={run}
       titleId="dossier-title"
       onClose={props.onClose}
+      onShowArt={props.onShowArt}
     />,
   );
   return { container, run, h };
@@ -375,5 +376,77 @@ describe("the close corner", () => {
     const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8");
     const rule = css.slice(css.indexOf(".gc-dossier-close {"));
     expect(rule.slice(0, rule.indexOf("}"))).toMatch(/z-index:\s*2/);
+  });
+});
+
+// THE PORTRAIT BUTTON (the art showcase's opener, owner request 2026-08-02). The SHOWCASE itself is wired
+// in `gachaFleet.test.tsx`, beside the state and the View-Transition machinery that carry it; what belongs
+// here is the control: a real button, named, wrapping the SAME `.avatar` node the morph is named on.
+describe("the portrait button", () => {
+  // Comments stripped, like every other source-level guard here: the prose around these rules discusses
+  // the very numbers being asserted.
+  const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+
+  it("names the machine's art and hands the tap to the host", () => {
+    const onShowArt = vi.fn();
+    const { container } = renderD({ onShowArt });
+    const btn = screen.getByRole("button", { name: showArtLabel("pegasus") });
+    expect(btn.className).toBe("gc-art-btn");
+    // …and it WRAPS the portrait rather than replacing it: the avatar is what gacha.css names for the
+    // morph and what GachaFleet suppresses for a capture, so it must still be the same element.
+    expect(btn.querySelector("img.avatar")).toBe(container.querySelector(".avatar"));
+    // the rarity badge still overlays the frame beside it, not inside the button
+    expect(container.querySelector(".art-frame > .art-rar")).not.toBeNull();
+    fireEvent.click(btn);
+    expect(onShowArt).toHaveBeenCalledTimes(1);
+  });
+
+  // The showcase's LOOK is source-asserted for the same reason the light surface's is: jsdom loads no CSS,
+  // and the two claims that would silently rot are the Z-RUNG (a number that has to stay between two other
+  // numbers in a ladder nothing enforces) and the uncropped painting the whole surface exists for.
+  it("stands on rung 46: above the sheet it was opened from, below the questions", () => {
+    const rule = css.slice(css.indexOf(".gc-art-view {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toMatch(/z-index:\s*46/);
+    // the kit's ladder either side of it: `.bs-root` 40 < 46 < `.modal-backdrop` 50
+    const kit = readFileSync(resolve(process.cwd(), "src/theme-engine/kit/kit.css"), "utf8");
+    const sheet = kit.slice(kit.indexOf(".kit .bs-root {"));
+    expect(sheet.slice(0, sheet.indexOf("}"))).toMatch(/z-index:\s*40/);
+  });
+
+  it("paints the UNCROPPED art on the shell's own backdrop, from tokens", () => {
+    // the STANDALONE rule (line-anchored) — `.gc-art-view img` also appears inside the `showcase`
+    // transition's naming rule above it
+    const body = /\n\s*\.gc-art-view img \{([^}]*)\}/.exec(css)![1];
+    expect(body).toContain("object-fit: contain");
+    // a focal crop is exactly what this surface undoes — no `object-position` may reach it
+    expect(body).not.toContain("object-position");
+    expect(css).toMatch(
+      /\.gc-art-view\s*{[^}]*background-image: var\(--gc-pinstripe\), var\(--gc-backdrop\)/,
+    );
+  });
+
+  it("names BOTH halves of the showcase morph under its own transition type", () => {
+    // The portrait is the group's FROM going out and its TO coming back; the full-screen image is the
+    // other end. Both are named by CSS under the `showcase` stamp — the inline work GachaFleet does is
+    // only the suppression that keeps ONE of them named per capture.
+    expect(css).toContain('[data-transition="showcase"] .gc-dossier .avatar');
+    expect(css).toContain('[data-transition="showcase"] .gc-art-view img');
+    expect(css).toMatch(/\[data-transition="showcase"\]::view-transition-group\(capsule-shell\)/);
+  });
+
+  it("stays a plain picture with no handler, and never wraps a placeholder frame", () => {
+    // Standalone (the precedent `onClose` set): no handler, no dangling control.
+    const plain = renderD();
+    expect(plain.container.querySelector(".gc-art-btn")).toBeNull();
+    expect(plain.container.querySelector("img.avatar")).not.toBeNull();
+    cleanup();
+    // …and there is nothing to enlarge when the resolver gave a placeholder.
+    const blank = renderD({ art: null, onShowArt: vi.fn() });
+    expect(blank.container.querySelector(".gc-art-btn")).toBeNull();
+    expect(blank.container.querySelector(".avatar.blank")).not.toBeNull();
   });
 });

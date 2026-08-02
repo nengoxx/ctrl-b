@@ -12,6 +12,7 @@ import { setPlanSheetOpen } from "../../store/planSheet";
 import { getSheetSnap, setSheetSnap } from "../../store/sheetSnap";
 import { useThemeSetting } from "../../theme-engine/settings";
 import type { Host } from "../../types";
+import { GachaArtShowcase } from "./GachaArtShowcase";
 import { GachaBanner, type BannerSlide } from "./GachaBanner";
 import { GachaCard } from "./GachaCard";
 import { GachaHostDetail } from "./GachaHostDetail";
@@ -104,12 +105,44 @@ export function GachaFleet({ active }: { active: boolean }) {
     // without this the old one would capture the plainly-opened dossier as its morph destination.
     skipActiveViewTransition();
   }, []);
+
+  // ── THE ART SHOWCASE (owner request 2026-08-02) — the dossier PORTRAIT, full screen. Two pieces of
+  //    state, held here because this is where the sheet, the morph machinery and the tap-outside listener
+  //    already live: WHETHER the overlay is up, and WHICH entrance carried it (`morph` = a View Transition
+  //    is flying the portrait; `fade` = the plain path, where the CSS opacity entrance stands in). Null is
+  //    closed — one variable, so "open" and "how it opened" can never disagree.
+  const [showArt, setShowArt] = useState<"morph" | "fade" | null>(null);
+  // The showcase's OWN inline suppression of the dossier avatar, with its own single owner — the mirror of
+  // `prep` above, and deliberately not folded into it: the two suppress the same node for opposite reasons
+  // (a morph hides the avatar for ONE capture; the showcase hides it for as long as the art is up, because
+  // the full-screen image is carrying the `capsule-shell` name in the meantime). A stray suppression left
+  // behind would give the NEXT dossier morph no destination at all, so every path that can close the art —
+  // the overlay's own dismissals, a dossier close, a host leaving the fleet, leaving the tab, unmount —
+  // goes through `dropShowcase`.
+  const artSuppressed = useRef<HTMLElement | null>(null);
+  const releaseArtName = useCallback(() => {
+    const el = artSuppressed.current;
+    if (!el) return;
+    artSuppressed.current = null;
+    el.style.removeProperty("view-transition-name");
+  }, []);
+  /** Take the art down with no transition of its own — for the paths where the DOSSIER is going away and
+   *  there is nothing left to morph back into. */
+  const dropShowcase = useCallback(() => {
+    releaseArtName();
+    setShowArt(null);
+  }, [releaseArtName]);
+
   const openHostDossier = useCallback(
     (hostId: string, morphImg?: HTMLImageElement | null) => {
       if (reeling) return;
       // Every open takes a ticket, morph or not: a plain open must also void a morph still in flight.
       const mine = ++gen.current;
       cleanMorphPrep();
+      // …and it takes the art down with it. Unreachable by pointer today (the showcase covers the cards
+      // it would be tapped on), but this is the line that keeps the avatar's suppression single-owned:
+      // without it a capsule morph would strip a name the showcase is still relying on.
+      dropShowcase();
       if (!morphImg || !viewTransitionsActive()) {
         setMorphOpen(false);
         setSelected(hostId);
@@ -134,7 +167,7 @@ export function GachaFleet({ active }: { active: boolean }) {
         setSelected(hostId);
       }, "detail");
     },
-    [reeling, cleanMorphPrep],
+    [reeling, cleanMorphPrep, dropShowcase],
   );
   // Drop a selection whose machine has left the fleet (a config edit, a removal) so the sheet can never
   // reference a gone host — the cosmos/frontier precedent.
@@ -142,10 +175,11 @@ export function GachaFleet({ active }: { active: boolean }) {
     if (selected && !hosts.some((h) => h.id === selected)) {
       gen.current++;
       cleanMorphPrep();
+      dropShowcase();
       setMorphOpen(false);
       setSelected(null);
     }
-  }, [selected, hosts, cleanMorphPrep]);
+  }, [selected, hosts, cleanMorphPrep, dropShowcase]);
   // Leaving the tab (or unmounting) CLOSES the dossier — the M3-confirm ruling: a nav tap is "outside"
   // under the owner's tap-outside wording, so the click listener already closes on pointer navigation;
   // clearing here makes keyboard/programmatic navigation behave identically instead of resurrecting the
@@ -157,13 +191,17 @@ export function GachaFleet({ active }: { active: boolean }) {
     if (!active) {
       ticket.current++;
       cleanMorphPrep();
+      dropShowcase();
       setMorphOpen(false);
       setSelected(null);
     }
     return () => {
       ticket.current++;
+      // The art layer's suppression outlives React's own cleanup order otherwise: the avatar is going
+      // away with us, but the REF must not keep pointing at a detached node for a remount to inherit.
+      releaseArtName();
     };
-  }, [active, cleanMorphPrep]);
+  }, [active, cleanMorphPrep, dropShowcase, releaseArtName]);
 
   const selIndex = selected ? hosts.findIndex((h) => h.id === selected) : -1;
   const selHost = selIndex >= 0 ? hosts[selIndex] : null;
@@ -196,9 +234,55 @@ export function GachaFleet({ active }: { active: boolean }) {
   const closeDossier = useCallback(() => {
     gen.current++; // a pending morph must not re-open what the user just dismissed
     cleanMorphPrep();
+    // the art stands ON the dossier: it cannot outlive it
+    dropShowcase();
     setMorphOpen(false);
     setSelected(null);
-  }, [cleanMorphPrep]);
+  }, [cleanMorphPrep, dropShowcase]);
+
+  // ── THE SHOWCASE's OPEN/CLOSE, on the SAME View-Transition machinery as the capsule morph (the owner's
+  //    G2 precedent), stamped `showcase` so gacha.css can time this flight on its own terms.
+  //
+  //    The naming dance is the EXACT MIRROR of `openHostDossier`'s swap trick, one link further along the
+  //    chain. There the tapped card is the FROM and the avatar the TO; here the avatar is the FROM and the
+  //    full-screen image the TO. Both are named by CSS under the `showcase` stamp (gacha.css), so the only
+  //    imperative move is the one CSS cannot express — suppressing the avatar for the NEW capture, where
+  //    it is still mounted under an opaque overlay and would otherwise be a second `capsule-shell` (two in
+  //    one capture = the browser skips the whole transition).
+  //
+  //    That suppression then STAYS for as long as the art is up, which is what makes the close a real
+  //    reverse morph with no extra machinery: the old capture sees the full-screen image named and the
+  //    avatar suppressed; the callback unmounts the image and releases the avatar; the new capture sees
+  //    exactly one `capsule-shell` again — the portrait it flies back into.
+  //
+  //    Both legs commit INSIDE the update callback (`runViewTransition` flushSyncs), because the browser
+  //    captures the new state one frame later: an overlay mounted by a passive effect would not be there
+  //    for it (the same law the sheet's `enterInstant` exists to satisfy).
+  const openShowcase = useCallback(() => {
+    // already up (the portrait is behind it): never start a second transition
+    if (showArt) return;
+    if (!viewTransitionsActive()) {
+      // no transition to carry it: the CSS entrance stands in
+      setShowArt("fade");
+      return;
+    }
+    const avatar = document.querySelector<HTMLElement>(".gc-dossier .avatar");
+    runViewTransition(() => {
+      if (avatar) {
+        avatar.style.setProperty("view-transition-name", "none");
+        artSuppressed.current = avatar;
+      }
+      setShowArt("morph");
+    }, "showcase");
+  }, [showArt]);
+  const closeShowcase = useCallback(() => {
+    if (!showArt) return; // a second dismissal would start a second transition, skipping the first
+    if (!viewTransitionsActive()) {
+      dropShowcase();
+      return;
+    }
+    runViewTransition(dropShowcase, "showcase");
+  }, [showArt, dropShowcase]);
   // TAP-OUTSIDE DISMISS (owner ruling 2026-08-02). The primitive's own catcher stays OFF: it is a
   // full-screen button, so it would eat the capsule tap that SWAPS the dossier before it ever reached the
   // card. This is the same dismissal expressed as a document listener that names its exemptions — the
@@ -218,11 +302,16 @@ export function GachaFleet({ active }: { active: boolean }) {
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented) return;
       const target = e.target instanceof Element ? e.target : null;
-      // The sheet, the two things that OPEN one — and any modal layer standing ABOVE it: the dossier's
-      // own shutdown button raises the shared ConfirmDialog, and dismissing the sheet under a dialog it
-      // spawned (on Cancel, no less) would be the wrong reading of "outside". Same cooperative posture
-      // the primitive's Escape handler takes toward a layer above it.
-      if (target?.closest(".bs-root, .gc-card, .gc-slide-hit, .modal-backdrop, .pm-backdrop"))
+      // The sheet, the two things that OPEN one — and any layer standing ABOVE it: the dossier's own
+      // shutdown button raises the shared ConfirmDialog, and its portrait raises the art showcase.
+      // Dismissing the sheet under a surface it spawned (on the tap that dismisses THAT surface, no
+      // less) would be the wrong reading of "outside". Same cooperative posture the primitive's Escape
+      // handler takes toward a layer above it.
+      if (
+        target?.closest(
+          ".bs-root, .gc-card, .gc-slide-hit, .gc-art-view, .modal-backdrop, .pm-backdrop",
+        )
+      )
         return;
       closeDossier();
     };
@@ -231,6 +320,9 @@ export function GachaFleet({ active }: { active: boolean }) {
   }, [sheetOpen, closeDossier]);
   // The LIVE selection while open (so polls update the sheet), the retained one through the slide-out.
   const detail = selHost ? { host: selHost, index: selIndex } : shown;
+  // ONE resolution of the dossier's art, read by the portrait and by the showcase it opens (§5.3's one
+  // shared resolver): the enlarged image is by construction the same entry the portrait was cropping.
+  const detailArt = detail ? artForHost(ROSTER, detail.index) : null;
 
   // The §6.4 slide set, in its ruled order: the fixed hero, then the owner's banner SCENES (G1 eyeball
   // round 3 — art-only slides, the owner's pick over cycling the hero's art), then ONE promo per host —
@@ -330,16 +422,32 @@ export function GachaFleet({ active }: { active: boolean }) {
           <GachaHostDetail
             host={detail.host}
             services={svcByHost.get(detail.host.id) ?? []}
-            art={artForHost(ROSTER, detail.index)}
+            art={detailArt}
             mode={starMode}
             index={detail.index}
             busy={busy.has(detail.host.id)}
             run={run}
             titleId={titleId}
             onClose={closeDossier}
+            onShowArt={openShowcase}
           />
         )}
       </BottomSheet>
+
+      {/* THE ART SHOWCASE — a SIBLING of the sheet, never a child of it (`.bs-sheet` is a transformed
+          containing block, so a fixed overlay inside it would be trapped in the sheet's box). Gated on the
+          dossier being genuinely OPEN, not merely retained: the art can then never outlive the portrait it
+          morphs back into, and — since leaving the tab closes the dossier in the same commit that mounts
+          the reel — the showcase and the reel sweep can never be on screen together, which is what makes
+          the z-rung above it (46) a statement of intent rather than a contested overlap. */}
+      {showArt && sheetOpen && detail && detailArt && (
+        <GachaArtShowcase
+          hostName={detail.host.name}
+          art={detailArt}
+          fade={showArt === "fade"}
+          onClose={closeShowcase}
+        />
+      )}
     </div>
   );
 }

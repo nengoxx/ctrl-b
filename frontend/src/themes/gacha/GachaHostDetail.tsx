@@ -2,7 +2,7 @@ import type { FleetAction } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
-import { CLOSE_DOSSIER_LABEL, dossierSub, pingText } from "./fleet";
+import { CLOSE_DOSSIER_LABEL, dossierSub, pingText, showArtLabel } from "./fleet";
 import type { ResolvedArt } from "./roster";
 import { isHighStar, starsFor, type StarMode } from "./stars";
 
@@ -37,6 +37,10 @@ interface Props {
   /** Dismiss the dossier — the prototype's visible corner close (owner-restored 2026-08-02). Optional so
    *  the content stays renderable standalone (the tests do); with no handler the corner is simply absent. */
   onClose?: () => void;
+  /** Show this unit's art FULL SCREEN (the showcase, owner request 2026-08-02) — the portrait becomes a
+   *  real button when a host supplies this. Optional on the same terms as `onClose`, and additionally
+   *  meaningless without art: a placeholder frame has nothing to enlarge, so it stays a plain span. */
+  onShowArt?: () => void;
 }
 
 /** How many accent pairs the tri-accent yields — pink→violet, violet→cyan, cyan→pink. The prototype's
@@ -55,6 +59,7 @@ export function GachaHostDetail({
   run,
   titleId,
   onClose,
+  onShowArt,
 }: Props) {
   const facts = hostDetailFacts(host, services);
   const online = facts.online;
@@ -80,6 +85,24 @@ export function GachaHostDetail({
     [seen, "Seen", GACHA_COPY.metricSeen],
   ];
 
+  // THE PORTRAIT. One node, two wrappings: bare when it is only a picture, inside a real BUTTON when the
+  // host offers the full-screen showcase. The `.avatar` element itself is untouched by that choice — it is
+  // what the morph is named on (gacha.css) and what GachaFleet suppresses for a capture, so wrapping it
+  // must not move it. The placeholder case never becomes a button: there is no art to enlarge.
+  const portrait = art ? (
+    <img
+      className="avatar"
+      src={art.url}
+      alt=""
+      draggable={false}
+      style={art.focus === undefined ? undefined : { objectPosition: art.focus }}
+    />
+  ) : (
+    // The resolver's placeholder case (empty roster / unusable file): the frame still holds the rarity
+    // badge, so the dossier's composition survives a missing character.
+    <span className="avatar blank" aria-hidden />
+  );
+
   return (
     <div className="gc-dossier" data-pair={index >= 0 ? index % ACCENT_PAIRS : 0}>
       {/* THE VISIBLE CLOSE (the prototype's `.close-detail`). It sits in the corner the handle's invisible
@@ -101,18 +124,17 @@ export function GachaHostDetail({
           close corner above, which is stacked over that strip on purpose (the cosmos chevron lesson). */}
       <div className="gc-dossier-head" data-bs-peek>
         <div className="art-frame">
-          {art ? (
-            <img
-              className="avatar"
-              src={art.url}
-              alt=""
-              draggable={false}
-              style={art.focus === undefined ? undefined : { objectPosition: art.focus }}
-            />
+          {art && onShowArt ? (
+            <button
+              type="button"
+              className="gc-art-btn"
+              aria-label={showArtLabel(host.name)}
+              onClick={onShowArt}
+            >
+              {portrait}
+            </button>
           ) : (
-            // The resolver's placeholder case (empty roster / unusable file): the frame still holds the
-            // rarity badge, so the dossier's composition survives a missing character.
-            <span className="avatar blank" aria-hidden />
+            portrait
           )}
           {/* aria-hidden for the same reason the card's rarity row is: the glyphs would be read out one by
               one, and the sheet is already labelled by the machine's name. */}
