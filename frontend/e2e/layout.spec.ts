@@ -479,6 +479,37 @@ test("gacha · chat bubbles: white user bubble with the hard pink offset, filled
   expect(parseFloat(type.user.lh)).toBeCloseTo(18.125, 2);
   expect(parseFloat(type.bot.lh)).toBeCloseTo(18.125, 2);
 
+  // The LOG's own box (G3 U4): the prototype's tighter gutter and rhythm, not the kit's. Measured here
+  // rather than asserted in CSS because the claim is about the cascade — the kit ships `6px 18px 12px` /
+  // `gap: 14px` and the theme overrides only the two halves that are the prototype's own.
+  const log = await page.locator("#tab-agent .chat-log").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return {
+      padLeft: s.paddingLeft,
+      padRight: s.paddingRight,
+      gap: s.rowGap,
+      padTop: s.paddingTop,
+    };
+  });
+  expect(log.padLeft).toBe("14px"); // theme.css:82 — the kit's 18px
+  expect(log.padRight).toBe("14px");
+  expect(log.gap).toBe("12px"); // base.css:57 — the kit's 14px
+  expect(log.padTop).toBe("6px"); // …and the kit's own top space is KEPT (the privilege row sits above)
+
+  // The USER row's NAME LABEL sits at the bubble's LEFT (start) edge — the shared thread's own behaviour
+  // in every theme, measured here because gacha is the theme that re-sizes the bubble's type and box and
+  // could most easily knock it off (owner finding, G3 round 2).
+  const whoRow = await page.evaluate(() => {
+    const row = document.querySelector("#tab-agent .b.user")!;
+    const r = (sel: string) => {
+      const b = row.querySelector(sel)!.getBoundingClientRect();
+      return { left: Math.round(b.left), right: Math.round(b.right) };
+    };
+    return { who: r(".who"), body: r(".body") };
+  });
+  expect(whoRow.who.left).toBe(whoRow.body.left); // the label starts where the bubble starts
+  expect(whoRow.who.right).toBe(whoRow.body.right); // …and neither overhangs the other
+
   // The shadow has ROOM: the bubble's right edge plus the 5px offset stays inside the log's box, and the
   // scroller never gains a horizontal overflow.
   const fit = await page.evaluate(() => {

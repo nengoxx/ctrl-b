@@ -493,9 +493,24 @@
      * to `.b.bot .body` rather than only re-coloring one.
      *
      * The user bubble's hard offset shadow is the theme's signature — the same `5px 5px 0` idiom as the
-     * nav indicator. It cannot clip: `.kit .chat-log` carries 18px of side padding and the bubble stops
-     * at that content edge, leaving 13px for a 5px offset; `#app-scroll` is `overflow-x: hidden`, so
-     * even a mis-measure could never produce a horizontal scrollbar (§14.11). The e2e arm measures it. */
+     * nav indicator. It cannot clip: `.kit .chat-log` carries 14px of side padding (below) and the bubble
+     * stops at that content edge, leaving 9px for a 5px offset; `#app-scroll` is `overflow-x: hidden`, so
+     * even a mis-measure could never produce a horizontal scrollbar (§14.11). The e2e arm measures it.
+     *
+     * ── The LOG's own metrics (G3 U4, the polish pass the G3 row owes) ────────────────────────────
+     * The bubbles landed at G0; re-measured against the prototype at G3, what was still the KIT's rather
+     * than the theme's is the box AROUND them: `.chat-log` ships `6px 18px 12px` with a 14px gap, where
+     * the prototype is `0 14px` with 12px (theme.css:82 over base.css:57). The side gutter and the rhythm
+     * are ported; the TOP and BOTTOM stay the kit's, deliberately, because both express something this
+     * layout does differently: the prototype's top space is a `margin-top: 18px` under an oracle that
+     * sits directly on the log, where gacha has the `.sec` header in between, and its bottom is scroll
+     * clearance under a DOCKED composer where gacha's floats. `padding-left/right` rather than the
+     * shorthand, so that stays true rather than being restated. */
+    .kit .chat-log {
+      padding-left: 14px;
+      padding-right: 14px;
+      gap: 12px;
+    }
     .kit .b.user,
     .kit .b.bot {
       max-width: 86%; /* the prototype's `.msg` — the kit ships 88%/92% */
