@@ -364,7 +364,15 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
         })
       }
       onPointerCancel={() => dispatch({ type: "cancel" })}
-      onLostPointerCapture={() => dispatch({ type: "cancel" })}
+      // A TOUCH pointerdown gives its TARGET — a slide's img/button/copy span — IMPLICIT capture (Pointer
+      // Events "implicit pointer capture"; mice get none, which is why desktop drag never saw this). When
+      // the horizontal lock then captures on the root, the spec fires `lostpointercapture` at that CHILD,
+      // and it BUBBLES here — where, unguarded, it read as "gesture died" and aborted every touch swipe at
+      // the exact frame it locked. Only the ROOT losing capture is a real loss; a child's is just the
+      // machine's own capture handoff.
+      onLostPointerCapture={(e) => {
+        if (e.target === e.currentTarget) dispatch({ type: "cancel" });
+      }}
       // The post-drag click suppression (§6.4). The flag must survive from pointerup INTO the click the
       // browser synthesizes after it, which is why it is a ref rather than state, and why it is cleared
       // HERE rather than on the next pointerdown: a drag that ends over a button must not open it, and the

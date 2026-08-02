@@ -635,6 +635,21 @@ e2e arms**, full gate green per commit. The record for successors:
   proposal unvetoed so far) · counter semantics implicitly accepted (no complaint over three
   rounds) · the Codex L above (`hero`-named host vs `HERO_KEY`): `host:`-prefix promo keys
   when G2 next touches the slide plumbing — a one-line namespace fix, not worth its own wave.
+- **POST-CLOSE FIX (owner device round, 2026-08-02 night): touch swipe was DEAD on the phone**
+  (Fennec — mouse drag fine, dots/taps fine). Root cause, Opus-research-confirmed with a live
+  CDP touch repro + spec citations: on TOUCH the pointerdown target (a slide child) holds
+  **implicit pointer capture**, so the horizontal lock's `root.setPointerCapture()` fires a
+  BUBBLING `lostpointercapture` at that child — which the root's unguarded handler read as a
+  cancel, aborting every swipe at the frame it locked. NOT engine-specific (Chromium repro'd
+  identically; Bugzilla sweep clean — Fennec's `touch-action` handling is not at fault). Fix =
+  the one-line target guard (`e.target === e.currentTarget`) + two pinning tests; alternatives
+  (skip capture on touch / capture at pointerdown) rejected — the latter breaks promo-tap click
+  targeting on desktop (the BottomSheet-documented Chromium asymmetry). Field check: no peer
+  lib (use-gesture/Embla/Framer/Swiper) captures on an ancestor; our own `useDragReorder`
+  lore said as much. The research pass stands as this fix's review round. **LESSON (durable,
+  any pointer-gesture code): a bubbling `lostpointercapture` listener MUST target-guard, or
+  touch's implicit capture handoff reads as a cancel — test gestures with REAL touch (CDP
+  `Input.dispatchTouchEvent`), not just mouse or jsdom.** Owner re-check on device pending.
 
 **Acceptance matrix (the lock session turns this into per-slice test obligations):** 0/1/many
 hosts · hosts>roster and roster>hosts · queries loading/error states (pill, counter) ·

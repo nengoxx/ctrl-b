@@ -26,7 +26,11 @@
 > hero-style templated copy, inert, filename-stable keys). Review: Codex R1 READY WITH FIXES
 > (4 MED/2 LOW) → 9-fix wave → confirm 8/9 → residual closed; scenes wave → its own Codex
 > round **READY FOR SLICE CLOSE** (one pre-existing LOW carried: a host named `hero` collides
-> with `HERO_KEY` — `host:`-prefix promo keys when G2 touches the slide plumbing).
+> with `HERO_KEY` — `host:`-prefix promo keys when G2 touches the slide plumbing). **Post-close
+> fix:** the owner's device round found touch swipe DEAD (implicit-capture `lostpointercapture`
+> bubbling from the slide child read as a cancel — §7.2's post-close entry has the full
+> diagnosis + the durable lesson); one-line target guard + 2 tests, Chromium-touch-verified
+> live, **owner's on-device Fennec re-check pending**.
 > **OWNER RULINGS THIS SESSION (all recorded, D52 addendum + plan):** 3★ ladder ≥3→★3 (§6.1
 > re-rule) · 5★ stays 1:1 · **G5 media dir = ROLE-SCOPED folders** `{characters,banner,
 > wallpaper,reel}/`, drop-in = assignment (§5.4) · banner scenes = EXTRA SLIDES over cycling

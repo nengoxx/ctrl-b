@@ -371,6 +371,36 @@ describe("the gesture, wired to the machine", () => {
     expect(slides(container)[0].hasAttribute("inert")).toBe(false);
   });
 
+  it("a CHILD's implicit-capture loss does not abort the drag (the touch-swipe killer)", () => {
+    // On touch, the pointerdown target — a slide child — holds IMPLICIT capture, so the horizontal lock's
+    // root.setPointerCapture() fires a BUBBLING `lostpointercapture` at that child. Unguarded, the root's
+    // handler read it as a cancel and killed every phone swipe at the moment it locked; mouse pointers get
+    // no implicit capture, which is why desktop drag never showed it.
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    act(() => {
+      fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
+      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 150, clientY: 102 }); // locks + captures
+      // The child's capture handoff, arriving between the lock and the next tracking move.
+      fireEvent.lostPointerCapture(slides(container)[0], { pointerId: 1, bubbles: true });
+      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 100, clientY: 102 });
+      fireEvent.pointerUp(banner, { pointerId: 1 });
+    });
+    expect(slides(container)[1].hasAttribute("inert")).toBe(false); // the drag survived and settled
+  });
+
+  it("…while the ROOT's own capture loss still cancels: mid-drag it snaps back", () => {
+    const { container } = render(<GachaFleet active />);
+    const banner = container.querySelector(".gc-banner")!;
+    act(() => {
+      fireEvent.pointerDown(banner, { pointerId: 1, isPrimary: true, clientX: 200, clientY: 100 });
+      fireEvent.pointerMove(banner, { pointerId: 1, clientX: 120, clientY: 102 });
+      fireEvent.lostPointerCapture(banner, { pointerId: 1 }); // target === the root itself
+      fireEvent.pointerUp(banner, { pointerId: 1 });
+    });
+    expect(slides(container)[0].hasAttribute("inert")).toBe(false); // snapped back, not advanced
+  });
+
   it("a pointercancel mid-drag resolves the gesture instead of stranding it", () => {
     vi.useFakeTimers();
     try {
