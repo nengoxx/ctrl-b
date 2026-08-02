@@ -6,12 +6,14 @@ import { isHighStar, MAX_STARS, starsFor, toStarMode } from "../../src/themes/ga
 // case list so the test reads like the spec table it enforces. The input is CONFIGURED services (not live
 // ones), the zero cell is the ruled ★1 floor, and the mode's single home is the `starMode` ThemeDef setting.
 
-// [configured services, 5★ result, 3★ result] — GACHA_PLAN §6.1's table, row for row.
+// [configured services, 5★ result, 3★ result] — GACHA_PLAN §6.1's table, row for row. The 3★ column
+// carries the G1-eyeball re-rule (owner, 2026-08-02): ≥3 services → ★3 (the lock table's "two or
+// three → ★2" collapsed a real 2-vs-3 difference on the owner's fleet).
 const LADDER: [number, number, number][] = [
   [0, 1, 1], // the ruled zero floor: a unit never renders starless
   [1, 1, 1],
   [2, 2, 2],
-  [3, 3, 2],
+  [3, 3, 3], // 3★'s top rung starts here now
   [4, 4, 3],
   [5, 5, 3],
   [6, 5, 3], // ≥5 tops out

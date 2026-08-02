@@ -14,9 +14,10 @@
 //        0     │   ★1    │   ★1     ← the zero floor, ruled at lock: a unit never renders starless
 //        1     │   ★1    │   ★1
 //        2     │   ★2    │   ★2
-//        3     │   ★3    │   ★2
-//        4     │   ★4    │   ★3
-//       ≥5     │   ★5    │   ★3
+//       ≥3     │  ★3..5  │   ★3     ← 3★'s top rung RE-RULED at the G1 eyeball (owner, 2026-08-02):
+//                                     the lock table's "two or three → ★2" collapsed a real 2-vs-3
+//                                     service difference on the owner's own fleet; ≥3 is the top now.
+//                                     (5★ unchanged: 1:1 to the cap, ≥5 → ★5.)
 
 /** The rarity scale — the `starMode` setting's two values. */
 export type StarMode = "five" | "three";
@@ -39,8 +40,8 @@ export function starsFor(configuredServices: number, mode: StarMode): number {
   const max = MAX_STARS[mode];
   if (!Number.isFinite(configuredServices) || configuredServices <= 1) return 1;
   const n = Math.floor(configuredServices);
-  // 5★ walks 1:1 up to the cap; 3★ compresses the middle — "two or three → ★2, more than three → ★3".
-  const raw = mode === "five" ? n : n <= 3 ? 2 : 3;
+  // 5★ walks 1:1 up to the cap; 3★ compresses above two — 2 → ★2, three-or-more → ★3 (the G1 re-rule).
+  const raw = mode === "five" ? n : n === 2 ? 2 : 3;
   return Math.min(raw, max);
 }
 

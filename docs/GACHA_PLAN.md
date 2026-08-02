@@ -400,12 +400,16 @@ a machine's services. The RULED ladders:
 |---|---|---|
 | 1 | ★1 | ★1 |
 | 2 | ★2 | ★2 |
-| 3 | ★3 | ★2 |
+| 3 | ★3 | ★3 |
 | 4 | ★4 | ★3 |
 | ≥5 | ★5 | ★3 |
 
-*(Verbatim owner ladder: 5★ = "1→1, 2→2, 3→3, 4→4, 5-or-more→5"; 3★ = "1 service→1, two or
-three→2, more than three→3".)* **Zero services — RULED at lock: the ★1 floor**
+*(Verbatim owner ladder at LOCK: 5★ = "1→1, 2→2, 3→3, 4→4, 5-or-more→5"; 3★ = "1 service→1,
+two or three→2, more than three→3". **3★ RE-RULED at the G1 eyeball, owner 2026-08-02: ≥3 → ★3**
+— the lock table's 2–3 compression made the owner's whole real fleet (2/2/3/3 configured
+services) read a flat ★2; the table above shows the live rule. 5★ re-confirmed unchanged at the
+same eyeball. NOTE the lock premise "emma carries 5–6 configured services" was optimistic —
+the real counts are 3 on the dev config / 4 on prod.)* **Zero services — RULED at lock: the ★1 floor**
 (a unit never renders starless; gacha logic); the G1 eyeball reviews it like any visual.
 **Config home — ONE home (council M5/R4-8):** the ladders above are DESIGN CONSTANTS; the mode
 lives in a single authoritative `ThemeDef.settings` seg key **`starMode`** (default `five` —

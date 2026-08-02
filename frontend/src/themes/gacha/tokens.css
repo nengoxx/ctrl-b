@@ -197,7 +197,9 @@
 
       /* Stars (§6.2): gold for the lower rungs, rose-gold for the top TWO in 5★ mode (the ★3 in 3★ mode). */
       --gc-star: #ffd464;
-      --gc-star-hi: #ff9e8a;
+      /* The §6.2 device-eyeball pick (owner, G1 round 2): decisively ROSIER than the draft's #ff9e8a
+       * salmon — pulled toward the brand pink so the top rungs read pink-gold at card size. */
+      --gc-star-hi: #ff8fa8;
       --gc-star-glow: #ffb63f88;
       --gc-star-dim: #b9b3d6; /* sleeping cards de-saturate */
       /* The rarity row's two shadows: a lit one on a live card, a flat one on a sleeping card (the
