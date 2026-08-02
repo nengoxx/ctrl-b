@@ -81,7 +81,10 @@ export function defaultRoster(): Roster {
       // The owner's own drops (G1 eyeball round 3): dealt to display positions 2 and 3 — vault and g5 on
       // the owner's fleet. `rook` left the deal for them; the file stays bundled for the G5 gallery.
       { name: "3", image: ART.characters[2] },
-      { name: "4", image: ART.characters[3] },
+      // Focal point (owner round 3): a full-body seated composition with the face ~18% from the top — the
+      // wide CARD's default crop (50% 46%, tuned for lyra's art) landed on the shirt. One per-entry value
+      // re-aims every surface (card shapes + promo); measured against simulated 16:9 and banner bands.
+      { name: "4", image: ART.characters[3], focus: "50% 8%" },
       // The TAIL entry: never dealt on a four-host fleet, but still the one cutout-bearing entry — the G4
       // reel figure's default rides on her staying in the roster (reelFigureArt scans for a cutout).
       { name: "lyra", image: ART.characters[4], cutout: ART.cutout },
