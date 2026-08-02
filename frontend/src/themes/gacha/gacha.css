@@ -1073,12 +1073,15 @@
     .bs-sheet::before {
       content: "";
       position: absolute;
-      left: 0;
-      right: 0;
-      top: 0;
-      height: 4px;
+      /* FULL-cover, painting only a 4px band: a 4px-TALL box can't carry a 24px corner radius (the radii
+       * degenerate and the band pokes outside the sheet's curve — owner eyeball). At full height the
+       * radius is real, so the band's corners clip to exactly the sheet's arc. */
+      inset: 0;
       border-radius: 24px 24px 0 0;
-      background: var(--gc-brand-fill);
+      background-image: var(--gc-brand-fill);
+      background-size: 100% 4px;
+      background-repeat: no-repeat;
+      background-position: top;
       /* above the sheet's own background box, below the in-flow handle/body content */
       z-index: 0;
       pointer-events: none;
@@ -1088,6 +1091,24 @@
     .bs-grip {
       background: var(--gc-dossier-ink);
       opacity: 0.3;
+    }
+
+    /* ── M3's IMAGE MORPH, the `detail`-typed transition (owner-pulled from G4 at the G2 eyeball).
+     * The scope root IS the html element (`data-skin` lives there), so `:scope` reaches the
+     * view-transition pseudos from inside gacha's own fence. Two choices, both the owner's ruling:
+     * the tapped portrait morphs into the sheet avatar at the prototype's 560 ms spring feel
+     * (CSS-approximated — a true spring isn't expressible), and the ROOT cross-fade is suppressed so
+     * nothing else flashes: the new root renders immediately (it is the LIVE capture, so the sheet's
+     * own slide-up shows through) and the portrait is the only thing that animates above it. */
+    :scope[data-transition="detail"]::view-transition-group(capsule-shell),
+    :scope[data-transition="detail"]::view-transition-old(capsule-shell),
+    :scope[data-transition="detail"]::view-transition-new(capsule-shell) {
+      animation-duration: 560ms;
+      animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    :scope[data-transition="detail"]::view-transition-old(root),
+    :scope[data-transition="detail"]::view-transition-new(root) {
+      animation: none;
     }
 
     .gc-dossier {
@@ -1108,6 +1129,9 @@
     }
     .gc-dossier .avatar {
       display: block;
+      /* M3's image half: the morph's TO element. Constant is safe — the only same-name risk is a card
+       * being stamped while the sheet is already up, and GachaFleet morphs on FRESH opens only. */
+      view-transition-name: capsule-shell;
       width: 104px;
       height: 138px;
       flex: none;
@@ -1169,8 +1193,9 @@
       font-size: 9px;
       letter-spacing: 0.16em;
       text-transform: uppercase;
-      color: var(--gc-dossier-ink);
-      opacity: 0.6;
+      /* the muted TOKEN, not `opacity` on the ink: an alpha blend is invisible to the contrast gate, and
+       * the 0.6 this shipped with blended under the 4.5 small-text floor (same for the two below) */
+      color: var(--gc-dossier-ink-2);
     }
 
     /* The RULED metric grid (§4.8): Ping / Uptime / Services / Seen — four equal white cards. `min-width: 0`
@@ -1199,7 +1224,7 @@
     .gc-metric span {
       display: block;
       margin-top: 5px;
-      opacity: 0.56;
+      color: var(--gc-dossier-ink-2);
       /* the prototype's own 7px caption (its theme.css tightens base.css's 8px), and the bilingual label
        * wraps rather than overflowing on a narrow phone */
       font-size: 7px;
@@ -1242,6 +1267,9 @@
     }
     .gc-act.primary {
       background: var(--accent-fill);
+      /* the gradient must NOT paint under the transparent 1px border — unclipped it fringes the rounded
+       * edges with the gradient's outermost stops (owner eyeball: pink one side, violet the other) */
+      background-clip: padding-box;
       border-color: transparent;
       color: var(--accent-ink);
       box-shadow: var(--gc-act-shadow);
@@ -1300,11 +1328,13 @@
       height: 8px;
       border-radius: 50%;
       /* down is the prototype's amber, not a danger red: a service that is off on a sleeping machine is
-       * the expected state, and the whole list goes amber when the unit is asleep. */
-      background: var(--warn);
+       * the expected state, and the whole list goes amber when the unit is asleep. The LIGHT-surface
+       * members of the pair — the night `--warn`/`--ok` pastels measure ~1.5 on the white card, far
+       * under the 3:1 non-text floor (the danger-ink precedent). */
+      background: var(--gc-dossier-warn);
     }
     .gc-svc.on i {
-      background: var(--ok);
+      background: var(--gc-dossier-ok);
     }
     .gc-svc strong {
       flex: 1;
@@ -1318,7 +1348,7 @@
       /* the prototype leaves `small` at the UA's ~13px, which reads LARGER than the 12px name beside it;
        * subordinated here to the caption scale the rest of the theme uses */
       font-size: 11px;
-      opacity: 0.55;
+      color: var(--gc-dossier-ink-2);
     }
     .gc-svc-empty {
       padding: 11px 12px;

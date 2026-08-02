@@ -327,7 +327,10 @@ describe("the dossier's light surface reads from the dossier tokens", () => {
   });
 
   it("keeps the prototype's tri-gradient top strip on the brand fill", () => {
-    expect(css).toMatch(/\.bs-sheet::before\s*{[^}]*background: var\(--gc-brand-fill\)/);
+    expect(css).toMatch(/\.bs-sheet::before\s*{[^}]*background-image: var\(--gc-brand-fill\)/);
+    // …painted as a 4px band on a FULL-cover box: a 4px-tall element can't carry the sheet's 24px corner
+    // radius (the radii degenerate and the strip pokes outside the curve — owner eyeball, G2).
+    expect(css).toMatch(/\.bs-sheet::before\s*{[^}]*background-size: 100% 4px/);
   });
 
   it("declares the G2 token values the prototype pins", () => {

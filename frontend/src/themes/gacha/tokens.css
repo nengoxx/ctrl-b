@@ -135,7 +135,10 @@
       /* Secondary accents from the §1 inventory. */
       --gc-caption: #9ff0ff; /* cyan captions under display copy */
       --gc-heading: #ff8ec2; /* pink section eyebrows */
-      --gc-unit-no: #c8438b; /* the dossier's UNIT DOSSIER kicker */
+      /* The dossier's UNIT DOSSIER kicker. The prototype's #c8438b measures 4.30 on the light sheet's
+       * top stop — under the small-text 4.5 floor — so it deepens within the same rose (5.5/4.6 on the
+       * two stops): the danger-token precedent, fidelity yielding to a measured floor. */
+      --gc-unit-no: #b03578;
 
       /* The FLEET WALLPAPER (M10): the prototype's four-stop scrim over the art, and the default focal
        * crop its `.wallpaper img` uses. A roster entry that declares its own `focus` overrides the crop
@@ -233,8 +236,19 @@
       --gc-dossier-from: #f9f8ff;
       --gc-dossier-to: #dfe4ff;
       --gc-dossier-ink: #17172c;
+      /* The muted SECONDARY ink (labels, the role line, service ports) — a real token rather than
+       * `opacity` on the full ink, because an alpha-blended gray is invisible to the token contrast gate
+       * and the .56 the sheet shipped with blended to ~3.9 on white: under the 4.5 small-text floor.
+       * This slate-violet measures 6.9/6.5/5.5 on card/from/to. */
+      --gc-dossier-ink-2: #565875;
       --gc-dossier-card: #ffffff;
       --gc-dossier-line: #c9d0ef;
+      /* The service dots, re-inked for the light card: the night `--ok`/`--warn` are pastels tuned for
+       * `#0a0b19` and measure ~1.5 on white — far under the 3:1 non-text floor — so the light surface
+       * gets deeper members of the same green/amber families (4.1/4.3 on the card), exactly the
+       * danger-ink precedent. One role, two lightings. */
+      --gc-dossier-ok: #188f57;
+      --gc-dossier-warn: #a86f00;
       /* The sheet's own elevation — a violet halo rather than black, so the light panel reads as LIT from
        * the arcade behind it instead of cut out of the page (`.detail-panel`'s `0 -20px 80px #5c6aff55`). */
       --gc-dossier-shadow: 0 -20px 80px #5c6aff55;

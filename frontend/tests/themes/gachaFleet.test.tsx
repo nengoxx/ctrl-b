@@ -819,6 +819,42 @@ describe("the unit dossier (G2)", () => {
     expect(dossierName()).toBe("pegasus");
   });
 
+  it("a card open runs the VIEW-TRANSITION image morph, and leaves no stray name behind (M3)", () => {
+    // jsdom has no startViewTransition, so every other test exercises the instant fallback; this one
+    // mocks it to pin the morph discipline: the tapped portrait is named BEFORE the call (the old
+    // capture happens after it, and must see the name) and un-named INSIDE the update callback (so the
+    // new capture sees only the sheet avatar named, and no stray name dup-skips a later transition).
+    const start = vi.fn((cb: () => void) => {
+      expect(
+        [...document.querySelectorAll<HTMLElement>(".gc-card img")].some(
+          (img) => img.style.getPropertyValue("view-transition-name") === "capsule-shell",
+        ),
+      ).toBe(true);
+      cb();
+      return { ready: Promise.resolve(), finished: Promise.resolve() };
+    });
+    (document as { startViewTransition?: unknown }).startViewTransition = start;
+    try {
+      const { container } = render(<GachaFleet active />);
+      act(() => {
+        fireEvent.click(cards(container)[0]);
+      });
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(dossierName()).toBe("pegasus");
+      for (const img of container.querySelectorAll<HTMLElement>(".gc-card img"))
+        expect(img.style.getPropertyValue("view-transition-name")).toBe("");
+      // A SWAP with the sheet already up opens PLAIN: the avatar holds the name, and a second named
+      // node in one capture would make the browser skip the whole transition.
+      act(() => {
+        fireEvent.click(cards(container)[1]);
+      });
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(dossierName()).toBe("atlas");
+    } finally {
+      delete (document as { startViewTransition?: unknown }).startViewTransition;
+    }
+  });
+
   it("tapping another capsule SWAPS the open dossier (catchOutside=false, the ruled precedent)", () => {
     const { container } = render(<GachaFleet active />);
     act(() => {

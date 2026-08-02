@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 
 import { BottomSheet, type SheetDetent } from "../../components/BottomSheet";
 import { useFleet } from "../../hooks/useFleet";
+import { runViewTransition } from "../../lib/viewTransition";
 import { setPlanSheetOpen } from "../../store/planSheet";
 import { getSheetSnap, setSheetSnap } from "../../store/sheetSnap";
 import { useThemeSetting } from "../../theme-engine/settings";
@@ -54,7 +55,28 @@ export function GachaFleet({ active }: { active: boolean }) {
   //    cosmos selection stores exist because their maps and grids select each other two ways — here nothing
   //    outside this body reads the selection, and a store would be state living further from its only user).
   const [selected, setSelected] = useState<string | null>(null);
-  const openHostDossier = useCallback((hostId: string) => setSelected(hostId), []);
+  // THE CAPSULE→DOSSIER IMAGE MORPH (M3's image half, owner-pulled from G4 at the G2 eyeball): a card
+  // hands over its portrait, which is view-transition-named for THIS transition only. The name is stamped
+  // before `startViewTransition` (the OLD capture happens after the call, at the next render step) and
+  // cleared INSIDE the update callback — after the old capture, before the new one — so the new snapshot
+  // sees only the sheet avatar carrying the name and no stray name survives to dup-skip a later
+  // transition (the viewTransition.ts warning). Fresh opens only: with the sheet already up the avatar
+  // holds the name, and a second named node would skip the transition anyway. The sheet keeps its own
+  // slide-up (the owner's ruling — only the IMAGE morphs); promos open plain (no portrait to morph from).
+  const openHostDossier = useCallback(
+    (hostId: string, morphImg?: HTMLImageElement | null) => {
+      if (morphImg && selected === null) {
+        morphImg.style.setProperty("view-transition-name", "capsule-shell");
+        runViewTransition(() => {
+          morphImg.style.removeProperty("view-transition-name");
+          setSelected(hostId);
+        }, "detail");
+      } else {
+        setSelected(hostId);
+      }
+    },
+    [selected],
+  );
   // Drop a selection whose machine has left the fleet (a config edit, a removal) so the sheet can never
   // reference a gone host — the cosmos/frontier precedent.
   useEffect(() => {

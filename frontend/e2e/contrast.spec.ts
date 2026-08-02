@@ -52,7 +52,30 @@ const PAIRS: Pair[] = [
   { fg: "--danger", bg: "--surface", min: 3 },
 ];
 
-const PROBE_TOKENS = [...new Set(PAIRS.flatMap((p) => [p.fg, p.bg]))];
+/** THEME-SPECIFIC pairs beyond the kit's semantic set — surfaces only that theme paints, gated at the
+ *  same floors. Gacha's UNIT DOSSIER (G2) is the theme's ONE light surface: its tokens are gacha-private
+ *  (`--gc-*`, resolvable only inside the theme's @scope — hence the probe mounting in `#app-scroll`,
+ *  the vapor-tokens.spec precedent), but the sheet is body text + affordances like any other surface. */
+const THEME_PAIRS: Record<string, Pair[]> = {
+  gacha: [
+    { fg: "--gc-dossier-ink", bg: "--gc-dossier-card", min: 4.5 }, // metric values, names, buttons
+    { fg: "--gc-dossier-ink", bg: "--gc-dossier-from", min: 4.5 }, // title on the sheet's top stop
+    { fg: "--gc-dossier-ink", bg: "--gc-dossier-to", min: 4.5 }, // …and its bottom stop
+    { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-card", min: 4.5 }, // muted labels are still small text
+    { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-from", min: 4.5 }, // the role line under the name
+    { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-to", min: 4.5 },
+    { fg: "--gc-unit-no", bg: "--gc-dossier-from", min: 4.5 }, // the UNIT DOSSIER kicker
+    { fg: "--gc-unit-no", bg: "--gc-dossier-to", min: 4.5 },
+    { fg: "--gc-dossier-danger", bg: "--gc-dossier-card", min: 4.5 }, // the Shut down pill's label
+    { fg: "--gc-dossier-ok", bg: "--gc-dossier-card", min: 3 }, // service dots: non-text affordances
+    { fg: "--gc-dossier-warn", bg: "--gc-dossier-card", min: 3 },
+  ],
+};
+
+const pairsFor = (theme: string): Pair[] => [...PAIRS, ...(THEME_PAIRS[theme] ?? [])];
+const probeTokensFor = (theme: string): string[] => [
+  ...new Set(pairsFor(theme).flatMap((p) => [p.fg, p.bg])),
+];
 
 /** WCAG 2.1 contrast ratio (1–21) between two concrete color strings, via culori. */
 function wcag(a: string, b: string): number {
@@ -100,7 +123,10 @@ for (const c of COMBOS) {
     // stops as concrete rgb() strings we can extract.
     const resolved = await page.evaluate((names) => {
       const probe = document.createElement("div");
-      document.body.appendChild(probe);
+      // INSIDE the app subtree, not on <body>: theme-private tokens live under the theme's @scope, which
+      // a body-level probe can sit outside of (the vapor-tokens.spec precedent). Kit tokens inherit down
+      // regardless, so the kit pairs resolve identically from here.
+      (document.querySelector("#app-scroll") ?? document.body).appendChild(probe);
       const out: Record<string, { bgImage: string; bgColor: string }> = {};
       for (const n of names) {
         probe.style.background = `var(${n})`;
@@ -110,7 +136,7 @@ for (const c of COMBOS) {
       }
       probe.remove();
       return out;
-    }, PROBE_TOKENS);
+    }, probeTokensFor(c.theme));
 
     // A token's concrete color list: a gradient contributes EVERY stop (each gated individually — for a
     // two-stop linear gradient the interpolated band sits between the endpoints, so the worst stop is the
@@ -128,7 +154,7 @@ for (const c of COMBOS) {
       return [r.bgColor];
     };
 
-    for (const p of PAIRS) {
+    for (const p of pairsFor(c.theme)) {
       // Gate the WORST fg-stop × bg-stop pairing (fg tokens are flat today; bg may be a gradient).
       let worst = { ratio: Infinity, fg: "", bg: "" };
       for (const fg of colorsOf(p.fg))

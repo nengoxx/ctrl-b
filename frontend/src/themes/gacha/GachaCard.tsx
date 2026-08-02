@@ -18,7 +18,9 @@ interface Props {
   art: ResolvedArt | null;
   shape: CapsuleShape;
   mode: StarMode;
-  onOpen: (hostId: string) => void;
+  /** The shared open seam. A card also hands over its portrait node — the M3 morph's FROM element; the
+   *  promo slides pass nothing and open plain. */
+  onOpen: (hostId: string, morphImg?: HTMLImageElement | null) => void;
 }
 
 /** Re-arm the shine so a TAP sweeps it (§10.3: the prototype's `:hover` sweep never fires on the owner's
@@ -45,7 +47,7 @@ export function GachaCard({ host, art, shape, mode, onOpen }: Props) {
       className={"gc-card " + shape + (online ? "" : " sleep")}
       aria-label={openLabel(host.name, online)}
       onPointerDown={armShine}
-      onClick={() => onOpen(host.id)}
+      onClick={(e) => onOpen(host.id, e.currentTarget.querySelector("img"))}
     >
       {art ? (
         <img
