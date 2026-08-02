@@ -490,7 +490,7 @@ for the "04 / 04" counter.
 | G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps five palette variants a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
 | G1 | Bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + **the §6.4 slide set: fixed hero + live per-host promos, clickable + swipeable**) + capsule track (cards/states/plates/shine + **the stars on cards**, §6.1/6.2) + wallpaper + the card-geometry rules (Q8.10 ruling) + the promo-copy owner pick | owner eyeball |
 | G2 | Dossier sheet (light inversion + the ruled frontier grid w/ §4.8's pinned values + services list + **the host ACTION BAR** — council H3, a named fidelity design checkpoint) — **reuses G1's star engine**, extracts the shared host-detail derivation to `lib/` (council M6), adds the sheet-timing call (§4.9 ledger) | eyeball + contrast probe |
-| G3 | Agent tab: GachaAgent body (oracle + §4.2 scroll mechanics) + chat-hooks reskin + composer skin — **the M7 blur ramp gets its own Fennec/Chrome device check here**, not deferred to G6 | eyeball + device check |
+| G3 | Agent tab: GachaAgent body (oracle + §4.2 scroll mechanics) + chat-hooks reskin + composer skin — **the M7 blur ramp gets its own Fennec/Chrome device check here**, not deferred to G6. **Owner emphasis (G0 eyeball, twice): the USER bubble must be exact — white, ink `#16162c`, the hard `5px 5px 0 #ff6cae` offset shadow (the same signature treatment as the nav indicator); bot `#222541`** (prototype theme.css:88) | eyeball + device check |
 | G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + M2/M3 VT enhancement per the spike verdict + Gecko tuning (the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape) |
 | G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
 | G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) + polish + full §14.15.1 hardening pass + the on-device Gecko round | owner sign-off |
@@ -646,6 +646,18 @@ such; the G0/G4 device rounds remain binding for everything Gecko-empirical.*
 - **Reduced motion:** no reel at all + the VT bypass — via `body[data-motion]`, never the OS
   query, and never the prototype's global `.001ms` sledgehammer (`base.css:78-80` is
   explicitly NOT ported; §14.11 rule).
+- **Owner observation at the G0 eyeball (2026-08-02):** with M2 off, the content swap is
+  VISIBLE during the reel's first frames (the slats haven't covered the viewport yet) — this
+  is precisely the gap M2's cross-fade masks in the prototype (old scales down 240 ms, new
+  fades in +100 ms). The G0 spike verdict therefore answers the owner's complaint too, not
+  just the liveness question. **If VT is dead/frozen on Fennec, the G4 fallback candidate is
+  the owner's suggested SHORT swap delay — on the BODY CONTENT ONLY** (owner clarification:
+  the bar's indicator/selected state flipping instantly is GOOD and stays immediate; only the
+  tab-body swap holds briefly until the slats cover). Mechanically: nav state flips at once,
+  the BODY's displayed tab lags it by a short gacha-only hold (a deferred display value, not
+  a deferred navigation — inputs and rapid taps stay live against the real state; re-entry
+  collapses to the newest target; the hold stays well under the ~300 ms tap-response bar) —
+  traded at the G4 eyeball against accepting the visible swap.
 
 ### 10.2 The oracle (M7) — the recipe
 

@@ -208,24 +208,45 @@ test("gacha · chrome fidelity: floating nav pill, white indicator + pink hard s
   await page.goto("/");
   await expect(page.locator(".kit-tabbar")).toBeVisible();
 
-  // 1 + 2. The nav FLOATS: inset, rounded, bordered, shadowed, blurred.
+  // 1 + 2. The nav FLOATS OVER the scroller — absolutely positioned and inset, like the kit's composer
+  //        one element up (the owner's round-2 note: content must pass under it, not stop above it).
   const nav = await page.locator(".kit-tabbar").evaluate((el) => {
     const s = getComputedStyle(el);
     return {
+      position: s.position,
       radius: s.borderTopLeftRadius,
-      marginLeft: s.marginLeft,
-      marginRight: s.marginRight,
+      left: s.left,
+      right: s.right,
+      minHeight: s.minHeight,
       borderWidth: s.borderTopWidth,
       shadow: s.boxShadow,
       backdrop: s.backdropFilter,
     };
   });
+  expect(nav.position).toBe("absolute");
   expect(nav.radius).toBe("16px");
-  expect(nav.marginLeft).toBe("12px");
-  expect(nav.marginRight).toBe("12px");
+  expect(nav.left).toBe("12px");
+  expect(nav.right).toBe("12px");
+  expect(nav.minHeight).toBe("66px"); // the prototype's slim bar (owner round 2, item B)
   expect(nav.borderWidth).toBe("1px");
   expect(nav.shadow).not.toBe("none");
   expect(nav.backdrop).toContain("blur");
+
+  // …and the scroller RUNS BEHIND it: the bar must overlap the scroll area, and the scroller must pad
+  // its bottom past the bar so the last row can still be reached. Both halves, or "floating" is just a
+  // shadow over dead space.
+  const overlap = await page.evaluate(() => {
+    const bar = document.querySelector(".kit-tabbar")!.getBoundingClientRect();
+    const scroll = document.querySelector("#app-scroll")!;
+    const rect = scroll.getBoundingClientRect();
+    return {
+      overlaps: rect.bottom > bar.top,
+      padBottom: parseFloat(getComputedStyle(scroll).paddingBottom),
+      barHeight: bar.height,
+    };
+  });
+  expect(overlap.overlaps).toBe(true);
+  expect(overlap.padBottom).toBeGreaterThan(overlap.barHeight);
 
   // 3. The indicator is a WHITE pill with the hard offset pink shadow (not the kit's accent line).
   const ind = await page.locator(".kit-tab-ind .bar").evaluate((el) => {
