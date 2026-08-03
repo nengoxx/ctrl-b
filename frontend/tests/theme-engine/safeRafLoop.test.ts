@@ -114,6 +114,29 @@ describe("safeRafLoop — (c) a throwing tick stops permanently and reports once
     expect(reportSpy).toHaveBeenCalledTimes(1); // no error-per-frame
   });
 
+  it("STAYS dead: a start() after the fault is a no-op, so an event-driven user can't resurrect it", () => {
+    // Codex G3 L1. "Stops permanently" has to be a LATCH, not just `running = false`: M7's fade driver
+    // calls start() on every scroll burst, so without the latch a persistent fault would re-arm the loop,
+    // throw again and report again once per burst — the error-per-frame failure in slow motion.
+    const reportSpy = vi.fn();
+    vi.stubGlobal("reportError", reportSpy);
+    const tick = vi.fn(() => {
+      throw new Error("boom");
+    });
+    const loop = safeRafLoop(tick);
+
+    loop.start();
+    fake.pump(0);
+    expect(loop.running).toBe(false);
+
+    loop.start(); // the next scroll burst
+    expect(loop.running).toBe(false); // …never re-arms
+    expect(fake.pending).toBe(0); // …and schedules nothing
+    fake.pump(16);
+    expect(tick).toHaveBeenCalledTimes(1); // the faulting body ran ONCE, for the loop's lifetime
+    expect(reportSpy).toHaveBeenCalledTimes(1); // …and was reported ONCE
+  });
+
   it("falls back to console.error when reportError is unavailable (feature-detect)", () => {
     vi.stubGlobal("reportError", undefined);
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});

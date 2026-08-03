@@ -1,3 +1,5 @@
+import type { Page } from "@playwright/test";
+
 import { expect, seedUI, test } from "./fixtures";
 
 // The SECTION LAYOUT SYSTEM v1 lever (D35 / FRONTIER_PLAN §6-F0) driven end-to-end on the REAL built app. A
@@ -1001,5 +1003,254 @@ test("gacha · the ARCADE composer skin: a flat cabinet panel here, and the same
       new Set([...el.querySelectorAll("button")].map((b) => b.getBoundingClientRect().top)).size,
   );
   expect(rows).toBe(1);
+  expect(pageErrors).toEqual([]);
+});
+
+// ── The G3 fix wave's browser arms (Codex G3 M1/M2/L2) ─────────────────────────────────────────────────
+// Three claims that only a real engine can settle, each one a bug that shipped: the privilege dropdown is a
+// DOCUMENT-level overlay under gacha exactly as under every other theme; the kit's pinned plan panel keeps
+// the kit's own sticky pin and rung; and the shared `arcade` skin holds up under every composer LAYOUT, not
+// just the stacked one it was measured on.
+
+/** A thread whose last assistant message carries a `task_plan` call — the shape `currentPlanOf` reads, and
+ *  therefore the only way to make the pinned panel mount from a seeded page. */
+function planThread(steps: { text: string; status: "pending" | "active" | "done" }[]) {
+  return [
+    {
+      id: "m0",
+      thread_id: "t1",
+      role: "user",
+      parts: [{ type: "text", text: "wake the fleet" }],
+      actor: "user",
+      ts: "2026-01-01T00:00:00Z",
+      tokens: null,
+      compacted: false,
+    },
+    {
+      id: "m1",
+      thread_id: "t1",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "Here is the plan." },
+        { type: "tool_call", call_id: "c1", tool: "task_plan", args: { steps }, state: "ok" },
+      ],
+      actor: "assistant",
+      ts: "2026-01-01T00:00:01Z",
+      tokens: null,
+      compacted: false,
+    },
+  ];
+}
+
+/** Seed one thread + its messages (the two routes every chat-shaped arm here needs). */
+async function seedThread(page: Page, messages: unknown[]) {
+  await page.route("**/api/threads", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          id: "t1",
+          title: "t",
+          agent: null,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          archived: false,
+        },
+      ]),
+    }),
+  );
+  await page.route("**/api/threads/t1/messages", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(messages),
+    }),
+  );
+}
+
+const chatLines = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    id: `m${i}`,
+    thread_id: "t1",
+    role: i % 2 ? "assistant" : "user",
+    parts: [{ type: "text", text: `line ${i} of the operator transcript` }],
+    actor: i % 2 ? "assistant" : "user",
+    ts: "2026-01-01T00:00:00Z",
+    tokens: null,
+    compacted: false,
+  }));
+
+test("the privilege dropdown is a DOCUMENT-level overlay — in gacha exactly as in cosmos", async ({
+  page,
+  pageErrors,
+}) => {
+  // Codex G3 M2. The chip's backdrop (fixed, z 60) and menu (z 61) are page-level rungs: while the menu is
+  // open the backdrop owns EVERY other surface, so the next tap closes the menu instead of reaching the
+  // composer or the bar. A theme that gives the `.sec` header a z-index turns it into a stacking context and
+  // those two rungs resolve INSIDE it — the menu then loses to the composer (z 4) and the appbar (z 5), and
+  // two overlays can be open at once. Hit-testing is the assertion because painting order is what broke.
+  const probe = async () => {
+    await page.click("#tab-agent .priv-chip");
+    await expect(page.locator(".priv-menu")).toBeVisible();
+    return await page.evaluate(() => {
+      const hit = (x: number, y: number) => document.elementFromPoint(x, y);
+      const menu = document.querySelector<HTMLElement>(".priv-menu")!;
+      const mr = menu.getBoundingClientRect();
+      const comp = document.querySelector<HTMLElement>(".kit-composer")!;
+      const cr = comp.getBoundingClientRect();
+      const bar = document.querySelector<HTMLElement>(".kit-appbar")!;
+      const br = bar.getBoundingClientRect();
+      const sec = document.querySelector<HTMLElement>("#tab-agent > .sec")!;
+      const onMenu = hit(mr.left + mr.width / 2, mr.top + 12);
+      const onComposer = hit(cr.left + cr.width / 2, cr.top + cr.height / 2);
+      const onBar = hit(br.left + 12, br.top + br.height / 2);
+      return {
+        secZ: getComputedStyle(sec).zIndex,
+        menuZ: getComputedStyle(menu).zIndex,
+        backdropZ: getComputedStyle(document.querySelector(".priv-backdrop")!).zIndex,
+        menuOwnsItself: !!onMenu?.closest(".priv-menu"),
+        backdropOwnsComposer: !!onComposer?.classList.contains("priv-backdrop"),
+        backdropOwnsAppbar: !!onBar?.classList.contains("priv-backdrop"),
+      };
+    });
+  };
+
+  await seedThread(page, chatLines(14));
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab: "agent", v: 1 });
+  await page.goto("/");
+  await expect(page.locator("#tab-agent .gc-oracle")).toBeVisible();
+  const gacha = await probe();
+  expect(gacha.menuZ).toBe("61");
+  expect(gacha.backdropZ).toBe("60");
+  expect(gacha.secZ).toBe("auto"); // the header is POSITIONED but never a stacking context
+  expect(gacha.menuOwnsItself).toBe(true);
+  expect(gacha.backdropOwnsComposer).toBe(true);
+  expect(gacha.backdropOwnsAppbar).toBe(true);
+
+  // …and the reference: the same three facts under a theme that never touched the ladder.
+  await seedUI(page, { theme: "cosmos", mode: "dark", accent: "violet", tab: "agent", v: 1 });
+  await page.goto("/");
+  await expect(page.locator("#tab-agent .priv-chip")).toBeVisible();
+  const cosmos = await probe();
+  expect(cosmos.menuOwnsItself).toBe(gacha.menuOwnsItself);
+  expect(cosmos.backdropOwnsComposer).toBe(gacha.backdropOwnsComposer);
+  expect(cosmos.backdropOwnsAppbar).toBe(gacha.backdropOwnsAppbar);
+  expect(pageErrors).toEqual([]);
+});
+
+test("gacha · the PINNED plan panel keeps the kit's sticky pin and its rung", async ({
+  page,
+  pageErrors,
+}) => {
+  // Codex G3 M1. The theme's z-ladder overrode `.plan-pin-panel`'s `position: sticky` with `relative`,
+  // which silently turned the PINNED placement back into an inline one: the panel scrolled away with the
+  // thread. The panel is the kit's — a theme paints it, the kit positions it — so this arm measures the
+  // kit's own contract through gacha: sticky, rung 4 (above the log's 2, below the appbar's 5), and still
+  // on screen after the thread has scrolled far past it.
+  await seedThread(page, planThread([{ text: "wake pegasus", status: "active" }]));
+  await seedUI(page, {
+    theme: "gacha",
+    mode: "dark",
+    accent: "arcade",
+    tab: "agent",
+    themeSettings: { gacha: { planPlacement: "pinned" } },
+    v: 1,
+  });
+  await page.goto("/");
+  const panel = page.locator(".plan-pin-panel");
+  await expect(panel).toBeVisible();
+
+  const read = async () =>
+    await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>(".plan-pin-panel")!;
+      const r = el.getBoundingClientRect();
+      const bar = document.querySelector<HTMLElement>(".kit-appbar")!.getBoundingClientRect();
+      const s = getComputedStyle(el);
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return {
+        position: s.position,
+        z: s.zIndex,
+        top: Math.round(r.top),
+        barBottom: Math.round(bar.bottom),
+        ownsItsOwnBand: !!hit?.closest(".plan-pin-panel"),
+        logZ: getComputedStyle(document.querySelector("#tab-agent .chat-log")!).zIndex,
+      };
+    });
+
+  const atTop = await read();
+  expect(atTop.position).toBe("sticky"); // NOT relative — the theme must not disable the pin
+  expect(atTop.z).toBe("4"); // the kit's rung: above the log (2), below the appbar (5)
+  expect(atTop.logZ).toBe("2");
+  expect(atTop.ownsItsOwnBand).toBe(true); // over the oracle art and the thread alike
+
+  await page.evaluate(() => {
+    document.getElementById("app-scroll")!.scrollTop = 600;
+  });
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+  const scrolled = await read();
+  // STUCK: still on screen, still just under the bar (the kit's `--appbar-h + 8px`), never travelling
+  // up across the appbar's band
+  expect(scrolled.top).toBeGreaterThanOrEqual(scrolled.barBottom);
+  expect(scrolled.top).toBeLessThanOrEqual(scrolled.barBottom + 12);
+  expect(scrolled.ownsItsOwnBand).toBe(true);
+  expect(pageErrors).toEqual([]);
+});
+
+test("gacha · the ARCADE skin holds its shape under every composer LAYOUT", async ({
+  page,
+  pageErrors,
+}) => {
+  // Codex G3 L2: the skin was only ever measured on `stacked`. The skin is the CHROME axis and the layout is
+  // the STRUCTURE axis (D30/D37) — they COMPOSE, and the split is the contract: the cabinet panel's chrome
+  // (opaque fill, no frost, a hairline that stays, no elevation) holds under every structure, while GEOMETRY
+  // stays the layout's own — the skin's radius/padding rules are deliberately `.stacked`-scoped so the
+  // docked sheet's top-only corners and the line variant's stadium survive it. Both halves are asserted,
+  // because a skin that reached into the other two would be the actual regression.
+  const geometry = {
+    stacked: { radius: "14px", bottomRadius: "14px", padTop: "9px" }, // the theme's --radius + its gutter
+    sheet: { radius: "14px", bottomRadius: "0px", padTop: "0px" }, // docked: top-only corners, no padding
+    line: { radius: "24px", bottomRadius: "24px", padTop: "5px" }, // the stadium, concentric with its buttons
+  };
+  for (const layout of ["stacked", "sheet", "line"] as const) {
+    await seedUI(page, {
+      theme: "gacha",
+      mode: "dark",
+      accent: "arcade",
+      tab: "agent",
+      themeSettings: { gacha: { composer: layout } },
+      v: 1,
+    });
+    await page.goto("/");
+    const bar = page.locator(".kit-composer");
+    await expect(bar).toBeVisible();
+    const seen = await bar.evaluate((el: HTMLElement) => {
+      const s = getComputedStyle(el);
+      return {
+        cls: el.className,
+        stamp: document.body.dataset.composerSkin,
+        bg: s.backgroundColor,
+        backdrop: s.backdropFilter,
+        borderWidth: s.borderTopWidth,
+        radius: s.borderTopLeftRadius,
+        bottomRadius: s.borderBottomLeftRadius,
+        padTop: s.paddingTop,
+        shadow: s.boxShadow,
+        overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    });
+    expect(seen.cls).toContain(layout === "stacked" ? "kit-composer" : layout);
+    // the CHROME — identical in all three
+    expect(seen.stamp).toBe("arcade");
+    expect(seen.bg).toBe("rgb(20, 23, 47)"); // --surface, opaque
+    expect(seen.backdrop).toBe("none");
+    expect(seen.borderWidth).toBe("1px");
+    expect(seen.shadow).toBe("none");
+    // …the STRUCTURE — each layout's own, untouched by the skin
+    expect(seen.radius).toBe(geometry[layout].radius);
+    expect(seen.bottomRadius).toBe(geometry[layout].bottomRadius);
+    expect(seen.padTop).toBe(geometry[layout].padTop);
+    expect(seen.overflowX).toBeLessThanOrEqual(0);
+  }
   expect(pageErrors).toEqual([]);
 });

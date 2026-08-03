@@ -27,12 +27,42 @@ import { setThemeSetting, setUI } from "../../src/store/ui";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
 import type { ChatMessage } from "../../src/types";
 
+// The ResizeObserver stub FIRES (Codex G3 L2): a stub whose callback is never invoked cannot exercise the
+// one thing M7's observer is for — re-measuring the oracle's offset when a box above it changes size without
+// any scroll happening. It also records its targets, so "the app bar is observed" is an assertion rather
+// than a claim in a comment.
+interface StubbedObserver {
+  cb: ResizeObserverCallback;
+  targets: Set<Element>;
+}
+const observers: StubbedObserver[] = [];
+/** Fire every live observer's callback (entries are unused by the driver — it re-measures from scratch). */
+function fireResizeObservers(): void {
+  for (const o of [...observers]) o.cb([], {} as ResizeObserver);
+}
+/** Every element any live observer is watching. */
+function observedTargets(): Element[] {
+  return observers.flatMap((o) => [...o.targets]);
+}
+
 beforeAll(() => {
   class ResizeObserverStub {
-    constructor(_cb: ResizeObserverCallback) {}
-    observe(): void {}
-    unobserve(): void {}
-    disconnect(): void {}
+    private entry: StubbedObserver;
+    constructor(cb: ResizeObserverCallback) {
+      this.entry = { cb, targets: new Set() };
+      observers.push(this.entry);
+    }
+    observe(target: Element): void {
+      this.entry.targets.add(target);
+    }
+    unobserve(target: Element): void {
+      this.entry.targets.delete(target);
+    }
+    disconnect(): void {
+      this.entry.targets.clear();
+      const i = observers.indexOf(this.entry);
+      if (i >= 0) observers.splice(i, 1);
+    }
   }
   globalThis.ResizeObserver = ResizeObserverStub;
 });
@@ -65,6 +95,7 @@ beforeEach(() => {
   setUI({ theme: "gacha", themeSettings: {} });
   setDraft("");
   chat.view = view([]);
+  observers.length = 0; // a previous arm's unmounted observers must never fire into this one
 });
 afterEach(() => {
   setUI({ themeSettings: {} });
@@ -189,18 +220,29 @@ function stubRamp(ramp = "240px") {
   });
 }
 
-/** Mount the body in a modelled pane: the anchor sits `BASE` px down and RIDES THE SCROLL, exactly as a
- *  real one does. Returns after the mount re-sync frame, so the driver has measured the modelled geometry. */
+/** Mount the body in a modelled pane: the anchor sits `base` px down and RIDES THE SCROLL, exactly as a
+ *  real one does. `setBase` models a POSITION-only move of the flow above the oracle — a pinned plan panel
+ *  mounting, the app bar re-laying-out — which is the class of change a ResizeObserver cannot report and
+ *  which a scroll frame alone therefore cannot correct. Returns after the mount re-sync frame, so the driver
+ *  has measured the modelled geometry. */
 async function mountAgent(ui: React.ReactElement, ramp = "240px") {
   const { scroller, setPos } = makeScroller();
   stubRamp(ramp);
+  let base = BASE;
   const view = render(ui, { container: scroller });
   const anchor = view.container.querySelector<HTMLElement>(".gc-oracle-anchor");
-  if (anchor) anchor.getBoundingClientRect = () => ({ top: BASE - scroller.scrollTop }) as DOMRect;
+  if (anchor) anchor.getBoundingClientRect = () => ({ top: base - scroller.scrollTop }) as DOMRect;
   await act(async () => {
     await new Promise((r) => requestAnimationFrame(() => r(null)));
   });
-  return { ...view, scroller, setPos };
+  return { ...view, scroller, setPos, setBase: (v: number) => (base = v) };
+}
+
+/** Let one scheduled frame land (the driver's coalescing remeasure rAF). */
+async function frame(): Promise<void> {
+  await act(async () => {
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+  });
 }
 
 /** Scroll the pane and let the driver's single rAF land. */
@@ -312,6 +354,79 @@ describe("GachaAgent — M7, the oracle fade driver", () => {
     expect(oracle.style.getPropertyValue(P)).toBe("");
     await scrollTo(scroller, setPos, BASE + 200);
     expect(oracle.style.getPropertyValue(P)).toBe("");
+  });
+
+  it("survives an active → inactive → active cycle: the body stays MOUNTED, the wiring is rebuilt", async () => {
+    // The kit keep-mounts every section body and gates it on `active` (never conditional-renders it), so
+    // leaving and re-entering the tab is the COMMON path — unmount is the rare one. Leaving must un-write
+    // and unhook (a `display: none` body measures all-zero, so anything it wrote would be a lie); returning
+    // must re-measure and re-publish at the CURRENT position, with no scroll event to prompt it.
+    const { container, scroller, setPos, rerender } = await mountAgent(<GachaAgent active />);
+    const oracle = container.querySelector<HTMLElement>(".gc-oracle")!;
+    const remove = vi.spyOn(scroller, "removeEventListener");
+    await scrollTo(scroller, setPos, BASE + 240);
+    expect(oracle.style.getPropertyValue(P)).toBe("1.000");
+
+    await act(async () => rerender(<GachaAgent active={false} />));
+    expect(oracle.style.getPropertyValue(P)).toBe(""); // the §10.5 ledger holds on deactivation too
+    expect(remove.mock.calls.filter((c) => c[0] === "scroll").length).toBeGreaterThan(0);
+    await scrollTo(scroller, setPos, BASE + 100); // scrolling while away writes nothing
+    expect(oracle.style.getPropertyValue(P)).toBe("");
+
+    await act(async () => rerender(<GachaAgent active />));
+    // republished from the position the pane is ACTUALLY at (100 of the 240px ramp), synchronously on
+    // re-activation — not left blank until the user happens to scroll again
+    expect(oracle.style.getPropertyValue(P)).toBe("0.417");
+    await scrollTo(scroller, setPos, BASE + 240);
+    expect(oracle.style.getPropertyValue(P)).toBe("1.000"); // …and the listener is live again
+  });
+
+  it("REMEASURES when an observed box resizes — and the APP BAR is one of them", async () => {
+    // Codex G3 M3, half one: the bar sits above the tab bodies inside the same scroller, so its height is
+    // part of the oracle's offset — and it changes on its own (a TTS toggle appearing, a display font
+    // landing). Neither the pane nor the block resizes when it does, so it has to be observed itself.
+    const bar = document.createElement("div");
+    bar.className = "kit-appbar";
+    document.body.appendChild(bar);
+    const { container, scroller, setPos, setBase } = await mountAgent(<GachaAgent active />);
+    const oracle = container.querySelector<HTMLElement>(".gc-oracle")!;
+    expect(observedTargets()).toContain(bar);
+    expect(observedTargets()).toContain(scroller);
+    expect(observedTargets()).toContain(oracle);
+
+    await scrollTo(scroller, setPos, BASE + 240);
+    expect(oracle.style.getPropertyValue(P)).toBe("1.000");
+    // the bar grows by 120px: the oracle moves DOWN the flow while the pane stays exactly where it is, so
+    // only a re-measurement can correct the ramp — a scroll-frame write would keep publishing 1.000
+    setBase(BASE + 120);
+    await act(async () => {
+      fireResizeObservers();
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+    expect(oracle.style.getPropertyValue(P)).toBe("0.500");
+    bar.remove();
+  });
+
+  it("REMEASURES when a PINNED PLAN mounts above it — with the thread length unchanged", async () => {
+    // Codex G3 M3, half two, and the reason `hasPinnedPlan` is its own dependency: `task_plan` can land
+    // inside the assistant message that is already streaming, so `messages.length` — what the bottom-pin
+    // re-sync keys on — never moves. The panel still displaces the entire flow below it by its height.
+    setThemeSetting("gacha", "planPlacement", "pinned");
+    chat.view = view([userMsg("go")]);
+    const { container, scroller, setPos, setBase, rerender } = await mountAgent(
+      <GachaAgent active />,
+    );
+    const oracle = container.querySelector<HTMLElement>(".gc-oracle")!;
+    await scrollTo(scroller, setPos, BASE + 240);
+    expect(oracle.style.getPropertyValue(P)).toBe("1.000");
+    expect(screen.queryByTestId("pinned-panel")).toBeNull();
+
+    chat.view = view([userMsg("go")], { steps: [{ text: "wake pegasus", status: "pending" }] });
+    setBase(BASE + 120); // the panel's height, pushing the oracle down
+    await act(async () => rerender(<GachaAgent active />));
+    await frame();
+    expect(screen.getByTestId("pinned-panel")).toBeTruthy();
+    expect(oracle.style.getPropertyValue(P)).toBe("0.500");
   });
 });
 

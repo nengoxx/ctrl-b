@@ -1770,19 +1770,33 @@
       transform: none;
     }
     /* ── THE AGENT TAB'S Z-LADDER (one place, stated in full) ──────────────────────────────────────
-     *   oracle 0  — the sticky BACKDROP the thread scrolls over (the prototype's own `z: oracle 0`)
-     *   log    2  — the thread, over the art (the prototype's own `.chat-log { z-index: 2 }`)
-     *   header 4  — the `.sec` row, ABOVE the thread, because it carries the privilege chip and that
-     *               chip's DROPDOWN must clear every bubble beneath it
-     *   plan   5  — the pinned plan panel, when that placement is chosen: a sticky panel of live steps
-     *               is never the thing that goes behind
+     *   oracle 0     — the sticky BACKDROP the thread scrolls over (the prototype's own `z: oracle 0`)
+     *   header auto  — the `.sec` row: POSITIONED, deliberately UN-RUNGED (see below)
+     *   log    2     — the thread, over the art (the prototype's own `.chat-log { z-index: 2 }`)
+     *   plan   4     — the kit's OWN rung for the pinned panel, untouched here (kit.css: sticky, z 4)
+     *   appbar 5     — the kit's bar, above everything in the pane
+     * …and the privilege dropdown's own 60/61, which are DOCUMENT-level rungs and must stay that way.
      *
-     * The header rung is the fix for a real bug (owner ruling, G3 round 2): a positioned ancestor with a
-     * z-index is a STACKING CONTEXT, so the dropdown's own z 61 is resolved INSIDE its container's rung,
-     * not against the page. With the header and the log both at 2, the log won on source order and the
-     * menu opened UNDER the bubbles — `document.elementFromPoint` over the open menu returned `.who` and
-     * `.tts-play` in gacha where it returns the menu's own buttons everywhere else. Anything that raises
-     * the log above the flow has to raise the chat CHROME with it.
+     * TWO rules, and each is a fix for a bug this tab actually shipped:
+     *
+     * 1. THE HEADER IS POSITIONED, WITH NO Z-INDEX (Codex G3 M2). It has to be positioned: the oracle is
+     *    a positioned z-0 box that STICKS, so an unpositioned header would scroll UNDER the art. It must
+     *    NOT carry a z-index: a positioned element with one is a STACKING CONTEXT, and the privilege
+     *    chip lives in this row — its backdrop (fixed, z 60) and menu (z 61) would then resolve INSIDE
+     *    the header's rung instead of against the page, which is not a cosmetic detail but the shared
+     *    overlay contract: measured under the z-4 header, `document.elementFromPoint` over the composer
+     *    returned the COMPOSER's textarea while the menu was open (the backdrop could not cover it, so
+     *    two overlays could be opened at once) and the appbar likewise. Un-runged, both points return
+     *    `.priv-backdrop`, exactly as under cosmos/minimal/frontier — the chip's chrome behaves
+     *    identically in every theme, which is the whole reason G3 round 2 put it back in `.sec`.
+     *    (The round-2 bug it replaces — the menu opening under the bubbles — was never about the rung
+     *    NUMBER: it was the bespoke `.gc-agent-bar`, a z-2 stacking context that trapped the same 61
+     *    below the log's z 2. With no context at all there is nothing left to trap.)
+     * 2. THE LOG rides above the art, and NOTHING here re-rungs the PINNED PLAN PANEL (Codex G3 M1). The
+     *    kit already gives it `position: sticky; z-index: 4` — above the log, below the appbar — and the
+     *    theme's earlier `position: relative` override silently DISABLED the pin: the panel scrolled away
+     *    with the thread and could cross over the appbar on the way. A theme paints the panel; the kit
+     *    positions it.
      *
      * Declared unconditionally rather than under `[data-oracle="fade"]`: in the `scroll` mode nothing
      * overlaps, so the ladder is inert there — and one ladder that always holds is worth more than a
@@ -1793,11 +1807,6 @@
     }
     .kit #tab-agent .sec {
       position: relative;
-      z-index: 4;
-    }
-    .kit #tab-agent .plan-pin-panel {
-      position: relative;
-      z-index: 5;
     }
     /* The name plate, bottom-left over the art (`.oracle-name`). */
     .gc-oracle-name {
