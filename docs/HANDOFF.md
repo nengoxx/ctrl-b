@@ -12,7 +12,35 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-03 — **✅ G2 BUILT + OWNER-EYEBALLED + PUSHED (unit dossier + the MORPH + the art showcase); NEXT = G3, the agent tab**)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-03 — **✅ G2 CLOSED · ◐ G3 code+reviews COMPLETE, owner DEVICE ROUND = the open gate · NEXT = that round, then G4**)
+> **This block is written for a COLD session (the prior one closed at its usage limit after
+> closing G1+G2 and building G3 end-to-end).** Everything through G3's review wave is
+> COMMITTED AND PUSHED (verify `git log origin/main..main` is empty; if not, push — the owner
+> authorized it). State: **FE 1343 / BE 1254 / 40 gacha e2e arms**, dev units RUNNING
+> (:5434/:5173) for the owner's checks.
+> **FIRST MOVE: ask the owner for the G3 device-round verdict** (the five checks: M7 blur ramp
+> smoothness on Fennec — perf-lite drops it whole if janky · 12.5px bubble read comfort · the
+> oracle pin across appbar modes · the flat `arcade` composer panel (+ its `--line-2` edge
+> fidelity delta, an owner call) · the M6 scanline on Gecko — its `data-engine` branch is
+> PRE-DESIGNED, NOT BUILT; the round decides). Fold verdicts as a fix wave via an Opus
+> subagent, then close G3 in §7.4/TODO.
+> **THEN G4 (re-scoped):** the reel FIGURE (smaller default, tunable — asset/timing/size
+> eyeball) on G0's mechanism + the M2 root-VT question per the §10.1 spike (the owner runs
+> `localStorage.setItem("ctrlb.spike.navVT","1")` on Fennec) — **M3's morph already SHIPPED at
+> G2** (§7.3), so G4 is figure + M2 only. Then G5 media/roster (role-scoped folders, §5.4) and
+> G6 palette variants close the phase; release = v1.5.0 (prod stays v1.4.6, owner ruling).
+> **Read before building: §7.1–§7.4 as-builts** (the phase's laws: frames-not-screenshots for
+> animations · VT capture-window commit discipline · generation tickets for async VT callbacks ·
+> the bespoke-body stacking law · worktree isolation for PARALLEL build agents — two agents in
+> one tree collided twice) + the D52 addenda in DECISIONS.
+> **Standing threads:** kit sr-only sheet close duplicates gacha's visible × label (kit
+> follow-up) · a11y e2e never opens the dossier (axe misses it — tag-gate note) ·
+> `skipActiveViewTransition` is global-not-per-layer (fine today; revisit if the VT wrapper
+> grows owners) · carousel dots close the dossier (owner-flagged, unvetoed) · owner picks
+> open: wordmark string (カプセルアーケード standing) · NEW ribbon (no data seam) · ~80 MB
+> original drops UNTRACKED in `design/prototypes/gacha/` (REC: never commit).
+>
+> ## ▶ PREVIOUS BLOCK, same day (2026-08-03 — **✅ G2 BUILT + OWNER-EYEBALLED + PUSHED (unit dossier + the MORPH + the art showcase); G3 was next**)
 > **The same owner-attended session closed G1 AND G2. Ten G2 commits `8c4c74f..c248260`, ALL
 > PUSHED (origin @ `c248260` + the docs commit riding this handoff); FE 1309 / BE 1254, gate
 > green per commit. G2 as-built = GACHA_PLAN §7.3 (READ IT — the morph arc is the session's

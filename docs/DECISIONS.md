@@ -3995,3 +3995,17 @@ then).
 - **§4.8's held-metric dash is the literal em dash** (`metricPending` in copy.ts): the
   "font regen needed" premise was verified WRONG (latin faces carry U+2000-206F); the G1
   pill/counter keep their eyeballed ASCII hyphen.
+
+**✏️ G3 addendum (2026-08-03 — as-built GACHA_PLAN §7.4; owner device round pending):**
+- **The composer catalog gains `arcade`** (D37 held: look-named, semantic tokens only, the
+  closed shared catalog's fifth value) — measured against every existing skin first, 4/5
+  defining properties differ.
+- **The oracle ghosts as ONE SURFACE** (owner ruling): art, scrim AND the display words ride
+  the M7 ramp together; and it **pins at `var(--appbar-h)`** (owner ruling) — never under
+  the bar. Both supersede §10.2's narrower recipe.
+- **The bespoke-body stacking law** (Codex M2 + the builder's accepted departure): chrome
+  ABOVE a runged log must be positioned WITHOUT z-index, or it traps every fixed descendant
+  (the privilege menu's 60/61). The shipped ladder: oracle 0 < header (un-runged) < log 2 <
+  plan 4 (kit sticky, never overridden) < appbar 5.
+- **`safeRafLoop` faults latch permanently** (start() no-ops after a thrown tick) — engine-wide
+  behavior change, the documented intent made real.

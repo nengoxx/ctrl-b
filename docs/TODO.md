@@ -1340,7 +1340,8 @@ v1.5.0 is RESERVED for this theme's release.
 - [x] G0 — the settle-everything slice ✅ owner-signed 2026-08-02 (15 commits + 4 fidelity waves; as-built = GACHA_PLAN §7.1; the VT spike ships fenced, verdict pending the owner's Fennec)
 - [x] G1 banner + capsule track + scenes — ✅ built + owner-eyeballed 2026-08-02 (as-built §7.2; 3★ ladder re-ruled, role-scoped G5 media folders ruled, scene slides + `SCENE_TITLES` pool)
 - [x] G2 unit dossier — ✅ built + owner-eyeballed + pushed 2026-08-02/03 (as-built §7.3; M3 morph pulled from G4 + prototype-exact, swap morph, visible ×, tap-outside/nav close, full-screen art showcase, em-dash metrics, contrast THEME_PAIRS)
-- [ ] G3–G6 per `GACHA_PLAN.md` §7 (each: Opus build → main-seat audit → Codex → owner eyeball); next = G3 agent tab (oracle + composer skin; bubbles shipped at G0)
+- [x] G3 agent tab — code + reviews ✅ COMPLETE 2026-08-03 (as-built §7.4; oracle one-surface ramp, arcade composer skin, stacking-law fix wave) — **⏳ owner DEVICE ROUND pending (M7 blur on Fennec · 12.5px · pin modes · arcade panel · Gecko scanline)**
+- [ ] G4–G6 per `GACHA_PLAN.md` §7 (each: Opus build → main-seat audit → Codex → owner eyeball); next = G4 reel figure + M2/M3-remainder per the VT spike verdict (M3's morph SHIPPED at G2 — G4 re-scoped)
 - [ ] Release as v1.5.0 (runbook §Release; prod currently v1.4.6 by owner ruling)
 
 ## Cross-cutting / don't-forget

@@ -529,7 +529,7 @@ for the "04 / 04" counter.
 | G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps five palette variants a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
 | ✅ G1 | **BUILT + OWNER-EYEBALLED 2026-08-02 (as-built §7.2)** — bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + the §6.4 slide set **incl. the eyeball-ruled SCENE slides**) + capsule track (cards/states/plates/shine + stars) + wallpaper + the geometry rule + the owner's own art in the bundled set | owner eyeball ✅ (3+ live rounds) |
 | ✅ G2 | **BUILT + OWNER-EYEBALLED 2026-08-02 night (as-built §7.3)** — dossier sheet (light inversion + the ruled grid + live service rows + the H3 ACTION BAR) + **the M3 capsule→dossier morph, owner-PULLED from G4 and made to visibly work** + swap morph + visible × + tap-outside close + **the full-screen ART SHOWCASE (owner ask)** — M6 extraction to `lib/hostDetail.ts` landed first; contrast gate gained the dossier's THEME_PAIRS rows | owner eyeball ✅ ("looks good", pushed) + contrast probe ✅ (48-combo matrix) |
-| G3 | Agent tab: GachaAgent body (oracle + §4.2 scroll mechanics) + composer skin — **the M7 blur ramp gets its own Fennec/Chrome device check here**, not deferred to G6. ~~Chat-hooks reskin~~ **BUBBLES SHIPPED AT G0 (owner pull-forward, `04003d9`+`6db92cc`: white/`#16162c`/`5px 5px 0 #ff6cae` + bot `#222541` + the prototype's 12.5px/1.45 type)** — G3 carries only bubble POLISH + the owner's 12.5px read-comfort check on device | eyeball + device check |
+| ◐ G3 | **BUILT + REVIEW-COMPLETE 2026-08-03 (as-built §7.4; commits `6c5298d..5ce33d7`) — OWNER DEVICE ROUND = the open gate.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
 | G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + M2/M3 VT enhancement per the spike verdict + Gecko tuning (the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape) |
 | G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
 | G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) + polish + full §14.15.1 hardening pass + the on-device Gecko round | owner sign-off |
@@ -726,6 +726,46 @@ as the G1 close).** Eleven commits `8c4c74f..294cc32`; end state
   ALWAYS runs (even skipped) → generation tickets + single-owner DOM prep for names ·
   `:scope[data-transition]::view-transition-*` matches fine inside `@scope` rooted on html ·
   a token contrast gate cannot see `opacity` blends — mute with tokens, not alpha.
+
+**§7.4 — G3 AS-BUILT (2026-08-03; ✅ code + reviews complete, ⏳ owner device round pending).**
+Six commits `6c5298d, 444469b, 8e37db5, 2f424ef, af6100e, 5ce33d7`; end state **1343 FE (112
+files) / 1254 BE / 40 gacha e2e arms**, gate green per commit. The record:
+- **U1** GachaAgent joins `bodies` (frontier's pattern): partitioned `ART.oracle` + M6 scanline
+  over the composed shared ChatThread; empty state with composer-filling chips. **U2** M7 as
+  ONE CSS var (`--gc-oracle-p`) from a passive `#app-scroll` listener through `safeRafLoop`;
+  progress from the oracle's own offset; TWO full faces (art+scrim+name) crossfading, ghost
+  carries the blur, `aria-hidden`. **U3 RULED: the catalog gains `arcade`** — measured 4/5
+  defining properties off every existing skin (prototype: opaque `#15172e`, no frost, hairline,
+  14px, no shadow); semantic tokens only; one fidelity delta flagged (edge `--line-2` #ffffff2e
+  vs the prototype's #ffffff1a — a shared skin can't read theme-private tokens). **U4** log-box
+  metrics, measured.
+- **The owner's four live findings (2f424ef):** privilege chip → the kit's `.sec/.right` slot
+  (was displaced to x=308 vs the precedents' 82) · the dropdown's trap fixed · the WHOLE FACE
+  rides the ramp (owner ruling — §10.2 had under-scoped it to the art) · the oracle pins at
+  `var(--appbar-h)`, never under the bar (owner ruling; §10.2's top:0 superseded). Plus an e2e
+  catch: M7's zoom must live INSIDE the block's clip or it grows the pane's scrollWidth.
+- **Codex round: READY WITH FIXES → all five taken (`5ce33d7`):** M1 the gacha override had
+  silently UN-STUCK the kit's pinned-plan panel (deleted outright — the kit's sticky z:4
+  stands) · M2 the header's z-index trapped PrivilegeChip's 60/61 overlay — **fixed by
+  REMOVING the header's z-index (positioned-but-un-runged ⇒ no stacking context; tree order
+  beats the z-0 oracle), NOT by Codex's portal** (the repo has zero portals; the agent's
+  departure from the main seat's header-3 ruling, accepted as the leaner fix; hit-test parity
+  with cosmos proven) · M3 M7's base remeasures on pinned-plan presence + an observed appbar,
+  coalesced through one rAF · L1 `safeRafLoop` latches `faulted` (start() no-ops after a
+  thrown tick — NOTE the blast radius: GachaBanner's drag loop now freezes post-fault instead
+  of re-throwing per gesture, the intended degradation) · L2 the adversarial arms (both M3
+  arms verified red on pre-fix code).
+- **The shipped stacking ladder (a durable law for bespoke agent bodies):** oracle 0 < header
+  (positioned, NO z-index) < log 2 < plan 4 (kit) < appbar 5, fixed overlays 60/61
+  document-level. **Any theme that gives the log a rung must NOT rung the chrome above it —
+  a positioned-with-z ancestor traps every fixed descendant.**
+- **Plan corrections recorded:** §10.2's wrapper-scale, art-only crossfade scope, and top:0
+  are all superseded as above. **Probe gotcha:** the dev backend's own `/api/appearance`
+  silently overrides a seeded theme — mock it or a "cosmos" probe run comes back wearing gacha.
+- **OPEN at this state:** the owner DEVICE ROUND (M7 blur on Fennec · 12.5px · pin across
+  appbar modes · the arcade panel · the M6 Gecko scanline branch, pre-designed not built) ·
+  the `--line-2` edge fidelity delta (owner call) · the arcade skin's cross-theme look rides
+  every theme's picker (visual-checked gacha+cosmos, screenshots in evidence).
 
 **Acceptance matrix (the lock session turns this into per-slice test obligations):** 0/1/many
 hosts · hosts>roster and roster>hosts · queries loading/error states (pill, counter) ·
