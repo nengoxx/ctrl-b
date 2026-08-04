@@ -148,6 +148,23 @@ export interface ThemeDef {
   // theme whose presentation genuinely can't express a preset. Resolved by `layout.ts#resolveLayout`.
   defaultLayout?: LayoutId;
   layouts?: LayoutId[];
+  // Owner-supplied art (D52/G5): the media NAMESPACE this theme reads, plus the copy the Conf gallery
+  // needs to describe it. Declaring it is what makes the gallery appear for this theme — the same
+  // descriptor-not-code shape as `settings` above, so the shared Conf tab never branches on a theme id.
+  media?: ThemeMedia;
+}
+
+/** A theme's owner-media declaration. The ROLES are folders under `$CTRLB_HOME/media/<ns>/`, and the
+ *  server's index is the authority on which exist — this only supplies the words for them, because
+ *  "what does `reel/` mean" is theme knowledge that no generic gallery could invent. */
+export interface ThemeMedia {
+  /** The `/api/media/{ns}` namespace. `gacha` is the first; the next art theme is another string. */
+  ns: string;
+  /** role → the hint shown under its heading in the gallery. A role with no hint still renders. */
+  roles?: Record<string, string>;
+  /** The `slots` pins the gallery offers (§5.2): binding one named file INTO a role, overriding that
+   *  role folder's own first-wins pick. `from` names the role whose files are the options. */
+  slots?: { key: string; label: string; from: string }[];
 }
 
 // Only BUILT themes appear here (a Partial record) — `rootFor` falls back to `DEFAULT_THEME` for an

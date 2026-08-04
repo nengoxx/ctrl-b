@@ -84,6 +84,14 @@
 // The DECODE, not the transfer, is what this defends against: the prototype's atlas.jpg is 3000×4257 and
 // decodes to ~51 MB of bitmap on the phone (§10.4). The owner's own runtime art gets no re-encode — the G5
 // index endpoint warns about oversized files instead (no server-side decoder surface).
+//
+// ── AND THE CONSEQUENCE FOR OWNER DROPS (the G4 carry, settled at G5) ─────────────────────────────────────
+// Nothing bakes a glow for a file dropped into `$CTRLB_HOME/media/gacha/reel/`: it is painted exactly as
+// supplied. That is the deliberate trade — baking would mean a server-side decoder (rejected above) and the
+// runtime `drop-shadow()` alternative is what the §10.1 rider bans — so a plain transparent PNG will read
+// FLATTER than lyra does. The owner meets this where it matters rather than here: the Conf gallery's `reel`
+// hint says so in the theme's own descriptor (index.tsx). Anyone wanting the bundled look can run the recipe
+// above against their own cutout and drop the RESULT in.
 
 const urls: Record<string, string> = import.meta.glob("./art/*.webp", {
   eager: true,

@@ -279,6 +279,12 @@ export function useSaveSettings() {
       qc.setQueryData(["notification-prefs"], res.settings.notifications);
       void qc.invalidateQueries({ queryKey: ["notification-prefs"] });
       void qc.invalidateQueries({ queryKey: ["providers"] }); // D48 — a save may add/rename/drop providers (fresh names/warnings)
+      // D52/G5 — a `themes.<ns>` save changes the ORDER the media index serves (and its slot pins), and
+      // the index is where the theme reads its art from. Invalidated by PREFIX so every namespace's
+      // listing re-reads; the theme then repaints without a reload. Not `setQueryData`: the echo is the
+      // settings doc, and the index is a projection of settings OVER THE FILES ON DISK — only the server
+      // can compute it.
+      void qc.invalidateQueries({ queryKey: ["media"] });
       void loadProviders(); // refresh the composer's module-level `/<provider>` verb set (best-effort)
       void loadAgents(); // SYS-9.2 — a save may change the default-agent selection; keep the composer's `/agent` set + resolved default fresh (best-effort)
       if (res.restart_required.length) {

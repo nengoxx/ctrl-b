@@ -5,6 +5,7 @@ import { AutomationsPanel } from "../components/AutomationsPanel";
 import { ConfGroup } from "../components/ConfGroup";
 import { JsonField } from "../components/JsonField";
 import { MachineEditor } from "../components/MachineEditor";
+import { MediaGallery } from "../components/MediaGallery";
 import { MemoryEditor } from "../components/MemoryEditor";
 import { NumField } from "../components/NumField";
 import { type PickerCatalog, type PickerValue } from "../components/ProviderModelPicker";
@@ -2487,6 +2488,22 @@ export function ConfTab({ active }: Props) {
           </SettingRow>
         </div>
       </ConfGroup>
+
+      {/* Owner art (D52/G5) — only for a theme that DECLARES a media namespace (`ThemeDef.media`), the
+          same descriptor-driven shape as the per-theme settings rows above: this tab never branches on a
+          theme id. Last, and after Appearance, because it is the one Conf group whose content lives
+          outside config entirely — the files are on disk, and this only records their order and pins. */}
+      {activeDef?.media != null && (
+        <ConfGroup
+          id="theme-art"
+          num={hostsUtils ? "20" : "19"}
+          title="Theme art"
+          right={`media/${activeDef.media.ns}/`}
+          defaultCollapsed
+        >
+          <MediaGallery media={activeDef.media} />
+        </ConfGroup>
+      )}
 
       <div className="conf-foot">
         ctrl·b · vapor build ·{" "}

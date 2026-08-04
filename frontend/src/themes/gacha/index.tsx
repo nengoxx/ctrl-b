@@ -100,6 +100,31 @@ export const gacha: ThemeDef = {
   // ideal every registered theme follows), and the JP sub-label for Utils exists precisely so the 4-tab
   // preset is a real, complete look rather than a fallback.
   defaultLayout: "3-tab",
+  // Owner art (G5 / §5.4's ruled option (b)). The owner drops files into `$CTRLB_HOME/media/gacha/<role>/`
+  // from any machine and the folder IS the assignment; this declares the namespace and the words the Conf
+  // gallery describes each role with. ASCII, like the settings labels above — these are gallery prose, not
+  // the theme's frozen Japanese copy, so they must not enlarge the font subset.
+  media: {
+    ns: "gacha",
+    roles: {
+      characters: "Capsule cards + the dossier portrait, dealt to machines in this order.",
+      banner: "One extra pickup-banner slide per image.",
+      wallpaper: "The fleet backdrop. The first image wins.",
+      // The G4 carry, put where the owner will actually meet it: the bundled cutout has its two shadows
+      // BAKED INTO the file (a runtime `drop-shadow()` on a large moving image re-rasterizes every frame
+      // on Gecko — the §10.1 rider), and nothing bakes one for a drop-in. See art.ts for the recipe.
+      reel: "The cutout that rides the tab transition. Dropped-in cutouts are painted as-is: the bundled one has its glow baked into the file, so a plain transparent PNG will look flatter.",
+      oracle: "The agent operator's backdrop. The first image wins.",
+    },
+    // Every pin binds a CHARACTER into a role — the §5.2 override that survived the role re-rule. The
+    // role folders cover the ordinary case on their own, so these stay optional in every sense.
+    slots: [
+      { key: "wallpaper", label: "Fleet backdrop", from: "characters" },
+      { key: "hero", label: "Hero slide", from: "characters" },
+      { key: "oracle", label: "Operator backdrop", from: "characters" },
+      { key: "reel_figure", label: "Transition figure", from: "characters" },
+    ],
+  },
   // The bundled art manifest (the eager `import.meta.glob` URL map, §9.3) — the DEFAULT roster the theme
   // resolves against until G5's owner directory exists, keyed by bare filename.
   assets,

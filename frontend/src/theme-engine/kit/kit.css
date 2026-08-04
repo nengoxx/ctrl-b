@@ -2498,7 +2498,10 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   line-height: 1;
   transition: transform 0.2s;
 }
-.kit .confrow .badge {
+/* The pill is shared with the G5 media gallery's per-file warnings (`.mgal-meta`) — one recipe, not a
+ * second badge language: same three states (ok / stale = a file that will not work / dim = advisory). */
+.kit .confrow .badge,
+.kit .mgal-meta .badge {
   font-size: 10px;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -2509,12 +2512,14 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   border: 1px solid var(--ok-soft);
   flex: none;
 }
-.kit .confrow .badge.stale {
+.kit .confrow .badge.stale,
+.kit .mgal-meta .badge.stale {
   background: var(--danger-soft);
   color: var(--danger);
   border-color: var(--danger-soft);
 }
-.kit .confrow .badge.dim {
+.kit .confrow .badge.dim,
+.kit .mgal-meta .badge.dim {
   background: var(--surface-2);
   color: var(--text-3);
   border-color: var(--line);
@@ -5528,4 +5533,153 @@ body[data-perf="lite"] .kit .navmenu-pop {
   flex-wrap: wrap;
   justify-self: end;
   max-width: 100%;
+}
+
+/* ── G5 (D52) — the OWNER MEDIA GALLERY (`MediaGallery.tsx`), the Conf half of the read-only media
+ * surface. Net-new: the kit has no other thumbnail list. Built from the recipes already here — the
+ * `.conf-card` frame, the `.confrow` hairline rhythm, the `.badge`/`.badge.stale`/`.badge.dim` pills,
+ * and the `.mform` input reset for the pin selects — so it reads as part of the Conf family under every
+ * theme. Every color is a token; the whole block is layout + those tokens, no new visual language. */
+.kit .mgal-msg {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.kit .mgal-role {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--line);
+}
+.kit .mgal-role:first-child {
+  border-top: 0;
+}
+.kit .mgal-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.kit .mgal-head b {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.kit .mgal-head .path {
+  font-size: 10px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.kit .mgal-hint,
+.kit .mgal-empty {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.kit .mgal-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kit .mgal-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+/* An unusable drop is marked on the ROW, not just in a badge: it is the one state where the owner has
+ * to act (rename or replace the file) before the theme can use it at all. */
+.kit .mgal-item.bad {
+  border-color: var(--danger-soft);
+}
+.kit .mgal-thumb {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.kit .mgal-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.kit .mgal-meta .name {
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .mgal-meta .dim {
+  font-size: 10px;
+  color: var(--text-3);
+}
+/* The move pair. 34px targets rather than the 44px ideal: two of them ride a 44px-tall row on a phone,
+ * and the row itself is the spacing that keeps them separable — the same trade the seg chips make. */
+.kit .mgal-move {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+.kit .mgal-move button {
+  all: unset;
+  box-sizing: border-box;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+.kit .mgal-move button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.kit .mgal-move button:not(:disabled):active {
+  transform: scale(0.94);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.kit .mgal-pin-grid {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+.kit .mgal-pin {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+.kit .mgal-pin > span {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.kit .mgal-pin select {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.kit .mgal-pin select:disabled {
+  opacity: 0.5;
 }
