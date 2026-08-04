@@ -485,7 +485,6 @@ export function GachaFleet({ active }: { active: boolean }) {
             services={svcByHost.get(detail.host.id) ?? []}
             art={detailArt}
             mode={starMode}
-            index={detail.index}
             busy={busy.has(detail.host.id)}
             run={run}
             titleId={titleId}

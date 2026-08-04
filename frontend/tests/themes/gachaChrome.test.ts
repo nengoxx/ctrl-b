@@ -161,7 +161,7 @@ describe("gacha chrome — the values live in tokens.css (council M7)", () => {
     ["--gc-dossier-line", "#c9d0ef"],
     // NOT the prototype's #c8438b: that literal measures 4.30 on the light sheet — under the small-text
     // 4.5 floor — so it deepened within the same rose (the owner-override/measured-floor precedent, like
-    // --gc-dossier-danger). The pin now guards the MEASURED value against drifting back.
+    // --gc-dossier-accent). The pin now guards the MEASURED value against drifting back.
     ["--gc-unit-no", "#b03578"],
     ["--gc-caption", "#9ff0ff"],
     ["--gc-heading", "#ff8ec2"],

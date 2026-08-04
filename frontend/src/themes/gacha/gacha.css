@@ -193,6 +193,32 @@
       backdrop-filter: none;
     }
 
+    /* ── The accent ramp on SMALL filled controls (owner 2026-08-03) ───────────────────────────────
+     * `--accent-fill` is the kit's channel for every filled control, and gacha points it at a two-stop
+     * pink→violet. On a wide control that ramp is a gentle sweep; on a 26–36px round one it is the entire
+     * sweep across a thumbnail, and the composer's mic + send sit 6px apart with the ramp RESETTING between
+     * them — the "cramped, too many colours" the owner called out.
+     *
+     * Fixed by widening the TILE, not by editing the colour: `background-size` makes the gradient wider than
+     * the box, so the control shows the ramp's middle rather than end to end. Deliberately NOT done by moving
+     * the token's stops past 0/100%, which would have swept all twelve kit consumers — the wide ones (save
+     * buttons, the tab indicator, modal actions) were never cramped and keep their full sweep. Listed
+     * explicitly, therefore, and only the four the owner picked: the composer pair, the seg's active chip and
+     * the mini-player's play button. `background-position: 50%` centres that window so the visible band is
+     * the ramp's midpoint in every one of them.
+     *
+     * These are KIT hooks reskinned by the theme (the §15 pattern), and `background-size` is a longhand the
+     * kit's `background:` shorthand resets to `auto` — this wins on LAYER (theme over base), not specificity,
+     * the same way every other rule in this file does. The mini-player's play button is a masked shape whose
+     * background IS its colour, so it takes the window exactly like the solid ones. */
+    .kit-composer .kit-send,
+    .kit-composer .kit-cbtn.mic.line-btn,
+    .kit .seg button.active,
+    .kit .mini-player .mp-play {
+      background-size: var(--gc-fill-spread) 100%;
+      background-position: 50%;
+    }
+
     /* ── Switches ─────────────────────────────────────────────────────────────────────────────────
      * The prototype's toggle: 48×28 track, borderless, `#ffffff15` when off, the TWO-STOP pink→violet
      * when on, with a WHITE 22px knob on a 260 ms spring. The kit's own recipe is 42×22 with a
@@ -1201,7 +1227,9 @@
     .gc-dossier-close {
       position: absolute;
       top: 0;
-      right: 12px;
+      /* 18px, measured off the mock (its disc sits 18px in at our width, ours sat at 12) — the old inset
+       * read as crowding the sheet's rounded corner, where the visible edge is already curving away. */
+      right: 18px;
       z-index: 2;
       display: grid;
       place-items: center;
@@ -1209,7 +1237,9 @@
       height: 34px;
       padding: 0;
       border: 0;
-      border-radius: 12px;
+      /* a CIRCLE (owner 2026-08-04, from the palette-study mock) — but the mock's thin ring is NOT adopted:
+       * this stays the solid ink disc it already was, so the × keeps its weight against the light sheet. */
+      border-radius: 50%;
       background: var(--gc-dossier-ink);
       color: var(--gc-dossier-from);
       font-size: 15px;
@@ -1301,6 +1331,9 @@
       min-width: 0;
       flex: 1;
       padding-top: 4px;
+      /* the close corner is absolutely positioned over this block's trailing edge (34px wide, 18px in);
+       * reserve its lane so a long host name wraps beside the circle instead of running under it. */
+      padding-right: 56px;
     }
     .gc-dossier-title .unit-no {
       display: block;
@@ -1334,27 +1367,37 @@
     .gc-metrics {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      padding: 0 14px 14px;
+      gap: 7px;
+      padding: 0 14px 12px;
     }
+    /* Geometry re-ruled 2026-08-04 against the palette-study mock. Measured, the mock's boxes are NOT
+     * smaller than ours — scaled to this width its metric cell is 77px against our 76 — but they are
+     * markedly SQUARER (cell ≈8px, action ≈6px, row ≈8px against our 14/12/14), which is what read as
+     * "tighter", and what suits a cabinet. So the corners come down to the mock's, and the padding comes
+     * down a little further on the owner's own call that the cells were oversized for their contents. */
     .gc-metric {
       min-width: 0;
-      padding: 12px 8px;
+      padding: 8px 6px;
       text-align: center;
       background: var(--gc-dossier-card);
       border: 1px solid var(--gc-dossier-line);
-      border-radius: 14px;
+      border-radius: 8px;
     }
     .gc-metric b {
       display: block;
       font-size: 16px;
       font-weight: 900;
+      /* the cell's real padding was here, not in `padding` (owner 2026-08-04): at the font's normal
+       * leading a 16px value gets a 24px line box for ~12px of ink, so 8px of air sat inside the box
+       * before any padding was applied. 1.15 keeps the descender room the value strings can need
+       * (`<1 ms` has none, but a `g`/`p` in a future unit would) and gives the rest back. */
+      line-height: 1.15;
       color: var(--gc-dossier-ink);
       overflow-wrap: anywhere;
     }
     .gc-metric span {
       display: block;
-      margin-top: 5px;
+      margin-top: 3px;
       color: var(--gc-dossier-ink-2);
       /* the prototype's own 7px caption (its theme.css tightens base.css's 8px), and the bilingual label
        * wraps rather than overflowing on a narrow phone */
@@ -1363,26 +1406,37 @@
       letter-spacing: 0.1em;
       text-transform: uppercase;
     }
+    /* …and the JP half takes the second line ALWAYS (owner 2026-08-03). Left to wrap naturally, only
+     * `Services サービス` was long enough to break at this width, so one card stood a line taller than the
+     * other three. A block on the nested element breaks it deterministically, with no restyle: same size,
+     * ink and tracking as the Latin half — the two lines are one caption, not a label and a sub-label.
+     * `font-style` because the element is an `<i>` (the prototype's own bilingual idiom, and HTML's
+     * element for a phrase in another language) and would otherwise italicise. */
+    .gc-metric span i {
+      display: block;
+      font-style: normal;
+    }
 
     /* ── The HOST ACTION BAR (council H3 — designed here, not ported: the prototype has no action bar).
      * Kit semantics (the same actions the cosmos/frontier dossiers run through the typed-action
      * chokepoint), gacha language: arcade TICKETS. The primary is the brand two-stop on the kit's verified
-     * `--accent-ink` pair, at the prototype's own 12px button radius, carrying the hard offset shadow this
+     * `--accent-ink` pair, at the mock's tighter 6px radius, carrying the hard offset shadow this
      * theme gives anything that sits ON a surface; pressing it translates INTO its own shadow, which is
-     * the sticker-press the prototype's dormant `press()` helper was reaching for. Shut down stays a quiet
-     * white pill with a rose rule and the light-surface danger ink — destructive, not shouty. */
+     * the sticker-press the prototype's dormant `press()` helper was reaching for. Shut down is the quiet
+     * half of the pair: the same outlined chip in the light-surface ACCENT (owner 2026-08-04, replacing
+     * the original rose/danger rule — the confirm dialog, not the colour, is what gates the action). */
     .gc-acts {
       display: flex;
       gap: 8px;
-      padding: 0 14px 14px;
+      padding: 0 14px 12px;
     }
     .gc-act {
       flex: 1;
       min-width: 0;
       appearance: none;
       cursor: pointer;
-      padding: 12px 10px;
-      border-radius: 12px;
+      padding: 10px 10px;
+      border-radius: 6px;
       background: var(--gc-dossier-card);
       border: 1px solid var(--gc-dossier-line);
       color: var(--gc-dossier-ink);
@@ -1405,9 +1459,17 @@
       color: var(--accent-ink);
       box-shadow: var(--gc-act-shadow);
     }
+    /* SHUT DOWN. Was a rose/danger rule (G2: "destructive, not shouty"); re-ruled to the mock's
+     * ACCENT-OUTLINED ghost by the owner 2026-08-04, so the pair reads as one control set — filled
+     * primary, outlined secondary — rather than as two different warnings. The destructive action is
+     * still gated where it counts: `run` routes shutdown through the typed action's confirm dialog. */
     .gc-act.danger {
-      color: var(--gc-dossier-danger);
-      border-color: color-mix(in srgb, var(--gc-dossier-danger) 45%, var(--gc-dossier-line));
+      /* the LIGHT-surface accent, not `--accent` itself: the night pink measures 2.62 on this white card
+       * against a 4.5 floor for 10px bold, so the button wears the deepened member of the same rose
+       * (5.79). The border is mixed at 60%, not the 45% the danger rule used — measured, 45% lands at
+       * 2.79 against the 3:1 non-text floor and 60% at 3.44. */
+      color: var(--gc-dossier-accent);
+      border-color: color-mix(in srgb, var(--gc-dossier-accent) 60%, var(--gc-dossier-line));
     }
     .gc-act:active:not(:disabled) {
       transform: translate(3px, 3px);
@@ -1424,34 +1486,22 @@
       transition: none;
     }
 
-    /* The live service rows. The left rule is the host's ACCENT PAIR (see `[data-pair]` below) — the port
-     * of the prototype fixture's per-host `color`/`color2`, which no live host carries. */
+    /* The live service rows. The prototype's per-host left rule (its fixture's `color`/`color2`, dealt
+     * here from the tri-accent by display index) was REMOVED at the owner's call 2026-08-04 — with it went
+     * the `[data-pair]` token blocks and the component's `index` prop, which existed for nothing else. */
     .gc-svcs {
       display: grid;
       gap: 7px;
-      padding: 0 14px 16px;
+      padding: 0 14px 14px;
     }
     .gc-svc {
-      position: relative;
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 11px 12px;
+      padding: 9px 12px;
       background: var(--gc-dossier-card);
       border: 1px solid var(--gc-dossier-line);
-      border-radius: 14px;
-      overflow: hidden;
-    }
-    /* The prototype's `border-left: 3px solid var(--host)`, as a gradient bar so BOTH halves of the host's
-     * pair paint (a flat border can carry only one). Same 3px, same edge, inside the row's radius. */
-    .gc-svc::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 3px;
-      background: linear-gradient(var(--gc-host), var(--gc-host-2));
+      border-radius: 8px;
     }
     .gc-svc i {
       flex: none;
@@ -1479,6 +1529,11 @@
       /* the prototype leaves `small` at the UA's ~13px, which reads LARGER than the 12px name beside it;
        * subordinated here to the caption scale the rest of the theme uses */
       font-size: 11px;
+      /* MONOSPACE (owner 2026-08-04): a port is a machine value, and the mock sets it in mono against the
+       * sans name — the one place this dossier changes face. NOTE this slot also carries the wordy
+       * fallback for a service with no port ("healthy"/"offline"), which now renders in mono too; splitting
+       * the two would need a class from the component, and is a one-line follow-up if it reads oddly. */
+      font-family: var(--font-mono);
       color: var(--gc-dossier-ink-2);
     }
     .gc-svc-empty {
@@ -1487,24 +1542,6 @@
       letter-spacing: 0.06em;
       text-transform: uppercase;
       opacity: 0.5;
-    }
-
-    /* THE PER-HOST ACCENT PAIRS. The prototype's fixture hand-assigned each host a `color`/`color2`; live
-     * hosts have no such field, so the port deals the pairs from the TRI-ACCENT by display index
-     * (`i % 3`, in GachaHostDetail) — deterministic, so a poll can never re-tint an open dossier, and
-     * authored entirely from the brand tokens, so a G6 palette variant re-tints these with everything
-     * else. Three rotations of the same trio: pink→violet, violet→cyan, cyan→pink. */
-    .gc-dossier[data-pair="0"] {
-      --gc-host: var(--gc-brand-1);
-      --gc-host-2: var(--gc-brand-2);
-    }
-    .gc-dossier[data-pair="1"] {
-      --gc-host: var(--gc-brand-2);
-      --gc-host-2: var(--gc-brand-3);
-    }
-    .gc-dossier[data-pair="2"] {
-      --gc-host: var(--gc-brand-3);
-      --gc-host-2: var(--gc-brand-1);
     }
 
     /* ── THE ART SHOWCASE (owner request 2026-08-02) — the unit's art, uncropped, on the arcade night ──
@@ -1668,7 +1705,16 @@
      * banner's glow. Sits above the scrim, below the name plate. */
     .gc-oracle-scan {
       position: absolute;
-      inset: 0;
+      /* TALLER THAN THE BOX BY EXACTLY THE TRAVEL (owner report 2026-08-03). The comb is painted by this
+       * element's own background, so it can only cover the element's box — and the loop slides that box down
+       * by `--gc-scan-travel`. At `inset: 0` the last frames of every cycle therefore exposed an uncombed
+       * band across the top of the art, growing to the full 28px right before the restart. Starting the layer
+       * one travel-length ABOVE the block keeps the visible 0…H band covered at every phase; the overhang
+       * (above at rest, below at the end) is clipped by `.gc-oracle`'s own `overflow: hidden`.
+       * The offset READS THE TRAVEL TOKEN rather than restating 28px, so the two can never drift out of
+       * agreement — and because the travel is exactly 7 periods of the 4px comb, the phase at the block's top
+       * edge is unchanged: the animation itself is untouched, only the strip it has to paint on. */
+      inset: calc(-1 * var(--gc-scan-travel)) 0 0 0;
       z-index: 3; /* above BOTH faces (and above a face's own name plate at z 2) */
       pointer-events: none;
       background: var(--gc-scanline);

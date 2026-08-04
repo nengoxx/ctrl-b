@@ -72,7 +72,10 @@ const svc = (over: Partial<Service> = {}): Service => ({
 
 const ROSTER = defaultRoster();
 
-function renderD(props: Partial<Parameters<typeof GachaHostDetail>[0]> = {}) {
+/** `index` is NOT a component prop — the dossier stopped taking one when the per-host accent bar was
+ *  removed (owner 2026-08-04). It stays a HELPER option because these tests still use it to pick which
+ *  roster entry the portrait should resolve to, exactly as GachaFleet does. */
+function renderD(props: Partial<Parameters<typeof GachaHostDetail>[0]> & { index?: number } = {}) {
   const run = props.run ?? vi.fn().mockResolvedValue(undefined);
   const h = props.host ?? host();
   const index = props.index ?? 0;
@@ -82,7 +85,6 @@ function renderD(props: Partial<Parameters<typeof GachaHostDetail>[0]> = {}) {
       services={props.services ?? []}
       art={props.art !== undefined ? props.art : artForHost(ROSTER, index)}
       mode={props.mode ?? "five"}
-      index={index}
       busy={props.busy ?? false}
       run={run}
       titleId="dossier-title"
@@ -245,7 +247,7 @@ describe("the host action bar", () => {
     expect(idle.container.querySelector(".gc-acts")!.hasAttribute("aria-busy")).toBe(false);
   });
 
-  it("paints the bar from tokens: the brand ticket, the light-surface danger ink", () => {
+  it("paints the bar from tokens: the brand ticket, the accent-outlined secondary", () => {
     const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8").replace(
       /\/\*[\s\S]*?\*\//g,
       "",
@@ -254,9 +256,13 @@ describe("the host action bar", () => {
     expect(css).toMatch(/\.gc-act\.primary\s*{[^}]*background: var\(--accent-fill\)/);
     expect(css).toMatch(/\.gc-act\.primary\s*{[^}]*color: var\(--accent-ink\)/);
     expect(css).toContain("box-shadow: var(--gc-act-shadow)");
-    expect(css).toContain("color: var(--gc-dossier-danger)");
-    // The night palette's --danger measures 3.0 on this white card; the deeper light-surface rose is 6.0.
-    expect(tokens).toContain("--gc-dossier-danger: #c2144e");
+    // SHUT DOWN was re-ruled from the danger rose to the mock's accent outline (owner 2026-08-04), so the
+    // pair reads as one control set; the confirm dialog still gates the action. It must use the
+    // LIGHT-SURFACE accent, never `--accent` itself — the night pink measures 2.62 on this white card
+    // against a 4.5 floor, which is the regression this line exists to catch (Codex 2026-08-04).
+    expect(css).toMatch(/\.gc-act\.danger\s*{[^}]*color: var\(--gc-dossier-accent\)/);
+    expect(css).not.toMatch(/\.gc-act\.danger\s*{[^}]*color: var\(--accent\)[;\s]/);
+    expect(tokens).toContain("--gc-dossier-accent: #b03578");
     expect(tokens).toContain("--gc-act-shadow: 3px 3px 0 var(--gc-dossier-ink)");
   });
 });
@@ -291,20 +297,6 @@ describe("the live service rows", () => {
     const { container } = renderD({ services: [] });
     expect(container.querySelectorAll(".gc-svc")).toHaveLength(0);
     expect(container.querySelector(".gc-svc-empty")).not.toBeNull();
-  });
-
-  it("deals the host's accent pair by DISPLAY INDEX, cycling the tri-accent", () => {
-    for (const [index, pair] of [
-      [0, "0"],
-      [1, "1"],
-      [2, "2"],
-      [3, "0"],
-      [7, "1"],
-    ] as const) {
-      const { container } = renderD({ index });
-      expect(container.querySelector(".gc-dossier")?.getAttribute("data-pair")).toBe(pair);
-      cleanup();
-    }
   });
 });
 
@@ -344,13 +336,6 @@ describe("the dossier's light surface reads from the dossier tokens", () => {
       expect(tokens).toContain(`${token}: ${value}`);
       expect(css).toContain(`var(${token})`);
     }
-  });
-
-  it("builds the per-host accent pairs from the brand trio, not from per-host values", () => {
-    expect(css).toContain('.gc-dossier[data-pair="0"]');
-    expect(css).toContain("--gc-host: var(--gc-brand-1)");
-    expect(css).toContain("--gc-host-2: var(--gc-brand-3)");
-    expect(css).toContain("linear-gradient(var(--gc-host), var(--gc-host-2))");
   });
 });
 

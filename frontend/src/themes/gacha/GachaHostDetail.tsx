@@ -28,8 +28,6 @@ interface Props {
   /** The roster's assignment for this host — the SAME entry its capsule card and promo slide render. */
   art: ResolvedArt | null;
   mode: StarMode;
-  /** The host's position in the fleet's DISPLAY order — picks its accent pair (see `data-pair` below). */
-  index: number;
   /** A host action is in flight (`useFleet().busy`) — disables the whole bar. */
   busy: boolean;
   run: (action: FleetAction, host: Host) => Promise<void>;
@@ -43,18 +41,11 @@ interface Props {
   onShowArt?: () => void;
 }
 
-/** How many accent pairs the tri-accent yields — pink→violet, violet→cyan, cyan→pink. The prototype's
- *  fixture hand-assigned each host a `color`/`color2`; live hosts have no such field, so the port deals
- *  them deterministically by DISPLAY INDEX (`i % 3`). Deterministic means a poll can never re-tint a
- *  dossier, and the pairs themselves are token-authored in gacha.css (no per-host values anywhere). */
-const ACCENT_PAIRS = 3;
-
 export function GachaHostDetail({
   host,
   services,
   art,
   mode,
-  index,
   busy,
   run,
   titleId,
@@ -104,7 +95,7 @@ export function GachaHostDetail({
   );
 
   return (
-    <div className="gc-dossier" data-pair={index >= 0 ? index % ACCENT_PAIRS : 0}>
+    <div className="gc-dossier">
       {/* THE VISIBLE CLOSE (the prototype's `.close-detail`). It sits in the corner the handle's invisible
           16px drag hit-strip reaches into, so it carries the z-index that puts it ABOVE that strip — the
           cosmos chevron lesson, applied deliberately rather than avoided. The kit's own sr-only close stays
@@ -157,8 +148,15 @@ export function GachaHostDetail({
         {metrics.map(([value, label, jp]) => (
           <div className="gc-metric" key={label}>
             <b>{value}</b>
+            {/* Bilingual caption on TWO LINES (owner 2026-08-03). The prototype puts both halves in one
+                span and lets them wrap, which is what shipped — but at this width only `Services サービス`
+                is long enough to wrap, so the row came out ragged: three cards one line, one card two.
+                The JP half is NESTED (not a sibling span) and blocked by CSS: it keeps the label's text
+                exactly `Ping 応答`, which the dossier unit tests read as the card's identity, and it is the
+                prototype's own bilingual idiom — its nav label nests an `em` inside `.lbl` the same way.
+                `lang` so a screen reader on an English document voice switches for the caption. */}
             <span>
-              {label} {jp}
+              {label} <i lang="ja">{jp}</i>
             </span>
           </div>
         ))}

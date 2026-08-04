@@ -66,7 +66,7 @@ const THEME_PAIRS: Record<string, Pair[]> = {
     { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-to", min: 4.5 },
     { fg: "--gc-unit-no", bg: "--gc-dossier-from", min: 4.5 }, // the UNIT DOSSIER kicker
     { fg: "--gc-unit-no", bg: "--gc-dossier-to", min: 4.5 },
-    { fg: "--gc-dossier-danger", bg: "--gc-dossier-card", min: 4.5 }, // the Shut down pill's label
+    { fg: "--gc-dossier-accent", bg: "--gc-dossier-card", min: 4.5 }, // the Shut down button's label
     { fg: "--gc-dossier-ok", bg: "--gc-dossier-card", min: 3 }, // service dots: non-text affordances
     { fg: "--gc-dossier-warn", bg: "--gc-dossier-card", min: 3 },
   ],

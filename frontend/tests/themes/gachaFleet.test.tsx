@@ -803,8 +803,7 @@ describe("the unit dossier (G2)", () => {
     expect(dossierName()).toBe("atlas");
     // the sheet is labelled by the name it renders (the non-modal a11y contract)
     expect(sheet.getAttribute("aria-labelledby")).toBe(dossier()!.querySelector("h2")!.id);
-    // …and the machine's DISPLAY index picks its accent pair
-    expect(dossier()!.getAttribute("data-pair")).toBe("1");
+    // (the `data-pair` accent seam this used to assert went with the per-host service bar — owner 2026-08-04)
   });
 
   it("a banner PROMO opens the same dossier — one seam, two surfaces", () => {
