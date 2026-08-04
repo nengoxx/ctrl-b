@@ -40,6 +40,30 @@
 > open: wordmark string (カプセルアーケード standing) · NEW ribbon (no data seam) · ~80 MB
 > original drops UNTRACKED in `design/prototypes/gacha/` (REC: never commit).
 >
+> ## ▶ SIDE SESSION (2026-08-04, Opus — a deliberate DEVIATION, now closed)
+> **An owner-attended session ran BESIDE the main arc while the main model was rate-limited. Three
+> commits pushed (`ba0b8b1` kit · `d65e7b7` gacha · `44aec0a` docs); gate green at each (1341 vitest,
+> 94 e2e mobile + 94 desktop + 7 firefox, stylelint/prettier/tsc). Two Codex rounds + a council round
+> ran over it. Full record: the amendment at the end of GACHA_PLAN §7.4 and the D52 G3 note.**
+> Short form of what SHIPPED: the tools-menu open RING is gated to the `outline` composer skin (it was
+> re-growing a border glass/bezel/sleek strip) with a new e2e arm proven red-on-broken · the `arcade`
+> skin was re-ruled — no outlines anywhere, ONE hard accent drop, a sticker press · the M6 scanline's
+> uncombed band fixed (the layer is now one travel-length taller than its box) · `--gc-fill-spread`
+> calms the accent ramp on four SMALL filled controls · the dossier's second pass (tighter/squarer,
+> two-line bilingual captions, mono ports, circle close, Shut-down re-coloured to a
+> contrast-safe `--gc-dossier-accent`, the per-host service bar removed with its whole dead chain).
+>
+> **▶ WHAT THIS LEAVES FOR G6 — the owner chose new palette + button designs, and they are now
+> OPTIONS in the plan: GACHA_PLAN §4.4 "Family 3 — the DOSSIER SURFACE".** Four owner-shortlisted
+> DARK dossier palettes (neon-purple · sunset-orange · rose-pink · aurora-violet), each normalised so
+> every gated pair passes, plus the ACTION BUTTON measured from the owner's mock (flat horizontal
+> gradient, ~5px radius, a 1px rim at 1.10x the fill, NO elevation — it replaces the sticker language
+> on the dossier only). **The dossier goes DARK as a TRIAL, not a lock** — that reverses G2's
+> one-light-surface identity, so it wants an explicit owner sign-off before it ships. §4.4 also
+> records the four measurement traps that cost this session, the two RULES the dark flip breaks that
+> no token edit covers (`--gc-unit-no` at 2.94, and the close disc inverting into a white blob), and
+> what is still unfinished (top brand strip, star badge, and the disabled/focus state sheet on dark).
+>
 > ## ▶ PREVIOUS BLOCK, same day (2026-08-03 — **✅ G2 BUILT + OWNER-EYEBALLED + PUSHED (unit dossier + the MORPH + the art showcase); G3 was next**)
 > **The same owner-attended session closed G1 AND G2. Ten G2 commits `8c4c74f..c248260`, ALL
 > PUSHED (origin @ `c248260` + the docs commit riding this handoff); FE 1309 / BE 1254, gate

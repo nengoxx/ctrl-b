@@ -213,6 +213,87 @@ tokens.css block. The ruled set:
   | nebula (soft) | `#eb77ea` `#9c96f4` `#5ec7db` | `#0c0a1c` · `#171634` · `#43276b→#141334→#08070f` | HSR's own in-UI element chips verbatim (Lightning/Quantum/Ice) — pastel-celestial. Weakest SHIFT: same hue arc as arcade, mainly desaturated — a calm-eyes option, not range | 6.73 on card |
   | eridu (loud) | `#ff5cd0` `#3ff0ff` `#b4ff4a` | `#0a0a12` · `#12141f` · `#26305e→#0f1120→#06070c` | ZZZ black/white+neon signage + NIKKE HUD contrast. **Semantic blocker: the acid lime competes with ok-green `#74f3ad` for "host is up"** — only shippable if the trio never touches status chrome | 6.72 on card |
 
+**Family 3 — the DOSSIER SURFACE (owner session 2026-08-04, Opus). SCOPE: dossier-only.** Distinct
+from families 1 and 2 above, which re-tint the WHOLE theme — the owner ruled this exercise
+**dossier-only**, so these move `--gc-dossier-*` and nothing else. Global `--accent-fill` /
+`--gc-brand-fill` were explicitly off the table.
+
+**The dossier goes DARK** (owner, "for now to try how it looks"). That reverses G2's one-light-surface
+idea ("an arcade prize slip pulled out from under the night-time cabinet") — a real identity change,
+recorded as a TRIAL, not a lock. Measured consequence worth keeping: **dark makes contrast EASIER.**
+Every tight margin in this theme lives on the light sheet — the 2.62:1 Shut-down bug fixed the same
+day, `--gc-unit-no`, and the retired `--gc-dossier-danger` all exist because literals had to be
+deepened for it.
+
+The four the owner shortlisted, sampled from `design/prototypes/gacha/dossier palette example.png`
+(4x2 panel grid at `(14 + 384c, 40 + 506r)`, 347x440) and NORMALISED so every gated pair passes:
+
+  | palette | sheet from→to | card | action fill (90deg) | on-fill ink | accent ink | kicker |
+  |---|---|---|---|---|---|---|
+  | **neon-purple** | `#140e35`→`#070b25` | `#130f32` | `#511cab`→`#4f1ea7` | `#ffffff` | `#f46adf` | `#f46adf` |
+  | **sunset-orange** | `#843e3c`→`#2f1f34` | `#502f3e` | `#d97943`→`#ce6144` | `#0a0b19` | `#f28c53` | `#f7ba98` |
+  | **rose-pink** | `#34202b`→`#15141e` | `#221b23` | `#da7b7a`→`#c55e74` | `#0a0b19` | `#f3bfc0` | `#f3bfc0` |
+  | **aurora-violet** | `#171643`→`#08112d` | `#10143a` | `#7e37a5`→`#562a90` | `#ffffff` | `#d5a5f1` | `#d5a5f1` |
+
+  Shared across all four: `--gc-dossier-ink #f4f2ff` · `-ink-2 #b9b4d8` · `-line #ffffff20` ·
+  `-ok #74f3ad` (the NIGHT token, back in its element at 12–13:1) · `-warn #ffc76a` ·
+  `-badge #0c0a24e6` · `-art-shadow 0 10px 22px #00000066`.
+
+  **Normalisations applied — do not "restore" these to the mock's literals, they fail:**
+  sunset-orange's kicker lightened 40% toward white (3.16 → 4.55) · cyber-teal's fill deepened 8%
+  and amber-gold's 24% so a white label clears · rose-pink's fill LIGHTENED 8% because it carries a
+  DARK label. **sunset-orange and rose-pink are the two whose fills are light enough to need dark
+  labels** — that is a property of the palettes, not a bug.
+
+  **Gate method (the plan's own rule, learned the hard way):** the label is CENTRED, so gate the
+  band the text actually covers, not the gradient's extremes — testing the extremes failed four
+  palettes spuriously. Ratios were computed BEFORE rendering; all four pass ink/card, ink-2/card,
+  kicker/sheet, Shut-down/card, label/band and the dot floors.
+
+**The ACTION BUTTON, measured from the example (same session).** The owner asked for "as close as
+possible" to the mock. Four of my own measurements were wrong before this settled — recorded so the
+next reader does not repeat them:
+
+- The bright 1px top highlight exists **only on the neon-purple panel**; the other seven have none.
+  It is NOT the design language. Same for the 20% vertical fill gradient (neon-purple again).
+- The fill gradient is **HORIZONTAL, not vertical** — median −39% left→right against −4.6%
+  top→bottom. A vertical sample reads it as flat.
+- Box is **176 x 39 CSS px** (an earlier "195" sampled across the gap into the second button), and
+  `.gc-act` inherits the kit's unitless `line-height: 1.5`, so a 10px label is a 15px line box —
+  12px padding gives 41px, not 39. Use 11px.
+- Radius **4.6px**; it only *looks* rounder in a side-by-side if the mock is upscaled.
+- The rim is **1.10x the fill's luminance** — a whisper. A `color-mix(fill 78%, white)` is ~2x and
+  visibly wrong; 90/10 lands right.
+
+  So the example's primary is: flat-ish horizontal gradient · ~5px radius · a 1px rim a hair lighter
+  than the fill · **no elevation at all** · white or dark label per the table above. The secondary is
+  transparent with a muted accent border. The press has no offset to sink into, so both buttons drop
+  the sticker translate for an opacity change — and note the generic `.gc-act:active` in gacha.css
+  still slides the SECONDARY 3px unless it is replaced, not merely overridden on `.primary`.
+
+  **This REPLACES the theme's sticker language on the dossier only** (the nav indicator, user bubble
+  and arcade composer keep it). `--gc-act-shadow` becomes unused — see §5's single migration.
+
+**Two rules the dark flip BREAKS that no token edit covers** (both found by rendering, not by
+reading):
+1. `--gc-unit-no` — the deepened rose minted for the LIGHT sheet measures **2.94** on a dark one, and
+   it is not a `--gc-dossier-*` token, so a dossier-family sweep misses it. Each palette carries its
+   own kicker in the table above.
+2. `.gc-dossier-close` composes `background: var(--gc-dossier-ink)` with `color: var(--gc-dossier-from)`
+   — correct when ink is dark and sheet light; flipping the tokens turns the disc into a white blob.
+   It needs its own pair (the mock's is a dark disc with a light glyph).
+
+**Still unfinished on these four:** the sheet's top brand strip and the star badge still carry
+light-sheet values, and the state sheet (active / focus-visible / **disabled**, a flat
+`opacity: 0.42` that moves every ratio at once) has not been rendered on a dark surface.
+
+**The lab that produced all of this** lives in the session scratchpad (`palette-lab/`:
+`candidates.mjs` + `render.mjs` + `palettes.json`), NOT in the repo — it drives the real running dev
+app via Playwright, injects candidates inside the same `@layer theme { @scope … }` as production
+(unlayered injection outranks the theme and would flatter a losing rule), mocks `/api/appearance` and
+aborts every non-GET `/api/**` with a counter that read **0** on every run. Re-runnable, but it is a
+tool for one decision — do not promote it into the repo without a reason.
+
   All four clear the 3.0 probe bar everywhere, and every candidate's WORST trio-on-card ratio
   beats the shipped arcade trio's own weakest link (`#805cff` on card = 4.10, re-computed).
   Gold stars + ok/warn status hexes stay constant across all variants.
@@ -532,7 +613,7 @@ for the "04 / 04" counter.
 | ◐ G3 | **BUILT + REVIEW-COMPLETE 2026-08-03 (as-built §7.4; commits `6c5298d..5ce33d7`) — OWNER DEVICE ROUND = the open gate.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
 | G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + M2/M3 VT enhancement per the spike verdict + Gecko tuning (the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape) |
 | G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
-| G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) + polish + full §14.15.1 hardening pass + the on-device Gecko round | owner sign-off |
+| G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) **+ §4.4 FAMILY 3 — the four owner-shortlisted DOSSIER palettes (neon-purple · sunset-orange · rose-pink · aurora-violet) and the measured example ACTION BUTTON, both from the 2026-08-04 session; the dossier goes DARK as a trial.** Ship each as one `body[data-accent]` block + a `palettes.accents` row + a `contrast-matrix.ts` row; the button rules REPLACE `.gc-act*` rather than layering over them, and `--gc-act-shadow` migrates per §5 | owner sign-off |
 
 Each slice: Opus build from a pinned brief → main-seat audit → Codex round → owner eyeball
 (the D51 cadence). The theme joins `themeContract.test.ts` + the e2e structural/a11y groups at G0.
