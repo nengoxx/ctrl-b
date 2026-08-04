@@ -27,6 +27,11 @@ export interface MediaFile {
   /** Read from the file's magic bytes, not its extension; `null` when the bytes are unreadable. */
   format: string | null;
   size_bytes: number;
+  /** An opaque change token for these BYTES (`mtime_ns:size`). Owner files are mutable IN PLACE under
+   *  a stable name, so the URL is not their identity — and it must stay stable anyway, or the SW's
+   *  media cache would miss on every poll. A consumer that REMEMBERS something about a file (the reel
+   *  figure's failure latch) keys on (url, revision), so replacing the file clears what it remembered. */
+  revision: string;
   width: number | null;
   height: number | null;
   /** Unreadable, or a format that disagrees with the extension — the mount would serve a broken image.

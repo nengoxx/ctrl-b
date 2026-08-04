@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { setGachaReelRunning } from "../../store/gachaReel";
 import { useUISlice } from "../../store/ui";
@@ -49,13 +49,23 @@ export function GachaReel() {
  *  because it is a property of THIS animation — a second reel-shaped effect would bring its own. */
 const REEL_TOTAL_MS = 640;
 
+/** The identity of a piece of art FOR THE FAILURE LATCH: which file, and which bytes of it. Owner media
+ *  is mutable in place, so the URL alone would keep a repaired file latched (Codex F6); bundled art is
+ *  content-hashed and carries no revision, which is correct — it cannot change under a running app. */
+function artKey(art: { url: string; rev?: string }): string {
+  return `${art.url}\u0000${art.rev ?? ""}`;
+}
+
 function GachaReelSweep() {
   const tab = useUISlice((s) => s.tab);
   // The FIGURE's art (G4), through the theme's ONE art resolver — a roster `reel_figure:` pin, else the
   // owner's `media/gacha/reel/` cutout, else the first bundled entry carrying one, else nothing at all
   // (`reelFigureArt`, §5.2). `null` is a first-class outcome, not a defect: the reel must be complete
   // WITHOUT the figure, so this is a plain conditional render.
-  const figureArt = reelFigureArt(useGachaRoster());
+  // MEMOISED on the roster: the ladder builds a fresh object for the bundled rung, so without this the
+  // warm-up effect below would see a new-but-equal `figure` every render and re-fetch on each one.
+  const roster = useGachaRoster();
+  const figureArt = useMemo(() => reelFigureArt(roster), [roster]);
   // `perf: lite` DROPS the figure — the same call gacha.css makes (`body[data-perf="lite"] .gc-reel-figure`),
   // but made HERE as well, because CSS can only hide the node: the component would still warm the image and
   // mount an element the owner asked not to pay for. The gate is read from the store rather than the body
@@ -68,16 +78,19 @@ function GachaReelSweep() {
   // the image is known bad the reel runs on its slats alone, which is the same complete effect a roster with
   // no cutout already gives (Codex G4 F2a).
   //
-  // URL-SCOPED, which is the G5 carry (the G4 Codex confirm note): the latch was a boolean while the art was
+  // ART-SCOPED, which is the G5 carry (the G4 Codex confirm note): the latch was a boolean while the art was
   // a module constant that could not change under it. Now the art comes from the media index, so a boolean
-  // would be a TRAP — the owner replaces a broken cutout, the index hands over a new URL, and the theme
-  // stays figure-less until a reload because a fact about the OLD file is still latched. Keyed to the URL
-  // that failed, the latch clears itself the moment the art is a different file, and still never retries
-  // the one that is actually broken.
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  // would be a TRAP — the owner fixes a broken cutout and the theme stays figure-less until a reload,
+  // because a fact about the OLD file is still latched.
+  //
+  // Keying on the URL alone was only HALF the fix (Codex F6): the owner's usual repair is to overwrite
+  // `cut.webp` IN PLACE, which changes nothing about the URL — and the URL must stay stable anyway, or the
+  // SW's media cache would miss on every poll. So the key is the index's (url, revision) pair: replacing
+  // the bytes clears the latch, while the file that is actually broken is never retried.
+  const [failedKey, setFailedKey] = useState<string | null>(null);
   const figure =
-    figureArt !== null && perf !== "lite" && figureArt.url !== failedUrl ? figureArt : null;
-  const figureUrl = figure?.url ?? null;
+    figureArt !== null && perf !== "lite" && artKey(figureArt) !== failedKey ? figureArt : null;
+  const figureKey = figure === null ? null : artKey(figure);
 
   useEffect(() => {
     if (tab !== bootTab) setEverSwitched(true);
@@ -92,17 +105,17 @@ function GachaReelSweep() {
   // trips the latch before the first reel ever runs. The `Image` is retained by this effect's cleanup so it
   // cannot be collected between `src` and the event that would report the failure.
   //
-  // Keyed on the URL STRING, not the resolved object: the art now arrives from a query, and a refetch that
-  // returns the same listing would re-run a whole warm-up on a new-but-equal object.
+  // Keyed on the art's IDENTITY STRING, not the resolved object: the art now arrives from a query, and a
+  // refetch that returns the same listing would re-run a whole warm-up on a new-but-equal object.
   useEffect(() => {
-    if (figureUrl === null) return;
+    if (figure === null || figureKey === null) return;
     const warm = new Image();
-    warm.onerror = () => setFailedUrl(figureUrl);
-    warm.src = figureUrl;
+    warm.onerror = () => setFailedKey(figureKey);
+    warm.src = figure.url;
     return () => {
       warm.onerror = null;
     };
-  }, [figureUrl]);
+  }, [figure, figureKey]);
 
   const sweeping = everSwitched || tab !== bootTab;
 
@@ -144,7 +157,7 @@ function GachaReelSweep() {
           src={figure.url}
           alt=""
           decoding="async"
-          onError={() => setFailedUrl(figure.url)}
+          onError={() => setFailedKey(artKey(figure))}
         />
       )}
     </div>

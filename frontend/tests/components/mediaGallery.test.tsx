@@ -37,7 +37,12 @@ import { MediaGallery } from "../../src/components/MediaGallery";
 const MEDIA: ThemeMedia = {
   ns: "gacha",
   roles: { characters: "Capsule cards.", reel: "The cutout that rides the tab transition." },
-  slots: [{ key: "wallpaper", label: "Fleet backdrop", from: "characters" }],
+  slots: [
+    { key: "wallpaper", label: "Fleet backdrop", from: "characters" },
+    // The ruled shape (Codex F4): the figure's options come from the REEL role, not the cast, with the
+    // theme's own bundled cutout standing in while that folder is empty.
+    { key: "reel_figure", label: "Transition figure", from: "reel", bundled: ["lyra"] },
+  ],
 };
 
 const file = (name: string, role: string, over: Partial<MediaIndex["roles"][string][0]> = {}) => ({
@@ -46,6 +51,7 @@ const file = (name: string, role: string, over: Partial<MediaIndex["roles"][stri
   url: `/api/media/gacha/files/${role}/${name}.webp`,
   format: "webp",
   size_bytes: 88_000,
+  revision: "1:88000",
   width: 640,
   height: 854,
   unusable: false,
@@ -193,6 +199,49 @@ describe("MediaGallery", () => {
     fireEvent.change(select, { target: { value: "" } });
     await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
     expect(savedBlock()).toEqual({ slots: { wallpaper: null } });
+  });
+
+  it("the figure pin offers CUTOUTS, never the cast (a portrait would sweep as a rectangle)", async () => {
+    renderGallery(
+      index({
+        roles: {
+          characters: [file("a", "characters"), file("b", "characters")],
+          reel: [file("cut", "reel"), file("cut2", "reel")],
+        },
+      }),
+    );
+    await screen.findByText("a.webp");
+    const options = [...screen.getByRole("combobox", { name: /Transition figure/ }).children].map(
+      (o) => o.textContent,
+    );
+    expect(options).toEqual(["—", "cut", "cut2"]);
+    // the cast is offered for the backdrop, which crops a portrait fine — the two differ on purpose
+    const backdrop = [...screen.getByRole("combobox", { name: /Fleet backdrop/ }).children].map(
+      (o) => o.textContent,
+    );
+    expect(backdrop).toEqual(["—", "a", "b"]);
+  });
+
+  it("…and falls back to the theme's BUNDLED cutout names while reel/ is empty", async () => {
+    renderGallery(index({ roles: { characters: [file("a", "characters")], reel: [] } }));
+    await screen.findByText("a.webp");
+    const options = [...screen.getByRole("combobox", { name: /Transition figure/ }).children].map(
+      (o) => o.textContent,
+    );
+    expect(options).toEqual(["—", "lyra"]); // useful on a fresh install, not an empty select
+  });
+
+  it("a LEGACY pin naming something the slot no longer offers is shown as missing, not hidden", async () => {
+    // The F4 re-rule stopped offering characters for the figure; a config written before it must be
+    // visible so the owner can clear it — the theme has already degraded to the default underneath.
+    renderGallery(
+      index({
+        roles: { characters: [file("kira", "characters")], reel: [file("cut", "reel")] },
+        slots: { reel_figure: "kira" },
+      }),
+    );
+    await screen.findByText("kira.webp");
+    expect(screen.getByRole("option", { name: "kira (missing)" })).toBeTruthy();
   });
 
   it("a DANGLING pin stays visible so the owner can see the value they need to clear", async () => {

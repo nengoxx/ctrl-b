@@ -91,6 +91,12 @@ class MediaFile(BaseModel):
     #: that are not in the allowlist at all (an `.png` that is really HTML).
     format: str | None = None
     size_bytes: int = 0
+    #: An opaque change token for THESE BYTES (`mtime_ns:size`), from the stat the size already needed.
+    #: The URL cannot carry it: owner files are mutable IN PLACE under a stable name, which is exactly
+    #: what makes the name unusable as an identity — and the URL has to stay stable anyway, or the SW's
+    #: media cache would miss on every poll. A consumer that remembers something about a file (the reel
+    #: figure's failure latch) keys on (url, revision) so replacing the file clears what was remembered.
+    revision: str = ""
     width: int | None = None
     height: int | None = None
     #: The file cannot be used: unreadable bytes, or a format that disagrees with the extension. The
@@ -358,9 +364,10 @@ def describe_file(path: Path, ns: str, role: str) -> MediaFile:
     ext_type = ALLOWED_TYPES.get(path.suffix.lower())
     probe = probe_image(path)
     try:
-        size = path.stat().st_size
+        st = path.stat()
+        size, revision = st.st_size, f"{st.st_mtime_ns}:{st.st_size}"
     except OSError:
-        size = 0
+        size, revision = 0, ""
     warnings: list[str] = []
     unusable = False
     if probe.fmt is None:
@@ -381,6 +388,7 @@ def describe_file(path: Path, ns: str, role: str) -> MediaFile:
         url=file_url(ns, role, path.name),
         format=probe.fmt,
         size_bytes=size,
+        revision=revision,
         width=probe.width,
         height=probe.height,
         unusable=unusable,

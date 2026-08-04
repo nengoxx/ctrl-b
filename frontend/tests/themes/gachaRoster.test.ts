@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
+import { gacha } from "../../src/themes/gacha";
 import { ART } from "../../src/themes/gacha/art";
 import {
   artForHost,
@@ -135,16 +136,11 @@ describe("unusable entries hold their position", () => {
     expect(oracleArt(r)).toEqual({ url: ART.oracle });
   });
 
-  it("an unusable cutout is skipped for the reel figure, in favour of a usable one", () => {
-    const r = roster([
-      entry("a", { cutout: "a-cut.webp", unusable: true }),
-      entry("b", { cutout: "b-cut.webp" }),
-    ]);
-    expect(reelFigureArt(r)).toEqual({ url: "b-cut.webp" });
-    // …and with no usable cutout at all, no figure (the slats carry the reel alone).
-    expect(
-      reelFigureArt(roster([entry("a", { cutout: "a-cut.webp", unusable: true })])),
-    ).toBeNull();
+  it("an unusable cutout never reaches the reel POOL, so it is never the figure", () => {
+    // The pool is where the figure is chosen from (Codex F4), and `pool()` drops unusable files on the
+    // way in — a first-wins pool has nothing to gain from holding a member that cannot paint.
+    const r = rosterFromIndex(index({ reel: [file("bad", { unusable: true }), file("good")] }, {}));
+    expect(reelFigureArt(r)).toMatchObject({ url: file("good").url });
   });
 });
 
@@ -211,22 +207,21 @@ describe("slots — pins, and what happens when a pin dangles", () => {
   });
 });
 
-describe("reelFigureArt — the cutout slot is stricter than the crops", () => {
-  it("uses the pinned entry only when it actually HAS a cutout", () => {
-    const r = roster([entry("a"), entry("b", { cutout: "b-cut.webp" })], { reel_figure: "a" });
-    expect(reelFigureArt(r)).toEqual({ url: "b-cut.webp" }); // the pin has no cutout → first that does
-  });
-
-  it("honors a valid pin over the positional first", () => {
-    const r = roster([entry("a", { cutout: "a-cut.webp" }), entry("b", { cutout: "b-cut.webp" })], {
-      reel_figure: "b",
-    });
-    expect(reelFigureArt(r)).toEqual({ url: "b-cut.webp" });
-  });
-
+describe("reelFigureArt — the figure is chosen from the REEL POOL alone", () => {
   it("no cutout anywhere → no figure (the slats must carry the reel alone)", () => {
+    // A roster with an empty reel pool is the degenerate case the reel was designed to survive: the
+    // synthetic helper below builds one, which the BUNDLED roster never is (its pool is derived).
     expect(reelFigureArt(roster([entry("a"), entry("b")]))).toBeNull();
     expect(reelFigureArt(roster([]))).toBeNull();
+  });
+
+  it("an entry's `cutout` field feeds the BUNDLED pool — it is not a second resolution path", () => {
+    // The field is the schema's one source for the bundled option; the resolver reads the pool only.
+    const withCutouts = defaultRoster().entries.filter((e) => e.cutout !== undefined);
+    expect(defaultRoster().pools.reel.map((a) => a.url)).toEqual(withCutouts.map((e) => e.cutout));
+    // …and a hand-built roster whose entries carry cutouts but whose pool is empty resolves to nothing,
+    // which is what "one resolution path" means.
+    expect(reelFigureArt(roster([entry("a", { cutout: "a-cut.webp" })]))).toBeNull();
   });
 });
 
@@ -248,7 +243,7 @@ describe("defaultRoster — the bundled fallback set (§5.5)", () => {
     expect(wallpaperArt(r)).toEqual({ url: ART.banner });
     expect(heroArt(r)).toEqual({ url: ART.banner });
     expect(oracleArt(r)).toEqual({ url: ART.oracle });
-    expect(reelFigureArt(r)).toEqual({ url: ART.cutout });
+    expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
   });
 
   it("keeps the SCENE art out of the per-host cycle (the frontier partition rule)", () => {
@@ -275,6 +270,7 @@ const file = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
   size_bytes: 1000,
   width: 640,
   height: 854,
+  revision: "1:1000",
   unusable: false,
   warnings: [],
   ...over,
@@ -303,7 +299,7 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(r.scenes).toEqual(defaultRoster().scenes);
     expect(wallpaperArt(r)).toEqual({ url: ART.banner });
     expect(oracleArt(r)).toEqual({ url: ART.oracle });
-    expect(reelFigureArt(r)).toEqual({ url: ART.cutout });
+    expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
   });
 
   it("characters/ REPLACES the dealt cast, in the order the index handed over", () => {
@@ -337,7 +333,7 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
         banner: [file("s1", { unusable: true })],
       }),
     );
-    expect(wallpaperArt(r)).toEqual({ url: file("good").url });
+    expect(wallpaperArt(r)).toMatchObject({ url: file("good").url });
     expect(r.scenes).toEqual(defaultRoster().scenes); // the only scene was broken ⇒ the bundled pair
   });
 
@@ -351,7 +347,12 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
 
   it("reel/ outranks the bundled cutout — dropping one in is the whole point of the folder", () => {
     const r = rosterFromIndex(index({ reel: [file("cut")] }));
-    expect(reelFigureArt(r)).toEqual({ url: file("cut").url });
+    expect(reelFigureArt(r)).toMatchObject({ url: file("cut").url });
+  });
+
+  it("carries each pool file's REVISION, so a consumer can tell replaced bytes from the same name", () => {
+    const r = rosterFromIndex(index({ reel: [file("cut", { revision: "77:9" })] }));
+    expect(reelFigureArt(r)).toEqual({ name: "cut", url: file("cut").url, rev: "77:9" });
   });
 
   it("a slots PIN still outranks the role folder (the owner binding a character into a role)", () => {
@@ -359,20 +360,22 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
       { characters: [file("kira")], wallpaper: [file("w")] },
       { wallpaper: "kira" },
     );
-    expect(wallpaperArt(rosterFromIndex(withWide))).toEqual({ url: file("kira").url });
+    expect(wallpaperArt(rosterFromIndex(withWide))).toMatchObject({ url: file("kira").url });
     // …and a pin naming nothing on disk degrades to the folder rather than blanking the surface.
     const dangling = index(
       { characters: [file("kira")], wallpaper: [file("w")] },
       { wallpaper: "ghost" },
     );
-    expect(wallpaperArt(rosterFromIndex(dangling))).toEqual({ url: file("w").url });
+    expect(wallpaperArt(rosterFromIndex(dangling))).toMatchObject({ url: file("w").url });
   });
 
   it("owner characters carry no wide/cutout/focus — under the role rule the FOLDER is the assignment", () => {
     const r = rosterFromIndex(index({ characters: [file("kira")] }));
     expect(r.entries[0]).toEqual({ name: "kira", image: file("kira").url });
-    // so a character can never accidentally become the reel figure just by existing
-    expect(reelFigureArt(r)).toBeNull();
+    // …so a character can never become the reel figure just by existing — and replacing the CAST must
+    // not cost the transition its figure either (the reel role falls back on its own).
+    expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
+    expect(reelFigureArt(r)!.url).not.toBe(file("kira").url);
   });
 });
 
@@ -384,5 +387,46 @@ describe("rosterFromIndex — a malformed payload degrades, never throws inside 
   it("a non-array role is ignored rather than iterated", () => {
     const bad = { ns: "gacha", roles: { characters: null } } as unknown as MediaIndex;
     expect(rosterFromIndex(bad).entries).toEqual(defaultRoster().entries);
+  });
+});
+
+// ── G5 · the reel_figure pin addresses the REEL POOL (ruled, Codex F4). A character portrait is a
+//    rectangle; pinned as the figure it would sweep across the screen as one, so it must not resolve —
+//    and the gallery must not even offer it (see the MediaGallery suite). ──
+describe("reelFigureArt — the pin selects a CUTOUT, never a portrait", () => {
+  it("a pin naming a reel/ file wins over that folder's first entry", () => {
+    const r = rosterFromIndex(index({ reel: [file("a"), file("b")] }, { reel_figure: "b" }));
+    expect(reelFigureArt(r)).toMatchObject({ url: file("b").url });
+  });
+
+  it("a pin naming the BUNDLED cutout entry still resolves (the fresh-install case)", () => {
+    const r = rosterFromIndex(index({ characters: [] }, { reel_figure: "lyra" }));
+    expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
+  });
+
+  it("a LEGACY pin naming a character without a cutout degrades to the default, never a rectangle", () => {
+    const r = rosterFromIndex(
+      index(
+        { characters: [file("kira"), file("nova")], reel: [file("cut")] },
+        { reel_figure: "kira" },
+      ),
+    );
+    // NOT kira's portrait: the pin resolves to nothing and the ladder falls through (§5.3)
+    expect(reelFigureArt(r)).toMatchObject({ url: file("cut").url });
+  });
+
+  it("…and with no reel/ files either, the same legacy pin lands on the bundled cutout", () => {
+    const r = rosterFromIndex(index({ characters: [file("kira")] }, { reel_figure: "kira" }));
+    expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
+  });
+
+  it("the theme's declared `bundled` pin options ARE the bundled cutout-bearing entries", () => {
+    // The gallery offers `slot.bundled` while reel/ is empty; if the two drift, the owner is offered a
+    // name the resolver would refuse. Kept in step here rather than by comment.
+    const declared = gacha.media?.slots?.find((s) => s.key === "reel_figure")?.bundled ?? [];
+    const withCutouts = defaultRoster()
+      .entries.filter((e) => e.cutout !== undefined)
+      .map((e) => e.name);
+    expect(declared).toEqual(withCutouts);
   });
 });

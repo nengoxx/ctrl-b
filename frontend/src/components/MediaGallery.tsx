@@ -143,31 +143,43 @@ export function MediaGallery({ media }: { media: ThemeMedia }) {
             Bind one image into a role, overriding that folder&apos;s own first pick.
           </p>
           <div className="mgal-pin-grid">
-            {media.slots.map((slot) => (
-              <label className="mgal-pin" key={slot.key}>
-                <span>{slot.label}</span>
-                <select
-                  value={data.slots[slot.key] ?? ""}
-                  disabled={busy}
-                  onChange={(e) =>
-                    patch({ slots: { [slot.key]: e.target.value === "" ? null : e.target.value } })
-                  }
-                >
-                  <option value="">—</option>
-                  {(data.roles[slot.from] ?? []).map((f) => (
-                    <option key={f.name} value={f.name}>
-                      {f.name}
-                    </option>
-                  ))}
-                  {/* A pin whose file is gone still shows, so the owner can SEE the dangling value they
-                      need to clear — the theme has already degraded to the role's default underneath. */}
-                  {data.slots[slot.key] != null &&
-                    !(data.roles[slot.from] ?? []).some((f) => f.name === data.slots[slot.key]) && (
-                      <option value={data.slots[slot.key]}>{data.slots[slot.key]} (missing)</option>
+            {media.slots.map((slot) => {
+              // The options come from the slot's OWN source role, which is not always the role being
+              // pinned (ruled, Codex F4): the gacha reel figure needs a transparent cutout, so it offers
+              // `reel/` and never the cast — a character pinned there would sweep the screen as a
+              // rectangle. When that folder is still empty the theme's `bundled` names stand in, so the
+              // pin is useful on a fresh install instead of an empty select.
+              const files = data.roles[slot.from] ?? [];
+              const options = files.length > 0 ? files.map((f) => f.name) : (slot.bundled ?? []);
+              const current = data.slots[slot.key];
+              return (
+                <label className="mgal-pin" key={slot.key}>
+                  <span>{slot.label}</span>
+                  <select
+                    value={current ?? ""}
+                    disabled={busy}
+                    onChange={(e) =>
+                      patch({
+                        slots: { [slot.key]: e.target.value === "" ? null : e.target.value },
+                      })
+                    }
+                  >
+                    <option value="">—</option>
+                    {options.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                    {/* A pin the options no longer contain still shows, so the owner can SEE the value
+                        they need to clear — including a LEGACY one naming something this slot stopped
+                        offering. The theme has already degraded to the role's default underneath. */}
+                    {current != null && !options.includes(current) && (
+                      <option value={current}>{current} (missing)</option>
                     )}
-                </select>
-              </label>
-            ))}
+                  </select>
+                </label>
+              );
+            })}
           </div>
         </section>
       )}

@@ -57,14 +57,6 @@ export interface RosterSlots {
   hero?: string;
 }
 
-/** One banner SCENE slide (§6.4): a named piece of landscape art that is its own slide. Named rather
- *  than a bare URL because each slide needs a stable KEY; the visible title comes from the
- *  `SCENE_TITLES` pool by position, never from this name. */
-export interface SceneArt {
-  name: string;
-  url: string;
-}
-
 /** The single-pick role pools the owner's `media/gacha/<role>/` folders feed (§5.4's re-rule:
  *  drop-in = assignment). FIRST WINS in each — the owner reorders in the Conf gallery, and the index
  *  hands them over already ordered, so "first" is the owner's own pick with no pinning ceremony.
@@ -72,16 +64,18 @@ export interface SceneArt {
  *  EMPTY is the normal state, not a defect: a role the owner has dropped nothing into leaves its
  *  consumer on the bundled default, which is what keeps a fresh install identical to G1–G4. */
 export interface RolePools {
-  wallpaper: ResolvedArt[];
-  reel: ResolvedArt[];
-  oracle: ResolvedArt[];
+  wallpaper: NamedArt[];
+  reel: NamedArt[];
+  oracle: NamedArt[];
 }
 
 export interface Roster {
   entries: RosterEntry[];
   slots: RosterSlots;
-  /** The banner role's slides — the owner's `banner/` drops, else the bundled pair (§6.4). */
-  scenes: SceneArt[];
+  /** The banner role's slides (§6.4) — the owner's `banner/` drops, else the bundled pair. Named
+   *  because each slide needs a stable KEY; the visible title comes from the `SCENE_TITLES` pool by
+   *  position, never from this name. */
+  scenes: NamedArt[];
   /** The owner's other role pools. See `RolePools`. */
   pools: RolePools;
 }
@@ -92,6 +86,15 @@ export interface Roster {
 export interface ResolvedArt {
   url: string;
   focus?: string;
+  /** The index's change token for these bytes, when the art came from the owner's media folder. Absent
+   *  for bundled art, which is content-hashed and cannot change under a running app. Only a consumer
+   *  that REMEMBERS something about one file needs it (the reel figure's failure latch, G4/F6). */
+  rev?: string;
+}
+
+/** A pool member: art that also carries the NAME a `slots` pin can address it by. */
+export interface NamedArt extends ResolvedArt {
+  name: string;
 }
 
 /** The bundled default roster (§5.5) — the prototype's own four characters, in its own order, so a fresh
@@ -100,29 +103,43 @@ export interface ResolvedArt {
  *  otherwise enter the per-host cycle and be dealt to a machine as its capsule portrait (the frontier
  *  partition rule, art.ts). Slots left empty on purpose — the fallbacks below are the intended defaults, so
  *  shipping pins would only be a second place to change them. */
+const BUNDLED_ENTRIES: RosterEntry[] = [
+  { name: "pegasus", image: ART.characters[0] },
+  { name: "atlas", image: ART.characters[1] },
+  // The owner's own drops (G1 eyeball round 3): dealt to display positions 2 and 3 — vault and g5 on
+  // the owner's fleet. `rook` left the deal for them; the file stays bundled for the G5 gallery.
+  { name: "3", image: ART.characters[2] },
+  // Focal point (owner round 3): a full-body seated composition with the face ~18% from the top — the
+  // wide CARD's default crop (50% 46%, tuned for lyra's art) landed on the shirt. One per-entry value
+  // re-aims every surface (card shapes + promo); measured against simulated 16:9 and banner bands.
+  { name: "4", image: ART.characters[3], focus: "50% 8%" },
+  // The TAIL entry: never dealt on a four-host fleet, but still the one CUTOUT-bearing entry — the G4
+  // reel figure's bundled option is derived from exactly this field.
+  { name: "lyra", image: ART.characters[4], cutout: ART.cutout },
+];
+
 export function defaultRoster(): Roster {
   return {
-    entries: [
-      { name: "pegasus", image: ART.characters[0] },
-      { name: "atlas", image: ART.characters[1] },
-      // The owner's own drops (G1 eyeball round 3): dealt to display positions 2 and 3 — vault and g5 on
-      // the owner's fleet. `rook` left the deal for them; the file stays bundled for the G5 gallery.
-      { name: "3", image: ART.characters[2] },
-      // Focal point (owner round 3): a full-body seated composition with the face ~18% from the top — the
-      // wide CARD's default crop (50% 46%, tuned for lyra's art) landed on the shirt. One per-entry value
-      // re-aims every surface (card shapes + promo); measured against simulated 16:9 and banner bands.
-      { name: "4", image: ART.characters[3], focus: "50% 8%" },
-      // The TAIL entry: never dealt on a four-host fleet, but still the one cutout-bearing entry — the G4
-      // reel figure's default rides on her staying in the roster (reelFigureArt scans for a cutout).
-      { name: "lyra", image: ART.characters[4], cutout: ART.cutout },
-    ],
+    entries: BUNDLED_ENTRIES,
     slots: {},
     scenes: ART.scenes.map((s) => ({ name: s.name, url: s.url })),
-    // EMPTY on purpose: the bundled wallpaper/oracle/cutout are the LAST rung of each ladder below, not
-    // a pool entry. Pre-loading them here would make "did the owner supply one?" unanswerable — and the
-    // reel's bundled figure genuinely is a different thing from an owner drop (it is the one asset with
-    // its glow baked in, art.ts).
-    pools: { wallpaper: [], reel: [], oracle: [] },
+    pools: {
+      // Wallpaper and oracle are EMPTY on purpose: their bundled art is SCENE art, addressed by no name
+      // and pinnable through no slot, so it belongs on the last rung of each ladder below rather than in
+      // a pool.
+      wallpaper: [],
+      oracle: [],
+      // The reel pool is different, and the difference is the PIN (§5.2 / Codex F4): the figure can be
+      // chosen, so its bundled option needs a name the owner can select — and it has to survive the
+      // owner replacing the cast, which is exactly what an entries-only fallback got wrong (drop in four
+      // portraits and the tab transition silently lost its figure). DERIVED from the entries' `cutout`
+      // field so the schema stays the one source; `ThemeDef.media.slots[].bundled` mirrors these names
+      // for the gallery, and a test keeps the two in step.
+      reel: BUNDLED_ENTRIES.filter((e) => e.cutout !== undefined).map((e) => ({
+        name: e.name,
+        url: e.cutout as string,
+      })),
+    },
   };
 }
 
@@ -156,7 +173,9 @@ export function rosterFromIndex(index: MediaIndex | undefined): Roster {
     scenes: scenes.length > 0 ? scenes.map((f) => ({ name: f.name, url: f.url })) : bundled.scenes,
     pools: {
       wallpaper: pool(role("wallpaper")),
-      reel: pool(role("reel")),
+      // Per-role fallback, the same rule the cast and the scenes follow: an empty `reel/` keeps the
+      // BUNDLED cutout, whatever the owner did to the other roles.
+      reel: role("reel").length > 0 ? pool(role("reel")) : bundled.pools.reel,
       oracle: pool(role("oracle")),
     },
   };
@@ -169,8 +188,10 @@ function toEntry(f: MediaFile): RosterEntry {
   return { name: f.name, image: f.url, ...(f.unusable && { unusable: true }) };
 }
 
-function pool(files: MediaFile[]): ResolvedArt[] {
-  return files.filter((f) => !f.unusable).map((f) => ({ url: f.url }));
+function pool(files: MediaFile[]): NamedArt[] {
+  return files
+    .filter((f) => !f.unusable)
+    .map((f) => ({ name: f.name, url: f.url, rev: f.revision }));
 }
 
 /** The entry a host at `index` (its position in the fleet's DISPLAY order) is assigned.
@@ -239,7 +260,7 @@ function toArt(entry: RosterEntry | null | undefined): ResolvedArt | null {
 /** First-wins on a role pool, honestly typed: indexing an empty array yields `undefined` at runtime, and
  *  this project does not run `noUncheckedIndexedAccess` — so the middle rung of every ladder below would
  *  otherwise claim to always match and make its bundled fallback look like dead code. */
-function first(pool: ResolvedArt[]): ResolvedArt | undefined {
+function first(pool: NamedArt[]): NamedArt | undefined {
   return pool.length > 0 ? pool[0] : undefined;
 }
 
@@ -263,29 +284,22 @@ export function oracleArt(roster: Roster): ResolvedArt {
   );
 }
 
-/** A cutout-bearing entry as art — the reel figure's own `toArt`. `null` for an entry with no cutout,
- *  which is most of them: the cutout is a different asset KIND, not a crop of the portrait. */
-function toCutoutArt(entry: RosterEntry | undefined): ResolvedArt | null {
-  if (!entry || entry.unusable || entry.cutout === undefined) return null;
-  return { url: entry.cutout, ...(entry.focus !== undefined && { focus: entry.focus }) };
-}
-
-/** The reel figure (G4) — a CUTOUT, not a crop, so the ladder is stricter at both ends: a PIN only counts
- *  if the entry it names actually carries one, and the last rung is `null` rather than a bundled image
- *  (the reel must be complete without the figure — the slats carry the transition alone).
+/** The reel figure (G4) — a CUTOUT, not a crop, and therefore the ONE ladder that reads a single pool:
+ *  the pin, else that pool's first member, else `null` (no figure — the reel must be complete without
+ *  one, the slats carry the transition alone).
  *
- *  The owner's `reel/` pool outranks the bundled cutout-bearing entry: dropping a cutout in is the whole
- *  point of the folder, and it would be strange for it to lose to art that ships in the binary. Owner
- *  cutouts have NO baked glow — see the theme README's `reel/` note (the bundled one bakes its two
- *  shadows at export time because a runtime `drop-shadow()` re-rasterizes every frame on Gecko). */
+ *  **The pin addresses the REEL POOL, not the cast** (ruled, Codex F4). A character portrait is a
+ *  rectangle: pinned here it would sweep across the screen as a rectangle mid-transition, so it must not
+ *  even be resolvable — and the Conf gallery correspondingly offers `reel/` files and nothing else. A
+ *  LEGACY config pin naming a plain character finds no pool member and falls through to the default,
+ *  per §5.3: never a hole, never a crash.
+ *
+ *  The pool holds the owner's `reel/` drops when there are any, else the bundled cutout (see
+ *  `defaultRoster`) — so dropping a cutout in wins over art that ships in the binary, and NOT dropping
+ *  one still leaves a figure. Owner cutouts have NO baked glow: see the `reel/` gallery hint
+ *  (index.tsx) and the bake recipe in art.ts. */
 export function reelFigureArt(roster: Roster): ResolvedArt | null {
-  const pinned = toCutoutArt(slotEntry(roster, "reel_figure"));
-  if (pinned !== null) return pinned;
-  const owned = first(roster.pools.reel);
-  if (owned !== undefined) return owned;
-  for (const entry of roster.entries) {
-    const art = toCutoutArt(entry);
-    if (art !== null) return art;
-  }
-  return null;
+  const pin = roster.slots.reel_figure;
+  const pinned = pin === undefined ? undefined : roster.pools.reel.find((a) => a.name === pin);
+  return pinned ?? first(roster.pools.reel) ?? null;
 }

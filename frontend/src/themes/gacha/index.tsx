@@ -116,13 +116,20 @@ export const gacha: ThemeDef = {
       reel: "The cutout that rides the tab transition. Dropped-in cutouts are painted as-is: the bundled one has its glow baked into the file, so a plain transparent PNG will look flatter.",
       oracle: "The agent operator's backdrop. The first image wins.",
     },
-    // Every pin binds a CHARACTER into a role — the §5.2 override that survived the role re-rule. The
-    // role folders cover the ordinary case on their own, so these stay optional in every sense.
+    // The §5.2 pins that survived the role re-rule. The role folders cover the ordinary case on their
+    // own, so these stay optional in every sense. Three of them bind a CHARACTER into a role — a
+    // portrait crops fine as a backdrop.
+    //
+    // The FIGURE does not, and that is a ruling rather than a detail (Codex F4): the reel needs a
+    // transparent CUTOUT, so a character pinned there would sweep across the screen as a rectangle.
+    // Its options are the `reel/` files, plus the one bundled cutout entry while that folder is empty.
     slots: [
       { key: "wallpaper", label: "Fleet backdrop", from: "characters" },
       { key: "hero", label: "Hero slide", from: "characters" },
       { key: "oracle", label: "Operator backdrop", from: "characters" },
-      { key: "reel_figure", label: "Transition figure", from: "characters" },
+      // `bundled` mirrors the cutout-bearing entries of `defaultRoster()` (roster.ts) — a roster test
+      // fails if the two ever drift.
+      { key: "reel_figure", label: "Transition figure", from: "reel", bundled: ["lyra"] },
     ],
   },
   // The bundled art manifest (the eager `import.meta.glob` URL map, §9.3) — the DEFAULT roster the theme

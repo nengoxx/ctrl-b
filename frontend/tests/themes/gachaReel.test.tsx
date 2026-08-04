@@ -239,7 +239,7 @@ describe("the reel figure", () => {
   //    safe; now the art is runtime-mutable, so a boolean would strand the theme figure-less after the
   //    owner FIXES the file — the reason the note came forward to this slice. ──
 
-  const ownerCutout = (name: string) => ({
+  const ownerCutout = (name: string, revision = "1:1") => ({
     ns: "gacha",
     collation: "casefold-natural",
     roles: {
@@ -250,6 +250,7 @@ describe("the reel figure", () => {
           url: `/api/media/gacha/files/reel/${name}.webp`,
           format: "webp",
           size_bytes: 1,
+          revision,
           width: 1,
           height: 1,
           unusable: false,
@@ -286,6 +287,29 @@ describe("the reel figure", () => {
     // …and the broken one is still latched: coming BACK to it must not re-mount a known-bad image.
     media.data = ownerCutout("broken");
     act(() => setUI({ tab: "agent" }));
+    expect(figure(container)).toBeNull();
+  });
+
+  it("a file REPLACED IN PLACE clears the latch — the same name is not the same bytes", () => {
+    // Codex F6: the owner's usual repair is `scp cut.webp` over the broken one, which changes nothing
+    // about the URL — and the URL has to stay stable for the SW's media cache. The index's revision is
+    // what makes "this is a different file now" expressible.
+    media.data = ownerCutout("cut", "100:5");
+    stubImage();
+    const { container } = render(<GachaReel />);
+    act(() => warmed[0].onerror!());
+    act(() => setUI({ tab: "agent" }));
+    expect(figure(container)).toBeNull();
+
+    // same URL, new bytes
+    media.data = ownerCutout("cut", "200:9");
+    act(() => setUI({ tab: "conf" }));
+    expect(figure(container)!.getAttribute("src")).toBe("/api/media/gacha/files/reel/cut.webp");
+
+    // …and a refetch that returns the SAME revision must not un-latch a still-broken file
+    act(() => warmed[warmed.length - 1].onerror!());
+    media.data = ownerCutout("cut", "200:9");
+    act(() => setUI({ tab: "fleet" }));
     expect(figure(container)).toBeNull();
   });
 

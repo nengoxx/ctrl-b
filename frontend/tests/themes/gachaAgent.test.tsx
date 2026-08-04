@@ -128,6 +128,7 @@ describe("GachaAgent — the oracle block", () => {
             url: "/api/media/gacha/files/oracle/eye.webp",
             format: "webp",
             size_bytes: 1,
+            revision: "1:1",
             width: 1,
             height: 1,
             unusable: false,

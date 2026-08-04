@@ -163,8 +163,17 @@ export interface ThemeMedia {
   /** role → the hint shown under its heading in the gallery. A role with no hint still renders. */
   roles?: Record<string, string>;
   /** The `slots` pins the gallery offers (§5.2): binding one named file INTO a role, overriding that
-   *  role folder's own first-wins pick. `from` names the role whose files are the options. */
-  slots?: { key: string; label: string; from: string }[];
+   *  role folder's own first-wins pick.
+   *
+   *  `from` names the role whose files are the OPTIONS — which is not always the role being pinned, and
+   *  the difference is load-bearing (ruled, Codex F4): the gacha reel figure needs a transparent CUTOUT,
+   *  so its options come from `reel/`, never from the cast. Offering a character portrait there would
+   *  let the owner pick something that sweeps across the screen as a rectangle.
+   *
+   *  `bundled` names what the theme itself can supply for the slot while `from` is still empty, so the
+   *  pin is useful on a fresh install instead of an empty select. They must be names the theme's own
+   *  resolver would accept — a theme test is the right place to keep the two in step. */
+  slots?: { key: string; label: string; from: string; bundled?: string[] }[];
 }
 
 // Only BUILT themes appear here (a Partial record) — `rootFor` falls back to `DEFAULT_THEME` for an

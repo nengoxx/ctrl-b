@@ -15,6 +15,7 @@ it is asserting on.
 
 from __future__ import annotations
 
+import os
 import struct
 import time
 from pathlib import Path
@@ -397,6 +398,25 @@ def test_oversize_files_carry_gallery_warnings(home: Path) -> None:
         assert sorted(entry["warnings"]) == ["dimensions", "oversize"]
         assert (entry["width"], entry["height"]) == (3000, 4257)
         assert c.get(entry["url"]).status_code == 200
+
+
+def test_a_replaced_file_changes_its_revision_but_not_its_url(home: Path) -> None:
+    """Codex F6 — owner files are mutable IN PLACE, so the URL cannot be their identity. The URL must
+    stay stable (the SW's media cache is keyed on it); `revision` is what says the bytes changed, so a
+    consumer that latched something about the old file can tell it is looking at a new one."""
+    with make_client() as c:
+        art = role(home, "reel") / "cut.png"
+        art.write_bytes(png_bytes(10, 10))
+        first = c.get("/api/media/gacha").json()["roles"]["reel"][0]
+        assert first["revision"]
+
+        os.utime(art, ns=(1_000_000_000, 2_000_000_000))  # a deterministic "later" mtime
+        art.write_bytes(png_bytes(20, 20) + b"\x00")  # same NAME, different bytes
+        os.utime(art, ns=(3_000_000_000, 4_000_000_000))
+        second = c.get("/api/media/gacha").json()["roles"]["reel"][0]
+
+        assert second["url"] == first["url"]
+        assert second["revision"] != first["revision"]
 
 
 def test_urls_are_percent_encoded(home: Path) -> None:
