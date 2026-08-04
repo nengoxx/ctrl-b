@@ -3999,7 +3999,14 @@ then).
 **✏️ G3 addendum (2026-08-03 — as-built GACHA_PLAN §7.4; owner device round pending):**
 - **The composer catalog gains `arcade`** (D37 held: look-named, semantic tokens only, the
   closed shared catalog's fifth value) — measured against every existing skin first, 4/5
-  defining properties differ.
+  defining properties differ. **⚠ Its LOOK was re-ruled by the owner on 2026-08-03 (changes
+  uncommitted at the time of writing; full record: the amendment at the end of GACHA_PLAN
+  §7.4): no outlines anywhere — the bar's hairline and every control border go transparent,
+  which also drops the mic's red recording ring (owner-confirmed, matching glass/bezel) — and
+  the flatness is replaced by ONE hard zero-blur accent drop (`--arcade-lift: 3px`) on the bar,
+  the controls and the composer popovers, plus a sticker press. The D37 rulings on this entry
+  are UNAFFECTED: still look-named, still shared, still semantic tokens only — cosmos wears it
+  in violet, which the e2e now asserts.**
 - **The oracle ghosts as ONE SURFACE** (owner ruling): art, scrim AND the display words ride
   the M7 ramp together; and it **pins at `var(--appbar-h)`** (owner ruling) — never under
   the bar. Both supersede §10.2's narrower recipe.

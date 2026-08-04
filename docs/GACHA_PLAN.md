@@ -737,8 +737,10 @@ files) / 1254 BE / 40 gacha e2e arms**, gate green per commit. The record:
   carries the blur, `aria-hidden`. **U3 RULED: the catalog gains `arcade`** — measured 4/5
   defining properties off every existing skin (prototype: opaque `#15172e`, no frost, hairline,
   14px, no shadow); semantic tokens only; one fidelity delta flagged (edge `--line-2` #ffffff2e
-  vs the prototype's #ffffff1a — a shared skin can't read theme-private tokens). **U4** log-box
-  metrics, measured.
+  vs the prototype's #ffffff1a — a shared skin can't read theme-private tokens). **⚠ U3's LOOK
+  is SUPERSEDED — see the 2026-08-03 skin amendment at the end of this section; the hairline
+  and the flatness are both gone. Its D37 rulings (look-named, shared, semantic tokens only)
+  all stand.** **U4** log-box metrics, measured.
 - **The owner's four live findings (2f424ef):** privilege chip → the kit's `.sec/.right` slot
   (was displaced to x=308 vs the precedents' 82) · the dropdown's trap fixed · the WHOLE FACE
   rides the ramp (owner ruling — §10.2 had under-scoped it to the art) · the oracle pins at
@@ -763,9 +765,51 @@ files) / 1254 BE / 40 gacha e2e arms**, gate green per commit. The record:
   are all superseded as above. **Probe gotcha:** the dev backend's own `/api/appearance`
   silently overrides a seeded theme — mock it or a "cosmos" probe run comes back wearing gacha.
 - **OPEN at this state:** the owner DEVICE ROUND (M7 blur on Fennec · 12.5px · pin across
-  appbar modes · the arcade panel · the M6 Gecko scanline branch, pre-designed not built) ·
-  the `--line-2` edge fidelity delta (owner call) · the arcade skin's cross-theme look rides
-  every theme's picker (visual-checked gacha+cosmos, screenshots in evidence).
+  appbar modes · ~~the arcade panel~~ *(re-ruled — see the amendment below)* · the M6 Gecko
+  scanline branch, pre-designed not built) · ~~the `--line-2` edge fidelity delta~~ *(moot: the
+  edge is gone)* · the arcade skin's cross-theme look rides every theme's picker
+  (visual-checked gacha+cosmos, screenshots in evidence).
+
+**⚠ AMENDMENT — the `arcade` skin was RE-RULED after G3 closed (owner session 2026-08-03,
+UNCOMMITTED at the time of writing; the code in `kit/kit.css` is the record).** U3 above
+describes the skin as SHIPPED at G3, not as it now stands. The owner drove a live round on it
+and the look changed materially:
+
+- **No outlines anywhere in the skin.** The bar's hairline, the controls' borders — all
+  `transparent`. This also strips the mic's red RECORDING ring (`.kit-cbtn.mic.rec`); the red
+  glyph is the cue, exactly as glass and bezel already do. **Owner-confirmed, not an oversight.**
+- **The flatness is replaced by ONE SIGNATURE: a hard, zero-blur accent drop** —
+  `--arcade-lift: 3px`, `color-mix(in oklch, var(--accent) 60%, transparent)` — on the bar, on
+  every control (menu, mic, plan pill, send) and on the composer's two popovers
+  (`.kit-suggest`/`.tools-sheet`). A darkened variant for the accent-FILLED controls was built
+  and rejected: the owner ruled for one colour across the bar. Semantic tokens throughout, so
+  it wears the host theme's accent — cosmos paints it violet (now asserted in e2e).
+- **A sticker PRESS:** `:active` translates a control into its drop and removes it. The mic
+  rides the JS `.press` class as well, because `:active` wedges on Fennec (useComposerChrome).
+- **The neutral controls take the plan pill's `--accent-soft` fill** — without a fill, a drop
+  behind a see-through button reads as a detached band, not a shadow.
+- **Geometry:** unchanged except the DOCKED layout's menu + mic, which square off to
+  `--radius-sm` (owner ruling). A pass that squared every layout's controls was rejected. The
+  docked send slab is untouched; its drop is fully clipped by the bar's `overflow: hidden` and
+  paints zero pixels (pixel-diff verified — harmless, left in place).
+- **Two e2e arms were re-pointed** (`layout.spec.ts` ~963 / ~1248): they asserted "the edge
+  STAYS" and `shadow: none`, both now false. They gate the transparent border and a
+  `/ 3px 3px 0px 0px$/` shadow SHAPE (not a literal colour, so a palette change can't break them).
+- **Two gacha-side fixes rode the same session** (both in `themes/gacha/`): the M6 scanline layer
+  is now one travel-length taller than its box (`inset: calc(-1 * var(--gc-scan-travel)) 0 0 0`),
+  which fixes the uncombed band that appeared across the top of the art at the end of every
+  7s cycle — the animation itself is untouched; and `--gc-fill-spread: 240%` widens the
+  `--accent-fill` ramp via `background-size` on the four SMALL filled controls the owner picked
+  (composer send + line mic, seg active chip, mini-player play) so a 26–36px control shows the
+  ramp's middle instead of the whole sweep. The token's stops were deliberately NOT moved —
+  the wide consumers keep their full sweep.
+- **STILL OPEN on device:** whether `:active` wedges on Fennec for the send/menu/plan pill (the
+  mic is immune by construction).
+
+*(Separately, and unrelated to gacha: the tools-menu trigger's open RING is now gated to the
+`outline` skin — `body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open`. It used to
+re-grow a border that glass/bezel/sleek deliberately strip, so an open menu was the only
+outlined thing in a borderless bar.)*
 
 **Acceptance matrix (the lock session turns this into per-slice test obligations):** 0/1/many
 hosts · hosts>roster and roster>hosts · queries loading/error states (pill, counter) ·
