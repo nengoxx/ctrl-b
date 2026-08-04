@@ -12,6 +12,22 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
+> ## ▶ UPDATE 4 (2026-08-05, Fable): **◐ G5 BUILT + REVIEW-COMPLETE — owner FILE-DROP + GALLERY
+> ROUND = the open gate.** Eleven commits `ac621ed..8f6297a` (as-built **§7.6** — read it),
+> NOTHING PUSHED past `fb38289`. The namespace-generic media surface (ruled option b): hardened
+> read-only `/api/media/{ns}/files/` mount + per-role index with `revision`, the
+> `ThemeDef.media`-driven Conf gallery, the repo's FIRST SW runtimeCaching, and the durable
+> **DEGRADE-NEVER-BRICK law** — a bad media layout disables the namespace with a visible
+> reason; the pre-ruling code would have CRASH-LOOPED prod systemd on a stray file. Review arc:
+> Codex NOT READY → two waves + a final fix → main-seat-verified CLOSED. BE 1301 / FE 1404 /
+> 205 e2e. **Rulings of record:** reel_figure pins select from the REEL POOL · index wire =
+> `{roles, slots}` (§5.2 amended) · advisory thresholds = named constants · post-boot
+> root-swap = out of threat model. **NEXT: the owner drops real images into
+> `~/.ctrl-b-dev/media/gacha/{characters,banner,wallpaper,reel,oracle}/` (dev backend is
+> RESTARTED and serving), checks the deal/scenes/wallpaper/reel pickup + the phone gallery;
+> then push the stack, then G6 palettes (the dark-dossier trial needs explicit sign-off),
+> then v1.5.0.** Standing kit item minted: a global request timeout for `getJSON`.
+>
 > ## ▶ UPDATE 3 (2026-08-04, late): **✅ G4 CLOSED — the owner round PASSED on BOTH phone and
 > desktop** ("they look good"; the 67% figure default stands untouched, M2's on-device tab
 > switch confirmed, no tuning requested). The full G4 stack is PUSHED (owner-authorized).

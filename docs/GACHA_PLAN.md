@@ -619,7 +619,7 @@ for the "04 / 04" counter.
 | ✅ G2 | **BUILT + OWNER-EYEBALLED 2026-08-02 night (as-built §7.3)** — dossier sheet (light inversion + the ruled grid + live service rows + the H3 ACTION BAR) + **the M3 capsule→dossier morph, owner-PULLED from G4 and made to visibly work** + swap morph + visible × + tap-outside close + **the full-screen ART SHOWCASE (owner ask)** — M6 extraction to `lib/hostDetail.ts` landed first; contrast gate gained the dossier's THEME_PAIRS rows | owner eyeball ✅ ("looks good", pushed) + contrast probe ✅ (48-combo matrix) |
 | ✅ G3 | **CLOSED 2026-08-04 (as-built §7.4; commits `6c5298d..5ce33d7` + the side-session re-rule `ba0b8b1`/`d65e7b7`) — device round PASSED wholesale, Gecko scanline branch NOT needed.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
 | ✅ G4 | **CLOSED 2026-08-04 (as-built §7.5; commits `dd1a056..fa86ed3`) — owner round PASSED on phone + desktop, 67% default kept, M2 device-confirmed.** The reel FIGURE (67% tunable default, all dials `--gc-figure-*` tokens, corrected baked glow — drop-shadow's length IS σ, §7.5 lesson) + M2 shipped prototype-exact with the seam promoted (flag deleted) + the type-scoped VT skip + degradation latches. Codex: READY WITH FIXES → wave → confirm all-resolved, residual LOWs closed | owner figure eyeball + Fennec+Chrome device round (incl. the one-line M2 check) |
-| G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
+| ◐ G5 | **BUILT + REVIEW-COMPLETE 2026-08-05 (as-built §7.6; commits `ac621ed..8f6297a`) — OWNER FILE-DROP + GALLERY ROUND = the open gate.** The namespace-generic media surface per the ruled option (b): hardened read-only mount + per-role index (+`revision`), the `ThemeDef.media` gallery, the first SW runtimeCaching, per-namespace DEGRADE-NEVER-BRICK health, the reel-pool pin ruling. Codex arc: NOT READY → 2 waves + final → closed | owner file-drop + phone gallery round |
 | G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) **+ §4.4 FAMILY 3 — the four owner-shortlisted DOSSIER palettes (neon-purple · sunset-orange · rose-pink · aurora-violet) and the measured example ACTION BUTTON, both from the 2026-08-04 session; the dossier goes DARK as a trial.** Ship each as one `body[data-accent]` block + a `palettes.accents` row + a `contrast-matrix.ts` row; the button rules REPLACE `.gc-act*` rather than layering over them, and `--gc-act-shadow` migrates per §5 | owner sign-off |
 
 Each slice: Opus build from a pinned brief → main-seat audit → Codex round → owner eyeball
@@ -954,6 +954,58 @@ hosts · hosts>roster and roster>hosts · queries loading/error states (pill, co
 no-services and many-services hosts · missing/corrupt/deleted art (file AND slot reference) ·
 all appbar/layout modes · reduced-motion and perf-lite · VT unsupported (older Gecko) · rapid
 tab switching (reel re-entrancy) · long host names on plates · Fennec AND Chrome device rounds.
+
+**§7.6 — G5 AS-BUILT (2026-08-05; ✅ code + reviews COMPLETE — ⏳ owner file-drop + gallery
+round pending).** Eleven commits `ac621ed..8f6297a` (4 build + 4 wave-1 + 2 wave-2 + 1 final);
+end state **BE 1301 (+47) / FE 1404 (+41) / 205 e2e**, gate green per commit; every security
+behavior live-verified against the dev backend (hostile drops, traversals, symlinks, the
+role-file collision). The record:
+- **B1 backend:** `core/media.py` (namespace/role registry · the one collation
+  `casefold-natural` · the bounded stdlib magic-byte+dimension prober · `ensure_media_dirs`) +
+  `api/media.py` (`MediaFiles(StaticFiles)`: extension→type ALLOWLIST set-not-guessed, nosniff,
+  no-cache, `follow_symlink=False`, role-shape gate `<role>/<file>`, the `is_served_file`
+  lstat gate) + the `/api/media/{ns}` index (per-role lists in server order + format/size/WxH/
+  `revision` (`mtime_ns:size`) metadata + roster entries/slots) vs `/api/media/{ns}/files/`
+  mount split; `themes.gacha` Settings models. **Wire-shape AMENDMENT to §5.2:** the index
+  ships `{roles, slots}` — the role re-rule's per-role lists ARE the entries; the draft's flat
+  `{entries}` is superseded (no duplicate wire data).
+- **B2 swap:** one `useMedia` query → `rosterFromIndex` adapter → the SAME §5.3 resolver;
+  per-ROLE bundled fallback (no user files ⇒ byte-identical G4 behavior); `Roster` gained
+  `scenes`+`pools`; the reel latch is `(url, revision)`-scoped (in-place replacement recovers).
+- **B3 gallery:** namespace-generic `MediaGallery` driven by a **`ThemeDef.media` descriptor**
+  (descriptor-not-code — no `theme===` branches in ConfTab); order/pins via the normal
+  settings path; save-await bounded (`MEDIA_REFETCH_TIMEOUT_MS` 5 s — the standing kit item:
+  global request timeout); oversize warnings from named constants (ruled: advisory thresholds
+  are not config).
+- **B4 PWA:** the repo's first runtimeCaching — woff2 `CacheFirst`, media files
+  `StaleWhileRevalidate` via a **sameOrigin+pathname callback matcher** (an unanchored href
+  regex was cache-poisonable by query-string lookalikes — Codex); the sw spec compiles the
+  matcher out of the real built `dist/sw.js`.
+- **⚖ RULINGS OF RECORD:** the `reel_figure` pin selects from the REEL POOL (reel/ files +
+  bundled cutouts when empty), never plain characters — a portrait without a cutout must not
+  be offerable (it would render as a rectangle mid-sweep); the bundled reel pool derives from
+  entries' `cutout` fields per-role (fixes "owner portraits dropped ⇒ figure silently lost";
+  retired `toCutoutArt` as a duplicate path). **DEGRADE, NEVER BRICK (durable law):** a bad
+  media layout (symlinked spine, role-file collision, mkdir failure) disables THAT NAMESPACE —
+  no mount, index 200 `{disabled, reason}`, gallery shows the reason, prominent log — and the
+  panel boots; the pre-ruling code CRASH-LOOPED prod's systemd on a stray file (uncaught
+  `FileExistsError` after the exit-78 preflight). Post-boot root-swap symlinks are OUT OF
+  THREAT MODEL (fs access = shell = owns the box; the tailnet is the boundary) — recorded in
+  the ensure docstring. Symlinks are rejected at EVERY level (spine at ensure; files via the
+  single `is_served_file` predicate read by mount AND index, so advertised == served).
+- **Review arc:** Codex R1 **NOT READY** (6 MED/2 LOW — lead: role-scope hole + SW overmatch)
+  → wave 1 (8 fixes; live-verified) → confirm **WAVE NEEDS FIXES** (file-level symlinks · the
+  two boot bugs · parser leniency · hung-fetch hostage · rewarm nit) → wave 2 → final confirm
+  (2 mechanical residuals: degenerate SOF/chunk lengths · the duplicated predicate) →
+  `8f6297a`, main-seat verified diff, **review CLOSED by the main seat** (exactly-specified
+  leaf fixes; red-first proven).
+- **Collation edge (documented+pinned):** numbers sort before text (`a1.png` < `a.png`);
+  `2.png` < `10.png` (natural).
+- **OPEN (the G5 gate):** the owner round — drop real images into
+  `$CTRLB_HOME/media/gacha/{characters,banner,wallpaper,reel,oracle}/` (dev:
+  `~/.ctrl-b-dev/media/gacha/`), check the deal/scenes/wallpaper/oracle/reel-cutout pickup,
+  and the phone gallery (order, pins, warnings, real touch). Owner cutouts have NO baked glow
+  (expected; the gallery's reel hint + `art.ts` say so — the bake recipe is there if wanted).
 
 ## 8. Owner questions (the §5-of-vapor-plan analogue) — **✅ ALL RULED (prep session + the lock session, both 2026-08-02); nothing remains open**
 
