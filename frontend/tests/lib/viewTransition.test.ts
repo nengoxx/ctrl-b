@@ -22,6 +22,10 @@ interface FakeTransition {
   settle: () => void;
   rejectReady: (err: Error) => void;
   rejectFinished: (err: Error) => void;
+  /** `html[data-transition]` as it stood WHEN `startViewTransition` was entered — the value the real API
+   *  would capture the "old" state under. Asserting on this (not on the attribute after the wrapper
+   *  returns) is what proves a retire/stamp landed BEFORE the capture, not merely before the return. */
+  stampAtStart: string | undefined;
 }
 
 interface FakeVT {
@@ -63,6 +67,7 @@ function installFakeVT(): FakeVT {
       },
       rejectReady,
       rejectFinished,
+      stampAtStart: document.documentElement.dataset.transition,
     };
     state.transitions.push(t);
     cb(); // the real API runs the callback synchronously to capture the "new" state
@@ -188,7 +193,12 @@ describe("runViewTransition — hardening", () => {
     const vt = installFakeVT();
     runViewTransition(() => {}, "tab");
     expect(document.documentElement.dataset.transition).toBe("tab");
+    expect(vt.transitions[0].stampAtStart).toBe("tab"); // …and the typed stamp PRECEDED its capture
     runViewTransition(() => {}); // no type → owns nothing, but clears what it supersedes
+    // The load-bearing assertion is the capture-time one: the fake records the attribute as it stood when
+    // `startViewTransition` was ENTERED. Asserting only after the wrapper returned would also pass if the
+    // retire happened after start() — exactly the regression this test exists to block (Codex confirm LOW).
+    expect(vt.transitions[1].stampAtStart).toBeUndefined();
     expect(document.documentElement.dataset.transition).toBeUndefined();
 
     // …and the superseded transition settling later cannot resurrect it (its cleanup no-ops on the token).

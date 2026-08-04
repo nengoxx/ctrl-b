@@ -156,7 +156,7 @@
        * `--gc-figure-h` says; the token is the element's height, which is the thing CSS can honor.
        * (That margin GREW with the G4 fix wave — the bake's blur was half the prototype's, so the
        * corrected glow needs a wider canvas, art.ts. The default below rose from 62% to keep the
-       * character at exactly the size the eyeball round settled on: 62% x 828/900 of a character.)
+       * character the same on-screen size: 62% x 900/828 ≈ 67.4%, rounded to 67%.)
        *
        * …and one consequence to know while tuning. The asset is 855x900 (aspect 0.95), so the element
        * is 0.95x as wide as it is tall, and the overlay clips what does not fit. Above roughly 49% of a
