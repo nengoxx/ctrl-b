@@ -8,7 +8,6 @@ import { PinnedPlanPanel } from "../../theme-engine/kit/composer/plan/PinnedPlan
 import { usePlanPlacement } from "../../theme-engine/kit/composer/plan/placement";
 import { safeRafLoop } from "../../theme-engine/safeRafLoop";
 import { useThemeSetting } from "../../theme-engine/settings";
-import { ART } from "./art";
 import { GACHA_COPY } from "./copy";
 import {
   ORACLE_P_VAR,
@@ -17,6 +16,8 @@ import {
   oracleProgressValue,
   parsePx,
 } from "./oracle";
+import { oracleArt, type ResolvedArt } from "./roster";
+import { useGachaRoster } from "./useGachaRoster";
 
 // The gacha bespoke AGENT body (D52 / GACHA_PLAN §4.2, G3) — the prototype's `.screen[data-screen="agent"]`,
 // injected into DefaultRoot's `agent` body slot by GachaRoot. FrontierAgent is the named precedent and this
@@ -25,7 +26,7 @@ import {
 // auto-close lives in <AppEngines/> (§15 rule 5), so swapping the body can never lose it: nothing to carry.
 //
 // THE ORACLE is the prototype's own header — a 300px art block (the resolver's SCENE art, never a roster
-// character: `ART.oracle` is a partitioned slot exactly so a machine's portrait can never be dealt here)
+// character: the oracle ROLE is a partitioned pool exactly so a machine's portrait can never be dealt here)
 // under a scanline loop, with the operator's name over it. It is deliberately NOT a `.sec` header: the
 // prototype's agent screen has no section head, the oracle names the tab, and the round-4 measurement wave
 // established that the theme's first block sits FLUSH under the appbar.
@@ -213,10 +214,15 @@ function useOracleFade(
  *  property is opacity or transform. */
 function GachaOracle({
   fade,
+  art,
   oracleRef,
   anchorRef,
 }: {
   fade: boolean;
+  /** The backdrop, already resolved by the body through §5.3's ONE resolver (G5): an `oracle:` pin, else
+   *  the owner's `media/gacha/oracle/` drop, else the bundled scene. Both stacked copies paint it — they
+   *  are the same surface twice, so they cannot be handed different art. */
+  art: ResolvedArt;
   oracleRef: RefObject<HTMLDivElement | null>;
   anchorRef: RefObject<HTMLDivElement | null>;
 }) {
@@ -226,11 +232,18 @@ function GachaOracle({
           position at any scroll offset. Rendering it costs one empty div and saves the driver from having
           to reason about a stuck element's own coordinates. */}
       <div className="gc-oracle-anchor" ref={anchorRef} aria-hidden />
-      <div className="gc-oracle" ref={oracleRef}>
+      {/* The focal crop rides a custom property, the wallpaper precedent: it belongs to the SURFACE, so both
+          stacked copies of the art read it from here rather than each carrying its own. Absent → the
+          tokens.css default (the prototype's own crop) stands. */}
+      <div
+        className="gc-oracle"
+        ref={oracleRef}
+        style={art.focus === undefined ? undefined : { ["--gc-oracle-pos" as string]: art.focus }}
+      >
         {/* The SHARP face. Art + scrim + name plate — the whole surface, because that is the prototype's
             own M7 target. */}
         <div className="gc-oracle-face sharp">
-          <img className="gc-oracle-art" src={ART.oracle} alt="" draggable={false} />
+          <img className="gc-oracle-art" src={art.url} alt="" draggable={false} />
           <div className="gc-oracle-name">
             <p className="eyebrow">PRIZE OPERATOR</p>
             <h1>
@@ -244,7 +257,7 @@ function GachaOracle({
             already announces, so the tab still has exactly ONE heading in the accessibility tree. */}
         {fade && (
           <div className="gc-oracle-face soft" aria-hidden>
-            <img className="gc-oracle-art" src={ART.oracle} alt="" draggable={false} />
+            <img className="gc-oracle-art" src={art.url} alt="" draggable={false} />
             <div className="gc-oracle-name">
               <p className="eyebrow">PRIZE OPERATOR</p>
               <h1>
@@ -277,6 +290,10 @@ export function GachaAgent({ active }: { active: boolean }) {
   // second source): the attribute drives the CSS, this drives whether the driver runs and whether the ghost
   // copy is in the DOM at all.
   const fade = useThemeSetting<boolean>("gacha", "oracle") ?? false;
+  // The oracle's backdrop, through the theme's ONE art seam (G5) — the same shared query the Fleet, the
+  // Root's wallpaper and the reel figure read. Resolved HERE, in the body, and handed down: the surface
+  // renders what it is given (the GachaFleet convention).
+  const roster = useGachaRoster();
   // The pinned panel's PRESENCE — the one piece of flow above the oracle that comes and goes. Derived once
   // and used twice (the mount below, and M7's remeasure dependency), so the driver can never disagree with
   // what is actually rendered.
@@ -294,7 +311,12 @@ export function GachaAgent({ active }: { active: boolean }) {
       aria-labelledby="tabbtn-agent"
     >
       {hasPinnedPlan && <PinnedPlanPanel />}
-      <GachaOracle fade={fade} oracleRef={oracleRef} anchorRef={anchorRef} />
+      <GachaOracle
+        fade={fade}
+        art={oracleArt(roster)}
+        oracleRef={oracleRef}
+        anchorRef={anchorRef}
+      />
       {/* The kit's own `.sec` header, exactly as AgentTab and FrontierAgent render it (owner ruling, G3
           round 2). The first pass gave the privilege chip a bespoke right-aligned strip of its own, which
           put a shared chat control somewhere it is in no other theme AND parked it in a z-context of its

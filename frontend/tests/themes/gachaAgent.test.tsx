@@ -15,6 +15,13 @@ const chat = vi.hoisted(() => {
 });
 vi.mock("../../src/hooks/useAgentChat", () => ({ useAgentChat: () => chat.view }));
 vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: [] }) }));
+
+// G5 — the theme's art now comes from `GET /api/media/gacha`. The index hook is mocked rather than wrapped
+// in a QueryClientProvider (the `useFleet` precedent above): these cases are about the BODY's wiring, and
+// the default — no owner files — is also the assertion that G1–G4 behavior is byte-identical on a fresh
+// install. `media.data = …` drives the owner-supplied cases.
+const media = vi.hoisted(() => ({ data: undefined as MediaIndex | undefined }));
+vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 vi.mock("../../src/theme-engine/kit/composer/plan/PinnedPlanPanel", () => ({
   PinnedPlanPanel: () => <div data-testid="pinned-panel" />,
 }));
@@ -25,6 +32,7 @@ import { GACHA_COPY } from "../../src/themes/gacha/copy";
 import { getDraft, setDraft } from "../../src/store/composer";
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
+import type { MediaIndex } from "../../src/hooks/useMedia";
 import type { ChatMessage } from "../../src/types";
 
 // The ResizeObserver stub FIRES (Codex G3 L2): a stub whose callback is never invoked cannot exercise the
@@ -96,6 +104,7 @@ beforeEach(() => {
   setDraft("");
   chat.view = view([]);
   observers.length = 0; // a previous arm's unmounted observers must never fire into this one
+  media.data = undefined; // no owner files ⇒ the bundled oracle art, exactly as G3 shipped it
 });
 afterEach(() => {
   setUI({ themeSettings: {} });
@@ -104,6 +113,39 @@ afterEach(() => {
 });
 
 describe("GachaAgent — the oracle block", () => {
+  // G5 — the backdrop resolves through §5.3's ONE resolver now (it used to reach into the bundled manifest
+  // directly, which was the last surface bypassing it). Both stacked copies must take the SAME art: they
+  // are one surface rendered twice, and a mismatch would crossfade between two different pictures.
+  it("paints the owner's oracle/ drop on BOTH faces when there is one", () => {
+    media.data = {
+      ns: "gacha",
+      collation: "casefold-natural",
+      roles: {
+        oracle: [
+          {
+            name: "eye",
+            file: "eye.webp",
+            url: "/api/media/gacha/files/oracle/eye.webp",
+            format: "webp",
+            size_bytes: 1,
+            width: 1,
+            height: 1,
+            unusable: false,
+            warnings: [],
+          },
+        ],
+      },
+      slots: {},
+    };
+    setUI({ themeSettings: { gacha: { oracle: true } } });
+    const { container } = render(<GachaAgent active />);
+    const arts = [...container.querySelectorAll<HTMLImageElement>(".gc-oracle-art")];
+    expect(arts).toHaveLength(2); // sharp + the soft ghost (the fade mode is on)
+    for (const img of arts) {
+      expect(img.getAttribute("src")).toBe("/api/media/gacha/files/oracle/eye.webp");
+    }
+  });
+
   it("renders the ORACLE art (the partitioned scene slot, never a roster character) + its name plate", () => {
     const { container } = render(<GachaAgent active />);
     const art = container.querySelector<HTMLImageElement>(".gc-oracle-face.sharp .gc-oracle-art");

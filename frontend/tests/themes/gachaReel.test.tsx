@@ -1,8 +1,16 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// G5 — the figure's art now comes from `GET /api/media/gacha`. The index hook is mocked rather than
+// wrapped in a QueryClientProvider (the `useFleet` precedent in the Fleet suite): the default — no owner
+// files — is also the assertion that the G4 figure is byte-identical on a fresh install, and
+// `media.data = …` drives the owner-cutout + swapped-URL cases below.
+const media = vi.hoisted(() => ({ data: undefined as MediaIndex | undefined }));
+vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
+
+import type { MediaIndex } from "../../src/hooks/useMedia";
 import { setUI } from "../../src/store/ui";
 import { GachaReel } from "../../src/themes/gacha/GachaReel";
 import { defaultRoster, reelFigureArt } from "../../src/themes/gacha/roster";
@@ -43,6 +51,7 @@ function stubImage(): void {
 beforeEach(() => {
   setUI({ theme: "gacha", tab: "fleet", motion: "full", perf: "full" });
   warmed = [];
+  media.data = undefined; // default: no owner files ⇒ the bundled figure, exactly as G4 shipped it
 });
 
 afterEach(() => {
@@ -224,6 +233,60 @@ describe("the reel figure", () => {
     act(() => setUI({ tab: "agent" }));
     expect(figure(container)).toBeNull(); // never mounted — no broken <img> riding the sweep
     expect(reel(container)!.querySelectorAll("i")).toHaveLength(5);
+  });
+
+  // ── G5 · the latch is URL-SCOPED (the G4 carry). While the figure was a module constant a boolean was
+  //    safe; now the art is runtime-mutable, so a boolean would strand the theme figure-less after the
+  //    owner FIXES the file — the reason the note came forward to this slice. ──
+
+  const ownerCutout = (name: string) => ({
+    ns: "gacha",
+    collation: "casefold-natural",
+    roles: {
+      reel: [
+        {
+          name,
+          file: `${name}.webp`,
+          url: `/api/media/gacha/files/reel/${name}.webp`,
+          format: "webp",
+          size_bytes: 1,
+          width: 1,
+          height: 1,
+          unusable: false,
+          warnings: [],
+        },
+      ],
+    },
+    slots: {},
+  });
+
+  it("takes the OWNER's reel cutout over the bundled one", () => {
+    media.data = ownerCutout("mine");
+    stubImage();
+    const { container } = render(<GachaReel />);
+    act(() => setUI({ tab: "agent" }));
+    expect(figure(container)!.getAttribute("src")).toBe("/api/media/gacha/files/reel/mine.webp");
+    expect(warmed[0].src).toBe("/api/media/gacha/files/reel/mine.webp");
+  });
+
+  it("a REPLACED cutout clears the failure latch — the latch is keyed to the URL that broke", () => {
+    media.data = ownerCutout("broken");
+    stubImage();
+    const { container } = render(<GachaReel />);
+    act(() => warmed[0].onerror!()); // the owner's drop is corrupt
+    act(() => setUI({ tab: "agent" }));
+    expect(figure(container)).toBeNull();
+
+    // The owner replaces the file; the index hands over a DIFFERENT url. A boolean latch would keep the
+    // theme figure-less until a reload — this must recover on the next render.
+    media.data = ownerCutout("fixed");
+    act(() => setUI({ tab: "conf" }));
+    expect(figure(container)!.getAttribute("src")).toBe("/api/media/gacha/files/reel/fixed.webp");
+
+    // …and the broken one is still latched: coming BACK to it must not re-mount a known-bad image.
+    media.data = ownerCutout("broken");
+    act(() => setUI({ tab: "agent" }));
+    expect(figure(container)).toBeNull();
   });
 
   it("…and a failure reported by the RENDERED image drops it too (the final fallback)", () => {

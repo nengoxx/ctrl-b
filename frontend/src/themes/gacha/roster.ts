@@ -12,10 +12,13 @@
 // figure (G4) — must ALL resolve through it, because a host's card art and its promo art disagreeing would
 // read as a bug (Codex R4-3: one deterministic behavior, one shared resolver).
 //
-// Until G5 lands the media index endpoint, `defaultRoster()` supplies the bundled set — same resolver, no
-// config. The G5 adapter's whole job is to build a `Roster` out of the endpoint's payload; nothing below
-// changes.
+// G5 wired the OWNER's files in (§5.4's ruled option (b)): `rosterFromIndex` below builds a `Roster` out
+// of the media index's per-role listings, and `defaultRoster()` is now the FALLBACK — the bundled set a
+// fresh install shows before a single file has been dropped in. Every fallback is per ROLE, so a fleet
+// with owner characters and no owner wallpaper still gets the bundled wallpaper; only what the owner
+// actually supplied is replaced.
 
+import type { MediaFile, MediaIndex } from "../../hooks/useMedia";
 import { ART } from "./art";
 
 /** One roster entry — one object per character, extended with optional fields rather than grown into
@@ -54,9 +57,33 @@ export interface RosterSlots {
   hero?: string;
 }
 
+/** One banner SCENE slide (§6.4): a named piece of landscape art that is its own slide. Named rather
+ *  than a bare URL because each slide needs a stable KEY; the visible title comes from the
+ *  `SCENE_TITLES` pool by position, never from this name. */
+export interface SceneArt {
+  name: string;
+  url: string;
+}
+
+/** The single-pick role pools the owner's `media/gacha/<role>/` folders feed (§5.4's re-rule:
+ *  drop-in = assignment). FIRST WINS in each — the owner reorders in the Conf gallery, and the index
+ *  hands them over already ordered, so "first" is the owner's own pick with no pinning ceremony.
+ *
+ *  EMPTY is the normal state, not a defect: a role the owner has dropped nothing into leaves its
+ *  consumer on the bundled default, which is what keeps a fresh install identical to G1–G4. */
+export interface RolePools {
+  wallpaper: ResolvedArt[];
+  reel: ResolvedArt[];
+  oracle: ResolvedArt[];
+}
+
 export interface Roster {
   entries: RosterEntry[];
   slots: RosterSlots;
+  /** The banner role's slides — the owner's `banner/` drops, else the bundled pair (§6.4). */
+  scenes: SceneArt[];
+  /** The owner's other role pools. See `RolePools`. */
+  pools: RolePools;
 }
 
 /** A resolved piece of art for a consumer to paint. `focus` is the entry's focal point when it declared
@@ -90,7 +117,60 @@ export function defaultRoster(): Roster {
       { name: "lyra", image: ART.characters[4], cutout: ART.cutout },
     ],
     slots: {},
+    scenes: ART.scenes.map((s) => ({ name: s.name, url: s.url })),
+    // EMPTY on purpose: the bundled wallpaper/oracle/cutout are the LAST rung of each ladder below, not
+    // a pool entry. Pre-loading them here would make "did the owner supply one?" unanswerable — and the
+    // reel's bundled figure genuinely is a different thing from an owner drop (it is the one asset with
+    // its glow baked in, art.ts).
+    pools: { wallpaper: [], reel: [], oracle: [] },
   };
+}
+
+/** Build the live roster from the media index (§5.4) — the ONE adapter between the endpoint and the
+ *  resolver. `undefined` (the query has not answered, or failed) is the bundled set, so first paint and
+ *  a backend hiccup both show art rather than placeholders.
+ *
+ *  The fallback is PER ROLE, not all-or-nothing: an empty `characters/` keeps the bundled cast while an
+ *  owner-filled `wallpaper/` still wins its own slot. That is what makes "drop one file in" a complete,
+ *  useful action instead of an all-or-nothing switch to a half-empty theme.
+ *
+ *  UNUSABLE files are treated differently in the two positions, and deliberately (§5.3): a broken
+ *  CHARACTER keeps its slot in the list — the order IS the host assignment, so dropping it would
+ *  silently re-deal every host after it — while a broken file in a first-wins POOL is skipped, because
+ *  there the only thing its position buys is a blank surface. */
+export function rosterFromIndex(index: MediaIndex | undefined): Roster {
+  const bundled = defaultRoster();
+  if (index === undefined) return bundled;
+  // Defensive against the PAYLOAD, not against our own types: this is wire data, and a stub/partial
+  // response (an e2e mock, a proxy answering `{}`) must degrade to the bundled set rather than throw
+  // inside a theme's render.
+  const role = (name: string): MediaFile[] => {
+    const files = index.roles?.[name];
+    return Array.isArray(files) ? files : [];
+  };
+  const characters = role("characters");
+  const scenes = role("banner").filter((f) => !f.unusable);
+  return {
+    entries: characters.length > 0 ? characters.map(toEntry) : bundled.entries,
+    slots: index.slots ?? {},
+    scenes: scenes.length > 0 ? scenes.map((f) => ({ name: f.name, url: f.url })) : bundled.scenes,
+    pools: {
+      wallpaper: pool(role("wallpaper")),
+      reel: pool(role("reel")),
+      oracle: pool(role("oracle")),
+    },
+  };
+}
+
+/** One owner file as a roster ENTRY. No `wide`/`cutout`/`focus`: under the role re-rule those fields
+ *  describe the BUNDLED defaults only — an owner's landscape art lives in `wallpaper/`, their cutout in
+ *  `reel/`, and the folder a file sits in is the whole of its assignment. */
+function toEntry(f: MediaFile): RosterEntry {
+  return { name: f.name, image: f.url, ...(f.unusable && { unusable: true }) };
+}
+
+function pool(files: MediaFile[]): ResolvedArt[] {
+  return files.filter((f) => !f.unusable).map((f) => ({ url: f.url }));
 }
 
 /** The entry a host at `index` (its position in the fleet's DISPLAY order) is assigned.
@@ -151,10 +231,24 @@ function toArt(entry: RosterEntry | null | undefined): ResolvedArt | null {
   return { url: entry.image, ...(entry.focus !== undefined && { focus: entry.focus }) };
 }
 
-/** The fleet wallpaper / pickup-banner backdrop: the pinned entry's wide art, else the bundled scene art.
- *  The bundled scene is the FALLBACK rather than an entry, so it can't be dealt to a host (art.ts). */
+// ── the slot ladders. Every one reads the same three rungs, in the same order (§5.4): a `slots` PIN
+//    naming an entry (the owner binding a character into a role) → the role FOLDER's first file (the
+//    owner's drop-in assignment) → the BUNDLED default. The bundled art is the fallback rather than a
+//    roster entry so it can never be dealt to a host as a capsule portrait (the art.ts partition rule).
+
+/** First-wins on a role pool, honestly typed: indexing an empty array yields `undefined` at runtime, and
+ *  this project does not run `noUncheckedIndexedAccess` — so the middle rung of every ladder below would
+ *  otherwise claim to always match and make its bundled fallback look like dead code. */
+function first(pool: ResolvedArt[]): ResolvedArt | undefined {
+  return pool.length > 0 ? pool[0] : undefined;
+}
+
+/** The fleet wallpaper / pickup-banner backdrop. */
 export function wallpaperArt(roster: Roster): ResolvedArt {
-  return toWideArt(slotEntry(roster, "wallpaper")) ?? { url: ART.banner };
+  return (
+    toWideArt(slotEntry(roster, "wallpaper")) ??
+    first(roster.pools.wallpaper) ?? { url: ART.banner }
+  );
 }
 
 /** The fixed hero slide's art — its own pin, else the wallpaper pick (§5.2's stated default). */
@@ -162,18 +256,36 @@ export function heroArt(roster: Roster): ResolvedArt {
   return toWideArt(slotEntry(roster, "hero")) ?? wallpaperArt(roster);
 }
 
-/** The agent oracle's backdrop: the pinned entry's wide art, else the bundled scene art. */
+/** The agent oracle's backdrop. */
 export function oracleArt(roster: Roster): ResolvedArt {
-  return toWideArt(slotEntry(roster, "oracle")) ?? { url: ART.oracle };
+  return (
+    toWideArt(slotEntry(roster, "oracle")) ?? first(roster.pools.oracle) ?? { url: ART.oracle }
+  );
 }
 
-/** The reel figure (G4) — a CUTOUT, not a crop, so the ladder is stricter: the pinned entry only counts if
- *  it actually has one, else the first entry that does, else `null` (no figure; the slats carry the
- *  transition alone, which is the design's own posture — the reel must be complete without the figure). */
-export function reelFigureArt(roster: Roster): ResolvedArt | null {
-  const pinned = slotEntry(roster, "reel_figure");
-  const usable = (e: RosterEntry | undefined) => e?.cutout !== undefined && !e.unusable;
-  const entry = usable(pinned) ? pinned : roster.entries.find(usable);
-  if (!entry?.cutout) return null;
+/** A cutout-bearing entry as art — the reel figure's own `toArt`. `null` for an entry with no cutout,
+ *  which is most of them: the cutout is a different asset KIND, not a crop of the portrait. */
+function toCutoutArt(entry: RosterEntry | undefined): ResolvedArt | null {
+  if (!entry || entry.unusable || entry.cutout === undefined) return null;
   return { url: entry.cutout, ...(entry.focus !== undefined && { focus: entry.focus }) };
+}
+
+/** The reel figure (G4) — a CUTOUT, not a crop, so the ladder is stricter at both ends: a PIN only counts
+ *  if the entry it names actually carries one, and the last rung is `null` rather than a bundled image
+ *  (the reel must be complete without the figure — the slats carry the transition alone).
+ *
+ *  The owner's `reel/` pool outranks the bundled cutout-bearing entry: dropping a cutout in is the whole
+ *  point of the folder, and it would be strange for it to lose to art that ships in the binary. Owner
+ *  cutouts have NO baked glow — see the theme README's `reel/` note (the bundled one bakes its two
+ *  shadows at export time because a runtime `drop-shadow()` re-rasterizes every frame on Gecko). */
+export function reelFigureArt(roster: Roster): ResolvedArt | null {
+  const pinned = toCutoutArt(slotEntry(roster, "reel_figure"));
+  if (pinned !== null) return pinned;
+  const owned = first(roster.pools.reel);
+  if (owned !== undefined) return owned;
+  for (const entry of roster.entries) {
+    const art = toCutoutArt(entry);
+    if (art !== null) return art;
+  }
+  return null;
 }

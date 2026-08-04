@@ -215,6 +215,15 @@ const ROUTES: Record<string, unknown> = {
   "/api/hosts": HOSTS,
   "/api/services": SERVICES,
   "/api/voice/status": { stt: false, tts: false },
+  // G5 — the owner media index. Mocked EMPTY on purpose: no owner files is the state a fresh install is
+  // in, so every gacha spec renders the BUNDLED art and stays independent of what sits in the dev box's
+  // `$CTRLB_HOME/media/`. The path is namespaced, so a second art-bearing theme adds its own row.
+  "/api/media/gacha": {
+    ns: "gacha",
+    collation: "casefold-natural",
+    roles: { characters: [], banner: [], wallpaper: [], reel: [], oracle: [] },
+    slots: {},
+  },
   "/api/actions": ACTIONS,
   "/api/tools": TOOLS,
   "/api/settings": SETTINGS,

@@ -7,7 +7,8 @@ import { GACHA_COPY } from "./copy";
 import { GachaAgent } from "./GachaAgent";
 import { GachaFleet } from "./GachaFleet";
 import { GachaReel } from "./GachaReel";
-import { defaultRoster, wallpaperArt } from "./roster";
+import { wallpaperArt } from "./roster";
+import { useGachaRoster } from "./useGachaRoster";
 
 // gacha's Root ("Capsule Arcade", D52 / GACHA_PLAN §3). A scaffold Root at G0: it maps the arcade palette
 // onto the REUSED Kit shell (DefaultRoot, colored by gacha's tokens.css) and fills the two appbar brand
@@ -36,16 +37,18 @@ const COMPOSER_SLOTS = { placeholder: GACHA_COPY.composerPlaceholder };
 // rebuild the merge — and remount the body — on every Root render.
 const BODIES = { fleet: GachaFleet, agent: GachaAgent };
 
-// The fleet wallpaper's resolved art (M10). Module-level for the same reason `GachaFleet`'s roster is: until
-// G5's media index lands the bundled default set cannot change at runtime, so resolving it once keeps the
-// layout effect's dependency list honest (the attrs it stamps are the only things that vary).
-const WALLPAPER = wallpaperArt(defaultRoster());
-
 export function GachaRoot() {
   const appbarMode = useUISlice((s) => s.appbarMode);
   // R6: both ship ON (the prototype defaults them OFF — a deliberate, owner-ruled flip).
   const wallpaper = useThemeSetting<boolean>("gacha", "wallpaper");
   const oracle = useThemeSetting<boolean>("gacha", "oracle");
+  // The fleet wallpaper's resolved art (M10), through the theme's ONE art seam (G5): a `wallpaper:` pin,
+  // else the owner's `media/gacha/wallpaper/` pick, else the bundled scene. The layout effect below
+  // depends on the two VALUES rather than the object, so a re-fetch that resolves to the same art cannot
+  // re-stamp `body` for nothing.
+  const art = wallpaperArt(useGachaRoster());
+  const artUrl = art.url;
+  const artFocus = art.focus;
 
   useLayoutEffect(() => {
     const b = document.body;
@@ -53,19 +56,19 @@ export function GachaRoot() {
     b.dataset.oracle = oracle ? "fade" : "scroll";
     // The fleet wallpaper's ART (M10). It is published as a custom property on `body` rather than rendered,
     // because the layer itself is a BACKGROUND on `.kit-main` — a node DefaultRoot owns — and a custom
-    // property only reaches it from an ancestor. Same resolver as every other gacha surface, so a G5
+    // property only reaches it from an ancestor. Same resolver as every other gacha surface, so a
     // `wallpaper:` pin moves this with everything else. The focal crop is set only when the entry declares
     // one; otherwise tokens.css's default (the prototype's own 56% 30%) stands.
-    b.style.setProperty("--gc-wallpaper-img", `url("${WALLPAPER.url}")`);
-    if (WALLPAPER.focus === undefined) b.style.removeProperty("--gc-wallpaper-pos");
-    else b.style.setProperty("--gc-wallpaper-pos", WALLPAPER.focus);
+    b.style.setProperty("--gc-wallpaper-img", `url("${artUrl}")`);
+    if (artFocus === undefined) b.style.removeProperty("--gc-wallpaper-pos");
+    else b.style.setProperty("--gc-wallpaper-pos", artFocus);
     return () => {
       delete b.dataset.wallpaper;
       delete b.dataset.oracle;
       b.style.removeProperty("--gc-wallpaper-img");
       b.style.removeProperty("--gc-wallpaper-pos");
     };
-  }, [wallpaper, oracle]);
+  }, [wallpaper, oracle, artUrl, artFocus]);
 
   return (
     <>

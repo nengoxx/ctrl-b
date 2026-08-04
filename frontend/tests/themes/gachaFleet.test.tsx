@@ -14,6 +14,14 @@ const fleet = vi.hoisted(() => {
 });
 vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
 
+// G5 — the theme's art now comes from `GET /api/media/gacha`. The index hook is mocked rather than wrapped
+// in a QueryClientProvider (the `useFleet` precedent above): these cases are about the BODY's wiring, and
+// the default — no owner files — is also the assertion that G1–G4 behavior is byte-identical on a fresh
+// install. `media.data = …` drives the owner-supplied cases.
+const media = vi.hoisted(() => ({ data: undefined as MediaIndex | undefined }));
+vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
+
+import type { MediaIndex } from "../../src/hooks/useMedia";
 import { runViewTransition } from "../../src/lib/viewTransition";
 import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setUI } from "../../src/store/ui";
@@ -72,9 +80,30 @@ const promos = (c: HTMLElement): HTMLElement[] => [
 const SCENERY = 1 + ART.scenes.length;
 const rate = (c: HTMLElement): string => c.querySelector(".gc-banner-rate span")!.textContent ?? "";
 
+/** G5 — a media index payload. `mediaFile` builds one servable file; the default `media.data` is
+ *  `undefined` (no owner files ⇒ the bundled art), which every case above relies on. */
+const mediaFile = (name: string, role: string) => ({
+  name,
+  file: `${name}.webp`,
+  url: `/api/media/gacha/files/${role}/${name}.webp`,
+  format: "webp",
+  size_bytes: 1,
+  width: 1,
+  height: 1,
+  unusable: false,
+  warnings: [],
+});
+const mediaIndex = (roles: Record<string, ReturnType<typeof mediaFile>[]>) => ({
+  ns: "gacha",
+  collation: "casefold-natural",
+  roles,
+  slots: {},
+});
+
 beforeEach(() => {
   setUI({ theme: "gacha", tab: "fleet", motion: "full", themeSettings: {} });
   setFleet();
+  media.data = undefined;
 });
 afterEach(cleanup);
 
@@ -1598,5 +1627,46 @@ describe("the autoplay timer (§6.4's matrix)", () => {
       }),
     ).not.toThrow();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+// ── G5 · the owner's media folders reach the two surfaces this body composes. What is load-bearing is that
+//    BOTH read the same swapped roster — the card and the promo for one host must stay the same character,
+//    which is the whole reason §5.3 rules one resolver — and that the two pools stay separate. ──
+describe("owner media (G5)", () => {
+  it("deals the owner's characters/ to the cards AND the promos, and their banner/ to the scenes", () => {
+    media.data = mediaIndex({
+      characters: [mediaFile("kira", "characters"), mediaFile("nova", "characters")],
+      banner: [mediaFile("scene1", "banner")],
+    });
+    const { container } = render(<GachaFleet active />);
+
+    const cardArt = [...container.querySelectorAll<HTMLImageElement>(".gc-card img")].map(
+      (i) => i.src,
+    );
+    expect(cardArt[0]).toContain("/api/media/gacha/files/characters/kira.webp");
+    expect(cardArt[1]).toContain("/api/media/gacha/files/characters/nova.webp");
+    // the promo for host 0 is the SAME entry, at the same display index
+    expect(promos(container)[0].querySelector("img")!.src).toContain(
+      "/api/media/gacha/files/characters/kira.webp",
+    );
+
+    // ONE scene slide (the owner's single drop replaces the bundled pair outright), and no character has
+    // leaked into it — the roles are independent pools. Scenes are the strip between the hero and the
+    // promos, the same way every other case in this file addresses them.
+    const scenery = slides(container).slice(1, slides(container).length - promos(container).length);
+    expect(scenery).toHaveLength(1);
+    expect(scenery[0].querySelector("img")!.src).toContain(
+      "/api/media/gacha/files/banner/scene1.webp",
+    );
+  });
+
+  it("an owner role the fleet does not use leaves the surfaces on the bundled art", () => {
+    media.data = mediaIndex({ reel: [mediaFile("cut", "reel")] });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector<HTMLImageElement>(".gc-card img")!.src).toContain(
+      ART.characters[0],
+    );
+    expect(slides(container).slice(1, SCENERY)).toHaveLength(ART.scenes.length);
   });
 });

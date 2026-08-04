@@ -16,12 +16,12 @@ import { GachaArtShowcase } from "./GachaArtShowcase";
 import { GachaBanner, type BannerSlide } from "./GachaBanner";
 import { GachaCard } from "./GachaCard";
 import { GachaHostDetail } from "./GachaHostDetail";
-import { ART } from "./art";
 import { HERO_KEY, HOST_KEY_PREFIX, SCENE_KEY_PREFIX } from "./carousel";
 import { GACHA_COPY } from "./copy";
 import { CLOSE_DOSSIER_LABEL, cardShapes, counterText, hostsResolved, rateText } from "./fleet";
-import { artForHost, defaultRoster, heroArt, wideArtForHost } from "./roster";
+import { artForHost, heroArt, wideArtForHost } from "./roster";
 import { MAX_STARS, toStarMode } from "./stars";
+import { useGachaRoster } from "./useGachaRoster";
 
 // The gacha bespoke FLEET (D52 / GACHA_PLAN §6) — the prototype's capsule-arcade fleet screen, injected into
 // DefaultRoot's `fleet` body slot by GachaRoot (the cosmos/frontier/vapor precedent). A PURE CONSUMER of the
@@ -32,11 +32,6 @@ import { MAX_STARS, toStarMode } from "./stars";
 // resolver), the star mode, the online count — and hands each surface the resolved values. That is what keeps
 // a host's promo slide and its capsule card showing the same character with the same rarity.
 
-/** The roster the theme resolves against. Until G5's media index endpoint exists this is the BUNDLED default
- *  set (§5.5) — a module constant rather than a hook, because it cannot change at runtime yet. G5 replaces
- *  this one line with its query; nothing downstream moves, which is the point of the resolver. */
-const ROSTER = defaultRoster();
-
 /** The dossier sheet's persisted detent — a stable key into the shared, theme-agnostic `sheetSnap` store,
  *  with a module-level setter so `onSnapChange` keeps a constant identity per the prop's contract (the
  *  cosmos/frontier precedent). */
@@ -46,6 +41,9 @@ const persistSheetSnap = (snap: SheetDetent) => setSheetSnap(SHEET_KEY, snap);
 export function GachaFleet({ active }: { active: boolean }) {
   const { hosts, svcByHost, busy, run, hasData, isLoading, error } = useFleet();
   const starMode = toStarMode(useThemeSetting<string>("gacha", "starMode"));
+  // The roster the theme resolves against (§5.2's read path): the owner's media folders when they hold
+  // anything, the bundled set otherwise. One query, shared with the Root/reel/Agent by its key.
+  const roster = useGachaRoster();
 
   const onlineCount = hosts.filter((h) => h.status?.online).length;
   // §6.3's loading semantics, shared by the rate pill and (G1's track) the counter: an unresolved fleet
@@ -392,19 +390,20 @@ export function GachaFleet({ active }: { active: boolean }) {
   const detail = selHost ? { host: selHost, index: selIndex } : shown;
   // ONE resolution of the dossier's art, read by the portrait and by the showcase it opens (§5.3's one
   // shared resolver): the enlarged image is by construction the same entry the portrait was cropping.
-  const detailArt = detail ? artForHost(ROSTER, detail.index) : null;
+  const detailArt = detail ? artForHost(roster, detail.index) : null;
 
   // The §6.4 slide set, in its ruled order: the fixed hero, then the owner's banner SCENES (G1 eyeball
   // round 3 — art-only slides, the owner's pick over cycling the hero's art), then ONE promo per host —
   // online AND sleeping (the ruled membership; a sleeping promo renders dimmed, which keeps its click
   // useful: open the dossier, then wake).
   //
-  // The body composes the list because it is the one place that knows all three sources. The scenes come
-  // from the bundled art PARTITION rather than the roster, which is what keeps them out of the per-host
-  // cycle; G5's banner media folder replaces that one expression and nothing downstream moves.
+  // The body composes the list because it is the one place that knows all three sources. The scenes are
+  // the roster's `scenes` — the owner's `media/gacha/banner/` drops, else the bundled pair — and they are
+  // a SEPARATE pool from the entries, which is what keeps a scene from ever being dealt to a machine as
+  // its capsule portrait (the art.ts partition rule, now enforced by the role folders themselves).
   const slides: BannerSlide[] = [
-    { kind: "hero", key: HERO_KEY, art: heroArt(ROSTER) },
-    ...ART.scenes.map((scene, i) => ({
+    { kind: "hero", key: HERO_KEY, art: heroArt(roster) },
+    ...roster.scenes.map((scene, i) => ({
       kind: "scene" as const,
       key: SCENE_KEY_PREFIX + scene.name,
       name: scene.name,
@@ -417,7 +416,7 @@ export function GachaFleet({ active }: { active: boolean }) {
       // key, so a machine named `hero` collides with the fixed slide.
       key: HOST_KEY_PREFIX + host.id,
       host,
-      art: wideArtForHost(ROSTER, i),
+      art: wideArtForHost(roster, i),
       online: !!host.status?.online,
     })),
   ];
@@ -463,7 +462,7 @@ export function GachaFleet({ active }: { active: boolean }) {
             <GachaCard
               key={hosts[i].id}
               host={hosts[i]}
-              art={artForHost(ROSTER, i)}
+              art={artForHost(roster, i)}
               shape={shape}
               mode={starMode}
               onOpen={openHostDossier}

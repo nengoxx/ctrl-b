@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
 import { ART } from "../../src/themes/gacha/art";
 import {
   artForHost,
@@ -9,6 +10,7 @@ import {
   heroArt,
   oracleArt,
   reelFigureArt,
+  rosterFromIndex,
   slotEntry,
   wallpaperArt,
   wideArtForHost,
@@ -25,8 +27,20 @@ function entry(name: string, extra: Partial<RosterEntry> = {}): RosterEntry {
   return { name, image: `${name}.webp`, ...extra };
 }
 
-function roster(entries: RosterEntry[], slots: Roster["slots"] = {}): Roster {
-  return { entries, slots };
+/** A roster with NO owner media (G5): empty role pools everywhere, which is the state a fresh install is
+ *  in and the state every ladder below must degrade to. The owner-supplied cases pass `over`. */
+function roster(
+  entries: RosterEntry[],
+  slots: Roster["slots"] = {},
+  over: Partial<Pick<Roster, "scenes" | "pools">> = {},
+): Roster {
+  return {
+    entries,
+    slots,
+    scenes: [],
+    pools: { wallpaper: [], reel: [], oracle: [] },
+    ...over,
+  };
 }
 
 describe("entryForHost / artForHost — positional assignment over the display order", () => {
@@ -245,5 +259,130 @@ describe("defaultRoster — the bundled fallback set (§5.5)", () => {
     expect(dealt).not.toContain(ART.oracle);
     for (const scene of ART.scenes) expect(dealt).not.toContain(scene.url);
     expect(new Set(dealt)).toEqual(new Set(ART.characters));
+  });
+});
+
+// ── G5 · rosterFromIndex — the OWNER's media folders (§5.4). The adapter is the only thing between the
+//    index endpoint and the resolver above, so what it must get right is: which role feeds which
+//    consumer, that a role the owner left empty falls back to the BUNDLED set (a fresh install is
+//    byte-identical to G1–G4), and the two different treatments of an unusable file. ──
+
+const file = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
+  name,
+  file: `${name}.webp`,
+  url: `/api/media/gacha/files/x/${name}.webp`,
+  format: "webp",
+  size_bytes: 1000,
+  width: 640,
+  height: 854,
+  unusable: false,
+  warnings: [],
+  ...over,
+});
+
+const index = (
+  roles: Record<string, MediaFile[]>,
+  slots: Record<string, string> = {},
+): MediaIndex => ({
+  ns: "gacha",
+  collation: "casefold-natural",
+  roles,
+  slots,
+});
+
+describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)", () => {
+  it("no index yet (first paint, or a backend hiccup) → the bundled set, so art never waits on a query", () => {
+    expect(rosterFromIndex(undefined)).toEqual(defaultRoster());
+  });
+
+  it("an index with nothing in it is ALSO the bundled set — every role falls back on its own", () => {
+    const r = rosterFromIndex(
+      index({ characters: [], banner: [], wallpaper: [], reel: [], oracle: [] }),
+    );
+    expect(r.entries).toEqual(defaultRoster().entries);
+    expect(r.scenes).toEqual(defaultRoster().scenes);
+    expect(wallpaperArt(r)).toEqual({ url: ART.banner });
+    expect(oracleArt(r)).toEqual({ url: ART.oracle });
+    expect(reelFigureArt(r)).toEqual({ url: ART.cutout });
+  });
+
+  it("characters/ REPLACES the dealt cast, in the order the index handed over", () => {
+    const r = rosterFromIndex(index({ characters: [file("kira"), file("nova")] }));
+    expect(r.entries.map((e) => e.name)).toEqual(["kira", "nova"]);
+    expect(assignArt(r, 3).map((a) => a!.url)).toEqual([
+      file("kira").url,
+      file("nova").url,
+      file("kira").url, // the cycling rule is untouched by where the entries came from
+    ]);
+  });
+
+  it("a broken CHARACTER keeps its position (flagged) — dropping it would re-deal every host after it", () => {
+    const r = rosterFromIndex(
+      index({ characters: [file("a"), file("b", { unusable: true }), file("c")] }),
+    );
+    expect(r.entries.map((e) => e.name)).toEqual(["a", "b", "c"]);
+    expect(r.entries[1].unusable).toBe(true);
+    // …and only ITS host gets the placeholder; the third host still gets the third entry.
+    expect(assignArt(r, 3).map((a) => a?.url ?? null)).toEqual([
+      file("a").url,
+      null,
+      file("c").url,
+    ]);
+  });
+
+  it("a broken file in a first-wins POOL is SKIPPED — there its position only buys a blank surface", () => {
+    const r = rosterFromIndex(
+      index({
+        wallpaper: [file("bad", { unusable: true }), file("good")],
+        banner: [file("s1", { unusable: true })],
+      }),
+    );
+    expect(wallpaperArt(r)).toEqual({ url: file("good").url });
+    expect(r.scenes).toEqual(defaultRoster().scenes); // the only scene was broken ⇒ the bundled pair
+  });
+
+  it("banner/ becomes the SCENE slides, one per file, keyed by stem", () => {
+    const r = rosterFromIndex(index({ banner: [file("b9"), file("b1")] }));
+    expect(r.scenes).toEqual([
+      { name: "b9", url: file("b9").url },
+      { name: "b1", url: file("b1").url }, // the SERVER ruled the order; the client never re-sorts
+    ]);
+  });
+
+  it("reel/ outranks the bundled cutout — dropping one in is the whole point of the folder", () => {
+    const r = rosterFromIndex(index({ reel: [file("cut")] }));
+    expect(reelFigureArt(r)).toEqual({ url: file("cut").url });
+  });
+
+  it("a slots PIN still outranks the role folder (the owner binding a character into a role)", () => {
+    const withWide = index(
+      { characters: [file("kira")], wallpaper: [file("w")] },
+      { wallpaper: "kira" },
+    );
+    expect(wallpaperArt(rosterFromIndex(withWide))).toEqual({ url: file("kira").url });
+    // …and a pin naming nothing on disk degrades to the folder rather than blanking the surface.
+    const dangling = index(
+      { characters: [file("kira")], wallpaper: [file("w")] },
+      { wallpaper: "ghost" },
+    );
+    expect(wallpaperArt(rosterFromIndex(dangling))).toEqual({ url: file("w").url });
+  });
+
+  it("owner characters carry no wide/cutout/focus — under the role rule the FOLDER is the assignment", () => {
+    const r = rosterFromIndex(index({ characters: [file("kira")] }));
+    expect(r.entries[0]).toEqual({ name: "kira", image: file("kira").url });
+    // so a character can never accidentally become the reel figure just by existing
+    expect(reelFigureArt(r)).toBeNull();
+  });
+});
+
+describe("rosterFromIndex — a malformed payload degrades, never throws inside a render", () => {
+  it("an empty object (a stub mock, a proxy answering `{}`) is the bundled set", () => {
+    expect(rosterFromIndex({} as MediaIndex)).toEqual(defaultRoster());
+  });
+
+  it("a non-array role is ignored rather than iterated", () => {
+    const bad = { ns: "gacha", roles: { characters: null } } as unknown as MediaIndex;
+    expect(rosterFromIndex(bad).entries).toEqual(defaultRoster().entries);
   });
 });
