@@ -257,7 +257,7 @@ export function useSaveSettings() {
     // server holds the new ones — with the bar saying "Saved" (Codex, review of the fix wave). This is
     // the standard optimistic-write guard; it is the one thing missing to make the echo authoritative.
     onMutate: () => qc.cancelQueries({ queryKey: ["settings"] }),
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
       qc.setQueryData(["settings"], res.settings); // adopt the server's masked echo immediately
       // FR2-1 — keep the providers base rev PAIRED with the settings echo (the same key the settings
       // queryFn writes), so a follow-up save's epoch capture reads the fresh post-write base even before
@@ -279,12 +279,6 @@ export function useSaveSettings() {
       qc.setQueryData(["notification-prefs"], res.settings.notifications);
       void qc.invalidateQueries({ queryKey: ["notification-prefs"] });
       void qc.invalidateQueries({ queryKey: ["providers"] }); // D48 — a save may add/rename/drop providers (fresh names/warnings)
-      // D52/G5 — a `themes.<ns>` save changes the ORDER the media index serves (and its slot pins), and
-      // the index is where the theme reads its art from. Invalidated by PREFIX so every namespace's
-      // listing re-reads; the theme then repaints without a reload. Not `setQueryData`: the echo is the
-      // settings doc, and the index is a projection of settings OVER THE FILES ON DISK — only the server
-      // can compute it.
-      void qc.invalidateQueries({ queryKey: ["media"] });
       void loadProviders(); // refresh the composer's module-level `/<provider>` verb set (best-effort)
       void loadAgents(); // SYS-9.2 — a save may change the default-agent selection; keep the composer's `/agent` set + resolved default fresh (best-effort)
       if (res.restart_required.length) {
@@ -292,6 +286,23 @@ export function useSaveSettings() {
       } else {
         pushToast("Settings saved", "ok");
       }
+      // D52/G5 — a `themes.<ns>` save changes the ORDER the media index serves (and its slot pins), and
+      // the index is where the theme reads its art from. Invalidated by PREFIX so every namespace's
+      // listing re-reads; the theme then repaints without a reload. Not `setQueryData`: the echo is the
+      // settings doc, and the index is a projection of settings OVER THE FILES ON DISK — only the server
+      // can compute it.
+      //
+      // AWAITED, and last (Codex F5). Everything above is fire-and-forget because its consumers can
+      // tolerate one stale render; the media index cannot, because the GALLERY COMPUTES ITS NEXT WRITE
+      // FROM IT. `isPending` stays true until the refetch lands, so the reorder controls stay blocked
+      // until the authoritative order is the one on screen — otherwise a second tap between "PUT
+      // resolved" and "index refetched" computes a full order from the stale list and persists it over
+      // the first move. The toast fires BEFORE the await: the save really is done, and the extra tick is
+      // about what the owner is allowed to click next, not about what the server knows.
+      //
+      // Cost when no media query is mounted (every non-gacha save): `invalidateQueries` only awaits
+      // ACTIVE observers, so it resolves immediately.
+      await qc.invalidateQueries({ queryKey: ["media"] });
     },
     onError: (e: Error, patch) => {
       // FX15 (Codex#12): the providers-conflict path applies ONLY to a 409 whose patch actually carried

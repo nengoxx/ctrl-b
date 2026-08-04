@@ -187,6 +187,81 @@ describe("MediaGallery", () => {
     expect(api.putJSON).toHaveBeenCalledTimes(1); // the stale-order write never happened
   });
 
+  it("stays blocked until the REFETCHED order is on screen, not merely until the PUT resolves", async () => {
+    // Codex F5. The next order is computed from the list on screen, so the window between "PUT
+    // resolved" and "index refetched" is the dangerous one: a tap in it computes a full order from the
+    // stale list and persists it OVER the move that just landed. `useSaveSettings` awaits the media
+    // invalidation, so `isPending` — and the controls — outlive the round trip.
+    let releaseRefetch: (v: MediaIndex) => void = () => undefined;
+    api.getJSON
+      .mockResolvedValueOnce(index())
+      .mockImplementationOnce(() => new Promise<MediaIndex>((r) => (releaseRefetch = r)));
+
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery media={MEDIA} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("a.webp");
+
+    fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    // the PUT has RESOLVED and the refetch has not — the moment the fix exists for
+    await waitFor(() => expect(api.getJSON).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "Move a.webp down" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Move a.webp down" }));
+    expect(api.putJSON).toHaveBeenCalledTimes(1); // the stale-order write never happened
+
+    // …and once the authoritative order lands, the next move is computed from THAT.
+    const fresh = index({
+      roles: {
+        characters: [file("a", "characters"), file("c", "characters"), file("b", "characters")],
+        reel: [],
+      },
+    });
+    releaseRefetch(fresh);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Move a.webp down" })).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Move a.webp down" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
+    const [, body] = api.putJSON.mock.calls[1] as [string, { themes: { gacha: unknown } }];
+    expect(body.themes.gacha).toEqual({
+      roles: { characters: { order: ["c.webp", "a.webp", "b.webp"] } },
+    });
+  });
+
+  it("re-reads the directory on every entry — files arrive OUT OF BAND, over SSH", async () => {
+    // Codex F7: a 60s-stale listing would show the owner art that predates the copy they just finished.
+    // The gallery's own observer refetches on mount; the theme's surfaces keep the cheap staleTime.
+    api.getJSON.mockResolvedValue(index());
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const ui = (
+      <QueryClientProvider client={qc}>
+        <MediaGallery media={MEDIA} />
+      </QueryClientProvider>
+    );
+    const { unmount } = render(ui);
+    await screen.findByText("a.webp");
+    expect(api.getJSON).toHaveBeenCalledTimes(1);
+
+    unmount();
+    // the owner scp's a new file in while the gallery is not looking
+    api.getJSON.mockResolvedValue(
+      index({ roles: { characters: [file("zzz", "characters")], reel: [] } }),
+    );
+    render(ui);
+    expect(await screen.findByText("zzz.webp")).toBeTruthy();
+    expect(api.getJSON).toHaveBeenCalledTimes(2);
+  });
+
   it("pinning writes the slot; clearing writes NULL, not an empty string", async () => {
     renderGallery();
     await screen.findByText("a.webp");

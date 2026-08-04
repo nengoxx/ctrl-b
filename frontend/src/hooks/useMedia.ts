@@ -51,10 +51,17 @@ export interface MediaIndex {
   slots: Record<string, string>;
 }
 
-export function useMediaIndex(ns: string) {
+/** `opts` is per-OBSERVER, not per query: TanStack resolves `staleTime`/`refetchOnMount` for each
+ *  consumer separately, so the Conf gallery can insist on a fresh read without making the theme's own
+ *  surfaces re-fetch on every tab change. */
+export function useMediaIndex(
+  ns: string,
+  opts?: { staleTime?: number; refetchOnMount?: "always" },
+) {
   return useQuery<MediaIndex>({
     queryKey: ["media", ns],
     queryFn: () => getJSON<MediaIndex>(`/api/media/${ns}`),
     staleTime: 60_000,
+    ...opts,
   });
 }

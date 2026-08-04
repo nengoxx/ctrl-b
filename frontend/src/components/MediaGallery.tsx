@@ -35,7 +35,16 @@ function metaText(f: MediaFile): string {
 }
 
 export function MediaGallery({ media }: { media: ThemeMedia }) {
-  const { data, isLoading, error } = useMediaIndex(media.ns);
+  // FRESH on entry (Codex F7). The files are dropped in OUT OF BAND — over SSH, from another machine —
+  // so a long-lived query with a 60s staleTime would show the owner a listing that predates the copy
+  // they just finished. This observer alone opts out: an always-refetch on mount plus the default
+  // refetch-on-window-focus means arriving at the gallery, or coming back to the tab, re-reads the
+  // directory. NOT a polling interval: the theme's own surfaces share this key, and nothing here is
+  // worth a request every N seconds on a phone.
+  const { data, isLoading, error } = useMediaIndex(media.ns, {
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
   const save = useSaveSettings();
   // Reordering is DISABLED while a save is in flight, deliberately: the next order is computed from the
   // list currently on screen, so a second tap landing before the index refetched would be computed off a
