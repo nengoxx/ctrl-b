@@ -101,7 +101,14 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /\/api\/media\/.*\/files\//,
+            // A CALLBACK, not a RegExp (Codex F2). Workbox tests a regexp `urlPattern` against the
+            // full, unanchored href — so `/api/settings?next=/api/media/gacha/files/` matched, and a
+            // live-state response with a media-looking query string would have been cached as art.
+            // Matching on the PATHNAME, anchored, and only same-origin, is the only reading that says
+            // what was meant. (Workbox serializes the function's source into the SW; it must therefore
+            // stay self-contained — no imports, no outer bindings.)
+            urlPattern: ({ url, sameOrigin }) =>
+              sameOrigin && /^\/api\/media\/[^/]+\/files\//.test(url.pathname),
             handler: "StaleWhileRevalidate",
             options: {
               cacheName: "ctrlb-media",

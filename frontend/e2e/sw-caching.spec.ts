@@ -26,9 +26,42 @@ test("the SW ships both runtimeCaching routes, with the handler each resource ac
 
   // The owner's own files, mutable under a STABLE name. CacheFirst here would pin replaced art forever,
   // against the mount's own `Cache-Control: no-cache` — this is the assertion that says so.
-  expect(flat).toContain("/api/media/.*/files/");
-  expect(flat).toMatch(/files\/\/,new \w+\.StaleWhileRevalidate\(\{cacheName:"ctrlb-media"/);
+  expect(flat).toMatch(/,new \w+\.StaleWhileRevalidate\(\{cacheName:"ctrlb-media"/);
   expect(flat).not.toMatch(/CacheFirst\(\{cacheName:"ctrlb-media"/);
+});
+
+test("the media route matches PATHS, not anything with a media-looking href", async ({
+  request,
+}) => {
+  // Codex F2, pinned behaviourally rather than by source-reading: the matcher is lifted OUT of the
+  // shipped SW and called. A regexp `urlPattern` is tested by workbox against the full unanchored
+  // href, so the previous form matched any URL that merely CONTAINED the media path — including live
+  // state with it in a query string.
+  const sw = await (await request.get("/sw.js")).text();
+  const src = /registerRoute\((\(\{url.*?),new \w+\.StaleWhileRevalidate/.exec(sw);
+  expect(src, "the media route should be a callback matcher, not a bare RegExp").not.toBeNull();
+  // Compiling the extracted source is the POINT of this test — it is the only way to ask the shipped
+  // matcher what it actually matches, rather than reading its source and believing ourselves. The input
+  // is our own build output, fetched from our own preview server, inside a test process; the two rules
+  // below exist to stop untrusted strings becoming code, which is not what is happening here.
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval, @typescript-eslint/no-unsafe-call
+  const match = new Function(`return (${src![1]})`)() as (a: {
+    url: URL;
+    sameOrigin: boolean;
+  }) => unknown;
+
+  const at = (href: string, sameOrigin = true) => !!match({ url: new URL(href), sameOrigin });
+
+  expect(at("http://h/api/media/gacha/files/characters/lyra.webp")).toBe(true);
+  expect(at("http://h/api/media/gacha/files/reel/cut%20out.webp")).toBe(true);
+
+  // THE regression: live state is never cached because its query string looks like art.
+  expect(at("http://h/api/settings?next=/api/media/gacha/files/")).toBe(false);
+  expect(at("http://h/api/agent/chat#/api/media/gacha/files/x.png")).toBe(false);
+  // the JSON index is live state too — only the FILES mount is cacheable
+  expect(at("http://h/api/media/gacha")).toBe(false);
+  // and never another origin's lookalike path
+  expect(at("http://evil/api/media/gacha/files/x.png", false)).toBe(false);
 });
 
 test("the precache manifest carries the app and NOTHING it never requests", async ({ request }) => {
