@@ -41,10 +41,13 @@
 > original drops UNTRACKED in `design/prototypes/gacha/` (REC: never commit).
 >
 > ## ▶ SIDE SESSION (2026-08-04, Opus — a deliberate DEVIATION, now closed)
-> **An owner-attended session ran BESIDE the main arc while the main model was rate-limited. Three
-> commits pushed (`ba0b8b1` kit · `d65e7b7` gacha · `44aec0a` docs); gate green at each (1341 vitest,
-> 94 e2e mobile + 94 desktop + 7 firefox, stylelint/prettier/tsc). Two Codex rounds + a council round
-> ran over it. Full record: the amendment at the end of GACHA_PLAN §7.4 and the D52 G3 note.**
+> **⚠ THIS DOES NOT CHANGE THE MAIN ARC. The open gate is still G3's owner device round, then G4 —
+> read the block ABOVE this one and carry on from there. Everything here is a side note.**
+> **An owner-attended session ran BESIDE the main arc while the main model was rate-limited. FOUR
+> commits, NOT PUSHED — `origin/main` is four behind (`ba0b8b1` kit · `d65e7b7` gacha · `44aec0a`
+> + `5578dc4` docs); gate green at each (1341 vitest, 94 e2e mobile + 94 desktop + 7 firefox,
+> stylelint/prettier/tsc). Two Codex rounds + a council round ran over it. Full record: the amendment
+> at the end of GACHA_PLAN §7.4 and the D52 G3 note.**
 > Short form of what SHIPPED: the tools-menu open RING is gated to the `outline` composer skin (it was
 > re-growing a border glass/bezel/sleek strip) with a new e2e arm proven red-on-broken · the `arcade`
 > skin was re-ruled — no outlines anywhere, ONE hard accent drop, a sticker press · the M6 scanline's
