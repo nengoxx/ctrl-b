@@ -35,18 +35,41 @@
 // `lyra-cutout.webp` is not a resize: it is the reel FIGURE, and its glow is baked in at export time
 // because the §10.1 rider bans the prototype's runtime `filter: drop-shadow(0 10px 30px #0009)
 // drop-shadow(0 0 22px #ff6cae66)` — two static shadows on a large moving image re-rasterize every frame
-// on Gecko. The bake reproduces exactly those two shadows, pre-divided by the figure's DISPLAY scale
-// (~0.65 of the asset at the `--gc-figure-h` default), so what lands on screen matches the prototype's
-// CSS: a CSS blur radius R is a Gaussian of sigma R/2, hence 30px→15→23 and 22px→11→17 in asset space,
-// and the dark shadow's 10px y-offset becomes 15. `PAD` is the canvas the blur needs (3 sigma + offset),
-// added at the top and sides only — the figure is bottom-anchored, so a bottom margin would just lift it
-// off its floor. 711x828, ~97 KB.
+// on Gecko. The bake reproduces those two shadows at the figure's DISPLAY scale (0.622 css px per asset px:
+// a 460 px character from a 740 px source, the `--gc-figure-h` default), so what lands on screen matches
+// what the prototype's CSS would have painted.
+//
+// THE SIGMA, settled by measurement (the G4 Codex round — the first bake halved it, and the halo shipped at
+// half its intended reach). `drop-shadow()`'s blur length IS the Gaussian sigma; it does NOT follow
+// box-shadow's sigma = R/2, which is what the two looking alike invites you to assume. On a hard-edged
+// square, `drop-shadow(0 0 30px)` is PIXEL-IDENTICAL to `blur(30px)` (RMSE 0.0000, alpha under 0.01 at
+// 62.4 px) in BOTH Chromium and Gecko, and nothing like `blur(15px)` (RMSE 0.0586, under 0.01 at 30.5 px).
+// So the css sigmas here are 30 and 22 — not 15 and 11 — and in asset space 30/0.622→48 and 22/0.622→35,
+// with the dark shadow's 10 px y-offset becoming 16.
+//
+// What that was worth, profiled against the prototype's real CSS at the same on-screen character size (mean
+// composite alpha in distance bands around the silhouette): the halved bake held ~0.8x of the prototype's
+// glow within 16 px and then collapsed — 0.19x in the 16-24 px band, 0.04x at 24-32, ZERO past 32 px, where
+// the prototype still paints out to ~64. With the sigmas above it tracks the prototype through the bands
+// that carry the look (1.25 / 1.24 / 1.07 / 0.87 out to 32 px) and keeps a thinner far tail (0.51x at
+// 32-48 px, where alpha is ~0.03) — the one visible residue of Skia's tighter blur approximation.
+//
+// Filters do CHAIN — the pink `drop-shadow()` sees the dark one's OUTPUT, so it is technically cast by the
+// figure PLUS its dark shadow. Baking that faithfully was tried and REJECTED on the same measurement: two
+// true-Gaussian stages compound, and it overshoots to 1.4-1.5x the prototype's mean alpha in every near band
+// (1.39x total glow ink, against 1.12x for the two-independent-shadows form below). Reproducing what the
+// prototype PAINTS is the only thing this bake is for, so the simpler form stays.
+//
+// `PAD` is the canvas the blur needs (3 sigma + offset), added at the top and sides only — the figure is
+// bottom-anchored, so a bottom margin would just lift it off its floor. 855x900, ~107 KB. Growing the pad is
+// what moved `--gc-figure-h` (tokens.css): the character is now 0.82 of the element, so the token rose to
+// keep it exactly the size the eyeball round settled on.
 //
 //   node --input-type=module -e '
 //   import sharp from "sharp";
 //   const S = "../design/prototypes/gacha/uploads/prot/assets/gacha/lyra-cutout.png";
 //   const O = "src/themes/gacha/art/lyra-cutout.webp";
-//   const PAD = 88, SHADOWS = [{s:23,o:.6,dy:15,c:{r:0,g:0,b:0}},{s:17,o:.4,dy:0,c:{r:255,g:108,b:174}}];
+//   const PAD = 160, SHADOWS = [{s:48,o:.6,dy:16,c:{r:0,g:0,b:0}},{s:35,o:.4,dy:0,c:{r:255,g:108,b:174}}];
 //   const fig = await sharp(S).ensureAlpha()
 //     .extend({top:PAD,left:PAD,right:PAD,bottom:0,background:{r:0,g:0,b:0,alpha:0}}).png().toBuffer();
 //   const {width:W,height:H} = await sharp(fig).metadata();

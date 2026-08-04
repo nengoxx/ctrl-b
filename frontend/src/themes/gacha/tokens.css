@@ -151,18 +151,21 @@
        * proportion on any viewport; `width: auto` follows.
        *
        * NOTE on the height: the committed cutout carries its glow BAKED IN (§10.1 rider — a static
-       * `drop-shadow()` on a large moving image re-rasterizes per frame on Gecko), which costs ~11% of
-       * transparent margin at the top and sides. So the CHARACTER reads at about 0.89 of whatever
+       * `drop-shadow()` on a large moving image re-rasterizes per frame on Gecko), which costs ~18% of
+       * transparent margin at the top and sides. So the CHARACTER reads at about 0.82 of whatever
        * `--gc-figure-h` says; the token is the element's height, which is the thing CSS can honor.
+       * (That margin GREW with the G4 fix wave — the bake's blur was half the prototype's, so the
+       * corrected glow needs a wider canvas, art.ts. The default below rose from 62% to keep the
+       * character at exactly the size the eyeball round settled on: 62% x 828/900 of a character.)
        *
-       * …and one consequence to know while tuning. The asset is 711x828 (aspect 0.859), so the element
-       * is 0.859x as wide as it is tall, and the overlay clips what does not fit. Above roughly 54% of a
-       * phone's shell (55.1% at 393x830, 53.7% at 360x780) the element is wider than the viewport and
+       * …and one consequence to know while tuning. The asset is 855x900 (aspect 0.95), so the element
+       * is 0.95x as wide as it is tall, and the overlay clips what does not fit. Above roughly 49% of a
+       * phone's shell (49.8% at 393x830, 48.6% at 360x780) the element is wider than the viewport and
        * the OUTER GLOW starts clipping at the sides — the character itself still fits well past that,
-       * which is why the default sits at 62%: a figure sized to keep every last pixel of glow reads
-       * small. Drop to ~54% for a fully-contained glow; raise it for presence. Nothing here breaks
+       * which is why the default sits at 67%: a figure sized to keep every last pixel of glow reads
+       * small. Drop to ~49% for a fully-contained glow; raise it for presence. Nothing here breaks
        * either way — `.gc-reel` is `overflow: hidden`, so the page can never scroll sideways. */
-      --gc-figure-h: 62%; /* element height, % of the shell (the prototype's 84%, re-scoped) */
+      --gc-figure-h: 67%; /* element height, % of the shell (the prototype's 84%, re-scoped) */
       --gc-figure-x: 50%; /* horizontal anchor — the figure is centred on this point */
       --gc-figure-lift: 0px; /* extra rise ABOVE the safe-area floor (0 = standing on it) */
       --gc-figure-dur: 620ms; /* the whole in-hold-out arc (the prototype's own) */
