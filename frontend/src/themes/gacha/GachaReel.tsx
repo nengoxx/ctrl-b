@@ -90,7 +90,11 @@ function GachaReelSweep() {
   const [failedKey, setFailedKey] = useState<string | null>(null);
   const figure =
     figureArt !== null && perf !== "lite" && artKey(figureArt) !== failedKey ? figureArt : null;
+  // Both PRIMITIVES, and both are what the warm-up below depends on (Codex W5): a refetch that returns
+  // an equal-but-new listing rebuilds the roster object, so depending on `figure` itself would re-warm
+  // art that did not change. url + revision is the identity that actually matters.
   const figureKey = figure === null ? null : artKey(figure);
+  const figureUrl = figure === null ? null : figure.url;
 
   useEffect(() => {
     if (tab !== bootTab) setEverSwitched(true);
@@ -108,14 +112,14 @@ function GachaReelSweep() {
   // Keyed on the art's IDENTITY STRING, not the resolved object: the art now arrives from a query, and a
   // refetch that returns the same listing would re-run a whole warm-up on a new-but-equal object.
   useEffect(() => {
-    if (figure === null || figureKey === null) return;
+    if (figureUrl === null || figureKey === null) return;
     const warm = new Image();
     warm.onerror = () => setFailedKey(figureKey);
-    warm.src = figure.url;
+    warm.src = figureUrl;
     return () => {
       warm.onerror = null;
     };
-  }, [figure, figureKey]);
+  }, [figureKey, figureUrl]);
 
   const sweeping = everSwitched || tab !== bootTab;
 

@@ -341,6 +341,58 @@ describe("MediaGallery", () => {
     expect(container.querySelector("input[type=file]")).toBeNull();
   });
 
+  it("says WHY when the namespace is disabled, instead of showing an empty grid", async () => {
+    // Codex W2. An empty grid means "you have not dropped anything in yet"; a disabled namespace means
+    // "the app cannot read your folder". Only one of those is the owner's to fix, so they must not look
+    // the same. The theme is already on its bundled art underneath.
+    renderGallery({
+      ns: "gacha",
+      collation: "casefold-natural",
+      roles: {},
+      slots: {},
+      disabled: true,
+      reason: "'/home/x/.ctrl-b/media/gacha/reel' is a file, but a directory is needed there.",
+    });
+    expect(await screen.findByText(/media disabled/)).toBeTruthy();
+    expect(screen.getByText(/is a file, but a directory is needed there/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Move/ })).toBeNull();
+  });
+
+  it("a hung media refetch does not hold the save open forever", async () => {
+    // Codex W4. `getJSON` has no timeout (a standing kit-wide gap), so the awaited invalidation is
+    // bounded: on the bound the save settles and the controls unblock with a possibly-stale order,
+    // rather than the Save button hanging over an art listing.
+    vi.useFakeTimers();
+    try {
+      api.getJSON.mockResolvedValueOnce(index()).mockImplementationOnce(
+        () => new Promise<MediaIndex>(() => undefined), // never settles
+      );
+      const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+      render(
+        <QueryClientProvider client={qc}>
+          <MediaGallery media={MEDIA} />
+        </QueryClientProvider>,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(screen.getByText("a.webp")).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(screen.getByRole("button", { name: "Move a.webp down" })).toHaveProperty(
+        "disabled",
+        true,
+      );
+
+      await vi.advanceTimersByTimeAsync(6_000); // past the bound
+      expect(screen.getByRole("button", { name: "Move a.webp down" })).toHaveProperty(
+        "disabled",
+        false,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reports an unreachable index instead of rendering an empty gallery", async () => {
     api.getJSON.mockRejectedValue(new Error("boom"));
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

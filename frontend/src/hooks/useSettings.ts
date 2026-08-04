@@ -246,6 +246,11 @@ export function useProviders() {
   });
 }
 
+/** How long a settings save will wait for the media index to re-read before giving up on it (W4).
+ *  Generous for a LAN round trip and short enough that a hung fetch is a hiccup rather than a stuck
+ *  Save button. Retire this bound when the kit grows a global request timeout. */
+const MEDIA_REFETCH_TIMEOUT_MS = 5_000;
+
 /** Save a partial settings patch. Invalidates the cache + toasts; surfaces a restart note. */
 export function useSaveSettings() {
   const qc = useQueryClient();
@@ -302,7 +307,16 @@ export function useSaveSettings() {
       //
       // Cost when no media query is mounted (every non-gacha save): `invalidateQueries` only awaits
       // ACTIVE observers, so it resolves immediately.
-      await qc.invalidateQueries({ queryKey: ["media"] });
+      //
+      // BOUNDED (Codex W4). `getJSON` has no timeout or abort — a standing kit-wide gap, not this
+      // slice's to close — so a refetch that never settles would otherwise hold EVERY settings save
+      // open forever, over an art listing. On the bound the save resolves and the gallery's move-block
+      // simply ends with a possibly-stale order; the race F5 closed is the NORMAL path, where the
+      // refetch lands in milliseconds on a LAN, and that path still waits for the fresh order.
+      await Promise.race([
+        qc.invalidateQueries({ queryKey: ["media"] }),
+        new Promise((resolve) => setTimeout(resolve, MEDIA_REFETCH_TIMEOUT_MS)),
+      ]);
     },
     onError: (e: Error, patch) => {
       // FX15 (Codex#12): the providers-conflict path applies ONLY to a 409 whose patch actually carried

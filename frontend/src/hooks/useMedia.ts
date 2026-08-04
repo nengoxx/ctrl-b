@@ -49,6 +49,12 @@ export interface MediaIndex {
   roles: Record<string, MediaFile[]>;
   /** The `slots` pins as configured (§5.2). A pin naming nothing on disk degrades in the resolver. */
   slots: Record<string, string>;
+  /** The namespace's tree is not servable and is NOT MOUNTED: a symlink on its spine, a file where a
+   *  role folder belongs, or a mkdir that failed. `roles` is empty, so the theme falls back to its
+   *  bundled art on its own — but the GALLERY must say `reason` rather than show an empty grid, which
+   *  is the difference between "nothing dropped in yet" and "the app cannot read your folder". */
+  disabled?: boolean;
+  reason?: string;
 }
 
 /** `opts` is per-OBSERVER, not per query: TanStack resolves `staleTime`/`refetchOnMount` for each

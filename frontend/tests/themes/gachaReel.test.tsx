@@ -290,6 +290,20 @@ describe("the reel figure", () => {
     expect(figure(container)).toBeNull();
   });
 
+  it("does NOT re-warm when the index changes but the art does not (W5)", () => {
+    // The warm-up depends on the art's IDENTITY, not on the roster object: a refetch that returns an
+    // equal-but-new listing (or a change to a role this component does not read) rebuilds the roster,
+    // and re-fetching the same bytes on every one of those would be a request per poll.
+    media.data = ownerCutout("cut", "1:1");
+    stubImage();
+    render(<GachaReel />);
+    expect(warmed).toHaveLength(1);
+
+    media.data = ownerCutout("cut", "1:1"); // same file, brand-new payload object
+    act(() => setUI({ tab: "agent" }));
+    expect(warmed).toHaveLength(1);
+  });
+
   it("a file REPLACED IN PLACE clears the latch — the same name is not the same bytes", () => {
     // Codex F6: the owner's usual repair is `scp cut.webp` over the broken one, which changes nothing
     // about the URL — and the URL has to stay stable for the SW's media cache. The index's revision is

@@ -55,6 +55,16 @@ export function MediaGallery({ media }: { media: ThemeMedia }) {
   if (error)
     return <div className="conf-card mgal-msg">media index unreachable: {error.message}</div>;
   if (!data) return <div className="conf-card mgal-msg">{isLoading ? "loading…" : "no media"}</div>;
+  // The namespace could not be prepared, so nothing is mounted and there is nothing to order (W2). An
+  // empty grid would read as "you have not dropped anything in yet", which is the one wrong thing to
+  // say here: the theme is on its bundled art and only the owner can fix the folder.
+  if (data.disabled === true) {
+    return (
+      <div className="conf-card mgal-msg">
+        <b>media disabled</b> — {data.reason || "this namespace could not be prepared."}
+      </div>
+    );
+  }
 
   const patch = (block: Record<string, unknown>) => save.mutate({ themes: { [media.ns]: block } });
 
