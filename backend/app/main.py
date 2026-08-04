@@ -539,8 +539,17 @@ def create_app() -> FastAPI:
     # One `MediaFiles` per namespace: the mount is a static prefix, so the `{ns}` of the index route
     # is a registry walk here. Adding the next art-bearing theme is a row in `MEDIA_NAMESPACES`.
     home = home_path()
-    ensure_media_dirs(home)
+    # DEGRADE, NEVER BRICK (W2): a namespace whose tree is not servable is skipped, loudly, instead of
+    # raising. This code runs AFTER the exit-78 config preflight, so an exception here would surface as
+    # an ordinary uvicorn failure — which `Restart=on-failure` retries every 5s. An art folder with the
+    # wrong shape must not be able to crash-loop the control panel.
+    app.state.media_health = ensure_media_dirs(home)
     for ns, roles in MEDIA_NAMESPACES.items():
+        # `ns_health`, not `health` — that name is the health ROUTER module, imported above.
+        ns_health = app.state.media_health[ns]
+        if not ns_health.ok:
+            logger.error("media namespace %r is DISABLED — %s", ns, ns_health.reason)
+            continue
         app.mount(
             f"{MEDIA_URL_ROOT}/{ns}/{MEDIA_FILES_SEGMENT}",
             # The namespace's ROLES are passed in, not inferred from what is on disk: the mount then

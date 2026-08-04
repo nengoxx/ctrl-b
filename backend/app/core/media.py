@@ -23,6 +23,7 @@ lets the Conf gallery warn about a 3000x4257 drop before the phone tries to deco
 from __future__ import annotations
 
 import re
+import stat
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -119,6 +120,12 @@ class MediaIndex(BaseModel):
     ns: str
     #: The name of the default ordering rule, so the client can state the same contract it consumes.
     collation: str = ROLE_COLLATION
+    #: The namespace's tree is not servable and is NOT MOUNTED (W2) — a symlink on its spine, a file
+    #: where a role folder belongs, or a mkdir that failed. The theme falls back to its bundled art
+    #: (`roles` is empty), and the Conf gallery shows `reason` instead of an empty grid, which is the
+    #: difference between "you have not dropped anything in yet" and "the app cannot read your folder".
+    disabled: bool = False
+    reason: str = ""
     #: role -> files, already in the RULED order (config order first, then the collation).
     roles: dict[str, list[MediaFile]] = Field(default_factory=dict)
     #: The §5.2 `slots` pins as configured, echoed verbatim — a dangling pin is the client resolver's
@@ -143,38 +150,67 @@ def role_dir(home: Path, ns: str, role: str) -> Path:
     return ns_dir(home, ns) / role
 
 
-class MediaLayoutError(RuntimeError):
-    """The media tree is not something we are willing to serve from. Raised at construction, so the
-    process refuses to start rather than serving whatever the owner pointed it at."""
+@dataclass(frozen=True)
+class NamespaceHealth:
+    """Whether one namespace's tree is servable, and if not, what an operator has to fix."""
+
+    ns: str
+    ok: bool
+    #: Operator-facing, and it NAMES THE PATH — the whole value of the check is that the one sentence
+    #: is enough to act on. Empty when `ok`.
+    reason: str = ""
 
 
-def ensure_media_dirs(home: Path) -> Path:
-    """Create every namespace's role folders. Called BEFORE the mounts are registered, because
-    `StaticFiles(check_dir=True)` RAISES at construction on a missing directory (§10.4 detail ①) — a
-    fresh install would otherwise fail to build the app at all. Idempotent.
+def ensure_media_dirs(home: Path) -> dict[str, NamespaceHealth]:
+    """Create every namespace's role folders and report whether each namespace came out servable.
 
-    **A SYMLINK anywhere on the media spine is refused, loudly** (Codex F1). `StaticFiles` contains
-    requests to the realpath of its root, so a symlinked root does not "escape" — it RELOCATES, and
-    every containment check then happily approves the link's target. A symlinked `media/`, `media/<ns>/`
-    or a role dir would therefore publish whatever it points at, read-only, to the whole tailnet. That
-    is a misconfiguration and not a feature: nobody needs to alias an art folder badly enough to make
-    "the serving root is wherever this link goes" a supported shape. Failing at boot means the operator
-    reads one sentence instead of discovering it from the outside.
+    **DEGRADE, NEVER BRICK** (ruled, Codex W2). The first cut raised on a bad layout — and it runs
+    inside `create_app()`, i.e. AFTER the exit-78 config preflight, so the exception surfaced as a plain
+    uvicorn failure that `Restart=on-failure` retries: an art folder with the wrong shape would have
+    crash-looped the whole panel every 5 seconds. Nothing here is worth the control plane. A namespace
+    that cannot be served is simply NOT MOUNTED, its index says so with the reason, and everything else
+    boots normally.
 
-    Only the spine is checked — a symlinked FILE inside a role dir is already handled by the mount's
-    `follow_symlink=False` (it 404s if it leaves the root) and by the index's own containment filter.
+    A namespace is refused when:
+
+      * any path on its spine (`media/`, `media/<ns>/`, a role dir) is a SYMLINK. A symlink there does
+        not "escape" containment — it RELOCATES the root, and every check downstream then approves the
+        link's target, publishing it read-only to the whole tailnet. Nobody needs to alias an art folder
+        badly enough to make that a supported shape.
+      * a REGULAR FILE occupies one of those names (`mkdir` would raise `FileExistsError`, which is how
+        this was found).
+      * `mkdir` fails for any other reason (permissions, a full disk, a vanished mount).
+
+    Scope, deliberately: this is a BOOT-TIME shape check, not a live guard. Someone who can swap a real
+    directory for a symlink afterwards already has shell on the box, and a shell user owns everything
+    the app could protect — the trust boundary is the tailnet, not the filesystem (SECURITY_MODEL §1).
+    Re-checking per request would buy nothing and cost a stat on every image.
+
+    Symlinked FILES inside a role are a different question and are handled where they are reachable:
+    the mount's `lookup_path` and the index's listing both require a regular file (W1).
     """
     root = media_root(home)
+    health: dict[str, NamespaceHealth] = {}
     for ns, roles in MEDIA_NAMESPACES.items():
+        reason = ""
         for path in (root, ns_dir(home, ns), *(role_dir(home, ns, role) for role in roles)):
             if path.is_symlink():
-                raise MediaLayoutError(
-                    f"media path '{path}' is a symlink; the media tree must be real directories "
-                    "(a link here would publish its target read-only to the whole tailnet). "
-                    "Replace it with a directory, or move the files in."
+                reason = (
+                    f"'{path}' is a symlink; the media tree must be real directories (a link here "
+                    "would publish its target read-only to the whole tailnet). Replace it with a "
+                    "directory, or move the files in."
                 )
-            path.mkdir(parents=True, exist_ok=True)
-    return root
+                break
+            if path.exists() and not path.is_dir():
+                reason = f"'{path}' is a file, but a directory is needed there. Move or rename it."
+                break
+            try:
+                path.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                reason = f"'{path}' could not be created: {exc.strerror or type(exc).__name__}."
+                break
+        health[ns] = NamespaceHealth(ns=ns, ok=not reason, reason=reason)
+    return health
 
 
 def file_url(ns: str, role: str, filename: str) -> str:
@@ -235,6 +271,10 @@ _JPEG_SCAN_LIMIT = 1 << 20
 #: How much of it is read per hop. Bounded CHUNKS rather than the byte-at-a-time resync the first cut
 #: used (Codex F8): a malformed drop made the scan a million single-byte reads inside a request.
 _JPEG_CHUNK = 1 << 16
+#: Enough for a whole PNG IHDR chunk (8 + 13 + 4 = 25 bytes after the 8-byte signature) and for every
+#: WebP flavor's first chunk header, so one read answers both.
+_HEAD_BYTES = 40
+_PNG_IHDR_END = 33
 
 
 def probe_image(path: Path) -> Probe:
@@ -252,19 +292,25 @@ def probe_image(path: Path) -> Probe:
     the file unusable with a warning, which is the one place the owner can act on it.
     """
     try:
+        size = path.stat().st_size
         with path.open("rb") as f:
-            head = f.read(32)
+            head = f.read(_HEAD_BYTES)
             if head.startswith(b"\x89PNG\r\n\x1a\n"):
-                # The IHDR chunk is mandatory and must be FIRST (PNG spec §11.2.2), so its absence at
-                # byte 12 means the file is truncated or not really a PNG.
-                if len(head) >= 24 and head[12:16] == b"IHDR":
+                # The IHDR chunk is mandatory, must be FIRST, and is fixed-size (PNG spec §11.2.2): an
+                # 8-byte length+type, 13 data bytes, 4 CRC bytes. Requiring the WHOLE chunk — declared
+                # length included — is what separates a real header from a file that stops inside it.
+                if (
+                    len(head) >= _PNG_IHDR_END
+                    and head[8:12] == b"\x00\x00\x00\x0d"
+                    and head[12:16] == b"IHDR"
+                ):
                     w, h = struct.unpack(">II", head[16:24])
                     return Probe("png", w, h)
                 return Probe()
             if head.startswith(b"\xff\xd8\xff"):
                 return _probe_jpeg(f, head)
             if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
-                return _probe_webp(head)
+                return _probe_webp(head, size)
     except OSError:
         return Probe()
     return Probe()
@@ -320,8 +366,10 @@ def _probe_jpeg(f: IO[bytes], head: bytes) -> Probe:
         if length < 2:
             return Probe()
         if m in _JPEG_SOF:
-            # segment body: precision(1) · height(2) · width(2), right after the length field
-            if not need(i + 7):
+            # segment body: precision(1) · height(2) · width(2), right after the length field. The
+            # DECLARED length must fit in what we can read too (Codex W3): a file that stops inside the
+            # frame header it announced is truncated, whatever its first seven bytes happen to say.
+            if not need(i + 7) or not need(i + length):
                 return Probe()
             h = int.from_bytes(buf[i + 3 : i + 5], "big")
             w = int.from_bytes(buf[i + 5 : i + 7], "big")
@@ -330,15 +378,27 @@ def _probe_jpeg(f: IO[bytes], head: bytes) -> Probe:
     return Probe()
 
 
-def _probe_webp(head: bytes) -> Probe:
+def _probe_webp(head: bytes, size: int) -> Probe:
     """The three WebP flavors keep the canvas size in three different places (RFC 9649 §2.5).
 
     A COMPLETE chunk header of a known flavor is the format claim: `RIFF....WEBP` followed by nothing,
     by an unknown fourcc, or by a truncated chunk yields `Probe()` (unusable).
 
-    `payload` is the first chunk's data: bytes 0-3 `RIFF`, 4-7 file size, 8-11 `WEBP`, 12-15 the chunk
-    fourcc, 16-19 the chunk size, and the payload from 20 on.
+    `payload` is the first chunk's data: bytes 0-3 `RIFF`, 4-7 the RIFF size, 8-11 `WEBP`, 12-15 the
+    chunk fourcc, 16-19 the chunk size, and the payload from 20 on.
+
+    The two DECLARED lengths must also be internally consistent with the file (Codex W3): the RIFF size
+    counts everything after its own 8-byte header, and the first chunk has to fit inside it. A file
+    announcing more than it contains is truncated — the commonest half-finished `scp`. This is the
+    limit of the checking on purpose: the allowlist plus an honest advisory is the whole job here, the
+    browser is the real decoder, and the client already degrades on its `onerror`.
     """
+    if len(head) < 20:
+        return Probe()
+    riff_size = int.from_bytes(head[4:8], "little")
+    chunk_size = int.from_bytes(head[16:20], "little")
+    if riff_size + 8 > size or chunk_size + 12 > riff_size:
+        return Probe()
     fourcc, payload = head[12:16], head[20:]
     if fourcc == b"VP8 " and len(payload) >= 10 and payload[3:6] == b"\x9d\x01\x2a":
         # lossy: the 3-byte frame tag, the sync code, then 14-bit width and height
@@ -410,11 +470,13 @@ def list_role(home: Path, ns: str, role: str, order: list[str] | None = None) ->
         entries = [p for p in directory.iterdir() if p.suffix.lower() in ALLOWED_TYPES]
     except OSError:  # the owner deleted the folder under us — an empty role, not a 500
         return []
-    root = directory.resolve()
     files: dict[str, Path] = {}
     for p in entries:
+        # `lstat`, so a SYMLINK is judged as a symlink rather than as whatever it points at (Codex W1).
+        # The mount applies exactly this rule, which is what keeps "listed" and "served" the same set:
+        # owner drops are real files, and a link is not a supported shape at any level of this tree.
         try:
-            if not p.is_file() or root not in p.resolve().parents:
+            if not stat.S_ISREG(p.lstat().st_mode):
                 continue
         except OSError:
             continue
@@ -422,6 +484,12 @@ def list_role(home: Path, ns: str, role: str, order: list[str] | None = None) ->
     pinned = [files.pop(name) for name in (order or []) if name in files]
     rest = sorted(files.values(), key=lambda p: sort_key(p.name))
     return [describe_file(p, ns, role) for p in (*pinned, *rest)]
+
+
+def disabled_index(ns: str, reason: str) -> MediaIndex:
+    """The payload for a namespace that is not mounted (W2). Same shape, empty roles, and the reason —
+    so every consumer keeps working and the one that can act on it is told."""
+    return MediaIndex(ns=ns, disabled=True, reason=reason)
 
 
 def build_index(

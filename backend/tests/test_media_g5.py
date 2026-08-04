@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 
 from app.api.media import MediaFiles
 from app.config import GachaThemeCfg, Settings
-from app.core.media import MediaLayoutError, ensure_media_dirs, ns_dir, probe_image, sort_key
+from app.core.media import ensure_media_dirs, ns_dir, probe_image, sort_key
 
 # ── fixtures ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -158,10 +158,16 @@ def test_only_registered_role_paths_are_served(home: Path) -> None:
 
 
 @pytest.mark.parametrize("level", ["root", "namespace", "role"])
-def test_a_symlinked_media_path_refuses_to_boot(home: Path, tmp_path, level: str) -> None:
-    """Codex F1 — a symlink on the media spine RELOCATES the serving root rather than escaping it, so
-    every containment check downstream then approves the link's target. Refused loudly at ensure-time,
-    at EVERY level: one sentence for the operator beats discovering it from the outside."""
+def test_a_symlinked_media_path_DISABLES_the_namespace_without_bricking_the_app(
+    home: Path, tmp_path, level: str
+) -> None:
+    """Codex F1 + W2. A symlink on the media spine RELOCATES the serving root rather than escaping it,
+    so every containment check downstream then approves the link's target — it must not be served.
+
+    But it must not take the PANEL down either: this runs after the exit-78 config preflight, so
+    raising would surface as an ordinary uvicorn failure that `Restart=on-failure` retries every 5s.
+    The namespace is disabled, the app boots, and the reason is available where it can be acted on.
+    """
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     (elsewhere / "secret.png").write_bytes(png_bytes())
@@ -174,21 +180,74 @@ def test_a_symlinked_media_path_refuses_to_boot(home: Path, tmp_path, level: str
     link.parent.mkdir(parents=True, exist_ok=True)
     link.symlink_to(elsewhere, target_is_directory=True)
 
-    with pytest.raises(MediaLayoutError) as exc:
-        ensure_media_dirs(home)
-    assert "symlink" in str(exc.value)
-    # …and the app refuses to build at all, rather than starting up serving the link's target
-    with pytest.raises(MediaLayoutError):
-        make_client()
-
-
-def test_a_real_media_tree_still_boots(home: Path) -> None:
-    """The other half of the symlink rule: ordinary directories are the normal case and must not trip
-    it, including on the second boot when everything already exists."""
-    ensure_media_dirs(home)
-    ensure_media_dirs(home)
+    assert ensure_media_dirs(home)["gacha"].ok is False
     with make_client() as c:
-        assert c.get("/api/media/gacha").status_code == 200
+        body = c.get("/api/media/gacha").json()
+        assert body["disabled"] is True
+        assert "symlink" in body["reason"] and str(link) in body["reason"]
+        assert body["roles"] == {}
+        # NOT MOUNTED: the link's target is unreachable, and so is everything else under it
+        assert c.get("/api/media/gacha/files/characters/secret.png").status_code == 404
+        # …and the rest of the app is fine
+        assert c.get("/api/health").status_code == 200
+
+
+def test_a_file_where_a_role_folder_belongs_DISABLES_the_namespace(home: Path) -> None:
+    """Codex W2(a) — `mkdir` raised an uncaught `FileExistsError` on this, which is how a single stray
+    file could crash-loop the panel. It is now one disabled namespace with a sentence about it."""
+    ns_dir(home, "gacha").mkdir(parents=True)
+    (ns_dir(home, "gacha") / "reel").write_text("not a folder", encoding="utf-8")
+
+    assert ensure_media_dirs(home)["gacha"].ok is False
+    with make_client() as c:
+        body = c.get("/api/media/gacha").json()
+        assert body["disabled"] is True
+        assert "reel" in body["reason"] and "directory" in body["reason"]
+        assert c.get("/api/health").status_code == 200
+
+
+def test_a_healthy_namespace_is_unaffected_and_says_so(home: Path) -> None:
+    """The other half of the rule: an ordinary tree boots, reports healthy, and carries no disabled
+    flag — including on the second boot, when everything already exists."""
+    assert ensure_media_dirs(home)["gacha"].ok is True
+    assert ensure_media_dirs(home)["gacha"].reason == ""
+    with make_client() as c:
+        (role(home, "characters") / "a.png").write_bytes(png_bytes())
+        body = c.get("/api/media/gacha").json()
+        assert body["disabled"] is False
+        assert body["reason"] == ""
+        assert [f["file"] for f in body["roles"]["characters"]] == ["a.png"]
+        assert c.get("/api/media/gacha/files/characters/a.png").status_code == 200
+
+
+def test_symlinked_FILES_inside_a_role_are_neither_listed_nor_served(home: Path, tmp_path) -> None:
+    """Codex W1 — the hole the namespace-root containment could not see: a link INSIDE a role whose
+    target is also inside the namespace passed both `follow_symlink=False` and the two-segment shape
+    gate. Owner drops are real files; a link is not a supported shape at any level.
+
+    Index and mount are asserted TOGETHER, in one test, because the only thing worse than either being
+    wrong is the two disagreeing: a listing that promises what the mount refuses (or hides what it
+    serves) is a bug in whichever one you did not read.
+    """
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(png_bytes())
+    with make_client() as c:
+        chars, reel = role(home, "characters"), role(home, "reel")
+        (chars / "real.png").write_bytes(png_bytes())
+        (reel / "cut.png").write_bytes(png_bytes())
+        (ns_dir(home, "gacha") / "loose.png").write_bytes(png_bytes())
+
+        (chars / "to-other-role.png").symlink_to(reel / "cut.png")  # another role's file
+        (chars / "to-namespace.png").symlink_to(ns_dir(home, "gacha") / "loose.png")  # beside the roles
+        (chars / "to-outside.png").symlink_to(outside)  # right out of the tree
+        (chars / "to-nowhere.png").symlink_to(chars / "gone.png")  # dangling
+
+        listed = [f["file"] for f in c.get("/api/media/gacha").json()["roles"]["characters"]]
+        assert listed == ["real.png"]
+        for name in ("to-other-role.png", "to-namespace.png", "to-outside.png", "to-nowhere.png"):
+            assert c.get(f"/api/media/gacha/files/characters/{name}").status_code == 404, name
+        # the agreement, stated as such: everything the index lists is servable, and nothing else is
+        assert c.get("/api/media/gacha/files/characters/real.png").status_code == 200
 
 
 # ── ③ the Content-Type allowlist + nosniff ────────────────────────────────────────────────────────
@@ -354,6 +413,35 @@ def test_a_malformed_jpeg_gives_up_instead_of_walking_the_whole_file(tmp_path) -
         ("webp unknown chunk", b"RIFF" + struct.pack("<I", 20) + b"WEBP" + b"XXXX" + b"\x00" * 12),
         ("webp truncated vp8x", b"RIFF" + struct.pack("<I", 14) + b"WEBP" + b"VP8X" + struct.pack("<I", 10)),
         ("webp vp8 no sync", b"RIFF" + struct.pack("<I", 20) + b"WEBP" + b"VP8 " + b"\x00" * 12),
+        # ── W3: MID-truncation. Each of these has a plausible-looking start and then stops inside the
+        # structure it declared — the shape a half-finished `scp` leaves behind.
+        (
+            "png ihdr without its crc",
+            b"\x89PNG\r\n\x1a\n"
+            + struct.pack(">I", 13)
+            + b"IHDR"
+            + struct.pack(">II", 640, 854)
+            + b"\x08\x06\x00\x00\x00",  # 29 bytes: data complete, CRC missing
+        ),
+        (
+            "jpeg sof shorter than its declared length",
+            b"\xff\xd8" + b"\xff\xc0" + struct.pack(">H", 17) + b"\x08" + struct.pack(">HH", 700, 1240),
+        ),
+        (
+            "webp riff size larger than the file",
+            b"RIFF"
+            + struct.pack("<I", 9999)
+            + b"WEBP"
+            + b"VP8X"
+            + struct.pack("<I", 10)
+            + b"\x00" * 4
+            + (719).to_bytes(3, "little")
+            + (999).to_bytes(3, "little"),
+        ),
+        (
+            "webp chunk larger than its riff",
+            b"RIFF" + struct.pack("<I", 22) + b"WEBP" + b"VP8X" + struct.pack("<I", 9999) + b"\x00" * 10,
+        ),
     ],
 )
 def test_a_signature_is_not_a_format(tmp_path, label: str, data: bytes) -> None:

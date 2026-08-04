@@ -18,6 +18,8 @@ Thin by design: everything mechanical lives in `app.core.media`, which knows not
 from __future__ import annotations
 
 import asyncio
+import os
+import stat
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -32,6 +34,7 @@ from app.core.media import (
     MEDIA_NAMESPACES,
     MediaIndex,
     build_index,
+    disabled_index,
 )
 
 router = APIRouter(tags=["media"])
@@ -42,7 +45,7 @@ class MediaFiles(StaticFiles):
 
     Starlette 1.3.1 already handles path traversal properly (normpath + realpath + `commonpath`
     containment, and `follow_symlink=False` rejects a symlink pointing out of the root), so that is
-    not what this subclass is for. It closes two different holes that containment does not:
+    not what this subclass is for. It closes three holes that containment does not:
 
     **The SHAPE** (Codex F1). Containment only says the path stayed under the namespace root — it says
     nothing about WHERE under it. A file the owner parked beside the role folders (a root-level
@@ -61,14 +64,43 @@ class MediaFiles(StaticFiles):
         byte 304, so this costs a round trip, not a re-download. `immutable` is reserved for hashed
         names (the build's `/assets`), which these are not.
 
+    **The FILE ITSELF** (Codex W1). `follow_symlink=False` only rejects a link that leaves the root, so
+    `characters/x.png -> ../private/secret.png` passed both it and the shape gate: the target is under
+    the namespace, just somewhere nothing lists. Owner drops are real files, and a symlink is not a
+    supported feature at any level of this tree — so the final component must be a REGULAR FILE, which
+    also disposes of directories and fifos in the same line. The index applies the same rule, so what
+    is listed and what is served cannot disagree.
+
     Nothing here is theme-aware: one instance is mounted per namespace in `create_app`, with that
     namespace's role list.
     """
 
     def __init__(self, *, directory: Path, roles: Sequence[str]) -> None:
-        # check_dir stays TRUE (the loud failure is the useful one) — `ensure_media_dirs` runs first.
+        # check_dir stays TRUE (the loud failure is the useful one) — a namespace whose tree is not
+        # servable is never mounted at all (`ensure_media_dirs` health, W2), so reaching here means the
+        # directory exists.
         super().__init__(directory=directory, check_dir=True, follow_symlink=False)
         self.roles = frozenset(roles)
+
+    def lookup_path(self, path: str) -> tuple[str, os.stat_result | None]:
+        """The FILE gate (Codex W1): the final component must be a REGULAR FILE.
+
+        `follow_symlink=False` only rejects a link that leaves the root, so
+        `characters/x.png -> ../private/secret.png` passed it AND the shape gate — the target is inside
+        the namespace, just somewhere nothing lists. `lstat` asks what the component IS rather than what
+        it points at, and rejecting non-regular files disposes of directories and fifos in the same
+        line. The index applies the same rule, so listed and served cannot disagree.
+
+        Placed HERE rather than in `get_response` on purpose: Starlette already runs this method in a
+        worker thread, so the extra `lstat` costs no event-loop time. Returning the miss tuple routes
+        into the ordinary 404 — a probe learns "not there" and nothing else.
+        """
+        try:
+            if not stat.S_ISREG(os.lstat(os.path.join(str(self.directory), path)).st_mode):
+                return "", None
+        except OSError:
+            return "", None
+        return super().lookup_path(path)
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         # `path` arrives normalised by `StaticFiles.get_path` (`..` collapsed), so both checks below are
@@ -109,6 +141,13 @@ async def media_index(ns: str, request: Request) -> MediaIndex:
     """
     if ns not in MEDIA_NAMESPACES:
         raise HTTPException(status_code=404, detail=f"unknown media namespace: {ns}")
+    # A namespace whose tree could not be prepared is not mounted (W2), so there is nothing to list and
+    # nothing to serve. It answers 200 with the REASON rather than 404 or an empty grid: the client must
+    # be able to tell "you have dropped nothing in yet" from "the app cannot read your folder", and only
+    # one of those is something the owner can fix.
+    health = request.app.state.media_health.get(ns)
+    if health is not None and not health.ok:
+        return disabled_index(ns, health.reason)
     settings = request.app.state.settings
     order, slots = settings.themes.overrides(ns)
     # OFF the event loop (Codex F8): building the index walks directories, stats every entry and reads
