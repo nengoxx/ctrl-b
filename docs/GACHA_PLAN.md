@@ -611,7 +611,7 @@ for the "04 / 04" counter.
 | ✅ G1 | **BUILT + OWNER-EYEBALLED 2026-08-02 (as-built §7.2)** — bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + the §6.4 slide set **incl. the eyeball-ruled SCENE slides**) + capsule track (cards/states/plates/shine + stars) + wallpaper + the geometry rule + the owner's own art in the bundled set | owner eyeball ✅ (3+ live rounds) |
 | ✅ G2 | **BUILT + OWNER-EYEBALLED 2026-08-02 night (as-built §7.3)** — dossier sheet (light inversion + the ruled grid + live service rows + the H3 ACTION BAR) + **the M3 capsule→dossier morph, owner-PULLED from G4 and made to visibly work** + swap morph + visible × + tap-outside close + **the full-screen ART SHOWCASE (owner ask)** — M6 extraction to `lib/hostDetail.ts` landed first; contrast gate gained the dossier's THEME_PAIRS rows | owner eyeball ✅ ("looks good", pushed) + contrast probe ✅ (48-combo matrix) |
 | ✅ G3 | **CLOSED 2026-08-04 (as-built §7.4; commits `6c5298d..5ce33d7` + the side-session re-rule `ba0b8b1`/`d65e7b7`) — device round PASSED wholesale, Gecko scanline branch NOT needed.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
-| ◐ G4 | **BUILT + REVIEW-COMPLETE 2026-08-04 (as-built §7.5; commits `dd1a056..fa86ed3`) — OWNER EYEBALL + DEVICE ROUND = the open gate.** The reel FIGURE (67% tunable default, all dials `--gc-figure-*` tokens, corrected baked glow — drop-shadow's length IS σ, §7.5 lesson) + M2 shipped prototype-exact with the seam promoted (flag deleted) + the type-scoped VT skip + degradation latches. Codex: READY WITH FIXES → wave → confirm all-resolved, residual LOWs closed | owner figure eyeball + Fennec+Chrome device round (incl. the one-line M2 check) |
+| ✅ G4 | **CLOSED 2026-08-04 (as-built §7.5; commits `dd1a056..fa86ed3`) — owner round PASSED on phone + desktop, 67% default kept, M2 device-confirmed.** The reel FIGURE (67% tunable default, all dials `--gc-figure-*` tokens, corrected baked glow — drop-shadow's length IS σ, §7.5 lesson) + M2 shipped prototype-exact with the seam promoted (flag deleted) + the type-scoped VT skip + degradation latches. Codex: READY WITH FIXES → wave → confirm all-resolved, residual LOWs closed | owner figure eyeball + Fennec+Chrome device round (incl. the one-line M2 check) |
 | G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
 | G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) **+ §4.4 FAMILY 3 — the four owner-shortlisted DOSSIER palettes (neon-purple · sunset-orange · rose-pink · aurora-violet) and the measured example ACTION BUTTON, both from the 2026-08-04 session; the dossier goes DARK as a trial.** Ship each as one `body[data-accent]` block + a `palettes.accents` row + a `contrast-matrix.ts` row; the button rules REPLACE `.gc-act*` rather than layering over them, and `--gc-act-shadow` migrates per §5 | owner sign-off |
 
@@ -901,8 +901,9 @@ and the look changed materially:
 re-grow a border that glass/bezel/sleek deliberately strip, so an open menu was the only
 outlined thing in a borderless bar.)*
 
-**§7.5 — G4 AS-BUILT (2026-08-04; ✅ code + reviews COMPLETE — ⏳ owner eyeball + Fennec/Chrome
-device round pending).** Seven commits `dd1a056, 9a57155, dbb020a, 6dbecef, a282ef8, cafb48a,
+**§7.5 — G4 AS-BUILT (2026-08-04; ✅ code + reviews COMPLETE; ✅ CLOSED same night — the owner
+round PASSED on BOTH phone and desktop: figure approved at the 67% default untouched, M2's
+on-device tab switch confirmed good, no tuning requested).** Seven commits `dd1a056, 9a57155, dbb020a, 6dbecef, a282ef8, cafb48a,
 fa86ed3`; end state **FE 1363 / BE 1254**, gate green per commit. The record:
 - **S1** the VT skip is TYPE-scoped (`skipActiveViewTransition(...types)`, `activeType` beside
   `activeTransition`; kinds disjoint by construction: nav=`tab`, fleet=`detail`/`showcase`,
@@ -937,10 +938,9 @@ fa86ed3`; end state **FE 1363 / BE 1254**, gate green per commit. The record:
 - **Carried to G5:** owner-supplied cutouts have no baked glow (bake at index time, or document
   the expectation) · the figure's failure latch is safe ONLY while `FIGURE` is module-static —
   runtime/media-index art needs URL-scoped reset semantics (Codex confirm note).
-- **OPEN (the G4 gate):** the owner FIGURE EYEBALL (asset/size/timing — the tokens are the
-  dials; the corrected glow is fuller than the first evidence strips) + the Fennec+Chrome
-  device round (Gate-B shape) incl. the one-line M2 check: *switch tabs under gacha; the slats
-  keep sweeping through the cross-fade*.
+- ~~**OPEN (the G4 gate):** the owner FIGURE EYEBALL + the Fennec+Chrome device round~~
+  **→ PASSED same night (phone AND desktop, owner: "they look good"); no tuning asked, the
+  67% default stands, the M2 device check is done. G4 CLOSED.**
 
 **Acceptance matrix (the lock session turns this into per-slice test obligations):** 0/1/many
 hosts · hosts>roster and roster>hosts · queries loading/error states (pill, counter) ·

@@ -12,7 +12,14 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ UPDATE 2 (2026-08-04 night, Fable): **◐ G4 BUILT + REVIEW-COMPLETE — owner FIGURE EYEBALL
+> ## ▶ UPDATE 3 (2026-08-04, late): **✅ G4 CLOSED — the owner round PASSED on BOTH phone and
+> desktop** ("they look good"; the 67% figure default stands untouched, M2's on-device tab
+> switch confirmed, no tuning requested). The full G4 stack is PUSHED (owner-authorized).
+> **NEXT = G5 media/roster (role-scoped folders §5.4; carries the owner-cutout glow expectation
+> + the URL-scoped figure-latch reset), then G6 palettes (+ the §4.4 dark-dossier trial
+> options), then release v1.5.0** — G5 awaits the owner's go-ahead per the phase-pause rule.
+>
+> ## ▶ UPDATE 2 (2026-08-04 night, Fable): **✅ (closed by UPDATE 3) G4 BUILT + REVIEW-COMPLETE — owner FIGURE EYEBALL
 > + DEVICE ROUND = the open gate.** Seven commits `dd1a056..fa86ed3` (as-built **§7.5** — read
 > it): the reel figure (all dials `--gc-figure-*` tokens, 67% default), M2 prototype-exact with
 > the spike seam PROMOTED (**the `ctrlb.spike.navVT` flag NO LONGER EXISTS — older blocks below
