@@ -46,6 +46,9 @@ from app.api import (
     services,
 )
 from app.api import (
+    media as media_api,
+)
+from app.api import (
     settings as settings_api,
 )
 from app.api import (
@@ -54,14 +57,23 @@ from app.api import (
 from app.api import (
     voice as voice_api,
 )
+from app.api.media import MediaFiles
 from app.config import (
     ConfigValidationError,
+    home_path,
     load_dotenv,
     load_settings,
     loggable,
     validation_detail,
 )
 from app.core.events import EventBus
+from app.core.media import (
+    MEDIA_FILES_SEGMENT,
+    MEDIA_NAMESPACES,
+    MEDIA_URL_ROOT,
+    ensure_media_dirs,
+    ns_dir,
+)
 from app.db import Database
 from app.runtime import (
     apply_tool_overrides,
@@ -513,6 +525,27 @@ def create_app() -> FastAPI:
     app.include_router(voice_api.router, prefix="/api")
     app.include_router(access_api.router, prefix="/api")
     app.include_router(automations.router, prefix="/api")
+    app.include_router(media_api.router, prefix="/api")
+
+    # Owner media (D52/G5, GACHA_PLAN §10.4): the namespace-generic read-only library over
+    # `$CTRLB_HOME/media/<ns>/`. Three orderings are load-bearing here:
+    #   ① the dirs are ENSURED first — `StaticFiles(check_dir=True)` RAISES at construction on a
+    #     missing directory, so a fresh install would fail to build the app at all;
+    #   ② the mounts come after the INDEX route (`/api/media/{ns}`) but their paths carry an extra
+    #     `/files` segment, so the two can never shadow each other;
+    #   ③ everything here is registered BEFORE the SPA fallback below, and OUTSIDE its prod-only
+    #     branch — the Vite dev proxy forwards `/api` here, so this one placement serves both profiles
+    #     with no vite.config change.
+    # One `MediaFiles` per namespace: the mount is a static prefix, so the `{ns}` of the index route
+    # is a registry walk here. Adding the next art-bearing theme is a row in `MEDIA_NAMESPACES`.
+    home = home_path()
+    ensure_media_dirs(home)
+    for ns in MEDIA_NAMESPACES:
+        app.mount(
+            f"{MEDIA_URL_ROOT}/{ns}/{MEDIA_FILES_SEGMENT}",
+            MediaFiles(directory=ns_dir(home, ns)),
+            name=f"media-{ns}",
+        )
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
     if _FRONTEND_DIST.is_dir():

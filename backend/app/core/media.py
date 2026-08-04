@@ -1,0 +1,375 @@
+"""Owner-supplied media — the namespace-generic read-only library (D52/G5; GACHA_PLAN §5.4 + §10.4).
+
+The owner drops image files into `$CTRLB_HOME/media/<ns>/<role>/` from any machine (SSH/SMB) and the
+app serves them read-only. **There is no write API and there must never be one here** (§5.4 ruled
+option (b)): the app has no application-layer auth — the tailnet IS the boundary (SECURITY_MODEL §1) —
+so an upload endpoint would be reachable by anything on the tailnet. This module lists and describes
+what is on disk; `app/api/media.py` publishes it and mounts the hardened static surface.
+
+**Namespace-generic by construction** (council M9): `gacha` is the first namespace, and the next
+art-bearing theme is a row in `MEDIA_NAMESPACES` — not a new route, not a new mount class. Nothing in
+this module or in the API layer knows what a "capsule card" is.
+
+**Drop-in = assignment** (the G1-eyeball re-rule): the role FOLDER a file lands in is what binds it to
+a consumer. Ordering INSIDE a role is `ROLE_COLLATION` by default, overridden per role by the Conf
+gallery's persisted `themes.<ns>.roles.<role>.order` (§5.4's 2026-08-04 ruling).
+
+**No decoder dependency.** User files get no server-side re-encode and no Pillow (a new runtime dep
+AND an untrusted-decoder surface, §10.4). `probe_image` below is a stdlib magic-byte + dimension
+reader: it gives the format allowlist its ground truth (the byte header, never the extension) and
+lets the Conf gallery warn about a 3000x4257 drop before the phone tries to decode ~51 MB of bitmap.
+"""
+
+from __future__ import annotations
+
+import re
+import struct
+from dataclasses import dataclass
+from pathlib import Path
+from typing import IO
+from urllib.parse import quote
+
+from pydantic import BaseModel, Field
+
+#: The workspace subdirectory holding every namespace (`$CTRLB_HOME/media/`).
+MEDIA_DIRNAME = "media"
+
+#: The URL root both halves of the surface hang off: `<root>/<ns>` is the JSON index and
+#: `<root>/<ns>/files/<role>/<file>` is the static mount. Declared HERE so the router, the mount
+#: registration and the `url` in every index entry can never drift into three different prefixes.
+#: The prefix is SPLIT on purpose (§10.4 detail ②) — one shared prefix invites route-order collisions.
+MEDIA_URL_ROOT = "/api/media"
+MEDIA_FILES_SEGMENT = "files"
+
+#: The gacha role folders (§5.4). `oracle` has its own folder for symmetry (the G5-brief default).
+#: Order matters only for the ensure-dir walk and for how the Conf gallery lists sections.
+GACHA_ROLES: tuple[str, ...] = ("characters", "banner", "wallpaper", "reel", "oracle")
+
+#: ns -> its role folders. The single registry the ensure-dir, the mounts and the index all read.
+MEDIA_NAMESPACES: dict[str, tuple[str, ...]] = {"gacha": GACHA_ROLES}
+
+#: extension -> (Content-Type served, magic-byte format name expected inside).
+#:
+#: A CLOSED ALLOWLIST, and the reason the mount subclasses StaticFiles (§10.4): `FileResponse` guesses
+#: the type from the extension, so an owner-dropped `evil.html` would be served as same-origin
+#: `text/html` — stored XSS with full API access on a boundary that has no auth. No SVG for the same
+#: reason (it is active content, same-origin). Nothing outside this table is served or even listed.
+ALLOWED_TYPES: dict[str, tuple[str, str]] = {
+    ".png": ("image/png", "png"),
+    ".jpg": ("image/jpeg", "jpeg"),
+    ".jpeg": ("image/jpeg", "jpeg"),
+    ".webp": ("image/webp", "webp"),
+}
+
+#: The ONE deterministic collation, named on the wire (`MediaIndex.collation`) so the client and the
+#: server can never disagree about what "default order" means (§5.4's ruling). See `sort_key`.
+ROLE_COLLATION = "casefold-natural"
+
+#: Advisory-only thresholds for the Conf gallery's "consider resizing" hint — they change NOTHING
+#: about what is served, which is why they are named constants rather than config knobs (a setting for
+#: when to show a hint is a knob nobody would ever turn). Anchored on §10.4's own target table, whose
+#: largest entry is 1240x700 (0.87 MP) at ~120 KB: a file over these is far outside every target.
+WARN_BYTES = 1_500_000
+WARN_PIXELS = 4_000_000
+
+
+# ── the index's wire models ───────────────────────────────────────────────────────────────────────
+
+
+class MediaFile(BaseModel):
+    """One servable file in a role folder, as the index reports it."""
+
+    #: The filename STEM — what a `slots` pin names, and the entry name the client resolver deals.
+    #: Two files sharing a stem (`lyra.png` + `lyra.webp`) are a foot-gun the owner can see in the
+    #: gallery; a pin then resolves to whichever comes first in this role's order.
+    name: str
+    #: The filename inside the role folder (what the config's `order` list holds).
+    file: str
+    #: The absolute, percent-encoded URL of the static mount's copy — the client never builds paths.
+    url: str
+    #: The format read from the file's MAGIC BYTES, not its extension. `None` = unreadable, or bytes
+    #: that are not in the allowlist at all (an `.png` that is really HTML).
+    format: str | None = None
+    size_bytes: int = 0
+    width: int | None = None
+    height: int | None = None
+    #: The file cannot be used: unreadable bytes, or a format that disagrees with the extension. The
+    #: latter really is fatal rather than pedantic — the mount serves the Content-Type the EXTENSION
+    #: says with `nosniff`, so a JPEG named `.png` is a guaranteed broken image in the browser.
+    unusable: bool = False
+    #: Machine-readable advisories for the gallery (`format-mismatch`, `unreadable`, `oversize`,
+    #: `dimensions`). Never a reason to hide the file — the owner is told, the render stays silent.
+    warnings: list[str] = Field(default_factory=list)
+
+
+class MediaIndex(BaseModel):
+    """`GET /api/media/{ns}` — everything a theme needs in ONE query (§5.2's pinned read path).
+
+    Roster ENTRIES are `roles["characters"]` (the role re-rule superseded the flat entry list), and
+    host->entry ASSIGNMENT is deliberately absent: it depends on the client's fleet display order, so
+    it lives in the client resolver (§5.3) and cannot be computed here without duplicating it.
+    """
+
+    ns: str
+    #: The name of the default ordering rule, so the client can state the same contract it consumes.
+    collation: str = ROLE_COLLATION
+    #: role -> files, already in the RULED order (config order first, then the collation).
+    roles: dict[str, list[MediaFile]] = Field(default_factory=dict)
+    #: The §5.2 `slots` pins as configured, echoed verbatim — a dangling pin is the client resolver's
+    #: problem to degrade from, not something to silently drop here (it would hide the owner's typo).
+    slots: dict[str, str] = Field(default_factory=dict)
+
+
+# ── paths ─────────────────────────────────────────────────────────────────────────────────────────
+
+
+def media_root(home: Path) -> Path:
+    """`$CTRLB_HOME/media/`. Takes the home path as an ARGUMENT so this module never imports
+    `app.config` — which is what lets `config.py` import the role registry from here."""
+    return home / MEDIA_DIRNAME
+
+
+def ns_dir(home: Path, ns: str) -> Path:
+    return media_root(home) / ns
+
+
+def role_dir(home: Path, ns: str, role: str) -> Path:
+    return ns_dir(home, ns) / role
+
+
+def ensure_media_dirs(home: Path) -> Path:
+    """Create every namespace's role folders. Called BEFORE the mounts are registered, because
+    `StaticFiles(check_dir=True)` RAISES at construction on a missing directory (§10.4 detail ①) — a
+    fresh install would otherwise fail to build the app at all. Idempotent."""
+    root = media_root(home)
+    for ns, roles in MEDIA_NAMESPACES.items():
+        for role in roles:
+            role_dir(home, ns, role).mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def file_url(ns: str, role: str, filename: str) -> str:
+    """The mount URL for one file. Percent-encoded per segment — owner filenames really do carry
+    spaces and `#` (the owner's own drops live in a folder called `banner images`)."""
+    return f"{MEDIA_URL_ROOT}/{ns}/{MEDIA_FILES_SEGMENT}/{quote(role)}/{quote(filename)}"
+
+
+# ── the collation ─────────────────────────────────────────────────────────────────────────────────
+
+_DIGITS = re.compile(r"(\d+)")
+
+
+def sort_key(filename: str) -> tuple[tuple[object, ...], str]:
+    """`ROLE_COLLATION` = casefold-natural: split into digit and non-digit runs, casefold the text
+    runs, compare the digit runs NUMERICALLY (`2.png` before `10.png`), and break ties on the exact
+    filename so two names differing only in case have a stable, reproducible order.
+
+    Natural rather than plain lexicographic because the zero-UI escape hatch the owner was promised is
+    "name them `01-foo`, `02-bar`" — and the moment there are ten of them, plain sorting betrays it.
+
+    Each run becomes `(0, number)` or `(1, text)`. The leading tag is what keeps the tuples mutually
+    comparable whatever shape two names have — a text run is never compared against a number — and
+    numbers-before-text agrees with ordinary lexicographic order, where `01-foo` precedes `banner`.
+    Its one visible consequence, stated so it is a rule and not a surprise: where two names differ in
+    KIND at the same position the digit run wins, so `a1.png` sorts before `a.png`. The raw filename
+    rides OUTSIDE the run tuple, purely as the tie-break for names that differ only in case.
+    """
+    parts: list[object] = []
+    for run in _DIGITS.split(filename):
+        if not run:
+            continue
+        parts.append((0, int(run)) if run.isdigit() else (1, run.casefold()))
+    return tuple(parts), filename
+
+
+# ── the magic-byte + dimension reader (stdlib, no decoder) ────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class Probe:
+    """What the first bytes of a file actually say. `fmt is None` = not an allowlisted image."""
+
+    fmt: str | None = None
+    width: int | None = None
+    height: int | None = None
+
+
+#: JPEG start-of-frame markers carry the dimensions; 0xC4/0xC8/0xCC are Huffman/arithmetic tables that
+#: share the 0xC0-0xCF range and must be skipped like any other segment.
+_JPEG_SOF = {*range(0xC0, 0xD0)} - {0xC4, 0xC8, 0xCC}
+#: Standalone markers with no length field.
+_JPEG_STANDALONE = {0x01, 0xD8, *range(0xD0, 0xD8)}
+#: How far into a JPEG the SOF hunt may run before giving up on the dimensions. A conforming file puts
+#: SOF within a few KB (EXIF thumbnails and ICC profiles are the only things ahead of it), so this only
+#: ever bites a malformed one — where the byte-at-a-time resync would otherwise walk the WHOLE file on
+#: every index request. Giving up costs the gallery two numbers, never the listing.
+_JPEG_SCAN_LIMIT = 1 << 20
+
+
+def probe_image(path: Path) -> Probe:
+    """Format + pixel dimensions from the file HEADER alone — no decode, no third-party dep.
+
+    Reading the header rather than trusting the extension is the whole point: the mount serves the
+    Content-Type the extension claims, so the index has to be the thing that notices when the bytes
+    disagree. Any I/O or parse failure degrades to `Probe()` (unusable), never an exception — the
+    caller is a listing endpoint walking a directory the owner writes to behind our back.
+    """
+    try:
+        with path.open("rb") as f:
+            head = f.read(32)
+            if head.startswith(b"\x89PNG\r\n\x1a\n"):
+                if head[12:16] == b"IHDR" and len(head) >= 24:
+                    w, h = struct.unpack(">II", head[16:24])
+                    return Probe("png", w, h)
+                return Probe("png")
+            if head.startswith(b"\xff\xd8\xff"):
+                return _probe_jpeg(f)
+            if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+                return _probe_webp(head)
+    except OSError:
+        return Probe()
+    return Probe()
+
+
+def _probe_jpeg(f: IO[bytes]) -> Probe:
+    """Walk the marker chain to the first SOF segment. JPEG is the one format whose size is not at a
+    fixed offset — EXIF/ICC segments of arbitrary length sit in front of it. Bounded by
+    `_JPEG_SCAN_LIMIT`: the resync below reads a byte at a time, so an unbounded walk over a malformed
+    multi-megabyte file would be paid on every index request."""
+    f.seek(2)
+    while True:
+        if f.tell() > _JPEG_SCAN_LIMIT:
+            return Probe("jpeg")
+        b = f.read(1)
+        if not b:
+            return Probe("jpeg")
+        if b != b"\xff":
+            continue  # fill byte / stray data — resync on the next marker prefix
+        marker = f.read(1)
+        while marker == b"\xff":  # marker prefixes may repeat as padding
+            marker = f.read(1)
+        if not marker:
+            return Probe("jpeg")
+        m = marker[0]
+        if m in _JPEG_STANDALONE:
+            continue
+        seg = f.read(2)
+        if len(seg) < 2:
+            return Probe("jpeg")
+        (length,) = struct.unpack(">H", seg)
+        if m in _JPEG_SOF:
+            data = f.read(5)
+            if len(data) < 5:
+                return Probe("jpeg")
+            h, w = struct.unpack(">HH", data[1:5])
+            return Probe("jpeg", w, h)
+        if length < 2:
+            return Probe("jpeg")
+        f.seek(length - 2, 1)
+
+
+def _probe_webp(head: bytes) -> Probe:
+    """The three WebP flavors keep the canvas size in three different places (RFC 9649 §2.5).
+
+    `payload` is the first chunk's data: bytes 0-3 `RIFF`, 4-7 file size, 8-11 `WEBP`, 12-15 the chunk
+    fourcc, 16-19 the chunk size, and the payload from 20 on.
+    """
+    fourcc, payload = head[12:16], head[20:]
+    if fourcc == b"VP8 " and len(payload) >= 10 and payload[3:6] == b"\x9d\x01\x2a":
+        # lossy: the 3-byte frame tag, the sync code, then 14-bit width and height
+        w, h = struct.unpack("<HH", payload[6:10])
+        return Probe("webp", w & 0x3FFF, h & 0x3FFF)
+    if fourcc == b"VP8L" and len(payload) >= 5 and payload[0] == 0x2F:
+        # lossless: a signature byte, then 14 bits of width-1 and 14 of height-1
+        (bits,) = struct.unpack("<I", payload[1:5])
+        return Probe("webp", (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1)
+    if fourcc == b"VP8X" and len(payload) >= 10:
+        # extended: 4 flag bytes, then canvas width-1 and height-1 as 3-byte little-endians
+        w = int.from_bytes(payload[4:7], "little") + 1
+        h = int.from_bytes(payload[7:10], "little") + 1
+        return Probe("webp", w, h)
+    return Probe("webp")
+
+
+# ── the listing ───────────────────────────────────────────────────────────────────────────────────
+
+
+def describe_file(path: Path, ns: str, role: str) -> MediaFile:
+    """One directory entry, probed and judged."""
+    ext_type = ALLOWED_TYPES.get(path.suffix.lower())
+    probe = probe_image(path)
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
+    warnings: list[str] = []
+    unusable = False
+    if probe.fmt is None:
+        warnings.append("unreadable")
+        unusable = True
+    elif ext_type is not None and probe.fmt != ext_type[1]:
+        # Served as the extension's type under `nosniff` ⇒ the browser refuses it. Broken, not merely
+        # untidy: the owner has to rename the file, and the gallery is where they find that out.
+        warnings.append("format-mismatch")
+        unusable = True
+    if size > WARN_BYTES:
+        warnings.append("oversize")
+    if probe.width and probe.height and probe.width * probe.height > WARN_PIXELS:
+        warnings.append("dimensions")
+    return MediaFile(
+        name=path.stem,
+        file=path.name,
+        url=file_url(ns, role, path.name),
+        format=probe.fmt,
+        size_bytes=size,
+        width=probe.width,
+        height=probe.height,
+        unusable=unusable,
+        warnings=warnings,
+    )
+
+
+def list_role(home: Path, ns: str, role: str, order: list[str] | None = None) -> list[MediaFile]:
+    """A role folder's servable files in the RULED order: the owner's persisted `order` first (names
+    that are actually still on disk), then everything else by `sort_key`.
+
+    Only allowlisted EXTENSIONS are listed at all, so the gallery can never show a row the mount would
+    404 — and a stray `notes.txt` beside the art is simply invisible rather than an error. Symlinks
+    that escape the role folder are dropped for the same reason: the mount rejects them
+    (`follow_symlink=False`), so advertising them would be a lie.
+    """
+    directory = role_dir(home, ns, role)
+    try:
+        entries = [p for p in directory.iterdir() if p.suffix.lower() in ALLOWED_TYPES]
+    except OSError:  # the owner deleted the folder under us — an empty role, not a 500
+        return []
+    root = directory.resolve()
+    files: dict[str, Path] = {}
+    for p in entries:
+        try:
+            if not p.is_file() or root not in p.resolve().parents:
+                continue
+        except OSError:
+            continue
+        files[p.name] = p
+    pinned = [files.pop(name) for name in (order or []) if name in files]
+    rest = sorted(files.values(), key=lambda p: sort_key(p.name))
+    return [describe_file(p, ns, role) for p in (*pinned, *rest)]
+
+
+def build_index(
+    home: Path,
+    ns: str,
+    *,
+    order: dict[str, list[str]] | None = None,
+    slots: dict[str, str] | None = None,
+) -> MediaIndex:
+    """The whole `GET /api/media/{ns}` payload. `order`/`slots` come from the owner's config
+    (`themes.<ns>`) — this module never reads settings itself, so a second namespace is one registry
+    row plus its own config block."""
+    order = order or {}
+    return MediaIndex(
+        ns=ns,
+        roles={role: list_role(home, ns, role, order.get(role)) for role in MEDIA_NAMESPACES.get(ns, ())},
+        slots=dict(slots or {}),
+    )

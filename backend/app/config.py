@@ -37,6 +37,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.error import CommentMark
 from ruamel.yaml.tokens import CommentToken
 
+from app.core.media import MEDIA_NAMESPACES
 from app.domain.agent import AgentDef, CompactionCfg, ModelRef
 from app.domain.enums import OSType, Risk
 from app.domain.host import Host
@@ -1006,6 +1007,93 @@ class AutomationsCfg(BaseModel):
     keep_runs: int = Field(default=50, ge=1, le=1000)
 
 
+class MediaRoleCfg(BaseModel):
+    """The owner's persisted overrides for ONE media role folder (D52/G5, GACHA_PLAN §5.4).
+
+    ONE object per role rather than a `role_order:` map beside a future `role_hidden:` map — the next
+    per-role dimension is an additive field with a default here (the extend-don't-migrate directive,
+    D48's `providers` precedent). Today it carries exactly one:
+
+    - `order`: filenames in the owner's chosen order, written by the Conf gallery. It OVERRIDES the
+      index's default collation for the names it lists; anything on disk it does not name follows in
+      that collation, and a name whose file is gone is ignored (a deleted drop must not 404 a listing).
+    """
+
+    model_config = {"extra": "allow"}
+
+    order: list[str] = Field(default_factory=list)
+
+
+class GachaSlotsCfg(BaseModel):
+    """The §5.2 `slots` pins: an optional binding of a NAMED entry into a role, overriding the role
+    folder's own first-wins pick. Each value is a media file's stem (`lyra`), and a pin that names
+    nothing on disk degrades to the role's default in the client resolver — never a hole, never a
+    crash (§5.3), and never silently dropped here, which would hide the owner's typo."""
+
+    model_config = {"extra": "allow"}
+
+    reel_figure: str | None = None
+    oracle: str | None = None
+    wallpaper: str | None = None
+    hero: str | None = None
+
+
+class GachaThemeCfg(BaseModel):
+    """`themes.gacha` — everything the Conf gallery persists for the gacha theme (D52/G5).
+
+    Deliberately NOT the art itself: the files live in `$CTRLB_HOME/media/gacha/<role>/` and the role
+    folder a file sits in IS its assignment (§5.4's re-rule). This block only records the two things a
+    folder listing cannot: the owner's ORDER inside a role, and the cross-role `slots` pins.
+    """
+
+    model_config = {"extra": "allow"}
+
+    roles: dict[str, MediaRoleCfg] = Field(default_factory=dict)
+    slots: GachaSlotsCfg = Field(default_factory=GachaSlotsCfg)
+
+    @field_validator("roles")
+    @classmethod
+    def _known_roles_and_bare_filenames(cls, v: dict[str, MediaRoleCfg]) -> dict[str, MediaRoleCfg]:
+        """A role key that is not a real folder would be silently inert — a typo the owner could never
+        see. And an `order` entry is a FILENAME inside its role folder, never a path: rejecting
+        separators keeps the config incapable of expressing something the index would have to
+        sanitise (the value is only ever matched against a directory listing, so this is
+        defence-in-depth, not the containment itself)."""
+        roles = MEDIA_NAMESPACES["gacha"]
+        for role, cfg in v.items():
+            if role not in roles:
+                raise ValueError(f"unknown gacha media role {role!r} (expected one of {list(roles)})")
+            for name in cfg.order:
+                if not name.strip() or name in (".", "..") or "/" in name or "\\" in name:
+                    raise ValueError(f"themes.gacha.roles.{role}.order: {name!r} is not a bare filename")
+        return v
+
+
+class ThemesCfg(BaseModel):
+    """`themes: {<theme id>: {…}}` — the ONE feature-named home for per-theme owner state (council H1).
+
+    A `theme_gacha:` top-level key would be the banned sibling-map shape: the next theme with art would
+    mint a second top-level section plus its own model, reader and writer, and renaming later would
+    cost a real config migration. Here it is one additive field, typed where a schema exists — and
+    `extra="allow"` means a theme block this build has no model for still round-trips losslessly.
+    """
+
+    model_config = {"extra": "allow"}
+
+    gacha: GachaThemeCfg = Field(default_factory=GachaThemeCfg)
+
+    def overrides(self, theme_id: str) -> tuple[dict[str, list[str]], dict[str, str]]:
+        """`(order-by-role, slots)` for a media namespace — the projection the namespace-generic media
+        index consumes, so the API layer never branches on a theme id. Empty for a theme with no
+        typed block, which is exactly what a namespace with no owner overrides looks like."""
+        block = getattr(self, theme_id, None)
+        if not isinstance(block, GachaThemeCfg):
+            return {}, {}
+        order = {role: list(cfg.order) for role, cfg in block.roles.items() if cfg.order}
+        slots = {k: v for k, v in block.slots.model_dump().items() if isinstance(v, str) and v.strip()}
+        return order, slots
+
+
 class Settings(BaseModel):
     """Typed view over `config.yaml`.
 
@@ -1040,6 +1128,10 @@ class Settings(BaseModel):
     monitor: MonitorCfg = Field(default_factory=MonitorCfg)
     #: Scheduled agent automations (A3/D49) — runner tunables only; the definitions live in SQLite.
     automations: AutomationsCfg = Field(default_factory=AutomationsCfg)
+    #: Per-theme owner state (D52/G5) — today only `gacha`'s media role order + slot pins. Purely
+    #: additive: a config written before G5 has no `themes:` key and loads to these defaults, which is
+    #: what keeps the theme byte-identical until the owner touches the gallery.
+    themes: ThemesCfg = Field(default_factory=ThemesCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`
