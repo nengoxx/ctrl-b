@@ -137,14 +137,37 @@ def role_dir(home: Path, ns: str, role: str) -> Path:
     return ns_dir(home, ns) / role
 
 
+class MediaLayoutError(RuntimeError):
+    """The media tree is not something we are willing to serve from. Raised at construction, so the
+    process refuses to start rather than serving whatever the owner pointed it at."""
+
+
 def ensure_media_dirs(home: Path) -> Path:
     """Create every namespace's role folders. Called BEFORE the mounts are registered, because
     `StaticFiles(check_dir=True)` RAISES at construction on a missing directory (§10.4 detail ①) — a
-    fresh install would otherwise fail to build the app at all. Idempotent."""
+    fresh install would otherwise fail to build the app at all. Idempotent.
+
+    **A SYMLINK anywhere on the media spine is refused, loudly** (Codex F1). `StaticFiles` contains
+    requests to the realpath of its root, so a symlinked root does not "escape" — it RELOCATES, and
+    every containment check then happily approves the link's target. A symlinked `media/`, `media/<ns>/`
+    or a role dir would therefore publish whatever it points at, read-only, to the whole tailnet. That
+    is a misconfiguration and not a feature: nobody needs to alias an art folder badly enough to make
+    "the serving root is wherever this link goes" a supported shape. Failing at boot means the operator
+    reads one sentence instead of discovering it from the outside.
+
+    Only the spine is checked — a symlinked FILE inside a role dir is already handled by the mount's
+    `follow_symlink=False` (it 404s if it leaves the root) and by the index's own containment filter.
+    """
     root = media_root(home)
     for ns, roles in MEDIA_NAMESPACES.items():
-        for role in roles:
-            role_dir(home, ns, role).mkdir(parents=True, exist_ok=True)
+        for path in (root, ns_dir(home, ns), *(role_dir(home, ns, role) for role in roles)):
+            if path.is_symlink():
+                raise MediaLayoutError(
+                    f"media path '{path}' is a symlink; the media tree must be real directories "
+                    "(a link here would publish its target read-only to the whole tailnet). "
+                    "Replace it with a directory, or move the files in."
+                )
+            path.mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -199,11 +222,13 @@ class Probe:
 _JPEG_SOF = {*range(0xC0, 0xD0)} - {0xC4, 0xC8, 0xCC}
 #: Standalone markers with no length field.
 _JPEG_STANDALONE = {0x01, 0xD8, *range(0xD0, 0xD8)}
-#: How far into a JPEG the SOF hunt may run before giving up on the dimensions. A conforming file puts
-#: SOF within a few KB (EXIF thumbnails and ICC profiles are the only things ahead of it), so this only
-#: ever bites a malformed one — where the byte-at-a-time resync would otherwise walk the WHOLE file on
-#: every index request. Giving up costs the gallery two numbers, never the listing.
+#: How far into a JPEG the SOF hunt may run before giving up. A conforming file puts SOF within a few KB
+#: (EXIF thumbnails and ICC profiles are the only things ahead of it), so this only ever bites a
+#: malformed one — where an unbounded walk would be paid on every index request.
 _JPEG_SCAN_LIMIT = 1 << 20
+#: How much of it is read per hop. Bounded CHUNKS rather than the byte-at-a-time resync the first cut
+#: used (Codex F8): a malformed drop made the scan a million single-byte reads inside a request.
+_JPEG_CHUNK = 1 << 16
 
 
 def probe_image(path: Path) -> Probe:
@@ -211,19 +236,27 @@ def probe_image(path: Path) -> Probe:
 
     Reading the header rather than trusting the extension is the whole point: the mount serves the
     Content-Type the extension claims, so the index has to be the thing that notices when the bytes
-    disagree. Any I/O or parse failure degrades to `Probe()` (unusable), never an exception — the
-    caller is a listing endpoint walking a directory the owner writes to behind our back.
+    disagree. Any I/O or parse failure degrades to `Probe()`, never an exception — the caller is a
+    listing endpoint walking a directory the owner writes to behind our back.
+
+    **A format claim requires the COMPLETE required header** (Codex F3). A signature alone is not a
+    format: an 8-byte PNG signature, a bare `\xff\xd8\xff`, or `RIFF....WEBP` with nothing after it are
+    all truncated files that no browser will render, and reporting them usable would put a permanently
+    broken image in the roster with nothing to explain it. Signature-only ⇒ `Probe()` ⇒ the index marks
+    the file unusable with a warning, which is the one place the owner can act on it.
     """
     try:
         with path.open("rb") as f:
             head = f.read(32)
             if head.startswith(b"\x89PNG\r\n\x1a\n"):
-                if head[12:16] == b"IHDR" and len(head) >= 24:
+                # The IHDR chunk is mandatory and must be FIRST (PNG spec §11.2.2), so its absence at
+                # byte 12 means the file is truncated or not really a PNG.
+                if len(head) >= 24 and head[12:16] == b"IHDR":
                     w, h = struct.unpack(">II", head[16:24])
                     return Probe("png", w, h)
-                return Probe("png")
+                return Probe()
             if head.startswith(b"\xff\xd8\xff"):
-                return _probe_jpeg(f)
+                return _probe_jpeg(f, head)
             if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
                 return _probe_webp(head)
     except OSError:
@@ -231,45 +264,71 @@ def probe_image(path: Path) -> Probe:
     return Probe()
 
 
-def _probe_jpeg(f: IO[bytes]) -> Probe:
+def _probe_jpeg(f: IO[bytes], head: bytes) -> Probe:
     """Walk the marker chain to the first SOF segment. JPEG is the one format whose size is not at a
-    fixed offset — EXIF/ICC segments of arbitrary length sit in front of it. Bounded by
-    `_JPEG_SCAN_LIMIT`: the resync below reads a byte at a time, so an unbounded walk over a malformed
-    multi-megabyte file would be paid on every index request."""
-    f.seek(2)
-    while True:
-        if f.tell() > _JPEG_SCAN_LIMIT:
-            return Probe("jpeg")
-        b = f.read(1)
-        if not b:
-            return Probe("jpeg")
-        if b != b"\xff":
-            continue  # fill byte / stray data — resync on the next marker prefix
-        marker = f.read(1)
-        while marker == b"\xff":  # marker prefixes may repeat as padding
-            marker = f.read(1)
-        if not marker:
-            return Probe("jpeg")
-        m = marker[0]
+    fixed offset — EXIF/ICC segments of arbitrary length sit in front of it.
+
+    Reaching a real SOFn is the format claim: a stream that ends, runs past `_JPEG_SCAN_LIMIT`, or
+    carries a malformed segment length yields `Probe()` (unusable), never a bare `Probe("jpeg")`.
+    """
+    buf = head
+
+    def need(end: int) -> bool:
+        """Ensure `buf` holds at least `end` bytes, reading in chunks. False = EOF or past the cap."""
+        nonlocal buf
+        while len(buf) < end:
+            if len(buf) >= _JPEG_SCAN_LIMIT:
+                return False
+            more = f.read(_JPEG_CHUNK)
+            if not more:
+                return False
+            buf += more
+        return True
+
+    i = 2
+    while i < _JPEG_SCAN_LIMIT:
+        # In a conforming stream `buf[i]` IS the 0xFF of the next marker; `find` only does work on a
+        # malformed one, and then it does it a chunk at a time instead of a byte at a time.
+        if not need(i + 1):
+            return Probe()
+        j = buf.find(b"\xff", i)
+        if j < 0:
+            i = len(buf)
+            if not need(i + 1):
+                return Probe()
+            continue
+        k = j + 1
+        while True:  # marker prefixes may repeat as padding
+            if not need(k + 1):
+                return Probe()
+            if buf[k] != 0xFF:
+                break
+            k += 1
+        m = buf[k]
+        i = k + 1
         if m in _JPEG_STANDALONE:
             continue
-        seg = f.read(2)
-        if len(seg) < 2:
-            return Probe("jpeg")
-        (length,) = struct.unpack(">H", seg)
-        if m in _JPEG_SOF:
-            data = f.read(5)
-            if len(data) < 5:
-                return Probe("jpeg")
-            h, w = struct.unpack(">HH", data[1:5])
-            return Probe("jpeg", w, h)
+        if not need(i + 2):
+            return Probe()
+        length = int.from_bytes(buf[i : i + 2], "big")
         if length < 2:
-            return Probe("jpeg")
-        f.seek(length - 2, 1)
+            return Probe()
+        if m in _JPEG_SOF:
+            # segment body: precision(1) · height(2) · width(2), right after the length field
+            if not need(i + 7):
+                return Probe()
+            h = int.from_bytes(buf[i + 3 : i + 5], "big")
+            w = int.from_bytes(buf[i + 5 : i + 7], "big")
+            return Probe("jpeg", w, h)
+        i += length
+    return Probe()
 
 
 def _probe_webp(head: bytes) -> Probe:
     """The three WebP flavors keep the canvas size in three different places (RFC 9649 §2.5).
+
+    A COMPLETE chunk header of a known flavor is the format claim: `RIFF....WEBP` followed by nothing,
+    by an unknown fourcc, or by a truncated chunk yields `Probe()` (unusable).
 
     `payload` is the first chunk's data: bytes 0-3 `RIFF`, 4-7 file size, 8-11 `WEBP`, 12-15 the chunk
     fourcc, 16-19 the chunk size, and the payload from 20 on.
@@ -288,7 +347,7 @@ def _probe_webp(head: bytes) -> Probe:
         w = int.from_bytes(payload[4:7], "little") + 1
         h = int.from_bytes(payload[7:10], "little") + 1
         return Probe("webp", w, h)
-    return Probe("webp")
+    return Probe()
 
 
 # ── the listing ───────────────────────────────────────────────────────────────────────────────────

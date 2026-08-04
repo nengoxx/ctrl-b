@@ -540,10 +540,13 @@ def create_app() -> FastAPI:
     # is a registry walk here. Adding the next art-bearing theme is a row in `MEDIA_NAMESPACES`.
     home = home_path()
     ensure_media_dirs(home)
-    for ns in MEDIA_NAMESPACES:
+    for ns, roles in MEDIA_NAMESPACES.items():
         app.mount(
             f"{MEDIA_URL_ROOT}/{ns}/{MEDIA_FILES_SEGMENT}",
-            MediaFiles(directory=ns_dir(home, ns)),
+            # The namespace's ROLES are passed in, not inferred from what is on disk: the mount then
+            # serves exactly what the index advertises, and a folder the owner parked beside the role
+            # dirs is invisible rather than quietly public (Codex F1).
+            MediaFiles(directory=ns_dir(home, ns), roles=roles),
             name=f"media-{ns}",
         )
 

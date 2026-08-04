@@ -16,6 +16,7 @@ it is asserting on.
 from __future__ import annotations
 
 import struct
+import time
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ from fastapi.testclient import TestClient
 
 from app.api.media import MediaFiles
 from app.config import GachaThemeCfg, Settings
-from app.core.media import ns_dir, probe_image, sort_key
+from app.core.media import MediaLayoutError, ensure_media_dirs, ns_dir, probe_image, sort_key
 
 # ── fixtures ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -85,7 +86,7 @@ def test_staticfiles_refuses_a_missing_directory(tmp_path) -> None:
     """The reason the ensure-dir exists, stated as a test: `check_dir=True` raises at CONSTRUCTION,
     so without the startup ensure a fresh install could not even build the app."""
     with pytest.raises(RuntimeError):
-        MediaFiles(directory=tmp_path / "not-there")
+        MediaFiles(directory=tmp_path / "not-there", roles=("characters",))
 
 
 def test_role_dirs_are_created_at_app_construction(home: Path) -> None:
@@ -131,6 +132,62 @@ def test_traversal_attempts_never_escape_the_role_root(home: Path) -> None:
             assert "computers" not in r.text
         # the sanity control: the legitimate file right beside those attempts does serve
         assert c.get("/api/media/gacha/files/characters/a.png").status_code == 200
+
+
+def test_only_registered_role_paths_are_served(home: Path) -> None:
+    """Codex F1 — the SHAPE gate. Containment says the path stayed under the namespace root; it says
+    nothing about where. Anything the owner parked BESIDE the role folders was servable while appearing
+    in no listing, which is the worst combination: public and invisible."""
+    ns = ns_dir(home, "gacha")
+    with make_client() as c:
+        (ns / "loose.png").write_bytes(png_bytes())  # dropped at the namespace root
+        (ns / "private").mkdir()
+        (ns / "private" / "secret.png").write_bytes(png_bytes())
+        (role(home, "characters") / "nested").mkdir()
+        (role(home, "characters") / "nested" / "deep.png").write_bytes(png_bytes())
+        for path in ("loose.png", "private/secret.png", "characters/nested/deep.png"):
+            assert c.get(f"/api/media/gacha/files/{path}").status_code == 404, path
+        # …and none of them is advertised either
+        body = c.get("/api/media/gacha").json()
+        assert body["roles"]["characters"] == []
+        assert "private" not in body["roles"]
+        # the control: a file in a REGISTERED role still serves
+        (role(home, "characters") / "ok.png").write_bytes(png_bytes())
+        assert c.get("/api/media/gacha/files/characters/ok.png").status_code == 200
+
+
+@pytest.mark.parametrize("level", ["root", "namespace", "role"])
+def test_a_symlinked_media_path_refuses_to_boot(home: Path, tmp_path, level: str) -> None:
+    """Codex F1 — a symlink on the media spine RELOCATES the serving root rather than escaping it, so
+    every containment check downstream then approves the link's target. Refused loudly at ensure-time,
+    at EVERY level: one sentence for the operator beats discovering it from the outside."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "secret.png").write_bytes(png_bytes())
+
+    link = {
+        "root": home / "media",
+        "namespace": ns_dir(home, "gacha"),
+        "role": role(home, "characters"),
+    }[level]
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(elsewhere, target_is_directory=True)
+
+    with pytest.raises(MediaLayoutError) as exc:
+        ensure_media_dirs(home)
+    assert "symlink" in str(exc.value)
+    # …and the app refuses to build at all, rather than starting up serving the link's target
+    with pytest.raises(MediaLayoutError):
+        make_client()
+
+
+def test_a_real_media_tree_still_boots(home: Path) -> None:
+    """The other half of the symlink rule: ordinary directories are the normal case and must not trip
+    it, including on the second boot when everything already exists."""
+    ensure_media_dirs(home)
+    ensure_media_dirs(home)
+    with make_client() as c:
+        assert c.get("/api/media/gacha").status_code == 200
 
 
 # ── ③ the Content-Type allowlist + nosniff ────────────────────────────────────────────────────────
@@ -268,12 +325,52 @@ def test_probe_reads_dimensions_from_each_allowed_format(tmp_path) -> None:
 
 
 def test_a_malformed_jpeg_gives_up_instead_of_walking_the_whole_file(tmp_path) -> None:
-    """The marker resync reads a byte at a time, so a malformed multi-megabyte file must not be walked
-    end to end on every index request. It stays a JPEG (the magic bytes said so) with no dimensions."""
+    """The scan is bounded AND chunked (Codex F8): a malformed multi-megabyte file must not be walked
+    end to end, and never a byte at a time, on every index request. Giving up means no format claim
+    (Codex F3) — a file whose markers never reach an SOF is not a JPEG any browser will render."""
     p = tmp_path / "x.jpg"
     p.write_bytes(b"\xff\xd8\xff" + b"\xff" * (4 << 20))
+    started = time.perf_counter()
     probe = probe_image(p)
-    assert (probe.fmt, probe.width, probe.height) == ("jpeg", None, None)
+    elapsed = time.perf_counter() - started
+    assert (probe.fmt, probe.width, probe.height) == (None, None, None)
+    # Generous by two orders of magnitude — it is the SHAPE of the cost being pinned (bounded + chunked),
+    # not a benchmark. The byte-at-a-time version took ~1M single-byte reads to reach the same answer.
+    assert elapsed < 1.0
+
+
+@pytest.mark.parametrize(
+    ("label", "data"),
+    [
+        ("png signature only", b"\x89PNG\r\n\x1a\n"),
+        ("png truncated ihdr", b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + b"\x00\x00"),
+        ("png missing ihdr", b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"tEXt" + b"\x00" * 12),
+        ("jpeg soi only", b"\xff\xd8\xff"),
+        ("jpeg no sof", b"\xff\xd8" + b"\xff\xe0" + struct.pack(">H", 16) + b"JFIF\x00" + b"\x00" * 11),
+        ("jpeg truncated sof", b"\xff\xd8" + b"\xff\xc0" + struct.pack(">H", 17) + b"\x08\x00"),
+        ("jpeg bad length", b"\xff\xd8" + b"\xff\xe0" + struct.pack(">H", 1) + b"junk"),
+        ("webp riff only", b"RIFF" + struct.pack("<I", 4) + b"WEBP"),
+        ("webp unknown chunk", b"RIFF" + struct.pack("<I", 20) + b"WEBP" + b"XXXX" + b"\x00" * 12),
+        ("webp truncated vp8x", b"RIFF" + struct.pack("<I", 14) + b"WEBP" + b"VP8X" + struct.pack("<I", 10)),
+        ("webp vp8 no sync", b"RIFF" + struct.pack("<I", 20) + b"WEBP" + b"VP8 " + b"\x00" * 12),
+    ],
+)
+def test_a_signature_is_not_a_format(tmp_path, label: str, data: bytes) -> None:
+    """Codex F3 — a format claim requires the COMPLETE required header. A signature with nothing behind
+    it is a truncated file no browser will render; calling it usable would put a permanently broken
+    image in the roster with nothing to explain it. Unusable + a warning is the only actionable answer."""
+    p = tmp_path / "x"
+    p.write_bytes(data)
+    assert probe_image(p).fmt is None, label
+
+
+def test_truncated_drops_are_listed_as_unusable(home: Path) -> None:
+    """…and that verdict reaches the gallery: still listed (the owner has to SEE the file to fix it),
+    flagged, with the warning that says why."""
+    with make_client() as c:
+        (role(home, "characters") / "stub.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        entry = c.get("/api/media/gacha").json()["roles"]["characters"][0]
+        assert (entry["format"], entry["unusable"], entry["warnings"]) == (None, True, ["unreadable"])
 
 
 def test_mislabeled_extension_is_flagged_unusable(home: Path) -> None:

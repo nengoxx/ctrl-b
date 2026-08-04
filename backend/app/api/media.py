@@ -17,6 +17,8 @@ Thin by design: everything mechanical lives in `app.core.media`, which knows not
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Sequence
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -36,14 +38,20 @@ router = APIRouter(tags=["media"])
 
 
 class MediaFiles(StaticFiles):
-    """StaticFiles under a CLOSED Content-Type allowlist.
+    """StaticFiles narrowed to exactly what the index advertises: `<role>/<allowlisted image>`.
 
     Starlette 1.3.1 already handles path traversal properly (normpath + realpath + `commonpath`
     containment, and `follow_symlink=False` rejects a symlink pointing out of the root), so that is
-    not what this subclass is for. **The real hole is Content-Type** (§10.4, verified): `FileResponse`
-    GUESSES the type from the extension, so an owner-dropped `evil.html` in a media folder would be
-    served as same-origin `text/html` — stored XSS against an app with no auth and full API access
-    from the same origin. So:
+    not what this subclass is for. It closes two different holes that containment does not:
+
+    **The SHAPE** (Codex F1). Containment only says the path stayed under the namespace root — it says
+    nothing about WHERE under it. A file the owner parked beside the role folders (a root-level
+    `x.png`, a `private/` directory of their own) was therefore served to the whole tailnet while
+    appearing in no listing. The path must now be exactly `<registered role>/<file>`.
+
+    **The Content-Type** (§10.4, verified): `FileResponse` GUESSES the type from the extension, so an
+    owner-dropped `evil.html` in a media folder would be served as same-origin `text/html` — stored XSS
+    against an app with no auth and full API access from the same origin. So:
 
       * the extension must be in `ALLOWED_TYPES` or the request 404s before anything is opened;
       * the Content-Type is SET from that table, never guessed;
@@ -53,18 +61,30 @@ class MediaFiles(StaticFiles):
         byte 304, so this costs a round trip, not a re-download. `immutable` is reserved for hashed
         names (the build's `/assets`), which these are not.
 
-    Nothing here is namespace-aware: one instance is mounted per namespace in `create_app`.
+    Nothing here is theme-aware: one instance is mounted per namespace in `create_app`, with that
+    namespace's role list.
     """
 
-    def __init__(self, *, directory: Path) -> None:
+    def __init__(self, *, directory: Path, roles: Sequence[str]) -> None:
         # check_dir stays TRUE (the loud failure is the useful one) — `ensure_media_dirs` runs first.
         super().__init__(directory=directory, check_dir=True, follow_symlink=False)
+        self.roles = frozenset(roles)
 
     async def get_response(self, path: str, scope: Scope) -> Response:
-        # `path` arrives normalised by `StaticFiles.get_path` (`..` collapsed), so this is a pure
-        # extension check on the resolved name. Done BEFORE `super()` so a disallowed file is never
+        # `path` arrives normalised by `StaticFiles.get_path` (`..` collapsed), so both checks below are
+        # pure inspections of the RESOLVED name. Done BEFORE `super()` so a rejected request is never
         # stat-ed or opened — the 404 is indistinguishable from "not there", which is the right answer
         # to someone probing what the owner keeps in a folder.
+        #
+        # ① The SHAPE gate (Codex F1). Containment alone is not enough: it only says the path stays
+        # under the namespace root, so a file the owner parked BESIDE the role folders — a root-level
+        # `x.png`, or anything inside a `private/` they made themselves — was servable to the whole
+        # tailnet while appearing in no listing. The mount now serves exactly what the index advertises:
+        # `<registered role>/<file>`, two segments, no deeper nesting.
+        parts = Path(path).parts
+        if len(parts) != 2 or parts[0] not in self.roles:
+            raise StarletteHTTPException(status_code=404)
+        # ② The TYPE gate.
         allowed = ALLOWED_TYPES.get(Path(path).suffix.lower())
         if allowed is None:
             raise StarletteHTTPException(status_code=404)
@@ -91,4 +111,9 @@ async def media_index(ns: str, request: Request) -> MediaIndex:
         raise HTTPException(status_code=404, detail=f"unknown media namespace: {ns}")
     settings = request.app.state.settings
     order, slots = settings.themes.overrides(ns)
-    return build_index(settings.home_dir(), ns, order=order, slots=slots)
+    # OFF the event loop (Codex F8): building the index walks directories, stats every entry and reads
+    # each file's header — all blocking, and the JPEG scan is bounded but not free on a malformed drop.
+    # `asyncio.to_thread` is the house hop for sync work in an async route (app/api/agent.py's skill and
+    # agent readers). The whole build goes in one hop rather than per-file, so a role with twenty files
+    # costs one context switch, not twenty.
+    return await asyncio.to_thread(build_index, settings.home_dir(), ns, order=order, slots=slots)
