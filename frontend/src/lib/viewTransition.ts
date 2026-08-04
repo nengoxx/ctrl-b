@@ -24,10 +24,6 @@ import { flushSync } from "react-dom";
 
 import { getUI } from "../store/ui";
 
-/** The G0 spike's dev-only switch (see `runNavTransition`). localStorage, not a build flag, so the owner
- *  can A/B it on the phone against the SAME build. */
-const NAV_VT_KEY = "ctrlb.spike.navVT";
-
 // Minimal structural type so this compiles regardless of the TS DOM lib version (the API may not be in
 // older lib.dom.d.ts). Compatible with the real typing where present.
 interface ViewTransitionLike {
@@ -130,37 +126,32 @@ export function runViewTransition(update: () => void, type?: string): void {
   void t.finished.then(clear, clear); // `.then(f, f)`, not `.finally(f)`: finally RE-THROWS the rejection
 }
 
-// ── ⚠ TEMPORARY — the G0 VIEW-TRANSITION SPIKE (D52 / GACHA_PLAN §10.1, risk #2) ────────────────────
-// DELETE OR PROMOTE AT G4. This exists to answer the ONE question paper could not: does
-// `::view-transition-new(root)` render LIVE on the owner's Fennec 144+? If it does, gacha's reel keeps
-// animating during a root View Transition and M2 (the prototype's tab cross-fade/scale under the reel) is
-// worth a real seam; if it does not, the reel freezes mid-sweep behind a static snapshot and M2 DIES
-// without ceremony — the reel alone must carry the transition, which is the plan's standing posture.
+// ── THE NAVIGATION-TRANSITION DECORATOR (M2 — D52 / GACHA_PLAN §10.1) ───────────────────────────────
+// The G0 spike that stood here is over: its device question — does `::view-transition-new(root)` render
+// LIVE, so a reel keeps sweeping through a root View Transition rather than freezing behind a snapshot? —
+// was settled for Gecko in the affirmative (outcome (a), 2026-08-04), so M2 ships and the flag is gone.
+// This is now the real, unflagged decorator, at the same chokepoint the spike was deliberately shaped to
+// fit: `useSections.navigate`'s `setUI({ tab })`.
 //
-// It is deliberately the SMALLEST possible intrusion on the shared nav chokepoint:
-//   · DEFAULT OFF. With the flag unset this is `update()` — byte-identical to the direct `setUI` call it
-//     replaced, for every theme, in every build.
-//   · GACHA ONLY even when on. A root cross-fade on cosmos/frontier/vapor/minimal is not being spiked.
-//   · localStorage-flagged, so the owner toggles it in the browser console on the phone and A/Bs the same
-//     deployed build: `localStorage.setItem("ctrlb.spike.navVT", "1")` (and `removeItem` to go back).
-// After the device round: either the flag and this function are deleted (M2 dies), or the wrapper becomes
-// a real, unflagged navigation-transition decorator at this same chokepoint (M2 lives). Either way this
-// block does not survive G4.
-function navSpikeEnabled(): boolean {
-  if (getUI().theme !== "gacha") return false;
-  try {
-    return localStorage.getItem(NAV_VT_KEY) === "1";
-  } catch {
-    return false; // private mode / disabled storage — the spike is simply off
-  }
-}
+// It stays GACHA-GATED, and that is a design statement rather than caution: a root cross-fade is a piece
+// of the arcade's tab CHOREOGRAPHY — the thing the reel's slats sweep over — not a kit-wide navigation
+// behaviour. cosmos/frontier/vapor/minimal have their own section entrances and get a plain `setUI`,
+// byte-identical to the direct call this replaced. The theme read is the store's, not a prop, because the
+// chokepoint is a shared hook that must not grow a per-theme parameter for one theme's flourish.
+//
+// The `tab` STAMP is the whole interface to CSS: `html[data-transition="tab"]` for the flight, which
+// gacha.css scopes its `::view-transition-old/new(root)` keyframes to (the M2 block). It rides an
+// attribute rather than `startViewTransition({types})` because 144 devices exist (§10.1) — the ruling
+// stands even though Gecko 147 shipped types.
+//
+// Reduced motion and engines without View Transitions need nothing here: `runViewTransition` applies the
+// update instantly on both paths, so navigation is never gated on an animation.
 
-/** The nav chokepoint's transition wrapper. Off by default: applies `update` directly. */
+/** Apply a NAVIGATION update — inside a root View Transition under gacha (M2), plainly everywhere else. */
 export function runNavTransition(update: () => void): void {
-  if (!navSpikeEnabled()) {
+  if (getUI().theme !== "gacha") {
     update();
     return;
   }
-  // `tab` stamps html[data-transition="tab"] so the theme can scope its root-VT keyframes to this kind.
   runViewTransition(update, "tab");
 }

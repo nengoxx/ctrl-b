@@ -504,6 +504,44 @@
       display: none;
     }
 
+    /* ── M2 — the TAB CROSS-FADE under the reel (§10.1; the `tab` transition type) ────────────────
+     * The prototype's DEFAULT root transition (theme.css:144-147), which under gacha is a NAMED kind
+     * because this app's unstamped default is the theme swap, not a tab change. `useSections.navigate`
+     * wraps its `setUI` in `runNavTransition`, which stamps `html[data-transition="tab"]` for the flight.
+     *
+     * The choreography, measured off the prototype and kept to the millisecond: the outgoing screen
+     * eases back to 96% while it fades (240 ms), and the incoming one comes in from 104% over 380 ms
+     * with a 100 ms HEAD START for the old — the overlap is what makes it read as one screen replacing
+     * another rather than as two independent fades. Both ends stay `transform`/`opacity` only (§14.11),
+     * and both keyframes are shared with the `detail` morph below at its own shorter timings — one pair,
+     * two kinds, exactly as the prototype declares them.
+     *
+     * This is what the reel is sweeping OVER: the slats cover the swap for ~640 ms, and the cross-fade
+     * masks the frames before they have covered the viewport (the owner's G0 eyeball note). It relies on
+     * `::view-transition-new(root)` painting LIVE — settled for Gecko by the §10.1 probe (outcome (a)),
+     * which is what made M2 worth shipping at all: a frozen snapshot would stall the reel mid-sweep.
+     *
+     * Reduced motion needs no rule here: `runViewTransition` bypasses the API entirely on the app's own
+     * motion axis, so there is no pseudo-element to style (the house rule — never the OS media query). */
+    :scope[data-transition="tab"]::view-transition-old(root) {
+      animation: gacha-root-out 240ms ease both;
+    }
+    :scope[data-transition="tab"]::view-transition-new(root) {
+      animation: gacha-root-in 380ms 100ms var(--gc-ease-out) both;
+    }
+    @keyframes gacha-root-out {
+      to {
+        transform: scale(0.96);
+        opacity: 0;
+      }
+    }
+    @keyframes gacha-root-in {
+      from {
+        transform: scale(1.04);
+        opacity: 0;
+      }
+    }
+
     /* ── Chat bubbles (§15 chat-hooks reskin) ─────────────────────────────────────────────────────
      * Pulled forward from G3 by owner ruling — the BUBBLES only; the oracle header, the composer skin
      * and the M7 scroll mechanics stay G3.
@@ -1154,28 +1192,18 @@
     :scope[data-transition="detail"]::view-transition-new(capsule-shell) {
       animation-duration: 280ms;
     }
-    /* …and the page BEHIND it takes the prototype's own detail cross-fade (theme.css:149-150 — its
-     * `old-reel`/`new-reel` pair at the detail timings): the old page eases back to 96% as it goes, the new
-     * one — dossier already at rest, portrait extracted into the group above — comes in from 104%. This is
-     * what carries the sheet's ARRIVAL now that the sheet cannot slide under a transition (the capture is
-     * a single frame: a sliding sheet would freeze the morph's destination at its off-screen start). */
+    /* …and the page BEHIND it takes the prototype's own detail cross-fade (theme.css:149-150 — the SAME
+     * `gacha-root-out`/`gacha-root-in` pair M2 uses, re-timed): the old page eases back to 96% as it goes,
+     * the new one — dossier already at rest, portrait extracted into the group above — comes in from 104%.
+     * This is what carries the sheet's ARRIVAL now that the sheet cannot slide under a transition (the
+     * capture is a single frame: a sliding sheet would freeze the morph's destination at its off-screen
+     * start). Shorter than the tab's, exactly as the prototype has it: a panel arriving over a page that
+     * stays put needs less travel than a whole screen being replaced. */
     :scope[data-transition="detail"]::view-transition-old(root) {
-      animation: gacha-detail-out 200ms ease both;
+      animation: gacha-root-out 200ms ease both;
     }
     :scope[data-transition="detail"]::view-transition-new(root) {
-      animation: gacha-detail-in 300ms ease both;
-    }
-    @keyframes gacha-detail-out {
-      to {
-        transform: scale(0.96);
-        opacity: 0;
-      }
-    }
-    @keyframes gacha-detail-in {
-      from {
-        transform: scale(1.04);
-        opacity: 0;
-      }
+      animation: gacha-root-in 300ms ease both;
     }
 
     /* ── THE ART SHOWCASE's transition, the `showcase` type (owner request 2026-08-02) ─────────────────

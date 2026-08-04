@@ -177,6 +177,68 @@ test("gacha · 4-tab: the pick is honored — utils returns to the bar WITH its 
   expect(pageErrors).toEqual([]);
 });
 
+// ── M2 · the navigation transition, driven for real (D52 G4 / §10.1) ──────────────────────────────────
+// The decorator is unflagged now, so a REAL tab tap in a REAL engine must actually start a root View
+// Transition under gacha — and must not start one anywhere else. The stamp is transient (it clears when
+// the transition settles), so both arms RECORD attribute mutations rather than racing a poll against a
+// ~500 ms flight; the observer is installed before the tap and read after it.
+const recordTransitionStamps = async (page: Page): Promise<void> => {
+  await page.evaluate(() => {
+    const seen: string[] = [];
+    (window as unknown as { __vt: string[] }).__vt = seen;
+    new MutationObserver(() => {
+      const v = document.documentElement.dataset.transition;
+      if (v !== undefined && !seen.includes(v)) seen.push(v);
+    }).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-transition"],
+    });
+  });
+};
+const transitionStamps = (page: Page): Promise<string[]> =>
+  page.evaluate(() => (window as unknown as { __vt: string[] }).__vt);
+
+test("gacha · M2: a tab tap runs through a `tab`-stamped root View Transition", async ({
+  page,
+  pageErrors,
+}) => {
+  // `motion` is seeded explicitly: the store's first-load default honors the OS query once, and a CI
+  // machine advertising `prefers-reduced-motion` would bypass the transition for the right reason and
+  // fail this for the wrong one.
+  await seedUI(page, {
+    theme: "gacha",
+    mode: "dark",
+    accent: "arcade",
+    motion: "full",
+    tab: "fleet",
+    v: 1,
+  });
+  await page.goto("/");
+  await expect(page.locator("#tabbtn-agent")).toBeVisible();
+  await recordTransitionStamps(page);
+
+  await page.locator("#tabbtn-agent").click();
+  await expect(page.locator("#tab-agent")).toBeVisible(); // the navigation itself is never gated on it
+  expect(await transitionStamps(page)).toEqual(["tab"]);
+  // …and the stamp is not left behind: the cleanup is what keeps the NEXT kind's CSS unpolluted.
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.dataset.transition))
+    .toBeUndefined();
+  expect(pageErrors).toEqual([]);
+});
+
+test("cosmos · M2 is gacha's alone: a tab tap stamps nothing", async ({ page, pageErrors }) => {
+  await seedUI(page, { theme: "cosmos", mode: "dark", motion: "full", tab: "fleet", v: 1 });
+  await page.goto("/");
+  await expect(page.locator("#tabbtn-agent")).toBeVisible();
+  await recordTransitionStamps(page);
+
+  await page.locator("#tabbtn-agent").click();
+  await expect(page.locator("#tab-agent")).toBeVisible();
+  expect(await transitionStamps(page)).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
 test("gacha · 2-tab: conf via the DOCKED direct button; utils still hosted", async ({
   page,
   pageErrors,

@@ -247,37 +247,14 @@ describe("skipActiveViewTransition — the type-scoped ownership fix", () => {
   });
 });
 
-// ── The G0 nav SPIKE (D52 / GACHA_PLAN §10.1, risk #2) — a temporary, dev-only, default-OFF wrapper at the
-//    nav chokepoint so the owner can A/B `::view-transition-new(root)` liveness on Fennec against the same
-//    deployed build. These arms pin the two properties that make it safe to have in shared code at all:
-//    OFF is byte-identical to a direct update, and ON is scoped to gacha. It does not survive G4. ──
-describe("runNavTransition — the G0 spike gate", () => {
-  afterEach(() => {
-    localStorage.removeItem("ctrlb.spike.navVT");
-  });
-
-  it("is OFF by default — the update applies directly, no transition started", () => {
+// ── The NAVIGATION-TRANSITION DECORATOR (M2 — D52 / GACHA_PLAN §10.1), promoted from the G0 spike once
+//    the `::view-transition-new(root)` liveness question was settled. The spike's localStorage flag is
+//    gone; what these arms pin is what makes an unflagged wrapper safe in the shared nav chokepoint:
+//    every theme but gacha still gets a plain update, gacha gets the `tab`-stamped transition, and the
+//    reduced-motion / unsupported bypasses are the wrapper's, not a second copy. ──
+describe("runNavTransition — the M2 decorator", () => {
+  it("wraps a gacha navigation in a `tab`-stamped transition", async () => {
     const vt = installFakeVT();
-    setUI({ theme: "gacha" });
-    const update = vi.fn();
-    runNavTransition(update);
-    expect(update).toHaveBeenCalledTimes(1);
-    expect(vt.calls).toBe(0);
-  });
-
-  it("stays off for every OTHER theme even when the flag is set", () => {
-    const vt = installFakeVT();
-    localStorage.setItem("ctrlb.spike.navVT", "1");
-    for (const theme of ["cosmos", "frontier", "vapor", "minimal"] as const) {
-      setUI({ theme });
-      runNavTransition(() => {});
-    }
-    expect(vt.calls).toBe(0);
-  });
-
-  it("wraps the update with the `tab` stamp when enabled ON GACHA", async () => {
-    const vt = installFakeVT();
-    localStorage.setItem("ctrlb.spike.navVT", "1");
     setUI({ theme: "gacha" });
     const update = vi.fn();
     runNavTransition(update);
@@ -289,13 +266,33 @@ describe("runNavTransition — the G0 spike gate", () => {
     expect(document.documentElement.dataset.transition).toBeUndefined();
   });
 
-  it("still respects reduced motion when enabled (the wrapper delegates, it does not re-implement)", () => {
+  it("leaves every OTHER theme's navigation a plain update (byte-identical to the direct setUI)", () => {
     const vt = installFakeVT();
-    localStorage.setItem("ctrlb.spike.navVT", "1");
+    for (const theme of ["cosmos", "frontier", "vapor", "minimal"] as const) {
+      setUI({ theme });
+      const update = vi.fn();
+      runNavTransition(update);
+      expect(update).toHaveBeenCalledTimes(1);
+    }
+    expect(vt.calls).toBe(0);
+    expect(document.documentElement.dataset.transition).toBeUndefined();
+  });
+
+  it("respects reduced motion on gacha too (it delegates, it does not re-implement the gates)", () => {
+    const vt = installFakeVT();
     setUI({ theme: "gacha", motion: "reduced" });
     const update = vi.fn();
     runNavTransition(update);
     expect(update).toHaveBeenCalledTimes(1);
     expect(vt.calls).toBe(0);
+  });
+
+  it("navigates instantly where the engine has no View Transitions at all", () => {
+    // jsdom's own default — the progressive-enhancement floor: navigation is never gated on an animation.
+    setUI({ theme: "gacha" });
+    const update = vi.fn();
+    runNavTransition(update);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.dataset.transition).toBeUndefined();
   });
 });

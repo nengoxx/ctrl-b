@@ -74,10 +74,10 @@ export function useSections(): SectionsController {
       // chunk was still loading, the armed target was never consumed — left alone it would (a) keep the
       // scroll-reset skipped and (b) surprise-scroll the NEXT Conf visit to the Tools group.
       clearGroupScrollTarget();
-      // `runNavTransition` is the G0 View-Transition SPIKE's seam (D52 / GACHA_PLAN §10.1) and is a plain
-      // `setUI({ tab: id })` unless the owner has flipped the dev-only flag ON, on gacha, on their own
-      // device. See the fenced block at the bottom of `lib/viewTransition.ts`: it does not survive G4 —
-      // either it is deleted (M2 dies) or it becomes a real navigation-transition decorator right here.
+      // `runNavTransition` is the navigation-transition decorator (D52 / GACHA_PLAN §10.1 M2): a plain
+      // `setUI({ tab: id })` for every theme but gacha, which wraps it in a root View Transition so its
+      // tab reel sweeps over a cross-fade rather than over a hard swap. The gate lives in the decorator,
+      // not here — this chokepoint stays theme-agnostic.
       // Deliberately NOT applied to the hosted branch above: that one is also driven by DefaultRoot's
       // coercion EFFECT, and `flushSync` inside an effect is a React warning.
       runNavTransition(() => setUI({ tab: id }));
