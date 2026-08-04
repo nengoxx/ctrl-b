@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 
 import { setGachaReelRunning } from "../../store/gachaReel";
 import { useUISlice } from "../../store/ui";
+import { defaultRoster, reelFigureArt } from "./roster";
 
 // The gacha TAB REEL (M1) — five vertical slats sweeping top→bottom over the whole shell on every section
-// change (D52 / GACHA_PLAN §10.1; the reel FIGURE is G4, this is the mechanism).
+// change, plus the character FIGURE that rides them (D52 / GACHA_PLAN §10.1; G0 built the mechanism, G4
+// added the figure).
 //
 // M1 IS THE PRIMARY EFFECT and must be complete without View Transitions: the plan's standing posture is
 // that M2 (the root cross-fade under the reel) is progressive enhancement, droppable without ceremony. So
@@ -46,6 +48,15 @@ export function GachaReel() {
  *  because it is a property of THIS animation — a second reel-shaped effect would bring its own. */
 const REEL_TOTAL_MS = 640;
 
+// The FIGURE's art (G4), through the theme's ONE art resolver — a roster `reel_figure:` pin, else the first
+// entry carrying a cutout, else nothing at all (`reelFigureArt`, §5.2). MODULE-LEVEL, the `GachaRoot`
+// wallpaper precedent: until G5's media index lands the bundled set cannot change at runtime, so resolving
+// once keeps the render pure and the effect deps honest.
+//
+// `null` is a first-class outcome, not a defect: the reel must be complete WITHOUT the figure (a roster with
+// no cutout-bearing entry is a legitimate G5 configuration), so this is a plain conditional render.
+const FIGURE = reelFigureArt(defaultRoster());
+
 function GachaReelSweep() {
   const tab = useUISlice((s) => s.tab);
   const [bootTab] = useState(tab);
@@ -54,6 +65,14 @@ function GachaReelSweep() {
   useEffect(() => {
     if (tab !== bootTab) setEverSwitched(true);
   }, [tab, bootTab]);
+
+  // WARM the figure once, at mount. The overlay only exists for the ~640 ms of a sweep, so without this the
+  // very FIRST tab change would fetch and decode a fresh image inside the animation it is supposed to be
+  // riding — the one sweep that shows an empty reel. One request, no DOM, cache-served from then on
+  // (`key={tab}` remounts the <img> every sweep, which is exactly what a warm cache is for).
+  useEffect(() => {
+    if (FIGURE) new Image().src = FIGURE.url;
+  }, []);
 
   const sweeping = everSwitched || tab !== bootTab;
 
@@ -83,6 +102,11 @@ function GachaReelSweep() {
       <i />
       <i />
       <i />
+      {/* AFTER the slats, as the prototype has it (index.html:42) — the figure rides ON the sweep, so
+          paint order alone puts it above them; no z-index inside the overlay. `alt=""` is belt-and-braces
+          under an `aria-hidden` parent, and the glow is BAKED INTO the asset (§10.1 rider: a static
+          `drop-shadow()` on a large moving image re-rasterizes per frame on Gecko). */}
+      {FIGURE && <img className="gc-reel-figure" src={FIGURE.url} alt="" decoding="async" />}
     </div>
   );
 }

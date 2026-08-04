@@ -138,6 +138,28 @@
        * kept as its own token rather than unified, so the slats stay the prototype's colors. */
       --gc-reel-slat: linear-gradient(#ff6caf, #755cff, #57e7ff);
 
+      /* ── THE REEL FIGURE (G4 — the prototype's `.reel-figure`, theme.css:136-138) ──────────────────
+       * The character riding the slats. EVERY dial lives here rather than in gacha.css, because this is
+       * the one piece of the theme whose right value is a matter of taste on a real phone: the owner's
+       * eyeball round tunes size / lift / tempo without a code edit, and G6's variants inherit whatever
+       * they settle on. (The ART itself is not a token — it comes from the roster resolver, so a
+       * `reel_figure:` pin swaps the character, §5.2.)
+       *
+       * The one RE-SCOPE from the prototype: it draws the figure at 84% of the shell, which on a phone
+       * is a face filling most of the screen for two thirds of a second. The default here is smaller —
+       * present, unmistakable, and not in the way. Height rather than width, so the figure keeps its
+       * proportion on any viewport; `width: auto` follows.
+       *
+       * NOTE on the height: the committed cutout carries its glow BAKED IN (§10.1 rider — a static
+       * `drop-shadow()` on a large moving image re-rasterizes per frame on Gecko), which costs ~11% of
+       * transparent margin at the top and sides. So the CHARACTER reads at about 0.89 of whatever
+       * `--gc-figure-h` says; the token is the element's height, which is the thing CSS can honor. */
+      --gc-figure-h: 62%; /* element height, % of the shell (the prototype's 84%, re-scoped) */
+      --gc-figure-x: 50%; /* horizontal anchor — the figure is centred on this point */
+      --gc-figure-lift: 0px; /* extra rise ABOVE the safe-area floor (0 = standing on it) */
+      --gc-figure-dur: 620ms; /* the whole in-hold-out arc (the prototype's own) */
+      --gc-figure-peak: 0.92; /* the opacity it holds through the middle (the prototype's own) */
+
       /* Secondary accents from the §1 inventory. */
       --gc-caption: #9ff0ff; /* cyan captions under display copy */
       --gc-heading: #ff8ec2; /* pink section eyebrows */

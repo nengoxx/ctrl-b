@@ -497,10 +497,63 @@
         transform: translateY(110%);
       }
     }
+    /* ── THE FIGURE (G4 — the prototype's `.reel-figure`, theme.css:136-138) ──────────────────────
+     * The character riding the sweep: up from the floor as the slats close, held through the middle of
+     * the arc, gone as they leave. It is the LAST child of the overlay, as the prototype has it, so
+     * paint order alone puts it over the slats — no z-index inside a layer that already owns a rung.
+     *
+     * NO `filter` (the §10.1 rider): the prototype's static double `drop-shadow()` would re-rasterize a
+     * large moving image every frame on Gecko, so the dark drop and the pink glow are BAKED INTO the
+     * committed asset instead (see art.ts's regeneration recipe). What is left animates transform +
+     * opacity only, which is the §14.11 bar.
+     *
+     * The floor is the SAFE AREA, not the viewport edge: `.gc-reel` is already sized to the shell's
+     * keyboard-aware height, and a home indicator would otherwise cut across the figure's hem.
+     *
+     * Every dial is a token (`--gc-figure-*`, tokens.css) — this is the piece of the theme whose right
+     * value is a matter of taste on a real phone, and the owner's round tunes it without a code edit. */
+    .gc-reel-figure {
+      position: absolute;
+      left: var(--gc-figure-x);
+      bottom: calc(env(safe-area-inset-bottom, 0px) + var(--gc-figure-lift));
+      /* The independent `translate` property does the centring, leaving `transform` free for the
+       * animation (the prototype's own split — a transform-based centre would be overwritten). */
+      translate: -50% 0;
+      height: var(--gc-figure-h);
+      width: auto;
+      /* Resting state is invisible: the node exists only during a sweep, but the animation's `both` fill
+       * is deliberately NOT used — a figure that lingered at its last keyframe would outlive the slats. */
+      opacity: 0;
+      will-change: transform, opacity;
+      contain: layout;
+      animation: gacha-reel-figure var(--gc-figure-dur) var(--gc-ease-out);
+    }
+    @keyframes gacha-reel-figure {
+      0% {
+        opacity: 0;
+        transform: translateY(14%) scale(1.06);
+      }
+      38%,
+      62% {
+        opacity: var(--gc-figure-peak);
+        transform: translateY(0) scale(1);
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(8%) scale(0.99);
+      }
+    }
     /* The CSS belt on the app's motion axis. GachaReel already returns null under reduced motion — this is
      * the §14.11 rule that every animation is ALSO gated in CSS, never the OS media query, and never the
-     * prototype's global `.001ms` sledgehammer (base.css:78-80 is explicitly NOT ported). */
+     * prototype's global `.001ms` sledgehammer (base.css:78-80 is explicitly NOT ported). One rule covers
+     * the figure too: it lives INSIDE the overlay, so no reel means no figure. */
     body[data-motion="reduced"] .gc-reel {
+      display: none;
+    }
+    /* …and the PERF-LITE gate drops the figure alone (the banner-glow / oracle-scan precedent): the slats
+     * are five flat gradients, but the figure is a full-height image compositing over the whole shell on
+     * every navigation — the expensive half of the sweep, and the half the transition survives without. */
+    body[data-perf="lite"] .gc-reel-figure {
       display: none;
     }
 

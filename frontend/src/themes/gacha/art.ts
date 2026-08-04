@@ -25,12 +25,38 @@
 //     ["atlas.jpg","atlas.webp",640,854,72,"cover",false],
 //     ["rook.png","rook.webp",640,854,72,"cover",false],
 //     ["lyra.png","lyra.webp",640,854,72,"cover",false],
-//     ["lyra-cutout.png","lyra-cutout.webp",720,1000,72,"inside",true],
 //     ["bg-fleet.jpg","banner.webp",1240,700,70,"cover",false],
 //     ["bg-eye.png","oracle.webp",1240,700,70,"cover",false]];
 //   for (const [s,o,w,h,q,fit,alpha] of jobs)
 //     await sharp(`${S}/${s}`).resize(w,h,{fit,withoutEnlargement:true})
 //       .webp(alpha?{quality:q,alphaQuality:90}:{quality:q}).toFile(`${O}/${o}`);'
+//
+// ── AND THE CUTOUT, which is a different job (G4) ─────────────────────────────────────────────────────────
+// `lyra-cutout.webp` is not a resize: it is the reel FIGURE, and its glow is baked in at export time
+// because the §10.1 rider bans the prototype's runtime `filter: drop-shadow(0 10px 30px #0009)
+// drop-shadow(0 0 22px #ff6cae66)` — two static shadows on a large moving image re-rasterize every frame
+// on Gecko. The bake reproduces exactly those two shadows, pre-divided by the figure's DISPLAY scale
+// (~0.65 of the asset at the `--gc-figure-h` default), so what lands on screen matches the prototype's
+// CSS: a CSS blur radius R is a Gaussian of sigma R/2, hence 30px→15→23 and 22px→11→17 in asset space,
+// and the dark shadow's 10px y-offset becomes 15. `PAD` is the canvas the blur needs (3 sigma + offset),
+// added at the top and sides only — the figure is bottom-anchored, so a bottom margin would just lift it
+// off its floor. 711x828, ~97 KB.
+//
+//   node --input-type=module -e '
+//   import sharp from "sharp";
+//   const S = "../design/prototypes/gacha/uploads/prot/assets/gacha/lyra-cutout.png";
+//   const O = "src/themes/gacha/art/lyra-cutout.webp";
+//   const PAD = 88, SHADOWS = [{s:23,o:.6,dy:15,c:{r:0,g:0,b:0}},{s:17,o:.4,dy:0,c:{r:255,g:108,b:174}}];
+//   const fig = await sharp(S).ensureAlpha()
+//     .extend({top:PAD,left:PAD,right:PAD,bottom:0,background:{r:0,g:0,b:0,alpha:0}}).png().toBuffer();
+//   const {width:W,height:H} = await sharp(fig).metadata();
+//   const glow = async ({s,o,c}) => sharp({create:{width:W,height:H,channels:3,background:c}})
+//     .joinChannel(await sharp(fig).extractChannel("alpha").blur(s).linear(o,0).toColourspace("b-w")
+//       .toBuffer()).png().toBuffer();
+//   await sharp({create:{width:W,height:H,channels:4,background:{r:0,g:0,b:0,alpha:0}}})
+//     .composite([...await Promise.all(SHADOWS.map(async g => ({input: await glow(g), top: g.dy, left: 0}))),
+//                 {input: fig, top: 0, left: 0}])
+//     .webp({quality:72,alphaQuality:90}).toFile(O);'
 //
 // The DECODE, not the transfer, is what this defends against: the prototype's atlas.jpg is 3000×4257 and
 // decodes to ~51 MB of bitmap on the phone (§10.4). The owner's own runtime art gets no re-encode — the G5
@@ -74,7 +100,8 @@ export const SCENE_KEYS = ["b2", "b3"] as const;
 
 export const ART = {
   characters: CHARACTER_KEYS.map(byName),
-  /** The transparent cutout the reel figure uses (G4) — a different asset KIND, not a crop. */
+  /** The transparent cutout the reel figure uses (G4) — a different asset KIND, not a crop, and the one
+   *  bundled image with its own lighting baked in (see the recipe above). */
   cutout: byName("lyra-cutout"),
   /** Landscape scene art: the pickup banner / fleet wallpaper, and the agent oracle's backdrop. */
   banner: byName("banner"),
