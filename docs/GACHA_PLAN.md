@@ -611,7 +611,7 @@ for the "04 / 04" counter.
 | ✅ G1 | **BUILT + OWNER-EYEBALLED 2026-08-02 (as-built §7.2)** — bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + the §6.4 slide set **incl. the eyeball-ruled SCENE slides**) + capsule track (cards/states/plates/shine + stars) + wallpaper + the geometry rule + the owner's own art in the bundled set | owner eyeball ✅ (3+ live rounds) |
 | ✅ G2 | **BUILT + OWNER-EYEBALLED 2026-08-02 night (as-built §7.3)** — dossier sheet (light inversion + the ruled grid + live service rows + the H3 ACTION BAR) + **the M3 capsule→dossier morph, owner-PULLED from G4 and made to visibly work** + swap morph + visible × + tap-outside close + **the full-screen ART SHOWCASE (owner ask)** — M6 extraction to `lib/hostDetail.ts` landed first; contrast gate gained the dossier's THEME_PAIRS rows | owner eyeball ✅ ("looks good", pushed) + contrast probe ✅ (48-combo matrix) |
 | ✅ G3 | **CLOSED 2026-08-04 (as-built §7.4; commits `6c5298d..5ce33d7` + the side-session re-rule `ba0b8b1`/`d65e7b7`) — device round PASSED wholesale, Gecko scanline branch NOT needed.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
-| G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + M2/M3 VT enhancement per the spike verdict + Gecko tuning (the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape) |
+| G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + **M2 BUILDS (spike verdict = outcome (a), settled 2026-08-04 — see §10.1): ① the `skipActiveViewTransition` owner-token fix ② the `[data-transition="tab"]` M2 CSS (does not exist yet) ③ the seam promotion (unflagged decorator, fenced block dies)** + Gecko tuning (M3 shipped at G2; the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape; incl. the one-line M2 liveness eyeball) |
 | G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
 | G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) **+ §4.4 FAMILY 3 — the four owner-shortlisted DOSSIER palettes (neon-purple · sunset-orange · rose-pink · aurora-violet) and the measured example ACTION BUTTON, both from the 2026-08-04 session; the dossier goes DARK as a trial.** Ship each as one `body[data-accent]` block + a `palettes.accents` row + a `contrast-matrix.ts` row; the button rules REPLACE `.gc-act*` rather than layering over them, and `--gc-act-shadow` migrates per §5 | owner sign-off |
 
@@ -654,10 +654,13 @@ fidelity waves — the record for successors:
   it did NOT fire on コマンド入力… because the string was frozen at registration — correct) ·
   the layer-trap fence now lists **7** members · `--appbar-h` is MEASURED (ResizeObserver;
   ~57px bare / ~62–64 with TTS or 2-tab chrome — reference numbers only).
-- **OPEN, carried to G4: the VT spike is UNTESTED** — the owner tests
-  `localStorage.setItem("ctrlb.spike.navVT","1")` on Fennec later; the owner's observed
-  visible-swap-under-the-reel (§10.1 note) is the thing M2 masks, with the body-only
-  deferred-display fallback pre-designed if VT is dead.
+- ~~**OPEN, carried to G4: the VT spike is UNTESTED**~~ **→ ✅ SETTLED 2026-08-04 without the
+  owner's phone: outcome (a), `new(root)` is LIVE in Gecko — the §10.1 verdict block is the
+  record** (external-capture probe, the transfer argument, the residuals, and the
+  `skipActiveViewTransition` ownership bug it uncovered = G4's first obligation). The owner's
+  observed visible-swap-under-the-reel is confirmed as the thing M2's cross-fade masks
+  (measured: 1-frame step flag-off vs an 8-frame ramp flag-on); the body-only fallback is no
+  longer needed.
 
 **§7.2 — G1 AS-BUILT (✅ owner-eyeballed 2026-08-02 evening, same session as the G0 sign-off).**
 Fifteen commits `2898fad..4879f9e`; end state **1221 FE unit (107 files) / 1254 BE / 33 gacha
@@ -1028,6 +1031,39 @@ such; the G0/G4 device rounds remain binding for everything Gecko-empirical.*
   group pinned live (`::view-transition-group(reel){animation:none}` +
   `old(reel){display:none}` + `new(reel){animation:none}` — paints above root) · (c) drop the
   root VT for tabs (M2 dies; the reel carries everything).
+- **✅ SPIKE VERDICT (2026-08-04): OUTCOME (a) — `::view-transition-new(root)` is LIVE in
+  Gecko; M2 ships prototype-identical.** Settled WITHOUT the owner's phone, by an Opus
+  external-capture probe on this box (the frames-not-screenshots bar: Xvfb + real windowed
+  Firefox + ffmpeg x11grab; Playwright drove but never captured): a canary animation inside
+  the root capture advanced monotonically at nominal rate through a stretched 2.5 s root VT
+  on BOTH Gecko 151 (in-app, gacha, real reel — the slats swept and completed INSIDE the VT
+  window) and system Firefox 152.0.6 (engine-level page). Transfer to Fennec: high
+  confidence — BCD pins every VT entry at 144 for `firefox` AND `firefox_android` (one
+  implementation, one train, bug 1985809; no Android-specific VT bugs found), and liveness
+  held even under Xvfb SOFTWARE compositing, the less favourable path. Residuals, honestly:
+  144 itself untested (first-release quirk not excludable from here — the owner's Fennec
+  must be ≥144, and their desktop runs 152 so it likely is) · device stutter-vs-freeze is a
+  fluidity question G4's existing Fennec+Chrome round covers anyway, as one line item:
+  *switch tabs under gacha with M2 wired; confirm the slats keep sweeping through the
+  cross-fade*. No standalone phone spike is owed. Evidence strips + drivers were kept in the
+  session scratchpad (`vt-spike-probe/`), not committed.
+  **The probe also found WHY the owner's own desktop A/B looked identical ("same as
+  before") — a REAL ownership bug, G4's first obligation:** `GachaFleet.dropShowcase`
+  (`GachaFleet.tsx:150-156`) calls `skipActiveViewTransition()` UNCONDITIONALLY, and the
+  tab-leave effect (`:210-219`) calls `dropShowcase` — so a fleet→X navigation kills the nav
+  VT started microseconds earlier in the same commit, 100% reproducibly (captured with
+  stacks). `activeTransition` (`viewTransition.ts:57`) is a module-global with NO owner
+  token — unlike `stampOwner` (`:47`), which token-guards the attribute against exactly this
+  cross-talk class. Latent today (flag-off), fatal once M2 is unflagged. **G4 fix = give the
+  skip the same token discipline `stampOwner` already has** (a caller may only end the
+  transition it started; the minimal `showArt !== null` guard is the fallback, the token is
+  the pattern-matching fix). Two more G4 obligations the probe surfaced: **the M2 CSS does
+  not exist yet** (`[data-transition="tab"]` matches zero rules — the flag currently yields
+  only the bare ~250 ms UA cross-fade, measured 274 ms), and the seam promotion
+  (`runNavTransition` → unflagged decorator; the fenced block dies) per the block's own
+  charter. *Stale-fact fix, same probe: VT `types` landed in Gecko 147 (bug 2001878) — the
+  next bullet's "Firefox 144 lacks VT types" was true at lock time; the `html
+  [data-transition]` attribute form REMAINS the ruling (144 devices exist; don't relitigate).*
 - **Interruption semantics (spec-verified):** a second `startViewTransition` SKIPS the active
   one with AbortError — not queued; the skipped callback has already run so state stays
   correct. Swallow `.ready`/`.finished` rejections (the house helper already does); a hidden
@@ -1257,7 +1293,7 @@ such; the G0/G4 device rounds remain binding for everything Gecko-empirical.*
 | # | Risk | Status |
 |---|---|---|
 | 1 | Per-card backdrop-filter × N under the wallpaper-ON default (the #1 Fennec jank class) | **Resolved by design — deleted, card alpha raised** (§10.3) |
-| 2 | VT `::view-transition-new(root)` liveness on Fennec 144 (decides the reel×M2 composition) | **The one empirical unknown** — G0 spike, options ranked (§10.1) |
+| 2 | VT `::view-transition-new(root)` liveness on Fennec 144 (decides the reel×M2 composition) | **✅ SETTLED 2026-08-04 — LIVE (outcome (a)); external-capture probe on desktop Gecko 151/152 + BCD single-implementation transfer argument (§10.1 verdict block)** |
 | 3 | M6 scanline: moving + blended on Gecko (the cosmos Gate-B class) | Gecko branch pre-designed; device round decides (§10.3) |
 | 4 | JP font weight (757 KB/72 req naive; 31 MB dist) | **Resolved by design — frozen subset ~140 KB** (§10.4) |
 | 5 | Stored XSS via media Content-Type on the art mount | **Resolved by design — allowlist subclass + nosniff** (§10.4) |

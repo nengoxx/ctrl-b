@@ -16,9 +16,19 @@
 > five checks; the arcade panel approved as re-ruled by the side session; the M6 Gecko
 > `data-engine` scanline branch is NOT built and NOT needed; `:active`-wedge closed, no
 > complaint). **All five side-session commits PUSHED** (`ba0b8b1..c8ddcdb`, owner-authorized;
-> origin == main). Records: GACHA_PLAN §7.4 header + §7 G3 row + TODO. **NEXT = G4** (reel
-> figure + the M2 verdict — spike still untested; the fallback if VT is dead on Fennec is the
-> §10.1 body-only short-hold). Dev units RUNNING for the owner's checks.
+> origin == main). Records: GACHA_PLAN §7.4 header + §7 G3 row + TODO. **THE VT SPIKE IS
+> SETTLED (same day, NO phone test needed): outcome (a) — `::view-transition-new(root)` is
+> LIVE in Gecko, so M2 ships prototype-identical.** An Opus external-capture probe (Xvfb +
+> x11grab, the frames-not-screenshots bar) proved liveness on Gecko 151 in-app + FF 152
+> engine-level; BCD pins ONE VT implementation at 144 for desktop AND Android. It also found
+> a REAL bug — the reason the owner's desktop A/B looked dead: `GachaFleet.dropShowcase`
+> skips ANY active transition (`activeTransition` has no owner token), so a fleet→X nav
+> kills the nav VT 100% of the time. **G4 = reel figure + M2's three obligations (① the
+> owner-token skip fix ② the `[data-transition="tab"]` CSS, which doesn't exist yet ③ the
+> seam promotion) — full record = the §10.1 verdict block + the §7 G4 row.** Dependency
+> housekeeping same day: 5 undici Dependabot alerts + 2 audit highs (brace-expansion,
+> fast-uri) fixed lockfile-only (`0d87ac5`+`810de56`, frontend audit = 0 vulns), held
+> UNPUSHED pending the owner's OK. Dev units RUNNING for the owner's checks.
 >
 > ## ▶ PREVIOUS BLOCK (2026-08-03 — **✅ G2 CLOSED · ◐ G3 code+reviews COMPLETE, owner DEVICE ROUND = the open gate · NEXT = that round, then G4**)
 > **This block is written for a COLD session (the prior one closed at its usage limit after
