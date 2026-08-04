@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import stat
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -35,6 +34,7 @@ from app.core.media import (
     MediaIndex,
     build_index,
     disabled_index,
+    is_served_file,
 )
 
 router = APIRouter(tags=["media"])
@@ -87,18 +87,16 @@ class MediaFiles(StaticFiles):
 
         `follow_symlink=False` only rejects a link that leaves the root, so
         `characters/x.png -> ../private/secret.png` passed it AND the shape gate — the target is inside
-        the namespace, just somewhere nothing lists. `lstat` asks what the component IS rather than what
-        it points at, and rejecting non-regular files disposes of directories and fifos in the same
-        line. The index applies the same rule, so listed and served cannot disagree.
+        the namespace, just somewhere nothing lists.
 
         Placed HERE rather than in `get_response` on purpose: Starlette already runs this method in a
         worker thread, so the extra `lstat` costs no event-loop time. Returning the miss tuple routes
         into the ordinary 404 — a probe learns "not there" and nothing else.
+
+        The predicate is `core.media.is_served_file`, the same one the INDEX filters its listing with —
+        one rule, so what is advertised and what is served cannot drift (Codex R2).
         """
-        try:
-            if not stat.S_ISREG(os.lstat(os.path.join(str(self.directory), path)).st_mode):
-                return "", None
-        except OSError:
+        if not is_served_file(Path(str(self.directory), path)):
             return "", None
         return super().lookup_path(path)
 

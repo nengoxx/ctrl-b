@@ -213,6 +213,27 @@ def ensure_media_dirs(home: Path) -> dict[str, NamespaceHealth]:
     return health
 
 
+def is_served_file(path: Path) -> bool:
+    """The ONE rule for "will this surface serve that?" — read by the mount's `lookup_path` AND by the
+    index's listing, so what is advertised and what is served cannot drift apart (Codex R2; the two had
+    grown separate copies of it).
+
+    `lstat`, not `stat`: the question is what the component IS, not what it points at. A symlink whose
+    target is elsewhere INSIDE the namespace passes Starlette's containment and the mount's shape gate
+    (`characters/x.png -> ../private/secret.png`), so this is the check that stops it — and rejecting
+    non-regular files disposes of directories and fifos in the same line. Owner drops are real files;
+    a link is not a supported shape at any level of this tree.
+
+    Any `OSError` (a dangling link, a revoked permission, a vanished mount) is a plain False: the caller
+    is either a listing walking a directory the owner writes to behind our back, or a 404 path where
+    "not there" is the only thing a probe should be able to learn.
+    """
+    try:
+        return stat.S_ISREG(path.lstat().st_mode)
+    except OSError:
+        return False
+
+
 def file_url(ns: str, role: str, filename: str) -> str:
     """The mount URL for one file. Percent-encoded per segment — owner filenames really do carry
     spaces and `#` (the owner's own drops live in a folder called `banner images`)."""
@@ -275,6 +296,14 @@ _JPEG_CHUNK = 1 << 16
 #: WebP flavor's first chunk header, so one read answers both.
 _HEAD_BYTES = 40
 _PNG_IHDR_END = 33
+#: The smallest SOF segment that actually contains what we read from it: the 2-byte length itself plus
+#: precision(1) + height(2) + width(2). A real SOFn is >= 11 (it also carries per-component bytes); this
+#: is deliberately the PARSER's minimum, not the format's, because that is the claim being checked.
+_JPEG_SOF_MIN_LEN = 7
+#: Per-flavor minimum WebP chunk payload — again the parser's own reach, not the format's: the bytes
+#: each branch below indexes into. A chunk declaring less than this does not contain the canvas size,
+#: so reading it anyway would report a size from bytes outside the chunk (Codex R1).
+_WEBP_MIN_CHUNK = {b"VP8 ": 10, b"VP8L": 5, b"VP8X": 10}
 
 
 def probe_image(path: Path) -> Probe:
@@ -366,10 +395,14 @@ def _probe_jpeg(f: IO[bytes], head: bytes) -> Probe:
         if length < 2:
             return Probe()
         if m in _JPEG_SOF:
-            # segment body: precision(1) · height(2) · width(2), right after the length field. The
-            # DECLARED length must fit in what we can read too (Codex W3): a file that stops inside the
-            # frame header it announced is truncated, whatever its first seven bytes happen to say.
-            if not need(i + 7) or not need(i + length):
+            # segment body: precision(1) · height(2) · width(2), right after the length field. Two
+            # separate things must hold about the DECLARED length, and the first cut only checked one:
+            #   · it must CONTAIN the fields being read (Codex R1) — a SOF announcing `length: 2` is
+            #     just the length field, so the "dimensions" after it belong to whatever follows, and
+            #     parsing them anyway reads past the segment and reports a size the file never gave;
+            #   · the segment must fit in what we can read (Codex W3) — a file that stops inside the
+            #     frame header it announced is truncated, whatever its first seven bytes say.
+            if length < _JPEG_SOF_MIN_LEN or not need(i + length):
                 return Probe()
             h = int.from_bytes(buf[i + 3 : i + 5], "big")
             w = int.from_bytes(buf[i + 5 : i + 7], "big")
@@ -400,6 +433,8 @@ def _probe_webp(head: bytes, size: int) -> Probe:
     if riff_size + 8 > size or chunk_size + 12 > riff_size:
         return Probe()
     fourcc, payload = head[12:16], head[20:]
+    if chunk_size < _WEBP_MIN_CHUNK.get(fourcc, 0):
+        return Probe()
     if fourcc == b"VP8 " and len(payload) >= 10 and payload[3:6] == b"\x9d\x01\x2a":
         # lossy: the 3-byte frame tag, the sync code, then 14-bit width and height
         w, h = struct.unpack("<HH", payload[6:10])
@@ -470,17 +505,7 @@ def list_role(home: Path, ns: str, role: str, order: list[str] | None = None) ->
         entries = [p for p in directory.iterdir() if p.suffix.lower() in ALLOWED_TYPES]
     except OSError:  # the owner deleted the folder under us — an empty role, not a 500
         return []
-    files: dict[str, Path] = {}
-    for p in entries:
-        # `lstat`, so a SYMLINK is judged as a symlink rather than as whatever it points at (Codex W1).
-        # The mount applies exactly this rule, which is what keeps "listed" and "served" the same set:
-        # owner drops are real files, and a link is not a supported shape at any level of this tree.
-        try:
-            if not stat.S_ISREG(p.lstat().st_mode):
-                continue
-        except OSError:
-            continue
-        files[p.name] = p
+    files: dict[str, Path] = {p.name: p for p in entries if is_served_file(p)}
     pinned = [files.pop(name) for name in (order or []) if name in files]
     rest = sorted(files.values(), key=lambda p: sort_key(p.name))
     return [describe_file(p, ns, role) for p in (*pinned, *rest)]

@@ -442,6 +442,39 @@ def test_a_malformed_jpeg_gives_up_instead_of_walking_the_whole_file(tmp_path) -
             "webp chunk larger than its riff",
             b"RIFF" + struct.pack("<I", 22) + b"WEBP" + b"VP8X" + struct.pack("<I", 9999) + b"\x00" * 10,
         ),
+        # ── R1: DEGENERATE lengths. Not truncation — the file is long enough — but the header declares
+        # a segment/chunk too small to hold the fields the parser would then read past the end of.
+        (
+            "jpeg sof declaring a 2-byte segment",
+            b"\xff\xd8"
+            + b"\xff\xc0"
+            + struct.pack(">H", 2)  # the length field and nothing else
+            + b"\x08"
+            + struct.pack(">HH", 700, 1240)  # …so these bytes are NOT part of the frame header
+            + b"\x03"
+            + b"\x00" * 9,
+        ),
+        (
+            "webp vp8x declaring an empty chunk",
+            b"RIFF"
+            + struct.pack("<I", 12)
+            + b"WEBP"
+            + b"VP8X"
+            + struct.pack("<I", 0)  # …so the canvas bytes below are not the chunk's payload
+            + b"\x00" * 4
+            + (719).to_bytes(3, "little")
+            + (999).to_bytes(3, "little"),
+        ),
+        (
+            "webp vp8l declaring an empty chunk",
+            b"RIFF"
+            + struct.pack("<I", 12)
+            + b"WEBP"
+            + b"VP8L"
+            + struct.pack("<I", 0)
+            + b"\x2f"
+            + b"\x00" * 4,
+        ),
     ],
 )
 def test_a_signature_is_not_a_format(tmp_path, label: str, data: bytes) -> None:
