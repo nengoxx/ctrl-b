@@ -59,8 +59,19 @@ const FIGURE = reelFigureArt(defaultRoster());
 
 function GachaReelSweep() {
   const tab = useUISlice((s) => s.tab);
+  // `perf: lite` DROPS the figure — the same call gacha.css makes (`body[data-perf="lite"] .gc-reel-figure`),
+  // but made HERE as well, because CSS can only hide the node: the component would still warm the image and
+  // mount an element the owner asked not to pay for. The gate is read from the store rather than the body
+  // attribute so it re-renders when the Appearance switch flips (Codex G4 F2b).
+  const perf = useUISlice((s) => s.perf);
   const [bootTab] = useState(tab);
   const [everSwitched, setEverSwitched] = useState(false);
+  // The DEGRADATION LATCH: a cutout that cannot be fetched or decoded (a corrupt drop, a pruned asset) would
+  // otherwise mount a broken <img> and animate it — the sweep would carry a torn icon across the screen. Once
+  // the image is known bad the reel runs on its slats alone, which is the same complete effect a roster with
+  // no cutout already gives (Codex G4 F2a). One-way and per-mount: the theme's art cannot change under it.
+  const [figureFailed, setFigureFailed] = useState(false);
+  const figure = FIGURE !== null && perf !== "lite" && !figureFailed ? FIGURE : null;
 
   useEffect(() => {
     if (tab !== bootTab) setEverSwitched(true);
@@ -70,9 +81,19 @@ function GachaReelSweep() {
   // very FIRST tab change would fetch and decode a fresh image inside the animation it is supposed to be
   // riding — the one sweep that shows an empty reel. One request, no DOM, cache-served from then on
   // (`key={tab}` remounts the <img> every sweep, which is exactly what a warm cache is for).
+  //
+  // The warm-up doubles as the PROBE: it is the one fetch that happens outside a sweep, so a failure here
+  // trips the latch before the first reel ever runs. The `Image` is retained by this effect's cleanup so it
+  // cannot be collected between `src` and the event that would report the failure.
   useEffect(() => {
-    if (FIGURE) new Image().src = FIGURE.url;
-  }, []);
+    if (figure === null) return;
+    const warm = new Image();
+    warm.onerror = () => setFigureFailed(true);
+    warm.src = figure.url;
+    return () => {
+      warm.onerror = null;
+    };
+  }, [figure]);
 
   const sweeping = everSwitched || tab !== bootTab;
 
@@ -105,8 +126,18 @@ function GachaReelSweep() {
       {/* AFTER the slats, as the prototype has it (index.html:42) — the figure rides ON the sweep, so
           paint order alone puts it above them; no z-index inside the overlay. `alt=""` is belt-and-braces
           under an `aria-hidden` parent, and the glow is BAKED INTO the asset (§10.1 rider: a static
-          `drop-shadow()` on a large moving image re-rasterizes per frame on Gecko). */}
-      {FIGURE && <img className="gc-reel-figure" src={FIGURE.url} alt="" decoding="async" />}
+          `drop-shadow()` on a large moving image re-rasterizes per frame on Gecko).
+          `onError` is the LAST line of the degradation latch, not interactivity: the warm-up normally catches
+          a bad asset first, but a cache that goes bad afterwards is reported only here. */}
+      {figure && (
+        <img
+          className="gc-reel-figure"
+          src={figure.url}
+          alt=""
+          decoding="async"
+          onError={() => setFigureFailed(true)}
+        />
+      )}
     </div>
   );
 }

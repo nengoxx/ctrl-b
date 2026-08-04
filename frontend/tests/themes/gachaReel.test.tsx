@@ -1,4 +1,4 @@
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -21,11 +21,34 @@ import { defaultRoster, reelFigureArt } from "../../src/themes/gacha/roster";
 
 const reel = (c: HTMLElement) => c.querySelector(".gc-reel");
 
+/** Record every `new Image()` the component makes, and let a test report a failure on one. jsdom loads no
+ *  resources, so a real warm-up Image fires neither `load` nor `error` — the stub is the only way to drive
+ *  (and to COUNT) the pre-fetch, which is the half a CSS-only `perf: lite` gate can't reach. */
+interface WarmImage {
+  src: string;
+  onerror: ((this: unknown) => void) | null;
+}
+let warmed: WarmImage[] = [];
+const realImage = globalThis.Image;
+function stubImage(): void {
+  globalThis.Image = class {
+    src = "";
+    onerror: ((this: unknown) => void) | null = null;
+    constructor() {
+      warmed.push(this);
+    }
+  } as unknown as typeof Image;
+}
+
 beforeEach(() => {
-  setUI({ theme: "gacha", tab: "fleet", motion: "full" });
+  setUI({ theme: "gacha", tab: "fleet", motion: "full", perf: "full" });
+  warmed = [];
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  globalThis.Image = realImage;
+});
 
 describe("GachaReel", () => {
   it("renders NOTHING on first mount (no boot reel)", () => {
@@ -125,7 +148,7 @@ describe("the reel figure", () => {
     expect(figure(container)!.getAttribute("src")).toBe(reelFigureArt(defaultRoster())!.url);
   });
 
-  it("is decorative to the letter — empty alt under an aria-hidden parent, no handlers", () => {
+  it("is decorative to the letter — empty alt under an aria-hidden parent, nothing interactive", () => {
     const { container } = render(<GachaReel />);
     act(() => setUI({ tab: "agent" }));
     const img = figure(container)!;
@@ -167,6 +190,54 @@ describe("the reel figure", () => {
     expect(css).toMatch(/body\[data-perf="lite"\] \.gc-reel-figure \{\s*display: none;/);
     // …and reduced motion still takes the WHOLE overlay, figure included, in one rule.
     expect(css).toMatch(/body\[data-motion="reduced"\] \.gc-reel \{\s*display: none;/);
+  });
+
+  // ── DEGRADATION (Codex G4 F2). The CSS rule above hides the node; these pin the two things CSS cannot
+  //    do — not FETCHING the image the owner opted out of, and dropping a figure whose asset is broken
+  //    rather than sweeping a torn <img> across the whole shell. ──
+
+  it("under `perf: lite` it is never fetched and never mounted — not merely hidden", () => {
+    setUI({ perf: "lite" });
+    stubImage();
+    const { container } = render(<GachaReel />);
+    act(() => setUI({ tab: "agent" }));
+    expect(warmed).toHaveLength(0); // the warm-up itself is skipped — no request at all
+    expect(figure(container)).toBeNull(); // …and no element, so nothing to compose or animate
+    expect(reel(container)!.querySelectorAll("i")).toHaveLength(5); // the sweep is complete without it
+  });
+
+  it("…and is fetched exactly ONCE per mount when perf is full (the warm-up, unchanged)", () => {
+    stubImage();
+    const { container } = render(<GachaReel />);
+    act(() => setUI({ tab: "agent" }));
+    act(() => setUI({ tab: "conf" }));
+    expect(warmed).toHaveLength(1);
+    expect(warmed[0].src).toBe(reelFigureArt(defaultRoster())!.url);
+    expect(figure(container)).not.toBeNull();
+  });
+
+  it("a cutout that fails to LOAD drops the figure — the reel runs on its slats", () => {
+    stubImage();
+    const { container } = render(<GachaReel />);
+    expect(warmed).toHaveLength(1);
+    act(() => warmed[0].onerror!()); // corrupt / pruned / unreachable asset
+    act(() => setUI({ tab: "agent" }));
+    expect(figure(container)).toBeNull(); // never mounted — no broken <img> riding the sweep
+    expect(reel(container)!.querySelectorAll("i")).toHaveLength(5);
+  });
+
+  it("…and a failure reported by the RENDERED image drops it too (the final fallback)", () => {
+    // The warm-up normally catches a bad asset first; this is the path where it doesn't — a cache entry
+    // that goes bad after the warm request succeeded.
+    const { container } = render(<GachaReel />);
+    act(() => setUI({ tab: "agent" }));
+    fireEvent.error(figure(container)!);
+    expect(figure(container)).toBeNull();
+    expect(reel(container)).not.toBeNull();
+
+    // …and it stays gone on the next sweep, rather than re-mounting a known-broken image every navigation.
+    act(() => setUI({ tab: "conf" }));
+    expect(figure(container)).toBeNull();
   });
 });
 

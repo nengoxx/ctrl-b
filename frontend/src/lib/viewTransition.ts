@@ -103,6 +103,15 @@ export function runViewTransition(update: () => void, type?: string): void {
     token = {};
     stampOwner = token;
     root.dataset.transition = type;
+  } else {
+    // An UNTYPED transition (the theme swap) supersedes whatever was running — the browser skips the older
+    // one the moment we call `start()`. It owns no stamp, but it must still RETIRE the old one's: the skipped
+    // transition's `finished` settles a frame or more later, so leaving the attribute up would run this
+    // cross-fade under the previous kind's `::view-transition-*` rules (Codex G4 F1 — a theme swap briefly
+    // animating under M2's `[data-transition="tab"]` keyframes). Clearing the owner too makes the older
+    // owner's own cleanup a no-op, the same identity discipline the token guard uses in the other direction.
+    stampOwner = null;
+    delete root.dataset.transition;
   }
   const t = start(apply);
   activeTransition = t;

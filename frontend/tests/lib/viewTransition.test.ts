@@ -180,15 +180,33 @@ describe("runViewTransition — hardening", () => {
     expect(document.documentElement.dataset.transition).toBeUndefined();
   });
 
-  it("an UNTYPED transition never touches a running typed transition's stamp", async () => {
+  it("an UNTYPED transition RETIRES the running typed one's stamp, synchronously (Codex G4 F1)", async () => {
+    // The bug: an untyped transition (the theme swap) stamps nothing, so the OLD `tab` attribute used to
+    // survive until the superseded transition's `finished` settled — a frame or more later. For that window
+    // the theme swap's own root cross-fade ran under M2's `[data-transition="tab"]` keyframes. The retire
+    // must land BEFORE `start()`, i.e. before this call returns — a microtask would already be too late.
     const vt = installFakeVT();
     runViewTransition(() => {}, "tab");
-    runViewTransition(() => {}); // no type → stamps nothing, owns nothing
     expect(document.documentElement.dataset.transition).toBe("tab");
+    runViewTransition(() => {}); // no type → owns nothing, but clears what it supersedes
+    expect(document.documentElement.dataset.transition).toBeUndefined();
+
+    // …and the superseded transition settling later cannot resurrect it (its cleanup no-ops on the token).
+    vt.transitions[0].rejectReady(new Error("AbortError"));
+    vt.transitions[0].rejectFinished(new Error("AbortError"));
+    await flushMicrotasks();
+    expect(document.documentElement.dataset.transition).toBeUndefined();
     vt.transitions[1].settle();
     await flushMicrotasks();
+    expect(document.documentElement.dataset.transition).toBeUndefined();
+  });
+
+  it("a TYPED transition started after an untyped one still stamps normally (the retire is not sticky)", async () => {
+    const vt = installFakeVT();
+    runViewTransition(() => {}); // untyped: nothing stamped, no owner
+    runViewTransition(() => {}, "tab");
     expect(document.documentElement.dataset.transition).toBe("tab");
-    vt.transitions[0].settle();
+    vt.transitions[1].settle();
     await flushMicrotasks();
     expect(document.documentElement.dataset.transition).toBeUndefined();
   });

@@ -182,15 +182,28 @@ test("gacha · 4-tab: the pick is honored — utils returns to the bar WITH its 
 // Transition under gacha — and must not start one anywhere else. The stamp is transient (it clears when
 // the transition settles), so both arms RECORD attribute mutations rather than racing a poll against a
 // ~500 ms flight; the observer is installed before the tap and read after it.
+//
+// EVERY set is recorded, not the distinct VALUES (Codex G4 F4): de-duplicating pinned which value won and
+// said nothing about how many transitions ran — one stamp and fifty would have read identically, so a
+// decorator that fired once and then stopped (or fired on every render) would have passed. Removals are
+// skipped, so the list is exactly "the stamps that went up".
 const recordTransitionStamps = async (page: Page): Promise<void> => {
   await page.evaluate(() => {
     const seen: string[] = [];
     (window as unknown as { __vt: string[] }).__vt = seen;
-    new MutationObserver(() => {
-      const v = document.documentElement.dataset.transition;
-      if (v !== undefined && !seen.includes(v)) seen.push(v);
+    new MutationObserver((records) => {
+      // A callback can carry SEVERAL records (a stamp and its removal batch into one microtask), and a
+      // record reports only the value BEFORE it — so the value AFTER record i is the next record's
+      // `oldValue`, and the live attribute for the last one. That reconstruction is what makes the count
+      // exact instead of "whatever the attribute happened to read when the observer fired".
+      const current = document.documentElement.dataset.transition ?? null;
+      records.forEach((r, i) => {
+        const after = i + 1 < records.length ? records[i + 1].oldValue : current;
+        if (after !== null) seen.push(after);
+      });
     }).observe(document.documentElement, {
       attributes: true,
+      attributeOldValue: true,
       attributeFilter: ["data-transition"],
     });
   });
@@ -219,8 +232,18 @@ test("gacha · M2: a tab tap runs through a `tab`-stamped root View Transition",
 
   await page.locator("#tabbtn-agent").click();
   await expect(page.locator("#tab-agent")).toBeVisible(); // the navigation itself is never gated on it
-  expect(await transitionStamps(page)).toEqual(["tab"]);
-  // …and the stamp is not left behind: the cleanup is what keeps the NEXT kind's CSS unpolluted.
+  // …and the stamp is not left behind: the cleanup is what keeps the NEXT kind's CSS unpolluted — which is
+  // also what makes the SECOND tap's stamp a new one rather than the first's leftover.
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.dataset.transition))
+    .toBeUndefined();
+
+  // A SECOND real tap: two navigations must stamp TWICE. The count is the assertion (Codex G4 F4) — a
+  // decorator that ran only on the first navigation, or one that stamped on every render, both produced
+  // the same single `["tab"]` a de-duplicated recorder saw.
+  await page.locator("#tabbtn-fleet").click();
+  await expect(page.locator("#tab-fleet")).toBeVisible();
+  await expect.poll(() => transitionStamps(page)).toEqual(["tab", "tab"]);
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.transition))
     .toBeUndefined();
