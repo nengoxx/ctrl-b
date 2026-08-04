@@ -12,7 +12,15 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-03 — **✅ G2 CLOSED · ◐ G3 code+reviews COMPLETE, owner DEVICE ROUND = the open gate · NEXT = that round, then G4**)
+> ## ▶ UPDATE (2026-08-04, Fable): **✅ G3 CLOSED — the owner device round PASSED wholesale** (all
+> five checks; the arcade panel approved as re-ruled by the side session; the M6 Gecko
+> `data-engine` scanline branch is NOT built and NOT needed; `:active`-wedge closed, no
+> complaint). **All five side-session commits PUSHED** (`ba0b8b1..c8ddcdb`, owner-authorized;
+> origin == main). Records: GACHA_PLAN §7.4 header + §7 G3 row + TODO. **NEXT = G4** (reel
+> figure + the M2 verdict — spike still untested; the fallback if VT is dead on Fennec is the
+> §10.1 body-only short-hold). Dev units RUNNING for the owner's checks.
+>
+> ## ▶ PREVIOUS BLOCK (2026-08-03 — **✅ G2 CLOSED · ◐ G3 code+reviews COMPLETE, owner DEVICE ROUND = the open gate · NEXT = that round, then G4**)
 > **This block is written for a COLD session (the prior one closed at its usage limit after
 > closing G1+G2 and building G3 end-to-end).** Everything through G3's review wave is
 > COMMITTED AND PUSHED (verify `git log origin/main..main` is empty; if not, push — the owner

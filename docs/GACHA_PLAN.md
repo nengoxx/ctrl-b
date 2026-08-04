@@ -610,7 +610,7 @@ for the "04 / 04" counter.
 | G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps five palette variants a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
 | ✅ G1 | **BUILT + OWNER-EYEBALLED 2026-08-02 (as-built §7.2)** — bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + the §6.4 slide set **incl. the eyeball-ruled SCENE slides**) + capsule track (cards/states/plates/shine + stars) + wallpaper + the geometry rule + the owner's own art in the bundled set | owner eyeball ✅ (3+ live rounds) |
 | ✅ G2 | **BUILT + OWNER-EYEBALLED 2026-08-02 night (as-built §7.3)** — dossier sheet (light inversion + the ruled grid + live service rows + the H3 ACTION BAR) + **the M3 capsule→dossier morph, owner-PULLED from G4 and made to visibly work** + swap morph + visible × + tap-outside close + **the full-screen ART SHOWCASE (owner ask)** — M6 extraction to `lib/hostDetail.ts` landed first; contrast gate gained the dossier's THEME_PAIRS rows | owner eyeball ✅ ("looks good", pushed) + contrast probe ✅ (48-combo matrix) |
-| ◐ G3 | **BUILT + REVIEW-COMPLETE 2026-08-03 (as-built §7.4; commits `6c5298d..5ce33d7`) — OWNER DEVICE ROUND = the open gate.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
+| ✅ G3 | **CLOSED 2026-08-04 (as-built §7.4; commits `6c5298d..5ce33d7` + the side-session re-rule `ba0b8b1`/`d65e7b7`) — device round PASSED wholesale, Gecko scanline branch NOT needed.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
 | G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + M2/M3 VT enhancement per the spike verdict + Gecko tuning (the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape) |
 | G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
 | G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) **+ §4.4 FAMILY 3 — the four owner-shortlisted DOSSIER palettes (neon-purple · sunset-orange · rose-pink · aurora-violet) and the measured example ACTION BUTTON, both from the 2026-08-04 session; the dossier goes DARK as a trial.** Ship each as one `body[data-accent]` block + a `palettes.accents` row + a `contrast-matrix.ts` row; the button rules REPLACE `.gc-act*` rather than layering over them, and `--gc-act-shadow` migrates per §5 | owner sign-off |
@@ -808,7 +808,14 @@ as the G1 close).** Eleven commits `8c4c74f..294cc32`; end state
   `:scope[data-transition]::view-transition-*` matches fine inside `@scope` rooted on html ·
   a token contrast gate cannot see `opacity` blends — mute with tokens, not alpha.
 
-**§7.4 — G3 AS-BUILT (2026-08-03; ✅ code + reviews complete, ⏳ owner device round pending).**
+**§7.4 — G3 AS-BUILT (2026-08-03; ✅ code + reviews complete; ✅ CLOSED 2026-08-04 — owner
+device round PASSED wholesale, no fix wave needed).** Device-round verdicts (owner, Fennec,
+2026-08-04): M7 blur ramp smooth · 12.5px bubbles comfortable · oracle pin holds across appbar
+modes · the arcade composer panel approved **as re-ruled by the 2026-08-03 side session** (the
+amendment below IS the shipped look; the old flat-panel question and its `--line-2` delta are
+moot) · the M6 scanline fine on Gecko as-is — **the pre-designed `data-engine` Gecko branch is
+NOT built and NOT needed**. The `:active`-wedge question rode the same round with no complaint —
+closed unless daily use bites.
 Six commits `6c5298d, 444469b, 8e37db5, 2f424ef, af6100e, 5ce33d7`; end state **1343 FE (112
 files) / 1254 BE / 40 gacha e2e arms**, gate green per commit. The record:
 - **U1** GachaAgent joins `bodies` (frontier's pattern): partitioned `ART.oracle` + M6 scanline
@@ -845,11 +852,9 @@ files) / 1254 BE / 40 gacha e2e arms**, gate green per commit. The record:
 - **Plan corrections recorded:** §10.2's wrapper-scale, art-only crossfade scope, and top:0
   are all superseded as above. **Probe gotcha:** the dev backend's own `/api/appearance`
   silently overrides a seeded theme — mock it or a "cosmos" probe run comes back wearing gacha.
-- **OPEN at this state:** the owner DEVICE ROUND (M7 blur on Fennec · 12.5px · pin across
-  appbar modes · ~~the arcade panel~~ *(re-ruled — see the amendment below)* · the M6 Gecko
-  scanline branch, pre-designed not built) · ~~the `--line-2` edge fidelity delta~~ *(moot: the
-  edge is gone)* · the arcade skin's cross-theme look rides every theme's picker
-  (visual-checked gacha+cosmos, screenshots in evidence).
+- ~~**OPEN at this state:** the owner DEVICE ROUND~~ **→ PASSED 2026-08-04 (see the header);
+  all five checks closed, no fix wave.** Still standing: the arcade skin's cross-theme look
+  rides every theme's picker (visual-checked gacha+cosmos, screenshots in evidence).
 
 **⚠ AMENDMENT — the `arcade` skin was RE-RULED after G3 closed (owner session 2026-08-03,
 UNCOMMITTED at the time of writing; the code in `kit/kit.css` is the record).** U3 above
@@ -884,8 +889,9 @@ and the look changed materially:
   (composer send + line mic, seg active chip, mini-player play) so a 26–36px control shows the
   ramp's middle instead of the whole sweep. The token's stops were deliberately NOT moved —
   the wide consumers keep their full sweep.
-- **STILL OPEN on device:** whether `:active` wedges on Fennec for the send/menu/plan pill (the
-  mic is immune by construction).
+- ~~**STILL OPEN on device:** whether `:active` wedges on Fennec for the send/menu/plan pill~~
+  **→ closed by the 2026-08-04 device round** (no wedge reported; the mic is immune by
+  construction). Re-open only if daily use shows a stuck press.
 
 *(Separately, and unrelated to gacha: the tools-menu trigger's open RING is now gated to the
 `outline` skin — `body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open`. It used to
