@@ -956,14 +956,16 @@ test("gacha · the ARCADE composer skin: a flat cabinet panel here, and the same
   await expect(page.locator(".kit-composer")).toBeVisible();
   const gacha = await chrome();
   expect(gacha.stamp).toBe("arcade"); // the theme declares it; no user override involved
-  // the panel: OPAQUE (no frost), a visible hairline, the theme's own tight radius, an even gutter, flat
+  // the panel: OPAQUE (no frost), NO outline, the theme's own tight radius, an even gutter, and the skin's
+  // HARD OFFSET in place of an ambient lift. The last two were the reverse until the owner re-ruled the skin
+  // (2026-08-03): one signature — a zero-blur accent drop — and no borders anywhere in it.
   expect(gacha.bg).toBe("rgb(20, 23, 47)"); // --surface, opaque — the prototype's #15172e within 1/255
   expect(gacha.backdrop).toBe("none");
-  expect(gacha.borderWidth).toBe("1px");
-  expect(gacha.borderColor).not.toBe("rgba(0, 0, 0, 0)"); // unlike glass/bezel/sleek, the edge STAYS
+  expect(gacha.borderWidth).toBe("1px"); // the box still RESERVES its edge — only the colour goes
+  expect(gacha.borderColor).toBe("rgba(0, 0, 0, 0)");
   expect(gacha.radius).toBe("14px"); // gacha's --radius = the prototype's own 14px (kit default is 20)
   expect(gacha.padding).toBe("9px 9px"); // the prototype's even 9px gutter
-  expect(gacha.shadow).toBe("none"); // a panel bolted on, not a bar floating above
+  expect(gacha.shadow).toMatch(/ 3px 3px 0px 0px$/); // offset by the lift, zero blur AND zero spread
   expect(gacha.ctrlRadius).toBe("10px"); // --radius-sm: the controls square off with the bar
 
   // ── cosmos wearing the same catalog value ──
@@ -982,11 +984,13 @@ test("gacha · the ARCADE composer skin: a flat cabinet panel here, and the same
   const cosmos = await chrome();
   expect(cosmos.stamp).toBe("arcade");
   expect(cosmos.backdrop).toBe("none");
-  expect(cosmos.shadow).toBe("none");
+  expect(cosmos.shadow).toMatch(/ 3px 3px 0px 0px$/);
   expect(cosmos.padding).toBe("9px 9px");
-  // …its OWN surface and its OWN corner radius — no gacha value leaked into the shared catalog
+  // …its OWN surface, corner radius and accent — no gacha value leaked into the shared catalog. The drop is
+  // mixed from `--accent`, so the same rule paints violet here and pink there: same shape, host's colour.
   expect(cosmos.bg).not.toBe(gacha.bg);
   expect(cosmos.radius).not.toBe(gacha.radius);
+  expect(cosmos.shadow).not.toBe(gacha.shadow);
 
   // ── and the picker offers it everywhere (the D37 contract's visible half) ──
   await seedUI(page, { theme: "cosmos", mode: "dark", accent: "violet", tab: "conf", v: 1 });
@@ -1203,7 +1207,7 @@ test("gacha · the ARCADE skin holds its shape under every composer LAYOUT", asy
 }) => {
   // Codex G3 L2: the skin was only ever measured on `stacked`. The skin is the CHROME axis and the layout is
   // the STRUCTURE axis (D30/D37) — they COMPOSE, and the split is the contract: the cabinet panel's chrome
-  // (opaque fill, no frost, a hairline that stays, no elevation) holds under every structure, while GEOMETRY
+  // (opaque fill, no frost, no outline, one hard accent drop) holds under every structure, while GEOMETRY
   // stays the layout's own — the skin's radius/padding rules are deliberately `.stacked`-scoped so the
   // docked sheet's top-only corners and the line variant's stadium survive it. Both halves are asserted,
   // because a skin that reached into the other two would be the actual regression.
@@ -1232,6 +1236,7 @@ test("gacha · the ARCADE skin holds its shape under every composer LAYOUT", asy
         bg: s.backgroundColor,
         backdrop: s.backdropFilter,
         borderWidth: s.borderTopWidth,
+        borderColor: s.borderTopColor,
         radius: s.borderTopLeftRadius,
         bottomRadius: s.borderBottomLeftRadius,
         padTop: s.paddingTop,
@@ -1244,13 +1249,74 @@ test("gacha · the ARCADE skin holds its shape under every composer LAYOUT", asy
     expect(seen.stamp).toBe("arcade");
     expect(seen.bg).toBe("rgb(20, 23, 47)"); // --surface, opaque
     expect(seen.backdrop).toBe("none");
-    expect(seen.borderWidth).toBe("1px");
-    expect(seen.shadow).toBe("none");
+    expect(seen.borderWidth).toBe("1px"); // the edge is RESERVED but transparent (owner ruling 2026-08-03)
+    expect(seen.borderColor).toBe("rgba(0, 0, 0, 0)");
+    expect(seen.shadow).toMatch(/ 3px 3px 0px 0px$/); // the one hard drop, identical in all three layouts
     // …the STRUCTURE — each layout's own, untouched by the skin
     expect(seen.radius).toBe(geometry[layout].radius);
     expect(seen.bottomRadius).toBe(geometry[layout].bottomRadius);
     expect(seen.padTop).toBe(geometry[layout].padTop);
     expect(seen.overflowX).toBeLessThanOrEqual(0);
   }
+  expect(pageErrors).toEqual([]);
+});
+
+test("the tools-menu trigger's open RING belongs to the `outline` skin alone", async ({
+  page,
+  pageErrors,
+}) => {
+  // Owner report 2026-08-03: opening the tools/skills menu grew an accent border on its trigger under EVERY
+  // skin — re-adding the very resting border glass/bezel/sleek strip from all composer controls, so an open
+  // menu was the only outlined thing in a borderless bar. The ring is now gated to `outline`; everywhere else
+  // the open state is the accent GLYPH alone. Two non-outline skins are covered rather than one: `bezel`,
+  // which never had resting borders, and `arcade`, which is the theme's DECLARED default and therefore the
+  // configuration actually shipped. (Arcade was chosen originally because it kept a visible resting
+  // hairline, which would have caught a blanket `border-color: transparent` fix; the owner then removed
+  // every outline from that skin, so today both arms assert the same shape. Kept anyway — a skin whose
+  // default changes should not silently stop being covered.) One theme, one variable.
+  const probe = async (composerSkin: string) => {
+    await seedUI(page, {
+      theme: "gacha",
+      mode: "dark",
+      accent: "arcade",
+      tab: "agent",
+      themeSettings: { gacha: { composerSkin } },
+      v: 1,
+    });
+    await page.goto("/");
+    const trigger = page.locator(".kit-cbtn.tools");
+    await expect(trigger).toBeVisible();
+    const read = () =>
+      trigger.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { border: s.borderTopColor, glyph: s.color };
+      });
+    const rest = await read();
+    await trigger.click();
+    // Never let this pass VACUOUSLY: if the trigger stopped opening the panel entirely, "the border did not
+    // change" would be trivially true. The panel has to actually be open before either reading counts.
+    await expect(page.locator(".tools-sheet.open")).toBeVisible();
+    // The trigger's `color` is TRANSITIONED (`.kit-cbtn`, 150ms), so a sample taken on the click frame
+    // returns the interpolated START colour and the glyph looks unchanged. POLL for it to settle rather
+    // than sleeping a fixed 250ms: a throttled CI worker can outlast any timeout we would pick, and the
+    // glyph changing is the very thing every caller below asserts. `border-color` is not transitioned —
+    // it snaps — so once the glyph has landed both readings are final.
+    await expect.poll(async () => (await read()).glyph).not.toBe(rest.glyph);
+    return { rest, open: await read() };
+  };
+
+  for (const skin of ["bezel", "arcade"]) {
+    const { rest, open } = await probe(skin);
+    expect(open.border, `${skin}: the open trigger must not grow a ring`).toBe(rest.border);
+    expect(open.glyph, `${skin}: the glyph is the only open cue — it must still change`).not.toBe(
+      rest.glyph,
+    );
+  }
+
+  const outline = await probe("outline");
+  expect(outline.open.border).not.toBe(outline.rest.border);
+  // …and it appeared, rather than the edge merely going transparent (which `not.toBe(rest)` alone would pass)
+  expect(outline.open.border).not.toBe("rgba(0, 0, 0, 0)");
+  expect(outline.open.glyph).not.toBe(outline.rest.glyph);
   expect(pageErrors).toEqual([]);
 });

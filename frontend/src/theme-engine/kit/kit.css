@@ -773,6 +773,18 @@ body[data-motion="reduced"] .kit .tools-sheet {
 }
 .kit .kit-cbtn.tools.open {
   color: var(--accent);
+}
+/* …and the open RING is the `outline` skin's alone (owner 2026-08-03). It used to ride the rule above, where
+ * it re-grew the very resting border glass/bezel/sleek strip from every composer control — the open trigger
+ * was the only outlined thing in a borderless bar, because `.kit .kit-cbtn.tools.open` (0,4,0) outspecifies
+ * their `.kit-composer .kit-cbtn` (0,3,1). Gated AFFIRMATIVELY rather than stripped per-skin: a subtractive
+ * `border-color: transparent` list would need a new entry per skin minted, and under `arcade` — which KEEPS a
+ * hairline on its controls — it would punch the edge out on open instead of leaving it alone. This way every
+ * other skin keeps whatever edge language it already has and the accent GLYPH carries the open state (the
+ * plan pill's precedent: it signals open by rotating its chevron, never by growing a border). The stamp is
+ * set in a layout effect before first paint and `.open` needs a click, so the un-stamped pre-mount state this
+ * section's skins deliberately avoid keying is unreachable here. */
+body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
   border-color: color-mix(in oklch, var(--accent) 40%, transparent);
 }
 /* the ARMED marker: the one always-visible sign that the next message is pointed somewhere. It must read
@@ -1265,42 +1277,48 @@ body[data-composer-skin="sleek"] .kit .tools-sheet {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
 }
 
-/* ── skin · ARCADE (body[data-composer-skin="arcade"]) — the flat CABINET PANEL (D52 G3) ───────────────────
+/* ── skin · ARCADE (body[data-composer-skin="arcade"]) — the CABINET PANEL (D52 G3, re-ruled 2026-08-04) ──
  * The fifth catalog value, and the first minted since the axis itself. Where `outline` floats a frosted,
- * softly-lifted bar, arcade is a PANEL BOLTED TO THE MACHINE: an opaque fill, a hairline edge, no frost and
- * no elevation at all, tighter corners than the kit's 20px lozenge, and controls squared off to match. The
- * look is the one it is named for — a cabinet's control plate — not a theme: gacha ships it as its default
- * (its prototype's composer is `#15172e`, a 1px `#ffffff1a` edge, a 14px radius and 9px of padding, with no
- * shadow at all — four of the five properties differ from every existing skin, which is what earned a new
- * value rather than a reuse), and it renders sanely anywhere because every value below is a SEMANTIC token:
- * `--surface`, `--line-2`, `--radius`, `--radius-sm`, `--density-pad`. No theme-private token is legible
- * from here, by design (D37/D51 — a catalog skin belongs to every theme's picker).
+ * softly-lifted bar, arcade is a PANEL BOLTED TO THE MACHINE: an opaque fill, NO outline anywhere, one hard
+ * zero-blur accent drop instead of an ambient lift, tighter corners than the kit's 20px lozenge, and
+ * controls that read as buttons on a plate. It shipped at G3 as a flat, hairlined, shadowless panel; the
+ * owner re-ruled it into the drop-and-press language below, which is the half the bar alone could not
+ * carry (the ledger entry is GACHA_PLAN §7.4's amendment). The look is the one it is named for — a
+ * cabinet's control plate — not a theme: gacha ships it as its default, and it renders sanely anywhere
+ * because every value below is a SEMANTIC token: `--surface`, `--accent`, `--accent-soft`, `--radius`,
+ * `--radius-sm`, `--density-pad`. No theme-private token is legible from here, by design (D37/D51 — a
+ * catalog skin belongs to every theme's picker), so the drop paints coral in frontier and violet in
+ * cosmos exactly as it paints pink here.
  *
- * The gates come out FREE, which is part of why this skin is cheap: there is no blur to drop under
- * perf-lite (the base `body[data-perf="lite"] .kit-composer` re-asserts the very `--surface` fill this skin
- * already uses), nothing animates, and the popovers already wear the flat, bordered, opaque language the
- * bar does (`.kit .kit-suggest`/`.tools-sheet` — `--surface` + `--line-2` + `--radius-sm`), so they need no
- * rule at all. What DOES need care is the same specificity fight the other skins document: the geometry
- * overrides are `.stacked`-scoped so the docked sheet's `padding: 0` / top-only radius and the line
- * variant's 24px stadium are never clobbered by a (0,2,1) skin rule. */
+ * The gates stay cheap: there is no blur to drop under perf-lite (the base `body[data-perf="lite"]
+ * .kit-composer` re-asserts the very `--surface` fill this skin already uses), and the only motion is the
+ * press — a transition-less `transform` on `:active`, so there is nothing for `data-motion` to gate. The
+ * popovers DO take a rule now (they lost their outline and gained the drop with everything else). What
+ * needs care is the same specificity fight the other skins document: the GEOMETRY overrides stay
+ * `.stacked`-scoped so the docked sheet's `padding: 0` / top-only radius and the line variant's 24px
+ * stadium are never clobbered by a (0,2,1) skin rule — the one deliberate exception is the docked
+ * layout's two small buttons, squared at the owner's call. */
 body[data-composer-skin="arcade"] .kit-composer {
-  /* opaque: the panel is a surface, not a window. (0,2,1) beats the base fill + border + shadow (0,1,0). */
+  /* opaque: the panel is a surface, not a window. (0,2,1) beats the base fill + border + shadow (0,1,0).
+   * The hairline is GONE and the elevation is the skin's own hard offset (owner ruling 2026-08-03 — one
+   * signature, no outlines anywhere in this skin): the bar is the largest thing wearing it, so it sets the
+   * language its controls and popovers repeat. `--arcade-lift` is declared right below on this same element,
+   * so it resolves here. */
+  --arcade-lift: 3px;
   background: var(--surface);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  border-color: var(--line-2); /* the hairline STAYS — unlike glass/bezel/sleek, which all drop it */
-  box-shadow: none;
+  border-color: transparent;
+  box-shadow: var(--arcade-lift) var(--arcade-lift) 0 color-mix(in oklch, var(--accent) 60%, transparent);
 }
-/* the base light-mode rule (`body[data-mode="light"] .kit-composer`, (0,2,1)) re-adds a drop shadow and
- * ties this section on specificity — win it at (0,3,1) rather than by source order alone. */
-body[data-mode="light"][data-composer-skin="arcade"] .kit-composer {
-  box-shadow: none;
-}
-/* the DOCKED sheet's own upward lift ((0,2,0)) and its light re-assert ((0,3,1)) both have to go flat too,
- * or the skin would be shadowless in one layout and lifted in another. */
+/* the base light-mode rule (`body[data-mode="light"] .kit-composer`, (0,2,1)) re-adds a soft drop shadow and
+ * ties this section on specificity — win it at (0,3,1) rather than by source order alone. The docked sheet's
+ * own upward lift ((0,2,0)) and its light re-assert ((0,3,1)) need the same treatment, or the skin would wear
+ * its offset in one layout and a soft ambient in another. */
+body[data-mode="light"][data-composer-skin="arcade"] .kit-composer,
 body[data-composer-skin="arcade"] .kit-composer.sheet,
 body[data-mode="light"][data-composer-skin="arcade"] .kit-composer.sheet {
-  box-shadow: none;
+  box-shadow: var(--arcade-lift) var(--arcade-lift) 0 color-mix(in oklch, var(--accent) 60%, transparent);
 }
 /* STACKED-only geometry: the theme's own corner radius instead of the kit's lozenge, and a tighter, even
  * gutter. The sheet (`padding: 0`, top-only radius) and the line stadium (24px, concentric with its 36px
@@ -1319,6 +1337,103 @@ body[data-composer-skin="arcade"] .kit-composer.stacked .kit-send {
 /* the plan pill follows the same corner language (the glass skin's own 8px-rect precedent). */
 body[data-composer-skin="arcade"] .kit-composer.stacked .plan-pill {
   border-radius: var(--radius-sm);
+}
+/* ── arcade · the controls become ARCADE BUTTONS (owner direction 2026-08-03) ──────────────────────────────
+ * The skin as first built said "cabinet panel" through the BAR alone, and all of its geometry rules are
+ * `.stacked`-scoped (correctly — the docked sheet's `padding: 0`/top-only radius and the line stadium's 24px
+ * concentric corners are layout-owned). Measured against `outline` that left it near-mute in the other two
+ * layouts: opaque-vs-85%-frost and shadow-vs-none, nothing else. This adds the half the bar could not carry —
+ * a HARD zero-blur offset shadow under the controls, and a press that translates a control INTO its own
+ * shadow: a physical button on a plate, which is what the skin is named for.
+ *
+ * Control geometry otherwise stays exactly where the skin and the layouts already put it: line keeps its
+ * circles, the stacked block above re-corners its own, and the ONE geometry rule here is the docked layout's
+ * two small buttons (owner ruling — a pass that squared every layout's controls was rejected).
+ *
+ * Semantic tokens only (D37 — this is a catalog value every theme's picker offers, so it wears the host
+ * theme's accent: pink under gacha, coral under frontier, violet under cosmos). `--accent`, NEVER
+ * `--accent-fill`: that token may be a gradient <image> and would devolve in a color slot. The offset is one
+ * local custom property so the lift and the press displacement can never drift apart — and it is 3px, not the
+ * 5px gacha uses on its own bubbles/indicator, because the line layout allows only 5/6px of padding around
+ * its 36px controls (`--arcade-lift` is declared with the bar's own chrome above). */
+/* NO OUTLINES, anywhere in this skin (owner ruling 2026-08-03) — the bar dropped its hairline above, and the
+ * controls drop theirs here. The neutral ones then take the plan pill's own fill, `--accent-soft`, so they
+ * read as the pill does: a soft accent plate with a hard drop, no edge. Without a fill they would be a bare
+ * glyph with a shadow floating beside it — an outer box-shadow is never painted under its own border box, so
+ * a see-through control shows the drop as a detached band. `:not(.line-btn)` spares the line layout's mic,
+ * which that variant already fills with `--accent-fill` (this rule is (0,4,1) and would otherwise outrank its
+ * (0,4,0) fill); the send has its own fill and never had a border.
+ * Note this also strips the mic's RECORDING ring (base `.kit-cbtn.mic.rec`, (0,3,0), outranked at (0,3,1)) —
+ * the same trade glass and bezel already make: the red GLYPH is the recording cue under a borderless skin. */
+body[data-composer-skin="arcade"] .kit-composer .kit-cbtn,
+body[data-composer-skin="arcade"] .kit-composer .plan-pill {
+  border-color: transparent;
+}
+body[data-composer-skin="arcade"] .kit-composer .kit-cbtn:not(.line-btn) {
+  background: var(--accent-soft);
+}
+/* ONE drop, one colour, every control — the tools trigger, the mic, the plan pill and the send alike. A
+ * darkened variant was tried for the accent-FILLED controls (send, and the line layout's `--accent-fill` mic),
+ * on the theory that an accent drop under an accent fill has too little contrast to read; the owner ruled for
+ * the single colour anyway (2026-08-03), because one shadow across the bar matters more than each drop's
+ * separation from its own button. (0,3,1) beats the base `.kit-cbtn` (0,1,0), `.kit-send` (0,1,0) and
+ * `.kit .plan-pill` (0,2,0); none of them declares a box-shadow, so nothing is overridden — only added. */
+body[data-composer-skin="arcade"] .kit-composer .kit-cbtn,
+body[data-composer-skin="arcade"] .kit-composer .plan-pill,
+body[data-composer-skin="arcade"] .kit-composer .kit-send {
+  box-shadow: var(--arcade-lift) var(--arcade-lift) 0 color-mix(in oklch, var(--accent) 60%, transparent);
+}
+/* the DOCKED layout's two small buttons SQUARE OFF (owner ruling 2026-08-03) — the menu trigger and the
+ * embedded mic take the same `--radius-sm` corners the stacked layout's controls already wear under this
+ * skin, so their drop reads as a plate rather than the crescent a hard shadow makes under a circle. Scoped to
+ * arcade + sheet: no other skin or layout is touched, and the layout's own geometry — the send slab, the
+ * plan pill's 8px rect, the field, the bar's top-only radius — is left exactly as it is. (0,4,1) beats the
+ * base `.kit-cbtn` radius (0,1,0); the layout's `.kit-composer.sheet .field .kit-cbtn.mic` (0,5,0) sizes and
+ * colours that mic but never sets a radius, so there is no fight to win. */
+body[data-composer-skin="arcade"] .kit-composer.sheet .kit-cbtn {
+  border-radius: var(--radius-sm);
+}
+/* …and that layout's embedded mic gets its own breathing room. It sits at the field's trailing edge on a
+ * `margin-right: 2px`, which is less than the 3px lift — so the send block, painting after it, covered the
+ * right half of its drop. Widened to clear the offset with a pixel to spare, the shadow lands entirely on the
+ * field. `--arcade-lift` is not usable in the calc: the gap must exceed it, and hard-coding the relationship
+ * would let a future lift change silently re-clip. (0,6,1) beats the layout's own (0,5,0) margin. */
+body[data-composer-skin="arcade"] .kit-composer.sheet .field .kit-cbtn.mic {
+  margin-right: 6px;
+}
+/* the PRESS: translate into the drop and remove it, so the control lands flush on the panel. Transform-only,
+ * no transition declared → instant, and §14.11-safe with nothing to motion-gate.
+ * `.kit-cbtn.mic.press` rides along because the mic's press is a JS-TOGGLED class, not `:active` — the kit
+ * chose that deliberately (useComposerChrome.ts: "Fennec leaves :active wedged after a tap"), and the mic is
+ * the one control held down for a gesture rather than tapped. Our (0,4,1) outspecifies the base
+ * `.kit-cbtn.mic.press` (0,3,0) scale, so under THIS skin the mic's feedback is the sticker press too — one
+ * press language across the bar rather than two. */
+body[data-composer-skin="arcade"] .kit-composer .kit-cbtn:active,
+body[data-composer-skin="arcade"] .kit-composer .kit-cbtn.mic.press,
+body[data-composer-skin="arcade"] .kit-composer .kit-send:active,
+body[data-composer-skin="arcade"] .kit-composer .plan-pill:active {
+  transform: translate(var(--arcade-lift), var(--arcade-lift));
+  box-shadow: none;
+}
+/* the composer's POPOVERS finish the sweep — the typing suggestions and the tools/skills menu. Same two moves
+ * as everything else in this skin: the shell's outline goes, and the elevation becomes the hard offset. The
+ * shared shell's ambient drop is KEPT underneath it: these float over live chat, where a 3px offset alone
+ * gives no separation from the text behind them (sleek keeps a contact shadow for the same reason). The
+ * lift's own custom property is scoped to `.kit-composer`, and these are its SIBLINGS, so the value is
+ * restated rather than inherited. (0,3,1) beats the shared shell (0,2,0).
+ * The plan SHEET is deliberately untouched: it is a bottom-anchored panel that tucks BEHIND the composer with
+ * `border-bottom: 0` and lifts upward — a down-right offset would read as a mistake on it. */
+body[data-composer-skin="arcade"] .kit .kit-suggest,
+body[data-composer-skin="arcade"] .kit .tools-sheet {
+  border-color: transparent;
+  box-shadow: 3px 3px 0 color-mix(in oklch, var(--accent) 60%, transparent), 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+/* and the placeholder picks up a 1px echo of the same offset (owner ask 2026-08-03: the theme's signature
+ * should reach the hint text too). ONE pixel, not the 3px lift: the hint is 15px `--text-3` grey, and at the
+ * full offset the copy doubles rather than gains an edge. Muted to match — the hint stays quiet, it just
+ * stops being colourless. */
+body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
+  text-shadow: 1px 1px 0 color-mix(in oklch, var(--accent) 45%, transparent);
 }
 
 /* ── Fleet view (KitFleet) — device list + 3-stat summary; ported from the minimal prototype. Inner class
