@@ -54,18 +54,14 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Never cache /api responses — they're live state and mutations.
+        // A navigation request under /api is a mistyped endpoint, not an app route — never answer it
+        // with the SPA shell. (Unrelated to caching: the ONE cached /api path is the media mount, see
+        // `runtimeCaching` below.)
         navigateFallbackDenylist: [/^\/api\//],
         // The plugin default (js/css/html) PLUS vapor's bundled logo (D51 V4 close-out, sweep M2):
         // with cosmos the default, a fresh PWA gone offline may never have fetched the logo before
         // the first switch to vapor — without this entry the mark renders blank. Targeted glob, not
         // image-wide.
-        //
-        // CORRECTION (D52 §10.4, verified against the built artifact): the old note here claimed the
-        // cosmos art set "stays runtime-cached". It is not — this repo has NO `runtimeCaching` rules at
-        // all, so every theme's art and woff2 rely on the plain browser HTTP cache when offline. The
-        // repo's first `runtimeCaching` routes (woff2 CacheFirst, `/api/media/` StaleWhileRevalidate —
-        // never CacheFirst, those files are owner-mutable) land at G5 with their own gate, per council M8.
         //
         // `dist/stats.html` is the rollup-visualizer BUILD REPORT (~290 KB), not part of the app — the
         // bare `**/*.html` sweeps it into the precache manifest, where it costs every install its size
@@ -73,6 +69,49 @@ export default defineConfig({
         // real future .html entry point is still picked up automatically.
         globPatterns: ["**/*.{js,css,html}", "assets/vapor-logo-*.png"],
         globIgnores: ["**/stats.html"],
+        // ── The repo's FIRST runtimeCaching routes (D52/G5, GACHA_PLAN §10.4; council M8 put them
+        // here rather than in G0's riders — they touch the PWA update path, and the media caching
+        // posture belongs with the media surface).
+        //
+        // Before these, nothing outside the precache manifest survived offline: every theme's fonts
+        // and art fell back to the plain browser HTTP cache. (An earlier note in this file claimed
+        // cosmos's art "stays runtime-cached" — it never was; there were no rules at all.) Precaching
+        // them instead was the wrong fix: it would charge EVERY install for FOUR themes' assets to
+        // make one of them work offline. Cached on first use, an unused theme costs nothing.
+        //
+        // The two handlers are deliberately different, and the difference is the whole point:
+        //  · woff2 are CONTENT-HASHED build outputs — a changed font is a changed filename, so the
+        //    cached copy can never be stale. CacheFirst: zero revalidation, ever.
+        //  · `/api/media/` files are the OWNER's, mutable under a stable name (they replace
+        //    `lyra.webp` over SSH and expect the theme to follow). CacheFirst would pin the old bytes
+        //    forever against the mount's own `Cache-Control: no-cache`. StaleWhileRevalidate paints
+        //    instantly from cache and repairs itself on the next load — the honest reading of a
+        //    revalidate-always resource that must also work offline.
+        runtimeCaching: [
+          {
+            // The build emits every font to `/assets/<name>-<hash>.woff2`.
+            urlPattern: /\/assets\/[^/]+\.woff2$/,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "ctrlb-fonts",
+              // Five JP weights + the latin faces, with room for a second theme's set before the
+              // oldest is evicted; a year, because a hashed name is never re-issued with new bytes.
+              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: /\/api\/media\/.*\/files\//,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "ctrlb-media",
+              // Bounded because these are the owner's own files at whatever size they dropped in
+              // (the index warns about a 3.6 MB one; it does not refuse it).
+              expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
     }),
   ],
