@@ -477,6 +477,13 @@ frontend; `$CTRLB_HOME` has no media dir or route; the only upload endpoint is t
   the index endpoint per-role (`{characters: […], banner: […], …}`) and the §10.4 hardening
   applies per subfolder unchanged. Until G5, the bundled interim carries the same shapes in
   code (`ART.scenes`, the roster) so G5 stays a source swap, not a redesign.
+- **✅ RULED (owner, 2026-08-04, closing the default-order gap): ALPHABETICAL FILENAME sort is
+  the default order** for files in a role folder before the Conf gallery is ever touched;
+  gallery reorder/pins override it (persisted in config) once made. Rationale: predictable,
+  stable across restarts, and a zero-UI escape hatch — `01-foo.png`, `02-bar.png` works with no
+  gallery visit, but nothing forces the convention. (The G5 brief pins the sort as
+  case-insensitive natural/lexicographic — one deterministic collation, stated in the index
+  endpoint's contract so client and server can never disagree.)
 
 **5.5 Fallback art:** the theme ships the prototype's asset set as the bundled default roster
 either way, so it looks right on first boot (art provenance: the owner's own picks — confirm at
