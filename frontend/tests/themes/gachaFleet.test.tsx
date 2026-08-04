@@ -14,6 +14,7 @@ const fleet = vi.hoisted(() => {
 });
 vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
 
+import { runViewTransition } from "../../src/lib/viewTransition";
 import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setUI } from "../../src/store/ui";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
@@ -1390,6 +1391,23 @@ describe("the art showcase's morph", () => {
     rerender(<GachaFleet active={false} />); // leaving the tab: the reel starts in this same commit
     expect(vt.skips[1]).toHaveBeenCalled();
     expect(document.querySelector(".gc-art-view")).toBeNull();
+  });
+
+  it("…but it does NOT end the NAVIGATION transition that carried the user away (G4 S1)", () => {
+    // The §10.1 probe's finding, reproduced at the call site it was found at. A fleet→X navigation starts
+    // a `tab`-typed root transition and, in the SAME commit, flips this body inactive — whose teardown
+    // calls `dropShowcase`. With an unscoped skip that teardown ended the nav transition microseconds
+    // after it began, 100% reproducibly: M2 looked "the same as before" on the owner's own A/B because
+    // there was no transition left to look at. The teardown owns `detail`/`showcase`; `tab` is the nav
+    // chokepoint's, and must survive.
+    const vt = deferVT();
+    const { rerender } = render(<GachaFleet active />);
+    act(() => {
+      runViewTransition(() => {}, "tab"); // what the nav decorator does, minus its gate
+    });
+    expect(vt.start).toHaveBeenCalledTimes(1);
+    rerender(<GachaFleet active={false} />); // the same commit's other half: the body leaves
+    expect(vt.skips[0]).not.toHaveBeenCalled();
   });
 
   it("a host vanishing mid-flight voids the art, and coming back does not resurrect it", () => {

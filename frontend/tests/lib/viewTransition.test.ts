@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runNavTransition, runViewTransition } from "../../src/lib/viewTransition";
+import {
+  runNavTransition,
+  runViewTransition,
+  skipActiveViewTransition,
+} from "../../src/lib/viewTransition";
 import { setUI } from "../../src/store/ui";
 
 // `lib/viewTransition.ts#runViewTransition` (D52 / GACHA_PLAN §10.1) — the ONE View-Transition wrapper,
@@ -14,6 +18,7 @@ import { setUI } from "../../src/store/ui";
 interface FakeTransition {
   ready: Promise<void>;
   finished: Promise<void>;
+  skipTransition: ReturnType<typeof vi.fn>;
   settle: () => void;
   rejectReady: (err: Error) => void;
   rejectFinished: (err: Error) => void;
@@ -51,6 +56,7 @@ function installFakeVT(): FakeVT {
     const t: FakeTransition = {
       ready,
       finished,
+      skipTransition: vi.fn(),
       settle: () => {
         settleReady();
         settleFinished();
@@ -185,6 +191,59 @@ describe("runViewTransition — hardening", () => {
     vt.transitions[0].settle();
     await flushMicrotasks();
     expect(document.documentElement.dataset.transition).toBeUndefined();
+  });
+});
+
+// ── THE SKIP's OWNERSHIP (G4 S1 — the bug the §10.1 VT probe caught). `skipActiveViewTransition` used to
+//    end WHATEVER transition was running, from any caller: a gacha body tearing its own morph down killed
+//    the navigation transition started microseconds earlier in the same commit, 100% of the time. The skip
+//    is now scoped by the same `type` concept the stamp already rides — a caller may only end a KIND of
+//    transition it itself starts. ──
+describe("skipActiveViewTransition — the type-scoped ownership fix", () => {
+  it("a `tab` transition SURVIVES a `detail`-scoped skip (the probe's kill, in miniature)", () => {
+    const vt = installFakeVT();
+    runViewTransition(() => {}, "tab");
+    skipActiveViewTransition("detail");
+    expect(vt.transitions[0].skipTransition).not.toHaveBeenCalled();
+  });
+
+  it("…and the OWNER of the kind still ends it", () => {
+    const vt = installFakeVT();
+    runViewTransition(() => {}, "detail");
+    skipActiveViewTransition("detail");
+    expect(vt.transitions[0].skipTransition).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts several kinds — one teardown may own more than one (gacha's detail + showcase)", () => {
+    const vt = installFakeVT();
+    runViewTransition(() => {}, "showcase");
+    skipActiveViewTransition("detail", "showcase");
+    expect(vt.transitions[0].skipTransition).toHaveBeenCalledTimes(1);
+  });
+
+  it("an UNTYPED transition (the theme swap) is owned by nobody and can never be skipped", () => {
+    const vt = installFakeVT();
+    runViewTransition(() => {});
+    skipActiveViewTransition("tab", "detail", "showcase");
+    expect(vt.transitions[0].skipTransition).not.toHaveBeenCalled();
+  });
+
+  it("only the LATEST transition is skippable — a superseded one is already gone", async () => {
+    const vt = installFakeVT();
+    runViewTransition(() => {}, "detail"); // T1
+    runViewTransition(() => {}, "tab"); // T2 supersedes it (the browser skipped T1 itself)
+    skipActiveViewTransition("detail");
+    expect(vt.transitions[0].skipTransition).not.toHaveBeenCalled();
+    expect(vt.transitions[1].skipTransition).not.toHaveBeenCalled();
+  });
+
+  it("forgets a transition once it has settled (no stale handle held forever)", async () => {
+    const vt = installFakeVT();
+    runViewTransition(() => {}, "detail");
+    vt.transitions[0].settle();
+    await flushMicrotasks();
+    skipActiveViewTransition("detail");
+    expect(vt.transitions[0].skipTransition).not.toHaveBeenCalled();
   });
 });
 

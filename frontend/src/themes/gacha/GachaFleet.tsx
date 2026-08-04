@@ -103,7 +103,9 @@ export function GachaFleet({ active }: { active: boolean }) {
     p.avatar?.style.removeProperty("view-transition-name");
     // …and end the superseded transition outright: a PLAIN open starts no transition of its own, so
     // without this the old one would capture the plainly-opened dossier as its morph destination.
-    skipActiveViewTransition();
+    // SCOPED to the kind this body starts here (G4 S1): the prep it is cleaning belongs to a `detail`
+    // morph, and nothing else's flight is this function's business.
+    skipActiveViewTransition("detail");
   }, []);
 
   // ── THE ART SHOWCASE (owner request 2026-08-02) — the dossier PORTRAIT, full screen. Two pieces of
@@ -146,13 +148,20 @@ export function GachaFleet({ active }: { active: boolean }) {
    *  going away and there is nothing left to morph back into. It also ENDS the transition this body still
    *  owns (L1): unmounting the overlay stops the LIVE DOM, but a settling reverse morph keeps painting its
    *  `::view-transition-*` pseudos over the whole page for the rest of its flight — including over a tab
-   *  reel that started in the same commit. */
+   *  reel that started in the same commit.
+   *
+   *  "OWNS" is now literal (G4 S1, the §10.1 VT-probe finding). This runs on the tab-leave teardown, and
+   *  the commit that leaves the tab is the SAME one the navigation transition just started — so an
+   *  unscoped skip ended `tab` instead, killing M2 outright every time the user left the fleet. Both of
+   *  this body's own kinds are named because both can be the one in flight here: `showcase` when the art's
+   *  own morph is still settling, `detail` when a capsule morph's callback has already run (its prep
+   *  cleared, so `cleanMorphPrep` above no longer reaches it). */
   const dropShowcase = useCallback(() => {
     artGen.current++; // any callback still in flight is now void
     artReturnFocus.current = false;
     releaseArtName();
     setShowArt(null);
-    skipActiveViewTransition();
+    skipActiveViewTransition("detail", "showcase");
   }, [releaseArtName]);
 
   const openHostDossier = useCallback(

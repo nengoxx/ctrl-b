@@ -53,12 +53,25 @@ let stampOwner: object | null = null;
  *  One predicate, read by the wrapper itself, so the two can never disagree. */
 /** The most recent transition this wrapper started. Held so a caller superseding one with a PLAIN update
  *  (no new transition to auto-skip it) can end it explicitly — otherwise it would capture whatever DOM the
- *  plain update just committed as its "new" state and animate toward it (Codex M3-confirm M1). */
+ *  plain update just committed as its "new" state and animate toward it (Codex M3-confirm M1). Cleared when
+ *  it settles, so `skipActiveViewTransition` can never reach a finished transition (or hold its handle). */
 let activeTransition: ViewTransitionLike | null = null;
+/** …and its KIND — the same `type` the stamp rides. `undefined` = the unstamped default kind (a theme
+ *  swap), which by construction belongs to no named owner. */
+let activeType: string | undefined;
 
-/** Skip the wrapper's active transition, if one is still running. Safe always: skipping a settled
- *  transition is a spec no-op, and the skipped transition's update callback is still guaranteed to run. */
-export function skipActiveViewTransition(): void {
+/** End the active transition — but ONLY if it is one of the KINDS the caller names, i.e. one the caller
+ *  itself starts. That scope is the whole point (G4 S1, the §10.1 VT-probe finding): an unscoped skip let
+ *  any caller end ANY running transition, and gacha's fleet body did exactly that — its tab-leave teardown
+ *  killed the `tab` navigation transition started microseconds earlier in the same commit, every time.
+ *  Ownership by TYPE rather than by handle, because `type` is the identity concept this module already has
+ *  (`stampOwner` guards the attribute with the same discipline) and the kinds are disjoint by construction:
+ *  the nav chokepoint starts `tab`, gacha's fleet starts `detail`/`showcase`, a theme swap is untyped.
+ *
+ *  Safe always: skipping a settled transition would be a spec no-op anyway, and a skipped transition's
+ *  update callback is still guaranteed to have run, so state stays correct either way. */
+export function skipActiveViewTransition(...types: string[]): void {
+  if (activeType === undefined || !types.includes(activeType)) return;
   activeTransition?.skipTransition?.();
 }
 
@@ -97,12 +110,19 @@ export function runViewTransition(update: () => void, type?: string): void {
   }
   const t = start(apply);
   activeTransition = t;
+  activeType = type;
   // Swallow BOTH legs. `ready` rejects on the skip/TimeoutError path; `finished` rejects too when the
   // transition is skipped or aborted — the original block only caught `ready`, so a skipped transition
   // surfaced an unhandled rejection. Neither is a correctness signal: the callback has already run, so the
   // DOM is applied either way (never gate state on `finished`).
   t.ready.catch(() => {});
   const clear = () => {
+    // Let go of the handle the moment this transition is over — identity-guarded, because a NEWER
+    // transition may already have taken the slot (this one was the skipped loser).
+    if (activeTransition === t) {
+      activeTransition = null;
+      activeType = undefined;
+    }
     if (token === null || stampOwner !== token) return; // untyped, or a newer transition owns the stamp
     stampOwner = null;
     delete root.dataset.transition;
