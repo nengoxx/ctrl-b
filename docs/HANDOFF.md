@@ -12,6 +12,20 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
+> ## ▶ UPDATE 2 (2026-08-04 night, Fable): **◐ G4 BUILT + REVIEW-COMPLETE — owner FIGURE EYEBALL
+> + DEVICE ROUND = the open gate.** Seven commits `dd1a056..fa86ed3` (as-built **§7.5** — read
+> it): the reel figure (all dials `--gc-figure-*` tokens, 67% default), M2 prototype-exact with
+> the spike seam PROMOTED (**the `ctrlb.spike.navVT` flag NO LONGER EXISTS — older blocks below
+> that mention it are historical**), the type-scoped VT skip, degradation latches, and the
+> corrected baked glow (**durable: CSS `drop-shadow()`'s blur length IS the Gaussian σ** —
+> Codex right, main seat wrong, settled by pixel experiment). Review arc: Codex READY WITH
+> FIXES → wave → confirm ALL-RESOLVED → residual LOWs closed. FE 1363 / BE 1254. **NOTHING
+> PUSHED since `8757c1c`** — the G4 commits await the owner's word. Dev units RUNNING; the
+> figure + fuller glow are live on :5173. **NEXT: the owner's figure eyeball (tune via tokens,
+> the owner speaks words, the seat turns dials) + the Fennec+Chrome device round (one-line M2
+> check: slats keep sweeping through the cross-fade); then G5 media (carries: owner-cutout glow
+> expectation + URL-scoped figure-latch reset), G6 palettes, release v1.5.0.**
+>
 > ## ▶ UPDATE (2026-08-04, Fable): **✅ G3 CLOSED — the owner device round PASSED wholesale** (all
 > five checks; the arcade panel approved as re-ruled by the side session; the M6 Gecko
 > `data-engine` scanline branch is NOT built and NOT needed; `:active`-wedge closed, no

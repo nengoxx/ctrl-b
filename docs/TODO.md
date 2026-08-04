@@ -1341,7 +1341,8 @@ v1.5.0 is RESERVED for this theme's release.
 - [x] G1 banner + capsule track + scenes — ✅ built + owner-eyeballed 2026-08-02 (as-built §7.2; 3★ ladder re-ruled, role-scoped G5 media folders ruled, scene slides + `SCENE_TITLES` pool)
 - [x] G2 unit dossier — ✅ built + owner-eyeballed + pushed 2026-08-02/03 (as-built §7.3; M3 morph pulled from G4 + prototype-exact, swap morph, visible ×, tap-outside/nav close, full-screen art showcase, em-dash metrics, contrast THEME_PAIRS)
 - [x] G3 agent tab — ✅ CLOSED 2026-08-04 (as-built §7.4; oracle one-surface ramp, arcade composer skin as re-ruled by the 2026-08-03 side session, stacking-law fix wave) — owner device round PASSED wholesale (M7 blur · 12.5px · pin modes · arcade panel · Gecko scanline as-is, no `data-engine` branch)
-- [ ] G4–G6 per `GACHA_PLAN.md` §7 (each: Opus build → main-seat audit → Codex → owner eyeball); next = G4 reel figure + M2/M3-remainder per the VT spike verdict (M3's morph SHIPPED at G2 — G4 re-scoped)
+- [x] G4 reel figure + M2 — code + reviews ✅ COMPLETE 2026-08-04 (as-built §7.5; spike verdict = LIVE, M2 prototype-exact, seam promoted, type-scoped skip, figure tokens, corrected glow) — **⏳ owner FIGURE EYEBALL + Fennec/Chrome DEVICE ROUND pending (incl. the one-line M2 check)**
+- [ ] G5–G6 per `GACHA_PLAN.md` §7 (each: Opus build → main-seat audit → Codex → owner eyeball); G5 carries: role-scoped media folders (§5.4) · owner-cutout glow expectation · URL-scoped figure-latch reset (§7.5 carries)
 - [ ] Release as v1.5.0 (runbook §Release; prod currently v1.4.6 by owner ruling)
 
 ## Cross-cutting / don't-forget

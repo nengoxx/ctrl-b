@@ -611,7 +611,7 @@ for the "04 / 04" counter.
 | ✅ G1 | **BUILT + OWNER-EYEBALLED 2026-08-02 (as-built §7.2)** — bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + the §6.4 slide set **incl. the eyeball-ruled SCENE slides**) + capsule track (cards/states/plates/shine + stars) + wallpaper + the geometry rule + the owner's own art in the bundled set | owner eyeball ✅ (3+ live rounds) |
 | ✅ G2 | **BUILT + OWNER-EYEBALLED 2026-08-02 night (as-built §7.3)** — dossier sheet (light inversion + the ruled grid + live service rows + the H3 ACTION BAR) + **the M3 capsule→dossier morph, owner-PULLED from G4 and made to visibly work** + swap morph + visible × + tap-outside close + **the full-screen ART SHOWCASE (owner ask)** — M6 extraction to `lib/hostDetail.ts` landed first; contrast gate gained the dossier's THEME_PAIRS rows | owner eyeball ✅ ("looks good", pushed) + contrast probe ✅ (48-combo matrix) |
 | ✅ G3 | **CLOSED 2026-08-04 (as-built §7.4; commits `6c5298d..5ce33d7` + the side-session re-rule `ba0b8b1`/`d65e7b7`) — device round PASSED wholesale, Gecko scanline branch NOT needed.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
-| G4 | The reel FIGURE (smaller default, tunable — asset, timing, size eyeball) on G0's mechanism + **M2 BUILDS (spike verdict = outcome (a), settled 2026-08-04 — see §10.1): ① the `skipActiveViewTransition` owner-token fix ② the `[data-transition="tab"]` M2 CSS (does not exist yet) ③ the seam promotion (unflagged decorator, fenced block dies)** + Gecko tuning (M3 shipped at G2; the split is council M10: G0 = mechanism/slats/spike, G4 = figure + composition) | Fennec+Chrome device round (the Gate-B shape; incl. the one-line M2 liveness eyeball) |
+| ◐ G4 | **BUILT + REVIEW-COMPLETE 2026-08-04 (as-built §7.5; commits `dd1a056..fa86ed3`) — OWNER EYEBALL + DEVICE ROUND = the open gate.** The reel FIGURE (67% tunable default, all dials `--gc-figure-*` tokens, corrected baked glow — drop-shadow's length IS σ, §7.5 lesson) + M2 shipped prototype-exact with the seam promoted (flag deleted) + the type-scoped VT skip + degradation latches. Codex: READY WITH FIXES → wave → confirm all-resolved, residual LOWs closed | owner figure eyeball + Fennec+Chrome device round (incl. the one-line M2 check) |
 | G5 | Roster serving per the RULED option (b), **namespace-generic (council M9): ONE `/api/media/{ns}/` mount over `$CTRLB_HOME/media/<ns>/` — gacha is the first namespace, frontier's never-built art picker inherits it** — ensured dir + the hardened read-only mount (§10.4 serving details incl. the route split + backend tests) + the Conf gallery (order/pin) + **the repo's first SW `runtimeCaching` routes land HERE with their own gate** (woff2 `CacheFirst` + `/api/media/` `StaleWhileRevalidate` — council M8 moved them out of G0's riders) | gate + the §5.4/§10.4 security requirements |
 | G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) **+ §4.4 FAMILY 3 — the four owner-shortlisted DOSSIER palettes (neon-purple · sunset-orange · rose-pink · aurora-violet) and the measured example ACTION BUTTON, both from the 2026-08-04 session; the dossier goes DARK as a trial.** Ship each as one `body[data-accent]` block + a `palettes.accents` row + a `contrast-matrix.ts` row; the button rules REPLACE `.gc-act*` rather than layering over them, and `--gc-act-shadow` migrates per §5 | owner sign-off |
 
@@ -900,6 +900,47 @@ and the look changed materially:
 `outline` skin — `body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open`. It used to
 re-grow a border that glass/bezel/sleek deliberately strip, so an open menu was the only
 outlined thing in a borderless bar.)*
+
+**§7.5 — G4 AS-BUILT (2026-08-04; ✅ code + reviews COMPLETE — ⏳ owner eyeball + Fennec/Chrome
+device round pending).** Seven commits `dd1a056, 9a57155, dbb020a, 6dbecef, a282ef8, cafb48a,
+fa86ed3`; end state **FE 1363 / BE 1254**, gate green per commit. The record:
+- **S1** the VT skip is TYPE-scoped (`skipActiveViewTransition(...types)`, `activeType` beside
+  `activeTransition`; kinds disjoint by construction: nav=`tab`, fleet=`detail`/`showcase`,
+  theme swap untyped) — closes the probe's ownership bug; the exact kill reproduced red-first.
+  **Fix-wave hardening:** an UNTYPED start now synchronously retires a typed stamp before
+  `start()` (else the theme swap ran under M2's tab rules), and the test proves BEFORE-start
+  via a capture-time `stampAtStart` recorded inside the fake — an after-return assertion would
+  pass the regression.
+- **S2** M2 ships prototype-exact (`old(root)` scale .96 / 240 ms ease · `new(root)` from 1.04
+  / 380 ms + 100 ms delay on `--gc-ease-out`), keyframes unified kind-neutral
+  (`gacha-root-out/in` serve tab 240/380+100 AND detail 200/300 via per-kind overrides). The
+  spike seam PROMOTED per its charter: flag + fenced block deleted, `runNavTransition` = the
+  real gacha-gated decorator, other themes byte-identical (e2e: one `tab` stamp per real tap
+  on gacha — cardinality via the MutationRecord `oldValue` chain, two taps ⇒ `["tab","tab"]`;
+  zero on cosmos). The hosted-nav branch (utils→conf) gets reel but NO M2 (flushSync-in-effect;
+  pre-existing, accepted).
+- **S3** the reel FIGURE: `--gc-figure-{h,x,lift,dur,peak}` tokens (h default 67% vs the
+  prototype's 84% — the re-scope; the tokens.css note carries the aspect/clip numbers), art via
+  `reelFigureArt` (G5 pin swaps it), warm-up preload, degradation LATCH (corrupt art ⇒
+  slats-only; `perf: lite` ⇒ no fetch AND no mount), overlay unchanged at z 45.
+- **⚠ DURABLE LESSON (Codex right, main seat wrong, settled by pixel experiment):** CSS
+  `drop-shadow()`'s blur length **IS the Gaussian σ** — proven pixel-identical to `blur()` at
+  the same value in BOTH engines (RMSE 0.0000) — box-shadow's r=2σ does NOT apply to filter
+  functions. The first bake halved the glow; regenerated σ 48/35 asset px (30/22 css ÷ .622
+  scale), 855×900 107 KB, recipe reproduces byte-for-byte (`art.ts`); `--gc-figure-h` 62→67%
+  compensates (900/828) so the character's on-screen size is unchanged. The independent
+  two-shadows form KEPT (baking the real filter chain overshoots 1.4–1.5×).
+- **Review arc:** Codex R1 READY WITH FIXES (2 MED/3 LOW) → wave `a282ef8`+`cafb48a` → confirm
+  round: all four CONFIRMED-RESOLVED + 2 new LOWs (before-start proof · a flipped ratio in the
+  tokens note), both closed `fa86ed3`. HANDOFF-stale-flag LOW = ruled historical-blocks-stand;
+  the live top block carries the disclaimer.
+- **Carried to G5:** owner-supplied cutouts have no baked glow (bake at index time, or document
+  the expectation) · the figure's failure latch is safe ONLY while `FIGURE` is module-static —
+  runtime/media-index art needs URL-scoped reset semantics (Codex confirm note).
+- **OPEN (the G4 gate):** the owner FIGURE EYEBALL (asset/size/timing — the tokens are the
+  dials; the corrected glow is fuller than the first evidence strips) + the Fennec+Chrome
+  device round (Gate-B shape) incl. the one-line M2 check: *switch tabs under gacha; the slats
+  keep sweeping through the cross-fade*.
 
 **Acceptance matrix (the lock session turns this into per-slice test obligations):** 0/1/many
 hosts · hosts>roster and roster>hosts · queries loading/error states (pill, counter) ·
