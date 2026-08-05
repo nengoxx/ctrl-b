@@ -62,7 +62,8 @@ stylelint ⑨, `kit-render.spec.ts` ⑩ — all SHIPPED 2026-07-10 and ARE in th
 the bespoke Agent tab on the §15 chat contract]; F5 polish/gates remains):**
 the second bespoke/spatial theme. Pre-classified:
 **Fleet = bespoke** (Mœbius art-map + GPS beacons + rig-card grid; `present()` supplies x/y +
-`assets` art + per-host `appearance.frontier.image` override — §9.9) · **Agent tab = bespoke** (the
+`assets` art; the per-host `appearance.frontier.image` override was **RETIRED at D53 M2** — the
+`media/frontier/rigs/` owner pool replaced it; `x`/`y` still work — §9.9) · **Agent tab = bespoke** (the
 one non-Fleet structural deviation any theme has, D29) · **HostDetail = reuse the Kit
 `BottomSheet`** · everything else = a `.kit` tokens reskin. Design source:
 `design/prototypes/variations/frontier.html`; build precedent + reusable seams
