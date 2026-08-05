@@ -60,6 +60,13 @@ FRONTIER_ROLES: tuple[str, ...] = ("rigs", "hero", "stack")
 #: pool with a first-wins default that the owner may override by name. The named role gets none.
 FRONTIER_SLOTS: tuple[str, ...] = ("hero",)
 
+#: The kit role folders (D53 M3 / MEDIA_PLAN §3). ONE named role, and it belongs to no theme: every
+#: theme's service rows read it, so the namespace is the kit's rather than any theme's. Its keys are
+#: DATA-DERIVED — a file binds to the service whose identity its stem matches — which is why there is no
+#: key list here: the services live in `config.yaml`, not in this registry. No pins for the same reason
+#: the frontier stack has none: the filename IS the binding.
+KIT_ROLES: tuple[str, ...] = ("services",)
+
 
 @dataclass(frozen=True)
 class MediaNamespace:
@@ -77,6 +84,7 @@ class MediaNamespace:
 MEDIA_NAMESPACES: dict[str, MediaNamespace] = {
     "gacha": MediaNamespace(roles=GACHA_ROLES, slots=GACHA_SLOTS),
     "frontier": MediaNamespace(roles=FRONTIER_ROLES, slots=FRONTIER_SLOTS),
+    "kit": MediaNamespace(roles=KIT_ROLES),
 }
 
 #: extension -> (Content-Type served, magic-byte format name expected inside).

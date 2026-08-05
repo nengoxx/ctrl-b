@@ -262,6 +262,29 @@ def test_the_frontier_namespace_serves_its_three_roles(home: Path) -> None:
         assert c.get(body["roles"]["stack"][0]["url"]).status_code == 200
 
 
+def test_the_kit_namespace_serves_its_one_named_role_and_offers_no_pin(home: Path) -> None:
+    """D53 M3's registry row. `kit/services/` is the namespace no THEME owns — every theme's service
+    rows read it — and its keys are DATA-DERIVED: the server reports stems and knows nothing about what
+    a service is called, because the binding (`normalizeMediaKey(stem) == keyFor(service)`) is computed
+    client-side only. So the whole server-side contract is: the role lists, the stems are reported, the
+    files serve, and there is no pin to configure."""
+    with make_client() as c:
+        (ns_dir(home, "kit") / "services" / "Jellyfin.png").write_bytes(png_bytes())
+        body = c.get("/api/media/kit").json()
+        assert [f["name"] for f in body["roles"]["services"]] == ["Jellyfin"]
+        assert list(body["roles"]) == ["services"]
+        assert body["slots"] == {}
+        assert c.get(body["roles"]["services"][0]["url"]).status_code == 200
+
+        # An empty `media.kit` block is valid config (the namespace has nothing to persist: no order
+        # worth keeping for a role where the FILENAME is the assignment, and no pins at all)…
+        assert c.put("/api/settings", json={"media": {"kit": {}}}).status_code == 200
+        # …but a pin is refused, like every other slot typo: the registry row declares none.
+        assert (
+            c.put("/api/settings", json={"media": {"kit": {"slots": {"services": "x"}}}}).status_code == 422
+        )
+
+
 def test_symlinked_FILES_inside_a_role_are_neither_listed_nor_served(home: Path, tmp_path) -> None:
     """Codex W1 — the hole the namespace-root containment could not see: a link INSIDE a role whose
     target is also inside the namespace passed both `follow_symlink=False` and the two-segment shape
