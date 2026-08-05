@@ -4057,6 +4057,30 @@ Ships IN v1.5.0 (owner: finished product, no seams, no dead code), sequenced M1a
   reader + round-trip test die deliberately; no UI writer ever existed; the rigs pool
   replaces it per R3's spirit). The D28 appearance blob and frontier `x/y` keep working.
 
+**M3 as-built (2026-08-05, `d70d395`+`bbbb859`+`6dcb7a1` + R1 `8941676` + `06b6f7f` — build
+Opus, audit main seat, Codex READY WITH FIXES → R1 wave → confirm ALL RESOLVED → the copy
+residual closed): kit service icons — D53 IS FEATURE-COMPLETE.** Decisions of record beyond
+the plan: `keyFor` treats a blank/whitespace `kind` as ABSENT (falls to trimmed `name` — the
+MachineEditor writer's rule applied at the reader; bare `??` would mint an empty key) · the
+five verified render sites are kit Fleet (grid — a `:has(.kit-svcicon)` column only when an
+icon exists), vapor DeviceRow, **cosmos CosmosHostDetail (the fleet has no service rows)**,
+frontier + gacha HostDetail · the icon latch is per-instance keyed on
+`artIdentity(url, revision)` (lifted to lib/media.ts; GachaReel shares it) **with
+`key={identity}` on the `<img>` so a revision change replaces the element — the late-old-
+error race cannot latch repaired bytes (negative-proven ×5 surfaces)** · `classifyNamed` is
+the ONE classifier for BOTH named key sources (static stack keys + data-derived services):
+byKey/keyOf/shadowed/unmatched, unusable files keep the server's verdict · registry rows
+carry `keySource: "services"` (dispatch is declared, never inferred) and `useServices` gained
+per-observer `(pollSeconds | false, {enabled})` (the gallery reads identities without driving
+the fleet poll) · `ICON_ART` 200 KB/512² · `isStemRepresentable` = the conservative
+WINDOWS-superset stem rule (chars, control range, DOS device names, edge dot/space — a
+Windows server is a supported profile and the media dir is server-side); the gallery's
+reason stays GENERAL ("no file on the server could be named this") · `useServiceIcons`
+policy: 10-min staleTime, no focus refetch, silent degrade; a failed refetch over cached
+data stays quiet, terminal failure reads "service list unavailable — bindings unknown". The
+two-group ConfTab render test (deferred from M1b) is in (`#media-gacha`+`#media-kit` under
+gacha; `#media-kit` alone under vapor). **Owner eyeball DEFERRED-UNTIL-USE (standing).**
+
 **M2 as-built (2026-08-05, `8e0c6ba`+`7c3898d`+`40b2b39`+`9e55090` — build Opus, audit main
 seat, Codex READY WITH FIXES → closed): the frontier namespace + the `image` retirement.**
 Decisions of record beyond the plan: `rigUrlFor` is PARTIAL (owner art or undefined) with the

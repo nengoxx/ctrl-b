@@ -12,7 +12,24 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ UPDATE 3 (2026-08-05, Fable): **✅ M2 CLOSED — NEXT = M3 (kit service icons), the LAST media slice**
+> ## ▶ UPDATE 4 (2026-08-05, Fable): **✅ M3 CLOSED — D53 MEDIA-V2 IS FEATURE-COMPLETE. NEXT = G6 palettes, then release v1.5.0**
+> The whole M-ladder closed in ONE day, each slice through the full cadence (Opus build →
+> main-seat audit → Codex → fix wave where needed). M3 = `d70d395`+`bbbb859`+`6dcb7a1` + R1
+> wave `8941676` + residual `06b6f7f` (as-built = the D53 M3 addendum: keyFor, the
+> `key={identity}` race fix negative-proven ×5, `classifyNamed` one-classifier, the
+> cross-platform stem rule, the two-group ConfTab test). Also fixed en route: `be4f4a2` — the
+> morning's appbar slimming had broken a gacha layout e2e arm UNDETECTED because push CI
+> skips e2e (the known gotcha; the M3 builder's full Playwright run surfaced it). **The tree
+> state: FE 1549 vitest / BE 1306 pytest / 211 Playwright ALL GREEN, full gate green; 17
+> LOCAL commits past origin `693a06a` — the owner pushes by word, ASK before pushing.** Owner
+> eyeballs for G5/M2/M3 all DEFERRED-UNTIL-USE (standing ruling: no drops for now, the
+> feature ships finished; every surface probe-verified live instead). Dev units RUNNING.
+> **NEXT = G6** (GACHA_PLAN §4.4: the ruled palette trio + two accent-shifters + the owner's
+> four DARK dossier palettes & measured action button as OPTIONS — **the dark-dossier flip is
+> a TRIAL needing explicit owner sign-off**), then release v1.5.0 per deploy/linux/README
+> §Release (prod stays v1.4.6 until then).
+>
+> ## ▶ UPDATE 3 (2026-08-05, Fable): **✅ M2 CLOSED — superseded above (M3 closed the same day)**
 > **The owner's standing ruling this block inherits: NO file drops for now — the media feature
 > ships FINISHED, probe-verified, eyeballs DEFERRED-UNTIL-USE** (G5's round, M2's, M3's — all
 > the same standing; the owner: "I just want the feature ready for whenever I want to use
