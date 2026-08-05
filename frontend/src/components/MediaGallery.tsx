@@ -1,6 +1,6 @@
 import { useMediaIndex, type MediaFile } from "../hooks/useMedia";
 import { useSaveSettings } from "../hooks/useSettings";
-import type { ThemeMedia } from "../theme-engine/types";
+import type { MediaNsDef, MediaRoleDef } from "../theme-engine/mediaRegistry";
 
 // The owner-media gallery (D52/G5, GACHA_PLAN §5.4) — the Conf half of the read-only media surface.
 //
@@ -9,21 +9,36 @@ import type { ThemeMedia } from "../theme-engine/types";
 // boundary), so a write endpoint would be reachable by anything on the tailnet. The owner copies files in
 // from another machine; this ORDERS and PINS them, and tells them when a file will not work.
 //
-// NAMESPACE-GENERIC: everything theme-shaped arrives as `ThemeMedia` DATA from the active `ThemeDef` (the
-// same descriptor-not-code shape the per-theme settings rows already use), and the ROLES come from the
-// server's index. So the next art-bearing theme is a declaration, not a second gallery.
+// NAMESPACE-GENERIC: everything descriptive arrives as a `MediaNsDef` row from `theme-engine/mediaRegistry`
+// (D53 §5's inversion — a namespace need not belong to a theme), and which roles EXIST comes from the
+// server's index. So the next namespace is a registry row, not a second gallery.
 //
 // Writes go through the ordinary `PUT /api/settings` — `media.<ns>.roles.<role>.order` and
 // `media.<ns>.slots.<key>`. There is no media-specific write path to secure or to keep in sync.
 
-/** Warning code → what the owner should read. Codes come from the index's magic-byte reader; anything
- *  unrecognised is shown verbatim rather than swallowed, so a new server-side code is never invisible. */
-const WARNINGS: Record<string, { text: string; bad?: boolean }> = {
+/** Advisory code → what the owner should read. Two come from the server's `unusable_reason` (only it read
+ *  the bytes); the other two are derived HERE from the file's numbers against the role's bounds, because
+ *  "too big" is per-role policy and the server ships facts (MEDIA_PLAN §5). An unrecognised server reason
+ *  is shown verbatim rather than swallowed, so a new one is never invisible. */
+const ADVISORIES: Record<string, { text: string; bad?: boolean }> = {
   unreadable: { text: "unreadable file", bad: true },
   "format-mismatch": { text: "wrong extension", bad: true },
   oversize: { text: "large file" },
   dimensions: { text: "very large image" },
 };
+
+/** The badges for one file, in severity order: what makes it unusable first, then the size advisories.
+ *  A role the registry does not describe still shows the server's verdict — it only loses the bounds. */
+function advisories(f: MediaFile, role: MediaRoleDef | undefined): string[] {
+  const out: string[] = [];
+  if (f.unusable_reason != null) out.push(f.unusable_reason);
+  if (role != null) {
+    if (f.size_bytes > role.bounds.bytes) out.push("oversize");
+    if (f.width != null && f.height != null && f.width * f.height > role.bounds.pixels)
+      out.push("dimensions");
+  }
+  return out;
+}
 
 /** `640×854 · 88 KB` — the two numbers the §10.4 hint is about, and nothing else. */
 function metaText(f: MediaFile): string {
@@ -34,14 +49,14 @@ function metaText(f: MediaFile): string {
   return f.width && f.height ? `${f.width}×${f.height} · ${size}` : size;
 }
 
-export function MediaGallery({ media }: { media: ThemeMedia }) {
+export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
   // FRESH on entry (Codex F7). The files are dropped in OUT OF BAND — over SSH, from another machine —
   // so a long-lived query with a 60s staleTime would show the owner a listing that predates the copy
   // they just finished. This observer alone opts out: an always-refetch on mount plus the default
   // refetch-on-window-focus means arriving at the gallery, or coming back to the tab, re-reads the
   // directory. NOT a polling interval: the theme's own surfaces share this key, and nothing here is
   // worth a request every N seconds on a phone.
-  const { data, isLoading, error } = useMediaIndex(media.ns, {
+  const { data, isLoading, error } = useMediaIndex(ns, {
     staleTime: 0,
     refetchOnMount: "always",
   });
@@ -66,7 +81,7 @@ export function MediaGallery({ media }: { media: ThemeMedia }) {
     );
   }
 
-  const patch = (block: Record<string, unknown>) => save.mutate({ media: { [media.ns]: block } });
+  const patch = (block: Record<string, unknown>) => save.mutate({ media: { [ns]: block } });
 
   /** Move one file within its role and persist the WHOLE role order — the config field is the order
    *  itself, not a diff, and writing the full list is what keeps the stored order meaningful after the
@@ -85,15 +100,18 @@ export function MediaGallery({ media }: { media: ThemeMedia }) {
     <div className="conf-card mgal">
       {roles.map((role) => {
         const files = data.roles[role] ?? [];
+        // The server is the authority on which roles EXIST; the registry only describes them, so a role it
+        // has no row for still lists and still reorders — it just carries no hint and no size advisories.
+        const roleDef = def.roles[role];
         return (
           <section className="mgal-role" key={role}>
             <div className="mgal-head">
               <b>{role}</b>
               <span className="path">
-                media/{media.ns}/{role}/
+                media/{ns}/{role}/
               </span>
             </div>
-            {media.roles?.[role] != null && <p className="mgal-hint">{media.roles[role]}</p>}
+            {roleDef?.hint != null && <p className="mgal-hint">{roleDef.hint}</p>}
             {files.length === 0 ? (
               <p className="mgal-empty">
                 Empty — the theme uses its bundled art. Copy .png/.jpg/.webp files into this folder.
@@ -114,13 +132,16 @@ export function MediaGallery({ media }: { media: ThemeMedia }) {
                     <div className="mgal-meta">
                       <span className="name">{f.file}</span>
                       <span className="dim">{metaText(f)}</span>
-                      {f.warnings.map((w) => (
+                      {advisories(f, roleDef).map((w) => (
                         <span
-                          className={"badge" + (WARNINGS[w]?.bad ? " stale" : " dim")}
+                          className={"badge" + (ADVISORIES[w]?.bad ? " stale" : " dim")}
                           key={w}
                           title={w}
                         >
-                          {WARNINGS[w]?.text ?? w}
+                          {/* The PROBED format rides the mismatch badge: the bytes are a jpeg however the
+                              name reads, and that is the whole of what the owner has to act on. */}
+                          {(ADVISORIES[w]?.text ?? w) +
+                            (w === "format-mismatch" && f.format != null ? ` (${f.format})` : "")}
                         </span>
                       ))}
                     </div>
@@ -152,7 +173,7 @@ export function MediaGallery({ media }: { media: ThemeMedia }) {
 
       {/* The PINS (§5.2). Optional in every sense — the role folders above cover the ordinary case on
           their own — so they sit last, and every one of them offers "—" as its first option. */}
-      {media.slots != null && media.slots.length > 0 && (
+      {def.slots != null && def.slots.length > 0 && (
         <section className="mgal-role mgal-pins">
           <div className="mgal-head">
             <b>pins</b>
@@ -162,7 +183,7 @@ export function MediaGallery({ media }: { media: ThemeMedia }) {
             Bind one image into a role, overriding that folder&apos;s own first pick.
           </p>
           <div className="mgal-pin-grid">
-            {media.slots.map((slot) => {
+            {def.slots.map((slot) => {
               // The options come from the slot's OWN source role, which is not always the role being
               // pinned (ruled, Codex F4): the gacha reel figure needs a transparent cutout, so it offers
               // `reel/` and never the cast — a character pinned there would sweep the screen as a

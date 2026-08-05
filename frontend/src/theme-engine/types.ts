@@ -148,32 +148,17 @@ export interface ThemeDef {
   // theme whose presentation genuinely can't express a preset. Resolved by `layout.ts#resolveLayout`.
   defaultLayout?: LayoutId;
   layouts?: LayoutId[];
-  // Owner-supplied art (D52/G5): the media NAMESPACE this theme reads, plus the copy the Conf gallery
-  // needs to describe it. Declaring it is what makes the gallery appear for this theme — the same
-  // descriptor-not-code shape as `settings` above, so the shared Conf tab never branches on a theme id.
+  // Owner-supplied art (D52/G5): the media NAMESPACE this theme's surfaces read.
   media?: ThemeMedia;
 }
 
-/** A theme's owner-media declaration. The ROLES are folders under `$CTRLB_HOME/media/<ns>/`, and the
- *  server's index is the authority on which exist — this only supplies the words for them, because
- *  "what does `reel/` mean" is theme knowledge that no generic gallery could invent. */
+/** A theme's owner-media LINK (D53 / MEDIA_PLAN §5 — the registry inversion). Everything DESCRIPTIVE about
+ *  a namespace (its roles, the gallery's copy for them, the `slots` pins, the advisory bounds) lives in
+ *  `theme-engine/mediaRegistry`, because a namespace need not belong to a theme at all — `kit` belongs to
+ *  none. A ThemeDef says only which namespace it reads. */
 export interface ThemeMedia {
-  /** The `/api/media/{ns}` namespace. `gacha` is the first; the next art theme is another string. */
+  /** The `/api/media/{ns}` namespace, and a key of `MEDIA_NS`. `gacha` is the first. */
   ns: string;
-  /** role → the hint shown under its heading in the gallery. A role with no hint still renders. */
-  roles?: Record<string, string>;
-  /** The `slots` pins the gallery offers (§5.2): binding one named file INTO a role, overriding that
-   *  role folder's own first-wins pick.
-   *
-   *  `from` names the role whose files are the OPTIONS — which is not always the role being pinned, and
-   *  the difference is load-bearing (ruled, Codex F4): the gacha reel figure needs a transparent CUTOUT,
-   *  so its options come from `reel/`, never from the cast. Offering a character portrait there would
-   *  let the owner pick something that sweeps across the screen as a rectangle.
-   *
-   *  `bundled` names what the theme itself can supply for the slot while `from` is still empty, so the
-   *  pin is useful on a fresh install instead of an empty select. They must be names the theme's own
-   *  resolver would accept — a theme test is the right place to keep the two in step. */
-  slots?: { key: string; label: string; from: string; bundled?: string[] }[];
 }
 
 // Only BUILT themes appear here (a Partial record) — `rootFor` falls back to `DEFAULT_THEME` for an

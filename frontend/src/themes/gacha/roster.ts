@@ -12,6 +12,12 @@
 // figure (G4) — must ALL resolve through it, because a host's card art and its promo art disagreeing would
 // read as a bug (Codex R4-3: one deterministic behavior, one shared resolver).
 //
+// D53 M1b lifted the GENERIC half of the resolution into `lib/media.ts` — `orderedUsable`, `cycleAt` /
+// `cycleAssign` and `firstUsable` are the operations frontier's rigs and the kit's icons compose too. What
+// stays here is what is gacha's alone: the wide ladder, focal crops, cutouts, and which role feeds which
+// surface (the ossification fence, MEDIA_PLAN §2). Behavior is unchanged through the lift — the §9 parity
+// arms in tests/themes/gachaRoster.test.ts are what say so.
+//
 // G5 wired the OWNER's files in (§5.4's ruled option (b)): `rosterFromIndex` below builds a `Roster` out
 // of the media index's per-role listings, and `defaultRoster()` is now the FALLBACK — the bundled set a
 // fresh install shows before a single file has been dropped in. Every fallback is per ROLE, so a fleet
@@ -19,6 +25,7 @@
 // actually supplied is replaced.
 
 import type { MediaFile, MediaIndex } from "../../hooks/useMedia";
+import { cycleAssign, cycleAt, firstUsable, orderedUsable } from "../../lib/media";
 import { ART } from "./art";
 
 /** One roster entry — one object per character, extended with optional fields rather than grown into
@@ -166,7 +173,7 @@ export function rosterFromIndex(index: MediaIndex | undefined): Roster {
     return Array.isArray(files) ? files : [];
   };
   const characters = role("characters");
-  const scenes = role("banner").filter((f) => !f.unusable);
+  const scenes = orderedUsable(role("banner"));
   return {
     entries: characters.length > 0 ? characters.map(toEntry) : bundled.entries,
     slots: index.slots ?? {},
@@ -189,22 +196,17 @@ function toEntry(f: MediaFile): RosterEntry {
 }
 
 function pool(files: MediaFile[]): NamedArt[] {
-  return files
-    .filter((f) => !f.unusable)
-    .map((f) => ({ name: f.name, url: f.url, rev: f.revision }));
+  return orderedUsable(files).map((f) => ({ name: f.name, url: f.url, rev: f.revision }));
 }
 
 /** The entry a host at `index` (its position in the fleet's DISPLAY order) is assigned.
  *
  *  ORDERED CYCLING when there are more hosts than entries (`i mod N`, ruled at lock — Codex R4-3): the
  *  alternative, leaving the overflow hosts art-less, would make the placeholder a NORMAL state on any fleet
- *  bigger than the roster. The placeholder (`null`) is reserved for the genuinely degenerate case: an EMPTY
- *  roster. A negative or fractional index is treated as unassigned rather than throwing — the caller is a
- *  render path. */
+ *  bigger than the roster. `cycleAt` is that operation, and it deals the list WHOLE — an unusable entry
+ *  holds its position and only `toArt` below turns it into the placeholder. */
 export function entryForHost(roster: Roster, index: number): RosterEntry | null {
-  const n = roster.entries.length;
-  if (n === 0 || !Number.isInteger(index) || index < 0) return null;
-  return roster.entries[index % n];
+  return cycleAt(roster.entries, index);
 }
 
 /** The card/portrait art for a host at `index`. `null` → the consumer's placeholder treatment. */
@@ -214,7 +216,7 @@ export function artForHost(roster: Roster, index: number): ResolvedArt | null {
 
 /** The whole fleet's assignment in one call, in display order — what a Fleet body maps over. */
 export function assignArt(roster: Roster, hostCount: number): (ResolvedArt | null)[] {
-  return Array.from({ length: Math.max(0, hostCount) }, (_, i) => artForHost(roster, i));
+  return cycleAssign(roster.entries, hostCount).map(toArt);
 }
 
 /** The LANDSCAPE art for a host at `index` — the banner's per-host promo slide (§6.4).
@@ -257,18 +259,11 @@ function toArt(entry: RosterEntry | null | undefined): ResolvedArt | null {
 //    owner's drop-in assignment) → the BUNDLED default. The bundled art is the fallback rather than a
 //    roster entry so it can never be dealt to a host as a capsule portrait (the art.ts partition rule).
 
-/** First-wins on a role pool, honestly typed: indexing an empty array yields `undefined` at runtime, and
- *  this project does not run `noUncheckedIndexedAccess` — so the middle rung of every ladder below would
- *  otherwise claim to always match and make its bundled fallback look like dead code. */
-function first(pool: NamedArt[]): NamedArt | undefined {
-  return pool.length > 0 ? pool[0] : undefined;
-}
-
 /** The fleet wallpaper / pickup-banner backdrop. */
 export function wallpaperArt(roster: Roster): ResolvedArt {
   return (
     toWideArt(slotEntry(roster, "wallpaper")) ??
-    first(roster.pools.wallpaper) ?? { url: ART.banner }
+    firstUsable(roster.pools.wallpaper) ?? { url: ART.banner }
   );
 }
 
@@ -280,7 +275,8 @@ export function heroArt(roster: Roster): ResolvedArt {
 /** The agent oracle's backdrop. */
 export function oracleArt(roster: Roster): ResolvedArt {
   return (
-    toWideArt(slotEntry(roster, "oracle")) ?? first(roster.pools.oracle) ?? { url: ART.oracle }
+    toWideArt(slotEntry(roster, "oracle")) ??
+    firstUsable(roster.pools.oracle) ?? { url: ART.oracle }
   );
 }
 
@@ -299,7 +295,7 @@ export function oracleArt(roster: Roster): ResolvedArt {
  *  one still leaves a figure. Owner cutouts have NO baked glow: see the `reel/` gallery hint
  *  (index.tsx) and the bake recipe in art.ts. */
 export function reelFigureArt(roster: Roster): ResolvedArt | null {
-  const pin = roster.slots.reel_figure;
-  const pinned = pin === undefined ? undefined : roster.pools.reel.find((a) => a.name === pin);
-  return pinned ?? first(roster.pools.reel) ?? null;
+  // `firstUsable`'s pin resolves within THIS pool and nothing else, which is exactly the F4 ruling: a
+  // legacy pin naming a plain character finds no member here and falls through to the pool's own first.
+  return firstUsable(roster.pools.reel, roster.slots.reel_figure) ?? null;
 }

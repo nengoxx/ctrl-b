@@ -37,8 +37,11 @@ export interface MediaFile {
   /** Unreadable, or a format that disagrees with the extension — the mount would serve a broken image.
    *  The file still keeps its POSITION (that is what stops one bad drop re-dealing the whole fleet). */
   unusable: boolean;
-  /** Gallery advisories: `unreadable` · `format-mismatch` · `oversize` · `dimensions`. */
-  warnings: string[];
+  /** WHY it is unusable, machine-readable, `null` when it is not — one of the two verdicts only the SERVER
+   *  can reach (it read the bytes). Named apart from the index's own `disabled`/`reason` below, which are
+   *  about the whole NAMESPACE. The gallery turns it into a sentence; every SIZE-derived advisory is the
+   *  client's own, from the numbers above against the registry's per-role bounds (MEDIA_PLAN §5). */
+  unusable_reason: "unreadable" | "format-mismatch" | null;
 }
 
 export interface MediaIndex {

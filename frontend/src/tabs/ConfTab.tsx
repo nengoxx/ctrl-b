@@ -51,6 +51,7 @@ import { clearGroupScrollTarget, useGroupScrollTarget } from "../store/groupScro
 import { requestPrompt } from "../store/prompt";
 import { pushToast } from "../store/toast";
 import { HOSTED_UTILS_GROUP_ID } from "../theme-engine/layout";
+import { applicableNs, MEDIA_NS } from "../theme-engine/mediaRegistry";
 import { registry, registeredThemes } from "../theme-engine/registry";
 import { defaultSwitchTarget } from "../theme-engine/resolve";
 import { themeRowValue } from "../theme-engine/settings";
@@ -2489,21 +2490,26 @@ export function ConfTab({ active }: Props) {
         </div>
       </ConfGroup>
 
-      {/* Owner art (D52/G5) — only for a theme that DECLARES a media namespace (`ThemeDef.media`), the
-          same descriptor-driven shape as the per-theme settings rows above: this tab never branches on a
-          theme id. Last, and after Appearance, because it is the one Conf group whose content lives
-          outside config entirely — the files are on disk, and this only records their order and pins. */}
-      {activeDef?.media != null && (
-        <ConfGroup
-          id="theme-art"
-          num={hostsUtils ? "20" : "19"}
-          title="Theme art"
-          right={`media/${activeDef.media.ns}/`}
-          defaultCollapsed
-        >
-          <MediaGallery media={activeDef.media} />
-        </ConfGroup>
-      )}
+      {/* Owner media (D52/G5 · D53 §5) — one group per APPLICABLE namespace: the active theme's own, plus
+          any row the registry marks always-on (a namespace no theme owns). Descriptor-driven like the
+          per-theme settings rows above, so this tab never branches on a theme id or a namespace name.
+          Last, and after Appearance, because these are the only Conf groups whose content lives outside
+          config entirely — the files are on disk, and this only records their order and pins. */}
+      {applicableNs(activeDef).map((ns, i) => {
+        const def = MEDIA_NS[ns];
+        return (
+          <ConfGroup
+            key={ns}
+            id={`media-${ns}`}
+            num={String((hostsUtils ? 20 : 19) + i).padStart(2, "0")}
+            title={def.title}
+            right={`media/${ns}/`}
+            defaultCollapsed
+          >
+            <MediaGallery ns={ns} def={def} />
+          </ConfGroup>
+        );
+      })}
 
       <div className="conf-foot">
         ctrl·b · vapor build ·{" "}

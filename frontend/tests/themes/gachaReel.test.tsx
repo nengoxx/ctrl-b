@@ -254,7 +254,7 @@ describe("the reel figure", () => {
           width: 1,
           height: 1,
           unusable: false,
-          warnings: [],
+          unusable_reason: null,
         },
       ],
     },

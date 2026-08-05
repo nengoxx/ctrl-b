@@ -92,7 +92,7 @@ const mediaFile = (name: string, role: string) => ({
   width: 1,
   height: 1,
   unusable: false,
-  warnings: [],
+  unusable_reason: null,
 });
 const mediaIndex = (roles: Record<string, ReturnType<typeof mediaFile>[]>) => ({
   ns: "gacha",

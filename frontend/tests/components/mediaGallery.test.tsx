@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MediaIndex } from "../../src/hooks/useMedia";
-import type { ThemeMedia } from "../../src/theme-engine/types";
+import { MEDIA_NS } from "../../src/theme-engine/mediaRegistry";
 
 // The owner-media gallery (D52/G5, GACHA_PLAN §5.4) — the Conf half of the read-only media surface.
 //
@@ -17,7 +17,13 @@ import type { ThemeMedia } from "../../src/theme-engine/types";
 //  · reordering writes the WHOLE role order (the config field is the order itself, not a diff);
 //  · a pin writes `media.<ns>.slots.<key>`, and clearing one writes null — never a stray "";
 //  · nothing here can create, rename or delete a file (§5.4 ruled option (b): there is no write API);
-//  · the index's warnings are SHOWN — a file the theme cannot use must be visible as such.
+//  · the advisories are SHOWN — a file the theme cannot use must be visible as such. Since D53 M1b the
+//    gallery DERIVES them: the server's `unusable_reason` for what only it can know (it read the bytes),
+//    and the size/dimension ones here, from the file's numbers against the registry row's per-role bounds.
+//
+// The row under test is the REAL `MEDIA_NS.gacha`, not a local fixture: the parity obligation on the M1b
+// lift is that the same files show the same badges as when the server derived them, which is a claim about
+// the bounds that actually ship.
 
 const api = vi.hoisted(() => ({
   getJSON: vi.fn(),
@@ -34,17 +40,6 @@ vi.mock("../../src/lib/composer", () => ({ loadProviders: vi.fn(), loadAgents: v
 
 import { MediaGallery } from "../../src/components/MediaGallery";
 
-const MEDIA: ThemeMedia = {
-  ns: "gacha",
-  roles: { characters: "Capsule cards.", reel: "The cutout that rides the tab transition." },
-  slots: [
-    { key: "wallpaper", label: "Fleet backdrop", from: "characters" },
-    // The ruled shape (Codex F4): the figure's options come from the REEL role, not the cast, with the
-    // theme's own bundled cutout standing in while that folder is empty.
-    { key: "reel_figure", label: "Transition figure", from: "reel", bundled: ["lyra"] },
-  ],
-};
-
 const file = (name: string, role: string, over: Partial<MediaIndex["roles"][string][0]> = {}) => ({
   name,
   file: `${name}.webp`,
@@ -55,7 +50,7 @@ const file = (name: string, role: string, over: Partial<MediaIndex["roles"][stri
   width: 640,
   height: 854,
   unusable: false,
-  warnings: [] as string[],
+  unusable_reason: null,
   ...over,
 });
 
@@ -77,7 +72,7 @@ function renderGallery(payload: MediaIndex = index()): ReturnType<typeof render>
   const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const ui: ReactElement = (
     <QueryClientProvider client={qc}>
-      <MediaGallery media={MEDIA} />
+      <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
     </QueryClientProvider>
   );
   return render(ui);
@@ -121,35 +116,59 @@ describe("MediaGallery", () => {
     expect(screen.getByText("media/gacha/reel/")).toBeTruthy();
   });
 
-  it("shows the theme's per-role hint — including the reel cutout's missing-glow expectation", async () => {
+  it("shows the registry's per-role hint — including the reel cutout's missing-glow expectation", async () => {
     renderGallery();
     await screen.findByText("a.webp");
-    expect(screen.getByText("The cutout that rides the tab transition.")).toBeTruthy();
+    expect(screen.getByText(/The cutout that rides the tab transition/)).toBeTruthy();
   });
 
-  it("surfaces the index's warnings, and marks an unusable file on its row", async () => {
+  it("derives the four advisories — the server's verdict plus the role's bounds — and marks the bad row", async () => {
     const { container } = renderGallery(
       index({
         roles: {
           characters: [
-            file("liar", "characters", { unusable: true, warnings: ["format-mismatch"] }),
-            file("huge", "characters", {
-              warnings: ["oversize", "dimensions"],
-              size_bytes: 3_600_000,
+            file("liar", "characters", {
+              unusable: true,
+              unusable_reason: "format-mismatch",
+              format: "jpeg",
             }),
+            file("stub", "characters", {
+              unusable: true,
+              unusable_reason: "unreadable",
+              format: null,
+            }),
+            // Facts only: 3.6 MB and 12.8 MP, both past the gacha row's full-art bounds.
+            file("huge", "characters", { size_bytes: 3_600_000, width: 3000, height: 4257 }),
           ],
         },
       }),
     );
     await screen.findByText("liar.webp");
-    expect(screen.getByText("wrong extension")).toBeTruthy();
+    // The PROBED format rides the mismatch badge (§5's client-compares-format-to-extension line): the
+    // bytes are a jpeg however the name reads, which is the whole of what the owner has to act on.
+    expect(screen.getByText("wrong extension (jpeg)")).toBeTruthy();
+    expect(screen.getByText("unreadable file")).toBeTruthy();
     expect(screen.getByText("large file")).toBeTruthy();
     expect(screen.getByText("very large image")).toBeTruthy();
-    expect(container.querySelectorAll(".mgal-item.bad")).toHaveLength(1);
+    expect(container.querySelectorAll(".mgal-item.bad")).toHaveLength(2);
     // …and the oversize one still shows its real numbers, because it is still usable
-    expect([...container.querySelectorAll(".mgal-item .dim")][1].textContent).toBe(
-      "640×854 · 3.6 MB",
+    expect([...container.querySelectorAll(".mgal-item .dim")][2].textContent).toBe(
+      "3000×4257 · 3.6 MB",
     );
+  });
+
+  it("a file inside the role's bounds carries NO badge — the advisory is a ceiling, not a description", async () => {
+    const { container } = renderGallery(
+      index({
+        roles: {
+          characters: [
+            file("ok", "characters", { size_bytes: 1_500_000, width: 2000, height: 2000 }),
+          ],
+        },
+      }),
+    );
+    await screen.findByText("ok.webp");
+    expect(container.querySelectorAll(".mgal-item .badge")).toHaveLength(0);
   });
 
   it("moving a file writes the WHOLE role order through PUT /api/settings", async () => {
@@ -200,7 +219,7 @@ describe("MediaGallery", () => {
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     render(
       <QueryClientProvider client={qc}>
-        <MediaGallery media={MEDIA} />
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
       </QueryClientProvider>,
     );
     await screen.findByText("a.webp");
@@ -245,7 +264,7 @@ describe("MediaGallery", () => {
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const ui = (
       <QueryClientProvider client={qc}>
-        <MediaGallery media={MEDIA} />
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
       </QueryClientProvider>
     );
     const { unmount } = render(ui);
@@ -370,7 +389,7 @@ describe("MediaGallery", () => {
       const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
       render(
         <QueryClientProvider client={qc}>
-          <MediaGallery media={MEDIA} />
+          <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
         </QueryClientProvider>,
       );
       await vi.advanceTimersByTimeAsync(0);
@@ -398,7 +417,7 @@ describe("MediaGallery", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={qc}>
-        <MediaGallery media={MEDIA} />
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
       </QueryClientProvider>,
     );
     expect(await screen.findByText(/media index unreachable: boom/)).toBeTruthy();

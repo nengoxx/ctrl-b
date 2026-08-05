@@ -1,6 +1,7 @@
 import { expect, test } from "./fixtures";
 
-// The owner-media gallery ROUND TRIP, driven in the real built app (D53 M1a's gate). The vitest suite
+// The owner-media gallery ROUND TRIP, driven in the real built app (D53 M1a's gate; the group id became
+// per-NAMESPACE at M1b, when the Conf tab started rendering one gallery per applicable namespace). The vitest suite
 // (tests/components/mediaGallery.test.tsx) already pins the patch SHAPE against a mocked api client; what
 // only a browser run can prove is the whole chain: the Conf group renders under a media-bearing theme, a
 // reorder leaves through `PUT /api/settings` as a `media.<ns>` patch — the D53 §4 re-home, never the old
@@ -20,7 +21,7 @@ const file = (name: string) => ({
   width: 640,
   height: 854,
   unusable: false,
-  warnings: [] as string[],
+  unusable_reason: null as string | null,
 });
 
 const SAVE_ECHO = {
@@ -40,7 +41,7 @@ test("Conf · Theme art — a reorder writes `media.<ns>` and survives a reload"
       JSON.stringify({ theme: "gacha", mode: "dark", accent: "arcade", tab: "conf", v: 1 }),
     );
     // The gallery's Conf group ships collapsed; the persisted collapse blob opens it before first paint.
-    localStorage.setItem("ctrlb.collapsed", JSON.stringify({ "theme-art": false }));
+    localStorage.setItem("ctrlb.collapsed", JSON.stringify({ "media-gacha": false }));
   });
 
   // Registered AFTER the baseline mock, so it wins — and everything it does not own is handed back with
@@ -77,7 +78,7 @@ test("Conf · Theme art — a reorder writes `media.<ns>` and survives a reload"
   });
 
   await page.goto("/");
-  const art = page.locator("#theme-art");
+  const art = page.locator("#media-gacha");
   await expect(art.locator(".mgal-item .name").first()).toHaveText("a.webp");
 
   await art.getByRole("button", { name: "Move b.webp up" }).click();
@@ -94,6 +95,6 @@ test("Conf · Theme art — a reorder writes `media.<ns>` and survives a reload"
 
   // ③ …and the persisted state is what a fresh boot reads back
   await page.reload();
-  await expect(page.locator("#theme-art .mgal-item .name")).toHaveText(["b.webp", "a.webp"]);
+  await expect(page.locator("#media-gacha .mgal-item .name")).toHaveText(["b.webp", "a.webp"]);
   expect(puts).toHaveLength(1); // a reload is not a write
 });

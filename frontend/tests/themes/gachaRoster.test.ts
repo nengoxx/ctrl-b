@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
-import { gacha } from "../../src/themes/gacha";
+import { MEDIA_NS } from "../../src/theme-engine/mediaRegistry";
 import { ART } from "../../src/themes/gacha/art";
 import {
   artForHost,
@@ -23,6 +23,17 @@ import {
 // through (cards, promo slides, dossier, reel figure). These cases are the §7 acceptance-matrix rows the
 // resolver owns: 0 / 1 / many hosts · hosts > roster (ordered cycling) · roster > hosts · a `slots` pin to a
 // missing entry. Pure functions, so no render, no store, no queries.
+//
+// ── D53 M1b · the PARITY ARMS (MEDIA_PLAN §9). The resolver now composes `lib/media.ts` (`orderedUsable`,
+//    `cycleAt`/`cycleAssign`, `firstUsable`) instead of owning those rules itself, and the obligation on that
+//    lift is that nothing changed. The four named arms, each pinned below UNMODIFIED through the refactor:
+//      ① scenes — "banner/ becomes the SCENE slides" + the broken-scene case (`orderedUsable`);
+//      ② unusable-position deal stability — "unusable entries hold their position" (`cycleAt`, the whole
+//        list dealt: one broken file must not re-deal the fleet);
+//      ③ wallpaper/oracle fallback — "slots — pins, and what happens when a pin dangles" + the pin-outranks-
+//        folder case (`firstUsable` as the ladder's middle rung);
+//      ④ reel bundled replacement — "reel/ outranks the bundled cutout" + the legacy-pin cases
+//        (`firstUsable` with its pin).
 
 function entry(name: string, extra: Partial<RosterEntry> = {}): RosterEntry {
   return { name, image: `${name}.webp`, ...extra };
@@ -272,7 +283,7 @@ const file = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
   height: 854,
   revision: "1:1000",
   unusable: false,
-  warnings: [],
+  unusable_reason: null,
   ...over,
 });
 
@@ -420,10 +431,11 @@ describe("reelFigureArt — the pin selects a CUTOUT, never a portrait", () => {
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
   });
 
-  it("the theme's declared `bundled` pin options ARE the bundled cutout-bearing entries", () => {
+  it("the registry's declared `bundled` pin options ARE the bundled cutout-bearing entries", () => {
     // The gallery offers `slot.bundled` while reel/ is empty; if the two drift, the owner is offered a
-    // name the resolver would refuse. Kept in step here rather than by comment.
-    const declared = gacha.media?.slots?.find((s) => s.key === "reel_figure")?.bundled ?? [];
+    // name the resolver would refuse. Kept in step here rather than by comment — the declaration moved to
+    // the media registry at M1b, the resolver did not.
+    const declared = MEDIA_NS.gacha.slots?.find((s) => s.key === "reel_figure")?.bundled ?? [];
     const withCutouts = defaultRoster()
       .entries.filter((e) => e.cutout !== undefined)
       .map((e) => e.name);
