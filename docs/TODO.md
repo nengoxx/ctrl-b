@@ -927,7 +927,7 @@ Full suite (92 unit + 32 e2e) + 390px eyeball green at EVERY milestone. Audit ea
       *(parked post-F5: per-host art-override UI + the asset format/size pass)*): own Fleet (art-map + GPS beacons, `x/y` via `present()`) + **bespoke Agent tab**
       (the 3-layer bobbing rig-stack empty state — the one non-Fleet structural deviation) + bottom-sheet `HostDetail` (**reuse cosmos's
       `components/BottomSheet.tsx` primitive** — multi-snap, see THEME_ENGINE §14.13 #9) + asset strategy
-      (`import.meta.glob`; built-in Mœbius drawing set by index + per-host `host.appearance.frontier.image` override).
+      (`import.meta.glob`; built-in Mœbius drawing set by index + per-host `host.appearance.frontier.image` override — that override was later **RETIRED at D53 M2**, replaced by the `media/frontier/rigs/` owner pool).
 
 **Per-theme Fleet eyeball passes (owner directive):** each theme's Fleet (and frontier's Agent) gets a 390px design pass
 to decide what host data to show / how to structure it — only the Fleet (+ frontier Agent) deviate; everything else is
@@ -1346,7 +1346,7 @@ v1.5.0 is RESERVED for this theme's release.
 - [ ] **M1a–M3 media namespaces v2 (D53, `MEDIA_PLAN.md` §8 — BEFORE G6, owner-ruled):**
   - [x] M1a config re-home alone — ✅ CLOSED 2026-08-05 (`a767871`; ns-generic `media:` model + slot keys moved into the registry row `MediaNamespace(roles, slots)`, `themes:` family deleted, reader/writer moved, both dev configs verified clean (no key — nothing to hand-clean), ignored-old-keys test + NEW gallery round-trip e2e; Opus build → main-seat audit PASS → Codex READY zero findings)
   - [x] M1b `lib/media.ts` operations + the FE registry inversion — ✅ CLOSED 2026-08-05 (`59b7c2a`+`2832744`+fix `7890dab`; ops = orderedUsable/cycleAt/cycleAssign/firstUsable — resolveNamed→M2, keyFor→M3; registry rows INLINE in `theme-engine/mediaRegistry.ts` (cycle-ruled), ThemeMedia = ns link, ConfTab `applicableNs` w/ always-on mechanism (kit row lands M3); `warnings[]` off the wire, `unusable` COMPUTED from `unusable_reason`, advisories client-side per-role; §9 parity arms passed unmodified; Codex READY WITH FIXES → both LOWs taken, LOW-3 two-group render test DEFERRED to M3)
-  - [ ] M2 frontier namespace (rigs/hero/stack consumers, the `image` retirement, 8-combo stack matrix) — owner eyeball gate
+  - [x] M2 frontier namespace — ✅ CLOSED 2026-08-05 (`8e0c6ba`+`7c3898d`+`40b2b39`+fix `9e55090`; rigs/hero/stack via the `ownerArt.ts` adapter (present() stays pure; partial `rigUrlFor` ⇒ empty-folder byte-identity by construction), `named` kind + `resolveNamed`/`normalizeMediaKey`, gallery key rows + binds-as badges, LAYER_ART bounds, the `image` retirement (x/y keep), 8-combo matrix + degrade-isolation arms; probe-verified live incl. case-folded stem binding + hero pin round-trip; Codex READY WITH FIXES → 3 LOWs closed: first-declared-wins + registry uniqueness invariant + owner-art e2e arm + neutral `sigil` pass-through seed) — **owner eyeball DEFERRED-UNTIL-USE (owner 2026-08-05: no drops for now, feature ships finished)**
   - [ ] M3 kit services (`keyFor`, `ServiceIcon`, five surfaces, keyed gallery UI + collision/unmatched annotations) — owner eyeball ≥2 themes + automated arms on all five
 - [ ] G6 palette variants per `GACHA_PLAN.md` §7/§4.4 (base-ramp trio + two accent-shifters + the owner's dark-dossier trial options — the dark flip needs explicit owner sign-off, it reverses G2's one-light-surface identity)
 - [ ] Release as v1.5.0 (runbook §Release; prod currently v1.4.6 by owner ruling)

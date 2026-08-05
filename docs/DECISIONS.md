@@ -4057,6 +4057,20 @@ Ships IN v1.5.0 (owner: finished product, no seams, no dead code), sequenced M1a
   reader + round-trip test die deliberately; no UI writer ever existed; the rigs pool
   replaces it per R3's spirit). The D28 appearance blob and frontier `x/y` keep working.
 
+**M2 as-built (2026-08-05, `8e0c6ba`+`7c3898d`+`40b2b39`+`9e55090` — build Opus, audit main
+seat, Codex READY WITH FIXES → closed): the frontier namespace + the `image` retirement.**
+Decisions of record beyond the plan: `rigUrlFor` is PARTIAL (owner art or undefined) with the
+bundled rung at the consumer (`?? assets[enc.asset]`) so present()'s RIG_KEYS modulo is never
+duplicated and empty-folder byte-identity holds by construction · NO (url,revision) failure
+latch for frontier (background-image has no error event; server-marked unusable never reaches
+the DOM) · `MediaKeyDef` static key lists carry per-key geometry hints; `LAYER_ART`
+(500 KB/1 MP) priced apart from FULL_ART against the measured layer boxes · `resolveNamed`
+collapses colliding declared keys FIRST-declared-wins (+ a registry uniqueness invariant) ·
+the owner-art e2e arm proves the adapter live (the empty-fixture arm proves only bundled
+parity) · the hosts pass-through test seeds a neutral `sigil` key (a generic test must not
+model a retired key as supported). **The owner eyeball is DEFERRED-UNTIL-USE (owner ruling
+2026-08-05: no file drops for now; probe verification + the automated matrix stand in).**
+
 **M1b as-built (2026-08-05, `59b7c2a`+`2832744`+`7890dab` — build Opus, audit main seat,
 Codex READY WITH FIXES → closed):** the operations module ships gacha's consumed set only
 (`orderedUsable`/`cycleAt`/`cycleAssign`/`firstUsable`; `resolveNamed`→M2, `keyFor`→M3 —

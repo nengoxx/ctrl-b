@@ -12,7 +12,22 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ UPDATE 2 (2026-08-05, Fable): **✅ M1b CLOSED — NEXT = M2 (frontier), which ends in an owner eyeball**
+> ## ▶ UPDATE 3 (2026-08-05, Fable): **✅ M2 CLOSED — NEXT = M3 (kit service icons), the LAST media slice**
+> **The owner's standing ruling this block inherits: NO file drops for now — the media feature
+> ships FINISHED, probe-verified, eyeballs DEFERRED-UNTIL-USE** (G5's round, M2's, M3's — all
+> the same standing; the owner: "I just want the feature ready for whenever I want to use
+> custom art"). M2 landed as `8e0c6ba` (BE frontier row) + `7c3898d` (`named` kind +
+> `resolveNamed` + gallery key rows) + `40b2b39` (the `ownerArt.ts` adapter, consumers, the
+> `image` retirement) + fix `9e55090` (Codex 3 LOWs: first-declared-wins + registry
+> uniqueness invariant + the owner-art e2e arm + neutral `sigil` seed). As-built = the D53 M2
+> addendum. Probe-verified on the live dev backend (case-folded `Cube.png`→cube binding,
+> unreadable-never-binds, hero pin PUT round-trip, percent-encoded URLs 200). ALL LOCAL past
+> `693a06a` — the owner pushes by word, ask before pushing. **NEXT = M3** (kit services row —
+> alwaysOn, `keyFor` over `kind ?? name`, ONE `ServiceIcon` w/ the (url,revision) latch, five
+> surfaces, keyed gallery + collision/unmatched annotations, `useServiceIcons` policy, + the
+> deferred two-group ConfTab render test), then G6 palettes, then v1.5.0.
+>
+> ## ▶ UPDATE 2 (2026-08-05, Fable): **✅ M1b CLOSED — superseded above (M2 closed the same day)**
 > The owner gave the go ("make sure the implementation is correct… let's go"). M1b landed as
 > `59b7c2a` (FE: lib/media.ts ops + the registry inversion + gacha recomposed, parity arms
 > unmodified) + `2832744` (BE: `warnings[]` off the wire, `unusable_reason` added) + the fix
