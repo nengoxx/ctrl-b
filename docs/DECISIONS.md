@@ -4056,3 +4056,14 @@ Ships IN v1.5.0 (owner: finished product, no seams, no dead code), sequenced M1a
 - **`appearance.frontier.image` is RETIRED** — an intentional breaking retirement (live
   reader + round-trip test die deliberately; no UI writer ever existed; the rigs pool
   replaces it per R3's spirit). The D28 appearance blob and frontier `x/y` keep working.
+
+**M1a as-built (2026-08-05, `a767871` — build Opus, audit main seat, Codex READY zero
+findings):** the fold landed exactly as ruled, with one build-time decision of record — slot
+KEYS moved into the backend registry row (`MEDIA_NAMESPACES: dict[ns, MediaNamespace(roles,
+slots)]`), because they existed nowhere ns-generic once `GachaSlotsCfg`'s typed fields died;
+the registry was already the roles authority, and a row (not a sibling map) keeps the next
+namespace one-row additive. Registry validation now refuses namespace AND slot typos (wider
+than G5's roles-only check); slot VALUES stay unvalidated on purpose (parity: the gallery's
+clear-pin writes `""`/`null`, filtered in the projection). Consequence until M2: a
+hand-authored `media.frontier` block 422s (no registry row yet). Dev configs verified to
+carry no old keys — the hand-clean item was a no-op.

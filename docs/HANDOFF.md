@@ -12,6 +12,23 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
+> ## ▶ UPDATE (2026-08-05, Fable): **✅ THE STACK IS PUSHED · G5's OWNER ROUND DEFERRED · M1a CLOSED — NEXT = M1b (awaits the owner's go, per the phase-pause rule)**
+> The owner's word landed: **push** — origin/main is at `693a06a` (the whole G5 arc + D53 docs +
+> an owner-requested kit tweak: the "on" appbar slimmed to the clear mode's 8/6 pads, kit-wide +
+> gacha's override; live-verified 50px). Push CI green (local pre-push bypassed with its
+> documented escape because a builder was mutating the tree — CI ran the same gate). **The G5
+> FILE-DROP + gallery round is DEFERRED by the owner ("we'll leave that for some time later") —
+> it no longer gates the M-slices but is still owed before v1.5.0 ships** (the one thing verified
+> only at layout level: real-touch gallery reorder). **M1a is CLOSED** (`a767871`, LOCAL —
+> unpushed): the total `themes:`→`media:` fold per MEDIA_PLAN §4, slot keys moved into the
+> registry row (`MediaNamespace(roles, slots)` — the D53 as-built addendum records why), dev
+> configs verified clean (hand-clean = no-op), ignored-old-keys test + the repo's first gallery
+> round-trip e2e. Arc: Opus build → main-seat audit PASS (3 deviations ruled ACCEPTED) → Codex
+> **READY, zero findings**. Gotcha until M2: a hand-authored `media.frontier` block 422s (no
+> registry row yet). **NEXT = M1b** (lib/media.ts operations + FE registry inversion + ConfTab
+> `applicableNs` + gacha parity arms + `warnings[]` off the wire) — brief is ready to write from
+> MEDIA_PLAN §5; do not start without the owner's go-ahead.
+>
 > ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-05, Fable — written for a COLD session)
 > **Where the phase stands: G0–G4 ✅ CLOSED AND PUSHED (origin @ `fb38289`) · G5 code+reviews
 > ✅ COMPLETE but UNPUSHED · the media-v2 extension ✅ COUNCIL-SETTLED as D53 · release arc =
