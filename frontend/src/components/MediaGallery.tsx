@@ -1,11 +1,7 @@
 import { useMediaIndex, type MediaFile } from "../hooks/useMedia";
 import { useSaveSettings } from "../hooks/useSettings";
-import { normalizeMediaKey, resolveNamed } from "../lib/media";
-import {
-  serviceKeyBindings,
-  useDerivedServiceKeys,
-  type ServiceKeyBindings,
-} from "../theme-engine/kit/serviceIcons";
+import { classifyNamed, normalizeMediaKey, type NamedBinding } from "../lib/media";
+import { serviceKeyBindings, useDerivedServiceKeys } from "../theme-engine/kit/serviceIcons";
 import type { MediaNsDef, MediaRoleDef } from "../theme-engine/mediaRegistry";
 
 // The owner-media gallery (D52/G5, GACHA_PLAN §5.4) — the Conf half of the read-only media surface.
@@ -46,43 +42,45 @@ function advisories(f: MediaFile, role: MediaRoleDef | undefined): string[] {
   return out;
 }
 
-/** A STATIC-key `named` role's binding, both ways round: which file took each declared KEY, and which key
- *  (if any) each FILE took. Same `resolveNamed` the theme resolves through, so the gallery cannot claim a
- *  binding the render will not honour — including the two rules that decide the contested cases (an
- *  unusable file never binds; on a stem collision the first in this listing wins).
+/** A STATIC-key `named` role's binding (the frontier stack): the declared keys, plus the SAME generic
+ *  classification the data-derived source gets — `classifyNamed`, so both key sources diagnose a drop
+ *  identically (Codex M3 MED-1: the static path used to record only the winners, which left a shadowed
+ *  `Cube.webp` and a mistyped `platform_mis.png` looking exactly like a file that had bound).
  *
- *  The reverse map is keyed on the file OBJECT, which is exactly why `resolveNamed` returns the caller's
- *  own entries rather than copies. The DATA-derived key source (kit's services) is the same shape with
- *  more to say — `serviceKeyBindings`, which also classifies the files that bound nothing. */
+ *  It runs through the same operation the THEME resolves through, so the gallery cannot claim a binding
+ *  the render will not honour — including the two rules that decide the contested cases (an unusable
+ *  file never binds; on a stem collision the first in this listing wins). */
 function bindings(files: MediaFile[], role: MediaRoleDef | undefined) {
   const keys = role?.keys;
   if (keys === undefined) return null;
-  const byKey = resolveNamed(
-    files,
-    keys.map((k) => k.key),
-  );
-  const keyOf = new Map<MediaFile, string>();
-  for (const [key, file] of byKey) keyOf.set(file, key);
-  return { keys, byKey, keyOf };
+  return {
+    keys,
+    binding: classifyNamed(
+      files,
+      keys.map((k) => k.key),
+    ),
+  };
 }
 
-/** What a DERIVED-key role says about one file, from the file's own side. `null` = nothing to say (it
- *  bound a key, and the key badge beside it already says which).
+/** What a `named` role says about one file, from the file's own side. `null` = nothing to say (it bound
+ *  a key, and the key badge beside it already says which; or the file is broken and carries the
+ *  server's verdict instead).
  *
- *  UNKNOWN while the services are still loading is the load-bearing case (Opus M5): "no service is
- *  called that" is a claim about a list we do not have yet, and rendering it for a beat would tell the
- *  owner their correctly-named file is wrong. */
+ *  UNKNOWN while a DERIVED role's data is still loading — or unreachable — is the load-bearing case
+ *  (Opus M5): "no service is called that" is a claim about a list we do not have, and rendering it would
+ *  tell the owner their correctly-named file is wrong. A static-key role has its keys from the registry,
+ *  so it is never in that state. */
 function fileNote(
   f: MediaFile,
-  derived: ServiceKeyBindings | null,
-  pending: boolean,
+  binding: NamedBinding<MediaFile> | null,
+  unknown: boolean,
 ): { text: string; title: string } | null {
-  if (pending) return { text: "unknown", title: "still reading the fleet's services" };
-  if (derived === null || f.unusable || derived.keyOf.has(f)) return null;
+  if (unknown) return { text: "unknown", title: "the list of keys is not available yet" };
+  if (binding === null || f.unusable || binding.keyOf.has(f)) return null;
   const key = normalizeMediaKey(f.name);
-  return derived.shadowed.has(f)
+  return binding.shadowed.has(f)
     ? { text: "duplicate", title: `another file already binds "${key}"` }
-    : { text: "no service", title: `no service is named or kinded "${key}"` };
+    : { text: "no match", title: `nothing here is named "${key}"` };
 }
 
 /** `640×854 · 88 KB` — the two numbers the §10.4 hint is about, and nothing else. */
@@ -238,17 +236,20 @@ function RoleSection({
   // The role's own data dependency, and only its own: a role with no `keySource` passes `false` and this
   // adds no fetcher (the hook is still CALLED — rules of hooks — it just does not subscribe to a poll).
   const derives = roleDef?.keySource === "services";
-  const { services } = useDerivedServiceKeys(derives);
+  const { services, failed } = useDerivedServiceKeys(derives);
   // "We do not know yet" is a THIRD state, not an empty list: annotating files against an empty service
   // list would flag every correctly-named one as unmatched for as long as the fleet query takes (§5).
-  const pending = derives && services === undefined;
+  // And it has two causes with two different sentences — still loading, or it will never arrive.
+  const unknown = derives && services === undefined;
   const derived = derives && services !== undefined ? serviceKeyBindings(services, files) : null;
   // A NAMED role is not a list the owner orders — it is a set of slots they FILL by filename, so the keys
   // are shown with what each one currently resolves to. Without this a named role would render
   // indistinguishably from a pool, and the one thing the owner must know (what to call the file) would
   // appear nowhere.
   const named = bindings(files, roleDef);
-  const keyOf = (f: MediaFile) => named?.keyOf.get(f) ?? derived?.keyOf.get(f);
+  // ONE binding either way (Codex M3 MED-1): both key sources classify through `classifyNamed`, so the
+  // badges below are rendered once rather than once per source.
+  const binding = named?.binding ?? derived?.binding ?? null;
 
   return (
     <section className="mgal-role">
@@ -264,7 +265,7 @@ function RoleSection({
       {named != null && (
         <ul className="mgal-keys">
           {named.keys.map((k) => {
-            const file = named.byKey.get(k.key);
+            const file = named.binding.byKey.get(k.key);
             return (
               <li key={k.key}>
                 <code>{k.key}</code>
@@ -275,7 +276,13 @@ function RoleSection({
           })}
         </ul>
       )}
-      {pending && <p className="mgal-empty">reading the fleet&apos;s services…</p>}
+      {/* The two UNKNOWN states, told apart (Codex M3 LOW-2): a spinner sentence for a request that will
+          never arrive is the one thing worse than saying the bindings cannot be shown. */}
+      {unknown && (
+        <p className="mgal-empty">
+          {failed ? "service list unavailable — bindings unknown" : "reading the fleet’s services…"}
+        </p>
+      )}
       {derived != null &&
         (derived.rows.length === 0 ? (
           <p className="mgal-empty">
@@ -291,7 +298,11 @@ function RoleSection({
                       no winner to pick — services are not in the media index — so BOTH rows share the one
                       file, and saying so is the whole remedy (per-host binding is out of scope, §0). */}
                   {row.services.join(" · ")}
-                  {row.services.length > 1 && " — these share one icon"}
+                  {/* …and only "share" it when there IS one (Codex M3 LOW-1): on a fresh install, or
+                      when the only candidate file is unusable, the truthful statement is about the KEY
+                      they collapse to, not about an icon neither of them has. */}
+                  {row.services.length > 1 &&
+                    (row.file ? " — these share this icon" : " — these use the same icon key")}
                   {!row.representable &&
                     " — cannot have an icon: no file can be named this (a “/” or “\\” in the name)"}
                 </span>
@@ -311,8 +322,8 @@ function RoleSection({
       ) : (
         <ul className="mgal-list">
           {files.map((f, i) => {
-            const note = fileNote(f, derived, pending);
-            const key = keyOf(f);
+            const note = fileNote(f, binding, unknown);
+            const key = binding?.keyOf.get(f);
             return (
               <li className={"mgal-item" + (f.unusable ? " bad" : "")} key={f.file}>
                 {/* The thumbnail comes from the SAME mount the theme paints from, so a file that

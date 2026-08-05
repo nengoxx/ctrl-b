@@ -233,4 +233,22 @@ describe.each(SURFACES)("service icons · $name", ({ row, element }) => {
     r.rerender(element());
     expect(iconIn(r)?.getAttribute("src")).toBe(ICON_URL);
   });
+
+  it("a LATE error from the replaced revision cannot latch the repaired one (Codex M3 MED-2)", () => {
+    // The race: revision A's request is still outstanding when B's props arrive. The URL is stable
+    // across a repair, so without a `key` React would re-use the same <img> — and A's later `error`
+    // would fire the UPDATED handler, latching B and hiding a picture that is perfectly good.
+    media.data = withIcon("1:4000");
+    const r = render(element());
+    const stale = iconIn(r)!;
+
+    media.data = withIcon("2:5000");
+    r.rerender(element());
+    fireEvent.error(stale); // A's load fails, late
+
+    expect(iconIn(r)?.getAttribute("src")).toBe(ICON_URL);
+    // …and B's OWN failure still latches: the fix detaches the stale request, it does not disarm the latch.
+    fireEvent.error(iconIn(r)!);
+    expect(imgsIn(r)).toHaveLength(0);
+  });
 });

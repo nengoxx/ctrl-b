@@ -36,6 +36,12 @@ export function ServiceIcon({ service }: { service: ServiceIdentity }) {
 
   return (
     <img
+      // KEYED ON THE IDENTITY, so a new revision REPLACES the element rather than re-using it (Codex M3
+      // MED-2). The URL is stable across a repair, so React would otherwise keep the same <img> — and
+      // the old request is still in flight on it. Its late `error` would then fire the UPDATED handler
+      // and latch the key of the file that just arrived, hiding a picture that is perfectly good until
+      // the next revision or a remount. Replacing the node detaches that request with it.
+      key={key}
       className="kit-svcicon"
       src={icon.url}
       alt=""

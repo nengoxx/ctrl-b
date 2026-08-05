@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   artIdentity,
+  classifyNamed,
   cycleAssign,
   cycleAt,
   firstUsable,
@@ -145,17 +146,87 @@ describe("keyFor — the service identity a file is named after (D53 M3)", () =>
   });
 });
 
-describe("isStemRepresentable — the services that cannot have an icon", () => {
-  it("rejects path separators and the empty key, and nothing else", () => {
-    expect(isStemRepresentable("jellyfin")).toBe(true);
-    expect(isStemRepresentable("home assistant")).toBe(true); // spaces are fine in a filename
-    expect(isStemRepresentable("media/plex")).toBe(false);
-    expect(isStemRepresentable("media\\plex")).toBe(false);
-    expect(isStemRepresentable("")).toBe(false);
+describe("isStemRepresentable — the keys no file can be named after", () => {
+  it("accepts the ordinary ones: letters, digits, spaces, dots and dashes inside the stem", () => {
+    for (const ok of ["jellyfin", "home assistant", "signal-bot", "platform-mid", "node.exporter"])
+      expect(isStemRepresentable(ok), ok).toBe(true);
   });
 
-  it("agrees with `keyFor` on the one service that can produce an empty key", () => {
+  it("rejects every character WINDOWS forbids, not only POSIX's `/` (Codex M3 LOW-3)", () => {
+    // `$CTRLB_HOME/media/` lives on the SERVER's filesystem and a Windows server is a supported
+    // profile, so the rule is the strictest of the ones we ship — otherwise a key looks nameable in
+    // the gallery on one host and cannot be typed on another. `Plex: 4K` is the realistic one.
+    for (const bad of [
+      "media/plex",
+      "media\\plex",
+      "plex: 4k",
+      'say "hi"',
+      "a<b",
+      "a>b",
+      "a|b",
+      "a?b",
+      "a*b",
+    ])
+      expect(isStemRepresentable(bad), bad).toBe(false);
+  });
+
+  it("rejects control characters, the empty key, and a trailing dot or space", () => {
+    expect(isStemRepresentable("a b")).toBe(false);
+    expect(isStemRepresentable("ab")).toBe(false);
+    expect(isStemRepresentable("")).toBe(false);
+    // Windows silently STRIPS these, so the file the owner thinks they saved is not the one on disk.
+    expect(isStemRepresentable("plex.")).toBe(false);
+    expect(isStemRepresentable("plex ")).toBe(false);
+  });
+
+  it("rejects the DOS device names as a WHOLE stem, however they are cased", () => {
+    for (const dev of ["con", "CON", "PRN", "aux", "nul", "com1", "LPT9"])
+      expect(isStemRepresentable(dev), dev).toBe(false);
+    // …and only as the whole stem: a service actually called `console` is nameable.
+    for (const ok of ["console", "con-fig", "com10", "lpt0"])
+      expect(isStemRepresentable(ok), ok).toBe(true);
+  });
+
+  it("agrees with `keyFor` on the keys it can produce", () => {
     expect(isStemRepresentable(keyFor({ name: "   ", kind: "  " }))).toBe(false);
+    expect(isStemRepresentable(keyFor({ name: "Plex: 4K" }))).toBe(false);
+    expect(isStemRepresentable(keyFor({ name: "CON" }))).toBe(false);
+    expect(isStemRepresentable(keyFor({ name: "Home Assistant" }))).toBe(true);
+  });
+});
+
+describe("classifyNamed — every file accounted for, whatever the key SOURCE is", () => {
+  // Generic on purpose (Codex M3 MED-1): the frontier stack's static keys and the kit's data-derived
+  // ones both have collisions and typos, so the diagnostics are one function rather than a feature the
+  // service role happened to get.
+  it("records the winner AND the loser of a file/file collision", () => {
+    const first = f("cube");
+    const second = f("Cube");
+    const out = classifyNamed([first, second], ["cube"]);
+    expect(out.byKey.get("cube")).toBe(first);
+    expect(out.keyOf.get(first)).toBe("cube");
+    expect(out.shadowed.has(second)).toBe(true);
+    expect(out.unmatched.size).toBe(0);
+  });
+
+  it("a file matching no declared key is UNMATCHED — the typo case", () => {
+    const typo = f("platform_mis");
+    const out = classifyNamed([f("cube"), typo], ["cube", "platform-mid"]);
+    expect(out.unmatched.has(typo)).toBe(true);
+    expect(out.shadowed.size).toBe(0);
+  });
+
+  it("an UNUSABLE file is neither shadowed nor unmatched — it carries the server's verdict", () => {
+    const broken = f("cube", true);
+    const out = classifyNamed([broken], ["cube"]);
+    expect(out.byKey.size).toBe(0);
+    expect(out.shadowed.size + out.unmatched.size).toBe(0);
+  });
+
+  it("classifies against the NORMALIZED declared keys, like the binding itself", () => {
+    const out = classifyNamed([f("CUBE"), f("cube")], ["Cube"]);
+    expect(out.keyOf.get(out.byKey.get("Cube")!)).toBe("Cube");
+    expect(out.shadowed.size).toBe(1);
   });
 });
 

@@ -447,14 +447,18 @@ const svcFile = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
 });
 
 /** The kit gallery against a URL-aware client mock: its own index, plus the `/api/services` list it
- *  fetches ITSELF (`services: null` leaves that request pending forever — the unknown state). */
+ *  fetches ITSELF — `services: null` leaves that request pending forever and `"error"` fails it, the two
+ *  ways the key list can be unknown. */
 function renderKitGallery(
   files: MediaFile[],
-  services: { name: string; kind?: string | null }[] | null,
+  services: { name: string; kind?: string | null }[] | null | "error",
 ) {
   api.getJSON.mockImplementation((url: string) => {
-    if (url === "/api/services")
-      return services === null ? new Promise(() => {}) : Promise.resolve(services);
+    if (url === "/api/services") {
+      if (services === null) return new Promise(() => {}); // pending forever
+      if (services === "error") return Promise.reject(new Error("offline"));
+      return Promise.resolve(services);
+    }
     return Promise.resolve({
       ns: "kit",
       collation: "casefold-natural",
@@ -535,11 +539,11 @@ describe("MediaGallery · kit service icons", () => {
     await settled(container);
     const [row] = keyRows(container);
     expect(row.hint).toContain("media-a · media-b");
-    expect(row.hint).toContain("share one icon");
+    expect(row.hint).toContain("share this icon"); // a file DID win it — see the no-file arm below
     expect(row.bound).toBe("jellyfin.png");
   });
 
-  it("flags a file/file collision on the LOSER, and an unmatched file as having no service", async () => {
+  it("flags a file/file collision on the LOSER, and a file no key wants as unmatched", async () => {
     const { container } = renderKitGallery(
       [
         svcFile("jellyfin", { file: "jellyfin.png" }),
@@ -551,7 +555,7 @@ describe("MediaGallery · kit service icons", () => {
     await settled(container);
     expect(badgesOf(container, "jellyfin.png")).toEqual(["jellyfin"]); // the winner, by index order
     expect(badgesOf(container, "Jellyfin.webp")).toEqual(["duplicate"]);
-    expect(badgesOf(container, "emby.png")).toEqual(["no service"]);
+    expect(badgesOf(container, "emby.png")).toEqual(["no match"]);
   });
 
   it("says outright that a service whose key cannot be a filename cannot have an icon", async () => {
@@ -570,5 +574,97 @@ describe("MediaGallery · kit service icons", () => {
     await settled(container);
     expect(badgesOf(container, "jellyfin.png")).toEqual(["wrong extension (jpeg)"]);
     expect(keyRows(container)[0].bound).toBe("no icon");
+  });
+
+  it("colliding services with NO file share a KEY, not an icon (Codex M3 LOW-1)", async () => {
+    // The fresh-install wording. "These share one icon" is a claim about a picture that does not
+    // exist — on a fresh install, or when the only candidate file is unusable, what they actually
+    // share is the name the owner has to give the file.
+    const { container } = renderKitGallery(
+      [],
+      [
+        { name: "media-a", kind: "jellyfin" },
+        { name: "media-b", kind: "jellyfin" },
+      ],
+    );
+    await settled(container);
+    const [row] = keyRows(container);
+    expect(row.hint).toContain("use the same icon key");
+    expect(row.hint).not.toContain("share this icon");
+    expect(row.bound).toBe("no icon");
+  });
+
+  it("a FAILED service list says so, instead of spinning forever (Codex M3 LOW-2)", async () => {
+    // The query is terminal — retry is off — so "reading the fleet's services…" would be a spinner
+    // sentence for something that will never arrive. The FILES keep their honest `unknown` badge:
+    // the bindings are unknown, which is not the same as unmatched.
+    const { container } = renderKitGallery([svcFile("jellyfin")], "error");
+    await waitFor(() =>
+      expect(container.querySelector(".mgal-empty")!.textContent).toContain(
+        "service list unavailable",
+      ),
+    );
+    expect(container.querySelector(".mgal-empty")!.textContent).not.toContain("reading the fleet");
+    expect(keyRows(container)).toEqual([]);
+    expect(badgesOf(container, "jellyfin.png")).toEqual(["unknown"]);
+  });
+});
+
+// ── the STATIC-key half of the same obligation (Codex M3 MED-1) ──────────────────────────────────
+//
+// The frontier stack's keys come from the registry rather than from live data, but a drop can go wrong
+// in exactly the same two ways — a second file reaching a key that is already taken, and a file whose
+// stem matches no key at all. Before the classifier was shared, this path recorded only the WINNERS, so
+// `Cube.webp` and a mistyped `platform_mis.png` looked exactly like a file that had bound.
+
+function renderStackGallery(files: MediaFile[]) {
+  api.getJSON.mockResolvedValue({
+    ns: "frontier",
+    collation: "casefold-natural",
+    roles: { rigs: [], hero: [], stack: files },
+    slots: {},
+  });
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MediaGallery ns="frontier" def={MEDIA_NS.frontier} />
+    </QueryClientProvider>,
+  );
+}
+
+const stackFile = (name: string, file: string): MediaFile => ({
+  ...svcFile(name),
+  file,
+  url: `/api/media/frontier/files/stack/${file}`,
+});
+
+describe("MediaGallery · a static-key named role diagnoses drops the same way", () => {
+  it("badges the LOSER of a stem collision, in either index order", async () => {
+    const png = stackFile("cube", "cube.png");
+    const webp = stackFile("Cube", "Cube.webp");
+
+    const first = renderStackGallery([png, webp]);
+    await waitFor(() => expect(first.container.querySelectorAll(".mgal-item")).toHaveLength(2));
+    expect(badgesOf(first.container, "cube.png")).toEqual(["cube"]);
+    expect(badgesOf(first.container, "Cube.webp")).toEqual(["duplicate"]);
+    cleanup();
+
+    // The tie-break is the LISTING, which the owner reorders — so the other order names the other winner.
+    const second = renderStackGallery([webp, png]);
+    await waitFor(() => expect(second.container.querySelectorAll(".mgal-item")).toHaveLength(2));
+    expect(badgesOf(second.container, "Cube.webp")).toEqual(["cube"]);
+    expect(badgesOf(second.container, "cube.png")).toEqual(["duplicate"]);
+  });
+
+  it("flags a file that matches no declared layer — the typo the owner would otherwise hunt for", async () => {
+    const { container } = renderStackGallery([
+      stackFile("cube", "cube.png"),
+      stackFile("platform_mis", "platform_mis.png"),
+    ]);
+    await waitFor(() => expect(container.querySelectorAll(".mgal-item")).toHaveLength(2));
+    expect(badgesOf(container, "platform_mis.png")).toEqual(["no match"]);
+    // …and the key panel still says what that layer is falling back to.
+    const rows = keyRows(container);
+    expect(rows.map((r) => r.bound)).toEqual(["cube.png", "bundled", "bundled"]);
   });
 });

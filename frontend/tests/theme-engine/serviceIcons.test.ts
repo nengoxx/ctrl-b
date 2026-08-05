@@ -96,7 +96,7 @@ describe("serviceKeyBindings — what the gallery says", () => {
     expect(b.rows.map((r) => r.key)).toEqual(["jellyfin", "grafana"]);
     expect(b.rows[0].file).toBe(jelly);
     expect(b.rows[1].file).toBeUndefined();
-    expect(b.keyOf.get(jelly)).toBe("jellyfin");
+    expect(b.binding.keyOf.get(jelly)).toBe("jellyfin");
   });
 
   it("service/service collision: BOTH services listed on one row, sharing the winning file (§5)", () => {
@@ -122,36 +122,36 @@ describe("serviceKeyBindings — what the gallery says", () => {
 
     const first = serviceKeyBindings(services, [png, webp]);
     expect(first.rows[0].file).toBe(png);
-    expect(first.shadowed.has(webp)).toBe(true);
-    expect(first.unmatched.size).toBe(0);
+    expect(first.binding.shadowed.has(webp)).toBe(true);
+    expect(first.binding.unmatched.size).toBe(0);
 
     // …and in the other order the other file wins — the tie-break IS the listing the owner can reorder.
     const second = serviceKeyBindings(services, [webp, png]);
     expect(second.rows[0].file).toBe(webp);
-    expect(second.shadowed.has(png)).toBe(true);
+    expect(second.binding.shadowed.has(png)).toBe(true);
   });
 
   it("an extension TIE is the same rule: two spellings of one stem, first-wins, no third state", () => {
     const a = file("plex", { file: "plex.png" });
     const b = file("plex", { file: "plex.webp" });
     const out = serviceKeyBindings([{ name: "plex" }], [a, b]);
-    expect(out.keyOf.get(a)).toBe("plex");
-    expect(out.keyOf.has(b)).toBe(false);
-    expect(out.shadowed.has(b)).toBe(true);
+    expect(out.binding.keyOf.get(a)).toBe("plex");
+    expect(out.binding.keyOf.has(b)).toBe(false);
+    expect(out.binding.shadowed.has(b)).toBe(true);
   });
 
   it("a file no service is named for is UNMATCHED — distinct from being shadowed", () => {
     const stray = file("emby");
     const out = serviceKeyBindings([{ name: "plex" }], [file("plex"), stray]);
-    expect(out.unmatched.has(stray)).toBe(true);
-    expect(out.shadowed.size).toBe(0);
+    expect(out.binding.unmatched.has(stray)).toBe(true);
+    expect(out.binding.shadowed.size).toBe(0);
   });
 
   it("an UNUSABLE file is neither: the server's verdict is the reason, and it already carries it", () => {
     const broken = file("plex", { unusable: true, unusable_reason: "unreadable" });
     const out = serviceKeyBindings([{ name: "plex" }], [broken]);
     expect(out.rows[0].file).toBeUndefined();
-    expect(out.shadowed.size + out.unmatched.size).toBe(0);
+    expect(out.binding.shadowed.size + out.binding.unmatched.size).toBe(0);
   });
 
   it("flags a service whose key can never be a filename, and offers it no file", () => {
@@ -162,7 +162,7 @@ describe("serviceKeyBindings — what the gallery says", () => {
   });
 
   it("no services and no files are both empty, never a throw", () => {
-    expect(serviceKeyBindings([], [file("plex")]).unmatched.size).toBe(1);
+    expect(serviceKeyBindings([], [file("plex")]).binding.unmatched.size).toBe(1);
     expect(serviceKeyBindings([{ name: "plex" }], []).rows[0].file).toBeUndefined();
   });
 });

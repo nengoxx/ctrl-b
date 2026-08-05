@@ -14,8 +14,8 @@ import { useCallback } from "react";
 
 import { useMediaIndex, type MediaFile, type MediaIndex } from "../../hooks/useMedia";
 import { useServices } from "../../hooks/useServices";
-import { isStemRepresentable, keyFor, normalizeMediaKey, resolveNamed } from "../../lib/media";
-import type { ServiceIdentity } from "../../lib/media";
+import { classifyNamed, isStemRepresentable, keyFor, resolveNamed } from "../../lib/media";
+import type { NamedBinding, ServiceIdentity } from "../../lib/media";
 
 /** The namespace and the one role it holds — named once so the hook, the gallery and the tests cannot
  *  drift from `core/media.py`'s `KIT_ROLES`. */
@@ -84,20 +84,13 @@ export interface ServiceKeyRow {
 
 export interface ServiceKeyBindings {
   rows: ServiceKeyRow[];
-  /** Which key each WINNING file took — the file's own side of the same answer. */
-  keyOf: Map<MediaFile, string>;
-  /** Files whose stem reaches a key another file already took (file/file collision, first-wins). */
-  shadowed: Set<MediaFile>;
-  /** Files whose stem matches no current service at all — a rename, or a service that has gone away. */
-  unmatched: Set<MediaFile>;
+  /** The files' side of the same answer — bound / shadowed / unmatched, from the SHARED classifier, so
+   *  a derived-key role and a static-key one diagnose a drop identically (Codex M3 MED-1). */
+  binding: NamedBinding<MediaFile>;
 }
 
-/** Everything the gallery says about the `services` role, derived from the LIVE fleet.
- *
- *  Every file is accounted for exactly once, which is the point: the owner drops a file and the gallery
- *  has to answer "did that work?" with one of four sentences — it bound to a key, another file already
- *  had that key, no service is called that, or the file itself is broken (the unusable badge the file
- *  row already carries, which is why those are skipped here rather than reported twice). */
+/** Everything the gallery says about the `services` role, derived from the LIVE fleet: the KEY rows
+ *  (which the static-key roles get from the registry instead) plus the generic file classification. */
 export function serviceKeyBindings(
   services: readonly ServiceIdentity[],
   files: readonly MediaFile[],
@@ -109,24 +102,14 @@ export function serviceKeyBindings(
     if (row) row.services.push(service.name);
     else byKey.set(key, { key, services: [service.name], representable: isStemRepresentable(key) });
   }
-  const bound = resolveNamed(files, [...byKey.keys()]);
-  const keyOf = new Map<MediaFile, string>();
-  for (const [key, file] of bound) {
-    // The row is present by construction (the keys came from it) — `resolveNamed` returns only keys it
+  const binding = classifyNamed(files, [...byKey.keys()]);
+  for (const [key, file] of binding.byKey) {
+    // The row is present by construction (the keys came from it) — the classifier returns only keys it
     // was given. Both directions are recorded because the gallery asks the question both ways.
     const row = byKey.get(key);
     if (row) row.file = file;
-    keyOf.set(file, key);
   }
-  const shadowed = new Set<MediaFile>();
-  const unmatched = new Set<MediaFile>();
-  for (const file of files) {
-    // An unusable file binds nothing, but "shadowed"/"unmatched" would be the wrong reason to give: it
-    // already carries the server's verdict, and THAT is what the owner has to act on.
-    if (file.unusable || keyOf.has(file)) continue;
-    (byKey.has(normalizeMediaKey(file.name)) ? shadowed : unmatched).add(file);
-  }
-  return { rows: [...byKey.values()], keyOf, shadowed, unmatched };
+  return { rows: [...byKey.values()], binding };
 }
 
 /** The gallery's own data dependency (Opus M5): the keyed panel fetches the services ITSELF rather than
@@ -135,9 +118,13 @@ export function serviceKeyBindings(
  *
  *  `enabled` is a parameter rather than a call site condition so the gallery can call this once per role
  *  section unconditionally (rules of hooks) and pay for it only on the role that has a `keySource`.
- *  `undefined` services = "not answered yet OR unreachable", and the caller renders UNKNOWN for both:
- *  claiming "no service is called that" on the strength of a list we do not have is the one wrong
- *  sentence here (§5).
+ *
+ *  THREE outcomes, not two (Codex M3 LOW-2). No list yet is either "still loading" or "the request
+ *  failed", and collapsing them left a terminally failed query rendering "reading the fleet's
+ *  services…" forever — a spinner for something that will never arrive. `failed` separates them so the
+ *  gallery can say which. Neither may say "no service is called that": claiming that on the strength of
+ *  a list we do not have is the one wrong sentence here (§5), so the FILES keep their `unknown` badge in
+ *  both states.
  *
  *  It joins the app-wide `["services"]` query WITHOUT driving its poll (`pollSeconds: false`): the
  *  gallery wants the identities, not the liveness, and the cadence of a shared query belongs to the
@@ -145,7 +132,10 @@ export function serviceKeyBindings(
  *  which is the same fresh-on-entry promise the gallery makes about the files themselves. */
 export function useDerivedServiceKeys(enabled: boolean): {
   services: ServiceIdentity[] | undefined;
+  failed: boolean;
 } {
-  const { data } = useServices(false, { enabled });
-  return { services: enabled ? data : undefined };
+  const { data, isError } = useServices(false, { enabled });
+  // A cached list with a failed REFETCH is not a failure the owner needs told about: the annotations
+  // are still answerable, just from a slightly older list. `failed` is only the state with nothing.
+  return { services: enabled ? data : undefined, failed: enabled && isError && data === undefined };
 }

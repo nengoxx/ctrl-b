@@ -111,14 +111,43 @@ export function keyFor(service: ServiceIdentity): string {
   return normalizeMediaKey(kind !== "" ? kind : service.name.trim());
 }
 
+//: Characters no stem may carry. The set is WINDOWS' (a superset of POSIX's, which forbids only `/`),
+//: and that is deliberate rather than paranoid: `$CTRLB_HOME/media/` lives on the SERVER's filesystem,
+//: and a Windows server is a supported deployment profile (ARCHITECTURE §6). The rule has to be the
+//: strictest of the profiles we ship, because the alternative is a key that looks fine in the gallery on
+//: one host and cannot be typed on another. Control characters ride along: they are unusable everywhere
+//: and invisible in every listing the owner would compare against.
+// eslint-disable-next-line no-control-regex -- the control range IS the rule here, not an accident
+const UNNAMEABLE = /[<>:"/\\|?*\u0000-\u001f]/;
+//: …and the DOS device names, which Windows refuses as a whole filename however it is spelled. Matched
+//: against the whole (already lowercased) stem.
+const DOS_DEVICES = new Set([
+  "con",
+  "prn",
+  "aux",
+  "nul",
+  ...Array.from({ length: 9 }, (_, i) => `com${i + 1}`),
+  ...Array.from({ length: 9 }, (_, i) => `lpt${i + 1}`),
+]);
+
 /** Whether a key can be a FILENAME STEM at all — the honest answer to "why does this service never get
- *  an icon" (§5). A service called `media/plex` normalizes to a key with a path separator in it, and no
- *  file in one directory can carry that name; the empty key (a service with a blank name AND kind) is
- *  the same problem. The GALLERY is where this is said out loud — the render path needs no guard,
- *  because the index only ever lists real files from one directory, so no listed stem can match one of
- *  these keys in the first place. */
+ *  an icon" (§5). A service called `media/plex`, or `Plex: 4K`, normalizes to a key no file in one
+ *  directory can carry; the empty key (a blank name AND kind) is the same problem. Said OUT LOUD in the
+ *  gallery rather than left to be discovered, which is the whole reason this predicate exists: the owner
+ *  would otherwise keep renaming a file that can never match.
+ *
+ *  Conservative on purpose (Codex M3 LOW-3) — see `UNNAMEABLE`. The render path still needs no guard:
+ *  the index only ever lists real files from one directory, so no listed stem can match one of these
+ *  keys in the first place. */
 export function isStemRepresentable(key: string): boolean {
-  return key !== "" && !key.includes("/") && !key.includes("\\");
+  return (
+    key !== "" &&
+    !UNNAMEABLE.test(key) &&
+    !DOS_DEVICES.has(normalizeMediaKey(key)) &&
+    // A trailing dot or space is silently STRIPPED by Windows, so the file the owner thinks they saved
+    // is not the one on disk — unnameable in the only sense that matters here.
+    !/[. ]$/.test(key)
+  );
 }
 
 /** The identity of one piece of art FOR A FAILURE LATCH: which file, and which bytes of it (Codex M2/G4
@@ -159,14 +188,7 @@ export function resolveNamed<T extends MediaNamed>(
   files: readonly T[],
   keys: readonly string[],
 ): Map<string, T> {
-  // First-DECLARED wins when two keys normalize identically (Codex M2 LOW-1): static registry lists are
-  // invariant-tested unique, so this guard is for DATA-DERIVED key lists (M3's service identities), where
-  // it makes the collapse deterministic in declaration order rather than silently last-wins.
-  const wanted = new Map<string, string>();
-  for (const k of keys) {
-    const norm = normalizeMediaKey(k);
-    if (!wanted.has(norm)) wanted.set(norm, k);
-  }
+  const wanted = wantedKeys(keys);
   const bound = new Map<string, T>();
   for (const f of orderedUsable(files)) {
     const key = wanted.get(normalizeMediaKey(f.name));
@@ -174,4 +196,56 @@ export function resolveNamed<T extends MediaNamed>(
     if (key !== undefined && !bound.has(key)) bound.set(key, f);
   }
   return bound;
+}
+
+/** normalized key -> the DECLARED spelling that claimed it. First-DECLARED wins when two keys normalize
+ *  identically (Codex M2 LOW-1): static registry lists are invariant-tested unique, so this guard is for
+ *  DATA-DERIVED key lists (service identities), where it makes the collapse deterministic in declaration
+ *  order rather than silently last-wins. */
+function wantedKeys(keys: readonly string[]): Map<string, string> {
+  const wanted = new Map<string, string>();
+  for (const k of keys) {
+    const norm = normalizeMediaKey(k);
+    if (!wanted.has(norm)) wanted.set(norm, k);
+  }
+  return wanted;
+}
+
+/** `resolveNamed` plus the answer from the FILES' side: every file accounted for, exactly once.
+ *
+ *  The gallery has to be able to say why a drop did nothing, and "it bound" is only one of four
+ *  answers — the other three are what the owner actually needs when the icon or the layer does not
+ *  appear. GENERIC rather than service-specific (Codex M3 MED-1): both `named` key sources have
+ *  collisions and typos, so the static-key roles (the frontier stack) and the data-derived one (kit's
+ *  services) classify through this one function instead of one of them shipping the diagnostics and the
+ *  other only its winners. */
+export interface NamedBinding<T> {
+  /** key -> the file that took it (`resolveNamed`). */
+  byKey: Map<string, T>;
+  /** …and the inverse, for the file's own row. */
+  keyOf: Map<T, string>;
+  /** Files whose stem reaches a key ANOTHER file already took — the file/file collision's losers. */
+  shadowed: Set<T>;
+  /** Files whose stem matches no declared key at all: a typo, a rename, or art for something gone. */
+  unmatched: Set<T>;
+}
+
+export function classifyNamed<T extends MediaNamed>(
+  files: readonly T[],
+  keys: readonly string[],
+): NamedBinding<T> {
+  const byKey = resolveNamed(files, keys);
+  const keyOf = new Map<T, string>();
+  for (const [key, file] of byKey) keyOf.set(file, key);
+  const wanted = wantedKeys(keys);
+  const shadowed = new Set<T>();
+  const unmatched = new Set<T>();
+  for (const f of files) {
+    // An unusable file binds nothing, but "shadowed"/"unmatched" would be the wrong reason to give: it
+    // already carries the server's verdict, and THAT is what the owner has to act on. Truthiness, like
+    // `orderedUsable` — a junk wire value is excluded there, so it must not be diagnosed here.
+    if (f.unusable || keyOf.has(f)) continue;
+    (wanted.has(normalizeMediaKey(f.name)) ? shadowed : unmatched).add(f);
+  }
+  return { byKey, keyOf, shadowed, unmatched };
 }
