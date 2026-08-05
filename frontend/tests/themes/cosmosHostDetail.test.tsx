@@ -14,6 +14,11 @@ import type { Host, Service } from "../../src/types";
 // The frontier half already existed (`frontierHostDetail.test.tsx`); cosmos had no component test at all,
 // which is exactly the gap a refactor would have fallen through.
 
+// D53 M3 — the service rows carry the owner's `kit` service ICON now, and `ServiceIcon` reads the media
+// index. Mocked to the fresh-install state (no owner files, so no icon element) rather than wrapped in a
+// QueryClientProvider — the frontierFleetSheet precedent; the icon itself has its own five-surface suite.
+vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => ({ data: undefined }) }));
+
 afterEach(cleanup);
 
 const host = (over: Partial<Host> = {}): Host => ({

@@ -3,6 +3,7 @@ import type { MouseEvent } from "react";
 import { useFleet } from "../../hooks/useFleet";
 import { relativeTime } from "../../lib/relativeTime";
 import type { Host, Service } from "../../types";
+import { ServiceIcon } from "./ServiceIcon";
 
 // Kit Fleet view (D29 §14.4) — the standard device-list Fleet for reskin themes (minimal now; phosphor/
 // observatory-list later), so DefaultRoot defaults its Fleet section to this. A PURE CONSUMER of the
@@ -228,6 +229,9 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
                     onClick={(e) => e.stopPropagation()}
                   >
                     <span className="led" />
+                    {/* The owner's icon for this service (D53 M3) — nothing at all when they have
+                        dropped none, which is every fresh install. */}
+                    <ServiceIcon service={s} />
                     <span className="nm2">
                       <span className="name">{s.name}</span>
                       <span className="addr">{addr}</span>
@@ -250,6 +254,7 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
                 ) : (
                   <div key={s.id} className="srow off" aria-label={`${s.name} ${addr} — offline`}>
                     <span className="led" />
+                    <ServiceIcon service={s} />
                     <span className="nm2">
                       <span className="name">{s.name}</span>
                       <span className="addr">{addr}</span>

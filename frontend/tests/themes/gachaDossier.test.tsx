@@ -21,6 +21,11 @@ import type { Host, HostServiceCfg, Service } from "../../src/types";
 // capsule card, and the live service rows. The sheet's OPEN wiring lives in `gachaFleet.test.tsx`, beside
 // the click seam it hangs off.
 
+// D53 M3 — the service rows carry the owner's `kit` service ICON now, and `ServiceIcon` reads the media
+// index. Mocked to the fresh-install state (no owner files, so no icon element) rather than wrapped in a
+// QueryClientProvider — the frontierFleetSheet precedent; the icon itself has its own five-surface suite.
+vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => ({ data: undefined }) }));
+
 afterEach(cleanup);
 
 /** N CONFIGURED services (the star + Services-metric input — the host's own array, not the live list). */

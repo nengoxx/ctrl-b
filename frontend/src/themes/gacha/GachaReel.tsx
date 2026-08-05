@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { artIdentity } from "../../lib/media";
 import { setGachaReelRunning } from "../../store/gachaReel";
 import { useUISlice } from "../../store/ui";
 import { reelFigureArt } from "./roster";
@@ -49,11 +50,11 @@ export function GachaReel() {
  *  because it is a property of THIS animation — a second reel-shaped effect would bring its own. */
 const REEL_TOTAL_MS = 640;
 
-/** The identity of a piece of art FOR THE FAILURE LATCH: which file, and which bytes of it. Owner media
- *  is mutable in place, so the URL alone would keep a repaired file latched (Codex F6); bundled art is
- *  content-hashed and carries no revision, which is correct — it cannot change under a running app. */
+/** The identity of a piece of art FOR THE FAILURE LATCH — `lib/media.ts#artIdentity`, over the roster's
+ *  own field name (`rev`). The rule moved there at D53 M3, when the kit `ServiceIcon` became its second
+ *  consumer: "what makes this the same picture" is exactly the kind of rule that drifts if written twice. */
 function artKey(art: { url: string; rev?: string }): string {
-  return `${art.url}\u0000${art.rev ?? ""}`;
+  return artIdentity(art.url, art.rev);
 }
 
 function GachaReelSweep() {

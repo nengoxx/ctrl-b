@@ -60,12 +60,14 @@ export interface MediaIndex {
   reason?: string;
 }
 
-/** `opts` is per-OBSERVER, not per query: TanStack resolves `staleTime`/`refetchOnMount` for each
- *  consumer separately, so the Conf gallery can insist on a fresh read without making the theme's own
- *  surfaces re-fetch on every tab change. */
+/** `opts` is per-OBSERVER, not per query: TanStack resolves `staleTime`/`refetchOnMount`/
+ *  `refetchOnWindowFocus` for each consumer separately, so the three policies that ship can disagree on
+ *  one query — the Conf gallery insists on a fresh read (files arrive out of band), the service icons
+ *  ask for a long stale window and no focus refetch (`kit/serviceIcons.ts`), and a theme's own surfaces
+ *  take the default. All of them still share ONE request and ONE invalidation. */
 export function useMediaIndex(
   ns: string,
-  opts?: { staleTime?: number; refetchOnMount?: "always" },
+  opts?: { staleTime?: number; refetchOnMount?: "always"; refetchOnWindowFocus?: boolean },
 ) {
   return useQuery<MediaIndex>({
     queryKey: ["media", ns],

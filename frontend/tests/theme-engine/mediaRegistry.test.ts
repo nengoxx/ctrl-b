@@ -18,19 +18,22 @@ const ROWS: Record<string, MediaNsDef> = {
 };
 
 describe("applicableNs", () => {
+  // Against the LIVE registry, which since M3 holds the always-on `kit` row — so every expectation here
+  // is "the theme's own namespace, then kit". The mechanism itself is exercised against an injected
+  // registry below, where the two axes can be varied independently.
   it("renders the active theme's own namespace", () => {
-    expect(applicableNs(gacha)).toEqual(["gacha"]);
+    expect(applicableNs(gacha)).toEqual(["gacha", "kit"]);
   });
 
-  it("renders nothing for a theme that links none, and nothing with no theme at all", () => {
-    expect(applicableNs(def({ media: undefined }))).toEqual([]);
-    expect(applicableNs(undefined)).toEqual([]);
+  it("renders only the always-on row for a theme that links none, and with no theme at all", () => {
+    expect(applicableNs(def({ media: undefined }))).toEqual(["kit"]);
+    expect(applicableNs(undefined)).toEqual(["kit"]);
   });
 
-  it("a link naming a namespace the registry does not hold renders NOTHING", () => {
+  it("a link naming a namespace the registry does not hold adds NOTHING", () => {
     // The gallery's first act is to fetch `/api/media/<ns>`; a section that can only ever say "media index
     // unreachable" is worse than no section.
-    expect(applicableNs(def({ media: { ns: "nope" } }))).toEqual([]);
+    expect(applicableNs(def({ media: { ns: "nope" } }))).toEqual(["kit"]);
   });
 
   it("an ALWAYS-ON row renders beside the theme's own — and for a theme that links nothing", () => {
@@ -41,14 +44,56 @@ describe("applicableNs", () => {
     expect(applicableNs(def({ media: undefined }), ROWS)).toEqual(["shared"]);
   });
 
-  it("holds the two art namespaces today — every other theme sees no gallery", () => {
-    // The row count is the slice fence (M2): `kit` has no BACKEND namespace yet, so declaring its row here
-    // would render a gallery whose index 404s.
-    expect(Object.keys(MEDIA_NS)).toEqual(["gacha", "frontier"]);
+  it("holds the two art namespaces plus the always-on kit row — and EVERY theme sees the kit one", () => {
+    expect(Object.keys(MEDIA_NS)).toEqual(["gacha", "frontier", "kit"]);
     // Every LINK a registered theme declares must resolve to a row — a theme linking a namespace this
-    // registry does not hold would silently lose its gallery.
+    // registry does not hold would silently lose its gallery. Since M3 every theme also gets `kit`,
+    // including the three that link nothing: their service rows paint icons from it, so the gallery that
+    // says what to NAME those files has to be reachable from under them (the draft bug, Opus H2).
     for (const theme of registeredThemes()) {
-      expect(applicableNs(theme)).toEqual(theme.media ? [theme.media.ns] : []);
+      expect(applicableNs(theme)).toEqual([...(theme.media ? [theme.media.ns] : []), "kit"]);
+    }
+  });
+});
+
+describe("the kit row (D53 M3)", () => {
+  it("is ALWAYS-ON and holds the one role folder the backend registry declares", () => {
+    // The server's list is `KIT_ROLES` in core/media.py. Always-on is the mechanism, not a preference:
+    // no theme owns this namespace, so nothing else could reach its gallery.
+    expect(MEDIA_NS.kit.alwaysOn).toBe(true);
+    expect(Object.keys(MEDIA_NS.kit.roles)).toEqual(["services"]);
+  });
+
+  it("is NAMED with DATA-derived keys — no static list, and no pins", () => {
+    const services = MEDIA_NS.kit.roles.services;
+    expect(services.kind).toBe("named");
+    expect(services.keySource).toBe("services");
+    // The keys are the fleet's service identities, which live in config.yaml — a static list here would
+    // be a second, always-wrong copy of them.
+    expect(services.keys).toBeUndefined();
+    // Nothing to pin: the FILENAME is the binding, exactly as for the frontier stack.
+    expect(MEDIA_NS.kit.slots).toBeUndefined();
+  });
+
+  it("prices icons far below every art role — the reason bounds went per-role at all", () => {
+    const icons = MEDIA_NS.kit.roles.services.bounds;
+    for (const art of [MEDIA_NS.gacha.roles.characters, MEDIA_NS.frontier.roles.stack]) {
+      expect(icons.bytes).toBeLessThan(art.bounds.bytes);
+      expect(icons.pixels).toBeLessThan(art.bounds.pixels);
+    }
+    // A ~20 CSS px box: 512x512 is already 6x the linear size a 4x-DPR phone can use.
+    expect(icons.pixels).toBe(512 * 512);
+  });
+
+  it("a role declares EITHER a static key list or a key source, never both and never on a pool", () => {
+    for (const [nsName, ns] of Object.entries(MEDIA_NS)) {
+      for (const [roleName, role] of Object.entries(ns.roles)) {
+        const where = `${nsName}/${roleName}`;
+        if (role.keySource !== undefined) {
+          expect(role.kind, where).toBe("named");
+          expect(role.keys, where).toBeUndefined();
+        }
+      }
     }
   });
 });

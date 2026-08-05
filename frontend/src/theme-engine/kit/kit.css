@@ -1652,6 +1652,26 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   color: var(--accent);
   display: inline-flex;
 }
+/* ── owner service icons (D53 M3) ────────────────────────────────────────────────────────────────
+ * `ServiceIcon` renders this one element into all FIVE service-row surfaces, so its base sizing lives
+ * here under the `.kit` marker (every theme's Root is DefaultRoot, so every theme gets it) rather than
+ * five times over in five theme stylesheets. `--svc-icon` is the hook a theme would retune it with.
+ * `contain` because owner art is arbitrary: a wide logo letterboxes inside the square instead of being
+ * cropped or stretched, which is the same promise the frontier stack's layers make. */
+.kit .kit-svcicon {
+  flex: none;
+  width: var(--svc-icon, 20px);
+  height: var(--svc-icon, 20px);
+  object-fit: contain;
+  border-radius: 4px;
+}
+/* The kit's own service row is the one GRID among the five (the other four are flex, where the icon
+ * simply takes its place in the line). `:has()` adds the column ONLY for a row that actually has an
+ * icon — an icon-less row keeps today's three-column template, so the fresh-install rendering is
+ * unchanged by construction rather than by re-measurement. */
+.kit-device .srow:has(.kit-svcicon) {
+  grid-template-columns: auto auto 1fr auto;
+}
 .kit-device .no-svc {
   font-size: 12px;
   color: var(--text-3);

@@ -1,5 +1,6 @@
 import type { FleetAction } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
+import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
 import { CLOSE_DOSSIER_LABEL, dossierSub, pingText, showArtLabel } from "./fleet";
@@ -216,6 +217,9 @@ export function GachaHostDetail({
                 aria-label={`${s.name} ${svcOn ? "online" : "offline"}`}
               >
                 <i aria-hidden />
+                {/* The owner's icon for this service (D53 M3) — nothing at all when they have dropped
+                    none, which is every fresh install. */}
+                <ServiceIcon service={s} />
                 <strong>{s.name}</strong>
                 <small>{s.port == null ? (svcOn ? "healthy" : "offline") : `:${s.port}`}</small>
               </div>

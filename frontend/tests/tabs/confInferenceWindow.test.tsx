@@ -149,6 +149,10 @@ vi.mock("../../src/components/MemoryEditor", () => ({ MemoryEditor: () => null }
 vi.mock("../../src/components/SkillsEditor", () => ({ SkillsEditor: () => null }));
 vi.mock("../../src/components/ServerListEditor", () => ({ ServerListEditor: () => null }));
 vi.mock("../../src/components/AutomationsPanel", () => ({ AutomationsPanel: () => null }));
+// D53 M3 — the `kit` media gallery is ALWAYS-ON, so this tab now renders one under every theme (before
+// M3 the default theme linked no namespace and no gallery mounted here at all). It is a query consumer
+// and this suite has no QueryClientProvider; the groups it produces are covered in confMediaGroups.
+vi.mock("../../src/components/MediaGallery", () => ({ MediaGallery: () => null }));
 // A3 (14c) — ConfTab reads the automations list itself for the group's header summary, so the
 // hook is stubbed alongside the panel (this suite renders ConfTab with no QueryClientProvider).
 // Partial: the group header calls the REAL `automationsSummary` (a pure function of the envelope), so

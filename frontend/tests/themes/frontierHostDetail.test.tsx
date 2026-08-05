@@ -10,6 +10,11 @@ import type { Host, Service } from "../../src/types";
 // the online/offline action set + the typed-action `run` wiring, the per-service link/offline states, and the
 // busy disable. Mirrors the frontierPresent fixture style.
 
+// D53 M3 — the service rows carry the owner's `kit` service ICON now, and `ServiceIcon` reads the media
+// index. Mocked to the fresh-install state (no owner files, so no icon element) rather than wrapped in a
+// QueryClientProvider — the frontierFleetSheet precedent; the icon itself has its own five-surface suite.
+vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => ({ data: undefined }) }));
+
 afterEach(cleanup);
 
 const host = (over: Partial<Host> = {}): Host => ({

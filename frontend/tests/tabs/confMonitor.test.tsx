@@ -99,6 +99,10 @@ vi.mock("../../src/components/MemoryEditor", () => ({ MemoryEditor: () => null }
 vi.mock("../../src/components/SkillsEditor", () => ({ SkillsEditor: () => null }));
 vi.mock("../../src/components/ServerListEditor", () => ({ ServerListEditor: () => null }));
 vi.mock("../../src/components/AutomationsPanel", () => ({ AutomationsPanel: () => null }));
+// D53 M3 — the `kit` media gallery is ALWAYS-ON, so this tab now renders one under every theme. It is a
+// query consumer and this suite has no QueryClientProvider; the groups it produces are covered in
+// confMediaGroups.test.tsx.
+vi.mock("../../src/components/MediaGallery", () => ({ MediaGallery: () => null }));
 vi.mock("../../src/hooks/useAutomations", async (importActual) => ({
   ...(await importActual<typeof import("../../src/hooks/useAutomations")>()),
   useAutomations: () => ({ data: undefined }),

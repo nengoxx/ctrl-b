@@ -232,6 +232,15 @@ const ROUTES: Record<string, unknown> = {
     roles: { rigs: [], hero: [], stack: [] },
     slots: {},
   },
+  // D53 M3 — the kit service icons. This one is read under EVERY theme (the service rows are the
+  // consumer, not a theme's art), so the empty baseline is what keeps every other spec's rows in their
+  // fresh-install, icon-less shape. The spec that proves the icons land overrides it.
+  "/api/media/kit": {
+    ns: "kit",
+    collation: "casefold-natural",
+    roles: { services: [] },
+    slots: {},
+  },
   "/api/actions": ACTIONS,
   "/api/tools": TOOLS,
   "/api/settings": SETTINGS,

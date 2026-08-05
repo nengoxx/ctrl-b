@@ -86,6 +86,56 @@ export function normalizeMediaKey(s: string): string {
   return s.normalize("NFC").toLowerCase();
 }
 
+/** The two fields a service is IDENTIFIED by for icon binding. Structurally satisfied by the wire's
+ *  `Service` and by the config editor's `HostServiceCfg` — the same reason `MediaUsable` above is a
+ *  local interface rather than the wire type. */
+export interface ServiceIdentity {
+  name: string;
+  kind?: string | null;
+}
+
+/** The KEY a service's icon file must be named after (MEDIA_PLAN §5, D53): its `kind` when it has one,
+ *  else its display `name`, normalized. `kind` first because it is the SHARED identity — three machines
+ *  each running "Jellyfin", "jellyfin (4k)" and "media" all declare `kind: jellyfin` and want one icon,
+ *  which is also why same-kind services across hosts share a file by design (§0's stated limitation).
+ *
+ *  **Absent kind = empty kind** (the build ruling, M3): the plan writes `kind ?? name`, but `??` alone
+ *  would take `""` as an answer and hand back an empty key that no file can be named after. The config
+ *  editor already writes `kind: s.kind.trim() || null` (MachineEditor), so treating a blank kind as
+ *  absent is not a new rule — it is the WRITER's rule, applied at the reader so a hand-authored
+ *  `kind: ""` or `kind: "  "` behaves exactly like a hand-authored config with no `kind` at all.
+ *  Both sources are trimmed for the same reason: a key with edge whitespace is one no owner could name
+ *  a file for, since the padding is invisible in every listing they would compare it against. */
+export function keyFor(service: ServiceIdentity): string {
+  const kind = (service.kind ?? "").trim();
+  return normalizeMediaKey(kind !== "" ? kind : service.name.trim());
+}
+
+/** Whether a key can be a FILENAME STEM at all — the honest answer to "why does this service never get
+ *  an icon" (§5). A service called `media/plex` normalizes to a key with a path separator in it, and no
+ *  file in one directory can carry that name; the empty key (a service with a blank name AND kind) is
+ *  the same problem. The GALLERY is where this is said out loud — the render path needs no guard,
+ *  because the index only ever lists real files from one directory, so no listed stem can match one of
+ *  these keys in the first place. */
+export function isStemRepresentable(key: string): boolean {
+  return key !== "" && !key.includes("/") && !key.includes("\\");
+}
+
+/** The identity of one piece of art FOR A FAILURE LATCH: which file, and which bytes of it (Codex M2/G4
+ *  F6). Owner media is mutable IN PLACE, so the URL alone would keep a REPAIRED file latched — and the
+ *  URL has to stay stable anyway, or the SW's media cache would miss on every poll. Bundled art carries
+ *  no revision, which is correct: it cannot change under a running app.
+ *
+ *  Shared rather than re-derived per consumer (the gacha reel latch and the kit `ServiceIcon` are the
+ *  two), because "what makes this the same picture" is exactly the kind of rule that drifts when it is
+ *  written twice. Two arguments rather than an object: the two consumers name the field differently
+ *  (`rev` on a roster entry, `revision` on the wire). */
+export function artIdentity(url: string, revision?: string): string {
+  // NUL-joined: the one character neither a percent-encoded URL nor an `mtime_ns:size` revision can
+  // contain, so two different pairs can never spell the same identity.
+  return `${url}\u0000${revision ?? ""}`;
+}
+
 /** Bind a role's files to KEYS by casefolded stem — the `named` kind's whole mechanism (MEDIA_PLAN §2).
  *
  *  A file binds to the key its `normalizeMediaKey`d stem EQUALS. Nothing else binds: a stem matching no

@@ -45,6 +45,13 @@ export interface MediaKeyDef {
   hint: string;
 }
 
+/** The live data a `named` role's keys are DERIVED from, when they are not a static list (MEDIA_PLAN §2's
+ *  second key source). The gallery dispatches on this to fetch that data and annotate the keys with it —
+ *  a descriptor field rather than an inference from "named with no `keys`", so the generic gallery never
+ *  has to invent the knowledge of WHICH data a derived role means. One source today: the fleet's
+ *  services, whose identities `lib/media.ts#keyFor` turns into keys. */
+export type MediaKeySource = "services";
+
 /** One role folder under `media/<ns>/`. The server's index is the authority on which roles EXIST; this
  *  supplies the words and the policy for them, because "what does `reel/` mean" is knowledge no generic
  *  gallery could invent. */
@@ -54,8 +61,10 @@ export interface MediaRoleDef {
   hint?: string;
   bounds: MediaBounds;
   /** `named` roles with a STATIC key list (frontier's stack). Absent for a pool, and absent for a named
-   *  role whose keys are derived from live data — the gallery then annotates from that data instead. */
+   *  role whose keys are derived from live data — which declares `keySource` instead. */
   keys?: readonly MediaKeyDef[];
+  /** `named` roles whose keys come from live DATA (kit's services). Mutually exclusive with `keys`. */
+  keySource?: MediaKeySource;
 }
 
 /** A `slots` pin the gallery offers: binding one named file INTO a role, overriding that role folder's own
@@ -99,6 +108,15 @@ const FULL_ART: MediaBounds = { bytes: 1_500_000, pixels: 4_000_000 };
  *  size. Priced apart from `FULL_ART` for exactly the reason the bounds went per-role (Opus M6): a
  *  4 MP ceiling on a 155px box would never warn, which is the same as having no advisory at all. */
 const LAYER_ART: MediaBounds = { bytes: 500_000, pixels: 1_000_000 };
+
+/** Service ICONS: the smallest art the app paints, and priced against the box it lands in rather than
+ *  against the picture the owner may have downloaded. Every service row paints it at ~20 CSS px (kit's
+ *  `.srow`, vapor's `.svc-row`, cosmos' `.hd-svc`, frontier's `.svc`, gacha's `.gc-svc` all sit on a
+ *  40-42px row), so 512x512 is already 6x the linear size a 4x-DPR phone can use — generous headroom,
+ *  and still an advisory the owner will actually meet if they drop a 1024px press logo in. 200 KB is a
+ *  large transparent PNG at that ceiling. The advisory changes nothing about what is served: an oversize
+ *  icon still paints (MEDIA_PLAN §5 — these are the gallery's badges, not a gate). */
+const ICON_ART: MediaBounds = { bytes: 200_000, pixels: 262_144 };
 
 /** ns -> its row. The single front-end authority the Conf tab and the gallery read, mirroring the backend
  *  registry row-for-row. A new namespace is one row here + one row there. */
@@ -188,6 +206,25 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
     // The one pin: the same shape as the gacha wallpaper pin (a pool with a first-wins default the
     // owner may override by name). The stack needs none — its stems ARE its bindings (§4).
     slots: [{ key: "hero", label: "Map cover", from: "hero" }],
+  },
+  // kit (D53 M3): per-SERVICE icons — the namespace no theme owns, which is exactly why it is
+  // ALWAYS-ON. All five service-row surfaces read it (kit Fleet, vapor, cosmos, frontier, gacha), so
+  // gating its gallery on the active theme would have hidden the only place the owner can learn what to
+  // name a file — while three of those five themes painted icons from it (the draft bug, Opus H2).
+  //
+  // No pins and no static keys: the keys are the FLEET's service identities (`keyFor` = kind, else
+  // name), so they live in `config.yaml`, and the gallery derives them from the live service list.
+  kit: {
+    title: "Service icons",
+    alwaysOn: true,
+    roles: {
+      services: {
+        kind: "named",
+        keySource: "services",
+        hint: "One file per service, named after its KIND (the `kind:` field of a machine's service) — or after its NAME when it declares no kind. Services that share a kind share one icon. A service you drop nothing for keeps today's icon-less row.",
+        bounds: ICON_ART,
+      },
+    },
   },
 };
 

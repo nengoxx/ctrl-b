@@ -1,6 +1,7 @@
 import type { FleetAction } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
+import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 
 // Frontier host-detail sheet content (F3) — rendered inside the shared <BottomSheet> (the C3 primitive cosmos
@@ -180,6 +181,9 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
                 rel="noopener"
               >
                 <span className="led" aria-hidden />
+                {/* The owner's icon for this service (D53 M3) — nothing at all when they have dropped
+                    none, which is every fresh install. */}
+                <ServiceIcon service={s} />
                 <span className="info">
                   <span className="nm">{s.name}</span>
                   <span className="ad">{addr}</span>
@@ -197,6 +201,7 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
                 aria-label={`${s.name} ${addr} — ${svcOn ? "online" : "offline"}`}
               >
                 <span className="led" aria-hidden />
+                <ServiceIcon service={s} />
                 <span className="info">
                   <span className="nm">{s.name}</span>
                   <span className="ad">{addr}</span>

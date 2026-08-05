@@ -2,6 +2,7 @@ import { memo, type MouseEvent } from "react";
 
 import type { FleetAction } from "../../hooks/useActions";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
+import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 
 // One fleet row + its expandable dropdown (services + kv detail + wake/stop buttons), ported from
@@ -135,6 +136,9 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
                 onClick={(e) => e.stopPropagation()}
               >
                 <span className="led" />
+                {/* The owner's icon for this service (D53 M3) — nothing at all when they have dropped
+                    none, which is every fresh install. */}
+                <ServiceIcon service={s} />
                 <div className="info">
                   <div className="name">{s.name}</div>
                   <div className="addr">{addr}</div>
@@ -155,6 +159,7 @@ function DeviceRowImpl({ host, services, index, featured, open, busy, onToggle, 
                 aria-label={`${s.name} ${addr} — offline`}
               >
                 <span className="led" />
+                <ServiceIcon service={s} />
                 <div className="info">
                   <div className="name">{s.name}</div>
                   <div className="addr">{addr}</div>

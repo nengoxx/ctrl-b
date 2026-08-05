@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  artIdentity,
   cycleAssign,
   cycleAt,
   firstUsable,
+  isStemRepresentable,
+  keyFor,
   normalizeMediaKey,
   orderedUsable,
   resolveNamed,
@@ -103,6 +106,68 @@ describe("normalizeMediaKey — the pinned stem↔key normalization", () => {
     // reaches for a casefold polyfill they find the decision instead of a surprise (MEDIA_PLAN §5).
     expect(normalizeMediaKey("Straße")).toBe("straße");
     expect(normalizeMediaKey("Straße")).not.toBe("strasse");
+  });
+
+  it("is IDEMPOTENT — which is what lets a KEY be handed back to `resolveNamed` as a declared key", () => {
+    // `keyFor` returns a normalized key and the icon lookup then binds files against it, so
+    // normalize(normalize(x)) must equal normalize(x) or the gallery's grouping and the render's
+    // binding could disagree. Includes the two shapes that make people nervous: a dotted capital I
+    // (whose lowercase is a decomposed pair) and a ligature (which NFC deliberately leaves alone).
+    for (const s of ["Cube", "İstanbul", "ﬀ", "Straße", "Café", "café", "ǅ"]) {
+      expect(normalizeMediaKey(normalizeMediaKey(s))).toBe(normalizeMediaKey(s));
+    }
+  });
+});
+
+describe("keyFor — the service identity a file is named after (D53 M3)", () => {
+  it("takes KIND over name: the shared identity, so three differently-named services share one icon", () => {
+    expect(keyFor({ name: "Jellyfin (4K)", kind: "jellyfin" })).toBe("jellyfin");
+    expect(keyFor({ name: "media", kind: "Jellyfin" })).toBe("jellyfin");
+  });
+
+  it("falls to NAME when there is no kind — null, undefined, blank and whitespace alike", () => {
+    // The build ruling (M3): `??` alone would take `""` as an answer and hand back a key no file can be
+    // named after. `kind: s.kind.trim() || null` is what the config editor WRITES, so this is that same
+    // rule applied at the reader — a hand-authored `kind: ""` behaves like a hand-authored no-kind.
+    expect(keyFor({ name: "Plex", kind: null })).toBe("plex");
+    expect(keyFor({ name: "Plex" })).toBe("plex");
+    expect(keyFor({ name: "Plex", kind: "" })).toBe("plex");
+    expect(keyFor({ name: "Plex", kind: "   " })).toBe("plex");
+  });
+
+  it("trims both sources — an edge-whitespace key is one no owner could name a file for", () => {
+    expect(keyFor({ name: " Plex " })).toBe("plex");
+    expect(keyFor({ name: "x", kind: "  Jellyfin  " })).toBe("jellyfin");
+  });
+
+  it("normalizes exactly like a stem, so the two ends of the binding are ONE rule", () => {
+    expect(keyFor({ name: "Café" })).toBe(normalizeMediaKey("café"));
+  });
+});
+
+describe("isStemRepresentable — the services that cannot have an icon", () => {
+  it("rejects path separators and the empty key, and nothing else", () => {
+    expect(isStemRepresentable("jellyfin")).toBe(true);
+    expect(isStemRepresentable("home assistant")).toBe(true); // spaces are fine in a filename
+    expect(isStemRepresentable("media/plex")).toBe(false);
+    expect(isStemRepresentable("media\\plex")).toBe(false);
+    expect(isStemRepresentable("")).toBe(false);
+  });
+
+  it("agrees with `keyFor` on the one service that can produce an empty key", () => {
+    expect(isStemRepresentable(keyFor({ name: "   ", kind: "  " }))).toBe(false);
+  });
+});
+
+describe("artIdentity — the (url, revision) failure-latch key", () => {
+  it("distinguishes the same URL's two REVISIONS — the whole point (an in-place repair)", () => {
+    expect(artIdentity("/x.png", "1:2")).not.toBe(artIdentity("/x.png", "3:4"));
+    expect(artIdentity("/x.png", "1:2")).toBe(artIdentity("/x.png", "1:2"));
+  });
+
+  it("tolerates art with no revision (bundled files are content-hashed and cannot change)", () => {
+    expect(artIdentity("/a.png")).toBe(artIdentity("/a.png", undefined));
+    expect(artIdentity("/a.png")).not.toBe(artIdentity("/b.png"));
   });
 });
 
