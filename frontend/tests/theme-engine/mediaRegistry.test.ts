@@ -41,12 +41,14 @@ describe("applicableNs", () => {
     expect(applicableNs(def({ media: undefined }), ROWS)).toEqual(["shared"]);
   });
 
-  it("holds exactly the gacha row today — every other theme sees no gallery", () => {
-    // The row count is the slice fence (M1b): `kit` has no BACKEND namespace yet, so declaring its row here
+  it("holds the two art namespaces today — every other theme sees no gallery", () => {
+    // The row count is the slice fence (M2): `kit` has no BACKEND namespace yet, so declaring its row here
     // would render a gallery whose index 404s.
-    expect(Object.keys(MEDIA_NS)).toEqual(["gacha"]);
+    expect(Object.keys(MEDIA_NS)).toEqual(["gacha", "frontier"]);
+    // Every LINK a registered theme declares must resolve to a row — a theme linking a namespace this
+    // registry does not hold would silently lose its gallery.
     for (const theme of registeredThemes()) {
-      expect(applicableNs(theme)).toEqual(theme.id === "gacha" ? ["gacha"] : []);
+      expect(applicableNs(theme)).toEqual(theme.media ? [theme.media.ns] : []);
     }
   });
 });
@@ -75,5 +77,51 @@ describe("the gacha row", () => {
     for (const slot of slots) expect(MEDIA_NS.gacha.roles[slot.from]).toBeDefined();
     // The ruled shape (Codex F4): the figure's options come from the REEL role, never the cast.
     expect(slots.find((s) => s.key === "reel_figure")?.from).toBe("reel");
+  });
+});
+
+describe("the frontier row (D53 M2)", () => {
+  it("describes the three role folders the backend registry declares", () => {
+    // The server's list is `FRONTIER_ROLES` in core/media.py; a role it lists with no row here would
+    // render hintless and unbounded.
+    expect(Object.keys(MEDIA_NS.frontier.roles)).toEqual(["rigs", "hero", "stack"]);
+  });
+
+  it("the two POOLS are priced as full-bleed art; the LAYER role is priced far lower", () => {
+    expect(MEDIA_NS.frontier.roles.rigs.kind).toBe("pool");
+    expect(MEDIA_NS.frontier.roles.hero.kind).toBe("pool");
+    for (const role of [MEDIA_NS.frontier.roles.rigs, MEDIA_NS.frontier.roles.hero]) {
+      expect(role.bounds).toEqual(MEDIA_NS.gacha.roles.characters.bounds);
+    }
+    // The stack's boxes are ≤196×155 CSS px, so a 4 MP ceiling would never warn — which is the whole
+    // reason the bounds went per-role (Opus M6).
+    const stack = MEDIA_NS.frontier.roles.stack;
+    expect(stack.bounds.pixels).toBeLessThan(MEDIA_NS.frontier.roles.hero.bounds.pixels);
+    expect(stack.bounds.bytes).toBeLessThan(MEDIA_NS.frontier.roles.hero.bounds.bytes);
+  });
+
+  it("the stack is the NAMED role, and its keys carry per-key guidance", () => {
+    const stack = MEDIA_NS.frontier.roles.stack;
+    expect(stack.kind).toBe("named");
+    expect(stack.keys?.map((k) => k.key)).toEqual(["cube", "platform-mid", "platform-base"]);
+    // Every key says something about its own geometry — the layers are painted into three very
+    // different boxes, so a shared hint would be a lie for two of them (Codex MED).
+    for (const k of stack.keys ?? []) expect(k.hint.length).toBeGreaterThan(0);
+  });
+
+  it("only the POOL roles offer a pin — a named role's stems ARE its bindings", () => {
+    const slots = MEDIA_NS.frontier.slots ?? [];
+    expect(slots.map((s) => s.key)).toEqual(["hero"]);
+    for (const slot of slots) expect(MEDIA_NS.frontier.roles[slot.from].kind).toBe("pool");
+  });
+
+  it("no role declares static keys unless it is named (and vice versa where keys exist)", () => {
+    // The registry-wide shape rule: `keys` is meaningless on a pool, and a named role without them is
+    // one whose keys come from live data (M3's services) — neither exists in the same row by accident.
+    for (const ns of Object.values(MEDIA_NS)) {
+      for (const role of Object.values(ns.roles)) {
+        if (role.keys !== undefined) expect(role.kind).toBe("named");
+      }
+    }
   });
 });

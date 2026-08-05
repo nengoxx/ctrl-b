@@ -1,5 +1,6 @@
 import { useMediaIndex, type MediaFile } from "../hooks/useMedia";
 import { useSaveSettings } from "../hooks/useSettings";
+import { resolveNamed } from "../lib/media";
 import type { MediaNsDef, MediaRoleDef } from "../theme-engine/mediaRegistry";
 
 // The owner-media gallery (D52/G5, GACHA_PLAN §5.4) — the Conf half of the read-only media surface.
@@ -38,6 +39,26 @@ function advisories(f: MediaFile, role: MediaRoleDef | undefined): string[] {
       out.push("dimensions");
   }
   return out;
+}
+
+/** A `named` role's binding, both ways round: which file took each declared KEY, and which key (if any)
+ *  each FILE took. Same `resolveNamed` the theme resolves through, so the gallery cannot claim a binding
+ *  the render will not honour — including the two rules that decide the contested cases (an unusable file
+ *  never binds; on a stem collision the first in this listing wins).
+ *
+ *  The reverse map is keyed on the file OBJECT, which is exactly why `resolveNamed` returns the caller's
+ *  own entries rather than copies. M2 ships this much: the per-key rows and a per-file "binds as" badge.
+ *  Flagging the collisions and the unmatched files is M3's, with the keyed gallery those need. */
+function bindings(files: MediaFile[], role: MediaRoleDef | undefined) {
+  const keys = role?.keys;
+  if (keys === undefined) return null;
+  const byKey = resolveNamed(
+    files,
+    keys.map((k) => k.key),
+  );
+  const keyOf = new Map<MediaFile, string>();
+  for (const [key, file] of byKey) keyOf.set(file, key);
+  return { keys, byKey, keyOf };
 }
 
 /** `640×854 · 88 KB` — the two numbers the §10.4 hint is about, and nothing else. */
@@ -103,6 +124,11 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
         // The server is the authority on which roles EXIST; the registry only describes them, so a role it
         // has no row for still lists and still reorders — it just carries no hint and no size advisories.
         const roleDef = def.roles[role];
+        // A NAMED role is not a list the owner orders — it is a set of slots they FILL by filename, so
+        // the keys are shown with what each one currently resolves to. Without this a named role would
+        // render indistinguishably from a pool, and the one thing the owner must know (what to call the
+        // file) would appear nowhere.
+        const named = bindings(files, roleDef);
         return (
           <section className="mgal-role" key={role}>
             <div className="mgal-head">
@@ -112,6 +138,22 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
               </span>
             </div>
             {roleDef?.hint != null && <p className="mgal-hint">{roleDef.hint}</p>}
+            {named != null && (
+              <ul className="mgal-keys">
+                {named.keys.map((k) => {
+                  const file = named.byKey.get(k.key);
+                  return (
+                    <li key={k.key}>
+                      <code>{k.key}</code>
+                      <span className="h">{k.hint}</span>
+                      <span className={"b" + (file ? "" : " none")}>
+                        {file ? file.file : "bundled"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
             {files.length === 0 ? (
               <p className="mgal-empty">
                 Empty — the theme uses its bundled art. Copy .png/.jpg/.webp files into this folder.
@@ -132,6 +174,14 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
                     <div className="mgal-meta">
                       <span className="name">{f.file}</span>
                       <span className="dim">{metaText(f)}</span>
+                      {/* Which KEY this file took, for a named role — the same answer as the rows
+                          above, read from the file's side (a file that took none carries no badge
+                          at M2; the unmatched/collision flagging lands with M3's keyed gallery). */}
+                      {named?.keyOf.get(f) != null && (
+                        <span className="badge dim" title={`binds as ${named.keyOf.get(f)}`}>
+                          {named.keyOf.get(f)}
+                        </span>
+                      )}
                       {advisories(f, roleDef).map((w) => (
                         <span
                           className={"badge" + (ADVISORIES[w]?.bad ? " stale" : " dim")}

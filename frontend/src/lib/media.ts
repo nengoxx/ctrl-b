@@ -71,3 +71,50 @@ export function firstUsable<T extends MediaNamed>(
   const pinned = pin === undefined ? undefined : usable.find((f) => f.name === pin);
   return pinned ?? (usable.length > 0 ? usable[0] : undefined);
 }
+
+/** The ONE normalization every stem↔key comparison goes through (MEDIA_PLAN §5, pinned at the confirm
+ *  round). NFC first — a macOS-decomposed `é` and a Linux-composed one are the same name to a human and
+ *  must be the same key — then JS `toLowerCase`.
+ *
+ *  **The contract IS JavaScript semantics, not casefold ideals**: JS has no full Unicode casefold, so
+ *  `ß` does not fold to `ss` and a final sigma resolves however `toLowerCase` resolves it. That is
+ *  acceptable *because keys are computed client-side ONLY* — the server's `casefold-natural` collation
+ *  orders listings and never computes a key, so one implementation exists by construction and there is
+ *  nothing for a second one to disagree with. M3's `keyFor(service)` is this function over
+ *  `kind ?? name`; sharing it is what keeps the two ends of the binding on one rule. */
+export function normalizeMediaKey(s: string): string {
+  return s.normalize("NFC").toLowerCase();
+}
+
+/** Bind a role's files to KEYS by casefolded stem — the `named` kind's whole mechanism (MEDIA_PLAN §2).
+ *
+ *  A file binds to the key its `normalizeMediaKey`d stem EQUALS. Nothing else binds: a stem matching no
+ *  key is simply unbound (the gallery is where the owner learns that, not the render), which is what
+ *  makes "drop `cube.png` in" a complete action with no config to write.
+ *
+ *  Two rules decide the contested cases, both stated at the operation because both are visible to the
+ *  owner:
+ *   · **unusable files never bind.** A file the mount would serve broken is not a candidate at all, so
+ *     the key falls through to the consumer's next rung instead of painting a hole. It does NOT hold a
+ *     position the way a pool entry does — position buys nothing here, the NAME is the binding.
+ *   · **file/file collisions: first in the server's index order wins** (§5). `cube.png` and `cube.webp`
+ *     both reach `cube`; the winner is the one the index lists first, which is the owner's own
+ *     collation (and their gallery reorder), so the tie-break is something they can see and change.
+ *
+ *  Returns a Map holding only the keys that BOUND, so `map.get(key)` is `undefined` for an unbound one
+ *  and composes with `??` into the consumer's fallback ladder — the `firstUsable` convention. The
+ *  values are the caller's own objects (identity preserved), which is what lets the gallery invert the
+ *  map to answer "which key did THIS file take?". */
+export function resolveNamed<T extends MediaNamed>(
+  files: readonly T[],
+  keys: readonly string[],
+): Map<string, T> {
+  const wanted = new Map(keys.map((k) => [normalizeMediaKey(k), k]));
+  const bound = new Map<string, T>();
+  for (const f of orderedUsable(files)) {
+    const key = wanted.get(normalizeMediaKey(f.name));
+    // First-wins: a later file reaching a key that already bound is ignored, never an overwrite.
+    if (key !== undefined && !bound.has(key)) bound.set(key, f);
+  }
+  return bound;
+}

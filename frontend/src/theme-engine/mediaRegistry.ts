@@ -15,10 +15,11 @@
 
 import type { ThemeDef } from "./types";
 
-/** What a role's files ARE, publicly (MEDIA_PLAN §2's two kinds). `named` — files binding to KEYS by
- *  casefolded stem — lands with its first consumer (frontier's stack, M2), so today there is one kind:
- *  the ordered POOL the server collates and the gallery reorders. */
-export type MediaKind = "pool";
+/** What a role's files ARE, publicly (MEDIA_PLAN §2's two kinds). `pool` = the ordered list the server
+ *  collates and the gallery reorders, where POSITION is the assignment. `named` = files binding to KEYS
+ *  by casefolded stem (`lib/media.ts#resolveNamed`), where the FILENAME is the assignment and order
+ *  buys nothing but the collision tie-break. */
+export type MediaKind = "pool" | "named";
 
 /** Advisory-only ceilings for the gallery's "consider resizing" badges. PER ROLE, because one global
  *  constant serves neither end (Opus M6): an icon role is oversized at kilobytes, a wallpaper role only at
@@ -29,6 +30,21 @@ export interface MediaBounds {
   pixels: number;
 }
 
+/** One KEY a `named` role's files can bind to, plus the words the owner needs to name a file for it.
+ *
+ *  The hint carries per-key GUIDANCE — for frontier's stack that is GEOMETRY (Codex MED: the three
+ *  layers are painted into three very different boxes, so "any image" is a lie). It is hint TEXT rather
+ *  than a structured `ref` field because nothing COMPUTES on it: the layers paint `background-size:
+ *  contain`, so a wrong aspect letterboxes rather than distorts, and the only actor who can fix it is
+ *  the person reading the sentence.
+ *
+ *  Declared keys are a STATIC list here; the other key source is data-derived (M3's service identities),
+ *  which is why this is optional on the role rather than required by the kind. */
+export interface MediaKeyDef {
+  key: string;
+  hint: string;
+}
+
 /** One role folder under `media/<ns>/`. The server's index is the authority on which roles EXIST; this
  *  supplies the words and the policy for them, because "what does `reel/` mean" is knowledge no generic
  *  gallery could invent. */
@@ -37,6 +53,9 @@ export interface MediaRoleDef {
   /** Shown under the role's heading in the gallery. A role with no hint still renders. */
   hint?: string;
   bounds: MediaBounds;
+  /** `named` roles with a STATIC key list (frontier's stack). Absent for a pool, and absent for a named
+   *  role whose keys are derived from live data — the gallery then annotates from that data instead. */
+  keys?: readonly MediaKeyDef[];
 }
 
 /** A `slots` pin the gallery offers: binding one named file INTO a role, overriding that role folder's own
@@ -73,6 +92,13 @@ export interface MediaNsDef {
  *  so the gallery says exactly what it said before. Anchored on GACHA_PLAN §10.4's own target table, whose
  *  largest entry is 1240x700 (0.87 MP) at ~120 KB: a file over these is far outside every target. */
 const FULL_ART: MediaBounds = { bytes: 1_500_000, pixels: 4_000_000 };
+
+/** Small transparent LAYERS: frontier's rig stack. Its three boxes are 150×155, 132×27 and 196×33 CSS
+ *  px (frontier.css), so even authored at 4× for a dense phone the whole stack is well under 0.4 MP —
+ *  a megapixel is already generous headroom, and half a megabyte is a large transparent PNG at that
+ *  size. Priced apart from `FULL_ART` for exactly the reason the bounds went per-role (Opus M6): a
+ *  4 MP ceiling on a 155px box would never warn, which is the same as having no advisory at all. */
+const LAYER_ART: MediaBounds = { bytes: 500_000, pixels: 1_000_000 };
 
 /** ns -> its row. The single front-end authority the Conf tab and the gallery read, mirroring the backend
  *  registry row-for-row. A new namespace is one row here + one row there. */
@@ -119,6 +145,49 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
       // roster test fails if the two ever drift.
       { key: "reel_figure", label: "Transition figure", from: "reel", bundled: ["lyra"] },
     ],
+  },
+  // frontier (D53 M2): the badlands theme's three art surfaces. Two POOLS and the first NAMED role —
+  // and the split is not stylistic. Rigs and the map cover are interchangeable pictures where the
+  // ORDER is the whole assignment; the rig stack is three fixed LAYERS of one composition, each with
+  // its own box and its own z-position, so "which file is the cube" cannot be answered by position
+  // (drop one file into a pool of three and the layers would silently rotate). The owner names them.
+  frontier: {
+    title: "Theme art",
+    roles: {
+      rigs: {
+        kind: "pool",
+        hint: "The rig cards and the host sheet, dealt to machines in this order — your own rig first.",
+        bounds: FULL_ART,
+      },
+      hero: {
+        kind: "pool",
+        hint: "The badlands map cover. The first image wins.",
+        bounds: FULL_ART,
+      },
+      stack: {
+        kind: "named",
+        // Named files, owner-ruled (§10.1). The extension is free — `cube.png`, `cube.webp` and
+        // `Cube.PNG` all reach the same layer; only the stem is read.
+        hint: "The floating stack on Comms — one file per LAYER, named for it. Transparent PNGs; each is fitted into its box, so a wrong shape letterboxes rather than stretches. A layer you drop nothing for keeps its bundled art.",
+        bounds: LAYER_ART,
+        keys: [
+          // The aspect ratios are the bundled art's own, and the boxes they are painted into agree
+          // with them (frontier.css `.fr-rigstack .cube/.mid/.base`).
+          { key: "cube", hint: "the floating cube — roughly square (bundled 353×364)" },
+          {
+            key: "platform-mid",
+            hint: "the small slab under it — wide and flat, about 5:1 (bundled 222×45)",
+          },
+          {
+            key: "platform-base",
+            hint: "the ground slab — widest and flattest, about 6:1 (bundled 558×94)",
+          },
+        ],
+      },
+    },
+    // The one pin: the same shape as the gacha wallpaper pin (a pool with a first-wins default the
+    // owner may override by name). The stack needs none — its stems ARE its bindings (§4).
+    slots: [{ key: "hero", label: "Map cover", from: "hero" }],
   },
 };
 

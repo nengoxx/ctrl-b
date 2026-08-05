@@ -5580,6 +5580,43 @@ body[data-perf="lite"] .kit .navmenu-pop {
   line-height: 1.5;
   color: var(--text-3);
 }
+/* A NAMED role's key rows (D53 M2): the layer NAME the file has to be called, its guidance, and what
+ * that key currently resolves to. Grid rather than flex so the three columns line up down the list —
+ * the name column is the thing being scanned. Wraps to two lines on a narrow phone (the hint spans). */
+.kit .mgal-keys {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kit .mgal-keys li {
+  display: grid;
+  grid-template-columns: minmax(84px, auto) 1fr;
+  gap: 2px 10px;
+  align-items: baseline;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.kit .mgal-keys code {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .mgal-keys .h {
+  color: var(--text-3);
+}
+/* What the key resolves to today — under the name, so the pair reads as one answer. */
+.kit .mgal-keys .b {
+  grid-column: 1 / -1;
+  color: var(--text-2);
+}
+.kit .mgal-keys .b.none {
+  color: var(--text-3);
+  font-style: italic;
+}
 .kit .mgal-list {
   list-style: none;
   margin: 8px 0 0;

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { cycleAssign, cycleAt, firstUsable, orderedUsable } from "../../src/lib/media";
+import {
+  cycleAssign,
+  cycleAt,
+  firstUsable,
+  normalizeMediaKey,
+  orderedUsable,
+  resolveNamed,
+} from "../../src/lib/media";
 
 // The owner-media OPERATIONS (D53 / MEDIA_PLAN §2) — the generic half of what G5 shipped inside gacha's
 // resolver, lifted so frontier's rigs and the kit's icons compose the same rules. Pure functions over a
@@ -80,5 +87,65 @@ describe("firstUsable — the ladder rung", () => {
   it("`undefined` on an empty list, so it composes with `??` into the next rung", () => {
     expect(firstUsable([])).toBeUndefined();
     expect(firstUsable([f("a", true)], "a")).toBeUndefined();
+  });
+});
+
+describe("normalizeMediaKey — the pinned stem↔key normalization", () => {
+  it("is NFC + JS toLowerCase, so case and unicode FORM stop mattering", () => {
+    expect(normalizeMediaKey("Cube")).toBe("cube");
+    expect(normalizeMediaKey("PLATFORM-BASE")).toBe("platform-base");
+    // A decomposed é (e + U+0301, how macOS hands filenames over) and a composed one are one key.
+    expect(normalizeMediaKey("Café")).toBe(normalizeMediaKey("café"));
+  });
+
+  it("is JS semantics rather than casefold IDEALS — pinned, because that is the contract", () => {
+    // JS has no full Unicode casefold: `ß` does not fold to `ss`. Stated as a test so the day someone
+    // reaches for a casefold polyfill they find the decision instead of a surprise (MEDIA_PLAN §5).
+    expect(normalizeMediaKey("Straße")).toBe("straße");
+    expect(normalizeMediaKey("Straße")).not.toBe("strasse");
+  });
+});
+
+describe("resolveNamed — stem binds to key (the `named` kind)", () => {
+  it("binds on the casefolded stem, in either direction, and leaves unknown stems unbound", () => {
+    const files = [f("Cube"), f("platform-base"), f("notes")];
+    const bound = resolveNamed(files, ["cube", "platform-mid", "platform-base"]);
+    expect(bound.get("cube")?.name).toBe("Cube");
+    expect(bound.get("platform-base")?.name).toBe("platform-base");
+    // A key nobody named a file for is ABSENT, so `?? bundled` is the consumer's whole fallback.
+    expect(bound.get("platform-mid")).toBeUndefined();
+    expect(bound.size).toBe(2);
+  });
+
+  it("keys the map by the DECLARED spelling, whatever the file was called", () => {
+    const bound = resolveNamed([f("CUBE")], ["cube"]);
+    expect([...bound.keys()]).toEqual(["cube"]);
+  });
+
+  it("file/file collision: FIRST in the server's index order wins (§5)", () => {
+    // `cube.png` and `cube.webp` both reach `cube`. The winner is the one the index lists first —
+    // the owner's own collation and gallery reorder, so the tie-break is visible and movable.
+    const first = f("cube");
+    const second = f("Cube");
+    expect(resolveNamed([first, second], ["cube"]).get("cube")).toBe(first);
+    expect(resolveNamed([second, first], ["cube"]).get("cube")).toBe(second);
+  });
+
+  it("an UNUSABLE file never binds — the key falls through instead of painting a hole", () => {
+    expect(resolveNamed([f("cube", true)], ["cube"]).has("cube")).toBe(false);
+    // …and it does not hold the position either: the next file with that stem takes the key. Position
+    // is what a POOL preserves; here the NAME is the binding, so there is nothing to re-deal.
+    const good = f("Cube");
+    expect(resolveNamed([f("cube", true), good], ["cube"]).get("cube")).toBe(good);
+  });
+
+  it("returns the caller's own entries, so a consumer can invert it (the gallery does)", () => {
+    const file = f("cube");
+    expect(resolveNamed([file], ["cube"]).get("cube")).toBe(file);
+  });
+
+  it("no files or no keys is an empty map, never a throw (it is on a render path)", () => {
+    expect(resolveNamed([], ["cube"]).size).toBe(0);
+    expect(resolveNamed([f("cube")], []).size).toBe(0);
   });
 });
