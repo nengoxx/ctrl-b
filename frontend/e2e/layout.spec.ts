@@ -691,16 +691,17 @@ test("gacha · appbar: prototype padding in the default mode; a dissolve + no in
   await page.goto("/");
   await expect(page.locator(".kit-appbar")).toBeVisible();
 
-  // E — the bar carries the prototype's own `14px 16px`, not the kit's 16/12, and lands on the
-  // prototype's height (a 15px wordmark over a 9px subtitle inside 28px of vertical padding).
+  // E — SUPERSEDED 2026-08-05 (owner: the "on" bar sits as slim as clear — commit 693a06a): the bar
+  // carries the clear mode's 8/6 vertical pads with gacha's prototype 16px sides, replacing round-3's
+  // prototype-literal `14px 16px`. (This arm shipped one push broken: push CI skips e2e, so the pad
+  // change landed green — the tag gate or a local full run is where this file actually fires.)
   const bar = await page.locator(".kit-appbar").evaluate((el) => {
     const s = getComputedStyle(el);
     return { pad: s.padding, height: el.getBoundingClientRect().height };
   });
-  expect(bar.pad).toBe("14px 16px");
-  // 67px before the trim; ~57 after, which is the prototype's own bar height. The two paddings were a
-  // wash (kit 16+12 = prototype 14+14 = 28) — the height came from the brand's inherited 1.5 line boxes.
-  expect(bar.height).toBeLessThanOrEqual(58);
+  expect(bar.pad).toBe("8px 16px 6px");
+  // ~57px at the prototype pads; ~43 at the slim ones (the 28.8px brand block + 14px of padding).
+  expect(bar.height).toBeLessThanOrEqual(46);
   // `--appbar-h` is MEASURED, so everything anchored to it (the M7 oracle math, toasts, the mini-player)
   // follows the trim rather than assuming the old number.
   const appbarH = await page.evaluate(() =>
