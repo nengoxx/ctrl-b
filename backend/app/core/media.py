@@ -17,7 +17,9 @@ gallery's persisted `media.<ns>.roles.<role>.order` (§5.4's 2026-08-04 ruling).
 **No decoder dependency.** User files get no server-side re-encode and no Pillow (a new runtime dep
 AND an untrusted-decoder surface, §10.4). `probe_image` below is a stdlib magic-byte + dimension
 reader: it gives the format allowlist its ground truth (the byte header, never the extension) and
-lets the Conf gallery warn about a 3000x4257 drop before the phone tries to decode ~51 MB of bitmap.
+hands the Conf gallery the numbers it warns on before the phone tries to decode ~51 MB of bitmap.
+The WARNING is the client's to make (MEDIA_PLAN §5) — this module ships facts, plus the one verdict
+that needs the bytes (`unusable_reason`); "too big" is per-role policy the front-end registry holds.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ import stat
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO
+from typing import IO, Literal
 from urllib.parse import quote
 
 from pydantic import BaseModel, Field
@@ -81,13 +83,6 @@ ALLOWED_TYPES: dict[str, tuple[str, str]] = {
 #: server can never disagree about what "default order" means (§5.4's ruling). See `sort_key`.
 ROLE_COLLATION = "casefold-natural"
 
-#: Advisory-only thresholds for the Conf gallery's "consider resizing" hint — they change NOTHING
-#: about what is served, which is why they are named constants rather than config knobs (a setting for
-#: when to show a hint is a knob nobody would ever turn). Anchored on §10.4's own target table, whose
-#: largest entry is 1240x700 (0.87 MP) at ~120 KB: a file over these is far outside every target.
-WARN_BYTES = 1_500_000
-WARN_PIXELS = 4_000_000
-
 
 # ── the index's wire models ───────────────────────────────────────────────────────────────────────
 
@@ -119,9 +114,13 @@ class MediaFile(BaseModel):
     #: latter really is fatal rather than pedantic — the mount serves the Content-Type the EXTENSION
     #: says with `nosniff`, so a JPEG named `.png` is a guaranteed broken image in the browser.
     unusable: bool = False
-    #: Machine-readable advisories for the gallery (`format-mismatch`, `unreadable`, `oversize`,
-    #: `dimensions`). Never a reason to hide the file — the owner is told, the render stays silent.
-    warnings: list[str] = Field(default_factory=list)
+    #: WHY, machine-readable — `None` when the file is fine. The two verdicts here are the ones only
+    #: the server can reach, because only it read the bytes; the gallery turns them into sentences.
+    #: SIZE-derived advisories are deliberately NOT here (MEDIA_PLAN §5): "too big" is per-ROLE policy
+    #: (an icon is oversized at kilobytes, a wallpaper only at megapixels) and one global constant
+    #: served neither, so the client derives them from the numbers above against its registry's bounds.
+    #: Named apart from `MediaIndex.reason` below, which is about the whole NAMESPACE.
+    unusable_reason: Literal["unreadable", "format-mismatch"] | None = None
 
 
 class MediaIndex(BaseModel):
@@ -470,7 +469,12 @@ def _probe_webp(head: bytes, size: int) -> Probe:
 
 
 def describe_file(path: Path, ns: str, role: str) -> MediaFile:
-    """One directory entry, probed and judged."""
+    """One directory entry, probed and judged — FACTS plus the one verdict that needs the bytes.
+
+    The judgement stops here on purpose (MEDIA_PLAN §5): what the header says, how big it is, and
+    whether the mount could serve it at all. Whether it is *too* big is per-role policy the client
+    owns — this ships the numbers it decides on.
+    """
     ext_type = ALLOWED_TYPES.get(path.suffix.lower())
     probe = probe_image(path)
     try:
@@ -478,20 +482,13 @@ def describe_file(path: Path, ns: str, role: str) -> MediaFile:
         size, revision = st.st_size, f"{st.st_mtime_ns}:{st.st_size}"
     except OSError:
         size, revision = 0, ""
-    warnings: list[str] = []
-    unusable = False
+    reason: Literal["unreadable", "format-mismatch"] | None = None
     if probe.fmt is None:
-        warnings.append("unreadable")
-        unusable = True
+        reason = "unreadable"
     elif ext_type is not None and probe.fmt != ext_type[1]:
         # Served as the extension's type under `nosniff` ⇒ the browser refuses it. Broken, not merely
         # untidy: the owner has to rename the file, and the gallery is where they find that out.
-        warnings.append("format-mismatch")
-        unusable = True
-    if size > WARN_BYTES:
-        warnings.append("oversize")
-    if probe.width and probe.height and probe.width * probe.height > WARN_PIXELS:
-        warnings.append("dimensions")
+        reason = "format-mismatch"
     return MediaFile(
         name=path.stem,
         file=path.name,
@@ -501,8 +498,8 @@ def describe_file(path: Path, ns: str, role: str) -> MediaFile:
         revision=revision,
         width=probe.width,
         height=probe.height,
-        unusable=unusable,
-        warnings=warnings,
+        unusable=reason is not None,
+        unusable_reason=reason,
     )
 
 

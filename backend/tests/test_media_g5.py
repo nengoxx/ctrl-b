@@ -494,7 +494,11 @@ def test_truncated_drops_are_listed_as_unusable(home: Path) -> None:
     with make_client() as c:
         (role(home, "characters") / "stub.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         entry = c.get("/api/media/gacha").json()["roles"]["characters"][0]
-        assert (entry["format"], entry["unusable"], entry["warnings"]) == (None, True, ["unreadable"])
+        assert (entry["format"], entry["unusable"], entry["unusable_reason"]) == (
+            None,
+            True,
+            "unreadable",
+        )
 
 
 def test_mislabeled_extension_is_flagged_unusable(home: Path) -> None:
@@ -505,21 +509,34 @@ def test_mislabeled_extension_is_flagged_unusable(home: Path) -> None:
         (role(home, "characters") / "empty.webp").write_bytes(b"")
         by_name = {f["file"]: f for f in c.get("/api/media/gacha").json()["roles"]["characters"]}
         liar = by_name["liar.png"]
-        assert (liar["format"], liar["unusable"], liar["warnings"]) == ("jpeg", True, ["format-mismatch"])
+        # The PROBED format rides along: it is what the gallery shows beside "wrong extension", and it
+        # is the only thing that tells the owner whether to rename the file or replace it.
+        assert (liar["format"], liar["unusable"], liar["unusable_reason"]) == (
+            "jpeg",
+            True,
+            "format-mismatch",
+        )
         empty = by_name["empty.webp"]
-        assert (empty["format"], empty["unusable"], empty["warnings"]) == (None, True, ["unreadable"])
+        assert (empty["format"], empty["unusable"], empty["unusable_reason"]) == (
+            None,
+            True,
+            "unreadable",
+        )
 
 
-def test_oversize_files_carry_gallery_warnings(home: Path) -> None:
-    """The §10.4 gallery hint ("3000x4257, 3.6 MB — consider resizing"). Advisory only: the file is
-    still listed and still served."""
+def test_an_oversize_file_ships_facts_not_advisories(home: Path) -> None:
+    """The §10.4 gallery hint ("3000x4257, 3.6 MB — consider resizing") is the CLIENT's to make now
+    (MEDIA_PLAN §5): "too big" is per-role policy — an icon role warns at kilobytes, a wallpaper role
+    at megapixels — so the wire carries the numbers and no `warnings` list at all. Advisory either
+    way: the file is still listed, still usable, and still served."""
     with make_client() as c:
         big = png_bytes(3000, 4257) + b"\x00" * 1_600_000
         (role(home, "characters") / "atlas.png").write_bytes(big)
         entry = c.get("/api/media/gacha").json()["roles"]["characters"][0]
-        assert entry["unusable"] is False
-        assert sorted(entry["warnings"]) == ["dimensions", "oversize"]
+        assert (entry["unusable"], entry["unusable_reason"]) == (False, None)
+        assert "warnings" not in entry  # deleted from the wire, not merely emptied
         assert (entry["width"], entry["height"]) == (3000, 4257)
+        assert entry["size_bytes"] == len(big)
         assert c.get(entry["url"]).status_code == 200
 
 
