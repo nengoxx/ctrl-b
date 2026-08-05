@@ -39,6 +39,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/AUTOMATIONS_PLAN.md`](./docs/AUTOMATIONS_PLAN.md) | The A3 scheduled-automations design (D49, **LOCKED 2026-07-30, ready to build** — TODO Phase 14). Read before touching the scheduler, headless runs, or attribution. |
   | [`docs/VAPOR_ASSIMILATION_PLAN.md`](./docs/VAPOR_ASSIMILATION_PLAN.md) | Phase 16: vapor's COMPLETE migration onto the kit + cosmos default (**✅ COMPLETE 2026-08-02**, D51 — historical record + per-slice as-built appendix). |
   | [`docs/GACHA_PLAN.md`](./docs/GACHA_PLAN.md) | Phase 17: the gacha theme ("Capsule Arcade") port plan (**✅ LOCKED 2026-08-02, D52** — §8 all ruled + §11 council reconciliation; building G0–G6). Read with the FINAL prototype `design/prototypes/gacha/uploads/prot/capsule-arcade/`. |
+  | [`docs/MEDIA_PLAN.md`](./docs/MEDIA_PLAN.md) | Media namespaces v2: frontier art + kit service icons (**✅ COUNCIL-SETTLED 2026-08-05, D53** — ships in v1.5.0, slices M1a–M3 before G6). Read before touching `core/media.py`, the gallery, or any theme's art consumers. |
   | [`docs/UI_AUDIT.md`](./docs/UI_AUDIT.md) | Two-pass frontend audit (perf F1–F13 + a11y/resilience F14–F29). |
   | [`docs/SYSTEM_AUDIT.md`](./docs/SYSTEM_AUDIT.md) | Code-verified architecture audit (SYS-# findings; excludes the chat loop). |
   | [`docs/AGENT_CHAT_AUDIT.md`](./docs/AGENT_CHAT_AUDIT.md) | Agent-chat audit + 8-agent comparative analysis + the ACA improvement plan (Slices 0–8). |

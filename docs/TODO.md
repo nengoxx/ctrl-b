@@ -1343,6 +1343,11 @@ v1.5.0 is RESERVED for this theme's release.
 - [x] G3 agent tab — ✅ CLOSED 2026-08-04 (as-built §7.4; oracle one-surface ramp, arcade composer skin as re-ruled by the 2026-08-03 side session, stacking-law fix wave) — owner device round PASSED wholesale (M7 blur · 12.5px · pin modes · arcade panel · Gecko scanline as-is, no `data-engine` branch)
 - [x] G4 reel figure + M2 — ✅ CLOSED 2026-08-04 (as-built §7.5; spike verdict = LIVE, M2 prototype-exact, seam promoted, type-scoped skip, figure tokens, corrected glow) — owner round PASSED on phone + desktop (67% kept, M2 device-confirmed, no tuning)
 - [x] G5 media/roster serving — code + reviews ✅ COMPLETE 2026-08-05 (as-built §7.6; hardened mount + index, gallery, SW caching, degrade-never-brick health, reel-pool pin ruling; both §7.5 carries done) — **⏳ owner FILE-DROP + phone GALLERY round pending**
+- [ ] **M1a–M3 media namespaces v2 (D53, `MEDIA_PLAN.md` §8 — BEFORE G6, owner-ruled):**
+  - [ ] M1a config re-home alone (ns-generic `media:` model, `themes:` family deleted, readers/writers moved, BOTH dev configs hand-cleaned, ignored-old-keys test) — no behavior change
+  - [ ] M1b `lib/media.ts` operations + the FE media registry (+ ConfTab `applicableNs`) + gacha refactored on top (parity arms) + `warnings[]` off the wire (probed format + unusable reason stay)
+  - [ ] M2 frontier namespace (rigs/hero/stack consumers, the `image` retirement, 8-combo stack matrix) — owner eyeball gate
+  - [ ] M3 kit services (`keyFor`, `ServiceIcon`, five surfaces, keyed gallery UI + collision/unmatched annotations) — owner eyeball ≥2 themes + automated arms on all five
 - [ ] G6 palette variants per `GACHA_PLAN.md` §7/§4.4 (base-ramp trio + two accent-shifters + the owner's dark-dossier trial options — the dark flip needs explicit owner sign-off, it reverses G2's one-light-surface identity)
 - [ ] Release as v1.5.0 (runbook §Release; prod currently v1.4.6 by owner ruling)
 

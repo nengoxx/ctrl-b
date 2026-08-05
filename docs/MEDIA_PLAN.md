@@ -1,8 +1,9 @@
 # MEDIA_PLAN — media namespaces v2: frontier art + kit service icons (v1.5.0)
 
-**Status: COUNCIL-RECONCILED 2026-08-05 (draft → Codex READY WITH CHANGES + Opus architecture
-lens SHIP WITH CHANGES → all findings ruled, §11) — confirm round pending, then D-entry + TODO
-slices M1a–M3.** Owner directives: ships IN v1.5.0 as a finished product — no deferred seams,
+**Status: ✅ COUNCIL-SETTLED 2026-08-05 (draft → Codex READY WITH CHANGES + Opus lens SHIP
+WITH CHANGES → reconciled, §11 → BOTH confirm rounds folded: Opus all-RESOLVED + the two
+wire facts kept (probed format, unusable reason); Codex all-RESOLVED + the service-collision
+share rule + the pinned JS normalization). Recorded as D53; build slices = TODO M1a–M3.** Owner directives: ships IN v1.5.0 as a finished product — no deferred seams,
 no dead code, no unnecessary code; NAMED stack files; media slices BEFORE G6 palettes. Builds
 on the G5 surface (GACHA_PLAN §7.6 as-built; §5.2–§5.4 + §10.4 are the parent design).
 
@@ -116,15 +117,20 @@ records this so the update chain's schema history stays honest.
   under vapor/cosmos/minimal** (three of five themes) while their rows rendered icons.
   `ThemeDef.media` shrinks to the theme→ns link.
 - **Advisory policy moves CLIENT-side, per-role (composing Opus M6 + the `ref` deletion):**
-  the backend index stops shipping `warnings[]` — it serves FACTS (format, size, WxH,
-  revision, unusable); the gallery derives warnings from the registry's per-role bounds (an
-  icon role warns at kilobytes, a wallpaper role at megapixels — one global constant serves
-  neither). The structured `ref` dims field is DELETED (nothing computes on it); per-key
-  geometry guidance for the stack is hint TEXT carried per key (Codex's per-slot metadata
-  need, met without a dead field).
-- **`lib/media.ts`** — the operations of §2. `poolAssign` takes the index's server-ordered
-  list directly; NO client-side `order` parameter (the config projection is server-side —
-  one source of truth; Opus LOW).
+  the backend index stops shipping `warnings[]` — it serves FACTS; the gallery derives
+  warnings from the registry's per-role bounds (an icon role warns at kilobytes, a wallpaper
+  role at megapixels — one global constant serves neither). **The facts-only line keeps two
+  SERVER determinations on the wire (Opus confirm condition):** the PROBED format
+  (header-derived — the client compares it to the extension for mismatch warnings) and a
+  machine-readable `reason` on `unusable` (so "wrong extension" and "unreadable" stay
+  distinct messages). Size/WxH-derived codes (oversize, huge dimensions) are client-derived.
+  The structured `ref` dims field is DELETED (nothing computes on it); per-key geometry
+  guidance for the stack is hint TEXT carried per key (Codex's per-slot metadata need, met
+  without a dead field).
+- **`lib/media.ts`** — the operations of §2 (`orderedUsable` · `cycleAssign` · `firstUsable`
+  · `resolveNamed` · `keyFor`). Every operation takes the index's server-ordered list
+  directly; NO client-side `order` parameter (the config projection is server-side — one
+  source of truth; Opus LOW).
 - **Kit `ServiceIcon` component (Opus M1 + Codex's latch):** ONE component owns the degrade
   logic — error latch keyed `(url, revision)` (the G5 reel-latch pattern: in-place replacement
   recovers, same-revision failure stays latched), null-guard, token-styled sizing under `.kit`
@@ -134,14 +140,19 @@ records this so the update chain's schema history stays honest.
 - **`useServiceIcons` query policy (Opus M3 — distinct from the gallery's):** long staleTime,
   no focus refetch, silent degrade to no-icons on error. The gallery keeps fresh-on-entry.
   Both policies stated in code.
-- **Service-icon KEY (composing Opus M2 + Codex H2):** `keyFor(service) =
-  NFC(casefold(service.kind ?? service.name))`; a file binds when
-  `NFC(casefold(stem))` equals the key. Keys containing path separators or other
-  non-stem-representable characters simply cannot have icons (documented; the gallery says
-  so). Collisions — two files reaching one key, or two services collapsing to one key —
-  resolve **first-in-server-index-order wins**, and the gallery flags EVERY collision and
-  every unmatched file. No explicit binding config (rejected: a new config surface for a
-  homelab icon feature — the normalization branch of Codex's either/or).
+- **Service-icon KEY (composing Opus M2 + Codex H2; normalization PINNED at the confirm
+  round):** `keyFor(service) = normalize(service.kind ?? service.name)` where `normalize(s)
+  = s.normalize("NFC").toLowerCase()` — **the contract IS JavaScript semantics** (JS has no
+  full Unicode casefold; `ß`/final-sigma cases resolve per `toLowerCase`, and the tests pin
+  JS behavior, not casefold ideals). Keys are computed CLIENT-side only, so one
+  implementation exists by construction (the server's `casefold-natural` collation orders
+  listings; it never computes keys). A file binds when `normalize(stem)` equals the key.
+  Keys containing path separators or other non-stem-representable characters cannot have
+  icons (documented; the gallery says so). Collisions: two FILES reaching one key →
+  **first-in-server-index-order wins**; two SERVICES collapsing to one key → **both share
+  the winning file** (services are not in the media index — there is no service winner;
+  Codex confirm refinement). The gallery flags EVERY collision and every unmatched file. No
+  explicit binding config (rejected: a new config surface for a homelab icon feature).
 - **The keyed gallery owns its data dependency (Opus M5):** it fetches the fleet/services
   itself; annotations render as "unknown" while pending — never a false "no service named X".
 - **Frontier consumers:** `present.ts` deals rigs via `cycleAssign`; `FrontierFleet` hero via
@@ -218,3 +229,7 @@ unmatched + unknown-pending annotations.
 | `ref` dims delete · `poolAssign` drops `order` · hero=pool | Opus LOW | **ACCEPTED** (§5/§2) |
 | `kit/` → `shared/` on the owner-facing path | Opus LOW | **OVERRULED** — `kit` is house vocabulary; gallery header documents it (§3) |
 | Same-name services share an icon — state it | Opus LOW | **ACCEPTED** (§0) |
+| *Confirm round:* facts-only wire must keep the PROBED format + a machine-readable `unusable` reason (server determinations) | Opus confirm | **ACCEPTED** (§5) |
+| *Confirm round:* service/service collisions have no index-order winner — both share the winning file | Codex confirm | **ACCEPTED** (§5) |
+| *Confirm round:* pin the normalization — JS `toLowerCase` after NFC IS the contract (no full casefold in JS; client-side-only keys) | Codex confirm | **ACCEPTED** (§5) |
+| *Confirm round:* stale `poolAssign` name in §5 | both | **FIXED** (§5 names the §2 operations) |

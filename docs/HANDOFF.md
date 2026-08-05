@@ -12,7 +12,69 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ UPDATE 4 (2026-08-05, Fable): **◐ G5 BUILT + REVIEW-COMPLETE — owner FILE-DROP + GALLERY
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-05, Fable — written for a COLD session)
+> **Where the phase stands: G0–G4 ✅ CLOSED AND PUSHED (origin @ `fb38289`) · G5 code+reviews
+> ✅ COMPLETE but UNPUSHED · the media-v2 extension ✅ COUNCIL-SETTLED as D53 · release arc =
+> owner G5 round → M1a–M3 → G6 → v1.5.0 (prod stays v1.4.6).**
+>
+> **⚠ EVERYTHING AFTER `fb38289` IS UNPUSHED, DELIBERATELY** — the G5 slice (11 commits
+> `ac621ed..8f6297a`), its docs close (`5b50c4d`), and the MEDIA_PLAN/D53 docs. The owner's
+> standing pattern: the stack pushes together once their G5 round passes. Do NOT push without
+> the owner's word. Tree is clean except the two known untracked `design/prototypes/gacha/`
+> dirs (~80 MB originals — owner call, REC never commit).
+>
+> **OPEN GATE 1 — the owner's G5 round (they went to work before it; ASK FOR THE VERDICT
+> FIRST).** Dev units are RUNNING for it (:5434/:5173 — leave them up). The owner drops images
+> over SSH/SMB into `~/.ctrl-b-dev/media/gacha/{characters,banner,wallpaper,reel,oracle}/`
+> and checks: the fleet deal (alphabetical, `01-` prefixes work) · banner scene slides ·
+> wallpaper/oracle swap · a reel cutout (NO baked glow — expected, the gallery's reel hint
+> says so) · the Conf gallery on the phone (order, pins, warnings, REAL TOUCH reorder — the
+> one thing verified only at layout level). G5 as-built = GACHA_PLAN §7.6; verdict folds like
+> G3/G4 did (fix wave via Opus if findings, else close G5 in §7.6/TODO and PUSH the stack
+> with the owner's OK).
+>
+> **THEN THE MEDIA-V2 BUILD (D53; spec = MEDIA_PLAN.md — read it WHOLE before briefing, §11
+> holds the council rulings).** Slices in TODO: **M1a** (config re-home ALONE: ns-generic
+> `media:` model, the `themes:` family deleted, readers/writers moved, BOTH dev configs
+> hand-cleaned — main+prod-dev — ignored-old-keys test; no behavior change) → **M1b** (the
+> `lib/media.ts` operations + the FE media registry + ConfTab `applicableNs` + gacha
+> refactored on top with the §2 parity arms + `warnings[]` off the wire keeping probed
+> format + unusable reason) → **M2** (frontier: rigs/hero/stack, the `appearance.frontier
+> .image` RETIREMENT, 8-combo stack matrix; owner eyeball) → **M3** (kit services: `keyFor`
+> JS-semantics normalization, ONE `ServiceIcon` with the (url,revision) latch, five
+> surfaces, keyed gallery + collision/unmatched annotations; owner eyeball ≥2 themes).
+> Cadence per slice: Opus build from a pinned brief → main-seat audit → Codex → owner.
+> **Then G6 palettes** (GACHA_PLAN §4.4: the ruled trio + two accent-shifters + the owner's
+> four DARK dossier palettes & measured action button as OPTIONS — **the dark-dossier flip is
+> a TRIAL needing explicit owner sign-off**; it reverses G2's one-light-surface identity).
+> **Then release v1.5.0** per deploy/linux/README §Release (runbook-driven, Opus operational
+> agent precedent).
+>
+> **OPEN OWNER QUESTIONS / DESIGN CHOICES (carry them; none block M1a–M1b):**
+> ① the G5 round verdict (gate 1 above) · ② the G6 dark-dossier sign-off · ③ the wordmark
+> string (カプセルアーケード standing) · ④ the NEW ribbon (no data seam — needs owner
+> semantics if wanted) · ⑤ carousel dots close the dossier (owner-flagged, unvetoed) ·
+> ⑥ the ~80 MB untracked originals (REC never commit) · ⑦ M2/M3 eyeball verdicts when they
+> come. **Standing kit items (minted this session, not scheduled):** a global request
+> timeout for `getJSON` (the 5 s media-invalidation race is the local fix, comment names the
+> item) · kit sr-only sheet close vs gacha's visible × · a11y e2e never opens the dossier ·
+> kit-wide minimal plan/player overlap (vapor ledger §7.1). *Closed this session in passing:
+> the "skipActiveViewTransition is global-not-per-layer" thread — G4's type-scoping IS the
+> per-layer fix.*
+>
+> **WHAT SHIPPED THIS SESSION (2026-08-04→05, one continuous arc; as-builts §7.4-close/§7.5/
+> §7.6 + MEDIA_PLAN):** G3 closed (device round passed wholesale; Gecko scanline branch not
+> needed) · the VT spike SETTLED empirically without the owner's phone (outcome (a):
+> `new(root)` is LIVE in Gecko — external-capture probe; found+fixed the dropShowcase
+> nav-kill bug) · G4 built+closed same day (reel figure tokens; M2 prototype-exact; seam
+> promoted; type-scoped skip; the GLOW LESSON: CSS drop-shadow blur length IS σ — Codex
+> right, main seat wrong, settled by pixel experiment) · 7 dependency advisories zeroed
+> lockfile-only · G5 built through THREE Codex rounds (NOT READY → two waves + final →
+> main-seat-verified closed; DEGRADE-NEVER-BRICK minted as law after the crash-loop finding)
+> · media-v2 designed + council-settled as D53. **FE 1404 / BE 1301 / 205 e2e, gate green
+> throughout.**
+>
+> ## ▶ PREVIOUS BLOCK (2026-08-05, Fable): **◐ G5 BUILT + REVIEW-COMPLETE — owner FILE-DROP + GALLERY
 > ROUND = the open gate.** Eleven commits `ac621ed..8f6297a` (as-built **§7.6** — read it),
 > NOTHING PUSHED past `fb38289`. The namespace-generic media surface (ruled option b): hardened
 > read-only `/api/media/{ns}/files/` mount + per-role index with `revision`, the

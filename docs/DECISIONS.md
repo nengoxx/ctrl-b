@@ -4016,3 +4016,43 @@ then).
   plan 4 (kit sticky, never overridden) < appbar 5.
 - **`safeRafLoop` faults latch permanently** (start() no-ops after a thrown tick) — engine-wide
   behavior change, the documented intent made real.
+
+## D53 — Media namespaces v2: frontier art + kit service icons ✏️ LOCKED 2026-08-05 (owner rulings in conversation; spec of record = MEDIA_PLAN.md incl. its §11 council reconciliation + confirm rounds; council = Codex + Opus architecture lens, both confirm rounds folded)
+
+Ships IN v1.5.0 (owner: finished product, no seams, no dead code), sequenced M1a→M1b→M2→M3
+**before** G6 palettes. The rulings of record (full design: MEDIA_PLAN.md):
+
+- **The public model is TWO kinds** — `pool` (ordered list, gallery-reorderable) and `named`
+  (casefolded-stem binds to a key; key source = static list or data-derived). "slots"/pins
+  keep only their shipped meaning (a config pin binding a pool entry into a special role).
+  The resolver layer is composable OPERATIONS (`orderedUsable` · `cycleAssign`
+  position-preserving · `firstUsable` · `resolveNamed` · `keyFor`), because shipped gacha is
+  four semantics, not one; gacha parity through the lift is a named test obligation.
+- **The FE media REGISTRY owns descriptors** (mirrors backend `MEDIA_NAMESPACES`); themes
+  contribute rows; `kit` is an always-on row — ConfTab renders `applicableNs(activeTheme)`,
+  which fixes the draft bug where the kit gallery was unreachable under vapor/cosmos/minimal.
+- **Config re-home, total fold:** top-level `media: {<ns>: MediaNsCfg}` (one ns-generic
+  model); the `themes:` model family is DELETED (it held only media state — theme settings
+  live at `appearance.theme_settings`). **No migration code**: the old keys never existed in
+  a tagged release (prod = v1.4.6); dev configs hand-cleaned; extra-tolerant Settings makes
+  strays inert; one test pins old-keys-ignored.
+- **Namespaces:** `frontier/{rigs (pool, cycleAssign over self-first fleet order), hero
+  (pool, firstUsable — same shape as gacha wallpaper), stack (named: cube/platform-mid/
+  platform-base — owner-ruled NAMED files; per-key bundled fallback; 8-combo test matrix)}`
+  and `kit/{services}` (named, data-derived keys; no bundled fallback; the path stays `kit`).
+- **Service-icon key:** `normalize(kind ?? name)` where normalize = NFC + JS `toLowerCase`
+  (the contract IS JS semantics — keys are client-side only). File/file collisions:
+  first-in-server-index-order wins; service/service collisions: both share the winning file
+  (no service winner). The gallery flags every collision and unmatched file; unrepresentable
+  keys are documented out. No binding config. Known limitation (stated): same-named services
+  across hosts share one icon.
+- **One kit `ServiceIcon`** owns icon degrade — the `(url, revision)` error latch
+  (replacement recovers), rendered by the five verified service-row surfaces (gacha, cosmos,
+  frontier, vapor DeviceRow, kit Fleet). `useServiceIcons` policy: long staleTime, no focus
+  refetch, silent degrade (distinct from the gallery's fresh-on-entry).
+- **Advisory policy is CLIENT-side, per-role** (registry bounds; backend `warnings[]` leaves
+  the wire) — with two server facts kept: the PROBED format and a machine-readable
+  `unusable` reason (server determinations the client cannot derive).
+- **`appearance.frontier.image` is RETIRED** — an intentional breaking retirement (live
+  reader + round-trip test die deliberately; no UI writer ever existed; the rigs pool
+  replaces it per R3's spirit). The D28 appearance blob and frontier `x/y` keep working.
