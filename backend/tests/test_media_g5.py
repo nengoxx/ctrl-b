@@ -27,7 +27,7 @@ from fastapi.testclient import TestClient
 
 from app.api.media import MediaFiles
 from app.config import Settings
-from app.core.media import ensure_media_dirs, ns_dir, probe_image, sort_key
+from app.core.media import MEDIA_NAMESPACES, ensure_media_dirs, ns_dir, probe_image, sort_key
 
 # ── fixtures ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -92,27 +92,27 @@ def test_staticfiles_refuses_a_missing_directory(tmp_path) -> None:
         MediaFiles(directory=tmp_path / "not-there", roles=("characters",))
 
 
-def test_role_dirs_are_created_at_app_construction(home: Path) -> None:
-    """A boot with no `media/` at all creates every role folder and serves an empty index."""
+@pytest.mark.parametrize("ns", list(MEDIA_NAMESPACES))
+def test_role_dirs_are_created_at_app_construction(home: Path, ns: str) -> None:
+    """A boot with no `media/` at all creates EVERY namespace's role folders and serves an empty index.
+
+    Parametrized over the registry rather than over a list written here (D53 M2 added frontier): the
+    claim is that a namespace is one row and everything else follows, so a row nobody plumbed in would
+    fail this the moment it is declared."""
     assert not (home / "media").exists()
+    roles = MEDIA_NAMESPACES[ns].roles
     with make_client() as c:
-        assert sorted(p.name for p in ns_dir(home, "gacha").iterdir()) == [
-            "banner",
-            "characters",
-            "oracle",
-            "reel",
-            "wallpaper",
-        ]
-        body = c.get("/api/media/gacha").json()
-        assert body["ns"] == "gacha"
+        assert sorted(p.name for p in ns_dir(home, ns).iterdir()) == sorted(roles)
+        body = c.get(f"/api/media/{ns}").json()
+        assert body["ns"] == ns
         assert body["collation"] == "casefold-natural"
-        assert body["roles"] == {r: [] for r in ("characters", "banner", "wallpaper", "reel", "oracle")}
+        assert body["roles"] == {r: [] for r in roles}
         assert body["slots"] == {}
 
 
 def test_unknown_namespace_is_404(home: Path) -> None:
     with make_client() as c:
-        assert c.get("/api/media/frontier").status_code == 404
+        assert c.get("/api/media/cosmos").status_code == 404
 
 
 # ── ② traversal ───────────────────────────────────────────────────────────────────────────────────
@@ -220,6 +220,46 @@ def test_a_healthy_namespace_is_unaffected_and_says_so(home: Path) -> None:
         assert body["reason"] == ""
         assert [f["file"] for f in body["roles"]["characters"]] == ["a.png"]
         assert c.get("/api/media/gacha/files/characters/a.png").status_code == 200
+
+
+def test_one_disabled_namespace_leaves_the_others_healthy(home: Path, tmp_path) -> None:
+    """Degrade ISOLATION (MEDIA_PLAN §9), testable for the first time now that there are two namespaces:
+    a broken frontier tree takes frontier out and nothing else — gacha still lists, still serves, and the
+    two namespaces' health is decided per row rather than for the media surface as a whole."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    ns_dir(home, "frontier").parent.mkdir(parents=True, exist_ok=True)
+    ns_dir(home, "frontier").symlink_to(elsewhere, target_is_directory=True)
+
+    health = ensure_media_dirs(home)
+    assert health["frontier"].ok is False
+    assert health["gacha"].ok is True
+    with make_client() as c:
+        assert c.get("/api/media/frontier").json()["disabled"] is True
+        (role(home, "characters") / "a.png").write_bytes(png_bytes())
+        gacha = c.get("/api/media/gacha").json()
+        assert gacha["disabled"] is False
+        assert [f["file"] for f in gacha["roles"]["characters"]] == ["a.png"]
+        assert c.get("/api/media/gacha/files/characters/a.png").status_code == 200
+
+
+def test_the_frontier_namespace_serves_its_three_roles(home: Path) -> None:
+    """D53 M2's registry row, end to end: the pool roles list and serve, the NAMED role's files are
+    reported by STEM (the client binds `cube.png` to the `cube` layer on that name alone), and the one
+    pin is echoed for the client resolver."""
+    with make_client() as c:
+        (ns_dir(home, "frontier") / "rigs" / "01-rig.png").write_bytes(png_bytes())
+        (ns_dir(home, "frontier") / "hero" / "vista.webp").write_bytes(webp_bytes())
+        (ns_dir(home, "frontier") / "stack" / "cube.png").write_bytes(png_bytes())
+        r = c.put("/api/settings", json={"media": {"frontier": {"slots": {"hero": "vista"}}}})
+        assert r.status_code == 200, r.text
+
+        body = c.get("/api/media/frontier").json()
+        assert [f["file"] for f in body["roles"]["rigs"]] == ["01-rig.png"]
+        assert [f["name"] for f in body["roles"]["hero"]] == ["vista"]
+        assert [f["name"] for f in body["roles"]["stack"]] == ["cube"]
+        assert body["slots"] == {"hero": "vista"}
+        assert c.get(body["roles"]["stack"][0]["url"]).status_code == 200
 
 
 def test_symlinked_FILES_inside_a_role_are_neither_listed_nor_served(home: Path, tmp_path) -> None:
@@ -586,9 +626,13 @@ def test_namespace_role_and_slot_typos_are_refused() -> None:
     could never see. Path-shaped `order` entries are refused for the same visibility reason plus
     defence-in-depth — the value is only ever matched against a directory listing."""
     for bad in (
-        {"frontier": {"roles": {"rigs": {"order": ["a.png"]}}}},  # not a namespace (until M2)
+        {"cosmos": {"roles": {"planets": {"order": ["a.png"]}}}},  # not a namespace
         {"gacha": {"roles": {"charcters": {"order": ["a.png"]}}}},
         {"gacha": {"slots": {"reel_figur": "lyra"}}},
+        # frontier is a namespace since D53 M2 — but `stack` is a ROLE, not a pin. Its layers bind by
+        # filename stem, so a config trying to pin one is a mistake the owner must be shown.
+        {"frontier": {"slots": {"stack": "cube"}}},
+        {"frontier": {"roles": {"rig": {"order": ["a.png"]}}}},
         {"gacha": {"roles": {"characters": {"order": ["../../config.yaml"]}}}},
         {"gacha": {"roles": {"characters": {"order": [".."]}}}},
         {"gacha": {"roles": {"characters": {"order": ["sub\\a.png"]}}}},
@@ -596,6 +640,17 @@ def test_namespace_role_and_slot_typos_are_refused() -> None:
     ):
         with pytest.raises(ValueError):
             Settings.model_validate({"media": bad})
+
+    # …and the other half of the same rule: every registry row's real roles and pins VALIDATE, so a
+    # namespace that was added but never taught to the config model would fail here.
+    for ns, row in MEDIA_NAMESPACES.items():
+        block = {
+            "roles": {r: {"order": ["a.png"]} for r in row.roles},
+            "slots": {s: "a" for s in row.slots},
+        }
+        assert Settings.model_validate({"media": {ns: block}}).media_overrides(ns)[0] == {
+            r: ["a.png"] for r in row.roles
+        }
 
 
 def test_configured_order_and_slots_drive_the_index(home: Path) -> None:

@@ -51,6 +51,15 @@ GACHA_ROLES: tuple[str, ...] = ("characters", "banner", "wallpaper", "reel", "or
 #: The gacha `slots` pin keys (§5.2) — the cross-role bindings the Conf gallery offers.
 GACHA_SLOTS: tuple[str, ...] = ("wallpaper", "hero", "oracle", "reel_figure")
 
+#: The frontier role folders (D53 / MEDIA_PLAN §3). `rigs` and `hero` are POOLS (the badlands cards and
+#: the map cover); `stack` is the NAMED role — its three layers bind by filename STEM
+#: (`cube`/`platform-mid`/`platform-base`), so the drop-in IS the binding and no pin exists for it.
+FRONTIER_ROLES: tuple[str, ...] = ("rigs", "hero", "stack")
+
+#: The frontier `slots` pin keys. Only `hero`, and it is the same shape as the gacha wallpaper pin: a
+#: pool with a first-wins default that the owner may override by name. The named role gets none.
+FRONTIER_SLOTS: tuple[str, ...] = ("hero",)
+
 
 @dataclass(frozen=True)
 class MediaNamespace:
@@ -64,7 +73,11 @@ class MediaNamespace:
 
 
 #: ns -> its row. The single registry the ensure-dir, the mounts, the index and the config all read.
-MEDIA_NAMESPACES: dict[str, MediaNamespace] = {"gacha": MediaNamespace(roles=GACHA_ROLES, slots=GACHA_SLOTS)}
+#: A new namespace is exactly this one row: everything downstream walks the dict (M1a made that true).
+MEDIA_NAMESPACES: dict[str, MediaNamespace] = {
+    "gacha": MediaNamespace(roles=GACHA_ROLES, slots=GACHA_SLOTS),
+    "frontier": MediaNamespace(roles=FRONTIER_ROLES, slots=FRONTIER_SLOTS),
+}
 
 #: extension -> (Content-Type served, magic-byte format name expected inside).
 #:
