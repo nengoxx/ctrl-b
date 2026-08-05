@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import IO, Literal
 from urllib.parse import quote
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 #: The workspace subdirectory holding every namespace (`$CTRLB_HOME/media/`).
 MEDIA_DIRNAME = "media"
@@ -110,10 +110,6 @@ class MediaFile(BaseModel):
     revision: str = ""
     width: int | None = None
     height: int | None = None
-    #: The file cannot be used: unreadable bytes, or a format that disagrees with the extension. The
-    #: latter really is fatal rather than pedantic — the mount serves the Content-Type the EXTENSION
-    #: says with `nosniff`, so a JPEG named `.png` is a guaranteed broken image in the browser.
-    unusable: bool = False
     #: WHY, machine-readable — `None` when the file is fine. The two verdicts here are the ones only
     #: the server can reach, because only it read the bytes; the gallery turns them into sentences.
     #: SIZE-derived advisories are deliberately NOT here (MEDIA_PLAN §5): "too big" is per-ROLE policy
@@ -121,6 +117,16 @@ class MediaFile(BaseModel):
     #: served neither, so the client derives them from the numbers above against its registry's bounds.
     #: Named apart from `MediaIndex.reason` below, which is about the whole NAMESPACE.
     unusable_reason: Literal["unreadable", "format-mismatch"] | None = None
+
+    #: The file cannot be used: unreadable bytes, or a format that disagrees with the extension. The
+    #: latter really is fatal rather than pedantic — the mount serves the Content-Type the EXTENSION
+    #: says with `nosniff`, so a JPEG named `.png` is a guaranteed broken image in the browser.
+    #: COMPUTED from the reason so the pair cannot drift (Codex M1b LOW-1): the reason IS the verdict,
+    #: and the boolean stays on the wire because it is the field every renderer branches on.
+    @computed_field
+    @property
+    def unusable(self) -> bool:
+        return self.unusable_reason is not None
 
 
 class MediaIndex(BaseModel):
@@ -498,7 +504,6 @@ def describe_file(path: Path, ns: str, role: str) -> MediaFile:
         revision=revision,
         width=probe.width,
         height=probe.height,
-        unusable=reason is not None,
         unusable_reason=reason,
     )
 

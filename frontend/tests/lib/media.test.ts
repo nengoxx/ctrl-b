@@ -25,6 +25,11 @@ describe("orderedUsable", () => {
     expect(orderedUsable(files)).toEqual([]);
     expect(files).toHaveLength(1);
   });
+
+  it("a malformed TRUTHY flag still excludes — junk wire values degrade defensively (Codex M1b LOW-2)", () => {
+    const junk = [{ name: "a", unusable: "true" as unknown as boolean }, { name: "b" }];
+    expect(orderedUsable(junk).map((x) => x.name)).toEqual(["b"]);
+  });
 });
 
 describe("cycleAt / cycleAssign — positional dealing over the display order", () => {

@@ -30,7 +30,9 @@ export interface MediaNamed extends MediaUsable {
 /** The whole ordered list, minus what cannot paint — for a consumer that shows EVERY file in a role (the
  *  gacha banner's scene slides). Position carries no assignment here, so a broken file is simply dropped. */
 export function orderedUsable<T extends MediaUsable>(files: readonly T[]): T[] {
-  return files.filter((f) => f.unusable !== true);
+  // Truthiness, not `!== true` (Codex M1b LOW-2): a malformed wire value like the string "true" must stay
+  // EXCLUDED, exactly as the pre-lift resolver treated it — degrade-defensively on junk payloads.
+  return files.filter((f) => !f.unusable);
 }
 
 /** The entry at position `i`, cycling (`i mod N`) when there are more positions than files.
