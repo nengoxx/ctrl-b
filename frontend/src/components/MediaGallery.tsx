@@ -303,8 +303,12 @@ function RoleSection({
                       they collapse to, not about an icon neither of them has. */}
                   {row.services.length > 1 &&
                     (row.file ? " — these share this icon" : " — these use the same icon key")}
+                  {/* The REASON stays general (Codex M3-R1 NEW-1): the rule is the conservative
+                      cross-platform stem set (separators, reserved characters and names, edge dots/
+                      spaces — lib/media.ts#isStemRepresentable), so naming one character class here
+                      would be a false diagnosis for the others. */}
                   {!row.representable &&
-                    " — cannot have an icon: no file can be named this (a “/” or “\\” in the name)"}
+                    " — cannot have an icon: no file on the server could be named this"}
                 </span>
                 <span className={"b" + (row.file ? "" : " none")}>
                   {row.file ? row.file.file : row.representable ? "no icon" : "—"}

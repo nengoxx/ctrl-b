@@ -559,11 +559,15 @@ describe("MediaGallery · kit service icons", () => {
   });
 
   it("says outright that a service whose key cannot be a filename cannot have an icon", async () => {
-    const { container } = renderKitGallery([], [{ name: "media/plex" }]);
+    // Two shapes on purpose (Codex M3-R1 NEW-1): the separator case AND a reserved-name case share ONE
+    // general explanation — the copy must never diagnose a single character class, because the rule is
+    // the whole conservative stem set (lib/media.ts#isStemRepresentable).
+    const { container } = renderKitGallery([], [{ name: "media/plex" }, { name: "CON" }]);
     await settled(container);
-    const [row] = keyRows(container);
-    expect(row.hint).toContain("cannot have an icon");
-    expect(row.bound).toBe("—");
+    for (const row of keyRows(container)) {
+      expect(row.hint).toContain("cannot have an icon: no file on the server could be named this");
+      expect(row.bound).toBe("—");
+    }
   });
 
   it("an UNUSABLE file keeps the server's verdict as its reason, and gains no second one", async () => {
