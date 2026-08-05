@@ -5,8 +5,9 @@ import { useFleet } from "../../hooks/useFleet";
 import { setPlanSheetOpen } from "../../store/planSheet";
 import { getSheetSnap, setSheetSnap } from "../../store/sheetSnap";
 import { setFrontierSelection, useFrontierSelection } from "../../store/frontierSelection";
-import { ART, assets } from "./art";
+import { assets } from "./art";
 import { FrontierHostDetail } from "./FrontierHostDetail";
+import { useFrontierArt } from "./ownerArt";
 import { present } from "./present";
 
 // The frontier badlands Fleet (F2/F3, D29 §14.4) — the theme's bespoke signature surface, injected into
@@ -35,6 +36,9 @@ const persistSheetSnap = (snap: SheetDetent) => setSheetSnap(SHEET_KEY, snap);
 export function FrontierFleet({ active }: { active: boolean }) {
   const { hosts, svcByHost, run, busy, isLoading, error } = useFleet();
   const selected = useFrontierSelection();
+  // Owner art (D53 M2): the `rigs` pool + the `hero` cover. Never gates the render — with no owner
+  // files (or no answer yet) every expression below falls through to the bundled art.
+  const art = useFrontierArt();
 
   // Clear a selection whose host has left the fleet (config change / removal) — no stale `.sel` ghost, and
   // F3's sheet (which reads this store) won't reference a gone host. Mirrors the cosmos precedent.
@@ -57,12 +61,15 @@ export function FrontierFleet({ active }: { active: boolean }) {
           host,
           x,
           y,
-          art: assets[enc.asset as string], // asset is a validated rig key → its hashed URL
+          // The owner's rig for this position, else the theme's own indexed one (`enc.asset` is a
+          // validated rig key → its hashed URL). With an empty `rigs/` folder this IS the pre-M2
+          // expression, which is what makes a fresh install byte-identical.
+          art: art.rigUrlFor(i) ?? assets[enc.asset as string],
           plate: enc.plate as string,
           online: !!host.status?.online,
         };
       }),
-    [hosts],
+    [hosts, art],
   );
   const onlineCount = placements.filter((p) => p.online).length;
 
@@ -119,7 +126,7 @@ export function FrontierFleet({ active }: { active: boolean }) {
           if (!(e.target as Element).closest(".frontier-beacon")) setFrontierSelection(null);
         }}
       >
-        <div className="pic" style={{ backgroundImage: `url(${ART.hero})` }} />
+        <div className="pic" style={{ backgroundImage: `url(${art.hero})` }} />
         <div className="scrim" />
         <div className="frontier-sweep" aria-hidden />
 

@@ -16,11 +16,19 @@ const chat = vi.hoisted(() => {
 });
 vi.mock("../../src/hooks/useAgentChat", () => ({ useAgentChat: () => chat.view }));
 vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: [] }) }));
+// D53 M2 — the rig-stack's layers now come from `GET /api/media/frontier`. The index hook is mocked
+// rather than wrapped in a QueryClientProvider (the `useAgentChat` precedent above); the default —
+// no owner files — is also the assertion that the F4 stack is unchanged on a fresh install.
+const media = vi.hoisted(() => ({
+  data: undefined as import("../../src/hooks/useMedia").MediaIndex | undefined,
+}));
+vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 vi.mock("../../src/theme-engine/kit/composer/plan/PinnedPlanPanel", () => ({
   PinnedPlanPanel: () => <div data-testid="pinned-panel" />,
 }));
 
 import { FrontierAgent } from "../../src/themes/frontier/FrontierAgent";
+import { ART } from "../../src/themes/frontier/art";
 import { getDraft, setDraft } from "../../src/store/composer";
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
@@ -64,6 +72,7 @@ beforeEach(() => {
   setUI({ theme: "frontier", themeSettings: {} });
   setDraft("");
   chat.view = view([]);
+  media.data = undefined; // no owner files — the fresh-install state
 });
 afterEach(() => {
   setUI({ themeSettings: {} });
@@ -98,6 +107,53 @@ describe("FrontierAgent with messages", () => {
     // the shared log rendered the thread bubble
     expect(container.querySelector(".chat-log")).not.toBeNull();
     expect(screen.getByText("hello agent")).toBeTruthy();
+  });
+});
+
+describe("FrontierAgent rig-stack art (D53 M2)", () => {
+  const layerUrls = (container: HTMLElement) =>
+    [".layer.base", ".layer.mid", ".layer.cube"].map(
+      (sel) =>
+        /url\(["']?(.*?)["']?\)/.exec(
+          container.querySelector<HTMLElement>(sel)?.style.backgroundImage ?? "",
+        )?.[1],
+    );
+
+  it("with no owner files the three layers are the BUNDLED art (byte-identical to F4)", () => {
+    const { container } = render(<FrontierAgent active />);
+    expect(layerUrls(container)).toEqual([ART.stack.base, ART.stack.mid, ART.stack.cube]);
+  });
+
+  it("a single named drop replaces ONLY its layer — owner over bundled, composited", () => {
+    media.data = {
+      ns: "frontier",
+      collation: "casefold-natural",
+      roles: {
+        rigs: [],
+        hero: [],
+        stack: [
+          {
+            name: "cube",
+            file: "cube.png",
+            url: "/api/media/frontier/files/stack/cube.png",
+            format: "png",
+            size_bytes: 10,
+            revision: "1:10",
+            width: 10,
+            height: 10,
+            unusable: false,
+            unusable_reason: null,
+          },
+        ],
+      },
+      slots: {},
+    };
+    const { container } = render(<FrontierAgent active />);
+    expect(layerUrls(container)).toEqual([
+      ART.stack.base,
+      ART.stack.mid,
+      "/api/media/frontier/files/stack/cube.png",
+    ]);
   });
 });
 

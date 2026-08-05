@@ -86,13 +86,15 @@ describe("present() — plate", () => {
 });
 
 describe("present() — override mapping (explicit, validated, clamped)", () => {
-  it("swaps the asset when image names a real rig key", () => {
-    expect(present(host("h"), 0, { image: "rig4" }).asset).toBe("rig4");
-  });
-
-  it("falls back to the indexed default when image is dangling (never crashes)", () => {
-    expect(present(host("h"), 0, { image: "rig99" }).asset).toBe(RIG_KEYS[0]);
-    expect(present(host("h"), 0, { image: 42 }).asset).toBe(RIG_KEYS[0]); // non-string ignored
+  it("`image` is RETIRED and INERT — the indexed rig stands whatever a config says (D53 M2)", () => {
+    // An intentional breaking retirement, not a dead-code sweep: the override pinned a host to one of
+    // the six BUNDLED rigs, and `media/frontier/rigs/` replaces its purpose with the owner's own art.
+    // No UI ever wrote it, so a leftover key in a hand-edited config must simply reach no reader —
+    // exactly like any other unknown key in this blob.
+    expect(present(host("h"), 0, { image: "rig4" }).asset).toBe(RIG_KEYS[0]);
+    expect(present(host("h"), 2, { image: "rig4", x: 40 }).asset).toBe(RIG_KEYS[2]);
+    // …and it does not disturb the fields that KEPT working.
+    expect(pos(present(host("h"), 0, { image: "rig4", x: 40, y: 55 }))).toEqual({ x: 40, y: 55 });
   });
 
   it("replaces position from numeric x/y", () => {

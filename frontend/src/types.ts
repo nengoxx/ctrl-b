@@ -40,7 +40,8 @@ export interface Host {
   // Per-host, per-theme presentation override (D28 §9.9) — the OPEN pass-through blob a spatial theme owns
   // the schema for, keyed by themeId (mirrors backend `ComputerCfg.appearance`). Open by design: the app/DTO
   // never type the inner shape (a theme's present() validates it). First consumer = frontier's present()
-  // (`appearance.frontier = { image?, x?, y? }`).
+  // (`appearance.frontier = { x?, y? }` — its `image` key was retired at D53 M2, replaced by the owner's
+  // `media/frontier/rigs/` pool).
   appearance?: Record<string, Record<string, unknown>>;
   // FACT from the backend: this fleet entry IS the machine ctrl-b runs on (name == server hostname,
   // casefolded). The presentation layer (useHosts' select) sorts self FIRST, so every theme gives the

@@ -4,7 +4,7 @@ import { useAgentChat } from "../../hooks/useAgentChat";
 import { fillComposer } from "../../lib/composer";
 import { PinnedPlanPanel } from "../../theme-engine/kit/composer/plan/PinnedPlanPanel";
 import { usePlanPlacement } from "../../theme-engine/kit/composer/plan/placement";
-import { ART } from "./art";
+import { useFrontierArt } from "./ownerArt";
 
 // The frontier bespoke Agent body (F4, §2) — injected into DefaultRoot's `agent` body slot (FrontierRoot
 // passes it). It COMPOSES the shared `<ChatThread/>` (never forks it — §15's "shared + reskinned" band); the
@@ -30,14 +30,19 @@ const CHIPS = ["Which rigs are online?", "Any incidents today?"] as const;
 // away). Inside the pin, the OUTER positioner (`.fr-rigstack`) carries the empty↔watermark transition
 // (transform + opacity ONLY, transform-origin top center); the three INNER layers each run the infinite
 // `frontier-bob` keyframe — so the recede transform and the bob never share one `transform` (the research-
-// confirmed nested-wrapper rule). Decorative → aria-hidden. Art from the `stack` partition of art.ts.
+// confirmed nested-wrapper rule). Decorative → aria-hidden.
+//
+// Art per LAYER (D53 M2): the owner's `media/frontier/stack/<layer>.png` where they have named one, the
+// bundled `stack` partition of art.ts where they have not — resolved by `useFrontierArt`, which reads the
+// same shared query the Fleet body does (one request for both bodies).
 function RigStack() {
+  const { stack } = useFrontierArt();
   return (
     <div className="fr-rigstack-pin" aria-hidden>
       <div className="fr-rigstack">
-        <div className="layer base" style={{ backgroundImage: `url(${ART.stack.base})` }} />
-        <div className="layer mid" style={{ backgroundImage: `url(${ART.stack.mid})` }} />
-        <div className="layer cube" style={{ backgroundImage: `url(${ART.stack.cube})` }} />
+        <div className="layer base" style={{ backgroundImage: `url(${stack.base})` }} />
+        <div className="layer mid" style={{ backgroundImage: `url(${stack.mid})` }} />
+        <div className="layer cube" style={{ backgroundImage: `url(${stack.cube})` }} />
       </div>
     </div>
   );

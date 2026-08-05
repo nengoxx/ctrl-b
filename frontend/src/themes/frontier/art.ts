@@ -27,8 +27,10 @@ function byName(name: string): string {
   return urls[key];
 }
 
-// The rig-image override vocabulary + the F5 appearance-editor's option list (present() maps a host's
-// `appearance.frontier.image` against this set; a value outside it falls back to the indexed default).
+// The bundled rig pool's key order: present() names position i's rig as `RIG_KEYS[i % 6]`, and that key
+// is the LAST rung of a card's art ladder (an owner `media/frontier/rigs/` file for the position wins —
+// ownerArt.ts). It was also the `appearance.frontier.image` per-host override's vocabulary until D53 M2
+// RETIRED that override; the owner's own rig pool replaces it.
 export const RIG_KEYS = ["rig1", "rig2", "rig3", "rig4", "rig5", "rig6"] as const;
 
 // The PARTITIONED manifest (adversarial-review rule): the modulo pool present() cycles through is `rigs`

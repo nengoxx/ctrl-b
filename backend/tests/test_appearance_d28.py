@@ -33,7 +33,11 @@ def test_appearance_defaults_config_layer() -> None:
 
 def test_computer_appearance_field_roundtrips() -> None:
     """The open per-host override blob (D28 §9.9) survives save/load with arbitrary theme keys — proves
-    the pass-through (no per-theme Pydantic union that would force a server change per theme)."""
+    the pass-through (no per-theme Pydantic union that would force a server change per theme).
+
+    The frontier arm is `{x, y}` since D53 M2 RETIRED `appearance.frontier.image` (the owner's
+    `media/frontier/rigs/` pool replaces it). Nothing on this side typed the blob, so a config still
+    carrying an `image` key round-trips too — it simply reaches no reader."""
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "config.yaml"
         s = Settings.model_validate(
@@ -42,7 +46,7 @@ def test_computer_appearance_field_roundtrips() -> None:
                     "corsair": {
                         "ip": "10.0.0.5",
                         "appearance": {
-                            "frontier": {"image": "rig2.png"},
+                            "frontier": {"x": 40, "y": 55},
                             "cosmos": {"color": "#aabbcc", "size": 3},
                         },
                     }
@@ -52,7 +56,7 @@ def test_computer_appearance_field_roundtrips() -> None:
         save_settings_comment_stripping_for_tests(s, p)
         reloaded = load_settings(p)
         appearance = reloaded.computers["corsair"].appearance
-        assert appearance["frontier"]["image"] == "rig2.png"
+        assert appearance["frontier"] == {"x": 40, "y": 55}
         assert appearance["cosmos"] == {"color": "#aabbcc", "size": 3}
 
 

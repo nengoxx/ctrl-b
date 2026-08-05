@@ -71,6 +71,11 @@ export const frontier: ThemeDef = {
   // Per-host badlands-MAP encoding (§9.9) — R2-scattered beacon position + indexed rig art + plate. The
   // bespoke FrontierFleet (F2, injected via FrontierRoot → DefaultRoot's `fleet` slot) consumes it.
   present,
-  // The art manifest (eager `import.meta.glob` URL map, §9.3) — frontier's map/rig/rig-stack PNGs by name.
+  // Owner art (D53 M2): `$CTRLB_HOME/media/frontier/{rigs,hero,stack}/` — the rig cards' pool, the map
+  // cover, and the three NAMED Comms stack layers. Only the LINK lives here; the roles, their gallery
+  // copy, the pin and the advisory bounds are the `theme-engine/mediaRegistry` row (§5's inversion).
+  media: { ns: "frontier" },
+  // The BUNDLED art manifest (eager `import.meta.glob` URL map, §9.3) — frontier's map/rig/rig-stack PNGs
+  // by name, i.e. the last rung of every ladder in `ownerArt.ts`.
   assets,
 };

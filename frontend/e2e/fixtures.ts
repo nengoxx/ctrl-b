@@ -224,6 +224,14 @@ const ROUTES: Record<string, unknown> = {
     roles: { characters: [], banner: [], wallpaper: [], reel: [], oracle: [] },
     slots: {},
   },
+  // D53 M2 — the same shape for frontier's rows (empty for the same reason: the specs assert the
+  // BUNDLED map cover, rig cards and stack layers, which is the fresh-install rendering).
+  "/api/media/frontier": {
+    ns: "frontier",
+    collation: "casefold-natural",
+    roles: { rigs: [], hero: [], stack: [] },
+    slots: {},
+  },
   "/api/actions": ACTIONS,
   "/api/tools": TOOLS,
   "/api/settings": SETTINGS,

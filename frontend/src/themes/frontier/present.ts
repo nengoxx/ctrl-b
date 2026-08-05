@@ -46,22 +46,25 @@ function plateFor(name: string, index: number): string {
   return `0x${prefix}${String(index + 1).padStart(2, "0")}`;
 }
 
-// The override blob is `host.appearance.frontier` — the FLAT vocabulary `{ image?, x?, y? }` (the theme owns
-// this schema; §9.9). This is the first end-to-end run of the UNVALIDATED appearance pass-through, so the
-// mapping is EXPLICIT, never a blind `{...enc, ...override}` spread (which — as the review found — would let
-// a config typo like `x: 900` fling a beacon off-card, and couldn't map the flat `image` onto the nested
-// `asset`/`position` anyway). Each field is validated independently and a bad/absent field is IGNORED (the
-// indexed default stands), so a hand-edited config can never crash or corrupt the layout.
+// The override blob is `host.appearance.frontier` — the FLAT vocabulary `{ x?, y? }` (the theme owns this
+// schema; §9.9). This is the first end-to-end run of the UNVALIDATED appearance pass-through, so the mapping
+// is EXPLICIT, never a blind `{...enc, ...override}` spread (which — as the review found — would let a config
+// typo like `x: 900` fling a beacon off-card). Each field is validated independently and a bad/absent field
+// is IGNORED (the indexed default stands), so a hand-edited config can never crash or corrupt the layout.
+//
+// `image` was RETIRED at D53 M2 — an intentional breaking retirement, not a dead-code sweep. It was a
+// per-host pin onto one of the six BUNDLED rigs, and the `media/frontier/rigs/` pool replaces its purpose
+// with the owner's own art (R3's spirit: art is dealt by position, never bound to a machine). No UI ever
+// wrote it; a hand-authored `image:` key is now simply inert, exactly like any other unknown key here.
 export const present: Present = (host, index, override) => {
   const name = (host as { name?: string }).name ?? "";
   let x = SAFE_X0 + fract(0.5 + A1 * (index + 1 + R2_OFFSET)) * SAFE_XW;
   let y = SAFE_Y0 + fract(0.5 + A2 * (index + 1 + R2_OFFSET)) * SAFE_YH;
-  let asset: string = RIG_KEYS[index % RIG_KEYS.length];
+  // The theme's own per-position rig — and the LAST rung of the card's art ladder: an owner `rigs/` file
+  // for this position wins over it (resolved at the consumer, `ownerArt.ts`, never through this seam).
+  const asset: string = RIG_KEYS[index % RIG_KEYS.length];
 
   if (override) {
-    // image → asset ONLY if it names a real rig key; a dangling image keeps the indexed default.
-    const img = override.image;
-    if (typeof img === "string" && (RIG_KEYS as readonly string[]).includes(img)) asset = img;
     // numeric x/y → position, CLAMPED into the safe region (so a typo can't push the beacon off-card).
     // Non-numeric / NaN / absent → ignored per-field (the scatter default stands).
     if (typeof override.x === "number" && Number.isFinite(override.x)) {

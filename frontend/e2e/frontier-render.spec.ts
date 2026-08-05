@@ -54,6 +54,24 @@ test("frontier bespoke surfaces + Gate A locks — dark/coral", async ({ page, p
   const beacons = page.locator(".frontier-beacon");
   await expect(beacons).toHaveCount(2);
 
+  // ── D53 M2 lock: the owner-art adapter is LIVE and lands on its bundled rung. The media index is
+  // mocked EMPTY (fixtures.ts), i.e. the fresh-install state, so the map cover and every rig card must
+  // paint the theme's own hashed build assets — never an `/api/media/` URL and never a blank box. This
+  // is the byte-identity claim at the far end of the real render path (the unit arms pin the ladder).
+  const bgOf = (sel: string) =>
+    page.evaluate((s) => {
+      const el = document.querySelector<HTMLElement>(s);
+      return el ? getComputedStyle(el).backgroundImage : null;
+    }, sel);
+  expect(await bgOf(".frontier-map .pic")).toMatch(/\/assets\/hero-[^"')]+\.png/);
+  const rigArt = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>(".frontier-rig .art")].map(
+      (el) => getComputedStyle(el).backgroundImage,
+    ),
+  );
+  expect(rigArt).toHaveLength(2);
+  for (const bg of rigArt) expect(bg).toMatch(/\/assets\/rig\d-[^"')]+\.png/);
+
   // ── Beacon tap opens the host-detail SHEET (role=dialog on the shared BottomSheet, frontier-skinned) ──
   await beacons.first().click(); // vault (online) — the first placement
   const sheet = page.locator(".bs-sheet[role='dialog']");
@@ -122,6 +140,18 @@ test("frontier bespoke surfaces + Gate A locks — dark/coral", async ({ page, p
   const agentTab = page.locator("#tab-agent");
   await expect(agentTab).toBeVisible();
   await expect(page.locator(".fr-rigstack")).toBeVisible();
+  // …and its three NAMED layers are on their bundled art too (the other half of the M2 lock above).
+  const stackArt = await page.evaluate(() =>
+    [".layer.base", ".layer.mid", ".layer.cube"].map((s) => {
+      const el = document.querySelector<HTMLElement>(s);
+      return el ? getComputedStyle(el).backgroundImage : null;
+    }),
+  );
+  expect(stackArt).toEqual([
+    expect.stringMatching(/\/assets\/platform-base-[^"')]+\.png/),
+    expect.stringMatching(/\/assets\/platform-mid-[^"')]+\.png/),
+    expect.stringMatching(/\/assets\/cube-only-[^"')]+\.png/),
+  ]);
   await expect(agentTab).toHaveAttribute("data-thread", "empty"); // no messages at boot → hero state
   await expect(page.getByText("Frontier Comms")).toBeVisible(); // the empty-state hero
 
