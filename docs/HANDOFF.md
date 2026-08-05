@@ -12,7 +12,88 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ UPDATE 4 (2026-08-05, Fable): **✅ M3 CLOSED — D53 MEDIA-V2 IS FEATURE-COMPLETE. NEXT = G6 palettes, then release v1.5.0**
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-05 end of day, Fable — written for a COLD session; SUPERSEDES the UPDATE 1–4 stack below, which is this same day's history)
+>
+> ### Where the project stands
+> **Phase 17 gacha (G0–G5) ✅ CLOSED. D53 media-v2 (M1a–M3) ✅ FEATURE-COMPLETE — built in one
+> day, every slice through the full cadence (Opus build → main-seat audit → Codex round → fix
+> wave where findings → confirm/close).** Custom owner art is fully wired and DORMANT until
+> files are dropped: gacha's five roles, frontier's rigs/hero/stack (+ the
+> `appearance.frontier.image` retirement), and per-service icons on all five themes' service
+> rows. Empty folders ⇒ byte-identical rendering to before the feature existed.
+> **Tree:** `main` @ `3107256`, clean; **18 LOCAL commits past origin `693a06a`** (the morning
+> push). **FE 1549 vitest / BE 1306 pytest / 211 Playwright / full gate — ALL GREEN** (the e2e
+> number is a FULL local Playwright run, not CI's subset). Prod = **v1.4.6** untouched; dev
+> units RUNNING (:5434 + Vite :5173, `CTRLB_HOME=~/.ctrl-b-dev`). As-builts: GACHA_PLAN
+> §7.1–§7.6 + the D53 M1a/M1b/M2/M3 addenda in DECISIONS. Also shipped today, owner-ruled: the
+> "on" appbar slimmed to the clear mode's 8/6 pads, kit-wide + gacha (`693a06a`; ~50px bar;
+> supersedes gacha's round-3 `14px 16px` prototype literal — layout e2e re-pinned `be4f4a2`).
+>
+> ### ⚑ THE DECISION LIST — every open owner call, with its options (ask; do not assume)
+> **① PUSH the 18-commit stack.** All gated, all reviewed; the owner pushes by word (standing
+> rule). Options: push now · hold until G6 rides along · hold until release. No technical
+> blocker either way; the longer it sits the bigger the eventual delta.
+> **② G6 accent-shifter picks (the build's main open input).** GACHA_PLAN §4.4: the base-ramp
+> trio (arcade standing + midnight + indigo) is RULED; the owner picks **TWO accent-SHIFTING
+> variants** from the researched candidates **ember / glacier / nebula / eridu** (contrast
+> ratios main-seat re-verified at lock). This is an at-a-screen eyeball conversation.
+> **③ The DARK-DOSSIER TRIAL — needs an EXPLICIT sign-off, not a default.** §4.4 "Family 3":
+> four owner-shortlisted dark dossier palettes (neon-purple · sunset-orange · rose-pink ·
+> aurora-violet, all gate-normalised) + the measured flat action button. Shipping it REVERSES
+> G2's one-light-surface identity. §4.4 also records what is UNFINISHED on dark (top brand
+> strip · star badge · disabled/focus state sheet) and the two rules no token edit covers
+> (`--gc-unit-no` at 2.94 · the close disc inverting to a white blob). Options: sign off the
+> trial as a selectable variant · keep the light dossier only · defer the trial past v1.5.0.
+> **④ The deferred EYEBALL rounds (standing ruling: no drops for now, deferred-until-use).**
+> Three are owed: the G5 file-drop + phone-gallery round (REAL-TOUCH reorder is the one thing
+> verified only at layout level) · M2 frontier art on device · M3 icons on ≥2 themes. Decide:
+> does v1.5.0 SHIP with them still deferred (the feature is probe-verified + fully
+> automated), or does any become a release gate? Recommendation: ship; they are use-time
+> checks by nature.
+> **⑤ Wordmark string** — カプセルアーケード is the standing pick; confirm or change at G6.
+> **⑥ The NEW ribbon** — still has NO semantics and NO data seam; wanted for v1.5.0, later,
+> or dropped?
+> **⑦ Carousel dots close the dossier** — owner-flagged during G2, never vetoed; keep or
+> change at G6's device round.
+> **⑧ The ~80 MB untracked originals** (`design/prototypes/gacha/` two dirs). REC stands:
+> never commit. Decide: leave untracked · move out of the repo · delete.
+> **⑨ Release timing.** After G6: tag v1.5.0 per `deploy/linux/README.md` §Release
+> (runbook-driven; an Opus operational agent has run it before — sha → tag → **wait for the
+> CI release gate GREEN (the tag gate is where e2e actually runs)** → re-pin `~/apps/ctrl-b`
+> → `install.sh prod` → verify). Rollback target = v1.4.6. Schema untouched (still 5) — no
+> migration risk in this release.
+> **⑩ Cross-project standing owner items (not this arc, don't lose them):** the F1
+> notifications device round result (owner tested ~2026-07-30 PM — never reported back; ask)
+> · web-push stays PARKED pending the two Fennec/Firefox checks (its memory) · stop the dev
+> units when iteration ends.
+>
+> ### What G6 actually is (so a cold session can brief it)
+> GACHA_PLAN §4.4 end-to-end: wire the palette VARIANTS into gacha's theme settings (the
+> per-theme settings rows — the D31/§14.14 pattern; variant = tokens.css values, NO new CSS
+> architecture), the ruled trio + the owner's two shifter picks + (if signed off) the dark
+> dossier family + measured action button as options. Every variant passes the THEME_PAIRS
+> contrast gate rows (the 48-combo matrix precedent from G2). Then the owner's device round.
+> Cadence: Opus build from a pinned brief → main-seat audit → Codex → owner eyeball (G6 is
+> eyeball-heavy BY NATURE — budget several rounds, the G0 lesson).
+>
+> ### Traps this day bought (do not re-pay)
+> · **Push CI SKIPS e2e** — only the tag gate runs Playwright. After ANY theme-metric change,
+> run the FULL local suite (`npx playwright test` from `frontend/`); the appbar slimming rode
+> a green push with a broken gacha arm until the M3 builder's full run caught it.
+> · A keyed `<img>` (`key={identity}`) is the lean fix for stale-request error races; the
+> per-instance latch + parent-held state pattern is in `ServiceIcon.tsx`.
+> · `classifyNamed`/`resolveNamed`/`keyFor` in `lib/media.ts` are the ONE rule for named
+> binding — extend there, never beside.
+> · A hand-authored `media.<unknown-ns>` key 422s (registry-validated); `media.gacha/
+> frontier/kit` are the valid rows.
+> · pydantic `computed_field` over `@property` is pyright-clean WITHOUT the mypy ignore.
+> · Two writing agents in one tree collide — worktree isolation for PARALLEL waves;
+> sequential waves via SendMessage to the still-warm builder agent (context intact, cheap).
+> · The pre-push hook runs the FULL gate over the WORKING TREE — never push while a builder
+> agent is mutating it (use the hook's documented `--no-verify` escape only when the stack is
+> per-commit gated and CI covers it, and say so).
+>
+> ## ▶ UPDATE 4 (2026-08-05, Fable): **✅ M3 CLOSED — D53 MEDIA-V2 IS FEATURE-COMPLETE — superseded by the block above (same-day history)**
 > The whole M-ladder closed in ONE day, each slice through the full cadence (Opus build →
 > main-seat audit → Codex → fix wave where needed). M3 = `d70d395`+`bbbb859`+`6dcb7a1` + R1
 > wave `8941676` + residual `06b6f7f` (as-built = the D53 M3 addendum: keyFor, the
