@@ -1,6 +1,11 @@
 import { useMediaIndex, type MediaFile } from "../hooks/useMedia";
 import { useSaveSettings } from "../hooks/useSettings";
-import { resolveNamed } from "../lib/media";
+import { normalizeMediaKey, resolveNamed } from "../lib/media";
+import {
+  serviceKeyBindings,
+  useDerivedServiceKeys,
+  type ServiceKeyBindings,
+} from "../theme-engine/kit/serviceIcons";
 import type { MediaNsDef, MediaRoleDef } from "../theme-engine/mediaRegistry";
 
 // The owner-media gallery (D52/G5, GACHA_PLAN §5.4) — the Conf half of the read-only media surface.
@@ -41,14 +46,14 @@ function advisories(f: MediaFile, role: MediaRoleDef | undefined): string[] {
   return out;
 }
 
-/** A `named` role's binding, both ways round: which file took each declared KEY, and which key (if any)
- *  each FILE took. Same `resolveNamed` the theme resolves through, so the gallery cannot claim a binding
- *  the render will not honour — including the two rules that decide the contested cases (an unusable file
- *  never binds; on a stem collision the first in this listing wins).
+/** A STATIC-key `named` role's binding, both ways round: which file took each declared KEY, and which key
+ *  (if any) each FILE took. Same `resolveNamed` the theme resolves through, so the gallery cannot claim a
+ *  binding the render will not honour — including the two rules that decide the contested cases (an
+ *  unusable file never binds; on a stem collision the first in this listing wins).
  *
  *  The reverse map is keyed on the file OBJECT, which is exactly why `resolveNamed` returns the caller's
- *  own entries rather than copies. M2 ships this much: the per-key rows and a per-file "binds as" badge.
- *  Flagging the collisions and the unmatched files is M3's, with the keyed gallery those need. */
+ *  own entries rather than copies. The DATA-derived key source (kit's services) is the same shape with
+ *  more to say — `serviceKeyBindings`, which also classifies the files that bound nothing. */
 function bindings(files: MediaFile[], role: MediaRoleDef | undefined) {
   const keys = role?.keys;
   if (keys === undefined) return null;
@@ -59,6 +64,25 @@ function bindings(files: MediaFile[], role: MediaRoleDef | undefined) {
   const keyOf = new Map<MediaFile, string>();
   for (const [key, file] of byKey) keyOf.set(file, key);
   return { keys, byKey, keyOf };
+}
+
+/** What a DERIVED-key role says about one file, from the file's own side. `null` = nothing to say (it
+ *  bound a key, and the key badge beside it already says which).
+ *
+ *  UNKNOWN while the services are still loading is the load-bearing case (Opus M5): "no service is
+ *  called that" is a claim about a list we do not have yet, and rendering it for a beat would tell the
+ *  owner their correctly-named file is wrong. */
+function fileNote(
+  f: MediaFile,
+  derived: ServiceKeyBindings | null,
+  pending: boolean,
+): { text: string; title: string } | null {
+  if (pending) return { text: "unknown", title: "still reading the fleet's services" };
+  if (derived === null || f.unusable || derived.keyOf.has(f)) return null;
+  const key = normalizeMediaKey(f.name);
+  return derived.shadowed.has(f)
+    ? { text: "duplicate", title: `another file already binds "${key}"` }
+    : { text: "no service", title: `no service is named or kinded "${key}"` };
 }
 
 /** `640×854 · 88 KB` — the two numbers the §10.4 hint is about, and nothing else. */
@@ -119,107 +143,20 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
   const roles = Object.keys(data.roles);
   return (
     <div className="conf-card mgal">
-      {roles.map((role) => {
-        const files = data.roles[role] ?? [];
-        // The server is the authority on which roles EXIST; the registry only describes them, so a role it
-        // has no row for still lists and still reorders — it just carries no hint and no size advisories.
-        const roleDef = def.roles[role];
-        // A NAMED role is not a list the owner orders — it is a set of slots they FILL by filename, so
-        // the keys are shown with what each one currently resolves to. Without this a named role would
-        // render indistinguishably from a pool, and the one thing the owner must know (what to call the
-        // file) would appear nowhere.
-        const named = bindings(files, roleDef);
-        return (
-          <section className="mgal-role" key={role}>
-            <div className="mgal-head">
-              <b>{role}</b>
-              <span className="path">
-                media/{ns}/{role}/
-              </span>
-            </div>
-            {roleDef?.hint != null && <p className="mgal-hint">{roleDef.hint}</p>}
-            {named != null && (
-              <ul className="mgal-keys">
-                {named.keys.map((k) => {
-                  const file = named.byKey.get(k.key);
-                  return (
-                    <li key={k.key}>
-                      <code>{k.key}</code>
-                      <span className="h">{k.hint}</span>
-                      <span className={"b" + (file ? "" : " none")}>
-                        {file ? file.file : "bundled"}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {files.length === 0 ? (
-              <p className="mgal-empty">
-                Empty — the theme uses its bundled art. Copy .png/.jpg/.webp files into this folder.
-              </p>
-            ) : (
-              <ul className="mgal-list">
-                {files.map((f, i) => (
-                  <li className={"mgal-item" + (f.unusable ? " bad" : "")} key={f.file}>
-                    {/* The thumbnail comes from the SAME mount the theme paints from, so a file that
-                        renders here is a file that renders there — the gallery cannot flatter a drop. */}
-                    <img
-                      className="mgal-thumb"
-                      src={f.url}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    <div className="mgal-meta">
-                      <span className="name">{f.file}</span>
-                      <span className="dim">{metaText(f)}</span>
-                      {/* Which KEY this file took, for a named role — the same answer as the rows
-                          above, read from the file's side (a file that took none carries no badge
-                          at M2; the unmatched/collision flagging lands with M3's keyed gallery). */}
-                      {named?.keyOf.get(f) != null && (
-                        <span className="badge dim" title={`binds as ${named.keyOf.get(f)}`}>
-                          {named.keyOf.get(f)}
-                        </span>
-                      )}
-                      {advisories(f, roleDef).map((w) => (
-                        <span
-                          className={"badge" + (ADVISORIES[w]?.bad ? " stale" : " dim")}
-                          key={w}
-                          title={w}
-                        >
-                          {/* The PROBED format rides the mismatch badge: the bytes are a jpeg however the
-                              name reads, and that is the whole of what the owner has to act on. */}
-                          {(ADVISORIES[w]?.text ?? w) +
-                            (w === "format-mismatch" && f.format != null ? ` (${f.format})` : "")}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="mgal-move">
-                      <button
-                        type="button"
-                        aria-label={`Move ${f.file} up`}
-                        disabled={busy || i === 0}
-                        onClick={() => move(role, i, i - 1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Move ${f.file} down`}
-                        disabled={busy || i === files.length - 1}
-                        onClick={() => move(role, i, i + 1)}
-                      >
-                        ↓
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        );
-      })}
+      {roles.map((role) => (
+        <RoleSection
+          key={role}
+          ns={ns}
+          role={role}
+          files={data.roles[role] ?? []}
+          // The server is the authority on which roles EXIST; the registry only describes them, so a role
+          // it has no row for still lists and still reorders — it just carries no hint, no size advisories
+          // and no key panel.
+          roleDef={def.roles[role]}
+          busy={busy}
+          onMove={move}
+        />
+      ))}
 
       {/* The PINS (§5.2). Optional in every sense — the role folders above cover the ordinary case on
           their own — so they sit last, and every one of them offers "—" as its first option. */}
@@ -274,5 +211,165 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
         </section>
       )}
     </div>
+  );
+}
+
+/** One role folder: the heading + the path to copy into, the registry's hint, the KEY panel when the role
+ *  is `named`, and the files themselves.
+ *
+ *  Its own component because of the key panel's second source (D53 M3): a `named` role's keys are either a
+ *  static registry list or DATA — and reading that data is a hook, which a `.map()` inside the gallery
+ *  could not call once per role. Everything else here is the M2 render, moved verbatim. */
+function RoleSection({
+  ns,
+  role,
+  files,
+  roleDef,
+  busy,
+  onMove,
+}: {
+  ns: string;
+  role: string;
+  files: MediaFile[];
+  roleDef: MediaRoleDef | undefined;
+  busy: boolean;
+  onMove: (role: string, from: number, to: number) => void;
+}) {
+  // The role's own data dependency, and only its own: a role with no `keySource` passes `false` and this
+  // adds no fetcher (the hook is still CALLED — rules of hooks — it just does not subscribe to a poll).
+  const derives = roleDef?.keySource === "services";
+  const { services } = useDerivedServiceKeys(derives);
+  // "We do not know yet" is a THIRD state, not an empty list: annotating files against an empty service
+  // list would flag every correctly-named one as unmatched for as long as the fleet query takes (§5).
+  const pending = derives && services === undefined;
+  const derived = derives && services !== undefined ? serviceKeyBindings(services, files) : null;
+  // A NAMED role is not a list the owner orders — it is a set of slots they FILL by filename, so the keys
+  // are shown with what each one currently resolves to. Without this a named role would render
+  // indistinguishably from a pool, and the one thing the owner must know (what to call the file) would
+  // appear nowhere.
+  const named = bindings(files, roleDef);
+  const keyOf = (f: MediaFile) => named?.keyOf.get(f) ?? derived?.keyOf.get(f);
+
+  return (
+    <section className="mgal-role">
+      <div className="mgal-head">
+        <b>{role}</b>
+        {/* The folder to copy into, spelled out — the whole owner-facing contract of a namespace whose
+            name they never chose (§3: `kit` is house vocabulary; this is where it is documented). */}
+        <span className="path">
+          media/{ns}/{role}/
+        </span>
+      </div>
+      {roleDef?.hint != null && <p className="mgal-hint">{roleDef.hint}</p>}
+      {named != null && (
+        <ul className="mgal-keys">
+          {named.keys.map((k) => {
+            const file = named.byKey.get(k.key);
+            return (
+              <li key={k.key}>
+                <code>{k.key}</code>
+                <span className="h">{k.hint}</span>
+                <span className={"b" + (file ? "" : " none")}>{file ? file.file : "bundled"}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {pending && <p className="mgal-empty">reading the fleet&apos;s services…</p>}
+      {derived != null &&
+        (derived.rows.length === 0 ? (
+          <p className="mgal-empty">
+            No services are declared on any machine yet — nothing to name a file after.
+          </p>
+        ) : (
+          <ul className="mgal-keys">
+            {derived.rows.map((row) => (
+              <li key={row.key}>
+                <code>{row.key}</code>
+                <span className="h">
+                  {/* Every collision is stated where the owner meets it. A service/service collision has
+                      no winner to pick — services are not in the media index — so BOTH rows share the one
+                      file, and saying so is the whole remedy (per-host binding is out of scope, §0). */}
+                  {row.services.join(" · ")}
+                  {row.services.length > 1 && " — these share one icon"}
+                  {!row.representable &&
+                    " — cannot have an icon: no file can be named this (a “/” or “\\” in the name)"}
+                </span>
+                <span className={"b" + (row.file ? "" : " none")}>
+                  {row.file ? row.file.file : row.representable ? "no icon" : "—"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ))}
+      {files.length === 0 ? (
+        <p className="mgal-empty">
+          {derives
+            ? "Empty — every service row renders without an icon. Copy .png/.jpg/.webp files named after the services above into this folder."
+            : "Empty — the theme uses its bundled art. Copy .png/.jpg/.webp files into this folder."}
+        </p>
+      ) : (
+        <ul className="mgal-list">
+          {files.map((f, i) => {
+            const note = fileNote(f, derived, pending);
+            const key = keyOf(f);
+            return (
+              <li className={"mgal-item" + (f.unusable ? " bad" : "")} key={f.file}>
+                {/* The thumbnail comes from the SAME mount the theme paints from, so a file that
+                    renders here is a file that renders there — the gallery cannot flatter a drop. */}
+                <img className="mgal-thumb" src={f.url} alt="" loading="lazy" decoding="async" />
+                <div className="mgal-meta">
+                  <span className="name">{f.file}</span>
+                  <span className="dim">{metaText(f)}</span>
+                  {/* Which KEY this file took, for a named role — the same answer as the rows above,
+                      read from the file's side. `note` is the other half, and only a derived-key role
+                      has one: what a file that took NO key is doing there. */}
+                  {key != null && (
+                    <span className="badge dim" title={`binds as ${key}`}>
+                      {key}
+                    </span>
+                  )}
+                  {note != null && (
+                    <span className="badge dim" title={note.title}>
+                      {note.text}
+                    </span>
+                  )}
+                  {advisories(f, roleDef).map((w) => (
+                    <span
+                      className={"badge" + (ADVISORIES[w]?.bad ? " stale" : " dim")}
+                      key={w}
+                      title={w}
+                    >
+                      {/* The PROBED format rides the mismatch badge: the bytes are a jpeg however the
+                          name reads, and that is the whole of what the owner has to act on. */}
+                      {(ADVISORIES[w]?.text ?? w) +
+                        (w === "format-mismatch" && f.format != null ? ` (${f.format})` : "")}
+                    </span>
+                  ))}
+                </div>
+                <div className="mgal-move">
+                  <button
+                    type="button"
+                    aria-label={`Move ${f.file} up`}
+                    disabled={busy || i === 0}
+                    onClick={() => onMove(role, i, i - 1)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${f.file} down`}
+                    disabled={busy || i === files.length - 1}
+                    onClick={() => onMove(role, i, i + 1)}
+                  >
+                    ↓
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }

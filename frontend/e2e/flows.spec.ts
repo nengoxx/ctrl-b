@@ -199,3 +199,72 @@ test("Fleet — live-ping canvas is sized even if Fleet wasn't the initial tab (
     )
     .toBeGreaterThan(0);
 });
+
+// D53 M3 — the owner's SERVICE ICONS, end to end in the real built app (the M2 owner-art precedent: the
+// empty-fixture baseline proves the icon-less row, this proves the adapter is LIVE). One arm is enough
+// because one component paints all five surfaces; what only a browser run can show is the whole chain —
+// the `kit` index fetch, `keyFor` over the fleet's own service list, and a real load off the hardened
+// mount. Vapor's Fleet is the surface with the least ceremony to open (a row click).
+test("Fleet — an owner icon named after a service paints on its row (D53 M3)", async ({
+  page,
+  pageErrors,
+}) => {
+  const ICON = "/api/media/kit/files/services/ssh.png";
+  // Registered after the fixtures baseline, so this wins. The exact-index glob does NOT swallow the
+  // files mount (its URLs carry more path segments).
+  await page.route("**/api/media/kit", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ns: "kit",
+        collation: "casefold-natural",
+        roles: {
+          services: [
+            {
+              // `ssh` is the fixture fleet's first service, and it declares no kind — so this also
+              // exercises `keyFor`'s fallback to the display NAME.
+              name: "ssh",
+              file: "ssh.png",
+              url: ICON,
+              format: "png",
+              size_bytes: 68,
+              revision: "1:68",
+              width: 1,
+              height: 1,
+              unusable: false,
+              unusable_reason: null,
+            },
+          ],
+        },
+        slots: {},
+      }),
+    }),
+  );
+  // A real (1x1) PNG on the mount, so the paint is a genuine load rather than a broken image — which is
+  // also what proves the latch did NOT trip.
+  await page.route("**/api/media/kit/files/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    }),
+  );
+
+  await seedUI(page, { ...VAPOR_UI, tab: "fleet" });
+  await page.goto("/");
+  const row = page.locator(".dev").filter({ hasText: "vault" }).first();
+  await row.locator(".top .name").click();
+
+  const icon = row.locator(".svc-row", { hasText: "ssh" }).locator("img.kit-svcicon");
+  await expect(icon).toHaveAttribute("src", ICON);
+  // …and it DECODED: a broken image reports zero natural width, which is the state the latch removes.
+  await expect.poll(() => icon.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBe(1);
+  // The service with no file named for it keeps the icon-less row.
+  expect(await row.locator(".svc-row", { hasText: "web" }).locator("img").count()).toBe(0);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});

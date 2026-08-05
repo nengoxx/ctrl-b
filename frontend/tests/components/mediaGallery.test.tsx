@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { MediaIndex } from "../../src/hooks/useMedia";
+import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
 import { MEDIA_NS } from "../../src/theme-engine/mediaRegistry";
 
 // The owner-media gallery (D52/G5, GACHA_PLAN §5.4) — the Conf half of the read-only media surface.
@@ -421,5 +421,154 @@ describe("MediaGallery", () => {
       </QueryClientProvider>,
     );
     expect(await screen.findByText(/media index unreachable: boom/)).toBeTruthy();
+  });
+});
+
+// ── the KEYED gallery, where the keys are DATA (D53 M3 / MEDIA_PLAN §5) ──────────────────────────
+//
+// The kit row's keys are the fleet's SERVICE identities, so this half of the gallery owns a second data
+// dependency (Opus M5) and has four sentences to get right: which key each service wants, which file
+// took it, which files took none and WHY — and, while the service list is still in flight, that it does
+// not know yet. That last one is the load-bearing case: "no service is called that" would be a claim
+// about a list we do not have.
+
+const svcFile = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
+  name,
+  file: `${name}.png`,
+  url: `/api/media/kit/files/services/${name}.png`,
+  format: "png",
+  size_bytes: 4_000,
+  revision: `1:4000:${name}`,
+  width: 64,
+  height: 64,
+  unusable: false,
+  unusable_reason: null,
+  ...over,
+});
+
+/** The kit gallery against a URL-aware client mock: its own index, plus the `/api/services` list it
+ *  fetches ITSELF (`services: null` leaves that request pending forever — the unknown state). */
+function renderKitGallery(
+  files: MediaFile[],
+  services: { name: string; kind?: string | null }[] | null,
+) {
+  api.getJSON.mockImplementation((url: string) => {
+    if (url === "/api/services")
+      return services === null ? new Promise(() => {}) : Promise.resolve(services);
+    return Promise.resolve({
+      ns: "kit",
+      collation: "casefold-natural",
+      roles: { services: files },
+      slots: {},
+    });
+  });
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MediaGallery ns="kit" def={MEDIA_NS.kit} />
+    </QueryClientProvider>,
+  );
+}
+
+/** Wait for the derived key panel to have rendered (the services request has answered). */
+const settled = (c: HTMLElement) =>
+  waitFor(() => expect(c.querySelectorAll(".mgal-keys li").length).toBeGreaterThan(0));
+
+/** The key panel as the owner reads it: `key` → the text beside it → what answers it. */
+const keyRows = (c: HTMLElement) =>
+  [...c.querySelectorAll(".mgal-keys li")].map((li) => ({
+    key: li.querySelector("code")!.textContent,
+    hint: li.querySelector(".h")!.textContent,
+    bound: li.querySelector(".b")!.textContent,
+  }));
+
+/** The badges on one file row, by filename. */
+const badgesOf = (c: HTMLElement, filename: string) =>
+  [...c.querySelectorAll(".mgal-item")]
+    .filter((li) => li.querySelector(".name")!.textContent === filename)
+    .flatMap((li) => [...li.querySelectorAll(".badge")].map((b) => b.textContent));
+
+describe("MediaGallery · kit service icons", () => {
+  it("names the folder to copy into — the whole owner-facing contract of a namespace no theme owns", async () => {
+    const { container } = renderKitGallery([], []);
+    // A fleet with no services at all: nothing to name a file after, and the gallery says so rather
+    // than showing an empty key panel the owner cannot act on.
+    await screen.findByText(/nothing to name a file after/);
+    expect(container.querySelector(".mgal-head .path")!.textContent).toBe("media/kit/services/");
+    expect(screen.getByText(/every service row renders without an icon/)).toBeTruthy();
+    expect(keyRows(container)).toEqual([]);
+  });
+
+  it("one row per service key, in fleet order, each showing the file that answers it", async () => {
+    const { container } = renderKitGallery(
+      [svcFile("jellyfin")],
+      [
+        { name: "Media", kind: "jellyfin" },
+        { name: "Grafana", kind: null },
+      ],
+    );
+    await settled(container);
+    expect(keyRows(container)).toEqual([
+      { key: "jellyfin", hint: "Media", bound: "jellyfin.png" },
+      { key: "grafana", hint: "Grafana", bound: "no icon" },
+    ]);
+    // …and the same answer from the FILE's side.
+    expect(badgesOf(container, "jellyfin.png")).toEqual(["jellyfin"]);
+  });
+
+  it("says UNKNOWN while the service list is in flight — never a false 'no service named X'", async () => {
+    const { container } = renderKitGallery([svcFile("jellyfin")], null);
+    await screen.findByText("jellyfin.png");
+    expect(container.querySelector(".mgal-empty")!.textContent).toContain("reading the fleet");
+    expect(keyRows(container)).toEqual([]); // no key panel to be wrong with
+    expect(badgesOf(container, "jellyfin.png")).toEqual(["unknown"]);
+  });
+
+  it("flags a service/service collision on ONE row and says the two share the file", async () => {
+    const { container } = renderKitGallery(
+      [svcFile("jellyfin")],
+      [
+        { name: "media-a", kind: "Jellyfin" },
+        { name: "media-b", kind: "jellyfin" },
+      ],
+    );
+    await settled(container);
+    const [row] = keyRows(container);
+    expect(row.hint).toContain("media-a · media-b");
+    expect(row.hint).toContain("share one icon");
+    expect(row.bound).toBe("jellyfin.png");
+  });
+
+  it("flags a file/file collision on the LOSER, and an unmatched file as having no service", async () => {
+    const { container } = renderKitGallery(
+      [
+        svcFile("jellyfin", { file: "jellyfin.png" }),
+        svcFile("Jellyfin", { file: "Jellyfin.webp" }),
+        svcFile("emby"),
+      ],
+      [{ name: "media", kind: "jellyfin" }],
+    );
+    await settled(container);
+    expect(badgesOf(container, "jellyfin.png")).toEqual(["jellyfin"]); // the winner, by index order
+    expect(badgesOf(container, "Jellyfin.webp")).toEqual(["duplicate"]);
+    expect(badgesOf(container, "emby.png")).toEqual(["no service"]);
+  });
+
+  it("says outright that a service whose key cannot be a filename cannot have an icon", async () => {
+    const { container } = renderKitGallery([], [{ name: "media/plex" }]);
+    await settled(container);
+    const [row] = keyRows(container);
+    expect(row.hint).toContain("cannot have an icon");
+    expect(row.bound).toBe("—");
+  });
+
+  it("an UNUSABLE file keeps the server's verdict as its reason, and gains no second one", async () => {
+    const { container } = renderKitGallery(
+      [svcFile("jellyfin", { unusable: true, unusable_reason: "format-mismatch", format: "jpeg" })],
+      [{ name: "media", kind: "jellyfin" }],
+    );
+    await settled(container);
+    expect(badgesOf(container, "jellyfin.png")).toEqual(["wrong extension (jpeg)"]);
+    expect(keyRows(container)[0].bound).toBe("no icon");
   });
 });
