@@ -13,8 +13,8 @@ import type { ThemeMedia } from "../theme-engine/types";
 // same descriptor-not-code shape the per-theme settings rows already use), and the ROLES come from the
 // server's index. So the next art-bearing theme is a declaration, not a second gallery.
 //
-// Writes go through the ordinary `PUT /api/settings` — `themes.<ns>.roles.<role>.order` and
-// `themes.<ns>.slots.<key>`. There is no media-specific write path to secure or to keep in sync.
+// Writes go through the ordinary `PUT /api/settings` — `media.<ns>.roles.<role>.order` and
+// `media.<ns>.slots.<key>`. There is no media-specific write path to secure or to keep in sync.
 
 /** Warning code → what the owner should read. Codes come from the index's magic-byte reader; anything
  *  unrecognised is shown verbatim rather than swallowed, so a new server-side code is never invisible. */
@@ -66,7 +66,7 @@ export function MediaGallery({ media }: { media: ThemeMedia }) {
     );
   }
 
-  const patch = (block: Record<string, unknown>) => save.mutate({ themes: { [media.ns]: block } });
+  const patch = (block: Record<string, unknown>) => save.mutate({ media: { [media.ns]: block } });
 
   /** Move one file within its role and persist the WHOLE role order — the config field is the order
    *  itself, not a diff, and writing the full list is what keeps the stored order meaningful after the

@@ -147,7 +147,7 @@ async def media_index(ns: str, request: Request) -> MediaIndex:
     if health is not None and not health.ok:
         return disabled_index(ns, health.reason)
     settings = request.app.state.settings
-    order, slots = settings.themes.overrides(ns)
+    order, slots = settings.media_overrides(ns)
     # OFF the event loop (Codex F8): building the index walks directories, stats every entry and reads
     # each file's header — all blocking, and the JPEG scan is bounded but not free on a malformed drop.
     # `asyncio.to_thread` is the house hop for sync work in an async route (app/api/agent.py's skill and

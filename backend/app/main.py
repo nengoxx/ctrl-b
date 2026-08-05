@@ -544,7 +544,7 @@ def create_app() -> FastAPI:
     # an ordinary uvicorn failure — which `Restart=on-failure` retries every 5s. An art folder with the
     # wrong shape must not be able to crash-loop the control panel.
     app.state.media_health = ensure_media_dirs(home)
-    for ns, roles in MEDIA_NAMESPACES.items():
+    for ns, row in MEDIA_NAMESPACES.items():
         # `ns_health`, not `health` — that name is the health ROUTER module, imported above.
         ns_health = app.state.media_health[ns]
         if not ns_health.ok:
@@ -555,7 +555,7 @@ def create_app() -> FastAPI:
             # The namespace's ROLES are passed in, not inferred from what is on disk: the mount then
             # serves exactly what the index advertises, and a folder the owner parked beside the role
             # dirs is invisible rather than quietly public (Codex F1).
-            MediaFiles(directory=ns_dir(home, ns), roles=roles),
+            MediaFiles(directory=ns_dir(home, ns), roles=row.roles),
             name=f"media-{ns}",
         )
 

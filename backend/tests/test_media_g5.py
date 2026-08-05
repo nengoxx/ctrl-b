@@ -3,8 +3,9 @@
 The §10.4 obligation list, one test each: missing dir at boot, traversal attempts, the extension
 allowlist + `nosniff`, HEAD + 304 revalidation, route ordering vs the SPA fallback, index sort
 determinism (natural, so `2.png` precedes `10.png`), and the magic-byte reader catching a mislabeled
-extension. Plus the config half: `themes.gacha` defaults cleanly on a config that predates it, refuses
-a role typo, and round-trips through the ordinary `PUT /api/settings`.
+extension. Plus the config half: `media.gacha` (D53's ns-generic re-home) defaults cleanly on a config
+that predates it, refuses a namespace/role/slot typo, and round-trips through the ordinary
+`PUT /api/settings`.
 
 Config writes go to a temp `CTRLB_CONFIG`/`CTRLB_DB` — never the operator's real config.yaml.
 
@@ -21,10 +22,11 @@ import time
 from pathlib import Path
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from app.api.media import MediaFiles
-from app.config import GachaThemeCfg, Settings
+from app.config import Settings
 from app.core.media import ensure_media_dirs, ns_dir, probe_image, sort_key
 
 # ── fixtures ──────────────────────────────────────────────────────────────────────────────────────
@@ -552,33 +554,31 @@ def test_urls_are_percent_encoded(home: Path) -> None:
 # ── ⑧ the config block ────────────────────────────────────────────────────────────────────────────
 
 
-def test_absent_themes_section_loads_as_defaults() -> None:
-    """The house gotcha: `Settings` is extra-tolerant, so a config written before G5 must default
-    cleanly rather than 422 — that is what keeps the theme byte-identical until the gallery is used."""
+def test_absent_media_section_loads_as_defaults() -> None:
+    """The house gotcha: `Settings` is extra-tolerant, so a config written before the media surface
+    must default cleanly rather than 422 — that is what keeps every consumer on its bundled art until
+    the gallery is used."""
     s = Settings.model_validate({"server": {"port": 5433}})
-    assert s.themes.gacha.roles == {}
-    assert s.themes.gacha.slots.reel_figure is None
-    assert s.themes.overrides("gacha") == ({}, {})
+    assert s.media == {}
+    assert s.media_overrides("gacha") == ({}, {})
 
 
-def test_unknown_theme_blocks_round_trip_untyped() -> None:
-    """`extra="allow"`: a theme this build has no model for survives a load/save cycle, and asking for
-    its overrides is empty rather than an error."""
-    s = Settings.model_validate({"themes": {"frontier": {"rigs": ["a.png"]}}})
-    assert s.model_dump()["themes"]["frontier"] == {"rigs": ["a.png"]}
-    assert s.themes.overrides("frontier") == ({}, {})
-
-
-def test_role_typos_and_path_shaped_order_entries_are_refused() -> None:
+def test_namespace_role_and_slot_typos_are_refused() -> None:
+    """Every key of the ns-generic block is checked against `MEDIA_NAMESPACES` (D53 §4): a namespace,
+    role or slot name the registry does not know would be silently inert, which is a typo the owner
+    could never see. Path-shaped `order` entries are refused for the same visibility reason plus
+    defence-in-depth — the value is only ever matched against a directory listing."""
     for bad in (
-        {"roles": {"charcters": {"order": ["a.png"]}}},
-        {"roles": {"characters": {"order": ["../../config.yaml"]}}},
-        {"roles": {"characters": {"order": [".."]}}},
-        {"roles": {"characters": {"order": ["sub\\a.png"]}}},
-        {"roles": {"characters": {"order": ["  "]}}},
+        {"frontier": {"roles": {"rigs": {"order": ["a.png"]}}}},  # not a namespace (until M2)
+        {"gacha": {"roles": {"charcters": {"order": ["a.png"]}}}},
+        {"gacha": {"slots": {"reel_figur": "lyra"}}},
+        {"gacha": {"roles": {"characters": {"order": ["../../config.yaml"]}}}},
+        {"gacha": {"roles": {"characters": {"order": [".."]}}}},
+        {"gacha": {"roles": {"characters": {"order": ["sub\\a.png"]}}}},
+        {"gacha": {"roles": {"characters": {"order": ["  "]}}}},
     ):
         with pytest.raises(ValueError):
-            GachaThemeCfg.model_validate(bad)
+            Settings.model_validate({"media": bad})
 
 
 def test_configured_order_and_slots_drive_the_index(home: Path) -> None:
@@ -591,7 +591,7 @@ def test_configured_order_and_slots_drive_the_index(home: Path) -> None:
         r = c.put(
             "/api/settings",
             json={
-                "themes": {
+                "media": {
                     "gacha": {
                         "roles": {"characters": {"order": ["c.png", "gone.png", "a.png"]}},
                         "slots": {"reel_figure": "lyra", "wallpaper": ""},
@@ -605,12 +605,59 @@ def test_configured_order_and_slots_drive_the_index(home: Path) -> None:
         # blank pins are not pins — only the real one reaches the client
         assert body["slots"] == {"reel_figure": "lyra"}
         # …and it survives a reload from disk
-        assert "gacha" in Settings.model_validate({}).model_dump()["themes"]
-        reloaded = c.get("/api/settings").json()["themes"]["gacha"]
+        reloaded = c.get("/api/settings").json()["media"]["gacha"]
         assert reloaded["roles"]["characters"]["order"] == ["c.png", "gone.png", "a.png"]
 
 
-def test_a_bad_theme_patch_is_a_422_not_a_500(home: Path) -> None:
+def test_a_bad_media_patch_is_a_422_not_a_500(home: Path) -> None:
     with make_client() as c:
-        r = c.put("/api/settings", json={"themes": {"gacha": {"roles": {"nope": {"order": []}}}}})
+        r = c.put("/api/settings", json={"media": {"gacha": {"roles": {"nope": {"order": []}}}}})
         assert r.status_code == 422, r.text
+
+
+#: The G5 development shape, which never reached a tagged release (prod was pre-media) — so D53 §4
+#: ships NO migration for it. `Settings` is extra-tolerant, which makes a hand-authored leftover inert
+#: cruft rather than a hazard; this is the config that pins that intent.
+_OLD_THEMES_KEYS = """themes:
+  gacha:
+    roles:
+      characters:
+        order:
+        - z.png
+    slots:
+      reel_figure: ghost
+"""
+
+
+def test_old_themes_media_keys_are_inert_and_the_gallery_writes_only_media(home: Path) -> None:
+    """D53 §4's ruling, as a test: a config still carrying the pre-fold `themes.gacha` media keys boots,
+    IGNORES them (no reader exists), and a gallery write lands under `media:` — while the stray block is
+    neither resurrected nor mutated by the diff writer, because nothing patches it."""
+    cfg = home / "config.yaml"
+    cfg.write_text(_SEED + _OLD_THEMES_KEYS, encoding="utf-8")
+    with make_client() as c:
+        for name in ("a.png", "z.png"):
+            (role(home, "characters") / name).write_bytes(png_bytes())
+        # ignored: the listing is the plain collation and the old pin reaches nobody
+        body = c.get("/api/media/gacha").json()
+        assert [f["file"] for f in body["roles"]["characters"]] == ["a.png", "z.png"]
+        assert body["slots"] == {}
+
+        r = c.put(
+            "/api/settings",
+            json={"media": {"gacha": {"roles": {"characters": {"order": ["z.png", "a.png"]}}}}},
+        )
+        assert r.status_code == 200, r.text
+        assert [f["file"] for f in c.get("/api/media/gacha").json()["roles"]["characters"]] == [
+            "z.png",
+            "a.png",
+        ]
+
+    written = cfg.read_text(encoding="utf-8")
+    doc = yaml.safe_load(written)
+    assert doc["media"]["gacha"]["roles"]["characters"]["order"] == ["z.png", "a.png"]
+    # the leftover survived untouched — the write path edits the leaves it was given and nothing else
+    assert doc["themes"] == {
+        "gacha": {"roles": {"characters": {"order": ["z.png"]}}, "slots": {"reel_figure": "ghost"}}
+    }
+    assert written.count("themes:") == 1

@@ -15,7 +15,7 @@ import type { ThemeMedia } from "../../src/theme-engine/types";
 //
 // The load-bearing claims:
 //  · reordering writes the WHOLE role order (the config field is the order itself, not a diff);
-//  · a pin writes `themes.<ns>.slots.<key>`, and clearing one writes null — never a stray "";
+//  · a pin writes `media.<ns>.slots.<key>`, and clearing one writes null — never a stray "";
 //  · nothing here can create, rename or delete a file (§5.4 ruled option (b): there is no write API);
 //  · the index's warnings are SHOWN — a file the theme cannot use must be visible as such.
 
@@ -83,12 +83,12 @@ function renderGallery(payload: MediaIndex = index()): ReturnType<typeof render>
   return render(ui);
 }
 
-/** The `themes.<ns>` block of the single PUT the gallery made. */
+/** The `media.<ns>` block of the single PUT the gallery made. */
 function savedBlock(): Record<string, unknown> {
   expect(api.putJSON).toHaveBeenCalledTimes(1);
-  const [url, body] = api.putJSON.mock.calls[0] as [string, { themes: Record<string, unknown> }];
+  const [url, body] = api.putJSON.mock.calls[0] as [string, { media: Record<string, unknown> }];
   expect(url).toBe("/api/settings"); // the ORDINARY write path — no media-specific endpoint exists
-  return body.themes.gacha as Record<string, unknown>;
+  return body.media.gacha as Record<string, unknown>;
 }
 
 beforeEach(() => {
@@ -232,8 +232,8 @@ describe("MediaGallery", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Move a.webp down" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
-    const [, body] = api.putJSON.mock.calls[1] as [string, { themes: { gacha: unknown } }];
-    expect(body.themes.gacha).toEqual({
+    const [, body] = api.putJSON.mock.calls[1] as [string, { media: { gacha: unknown } }];
+    expect(body.media.gacha).toEqual({
       roles: { characters: { order: ["c.webp", "a.webp", "b.webp"] } },
     });
   });

@@ -291,7 +291,7 @@ export function useSaveSettings() {
       } else {
         pushToast("Settings saved", "ok");
       }
-      // D52/G5 — a `themes.<ns>` save changes the ORDER the media index serves (and its slot pins), and
+      // D52/G5 — a `media.<ns>` save changes the ORDER the media index serves (and its slot pins), and
       // the index is where the theme reads its art from. Invalidated by PREFIX so every namespace's
       // listing re-reads; the theme then repaints without a reload. Not `setQueryData`: the echo is the
       // settings doc, and the index is a projection of settings OVER THE FILES ON DISK — only the server

@@ -12,7 +12,7 @@ this module or in the API layer knows what a "capsule card" is.
 
 **Drop-in = assignment** (the G1-eyeball re-rule): the role FOLDER a file lands in is what binds it to
 a consumer. Ordering INSIDE a role is `ROLE_COLLATION` by default, overridden per role by the Conf
-gallery's persisted `themes.<ns>.roles.<role>.order` (§5.4's 2026-08-04 ruling).
+gallery's persisted `media.<ns>.roles.<role>.order` (§5.4's 2026-08-04 ruling).
 
 **No decoder dependency.** User files get no server-side re-encode and no Pillow (a new runtime dep
 AND an untrusted-decoder surface, §10.4). `probe_image` below is a stdlib magic-byte + dimension
@@ -46,8 +46,23 @@ MEDIA_FILES_SEGMENT = "files"
 #: Order matters only for the ensure-dir walk and for how the Conf gallery lists sections.
 GACHA_ROLES: tuple[str, ...] = ("characters", "banner", "wallpaper", "reel", "oracle")
 
-#: ns -> its role folders. The single registry the ensure-dir, the mounts and the index all read.
-MEDIA_NAMESPACES: dict[str, tuple[str, ...]] = {"gacha": GACHA_ROLES}
+#: The gacha `slots` pin keys (§5.2) — the cross-role bindings the Conf gallery offers.
+GACHA_SLOTS: tuple[str, ...] = ("wallpaper", "hero", "oracle", "reel_figure")
+
+
+@dataclass(frozen=True)
+class MediaNamespace:
+    """One namespace's registry row: the role FOLDERS on disk plus the `slots` pin KEYS its config may
+    bind. Both belong here because both are namespace facts the ns-generic `media.<ns>` config model
+    validates against (MEDIA_PLAN §4) — a slot key typed on a per-namespace pydantic class would be the
+    banned sibling shape, and a typo in either is only visible if this registry is the authority."""
+
+    roles: tuple[str, ...]
+    slots: tuple[str, ...] = ()
+
+
+#: ns -> its row. The single registry the ensure-dir, the mounts, the index and the config all read.
+MEDIA_NAMESPACES: dict[str, MediaNamespace] = {"gacha": MediaNamespace(roles=GACHA_ROLES, slots=GACHA_SLOTS)}
 
 #: extension -> (Content-Type served, magic-byte format name expected inside).
 #:
@@ -191,9 +206,9 @@ def ensure_media_dirs(home: Path) -> dict[str, NamespaceHealth]:
     """
     root = media_root(home)
     health: dict[str, NamespaceHealth] = {}
-    for ns, roles in MEDIA_NAMESPACES.items():
+    for ns, row in MEDIA_NAMESPACES.items():
         reason = ""
-        for path in (root, ns_dir(home, ns), *(role_dir(home, ns, role) for role in roles)):
+        for path in (root, ns_dir(home, ns), *(role_dir(home, ns, role) for role in row.roles)):
             if path.is_symlink():
                 reason = (
                     f"'{path}' is a symlink; the media tree must be real directories (a link here "
@@ -525,11 +540,12 @@ def build_index(
     slots: dict[str, str] | None = None,
 ) -> MediaIndex:
     """The whole `GET /api/media/{ns}` payload. `order`/`slots` come from the owner's config
-    (`themes.<ns>`) — this module never reads settings itself, so a second namespace is one registry
+    (`media.<ns>`) — this module never reads settings itself, so a second namespace is one registry
     row plus its own config block."""
     order = order or {}
+    row = MEDIA_NAMESPACES.get(ns)
     return MediaIndex(
         ns=ns,
-        roles={role: list_role(home, ns, role, order.get(role)) for role in MEDIA_NAMESPACES.get(ns, ())},
+        roles={role: list_role(home, ns, role, order.get(role)) for role in (row.roles if row else ())},
         slots=dict(slots or {}),
     )

@@ -1024,74 +1024,26 @@ class MediaRoleCfg(BaseModel):
     order: list[str] = Field(default_factory=list)
 
 
-class GachaSlotsCfg(BaseModel):
-    """The §5.2 `slots` pins: an optional binding of a NAMED entry into a role, overriding the role
-    folder's own first-wins pick. Each value is a media file's stem (`lyra`), and a pin that names
-    nothing on disk degrades to the role's default in the client resolver — never a hole, never a
-    crash (§5.3), and never silently dropped here, which would hide the owner's typo."""
+class MediaNsCfg(BaseModel):
+    """`media.<ns>` — everything the Conf gallery persists for ONE media namespace (D53, MEDIA_PLAN §4).
 
-    model_config = {"extra": "allow"}
-
-    reel_figure: str | None = None
-    oracle: str | None = None
-    wallpaper: str | None = None
-    hero: str | None = None
-
-
-class GachaThemeCfg(BaseModel):
-    """`themes.gacha` — everything the Conf gallery persists for the gacha theme (D52/G5).
-
-    Deliberately NOT the art itself: the files live in `$CTRLB_HOME/media/gacha/<role>/` and the role
+    Deliberately NOT the art itself: the files live in `$CTRLB_HOME/media/<ns>/<role>/` and the role
     folder a file sits in IS its assignment (§5.4's re-rule). This block only records the two things a
     folder listing cannot: the owner's ORDER inside a role, and the cross-role `slots` pins.
+
+    Namespace-GENERIC by construction: one model for every row of `MEDIA_NAMESPACES`, so a namespace is
+    a registry row and never a pydantic class of its own. `slots` is therefore a MAP whose keys the
+    registry validates (`Settings._known_media_namespaces_roles_and_slots`) rather than typed fields —
+    typed per-namespace slot fields would force an `isinstance` branch one layer up, which is the
+    banned sibling shape (§4). Each slot value is a media file's stem (`lyra`); a pin that names
+    nothing on disk degrades to the role's default in the client resolver — never a hole, never a
+    crash (§5.3), and never silently dropped here, which would hide the owner's typo.
     """
 
     model_config = {"extra": "allow"}
 
     roles: dict[str, MediaRoleCfg] = Field(default_factory=dict)
-    slots: GachaSlotsCfg = Field(default_factory=GachaSlotsCfg)
-
-    @field_validator("roles")
-    @classmethod
-    def _known_roles_and_bare_filenames(cls, v: dict[str, MediaRoleCfg]) -> dict[str, MediaRoleCfg]:
-        """A role key that is not a real folder would be silently inert — a typo the owner could never
-        see. And an `order` entry is a FILENAME inside its role folder, never a path: rejecting
-        separators keeps the config incapable of expressing something the index would have to
-        sanitise (the value is only ever matched against a directory listing, so this is
-        defence-in-depth, not the containment itself)."""
-        roles = MEDIA_NAMESPACES["gacha"]
-        for role, cfg in v.items():
-            if role not in roles:
-                raise ValueError(f"unknown gacha media role {role!r} (expected one of {list(roles)})")
-            for name in cfg.order:
-                if not name.strip() or name in (".", "..") or "/" in name or "\\" in name:
-                    raise ValueError(f"themes.gacha.roles.{role}.order: {name!r} is not a bare filename")
-        return v
-
-
-class ThemesCfg(BaseModel):
-    """`themes: {<theme id>: {…}}` — the ONE feature-named home for per-theme owner state (council H1).
-
-    A `theme_gacha:` top-level key would be the banned sibling-map shape: the next theme with art would
-    mint a second top-level section plus its own model, reader and writer, and renaming later would
-    cost a real config migration. Here it is one additive field, typed where a schema exists — and
-    `extra="allow"` means a theme block this build has no model for still round-trips losslessly.
-    """
-
-    model_config = {"extra": "allow"}
-
-    gacha: GachaThemeCfg = Field(default_factory=GachaThemeCfg)
-
-    def overrides(self, theme_id: str) -> tuple[dict[str, list[str]], dict[str, str]]:
-        """`(order-by-role, slots)` for a media namespace — the projection the namespace-generic media
-        index consumes, so the API layer never branches on a theme id. Empty for a theme with no
-        typed block, which is exactly what a namespace with no owner overrides looks like."""
-        block = getattr(self, theme_id, None)
-        if not isinstance(block, GachaThemeCfg):
-            return {}, {}
-        order = {role: list(cfg.order) for role, cfg in block.roles.items() if cfg.order}
-        slots = {k: v for k, v in block.slots.model_dump().items() if isinstance(v, str) and v.strip()}
-        return order, slots
+    slots: dict[str, str | None] = Field(default_factory=dict)
 
 
 class Settings(BaseModel):
@@ -1128,10 +1080,11 @@ class Settings(BaseModel):
     monitor: MonitorCfg = Field(default_factory=MonitorCfg)
     #: Scheduled agent automations (A3/D49) — runner tunables only; the definitions live in SQLite.
     automations: AutomationsCfg = Field(default_factory=AutomationsCfg)
-    #: Per-theme owner state (D52/G5) — today only `gacha`'s media role order + slot pins. Purely
-    #: additive: a config written before G5 has no `themes:` key and loads to these defaults, which is
-    #: what keeps the theme byte-identical until the owner touches the gallery.
-    themes: ThemesCfg = Field(default_factory=ThemesCfg)
+    #: Owner media state (D52/G5 + D53), keyed by NAMESPACE — the map mirrors `MEDIA_NAMESPACES`, which
+    #: is why it is not per-theme: `kit` is a namespace no theme owns. Purely additive: a config with no
+    #: `media:` key loads empty, which is what keeps every consumer on its bundled art until the owner
+    #: touches the gallery.
+    media: dict[str, MediaNsCfg] = Field(default_factory=dict)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`
@@ -1220,6 +1173,46 @@ class Settings(BaseModel):
                 if is_secret_sentinel_name(mname):
                     raise ValueError(f"model name {mname!r} collides with a secret-sentinel key")
         return v
+
+    @field_validator("media")
+    @classmethod
+    def _known_media_namespaces_roles_and_slots(cls, v: dict[str, MediaNsCfg]) -> dict[str, MediaNsCfg]:
+        """Every key is checked against `MEDIA_NAMESPACES` (D53 §4). A namespace, role or slot key that
+        is not in the registry would be silently inert — a typo the owner could never see — so it is a
+        load/PUT error instead. And an `order` entry is a FILENAME inside its role folder, never a path:
+        rejecting separators keeps the config incapable of expressing something the index would have to
+        sanitise (the value is only ever matched against a directory listing, so this is
+        defence-in-depth, not the containment itself)."""
+        for ns, block in v.items():
+            row = MEDIA_NAMESPACES.get(ns)
+            if row is None:
+                raise ValueError(f"unknown media namespace {ns!r} (expected one of {list(MEDIA_NAMESPACES)})")
+            for role, cfg in block.roles.items():
+                if role not in row.roles:
+                    raise ValueError(
+                        f"unknown media role {role!r} in namespace {ns!r} (expected one of {list(row.roles)})"
+                    )
+                for name in cfg.order:
+                    if not name.strip() or name in (".", "..") or "/" in name or "\\" in name:
+                        raise ValueError(f"media.{ns}.roles.{role}.order: {name!r} is not a bare filename")
+            for slot in block.slots:
+                if slot not in row.slots:
+                    raise ValueError(
+                        f"unknown media slot {slot!r} in namespace {ns!r} (expected one of {list(row.slots)})"
+                    )
+        return v
+
+    def media_overrides(self, ns: str) -> tuple[dict[str, list[str]], dict[str, str]]:
+        """`(order-by-role, slots)` for one media namespace — the projection the namespace-generic media
+        index consumes, so the API layer never branches on a namespace. Empty for a namespace the owner
+        has never touched, which is exactly what "no owner overrides" looks like. A blank pin is not a
+        pin: the gallery clears with `null`, and a hand-authored `""` must not reach the resolver."""
+        block = self.media.get(ns)
+        if block is None:
+            return {}, {}
+        order = {role: list(cfg.order) for role, cfg in block.roles.items() if cfg.order}
+        slots = {k: v for k, v in block.slots.items() if isinstance(v, str) and v.strip()}
+        return order, slots
 
     def hosts(self) -> list[Host]:
         """Project the `computers` map into typed domain `Host`s (stable slug id from name)."""
