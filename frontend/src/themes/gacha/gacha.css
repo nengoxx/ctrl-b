@@ -88,18 +88,15 @@
       background: var(--gc-bar-grad);
       border: 0;
       box-shadow: none;
-      /* The prototype's own `.topbar` padding (base.css `14px 16px`), replacing the kit's 16/12 — the
-       * owner's round-3 item E ("too much space"). Both designs then stack a 15px wordmark over a 9px
-       * subtitle inside those 28px of vertical padding.
+      /* Vertical pads = the clear mode's slim 8/6 metric (owner, 2026-08-05: the "on" bar should sit as
+       * slim as clear — this SUPERSEDES the prototype's `.topbar` literal `14px 16px`, which was itself
+       * the owner's round-3 item E pick). The 16px sides stay prototype-exact.
        *
        * The bar's HEIGHT is not a constant anywhere: DefaultRoot MEASURES the rendered bar
        * (`bar.offsetHeight`, re-measured by a ResizeObserver) into `--appbar-h`, and every consumer —
        * the top scrim, the toast/TTS-flash anchors, the M7 oracle math (§10.2) — rides that variable.
-       * Reference numbers measured on the dev build at a Pixel-5 viewport, for orientation only:
-       * ~56.8px BARE (the 28.8px brand block + 28px padding), ~64px with the round 36px TTS toggle
-       * beside it, ~62px in `transparent` mode where the kit's icon buttons are 34px squared (the
-       * docked 2-tab launcher is the same button). Do not hardcode any of them. */
-      padding: 14px 16px;
+       * Do not hardcode any of them. */
+      padding: calc(8px * var(--density-pad)) 16px calc(6px * var(--density-pad));
       -webkit-backdrop-filter: blur(14px);
       backdrop-filter: blur(14px);
     }
@@ -169,9 +166,10 @@
     body[data-perf="lite"] .kit-appbar.transparent,
     body[data-wallpaper="on"] .kit-appbar.transparent {
       background: var(--gc-bar-grad-wall);
-      /* RE-DECLARED from kit.css (the layer trap): the clear mode's slimmer pads + the negative margin that
-       * pulls content up under the reserved strip. Gacha's `padding: 14px 16px` above would otherwise win
-       * on layer order and give the mode back the dead air it exists to remove. */
+      /* RE-DECLARED from kit.css (the layer trap): the clear mode's pads + the negative margin that pulls
+       * content up under the reserved strip. Gacha's base bar rule above would otherwise win on layer order
+       * and drop the margin pull. (Since 2026-08-05 the base bar shares the same 8/6 pads, but the mode's
+       * contract stays spelled out here so it never depends on what a base-rule edit happens to leave.) */
       padding: calc(8px * var(--density-pad)) 16px calc(6px * var(--density-pad));
       margin-bottom: -14px;
       -webkit-backdrop-filter: blur(14px);

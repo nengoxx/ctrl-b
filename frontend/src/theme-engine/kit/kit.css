@@ -157,7 +157,10 @@ body[data-motion="reduced"] .kit .tab.active {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: calc(16px * var(--density-pad)) 18px calc(12px * var(--density-pad));
+  /* Vertical pads = the clear mode's slim metric (owner, 2026-08-05: the painted "on" bar read too tall
+   * next to clear — the original 16/12 was vapor's literal). The 34px icon buttons set the row's real
+   * height, so this trims margins only; --appbar-h is measured, so every anchored consumer follows. */
+  padding: calc(8px * var(--density-pad)) 18px calc(6px * var(--density-pad));
   /* frosted glass — content stays visible (blurred) behind the bar as it scrolls under (vapor parity).
    * backdrop-filter is the heaviest effect on Firefox, so it's gated on data-perf (lite → opaque below).
    * v1.3.1 owner finding #2: 72% + blur(8px) was too weak a surface — scrolled-under section titles
@@ -305,9 +308,11 @@ body[data-perf="lite"] .kit-appbar.transparent {
   box-shadow: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  /* SLIMMER than the painted bar (owner, v1.3.1 device round): with no surface to fill, the full
-   * 16/12 pads read as dead air — halve them so the in-flow offset the clear bar reserves is thinner.
-   * The 34px squared icon buttons below set the row's real height, so this only trims the margins.
+  /* The slim 8/6 pads were minted HERE (owner, v1.3.1 device round: with no surface to fill, the then-16/12
+   * pads read as dead air) and the painted bar later adopted the same metric (owner, 2026-08-05 — see the
+   * base rule). They stay EXPLICITLY re-declared so the mode contract survives a theme overriding the base
+   * bar's padding (gacha does; its @layer theme rule outranks this one, so themes re-declare these too).
+   * The 34px squared icon buttons below set the row's real height, so pads only trim the margins.
    * The negative bottom margin then pulls the FOLLOWING content up under the reserved strip (owner
    * round 2: the bar-to-content gap still read too wide — the first .sec carries its own 22px pad).
    * Safe because this bar paints nothing, and --appbar-h is measured from offsetHeight (margin-
