@@ -109,7 +109,14 @@ export function resolveNamed<T extends MediaNamed>(
   files: readonly T[],
   keys: readonly string[],
 ): Map<string, T> {
-  const wanted = new Map(keys.map((k) => [normalizeMediaKey(k), k]));
+  // First-DECLARED wins when two keys normalize identically (Codex M2 LOW-1): static registry lists are
+  // invariant-tested unique, so this guard is for DATA-DERIVED key lists (M3's service identities), where
+  // it makes the collapse deterministic in declaration order rather than silently last-wins.
+  const wanted = new Map<string, string>();
+  for (const k of keys) {
+    const norm = normalizeMediaKey(k);
+    if (!wanted.has(norm)) wanted.set(norm, k);
+  }
   const bound = new Map<string, T>();
   for (const f of orderedUsable(files)) {
     const key = wanted.get(normalizeMediaKey(f.name));

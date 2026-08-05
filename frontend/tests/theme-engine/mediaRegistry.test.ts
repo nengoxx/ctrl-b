@@ -124,4 +124,16 @@ describe("the frontier row (D53 M2)", () => {
       }
     }
   });
+
+  it("every static key list is UNIQUE after normalization (Codex M2 LOW-1)", () => {
+    // Two declared keys that normalize identically ("Café"/"Café") would race for one file and render
+    // duplicate React rows; `resolveNamed` collapses them first-declared-wins defensively, but a STATIC
+    // registry list has no excuse — this invariant makes the collapse unreachable for every row.
+    for (const [nsName, ns] of Object.entries(MEDIA_NS)) {
+      for (const [roleName, role] of Object.entries(ns.roles)) {
+        const keys = (role.keys ?? []).map((k) => k.key.normalize("NFC").toLowerCase());
+        expect(new Set(keys).size, `${nsName}/${roleName}`).toBe(keys.length);
+      }
+    }
+  });
 });

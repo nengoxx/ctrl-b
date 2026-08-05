@@ -148,4 +148,11 @@ describe("resolveNamed — stem binds to key (the `named` kind)", () => {
     expect(resolveNamed([], ["cube"]).size).toBe(0);
     expect(resolveNamed([f("cube")], []).size).toBe(0);
   });
+
+  it("declared keys that NORMALIZE identically collapse first-declared-wins (Codex M2 LOW-1)", () => {
+    // Registry lists are invariant-tested unique; this is the data-derived-list guard (M3 services).
+    const bound = resolveNamed([f("cube")], ["Cube", "CUBE"]);
+    expect([...bound.keys()]).toEqual(["Cube"]);
+    expect(bound.get("Cube")?.name).toBe("cube");
+  });
 });

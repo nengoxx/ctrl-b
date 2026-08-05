@@ -27,7 +27,10 @@ computers:
     role: nas
     appearance:
       frontier:
-        image: rig4
+        # `sigil` is DELIBERATELY not a key any theme reads: the pass-through is schema-free, and an
+        # arbitrary key proves it. (This seed used `image:` until D53 M2 RETIRED that vocabulary — a
+        # generic test must not model a retired key as the example of a supported one.)
+        sigil: rig4
         x: 42
         y: 61
     services:
@@ -237,7 +240,7 @@ def test_appearance_passthrough_and_preserved() -> None:
         with client as c:
             # --- pass-through: alpha's configured appearance surfaces unchanged ---
             alpha = _host(c, "alpha")
-            assert alpha["appearance"] == {"frontier": {"image": "rig4", "x": 42, "y": 61}}
+            assert alpha["appearance"] == {"frontier": {"sigil": "rig4", "x": 42, "y": 61}}
 
             # --- a host WITHOUT an appearance entry reports {} (not null/missing) ---
             r = c.post("/api/hosts", json={"name": "beta", "ip": "192.168.1.20"})
@@ -259,9 +262,9 @@ def test_appearance_passthrough_and_preserved() -> None:
                 },
             )
             assert r.status_code == 200, r.text
-            assert s_appearance(load_settings(cfg)) == {"frontier": {"image": "rig4", "x": 42, "y": 61}}
+            assert s_appearance(load_settings(cfg)) == {"frontier": {"sigil": "rig4", "x": 42, "y": 61}}
             # and it still round-trips out through the DTO after the edit
-            assert _host(c, "alpha")["appearance"] == {"frontier": {"image": "rig4", "x": 42, "y": 61}}
+            assert _host(c, "alpha")["appearance"] == {"frontier": {"sigil": "rig4", "x": 42, "y": 61}}
     finally:
         os.environ.pop("CTRLB_CONFIG", None)
         os.environ.pop("CTRLB_DB", None)

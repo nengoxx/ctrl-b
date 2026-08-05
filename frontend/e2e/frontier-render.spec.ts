@@ -167,3 +167,97 @@ test("frontier bespoke surfaces + Gate A locks — dark/coral", async ({ page, p
   // throws on boot/interaction surfaces here).
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
+
+// ── D53 M2, the other half of the lock above (Codex M2 LOW-2): with owner files PRESENT, the adapter
+// must land them on the painted surfaces — `/api/media/frontier/files/…` URLs in the computed
+// backgrounds, not the bundled assets. The empty-fixture arm proves bundled parity; this one proves the
+// adapter is LIVE end-to-end (index fetch → resolve → paint), including the partial-stack composite
+// (owner cube over bundled mid/base) and rig CYCLING (one owner rig serves both display positions).
+test("frontier owner art — dropped files reach the painted surfaces", async ({
+  page,
+  pageErrors,
+}) => {
+  await page.addInitScript(
+    (ui) => {
+      localStorage.setItem("ctrlb.ui", JSON.stringify(ui));
+    },
+    { theme: "frontier", mode: "dark", accent: "coral", tab: "fleet", v: 1 },
+  );
+
+  const file = (role: string, name: string, ext = "png") => ({
+    name,
+    file: `${name}.${ext}`,
+    url: `/api/media/frontier/files/${role}/${name}.${ext}`,
+    format: "png",
+    size_bytes: 68,
+    revision: `1:68:${name}`,
+    width: 1,
+    height: 1,
+    unusable: false,
+    unusable_reason: null,
+  });
+  // Registered after the fixtures baseline, so these win. The exact-index glob does NOT swallow the
+  // files mount (its URLs carry more path segments).
+  await page.route("**/api/media/frontier", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ns: "frontier",
+        collation: "casefold-natural",
+        roles: {
+          rigs: [file("rigs", "probe-rig")],
+          hero: [file("hero", "probe-hero")],
+          // `Cube` (case-folded stem) binds the cube layer; mid/base stay bundled — the composite rule.
+          stack: [file("stack", "Cube")],
+        },
+        slots: {},
+      }),
+    }),
+  );
+  // A real (1×1) PNG for every mount URL, so the paints are genuine loads, not broken images.
+  const PNG = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  await page.route("**/api/media/frontier/files/**", (route) =>
+    route.fulfill({ status: 200, contentType: "image/png", body: PNG }),
+  );
+
+  await page.goto("/");
+  await page.waitForSelector(".frontier-map");
+
+  // Map cover = the owner's hero (first usable — no pin needed).
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const el = document.querySelector<HTMLElement>(".frontier-map .pic");
+        return el ? getComputedStyle(el).backgroundImage : null;
+      }),
+    )
+    .toContain("/api/media/frontier/files/hero/probe-hero.png");
+
+  // Rig cards: ONE owner rig, TWO hosts — cycling deals it to both positions (i mod 1).
+  const rigArt = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>(".frontier-rig .art")].map(
+      (el) => getComputedStyle(el).backgroundImage,
+    ),
+  );
+  expect(rigArt).toHaveLength(2);
+  for (const bg of rigArt) expect(bg).toContain("/api/media/frontier/files/rigs/probe-rig.png");
+
+  // The stack composites owner-over-bundled: `Cube.png` took the cube layer, mid/base stay bundled.
+  await page.locator("#tabbtn-agent").click();
+  await expect(page.locator(".fr-rigstack")).toBeVisible();
+  const stackArt = await page.evaluate(() =>
+    [".layer.cube", ".layer.mid", ".layer.base"].map((s) => {
+      const el = document.querySelector<HTMLElement>(s);
+      return el ? getComputedStyle(el).backgroundImage : null;
+    }),
+  );
+  expect(stackArt[0]).toContain("/api/media/frontier/files/stack/Cube.png");
+  expect(stackArt[1]).toMatch(/\/assets\/platform-mid-[^"')]+\.png/);
+  expect(stackArt[2]).toMatch(/\/assets\/platform-base-[^"')]+\.png/);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
