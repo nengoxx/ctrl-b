@@ -12,7 +12,21 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ UPDATE (2026-08-05, Fable): **✅ THE STACK IS PUSHED · G5's OWNER ROUND DEFERRED · M1a CLOSED — NEXT = M1b (awaits the owner's go, per the phase-pause rule)**
+> ## ▶ UPDATE 2 (2026-08-05, Fable): **✅ M1b CLOSED — NEXT = M2 (frontier), which ends in an owner eyeball**
+> The owner gave the go ("make sure the implementation is correct… let's go"). M1b landed as
+> `59b7c2a` (FE: lib/media.ts ops + the registry inversion + gacha recomposed, parity arms
+> unmodified) + `2832744` (BE: `warnings[]` off the wire, `unusable_reason` added) + the fix
+> wave `7890dab` (Codex LOW-1/2: `unusable` computed from its reason; truthiness filter).
+> ALL LOCAL — nothing pushed since `693a06a`. Arc: Opus build → main-seat audit PASS (3
+> deviations ruled, see the D53 M1b as-built addendum) → Codex READY WITH FIXES → both LOWs
+> closed lean, LOW-3 (two-group ConfTab render test) DEFERRED to M3 where the kit row lands
+> for real. Dev backend restarted on the final shape, index healthy. **NEXT = M2** (frontier:
+> registry rows BE+FE, `named` kind + `resolveNamed` land with the stack consumer, rigs/hero/
+> stack, the `appearance.frontier.image` RETIREMENT, 8-combo stack matrix) — gate includes
+> the owner dropping art on dev for the eyeball. Standing M3 obligations so far: the kit
+> registry row + two-group render test + `keyFor`.
+>
+> ## ▶ UPDATE (2026-08-05, Fable): **✅ THE STACK IS PUSHED · G5's OWNER ROUND DEFERRED · M1a CLOSED — superseded above (M1b built the same day)**
 > The owner's word landed: **push** — origin/main is at `693a06a` (the whole G5 arc + D53 docs +
 > an owner-requested kit tweak: the "on" appbar slimmed to the clear mode's 8/6 pads, kit-wide +
 > gacha's override; live-verified 50px). Push CI green (local pre-push bypassed with its

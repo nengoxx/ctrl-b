@@ -4057,6 +4057,20 @@ Ships IN v1.5.0 (owner: finished product, no seams, no dead code), sequenced M1a
   reader + round-trip test die deliberately; no UI writer ever existed; the rigs pool
   replaces it per R3's spirit). The D28 appearance blob and frontier `x/y` keep working.
 
+**M1b as-built (2026-08-05, `59b7c2a`+`2832744`+`7890dab` — build Opus, audit main seat,
+Codex READY WITH FIXES → closed):** the operations module ships gacha's consumed set only
+(`orderedUsable`/`cycleAt`/`cycleAssign`/`firstUsable`; `resolveNamed`→M2, `keyFor`→M3 —
+lands-with-its-consumer). Registry rows live INLINE in `theme-engine/mediaRegistry.ts`, a
+ruled deviation from §5's "a theme contributes its row": theme-exported rows would import
+the shared bounds constants back out of the registry (an import cycle over a module-scope
+map — the store↛registry lesson); the inversion's intent (registry owns descriptors,
+`ThemeMedia` = the ns link) is intact. `applicableNs`'s always-on mechanism is built and
+injection-tested; the live registry holds gacha alone until M3 (a `kit` gallery would 404
+today). Wire: `warnings[]` deleted, `unusable_reason` added, and `unusable` is a COMPUTED
+field over it (Codex LOW — the pair cannot drift); advisory bounds are per-role FE registry
+constants (G5's values moved whole). Deferred to M3 by ruling: the two-group ConfTab render
+test (the second row lands for real there). The §9 parity arms passed UNMODIFIED.
+
 **M1a as-built (2026-08-05, `a767871` — build Opus, audit main seat, Codex READY zero
 findings):** the fold landed exactly as ruled, with one build-time decision of record — slot
 KEYS moved into the backend registry row (`MEDIA_NAMESPACES: dict[ns, MediaNamespace(roles,
