@@ -186,21 +186,59 @@ as fallback, byte-identical for every other theme). The exact katakana rendering
 copy pick at G0/G1 — draft **コントロール・ビー** (the ctrl·b transliteration) in the gacha
 gradient treatment, with カプセルアーケード ("Capsule Arcade") as the alternative reading if
 the owner prefers the prototype's brand over the app's; the JP subtitle ネットワーク景品所
-stays in `brandMeta` either way.
+stays in `brandMeta` either way. **RE-RULED 2026-08-06 (owner, from live side-by-side renders of
+both strings): コントロール・ビー wins** ("the one with the dot in the middle — it looks
+better") — G6 swaps the shipped カプセルアーケード string; subtitle unchanged.
 
-**4.4 Palette variants (R9) — ✅ RULED Q8.5: two families, five variants.** The registry models
-this natively: `ThemeDef.palettes.accents` (`{id, label, swatch}` list + `defaultAccent`) feeds
-the SHARED `data-accent` axis (D51 V2: one axis, every skin) — each gacha "accent" is a
-tokens.css block. The ruled set:
+**4.4 Palette variants (R9) — ✅ RULED Q8.5: two families, five variants. AMENDED at the G6
+pre-build rulings (owner, 2026-08-06, from live renders): TWO INDEPENDENT PICKERS — the theme
+ACCENT picker ships SEVEN variants (families 1+2, all four shifter candidates kept), and the
+DOSSIER gets its OWN picker (family 3: the light slip + the four dark palettes).** The registry
+models the accent axis natively: `ThemeDef.palettes.accents` (`{id, label, swatch}` list +
+`defaultAccent`) feeds the SHARED `data-accent` axis (D51 V2: one axis, every skin) — each gacha
+"accent" is a tokens.css block. The dossier axis is gacha-private: a per-theme settings row
+(§14.3 pattern, like `starMode`) driving `body[data-gc-dossier]`; rendered as color chips via a
+small ADDITIVE shared extension — an optional `swatch?` on seg options (the D51 additive-slot
+idiom; themes without it byte-identical — ledger entry in §4.9). The axes are disjoint in WRITES
+— accent blocks never write `--gc-dossier-*`, dossier blocks write only `--gc-dossier-*` (which
+REQUIRES minting `--gc-dossier-kicker`; the old scheme had each palette writing the non-dossier
+`--gc-unit-no`, the known trap — slip keeps today's value) — but the dossier surface READS four
+accent/global things by design (Codex G6-plan R1): the top strip (`--gc-brand-fill`), slip's
+sticker action button (`--accent-fill`/`--accent-ink` + `--gc-act-shadow`), and the star badge
+(`--gc-star*`). So the contrast gate grows additively (7 accent rows + 5 dossier rows), PLUS one
+bounded cross-axis check per crossing: strip + star badge legibility probed on every dossier
+sheet, slip's button on every accent (they are the only paints that vary on both axes — not a
+7×5 matrix). The ruled set:
 - **Family 1 — base-ramp variants (trio CONSTANT — it stays the brand):** **arcade** (the
   prototype as-is, default) · **midnight** (deeper, blacker navy; less purple in the radial) ·
   **indigo** (bluer, colder surfaces). These re-tint only bg/surfaces/radial ("the dark
-  blue-ish stuff").
-- **Family 2 — accent-SHIFTING variants (owner, lock session): TWO variants that move the
-  pink→violet→cyan trio too**, informed by a research pass over popular gacha games' real UI
-  palettes (Opus pass, 2026-08-02; main seat re-computed and CONFIRMED every quoted contrast
-  ratio). **The owner picks the final two from the four candidates below** (default pick if
-  none stated: ember + glacier — true warm/cold range). Field finding worth keeping: almost no
+  blue-ish stuff"). Midnight/indigo have NO pinned hexes — like eridu's re-derivation they are
+  BUILD-DERIVED under the stated identity + the recipe below, recorded in the as-built and
+  judged at the owner device round. Derivation color space for every lighten/darken/mix in the
+  recipe: **plain sRGB linear interpolation toward #fff/#000/the-partner** — the 2026-08-06
+  render pass reproduced the shipped arcade literals in it to within rounding (VERIFIED), so it
+  is the space that round-trips. Each variant's block must also state its own
+  `--gc-display-shadow` (a deep tint in its radial's family — eyeball-tuned, recorded).
+- **Family 2 — accent-SHIFTING variants that move the pink→violet→cyan trio too**, informed by a
+  research pass over popular gacha games' real UI palettes (Opus pass, 2026-08-02; main seat
+  re-computed and CONFIRMED every quoted contrast ratio). **RULED 2026-08-06 (owner, after a
+  live-render pass — all four candidates screenshotted on the running theme, phone viewport):
+  ALL FOUR ship** — "a bunch of variety could be good" — with ONE revision: **eridu's trio is
+  RE-DERIVED toward the green/blue side** ("keep it more on the side of the green and the blue
+  instead of going all the way to pink; make the gradient less convoluted") — drop the pink
+  `#ff5cd0` end, re-walk blue→cyan→green monotonically, same L≈60–72 band + ≥25° gold/warn
+  clearance rules as the original derivation. The render pass narrowed its lime blocker to a
+  MECHANISM: two brand consumers put trio color on status chrome — `--gc-online-fill` (its far
+  stop = trio slot 3) and `--gc-caption` (`lighten(b3,.43)`) — so if the revised trio still ends
+  lime-adjacent, eridu's block pins EXACTLY those two tokens off the trio (the "trio never
+  touches status chrome" carve-out; the other three candidates need no carve-out). The revised
+  trio's hexes, measured hue/lightness walk, gold/warn clearances, and whether the carve-out
+  fired are RECORDED in the G6 as-built before the device round. Render-pass
+  verdicts on the rest (VERIFIED on device-size renders): ember = the strongest shift, one
+  device-eyeball item (its ONLINE ribbon becomes green→violet, the widest hue jump in the set);
+  glacier = cleanest cold read, its tri-strip reads as ~2.5 colors at small size (caution
+  confirmed, accepted); nebula = barely a shift from arcade but KEPT (owner likes it; variety).
+  Field finding worth keeping: almost no
   major gacha uses a three-color gradient brand — they run ONE hero hue on near-neutral dark
   (Genshin/WuWa warm gold · Blue Archive/Arknights signal blue · HSR pastel violet · ZZZ
   black/white+neon) — so each candidate is a monotonic hue walk re-derived around a field
@@ -211,24 +249,77 @@ tokens.css block. The ruled set:
   | **ember** (warm) | `#ff6f52` `#ff4f93` `#c46bff` | `#120b18` · `#1e1433` · `#5b2350→#2a1330→#100810` | Genshin/WuWa warm-metal-on-dark + HSR Fire/Lightning; gold deliberately NOT in the trio (stars own it). Don't warm slot 1 past H 10° (warn-pill clearance) | 5.65 on card |
   | **glacier** (cold) | `#7c6cff` `#2fb8ff` `#79f2e6` | `#070d1c` · `#101a33` · `#1d3f7a→#0d1730→#05080f` | Blue Archive logo blue `#128AFA` lifted + Arknights crystalline-clinical + HSR Quantum/Ice. Tightest hue walk (63°) — verify the tri-strip still reads as three colors at small size on device | 4.47 on card |
   | nebula (soft) | `#eb77ea` `#9c96f4` `#5ec7db` | `#0c0a1c` · `#171634` · `#43276b→#141334→#08070f` | HSR's own in-UI element chips verbatim (Lightning/Quantum/Ice) — pastel-celestial. Weakest SHIFT: same hue arc as arcade, mainly desaturated — a calm-eyes option, not range | 6.73 on card |
-  | eridu (loud) | `#ff5cd0` `#3ff0ff` `#b4ff4a` | `#0a0a12` · `#12141f` · `#26305e→#0f1120→#06070c` | ZZZ black/white+neon signage + NIKKE HUD contrast. **Semantic blocker: the acid lime competes with ok-green `#74f3ad` for "host is up"** — only shippable if the trio never touches status chrome | 6.72 on card |
+  | eridu (loud) | `#ff5cd0` `#3ff0ff` `#b4ff4a` | `#0a0a12` · `#12141f` · `#26305e→#0f1120→#06070c` | ZZZ black/white+neon signage + NIKKE HUD contrast. **Semantic blocker: the acid lime competes with ok-green `#74f3ad` for "host is up"** — only shippable if the trio never touches status chrome. **RE-DERIVE per the 2026-08-06 ruling above (green/blue walk, pink end dropped) before shipping; base ramp may keep** | 6.72 on card |
+
+  **The variant-block RECIPE (2026-08-06 render pass, VERIFIED against the shipped tokens.css —
+  this is what a `body[data-accent]` block must contain).** The six base tokens are
+  `--gc-brand-1/2/3` (trio) · `--bg` · `--surface` (card) · `--gc-backdrop` (radial).
+  `--gc-brand-fill` and `--accent-fill` are `var()` formulas — they re-derive free. Everything
+  below is a FUNCTION of the base six and must be re-derived per variant or the block silently
+  shows arcade pink/cyan beside a new trio (ratios = the shipped arcade literals, re-computed and
+  confirmed by render):
+  `--surface-2` = lighten(card,.02) · `--gc-bar`/`--gc-bar-grad` = mix(bg,card,.5)+alphas ·
+  `--gc-bar-grad-wall`/`--gc-pill-bg`/`--gc-wallpaper-scrim`/`--gc-slide-scrim` = new bg, same
+  alphas · `--gc-card-wall`/`--gc-composer` = new card (+e6) · `--gc-card-scrim` =
+  darken(bg,.08)e6 · `--gc-bubble-bot` = lighten(card,.08) · `--gc-heading` = lighten(b1,.23) ·
+  `--gc-caption` = lighten(b3,.43) · `--gc-online-fill` = 92deg #74f3ad→b3 · `--gc-reel-slat` =
+  b1→b2→b3 · `--gc-switch-fill` = 90deg b1→darken(b2,.06) · `--gc-ind-shadow`/
+  `--gc-bubble-user-shadow`/`--gc-dot-shadow` = b1(+99) · `--gc-banner-glow` = b1-4d + b3-3d ·
+  `--accent` = var(--gc-brand-1) · **`--gc-display-shadow`** (arcade's violet `#1b1030` — NOT a
+  formula today; each variant states its own). Held constant across variants:
+  `--ok --warn --danger --gc-star* --gc-tag-ink --gc-online-ink --gc-nav-ink --gc-ind-fill` +
+  every hairline. **`--gc-dossier-*` is deliberately ABSENT: the dossier is the other picker's
+  scope.** (The re-runnable render lab: session scratchpad `shifter-previews/candidates.mjs` +
+  `render.mjs` — a tool for the pick, not repo material.)
 
 **Family 3 — the DOSSIER SURFACE (owner session 2026-08-04, Opus). SCOPE: dossier-only.** Distinct
 from families 1 and 2 above, which re-tint the WHOLE theme — the owner ruled this exercise
 **dossier-only**, so these move `--gc-dossier-*` and nothing else. Global `--accent-fill` /
 `--gc-brand-fill` were explicitly off the table.
 
-**The dossier goes DARK** (owner, "for now to try how it looks"). That reverses G2's one-light-surface
-idea ("an arcade prize slip pulled out from under the night-time cabinet") — a real identity change,
-recorded as a TRIAL, not a lock. Measured consequence worth keeping: **dark makes contrast EASIER.**
-Every tight margin in this theme lives on the light sheet — the 2.62:1 Shut-down bug fixed the same
-day, `--gc-unit-no`, and the retired `--gc-dossier-danger` all exist because literals had to be
-deepened for it.
+**The dark trial is ✅ SIGNED OFF (owner, 2026-08-06, from the example images) — as a PICKER, not a
+flip.** The dossier picker ships FIVE options: **slip** (the shipped G2 light sheet, unchanged —
+G2's identity survives as an option) + the four dark palettes below; **default = neon-purple**
+(the owner's favorite — "the first top-left image… I like the button there"). Per-option rulings:
+- **Action buttons:** the four DARK palettes take the flat example button, styled after the
+  **NEON-PURPLE panel specifically** — re-measure THAT panel and apply its treatment (including
+  its 1px top highlight and fill-gradient shape, which the earlier measurement pass had excluded
+  as "not the design language" — the owner wants precisely that look) with each palette's fill/ink
+  from the table below. **Slip KEEPS its current sticker-style button** — each identity stays
+  coherent (so the `.gc-act` replacement rules are scoped to the dark options only, and
+  `--gc-act-shadow` stays LIVE for slip — the former G6-row "single migration" of it is
+  superseded).
+- **Service-row dots go VAPOR-STYLE** (owner: "vapor has decorative colors for the dots… brighter,
+  and quite dim when the service is down — they still carry real status"). The precedent is
+  vapor's `.svc-row .led` (vapor.css: up = brand magenta + `--m-glow`, down = dim `--ink-faint`,
+  no glow). Gacha's version: two tokens per dossier palette — led-up = the palette's accent,
+  bright (+ subtle glow on the darks), led-down = dim neutral. This REPLACES the current
+  ok-green/warn-amber dot pair; the "whole list dims when the unit sleeps" behavior falls out
+  naturally. **BOTH states must clear the 3:1 non-text floor on their card, on ALL FIVE
+  palettes** (Codex G6-plan R2: on a port-bearing row the dot is the ONLY visible status cue —
+  the port slot shows `:8080`, not "offline", and the aria-label is not visual redundancy — so
+  no sub-floor exemption). "Dim" is achieved by killing the glow and dropping
+  saturation/brightness RELATIVE to led-up, not by dropping under the floor. Tokens (per
+  palette, slip included): `--gc-dossier-led` / `--gc-dossier-led-dim`(+ the glow rides led-up
+  on the darks only). This supersedes the shared `-ok #74f3ad` · `-warn #ffc76a` row in the
+  table below FOR THE DOTS — those tokens remain only if a non-dot dossier consumer still reads
+  them at build time (verify; delete if orphaned — no dead tokens).
+- **The tri-gradient top strip stays** for now on ALL five (owner, skeptical: "I have the feeling
+  it wouldn't look too good, but let's see how it looks" — a device-round item, not a build item).
+  It reads `--gc-brand-fill`, so it follows the ACCENT picker, tying the sheet to the theme.
+- **Star badge: keep as-is for now**; the design gets its own look later (owner, 2026-08-05).
+- Why this was once gated on an explicit trial (2026-08-04, historical): going dark reversed G2's
+  one-light-surface identity ("an arcade prize slip pulled out from under the night-time cabinet").
+  Shipping dark **as a picker** dissolves that objection — the slip identity survives as an option
+  rather than being replaced. Measured consequence worth keeping: **dark makes contrast EASIER.**
+  Every tight margin in this theme lives on the light sheet — the 2.62:1 Shut-down bug fixed the
+  same day, `--gc-unit-no`, and the retired `--gc-dossier-danger` all exist because literals had
+  to be deepened for it.
 
 The four the owner shortlisted, sampled from `design/prototypes/gacha/dossier palette example.png`
 (4x2 panel grid at `(14 + 384c, 40 + 506r)`, 347x440) and NORMALISED so every gated pair passes:
 
-  | palette | sheet from→to | card | action fill (90deg) | on-fill ink | accent ink | kicker |
+  | palette | sheet from→to | card | action fill stops (direction per the neon-purple authority below) | on-fill ink | accent ink | kicker |
   |---|---|---|---|---|---|---|
   | **neon-purple** | `#140e35`→`#070b25` | `#130f32` | `#511cab`→`#4f1ea7` | `#ffffff` | `#f46adf` | `#f46adf` |
   | **sunset-orange** | `#843e3c`→`#2f1f34` | `#502f3e` | `#d97943`→`#ce6144` | `#0a0b19` | `#f28c53` | `#f7ba98` |
@@ -250,12 +341,37 @@ The four the owner shortlisted, sampled from `design/prototypes/gacha/dossier pa
   palettes spuriously. Ratios were computed BEFORE rendering; all four pass ink/card, ink-2/card,
   kicker/sheet, Shut-down/card, label/band and the dot floors.
 
+  **THE PICKER CONTRACT (2026-08-06, Codex G6-plan R6 — pinned so no two agents invent it
+  twice).** Setting key **`dossierPalette`** (gacha `settings` map, type `seg`), default
+  **`neon-purple`**, options in this order:
+  `slip` ("Slip") · `neon-purple` ("Neon") · `sunset-orange` ("Sunset") · `rose-pink` ("Rose")
+  · `aurora-violet` ("Aurora") — each with `swatch` = its action-fill start hex (slip's = its
+  paper sheet top `--gc-dossier-from` value); value lands as `body[data-gc-dossier="<id>"]`
+  (absent/`slip` = today's rules untouched). Each DARK option's tokens block sets, from its
+  table row + the shared list: `--gc-dossier-from/-to/-card/-ink/-ink-2/-line/-badge/
+  -art-shadow` + minted **`--gc-dossier-kicker`** (its kicker column) + **`--gc-dossier-accent`**
+  (its accent-ink column) + **`--gc-dossier-led`/`-led-dim`** (per the dots bullet) +
+  **`--gc-dossier-close-bg`/`-close-ink`** (the mock's dark disc + light glyph — fixes the
+  known white-blob inversion) + **`--gc-dossier-act-fill`/`-act-ink`/`-act-rim`/`-act-hi`**
+  (the neon-purple-treatment slots, per-palette fill/ink) + its own **`-shadow`** and
+  **`-blank`** (slip's current values are light-tuned — each dark states both). Slip's block
+  is EMPTY — it is the absence of an override, not a fifth copy.
+
 **The ACTION BUTTON, measured from the example (same session).** The owner asked for "as close as
 possible" to the mock. Four of my own measurements were wrong before this settled — recorded so the
 next reader does not repeat them:
 
 - The bright 1px top highlight exists **only on the neon-purple panel**; the other seven have none.
-  It is NOT the design language. Same for the 20% vertical fill gradient (neon-purple again).
+  ~~It is NOT the design language. Same for the 20% vertical fill gradient (neon-purple again).~~
+  **INVERTED 2026-08-06: the owner picked the NEON-PURPLE panel's button as THE look** ("I want
+  that look… I like the button there"). **The single authority for the shipping dark buttons is
+  a fresh measurement of the NEON-PURPLE panel, taken at G6 build time and recorded in the
+  as-built**: its fill gradient (direction AND stops — this panel carries the ~20% vertical
+  component the others lack), the 1px top highlight (color/opacity, and measured as DISTINCT
+  from the 1px rim — two elements or one), radius, and rim luminance. That treatment then
+  applies uniformly across the four dark palettes with each palette's fill/ink from the table.
+  Every measurement bullet below (incl. "the fill gradient is HORIZONTAL") describes the OTHER
+  seven panels — lore for the reader, NON-AUTHORITATIVE for the shipping buttons.
 - The fill gradient is **HORIZONTAL, not vertical** — median −39% left→right against −4.6%
   top→bottom. A vertical sample reads it as flat.
 - Box is **176 x 39 CSS px** (an earlier "195" sampled across the gap into the second button), and
@@ -265,27 +381,37 @@ next reader does not repeat them:
 - The rim is **1.10x the fill's luminance** — a whisper. A `color-mix(fill 78%, white)` is ~2x and
   visibly wrong; 90/10 lands right.
 
-  So the example's primary is: flat-ish horizontal gradient · ~5px radius · a 1px rim a hair lighter
+  So the example's GENERIC primary (the seven non-selected panels — superseded for the shipping
+  buttons by the neon-purple authority above) is: flat-ish horizontal gradient · ~5px radius · a
+  1px rim a hair lighter
   than the fill · **no elevation at all** · white or dark label per the table above. The secondary is
   transparent with a muted accent border. The press has no offset to sink into, so both buttons drop
   the sticker translate for an opacity change — and note the generic `.gc-act:active` in gacha.css
   still slides the SECONDARY 3px unless it is replaced, not merely overridden on `.primary`.
 
-  **This REPLACES the theme's sticker language on the dossier only** (the nav indicator, user bubble
-  and arcade composer keep it). `--gc-act-shadow` becomes unused — see §5's single migration.
+  **This REPLACES the theme's sticker language on the DARK dossier options only** (the nav
+  indicator, user bubble and arcade composer keep it everywhere; **slip keeps the sticker button
+  too — 2026-08-06 ruling above**). `--gc-act-shadow` therefore STAYS LIVE (slip uses it); the
+  former G6-row "single migration" of it is superseded — the flat-button rules live under the
+  dark `body[data-gc-dossier]` values instead.
 
 **Two rules the dark flip BREAKS that no token edit covers** (both found by rendering, not by
 reading):
 1. `--gc-unit-no` — the deepened rose minted for the LIGHT sheet measures **2.94** on a dark one, and
-   it is not a `--gc-dossier-*` token, so a dossier-family sweep misses it. Each palette carries its
-   own kicker in the table above.
+   it is not a `--gc-dossier-*` token, so a dossier-family sweep misses it. **CLOSED by the picker
+   contract above: the kicker consumer moves onto minted `--gc-dossier-kicker` (slip's value = the
+   current `--gc-unit-no` rose), each palette's block sets its own** — the write-disjointness rule
+   then holds with no exception.
 2. `.gc-dossier-close` composes `background: var(--gc-dossier-ink)` with `color: var(--gc-dossier-from)`
    — correct when ink is dark and sheet light; flipping the tokens turns the disc into a white blob.
    It needs its own pair (the mock's is a dark disc with a light glyph).
 
-**Still unfinished on these four:** the sheet's top brand strip and the star badge still carry
-light-sheet values, and the state sheet (active / focus-visible / **disabled**, a flat
-`opacity: 0.42` that moves every ratio at once) has not been rendered on a dark surface.
+**Still unfinished on these four** *(2026-08-06 status: the first two are RULED above — strip
+kept as-is for now, badge kept as-is for now — so what remains is G6 BUILD verification, not
+owner input)*: the sheet's top brand strip and the star badge still carry light-sheet values
+(verify they read acceptably on each dark palette; the strip ruling is keep-and-judge-on-device),
+and the state sheet (active / focus-visible / **disabled**, a flat `opacity: 0.42` that moves
+every ratio at once) has not been rendered on a dark surface — G6 renders and gates it.
 
 **The lab that produced all of this** lives in the session scratchpad (`palette-lab/`:
 `candidates.mjs` + `render.mjs` + `palettes.json`), NOT in the repo — it drives the real running dev
@@ -297,8 +423,20 @@ tool for one decision — do not promote it into the repo without a reason.
   All four clear the 3.0 probe bar everywhere, and every candidate's WORST trio-on-card ratio
   beats the shipped arcade trio's own weakest link (`#805cff` on card = 4.10, re-computed).
   Gold stars + ok/warn status hexes stay constant across all variants.
-Every variant (all five shipping) must pass the §14.15.1-⑨ contrast probe; the G6 device round
-covers the full matrix.
+
+**Gate coverage (2026-08-06, Codex G6-plan R4 — the e2e matrix must be able to EXPRESS the
+promise before it can keep it).** Every shipping variant on BOTH axes passes the §14.15.1-⑨
+probe. The current harness (`e2e/contrast-matrix.ts` rows = theme/mode/accent;
+`contrast.spec.ts` seeds only those axes) has NO dossier dimension — G6 extends the row schema
+with an optional per-theme settings seed (`settings: {dossierPalette: "<id>"}`), giving **7
+accent rows (dossier at default) + 5 dossier rows (accent at default) + the bounded cross-axis
+checks named at the top of §4.4**. The dossier rows' THEME_PAIRS additions: act-ink/act-band
+(sampled over the CENTRED label band per the gate method — the pair schema gains a band-sample
+mode; the existing every-stop rule stays for non-centred-label pairs) · led/card and
+led-dim/card (both ≥3:1, all five) · close-ink/close-bg · kicker/sheet · ink & ink-2/card ·
+secondary label & border/card · star badge vs `-badge`. **Disabled controls are
+contrast-EXEMPT** (WCAG's own carve-out; the flat 0.42 sheet is rendered for the owner eyeball,
+not gated); focus-visible IS gated on each dark.
 
 **4.5 Defaults (R6).** `wallpaper: on`, `oracle: fade` ship as the theme's defaults (prototype
 ships OFF — deliberate flip, owner-ruled). Both stay owner-togglable rows.
@@ -347,13 +485,15 @@ THREE-tab design (Fleet/Agent/Settings). The kit defaults an unknown theme to th
 `defaultLayout: "3-tab"` (a `ThemeDef` field that exists) and its tab labels at G0, or it boots
 into the wrong navigation shape. Related open geometry rules the prototype's 4-host fixture
 hand-assigns: which live host gets the `feat` (5/4 full-row) card, which `wide` (16/9), what the
-"04 / 04" counter counts, and the `NEW` ribbon (no live field exists) — all §8.10. And the
+"04 / 04" counter counts, and the `NEW` ribbon (no live field exists) — all ruled in §8 (Q1/Q10;
+the ribbon since superseded by the G6-row demo ruling, 2026-08-06). And the
 **shared-extension ledger** — every place the port touches SHARED kit scope, named up front (the
 D51 discipline):
 | Extension | Scope | Posture |
 |---|---|---|
 | `brandText` slot (**committed** — the §4.3 katakana ruling needs it) | kit AppBar, the D51 `brandMark` idiom: `brandText ?? "ctrl·b"` | one prop + fallback; other themes byte-identical |
 | `subLabel` on the tab definition (**committed** — the Q8.6b keep ruling needs it) | `TAB_SETS`/tab-def shape + kit NavBar render | optional additive field; themes without it byte-identical; the CSS-attr alternative rejected (labels are data) |
+| `swatch?` on seg-setting options (**committed 2026-08-06** — the §4.4 dossier picker renders color chips) | the FULL render path (Codex G6-plan R7): `theme-engine/types.ts` seg options + ConfTab's settings-option mapping (it currently STRIPS unknown fields) + the shared `Seg` component (it owns option markup and renders only `{val,label}` today) + shared seg styling + tests | optional additive field typed `swatch?: string \| string[]` (the accents idiom reused — "a swatch is DATA for the chip"); seg rows without it render byte-identical, NO extra DOM node when absent |
 | `composerSkin` — **RULED (council H2/R4-2, per LOCKED D37): reuse an existing shared skin if faithful, else the catalog gains ONE look-named value `arcade`** (never `gacha`), authored on semantic tokens only | the axis catalog is CLOSED and shared (`kit/axes.ts`); a catalog value appears AND applies in every theme's picker — so G3 budgets the cross-theme cost: visual check in vapor/cosmos/frontier pickers + the `axes.test` arm | shared scope; the theme-scoped alternative is DELETED (it was a D37 bypass); any exception would need an explicit D52 amendment — not proposed |
 | ~~Pre-nav transition hook~~ | ~~`hooks/useSections.ts` chokepoint~~ | **DROPPED by the §10.1 research verdict** — passive start is prototype-faithful |
 | Shared VT helper `lib/viewTransition.ts` (**committed**) | extracts `switchTheme.ts:163-183`'s existing block; both callers use it | reuse-not-duplicate; §10.1 |
@@ -521,9 +661,11 @@ rolls a full row day one; 3★ one tap away). Cards, dossier stars and the rate 
 the SAME resolved value (`useThemeSetting`); nothing star-shaped lives in the roster YAML.
 Tests: default 5★ · 3★ toggle/persistence · invalid-value fallback · pill coupling.
 
-**6.2 Star colors.** 5-star mode: ★1–3 gold (`#ffd464`), **★4–5 pink-gold** (draft: a
-`#ffd464→#ff9e8a`-family rose-gold; exact value picked on device at the eyeball). 3-star mode:
-★1–2 gold, **★3 rosy**. Sleeping cards keep the de-saturation. Tokens, not hardcodes.
+**6.2 Star colors — AS BUILT (2026-08-06 correction: no longer a draft).** 5-star mode: ★1–3
+gold (`#ffd464`), ★4–5 pink-gold — **shipped as `--gc-star-hi: #ff8fa8`** (tokens.css, the
+owner-picked device value). 3-star mode: ★1–2 gold, ★3 rosy. Sleeping cards keep the
+de-saturation. Tokens, not hardcodes. **G6 holds these constant** — it only verifies the badge
+composite on the dark dossier palettes, it does not re-open the colors.
 
 **6.3 The rate pill.** `★{maxStars} RATE {onlineCount}.0%` — max-star mode (5★ default, ruled)
 + the live count of ONLINE hosts (4 on → "4.0%"). 天井 200 stays as flavor copy (R8). Both
@@ -614,13 +756,13 @@ for the "04 / 04" counter.
 
 | Slice | Contents | Gate |
 |---|---|---|
-| G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps five palette variants a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
+| G0 | **The settle-everything slice (Codex sequencing ruling: no Fleet JSX until these are pinned; recipes = §10).** **First, the KIT SEAMS UNIT as ONE reviewable, revertible commit (council M4):** `brandText` + `subLabel` + the `runViewTransition` extraction (behavior-identical extraction + test FIRST, the `.finished`/token-guard hardening as a labelled delta on top — it touches the daily theme-switch path). Then gacha-private: theme registration (`ThemeId` + registry row) + `defaultLayout: "3-tab"` + `TAB_SETS` row (JP sub-labels) · tokens.css (semantic extraction from theme.css; **the stylelint `src/themes/gacha/` override enforces `^gacha-` keyframes AND no literal colors outside tokens.css** — council M7, what keeps the palette variants — five then, seven + the dossier five since the 2026-08-06 re-ruling — a repaint-free G6) · fonts per §10.4 (**generate + measure the frozen subset**, guard test, lazy `loadFonts`) · settings descriptors (`starMode` default `five` + R6 defaults) · **the §10.1 device SPIKE** (VT-new liveness on the owner's Fennec → the M2 verdict; **G0 owns the reel MECHANISM: overlay mount, slats, passive start, spike verdict — the figure is G4's**, council M10) · the roster schema + resolver (§5.2/5.3 incl. cycling, resolving against the BUNDLED set) · the star ladders (§6.1, ruled) · riders: `stats.html` precache exclusion (§10.4; the `runtimeCaching` routes MOVED to G5 — council M8) · the ConfTab raw-value LOW (§10.5) · the kit-fade re-tune under gacha (§10.1). Palette VARIANTS stay unexposed until G6 | gate + kit-render e2e joins + the spike verdicts recorded |
 | ✅ G1 | **BUILT + OWNER-EYEBALLED 2026-08-02 (as-built §7.2)** — bespoke Fleet: banner (carousel + glow + live rate pill w/ §6.3 loading semantics + the §6.4 slide set **incl. the eyeball-ruled SCENE slides**) + capsule track (cards/states/plates/shine + stars) + wallpaper + the geometry rule + the owner's own art in the bundled set | owner eyeball ✅ (3+ live rounds) |
 | ✅ G2 | **BUILT + OWNER-EYEBALLED 2026-08-02 night (as-built §7.3)** — dossier sheet (light inversion + the ruled grid + live service rows + the H3 ACTION BAR) + **the M3 capsule→dossier morph, owner-PULLED from G4 and made to visibly work** + swap morph + visible × + tap-outside close + **the full-screen ART SHOWCASE (owner ask)** — M6 extraction to `lib/hostDetail.ts` landed first; contrast gate gained the dossier's THEME_PAIRS rows | owner eyeball ✅ ("looks good", pushed) + contrast probe ✅ (48-combo matrix) |
 | ✅ G3 | **CLOSED 2026-08-04 (as-built §7.4; commits `6c5298d..5ce33d7` + the side-session re-rule `ba0b8b1`/`d65e7b7`) — device round PASSED wholesale, Gecko scanline branch NOT needed.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
 | ✅ G4 | **CLOSED 2026-08-04 (as-built §7.5; commits `dd1a056..fa86ed3`) — owner round PASSED on phone + desktop, 67% default kept, M2 device-confirmed.** The reel FIGURE (67% tunable default, all dials `--gc-figure-*` tokens, corrected baked glow — drop-shadow's length IS σ, §7.5 lesson) + M2 shipped prototype-exact with the seam promoted (flag deleted) + the type-scoped VT skip + degradation latches. Codex: READY WITH FIXES → wave → confirm all-resolved, residual LOWs closed | owner figure eyeball + Fennec+Chrome device round (incl. the one-line M2 check) |
 | ◐ G5 | **BUILT + REVIEW-COMPLETE 2026-08-05 (as-built §7.6; commits `ac621ed..8f6297a`) — OWNER FILE-DROP + GALLERY ROUND = the open gate.** The namespace-generic media surface per the ruled option (b): hardened read-only mount + per-role index (+`revision`), the `ThemeDef.media` gallery, the first SW runtimeCaching, per-namespace DEGRADE-NEVER-BRICK health, the reel-pool pin ruling. Codex arc: NOT READY → 2 waves + final → closed | owner file-drop + phone gallery round |
-| G6 | Palette variants (the ruled §4.4 set: arcade/midnight/indigo + the two accent-shifting picks) **+ §4.4 FAMILY 3 — the four owner-shortlisted DOSSIER palettes (neon-purple · sunset-orange · rose-pink · aurora-violet) and the measured example ACTION BUTTON, both from the 2026-08-04 session; the dossier goes DARK as a trial.** Ship each as one `body[data-accent]` block + a `palettes.accents` row + a `contrast-matrix.ts` row; the button rules REPLACE `.gc-act*` rather than layering over them, and `--gc-act-shadow` migrates per §5 | owner sign-off |
+| G6 | **Per the 2026-08-06 pre-build rulings (all §4.4): TWO PICKERS.** (i) ACCENT picker, SEVEN variants: arcade/midnight/indigo + ember/glacier/nebula + the RE-DERIVED eridu (green/blue walk) — each one `body[data-accent]` block per the §4.4 variant-block recipe + a `palettes.accents` row + a `contrast-matrix.ts` row. (ii) DOSSIER picker (gacha settings row → `body[data-gc-dossier]`, seg + the additive `swatch?` chip extension): slip (unchanged, keeps sticker button) + neon-purple (DEFAULT) · sunset-orange · rose-pink · aurora-violet with the neon-purple-panel flat button (re-measured, highlight included), vapor-style led/led-dim service dots, per-palette kicker + close-disc pairs, top strip kept. (iii) Wordmark swap → コントロール・ビー (§4.3). (iv) NEW-ribbon DEMO on ONE random host card (no semantics, no data seam — owner decides keep/drop/meaning at the device round; the pick is made ONCE per Fleet mount and sticks until that host leaves the fleet — never re-rolled on poll re-renders; empty fleet = no ribbon). (v) Dark-surface verification: disabled/focus/active state sheet + brand strip + star badge rendered on the darks. Dots-close-dossier: RULED KEEP (2026-08-06) — off the open list | owner device round (eyeball-heavy BY NATURE — budget several rounds, the G0 lesson) |
 
 Each slice: Opus build from a pinned brief → main-seat audit → Codex round → owner eyeball
 (the D51 cadence). The theme joins `themeContract.test.ts` + the e2e structural/a11y groups at G0.
@@ -1017,11 +1159,13 @@ role-file collision). The record:
   §6.1 (5★: 1/2/3/4/≥5 → ★1..★5; 3★: 1 → ★1, 2–3 → ★2, >3 → ★3). The zero-services
   cell is ruled too: ★1 floor (lock session, §6.1).
 - ~~Q6 Brand wordmark~~ → **katakana wordmark** (§4.3; commits the `brandText` slot; exact
-  string = eyeball copy pick). The JP nav sub-labels half — ruled Q6b in the lock block below.
+  string = eyeball copy pick — *settled 2026-08-06 from live renders: コントロール・ビー, §4.3;
+  G6 swaps the shipped string*). The JP nav sub-labels half — ruled Q6b in the lock block below.
 - ~~Q1 (size half) + Q10 Card geometry~~ → **specified DURING the build slices, by eyeball**
   ("to make sure it fits and looks good" — owner). The G1/G4 briefs carry them as in-slice
   design work with owner checkpoints, not lock blockers. The COUNTER semantics and the `NEW`
-  ribbon ride along as G1 eyeball decisions.
+  ribbon ride along as G1 eyeball decisions *(the ribbon did NOT get ruled at G1 — superseded
+  2026-08-06: G6 ships it as a DEMO on one random card, semantics still open — see the G6 row)*.
 
 **✅ Ruled in the LOCK session (owner, 2026-08-02 — the seven formerly-open items):**
 
@@ -1036,6 +1180,8 @@ role-file collision). The record:
   (owner: "a couple more that also shift the accent trio"), derived from a research pass over
   popular gacha games' real UI palettes (owner-directed; candidates + provenance in §4.4).
   Five variants total; every one passes the §14.15.1-⑨ contrast probe. → §4.4, G6.
+  *(Superseded 2026-08-06 at the G6 pre-build rulings: ALL FOUR shifter candidates ship —
+  seven accent variants — plus the separate dossier picker; §4.4 is current.)*
 - ~~Q6b JP nav sub-labels~~ → **KEEP, via the `subLabel` kit extension (now committed —
   §4.9 ledger).** Owner constraint: **real Japanese** — kanji where it's the natural writing,
   kana otherwise; never decorative pseudo-JP. The four labels verified as genuine words:

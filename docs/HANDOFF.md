@@ -12,7 +12,69 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-05 end of day, Fable — written for a COLD session; SUPERSEDES the UPDATE 1–4 stack below, which is this same day's history)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-06, Fable — written for a COLD session that will BRIEF AND BUILD G6; SUPERSEDES the 2026-08-05 block below)
+>
+> ### What this session did (the G6 decision session — every open call RULED)
+> **① The stack is PUSHED** — origin/main carries the whole M-ladder + a `THEME_ENGINE.md`
+> doc-sync (`5821753`) + this session's G6 plan amendment (the tip of this block's commit).
+> Push CI green. Prod stays **v1.4.6**; dev units RUNNING (:5434/:5173).
+> **② The G6 palette decisions are ALL RULED (owner, 2026-08-06, from LIVE RENDERS)** — an
+> Opus agent rendered all four shifter candidates + both wordmark strings on the real running
+> theme (phone viewport, token injection at production cascade position, zero config writes;
+> re-runnable lab in the 08-05 session scratchpad `shifter-previews/`, method recorded in §4.4).
+> The owner picked from screenshots. **The spec of record = GACHA_PLAN §4.4 AS AMENDED
+> 2026-08-06 + the G6 slice-table row.** Read those two IN FULL before briefing; the ruling set:
+> · **TWO independent pickers.** Accent picker: SEVEN variants (arcade default · midnight ·
+>   indigo · ember · glacier · nebula · eridu). Dossier picker (new, gacha settings row
+>   `dossierPalette` → `body[data-gc-dossier]`, THE PICKER CONTRACT block in §4.4): slip +
+>   neon-purple (DEFAULT) · sunset-orange · rose-pink · aurora-violet.
+> · **eridu is KEPT but its trio is RE-DERIVED** green/blue-ward (pink end dropped, "less
+>   convoluted"); midnight/indigo also build-derived (never had hexes); sRGB pinned as the
+>   derivation space; the §4.4 variant-block RECIPE (verified against tokens.css) lists every
+>   derived token an accent block must re-compute.
+> · **The dark dossier is SIGNED OFF as a PICKER** (not a flip — slip survives, G2's identity
+>   objection dissolved). Slip keeps its sticker action button; the four darks take the flat
+>   button whose SINGLE AUTHORITY is a build-time re-measurement of the NEON-PURPLE example
+>   panel (highlight INCLUDED — the old "not the design language" note is explicitly inverted).
+> · **Dossier service dots go VAPOR-STYLE** (bright accent up / dim down, `.svc-row .led`
+>   precedent) — BOTH states ≥3:1 on all five palettes (the dot is the only visible status cue
+>   on port-bearing rows). New per-palette tokens incl. minted `--gc-dossier-kicker` (kills the
+>   `--gc-unit-no` cross-write) + the close-disc pair (kills the white-blob inversion).
+> · **Wordmark → コントロール・ビー** (§4.3 re-ruled; G6 swaps the shipped string) · **NEW
+>   ribbon = DEMO on one random card** (mount-sticky, no semantics — owner decides at the
+>   device round) · **carousel-dots-close = KEEP** (ruled, off the open list) · **top strip
+>   KEPT on all five** (owner skeptical — judge on device) · **star badge/colors held
+>   constant** (§6.2 corrected to as-built `#ff8fa8`).
+> **③ The plan went through a FULL Codex council round:** R1 = NOT READY (4 HIGH / 5 MED /
+> 2 LOW — disjointness claim, dim-dot a11y, button-authority ambiguity, gate-matrix
+> expressiveness, + spec gaps) → every finding accepted (some with leaner fixes, e.g. dim =
+> glow-kill not sub-floor) and folded → R2 verification: **all 11 RESOLVED; its two mechanical
+> residuals (a stale §8.10 ref + the palette table's `90deg` vs the button authority) fixed
+> per its own prescription — main-seat ruling: READY TO BRIEF.** The e2e gate work G6
+> carries: contrast-matrix rows gain an optional
+> `settings` seed; THEME_PAIRS gains the dossier pairs + a label-band sample mode ("Gate
+> coverage" block, §4.4).
+>
+> ### NEXT = the G6 BUILD (this is where the cold session starts)
+> Cadence per the standing method: **Opus build from a pinned brief → main-seat audit → Codex
+> round → owner device round** (G6 is eyeball-heavy BY NATURE — budget several rounds, the G0
+> lesson). Brief from GACHA_PLAN §4.4 + the G6 row ONLY (they are now self-contained; the
+> picker contract, variant recipe, gate coverage, and button authority are all pinned there).
+> Owner checks at the device round beyond the palettes themselves: ember's green→violet ONLINE
+> ribbon · the top strip on the darks (owner suspects it won't look good) · the NEW-ribbon
+> demo verdict · glacier's tri-strip at small size · the wordmark swap. **Then release v1.5.0**
+> per `deploy/linux/README.md` §Release (Opus operational agent precedent; rollback = v1.4.6;
+> schema untouched at 5).
+>
+> ### Still open across the project (unchanged by this session)
+> The deferred eyeball rounds STAY DEFERRED by standing ruling (G5 file-drop/gallery ·
+> M2 frontier art · M3 icons) — owner ruled they don't gate v1.5.0 unless re-raised · the ~80 MB
+> untracked `design/prototypes/gacha/` originals stay UNTRACKED ("for now") · the F1
+> notifications device-round result (owner tested ~2026-07-30 PM, never reported — STILL unasked)
+> · web-push PARKED (its memory) · stop the dev units when iteration ends · release timing =
+> after G6, owner's word.
+>
+> ## ▶ PREVIOUS (2026-08-05 end of day, Fable — the M-ladder close; historical since the 08-06 block above)
 >
 > ### Where the project stands
 > **Phase 17 gacha (G0–G5) ✅ CLOSED. D53 media-v2 (M1a–M3) ✅ FEATURE-COMPLETE — built in one
