@@ -1105,10 +1105,12 @@
     .gc-track {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      /* 10px (the prototype's) + the 4px lift (owner, 2026-08-07: "too close"): the accent drop paints
-       * INTO the gap on each card's right/bottom, so the prototype's gap read ~6px once the drops landed.
-       * 14 restores the original visual spacing with the drop inside it. */
-      gap: calc(10px + var(--gc-lift));
+      /* The prototype's 10px went through two owner rounds (2026-08-07) once the accent drops landed:
+       * the drop paints INTO the gap on each card's right/bottom, so 10 read as ~6 — compensating the
+       * lift restored it, and the owner then asked for more air on top ("a little bit more"). 14 + lift
+       * = 18px visible; the base is the owner's spacing, the lift term keeps it honest if the drop is
+       * ever retuned. */
+      gap: calc(14px + var(--gc-lift));
       padding: 0 12px;
     }
 
