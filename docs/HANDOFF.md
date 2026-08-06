@@ -41,6 +41,47 @@
 > All session-scratchpad artifacts (briefs, Codex reviews, render shots) are TMPFS-DEAD for
 > you — the docs above are the complete record; nothing load-bearing lives outside the repo.
 >
+> ### ⚑⚑⚑ THE CLEAN-SESSION STACK LANDED (2026-08-07 ~00:30 — SUPERSEDES both blocks below;
+> ### commit `7810bcc`, the 7th LOCAL/UNPUSHED commit; prod still v1.4.6; DO-NOT-RELEASE is LIFTED)
+>
+> **Everything the ⚑⚑ block below ordered is DONE, plus a live owner-ruling session on top** (the
+> owner was on device all evening — most eyeball items closed same-night). Three audited waves in
+> ONE commit; the joint Codex round's 6 findings all folded (its one blocker — the watermark
+> value-row false-pass — falsified and fixed); FULL gates green at commit (FE 1750 · Playwright 253
+> · tools/check.py). The complete measured record: **GACHA_PLAN §7.7 G6.5–G6.7 addenda** + the R15
+> §7.1 device-probe results block. What shipped: the contrast-gate truth model (texture/hover/
+> per-row watermark) · the tab flight re-composed to ONE root group, opacity-only (glass fixed,
+> 1px seam dead, Gecko engine branch RETIRED — device-probe-verified, owner-confirmed "really
+> good") · the `nameFont` picker (mincho default/bungee/maru; the synthetic-italic bug killed;
+> sha256-pinned atomic font pipeline; owner runs maru) · GachaStar SVG stars (dossier straddle-tab
+> no-shadow; cards accent-edge+drop; 1.30 ratio both surfaces) · the unified accent-drop signature
+> (--gc-lift-color = var(--accent) solid: cards 4px/portrait 5px/stars; slot-wrapper paint, button
+> owns the full slot) · C6 gradient-clipped card names (all accents ≥4.5 on the visible window) ·
+> the oracle bottom dissolve (scan always; art only when data-gc-ghosting ≥0.95/<0.88) · the
+> BottomSheet ×-close page jump FIXED kit-wide (focus({preventScroll:true}), trace-diagnosed) ·
+> balanced grid swatches · peek +10px · wave-1's badge/pity/frontier fixes.
+>
+> **THE REMAINING PATH TO v1.5.0** (owner closed most eyeballs live: glass/flight/shadows/stars/
+> oracle/LEDs/font-picker all ✓): ① the owner's SHORT final pass — star legibility over WHITE art
+> highlights (gold 1.41 there; the dark contour was 19.9 — a whisper of dark edge is the fallback)
+> · the composer's drop is now lighter+thinner (60% α, 3px) than every gacha drop beside it
+> (coherence call; kit-skin ruling 2026-08-03 owns it) · the card-plate synthetic ITALIC (owner:
+> "keep for now") · the wave-2 4-line-name/tab-overlap note · the scan-mask 7s phase pulse (fix =
+> one wrapper node if it bothers) · the "white bar atop the appbar" is probably browser chrome —
+> discriminator: check another theme. ② push on the owner's word → `deploy/linux/README.md`
+> §Release END-TO-END (tag gate runs e2e; re-pin; install; verify). **Rollback v1.4.6; schema
+> UNTOUCHED at 5.**
+>
+> **Deferred by the owner (budget), with assets banked:** the NAME-EFFECTS design session — the
+> rendered sheet EXISTS and is COMPLETE (`design/prototypes/gacha/research-sheets/
+> name-effect-candidates.html`, gitignored dir; C6 = shipped, C1 accent-initial = the owner's
+> maybe-next); its dossier (R18) was cut mid-write — re-commission the write-up only if the sheet
+> proves durable. Small code notes: `--gc-name-fill-window`'s 29.17/70.83 stops are hand-derived
+> from `--gc-fill-spread` (flagged in both files) · `--gc-plate-shadow` has no consumer (annotated).
+> **Housekeeping:** a throwaway `python3 -m http.server 8901` serves `design/prototypes/gacha/`
+> (the probe + sheets) — STOP it when rounds end; dev units RUNNING. R15/R16/R17 landed + indexed
+> (R13/R14 numbers were taken — the old ⚑⚑ block's "R12/R13/R14" naming is superseded).
+>
 > ### ⚑⚑ THE G6.3/G6.4 WAVE (2026-08-06 LATE — SUPERSEDES the block below where they conflict; the
 > ### owner ended the session on a LOW-USAGE handoff order: EVERYTHING open is captured here)
 >
