@@ -324,16 +324,16 @@
        * and they fix the INVERSION R16 caught: what shipped was 1.23 on the card and 1.37 on the dossier —
        * looser at the SMALLER size, which no reference does.
        *
-       * SIZES, after THREE owner rounds and now settled by a different rule than they started under. The
-       * dossier went UP (9.5px of glyph ink → 11.5). The card walked 7 → 10 → 11: C2's own 7px read "way
-       * too small" on device, 10 was R16's nearest analogue (the Arknights operator card, ink ~10 at pitch
-       * 13.2) — and the owner's final ruling replaced the analogue with a RELATIONSHIP: the two surfaces
-       * should "read the same scale", the card merely "smaller than the dossier ones". So the card sits one
-       * step under the dossier's 11.5 rather than at a size borrowed from another game's card.
-       * The RATIO is the constant through all of it: (11 + 3.3) / 11 = 1.30, the same 1.30 the dossier row
-       * carries, both inside R16's reference family (Arknights 1.32 / Epic Seven 1.31 / Genshin 1.33). */
-      --gc-star-size: 11px;
-      --gc-star-gap: 3.3px;
+       * SIZES, after FOUR owner rounds and now settled by the owner's eye outright. The dossier went UP
+       * (9.5px of glyph ink → 11.5). The card walked 7 → 10 → 11 → 13: C2's own 7px read "way too small"
+       * on device, 10 was R16's nearest analogue (the Arknights operator card, ink ~10 at pitch 13.2),
+       * 11 was "one step under the dossier" — and the final round overshot the dossier deliberately
+       * ("still too small" at 11): the card row sits OVER art at arm's length, the dossier row on a calm
+       * sheet up close, so equal-perceived beats equal-measured and the card lands ABOVE the dossier's
+       * 11.5. The RATIO is the constant through all of it: (13 + 3.9) / 13 = 1.30, the same 1.30 the
+       * dossier row carries, both inside R16's reference family (Arknights 1.32 / E7 1.31 / Genshin 1.33). */
+      --gc-star-size: 13px;
+      --gc-star-gap: 3.9px;
       --gc-star-size-lg: 11.5px;
       --gc-star-gap-lg: 3.5px;
       /* The primitive's STROKE, in its USER UNITS (the viewBox is 96.5 wide) — 9 units is 7.3% of whatever
