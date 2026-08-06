@@ -12,7 +12,100 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE NOW (2026-08-06 night, Fable — G6 + G6.1 + THE KIT ART SYSTEM all BUILT; SUPERSEDES both blocks below)
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-06 END OF DAY, Fable — written for a COLD session; SUPERSEDES every block below. v1.5.0 IS CODE-COMPLETE — the next session's job is the OWNER DEVICE ROUND, any fidelity fixes it produces, then PUSH + RELEASE.)
+>
+> ### The tree (verify first: `git log --oneline -6`, `git status`)
+> **FIVE commits sit LOCAL on `main`, UNPUSHED** (the owner pushes by word — standing rule):
+> `ffeda6b` G6 (two pickers · wordmark コントロール・ビー · NEW-ribbon demo) → `7dfddab` G6.1
+> (+cyber-teal/forest-green dossiers; shipped colors verified vs the example) → `97b731e` the
+> KIT ART SYSTEM (D54) → `fa74a8a` G6.2 jade + per-tab scroll restoration → `3f093b7` docs.
+> Working tree clean except the two long-standing untracked `design/prototypes/gacha/` dirs
+> (~80 MB originals — owner-ruled: stay untracked, never commit). Gates at close, ALL
+> main-seat re-run: **FE 1665 vitest · 253 Playwright (FULL local — remember push CI SKIPS
+> e2e; only the tag gate runs it) · backend full 6/6.** Prod = **v1.4.6 untouched**; dev units
+> RUNNING (:5434 + Vite :5173, `CTRLB_HOME=~/.ctrl-b-dev`) — the owner is poking them; STOP
+> them only when iteration truly ends.
+>
+> ### The records (read these, not the session): every build is fully documented in-repo
+> · Gacha G6/G6.1/G6.2: **GACHA_PLAN §7.7 + its two addenda** (as-builts, every measured
+> number) + §4.4 AS AMENDED (8 accents · 7 dossier options · THE SHARPENED CARVE-OUT RULE:
+> object-identity between status and brand lozenges decides, NOT hue clearance — jade cleared
+> the numbers and fired anyway).
+> · The Kit Art System: **DECISIONS D54 + MEDIA_PLAN §12** (rulings, the A1–A7 council
+> amendments, as-built deltas, the owner manual). Owner-droppable: `media/kit/{services,
+> service-banners,hosts,background}/`; cosmos = first adopter (deal-then-override banners +
+> faded PC image); the "Shared background" switch = a synced appearance field.
+> · Scroll restoration: the `fa74a8a` DefaultRoot comments ARE the design record (per-section
+> position map at the old reset chokepoint; three skips preserved; map clears on RESOLVED
+> layout change; appbarMode deliberately does NOT clear — recorded non-decision).
+> All session-scratchpad artifacts (briefs, Codex reviews, render shots) are TMPFS-DEAD for
+> you — the docs above are the complete record; nothing load-bearing lives outside the repo.
+>
+> ### NEXT ① — the OWNER DEVICE ROUND (the v1.5.0 gate; eyeball-heavy, budget rounds)
+> On the dev units, owner's phone (Fennec + Chrome):
+> · **Accents ×8** — jade (the owner's own ask — green trio/green-navy ramp; its tri-strip is
+>   the TIGHTEST walk, 55.9°, glacier's ~2.5-colors caution applies MOST) · ember's
+>   green→violet ONLINE ribbon · glacier tri-strip · eridu's blue→cyan→green walk · under
+>   jade, `--accent` and ok-green are BOTH greens on kit surfaces (outside the carve-out —
+>   eyeball item).
+> · **Dossiers ×7** — Teal/Forest (new); slip's lighter-means-dim dots; already ✓ by owner:
+>   wordmark, NEW ribbon, dark top strips ("alright for now"). amber-gold was PASSED OVER
+>   (accent ΔE 9.5 from star gold — the carve-out collision class); ONE tokens block + option
+>   row adds it if the owner overrules (§7.7 G6.1 addendum has its measured panel).
+> · **Kit art with REAL files** — drop into `~/.ctrl-b-dev/media/kit/`: banners (cosmos rows +
+>   kit rows), a PC image named after a machine, a background (+ the Appearance switch).
+>   Cosmos tone values are DELIBERATELY conservative and tunable per adopter
+>   (`--kit-host-strength: 0.11` · banner veil 42%/68%): eyeball items. The owner-caught
+>   banner-border regression is FIXED (pixel-proven; D54 records it).
+> · **Scroll feel** — scroll Conf, switch away, return.
+>
+> ### NEXT ② — release v1.5.0 (after the round + any fixes, on the owner's word)
+> Push (owner's word) → `deploy/linux/README.md` §Release END-TO-END: verified sha → semver
+> tag + push → **WAIT for the tag-gate CI GREEN (that is where e2e actually runs)** → re-pin
+> `~/apps/ctrl-b` → `install.sh prod` → verify `git describe` + health. An Opus operational
+> agent has run this runbook before (v1.1.1 precedent — delegate it). **Rollback = v1.4.6;
+> schema UNTOUCHED at 5 — no migration risk.** A fidelity fix wave before the tag is NEW code:
+> its own review round (the standing rule).
+>
+> ### Standing/open (do not lose)
+> · Recorded LOWs, deliberate: the Conf gallery THUMBNAILS use bare URLs (stale after an
+>   in-place overwrite; the surfaces themselves use `?rev=`) · the scroll listener's
+>   commit→passive-flush window (worst case = one lost position, i.e. the old behavior) ·
+>   `isolation` on `.kit` exists only while `.kit-bg` is mounted — a FUTURE participating
+>   theme with a Root-SIBLING overlay (gacha's reel idiom) stacks that sibling above the
+>   shell (all three scenery themes opt out today; D54 records it).
+> · Cross-project: **F1 notifications device-round result (owner tested ~2026-07-30 PM) is
+>   STILL UNREPORTED — ask** · web-push PARKED (its memory) · the deferred eyeball rounds
+>   (G5 file-drop/gallery · M2 frontier art · M3 icons) largely COLLAPSE INTO the kit-art
+>   device round above — one pass covers them.
+>
+> ### Traps this day bought (do not re-pay; the durable ones are also in the memory)
+> · **A kit `:root` var() FORMULA freezes under `@scope`** (`--accent-ink: var(--bg)`
+>   substituted once at the scope root) — any token a variant must re-derive belongs on
+>   `body`; the contrast gate MEASURES THE STALE PAIR AND PASSES (§14.6 class).
+> · **Lifting a CSS shorthand into longhands changes per-layer defaults** — the banner-border
+>   regression: the old shorthand's per-layer `repeat` let scrim/veil tile into the border
+>   box; the lifted blanket `no-repeat` exposed raw art there. PIXEL-PROVE paint identity
+>   when lifting any background recipe.
+> · **An advisory that can throw IS a gate** — non-throwing by contract, annotate
+>   "unresolved". · **Prefix-shaped property allowlists admit the wrong member**
+>   (`background…` matched `background-color`, the precise property a gradient dies on) —
+>   EXACT lists for property gates.
+> · **e2e settings seeds: assert SURVIVAL after the probes** — no observable sentinel exists
+>   when LOCAL wins the LWW reconcile; `waitForResponse` does not order against the store
+>   write. · **setState updaters must be pure** — draw randomness outside, hold the pick in a
+>   ref (StrictMode replays updaters).
+> · **Test geometry must derive the real values live** — the chevron e2e hardcoded the kit's
+>   16px strip; cosmos overrides it to 38px, making the precondition depend on the fix under
+>   test. `getComputedStyle(el, "::after")` and compute the true intersection; FALSIFY the
+>   test (remove the fix, expect the diagnostic failure, restore).
+> · **Two writing agents in one tree collide** — serial waves, or worktree isolation.
+> · Render-lab notes: gacha's sheet opens at the `[data-bs-peek]` detent (drag through the
+>   real snap before capturing) · wait on `.gc-svc` count, not `.gc-dossier` · abort + COUNT
+>   non-GET `/api/**` (the counter must read 0) · stub `/api/appearance` unseeded or the LWW
+>   reconcile silently re-themes the probe.
+>
+> ## ▶ PREVIOUS (2026-08-06 night block — mid-flight; historical since the block above)
 >
 > ### Where the release train stands (v1.5.0 = gacha + the Kit Art System, owner-ruled)
 > **① SHIPPED ON MAIN (all local — push on the owner's word):** G6 `ffeda6b` (two pickers ·
