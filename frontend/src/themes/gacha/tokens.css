@@ -19,7 +19,7 @@
  *     midnight + indigo (family 1, base ramp only) + ember + glacier + nebula + eridu (family 2, the trio
  *     moves too). An accent block NEVER writes a `--gc-dossier-*` token.
  *   · the DOSSIER axis (`body[data-gc-dossier]`, gacha-private — a `settings` seg stamped by GachaRoot) —
- *     FIVE options: slip (the G2 light sheet; NO block at all, it is the absence of an override) + four
+ *     SEVEN options: slip (the G2 light sheet; NO block at all, it is the absence of an override) + six
  *     dark palettes, default `neon-purple`. A dossier block writes ONLY `--gc-dossier-*`.
  * The dossier SURFACE still READS four accent/global things by design (the top strip's `--gc-brand-fill`,
  * slip's sticker button `--accent-fill`/`--accent-ink`, the star badge's `--gc-star*`) — that crossing is
@@ -399,14 +399,14 @@
        * DERIVED rather than restated five times — a fifth palette gets its dot for free. */
       --gc-dossier-led: var(--gc-dossier-accent);
       /* The close disc. Slip's pairing is the shipped one — a dark ink disc with a sheet-coloured glyph —
-       * which is exactly what INVERTS into a white blob when the sheet goes dark, so the four dark blocks
+       * which is exactly what INVERTS into a white blob when the sheet goes dark, so the dark blocks
        * re-pair it (dark lozenge + light glyph, the mock's own). Two tokens rather than two rules: the
        * disc is one control with one paint per palette. */
       --gc-dossier-close-bg: var(--gc-dossier-ink);
       --gc-dossier-close-ink: var(--gc-dossier-from);
       /* The primary action's fill + ink. Slip KEEPS the sticker ticket (owner ruling: each identity stays
        * coherent), so its values ARE the brand two-stop and the kit's verified ink — the dark palettes
-       * swap in the flat neon-purple-panel treatment. One `.gc-act.primary` rule, five paints. */
+       * swap in the flat neon-purple-panel treatment. One `.gc-act.primary` rule, one paint per palette. */
       --gc-dossier-act-fill: var(--accent-fill);
       --gc-dossier-act-ink: var(--accent-ink);
       /* The SECONDARY (Shut down) outline. Tokened at G6 so the contrast gate can measure it: it was an
@@ -637,24 +637,35 @@
     }
 
     /* ══ THE DOSSIER AXIS (§4.4 family 3, G6) ═════════════════════════════════════════════════════════
-     * `body[data-gc-dossier]`, stamped by GachaRoot from the `dossierPalette` setting. FIVE options:
+     * `body[data-gc-dossier]`, stamped by GachaRoot from the `dossierPalette` setting. SEVEN options:
      *   · `slip` — the shipped G2 light sheet. It has NO BLOCK: it is the ABSENCE of an override, not a
-     *     fifth copy of the values already on `:scope`/`body` above.
-     *   · four DARK palettes, sampled from `design/prototypes/gacha/dossier palette example.png` and
+     *     seventh copy of the values already on `:scope`/`body` above.
+     *   · six DARK palettes, sampled from `design/prototypes/gacha/dossier palette example.png` and
      *     NORMALISED so every gated pair passes (do not "restore" a normalised value toward the mock's
      *     literal — the literals are what failed).
+     *
+     * SAMPLING METHOD (re-derived and VERIFIED at G6.1, so a next reader can reproduce any of these):
+     * the 4x2 panel grid sits at `(14 + 384c, 40 + 506r)`, each panel 347x440. Panel-relative windows —
+     * `from` = median(x 209-220, y 128-138) · `to` = median(x 185-200, y 415-422) · `card` = the middle
+     * service row, median(x 240-299, y 366-373) · the action fill's authored pair = the REBOOT button's
+     * left/right interiors (x 24-35 / x 130-141, y 262-275) · `accent` = the brightest pixel of the SHUT
+     * DOWN label. Those windows reproduce the four shipped `from`/`to`/`accent` values EXACTLY (`card`
+     * to within 6/255 — the one value whose original sample point is not recoverable).
      * Every declaration below is a `--gc-dossier-*` name: the write-disjointness rule, with no exception
      * now that the kicker has its own token. Dark makes contrast EASIER — every tight margin in this
      * theme lives on the LIGHT sheet.
      *
-     * THE SHARED HALF first (the §4.4 table's own "shared across all four" row), as an explicit
-     * four-selector list rather than a `:not([data-gc-dossier="slip"])` shorthand: that shorthand carries
+     * THE SHARED HALF first (the §4.4 table's own "shared across all four" row, which G6.1's two cool
+     * palettes join unchanged — neither needed a per-palette ink-2, the sunset precedent), as an explicit
+     * six-selector list rather than a `:not([data-gc-dossier="slip"])` shorthand: that shorthand carries
      * HIGHER specificity than the per-palette blocks, which would make the per-palette overrides depend on
      * source order to win. Equal specificity + source order is the safe shape. */
     body[data-gc-dossier="neon-purple"],
     body[data-gc-dossier="sunset-orange"],
     body[data-gc-dossier="rose-pink"],
-    body[data-gc-dossier="aurora-violet"] {
+    body[data-gc-dossier="aurora-violet"],
+    body[data-gc-dossier="cyber-teal"],
+    body[data-gc-dossier="forest-green"] {
       --gc-dossier-ink: #f4f2ff;
       --gc-dossier-ink-2: #b9b4d8;
       --gc-dossier-line: #ffffff20;
@@ -668,8 +679,8 @@
       --gc-dossier-close-ink: var(--gc-dossier-ink);
       /* The secondary outline: mixed against the CARD, not `--gc-dossier-line` (which is a near-transparent
        * white here, so the slip formula would land at almost full-strength accent). 70% is the lowest step
-       * that clears the 3:1 non-text floor on all four cards — sunset-orange is the binding one at 3.13
-       * (neon 3.99 · rose 5.78 · aurora 4.92). */
+       * that clears the 3:1 non-text floor on all six cards — sunset-orange is the binding one at 3.13
+       * (neon 3.99 · rose 5.78 · aurora 4.92 · teal 5.15 · forest 4.86). */
       --gc-dossier-act-line: color-mix(in srgb, var(--gc-dossier-accent) 70%, var(--gc-dossier-card));
     }
     /* NEON-PURPLE - the DEFAULT (the owner's pick: "the first top-left image... I like the button there"), and
@@ -747,6 +758,69 @@
       --gc-dossier-act-hi: #aa6acd;
       --gc-dossier-shadow: 0 -20px 80px #7e37a555;
       --gc-dossier-blank: #1e2246;
+    }
+    /* ── G6.1: the two COOL palettes (owner, 2026-08-06 evening — "more variety … in line with any of the
+     *    colour palettes that are left"). Picked from the four unshipped example panels by MEASURED hue
+     *    clearance, not by name: the shipped four are magenta 332° / orange 54° / rose 20° / violet 315°
+     *    (LCh), so the entire cool half of the wheel was empty. cyber-teal (212°) and forest-green (146°)
+     *    are the two panels that fill it — each ≥91° from every shipped accent and 66° from each other —
+     *    where amber-gold's fill sits 15° from sunset-orange's (and its accent is ΔE 9.5 from `--gc-star`,
+     *    i.e. the sheet's identity colour would BE the rarity-star gold on the same surface) and
+     *    midnight-blue's fill 31° from aurora-violet's. Both new blocks take the same recipe the shipped
+     *    four are built from — verified byte-exact against all four before it was reused: act-rim =
+     *    lighten(fill-start) solved to 1.12x its luminance · act-hi = the fill-start +0.18 HSL lightness ·
+     *    blank = lighten(card, .06) · kicker = the palette's accent · shadow = the fill start at 55. ── */
+
+    /* CYBER-TEAL. TWO deviations, both measured and both precedented:
+     * (1) the SHEET's `from` is the one value NOT taken from the shared window. This panel's ramp is
+     *     FRONT-LOADED — it reaches its floor by ~40% of the panel height — so the window that reproduces
+     *     the other panels exactly catches only its tail: #001220 -> #01111f is a 5.7% fall where the
+     *     shipped family runs 43-79%. That is the sheet-side twin of neon-purple's degenerate button pair,
+     *     and it takes the same fix: the DEGENERATE member is re-taken, the sound one is kept. `from` is
+     *     the panel's own TOP band (median x 185-220, y 16-29) — which is what a CSS gradient's first stop
+     *     IS — giving a 54.7% fall and a top-stop luminance (0.0112) that lands beside neon-purple's own
+     *     shipped `from` (0.0146). `to` stays the shared window's value.
+     * (2) the fill carries §4.4's own recorded normalisation for this palette, DEEPENED 8%
+     *     (#008798 -> #007c8c): as authored, white on the top stop measures 4.27, and all four shipped
+     *     palettes clear 4.5 at BOTH extremes, not only over the ruled label band. Deepening keeps that
+     *     invariant (4.93 / 7.96 at the extremes, 6.27 over the band) at a cost no eye can see.
+     * The authored pair's 50% top-to-bottom fall is the steepest shipped (aurora-violet's 43% was) — kept
+     * for the same reason aurora's was: it is the panel's own gradient, and this one is the loudest. */
+    body[data-gc-dossier="cyber-teal"] {
+      --gc-dossier-from: #001e2d;
+      --gc-dossier-to: #01111f;
+      --gc-dossier-card: #001522;
+      --gc-dossier-accent: #23cbde;
+      --gc-dossier-kicker: #23cbde;
+      --gc-dossier-led-dim: #3c7278;
+      --gc-dossier-act-fill: linear-gradient(180deg, #007c8c, #01596a);
+      --gc-dossier-act-ink: #ffffff;
+      --gc-dossier-act-rim: #0d8392;
+      --gc-dossier-act-hi: #00cde8;
+      --gc-dossier-shadow: 0 -20px 80px #007c8c55;
+      --gc-dossier-blank: #0f232f;
+    }
+    /* FOREST-GREEN. Ships entirely as measured — no normalisation was needed anywhere (white clears 5.36
+     * on the fill's own top stop, the shared #b9b4d8 ink-2 clears 8.09 on this sheet's top, and the accent
+     * doubles as the kicker at 8.19/9.18). ONE method note: this is the only panel besides neon-purple
+     * whose button carries a real VERTICAL gradient (-31.4%, a clean monotone run down the button's own
+     * column), and its horizontal profile runs the WRONG WAY (+36.9%, dark-left to light-right). So its
+     * 180deg pair is the panel's own vertical measurement rather than the horizontal pair the other three
+     * darks were authored from — the more faithful reading of the axis we actually paint, and it lands
+     * mid-family between neon's 21% and aurora's 43%. */
+    body[data-gc-dossier="forest-green"] {
+      --gc-dossier-from: #08261f;
+      --gc-dossier-to: #011a1c;
+      --gc-dossier-card: #05231e;
+      --gc-dossier-accent: #68ce7b;
+      --gc-dossier-kicker: #68ce7b;
+      --gc-dossier-led-dim: #4e7c56;
+      --gc-dossier-act-fill: linear-gradient(180deg, #337848, #226540);
+      --gc-dossier-act-ink: #ffffff;
+      --gc-dossier-act-rim: #3b7e4f;
+      --gc-dossier-act-hi: #52b570;
+      --gc-dossier-shadow: 0 -20px 80px #33784855;
+      --gc-dossier-blank: #14302c;
     }
   }
 }

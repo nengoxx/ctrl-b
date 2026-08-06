@@ -128,8 +128,13 @@ export const gacha: ThemeDef = {
     //
     // The `swatch` per option is the §4.9 ledger's additive seg slot, and each value is the thing the
     // option most visibly changes: a dark palette's ACTION-FILL start (the button the owner picked this
-    // set for), and slip's paper top. Literals for the same reason the accent chips are — five rows, one
-    // active palette; `var()` would draw the active one five times.
+    // set for), and slip's paper top. Literals for the same reason the accent chips are — seven rows, one
+    // active palette; `var()` would draw the active one seven times.
+    //
+    // G6.1 appended the two COOL palettes (cyber-teal · forest-green) from the same example sheet: the
+    // shipped four are magenta/orange/rose/violet, i.e. the whole cool half of the wheel was unoccupied,
+    // and these are the two remaining panels furthest from it (≥91° LCh hue clearance, where amber-gold's
+    // fill sits 15° from sunset-orange's and midnight-blue's 31° from aurora-violet's).
     dossierPalette: {
       type: "seg",
       label: "Dossier",
@@ -140,6 +145,8 @@ export const gacha: ThemeDef = {
         { val: "sunset-orange", label: "Sunset", swatch: "#d97943" },
         { val: "rose-pink", label: "Rose", swatch: "#da7b7a" },
         { val: "aurora-violet", label: "Aurora", swatch: "#7e37a5" },
+        { val: "cyber-teal", label: "Teal", swatch: "#007c8c" },
+        { val: "forest-green", label: "Forest", swatch: "#337848" },
       ],
       default: "neon-purple",
     },

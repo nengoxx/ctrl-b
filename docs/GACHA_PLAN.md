@@ -193,7 +193,8 @@ better") — G6 swaps the shipped カプセルアーケード string; subtitle u
 **4.4 Palette variants (R9) — ✅ RULED Q8.5: two families, five variants. AMENDED at the G6
 pre-build rulings (owner, 2026-08-06, from live renders): TWO INDEPENDENT PICKERS — the theme
 ACCENT picker ships SEVEN variants (families 1+2, all four shifter candidates kept), and the
-DOSSIER gets its OWN picker (family 3: the light slip + the four dark palettes).** The registry
+DOSSIER gets its OWN picker (family 3: the light slip + the four dark palettes; +2 MORE cool
+darks at G6.1 same day — cyber-teal · forest-green, the §7.7 G6.1 addendum).** The registry
 models the accent axis natively: `ThemeDef.palettes.accents` (`{id, label, swatch}` list +
 `defaultAccent`) feeds the SHARED `data-accent` axis (D51 V2: one axis, every skin) — each gacha
 "accent" is a tokens.css block. The dossier axis is gacha-private: a per-theme settings row
@@ -342,12 +343,18 @@ The four the owner shortlisted, sampled from `design/prototypes/gacha/dossier pa
   kicker/sheet, Shut-down/card, label/band and the dot floors.
 
   **THE PICKER CONTRACT (2026-08-06, Codex G6-plan R6 — pinned so no two agents invent it
-  twice).** Setting key **`dossierPalette`** (gacha `settings` map, type `seg`), default
+  twice; AMENDED at G6.1, owner 2026-08-06 evening: "more variety … in line with any of the
+  color palettes that are left" ⇒ TWO MORE dark options appended from the example's remaining
+  panels).** Setting key **`dossierPalette`** (gacha `settings` map, type `seg`), default
   **`neon-purple`**, options in this order:
   `slip` ("Slip") · `neon-purple` ("Neon") · `sunset-orange` ("Sunset") · `rose-pink` ("Rose")
-  · `aurora-violet` ("Aurora") — each with `swatch` = its action-fill start hex (slip's = its
-  paper sheet top `--gc-dossier-from` value); value lands as `body[data-gc-dossier="<id>"]`
-  (absent/`slip` = today's rules untouched). Each DARK option's tokens block sets, from its
+  · `aurora-violet` ("Aurora") · `cyber-teal` ("Teal") · `forest-green` ("Forest") — each with
+  `swatch` = its action-fill start hex (slip's = its paper sheet top `--gc-dossier-from`
+  value); value lands as `body[data-gc-dossier="<id>"]`
+  (absent/`slip` = today's rules untouched). *(G6.1 pick rationale + the measured panels: the
+  §7.7 G6.1 addendum. amber-gold was passed over — its accent is ΔE 9.5 from `--gc-star`, the
+  eridu-carve-out collision class on the very surface that carries the stars; midnight-blue
+  sits inside neon/aurora's hue family. One block + one option row reverts either call.)* Each DARK option's tokens block sets, from its
   table row + the shared list: `--gc-dossier-from/-to/-card/-ink/-ink-2/-line/-badge/
   -art-shadow` + minted **`--gc-dossier-kicker`** (its kicker column) + **`--gc-dossier-accent`**
   (its accent-ink column) + **`--gc-dossier-led`/`-led-dim`** (per the dots bullet) +
@@ -1235,7 +1242,30 @@ verification. Diff +~1.3k/−100 across 23 files (+ `lib/chipBackground.ts`,
   the pre-mount slip fallback, `swatch?` byte-identity, wordmark/glyph safety.
 - **Recorded, not fixed (pre-existing):** `--gc-tag-ink` on `--gc-brand-fill`'s worst arcade
   stop = 4.27 (shipped since G1; the NEW ribbon reuses the pair, aria-hidden decorative).
-- **OPEN (the G6 gate): the owner device round** — the palettes themselves on all 12 combos,
+**G6.1 ADDENDUM (2026-08-06 evening — owner: verify the colors + "2 more in line with any of
+the palettes that are left"; built same night).** The verification came back **CLEAN**: the
+shipped four reproduce the example panels exactly on `from`/`to`/`accent` (the fitted sampling
+windows are now recorded in tokens.css; `card` carries a ≤6/255 method uncertainty — the one
+value whose original sample point is not recoverable), every §7.7 ratio recomputes, and the
+neon button authority re-confirms independently (rim 1.10×, highlight 2.55×, vertical −21.2%).
+Also established: all eight mock buttons carry WHITE labels (sunset/rose's dark inks are the
+documented normalisations), and the shipped kicker deliberately = the accent, not the mock's
+muted glyph (§4.4's own "lightened 40%" arithmetic proves it). **The two new palettes =
+cyber-teal + forest-green** — the shipped four occupy the magenta→orange arc (20°–54° + 315°–
+333°), these fill the cool half at ≥91° clearance (maximin winner); **amber-gold passed over**
+(accent ΔE 9.5 from `--gc-star` — the sheet's identity would BE the rarity gold; fill 15° from
+sunset's), midnight-blue likewise (inside neon/aurora's family). Two measured deviations, both
+precedented and recorded in the blocks: cyber-teal's `from` re-taken from its panel's top band
+(front-loaded ramp — the neon degenerate-pair twin) + its fill takes §4.4's own recorded 8%
+deepen (preserves the family's both-extremes-≥4.5 invariant); forest-green ships **entirely as
+measured, zero normalisations** (its 180° pair is its true vertical gradient — its horizontal
+runs the wrong way). Both join the shared dark block (4→6 selectors) and inherit the flat
+button/glow/focus rules via the `:not(slip)` scoping automatically (render-verified). Gate:
+SETTINGS_MATRIX 4→6 (the coverage guard demanded them red-first), 235 e2e / 1599 FE unit /
+6/6, all main-seat re-run. Strip advisories: teal 4.00 · forest 3.74 (better than every
+shipped dark except neon).
+
+- **OPEN (the G6+G6.1 gate): the owner device round** — the palettes themselves on all 14 combos,
   plus the named items: ember's green→violet ONLINE ribbon · the top strip on the darks (the
   1.19/1.79 advisories say slip/sunset are where to look) · the NEW-ribbon verdict
   (keep/drop/meaning) · glacier's tri-strip at small size · the wordmark · dossier dots'

@@ -239,8 +239,8 @@ describe("gacha sources — no non-ASCII outside copy.ts", () => {
  *  to the next `}` is exact). Returns null when the selector has no block at all — which is itself a
  *  meaningful answer for `slip`. */
 function blockFor(css: string, selector: string): string | null {
-  // A selector may also appear as the LAST MEMBER of a group (the shared dark-dossier block lists all
-  // four palettes, so `…"aurora-violet" {` matches there too). Take the occurrence whose preceding
+  // A selector may also appear as the LAST MEMBER of a group (the shared dark-dossier block lists every
+  // dark palette, so `…"aurora-violet" {` matches there too). Take the occurrence whose preceding
   // non-whitespace character is not a comma — i.e. the one that starts its own rule.
   for (let at = css.indexOf(selector + " {"); at >= 0; at = css.indexOf(selector + " {", at + 1)) {
     if (/,\s*$/.test(css.slice(0, at))) continue;
@@ -369,14 +369,42 @@ describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)",
       "sunset-orange",
       "rose-pink",
       "aurora-violet",
+      // G6.1 — appended IN ORDER after aurora, so an existing owner selection keeps its position
+      "cyber-teal",
+      "forest-green",
     ]);
-    expect(options.map((o) => o.label)).toEqual(["Slip", "Neon", "Sunset", "Rose", "Aurora"]);
+    expect(options.map((o) => o.label)).toEqual([
+      "Slip",
+      "Neon",
+      "Sunset",
+      "Rose",
+      "Aurora",
+      "Teal",
+      "Forest",
+    ]);
     expect(field?.type === "seg" && field.default).toBe("neon-purple");
     // every option carries its chip — the whole reason the §4.9 `swatch` slot was committed
     expect(options.every((o) => typeof o.swatch === "string")).toBe(true);
+    // …and each DARK chip is its own palette's action-fill START, the literal that tokens.css ships (the
+    // same literal-swatch trade-off the accent chips make: a `var()` would preview the ACTIVE palette on
+    // every row). Pinned because the chip and the block are two copies of one value.
+    for (const [val, swatch] of [
+      ["neon-purple", "#511cab"],
+      ["sunset-orange", "#d97943"],
+      ["rose-pink", "#da7b7a"],
+      ["aurora-violet", "#7e37a5"],
+      ["cyber-teal", "#007c8c"],
+      ["forest-green", "#337848"],
+    ]) {
+      expect(options.find((o) => o.val === val)?.swatch, `${val} chip`).toBe(swatch);
+      const block = blockFor(tokens, `body[data-gc-dossier="${val}"]`) ?? "";
+      expect(block, `${val}'s chip is not its own act-fill start`).toContain(
+        `--gc-dossier-act-fill: linear-gradient(180deg, ${swatch},`,
+      );
+    }
   });
 
-  it("slip has NO tokens.css block — it is the absence of an override, not a fifth copy", () => {
+  it("slip has NO tokens.css block — it is the absence of an override, not another copy", () => {
     expect(blockFor(tokens, 'body[data-gc-dossier="slip"]')).toBeNull();
   });
 
@@ -410,10 +438,21 @@ describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)",
     },
   );
 
-  it("the four darks share one block for the values the §4.4 table lists as shared", () => {
+  it("the darks share one block for the values the §4.4 table lists as shared", () => {
+    // The selector list is EQUAL-specificity with the per-palette blocks on purpose (a
+    // `:not([data-gc-dossier="slip"])` shorthand would outrank them), so it grows by one member per
+    // palette — G6.1 took it from four to six, and this pin is what makes a forgotten member fail loudly
+    // instead of silently dropping that palette back to slip's ink/line/badge.
     const block = blockFor(
       tokens,
-      'body[data-gc-dossier="neon-purple"],\n    body[data-gc-dossier="sunset-orange"],\n    body[data-gc-dossier="rose-pink"],\n    body[data-gc-dossier="aurora-violet"]',
+      [
+        'body[data-gc-dossier="neon-purple"]',
+        'body[data-gc-dossier="sunset-orange"]',
+        'body[data-gc-dossier="rose-pink"]',
+        'body[data-gc-dossier="aurora-violet"]',
+        'body[data-gc-dossier="cyber-teal"]',
+        'body[data-gc-dossier="forest-green"]',
+      ].join(",\n    "),
     );
     expect(block, "the shared dark-dossier block is missing").toBeTruthy();
     const has = new Set(declared(block!));

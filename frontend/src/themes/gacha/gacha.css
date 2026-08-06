@@ -1253,9 +1253,9 @@
     /* THE KEYBOARD FOCUS RING, re-coloured for this surface (G6). The kit's global ring is
      * `outline: 2px solid var(--accent)` — the NIGHT pink, which is exactly the token that measures 2.62
      * against the light slip's white card and is why `--gc-dossier-accent` exists at all. So inside the
-     * sheet the ring wears the surface's own accent: 5.79 on slip and 4.76–10.43 on the four darks, i.e.
+     * sheet the ring wears the surface's own accent: 5.79 on slip and 4.76–10.43 on the darks, i.e.
      * one rule makes the SAME pair the gate already measures (`--gc-dossier-accent` vs
-     * `--gc-dossier-card`) the thing that is actually painted, on all five palettes. Colour only — the
+     * `--gc-dossier-card`) the thing that is actually painted, on every palette. Colour only — the
      * outline geometry stays the kit's, so nothing about the indicator's shape or offset forks.
      *
      * SCOPED to the sheet that HOSTS a dossier (`:has()`, the existing kit idiom), not to every bottom
@@ -1585,8 +1585,8 @@
     .gc-act.primary {
       /* The palette's own primary paint (G6): slip's `--gc-dossier-act-fill`/`-act-ink` ARE the brand
        * two-stop and the kit's verified ink (tokens.css `body`), so this rule is byte-identical for the
-       * shipped light sheet; the four dark options swap in the flat neon-purple-panel treatment. ONE rule,
-       * five paints — the alternative was a second `.gc-act.primary` per palette. */
+       * shipped light sheet; the dark options swap in the flat neon-purple-panel treatment. ONE rule,
+       * one paint per palette — the alternative was a second `.gc-act.primary` per palette. */
       background: var(--gc-dossier-act-fill);
       /* the gradient must NOT paint under the transparent 1px border — unclipped it fringes the rounded
        * edges with the gradient's outermost stops (owner eyeball: pink one side, violet the other) */
@@ -1690,7 +1690,7 @@
       /* THE SERVICE LED (G6, owner-ruled): VAPOR-STYLE, not the old ok-green/warn-amber pair — vapor's
        * `.svc-row .led` is the precedent (up = the brand colour + a glow, down = dim, no glow). The status
        * is carried by BRIGHTNESS rather than by hue now, and "the whole list dims when the unit sleeps"
-       * falls out of it. BOTH states clear the 3:1 non-text floor on their own card, on all five palettes:
+       * falls out of it. BOTH states clear the 3:1 non-text floor on their own card, on every palette:
        * on a port-bearing row this dot is the ONLY visible status cue (the slot beside it shows `:8080`,
        * not "offline"), so "dim" is the glow killed and the colour dropped RELATIVE to the up state, never
        * dropped under the floor. The row's `aria-label` already spells the state for AT. */

@@ -260,7 +260,7 @@ describe("the host action bar", () => {
     const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
     // G6 routed the primary's paint through the DOSSIER's own act tokens, whose slip values ARE
     // `--accent-fill`/`--accent-ink` (tokens.css `body`) — so the light sheet renders identically while
-    // the four dark palettes can swap the flat mock button in. Both halves are pinned.
+    // the dark palettes can swap the flat mock button in. Both halves are pinned.
     expect(css).toMatch(/\.gc-act\.primary\s*{[^}]*background: var\(--gc-dossier-act-fill\)/);
     expect(css).toMatch(/\.gc-act\.primary\s*{[^}]*color: var\(--gc-dossier-act-ink\)/);
     expect(tokens).toContain("--gc-dossier-act-fill: var(--accent-fill)");
