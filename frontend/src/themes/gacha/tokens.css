@@ -66,6 +66,26 @@
       --gc-ease-spring: cubic-bezier(0.2, 1.25, 0.35, 1);
       --radius: 14px; /* the capsule card's own radius */
       --radius-sm: 10px;
+      /* ── THE ARCADE DROP (owner ask 2026-08-06) ──────────────────────────────────────────────────────
+       * kit.css's composer-skin signature, lifted onto gacha's two ART surfaces (the capsule cards and the
+       * dossier portrait) so the cabinet's one elevation language runs through the theme instead of
+       * stopping at the composer: `box-shadow: <lift> <lift> 0 <accent at 60%>`, `--arcade-lift: 3px`.
+       *
+       * gacha mints its OWN pair rather than reading `--arcade-lift`: that variable is declared ON
+       * `.kit-composer` by `body[data-composer-skin="arcade"]`, so it does not resolve anywhere else — and
+       * the skin is a picker value, so a card must not lose its drop because the owner chose a different
+       * composer. Same numbers, same formula, independent lifetime; the kit block is the reference, not
+       * the source. The DISTANCE is a constant and lives here; the COLOUR is a var() formula over
+       * `--accent` and lives on `body` (the §14.6 trap — see it there).
+       *
+       * TWO distances, both re-weighted on the owner's device round (2026-08-06). The kit's 3px read thin
+       * on gacha's art surfaces — pictures carry a heavier offset than a control plate does — so the
+       * CAPSULE CARDS go to 4 ("slightly thicker, not too much, like the button") and the DOSSIER PORTRAIT
+       * to 5, one step further again because a 104×138 picture on a wide sheet is the biggest single image
+       * the theme shows. A second token rather than a literal on the rule, so the pair stays one family
+       * and the card's own inset (gacha.css) follows its lift automatically. */
+      --gc-lift: 4px;
+      --gc-lift-lg: 5px;
       --density-pad: 1;
       --font-body: "Zen Kaku Gothic New", system-ui, sans-serif;
       /* The serif JP accent face (subtitles, 編成/設定 headings, nav sub-labels) — the prototype's second
@@ -78,6 +98,33 @@
        * `ui-monospace` FIRST, so this resolves to the platform's own mono and costs NOTHING against gacha's
        * frozen 70-glyph woff2 subset — no new download, on any device. */
       --font-mono: ui-monospace, "JetBrains Mono", monospace;
+      /* ── The MACHINE-NAME face (owner rider 2026-08-06, off docs/research/R17) ──────────────────────
+       * ONE pair for both surfaces that print a machine's name: the dossier's `h2` and the capsule card's
+       * plate. NOT the banner/promo titles — those are the ROSTER's copy, a different voice.
+       *
+       * Why the role has its own face at all: the dossier name borrowed `--font-display` at weight 900,
+       * ITALIC, and R17's headline finding is that the italic was a synthetic SHEAR — Shippori Mincho B1
+       * publishes `style: "normal"` only (all twelve generated `@font-face` blocks say so, and the CSS2
+       * API answers `ital,wght@1,800` with HTTP 400), so the browser was mechanically skewing a Japanese
+       * mincho, the one case MDN singles out as impeding legibility. Fixing it on `--font-display` itself
+       * would have moved the app-bar subtitle, the 編成/設定 heads and the nav sub-labels too — none of
+       * which were in question.
+       *
+       * The VALUE is a PICKER (`nameFont`, the theme's registry), not a constant: the owner saw Bungee
+       * live and ruled it "too bulky as a default". So `mincho` — the theme's own serif, now upright —
+       * is the base declared HERE, and each alternate is one `body[data-gc-namefont]` block below. That
+       * is the `dossierPalette`/`slip` shape exactly: the default is the absence of a block.
+       *
+       * `--font-display` is the TAIL of every value, not a sibling: the two alternates are Latin-only
+       * faces, so a runtime JAPANESE machine name matches neither and falls through to the serif stack's
+       * system JP tail — the §10.4 degradation contract, unchanged.
+       *
+       * Declared on `:scope` with the other font stacks (never `body`): these are constants, not `var()`
+       * formulas over a palette-overridden token, so the §14.6 freeze that puts the DERIVED dossier roles
+       * on `body` does not apply. The name's COLOUR is such a formula and does live there
+       * (`--gc-dossier-name`). */
+      --gc-name-font: var(--font-display);
+      --gc-name-weight: 900;
 
       /* ── THEME-PRIVATE roles (§15 token rule: named here, never re-purposing a contract token) ──
        * Every one is a role from the §1 palette inventory. They exist NOW, before their consumers, so the
@@ -236,11 +283,23 @@
 
       /* A capsule card: its own drop shadow + inset hairline, the bottom scrim that carries the plate, the
        * notched-corner MASK (the prototype's 315° cut, which is why the notch is a mask and not a radius),
-       * and the shine sweep. */
+       * and the shine sweep.
+       *
+       * ⚠ RECORDED, not fixed: the OUTER `0 16px 34px` half has never painted. A `mask` is applied after
+       * the element's own shadow, so it clips the drop away with everything outside the silhouette —
+       * verified by pixel probe when G7's arcade drop needed a home (which is why THAT one is a pseudo on
+       * the slot wrapper, gacha.css). The `inset` hairline is inside the silhouette and does render, which
+       * is the half the card actually wears. Left intact because the token is the prototype's own value and
+       * trimming it changes no pixel; a deliberate call, not an oversight. */
       --gc-card-shadow: 0 16px 34px #0008, inset 0 0 0 1px #ffffff1f;
       --gc-card-mask: linear-gradient(315deg, transparent 0 20px, #000 20px);
       --gc-card-scrim: linear-gradient(#0000 42%, #0a0817e6 92%);
       --gc-shine: linear-gradient(112deg, transparent 34%, #ffffff40 48%, transparent 60%);
+      /* The nameplate's legibility halo. NO LIVE CONSUMER since the owner picked C6 (2026-08-06): a
+       * `background-clip: text` fill and a `text-shadow` are mutually exclusive — the shadow paints ON TOP
+       * of the clipped fill — so the plate name ships shadowless and states `text-shadow: none` itself.
+       * Kept because it is the PROTOTYPE's own value for this surface and the treatment is a picked
+       * candidate the owner may walk back; deleting it would make reverting a re-derivation. */
       --gc-plate-shadow: 0 2px 10px #000;
       /* Under the wallpaper the prototype gives each card `#14172fcc` PLUS a `backdrop-filter: blur(2px)`.
        * The blur is DELETED by design (§10.3: many blurred surfaces re-blurring per scroll frame over a
@@ -253,13 +312,39 @@
       /* The §6.2 device-eyeball pick (owner, G1 round 2): decisively ROSIER than the draft's #ff9e8a
        * salmon — pulled toward the brand pink so the top rungs read pink-gold at card size. */
       --gc-star-hi: #ff8fa8;
-      --gc-star-glow: #ffb63f88;
       --gc-star-dim: #b9b3d6; /* sleeping cards de-saturate */
-      /* The rarity row's two shadows: a lit one on a live card, a flat one on a sleeping card (the
-       * prototype drops the glow with the colour). Composed over `--gc-star-glow` rather than re-typing it,
-       * so the glow has ONE home. */
-      --gc-star-shadow: 0 2px 6px #000, 0 0 12px var(--gc-star-glow);
-      --gc-star-shadow-dim: 0 2px 6px #000;
+      /* ── The star's DRAWN metrics (G7 — the R16 redesign; see GachaStar.tsx) ─────────────────────────
+       * The glyph's `font-size`/`letter-spacing`/`text-shadow` trio is gone with it: a drawn star is a box
+       * and a gap, so both surfaces are tunable in the vocabulary R16 measured the field in.
+       *
+       * `-size` IS the star's ink width (the primitive's viewBox is cropped to its stroked extent), so
+       * pitch÷ink — the ratio the whole R16 table is written in — reads straight off these four numbers:
+       *   card    (7 + 2)   / 7    = 1.29     dossier (11.5 + 3.5) / 11.5 = 1.30
+       * Both land on the reference family's ~1.3 (Arknights 1.32 · Epic Seven 1.31 · Genshin detail 1.33),
+       * and they fix the INVERSION R16 caught: what shipped was 1.23 on the card and 1.37 on the dossier —
+       * looser at the SMALLER size, which no reference does.
+       *
+       * SIZES, after THREE owner rounds and now settled by a different rule than they started under. The
+       * dossier went UP (9.5px of glyph ink → 11.5). The card walked 7 → 10 → 11: C2's own 7px read "way
+       * too small" on device, 10 was R16's nearest analogue (the Arknights operator card, ink ~10 at pitch
+       * 13.2) — and the owner's final ruling replaced the analogue with a RELATIONSHIP: the two surfaces
+       * should "read the same scale", the card merely "smaller than the dossier ones". So the card sits one
+       * step under the dossier's 11.5 rather than at a size borrowed from another game's card.
+       * The RATIO is the constant through all of it: (11 + 3.3) / 11 = 1.30, the same 1.30 the dossier row
+       * carries, both inside R16's reference family (Arknights 1.32 / Epic Seven 1.31 / Genshin 1.33). */
+      --gc-star-size: 11px;
+      --gc-star-gap: 3.3px;
+      --gc-star-size-lg: 11.5px;
+      --gc-star-gap-lg: 3.5px;
+      /* The primitive's STROKE, in its USER UNITS (the viewBox is 96.5 wide) — 9 units is 7.3% of whatever
+       * size a row asks for, so it scales with the star instead of needing a per-size table. It is the
+       * candidate sheet's own number; in CSS rather than as an SVG attribute so a surface can tune it. */
+      --gc-star-stroke: 9px;
+      /* The CARD row's drop offset, same user units: ≈1.24px at the row's 10px ink — the 1–1.5px bracket
+       * the owner named. Not a px length, deliberately: a px offset would read heavy at one size and as a
+       * hairline at another. (The dossier tab takes no drop — owner, 2026-08-06: "they look better
+       * without" — so this has exactly one consumer today.) */
+      --gc-star-drop: 12px;
 
       /* The ONLINE state ribbon + its ink. */
       --gc-online-fill: linear-gradient(92deg, #74f3ad, #54e5ff);
@@ -295,6 +380,16 @@
       --gc-oracle-floor: 0.28; /* the ghost's opacity at full ramp (the prototype's 1 − .72) */
       --gc-oracle-zoom: 0.06; /* the scale the art gains across the ramp */
       --gc-oracle-blur: 5px; /* the STATIC blur of the ghost copy — never an animated filter (§10.2) */
+      /* The ghosted block's BOTTOM DISSOLVE (owner report 2026-08-06) — the band over which the sticky
+       * backdrop stops being a picture and becomes the page. Fourth M7 tunable, same reason as the other
+       * three: it is a matter of taste on a real phone. The MASK itself is a token for the same reason
+       * `--gc-card-mask` is — an alpha ramp is written in colours, and gacha authors colours only here. */
+      --gc-oracle-edge-fade: 48px;
+      --gc-oracle-edge-mask: linear-gradient(
+        to bottom,
+        #000 calc(100% - var(--gc-oracle-edge-fade)),
+        transparent
+      );
 
       /* Composer surface (prototype `.composer`) — G3, when the look-named shared `arcade` skin lands. */
       --gc-composer: #15172e;
@@ -344,16 +439,23 @@
        * is `--gc-dossier-led` on `body` below (it IS the palette's accent, by the ruling). "Dim" is the
        * GLOW killed plus saturation/brightness dropped RELATIVE to the up state — never dropped under the
        * floor: on a port-bearing row the dot is the only visible status cue, so BOTH states clear the 3:1
-       * non-text floor on their own card (slip: 5.79 up / 3.30 dim on white). On this LIGHT sheet "dimmer"
+       * non-text floor on their own card (slip: 5.79 up / 3.30 dim on white). This dim value is also what
+       * PINS the row-hover share at 5% (G6.5 — see `--gc-dossier-row-hover`): it clears 3.06 on a hovered
+       * white row and nothing lighter would clear it at all. On this LIGHT sheet "dimmer"
        * means LIGHTER, which is why the value is a paler rose than the up state, not a darker one. This
        * REPLACED the `-ok #188f57` / `-warn #a86f00` pair, which had no other consumer and is deleted. */
       --gc-dossier-led-dim: #c872a0;
       /* The sheet's own elevation — a violet halo rather than black, so the light panel reads as LIT from
        * the arcade behind it instead of cut out of the page (`.detail-panel`'s `0 -20px 80px #5c6aff55`). */
       --gc-dossier-shadow: 0 -20px 80px #5c6aff55;
-      /* The portrait's contact shadow, and the dark lozenge its rarity badge sits in — the two places the
-       * night palette still shows through on the light surface (`.detail-avatar` / `.art-rar`). */
+      /* The portrait's contact shadow — the place the night palette still shows through on the light
+       * surface (`.detail-avatar`). */
       --gc-dossier-art-shadow: 0 10px 22px #3f426a55;
+      /* The dark LOZENGE role. Its rarity-badge consumer went at G7 (the R16 restyle turned that badge into
+       * a hairline tab reading `--gc-dossier-rar-bg`); what still reads it is the CLOSE DISC, whose dark
+       * blocks mix it at 78%. Slip pairs its own disc off `--gc-dossier-ink` instead, so this value has no
+       * live consumer on THIS palette — kept so the role is declared identically across the family and the
+       * light sheet has a lozenge to hand the day something else needs one. */
       --gc-dossier-badge: #17172ce6;
       /* The blank-portrait fill when the roster has no usable art for this machine: a flat step off the
        * sheet, so the frame still reads as a frame (the capsule card's `--gc-card-blank` analogue). */
@@ -401,9 +503,10 @@
        * first 44% and gone by 95%. It is deliberately not centred: the art must stay at full strength from
        * the subject at 67% of the sheet out to the sheet's right edge, and fade only leftward and away
        * vertically. Read against the shipped 66%-wide, 210px-tall box at a 393px viewport:
-       *   · TOP/BOTTOM — a 50% vertical radius against a 46% anchor puts BOTH of the box's own edge rows
-       *     past the fade's end, so the horizontal CUT the owner reported dissolves instead of ending, and
-       *     the art never reaches the metric grid below.
+       *   · TOP/BOTTOM — a 50% vertical radius against a 46% anchor puts the box's own top row past the
+       *     fade's end, so the horizontal CUT the owner reported dissolves instead of ending. The BOTTOM
+       *     edge is past it too — but the box outlives the head (152px) by 58px, so the fade's tail DOES
+       *     reach the metric grid; the gate models that (see `--gc-dossier-mark-value`/`-caption` below).
        *   · LEFT — half strength at the middle of the unit name, zero by the box's own left edge (which is
        *     the portrait's right edge): the "fade lands more or less in the middle of the name" ruling.
        *   · The solid core spans the whole right third, so the SUBJECT is never touched by the mask.
@@ -414,6 +517,36 @@
         #000000 44%,
         #00000000 95%
       );
+      /* ── THE WATERMARK AS THE CONTRAST GATE SEES IT (G6.5) ────────────────────────────────────────────
+       * TWO MODEL TOKENS, painted by nothing: they exist so `e2e/contrast.spec.ts` can put the art layer
+       * into a pair's backdrop stack the same way it already stacks the sheet and the card. Codex's G6.4
+       * review found the gate blind here — the two comments that claimed the 210px mark "never reaches the
+       * metric grid" were wrong (measured: head 0-152, mark 0-210, metric tiles 152-224), so the tile pairs
+       * were being gated against a backdrop the art demonstrably lifts.
+       *
+       * WHY A TOKEN AND NOT A NUMBER IN THE SPEC: the strength is the owner's knob above. Derived here, one
+       * retune moves the model with the paint; written in the spec, the two would drift the first time the
+       * owner asks for "a bit more visible" again.
+       *
+       * WHY WHITE: the art is arbitrary owner-supplied pixels, so the worst plausible pixel a token can be
+       * asked to survive is a near-white highlight — the same reading the close disc's own derivation uses
+       * (see the `--gc-dossier-close-bg` note below).
+       *
+       * WHY TWO BANDS: the mask's ellipse (ry = 50% of 210px = 105px, anchored 46% = 96.6px down, solid to
+       * 44%, out at 95%) resolves to very different strengths where text is actually painted, and both were
+       * measured off the shipped render:
+       *   · HEAD — the mask is at (or near) full strength through the whole head band, so anything painted
+       *     there is modelled over the FULL knob. That is the band the close disc sits in.
+       *   · METRIC GRID — the tiles' own text starts 161px down (value) and 182px down (caption), i.e. at
+       *     0.61 and 0.82 of the ellipse's vertical radius ⇒ mask 0.66 and 0.26. The GRID token takes the
+       *     lower of the two (0.26): the caption is the only tile text with a floor it can lose (the 16px
+       *     value clears 4.5 over the FULL knob with ≥6:1 to spare on every palette, checked at G6.5), so
+       *     modelling both tile pairs at the caption's own band is exact where it binds and free where it
+       *     doesn't. A layout change that moves the tiles closer to the head invalidates this number —
+       *     re-measure it there, don't nudge it.
+       * `0` on slip flows straight through both (no watermark ⇒ a transparent layer ⇒ a no-op stack).
+       * They live on `body` with the block's other var() formulas (§14.6) — declared here they would
+       * compute ONCE against slip's `0` on the scope root and never re-derive. */
     }
 
     /* Page text color. The page BACKGROUND lives in the bespoke gacha.css (the cosmos/frontier precedent:
@@ -453,6 +586,27 @@
        * button, the ~36px composer pair and the 32–68px seg chips alike, and can never under-run an element
        * and tile. The colour itself is untouched — this is the same gradient, seen closer up. */
       --gc-fill-spread: 240%;
+      /* ── THE CALM WINDOW, as a gate-visible token (C6, the clipped plate name — owner 2026-08-06) ────
+       * `--accent-fill` is a two-stop ramp, but `--gc-fill-spread` means a small element never SHOWS both
+       * ends: at 240% with `background-position: 50%` the visible slice is the middle 1/2.4 = 41.67% of the
+       * ramp, i.e. t = 0.2917 … 0.7083. Gating the name against `--accent-fill` itself would therefore
+       * measure two colours the glyphs cannot be painted in — the same "modelled a backdrop the screen does
+       * not paint" class the G6.5 addendum was written about, one axis over (here it is the INK).
+       *
+       * So the window is its own two-stop token and the gate's existing worst-stop handling for an <image>
+       * does the rest. The stops are `color-mix`es of the SAME two brand tokens the ramp is built from, so
+       * every accent variant re-derives them; CSS gradients interpolate in sRGB by default, which is the
+       * space the mix names.
+       *
+       * ⚠ THE TWO PERCENTAGES ARE `--gc-fill-spread`'s, computed by hand: 240% ⇒ (1 − 1/2.4)/2 = 29.17%
+       * and 70.83%. CSS cannot do that arithmetic inside `color-mix`, so moving the spread means moving
+       * these — the one place in this file where a value has to be kept in step by a human, flagged here
+       * and in the pair that reads it. */
+      --gc-name-fill-window: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--gc-brand-2) 29.17%, var(--gc-brand-1)),
+        color-mix(in srgb, var(--gc-brand-2) 70.83%, var(--gc-brand-1))
+      );
       --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
       --ok-soft: color-mix(in srgb, var(--ok) 16%, transparent);
       --warn-soft: color-mix(in srgb, var(--warn) 16%, transparent);
@@ -466,6 +620,32 @@
        * (it solves the same freeze with a literal, because vapor's ink is palette-independent; gacha's
        * follows --bg by design, so it is a formula, and formulas belong on `body`). */
       --accent-ink: var(--bg);
+      /* THE ARCADE DROP's colour (see `--gc-lift` on `:scope` for what it is and why gacha owns a copy).
+       *
+       * THE THEME'S FLAT ACCENT, SOLID (owner ruling 2026-08-06: "follow the theme, the actual same colour
+       * for all of those things"). It shipped for a day as `color-mix(… 60%, transparent)` — the kit
+       * composer skin's own formula — which reads as a WASHED version of the accent rather than the accent,
+       * and the owner wants the drops to match the chrome, not approximate it. `var(--accent)` is the
+       * existing derivation the theme already hands its controls (`--accent-fill`'s first stop is this same
+       * `--gc-brand-1`), so this re-points at a source rather than minting a parallel literal, and all eight
+       * accent variants re-tint it for free.
+       *
+       * ONE token for the whole drop family — the capsule cards, the dossier portrait and the stars' own
+       * offsets all read it, so the owner's "all of those things" is one edit and cannot drift apart.
+       *
+       * On `body` for exactly the reason `--accent-ink` above is, and MEASURED rather than assumed: with
+       * this on `:scope` the capsule cards' drop rendered TEAL — a custom property substitutes its `var()`
+       * where it is DECLARED and is inherited already-substituted, so on `html` it took the KIT's base
+       * `--accent` (which gacha only re-points on `body`) and no accent variant could ever move it. */
+      --gc-lift-color: var(--accent);
+      /* THE CAPSULE CARD's star EDGE (owner ruling 2026-08-06). The same `--accent` family as the drop
+       * above, kept as a near-opaque MIX rather than re-pointed at the flat token with it: this one is not
+       * a drop but a 0.47px stroke half sitting ON the gold, and the sliver of translucency is what stops
+       * it reading as a hard ring at the row's 11px ink. It was already the tightest share that survives
+       * bright artwork — a 60% edge that thin washes out, which is the exact case it exists for.
+       * On `body` for the §14.6 reason `--gc-lift-color` is: it is an `--accent` formula, and on `:scope`
+       * it would freeze at the kit's base accent. */
+      --gc-star-edge: color-mix(in oklch, var(--accent) 85%, transparent);
       /* ── THE DOSSIER's DERIVED roles (G6) — on `body` for the same reason as everything above: each is a
        * var() formula over a token the `body[data-gc-dossier]` blocks below override, so on `:scope` they
        * would compute once from slip's values and never re-derive. ── */
@@ -475,9 +655,10 @@
        * #511cab), not the sheet accent — "hot-pink LEDs where the mock is muted violet" was one of the
        * owner's named fidelity findings. */
       --gc-dossier-led: var(--gc-dossier-accent);
-      /* The host NAME (the `h2`). Slip keeps the sheet ink it already used; the darks state a
-       * palette-tinted literal, because the mock draws the name in the DISPLAY SERIF, italic, tinted
-       * toward the palette — never plain white (owner: "plain white name"). */
+      /* The host NAME's COLOUR (the `h2`). Slip keeps the sheet ink it already used; the darks state a
+       * palette-tinted literal, because the mock draws the name in a display face tinted toward the
+       * palette — never plain white (owner: "plain white name"). Its FACE is a constant and lives on
+       * `:scope` with the other stacks: `--gc-dossier-name-font` / `--gc-dossier-name-weight`. */
       --gc-dossier-name: var(--gc-dossier-ink);
       /* The close disc. Slip's pairing is the shipped one — a dark ink disc with a sheet-coloured glyph —
        * which is exactly what INVERTS into a white blob when the sheet goes dark, so the dark blocks
@@ -485,6 +666,21 @@
        * disc is one control with one paint per palette. */
       --gc-dossier-close-bg: var(--gc-dossier-ink);
       --gc-dossier-close-ink: var(--gc-dossier-from);
+      /* THE RARITY TAB's fill (G7 — the R16 restyle). Derived on `body` for the §14.6 reason every formula
+       * in this block is, and a TOKEN rather than an inline `color-mix` in gacha.css per the G6.5 lesson:
+       * an inline mix is invisible to the contrast probe, and this one is what the gold stars are painted
+       * over. The idea is "a quiet step off the surface" — and the DIRECTION of that step follows the
+       * surface, exactly as `--gc-dossier-close-bg` two lines up does.
+       *
+       * THIS is the LIGHT sheet's step, and it goes DOWN: the dark lozenge role, thinned to 78%. The
+       * sheet-coloured formula the dark palettes take (below) would be near-white here, and the gate
+       * caught it — gold `#ffd464` measured 1.32:1 against it, against a 3:1 non-text floor. Measured over
+       * slip's head band (`from`|`mid`, worst wins), by thinning step:
+       *   72% → gold 3.99 / rose-gold 2.62 ✗ · **78% → 4.79 / 3.15 ✓** · 84% → 5.79 / 3.80
+       * 78% is the smallest step that clears BOTH stars, and it is the same share the close disc's own
+       * thinning uses on the dark sheets — one "more opaque than not, but not completely opaque" value for
+       * both of this surface's dark lozenges. */
+      --gc-dossier-rar-bg: color-mix(in srgb, var(--gc-dossier-badge) 78%, transparent);
       /* The primary action's fill + ink. Slip KEEPS the sticker ticket (owner ruling: each identity stays
        * coherent), so its values ARE the brand two-stop and the kit's verified ink — the dark palettes
        * swap in the flat neon-purple-panel treatment. One `.gc-act.primary` rule, one paint per palette. */
@@ -499,10 +695,42 @@
       /* The SERVICE ROW's hover lift (G6.4 — the rows became links at the owner's device round). Derived
        * on `body` for the §14.6 reason the block's other formulas are: it mixes the surface's own accent
        * into the row's own card, so it re-derives per dossier palette and is a LIFT on both lightings
-       * (10% rose on slip's white card; 10% of the palette accent into a dark palette's translucent card,
-       * which stays translucent). Not gated for contrast: it is a background swap under the SAME ink, and
-       * a 10% mix moves the row's luminance far less than the sheet gradient already does under it. */
-      --gc-dossier-row-hover: color-mix(in srgb, var(--gc-dossier-accent) 10%, var(--gc-dossier-card));
+       * (rose on slip's white card; the palette accent into a dark palette's translucent card, which stays
+       * translucent).
+       *
+       * 5%, NOT the 10% this shipped with (G6.5, Codex's G6.4 contrast finding). The retired share came
+       * with the claim that a mix this small "moves the row's luminance far less than the sheet gradient
+       * already does under it", and that reasoning was wrong in a way only measurement shows: `color-mix`
+       * is PREMULTIPLIED, and the accent term is fully opaque, so mixing 10% of it into a 4.3%-alpha card
+       * did not tint the row — it TRIPLED the row's opacity (α .043 → .139) in a bright accent hue. Every
+       * pair on a hovered row rode that up: neon's port text 3.48, its dim LED 2.16, and on the LIGHT slip
+       * — the sheet the owner signed off — the dim LED landed 2.84 with NO lightening able to recover it
+       * (on white, "dimmer" means lighter, so the fix would have had to darken a signed-off token).
+       * 5% is the largest share that leaves slip's own pairs clear (dim LED 3.06) while halving the lift
+       * the dark palettes' inks and LEDs have to be normalised for; the row is still visibly lit (α .043 →
+       * .091 on neon) and the hover ALSO recolours the border, which is the louder half of the affordance.
+       * Gated now, on every palette: see the `--gc-dossier-row-hover` pairs in e2e/contrast.spec.ts. */
+      --gc-dossier-row-hover: color-mix(in srgb, var(--gc-dossier-accent) 5%, var(--gc-dossier-card));
+      /* The WATERMARK's THREE modelled bands — the contrast gate's only consumers, each derived from the
+       * owner's own strength knob so one retune moves the model with the paint. The full derivation (why
+       * white, why banded at all, where the transmissions come from) is on `--gc-dossier-mark-mask` above,
+       * which measures the shipped render at three rows: the head band, where the mask is solid; the metric
+       * tiles' VALUE row (y 161) at 0.66; and their CAPTION row (y 182) at 0.26.
+       *
+       * G6.8 SPLIT THE GRID BAND IN TWO (Codex wave-12 #1, a DO-NOT-SHIP). One `-grid` token carrying the
+       * caption's 0.26 was gating BOTH tile inks, so the 16px VALUE text — which sits 21px higher, under
+       * 2.5x more art — was measured against a backdrop 6.4 points of alpha weaker than the one it is
+       * actually painted on (4.16% modelled vs 10.56% real at the owner's 0.16 knob). That is a FALSE-PASS
+       * direction: a palette could clear the gate while the real metric row failed. Each row now models its
+       * own transmission, so neither ink is measured on the other's band.
+       *
+       * On `body` rather than `:scope` for the §14.6 reason every formula in this block is:
+       * `--gc-dossier-mark-opacity` is overridden by the `body[data-gc-dossier]` blocks, so a `:scope`
+       * declaration would freeze all three at slip's `0` and gate the darks against a watermark that is
+       * not there. */
+      --gc-dossier-mark-head: rgb(255 255 255 / var(--gc-dossier-mark-opacity));
+      --gc-dossier-mark-value: rgb(255 255 255 / calc(var(--gc-dossier-mark-opacity) * 0.66));
+      --gc-dossier-mark-caption: rgb(255 255 255 / calc(var(--gc-dossier-mark-opacity) * 0.26));
       /* The action bar's hard offset shadow — the theme's "this sits ON the surface" motif (the nav
        * indicator, the user chat bubble), here in the dossier's own ink so a filled ticket reads as
        * printed onto the slip. MOVED to `body` at G6 (it was on `:scope`): it composes
@@ -827,8 +1055,15 @@
        * time: all six palettes now carry their own (the mock's role line is palette-tinted, not a shared
        * lavender), so a shared value here would be dead. */
       --gc-dossier-line: color-mix(in srgb, var(--gc-dossier-outline) 22%, transparent);
-      /* the NIGHT badge, back in its element at 13.7:1 against the gold stars */
+      /* The NIGHT lozenge. Its rarity-badge consumer went at G7 (see the base declaration); what reads it
+       * here is the close disc below, at 78%. */
       --gc-dossier-badge: #0c0a24e6;
+      /* THE RARITY TAB, dark-sheet direction (G7). The base takes the dark lozenge thinned, because on the
+       * light slip sheet the quiet step is downward; on a DARK sheet the same idea is the sheet's own top
+       * stop at 72% — `--gc-dossier-from` is the lightest of the three, so the tab lifts a little off the
+       * band it sits in instead of sinking into it. Re-derives per palette (§14.6), and measured 11.5–12.0
+       * (gold) / 7.6–7.9 (rose-gold) on neon over its head band, i.e. never near the 3:1 floor here. */
+      --gc-dossier-rar-bg: color-mix(in srgb, var(--gc-dossier-from) 72%, transparent);
       --gc-dossier-art-shadow: 0 10px 22px #00000066;
       /* The close disc, RE-PAIRED for a dark sheet (the mock's dark lozenge + light glyph). It reads the
        * badge because that is the same role on this surface — the one dark lozenge the sheet allows —
@@ -836,11 +1071,13 @@
       /* G6.4 — and THINNED (owner device round: "more opaque than not, but not completely opaque", so the
        * watermark shows through the disc faintly). The thinning is a step ON TOP of the badge rather than
        * an edit TO it: `--gc-dossier-badge` is shared with the rarity lozenge over the portrait, where a
-       * translucent tile would let the artwork wash the gold stars out. 85% of a 0.9-alpha badge lands the
-       * disc at α 0.765 — a clear majority, which is what "more opaque than not" asks for. WORST measured
+       * translucent tile would let the artwork wash the gold stars out. 78% of a 0.9-alpha badge lands the
+       * disc at α 0.702 — a clear majority, which is what "more opaque than not" asks for. WORST measured
        * glyph pair, over the brightest plausible composite (a near-white art pixel at the watermark's own
-       * 0.16, under the thinned disc): 14.0:1 on sunset-orange, the lightest sheet in the set — the
-       * 4.5 floor is never in play here, the disc is dark on every dark palette. */
+       * 0.16, under the thinned disc): 12.6:1 on sunset-orange, the lightest sheet in the set — the
+       * 4.5 floor is never in play here, the disc is dark on every dark palette. That composite is what the
+       * gate now measures too (G6.5: the close pair's stack carries the texture + `--gc-dossier-mark-head`,
+       * so this derivation is re-checked on every run rather than being a comment). */
       --gc-dossier-close-bg: color-mix(in srgb, var(--gc-dossier-badge) 78%, transparent);
       --gc-dossier-close-ink: var(--gc-dossier-ink);
       /* The secondary outline: mixed against the CARD, not `--gc-dossier-line` (which is a near-transparent
@@ -892,15 +1129,20 @@
        * best fit of the six. The old flat `#130f32` sat BELOW the local gradient at the tile band and above
        * it at the rows, which is the "flat tiles / nearly invisible" the owner named. */
       --gc-dossier-card: #ab91fd0b;
-      --gc-dossier-ink-2: #9080c5;
+      /* G6.5 — lightened 16% toward white (was #9080c5, the mock's own role-line lavender). The card pairs
+       * gained the dot TEXTURE and, on the metric tiles, the watermark: over both this ink measured 4.07
+       * against its 4.5 small-text floor. The binding pair is the metric CAPTION over the mark's tail. */
+      --gc-dossier-ink-2: #a294ce;
       --gc-dossier-name: #c5c7f7;
       --gc-dossier-accent: #f46adf;
       /* the mock's kicker is a MUTED lavender, not the sheet accent (measured 168,149,218) */
       --gc-dossier-kicker: #a895da;
       /* the button-violet dot, NORMALISED: as measured (91,54,170) it lands 2.18 on the composited card,
-       * under the 3:1 non-text floor the LED is held to; raised in HSL lightness to 3.13 */
-      --gc-dossier-led: #7751c8;
-      --gc-dossier-led-dim: #725d9f;
+       * under the 3:1 non-text floor the LED is held to; raised in HSL lightness to 3.13 — and lightened a
+       * further 13%/12% toward white at G6.5 (2.54/2.53 once the dot texture joined the stack under the
+       * translucent card, 3.31/3.26 now; the hovered row is the second gate they clear, at 3.08/3.03) */
+      --gc-dossier-led: #8968cf;
+      --gc-dossier-led-dim: #8370ab;
       --gc-dossier-act-fill: linear-gradient(180deg, #511cab, #49199a);
       --gc-dossier-act-ink: #ffffff;
       --gc-dossier-act-rim: #5623ad;
@@ -941,7 +1183,9 @@
        * applied to the same glyphs, and lands within 3/255 of this one. 4.60/4.60/9.21 on from/mid/to. */
       --gc-dossier-kicker: #f8baa9;
       --gc-dossier-led: #d66e49;
-      --gc-dossier-led-dim: #af7866;
+      /* G6.5 — +3% toward white (was #af7866): this palette's card is OPAQUE, so the texture never reaches
+       * it, but the hovered row lifts it and the dim dot fell to 2.89 there. 3.28 on the card, 3.02 hovered. */
+      --gc-dossier-led-dim: #b17c6b;
       --gc-dossier-act-fill: linear-gradient(180deg, #d97943, #ce6144);
       --gc-dossier-act-ink: #0a0b19;
       --gc-dossier-act-rim: #dc8452;
@@ -961,12 +1205,17 @@
       /* the lift, rgb(252,124,140) at 7.7% (residual ±11 — this panel's tiles are lifted ~3.5x harder than
        * its service rows, and ONE token serves both; the fit splits the difference) */
       --gc-dossier-card: #fc7c8c14;
-      --gc-dossier-ink-2: #e1a4aa;
+      /* G6.5 — +2% toward white (was #e1a4aa), the G6.5 stack's smallest ink move: 4.47 over the metric
+       * tiles' texture+watermark composite, 4.55 now. */
+      --gc-dossier-ink-2: #e2a6ac;
       --gc-dossier-name: #f8e2e5;
       --gc-dossier-accent: #f3bfc0;
       --gc-dossier-kicker: #f3b6ba;
-      --gc-dossier-led: #dc6d78;
-      --gc-dossier-led-dim: #ad666d;
+      /* G6.5 — +4%/+19% toward white (were #dc6d78/#ad666d). The dim dot is the biggest single move in the
+       * re-normalisation: it measured 2.44 on the textured card and 1.96 on a hovered row. 3.39/3.37 on the
+       * card, 3.05/3.02 hovered. */
+      --gc-dossier-led: #dd737d;
+      --gc-dossier-led-dim: #bd8389;
       --gc-dossier-act-fill: linear-gradient(180deg, #da7b7a, #c55e74);
       --gc-dossier-act-ink: #0a0b19;
       --gc-dossier-act-rim: #dd8686;
@@ -986,13 +1235,16 @@
       --gc-dossier-outline-top: #a769c6;
       /* the lift, rgb(176,105,252) at 7.0% (residual ±8) */
       --gc-dossier-card: #b069fc12;
-      --gc-dossier-ink-2: #a78dd0;
+      /* G6.5 — lightened 13% toward white (was #a78dd0): 4.38 over the metric tiles' texture+watermark
+       * composite, the second-tightest ink in the set after neon's. */
+      --gc-dossier-ink-2: #b29cd6;
       --gc-dossier-name: #dcc6ee;
       --gc-dossier-accent: #d5a5f1;
       --gc-dossier-kicker: #b48cd7;
-      /* measured (146,74,177), raised to 3.10 on the composited card */
-      --gc-dossier-led: #9851b6;
-      --gc-dossier-led-dim: #866295;
+      /* measured (146,74,177), raised to 3.10 on the composited card — and a further 16%/15% toward white
+       * at G6.5 (2.49/2.50 with the dot texture under the card; 3.36/3.37 now, 3.04/3.06 on a hovered row) */
+      --gc-dossier-led: #a86dc2;
+      --gc-dossier-led-dim: #987aa5;
       --gc-dossier-act-fill: linear-gradient(180deg, #7e37a5, #562a90);
       --gc-dossier-act-ink: #ffffff;
       --gc-dossier-act-rim: #833ea8;
@@ -1041,12 +1293,15 @@
        * knee, so the solve has almost no backdrop spread to work with and runs to the cap; capped it keeps
        * the tile a LIFT that tracks the gradient rather than a repaint (residual ±5). */
       --gc-dossier-card: #01384740;
-      --gc-dossier-ink-2: #33a2b2;
+      /* G6.5 — +1% toward white (was #33a2b2): 4.99/4.56 on the textured card and the metric tiles. */
+      --gc-dossier-ink-2: #35a3b3;
       --gc-dossier-name: #72e4ee;
       --gc-dossier-accent: #23cbde;
       --gc-dossier-kicker: #44bacc;
       --gc-dossier-led: #2494ae;
-      --gc-dossier-led-dim: #3d6e79;
+      /* G6.5 — +11% toward white (was #3d6e79): 2.66 on the textured card. This palette's card carries the
+       * set's heaviest alpha (.25), so its dim dot has the least sheet showing through to lean on. */
+      --gc-dossier-led-dim: #527e88;
       --gc-dossier-act-fill: linear-gradient(180deg, #007c8c, #01596a);
       --gc-dossier-act-ink: #ffffff;
       --gc-dossier-act-rim: #0d8392;
@@ -1071,18 +1326,47 @@
       --gc-dossier-outline-top: #588d63;
       /* the lift, rgb(115,252,122) at 4.8% (residual ±6) */
       --gc-dossier-card: #73fc7a0c;
-      --gc-dossier-ink-2: #5ebf8a;
+      /* G6.5 — +3% toward white (was #5ebf8a): 4.43 over the metric tiles' texture+watermark composite. */
+      --gc-dossier-ink-2: #63c18e;
       --gc-dossier-name: #acf0d6;
       --gc-dossier-accent: #68ce7b;
       --gc-dossier-kicker: #74ce95;
       --gc-dossier-led: #58a260;
-      --gc-dossier-led-dim: #5e7e61;
+      /* G6.5 — +16% toward white (was #5e7e61): 2.49 on the textured card, 2.05 on a hovered row. */
+      --gc-dossier-led-dim: #78937a;
       --gc-dossier-act-fill: linear-gradient(180deg, #337848, #226540);
       --gc-dossier-act-ink: #ffffff;
       --gc-dossier-act-rim: #3b7e4f;
       --gc-dossier-act-hi: #52b570;
       --gc-dossier-shadow: 0 -20px 80px #33784855;
       --gc-dossier-blank: #14302c;
+    }
+
+    /* ══ THE NAME-FACE ALTERNATES (the `nameFont` picker, R17 rider 2026-08-06) ═══════════════════════
+     * One block per option, the `body[data-gc-dossier]` shape one axis over. `mincho` is deliberately
+     * absent — it IS the `:scope` base (`--gc-name-font`/`--gc-name-weight` up top), the same way `slip`
+     * is the absence of a dossier block. Both faces are COMMITTED latin-only subsets
+     * (`scripts/gen-theme-fonts.mjs`'s FACES table); an @font-face nothing paints is never fetched, so
+     * the two unpicked options cost zero bytes.
+     *
+     * Only the face and its weight live here. Sizes, tracking, shadows and the italic stay with the
+     * SURFACE, because each one is tuned to its own box (the card plate is 20/27px over art, the dossier
+     * `h2` is 27px on the sheet). */
+    /* BUNGEE 400 — arcade signage (David Jonathan Ross), 14.0 KB latin, no Reserved Font Name so our
+     * subsetting raises no licence question (R17 §3.2/§4). It ships ONE weight, and 400 is it — asking
+     * for 900 would synthesise a bolder one, which is the class of fake this rider exists to remove.
+     * ⚠ CAPS-ONLY: its lowercase glyphs ARE capitals, so machine names render ALL-CAPS whatever their
+     * case, and it is the widest of the three (~9 chars per dossier line at 27px vs mincho's ~12). */
+    body[data-gc-namefont="bungee"] {
+      --gc-name-font: "Bungee", var(--font-display);
+      --gc-name-weight: 400;
+    }
+    /* ZEN MARU GOTHIC 900 — rounded gothic, 11.3 KB latin, no RFN, and by Yoshimichi Ohira: the designer
+     * of the `Zen Kaku Gothic New` this theme already ships as `--font-body`, so it is the one alternate
+     * with deliberate superfamily coherence (R17 §3.2). Mixed-case, and the NARROWEST of the three. */
+    body[data-gc-namefont="maru"] {
+      --gc-name-font: "Zen Maru Gothic", var(--font-display);
+      --gc-name-weight: 900;
     }
   }
 }

@@ -1,8 +1,8 @@
 import type { PointerEvent } from "react";
 
 import type { Host } from "../../types";
-import { GACHA_COPY } from "./copy";
 import { openLabel, plateSub, type CapsuleShape } from "./fleet";
+import { GachaStar } from "./GachaStar";
 import type { ResolvedArt } from "./roster";
 import { isHighStar, starsFor, type StarMode } from "./stars";
 
@@ -44,6 +44,19 @@ export function GachaCard({ host, art, shape, mode, onOpen, isNew }: Props) {
   const stars = starsFor((host.services ?? []).length, mode);
 
   return (
+    // THE BUTTON IS THE SLOT (Codex wave-12 #5). It owns the grid cell edge to edge, so everything the
+    // owner can SEE of a card is also tappable — including the accent drop along its right and bottom,
+    // which used to sit on an inert wrapper and swallow thumb taps that landed on it.
+    //
+    // Inside it, `.gc-card-face` is the visual card: the one that is `mask`ed to the capsule silhouette
+    // (the 315° notch) and `overflow: hidden`, inset by the lift so the drop has somewhere to fall. That
+    // split is forced — a mask is applied AFTER filters, so (verified by pixel probe) `box-shadow` and
+    // `filter: drop-shadow()` on a masked element are both erased by it, and the drop can only be painted
+    // by a box OUTSIDE the masked one. It is now the button's own `::before`; the button is unmasked, so
+    // the pseudo survives, and the button is the hit area, so nothing visible is inert.
+    //
+    // Every positioned child keeps the face as its containing block, which is the SAME box they had when
+    // the button carried the mask — so none of their geometry moves.
     <button
       type="button"
       className={"gc-card " + shape + (online ? "" : " sleep")}
@@ -51,43 +64,44 @@ export function GachaCard({ host, art, shape, mode, onOpen, isNew }: Props) {
       onPointerDown={armShine}
       onClick={(e) => onOpen(host.id, e.currentTarget.querySelector("img"))}
     >
-      {art ? (
-        <img
-          src={art.url}
-          alt=""
-          draggable={false}
-          style={art.focus === undefined ? undefined : { objectPosition: art.focus }}
-        />
-      ) : (
-        // The resolver's placeholder case (an empty roster or an unusable file): a card without art is
-        // still a card — the plate, chip and rarity all read, over the theme's own surface (§5.3's
-        // "render stays silent"; the Conf gallery is where the owner is told).
-        <span className="gc-card-blank" aria-hidden />
-      )}
-      {/* The rarity row is aria-hidden: the star GLYPHS would read out one by one, and the button's label
-          already names the machine and its state. */}
-      <span className="rar" aria-hidden>
-        {Array.from({ length: stars }, (_, i) => (
-          <i key={i} className={isHighStar(i, mode) ? "hi" : undefined}>
-            {GACHA_COPY.star}
-          </i>
-        ))}
-      </span>
-      <span className={"state" + (online ? " on" : "")}>{online ? "ONLINE" : "SLEEPING"}</span>
-      {/* The `NEW` ribbon DEMO (G6 item iv). `aria-hidden` because it carries nothing: it is a look the
+      <span className="gc-card-face">
+        {art ? (
+          <img
+            src={art.url}
+            alt=""
+            draggable={false}
+            style={art.focus === undefined ? undefined : { objectPosition: art.focus }}
+          />
+        ) : (
+          // The resolver's placeholder case (an empty roster or an unusable file): a card without art is
+          // still a card — the plate, chip and rarity all read, over the theme's own surface (§5.3's
+          // "render stays silent"; the Conf gallery is where the owner is told).
+          <span className="gc-card-blank" aria-hidden />
+        )}
+        {/* The rarity row is aria-hidden: five repeated marks would read out one by one, and the button's
+          label already names the machine and its state. The mark itself is the DRAWN star (R16) — see
+          GachaStar for why it is no longer the ★ glyph. */}
+        <span className="rar" aria-hidden>
+          {Array.from({ length: stars }, (_, i) => (
+            <GachaStar key={i} hi={isHighStar(i, mode)} />
+          ))}
+        </span>
+        <span className={"state" + (online ? " on" : "")}>{online ? "ONLINE" : "SLEEPING"}</span>
+        {/* The `NEW` ribbon DEMO (G6 item iv). `aria-hidden` because it carries nothing: it is a look the
           owner is being shown, not a fact about the machine — and the button's own label already says the
           machine's name and state. It sits on the OPPOSITE corner from `.state` on purpose (gacha.css):
           the state chip is real status and must not be displaced by a decoration. */}
-      {isNew && (
-        <span className="gc-new" aria-hidden>
-          NEW
+        {isNew && (
+          <span className="gc-new" aria-hidden>
+            NEW
+          </span>
+        )}
+        <span className="plate">
+          <b>{host.name}</b>
+          <small>{plateSub(host)}</small>
         </span>
-      )}
-      <span className="plate">
-        <b>{host.name}</b>
-        <small>{plateSub(host)}</small>
+        <i className="shine" aria-hidden />
       </span>
-      <i className="shine" aria-hidden />
     </button>
   );
 }

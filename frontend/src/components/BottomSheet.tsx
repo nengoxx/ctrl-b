@@ -307,7 +307,14 @@ export function BottomSheet({
           focus instanceof HTMLElement &&
           focus !== document.body &&
           !sheetRef.current?.contains(focus);
-        if (!claimed) triggerRef.current?.focus?.();
+        // `preventScroll` (owner bug, 2026-08-06): focusing an element the browser considers out of view
+        // SCROLLS IT INTO VIEW, and the opener here is a card the sheet was covering. Root-caused by
+        // instrumenting the close path — on the × path (the only one that actually MOVES focus; see the
+        // test) the page behind jumped from scrollTop 0 to 226 on Blink / 230 on Gecko the moment this
+        // line ran, 420 ms after the tap. That is not a small nudge: the scroll CLAMPS, so on a short
+        // fleet it lands at the page's end. Restoring focus is the a11y contract (SC 2.4.3); scrolling
+        // while doing it never was.
+        if (!claimed) triggerRef.current?.focus?.({ preventScroll: true });
         triggerRef.current = null;
       }, SNAP_MS);
     }

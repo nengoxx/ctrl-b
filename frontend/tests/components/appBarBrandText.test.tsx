@@ -117,12 +117,24 @@ describe("KitAppBar brandMeta — gated by the synced `appbarSubtitleVisible` sw
     expect(brand(container).textContent).toBe("ctrl·b");
   });
 
-  it("a theme whose subtitle is EMPTY while it loads (frontier's null) shows nothing with the switch on", () => {
-    // frontier renders `null` until the fleet arrives — the slot is filled with a component, not a string,
-    // so the gate has to survive an emptied one rather than assuming "prop passed ⇒ text".
+  it("a theme with nothing to say yet passes `null` — and the WRAPPER goes too, not just its text", () => {
+    // frontier's rig count has no value until the fleet arrives, so it passes `null` (FrontierRoot resolves
+    // the data and hands the kit a value, G6.5). `.meta` must then be ABSENT, not present-and-empty: an
+    // empty inline span still carries the slot's margin and is a real node for AT to land on.
+    setUI({ appbarSubtitleVisible: true });
+    const { container } = render(<KitAppBar appbarMode="visible" brandMeta={null} />);
+    expect(brand(container).querySelector(".meta")).toBeNull();
+    expect(brand(container).textContent).toBe("ctrl·b");
+  });
+
+  it("…which is WHY the slot takes a value and not a component (the Codex G6.4 LOW-1 trap)", () => {
+    // A `<Component />` is a React ELEMENT — never null, however it renders — so the kit's `!= null` test
+    // cannot see through one, and a theme that filled the slot with a component whose body returns `null`
+    // got an empty wrapper anyway. Pinned so nobody "tidies" a theme's Root back into that shape.
     setUI({ appbarSubtitleVisible: true });
     const Empty = () => null;
     const { container } = render(<KitAppBar appbarMode="visible" brandMeta={<Empty />} />);
+    expect(brand(container).querySelector(".meta")).not.toBeNull();
     expect(brand(container).textContent).toBe("ctrl·b");
   });
 });

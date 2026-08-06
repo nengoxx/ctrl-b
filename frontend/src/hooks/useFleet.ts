@@ -128,6 +128,15 @@ export interface FleetView {
    *  view that doesn't care simply ignores it. */
   hasData: boolean;
   svcByHost: Map<string, Service[]>;
+  /** The SERVICES query's own lifecycle, on exactly the terms `hasData`/`isLoading`/`error` carry for the
+   *  hosts (Codex G6.4 review, MED-2). The two queries are independent pollers, so "the fleet has answered"
+   *  says nothing about whether `svcByHost` has: a view that derives a COUNT from the services — gacha's
+   *  pity pill — was reading the hosts' readiness and publishing a confident `0` for as long as the
+   *  services request was still in flight. Additive: every view that only renders per-host service ROWS
+   *  (the kit's, cosmos's, frontier's, vapor's) is unaffected and ignores these. */
+  svcHasData: boolean;
+  svcLoading: boolean;
+  svcError: Error | null;
   featured: number; // clamped to the current host range
   open: ReadonlySet<string>;
   poll: number;
@@ -152,28 +161,34 @@ export function useFleet(order: FleetOrder = "self-first"): FleetView {
   const hostsQ = useHosts(poll, order);
   const hosts = hostsQ.data ?? [];
   const { isLoading, error } = hostsQ;
-  const { data: services = [] } = useServices(poll);
+  // Kept whole for the same reason the hosts query is: `data === undefined` is the only honest source for
+  // "this poller has never answered", and the services poll finishes independently of the fleet's.
+  const svcQ = useServices(poll);
   const { run, busy } = useFleetActions();
   const featured = useFeatured();
   const open = useOpenRows();
 
-  // Group services by host. Memoized on the `services` query-data ref (stable across renders unless a
-  // poll changes it) so each host's array keeps a STABLE identity — that's what lets `memo(DeviceRow)`
-  // actually bail: the row's `services` prop only changes when that host's services really change.
+  // Group services by host. Memoized on the QUERY DATA ref (stable across renders unless a poll changes
+  // it) so each host's array keeps a STABLE identity — that's what lets `memo(DeviceRow)` actually bail:
+  // the row's `services` prop only changes when that host's services really change. The empty fallback
+  // lives INSIDE the callback, not beside it: a `?? []` in the dep would be a fresh array every render.
   const svcByHost = useMemo(() => {
     const m = new Map<string, Service[]>();
-    for (const s of services) {
+    for (const s of svcQ.data ?? []) {
       const list = m.get(s.host_id);
       list ? list.push(s) : m.set(s.host_id, [s]);
     }
     return m;
-  }, [services]);
+  }, [svcQ.data]);
   const clamped = hosts.length ? Math.min(featured, hosts.length - 1) : 0;
 
   return {
     hosts,
     hasData: hostsQ.data !== undefined,
     svcByHost,
+    svcHasData: svcQ.data !== undefined,
+    svcLoading: svcQ.isLoading,
+    svcError: svcQ.error,
     featured: clamped,
     open,
     poll,

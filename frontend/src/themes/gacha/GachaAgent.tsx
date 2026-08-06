@@ -10,9 +10,11 @@ import { safeRafLoop } from "../../theme-engine/safeRafLoop";
 import { useThemeSetting } from "../../theme-engine/settings";
 import { GACHA_COPY } from "./copy";
 import {
+  ORACLE_GHOST_DATA,
   ORACLE_P_VAR,
   ORACLE_RAMP_VAR,
   oracleProgress,
+  oracleGhosting,
   oracleProgressValue,
   parsePx,
 } from "./oracle";
@@ -122,6 +124,10 @@ function useOracleFade(
     let base = 0;
     let ramp: number | null = null;
     let last = "";
+    // …and the GHOSTING flag's own last-written state. The stamp is a BOOLEAN the bottom-dissolve mask
+    // keys on (see `oracleGhosting`), and it is tracked here for the same reason `last` is: the DOM is
+    // written only on a FLIP, so a scroll burst inside one state costs nothing.
+    let ghost = false;
     const measure = () => {
       base =
         anchor.getBoundingClientRect().top -
@@ -131,7 +137,16 @@ function useOracleFade(
     };
     const write = () => {
       if (ramp === null) return;
-      const value = oracleProgressValue(oracleProgress(scroller.scrollTop, base, ramp));
+      const p = oracleProgress(scroller.scrollTop, base, ramp);
+      // THE GHOSTING STAMP, before the numeric write and independent of it: it flips at most twice per
+      // scroll gesture, where the property moves every frame.
+      const ghosting = oracleGhosting(p, ghost);
+      if (ghosting !== ghost) {
+        ghost = ghosting;
+        if (ghosting) el.dataset[ORACLE_GHOST_DATA] = "";
+        else delete el.dataset[ORACLE_GHOST_DATA];
+      }
+      const value = oracleProgressValue(p);
       // a sub-perceptual move: don't dirty style
       if (value === last) return;
       last = value;
@@ -180,6 +195,8 @@ function useOracleFade(
       loop.stop();
       remeasure.stop();
       el.style.removeProperty(ORACLE_P_VAR);
+      // the switch-out cleanup ledger (§10.5): gacha leaves nothing behind on `body` or on its own nodes
+      delete el.dataset[ORACLE_GHOST_DATA];
     };
   }, [active, enabled]);
 

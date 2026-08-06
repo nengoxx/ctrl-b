@@ -135,3 +135,101 @@ describe("enterInstant", () => {
     expect(el.style.opacity).toBe("0"); // …but still at the START of its slide, waiting on the rAF
   });
 });
+
+// ── FOCUS RESTORATION ON CLOSE — the three branches of the claimed-focus guard, and the `preventScroll`
+//    the owner's "the page jumps when I close the dossier" bug turned out to be (2026-08-06).
+//
+// Root-caused by instrumenting the real close path: the restore fires 420 ms after close, and focusing an
+// element the browser considers out of view SCROLLS IT INTO VIEW — the opener is a card the sheet was
+// covering, so the page behind moved (measured: scrollTop 0 → 226 on Blink, 0 → 230 on Gecko, a CLAMP to
+// the page end rather than a nudge). Restoring focus is the a11y contract; scrolling while doing it is not.
+describe("BottomSheet — focus restoration on close", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+  });
+
+  const openSheet = (opts: { onClose?: () => void } = {}) => {
+    const trigger = document.createElement("button");
+    trigger.id = "opener";
+    document.body.append(trigger);
+    trigger.focus(); // the sheet captures `document.activeElement` as its trigger when it opens
+    const spy = vi.spyOn(trigger, "focus");
+    const view = render(
+      createElement(BottomSheet, {
+        open: true,
+        onClose: opts.onClose ?? (() => {}),
+        children: createElement("div", null, "body"),
+      }),
+    );
+    return { trigger, spy, view };
+  };
+
+  it("restores the opener WITHOUT scrolling — the owner's page-jump bug", () => {
+    const { trigger, spy, view } = openSheet();
+    // THE × PATH, which is the one that actually moves focus: the user activates a control INSIDE the
+    // sheet, so at teardown `document.activeElement` is inside the departing sheet — nothing outside
+    // claimed it — and the opener has to be focused back. (Escape leaves focus ON the opener already, so
+    // it takes the `claimed` branch and never calls `focus()` at all; that asymmetry is what made × the
+    // only close path the owner saw jump.)
+    // `.bs-sheet`, not `.bs-root`: the guard tests containment against the SHEET, so the full-screen
+    // `.bs-catch` dismissal button — a sibling of the sheet — counts as "outside" and would take the
+    // claimed branch. The × the owner presses is inside the sheet proper.
+    const inside = view.container.querySelector<HTMLElement>(".bs-sheet button");
+    expect(inside, "the sheet must render a focusable control").toBeTruthy();
+    inside!.focus();
+    view.rerender(
+      createElement(BottomSheet, {
+        open: false,
+        onClose: () => {},
+        children: createElement("div", null, "body"),
+      }),
+    );
+    vi.advanceTimersByTime(500); // past SNAP_MS
+    expect(spy).toHaveBeenCalled();
+    // THE ASSERTION THIS TEST EXISTS FOR: every restore must pass `preventScroll`.
+    for (const call of spy.mock.calls) expect(call[0]).toEqual({ preventScroll: true });
+    trigger.remove();
+  });
+
+  it("does NOT yank focus back when the user has already claimed it elsewhere", () => {
+    // The Codex M3-confirm L1 guard: a tap-outside dismissal puts focus on the control the user just
+    // activated, and stealing it 420 ms later would eat their next action.
+    const { trigger, spy, view } = openSheet();
+    const other = document.createElement("button");
+    document.body.append(other);
+    other.focus();
+    view.rerender(
+      createElement(BottomSheet, {
+        open: false,
+        onClose: () => {},
+        children: createElement("div", null, "body"),
+      }),
+    );
+    vi.advanceTimersByTime(500);
+    expect(spy).not.toHaveBeenCalled();
+    trigger.remove();
+    other.remove();
+  });
+
+  it("DOES restore when focus fell back to <body> — nothing claimed it", () => {
+    // The third branch, pinned because the live investigation could not observe it firing on the
+    // tap-outside path and it needed a decision rather than an assumption: `document.body` is explicitly
+    // excluded from `claimed`, so "focus went nowhere" restores exactly like Escape and the close buttons.
+    const { trigger, spy, view } = openSheet();
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    view.rerender(
+      createElement(BottomSheet, {
+        open: false,
+        onClose: () => {},
+        children: createElement("div", null, "body"),
+      }),
+    );
+    vi.advanceTimersByTime(500);
+    expect(spy).toHaveBeenCalled();
+    for (const call of spy.mock.calls) expect(call[0]).toEqual({ preventScroll: true });
+    trigger.remove();
+  });
+});

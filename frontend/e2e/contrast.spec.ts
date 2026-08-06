@@ -87,6 +87,35 @@ const PAIRS: Pair[] = [
 /** The sheet stops gacha's dossier CARD is painted over (D52 G6.3) — see the `over` doc + the card-stack
  *  note on the pairs below for why `--gc-dossier-from` is not among them. */
 const CARD_UNDER = ["--gc-dossier-mid", "--gc-dossier-to"];
+/** THE DOT TEXTURE (G6.5, Codex's G6.4 contrast finding). `.bs-sheet::after` paints a 1px white dot on a
+ *  13px grid ABOVE the sheet's own gradient and BELOW everything in `.gc-dossier` — so it is a layer in
+ *  every dossier stack, and the pairs that were gated straight on a sheet stop or on the card were reading
+ *  a backdrop that does not exist on screen (neon's `ink-2` measured 5.02 that way and 4.07 in truth).
+ *  The token is an `<image>`, so `colorsOf` hands back BOTH of its stops and the worst wins: that worst is
+ *  a full-strength dot, i.e. the gate models the pixel a glyph edge can land on rather than the field's
+ *  average. Slip's texture is `none` ⇒ a transparent layer ⇒ the whole stack is a no-op there, exactly as
+ *  its opaque card already made the layer below it one. */
+const TEXTURE = ["--gc-dossier-texture"];
+/** THE CHARACTER WATERMARK, as THREE modelled bands — see the tokens' own derivation for why white, why a
+ *  token, and where each transmission was measured on the shipped render. `--gc-dossier-mark-head` is the
+ *  full owner knob (the band the close disc sits in); the other two are the mask's weaker tail over the
+ *  metric tiles, at the VALUE row (0.66) and the CAPTION row (0.26) respectively. All three are `0`-alpha
+ *  on slip.
+ *
+ *  THE VALUE/CAPTION SPLIT IS G6.8 (Codex wave-12 #1, a DO-NOT-SHIP): one shared token carrying the
+ *  caption's 0.26 was gating both tile inks, so the 16px VALUE text — 21px higher, under 2.5x more art —
+ *  was measured against a backdrop 6.4 points of alpha weaker than the one it is painted on. A palette
+ *  could clear the gate while the real metric row failed, which is the false-pass direction. */
+const MARK_HEAD = ["--gc-dossier-mark-head"];
+const MARK_VALUE = ["--gc-dossier-mark-value"];
+const MARK_CAPTION = ["--gc-dossier-mark-caption"];
+/** The dossier CARD stacks, bottom-first. `CARD_STACK` is a card-bearing block CLEAR of the watermark
+ *  (the action bar at 224px and the service rows below it, against a 210px mark); the two GRID stacks are
+ *  the metric tiles, which are not (152-224px) — one per tile ROW, because the mask's transmission changes
+ *  across them. Text painted straight on the sheet takes none of them — see the pairs. */
+const CARD_STACK = [CARD_UNDER, TEXTURE];
+const VALUE_STACK = [CARD_UNDER, TEXTURE, MARK_VALUE];
+const CAPTION_STACK = [CARD_UNDER, TEXTURE, MARK_CAPTION];
 
 /** THEME-SPECIFIC pairs beyond the kit's semantic set — surfaces only that theme paints, gated at the
  *  same floors. Gacha's UNIT DOSSIER (G2) is the theme's ONE light surface: its tokens are gacha-private
@@ -94,17 +123,39 @@ const CARD_UNDER = ["--gc-dossier-mid", "--gc-dossier-to"];
  *  the vapor-tokens.spec precedent), but the sheet is body text + affordances like any other surface. */
 const THEME_PAIRS: Record<string, Pair[]> = {
   gacha: [
-    // THE CARD STACK (G6.3): the metric tiles / service rows / secondary button are a translucent lift over
-    // the sheet, and the sheet under them runs from `--gc-dossier-mid` (its 30% knee) down to
-    // `--gc-dossier-to`. `--gc-dossier-from` is deliberately NOT in the stack: no card-bearing block exists
-    // in the sheet's top 30% — the head (portrait + kicker + name + role line) occupies all of it, in the
-    // mock and in our own layout — so naming it here would gate these pairs against a backdrop they never
-    // touch. Slip's card is opaque, so the stack is a no-op there.
-    { fg: "--gc-dossier-ink", bg: "--gc-dossier-card", min: 4.5, over: [CARD_UNDER] }, // metric values, names, buttons
+    // THE CARD STACK (G6.3, deepened at G6.5): the metric tiles / service rows / secondary button are a
+    // translucent lift over the sheet, and the sheet under them runs from `--gc-dossier-mid` (its 30% knee)
+    // down to `--gc-dossier-to`. `--gc-dossier-from` is deliberately NOT in the stack: no card-bearing block
+    // exists in the sheet's top 30% — the head (portrait + kicker + name + role line) occupies all of it, in
+    // the mock and in our own layout — so naming it here would gate these pairs against a backdrop they
+    // never touch. The DOT TEXTURE sits between the sheet and the card (see `TEXTURE`), and the METRIC TILES
+    // sit over the watermark's tail on top of that (`VALUE_STACK`/`CAPTION_STACK`, one per tile row)
+    // while every other card-bearing block
+    // clears it. Slip's card is opaque, so all three stacks are a no-op there.
+    //
+    // `ink` and `ink-2` on the card are gated at their own TILE ROW because the tiles are their worst home:
+    // the same two tokens paint the service rows and the button labels one layer down (no watermark), so
+    // the tighter row covers both rather than duplicating every pair per block. The two rows take DIFFERENT
+    // stacks — `ink` paints the 16px values at the mask's 0.66 band, `ink-2` the captions at its 0.26 band
+    // (G6.8; sharing the caption's band under-modelled the values by 6.4 points of alpha).
+    { fg: "--gc-dossier-ink", bg: "--gc-dossier-card", min: 4.5, over: VALUE_STACK }, // metric values, row names, button labels
+    { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-card", min: 4.5, over: CAPTION_STACK }, // metric captions + service ports — small text
+    // ── TEXT PAINTED STRAIGHT ON THE SHEET (the head: title, role line, kicker, name). These rows are
+    // gated on the sheet STOP, with NO texture and NO watermark layer, and the line is deliberate.
+    // `over` models a BACKDROP — what shows THROUGH a translucent token — which is exactly what the dot
+    // field is for a card (it is under it) and exactly what it is NOT for the head's glyphs: there the dots
+    // and the art are painted straight ONTO the sheet, a 1px dot per 13px tile and a masked picture over
+    // the head's right-hand zone, i.e. a RENDERED-PIXEL question — and this theme already has an
+    // owner-signed answer for it: the G6.4 role-line trade, where the art stays at the owner's 0.16 and the
+    // text takes a sheet-coloured halo instead. Modelling either here would re-open that ruling and would
+    // demand near-white inks and kickers on five palettes to pass (measured, texture alone: neon ink-2
+    // 3.77 · sunset 3.81 + kicker 3.79 · rose 3.84 · aurora 3.82 + kicker 3.98 · forest 3.95 — it is an
+    // open main-seat question in §7.7's G6.5 addendum, not an oversight). The metric grid gets the
+    // watermark layer because there the art is under a TRANSLUCENT card — a true backdrop — with no halo
+    // and no ruling.
     { fg: "--gc-dossier-ink", bg: "--gc-dossier-from", min: 4.5 }, // title on the sheet's top stop
     { fg: "--gc-dossier-ink", bg: "--gc-dossier-mid", min: 4.5 }, // …its 30% knee (G6.3)…
     { fg: "--gc-dossier-ink", bg: "--gc-dossier-to", min: 4.5 }, // …and its bottom stop
-    { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-card", min: 4.5, over: [CARD_UNDER] }, // muted labels are still small text
     { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-from", min: 4.5 }, // the role line under the name
     { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-mid", min: 4.5 },
     { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-to", min: 4.5 },
@@ -119,31 +170,88 @@ const THEME_PAIRS: Record<string, Pair[]> = {
     // The SECONDARY (Shut down) pair — its label AND its outline. The outline became a token at G6
     // precisely so it could be gated: as an inline color-mix it was invisible here. At G6.3 that mix has a
     // TRANSLUCENT second term on the darks (the card), so the outline itself is translucent and rides the
-    // same stack — one layer further down than its own background.
-    { fg: "--gc-dossier-accent", bg: "--gc-dossier-card", min: 4.5, over: [CARD_UNDER] },
-    { fg: "--gc-dossier-act-line", bg: "--gc-dossier-card", min: 3, over: [CARD_UNDER] },
+    // same stack — one layer further down than its own background. The action bar starts 224px into the
+    // dossier against a 210px watermark, so this block takes the card stack, not the grid's.
+    { fg: "--gc-dossier-accent", bg: "--gc-dossier-card", min: 4.5, over: CARD_STACK },
+    { fg: "--gc-dossier-act-line", bg: "--gc-dossier-card", min: 3, over: CARD_STACK },
     // The PRIMARY's label over the band it actually covers (band-sample — the label is centred).
     { fg: "--gc-dossier-act-ink", bg: "--gc-dossier-act-fill", min: 4.5, band: true },
     // The service LED, both states. Non-text affordances, and on a port-bearing row the ONLY visible
     // status cue — so the DIM state is gated at the same floor as the bright one, no exemption.
-    { fg: "--gc-dossier-led", bg: "--gc-dossier-card", min: 3, over: [CARD_UNDER] },
-    { fg: "--gc-dossier-led-dim", bg: "--gc-dossier-card", min: 3, over: [CARD_UNDER] },
+    { fg: "--gc-dossier-led", bg: "--gc-dossier-card", min: 3, over: CARD_STACK },
+    { fg: "--gc-dossier-led-dim", bg: "--gc-dossier-card", min: 3, over: CARD_STACK },
+    // ── THE HOVERED SERVICE ROW (G6.5). The rows became links at G6.4 and their hover swaps the row's
+    // background for `--gc-dossier-row-hover` — a whole second backdrop that shipped ungated, on the
+    // reasoning (recorded in the token, now retired) that a small accent mix moves less luminance than the
+    // sheet gradient does. It does not: `color-mix` is premultiplied against an OPAQUE accent, so the mix
+    // multiplies the card's alpha as well as tinting it, and every pair on the row rides it up.
+    // Same four fg tokens the resting row carries — the name (`ink`), the port (`ink-2`) and both LED
+    // states — over the same stack, because a hovered row is a resting row with one layer swapped.
+    // The row's hover BORDER (`act-line`) is deliberately not a row here: it is the state CHANGE that
+    // identifies the affordance, adjacent to the sheet on its outer edge as much as to the fill on its
+    // inner one, and gating it against its own fill would pin the hover mix at a share too small to see.
+    { fg: "--gc-dossier-ink", bg: "--gc-dossier-row-hover", min: 4.5, over: CARD_STACK },
+    { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-row-hover", min: 4.5, over: CARD_STACK },
+    { fg: "--gc-dossier-led", bg: "--gc-dossier-row-hover", min: 3, over: CARD_STACK },
+    { fg: "--gc-dossier-led-dim", bg: "--gc-dossier-row-hover", min: 3, over: CARD_STACK },
     // The close disc's glyph on its own disc (the pair that exists because the old composition inverted).
-    // G6.4 THINNED the dark palettes' disc to α 0.765 (the owner wanted the watermark to show through it),
+    // G6.4 THINNED the dark palettes' disc to α 0.702 (the owner wanted the watermark to show through it),
     // so the disc joined the translucent club and needs its own backdrop stack — the sheet's TOP band, not
-    // the card's: the corner sits in the head, above the 30% knee. Slip's disc is opaque, so the stack is
-    // a no-op there, exactly as it is for slip's card.
+    // the card's: the corner sits in the head, above the 30% knee. G6.5 completes that stack with the two
+    // layers the token's own derivation always named but the gate did not carry: the dot texture and a
+    // full-strength watermark pixel (the head is where the mark's mask is solid). Slip's disc is opaque, so
+    // the stack is a no-op there, exactly as it is for slip's card.
     {
       fg: "--gc-dossier-close-ink",
       bg: "--gc-dossier-close-bg",
       min: 4.5,
-      over: [["--gc-dossier-from", "--gc-dossier-mid"]],
+      over: [["--gc-dossier-from", "--gc-dossier-mid"], TEXTURE, MARK_HEAD],
     },
+    // ── THE CAPSULE PLATE's CLIPPED NAME (C6, owner's pick 2026-08-06). The name is painted with
+    // `--accent-fill` clipped to its glyphs, so the INK is the accent ramp — and `--gc-fill-spread` means
+    // only the ramp's calm middle is ever visible, which is why the fg is `--gc-name-fill-window` (the
+    // modelled slice) and not `--accent-fill` (two stops the glyphs cannot show). Both of its stops are
+    // gated, worst wins, by the same <image> handling every gradient token here gets.
+    //
+    // THE BED is the card's own `--surface` — deliberately the scrim's TRANSPARENT end composited over the
+    // card rather than its opaque one. The plate sits where the scrim is nearly solid (`#0a0817e6` at 92%),
+    // which is DARKER and therefore kinder to a light accent ink; taking the light end is the conservative
+    // direction. What is NOT modelled is the ARTWORK under the scrim — art is not a token (the boundary the
+    // G6.5 addendum drew for the dossier head), and losing the plate's dark halo to the clip is precisely
+    // the trade the owner picked C6 knowing.
+    //
+    // FLOOR: 3.0 (large text). At 20px the name is `--gc-name-weight` 900 under mincho/maru — ≥18.66px AND
+    // bold, WCAG large — and the feature card's 27px clears the ≥24px rule outright. ⚠ Under BUNGEE the
+    // weight is 400, so a 20px pair/wide card's name is NOT large by WCAG and its real floor is 4.5; that
+    // is reported in §7.7 rather than gated here, because the treatment and the face are both owner picks.
+    { fg: "--gc-name-fill-window", bg: "--surface", min: 3 },
     // The two things the dossier surface reads off the OTHER axis — the bounded cross-axis checks (§4.4).
-    // The star badge is GATED on every dossier sheet. The sheet's top brand STRIP is the other one, and it
+    // The star tab is GATED on every dossier sheet. The sheet's top brand STRIP is the other one, and it
     // is ADVISORY-ONLY — see THEME_ADVISORIES below for why a hard floor is not available to it.
-    { fg: "--gc-star", bg: "--gc-dossier-badge", min: 3 },
-    { fg: "--gc-star-hi", bg: "--gc-dossier-badge", min: 3 },
+    //
+    // RE-STACKED at G7 (the R16 star redesign), and for the same reason G6.5 re-stacked everything else:
+    // these two used to be measured against `--gc-dossier-badge`, the filled dark lozenge — a backdrop the
+    // screen no longer paints. The lozenge is now a HAIRLINE TAB whose fill is `--gc-dossier-rar-bg`, the
+    // sheet's own top stop at 72%, i.e. TRANSLUCENT — so the stars are painted over that mix composited
+    // over the head band: the sheet's `from`→`mid` range, its dot texture, and a full-strength watermark
+    // pixel. Exactly the close disc's stack one element over, because the two sit in the same band.
+    //
+    // NOT modelled, and recorded rather than hidden: the tab is deliberately off-centre, so roughly its
+    // left half laps the PORTRAIT. Art is not a token and cannot be a layer (the same boundary the G6.5
+    // addendum drew for the head's text over the watermark) — what carries the stars there is the drawn
+    // star's own dark CONTOUR, which is R16 §2's whole point and is why the plaque could go.
+    {
+      fg: "--gc-star",
+      bg: "--gc-dossier-rar-bg",
+      min: 3,
+      over: [["--gc-dossier-from", "--gc-dossier-mid"], TEXTURE, MARK_HEAD],
+    },
+    {
+      fg: "--gc-star-hi",
+      bg: "--gc-dossier-rar-bg",
+      min: 3,
+      over: [["--gc-dossier-from", "--gc-dossier-mid"], TEXTURE, MARK_HEAD],
+    },
     // Slip's STICKER button is the paint that varies on both axes, so it is probed on every ACCENT row
     // too — it is the same `--accent-ink`/`--accent-fill` pair the kit set above already gates, which is
     // why no extra row is needed for it here.

@@ -53,3 +53,35 @@ export function oracleProgress(scrollTop: number, base: number, ramp: number): n
 export function oracleProgressValue(p: number): string {
   return p.toFixed(3);
 }
+
+/** The `data-gc-ghosting` stamp's dataset key (the DOM half writes `el.dataset[…]`; CSS sees
+ *  `[data-gc-ghosting]`). It marks "the block has STARTED ghosting" — the one boolean the bottom-dissolve
+ *  mask keys on, so the block keeps its designed crisp bottom edge while it is fully visible at rest
+ *  (owner ruling 2026-08-06). It is a separate signal from `--gc-oracle-p` on purpose: a mask whose
+ *  GEOMETRY tracked the ramp would re-rasterize a gradient every scroll frame, which is the paint cost
+ *  M7's whole one-write-per-frame design exists to avoid. */
+export const ORACLE_GHOST_DATA = "gcGhosting";
+
+/** The ramp positions the stamp flips at, as a hysteresis pair.
+ *
+ *  AT THE END OF THE RAMP, not the start (owner, 2026-08-06, revising the first cut): keyed near p=0 the
+ *  mask's arrival was a visible POP — it appears on a still-bright picture, where an edge that goes from
+ *  crisp to soft is exactly what the eye is watching. At 0.95 the block's own opacity is already
+ *  `1 − 0.95·(1 − --gc-oracle-floor)` ≈ 0.32, i.e. at the floor: the edge it softens is barely there, so
+ *  the change lands under the threshold of noticing while still removing the hard cut for the whole of
+ *  the state the owner actually looks at.
+ *
+ *  THE TWO NUMBERS DIFFER because the pair is a Schmitt trigger, not a threshold: a scroller parked at
+ *  the flip point wobbles by a pixel either way, and a single value would toggle the attribute — and
+ *  therefore the mask — on every one of those frames. The 0.07 gap is wide enough to swallow that wobble
+ *  and narrow enough that scrolling back up releases the mask while the block is still near the floor,
+ *  so neither direction shows a jump. Same discipline the `--gc-oracle-p` write applies with its
+ *  quantized-value guard, one axis over. */
+const GHOST_ON = 0.95;
+const GHOST_OFF = 0.88;
+
+/** Whether the block counts as fully ghosted at progress `p`, given whether it already did. Pure, so the
+ *  hysteresis is testable without a scroller. */
+export function oracleGhosting(p: number, was: boolean): boolean {
+  return was ? p >= GHOST_OFF : p >= GHOST_ON;
+}

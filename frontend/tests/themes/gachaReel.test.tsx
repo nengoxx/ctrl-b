@@ -342,111 +342,88 @@ describe("the reel figure", () => {
   });
 });
 
-// ── M2, the cross-fade the slats sweep OVER (G4). What is load-bearing is the CHOREOGRAPHY (measured off
-//    the prototype, theme.css:144-147) and the fact that it is SCOPED to the `tab` kind — unscoped it would
-//    fire on the theme swap too, which has its own cross-fade. ──
-describe("the M2 tab cross-fade (CSS)", () => {
-  it("scales the outgoing screen down over 240 ms and fades the new one in over 380 ms, NO delay", () => {
-    // …on `gacha-page`, NOT the root (G6.3): the root snapshot carries gacha's fixed app BACKDROP, and two
-    // misaligned scaled copies of it cross-fading rimmed the frame on Chrome (owner device round).
-    expect(ruleFor(':scope[data-transition="tab"]::view-transition-old(gacha-page)')).toContain(
-      "animation: gacha-root-out 240ms ease both",
-    );
-    // The prototype's 100 ms head start DIED at G6.4 (Codex composition audit): the appbar lives INSIDE
-    // `.kit-main`, so a `both`-fill delay held the incoming page — bar, glass and all — at opacity 0 for
-    // its first 100 ms, the owner-reported "nothing renders until the transition ends". From frame one now.
-    expect(ruleFor(':scope[data-transition="tab"]::view-transition-new(gacha-page)')).toContain(
-      "animation: gacha-root-in 380ms var(--gc-ease-out) both",
-    );
-  });
-
-  it("holds the CHROME still: appbar + tab bar are stationary live groups during the tab flight (G6.4)", () => {
-    // The reel's own idiom applied to the two bars (Codex audit): tab-scoped names, `animation: none` on
-    // every pseudo (the `new` side is LIVE, glass included), the redundant old capture hidden. Without
-    // this the appbar scaled+faded with `gacha-page` and its 14px glass "switched on" at commit.
-    // BLINK-ONLY (the §14.11 engine-branch allowlist): Gecko renders the live bar's glass through the
-    // flight correctly and pays real compositor cost per group (owner's Fennec janked at five), so the
-    // chrome groups are scoped off it — the lean three-group flight is Gecko's contract.
-    // Raw-css contains (not ruleFor): what is pinned is that the names are minted at all, engine-scoped
-    // (the flight-fill experiment that once shared this selector was owner-reverted — no fill rule now).
-    expect(css).toContain("view-transition-name: gacha-appbar");
-    expect(css).toContain("view-transition-name: gacha-tabbar");
-    expect(ruleFor(':scope[data-transition="tab"]::view-transition-new(gacha-appbar)')).toContain(
-      "animation: none",
-    );
-    // `ruleFor` finds the FIRST occurrence, which is the animation-none selector list — anchoring on the
-    // `… {` form lands on the second rule, where tabbar-old closes the pair's selector list.
-    expect(ruleFor(':scope[data-transition="tab"]::view-transition-old(gacha-tabbar) {')).toContain(
-      "opacity: 0",
-    );
-    // …and the kit's per-body `kit-fade` entrance is retired under gacha: the VT is the ONE entrance
-    // (it ran INSIDE the already-fading page group — two multiplied fades).
-    expect(ruleFor(".kit .tab.active")).toContain("animation: none");
-  });
-
-  it("names the CONTENT region for the flight only, and leaves the root a plain opacity cross-fade", () => {
-    // The name is SCOPED to the two gacha-typed transitions that scale (the dossier-avatar idiom): a
-    // `view-transition-name` left on a node outside its own flight makes the NEXT transition skip on a
-    // duplicate-name error.
-    const named = ruleFor(
-      ':scope[data-transition="tab"] .kit-main,\n    :scope[data-transition="detail"] .kit-main',
-    );
-    expect(named).toContain("view-transition-name: gacha-page");
-    // The root pair keeps ONLY a duration — no transform, so the backdrop and the nav bar hold still.
-    for (const kind of ["tab", "detail"]) {
-      const root = ruleFor(
-        `:scope[data-transition="${kind}"]::view-transition-old(root),\n    :scope[data-transition="${kind}"]::view-transition-new(root)`,
-      );
-      expect(root, `${kind} root pair`).toMatch(/animation-duration:\s*\d+ms/);
-      expect(root, `${kind} root pair must not transform`).not.toContain("gacha-root-");
+// ── M2, the flight the slats sweep OVER (G4; RE-COMPOSED at G6.6). What is load-bearing is that the `tab`
+//    kind names NOTHING — one snapshot, one group — and that the prototype's 96%/104% scale survives as an
+//    IN-PAGE entrance instead. The device probe behind that (docs/research/R15 §7.1) found a named glass bar
+//    double-applies its backdrop-filter on both engines, and every extra group is main-thread cost on Gecko. ──
+describe("the M2 tab flight (CSS)", () => {
+  it("names NOTHING for the `tab` kind — one root snapshot, so the bar's glass is never a second group", () => {
+    // G6.3/G6.4 extracted three groups (`gacha-page`, the two chrome bars, `gacha-reel`); the probe showed
+    // the named bar doubling its own blur ("several layers of glass") plus a 1px seam at the group's top
+    // edge on Chrome, and unnamed = glass intact. All four names are gone from this kind, and their absence
+    // is the contract — a re-introduced one would silently bring the artefact back.
+    for (const gone of [
+      ':scope[data-transition="tab"] .kit-main',
+      ':scope[data-transition="tab"] .gc-reel',
+      "gacha-appbar",
+      "gacha-tabbar",
+      "gacha-reel;", // the NAME (`view-transition-name: gacha-reel`), not the slat keyframes
+    ]) {
+      expect(css, `${gone} must not survive G6.6`).not.toContain(gone);
     }
+    // …and with nothing named there is no engine branch left either: both engines run this composition.
+    expect(css).not.toContain('data-engine="gecko"');
   });
 
-  it("gives the REEL its own group so it still paints ABOVE the extracted content", () => {
-    // The second owner device report: with `gacha-page` extracted, the reel — still inside the root
-    // snapshot — swept UNDER the tab contents on both engines, because named groups paint above the root
-    // group. Re-ordering the two groups cannot fix it (the root snapshot holds the backdrop, which must
-    // stay BELOW the content, and the reel, which must sit above it), so the reel becomes its own group;
-    // it paints after `.kit-main`, so its group sorts after `gacha-page` by construction.
-    expect(ruleFor(':scope[data-transition="tab"] .gc-reel')).toContain(
-      "view-transition-name: gacha-reel",
+  it("cross-fades the ROOT pair over 380 ms — the UA's own opacity fade, no transform", () => {
+    const root = ruleFor(
+      ':scope[data-transition="tab"]::view-transition-old(root),\n    :scope[data-transition="tab"]::view-transition-new(root)',
     );
-    // …and it must NOT take the UA cross-fade: `::view-transition-new` is live, so a fade-in would dim
-    // the first 380 ms of the sweep itself.
-    expect(ruleFor(':scope[data-transition="tab"]::view-transition-new(gacha-reel)')).toContain(
-      "animation: none",
+    expect(root).toContain("animation-duration: 380ms");
+    // Nothing may re-introduce a snapshot scale here: two misaligned scaled copies of gacha's fixed app
+    // backdrop are what rimmed the frame on Chrome (G6.3), and Gecko resamples a scaled snapshot (bug
+    // 2012228). The scale belongs in the page now.
+    expect(root).not.toContain("gacha-root-");
+    expect(root).not.toContain("transform");
+  });
+
+  it("scales NOTHING — not the snapshot, and not the page either", () => {
+    // G6.6 round 1 moved the prototype's 104%→100% onto an in-page entrance keyed to the flight stamp
+    // (R15's own option A3). On device it JUMPED THE OUTGOING PAGE, and the mechanism says it had to:
+    // `runViewTransition` stamps `html[data-transition="tab"]` BEFORE `startViewTransition`, and the old
+    // state is captured INSIDE that call — so for one commit the stamp is up while the LEAVING body is
+    // still the one matching `.tab.active`. A stamp-keyed animation cannot express "incoming only".
+    // Owner ruling: the flight is a pure opacity cross-fade. This pins the absence, because the tempting
+    // fix (put the entrance back, narrow the selector) is the one that cannot work.
+    expect(css).not.toContain("gacha-tab-in");
+    expect(css).not.toContain(':scope[data-transition="tab"] .kit .tab.active');
+    expect(css).not.toContain('body[data-motion="reduced"] .kit .tab.active');
+    // …and the kit's own `kit-fade` entrance stays retired under gacha: the VT is the ONE entrance.
+    expect(ruleFor("\n    .kit .tab.active")).toContain("animation: none");
+  });
+
+  it("keeps `gacha-page` + the 96/104 keyframe pair for the DETAIL morph, which is now their only consumer", () => {
+    // The dossier morph still extracts the content region, and for a reason that is specific to it: the
+    // sheet arrives over a page that stays put, and scaling the root would rim the frame. Its bar is NOT
+    // named (it rides inside `gacha-page`) — the probe's case 2, measured glass-good on Chrome.
+    expect(ruleFor(':scope[data-transition="detail"] .kit-main')).toContain(
+      "view-transition-name: gacha-page",
     );
-    const old = ruleFor(':scope[data-transition="tab"]::view-transition-old(gacha-reel)');
-    expect(old).toContain("animation: none");
-    expect(old).toContain("opacity: 0");
-    // Scoped to `tab` alone — the reel node lingers (invisible) after a sweep, and neither the dossier
-    // morph nor the showcase has any business extracting it.
-    expect(css).not.toContain('[data-transition="detail"] .gc-reel');
-    expect(css).not.toContain('[data-transition="showcase"] .gc-reel');
-  });
-
-  it("moves transform + opacity only — 96% out, 104% in (§14.11)", () => {
-    const out = atRuleFor("@keyframes gacha-root-out");
-    expect(out).toContain("scale(0.96)");
-    expect(out).toContain("opacity: 0");
-    const into = atRuleFor("@keyframes gacha-root-in");
-    expect(into).toContain("scale(1.04)");
-    expect(into).toContain("opacity: 0");
-    // Nothing that would trigger layout: no width/height/top/left in either keyframe.
-    expect(`${out}${into}`).not.toMatch(/\b(width|height|top|left|margin)\s*:/);
-  });
-
-  it("shares ONE keyframe pair with the `detail` morph, at that kind's own shorter timings", () => {
-    // The prototype declares the pair once and re-times it (theme.css:149-150). Two near-identical
-    // copies is the duplication this pins against — and the `detail` timings are what prove the
-    // re-time is real rather than a copy that drifted.
     expect(ruleFor(':scope[data-transition="detail"]::view-transition-old(gacha-page)')).toContain(
       "gacha-root-out 200ms",
     );
     expect(ruleFor(':scope[data-transition="detail"]::view-transition-new(gacha-page)')).toContain(
       "gacha-root-in 300ms",
     );
+    // …at the prototype's own values, still declared once (theme.css:149-150).
     expect([...css.matchAll(/@keyframes gacha-root-(in|out)/g)]).toHaveLength(2);
+    const out = atRuleFor("@keyframes gacha-root-out");
+    expect(out).toContain("scale(0.96)");
+    const into = atRuleFor("@keyframes gacha-root-in");
+    expect(into).toContain("scale(1.04)");
+    expect(`${out}${into}`).not.toMatch(/\b(width|height|top|left|margin)\s*:/);
+    // …and no OTHER kind may pick the pair back up (the `tab` flight gave it up at G6.6).
+    for (const m of css.matchAll(/([^{}\n]*)\{\s*animation: gacha-root-(in|out)/g)) {
+      expect(m[1]).toContain('[data-transition="detail"]');
+    }
+  });
+
+  it("leaves the detail root pair a plain opacity cross-fade too", () => {
+    const root = ruleFor(
+      ':scope[data-transition="detail"]::view-transition-old(root),\n    :scope[data-transition="detail"]::view-transition-new(root)',
+    );
+    expect(root).toMatch(/animation-duration:\s*\d+ms/);
+    expect(root).not.toContain("gacha-root-");
   });
 
   it("never fires unscoped — no bare `::view-transition-old/new(root)` rule exists", () => {

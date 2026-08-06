@@ -30,7 +30,7 @@ import { GachaBanner } from "../../src/themes/gacha/GachaBanner";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
 import { AUTOPLAY_MS, HERO_KEY, SNAP_MS } from "../../src/themes/gacha/carousel";
 import { ART } from "../../src/themes/gacha/art";
-import { sceneTitle } from "../../src/themes/gacha/fleet";
+import { PENDING, sceneTitle } from "../../src/themes/gacha/fleet";
 import { artForHost, defaultRoster, wideArtForHost } from "../../src/themes/gacha/roster";
 import type { Host } from "../../src/types";
 
@@ -66,6 +66,11 @@ function setFleet(over: Record<string, unknown> = {}): void {
     // The query has ANSWERED (the additive `hasData` flag) — the default for these fixtures; the
     // still-loading cases pass `hasData: false` explicitly.
     hasData: true,
+    // …and the SERVICES poller's own three facts (G6.5), independent of the fleet's: the pity pill reads
+    // these, and the cases below drive them apart from the host ones on purpose.
+    svcHasData: true,
+    svcLoading: false,
+    svcError: null,
     ...over,
   };
 }
@@ -79,6 +84,9 @@ const promos = (c: HTMLElement): HTMLElement[] => [
 /** hero + the two bundled banner scenes — every slide that is not a machine. */
 const SCENERY = 1 + ART.scenes.length;
 const rate = (c: HTMLElement): string => c.querySelector(".gc-banner-rate span")!.textContent ?? "";
+/** the SECOND pill in that row — 天井 + the fleet-wide online-service count */
+const pity = (c: HTMLElement): string =>
+  [...c.querySelectorAll(".gc-banner-rate span")][1]?.textContent ?? "";
 
 /** G5 — a media index payload. `mediaFile` builds one servable file; the default `media.data` is
  *  `undefined` (no owner files ⇒ the bundled art), which every case above relies on. */
@@ -234,6 +242,67 @@ describe("the rate pill (§6.3)", () => {
     setFleet({ hosts: [host("atlas", false)] });
     const { container } = render(<GachaFleet active />);
     expect(rate(container)).toContain("0.0%");
+  });
+});
+
+describe("the pity pill (§6.3, G6.5)", () => {
+  const svc = (hostId: string, online: boolean) => ({
+    id: `${hostId}.web`,
+    host_id: hostId,
+    name: "web",
+    port: 8080,
+    url: null,
+    status: {
+      service_id: `${hostId}.web`,
+      online,
+      checked_at: "2026-01-01T00:00:00Z",
+      error: null,
+    },
+  });
+
+  it("counts the ONLINE services of the machines currently in the fleet", () => {
+    setFleet({
+      svcByHost: new Map([
+        ["pegasus", [svc("pegasus", true), svc("pegasus", false)]],
+        ["atlas", [svc("atlas", true)]],
+      ]),
+    });
+    const { container } = render(<GachaFleet active />);
+    expect(pity(container)).toBe(`${GACHA_COPY.pityLabel} 2`);
+  });
+
+  it("holds — never a confident 0 — while the SERVICES poll is still in flight, fleet or no fleet", () => {
+    // The MED-2 case: the hosts query lands first (`hasData: true`), so a hosts-only readiness test
+    // published `天井 0` as fact while the services request was still open.
+    setFleet({ svcHasData: false, svcLoading: true });
+    const { container } = render(<GachaFleet active />);
+    expect(pity(container)).toBe(`${GACHA_COPY.pityLabel} ${PENDING}`);
+  });
+
+  it("…and does read 0 once the services query has genuinely answered with nothing online", () => {
+    setFleet({ svcByHost: new Map([["pegasus", [svc("pegasus", false)]]]) });
+    const { container } = render(<GachaFleet active />);
+    expect(pity(container)).toBe(`${GACHA_COPY.pityLabel} 0`);
+  });
+
+  it("drops a departed machine's still-cached services instead of counting orphans", () => {
+    // The two pollers are independent, so a removed host's rows survive in the map until the next
+    // services answer. The count walks the CURRENT hosts, so the orphan never reaches the pill.
+    setFleet({
+      hosts: [host("pegasus", true)],
+      svcByHost: new Map([
+        ["pegasus", [svc("pegasus", true)]],
+        ["ghost", [svc("ghost", true), svc("ghost", true)]],
+      ]),
+    });
+    const { container } = render(<GachaFleet active />);
+    expect(pity(container)).toBe(`${GACHA_COPY.pityLabel} 1`);
+  });
+
+  it("stays held while the FLEET is unresolved even though the services answered", () => {
+    setFleet({ hosts: [], isLoading: true, hasData: false });
+    const { container } = render(<GachaFleet active />);
+    expect(pity(container)).toBe(`${GACHA_COPY.pityLabel} ${PENDING}`);
   });
 });
 
@@ -671,12 +740,13 @@ describe("the capsule track (§6.1/§6.2)", () => {
   it("renders one card per host, in the ruled geometry", () => {
     setFleet({ hosts: [host("a", true), host("b", true), host("c", false), host("d", true)] });
     const { container } = render(<GachaFleet active />);
-    expect(cards(container).map((el) => el.className)).toEqual([
-      "gc-card feat",
-      "gc-card pair",
-      "gc-card pair sleep",
-      "gc-card wide",
-    ]);
+    // The BUTTON is the grid item and carries the shape (Codex wave-12 #5 — the visible accent drop has
+    // to be tappable, so the semantic control owns the whole cell). Its masked visual surface is an inner
+    // `.gc-card-face`, one per card.
+    expect(
+      [...container.querySelectorAll(".gc-track > .gc-card")].map((el) => el.className),
+    ).toEqual(["gc-card feat", "gc-card pair", "gc-card pair sleep", "gc-card wide"]);
+    expect(container.querySelectorAll(".gc-card > .gc-card-face")).toHaveLength(4);
   });
 
   it("gives every card the SAME roster entry its promo slide got", () => {
@@ -716,7 +786,10 @@ describe("the capsule track (§6.1/§6.2)", () => {
     setFleet({ hosts: [host("a", true, { services: svc(4) }), host("b", true, { services: [] })] });
     const { container, rerender } = render(<GachaFleet active />);
     const rarity = () =>
-      [...container.querySelectorAll(".gc-card .rar")].map((el) => el.textContent?.length);
+      // COUNT the drawn marks (G7): the rarity row holds `.gc-star` SVGs now, so it has no text length.
+      [...container.querySelectorAll(".gc-card .rar")].map(
+        (el) => el.querySelectorAll(".gc-star").length,
+      );
     // 5-star mode: 4 services → 4 stars; zero services → the ruled ★1 floor
     expect(rarity()).toEqual([4, 1]);
 
@@ -743,8 +816,8 @@ describe("the capsule track (§6.1/§6.2)", () => {
     });
     const { container } = render(<GachaFleet active />);
     const [five, two] = [...container.querySelectorAll(".gc-card .rar")];
-    expect(five.querySelectorAll("i.hi")).toHaveLength(2); // ★4 and ★5
-    expect(two.querySelectorAll("i.hi")).toHaveLength(0); // a ★2 card is all gold
+    expect(five.querySelectorAll(".gc-star.hi")).toHaveLength(2); // ★4 and ★5
+    expect(two.querySelectorAll(".gc-star.hi")).toHaveLength(0); // a ★2 card is all gold
   });
 
   it("states the machine on the chip AND in the button's accessible name", () => {
@@ -915,6 +988,12 @@ describe("the image morph (M3)", () => {
     document
       .querySelector<HTMLElement>(".gc-dossier .avatar")!
       .style.getPropertyValue("view-transition-name");
+  /** the floating rarity lozenge — CSS-named for a `detail` flight, inline-suppressed for a mid-exit
+   *  reopen (G6.5). Empty string = no inline name, i.e. the CSS one stands. */
+  const badgeName = (): string =>
+    document
+      .querySelector<HTMLElement>(".gc-dossier .art-rar")!
+      .style.getPropertyValue("view-transition-name");
 
   /** A spec-shaped `startViewTransition`: it captures the callback and hands back a handle, and the
    *  caller decides WHEN (and in which order) the pending callbacks run. */
@@ -1061,6 +1140,43 @@ describe("the image morph (M3)", () => {
     expect(dossierName()).toBe("vault");
     expect(cardName(container, 2)).toBe("");
     expect(avatarName()).toBe("");
+  });
+
+  it("a REOPEN mid-exit un-names the OLD sheet's rarity badge — and a swap keeps it (G6.5)", () => {
+    // Codex's G6.4 MED. `dossier-rar` is named by CSS for every `detail` flight, which is right for a
+    // fresh open (no old copy) and for a SWAP (both captures hold the badge at the same rect, so the
+    // mirrored hold in gacha.css keeps it lit). A reopen while the sheet is still EASING OUT is the third
+    // shape: that copy is displaced down the screen with the exiting sheet, and `gacha-rar-out` keeps it
+    // opaque for 73% of the 560 ms — so it would fly across the page ahead of the portrait.
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    vt.run(0);
+    expect(dossierName()).toBe("pegasus");
+
+    // A SWAP (the sheet is genuinely open) leaves the badge alone — the CSS hold is what that shape wants.
+    act(() => {
+      fireEvent.click(cards(container)[1]);
+    });
+    expect(badgeName()).toBe("");
+    vt.run(1);
+    expect(dossierName()).toBe("atlas");
+    expect(badgeName()).toBe("");
+
+    // …now close, and reopen while the sheet is still mounted for its 420 ms exit slide.
+    act(() => {
+      fireEvent.click(document.querySelector<HTMLElement>(".gc-dossier-close")!);
+    });
+    expect(dossier()).not.toBeNull(); // still on screen — that is the whole hazard
+    act(() => {
+      fireEvent.click(cards(container)[0]);
+    });
+    expect(badgeName()).toBe("none"); // suppressed for the OLD capture…
+    vt.run(2);
+    expect(dossierName()).toBe("pegasus");
+    expect(badgeName()).toBe(""); // …and released, so the new capture's badge is the CSS-named one
   });
 
   it("a close in the gap voids the pending open (and so does leaving the tab)", () => {

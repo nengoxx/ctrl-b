@@ -167,6 +167,30 @@ export const gacha: ThemeDef = {
       ],
       default: "neon-purple",
     },
+    // THE NAME FACE (the R17 rider, owner 2026-08-06 — declared second so the two IDENTITY pickers sit
+    // together, right under the accent Palette row the group opens with). It sets the face for the
+    // MACHINE NAME on both surfaces that carry one — the dossier's `h2` and the capsule card's plate —
+    // and deliberately not the banner/promo titles, which are the ROSTER's copy rather than a machine's.
+    //
+    // A PICKER rather than a token default because the owner tried the alternative live and ruled on it:
+    // Bungee "reads too bulky as a default", so it stays on offer and `mincho` — the theme's own Shippori
+    // serif, now UPRIGHT (R17: the italic was a synthetic shear of a face that publishes no italic) —
+    // remains the shipped look. Same mechanism as `dossierPalette` above, end to end: the value lands on
+    // `body[data-gc-namefont]` (GachaRoot) and each option is a tokens.css block declaring the pair
+    // `--gc-name-font` / `--gc-name-weight`; `mincho` is the ABSENCE of one (slip's precedent — it is the
+    // `:scope` base). No `swatch`: these options differ by SHAPE, and a colour chip would say nothing —
+    // the labels are the preview, and the surfaces re-render live.
+    nameFont: {
+      type: "seg",
+      label: "Name face",
+      desc: GACHA_COPY.settingNameFontDesc,
+      options: [
+        { val: "mincho", label: "Mincho" },
+        { val: "bungee", label: "Bungee" },
+        { val: "maru", label: "Zen Maru" },
+      ],
+      default: "mincho",
+    },
     composer: composerLayoutSetting("stacked"),
     // The prototype's composer is a flat, opaque panel with a hairline edge, tight corners and no shadow
     // at all — measured against every existing skin at G3, four of its five defining properties differ

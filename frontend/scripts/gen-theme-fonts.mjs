@@ -37,7 +37,8 @@
 // `--font-body`'s tail BY DESIGN (council L12) — it is not in scope for this subset.
 
 import { spawnSync } from "node:child_process";
-import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -45,6 +46,13 @@ import { gachaGlyphSet } from "../src/themes/gacha/copy.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const outDir = join(__dirname, "..", "src", "themes", "gacha", "fonts");
+// ── ATOMIC OUTPUT (Codex wave-12 #3) ─────────────────────────────────────────────────────────────────
+// Everything is generated into a TEMP SIBLING and swapped in only once every fetch, write and format has
+// succeeded. The old shape emptied the committed directory FIRST and then went to the network, so a failed
+// request, a 4xx, or a prettier that would not start left tracked faces missing or half-updated — a state
+// the guard test can only report after the damage, and one that is easy to commit by accident. A sibling
+// (not /tmp) keeps the swap on the same filesystem, so the final `rename` is atomic.
+const stageDir = `${outDir}.staging`;
 
 // A desktop-Chrome UA is what makes the API answer with woff2 rather than a legacy format.
 const UA =
@@ -52,11 +60,28 @@ const UA =
   "Chrome/120.0.0.0 Safari/537.36";
 const API = "https://fonts.googleapis.com/css2";
 
-// The six faces the theme uses (GACHA_PLAN §1): Zen Kaku Gothic New carries body + the heavy display
-// weights; Shippori Mincho B1 is the serif JP accent face (subtitles, headings, nav sub-labels).
+// A face that says nothing else takes both halves — the frozen JP subset AND the font's full latin.
+const BOTH_SUBSETS = ["jp", "latin"];
+
+// The faces the theme ships (GACHA_PLAN §1): Zen Kaku Gothic New carries body + the heavy display weights;
+// Shippori Mincho B1 is the serif JP accent face (subtitles, headings, nav sub-labels).
+//
+// `subsets` is OPTIONAL and defaults to both (the extend-don't-migrate shape: one face object grows a
+// field rather than the table splitting into two lists). It exists for the DOSSIER NAME face, added
+// 2026-08-06 off R17: that role paints host names and hostnames, which are Latin, and its candidates are
+// Latin-only designs — asking the CSS2 API for a JP `text=` subset of a font with no Japanese returns a
+// file of .notdefs, i.e. dead bytes plus a `unicode-range` that would shadow the real JP faces for those
+// codepoints. Runtime Japanese in a host name falls to the system stack by design (council L12), exactly
+// as it already does for every non-frozen glyph.
 const FACES = [
   { family: "Zen Kaku Gothic New", slug: "zen-kaku-gothic-new", weights: [400, 500, 700, 900] },
   { family: "Shippori Mincho B1", slug: "shippori-mincho-b1", weights: [600, 800] },
+  // The dossier NAME face (`--gc-dossier-name-font`) and its switchable alternate. Bungee is the shipped
+  // pick (owner, 2026-08-06); Zen Maru Gothic 900 is the one-line switch documented beside the token —
+  // declared here so the swap is a token edit, never a regeneration. An unused @font-face costs nothing:
+  // the browser fetches a face only when something paints in it.
+  { family: "Bungee", slug: "bungee", weights: [400], subsets: ["latin"] },
+  { family: "Zen Maru Gothic", slug: "zen-maru-gothic", weights: [900], subsets: ["latin"] },
 ];
 
 /** Fetch a CSS2 response as text, or throw with the status (a silent 4xx would write a broken file). */
@@ -95,16 +120,25 @@ const glyphs = gachaGlyphSet();
 if (glyphs.length === 0) throw new Error("gachaGlyphSet() is empty — nothing to subset");
 const text = glyphs.join("");
 
-// Start from a clean directory so a REMOVED face can't leave an orphan woff2 behind (the manifest
+// Start from a clean STAGING directory so a REMOVED face can't leave an orphan woff2 behind (the manifest
 // would then disagree with what's on disk, and the guard test would be measuring a ghost).
-await rm(outDir, { recursive: true, force: true });
-await mkdir(outDir, { recursive: true });
+await rm(stageDir, { recursive: true, force: true });
+await mkdir(stageDir, { recursive: true });
 
 const files = [];
-for (const { family, slug, weights } of FACES) {
+for (const { family, slug, weights, subsets = BOTH_SUBSETS } of FACES) {
+  // Reject an unknown subset rather than silently treating it as `latin` (Codex wave-12 #3): the branch
+  // below is `subset === "jp" ? … : latin`, so a typo would quietly ship a Latin file labelled something
+  // else — and the manifest would faithfully record the wrong thing.
+  for (const subset of subsets) {
+    if (!BOTH_SUBSETS.includes(subset))
+      throw new Error(
+        `${family}: unknown subset "${subset}" (expected ${BOTH_SUBSETS.join(" | ")})`,
+      );
+  }
   const famParam = family.replace(/ /g, "+");
   for (const weight of weights) {
-    for (const subset of ["jp", "latin"]) {
+    for (const subset of subsets) {
       const params =
         `family=${famParam}:wght@${weight}&display=swap` +
         (subset === "jp" ? `&text=${encodeURIComponent(text)}` : "");
@@ -112,13 +146,17 @@ for (const { family, slug, weights } of FACES) {
       const face = subset === "jp" ? firstFace(css) : latinFace(css);
       const buf = await download(face.url);
       const file = `${slug}-${weight}-${subset}.woff2`;
-      await writeFile(join(outDir, file), buf);
+      await writeFile(join(stageDir, file), buf);
       files.push({
         file,
         family,
         weight,
         subset,
         bytes: buf.length,
+        // The CONTENT, not just its length (Codex wave-12 #4): a wrong-but-same-size woff2 — or a manifest
+        // that faithfully records a bad download — passes every size/topology check. The guard asserts
+        // these against the bytes on disk, so the committed files are pinned to what was generated.
+        sha256: createHash("sha256").update(buf).digest("hex"),
         unicodeRange: face.unicodeRange ?? null,
       });
       console.log(`wrote ${file.padEnd(38)} ${buf.length.toLocaleString().padStart(8)} bytes`);
@@ -149,11 +187,11 @@ const css =
         `}\n`,
     )
     .join("\n");
-await writeFile(join(outDir, "faces.css"), css);
+await writeFile(join(stageDir, "faces.css"), css);
 
 const totalBytes = files.reduce((n, f) => n + f.bytes, 0);
 await writeFile(
-  join(outDir, "manifest.json"),
+  join(stageDir, "manifest.json"),
   JSON.stringify(
     {
       generatedBy: "scripts/gen-theme-fonts.mjs",
@@ -161,7 +199,11 @@ await writeFile(
       glyphSource: "src/themes/gacha/copy.ts#gachaGlyphSet",
       glyphs: text,
       glyphCount: glyphs.length,
-      faces: FACES.map(({ family, weights }) => ({ family, weights })),
+      faces: FACES.map(({ family, weights, subsets = BOTH_SUBSETS }) => ({
+        family,
+        weights,
+        subsets,
+      })),
       files,
       totalBytes,
     },
@@ -174,7 +216,7 @@ await writeFile(
 // so format them here rather than hand-tuning the serializer to prettier's line-breaking rules.
 const fmt = spawnSync(
   join(__dirname, "..", "node_modules", ".bin", "prettier"),
-  ["--write", join(outDir, "faces.css"), join(outDir, "manifest.json")],
+  ["--write", join(stageDir, "faces.css"), join(stageDir, "manifest.json")],
   { stdio: "inherit" },
 );
 if (fmt.status !== 0) {
@@ -182,6 +224,12 @@ if (fmt.status !== 0) {
     "prettier --write failed on the generated files (run `npm install` in frontend/)",
   );
 }
+
+// EVERYTHING SUCCEEDED — swap the staging directory in. `rename` cannot merge onto an existing path, so
+// the old directory goes first; both live on the same filesystem, so this is two metadata operations and
+// the window where neither exists is not a network round-trip wide.
+await rm(outDir, { recursive: true, force: true });
+await rename(stageDir, outDir);
 
 const onDisk = (await readdir(outDir)).length;
 console.log(

@@ -12,11 +12,12 @@ import { FrontierFleet } from "./FrontierFleet";
 // frontier omits `layouts` (offers all presets) and defaults to `3-tab` (registry).
 export function FrontierRoot() {
   const appbarMode = useUISlice((s) => s.appbarMode);
+  const brandMeta = useFrontierBrandMeta();
   return (
     <DefaultRoot
       appbarMode={appbarMode}
       bodies={{ fleet: FrontierFleet, agent: FrontierAgent }}
-      brandMeta={<FrontierBrandMeta />}
+      brandMeta={brandMeta}
       // frontier owns its own full-bleed art (the badlands map cover + the rig stack), so it opts out of
       // the shared kit background: full-app scenery is exclusive by default (the Kit Art System / A5).
       kitBackground={false}
@@ -30,14 +31,17 @@ export function FrontierRoot() {
 // shares the fleet query cache with no new wiring. While the fleet is loading or empty it renders NOTHING —
 // the G6.3 owner ruling retired every decorative subtitle ("dashboard" included); this slot survives only
 // because its filled state is live DATA.
-function FrontierBrandMeta() {
+//
+// A HOOK, not a component (G6.5, Codex's LOW-1). It used to be `<FrontierBrandMeta />` — an element, which
+// is never `null` however the component renders — so the Kit's `brandMeta != null` test saw a filled slot
+// whatever the fleet was doing, and with the subtitle switch on an empty/loading fleet still emitted an
+// empty `<span class="meta">`. Resolving the data HERE makes the slot value itself the answer: a string when
+// there are rigs, `null` when there are none, which is exactly what that conditional was written to read.
+// The cost is a Root render per fleet poll (the query notifies its subscriber wherever it lives); the
+// shell's expensive leaves — the chat bubbles, the markdown — are `memo`'d against precisely that.
+function useFrontierBrandMeta(): string | null {
   const { data: server } = useServerInfo();
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
   if (hosts.length === 0) return null;
-  const on = hosts.filter((h) => h.status?.online).length;
-  return (
-    <>
-      {on}/{hosts.length} rigs · online
-    </>
-  );
+  return `${hosts.filter((h) => h.status?.online).length}/${hosts.length} rigs · online`;
 }

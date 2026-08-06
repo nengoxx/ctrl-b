@@ -107,7 +107,11 @@ function metric(c: HTMLElement, label: string): string | undefined {
   const card = cards.find((m) => m.querySelector("span")?.textContent?.startsWith(label + " "));
   return card?.querySelector("b")?.textContent ?? undefined;
 }
-const stars = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".art-rar i")];
+// `.gc-star`, not `i`: the rarity mark became a drawn SVG primitive at G7 (GachaStar / R16). The `.hi`
+// class still rides the mark itself, so `isHighStar`'s contract is unchanged — only the element is.
+const stars = (c: HTMLElement): SVGElement[] => [
+  ...c.querySelectorAll<SVGElement>(".art-rar .gc-star"),
+];
 
 describe("the dossier's ruled metric grid (§4.8 / Codex R4-10)", () => {
   it("online: real ping, the deferred Uptime dash, the CONFIGURED service count, Seen now", () => {
@@ -168,18 +172,18 @@ describe("the dossier agrees with the capsule card", () => {
   it("draws exactly starsFor(configured, mode) stars, with the top rung highlighted", () => {
     const five = renderD({ mode: "five" });
     expect(stars(five.container)).toHaveLength(starsFor(3, "five")); // 3
-    expect(stars(five.container).filter((s) => s.className === "hi")).toHaveLength(0);
+    expect(stars(five.container).filter((s) => s.classList.contains("hi"))).toHaveLength(0);
     cleanup();
 
     const many = renderD({ host: host({ services: cfg(6) }) });
     expect(stars(many.container)).toHaveLength(5);
     // 5-star mode paints the top TWO rose-gold (§6.2)
-    expect(stars(many.container).filter((s) => s.className === "hi")).toHaveLength(2);
+    expect(stars(many.container).filter((s) => s.classList.contains("hi"))).toHaveLength(2);
     cleanup();
 
     const three = renderD({ mode: "three" });
     expect(stars(three.container)).toHaveLength(starsFor(3, "three")); // 3
-    expect(stars(three.container).filter((s) => s.className === "hi")).toHaveLength(1);
+    expect(stars(three.container).filter((s) => s.classList.contains("hi"))).toHaveLength(1);
   });
 
   it("shows the SAME roster entry the host's card and promo do, focal point included", () => {
@@ -381,8 +385,11 @@ describe("a live service with a URL opens", () => {
     // gated behind a real pointer — a sticky :hover on a phone would leave the last-tapped row lit
     expect(css).toMatch(/@media \(hover: hover\)\s*{\s*a\.gc-svc:hover\s*{[^}]*/);
     expect(css).toMatch(/a\.gc-svc:hover\s*{[^}]*background: var\(--gc-dossier-row-hover\)/);
+    // 5%, not the 10% this shipped with: `color-mix` is premultiplied against an OPAQUE accent, so the
+    // share is also an alpha multiplier on the row's translucent card (G6.5 — the gate now measures the
+    // hovered row, and 5% is the largest share slip's own dim LED survives).
     expect(tokens).toContain(
-      "--gc-dossier-row-hover: color-mix(in srgb, var(--gc-dossier-accent) 10%, var(--gc-dossier-card))",
+      "--gc-dossier-row-hover: color-mix(in srgb, var(--gc-dossier-accent) 5%, var(--gc-dossier-card))",
     );
     // §14.11 — the press is opacity, never a layout/paint property transition
     expect(css).toMatch(/a\.gc-svc\s*{[^}]*transition: opacity 160ms/);
@@ -564,11 +571,15 @@ describe("the dossier's light surface reads from the dossier tokens", () => {
     for (const [token, value] of [
       ["--gc-dossier-shadow", "0 -20px 80px #5c6aff55"],
       ["--gc-dossier-art-shadow", "0 10px 22px #3f426a55"],
-      ["--gc-dossier-badge", "#17172ce6"],
     ]) {
       expect(tokens).toContain(`${token}: ${value}`);
       expect(css).toContain(`var(${token})`);
     }
+    // `--gc-dossier-badge` keeps its value but LOST its gacha.css consumer at G7: the rarity lozenge it
+    // filled is now a hairline tab (`--gc-dossier-rar-bg`). Its live reader is the dark palettes' close
+    // disc, inside tokens.css — so the pin moves there rather than being dropped.
+    expect(tokens).toContain("--gc-dossier-badge: #17172ce6");
+    expect(tokens).toContain("color-mix(in srgb, var(--gc-dossier-badge) 78%, transparent)");
   });
 });
 

@@ -23,9 +23,9 @@ import {
   CLOSE_DOSSIER_LABEL,
   cardShapes,
   counterText,
-  hostsResolved,
   pickRibbonHost,
   pityText,
+  queryResolved,
   rateText,
 } from "./fleet";
 import { artForHost, heroArt, wideArtForHost } from "./roster";
@@ -48,7 +48,18 @@ const SHEET_KEY = "gacha-host-detail";
 const persistSheetSnap = (snap: SheetDetent) => setSheetSnap(SHEET_KEY, snap);
 
 export function GachaFleet({ active }: { active: boolean }) {
-  const { hosts, svcByHost, busy, run, hasData, isLoading, error } = useFleet();
+  const {
+    hosts,
+    svcByHost,
+    busy,
+    run,
+    hasData,
+    isLoading,
+    error,
+    svcHasData,
+    svcLoading,
+    svcError,
+  } = useFleet();
   const starMode = toStarMode(useThemeSetting<string>("gacha", "starMode"));
   // The roster the theme resolves against (§5.2's read path): the owner's media folders when they hold
   // anything, the bundled set otherwise. One query, shared with the Root/reel/Agent by its key.
@@ -63,13 +74,22 @@ export function GachaFleet({ active }: { active: boolean }) {
   const onlineCount = hosts.filter((h) => h.status?.online).length;
   // The pity pill's input (owner 2026-08-06): ONLINE SERVICES fleet-wide, the service-level twin of the
   // host count above — same live map the dossier rows read, so the two can never disagree.
-  const onlineServices = [...svcByHost.values()].reduce(
-    (n, svcs) => n + svcs.filter((s) => s.status?.online).length,
+  //
+  // Summed THROUGH THE CURRENT HOSTS, not over the whole map (Codex G6.4 MED-2): the two queries poll
+  // independently, so between a machine leaving the fleet and the next services answer its rows are still
+  // in the cache — and a fleet-wide count that walked every map value would keep counting services on a
+  // host the track no longer shows.
+  const onlineServices = hosts.reduce(
+    (n, h) => n + (svcByHost.get(h.id) ?? []).filter((s) => s.status?.online).length,
     0,
   );
   // §6.3's loading semantics, shared by the rate pill and (G1's track) the counter: an unresolved fleet
   // reads as a held value, never as a confident "0".
-  const resolved = hostsResolved(isLoading, error, hasData);
+  const resolved = queryResolved(isLoading, error, hasData);
+  // …and the pity pill needs BOTH pollers to have answered (Codex G6.4 MED-2). Its number is a sum over
+  // hosts × their services, so either query still in flight makes a printed `0` a claim the app cannot
+  // back — and the hosts one typically lands first, which is exactly when the pill was asserting it.
+  const svcResolved = resolved && queryResolved(svcLoading, svcError, svcHasData);
 
   // The card geometry (the main seat's Q8.10 ruling): host[0] featured, the rest in 3/4 pairs, a trailing
   // odd host wide. A pure function of the COUNT, so a poll can never re-shuffle the track's shape.
@@ -110,6 +130,13 @@ export function GachaFleet({ active }: { active: boolean }) {
   // needs the dossier mounted AT REST inside the update callback (see BottomSheet's prop doc); every other
   // open keeps the primitive's slide-up.
   const [morphOpen, setMorphOpen] = useState(false);
+  // Whether the sheet is OPEN, as a ref — for `openHostDossier`, which runs from a click handler and has
+  // to tell an open dossier apart from one that is merely still on screen easing out (the two need
+  // different `dossier-rar` naming; see the lingering-badge note in that callback). It is a ref and not
+  // the `sheetOpen` value because putting that in the callback's deps would hand every capsule card and
+  // promo slide a fresh handler identity on every open and close, for one boolean read; the layout effect
+  // that stamps `body[data-sheet]` writes it, so it is current before any click can land.
+  const sheetOpenRef = useRef(false);
   // The reel owns the screen while it sweeps (§6.4/F3): the banner already refuses input, and the capsule
   // track must too — a dossier opening behind five full-width slats is a tap the user never sees land.
   const reeling = useGachaReelRunning();
@@ -139,13 +166,18 @@ export function GachaFleet({ active }: { active: boolean }) {
   // and unguarded it would strip the styles a NEWER intent just re-applied to the very same nodes (taps
   // can reuse both the avatar and the card). So: every new intent cleans the pending prep synchronously
   // and takes ownership; a callback restores only while it still holds it.
-  const prep = useRef<{ card: HTMLImageElement; avatar: HTMLElement | null } | null>(null);
+  const prep = useRef<{
+    card: HTMLImageElement;
+    avatar: HTMLElement | null;
+    badge: HTMLElement | null;
+  } | null>(null);
   const cleanMorphPrep = useCallback(() => {
     const p = prep.current;
     if (!p) return;
     prep.current = null;
     p.card.style.removeProperty("view-transition-name");
     p.avatar?.style.removeProperty("view-transition-name");
+    p.badge?.style.removeProperty("view-transition-name");
     // …and end the superseded transition outright: a PLAIN open starts no transition of its own, so
     // without this the old one would capture the plainly-opened dossier as its morph destination.
     // SCOPED to the kind this body starts here (G4 S1): the prep it is cleaning belongs to a `detail`
@@ -226,8 +258,22 @@ export function GachaFleet({ active }: { active: boolean }) {
       }
       const avatar = document.querySelector<HTMLElement>(".gc-dossier .avatar");
       avatar?.style.setProperty("view-transition-name", "none");
+      // THE LINGERING BADGE (Codex G6.4 review, MED). The rarity lozenge is named by CSS for every
+      // `detail` flight (gacha.css), which is right for the two shapes that block was written for: a
+      // fresh open (no old copy) and a SWAP (both captures hold it at the SAME rect, so mirroring the
+      // hold keeps it lit). A REOPEN DURING THE EXIT is a third shape: the closing sheet stays mounted
+      // for its 420 ms slide, so its badge is still in the old capture — but DISPLACED down the screen
+      // with the sheet, and `gacha-rar-out` keeps it opaque for 73% of 560 ms. The group would fly that
+      // stale badge across the page toward the new one, ahead of the portrait it belongs to.
+      // So the old copy is un-named for exactly that case, on the same ownership terms as the avatar
+      // above: `sheetOpen` false + a dossier still in the DOM IS the lingering-exit state (a swap has it
+      // true and keeps the mirrored hold it was designed for).
+      const badge = sheetOpenRef.current
+        ? null
+        : document.querySelector<HTMLElement>(".gc-dossier .art-rar");
+      badge?.style.setProperty("view-transition-name", "none");
       morphImg.style.setProperty("view-transition-name", "capsule-shell");
-      const myPrep = { card: morphImg, avatar };
+      const myPrep = { card: morphImg, avatar, badge };
       prep.current = myPrep;
       runViewTransition(() => {
         // Restore ONLY while still the owner — a newer intent may have cleaned and RE-STAMPED these
@@ -237,6 +283,9 @@ export function GachaFleet({ active }: { active: boolean }) {
           prep.current = null;
           morphImg.style.removeProperty("view-transition-name");
           avatar?.style.removeProperty("view-transition-name");
+          // …and the badge gets its CSS name back for the NEW capture, where it is the destination the
+          // held-back `gacha-rar-in` fades up (React re-uses this node for the incoming dossier).
+          badge?.style.removeProperty("view-transition-name");
         }
         if (gen.current !== mine) return; // a newer intent (or a close / tab change) owns the dossier now
         setMorphOpen(true);
@@ -300,6 +349,9 @@ export function GachaFleet({ active }: { active: boolean }) {
   // capture can land before passive effects run — a passive stamp/collapse would let the snapshot catch
   // the composer (or the plan sheet) still un-yielded and ghost it through the root cross-fade.
   useLayoutEffect(() => {
+    // …the same fact into the ref the openers read (see its declaration): written HERE so it lands in the
+    // same commit as the stamp and can never disagree with it.
+    sheetOpenRef.current = sheetOpen;
     if (typeof document === "undefined") return;
     if (sheetOpen) document.body.dataset.sheet = "open";
     else delete document.body.dataset.sheet;
@@ -480,7 +532,7 @@ export function GachaFleet({ active }: { active: boolean }) {
         slides={slides}
         active={active}
         rate={rateText(MAX_STARS[starMode], onlineCount, resolved)}
-        pity={pityText(onlineServices, resolved)}
+        pity={pityText(onlineServices, svcResolved)}
         onOpenHost={openHostDossier}
       />
 

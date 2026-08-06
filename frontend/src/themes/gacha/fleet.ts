@@ -50,16 +50,21 @@ export function pickRibbonHost(
   return hostIds[i];
 }
 
-/** Has the fleet query produced an answer yet? The §6.3 rule the pill and the counter share: while the first
- *  poll is in flight, "0 online" is a LIE, not a state — so it renders held until something real arrives.
- *  Cached data from a previous success counts as resolved even while a background refetch is erroring
- *  (TanStack keeps the data; the surface must not collapse — Codex R4-4). A hard failure with no data ever is
+/** Has a poll produced an answer yet? The §6.3 rule the pills and the counter share: while the first poll is
+ *  in flight, "0 online" is a LIE, not a state — so it renders held until something real arrives. Cached
+ *  data from a previous success counts as resolved even while a background refetch is erroring (TanStack
+ *  keeps the data; the surface must not collapse — Codex R4-4). A hard failure with no data ever is
  *  unresolved, which is also the hero-only case.
  *
- *  `hasData` is the QUERY's own fact (`useFleet.hasData`), not a host count: a fleet that legitimately
- *  answered with zero machines and then hit a background refetch error has answered, and counting hosts
- *  would call that unresolved and blank a pill that was reading a true 0.0% a second earlier. */
-export function hostsResolved(isLoading: boolean, error: unknown, hasData: boolean): boolean {
+ *  `hasData` is the QUERY's own fact (`useFleet.hasData` / `.svcHasData`), not an item count: a fleet that
+ *  legitimately answered with zero machines and then hit a background refetch error has answered, and
+ *  counting hosts would call that unresolved and blank a pill that was reading a true 0.0% a second earlier.
+ *
+ *  QUERY-SHAPED, not host-shaped (renamed from `hostsResolved` at G6.5, Codex's MED-2): it takes exactly a
+ *  TanStack query's three lifecycle facts, and gacha now asks it about two independent pollers — the fleet
+ *  for the rate pill and the counter, the SERVICES for the pity pill. One rule, so the two pills cannot
+ *  disagree about what "not answered yet" looks like. */
+export function queryResolved(isLoading: boolean, error: unknown, hasData: boolean): boolean {
   return hasData || (!isLoading && !error);
 }
 
@@ -79,7 +84,9 @@ export function rateText(maxStars: number, onlineCount: number, resolved: boolea
 
 /** The pity pill — 天井 + the live count of ONLINE SERVICES fleet-wide (owner 2026-08-06: the prototype's
  *  frozen `天井 200` flavour "should make some sense" — its partner pill already counts online machines, so
- *  this one counts online services). Same held convention as the two above. */
+ *  this one counts online services). Same held convention as the two above, but `resolved` must answer for
+ *  BOTH pollers here (G6.5): the services query is independent of the fleet's, so a hosts-only readiness
+ *  test published a confident `天井 0` for as long as the services request was still in flight. */
 export function pityText(onlineServices: number, resolved: boolean): string {
   return `${GACHA_COPY.pityLabel} ${resolved ? onlineServices : PENDING}`;
 }

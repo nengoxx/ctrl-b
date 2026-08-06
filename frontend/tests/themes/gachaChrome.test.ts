@@ -34,6 +34,10 @@ import { gacha } from "../../src/themes/gacha";
 
 const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8");
 const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
+/** The KIT sheet — read only to pin the arcade-drop signature gacha mirrors (see that describe). */
+const kit = readFileSync(resolve(process.cwd(), "src/theme-engine/kit/kit.css"), "utf8");
+/** The e2e contrast gate — read to prove a modelled token is actually MEASURED, not just declared. */
+const contrast = readFileSync(resolve(process.cwd(), "e2e/contrast.spec.ts"), "utf8");
 
 /** Strip comments so a rule NAMED in prose can't satisfy a check for the rule itself. */
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -250,6 +254,13 @@ function blockFor(css: string, selector: string): string | null {
   }
   return null;
 }
+/** The declaration block of the first RULE whose selector list contains `selector` (comments stripped). */
+function ruleBlock(source: string, selector: string): string {
+  const at = source.indexOf(selector);
+  if (at < 0) throw new Error(`no rule for ${selector}`);
+  return /\{([^{}]*)\}/.exec(source.slice(at))![1];
+}
+
 const declared = (block: string): string[] =>
   [...block.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((m) => m[1]);
 
@@ -527,5 +538,330 @@ describe("gacha G6 — the wordmark (§4.3 re-ruling)", () => {
     }
     expect(glyphs.has("紙")).toBe(true);
     expect(GACHA_COPY.settingWallpaperDesc).toContain("紙");
+  });
+});
+
+describe("gacha — the NAME-FACE axis (`nameFont`, the R17 rider)", () => {
+  const field = gacha.settings?.nameFont;
+  const options = field?.type === "seg" ? field.options : [];
+
+  it("is a seg of three, defaulting to the theme's own serif", () => {
+    expect(field?.type).toBe("seg");
+    expect(options.map((o) => o.val)).toEqual(["mincho", "bungee", "maru"]);
+    expect(options.map((o) => o.label)).toEqual(["Mincho", "Bungee", "Zen Maru"]);
+    // `mincho` and not `bungee`: the owner saw Bungee live and ruled it too bulky as a DEFAULT — it stays
+    // on offer, which is the whole reason this is a picker rather than a token edit.
+    expect(field?.type === "seg" && field.default).toBe("mincho");
+    // No swatches: these options differ by SHAPE, so a colour chip would preview nothing (the dossier
+    // picker's `swatch` slot is deliberately unused here).
+    expect(options.every((o) => o.swatch === undefined)).toBe(true);
+  });
+
+  it("`mincho` has NO tokens.css block — it is the `:scope` base, the `slip` idiom one axis over", () => {
+    expect(blockFor(tokens, 'body[data-gc-namefont="mincho"]')).toBeNull();
+    const base = blockFor(tokens, ":scope")!;
+    expect(base).toContain("--gc-name-font: var(--font-display)");
+    expect(base).toContain("--gc-name-weight: 900");
+  });
+
+  it("each ALTERNATE declares exactly the pair, and nothing else", () => {
+    for (const id of ["bungee", "maru"]) {
+      const block = blockFor(tokens, `body[data-gc-namefont="${id}"]`);
+      expect(block, `no body[data-gc-namefont="${id}"] block`).toBeTruthy();
+      // Exactly the two role tokens: a palette or a size leaking in here would make the FACE picker move
+      // something a face has no business moving.
+      expect(declared(block!).sort()).toEqual(["--gc-name-font", "--gc-name-weight"]);
+      // …and `--font-display` stays the TAIL of every stack, which is what makes a runtime JAPANESE
+      // machine name fall through to the system JP serif (the §10.4 degradation contract) — both
+      // alternates are latin-only subsets.
+      expect(block).toContain("var(--font-display)");
+    }
+  });
+
+  it("names only faces the committed manifest actually ships", () => {
+    // A typo'd family is silent: the stack simply falls through to `--font-display` and the picker looks
+    // like it does nothing. The manifest is the list of faces that exist.
+    const manifest = JSON.parse(
+      readFileSync(resolve(process.cwd(), "src/themes/gacha/fonts/manifest.json"), "utf8"),
+    ) as { faces: { family: string; weights: number[] }[] };
+    const shipped = new Map(manifest.faces.map((f) => [f.family, f.weights]));
+    for (const [id, family, weight] of [
+      ["bungee", "Bungee", 400],
+      ["maru", "Zen Maru Gothic", 900],
+    ] as const) {
+      const block = blockFor(tokens, `body[data-gc-namefont="${id}"]`)!;
+      expect(block, `${id} must name ${family}`).toContain(`"${family}"`);
+      expect(shipped.get(family), `${family} is not in the committed manifest`).toContain(weight);
+      expect(block).toContain(`--gc-name-weight: ${weight}`);
+    }
+  });
+
+  it("BOTH machine-name surfaces read the pair — dossier `h2` and the capsule plate", () => {
+    // One name, one face, two surfaces (the owner's widened scope). The banner/promo titles are roster
+    // copy and deliberately do NOT read it.
+    const dossier = ruleBlock(rules, ".gc-dossier-title h2");
+    const plate = ruleBlock(rules, ".gc-card .plate b");
+    for (const [what, block] of [
+      ["the dossier name", dossier],
+      ["the card plate", plate],
+    ] as const) {
+      expect(block, `${what} must read --gc-name-font`).toContain(
+        "font-family: var(--gc-name-font)",
+      );
+      expect(block, `${what} must read --gc-name-weight`).toContain(
+        "font-weight: var(--gc-name-weight)",
+      );
+    }
+    // The dossier's synthetic ITALIC is retired (R17's headline: no shipped face publishes one). The
+    // card's is the PROTOTYPE's own and survives — pinned so neither drifts into the other by accident.
+    expect(dossier).toContain("font-style: normal");
+    expect(plate).toContain("font-style: italic");
+  });
+});
+
+describe("gacha G7 — the DRAWN rarity star (R16)", () => {
+  /** `--gc-star-*: 7px` → 7. */
+  const px = (token: string): number =>
+    Number(new RegExp(`${token}:\\s*([\\d.]+)px`).exec(tokens)![1]);
+
+  it("keeps the ★ GLYPH for the rate pill and drops it from the two rows", () => {
+    // R16 redesigned the ROWS, not the copy: `★N RATE` is a string (fleet.ts) and still rides the frozen
+    // JP subset. What must not survive is the rows' glyph typography — a `font-size`/`letter-spacing` pair
+    // on `.rar` would mean someone put the glyph back beside the drawn mark.
+    expect(GACHA_COPY.star).toBe("★");
+    const card = ruleBlock(rules, ".gc-card .rar {");
+    expect(card).not.toContain("font-size");
+    expect(card).not.toContain("letter-spacing");
+    // …and the glow went with it: legibility is the star's own contour now (R16 §2), and a per-star
+    // drop-shadow on a scrolling track is the §14.11 repaint class this theme avoids.
+    for (const dead of ["--gc-star-glow", "--gc-star-shadow"]) {
+      expect(tokens, `${dead} has no consumer left`).not.toContain(dead);
+      expect(rules).not.toContain(dead);
+    }
+  });
+
+  it("splits the treatment per SURFACE from one primitive — clean tab, edged card", () => {
+    const star = ruleBlock(rules, ".gc-star {");
+    // THE DEFAULT is the clean mark (and IS the dossier tab's treatment, so that surface needs no rule):
+    // both paints from `currentColor`, so the stroke is SHAPE — it fattens and rounds the silhouette — and
+    // the existing `--gc-star`/`-hi`/`-dim` tinting still drives it through the row's `color`. The
+    // candidate sheet's contrasting dark contour is retired: the owner read it as an outline.
+    expect(star).toContain("fill: currentColor");
+    expect(star).toContain("stroke: currentColor");
+    expect(star).toContain("paint-order: stroke fill"); // only the stroke's OUTER half ever shows
+    expect(tokens, "the dark-contour token has no consumer left").not.toContain(
+      "--gc-star-contour",
+    );
+    // …the drop is OFF by default, so a new surface inherits the plain mark…
+    expect(ruleBlock(rules, ".gc-star .drop {")).toContain("display: none");
+    // …and the CARD — the row that sits on artwork — turns it on and re-colours its edge to the accent.
+    expect(ruleBlock(rules, ".gc-card .rar .gc-star {")).toContain("stroke: var(--gc-star-edge)");
+    const cardDrop = ruleBlock(rules, ".gc-card .rar .gc-star .drop {");
+    expect(cardDrop).toContain("fill: var(--gc-lift-color)"); // the SAME token the cards + portrait use
+    expect(cardDrop).toContain("transform: translate(var(--gc-star-drop), var(--gc-star-drop))");
+    // Neither is `currentColor` — that is what keeps `.hi` re-tinting the STAR alone.
+    expect(cardDrop).not.toContain("currentColor");
+    expect(ruleBlock(rules, ".gc-card .rar .gc-star {")).not.toContain("currentColor");
+    // The DOSSIER tab takes neither: no drop rule, no stroke override — owner, "they look better without".
+    expect(rules).not.toContain(".gc-dossier .art-rar .gc-star");
+    // Both accent paints come from the SAME source and both live on `body` (the §14.6 freeze): the drop
+    // takes it flat, the edge keeps a sliver of translucency because it is a 0.47px stroke half sitting ON
+    // the gold rather than a shadow behind it.
+    expect(tokens).toContain("--gc-lift-color: var(--accent)");
+    expect(tokens).toMatch(/--gc-star-edge: color-mix\(in oklch, var\(--accent\) \d+%/);
+    // USER units for both the stroke and the offset (the viewBox is 96.5 wide), so they scale with the row.
+    expect(tokens).toMatch(/--gc-star-stroke:\s*\d+px/);
+    expect(tokens).toMatch(/--gc-star-drop:\s*\d+px/);
+    expect(star).toContain("stroke-width: var(--gc-star-stroke)");
+    // …and still no filter anywhere: the drop is a polygon, not an offscreen rasterization per star.
+    expect(star).not.toContain("filter");
+    expect(cardDrop).not.toContain("filter");
+  });
+
+  it("un-inverts the two rows: the DOSSIER star is bigger than the card's, and both pack at ~1.3", () => {
+    // R16's finding, and the reason this slice exists: what shipped was pitch÷ink 1.23 on the card and
+    // 1.37 on the dossier — LOOSER at the smaller size, which no measured reference does. The field packs
+    // small rows tight and lets big ones breathe at ~1.3 (Arknights 1.32 · Epic Seven 1.31 · Genshin
+    // detail 1.33). The primitive's viewBox is cropped to the star's stroked extent, so `-size` IS ink and
+    // this arithmetic is the real rendered ratio.
+    const [size, gap, sizeLg, gapLg] = [
+      px("--gc-star-size"),
+      px("--gc-star-gap"),
+      px("--gc-star-size-lg"),
+      px("--gc-star-gap-lg"),
+    ];
+    expect(sizeLg).toBeGreaterThan(size); // the inversion, gone
+    for (const [what, s, g] of [
+      ["card", size, gap],
+      ["dossier", sizeLg, gapLg],
+    ] as const) {
+      const ratio = (s + g) / s;
+      expect(ratio, `${what} pitch÷ink`).toBeGreaterThan(1.25);
+      expect(ratio, `${what} pitch÷ink`).toBeLessThan(1.35);
+    }
+  });
+
+  it("gives the dossier a HAIRLINE tab straddling the portrait's edge — no filled plaque", () => {
+    // anchored on the line start: a bare `.gc-dossier .art-rar` also matches the VT-naming rule above it.
+    const tab = ruleBlock(rules, "\n    .gc-dossier .art-rar {");
+    // R16 §2: nobody in the field puts a filled plaque behind rarity stars. The lozenge's fill is gone…
+    expect(tab).not.toContain("--gc-dossier-badge");
+    // …replaced by a 1px rim + a translucent, palette-derived fill the contrast gate can see.
+    expect(tab).toContain("border: 1px solid var(--gc-dossier-line)");
+    expect(tab).toContain("background: var(--gc-dossier-rar-bg)");
+    // …and it STRADDLES the frame's trailing edge rather than pinning a fixed right offset: the tab's
+    // width tracks the star count (★1 31.5px → ★5 91.5px at 393px), so a fixed offset makes a ★2 tab miss
+    // the portrait entirely. Measured on device-width renders before the change.
+    expect(tab).toContain("left: 100%");
+    expect(tab).toContain("translate: -50% 0");
+    // The element identity is load-bearing elsewhere: the `dossier-rar` view-transition-name is declared
+    // on this selector, and GachaFleet's lingering-badge suppression queries it.
+    expect(rules).toContain('[data-transition="detail"] .gc-dossier .art-rar');
+  });
+});
+
+describe("gacha — the ARCADE DROP on the two art surfaces (owner ask 2026-08-06)", () => {
+  it("borrows kit.css's signature through gacha's OWN token pair", () => {
+    // `--arcade-lift` is declared ON `.kit-composer` by the arcade composer skin, so it resolves nowhere
+    // else — and the skin is a picker value, so a card must not lose its drop when the owner picks a
+    // different composer. Same 3px, same 60% accent mix, independent lifetime.
+    // the DISTANCES are owner-tuned per surface and move; what is pinned is that gacha owns a PAIR and
+    // that the portrait's is the heavier one (its device round: 3px read "a little too slim" there).
+    expect(tokens).toMatch(/--gc-lift:\s*(\d+)px/);
+    expect(tokens).toMatch(/--gc-lift-lg:\s*(\d+)px/);
+    const [lift, liftLg] = [/--gc-lift:\s*(\d+)px/, /--gc-lift-lg:\s*(\d+)px/].map((re) =>
+      Number(re.exec(tokens)![1]),
+    );
+    expect(liftLg).toBeGreaterThan(lift);
+    // THE COLOUR is the theme's FLAT ACCENT, solid (owner 2026-08-06: "the actual same colour for all of
+    // those things"). It shipped for a day as the kit's own 60%-transparent mix, which reads as a washed
+    // accent rather than the accent. Bound to the existing derivation — never a parallel literal — so all
+    // eight variants re-tint it, and measured to land ON the active tab indicator's hard shadow: exactly
+    // equal on ember/glacier/nebula/eridu/jade, and 3/255 of blue apart on the arcade trio, whose
+    // `--gc-ind-shadow` is a deliberate near-trio value the palette note says not to unify.
+    expect(tokens).toContain("--gc-lift-color: var(--accent)");
+    expect(tokens, "the drop must not be a washed mix again").not.toMatch(
+      /--gc-lift-color:\s*color-mix/,
+    );
+    expect(kit, "the kit block this mirrors must still be the 3px/60% signature").toContain(
+      "--arcade-lift: 3px",
+    );
+    expect(kit).toContain(
+      "var(--arcade-lift) var(--arcade-lift) 0 color-mix(in oklch, var(--accent) 60%, transparent)",
+    );
+  });
+
+  it("declares the COLOUR on `body`, never `:scope` (the §14.6 substitution trap)", () => {
+    // Caught by measurement, not review: a custom property substitutes its `var()` where it is DECLARED
+    // and is inherited already-substituted, so on `html` this took the KIT's base `--accent` and the cards'
+    // drop rendered TEAL under every gacha accent. The DISTANCE is a constant and may stay on `:scope`.
+    const base = blockFor(tokens, ":scope")!;
+    // the `body`-scoped formula block (tokens.css declares `:scope, body` then a `body`-only block)
+    const body = tokens.slice(tokens.indexOf("\n    body {"));
+    expect(base).toMatch(/--gc-lift:\s*\d+px/);
+    expect(base).not.toContain("--gc-lift-color");
+    expect(body).toContain("--gc-lift-color");
+  });
+
+  it("paints the CARD's drop from the button's pseudo, wearing the face's own mask", () => {
+    // The face is masked AND `overflow: hidden`, and a mask is applied after filters — pixel-probed:
+    // `box-shadow` and `filter: drop-shadow()` on a masked element both paint NOTHING in the offset band.
+    // The drop therefore lives on a box outside it — the BUTTON's own pseudo (Codex wave-12 #5 put the
+    // button on the outside so the visible drop is tappable) — wearing the SAME mask, so the 315° notch is
+    // cut in the shadow too.
+    const drop = ruleBlock(rules, ".gc-card::before {");
+    expect(drop).toContain("background: var(--gc-lift-color)");
+    expect(drop).toContain("mask: var(--gc-card-mask)"); // the capsule silhouette, not a rectangle
+    expect(drop).toContain("inset: var(--gc-lift) 0 0 var(--gc-lift)"); // the face's box, moved by the lift
+    // …and the FIT ruling: the button keeps the footprint the track always gave a card, the FACE is inset
+    // inside it, so the grid can never clip the shadow and the track's rhythm is unchanged.
+    // …and the BUTTON is the box that owns the footprint, with the masked FACE inset inside it.
+    const card = ruleBlock(rules, "\n    .gc-card {");
+    expect(card).toContain("aspect-ratio: 3/4");
+    expect(card).not.toContain("mask"); // unmasked, which is the only reason its ::before survives
+    const face = ruleBlock(rules, ".gc-card-face {");
+    expect(face).toContain("inset: 0 var(--gc-lift) var(--gc-lift) 0");
+    expect(face).toContain("mask: var(--gc-card-mask)");
+  });
+
+  it("…and the DOSSIER portrait takes a plain box-shadow, because nothing masks it", () => {
+    // anchored on the line start: `.gc-dossier .avatar` also opens the VT-naming rule above it.
+    const av = ruleBlock(rules, "\n    .gc-dossier .avatar {");
+    // …at the LARGER lift: the owner's device round read the cards' 3px as "a little too slim" on a
+    // 104x138 picture. Two tokens, one family — never a literal on the rule.
+    expect(av).toContain("var(--gc-lift-lg) var(--gc-lift-lg) 0 var(--gc-lift-color)");
+    expect(tokens).toMatch(/--gc-lift:\s*\d+px/);
+    expect(tokens).toMatch(/--gc-lift-lg:\s*\d+px/);
+    // the soft contact shadow survives UNDER it — one crisp offset over one broad haze
+    expect(av).toContain("var(--gc-dossier-art-shadow)");
+  });
+});
+
+describe("gacha M7 — the oracle's BOTTOM DISSOLVE, split in two (owner reports 2026-08-06)", () => {
+  it("dissolves the COMB always, and the ART only once it starts ghosting", () => {
+    // ① the scanline's own mask runs for the whole of fade mode — the owner likes the softened comb at
+    // rest too. On the scan LAYER, because a mask is applied to an element's own rendering BEFORE it is
+    // blended into its parent: the comb's alpha ramps down first and `mix-blend-mode: screen` then
+    // contributes nothing at the bottom.
+    expect(ruleBlock(rules, 'body[data-oracle="fade"] .gc-oracle-scan {')).toContain(
+      "mask-image: var(--gc-oracle-edge-mask)",
+    );
+    // ② the BLOCK's mask is gated on the driver's boolean stamp, so at rest the art keeps the designed
+    // crisp bottom edge and only the ghosting state dissolves it.
+    const gated = ruleBlock(rules, 'body[data-oracle="fade"] .gc-oracle[data-gc-ghosting] {');
+    expect(gated).toContain("mask-image: var(--gc-oracle-edge-mask)");
+    expect(gated).toContain("-webkit-mask-image: var(--gc-oracle-edge-mask)");
+    // …and the UNGATED fade rule must NOT carry one, or the gate would be decorative.
+    expect(ruleBlock(rules, 'body[data-oracle="fade"] .gc-oracle {')).not.toContain("mask-image");
+    // MODE-SCOPED: outside fade mode the block is a header you scroll past — nothing to dissolve into.
+    expect(ruleBlock(rules, "\n    .gc-oracle {")).not.toContain("mask");
+  });
+
+  it("keys on a BOOLEAN, never on the ramp — the per-frame re-raster M7 exists to avoid", () => {
+    // A mask whose GEOMETRY tracked `--gc-oracle-p` would re-rasterize a gradient every scroll frame; the
+    // stamp flips at most twice per gesture and the driver writes it only on a flip.
+    const mask = /--gc-oracle-edge-mask:([\s\S]*?);/.exec(tokens)![1];
+    expect(mask).not.toContain("--gc-oracle-p");
+    expect(mask).toContain("var(--gc-oracle-edge-fade)"); // the band is the tunable, and it is one token
+    expect(tokens).toMatch(/--gc-oracle-edge-fade:\s*\d+px/);
+  });
+});
+
+describe("gacha — the capsule plate's CLIPPED NAME (C6, owner's pick 2026-08-06)", () => {
+  it("paints the accent fill through the glyphs, at the theme's calm-window spread", () => {
+    const b = ruleBlock(rules, ".gc-card .plate b {");
+    expect(b).toContain("background-image: var(--accent-fill)");
+    // `--gc-fill-spread` is this theme's own convention for a small element: a gradient fills its box, so a
+    // four-letter name would run the whole pink→violet sweep. 240% shows the ramp's calm MIDDLE instead —
+    // the same treatment the seg chips and the composer's mic/send pair take.
+    expect(b).toContain("background-size: var(--gc-fill-spread) 100%");
+    expect(b).toContain("background-position: 50% 0");
+    expect(b).toContain("-webkit-background-clip: text");
+    expect(b).toContain("background-clip: text");
+    expect(b).toContain("color: transparent");
+  });
+
+  it("ships SHADOWLESS, explicitly — a clipped fill and a text-shadow are mutually exclusive", () => {
+    // VERIFIED on both engines by the candidate sheet (§4.3): `text-shadow` paints ON TOP of a
+    // `background-clip: text` fill, so the plate's halo would flood the letterforms it should sit behind.
+    // The kit has the same gotcha from the other direction — an INHERITED text-shadow paints inside
+    // gradient-clipped glyphs, which is why the clear-appbar wordmark nulls the kit's halo — so the rule
+    // states `none` rather than trusting that nothing upstream sets one.
+    const b = ruleBlock(rules, ".gc-card .plate b {");
+    expect(b).toContain("text-shadow: none");
+    expect(b).not.toContain("var(--gc-plate-shadow)");
+  });
+
+  it("gates the VISIBLE slice of the ramp, derived from the same brand stops", () => {
+    // Gating against `--accent-fill` would measure two colours the glyphs can never show (the spread hides
+    // both ends) — the "modelled a paint the screen does not make" class, one axis over: here it is the INK.
+    expect(tokens).toContain("--gc-name-fill-window");
+    const win = /--gc-name-fill-window:([\s\S]*?);/.exec(tokens)![1];
+    // derived from the SAME two brand tokens the ramp is built from, so every accent re-derives it
+    expect(win).toContain("var(--gc-brand-1)");
+    expect(win).toContain("var(--gc-brand-2)");
+    expect(win, "the window must not be a literal").not.toMatch(/#[0-9a-f]{3,8}/i);
+    // …and the gate must actually read it (a token nothing measures is decoration)
+    expect(contrast).toContain('fg: "--gc-name-fill-window"');
   });
 });

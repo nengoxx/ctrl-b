@@ -126,6 +126,13 @@ export const GACHA_COPY = {
    *  ships bilingual like its siblings at zero font cost — and it is the right word anyway: the dossier is
    *  an arcade prize SLIP. */
   settingDossierDesc: "the unit dossier's own surface · 紙",
+  /** 名 (na/mei) — "name"; the face the machine NAME is set in (the R17 rider's picker, 2026-08-06). The
+   *  ONE glyph in this module that did not already ride the frozen subset — every other candidate word
+   *  (書体 · 文字 · 名前) needed two or more, and none of their kanji were present either. Adding it is the
+   *  documented workflow, not a workaround: edit here → `npm run fonts:gacha` → commit. It re-subsets the
+   *  six JP files (+~200 B total) and leaves all eight LATIN files byte-identical, which is the property
+   *  worth checking after any re-run. */
+  settingNameFontDesc: "the display face for machine names · 名",
 } as const;
 
 export type GachaCopyKey = keyof typeof GACHA_COPY;

@@ -1502,8 +1502,11 @@ target="_blank" rel="noopener">`; **everything else — offline, or up with no U
 `role="group"` div** with its `"<name> online|offline"` label, so there is never a dead link to
 tap. The row BODY (LED · `ServiceIcon` · name · port) is one JSX fragment shared by both arms, so
 the two can't drift. The anchor takes no `aria-label`: its link text is the name + port, the
-sibling pattern. Affordance = tokens only — `--gc-dossier-row-hover` (a 10% accent mix into the
-row's own card, derived on `body` so it re-tints per palette) behind `@media (hover: hover)` so a
+sibling pattern. Affordance = tokens only — `--gc-dossier-row-hover` (an accent mix into the
+row's own card, derived on `body` so it re-tints per palette; it shipped this round at **10%** and
+the G6.5 addendum below cuts it to **5%** — a premultiplied mix against an opaque accent multiplies
+the card's alpha as well as tinting it, which the ungated original did not account for) behind
+`@media (hover: hover)` so a
 phone can't leave the last-tapped row lit, plus an `opacity: .82` press (the darks' own flat press;
 a row has no offset shadow to sink into). The focus ring is already the sheet's
 (`.bs-sheet:has(.gc-dossier) :focus-visible`).
@@ -1623,6 +1626,651 @@ overlap live twice and asked for MORE visibility both times, so the trade is the
 rather than silently taken; nothing else in the slice depends on the value, and no geometry satisfies
 all three of their positioning rulings AND the floor (the arithmetic wants an effective art alpha
 ≤ 0.05 under the role line, half the bottom of their original bracket).
+
+---
+
+**G6.5 ADDENDUM — THE CONTRAST RE-NORMALISATION (2026-08-06).** Codex's review of the G6.4 wave
+returned **DO NOT SHIP** on one thing only: the gate itself. `Pair.over`'s sRGB source-over maths is
+right, but the STACK it modelled was incomplete, so the G6.4 table above is measured against
+backdrops the screen does not paint. Three holes, all on the dark palettes (slip's card is opaque
+and its texture/watermark are `none`, so every stack below is a no-op there):
+
+1. **the dot TEXTURE was missing under the translucent cards.** `.bs-sheet::after` paints the dot
+   field ABOVE the sheet gradient and BELOW the whole `.gc-dossier` subtree, so every card-bearing
+   block sits on it. Neon's `ink-2` measured **5.02** against the sheet stops alone and **4.07** in
+   truth; several dim LEDs fell from 3.09–3.16 to **2.44–2.66**.
+2. **the row-HOVER background was ungated entirely.** It arrived at G6.4 with the note that a 10%
+   accent mix "moves the row's luminance far less than the sheet gradient already does under it".
+   Measurement says otherwise, and the reason is a `color-mix` property nobody checked: the mix is
+   PREMULTIPLIED and the accent term is opaque, so a 10% share does not tint the card — it
+   **triples its alpha** (neon .043 → .139) in a bright hue. Worst pairs on a hovered row: neon port
+   3.48, neon dim LED 2.16, rose dim LED **1.96**, and on the LIGHT slip a dim LED at 2.84 that no
+   lightening can recover (on white, "dimmer" means lighter).
+3. **the WATERMARK does reach the metric grid** — two comments claimed it does not. Measured on the
+   shipped render at 393px: head **0–152**, mark **0–210**, metric tiles **152–224** (value row 161,
+   caption row 182), action bar **224–273**, service rows below that. So the tiles — and only the
+   tiles — are a translucent card over the art.
+
+**RULING (main seat): the owner-tuned knobs do not move.** The watermark keeps its geometry and its
+0.16; the texture keeps its 0.078; the G6.4 role-line halo trade stays accepted as recorded. The
+gate learns the real stack, and the tokens that then fail are normalised by the smallest step that
+clears the floor — the standing rule this theme has used since G6.
+
+**WHAT THE GATE MODELS NOW** (`e2e/contrast.spec.ts`):
+- `CARD_STACK = [[mid, to], [texture]]` — the action bar and the service rows, which clear the mark.
+- `GRID_STACK = CARD_STACK + [mark-grid]` — the metric tiles. `ink`/`ink-2` on the card are gated
+  here because the tiles are their worst home; the same two tokens paint the rows and the button
+  labels one layer down, so the tighter row covers both.
+- the CLOSE disc gains `[texture] + [mark-head]`, which its own token comment always claimed and the
+  gate never carried (12.6–16.7 — the derivation was right).
+- **two model tokens**, painted by nothing, derived from the owner's knob so a retune moves the
+  model with the paint: `--gc-dossier-mark-head` = white at the full opacity (the head band, where
+  the mask is solid) and `--gc-dossier-mark-grid` = white at **0.26** of it — the mask's own value at
+  the caption row (ry 105px anchored 96.6px down, solid to 44%, out at 95% ⇒ 0.66 at the value row,
+  0.26 at the caption's). The caption's band gates both tile pairs: it is the only tile text that
+  can lose a floor (the 16px value clears 4.5 over the FULL knob with ≥6:1 to spare). Both live on
+  `body`, not `:scope` — the §14.6 trap, caught live: declared on the scope root they froze at
+  slip's `0` and the layer silently did nothing.
+- four HOVER rows (`ink`, `ink-2`, both LEDs) over `CARD_STACK`. The hover BORDER is deliberately
+  not gated against its own fill: it is the state CHANGE that identifies the affordance and is
+  adjacent to the sheet on its outer edge, and gating it would pin the mix at a share too small to
+  see (sunset's is the binding one at 2.89).
+
+**DELIBERATELY NOT MODELLED — text painted STRAIGHT on the sheet (the head).** `over` is a BACKDROP
+stack: what shows through a translucent token. The dots and the art are painted OVER the sheet under
+the head's glyphs, which is a rendered-pixel question, and this theme has an owner-signed answer for
+it — the G6.4 halo trade. Modelling them as full-area backgrounds there would demand near-white inks
+and kickers on five palettes (measured, texture alone: neon `ink-2` 3.77 · sunset 3.81 + kicker 3.79
+· rose 3.84 · aurora 3.82 + kicker 3.98 · forest 3.95). **Recorded as an open main-seat question**,
+not taken silently.
+
+**TOKEN EDITS — the minimal deltas (all "lighten toward white", the method §7.7 already uses):**
+
+| palette | token | was → now | why (worst measured, before → after) |
+|---|---|---|---|
+| neon-purple | `ink-2` | `#9080c5` → **`#a294ce`** (+16%) | metric caption over texture+mark **4.07 → 4.54** |
+| neon-purple | `led` / `led-dim` | `#7751c8`/`#725d9f` → **`#8968cf`/`#8370ab`** (+13/+12%) | card 2.54/2.53 → **3.31/3.26**; hovered row → 3.08/3.03 |
+| sunset-orange | `led-dim` | `#af7866` → **`#b17c6b`** (+3%) | hovered row 2.89 → **3.02** (its card is opaque) |
+| rose-pink | `ink-2` | `#e1a4aa` → **`#e2a6ac`** (+2%) | metric caption 4.47 → **4.54** |
+| rose-pink | `led` / `led-dim` | `#dc6d78`/`#ad666d` → **`#dd737d`/`#bd8389`** (+4/+19%) | card 3.24/2.44 → **3.39/3.37**; hover 3.05/3.02 |
+| aurora-violet | `ink-2` | `#a78dd0` → **`#b29cd6`** (+13%) | metric caption 4.38 → **4.53** |
+| aurora-violet | `led` / `led-dim` | `#9851b6`/`#866295` → **`#a86dc2`/`#987aa5`** (+16/+15%) | card 2.49/2.50 → **3.36/3.37**; hover 3.04/3.06 |
+| cyber-teal | `ink-2` | `#33a2b2` → **`#35a3b3`** (+1%) | metric caption 4.56 → **4.61** |
+| cyber-teal | `led-dim` | `#3d6e79` → **`#527e88`** (+11%) | card 2.66 → **3.37**; hover 3.06 |
+| forest-green | `ink-2` | `#5ebf8a` → **`#63c18e`** (+3%) | metric caption 4.43 → **4.51** |
+| forest-green | `led-dim` | `#5e7e61` → **`#78937a`** (+16%) | card 2.49 → **3.39**; hover 3.05 |
+| *(shared)* | `row-hover` | `accent 10%` → **`accent 5%`** | the premultiply above; 5% is the largest share slip's own dim LED survives (**3.06**) |
+
+`slip` and `sunset-orange`'s inks are **untouched** — the light sheet is byte-identical to what the
+owner signed off, and sunset's opaque card immunises everything but its hovered row. Every accent,
+kicker, name, sheet stop, card alpha, button and mask value in the G6.4 table is unchanged.
+
+**MEASURED PASS TABLE (the real run, `--project=mobile -g gacha`, 14/14 green).** Worst value per
+column, floors 4.5 / 3 as before; `card` columns are the new stacks:
+
+| | ink/card (grid) | ink-2/card (grid) | led/card | dim/card | ink/hover | ink-2/hover | led/hover | dim/hover | close glyph |
+|---|---|---|---|---|---|---|---|---|---|
+| neon-purple | 11.24 | 4.54 | 3.31 | 3.26 | 11.81 | 4.77 | 3.08 | 3.03 | 14.42 |
+| sunset-orange | 10.45 | 6.97 | 3.40 | 3.28 | 9.63 | 6.42 | 3.14 | 3.02 | 12.64 |
+| rose-pink | 8.38 | 4.54 | 3.39 | 3.37 | 8.48 | 4.59 | 3.05 | 3.02 | 13.20 |
+| aurora-violet | 9.98 | 4.53 | 3.36 | 3.37 | 10.26 | 4.66 | 3.04 | 3.06 | 13.98 |
+| cyber-teal | 12.44 | 4.61 | 4.25 | 3.37 | 12.36 | 4.58 | 3.85 | 3.06 | 14.71 |
+| forest-green | 8.96 | 4.51 | 3.66 | 3.39 | 9.27 | 4.66 | 3.30 | 3.05 | 13.57 |
+| slip | 17.57 | 6.89 | 5.79 | 3.30 | 16.32 | 6.40 | 5.38 | 3.06 | 16.65 |
+
+**FALSIFIED, not merely green:** with neon's `led-dim` restored to `#725d9f` the gate fails the row
+it should (`2.53:1 < 3:1`), which is the proof that the new stack is doing work rather than
+resolving to a transparent no-op — the exact way the two mark tokens failed silently at first.
+
+**OPEN AFTER THIS ADDENDUM (main-seat calls, not build items):**
+- the head's dot-field/art overlap above — accept the G6.4 halo precedent as covering it, or model
+  it and re-tint five palettes' secondary inks.
+- the hover BORDER at 2.89 on sunset (ungated by the reasoning above).
+- the owner device round still owns the LOOK of every value this addendum moved: the LEDs are up to
+  19% lighter and two role lines up to 16% lighter.
+
+---
+
+**G6.6 ADDENDUM — THE TAB-FLIGHT RE-COMPOSITION (2026-08-06).** The owner ran the four-case device
+probe R15 §7.1 asks for, on Chrome Android **and** Fennec, and the answer inverts G6.3/G6.4's whole
+direction: **the extraction WAS the artefact.**
+
+| Case | Composition | Chrome Android | Fennec |
+|---|---|---|---|
+| 1 | no names at all | **glass GOOD** | clarity shift |
+| 2 | content region named, bar unnamed inside it | **glass GOOD** | clarity shift |
+| 3 | content + bar named, flat siblings — **our G6.4 state** | **layered glass** + a **1px seam** at the group's top edge | **layered glass** |
+| 4 | case 3 + `view-transition-group: nearest` (Chrome only) | identical to case 3 | n/a |
+
+Owner, verbatim: *"several layers of glass, it adds one when the transition starts."* That is the
+spec working as written — a named element is captured with its blur already baked into its image AND
+has its computed `backdrop-filter` copied onto `::view-transition-group()` every frame (R15 §2.1c–d;
+Blink implements the copy, §2.2). Two blurs, one bar. Case 4 kills option **A1** outright: nesting the
+group does not undo the doubling.
+
+Case 1 also corrects the claim that has stood in `gacha.css`'s bar block since G6.4 — that
+`backdrop-filter` "cannot survive a View Transition capture on Blink". It survives fine; what it
+cannot survive is being NAMED. And Gecko's degradation is in **all four** cases, i.e.
+composition-independent (Bugzilla 1999295 confirmed on device) — **accepted as unwinnable**, and
+deliberately *not* worth an engine branch, because the composition that is best for Chrome is also
+the cheapest for Gecko.
+
+**RULING (owner): adopt R15's A3 ≡ B1 — ONE root group for the tab flight, both engines, no branch.**
+
+**AS BUILT** (`frontend/src/themes/gacha/gacha.css`, the M2 block; net **−80 lines**):
+
+| Gone | Was | Why it goes |
+|---|---|---|
+| the `tab` arm of the `gacha-page` naming rule + its two pseudo rules | G6.3 | the extraction is the doubling's precondition |
+| the `gacha-appbar`/`gacha-tabbar` names + all six pseudo rules, **and the `body:not([data-engine="gecko"])` branch itself** | G6.4 | they *are* case 3; the branch has nothing left to gate |
+| the `gacha-reel` name + its old/new pair | G6.3 | with nothing extracted, the reel is back at its natural z-45 paint order **inside** the root snapshot — above the tab content for free, the pre-G6.3 behaviour. It also retires our one live use of the `animation: none`-on-a-group idiom (Gecko bug 2057752, a one-frame z-order flip) |
+
+| Kept / new | |
+|---|---|
+| `::view-transition-old/new(root)` @ **380 ms** | THE flight, and now the whole of it: a plain UA opacity cross-fade |
+| `gacha-page` + the `gacha-root-out/in` pair | survive for the **`detail`** morph alone — which is probe **case 2**, measured glass-good, and whose extraction is what keeps a root scale off gacha's fixed backdrop |
+
+**THE SCALE IS GONE ENTIRELY — round 2, and it is the trap worth remembering.** This shipped first as
+R15's option A3 describes it: the 96%/104% moved off the VT image onto an in-page `@keyframes`
+entrance on `.tab.active`. On device it **jumped the outgoing page** — the old screen grew for a beat
+before freezing — and the mechanism says it had to. `runViewTransition` stamps
+`html[data-transition="tab"]` **before** calling `startViewTransition` (the pseudo rules must be in
+scope when the transition begins), while the old state is captured **inside** that call. For one
+commit the stamp is up with the LEAVING body still matching `.tab.active`, so a stamp-keyed in-page
+animation fires on both sides — and it **cannot be narrowed**: the stamp is a document-level flag with
+no notion of which side of the swap an element is on. Any future in-page entrance has to ride a
+MOUNT-scoped mechanism (a key, a class the body sets when it becomes active), never this attribute.
+
+**Owner ruling: the tab flight is a PURE OPACITY CROSS-FADE.** The outgoing page is pixel-frozen at
+the tap and fades; the incoming one fades up; nothing scales anywhere. **`viewTransition.ts` is
+untouched** — the whole slice is CSS at the same chokepoint.
+
+**WHAT THE OWNER MUST RE-EYEBALL (the device round owns all of it):**
+1. **The flight is FADE-ONLY now — neither page scales.** Two steps plainer than the prototype, and the
+   second step is one the platform cannot give us cleanly here. Confirm it still reads as "one screen
+   replacing another", and that the old page is pixel-frozen from the tap (no growth, no shift).
+2. **Glass continuity** on the app bar and the tab bar through a flight — Chrome should now hold the
+   blur steady end to end, with no layering and no pop at commit.
+3. **The 1px rim/seam at the top of the bar should be gone** on Chrome (both its causes are: no named
+   group edge, and `:scope { background: var(--bg) }` still blacks the root canvas).
+4. **Gecko clunk** — three main-thread group animations are down to one (R15 §4.1), and the snapshot
+   resampling blur (bug 2012228) is gone with the snapshot scale. Fennec should feel smoother, but its
+   blur will still visibly soften for the flight and that is not fixable from here.
+5. **Tap feel** — the reel must still sweep ABOVE the tab content (the G6.3 report, now solved by
+   deletion), and rapid tab hammering must not glitch.
+
+---
+
+**G6.7 ADDENDUM — THE NAME FACE · THE STARS · THE ARCADE DROP · THE ORACLE'S BOTTOM EDGE
+(2026-08-06).** Four owner asks that landed in the same wave as G6.6, all eyeball items, all measured on
+device-width renders rather than reasoned.
+
+**① THE MACHINE-NAME FACE — a picker, off R17.** R17's headline: the dossier name's `font-style: italic`
+was a **synthetic shear**. `Shippori Mincho B1` publishes `style: "normal"` only (all twelve generated
+`@font-face` blocks; the CSS2 API answers `ital,wght@1,800` with **HTTP 400**), so the browser was
+mechanically skewing a Japanese mincho — the case MDN names as impeding legibility. The italic is gone
+from the dossier `h2`; the CARD plate keeps its own, because that one is the **prototype's** (`.plate b`)
+rather than ours, and was not in question. *(Flagged for the round: on all three faces the card's italic
+is still synthesised.)*
+
+The face itself became a **setting**, not a token default — the owner saw Bungee live and ruled it "too
+bulky as a default":
+
+| `nameFont` | face | latin woff2 | RFN | notes |
+|---|---|---:|---|---|
+| **`mincho`** (default) | Shippori Mincho B1 900 | *(already shipped)* | no | the theme's own serif, now upright |
+| `bungee` | Bungee 400 | 14.0 KB | no | arcade signage; **CAPS-ONLY** (lowercase glyphs *are* capitals) |
+| `maru` | Zen Maru Gothic 900 | 11.3 KB | no | Yoshimichi Ohira — same hand as `--font-body`'s Zen Kaku |
+
+Built as the **`dossierPalette` pattern end to end**: a seg row declared second in the registry (so the
+two identity pickers sit together under the accent row) → `useThemeSetting` → `body[data-gc-namefont]`
+(GachaRoot's fourth body attr, cleared on unmount) → one tokens.css block per alternate, with `mincho`
+expressed as the **absence** of one (slip's idiom). No ledger extension was needed: `themeSettings` is an
+open map and the row carries no `swatch` (these options differ by SHAPE — a colour chip would preview
+nothing). **SCOPE (owner):** the pair `--gc-name-font` / `--gc-name-weight` — renamed off `--gc-dossier-*`
+because it is no longer dossier-scoped — drives the dossier `h2` **and** the capsule card's plate. The
+banner/promo titles are ROSTER copy and deliberately keep `--font-body`. Only family + weight ride the
+tokens; each surface keeps its own size.
+
+The two faces are **committed latin-only subsets**. `scripts/gen-theme-fonts.mjs` grew one optional
+`subsets` field per face (extend-don't-migrate) — asking the CSS2 API for a JP `text=` subset of a font
+with no Japanese returns a file of .notdefs carrying a `unicode-range` that would then shadow the real JP
+faces. Runtime Japanese in a machine name falls to the system stack by design (council L12). `fonts.ts`
+warms **only Bungee**: an unpainted `@font-face` is never fetched, so the unpicked alternate costs zero.
+
+*Regeneration was clean and is worth recording as the method:* the first re-run reproduced all twelve
+existing woff2 **byte-for-byte** (so upstream had not drifted), and the second — after `settingNameFontDesc`
+added the one new glyph **名** — changed exactly the six JP files (+644 B) and left all eight LATIN files
+byte-identical. Committed total **219,568 B**, against the guard's 300 KB ceiling.
+
+**MEASURED NAME FIT** (393px, the dossier's 181px line box — `.gc-dossier-title` 241px minus the close
+disc's reserved 60px). Advance width at 27px:
+
+| name | mincho | bungee | maru | lines (mincho / bungee / maru) |
+|---|---:|---:|---:|---|
+| `emma` | 83 | 84 | 72 | 1 / 1 / 1 |
+| `corsair` | 95 | 131 | 82 | 1 / 1 / 1 |
+| `workstation-alpha` | 250 | 319 | 220 | 2 / 2 / 2 |
+| `media-server-basement-01` | 361 | 434 | 334 | 3 / 4 / 2 |
+
+**Nothing overflows or clips on any option** (`overflow-wrap: anywhere` wraps; the head grows from 152px
+to 165.5px at four lines and the sheet grows with it). Bungee fits **~9 lowercase characters per line**
+against mincho's ~12 — it is the widest of the three, which is the trade the owner already saw.
+
+**② THE RARITY STARS — drawn, off R16.** The ★ text glyph is replaced on both rows by **one primitive**
+(`GachaStar.tsx`): candidate **C2**'s squat round star, filled, with a dark contour. The `★` string
+survives where it is a string — the banner's `★N RATE` pill. `starsFor`/`isHighStar`, the aria-hidden row
+and the label pattern are untouched; `fill: currentColor` keeps the whole `--gc-star`/`-hi`/`-dim` tinting
+story working through the row's `color`.
+
+*A mechanic settled by pixel probe, because the sheet's CSS lied about it:* the candidate sheet set
+`stroke-width` on the `<use>`, which **never reached** the polygon in the shadow tree — three wildly
+different CSS widths rendered **byte-identical PNGs**, while a control symbol without the presentation
+attribute varied. What the owner actually picked was the symbol's own `stroke-width="9"` in **user
+units**, i.e. 7.3% of whatever size the row asks for. The primitive keeps it as an attribute, so the
+contour scales with the star and one component serves both rows. Its viewBox is cropped to the stroked
+extent, which makes `--gc-star-size` mean the star's real **ink** width.
+
+**MEASURED, and it un-inverts R16's finding:**
+
+| | ink | gap | pitch | pitch÷ink |
+|---|---:|---:|---:|---|
+| card, shipped before | 11.4 | — | 14 | 1.23 |
+| dossier, shipped before | 9.5 | — | 13 | **1.37** ← smaller AND looser than the card |
+| **card, now** | **10** | 3 | 13 | **1.30** |
+| **dossier, now** | **11.5** | 3.5 | 15 | **1.30** |
+
+Both land on the reference family (Arknights 1.32 · Epic Seven 1.31 · Genshin detail 1.33) and the detail
+surface is the bigger one. The card landed at **10** in a second round: candidate C2's own 7px read "way
+too small" on device, and 10 is the ink R16's nearest measured analogue uses — the **Arknights operator
+card, ~10px at pitch 13.2** — while still sitting under the 11.4px of glyph ink the theme shipped before,
+which is what the original "fleet: small" asked for.
+
+**THE TREATMENT SPLITS PER SURFACE** (owner rulings off the live states, same day). One primitive, one
+set of polygons; each surface says how they are painted, so nothing branches in TS:
+
+| | stroke | drop | why |
+|---|---|---|---|
+| **dossier tab** | `currentColor` (self) | **none** | a quiet tab on a sheet: the stroke's job is to fatten and round the silhouette into one solid, plumper star. Owner: *"they look better without."* |
+| **fleet card** | **accent** (`--gc-star-edge`, `var(--accent)` at 85%) | **yes** (`--gc-lift-color`) | this row sits on ARTWORK, and a frame can be bright anywhere behind it. Owner: *"a blue outline… the accent color outline"* for visibility |
+
+The candidate sheet's contrasting **dark contour is retired on both** — the owner read it as an outline.
+`paint-order: stroke fill` keeps the card's accent stroke an EDGE and not a ring: only its outer half
+survives, **≈0.47px** at the row's 10px ink. Both the stroke width (**9**) and the drop offset (**12**)
+are tokens in the primitive's **user units** (its viewBox is 96.5 wide), so both scale with the row —
+the drop lands at **1.244px** measured, inside the 1–1.5px bracket the ruling named. Neither accent paint
+is `currentColor`, which is what keeps `.hi` re-tinting the STAR alone — verified in the render: a `.hi`
+star's fill is `rgb(255,143,168)` while its stroke and drop stay accent.
+
+⚠ **THE OVER-ART CHECK, and it is a real trade the device round owns.** Measured on the shipped fleet at
+393px (brightest single pixel of artwork under each card's star row, against each star paint):
+
+| card | brightest art pixel | gold | rose-gold | accent edge |
+|---|---|---:|---:|---:|
+| 0, 1 | `rgb(255,255,255)` — a white highlight | **1.41:1** | **2.15:1** | **2.62:1** |
+| 2 | `rgb(75,66,67)` | 6.88:1 | 4.51:1 | 3.71:1 |
+| 3 | `rgb(0,0,0)` | 14.85:1 | 9.75:1 | 8.01:1 |
+
+Against a **white** highlight no star paint clears the 3:1 non-text floor; the accent edge is the best of
+the three at 2.62. The retired dark contour scored **~19.9:1** there — separation on bright art is exactly
+what it was buying. The card row also sits ABOVE the scrim's ramp (`--gc-card-scrim` is transparent to
+42%), so it is genuinely on unscrimmed art. Recorded, not designed around: the owner ruled the accent edge
+in after seeing both live, and the worst case is a single specular pixel rather than the typical backdrop.
+
+The dossier's filled dark **lozenge became C4's off-centre hairline tab** — 1px rim, translucent
+palette-derived fill, no black — and `--gc-dossier-badge` stays (the close disc still mixes it). Two
+corrections the renders forced:
+
+- **C4's literal `right: -52px` does not survive variable content.** The sheet only ever drew a ★5 tab. At
+  393px the tab runs **31.5px (★1, the ruled floor — the commonest tab on a real fleet) to 91.5px (★5)**,
+  and a fixed right offset makes the ★5 tab lap the portrait by 39.5px while the **★2 tab misses it by
+  5.5px**, floating free in the title column. It now straddles the frame's trailing edge (`left: 100%` +
+  a −50% self-shift), so every rung laps proportionally: **15.75 / 23.25 / 45.75px** at ★1 / ★2 / ★5.
+- **The contrast gate caught the fill on slip.** The tab's sheet-derived formula is near-white on the
+  light sheet: gold measured **1.32:1** against a 3:1 floor. The token's DIRECTION now follows the
+  surface, exactly as `--gc-dossier-close-bg` does — the light sheet takes the dark lozenge thinned to
+  **78%** (measured over its head band: 72% → gold 3.99 / rose 2.62 ✗ · **78% → 4.79 / 3.15 ✓** ·
+  84% → 5.79 / 3.80), the dark sheets take their own top stop at 72% (11.5–12.0 / 7.6–7.9). The gate's two
+  star rows were **re-stacked** onto the new fill + the head band's texture and watermark — the same
+  correction G6.5 made everywhere else. **14/14 green.**
+
+The glyph's 12px gold glow retires with the glyph (R16 §2: the contour is the legibility), and
+`--gc-star-glow` / `--gc-star-shadow` / `--gc-star-shadow-dim` are deleted rather than left orphaned.
+
+**③ THE ARCADE DROP on the two art surfaces.** kit.css's composer-skin signature — `<lift> <lift> 0` at a
+60% accent mix — now runs through the capsule cards and the dossier portrait. Both distances were
+re-weighted on the owner's device round: the kit's 3px reads thin on artwork, so the **cards go to 4px**
+("slightly thicker, not too much, like the button") and the **portrait to 5px**, one step further again
+because it is the largest single image the theme shows. gacha mints its **own**
+`--gc-lift` / `--gc-lift-color` rather than reading `--arcade-lift`, which is declared ON `.kit-composer`
+and would tie a card's elevation to a composer picker value.
+
+*Two things measurement decided:*
+
+- **Where the card's drop can live.** The card is masked to the capsule silhouette AND `overflow: hidden`,
+  and a mask is applied after filters: pixel-probed, **`box-shadow` and `filter: drop-shadow()` on the
+  card each paint NOTHING** in the offset band, while a pseudo on a wrapper wearing the same mask paints
+  correctly (and carries the 315° notch into the shadow). So `GachaCard` gained a `.gc-slot` wrapper —
+  the grid item, which now carries the SHAPE classes because they are geometry. Per the owner's fit
+  ruling the slot keeps the footprint the track always gave a card and the CARD is inset by the lift:
+  measured at 393px, slot ratios are **exactly 1.25 / 0.75 / 1.778** (feat / pair / wide, unchanged),
+  card inset 3/3, **no track overflow**, wallpaper on and off.
+  *(Falling out of the same probe: `--gc-card-shadow`'s outer `0 16px 34px` half has **never** painted,
+  for exactly this reason. Recorded on the token; not trimmed, since removing it changes no pixel.)*
+- **Where the colour token belongs.** With `--gc-lift-color` on `:scope` the drop rendered **TEAL** — a
+  custom property substitutes its `var()` where it is DECLARED and is inherited already-substituted, so on
+  `html` it took the KIT's base `--accent`, which gacha only re-points on `body`. This is the §14.6 trap
+  `--accent-ink` documents, and it was caught by a pixel sample rather than by review. The colour moved to
+  `body`; the distance is a constant and stays on `:scope`.
+
+The dossier portrait takes a plain `box-shadow` — it is a rounded rect with no mask and nothing clipping
+it (the sheet's own `overflow: hidden` is 16px away, measured) — with the crisp offset listed FIRST so it
+reads over the soft contact shadow. Verified in pixels at 3px: the drop is present at the portrait's edge
+and gone 8px out. **It then went to `--gc-lift-lg: 5px`** on the owner's device round ("a little too slim"
+at 3px — a 104×138 picture on a wide sheet carries a heavier offset than a 176px card in a 2-up grid), and
+the cards followed to **`--gc-lift: 4px`** in the same round. Two tokens, one family; the card's own inset
+reads its lift, so the track's footprint follows automatically.
+
+**④ THE ORACLE'S BOTTOM EDGE — and it ends up SPLIT IN TWO.** REPORTED: once ghosted, the sticky block
+ends in a clean-cut horizontal line behind the chat log, and the follow-up named the worst of it — the
+**SCANLINE**, whose straight hairlines all stop dead on one row. A **static vertical alpha mask** over a
+new `--gc-oracle-edge-fade` (48px — M7's fourth tunable, on the same "taste on a real phone" reasoning as
+its other three) answers both halves; the mask is a token (`--gc-oracle-edge-mask`) because an alpha ramp
+is written in colours and gacha authors colours only in `tokens.css`. Two further owner rounds then split
+where it applies, because the halves want different lifetimes:
+
+**(a) THE COMB dissolves ALWAYS**, for the whole of fade mode — the owner likes the softened comb at rest
+as well as ghosted — so the mask sits on `.gc-oracle-scan` itself. A mask is applied to an element's own
+rendering *before* it is blended into its parent, so the comb's alpha ramps down first and
+`mix-blend-mode: screen` then contributes nothing at the bottom. Measured, masked vs forced-off, over the
+last 24px (x-averaged, so the horizontal comb survives the average):
+
+| scan phase | 0% | 25% | 50% | 75% | 99% |
+|---|---|---|---|---|---|
+| Chromium masked / unmasked | 2.84 / 5.47 | 3.95 / 7.00 | 3.64 / 5.61 | 3.52 / 4.55 | 3.05 / 5.82 |
+| Gecko masked / unmasked | 3.38 / 8.57 | 6.17 / 10.10 | 6.27 / 8.75 | 6.71 / 7.95 | 3.38 / 8.57 |
+
+⚠ **The strength PULSES over the 7 s loop, and that is inherent to the pinned mechanism** — reported
+rather than worked around. `.gc-oracle-scan` is 28px taller than the block and *translates* down by
+`--gc-scan-travel`; a mask is authored in the element's own space, so it travels with it. The reduction
+runs ~53%→~24% (Chromium) and ~61%→~16% (Gecko) across a cycle. Any fix costs the static-mask property
+(an animated mask position) or a wrapper node, so it is left as an observation for the eyeball round.
+
+**(b) THE ART's edge dissolves only once the block is FULLY GHOSTED**, so at rest the crisp bottom edge —
+the designed hairline look — comes back. The block's mask is gated on a BOOLEAN the M7 driver stamps,
+`body[data-oracle="fade"] .gc-oracle[data-gc-ghosting]`. A boolean and not the ramp, deliberately: a mask
+whose *geometry* tracked `--gc-oracle-p` would re-rasterize a gradient every scroll frame, which is the
+paint cost M7's entire one-write-per-frame design exists to avoid. `GachaAgent`'s driver already computes
+`p` each frame; it now also flips the stamp, writing the DOM **only on a flip**.
+
+**THE THRESHOLD moved to the END of the ramp** after the owner saw the engage POP mid-scroll: `oracleGhosting`
+turns on at **p ≥ 0.95** and releases at **p < 0.88** (a Schmitt gap — a scroller parked on a single
+threshold wobbles a pixel and would toggle the attribute, and therefore the mask, every frame). At 0.95 the
+block's own opacity is already ≈0.32, i.e. at `--gc-oracle-floor`. Measured cost of the flip ITSELF (the
+same `p` rendered with the stamp on vs off, mean over the bottom 56 rows, 0–255):
+
+| ramp position | block opacity | Chromium | Gecko |
+|---|---|---|---|
+| p = 0 *(the first cut's threshold)* | 1.00 | 3.25 | 2.92 |
+| p = 0.5 | 0.64 | 1.73 | 1.67 |
+| **p = 0.88** *(release)* | 0.37 | **1.20** | **1.32** |
+| **p = 0.95** *(engage)* | 0.32 | **1.22** | **1.23** |
+
+— **~2.7× quieter than at the ramp's start, and the same in both directions**, which is what makes the
+hysteresis gap safe to cross either way. Fully ghosted, with the block mask on top of the scan's at its
+worst phase, the comb reads **0.32 (Chromium) / 0.51 (Gecko)** against 0.97 / 1.69 with the block mask off.
+
+Both masks are static and mode-scoped: outside `data-oracle="fade"` nothing changes at all —
+`data-oracle="scroll"` renders byte-identically.
+
+**⑤ THE PEEK DETENT (owner report, same round: the stars CLIP at the half-closed sheet).** Measured at
+393px with a ★5 tab, the deepest mark: the peek fold sat at the sheet's **+166px** with the tab's bottom
+rim at **+169** — **3.1px past it, clipped** — and the stars themselves only 1.9px clear before their own
+drop, while the portrait's thickened 5px offset ended 0.9px clear.
+
+Fixed **gacha-scoped**, as ruled, and by a lever that is this element's own: BottomSheet derives the peek
+reveal as `[data-bs-peek].offsetTop + .offsetHeight + 14`, and gacha's marker IS `.gc-dossier-head` — so
+its box height *is* the detent. Its bottom padding goes **14 → 24px**, which is also clearance it now owes
+on its own terms (the rarity mark used to sit inside the portrait; since G7 it hangs 9px past the frame,
+and the portrait's drop grew). **Peek 166 → 176px**: the tab's rim is now **6.9px above** the fold, the
+stars 11.9px, the portrait's drop 10.9px. Nothing kit-wide moved.
+
+*(Noted while measuring, deliberately NOT fixed here: the kit's formula loses gacha's handle strip,
+because `.gc-dossier-head` is `position: relative`, so its `offsetTop` reads 0 rather than its distance
+from the sheet's top — gacha's peek has always been ~22px shorter than the kit intends. That is a KIT
+arithmetic question; the ruling scoped this to gacha, and the rule above fixes the symptom inside gacha's
+own box.)*
+
+**OPEN AFTER THIS ADDENDUM (device-round items, not build items):**
+- **Star legibility over a white art highlight** — the table in ② above. The accent edge is the best paint
+  available at 2.62:1 and the dark contour that scored 19.9:1 is the thing the owner ruled out.
+- **The card plate's italic is still synthetic on all three faces** (no shipped face publishes an italic).
+  It is the prototype's own styling, so it was left alone rather than changed unasked — the owner's call.
+- **A 4-line machine name meets the rarity tab.** Measured under `mincho` at 393px: 1–3 lines clear the
+  tab by 21.5px or more (up to ~21 characters), and a 4-line name (~30 characters) overlaps its top edge
+  by **5.5px** in the 118–150px band. Beyond the owner's own fleet (4–7 characters), and no clipping —
+  recorded rather than designed around.
+- The whole wave is eyeball work: star size and packing, the tab's fill and lap, the drop's weight on
+  cards vs portrait, and the 48px dissolve band are all one-token tunes.
+
+
+---
+
+**G6.8 ADDENDUM — THE RECONCILIATION WAVE (2026-08-06).** Codex's wave-12 review returned **DO NOT SHIP**
+on one finding and five lean ones; the owner added two rulings of their own in the same round. All eight
+are folded in here.
+
+**① THE CONTRAST GATE's watermark model splits (the blocker).** `gacha.css`'s mask note records TWO
+transmissions at the metric tiles — **0.66** at the VALUE row (y 161) and **0.26** at the CAPTION row
+(y 182) — but tokens.css exported only the 0.26 model and the gate used it for BOTH tile inks. So the
+16px values, which sit 21px higher under 2.5× more art, were measured against a backdrop **6.4 points of
+alpha weaker** than the one they are painted on (4.3% modelled vs 10.6% real at the owner's 0.16 knob).
+That is the FALSE-PASS direction: a palette could clear the gate while the real metric row failed.
+
+`--gc-dossier-mark-grid` is retired for **`--gc-dossier-mark-value`** (knob × 0.66) and
+**`--gc-dossier-mark-caption`** (knob × 0.26), each derived from the owner's knob exactly as the old one
+was, and `contrast.spec.ts` gains `VALUE_STACK` / `CAPTION_STACK` so neither ink is measured on the
+other's band.
+
+**RE-MEASURED — and nothing needed re-normalising.** The correction tightens `--gc-dossier-ink` by up to
+2.0 contrast points; every palette still clears 4.5 with margin, so no token moved:
+
+| palette | ink / VALUE (correct) | ink / caption (old model) | delta | ink-2 / CAPTION |
+|---|---:|---:|---:|---:|
+| slip | 17.57 | 17.57 | 0.00 | 6.89 |
+| neon-purple | **9.21** | 11.21 | −2.00 | 4.52 |
+| sunset-orange | 10.45 | 10.45 | 0.00 | 6.97 |
+| rose-pink | **6.99** | 8.37 | −1.38 | 4.53 |
+| aurora-violet | 8.29 | 10.00 | −1.71 | 4.54 |
+| cyber-teal | 10.70 | 12.41 | −1.71 | 4.60 |
+| forest-green | 7.45 | 9.00 | −1.56 | 4.53 |
+
+*(slip and sunset-orange are 0.00 by construction — an opaque card, and slip's watermark is `0` besides.
+Tightest is rose-pink at **6.99**, 2.49 points of headroom. Modelled mark alphas: value **0.106**,
+caption **0.043**.)*
+
+**FALSIFIED, three runs, not merely green.** Dimming the shared `--gc-dossier-ink` to `#b6b6b6` — a value
+chosen to land inside the false-pass window — makes rose-pink read **3.81 (FAILS)** on the new VALUE
+stack and **4.57 (PASSES)** on the old shared-caption stack. That is Codex's finding reproduced end to
+end: the old model would have shipped it. Restored ⇒ **14/14 green**.
+
+**② THE NAME FACE's PREWARM follows the resolved setting.** `fonts.ts` awaited Bungee unconditionally,
+which was wrong in both directions: every DEFAULT user downloaded and awaited a face they never paint,
+and a synced `maru` was not warmed at all — so activation could finish before Zen Maru was ready and the
+dossier name would land in the fallback and swap under the owner, the exact FOUT the module exists to
+prevent. `loadFonts` now resolves `nameFont` through `resolveThemeSetting` (at CALL time, which keeps the
+settings→registry→theme→fonts cycle benign) and warms `NAME_FACE[value]`: **mincho → nothing extra** (it
+IS `--font-display`, already covered by Shippori's two weights), **bungee → `400 1em 'Bungee'`**, **maru →
+`900 1em 'Zen Maru Gothic'`**. The mapping is exported pure (`nameFaceProbes`) and tested for all three
+values, for coverage of every declared option, and for an unknown value warming nothing.
+
+**③ FONT GENERATION is now atomic, validated and hashed.** The generator emptied the committed directory
+BEFORE going to the network, so a failed fetch or a prettier that would not start left tracked faces
+missing or half-updated. It now builds into `fonts.staging` (a SIBLING, so the swap-in `rename` stays on
+one filesystem) and replaces the destination only after every fetch, write and format has succeeded;
+`subsets` values are validated against `jp | latin` and throw on anything else, instead of silently
+falling through to Latin. Each file carries a **sha256** in the manifest and `gachaFonts.test.ts` asserts
+it against the bytes on disk — size + topology let a wrong-but-same-size woff2 through. No `@font-face`
+parsing was added (ruled out of scope).
+
+**Re-run to stamp the hashes: all 14 woff2 byte-identical.** Reproducibility holds and Google has not
+drifted; only `manifest.json` changed. Guard falsified by zeroing one hash (fails with the file named),
+then restored.
+
+**④ THE CARD's HIT AREA now matches what is visible.** The accent drop was painted by a pseudo on an inert
+`.gc-slot` wrapper while the `<button>` sat inset by the lift, so a thumb landing on the visible drop hit
+nothing. The **BUTTON is now the grid item** — it owns the cell edge to edge, carries the shape classes and
+the drop pseudo — and the masked surface became an inner **`.gc-card-face`**, inset by the lift. The split
+is still forced (a mask is applied after filters, so `box-shadow`/`drop-shadow` on a masked element are
+erased — pixel-probed in wave 1), but the unmasked box is now the semantic control rather than a wrapper.
+Every positioned child keeps the face as its containing block, i.e. the same box it always had.
+
+**VERIFIED at 393px, both wallpaper modes, all shapes:** hit-tested at six extreme points per card —
+`dropRight`, `dropBottom`, `dropCorner`, both top corners and the centre — **all six resolve to the
+button on feat, pair, pair-sleep and wide**. Ratios unchanged (**1.25 / 0.75 / 1.778**), face inset 4/4,
+no track overflow, the VT morph hook (`currentTarget.querySelector("img")`) still resolves, the reel and
+the wave-1 badge-suppression selectors are untouched. The drop still paints identically: the strip right
+of the face reads accent for exactly **+0…+3px** and backdrop at +4 (= `--gc-lift`), the 315° notch shows
+backdrop (the shadow is notched too) and nothing paints above the card's top edge.
+
+**⑤ TWO STALE VT COMMENTS** corrected — the M2 block header still read "the scale done IN THE PAGE" and
+the M3 block still said the tab flight "scales the arriving `.tab` in the page". Both now describe the
+root-only opacity cross-fade, and the M3 note points at the capture/stamp reason no in-page scale is
+available. This is the comment that would otherwise invite a maintainer to "repair" the absent scale.
+
+**⑥ THE × CLOSE JUMP (owner bug, root-caused then fixed).** On the fleet at scrollTop 0, opening a dossier
+from a card the fold CUTS and closing it with × scrolled the page behind. Instrumented on the live app:
+the writer is **`BottomSheet.tsx:310`**, `triggerRef.current?.focus?.()` **without `preventScroll`**,
+firing `SNAP_MS` (420 ms) after close — measured **scrollTop 0 → 226 (Blink) / 0 → 230 (Gecko)**, which is
+a **CLAMP to the page end** (maxScrollTop 230), not the 31.5px the card needed. Nothing else wrote scroll:
+no `scrollTop=` setter call, no `scrollIntoView`, and the move was inside the `focus()` call rather than at
+the VT finish or the React commit.
+
+*The path asymmetry is diagnostic and is now pinned by tests:* **Escape does not jump** (focus never left
+the opener, so the claimed-focus guard skips the restore), **tap-outside does not jump**, and **× does**
+(focus was inside the sheet, so the opener has to be focused back). The fix is one argument —
+`focus({ preventScroll: true })` — which keeps SC 2.4.3 and drops only the scroll. Re-measured after:
+**0px on both engines, both close paths, with focus still restored to the card.**
+
+Three `BottomSheet` tests pin the guard's branches, including the one the live investigation could not
+observe firing: **focus fallen back to `<body>` DOES restore** (`document.body` is explicitly excluded from
+`claimed`) — so that branch is benign, not broken. A note for whoever reads the guard next: it tests
+containment against **`.bs-sheet`**, so the full-screen `.bs-catch` dismissal button counts as *outside*.
+Falsified by removing `preventScroll` (two tests fail), then restored.
+
+**⑦ THE FLEET STARS grew again (owner).** "Smaller than the dossier ones; something around those lines" —
+the card ink goes **10 → 11px** with the gap **3 → 3.3px**, so the two surfaces read one scale and the
+ratio stays exactly **1.30** (the dossier is 11.5 / 3.5, also 1.30). The rule that sets the size changed
+with it: the card no longer borrows another game's card metric (R16's Arknights analogue at 10px), it
+sits one step under the dossier by construction. Tokens only — no literals. Measured at 393px on every
+shape: row **68.2 × 11**, ink 11, pitch 14.3, ratio 1.300, inside the face on feat/pair/wide, **47px clear
+of the state chip** (236.5 on wide) and **121–153px clear of the plate** — no collision anywhere.
+
+**⑧ THE DROP FAMILY TAKES THE THEME'S FLAT ACCENT, SOLID (owner ruling).** "Follow the theme, the actual
+same colour for all of those things." The drops shipped for a day as `color-mix(in oklch, var(--accent)
+60%, transparent)` — the KIT composer skin's own formula, borrowed with the signature — which reads as a
+*washed* accent rather than the accent. `--gc-lift-color` is now **`var(--accent)`**: the derivation the
+theme already hands its controls (`--accent-fill`'s first stop is this same `--gc-brand-1`), re-pointed
+rather than re-typed, so all eight variants move with it. One token still feeds the whole family — cards,
+dossier portrait and the stars' own offsets — so "all of those things" is one edit and cannot drift.
+
+⚠ **A CORRECTION TO THE PREMISE, worth recording:** the brief assumed the active tab paints with
+`--accent-fill`. It does not. Under gacha the tab-bar indicator is a **WHITE pill** (`--gc-ind-fill:
+#ffffff`) wearing a **hard offset shadow** (`--gc-ind-shadow`) — it is the SEG's active chip that takes
+`--accent-fill`. So the thing the owner is matching is the indicator's *shadow*, and the flat accent hits
+it almost exactly. Measured, `--gc-lift-color` vs `--gc-ind-shadow` per variant:
+
+| accent | `--gc-lift-color` = `--accent` | indicator's hard shadow | match |
+|---|---|---|---|
+| arcade · midnight · indigo | `#ff6cae` | `#ff6cb1` | 3/255 of blue apart — the palette note's deliberate near-trio value, flagged "do not silently unify" |
+| ember | `#ff6f52` | `#ff6f52` | **exact** |
+| glacier | `#7c6cff` | `#7c6cff` | **exact** |
+| nebula | `#eb77ea` | `#eb77ea` | **exact** |
+| eridu | `#3a86ff` | `#3a86ff` | **exact** |
+| jade | `#5bae49` | `#5bae49` | **exact** |
+
+**Five of eight are byte-identical to the chrome the owner is matching**, and the other three differ by a
+value the theme keeps separate on purpose. Nothing was minted to achieve it.
+
+**Wallpaper check:** the drop pixel is now **identical with the wallpaper on and off** (`255,108,174` in
+both, sampled on the card's drop band) — an opaque colour has no backdrop to composite against, where the
+60% mix used to land differently on `--surface` and `--gc-card-wall`. The `--gc-star-edge` stroke keeps its
+85% mix deliberately: it is not a drop but a 0.47px stroke half sitting ON the gold, and the sliver of
+translucency is what stops it reading as a hard ring.
+
+**Gate: indifferent.** No gated or advisory pair reads `--gc-lift-color` — the drops are decorative
+(checked across `e2e/contrast.spec.ts` and `contrast-matrix.ts`), and the contrast sweep is unchanged at
+14/14.
+
+⚠ **COHERENCE QUESTION FOR THE MAIN SEAT (reported, NOT changed — the kit signature is a separate owner
+ruling, 2026-08-03).** The kit's arcade composer still paints `oklch(… / 0.6) 3px 3px 0`. Under gacha it is
+now both **lighter** (60% alpha vs solid) and **thinner** (3px vs the cards' 4px and the portrait's 5px)
+than every drop beside it. If the owner wants one language end to end, the composer skin is where the
+remaining delta lives.
+
+**⑨ THE PLATE's NAME TAKES C6 — THE GRADIENT-CLIPPED FILL (owner's pick off the name-effects sheet).**
+*(An earlier cut of this item shipped a `::first-letter` capital with a hard offset; the owner picked C6
+from the sheet instead and that version was REMOVED, tokens and tests with it. C1, the accent initial, is
+deferred to a later session and deliberately NOT built.)*
+
+`.gc-card .plate b` now paints `--accent-fill` clipped to its glyphs — the app-bar wordmark's treatment,
+one surface down — at `--gc-fill-spread`'s calm window with `background-position: 50% 0`. Verbatim from
+the sheet, including the part that is a finding rather than a style:
+
+**IT SHIPS SHADOWLESS, and that is VERIFIED incompatibility, not taste** (sheet §4.3): `text-shadow` paints
+ON TOP of a `background-clip: text` fill, so the plate's `--gc-plate-shadow` halo would flood the
+letterforms it exists to sit behind. The rule states `text-shadow: none` explicitly rather than trusting
+that nothing upstream sets one — the kit has the same gotcha from the other direction (an INHERITED
+text-shadow paints inside gradient-clipped glyphs, which is why the clear-appbar wordmark nulls the kit's
+halo). `--gc-plate-shadow` therefore has no live consumer; it is kept, annotated, because it is the
+prototype's own value for this surface and the treatment is a picked candidate the owner may walk back.
+
+**(a) RENDER — both engines, all three faces, no wrapper needed.** The sheet applied C6 to an inline
+element and so do we: `.plate` is `display: grid`, so the `b` is a blockified grid item — measured
+`display: block`, `background-clip: text`, `color: rgba(0,0,0,0)`, `text-shadow: none`, `background-size:
+240% 100%`, `background-position: 50% 0` on Chromium AND Gecko under mincho / bungee / maru. Glyph ink is
+present in the accent range in every combination, a long name still wraps inside the plate
+(`overflow-wrap: anywhere` untouched) and **nothing overflows the plate box** — checked with
+`media-server-basement-01`.
+
+**(b) CONTRAST — a new gated pair, and no palette needs tinting.** The name's INK is now the accent ramp,
+so it is gated like one. The fg is a new **`--gc-name-fill-window`**: `--gc-fill-spread` means only the
+ramp's middle 1/2.4 is ever visible (t = 0.2917…0.7083), so gating `--accent-fill` itself would measure two
+colours the glyphs cannot show — the G6.5 "modelled a paint the screen does not make" class, one axis over.
+The window is two `color-mix`es of the same two brand tokens, so every accent re-derives it; the gate's
+existing `<image>` worst-stop handling does the rest (and it asserts a gradient parses to stops, so the
+pair cannot pass vacuously — checked, the token resolves to `color(srgb …)` and the gate's regex covers it).
+
+The BED is the card's `--surface` — the scrim's transparent end, deliberately: the plate sits where the
+scrim is nearly solid, which is darker and kinder, so the light end is the conservative direction. The
+ARTWORK under the scrim is not modelled (art is not a token — the G6.5 boundary), and losing the plate's
+dark halo to the clip is exactly the trade C6 was picked knowing.
+
+| accent | visible calm window | vs `--surface` | vs the plate bed | 3.0 | 4.5 |
+|---|---|---:|---:|---|---|
+| arcade | `#da67c6 → #a561e7` | **4.57** | 5.10 | ✓ | ✓ |
+| midnight | `#da67c6 → #a561e7` | 4.89 | 5.22 | ✓ | ✓ |
+| indigo | `#da67c6 → #a561e7` | 4.63 | 5.14 | ✓ | ✓ |
+| ember | `#ff6665 → #ff5880` | 5.79 | 6.41 | ✓ | ✓ |
+| glacier | `#6682ff → #45a2ff` | 5.10 | 5.71 | ✓ | ✓ |
+| nebula | `#d480ed → #b38df1` | 6.66 | 7.42 | ✓ | ✓ |
+| eridu | `#379efc → #32c0f8` | 6.51 | 6.99 | ✓ | ✓ |
+| jade | `#4eb25d → #3cb879` | 6.32 | 7.11 | ✓ | ✓ |
+
+**The floor question, answered rather than assumed.** At 20px with `--gc-name-weight` 900 (mincho/maru) the
+name is ≥18.66px AND bold ⇒ WCAG **large**, floor 3.0; the feature card's 27px clears the ≥24px rule
+outright. ⚠ Under **BUNGEE the weight is 400**, so a 20px pair/wide name is *not* large and its real floor
+is 4.5 — but **every accent clears 4.5 anyway** (worst: arcade at 4.57), so the caveat costs nothing today.
+The gate is set at 3.0 as briefed; if a future accent lands between 3.0 and 4.5 this is the note that says
+Bungee makes it a real failure.
+
+⚠ **THE ONE HAND-KEPT VALUE in the window token:** its 29.17% / 70.83% stops are `--gc-fill-spread: 240%`
+computed by hand, because CSS cannot do that arithmetic inside `color-mix`. Moving the spread means moving
+them. Flagged in the token and in the gate pair.
+
+**OPEN AFTER THIS ADDENDUM:** the composer-vs-cards drop delta above. The wave-1 open items stand (the card plate's synthetic italic;
+the 4-line-name/rarity-tab overlap; star legibility over a white art highlight; the scan mask's phase
+pulse).
 
 ## 8. Owner questions (the §5-of-vapor-plan analogue) — **✅ ALL RULED (prep session + the lock session, both 2026-08-02); nothing remains open**
 

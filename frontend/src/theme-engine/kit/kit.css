@@ -1971,9 +1971,23 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
 /* ── primitive: palette swatch picker (Swatches) — a radiogroup of color chips; the selected chip shows a
  *    ring (the accent), focus a visible outline. Chip background is set inline (the theme's swatch). ── */
 .kit .swatches {
-  display: inline-flex;
+  /* A GRID whose column count the component computes (owner rounds, 2026-08-06: eight chips overflowed
+   * the row; a flex wrap broke them 6/2 and growing the buttons stretched the selection ring). `--sw-cols`
+   * comes from `Swatches`' own measure: equal to the count when one line fits — `max-content` columns,
+   * indistinguishable from the old inline row — else the balanced split (8 → 4/4, 7 → 4/3). A grid never
+   * shrinks below its tracks, so an unfittable single line trips the `.confrow` wrap-below-the-label
+   * mechanism (the seg's path) before the component ever balances: the balanced lines get the full row. */
+  display: inline-grid;
+  grid-template-columns: repeat(var(--sw-cols, 1), max-content);
   gap: 8px;
   align-items: center;
+}
+/* The balanced state: full row width, chips centred in equal fractions — the dossier seg's even spread,
+ * with the ring staying snug on the oval because nothing stretches the button itself. */
+.kit .swatches[data-wrapped] {
+  width: 100%;
+  grid-template-columns: repeat(var(--sw-cols), 1fr);
+  justify-items: center;
 }
 .kit .swatches .sw {
   all: unset;

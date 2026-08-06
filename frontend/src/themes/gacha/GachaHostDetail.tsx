@@ -4,6 +4,7 @@ import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
+import { GachaStar } from "./GachaStar";
 import { CLOSE_DOSSIER_LABEL, dossierSub, pingText, showArtLabel } from "./fleet";
 import type { ResolvedArt } from "./roster";
 import { isHighStar, starsFor, type StarMode } from "./stars";
@@ -151,13 +152,14 @@ export function GachaHostDetail({
           ) : (
             portrait
           )}
-          {/* aria-hidden for the same reason the card's rarity row is: the glyphs would be read out one by
-              one, and the sheet is already labelled by the machine's name. */}
+          {/* aria-hidden for the same reason the card's rarity row is: five repeated marks would be read
+              out one by one, and the sheet is already labelled by the machine's name. Same drawn primitive
+              as the card (R16) — one mark, two sizes. The ELEMENT keeps its `art-rar` class through the
+              G7 restyle: it carries the `dossier-rar` view-transition-name (gacha.css) and GachaFleet's
+              lingering-badge suppression queries it by that selector. */}
           <span className="art-rar" aria-hidden>
             {Array.from({ length: stars }, (_, i) => (
-              <i key={i} className={isHighStar(i, mode) ? "hi" : undefined}>
-                {GACHA_COPY.star}
-              </i>
+              <GachaStar key={i} hi={isHighStar(i, mode)} />
             ))}
           </span>
         </div>
