@@ -258,8 +258,13 @@ describe("the host action bar", () => {
       "",
     );
     const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
-    expect(css).toMatch(/\.gc-act\.primary\s*{[^}]*background: var\(--accent-fill\)/);
-    expect(css).toMatch(/\.gc-act\.primary\s*{[^}]*color: var\(--accent-ink\)/);
+    // G6 routed the primary's paint through the DOSSIER's own act tokens, whose slip values ARE
+    // `--accent-fill`/`--accent-ink` (tokens.css `body`) — so the light sheet renders identically while
+    // the four dark palettes can swap the flat mock button in. Both halves are pinned.
+    expect(css).toMatch(/\.gc-act\.primary\s*{[^}]*background: var\(--gc-dossier-act-fill\)/);
+    expect(css).toMatch(/\.gc-act\.primary\s*{[^}]*color: var\(--gc-dossier-act-ink\)/);
+    expect(tokens).toContain("--gc-dossier-act-fill: var(--accent-fill)");
+    expect(tokens).toContain("--gc-dossier-act-ink: var(--accent-ink)");
     expect(css).toContain("box-shadow: var(--gc-act-shadow)");
     // SHUT DOWN was re-ruled from the danger rose to the mock's accent outline (owner 2026-08-04), so the
     // pair reads as one control set; the confirm dialog still gates the action. It must use the
@@ -267,6 +272,12 @@ describe("the host action bar", () => {
     // against a 4.5 floor, which is the regression this line exists to catch (Codex 2026-08-04).
     expect(css).toMatch(/\.gc-act\.danger\s*{[^}]*color: var\(--gc-dossier-accent\)/);
     expect(css).not.toMatch(/\.gc-act\.danger\s*{[^}]*color: var\(--accent\)[;\s]/);
+    // its OUTLINE became a token at G6 so the contrast probe can measure it (an inline color-mix is
+    // invisible to the gate); slip's token still holds the measured 60% mix.
+    expect(css).toMatch(/\.gc-act\.danger\s*{[^}]*border-color: var\(--gc-dossier-act-line\)/);
+    expect(tokens).toContain(
+      "--gc-dossier-act-line: color-mix(in srgb, var(--gc-dossier-accent) 60%, var(--gc-dossier-line))",
+    );
     expect(tokens).toContain("--gc-dossier-accent: #b03578");
     expect(tokens).toContain("--gc-act-shadow: 3px 3px 0 var(--gc-dossier-ink)");
   });

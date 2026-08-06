@@ -42,6 +42,12 @@ export function GachaRoot() {
   // R6: both ship ON (the prototype defaults them OFF — a deliberate, owner-ruled flip).
   const wallpaper = useThemeSetting<boolean>("gacha", "wallpaper");
   const oracle = useThemeSetting<boolean>("gacha", "oracle");
+  // The DOSSIER PALETTE (G6 / §4.4 family 3) — a third body ATTR on exactly the same terms as the two
+  // above: it changes how the unit dossier LOOKS, never what is rendered, so it is a CSS axis
+  // (`body[data-gc-dossier]`) and not a prop threaded down to GachaHostDetail. `useThemeSetting` validates
+  // against the declared options, so a stale/corrupt synced value can only ever stamp a palette that
+  // exists — and `slip` stamps a value no tokens.css block matches, which IS how slip is expressed.
+  const dossier = useThemeSetting<string>("gacha", "dossierPalette");
   // The fleet wallpaper's resolved art (M10), through the theme's ONE art seam (G5): a `wallpaper:` pin,
   // else the owner's `media/gacha/wallpaper/` pick, else the bundled scene. The layout effect below
   // depends on the two VALUES rather than the object, so a re-fetch that resolves to the same art cannot
@@ -54,6 +60,7 @@ export function GachaRoot() {
     const b = document.body;
     b.dataset.wallpaper = wallpaper ? "on" : "off";
     b.dataset.oracle = oracle ? "fade" : "scroll";
+    b.dataset.gcDossier = dossier;
     // The fleet wallpaper's ART (M10). It is published as a custom property on `body` rather than rendered,
     // because the layer itself is a BACKGROUND on `.kit-main` — a node DefaultRoot owns — and a custom
     // property only reaches it from an ancestor. Same resolver as every other gacha surface, so a
@@ -65,10 +72,11 @@ export function GachaRoot() {
     return () => {
       delete b.dataset.wallpaper;
       delete b.dataset.oracle;
+      delete b.dataset.gcDossier;
       b.style.removeProperty("--gc-wallpaper-img");
       b.style.removeProperty("--gc-wallpaper-pos");
     };
-  }, [wallpaper, oracle, artUrl, artFocus]);
+  }, [wallpaper, oracle, dossier, artUrl, artFocus]);
 
   return (
     <>

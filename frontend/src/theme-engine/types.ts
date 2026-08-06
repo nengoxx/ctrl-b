@@ -89,7 +89,13 @@ export type ThemeSettingField =
       type: "seg";
       label: string;
       desc?: string;
-      options: { val: string; label: string }[];
+      // `swatch` is the ADDITIVE slot the D52 §4.9 ledger committed for gacha's dossier picker (G6): a
+      // colour CHIP rendered inside the seg option beside its label, so a palette row previews what it
+      // picks. Typed exactly like `PaletteModel.accents[].swatch` above and read by the same
+      // `chipBackground()` helper — a single CSS colour/gradient → one chip, a string[] → the conic
+      // multi-token preview. "A swatch is DATA for the chip", so it lives on the option, not in CSS.
+      // Omitted → `Seg` emits NO extra DOM node at all, so every existing seg row renders byte-identically.
+      options: { val: string; label: string; swatch?: string | string[] }[];
       default: string;
     };
 

@@ -1,7 +1,7 @@
 import { calcAPCA } from "apca-w3";
 import { rgb, wcagContrast } from "culori";
 
-import { CONTRAST_MATRIX } from "./contrast-matrix";
+import { CONTRAST_MATRIX, SETTINGS_MATRIX } from "./contrast-matrix";
 import { expect, test } from "./fixtures";
 
 // The WCAG contrast GATE (§14.15.1 item 8 · §14.15.1-A ⑧ settled). This RIDES the existing e2e suite (the
@@ -29,11 +29,24 @@ interface Combo {
   theme: string;
   mode: string;
   accent: string;
+  /** Per-theme settings this combo is probed under (D52 G6) — see `ThemeMatrix.settings`. */
+  settings?: Record<string, string>;
 }
 
-const COMBOS: Combo[] = CONTRAST_MATRIX.flatMap((t) =>
-  t.modes.flatMap((mode) => t.accents.map((accent) => ({ theme: t.theme, mode, accent }))),
+const COMBOS: Combo[] = [...CONTRAST_MATRIX, ...SETTINGS_MATRIX].flatMap((t) =>
+  t.modes.flatMap((mode) =>
+    t.accents.map((accent) => ({ theme: t.theme, mode, accent, settings: t.settings })),
+  ),
 );
+
+/** A combo's human name — the test title AND the failure prefix. */
+const comboId = (c: Combo): string =>
+  `${c.theme} ${c.mode}/${c.accent}` +
+  (c.settings
+    ? ` [${Object.entries(c.settings)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(" ")}]`
+    : "");
 
 // Token pairs to gate. `fg`/`bg` are semantic tokens; `min` is the WCAG 2.1 floor for that role (4.5:1 for
 // body text / ink on fill; 3:1 for large/secondary/status affordances). All are resolved via the probe.
@@ -41,6 +54,12 @@ interface Pair {
   fg: string;
   bg: string;
   min: number;
+  /** BAND-SAMPLE mode (D52 §4.4's own gate method, learned the hard way). The default rule gates every
+   *  stop of a gradient `bg` — right when the ink runs edge to edge, wrong when the ink is a CENTRED label
+   *  on a two-stop fill: there the text never touches the extremes, and gating them failed four dossier
+   *  palettes spuriously. With `band`, a gradient `bg` contributes the MIDPOINT of its stop list instead —
+   *  the band the label actually covers. Flat `bg` tokens are unaffected either way. */
+  band?: boolean;
 }
 const PAIRS: Pair[] = [
   { fg: "--accent-ink", bg: "--accent-fill", min: 4.5 }, // ink on the accent-filled controls (item ①)
@@ -64,17 +83,58 @@ const THEME_PAIRS: Record<string, Pair[]> = {
     { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-card", min: 4.5 }, // muted labels are still small text
     { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-from", min: 4.5 }, // the role line under the name
     { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-to", min: 4.5 },
-    { fg: "--gc-unit-no", bg: "--gc-dossier-from", min: 4.5 }, // the UNIT DOSSIER kicker
-    { fg: "--gc-unit-no", bg: "--gc-dossier-to", min: 4.5 },
-    { fg: "--gc-dossier-accent", bg: "--gc-dossier-card", min: 4.5 }, // the Shut down button's label
-    { fg: "--gc-dossier-ok", bg: "--gc-dossier-card", min: 3 }, // service dots: non-text affordances
-    { fg: "--gc-dossier-warn", bg: "--gc-dossier-card", min: 3 },
+    { fg: "--gc-dossier-kicker", bg: "--gc-dossier-from", min: 4.5 }, // the UNIT DOSSIER kicker
+    { fg: "--gc-dossier-kicker", bg: "--gc-dossier-to", min: 4.5 },
+    // The SECONDARY (Shut down) pair — its label AND its outline. The outline became a token at G6
+    // precisely so it could be gated: as an inline color-mix it was invisible here.
+    { fg: "--gc-dossier-accent", bg: "--gc-dossier-card", min: 4.5 },
+    { fg: "--gc-dossier-act-line", bg: "--gc-dossier-card", min: 3 },
+    // The PRIMARY's label over the band it actually covers (band-sample — the label is centred).
+    { fg: "--gc-dossier-act-ink", bg: "--gc-dossier-act-fill", min: 4.5, band: true },
+    // The service LED, both states. Non-text affordances, and on a port-bearing row the ONLY visible
+    // status cue — so the DIM state is gated at the same floor as the bright one, no exemption.
+    { fg: "--gc-dossier-led", bg: "--gc-dossier-card", min: 3 },
+    { fg: "--gc-dossier-led-dim", bg: "--gc-dossier-card", min: 3 },
+    // The close disc's glyph on its own disc (the pair that exists because the old composition inverted).
+    { fg: "--gc-dossier-close-ink", bg: "--gc-dossier-close-bg", min: 4.5 },
+    // The two things the dossier surface reads off the OTHER axis — the bounded cross-axis checks (§4.4).
+    // The star badge is GATED on every dossier sheet. The sheet's top brand STRIP is the other one, and it
+    // is ADVISORY-ONLY — see THEME_ADVISORIES below for why a hard floor is not available to it.
+    { fg: "--gc-star", bg: "--gc-dossier-badge", min: 3 },
+    { fg: "--gc-star-hi", bg: "--gc-dossier-badge", min: 3 },
+    // Slip's STICKER button is the paint that varies on both axes, so it is probed on every ACCENT row
+    // too — it is the same `--accent-ink`/`--accent-fill` pair the kit set above already gates, which is
+    // why no extra row is needed for it here.
   ],
 };
 
+/** An ADVISORY cross-axis probe: measured and ATTACHED to the report on every row of the theme, never
+ *  gated. `fg` is read over each of `bgs` (every stop × every stop; worst wins).
+ *
+ *  Gacha's dossier top STRIP is the one paint that needs this. The strip is `--gc-brand-fill` — an ACCENT-
+ *  axis token — laid over the sheet's own `--gc-dossier-from`/`-to` gradient, i.e. the two axes meet on it
+ *  and neither owns both sides. A hard floor is therefore impossible BY DESIGN: making it pass would mean
+ *  per-dossier normalisation of an accent token, which violates the write-disjointness rule the dossier
+ *  blocks are built on (every declaration under `body[data-gc-dossier]` is a `--gc-dossier-*` name). It is
+ *  also a 4px decorative band with no text and no state — nothing WCAG has a floor for. Slip ships at
+ *  ~1.4 against its own top stop deliberately (a brand band that reads as part of the sheet, not a rule
+ *  across it); whether any palette wants a louder strip is an owner device-round call, and the numbers
+ *  this annotation prints are the input to it. */
+interface Advisory {
+  fg: string;
+  bgs: string[];
+}
+const THEME_ADVISORIES: Record<string, Advisory[]> = {
+  gacha: [{ fg: "--gc-brand-fill", bgs: ["--gc-dossier-from", "--gc-dossier-to"] }],
+};
+
 const pairsFor = (theme: string): Pair[] => [...PAIRS, ...(THEME_PAIRS[theme] ?? [])];
+const advisoriesFor = (theme: string): Advisory[] => THEME_ADVISORIES[theme] ?? [];
 const probeTokensFor = (theme: string): string[] => [
-  ...new Set(pairsFor(theme).flatMap((p) => [p.fg, p.bg])),
+  ...new Set([
+    ...pairsFor(theme).flatMap((p) => [p.fg, p.bg]),
+    ...advisoriesFor(theme).flatMap((a) => [a.fg, ...a.bgs]),
+  ]),
 ];
 
 /** WCAG 2.1 contrast ratio (1–21) between two concrete color strings, via culori. */
@@ -95,17 +155,32 @@ function apcaLc(text: string, bg: string): number {
 }
 
 for (const c of COMBOS) {
-  test(`contrast — ${c.theme} ${c.mode}/${c.accent}`, async ({ page }) => {
+  test(`contrast — ${comboId(c)}`, async ({ page }) => {
     // Seed the persisted UI blob BEFORE any page script (the flows.spec addInitScript pattern). `v:1` stamps
     // the current persisted-schema version so the migration chain is skipped and mode/accent apply directly.
+    // `themeSettings` carries the row's own per-theme seed (D52 G6) through the SAME persisted key the app
+    // reads, so the theme's Root stamps its private axis exactly as it would for the owner.
     await page.addInitScript(
       (ui) => {
         localStorage.setItem("ctrlb.ui", JSON.stringify(ui));
       },
-      { theme: c.theme, mode: c.mode, accent: c.accent, tab: "fleet", v: 1 },
+      {
+        theme: c.theme,
+        mode: c.mode,
+        accent: c.accent,
+        tab: "fleet",
+        v: 1,
+        ...(c.settings ? { themeSettings: { [c.theme]: c.settings } } : {}),
+      },
     );
 
+    // ARM the appearance-reconcile wait BEFORE navigating (Codex F3). The assertion below proves the seed
+    // SURVIVED that reconcile — but the reconcile is an async round-trip, so without this the assertion can
+    // read `ctrlb.ui` in the window between boot and the response landing and pass on a race. The route is
+    // mocked by the `mockApi` fixture, so the response always arrives.
+    const appearanceDone = page.waitForResponse("**/api/appearance");
     await page.goto("/");
+    await appearanceDone;
 
     // Wait until the theme's SCOPED tokens.css (@layer theme :scope) has applied — it sets `color-scheme`
     // on <html>, flipping the computed value off the "normal" default — AND the Kit Root has mounted.
@@ -113,6 +188,18 @@ for (const c of COMBOS) {
       .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme))
       .not.toBe("normal");
     await page.waitForSelector("#app-scroll");
+
+    // The seed's SURFACE must be stamped before anything is measured (Codex F3): `body[data-gc-dossier]`
+    // is the selector tokens.css actually matches on, so a Root that failed to stamp it would leave this
+    // row measuring the default palette. `toHaveAttribute` auto-waits, so the stamping layout effect is
+    // free to land after the reconcile. (The full seed-SURVIVAL assertion runs AFTER the probes — see
+    // below for why that placement is the race-free one.)
+    if (c.settings) {
+      for (const [k, v] of Object.entries(c.settings)) {
+        if (k === "dossierPalette")
+          await expect(page.locator("body")).toHaveAttribute("data-gc-dossier", v);
+      }
+    }
 
     // Probe: resolve each token to concrete color(s) by reading it back off a real CSS property.
     // TWO channels (the §14.15.1-⑨ two-channel contract, exercised by K2): a token may be a flat <color>
@@ -154,11 +241,33 @@ for (const c of COMBOS) {
       return [r.bgColor];
     };
 
+    /** BAND-SAMPLE (§4.4's gate method): the single colour under a CENTRED label — the midpoint of the
+     *  gradient's stops. sRGB channel-average, because a CSS gradient with no interpolation hint
+     *  interpolates in sRGB, so for the two-stop fills this theme uses it IS the exact 50% colour. A flat
+     *  token passes through untouched. */
+    const bandOf = (stops: string[], token: string): string[] => {
+      if (stops.length < 2) return stops;
+      // FAIL LOUDLY rather than silently mis-measuring (Codex F4). The channel-average IS the 50% colour
+      // only for a TWO-stop, unpositioned, sRGB-interpolated gradient — the shape every band-sampled token
+      // has today. Give a third stop (or a positioned/hinted one) to the same average and the number it
+      // returns is not the colour under the label any more, and the gate would keep passing on it.
+      expect(
+        stops.length,
+        `band-sample assumes a two-stop unpositioned gradient — ${token} now has ${stops.length} stops; ` +
+          `re-derive the band`,
+      ).toBeLessThanOrEqual(2);
+      const parsed = stops.map((s) => rgb(s)).filter((v) => v !== undefined);
+      if (parsed.length < 2) return stops;
+      const avg = (k: "r" | "g" | "b") => parsed.reduce((a, v) => a + v[k], 0) / parsed.length;
+      return [toSrgb(`rgb(${avg("r") * 255}, ${avg("g") * 255}, ${avg("b") * 255})`)];
+    };
+
     for (const p of pairsFor(c.theme)) {
       // Gate the WORST fg-stop × bg-stop pairing (fg tokens are flat today; bg may be a gradient).
+      const bgColors = p.band ? bandOf(colorsOf(p.bg), p.bg) : colorsOf(p.bg);
       let worst = { ratio: Infinity, fg: "", bg: "" };
       for (const fg of colorsOf(p.fg))
-        for (const bg of colorsOf(p.bg)) {
+        for (const bg of bgColors) {
           const ratio = wcag(fg, bg);
           if (ratio < worst.ratio) worst = { ratio, fg, bg };
         }
@@ -166,12 +275,67 @@ for (const c of COMBOS) {
       // APCA is ADVISORY — attach to the report, never gate on it (⑧).
       test.info().annotations.push({
         type: "apca",
-        description: `${c.theme} ${c.mode}/${c.accent}  ${p.fg}(${worst.fg}) vs ${p.bg}(${worst.bg}) → WCAG ${worst.ratio.toFixed(2)}:1 · APCA Lc ${lc.toFixed(1)}`,
+        description: `${comboId(c)}  ${p.fg}(${worst.fg}) vs ${p.bg}(${worst.bg})${p.band ? " [band]" : ""} → WCAG ${worst.ratio.toFixed(2)}:1 · APCA Lc ${lc.toFixed(1)}`,
       });
       expect(
         worst.ratio,
-        `${c.theme} ${c.mode}/${c.accent}: ${p.fg} (${worst.fg}) vs ${p.bg} (worst stop ${worst.bg}) — WCAG ${worst.ratio.toFixed(2)}:1 < ${p.min}:1`,
+        `${comboId(c)}: ${p.fg} (${worst.fg}) vs ${p.bg} (${p.band ? "label band" : "worst stop"} ${worst.bg}) — WCAG ${worst.ratio.toFixed(2)}:1 < ${p.min}:1`,
       ).toBeGreaterThanOrEqual(p.min);
+    }
+
+    // The ADVISORY cross-axis probes — measured on the same resolved token set, attached to the report on
+    // the SAME channel APCA uses, and never asserted (see `THEME_ADVISORIES` for why the strip has no
+    // floor). Worst stop × worst stop, over every listed background token. NON-THROWING by contract
+    // (Codex fix-set R2 #1): `colorsOf` asserts on an unparseable image and `wcag` can throw on a
+    // malformed color — legitimate guards for the GATED pairs, but an advisory that can fail the run IS
+    // a gate. An unresolvable advisory annotates itself as such instead.
+    for (const a of advisoriesFor(c.theme)) {
+      try {
+        let worst = { ratio: Infinity, fg: "", bg: "", bgName: "" };
+        for (const fg of colorsOf(a.fg))
+          for (const bgName of a.bgs)
+            for (const bg of colorsOf(bgName)) {
+              const ratio = wcag(fg, bg);
+              if (ratio < worst.ratio) worst = { ratio, fg, bg, bgName };
+            }
+        test.info().annotations.push({
+          type: "strip-advisory",
+          description: `${comboId(c)}  ${a.fg}(${worst.fg}) vs ${worst.bgName}(${worst.bg}) → WCAG ${worst.ratio.toFixed(2)}:1 · APCA Lc ${apcaLc(worst.fg, worst.bg).toFixed(1)}`,
+        });
+      } catch (err) {
+        test.info().annotations.push({
+          type: "strip-advisory",
+          description: `${comboId(c)}  ${a.fg}: unresolved (${err instanceof Error ? err.message : String(err)})`,
+        });
+      }
+    }
+
+    // …and NOW prove the settings seed survived (D52 G6). The app reconciles its appearance against
+    // `GET /api/appearance` on every load; a server doc with a real `updated_at` wins LWW and REPLACES
+    // `themeSettings` wholesale — the seeded palette would be silently swapped for the theme's default
+    // while the row kept passing. (Found live against the real dev backend.) The e2e mock is deliberately
+    // unseeded (`updated_at: null`), so LOCAL holds — this asserts it still does. Placed AFTER the probes
+    // on purpose (Codex fix-set R2 #3): awaiting the response alone does not order this against React
+    // Query's reconcile write, and no observable sentinel exists when LOCAL wins — but from HERE, a wipe
+    // that landed BEFORE the probes shows up as a wrong body attribute above, and a wipe that landed
+    // after them still fails the row loudly, naming the fixture trap either way.
+    if (c.settings) {
+      const applied = await page.evaluate(
+        (theme) =>
+          (
+            JSON.parse(localStorage.getItem("ctrlb.ui") ?? "{}") as {
+              themeSettings?: Record<string, Record<string, unknown>>;
+            }
+          ).themeSettings?.[theme] ?? {},
+        c.theme,
+      );
+      for (const [k, v] of Object.entries(c.settings)) {
+        expect(
+          applied[k],
+          `${comboId(c)}: the seeded ${k}="${v}" did not survive the appearance reconcile — this row ` +
+            `would be measuring the theme's DEFAULT, not the palette it names`,
+        ).toBe(v);
+      }
     }
   });
 }

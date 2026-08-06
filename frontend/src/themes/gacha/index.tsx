@@ -26,23 +26,63 @@ const { Root, preload } = preloadableRoot(() =>
   import("./GachaRoot").then((m) => ({ default: m.GachaRoot })),
 );
 
+/** One accent chip: the variant's radial crown, then its brand trio. See the `accents` note below for why
+ *  these are literals rather than `var(--gc-brand-fill)`, and `gachaChrome.test.ts` for the guard that
+ *  keeps each chip's trio equal to the palette block it previews. */
+const rampSwatch = (crown: string, [b1, b2, b3]: readonly string[]): string =>
+  `linear-gradient(135deg, ${crown} 0 34%, ${b1} 34%, ${b2} 67%, ${b3})`;
+/** Family 1 (arcade · midnight · indigo) keeps the brand trio — only the base ramp moves. */
+const arcadeTrio = ["#ff6cae", "#805cff", "#54e5ff"] as const;
+
 export const gacha: ThemeDef = {
   id: "gacha",
   label: "Gacha",
   Root,
   loadRoot: preload,
-  // Dark-only. ONE accent today: §4.4 rules five palette variants (arcade · midnight · indigo + two
-  // accent-shifting picks) but they stay UNEXPOSED until G6 — declaring them early would put empty chips in
-  // the owner's picker and rows in the e2e contrast matrix for tokens that don't exist yet. The swatch is the
-  // prototype's own 92° brand gradient (the cosmos/frontier "a swatch is DATA for the chip" precedent).
+  // Dark-only, SEVEN accents (§4.4 as amended at the 2026-08-06 G6 pre-build rulings — all four family-2
+  // shifter candidates kept, "a bunch of variety could be good"): family 1 re-tints only the base ramp
+  // (arcade · midnight · indigo, the brand trio constant), family 2 moves the trio too (ember · glacier ·
+  // nebula · eridu). Each id is one `body[data-accent]` block in tokens.css and one row in
+  // e2e/contrast-matrix.ts.
+  //
+  // THE SWATCHES ARE LITERALS, and that is a deliberate REVERSAL of the Codex-G0 #4 note that used to sit
+  // here. Reading `var(--gc-brand-fill)` previewed the ACTIVE accent — correct while there was exactly one,
+  // and wrong with seven: every chip in the picker would show whichever palette is currently applied, so
+  // the control could not preview what it picks. So each chip re-states its own trio, vapor's literal
+  // gradient-string idiom (themes/vapor/index.tsx). The values are DATA in TS, not CSS, so gacha's
+  // no-literal-colors stylelint fence — which governs the theme's .css files — is untouched; the risk the
+  // old note guarded against (a chip drifting from the token) is covered by a unit test that reads
+  // tokens.css and asserts every chip still names its palette's own three brand hexes.
   palettes: {
     modes: ["dark"],
     defaultMode: "dark",
     accents: [
-      // The swatch READS THE TOKEN rather than re-typing the trio's hexes (Codex G0 #4): the chip is an
-      // inline background on an element inside gacha's own `@scope`, so `var()` resolves there — and the
-      // picker then previews the live brand identity instead of a copy that can silently drift from it.
-      { id: "arcade", label: "Arcade", swatch: "var(--gc-brand-fill)" },
+      // Each chip is ITS OWN radial-crown stop for the first third, then its own trio: family 1's three
+      // share the brand trio and differ only in the ramp, so a trio-only chip would draw three identical
+      // circles; family 2's differ in both. One 22px chip, both halves of what a variant actually changes.
+      { id: "arcade", label: "Arcade", swatch: rampSwatch("#3a205b", arcadeTrio) },
+      { id: "midnight", label: "Midnight", swatch: rampSwatch("#1d2450", arcadeTrio) },
+      { id: "indigo", label: "Indigo", swatch: rampSwatch("#26377f", arcadeTrio) },
+      {
+        id: "ember",
+        label: "Ember",
+        swatch: rampSwatch("#5b2350", ["#ff6f52", "#ff4f93", "#c46bff"]),
+      },
+      {
+        id: "glacier",
+        label: "Glacier",
+        swatch: rampSwatch("#1d3f7a", ["#7c6cff", "#2fb8ff", "#79f2e6"]),
+      },
+      {
+        id: "nebula",
+        label: "Nebula",
+        swatch: rampSwatch("#43276b", ["#eb77ea", "#9c96f4", "#5ec7db"]),
+      },
+      {
+        id: "eridu",
+        label: "Eridu",
+        swatch: rampSwatch("#26305e", ["#3a86ff", "#2fd8f5", "#3fe9bd"]),
+      },
     ],
     defaultAccent: "arcade",
   },
@@ -79,6 +119,29 @@ export const gacha: ThemeDef = {
         { val: "three", label: GACHA_COPY.starModeThree },
       ],
       default: "five",
+    },
+    // THE DOSSIER PALETTE (§4.4 family 3 / THE PICKER CONTRACT, G6). The dark trial is signed off AS A
+    // PICKER, not a flip: `slip` — the shipped G2 light sheet — survives as an option, which is what
+    // dissolved the "one light surface is the identity" objection. Default `neon-purple`, the owner's own
+    // pick ("the first top-left image… I like the button there"). The value lands on `body[data-gc-dossier]`
+    // (GachaRoot) and every option except slip is one tokens.css block; slip is the ABSENCE of one.
+    //
+    // The `swatch` per option is the §4.9 ledger's additive seg slot, and each value is the thing the
+    // option most visibly changes: a dark palette's ACTION-FILL start (the button the owner picked this
+    // set for), and slip's paper top. Literals for the same reason the accent chips are — five rows, one
+    // active palette; `var()` would draw the active one five times.
+    dossierPalette: {
+      type: "seg",
+      label: "Dossier",
+      desc: GACHA_COPY.settingDossierDesc,
+      options: [
+        { val: "slip", label: "Slip", swatch: "#f9f8ff" },
+        { val: "neon-purple", label: "Neon", swatch: "#511cab" },
+        { val: "sunset-orange", label: "Sunset", swatch: "#d97943" },
+        { val: "rose-pink", label: "Rose", swatch: "#da7b7a" },
+        { val: "aurora-violet", label: "Aurora", swatch: "#7e37a5" },
+      ],
+      default: "neon-purple",
     },
     // R6 — both ship ON, flipping the prototype's own OFF defaults (owner-ruled).
     wallpaper: {

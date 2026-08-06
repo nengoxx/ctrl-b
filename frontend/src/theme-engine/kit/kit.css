@@ -1765,6 +1765,22 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   background: var(--accent-fill);
   color: var(--accent-ink);
 }
+/* The optional per-option COLOUR CHIP (Seg's `swatch`, D52 §4.9 ledger — gacha's dossier picker). Sized
+ * and ringed like the palette picker's `.sw-chip` so the two chip surfaces read as one system, but small
+ * and INLINE: it sits inside the chip beside the label rather than replacing it, because a seg option is
+ * named text with a colour, not a colour alone. `inline-block` + its own `vertical-align` keep it on the
+ * label's optical centre line at any font size (it has no children to lay out, so the block form is the
+ * whole need — it flows in the button's text like a glyph). Only rendered when an option carries a
+ * swatch, so a seg row without one is untouched (no selector matches, no layout change). */
+.kit .seg button .seg-chip {
+  display: inline-block;
+  vertical-align: -1px;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+}
 .kit .switch {
   display: inline-flex;
   align-items: center;

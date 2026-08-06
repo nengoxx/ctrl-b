@@ -25,6 +25,19 @@ export interface ThemeMatrix {
   // fewer here (utils/conf move off-bar into Conf/the menu). Drift-guarded against the registry-resolved bar
   // in tests/theme-engine/themeContract.test.ts, so a `defaultLayout` change breaks the GUARD, not the sweep.
   bar: string[];
+  /** An optional PER-THEME SETTINGS SEED (D52 G6): the `ui.themeSettings[<theme>]` overrides this row is
+   *  probed under. It exists because a theme can own a palette axis of its own — gacha's dossier picker
+   *  (`body[data-gc-dossier]`, five options) re-tints a whole surface without touching mode or accent, so
+   *  before this the harness had NO WAY TO EXPRESS it and four of five palettes went unmeasured.
+   *
+   *  The rows deliberately do NOT form a product: §4.4's "Gate coverage" ruling is 7 accent rows (dossier
+   *  at its default) + 5 dossier rows (accent at its default) + bounded cross-axis pairs, not a 7x5 matrix
+   *  — the only paints that vary on BOTH axes are the sheet's top strip, the star badge and slip's sticker
+   *  button, and those are covered by pairs rather than by combinations.
+   *
+   *  Drift-guarded in tests/theme-engine/themeContract.test.ts: every seeded key must be a declared `seg`
+   *  setting of that theme and every value one of its declared options. */
+  settings?: Record<string, string>;
   /** `false` while a theme still ships BESPOKE chrome (= CONTRACT_WAIVERS "kit-structure"): the kit-render
    *  sweep waits on `.kit-appbar`, which such a theme never renders, so it skips those rows. The
    *  TOKEN-level gate (contrast.spec) still runs — it only needs <body> + `#app-scroll`. Omitted = true,
@@ -67,12 +80,32 @@ export const CONTRAST_MATRIX: ThemeMatrix[] = [
     bar: FULL_BAR,
   },
   {
-    // gacha (D52 G0): dark-only, and ONE accent for now — §4.4 rules five palette variants but they stay
-    // unexposed until G6, so the matrix describes exactly what ships. Like frontier it defaults to 3-tab
-    // (the prototype's Fleet/Agent/Settings shape), so utils is hosted in Conf → off-bar.
+    // gacha (D52 G6): dark-only, SEVEN accents on the shared body[data-accent] axis. Like frontier it
+    // defaults to 3-tab (the prototype's Fleet/Agent/Settings shape), so utils is hosted in Conf → off-bar.
+    // No `settings` seed → the theme's own default dossier palette (`neon-purple`) is what these seven rows
+    // are measured under, which is the §4.4 "7 accent rows, dossier at default" half of the promise.
     theme: "gacha",
     modes: ["dark"],
-    accents: ["arcade"],
+    accents: ["arcade", "midnight", "indigo", "ember", "glacier", "nebula", "eridu"],
     bar: ["fleet", "agent", "conf"],
   },
+];
+
+/** The extra rows the ACCENT-cross-MODE product cannot express: a theme's own palette axis, seeded through
+ *  `ThemeMatrix.settings` (D52 G6, §4.4 "Gate coverage"). Each is the theme's DEFAULT accent + one value of
+ *  its private axis — the other half of "7 accent rows + 5 dossier rows".
+ *
+ *  Kept as a separate export rather than folded into `CONTRAST_MATRIX` because that list has three other
+ *  consumers (the kit-render sweep's `bar`, and two drift guards that assert it equals the registry's
+ *  palettes exactly) — a settings row is not a palette row and must not appear in those. */
+export const SETTINGS_MATRIX: ThemeMatrix[] = [
+  // gacha's DOSSIER picker (§4.4 family 3). `neon-purple` is the theme default and is therefore already
+  // covered by the seven accent rows above, so it is NOT repeated here — these are the other four.
+  ...["slip", "sunset-orange", "rose-pink", "aurora-violet"].map((p) => ({
+    theme: "gacha",
+    modes: ["dark"],
+    accents: ["arcade"], // the default accent: the dossier rows vary ONE axis at a time
+    bar: ["fleet", "agent", "conf"],
+    settings: { dossierPalette: p },
+  })),
 ];

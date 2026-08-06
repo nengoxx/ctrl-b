@@ -762,7 +762,7 @@ for the "04 / 04" counter.
 | ✅ G3 | **CLOSED 2026-08-04 (as-built §7.4; commits `6c5298d..5ce33d7` + the side-session re-rule `ba0b8b1`/`d65e7b7`) — device round PASSED wholesale, Gecko scanline branch NOT needed.** GachaAgent body (oracle two-FACE crossfade — art+scrim+name ghost as ONE surface, owner-ruled; pin `top: var(--appbar-h)`, owner-ruled) + the shared catalog's `arcade` composer skin (measured: no existing skin faithful) + bubble polish + the owner's four live findings + the Codex wave (plan-pin regression, the UN-RUNGED-header stacking fix, M7 stale-base remeasure, safeRafLoop fault latch). Device checks owed: M7 blur on Fennec · 12.5px read comfort · pin across appbar modes · the flat composer · M6 scanline on Gecko | eyeball + device check (PENDING) |
 | ✅ G4 | **CLOSED 2026-08-04 (as-built §7.5; commits `dd1a056..fa86ed3`) — owner round PASSED on phone + desktop, 67% default kept, M2 device-confirmed.** The reel FIGURE (67% tunable default, all dials `--gc-figure-*` tokens, corrected baked glow — drop-shadow's length IS σ, §7.5 lesson) + M2 shipped prototype-exact with the seam promoted (flag deleted) + the type-scoped VT skip + degradation latches. Codex: READY WITH FIXES → wave → confirm all-resolved, residual LOWs closed | owner figure eyeball + Fennec+Chrome device round (incl. the one-line M2 check) |
 | ◐ G5 | **BUILT + REVIEW-COMPLETE 2026-08-05 (as-built §7.6; commits `ac621ed..8f6297a`) — OWNER FILE-DROP + GALLERY ROUND = the open gate.** The namespace-generic media surface per the ruled option (b): hardened read-only mount + per-role index (+`revision`), the `ThemeDef.media` gallery, the first SW runtimeCaching, per-namespace DEGRADE-NEVER-BRICK health, the reel-pool pin ruling. Codex arc: NOT READY → 2 waves + final → closed | owner file-drop + phone gallery round |
-| G6 | **Per the 2026-08-06 pre-build rulings (all §4.4): TWO PICKERS.** (i) ACCENT picker, SEVEN variants: arcade/midnight/indigo + ember/glacier/nebula + the RE-DERIVED eridu (green/blue walk) — each one `body[data-accent]` block per the §4.4 variant-block recipe + a `palettes.accents` row + a `contrast-matrix.ts` row. (ii) DOSSIER picker (gacha settings row → `body[data-gc-dossier]`, seg + the additive `swatch?` chip extension): slip (unchanged, keeps sticker button) + neon-purple (DEFAULT) · sunset-orange · rose-pink · aurora-violet with the neon-purple-panel flat button (re-measured, highlight included), vapor-style led/led-dim service dots, per-palette kicker + close-disc pairs, top strip kept. (iii) Wordmark swap → コントロール・ビー (§4.3). (iv) NEW-ribbon DEMO on ONE random host card (no semantics, no data seam — owner decides keep/drop/meaning at the device round; the pick is made ONCE per Fleet mount and sticks until that host leaves the fleet — never re-rolled on poll re-renders; empty fleet = no ribbon). (v) Dark-surface verification: disabled/focus/active state sheet + brand strip + star badge rendered on the darks. Dots-close-dossier: RULED KEEP (2026-08-06) — off the open list | owner device round (eyeball-heavy BY NATURE — budget several rounds, the G0 lesson) |
+| ◐ G6 | **BUILT + REVIEW-COMPLETE 2026-08-06 (as-built §7.7; uncommitted at write time, committed same day) — OWNER DEVICE ROUND = the open gate, then v1.5.0.** Per the 2026-08-06 pre-build rulings (all §4.4): TWO PICKERS. (i) ACCENT picker, SEVEN variants: arcade/midnight/indigo + ember/glacier/nebula + the RE-DERIVED eridu (green/blue walk) — each one `body[data-accent]` block per the §4.4 variant-block recipe + a `palettes.accents` row + a `contrast-matrix.ts` row. (ii) DOSSIER picker (gacha settings row → `body[data-gc-dossier]`, seg + the additive `swatch?` chip extension): slip (unchanged, keeps sticker button) + neon-purple (DEFAULT) · sunset-orange · rose-pink · aurora-violet with the neon-purple-panel flat button (re-measured, highlight included), vapor-style led/led-dim service dots, per-palette kicker + close-disc pairs, top strip kept. (iii) Wordmark swap → コントロール・ビー (§4.3). (iv) NEW-ribbon DEMO on ONE random host card (no semantics, no data seam — owner decides keep/drop/meaning at the device round; the pick is made ONCE per Fleet mount and sticks until that host leaves the fleet — never re-rolled on poll re-renders; empty fleet = no ribbon). (v) Dark-surface verification: disabled/focus/active state sheet + brand strip + star badge rendered on the darks. Dots-close-dossier: RULED KEEP (2026-08-06) — off the open list | owner device round (eyeball-heavy BY NATURE — budget several rounds, the G0 lesson) |
 
 Each slice: Opus build from a pinned brief → main-seat audit → Codex round → owner eyeball
 (the D51 cadence). The theme joins `themeContract.test.ts` + the e2e structural/a11y groups at G0.
@@ -1148,6 +1148,98 @@ role-file collision). The record:
   `~/.ctrl-b-dev/media/gacha/`), check the deal/scenes/wallpaper/oracle/reel-cutout pickup,
   and the phone gallery (order, pins, warnings, real touch). Owner cutouts have NO baked glow
   (expected; the gallery's reel hint + `art.ts` say so — the bake recipe is there if wanted).
+
+**§7.7 — G6 AS-BUILT (2026-08-06; ✅ code + reviews COMPLETE — ⏳ the owner DEVICE ROUND is the
+open gate).** The two pickers, the wordmark swap, the NEW-ribbon demo, the dark-surface
+verification. Diff +~1.3k/−100 across 23 files (+ `lib/chipBackground.ts`,
+`tests/stylelint/accentRules.test.ts` new); FE unit 1549→**1594** · Playwright 211→**231**
+(gacha contrast rows 1→12) · full gate 6/6, all main-seat re-run after every wave.
+- **(i) ACCENT picker — seven `body[data-accent]` blocks** per the §4.4 recipe. Family 1 blocks
+  carry only the ramp functions (trio constant by identity; the completeness guard's `RAMP_ONLY`
+  set knows). midnight/indigo BUILD-DERIVED (sRGB lerp): mid `#05070f/#0d1024/#1d2450→#0a0d22→#04050c`
+  (ink/fill 4.69) · ind `#050918/#0e1631/#26377f→#0d1737→#040716` — the card TUNED one step
+  deeper (first draft hit 3.97 worst-trio-on-card, under arcade's own 4.10; shipped 4.15,
+  ink/fill 4.62). ember/glacier/nebula = the pinned table hexes (ink/fill 6.25/5.03/7.51).
+  **eridu RE-DERIVED**: trio `#3a86ff→#2fd8f5→#3fe9bd`, LCh hue 285.3°→219.6°→170.1° monotonic,
+  L* 57.2→79.8→83.4, ≥83° clearance from gold/warn (floor 25°); worst-on-card 5.27. **The
+  carve-out FIRED on the mechanism** (slot 3 sits 15° from ok-green — CLOSER than the rejected
+  lime's 32°): `--gc-online-fill` + `--gc-caption` pinned to arcade's verified values; the
+  ONLINE ribbon stays green→cyan. Per-variant `--gc-display-shadow` = darken(radial-1,.50).
+  **A §14.6 trap closed:** kit's `--accent-ink: var(--bg)` sits on `:root` (= the scope root) and
+  froze at arcade's ink under every variant — re-declared on `body` (vapor-precedented); the gate
+  would have measured the stale pair. Recipe fidelity: three §4.4 formulas don't round-trip
+  arcade's own literals (`lighten(card,.02/.08)`, `darken(b2,.06)`) — arcade untouched, variants
+  take the recipe as written; recorded not fudged.
+- **(ii) DOSSIER picker** — `dossierPalette` seg exactly per THE PICKER CONTRACT; slip = NO
+  block. Ten `--gc-dossier-*` tokens minted (kicker · led/led-dim · close-bg/-ink ·
+  act-fill/-ink/-rim/-hi/-line); THREE deleted (`--gc-unit-no`, `-ok`, `-warn` — dot-only
+  consumers, verdict ORPHANED; the `gachaChrome` value pin moved to the kicker). The dark
+  action button = the FRESH neon-purple panel measurement (1 mock px ≈ 1.13 CSS px): box
+  178×37 CSS px — the shipped geometry, nothing moved · radius 6px stands · fill VERTICAL
+  −21% (horizontal flat −2.4%) · rim 1.11× (sides) · top highlight 2.51× — **"two elements or
+  one" = ONE element, two values** (per-side `border-color: hi rim rim`; a border + inset line
+  would stack two lifts, 1px too tall) · no elevation → press = `opacity .82`, the generic
+  `:active` slide REPLACED for the darks (secondary included). Only neon-purple's bottom stop is
+  derived (`darken(#511cab,.10)` — its table pair fell 1.6% where the panel measures 21%; the
+  other three fall 23/31/43% and ship as authored). Dots vapor-style: led = the palette accent
+  (derived ONCE on `body` — deliberate deviation from the contract's letter, the ruling defines
+  led AS the accent; led-dim per-palette), dark-only glow; both states ≥3:1 all five (slip
+  5.79/3.30 · neon 6.98/3.36 · sunset 4.76/3.43 · rose 10.43/3.44 · aurora 8.86/3.43). TWO new
+  normalisations: sunset's ink-2 → per-palette `#d0cce8` (shared value hit 3.87 on its brick
+  top) and its kicker one step lighter `#f9c2a3` (table value had 0.04 margin). The secondary
+  outline is TOKENED (`-act-line`; darks mix 70% against their own CARD — the slip formula's
+  `-line` is near-transparent white there). The `swatch?` seg extension shipped the full §4.9
+  path (types · ConfTab mapping un-STRIPPED via spread · Seg chip, NO node when absent ·
+  kit.css `.seg-chip` · `chipBackground` extracted to `lib/`, the Swatches/Seg shared rule).
+  **Accent chips are LITERALS** — deliberate reversal of the Codex-G0 #4 var() note (right with
+  one accent, wrong with seven: every chip would preview the ACTIVE palette); drift covered by a
+  unit test pinning each chip to its tokens.css hexes.
+- **(iii) Wordmark** → コントロール・ビー (values swapped in `copy.ts`; both readings frozen, no
+  font regen; `settingDossierDesc` uses 紙 — a glyph the subset already carries via 壁紙).
+- **(iv) NEW ribbon** — own top-LEFT ribbon (the state chip is real status, not displaced),
+  brand-pill pair, `aria-hidden`; `pickRibbonHost` = a pure tested reducer, pick held in a REF
+  and drawn OUTSIDE the state updater (StrictMode-pure; an updater may be replayed), top 32px
+  (clear of the rarity row — found by render).
+- **(v) Dark-surface verification** — 5 palettes × {rest, disabled, active×2, focus} rendered;
+  disabled stays contrast-EXEMPT. Focus ring: `.bs-sheet:has(.gc-dossier) :focus-visible` takes
+  `--gc-dossier-accent` (fixes the pre-existing 2.62 kit ring on slip's card; `:has()`-scoped so
+  a future NON-dossier sheet keeps the kit's own gated ring — under slip the rose ring is ~3.01
+  on kit surfaces). Known notes: gacha's `.bs-sheet` block restyles any future second sheet
+  (exactly one exists); the close transient (`detail == null`) shows the kit ring for an instant.
+- **Gate coverage as built:** 7 accent rows + 5 dossier rows (a separate `SETTINGS_MATRIX` — the
+  palette list has three other consumers that must not see settings rows) × the §4.4 pair list
+  (+ `--gc-star-hi`/badge beyond the brief — same lozenge); band-sample mode (2-stop
+  HARD-ASSERTED; stop-average ≠ band beyond two); the seed survives-the-reconcile assertion
+  (body-attr stamp check BEFORE the probes, the localStorage survival check AFTER them — no
+  observable sentinel exists when LOCAL wins LWW, so post-probe placement is what makes a wipe
+  on either side fail loudly); TWO drift guards (every seeded value is a declared option; every
+  dossier option has a row). **The STRIP is an ADVISORY channel, not a gate** (main-seat ruling
+  on Codex R1-F1: the strip follows the ACCENT axis by owner design — a per-dossier floor would
+  force a write-disjointness break; slip ships 1.19 worst BY DESIGN pending the standing
+  device-round skepticism): worst strip-vs-sheet slip **1.19** · sunset **1.79** · rose
+  **3.53** · aurora **3.97** · neon **4.28**; non-throwing by contract (an unresolvable advisory
+  annotates "unresolved").
+- **The stylelint fence GREW:** `ctrlb/accent-fill-contexts` gates a read of ANY `var(--*-fill)`
+  (Codex R1-F2's one-hop alias smuggle) with an EXACT property allowlist (fix-set R2: the old
+  prefix admitted `background-color` — the precise property a gradient dies on); allowed = image
+  props or another `--*-fill` alias declaration. The plugin gained its FIRST tests (4, Node-API
+  driven, the hole replayed pre/post-fix). Rule id kept (ruling: id churn, zero behavior).
+  Comment-evasion inside `var()` REJECTED as out of threat model (mistakes, not adversaries).
+- **Review arc:** Codex R1 **SHIP WITH FIXES** (2 MED/3 LOW — lead: the strip gate +
+  the alias hole; all five accepted, two with leaner main-seat fixes) + 2 main-seat audit items
+  → Opus fix wave (7 items) → Codex fix-set R2 (4 CLOSED · 1 LOW · 2 MED) → wave 2
+  (main-seat-applied, 3 surgical edits: advisory try/catch · exact prop list + regression test ·
+  assertion moved post-probe) → full gate + full local Playwright green. Codex R1 also
+  independently confirmed: recipe completeness, write-disjointness both ways, the cascade
+  idioms (equal-specificity shared/per-palette token blocks vs `:not()` for component rules),
+  the pre-mount slip fallback, `swatch?` byte-identity, wordmark/glyph safety.
+- **Recorded, not fixed (pre-existing):** `--gc-tag-ink` on `--gc-brand-fill`'s worst arcade
+  stop = 4.27 (shipped since G1; the NEW ribbon reuses the pair, aria-hidden decorative).
+- **OPEN (the G6 gate): the owner device round** — the palettes themselves on all 12 combos,
+  plus the named items: ember's green→violet ONLINE ribbon · the top strip on the darks (the
+  1.19/1.79 advisories say slip/sunset are where to look) · the NEW-ribbon verdict
+  (keep/drop/meaning) · glacier's tri-strip at small size · the wordmark · dossier dots'
+  brightness-coding on slip (lighter-means-dim on paper). Then v1.5.0.
 
 ## 8. Owner questions (the §5-of-vapor-plan analogue) — **✅ ALL RULED (prep session + the lock session, both 2026-08-02); nothing remains open**
 

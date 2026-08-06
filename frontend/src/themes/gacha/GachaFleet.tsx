@@ -18,7 +18,14 @@ import { GachaCard } from "./GachaCard";
 import { GachaHostDetail } from "./GachaHostDetail";
 import { HERO_KEY, HOST_KEY_PREFIX, SCENE_KEY_PREFIX } from "./carousel";
 import { GACHA_COPY } from "./copy";
-import { CLOSE_DOSSIER_LABEL, cardShapes, counterText, hostsResolved, rateText } from "./fleet";
+import {
+  CLOSE_DOSSIER_LABEL,
+  cardShapes,
+  counterText,
+  hostsResolved,
+  pickRibbonHost,
+  rateText,
+} from "./fleet";
 import { artForHost, heroArt, wideArtForHost } from "./roster";
 import { MAX_STARS, toStarMode } from "./stars";
 import { useGachaRoster } from "./useGachaRoster";
@@ -53,6 +60,32 @@ export function GachaFleet({ active }: { active: boolean }) {
   // The card geometry (the main seat's Q8.10 ruling): host[0] featured, the rest in 3/4 pairs, a trailing
   // odd host wide. A pure function of the COUNT, so a poll can never re-shuffle the track's shape.
   const shapes = cardShapes(hosts.length);
+
+  // THE `NEW` RIBBON DEMO (G6 item iv). One machine wears it; the pick is made once and STICKS until that
+  // machine leaves the fleet. State + an effect rather than a render-time roll, for two reasons: rendering
+  // is not allowed to be random (a re-render would move the ribbon, and it would differ between the two
+  // passes of StrictMode), and "sticks until the host is gone" is exactly the shape of a reducer over the
+  // live id list. `pickRibbonHost` owns the rule and is unit-tested with an injected `rand`; the effect is
+  // a no-op on every poll that keeps the machine, so this settles instead of looping.
+  //
+  // The pick is DRAWN OUTSIDE the state updater and remembered in a ref (Codex G6 F5). A `setState(prev =>
+  // …)` updater must be a PURE function of `prev` — React may call it more than once for the same update
+  // (StrictMode calls it twice by design, and a re-render can replay it) — and `pickRibbonHost` rolls a
+  // random number when it has to choose, so as an updater it could roll a DIFFERENT machine per call. The
+  // ref makes the effect itself the idempotent thing instead: the second StrictMode run reads back the
+  // pick the first one stored, sees no change, and doesn't even set state.
+  const [ribbonHost, setRibbonHost] = useState<string | null>(null);
+  const ribbonRef = useRef<string | null>(null);
+  useEffect(() => {
+    const next = pickRibbonHost(
+      hosts.map((h) => h.id),
+      ribbonRef.current,
+    );
+    if (next !== ribbonRef.current) {
+      ribbonRef.current = next;
+      setRibbonHost(next);
+    }
+  }, [hosts]);
 
   // ── THE UNIT DOSSIER (G2). The seam the capsule cards and the promo slides have shared since G1 now has
   //    its destination: one selected host id, one sheet. COMPONENT state rather than a store (the frontier/
@@ -466,6 +499,7 @@ export function GachaFleet({ active }: { active: boolean }) {
               shape={shape}
               mode={starMode}
               onOpen={openHostDossier}
+              isNew={hosts[i].id === ribbonHost}
             />
           ))}
         </div>

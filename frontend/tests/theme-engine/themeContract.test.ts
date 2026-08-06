@@ -10,7 +10,7 @@ import { clampChroma, formatHex, inGamut, parse } from "culori";
 import { createElement } from "react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { CONTRAST_MATRIX } from "../../e2e/contrast-matrix";
+import { CONTRAST_MATRIX, SETTINGS_MATRIX } from "../../e2e/contrast-matrix";
 import { setUI } from "../../src/store/ui";
 import { LAYOUT_PRESETS, partitionSections, resolveLayout } from "../../src/theme-engine/layout";
 import { registeredThemes } from "../../src/theme-engine/registry";
@@ -395,6 +395,49 @@ describe("e2e contrast matrix ↔ registry palettes (drift guard)", () => {
       ).toEqual(bar.map((d) => d.id));
     },
   );
+
+  // The SETTINGS matrix (D52 G6) — the rows that probe a theme's own palette axis. It is hand-written for
+  // the same reason the palette list is (Playwright can't import the registry), so it needs the same guard:
+  // a seed that names a setting the theme no longer declares, or a value it no longer offers, would be
+  // SILENTLY COERCED to the theme's default by `resolveThemeSetting` — the row would still pass, while
+  // measuring the default palette a second time instead of the one it claims to cover.
+  it.each(SETTINGS_MATRIX.map((r, i) => [i, r] as const))(
+    "SETTINGS_MATRIX[%i] seeds real, declared settings values",
+    (_i, row) => {
+      const def = registeredThemes().find((d) => d.id === row.theme);
+      expect(def, `SETTINGS_MATRIX names an unregistered theme "${row.theme}"`).toBeTruthy();
+      expect(row.accents).toEqual([def!.palettes.defaultAccent]); // one axis at a time (§4.4 gate coverage)
+      expect(row.modes).toEqual(def!.palettes.modes ?? ["dark"]);
+      for (const [key, val] of Object.entries(row.settings ?? {})) {
+        const field = def!.settings?.[key];
+        expect(field, `${row.theme} declares no setting "${key}"`).toBeTruthy();
+        expect(field!.type, `${row.theme}.${key} must be a seg to seed a palette row`).toBe("seg");
+        expect(
+          (field as { options: { val: string }[] }).options.map((o) => o.val),
+          `${row.theme}.${key}="${val}" is not a declared option — the app would coerce it to the default ` +
+            `and this row would silently re-measure the default palette`,
+        ).toContain(val);
+      }
+    },
+  );
+
+  // …and the other half: every seg option of a settings-driven palette axis must HAVE a row. gacha's
+  // dossier picker is the first (its default rides the seven accent rows, the rest ride SETTINGS_MATRIX),
+  // so a sixth palette added without a row would go unmeasured — exactly the hole G6 opened the schema to
+  // close. Keyed off the declared options rather than a hand-list, so it auto-follows the theme.
+  it("every gacha dossierPalette option is covered by a contrast row", () => {
+    const def = registeredThemes().find((d) => d.id === "gacha");
+    const field = def?.settings?.dossierPalette;
+    expect(field?.type, "gacha must declare a `dossierPalette` seg").toBe("seg");
+    const declared = (field as { options: { val: string }[] }).options.map((o) => o.val);
+    const covered = new Set<string>([
+      String(field!.default), // covered by the seven accent rows, which run at the theme's defaults
+      ...SETTINGS_MATRIX.filter((r) => r.theme === "gacha").map((r) => r.settings!.dossierPalette),
+    ]);
+    expect([...covered].sort(), "a dossier palette ships with no contrast row").toEqual(
+      [...declared].sort(),
+    );
+  });
 });
 
 // ── OKLCH sRGB-gamut ADVISORY (§14.15.4 backlog → built 2026-07-12 at the frontier F1 pre-flight). A

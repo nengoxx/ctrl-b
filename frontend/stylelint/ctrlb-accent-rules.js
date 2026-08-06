@@ -22,33 +22,61 @@ const {
 } = stylelint;
 
 // ── Rule 1: ctrlb/accent-fill-contexts ────────────────────────────────────────────────────────
-// `var(--accent-fill)` is the GRADIENT-UNSAFE accent token (a theme may define it as a
-// linear-gradient for a filled control's face). A gradient is only valid on an <image>-accepting
-// property — `background` / `background-image` / the `mask` family — so `--accent-fill` must NEVER
-// reach a <color>-only property (color/border/outline/box-shadow/…): there it silently collapses
-// to the property's `initial`, killing the fill. This rule reports any `var(--accent-fill)` read
-// outside the allowed property set. Correctness rule → error severity (zero current violations).
+// `--accent-fill` is the GRADIENT-UNSAFE accent token (a theme may define it as a linear-gradient for
+// a filled control's face). A gradient is only valid on an <image>-accepting property — `background` /
+// `background-image` / the `mask` family — so it must NEVER reach a <color>-only property
+// (color/border/outline/box-shadow/…): there it silently collapses to the property's `initial`,
+// killing the fill. Correctness rule → error severity (zero current violations).
+//
+// The rule checks EVERY `--*-fill` READ, not just `--accent-fill` (Codex G6 F2 — the alias hole). The
+// `-fill` suffix is the repo's own declared convention for "the <image>-capable channel"
+// (`--accent-fill`, `--gc-brand-fill`, `--gc-online-fill`, `--gc-switch-fill`, `--gc-dossier-act-fill`),
+// and a custom property is an untyped substitution, so a gradient survives an ALIAS hop intact —
+// `--foo-fill: var(--accent-fill)` is legal and useful (the theme's own naming for the same channel).
+// What that means is that the mistake this rule exists to catch can be made ONE HOP LATER: the old
+// value-side check only looked for `--accent-fill` by name, so `color: var(--foo-fill)` walked straight
+// past it and the fill died exactly as it would have directly. Checking the SUFFIX at the consumer
+// closes that with no extra bookkeeping — no cross-file alias graph, no ordering assumptions.
+//
+// So a `--*-fill` read is allowed in exactly two places: an <image>-capable property, or the
+// declaration of ANOTHER `--*-fill` custom property (the alias hop, which is checked at ITS consumer).
+// Aliasing a fill into a token NOT named `*-fill` (say `--gc-dossier-ink`) is still reported at the
+// declaration, which is the naming mistake worth catching.
 const fillRuleName = "ctrlb/accent-fill-contexts";
 const fillMessages = ruleMessages(fillRuleName, {
-  rejected: (prop) =>
-    `Unexpected var(--accent-fill) on "${prop}" — the gradient-unsafe accent token may only appear on ` +
-    `background / background-image / mask-* (a <color>-only property silently drops a gradient fill).`,
+  rejected: (prop, token) =>
+    `Unexpected var(${token}) on "${prop}" — an <image>-capable *-fill token may only be read on ` +
+    `background / background-image / mask-* or aliased into another --*-fill custom property ` +
+    `(a <color>-only property silently drops a gradient fill).`,
 });
-// background (shorthand), background-image, and the full mask family incl. the -webkit- prefix.
-const ALLOWED_FILL_PROP = /^(?:background|background-image|(?:-webkit-)?mask(?:-|$))/i;
+// EXACTLY the <image>-capable paint properties: the background/mask shorthands + their -image longhands
+// (incl. the -webkit- mask prefix). An EXACT list, not a prefix match (Codex fix-set R2 #2): the old
+// `background…` prefix also matched `background-color` — a <color>-only property where a gradient dies,
+// i.e. the precise mistake this rule exists to catch — and the non-image mask longhands (mask-mode,
+// mask-size, …), where a fill token is never meaningful.
+const ALLOWED_FILL_PROP =
+  /^(?:background|background-image|(?:-webkit-)?mask|(?:-webkit-)?mask-image)$/i;
+// A custom property whose own name ends in `-fill` — the alias hop (see the header).
+const FILL_ALIAS_PROP = /^--[a-z0-9-]*-fill$/i;
+// A READ of any `--*-fill` token: `var(--x-fill)` or `var(--x-fill, <fallback>)`, at any nesting depth
+// inside the value (a stop inside a `linear-gradient()`, a layer of a `background` shorthand, …).
+const FILL_READ = /var\(\s*(--[a-z0-9-]*-fill)\s*[,)]/gi;
 
 const accentFillContexts = createPlugin(fillRuleName, (primary) => (root, result) => {
   const valid = validateOptions(result, fillRuleName, { actual: primary, possible: [true] });
   if (!valid) return;
   root.walkDecls((decl) => {
-    if (!/var\(\s*--accent-fill\b/i.test(decl.value)) return;
-    if (ALLOWED_FILL_PROP.test(decl.prop)) return;
-    report({
-      message: fillMessages.rejected(decl.prop),
-      node: decl,
-      result,
-      ruleName: fillRuleName,
-    });
+    const tokens = new Set([...decl.value.matchAll(FILL_READ)].map((m) => m[1]));
+    if (tokens.size === 0) return;
+    if (ALLOWED_FILL_PROP.test(decl.prop) || FILL_ALIAS_PROP.test(decl.prop)) return;
+    for (const token of tokens) {
+      report({
+        message: fillMessages.rejected(decl.prop, token),
+        node: decl,
+        result,
+        ruleName: fillRuleName,
+      });
+    }
   });
 });
 accentFillContexts.ruleName = fillRuleName;

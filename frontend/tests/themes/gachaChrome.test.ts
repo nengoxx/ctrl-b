@@ -6,6 +6,9 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { GACHA_COPY, gachaGlyphSet } from "../../src/themes/gacha/copy";
+import { gacha } from "../../src/themes/gacha";
+
 // gacha's CHROME re-skin — the LAYER-TRAP guard (the owner's G0 eyeball wave).
 //
 // gacha.css re-skins kit surfaces (`.kit-appbar`, `.kit-tabbar`, `.kit-tab-ind`, `.kit .switch`) from
@@ -161,8 +164,10 @@ describe("gacha chrome — the values live in tokens.css (council M7)", () => {
     ["--gc-dossier-line", "#c9d0ef"],
     // NOT the prototype's #c8438b: that literal measures 4.30 on the light sheet — under the small-text
     // 4.5 floor — so it deepened within the same rose (the owner-override/measured-floor precedent, like
-    // --gc-dossier-accent). The pin now guards the MEASURED value against drifting back.
-    ["--gc-unit-no", "#b03578"],
+    // --gc-dossier-accent). The pin now guards the MEASURED value against drifting back. RENAMED at G6:
+    // it was `--gc-unit-no`, which was not a `--gc-dossier-*` name and so escaped the dossier picker's
+    // family sweep — the value is the same rose, minted into the family it belongs to.
+    ["--gc-dossier-kicker", "#b03578"],
     ["--gc-caption", "#9ff0ff"],
     ["--gc-heading", "#ff8ec2"],
   ])("%s is the prototype's %s", (token, value) => {
@@ -220,5 +225,255 @@ describe("gacha sources — no non-ASCII outside copy.ts", () => {
         `  subset will not contain it and it will render in the system fallback face.\n` +
         `  Fix: move the string into GACHA_COPY, then run \`npm run fonts:gacha\` and commit the outputs.`,
     ).toEqual([]);
+  });
+});
+
+// ── G6: THE TWO PALETTE PICKERS (D52 §4.4) ────────────────────────────────────────────────────────
+// Seven accent variants + five dossier options, and the failure mode both share is SILENT: a variant
+// block that skips one of the recipe's derived tokens does not break — it inherits arcade's value, so a
+// new trio ships with arcade's pink caption and arcade's cyan ribbon beside it, and only an eyeball on
+// the right screen would ever notice. So the completeness of each block is machine-checked here, against
+// the registry rows that expose them.
+
+/** The DECLARATION BLOCK for one selector, from the raw stylesheet (values contain no braces, so scanning
+ *  to the next `}` is exact). Returns null when the selector has no block at all — which is itself a
+ *  meaningful answer for `slip`. */
+function blockFor(css: string, selector: string): string | null {
+  // A selector may also appear as the LAST MEMBER of a group (the shared dark-dossier block lists all
+  // four palettes, so `…"aurora-violet" {` matches there too). Take the occurrence whose preceding
+  // non-whitespace character is not a comma — i.e. the one that starts its own rule.
+  for (let at = css.indexOf(selector + " {"); at >= 0; at = css.indexOf(selector + " {", at + 1)) {
+    if (/,\s*$/.test(css.slice(0, at))) continue;
+    const open = css.indexOf("{", at);
+    return css.slice(open + 1, css.indexOf("}", open));
+  }
+  return null;
+}
+const declared = (block: string): string[] =>
+  [...block.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((m) => m[1]);
+
+// Every token that is a FUNCTION of the six base values (§4.4's recipe). A block that moves the base and
+// omits one of these ships a half-repainted theme.
+const RAMP_DERIVED = [
+  "--bg",
+  "--surface",
+  "--surface-2",
+  "--gc-backdrop",
+  "--gc-bar",
+  "--gc-bar-grad",
+  "--gc-bar-grad-wall",
+  "--gc-pill-bg",
+  "--gc-wallpaper-scrim",
+  "--gc-slide-scrim",
+  "--gc-card-wall",
+  "--gc-composer",
+  "--gc-card-scrim",
+  "--gc-bubble-bot",
+  // not a formula in the recipe — each variant states its own deep tint in its radial's family
+  "--gc-display-shadow",
+];
+const TRIO_DERIVED = [
+  "--gc-brand-1",
+  "--gc-brand-2",
+  "--gc-brand-3",
+  "--gc-heading",
+  "--gc-caption",
+  "--gc-online-fill",
+  "--gc-reel-slat",
+  "--gc-switch-fill",
+  "--gc-ind-shadow",
+  "--gc-bubble-user-shadow",
+  "--gc-dot-shadow",
+  "--gc-banner-glow",
+];
+/** family 1 keeps the brand trio (only the ramp moves), family 2 moves both. */
+const RAMP_ONLY = new Set(["midnight", "indigo"]);
+
+describe("gacha G6 — the ACCENT axis (§4.4 families 1+2)", () => {
+  const accents = (gacha.palettes.accents ?? []).map((a) => a.id);
+
+  it("declares the seven ruled variants, arcade first + default", () => {
+    expect(accents).toEqual([
+      "arcade",
+      "midnight",
+      "indigo",
+      "ember",
+      "glacier",
+      "nebula",
+      "eridu",
+    ]);
+    expect(gacha.palettes.defaultAccent).toBe("arcade");
+  });
+
+  it.each(accents.filter((id) => id !== "arcade").map((id) => [id] as const))(
+    "%s has a tokens.css block carrying every token the recipe derives",
+    (id) => {
+      const block = blockFor(tokens, `body[data-accent="${id}"]`);
+      expect(block, `no body[data-accent="${id}"] block in tokens.css`).toBeTruthy();
+      const has = new Set(declared(block!));
+      const need = RAMP_ONLY.has(id) ? RAMP_DERIVED : [...RAMP_DERIVED, ...TRIO_DERIVED];
+      for (const token of need) {
+        expect(
+          has.has(token),
+          `body[data-accent="${id}"] omits ${token} — it is a FUNCTION of the base six, so the variant ` +
+            `would silently inherit arcade's value beside its own ramp/trio (§4.4's recipe)`,
+        ).toBe(true);
+      }
+    },
+  );
+
+  it.each(accents.map((id) => [id] as const))(
+    "%s's block writes NO --gc-dossier-* token (the two axes are disjoint in writes)",
+    (id) => {
+      const block = blockFor(tokens, `body[data-accent="${id}"]`) ?? "";
+      expect(
+        declared(block).filter((t) => t.startsWith("--gc-dossier-")),
+        `body[data-accent="${id}"] writes a dossier token — that is the other picker's scope (§4.4)`,
+      ).toEqual([]);
+    },
+  );
+
+  it("each picker chip re-states its OWN palette's trio (the literal-swatch trade-off)", () => {
+    // The chips are LITERALS on purpose: `var(--gc-brand-fill)` would preview the ACTIVE accent, so all
+    // seven chips would show one palette. The cost of literals is drift, and this is the guard that pays
+    // it — every chip's three brand hexes must equal the ones its own block declares (family 1 inherits
+    // the base trio from `:scope`, so those three are checked against that).
+    const baseTrio = ["--gc-brand-1", "--gc-brand-2", "--gc-brand-3"].map(
+      (t) => /--gc-brand-[123]:\s*(#[0-9a-f]{6})/i.exec(tokens.slice(tokens.indexOf(t)))![1],
+    );
+    for (const a of gacha.palettes.accents ?? []) {
+      const block = blockFor(tokens, `body[data-accent="${a.id}"]`) ?? "";
+      const own = ["--gc-brand-1", "--gc-brand-2", "--gc-brand-3"].map(
+        (t) => new RegExp(`${t}:\\s*(#[0-9a-f]{6})`, "i").exec(block)?.[1],
+      );
+      const trio = own.every(Boolean) ? (own as string[]) : baseTrio;
+      for (const hex of trio) {
+        expect(
+          String(a.swatch).includes(hex),
+          `the "${a.id}" picker chip does not contain ${hex} — it has drifted from the palette it previews`,
+        ).toBe(true);
+      }
+    }
+  });
+});
+
+describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)", () => {
+  const field = gacha.settings?.dossierPalette;
+  const options = field?.type === "seg" ? field.options : [];
+
+  it("is the contract's seg: key, order, labels, swatches and default", () => {
+    expect(field?.type).toBe("seg");
+    expect(options.map((o) => o.val)).toEqual([
+      "slip",
+      "neon-purple",
+      "sunset-orange",
+      "rose-pink",
+      "aurora-violet",
+    ]);
+    expect(options.map((o) => o.label)).toEqual(["Slip", "Neon", "Sunset", "Rose", "Aurora"]);
+    expect(field?.type === "seg" && field.default).toBe("neon-purple");
+    // every option carries its chip — the whole reason the §4.9 `swatch` slot was committed
+    expect(options.every((o) => typeof o.swatch === "string")).toBe(true);
+  });
+
+  it("slip has NO tokens.css block — it is the absence of an override, not a fifth copy", () => {
+    expect(blockFor(tokens, 'body[data-gc-dossier="slip"]')).toBeNull();
+  });
+
+  it.each(options.filter((o) => o.val !== "slip").map((o) => [o.val] as const))(
+    "%s sets its full per-palette token row",
+    (id) => {
+      const block = blockFor(tokens, `body[data-gc-dossier="${id}"]`);
+      expect(block, `no body[data-gc-dossier="${id}"] block`).toBeTruthy();
+      const has = new Set(declared(block!));
+      for (const token of [
+        "--gc-dossier-from",
+        "--gc-dossier-to",
+        "--gc-dossier-card",
+        "--gc-dossier-accent",
+        "--gc-dossier-kicker",
+        "--gc-dossier-led-dim",
+        "--gc-dossier-act-fill",
+        "--gc-dossier-act-ink",
+        "--gc-dossier-act-rim",
+        "--gc-dossier-act-hi",
+        "--gc-dossier-shadow",
+        "--gc-dossier-blank",
+      ]) {
+        expect(has.has(token), `body[data-gc-dossier="${id}"] omits ${token}`).toBe(true);
+      }
+      // …and writes NOTHING outside the family (the disjointness rule's other half)
+      expect(
+        declared(block!).filter((t) => !t.startsWith("--gc-dossier-")),
+        `body[data-gc-dossier="${id}"] writes a non-dossier token`,
+      ).toEqual([]);
+    },
+  );
+
+  it("the four darks share one block for the values the §4.4 table lists as shared", () => {
+    const block = blockFor(
+      tokens,
+      'body[data-gc-dossier="neon-purple"],\n    body[data-gc-dossier="sunset-orange"],\n    body[data-gc-dossier="rose-pink"],\n    body[data-gc-dossier="aurora-violet"]',
+    );
+    expect(block, "the shared dark-dossier block is missing").toBeTruthy();
+    const has = new Set(declared(block!));
+    for (const token of [
+      "--gc-dossier-ink",
+      "--gc-dossier-ink-2",
+      "--gc-dossier-line",
+      "--gc-dossier-badge",
+      "--gc-dossier-art-shadow",
+      "--gc-dossier-close-bg",
+      "--gc-dossier-close-ink",
+      "--gc-dossier-act-line",
+    ]) {
+      expect(has.has(token), `the shared dark block omits ${token}`).toBe(true);
+    }
+  });
+
+  it("the flat dark button REPLACES the sticker press for BOTH buttons, and slip is excluded", () => {
+    // The generic `.gc-act:active` slides 3px into a shadow the dark palettes do not have. Overriding it
+    // on `.primary` alone would leave the SECONDARY sliding — the §4.4 note this guard exists for.
+    expect(rules).toContain(
+      'body[data-gc-dossier]:not([data-gc-dossier="slip"]) .gc-act:active:not(:disabled)',
+    );
+    // slip keeps the sticker ticket, so its shadow token must stay LIVE
+    expect(tokens).toContain("--gc-act-shadow:");
+    expect(rules).toContain("var(--gc-act-shadow)");
+  });
+
+  it("the service dots are the vapor-style led pair, and the glow is dark-only", () => {
+    expect(rules).toContain("var(--gc-dossier-led-dim)");
+    expect(rules).toContain("var(--gc-dossier-led)");
+    expect(rules).toContain('body[data-gc-dossier]:not([data-gc-dossier="slip"]) .gc-svc.on i');
+    // the replaced pair must be GONE from the sheet AND from the token map (no dead tokens)
+    expect(rules).not.toContain("--gc-dossier-ok");
+    expect(rules).not.toContain("--gc-dossier-warn");
+    expect(tokens).not.toContain("--gc-dossier-ok:");
+    expect(tokens).not.toContain("--gc-dossier-warn:");
+  });
+
+  it("the close disc reads its own pair (the white-blob inversion is structurally impossible now)", () => {
+    expect(rules).toContain("background: var(--gc-dossier-close-bg)");
+    expect(rules).toContain("color: var(--gc-dossier-close-ink)");
+  });
+});
+
+describe("gacha G6 — the wordmark (§4.3 re-ruling)", () => {
+  it("ships コントロール・ビー, keeping カプセルアーケード as the alternative", () => {
+    expect(GACHA_COPY.brandWordmark).toBe("コントロール・ビー");
+    expect(GACHA_COPY.brandWordmarkAlt).toBe("カプセルアーケード");
+  });
+
+  it("costs no font regeneration — both readings were already in the frozen glyph set", () => {
+    // the swap is a VALUE move inside copy.ts, and `gachaGlyphSet()` walks the whole object, so the
+    // committed subset is untouched by which key is shipped. Same for the new dossier row's 紙, which
+    // rides `settingWallpaperDesc`'s 壁紙.
+    const glyphs = new Set(gachaGlyphSet());
+    for (const ch of GACHA_COPY.brandWordmark + GACHA_COPY.brandWordmarkAlt) {
+      if (ch.codePointAt(0)! > 0x7f) expect(glyphs.has(ch)).toBe(true);
+    }
+    expect(glyphs.has("紙")).toBe(true);
+    expect(GACHA_COPY.settingWallpaperDesc).toContain("紙");
   });
 });

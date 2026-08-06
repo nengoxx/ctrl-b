@@ -16,12 +16,15 @@
 // never decorative pseudo-JP. Each string's reading + gloss is noted so a future edit can keep that bar.
 
 export const GACHA_COPY = {
-  // ── Brand (§4.3 — the ruled katakana wordmark; the exact rendering is a G1 eyeball pick between the two,
-  //    so BOTH are frozen into the subset now and switching costs no font regeneration) ──
-  /** "Capsule Arcade" — the prototype's own brand, in katakana. */
-  brandWordmark: "カプセルアーケード",
-  /** "control-b" — the app's own name transliterated; the alternative reading (§4.3). */
-  brandWordmarkAlt: "コントロール・ビー",
+  // ── Brand (§4.3 — the ruled katakana wordmark. BOTH readings are frozen into the subset, which is what
+  //    made the G6 swap below a value edit with no font regeneration: the glyph set is derived from this
+  //    whole object, so moving which key is SHIPPED changes nothing about the committed woff2s) ──
+  /** The SHIPPED wordmark: "control-b" transliterated — コントロール・ビー. Re-ruled 2026-08-06 by the
+   *  owner from live side-by-side renders of both readings ("the one with the dot in the middle — it looks
+   *  better"); it replaced カプセルアーケード, which stands below as the alternative. */
+  brandWordmark: "コントロール・ビー",
+  /** "Capsule Arcade" — the prototype's own brand, in katakana; the alternative reading (§4.3). */
+  brandWordmarkAlt: "カプセルアーケード",
   /** ネットワーク景品所 (nettowāku keihinjo) — "network prize parlour"; the appbar subtitle. */
   brandMeta: "ネットワーク景品所",
 
@@ -115,6 +118,11 @@ export const GACHA_COPY = {
   settingWallpaperDesc: "pickup art fills the fleet background · 壁紙",
   /** 定着 (teichaku) — "fixing in place"; the sticky operator art. */
   settingOracleDesc: "the header fades in place instead of scrolling away · 定着",
+  /** 紙 (kami) — "paper"; the unit dossier's own surface (G6's dossier palette picker). Chosen from words
+   *  whose glyphs the frozen subset ALREADY carries (紙 rides `settingWallpaperDesc`'s 壁紙), so the picker
+   *  ships bilingual like its siblings at zero font cost — and it is the right word anyway: the dossier is
+   *  an arcade prize SLIP. */
+  settingDossierDesc: "the unit dossier's own surface · 紙",
 } as const;
 
 export type GachaCopyKey = keyof typeof GACHA_COPY;

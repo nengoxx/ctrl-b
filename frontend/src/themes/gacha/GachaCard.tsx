@@ -21,6 +21,8 @@ interface Props {
   /** The shared open seam. A card also hands over its portrait node — the M3 morph's FROM element; the
    *  promo slides pass nothing and open plain. */
   onOpen: (hostId: string, morphImg?: HTMLImageElement | null) => void;
+  /** Wear the `NEW` ribbon (G6's demo — one card in the track; see `pickRibbonHost`). Decoration only. */
+  isNew?: boolean;
 }
 
 /** Re-arm the shine so a TAP sweeps it (§10.3: the prototype's `:hover` sweep never fires on the owner's
@@ -35,7 +37,7 @@ function armShine(e: PointerEvent<HTMLButtonElement>): void {
   shine.classList.add("go");
 }
 
-export function GachaCard({ host, art, shape, mode, onOpen }: Props) {
+export function GachaCard({ host, art, shape, mode, onOpen, isNew }: Props) {
   const online = !!host.status?.online;
   // The ruled input (§6.1): CONFIGURED services, not live ones — so a card's rarity changes only when the
   // owner edits the machine, never when a service blinks.
@@ -72,6 +74,15 @@ export function GachaCard({ host, art, shape, mode, onOpen }: Props) {
         ))}
       </span>
       <span className={"state" + (online ? " on" : "")}>{online ? "ONLINE" : "SLEEPING"}</span>
+      {/* The `NEW` ribbon DEMO (G6 item iv). `aria-hidden` because it carries nothing: it is a look the
+          owner is being shown, not a fact about the machine — and the button's own label already says the
+          machine's name and state. It sits on the OPPOSITE corner from `.state` on purpose (gacha.css):
+          the state chip is real status and must not be displaced by a decoration. */}
+      {isNew && (
+        <span className="gc-new" aria-hidden>
+          NEW
+        </span>
+      )}
       <span className="plate">
         <b>{host.name}</b>
         <small>{plateSub(host)}</small>

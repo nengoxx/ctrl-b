@@ -13,10 +13,17 @@
  * (a var() formula is substituted at computed-value time on the DECLARING element, so on `:scope` it would
  * compute once from the base statics and never re-derive under `body[data-accent]`).
  *
- * PALETTE VARIANTS: §4.4 rules five (arcade · midnight · indigo · two accent-shifting picks), but they stay
- * UNEXPOSED until G6 — only `arcade` is declared in `ThemeDef.palettes.accents` today, so the picker, the
- * contrast matrix and this file all describe exactly what ships. A variant = one more `body[data-accent]`
- * block here plus one row there.
+ * PALETTE VARIANTS — SHIPPED AT G6 (2026-08-06 pre-build rulings, §4.4). TWO INDEPENDENT PICKERS, and the
+ * two axes are DISJOINT IN WRITES:
+ *   · the ACCENT axis (`body[data-accent]`, the shared D51 V2 axis) — SEVEN variants: arcade (default) +
+ *     midnight + indigo (family 1, base ramp only) + ember + glacier + nebula + eridu (family 2, the trio
+ *     moves too). An accent block NEVER writes a `--gc-dossier-*` token.
+ *   · the DOSSIER axis (`body[data-gc-dossier]`, gacha-private — a `settings` seg stamped by GachaRoot) —
+ *     FIVE options: slip (the G2 light sheet; NO block at all, it is the absence of an override) + four
+ *     dark palettes, default `neon-purple`. A dossier block writes ONLY `--gc-dossier-*`.
+ * The dossier SURFACE still READS four accent/global things by design (the top strip's `--gc-brand-fill`,
+ * slip's sticker button `--accent-fill`/`--accent-ink`, the star badge's `--gc-star*`) — that crossing is
+ * covered by the bounded cross-axis probes in e2e/contrast.spec.ts, not by a 7x5 matrix.
  *
  * CONTRAST (the §14.15.1-⑨ e2e probe gates these pairs; ratios recomputed for this palette):
  *   --accent-ink (= the var(--bg) fallback #0a0b19) on --accent-fill's WORST stop #805cff → 4.57 (min 4.5).
@@ -24,7 +31,10 @@
  *     violet and the fidelity mandate outranks headroom here. Any G6 variant that darkens --bg or lightens
  *     the mid stop must re-check THIS pair first.
  *   --text on --surface 16.7 · --text on --bg 18.2 · --text-2 on --surface 8.7 · --ok 12.9 · --warn 11.7 ·
- *   --danger 6.0 — all far clear of their floors. */
+ *   --danger 6.0 — all far clear of their floors.
+ *   The six G6 accent variants all clear the same pairs with MORE room (their accent-ink/accent-fill worst
+ *   stops run 4.53–7.51, arcade's 4.55 staying the tightest); every one is measured by its own row in
+ *   e2e/contrast-matrix.ts, and the five dossier options by theirs. */
 @layer theme {
   @scope ([data-skin="gacha"]) {
     :scope {
@@ -174,10 +184,6 @@
       /* Secondary accents from the §1 inventory. */
       --gc-caption: #9ff0ff; /* cyan captions under display copy */
       --gc-heading: #ff8ec2; /* pink section eyebrows */
-      /* The dossier's UNIT DOSSIER kicker. The prototype's #c8438b measures 4.30 on the light sheet's
-       * top stop — under the small-text 4.5 floor — so it deepens within the same rose (5.5/4.6 on the
-       * two stops): the danger-token precedent, fidelity yielding to a measured floor. */
-      --gc-unit-no: #b03578;
 
       /* The FLEET WALLPAPER (M10): the prototype's four-stop scrim over the art, and the default focal
        * crop its `.wallpaper img` uses. A roster entry that declares its own `focus` overrides the crop
@@ -306,12 +312,21 @@
       --gc-dossier-ink-2: #565875;
       --gc-dossier-card: #ffffff;
       --gc-dossier-line: #c9d0ef;
-      /* The service dots, re-inked for the light card: the night `--ok`/`--warn` are pastels tuned for
-       * `#0a0b19` and measure ~1.5 on white — far under the 3:1 non-text floor — so the light surface
-       * gets deeper members of the same green/amber families (4.1/4.3 on the card), exactly the
-       * danger-ink precedent. One role, two lightings. */
-      --gc-dossier-ok: #188f57;
-      --gc-dossier-warn: #a86f00;
+      /* The "UNIT DOSSIER" KICKER (G6). MINTED as its own `--gc-dossier-*` role so the dossier picker's
+       * write-disjointness rule holds with NO exception: the value below is the deepened rose the retired
+       * `--gc-unit-no` carried (the prototype's #c8438b measures 4.30 on the light sheet's top stop, under
+       * the small-text 4.5 floor — the danger-token precedent, fidelity yielding to a measured floor), but
+       * that token was NOT a `--gc-dossier-*` name, so a dossier-family sweep missed it and a dark sheet
+       * inherited a 2.94 kicker. Each dark palette states its own now. 5.5/4.6 on the two slip stops. */
+      --gc-dossier-kicker: #b03578;
+      /* The SERVICE-ROW LED, dim half (G6 — the vapor `.svc-row .led` idiom, owner-ruled): the bright half
+       * is `--gc-dossier-led` on `body` below (it IS the palette's accent, by the ruling). "Dim" is the
+       * GLOW killed plus saturation/brightness dropped RELATIVE to the up state — never dropped under the
+       * floor: on a port-bearing row the dot is the only visible status cue, so BOTH states clear the 3:1
+       * non-text floor on their own card (slip: 5.79 up / 3.30 dim on white). On this LIGHT sheet "dimmer"
+       * means LIGHTER, which is why the value is a paler rose than the up state, not a darker one. This
+       * REPLACED the `-ok #188f57` / `-warn #a86f00` pair, which had no other consumer and is deleted. */
+      --gc-dossier-led-dim: #c872a0;
       /* The sheet's own elevation — a violet halo rather than black, so the light panel reads as LIT from
        * the arcade behind it instead of cut out of the page (`.detail-panel`'s `0 -20px 80px #5c6aff55`). */
       --gc-dossier-shadow: 0 -20px 80px #5c6aff55;
@@ -325,15 +340,11 @@
       /* The dossier's ACCENT ink. `--accent` is tuned to read on the night `#0a0b19` and measures only
        * 2.62 against this white card — far under the 4.5 floor for the Shut down label's 10px bold — so
        * the light surface gets its own, deeper member of the same brand rose: 5.79 on
-       * `--gc-dossier-card`. The same deepening `--gc-unit-no` already makes for the kicker; one role in
+       * `--gc-dossier-card`. The same deepening `--gc-dossier-kicker` carries; one role in
        * two lightings, not two colors. (This REPLACED `--gc-dossier-danger` when the owner re-ruled the
        * Shut down button from a danger rule to the accent, 2026-08-04 — the old token had no consumer
        * left, and the gate row that watched it now watches this.) */
       --gc-dossier-accent: #b03578;
-      /* The action bar's hard offset shadow — the theme's "this sits ON the surface" motif (the nav
-       * indicator, the user chat bubble), here in the dossier's own ink so a filled ticket reads as
-       * printed onto the slip. Composed from the ink token so it re-tints with it. */
-      --gc-act-shadow: 3px 3px 0 var(--gc-dossier-ink);
     }
 
     /* Page text color. The page BACKGROUND lives in the bespoke gacha.css (the cosmos/frontier precedent:
@@ -372,12 +383,370 @@
       --ok-soft: color-mix(in srgb, var(--ok) 16%, transparent);
       --warn-soft: color-mix(in srgb, var(--warn) 16%, transparent);
       --danger-soft: color-mix(in srgb, var(--danger) 16%, transparent);
+      /* THE INK PAINTED ON `--accent-fill`. gacha inherited the Kit's `--accent-ink: var(--bg)` base
+       * (kit/tokens.css) — but that declaration sits on `:root`, which IS this scope's root element, so it
+       * would substitute the `:scope` `--bg` ONCE and then only inherit: under a G6 `body[data-accent]`
+       * block that re-tints the page, every filled control would keep arcade's #0a0b19 ink and the e2e
+       * gate would measure the STALE pair. Re-declared here, at/below the accent overrides, so it follows
+       * the variant's own page black — the §14.6 trap, and vapor's `--accent-ink` note is the precedent
+       * (it solves the same freeze with a literal, because vapor's ink is palette-independent; gacha's
+       * follows --bg by design, so it is a formula, and formulas belong on `body`). */
+      --accent-ink: var(--bg);
+      /* ── THE DOSSIER's DERIVED roles (G6) — on `body` for the same reason as everything above: each is a
+       * var() formula over a token the `body[data-gc-dossier]` blocks below override, so on `:scope` they
+       * would compute once from slip's values and never re-derive. ── */
+      /* The service LED, up state. It IS the palette's accent (the owner's vapor-style ruling), so it is
+       * DERIVED rather than restated five times — a fifth palette gets its dot for free. */
+      --gc-dossier-led: var(--gc-dossier-accent);
+      /* The close disc. Slip's pairing is the shipped one — a dark ink disc with a sheet-coloured glyph —
+       * which is exactly what INVERTS into a white blob when the sheet goes dark, so the four dark blocks
+       * re-pair it (dark lozenge + light glyph, the mock's own). Two tokens rather than two rules: the
+       * disc is one control with one paint per palette. */
+      --gc-dossier-close-bg: var(--gc-dossier-ink);
+      --gc-dossier-close-ink: var(--gc-dossier-from);
+      /* The primary action's fill + ink. Slip KEEPS the sticker ticket (owner ruling: each identity stays
+       * coherent), so its values ARE the brand two-stop and the kit's verified ink — the dark palettes
+       * swap in the flat neon-purple-panel treatment. One `.gc-act.primary` rule, five paints. */
+      --gc-dossier-act-fill: var(--accent-fill);
+      --gc-dossier-act-ink: var(--accent-ink);
+      /* The SECONDARY (Shut down) outline. Tokened at G6 so the contrast gate can measure it: it was an
+       * inline color-mix in gacha.css, invisible to the probe, and the dark palettes need a different
+       * blend anyway (their `--gc-dossier-line` is a near-transparent white, which would let the mix land
+       * at almost full-strength accent). Slip's value is the measured 60% mix it already shipped: 45%
+       * lands at 2.79 against the 3:1 non-text floor, 60% at 3.44. */
+      --gc-dossier-act-line: color-mix(in srgb, var(--gc-dossier-accent) 60%, var(--gc-dossier-line));
+      /* The action bar's hard offset shadow — the theme's "this sits ON the surface" motif (the nav
+       * indicator, the user chat bubble), here in the dossier's own ink so a filled ticket reads as
+       * printed onto the slip. MOVED to `body` at G6 (it was on `:scope`): it composes
+       * `var(--gc-dossier-ink)`, which the dossier picker now overrides. It stays LIVE — slip uses it, and
+       * the former "single migration" of it is superseded; the dark options simply don't read it. */
+      --gc-act-shadow: 3px 3px 0 var(--gc-dossier-ink);
     }
 
-    /* The one SHIPPING variant (§4.4 family 1, default). Declared explicitly rather than left implicit so
-     * the G6 siblings slot in beside it as pure additions. */
+    /* ══ THE ACCENT AXIS (§4.4, G6) ═══════════════════════════════════════════════════════════════════
+     * One block per variant, each a pure ADDITION beside arcade. The §4.4 RECIPE is what a block must
+     * contain: the six base tokens (`--gc-brand-1/2/3` · `--bg` · `--surface` · `--gc-backdrop`) PLUS
+     * every token that is a FUNCTION of them, or the block silently shows arcade pink/cyan beside a new
+     * trio. `--gc-brand-fill` / `--accent-fill` / `--accent` / `--accent-ink` are var() formulas on `body`
+     * above and re-derive for free. Held CONSTANT across every variant (never restated below):
+     * `--ok --warn --danger --gc-star* --gc-tag-ink --gc-online-ink --gc-nav-ink --gc-ind-fill` + every
+     * hairline. `--gc-dossier-*` is deliberately ABSENT: that is the other picker's scope.
+     *
+     * FAMILY 1 (midnight/indigo) re-tints ONLY the base ramp — the trio stays the brand — so those two
+     * blocks carry just the bg/card/radial functions; the trio-derived roles are arcade's by identity and
+     * restating them would be four duplicate literals per block.
+     *
+     * DERIVATION SPACE: plain sRGB linear interpolation toward #fff/#000/the-partner (the space §4.4
+     * verified round-trips arcade). Two of the recipe's formulas do NOT reproduce arcade's own shipped
+     * literals exactly — `lighten(card,.02)` gives #191c33 where arcade ships #16182f, `lighten(card,.08)`
+     * gives #272a40 where arcade ships #222541, and `darken(b2,.06)` gives #7856f0 where arcade ships the
+     * prototype's own #725bff. Arcade is UNTOUCHED (it keeps its literals); the variants take the recipe
+     * as written, so their step sits a few units off arcade's. Recorded rather than fudged. */
+
+    /* The DEFAULT variant (§4.4 family 1). Declared explicitly rather than left implicit so the six
+     * siblings below slot in beside it as pure additions. */
     body[data-accent="arcade"] {
       --accent: var(--gc-brand-1);
+    }
+    /* MIDNIGHT (family 1) — the same brand trio on a deeper, BLACKER navy, with the purple pulled
+     * out of the radial. Build-DERIVED (no pinned hexes, §4.4): only the base ramp moves, so every token
+     * below is one of the recipe's bg/card functions — the trio-derived roles stay arcade's by identity.
+     * accent-ink/accent-fill 4.69 (arcade 4.55) - a darker page only helps the tightest pair in the theme. */
+    body[data-accent="midnight"] {
+      --bg: #05070f;
+      --surface: #0d1024;
+      --surface-2: #121528;
+      --gc-backdrop: radial-gradient(circle at 30% 0, #1d2450, #0a0d22 48%, #04050c);
+      --gc-bar: #090c1ae8;
+      --gc-bar-grad: linear-gradient(#090c1aee, #090c1a99 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#05070fe8, #05070f66 70%, transparent);
+      --gc-pill-bg: #05070fcc;
+      --gc-wallpaper-scrim: linear-gradient(#05070ff2 4%, #05070fc4 30%, #05070fe8 66%, #05070f);
+      --gc-slide-scrim: linear-gradient(95deg, #05070f8c 4%, #05070f4d 32%, transparent 60%),
+        linear-gradient(#0000 52%, #05070f80);
+      --gc-card-wall: #0d1024e6;
+      --gc-composer: #0d1024;
+      --gc-card-scrim: linear-gradient(#0000 42%, #05060ee6 92%);
+      --gc-bubble-bot: #202336;
+      --gc-display-shadow: 0 3px 0 #0e1228, 0 10px 24px #000;
+    }
+    /* INDIGO (family 1) — BLUER, colder surfaces on the same trio. Same derivation rule as midnight;
+     * the card is the one value that had to be tuned rather than picked: at the first draft (#111a3a) the
+     * worst trio-on-card landed at 3.97, under the shipped arcade trio's own 4.10 weakest link, so the
+     * ramp deepened one step to #0e1631 (4.15). accent-ink/accent-fill 4.62. */
+    body[data-accent="indigo"] {
+      --bg: #050918;
+      --surface: #0e1631;
+      --surface-2: #131b35;
+      --gc-backdrop: radial-gradient(circle at 30% 0, #26377f, #0d1737 48%, #040716);
+      --gc-bar: #0a1024e8;
+      --gc-bar-grad: linear-gradient(#0a1024ee, #0a102499 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#050918e8, #05091866 70%, transparent);
+      --gc-pill-bg: #050918cc;
+      --gc-wallpaper-scrim: linear-gradient(#050918f2 4%, #050918c4 30%, #050918e8 66%, #050918);
+      --gc-slide-scrim: linear-gradient(95deg, #0509188c 4%, #0509184d 32%, transparent 60%),
+        linear-gradient(#0000 52%, #05091880);
+      --gc-card-wall: #0e1631e6;
+      --gc-composer: #0e1631;
+      --gc-card-scrim: linear-gradient(#0000 42%, #050816e6 92%);
+      --gc-bubble-bot: #212941;
+      --gc-display-shadow: 0 3px 0 #131c40, 0 10px 24px #000;
+    }
+    /* EMBER (family 2, WARM) — the §4.4 candidate table's pinned hexes: a Genshin/WuWa warm-metal read
+     * with the gold deliberately OUT of the trio (the stars own it). The widest shift in the set; its
+     * ONLINE ribbon becomes green->violet, which is the one named device-eyeball item. */
+    body[data-accent="ember"] {
+      --gc-brand-1: #ff6f52;
+      --gc-brand-2: #ff4f93;
+      --gc-brand-3: #c46bff;
+      --bg: #120b18;
+      --surface: #1e1433;
+      --surface-2: #221937;
+      --gc-backdrop: radial-gradient(circle at 30% 0, #5b2350, #2a1330 48%, #100810);
+      --gc-bar: #181026e8;
+      --gc-bar-grad: linear-gradient(#181026ee, #18102699 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#120b18e8, #120b1866 70%, transparent);
+      --gc-pill-bg: #120b18cc;
+      --gc-wallpaper-scrim: linear-gradient(#120b18f2 4%, #120b18c4 30%, #120b18e8 66%, #120b18);
+      --gc-slide-scrim: linear-gradient(95deg, #120b188c 4%, #120b184d 32%, transparent 60%),
+        linear-gradient(#0000 52%, #120b1880);
+      --gc-card-wall: #1e1433e6;
+      --gc-composer: #1e1433;
+      --gc-card-scrim: linear-gradient(#0000 42%, #110a16e6 92%);
+      --gc-bubble-bot: #302743;
+      --gc-heading: #ff907a;
+      --gc-caption: #ddabff;
+      --gc-online-fill: linear-gradient(92deg, #74f3ad, #c46bff);
+      --gc-reel-slat: linear-gradient(#ff6f52, #ff4f93, #c46bff);
+      --gc-switch-fill: linear-gradient(90deg, #ff6f52, #f04a8a);
+      --gc-ind-shadow: 5px 5px 0 #ff6f52;
+      --gc-bubble-user-shadow: 5px 5px 0 #ff6f52;
+      --gc-dot-shadow: 0 2px 8px #ff6f5299;
+      --gc-banner-glow: radial-gradient(60% 40% at 15% 25%, #ff6f524d, transparent 70%),
+        radial-gradient(50% 40% at 85% 80%, #c46bff3d, transparent 70%);
+      --gc-display-shadow: 0 3px 0 #2e1228, 0 10px 24px #000;
+    }
+    /* GLACIER (family 2, COLD) — the pinned Blue Archive / Arknights / HSR-Ice read. Tightest hue walk
+     * (63deg), so its tri-strip reads as ~2.5 colours at small size: a confirmed, accepted caution. */
+    body[data-accent="glacier"] {
+      --gc-brand-1: #7c6cff;
+      --gc-brand-2: #2fb8ff;
+      --gc-brand-3: #79f2e6;
+      --bg: #070d1c;
+      --surface: #101a33;
+      --surface-2: #151f37;
+      --gc-backdrop: radial-gradient(circle at 30% 0, #1d3f7a, #0d1730 48%, #05080f);
+      --gc-bar: #0c1428e8;
+      --gc-bar-grad: linear-gradient(#0c1428ee, #0c142899 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#070d1ce8, #070d1c66 70%, transparent);
+      --gc-pill-bg: #070d1ccc;
+      --gc-wallpaper-scrim: linear-gradient(#070d1cf2 4%, #070d1cc4 30%, #070d1ce8 66%, #070d1c);
+      --gc-slide-scrim: linear-gradient(95deg, #070d1c8c 4%, #070d1c4d 32%, transparent 60%),
+        linear-gradient(#0000 52%, #070d1c80);
+      --gc-card-wall: #101a33e6;
+      --gc-composer: #101a33;
+      --gc-card-scrim: linear-gradient(#0000 42%, #060c1ae6 92%);
+      --gc-bubble-bot: #232c43;
+      --gc-heading: #9a8eff;
+      --gc-caption: #b3f8f1;
+      --gc-online-fill: linear-gradient(92deg, #74f3ad, #79f2e6);
+      --gc-reel-slat: linear-gradient(#7c6cff, #2fb8ff, #79f2e6);
+      --gc-switch-fill: linear-gradient(90deg, #7c6cff, #2cadf0);
+      --gc-ind-shadow: 5px 5px 0 #7c6cff;
+      --gc-bubble-user-shadow: 5px 5px 0 #7c6cff;
+      --gc-dot-shadow: 0 2px 8px #7c6cff99;
+      --gc-banner-glow: radial-gradient(60% 40% at 15% 25%, #7c6cff4d, transparent 70%),
+        radial-gradient(50% 40% at 85% 80%, #79f2e63d, transparent 70%);
+      --gc-display-shadow: 0 3px 0 #0e203d, 0 10px 24px #000;
+    }
+    /* NEBULA (family 2, SOFT) — HSR's own in-UI element chips, pastel-celestial. The weakest SHIFT
+     * (arcade's hue arc, desaturated) and kept deliberately: a calm-eyes option, not range. */
+    body[data-accent="nebula"] {
+      --gc-brand-1: #eb77ea;
+      --gc-brand-2: #9c96f4;
+      --gc-brand-3: #5ec7db;
+      --bg: #0c0a1c;
+      --surface: #171634;
+      --surface-2: #1c1b38;
+      --gc-backdrop: radial-gradient(circle at 30% 0, #43276b, #141334 48%, #08070f);
+      --gc-bar: #121028e8;
+      --gc-bar-grad: linear-gradient(#121028ee, #12102899 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#0c0a1ce8, #0c0a1c66 70%, transparent);
+      --gc-pill-bg: #0c0a1ccc;
+      --gc-wallpaper-scrim: linear-gradient(#0c0a1cf2 4%, #0c0a1cc4 30%, #0c0a1ce8 66%, #0c0a1c);
+      --gc-slide-scrim: linear-gradient(95deg, #0c0a1c8c 4%, #0c0a1c4d 32%, transparent 60%),
+        linear-gradient(#0000 52%, #0c0a1c80);
+      --gc-card-wall: #171634e6;
+      --gc-composer: #171634;
+      --gc-card-scrim: linear-gradient(#0000 42%, #0b091ae6 92%);
+      --gc-bubble-bot: #2a2944;
+      --gc-heading: #f096ef;
+      --gc-caption: #a3dfea;
+      --gc-online-fill: linear-gradient(92deg, #74f3ad, #5ec7db);
+      --gc-reel-slat: linear-gradient(#eb77ea, #9c96f4, #5ec7db);
+      --gc-switch-fill: linear-gradient(90deg, #eb77ea, #938de5);
+      --gc-ind-shadow: 5px 5px 0 #eb77ea;
+      --gc-bubble-user-shadow: 5px 5px 0 #eb77ea;
+      --gc-dot-shadow: 0 2px 8px #eb77ea99;
+      --gc-banner-glow: radial-gradient(60% 40% at 15% 25%, #eb77ea4d, transparent 70%),
+        radial-gradient(50% 40% at 85% 80%, #5ec7db3d, transparent 70%);
+      --gc-display-shadow: 0 3px 0 #221436, 0 10px 24px #000;
+    }
+    /* ERIDU (family 2, LOUD) — RE-DERIVED 2026-08-06 per the owner's ruling: the pink end is DROPPED and
+     * the trio walks blue -> cyan -> green monotonically (LCh hue 285.3 -> 219.6 -> 170.1, L* 57.2 ->
+     * 79.8 -> 83.4; >=82deg of clearance from star gold #ffd464 and warn #ffc76a, floor 25). The base ramp
+     * is the candidate table's, unchanged.
+     *
+     * THE CARVE-OUT FIRED. Slot 3 is a green BY CONSTRUCTION of the ruled walk, and the two brand
+     * consumers that put trio colour on STATUS chrome would then say "up" twice: --gc-online-fill's far
+     * stop (a second green beside --ok #74f3ad, 15deg away in LCh - CLOSER than the rejected lime's 32)
+     * and --gc-caption (lighten(b3,.43) = a pale mint). Both are therefore pinned OFF the trio, to
+     * arcade's own verified values - the "trio never touches status chrome" carve-out, exactly as ruled.
+     * (Hue-literally the new slot 3 is NOT lime-adjacent - 47deg off #b4ff4a - but the carve-out exists
+     * for the MECHANISM, and the mechanism is worse here than it was for the lime.) */
+    body[data-accent="eridu"] {
+      --gc-brand-1: #3a86ff;
+      --gc-brand-2: #2fd8f5;
+      --gc-brand-3: #3fe9bd;
+      --bg: #0a0a12;
+      --surface: #12141f;
+      --surface-2: #171923;
+      --gc-backdrop: radial-gradient(circle at 30% 0, #26305e, #0f1120 48%, #06070c);
+      --gc-bar: #0e0f18e8;
+      --gc-bar-grad: linear-gradient(#0e0f18ee, #0e0f1899 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#0a0a12e8, #0a0a1266 70%, transparent);
+      --gc-pill-bg: #0a0a12cc;
+      --gc-wallpaper-scrim: linear-gradient(#0a0a12f2 4%, #0a0a12c4 30%, #0a0a12e8 66%, #0a0a12);
+      --gc-slide-scrim: linear-gradient(95deg, #0a0a128c 4%, #0a0a124d 32%, transparent 60%),
+        linear-gradient(#0000 52%, #0a0a1280);
+      --gc-card-wall: #12141fe6;
+      --gc-composer: #12141f;
+      --gc-card-scrim: linear-gradient(#0000 42%, #090911e6 92%);
+      --gc-bubble-bot: #252731;
+      --gc-heading: #67a2ff;
+      --gc-caption: #9ff0ff;
+      --gc-online-fill: linear-gradient(92deg, #74f3ad, #54e5ff);
+      --gc-reel-slat: linear-gradient(#3a86ff, #2fd8f5, #3fe9bd);
+      --gc-switch-fill: linear-gradient(90deg, #3a86ff, #2ccbe6);
+      --gc-ind-shadow: 5px 5px 0 #3a86ff;
+      --gc-bubble-user-shadow: 5px 5px 0 #3a86ff;
+      --gc-dot-shadow: 0 2px 8px #3a86ff99;
+      --gc-banner-glow: radial-gradient(60% 40% at 15% 25%, #3a86ff4d, transparent 70%),
+        radial-gradient(50% 40% at 85% 80%, #3fe9bd3d, transparent 70%);
+      --gc-display-shadow: 0 3px 0 #13182f, 0 10px 24px #000;
+    }
+
+    /* ══ THE DOSSIER AXIS (§4.4 family 3, G6) ═════════════════════════════════════════════════════════
+     * `body[data-gc-dossier]`, stamped by GachaRoot from the `dossierPalette` setting. FIVE options:
+     *   · `slip` — the shipped G2 light sheet. It has NO BLOCK: it is the ABSENCE of an override, not a
+     *     fifth copy of the values already on `:scope`/`body` above.
+     *   · four DARK palettes, sampled from `design/prototypes/gacha/dossier palette example.png` and
+     *     NORMALISED so every gated pair passes (do not "restore" a normalised value toward the mock's
+     *     literal — the literals are what failed).
+     * Every declaration below is a `--gc-dossier-*` name: the write-disjointness rule, with no exception
+     * now that the kicker has its own token. Dark makes contrast EASIER — every tight margin in this
+     * theme lives on the LIGHT sheet.
+     *
+     * THE SHARED HALF first (the §4.4 table's own "shared across all four" row), as an explicit
+     * four-selector list rather than a `:not([data-gc-dossier="slip"])` shorthand: that shorthand carries
+     * HIGHER specificity than the per-palette blocks, which would make the per-palette overrides depend on
+     * source order to win. Equal specificity + source order is the safe shape. */
+    body[data-gc-dossier="neon-purple"],
+    body[data-gc-dossier="sunset-orange"],
+    body[data-gc-dossier="rose-pink"],
+    body[data-gc-dossier="aurora-violet"] {
+      --gc-dossier-ink: #f4f2ff;
+      --gc-dossier-ink-2: #b9b4d8;
+      --gc-dossier-line: #ffffff20;
+      /* the NIGHT badge, back in its element at 13.7:1 against the gold stars */
+      --gc-dossier-badge: #0c0a24e6;
+      --gc-dossier-art-shadow: 0 10px 22px #00000066;
+      /* The close disc, RE-PAIRED for a dark sheet (the mock's dark lozenge + light glyph). It reads the
+       * badge because that is the same role on this surface — the one dark lozenge the sheet allows —
+       * and the glyph takes the sheet's own ink: 17.5:1. */
+      --gc-dossier-close-bg: var(--gc-dossier-badge);
+      --gc-dossier-close-ink: var(--gc-dossier-ink);
+      /* The secondary outline: mixed against the CARD, not `--gc-dossier-line` (which is a near-transparent
+       * white here, so the slip formula would land at almost full-strength accent). 70% is the lowest step
+       * that clears the 3:1 non-text floor on all four cards — sunset-orange is the binding one at 3.13
+       * (neon 3.99 · rose 5.78 · aurora 4.92). */
+      --gc-dossier-act-line: color-mix(in srgb, var(--gc-dossier-accent) 70%, var(--gc-dossier-card));
+    }
+    /* NEON-PURPLE - the DEFAULT (the owner's pick: "the first top-left image... I like the button there"), and
+     * the panel every dark button's treatment was measured from. Its table stop pair is the ONE that had to
+     * be re-derived: #511cab -> #4f1ea7 is a 1.6% luminance drop (that pair was sampled ACROSS a panel whose
+     * horizontal gradient is flat), where the measured VERTICAL falloff on this button is 21%. So the bottom
+     * stop is darken(#511cab, .10) - a deepening, which only widens the white label's 10.0:1 margin. */
+    body[data-gc-dossier="neon-purple"] {
+      --gc-dossier-from: #140e35;
+      --gc-dossier-to: #070b25;
+      --gc-dossier-card: #130f32;
+      --gc-dossier-accent: #f46adf;
+      --gc-dossier-kicker: #f46adf;
+      --gc-dossier-led-dim: #9e479d;
+      --gc-dossier-act-fill: linear-gradient(180deg, #511cab, #49199a);
+      --gc-dossier-act-ink: #ffffff;
+      --gc-dossier-act-rim: #5623ad;
+      --gc-dossier-act-hi: #7d43e0;
+      --gc-dossier-shadow: 0 -20px 80px #511cab55;
+      --gc-dossier-blank: #211d3e;
+    }
+    /* SUNSET-ORANGE. Its table stops already fall 23% top-to-bottom, so they ship as authored. TWO carried
+     * normalisations and ONE new: the kicker was already lightened 40% toward white (3.16 -> 4.54 on the
+     * brick top) and the fill is light enough to need a DARK label (a property of the palette, not a bug);
+     * NEW at G6, `--gc-dossier-ink-2` is lightened for this palette ALONE - the shared #b9b4d8 measures
+     * 3.87 against this sheet's #843e3c top stop, under the 4.5 small-text floor the role line sits at.
+     * #d0cce8 lands 4.93/9.87/7.42 on from/to/card. The brick top is the identity, so the ink moved. */
+    body[data-gc-dossier="sunset-orange"] {
+      --gc-dossier-from: #843e3c;
+      --gc-dossier-to: #2f1f34;
+      --gc-dossier-card: #502f3e;
+      --gc-dossier-ink-2: #d0cce8;
+      --gc-dossier-accent: #f28c53;
+      /* the table's #f7ba98 lands at 4.54 on the brick top — 0.04 of margin over the small-text floor, too
+       * thin to survive a rounding difference between the author-time computation and the engine's own.
+       * Lightened one more step within the same peach: 4.85/9.71. */
+      --gc-dossier-kicker: #f9c2a3;
+      --gc-dossier-led-dim: #cb764e;
+      --gc-dossier-act-fill: linear-gradient(180deg, #d97943, #ce6144);
+      --gc-dossier-act-ink: #0a0b19;
+      --gc-dossier-act-rim: #dc8452;
+      --gc-dossier-act-hi: #e8af8f;
+      --gc-dossier-shadow: 0 -20px 80px #d9794355;
+      --gc-dossier-blank: #5a3b4a;
+    }
+    /* ROSE-PINK. Table stops as authored (a 31% fall). Its fill was LIGHTENED 8% at the normalisation pass
+     * BECAUSE it carries a dark label - the mirror of the two deepenings the unshipped candidates needed. */
+    body[data-gc-dossier="rose-pink"] {
+      --gc-dossier-from: #34202b;
+      --gc-dossier-to: #15141e;
+      --gc-dossier-card: #221b23;
+      --gc-dossier-accent: #f3bfc0;
+      --gc-dossier-kicker: #f3bfc0;
+      --gc-dossier-led-dim: #866a6e;
+      --gc-dossier-act-fill: linear-gradient(180deg, #da7b7a, #c55e74);
+      --gc-dossier-act-ink: #0a0b19;
+      --gc-dossier-act-rim: #dd8686;
+      --gc-dossier-act-hi: #eec2c2;
+      --gc-dossier-shadow: 0 -20px 80px #da7b7a55;
+      --gc-dossier-blank: #2f2930;
+    }
+    /* AURORA-VIOLET. The steepest authored pair (a 43% fall) - the mock panel it came from had the strongest
+     * horizontal gradient in the set, which re-reads as a pronounced vertical falloff here. Kept: it is
+     * within the family the neon-purple measurement defines, and it is the loudest of the four by design. */
+    body[data-gc-dossier="aurora-violet"] {
+      --gc-dossier-from: #171643;
+      --gc-dossier-to: #08112d;
+      --gc-dossier-card: #10143a;
+      --gc-dossier-accent: #d5a5f1;
+      --gc-dossier-kicker: #d5a5f1;
+      --gc-dossier-led-dim: #7a629d;
+      --gc-dossier-act-fill: linear-gradient(180deg, #7e37a5, #562a90);
+      --gc-dossier-act-ink: #ffffff;
+      --gc-dossier-act-rim: #833ea8;
+      --gc-dossier-act-hi: #aa6acd;
+      --gc-dossier-shadow: 0 -20px 80px #7e37a555;
+      --gc-dossier-blank: #1e2246;
     }
   }
 }

@@ -1,4 +1,7 @@
-import { type CSSProperties, type KeyboardEvent, useRef } from "react";
+import { type KeyboardEvent, useRef } from "react";
+
+// The chip paint rule lives in `lib/` — `Seg` draws the same chip for its own optional `swatch` (D52 G6).
+import { chipBackground } from "../lib/chipBackground";
 
 // Palette swatch picker (D29 §14.4) — a radiogroup of color chips, the visual counterpart to `Seg` for the
 // Appearance "Palette" axis. Web-researched against the W3C APG radio pattern + React-Aria/Telerik swatch
@@ -14,18 +17,6 @@ export interface SwatchOption {
   val: string;
   label: string;
   swatch?: string | string[];
-}
-
-// Build the chip background: a neutral surface when unset, the value itself for a single color/gradient,
-// or an equal-wedge conic-gradient "pie" previewing each color of a multi-token palette.
-function chipBackground(swatch?: string | string[]): CSSProperties {
-  if (!swatch) return { background: "var(--surface-2)" };
-  if (!Array.isArray(swatch)) return { background: swatch };
-  const n = swatch.length;
-  const stops = swatch
-    .map((c, i) => `${c} ${((i / n) * 100).toFixed(2)}% ${(((i + 1) / n) * 100).toFixed(2)}%`)
-    .join(", ");
-  return { background: `conic-gradient(${stops})` };
 }
 
 export function Swatches(props: {

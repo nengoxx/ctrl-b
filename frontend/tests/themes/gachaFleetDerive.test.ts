@@ -7,6 +7,7 @@ import {
   counterText,
   dossierSub,
   hostsResolved,
+  pickRibbonHost,
   pingText,
   plateSub,
   promoCopy,
@@ -231,5 +232,44 @@ describe("promoCopy — the per-state slide templates (§6.4 / the R8 amendment)
       tag: GACHA_COPY.promoTagSleeping,
       caption: GACHA_COPY.promoCaptionSleeping,
     });
+  });
+});
+
+// ── The `NEW` ribbon's pick (D52 G6 item iv). The RULE is the whole point: one machine, chosen once, and
+//    it STICKS until that machine leaves the fleet. A poll re-render that re-rolled it would make the
+//    ribbon hop around the track every few seconds, which is the failure the owner ruling names. ──
+describe("pickRibbonHost — the NEW-ribbon demo pick (G6)", () => {
+  const first = () => 0; // always index 0
+  const last = () => 0.999;
+
+  it("empty fleet → no ribbon", () => {
+    expect(pickRibbonHost([], null, first)).toBeNull();
+    expect(pickRibbonHost([], "gone", first)).toBeNull();
+  });
+
+  it("rolls a pick when there is none", () => {
+    expect(pickRibbonHost(["a", "b", "c"], null, first)).toBe("a");
+    expect(pickRibbonHost(["a", "b", "c"], null, last)).toBe("c");
+  });
+
+  it("KEEPS a live pick — a poll must never re-roll it", () => {
+    // `rand` would say "a", but "c" is still in the fleet, so nothing moves.
+    expect(pickRibbonHost(["a", "b", "c"], "c", first)).toBe("c");
+    // …and it survives the fleet changing around it (a host added, another removed).
+    expect(pickRibbonHost(["c", "d", "e"], "c", first)).toBe("c");
+  });
+
+  it("re-rolls only when the picked machine has LEFT the fleet", () => {
+    expect(pickRibbonHost(["a", "b"], "gone", last)).toBe("b");
+  });
+
+  it("clamps a degenerate rand() so it can never index past the end", () => {
+    expect(pickRibbonHost(["a", "b"], null, () => 1)).toBe("b");
+    expect(pickRibbonHost(["a", "b"], null, () => -1)).toBe("a");
+  });
+
+  it("defaults to Math.random and always returns a member of the fleet", () => {
+    const ids = ["a", "b", "c", "d"];
+    for (let i = 0; i < 50; i++) expect(ids).toContain(pickRibbonHost(ids, null));
   });
 });

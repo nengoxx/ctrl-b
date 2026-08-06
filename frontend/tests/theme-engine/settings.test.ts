@@ -95,13 +95,15 @@ describe("themeSettingsSpec", () => {
 // ── gacha's declared schema (D52 G0) — the shared kit axes first (the cosmos/vapor ordering convention),
 //    then the theme's own three. Order IS the contract: ConfTab auto-renders the keys as declared. ──
 describe("themeSettingsSpec — gacha", () => {
-  it("declares the four kit axes then starMode / wallpaper / oracle, in that order", () => {
+  it("declares the four kit axes then starMode / dossierPalette / wallpaper / oracle, in that order", () => {
     expect(Object.keys(themeSettingsSpec("gacha") ?? {})).toEqual([
       "composer",
       "composerSkin",
       "planPlacement",
       "outlines",
       "starMode",
+      // G6's dossier picker sits with the theme's own rows, next to the other surface-shaping one
+      "dossierPalette",
       "wallpaper",
       "oracle",
     ]);

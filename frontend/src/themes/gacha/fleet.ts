@@ -28,6 +28,28 @@ export function cardShapes(hostCount: number): CapsuleShape[] {
   );
 }
 
+/** The `NEW` ribbon's host — a DEMO (G6 item iv, owner-ruled: no semantics, no data seam; the owner
+ *  decides keep/drop/meaning at the device round). The prototype hangs a third `state` value on one
+ *  fixture card and no live field feeds it, so exactly one machine in the track wears the ribbon and the
+ *  choice is arbitrary.
+ *
+ *  The RULE it has to obey is the interesting part: the pick is made ONCE and STICKS until that host
+ *  leaves the fleet — never re-rolled on a poll re-render, or the ribbon would hop from card to card
+ *  every few seconds. So this is a pure REDUCER over (the current host ids, the current pick): it keeps a
+ *  live pick, re-rolls only when there is none or the picked machine is gone, and an empty fleet resolves
+ *  to `null` (no ribbon). `rand` is injected so the rule is testable without stubbing Math.random. */
+export function pickRibbonHost(
+  hostIds: readonly string[],
+  current: string | null,
+  rand: () => number = Math.random,
+): string | null {
+  if (hostIds.length === 0) return null;
+  if (current !== null && hostIds.includes(current)) return current;
+  // clamp: a `rand` that returns exactly 1 (or anything out of range) must not index past the end
+  const i = Math.min(hostIds.length - 1, Math.max(0, Math.floor(rand() * hostIds.length)));
+  return hostIds[i];
+}
+
 /** Has the fleet query produced an answer yet? The §6.3 rule the pill and the counter share: while the first
  *  poll is in flight, "0 online" is a LIE, not a state — so it renders held until something real arrives.
  *  Cached data from a previous success counts as resolved even while a background refetch is erroring

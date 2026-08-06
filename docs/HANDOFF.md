@@ -12,7 +12,39 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-06, Fable — written for a COLD session that will BRIEF AND BUILD G6; SUPERSEDES the 2026-08-05 block below)
+> ## ▶ THE STATE NOW (2026-08-06 evening, Fable — G6 IS BUILT; SUPERSEDES the morning block below)
+>
+> ### What this session did (the G6 BUILD session)
+> **① G6 is BUILT + REVIEW-COMPLETE — the as-built is GACHA_PLAN §7.7 (read it; it is the
+> record).** The full cadence ran: Opus build from the pinned brief → main-seat audit (all 30
+> reported deviations ruled; gates re-run by the main seat) → Codex R1 SHIP-WITH-FIXES (2 MED /
+> 3 LOW, all accepted — two with leaner main-seat fixes) → Opus fix wave (7 items) → Codex
+> fix-set R2 → main-seat wave 2 (3 surgical edits) → full gate + FULL local Playwright green
+> (FE 1594 / e2e 231 / gate 6/6). Committed on main (see git log for the sha). Prod stays
+> **v1.4.6**; dev units RUNNING (:5434/:5173).
+> **② NEXT = the OWNER DEVICE ROUND, then v1.5.0.** The checklist lives at the end of §7.7
+> (ember's ONLINE ribbon · the top strip on the darks — the strip is an ADVISORY channel, slip
+> 1.19/sunset 1.79 are where to look · NEW-ribbon verdict · glacier tri-strip · wordmark ·
+> slip's lighter-means-dim dots). Release per `deploy/linux/README.md` §Release; rollback =
+> v1.4.6; schema untouched at 5.
+> **③ A NEW design conversation is OPEN: the KIT ART SYSTEM** (owner, this session — the M3
+> icons were only HALF the want; the owner wants the FULL owner-droppable art system, "no
+> seams", part of the kit). Draft plan in the session scratchpad (`m4-service-banners-plan.md`
+> — narrower M4 SUPERSEDED by the full-system framing). Four roles in `media/kit/`: services
+> (icons, shipped) · service-banners (identity-keyed; cosmos deal-then-override over its
+> bundled pool) · hosts ("PC images", keyed by host name, ships WITH its kit renderer in the
+> expanded kit Fleet row) · background (pool + gallery pick). One precedence rule: owner kit
+> file → theme's own art → nothing; empty folders ⇒ byte-identical. **THREE owner rulings were
+> ASKED AND ARE UNANSWERED:** (1) background semantics — kit background only where a theme has
+> no backdrop of its own (minimal/vapor), or under every theme? (2) do kit-surface themes
+> (minimal) paint banners natively day one, or literally cosmos-only? (3) does cosmos's host
+> sheet adopt PC images in the first slice, or kit-only first? Build window: after v1.5.0.
+> **④ Cross-project unchanged:** the deferred eyeball rounds stay deferred (G5 file-drop ·
+> M2 frontier art · M3 icons) · the ~80 MB untracked gacha originals stay untracked · the F1
+> notifications device-round result is STILL unasked · web-push PARKED · stop the dev units
+> when iteration ends.
+>
+> ## ▶ PREVIOUS (2026-08-06 morning — the G6 decision session; historical since the block above)
 >
 > ### What this session did (the G6 decision session — every open call RULED)
 > **① The stack is PUSHED** — origin/main carries the whole M-ladder + a `THEME_ENGINE.md`

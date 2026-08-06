@@ -2426,7 +2426,11 @@ export function ConfTab({ active }: Props) {
                   <Seg<string>
                     label={field.label}
                     current={value as string}
-                    options={field.options.map((o) => ({ val: o.val, label: o.label }))}
+                    // `swatch` rides through (D52 §4.9 ledger, G6): the mapping used to project each
+                    // option down to `{val,label}`, which SILENTLY STRIPPED any field a theme added —
+                    // so gacha's dossier-palette chips would never have reached `Seg`. Spread the option
+                    // instead of re-listing its fields, so the next additive slot needs no edit here.
+                    options={field.options.map((o) => ({ ...o }))}
                     onPick={(v) => pickSetting(key, v)}
                   />
                 )}
