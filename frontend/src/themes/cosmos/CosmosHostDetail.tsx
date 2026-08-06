@@ -1,6 +1,13 @@
 import type { FleetAction } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
+import {
+  hostArtProps,
+  ownerArtUrl,
+  serviceBannerProps,
+  useHostArt,
+  useServiceBanners,
+} from "../../theme-engine/kit/ownerArt";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 import { assignBanners } from "./serviceBanners";
@@ -85,9 +92,19 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
   const aliveOrSeen = online ? ALIVE_PLACEHOLDER : lastSeen;
   // Distinct decorative banner per service (de-duped within this host so it never repeats — see assignBanners).
   const banners = assignBanners(services.map((s) => s.id));
+  // …and the owner's own banners (the Kit Art System), DEAL THEN OVERRIDE: the bundled pool is dealt
+  // exactly as before, then any service the owner has dropped a file for takes that file instead. The
+  // order matters — excluding owner-bound services from the deal would re-deal every OTHER row, so one
+  // drop would silently change art the owner never touched. This way each drop changes exactly its own
+  // row, which is the dormancy rule extended (§A5's banner surface: owner file → the theme's own default
+  // for that same surface → nothing).
+  const ownerBanner = useServiceBanners();
+  // The owner's picture for this MACHINE, painted faded behind the whole sheet. Cosmos is its first
+  // adopter (an explicit theme choice, not an automatic kit behaviour); the tone lives in cosmos.css.
+  const art = hostArtProps(ownerArtUrl(useHostArt()(host)));
 
   return (
-    <div className="cosmos-hd">
+    <div className={"cosmos-hd" + (art ? ` ${art.className}` : "")} style={art?.style}>
       {/* data-bs-peek: the PEEK detent ends here — the sheet opens showing the name + this compact info
           (status · alive/seen · services, then the id line); drag-up reveals the actions + services. */}
       <div className="hd-head" data-bs-peek>
@@ -173,18 +190,17 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
           services.map((s) => {
             const svcOn = !!s.status?.online;
             const addr = `${host.name}:${s.port ?? "—"}`;
-            const bannerUrl = banners.get(s.id);
-            const bannerStyle = bannerUrl
-              ? { ["--svc-banner" as string]: `url(${bannerUrl})` }
-              : undefined;
+            // `?rev=` on the OWNER's file only — the bundled pool entry below it is a build asset with no
+            // revision to state (and it cannot change under a running app).
+            const banner = serviceBannerProps(ownerArtUrl(ownerBanner(s)) ?? banners.get(s.id));
             return svcOn && s.url ? (
               <a
                 key={s.id}
-                className="hd-svc on"
+                className={"hd-svc on" + (banner ? ` ${banner.className}` : "")}
                 href={rebaseServiceUrl(s.url, serviceBase(host, window.location))}
                 target="_blank"
                 rel="noopener"
-                style={bannerStyle}
+                style={banner?.style}
               >
                 <span className="led" aria-hidden />
                 {/* The owner's icon for this service (D53 M3) — nothing at all when they have dropped
@@ -213,10 +229,12 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
             ) : (
               <div
                 key={s.id}
-                className={"hd-svc" + (svcOn ? " on" : " off")}
+                className={
+                  "hd-svc" + (svcOn ? " on" : " off") + (banner ? ` ${banner.className}` : "")
+                }
                 role="group"
                 aria-label={`${s.name} ${addr} — ${svcOn ? "online" : "offline"}`}
-                style={bannerStyle}
+                style={banner?.style}
               >
                 <span className="led" aria-hidden />
                 <ServiceIcon service={s} />

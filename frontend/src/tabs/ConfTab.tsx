@@ -809,6 +809,7 @@ export function ConfTab({ active }: Props) {
   const mode = useUISlice((s) => s.mode); // light/dark (only shown when the active theme declares modes)
   const motion = useUISlice((s) => s.motion);
   const perf = useUISlice((s) => s.perf);
+  const kitBackgroundVisible = useUISlice((s) => s.kitBackgroundVisible); // the shared kit background switch
   const appbarMode = useUISlice((s) => s.appbarMode); // global, per-device (local) — every theme honors it
   const layout = useUISlice((s) => s.layout); // the RAW section-layout lever (auto/4/3/2) — device-local like App bar
   // The resolved partition (D35 §F0): `hostsUtils` = the active layout renders utils INSIDE Conf, so this
@@ -887,7 +888,11 @@ export function ConfTab({ active }: Props) {
     saveAppearance.mutate(currentAppearancePatch());
   };
   // Global levers (motion/perf) + per-theme settings all apply locally then sync the full doc.
-  const setGlobal = (patch: { motion?: typeof motion; perf?: typeof perf }) => {
+  const setGlobal = (patch: {
+    motion?: typeof motion;
+    perf?: typeof perf;
+    kitBackgroundVisible?: boolean;
+  }) => {
     setUI(patch);
     saveAppearance.mutate(currentAppearancePatch());
   };
@@ -2450,6 +2455,20 @@ export function ConfTab({ active }: Props) {
               on={perf === "full"}
               label="Blur"
               onToggle={() => setGlobal({ perf: perf === "full" ? "lite" : "full" })}
+            />
+          </SettingRow>
+          {/* The SHARED owner background (the Kit Art System). Synced, like the two levers above, because
+              it governs ONE shared image rather than a per-screen preference — and the copy has to stay
+              truthful under every theme (Codex A4): a theme with scenery of its own never mounts the
+              layer, so the switch is genuinely inert there rather than broken. */}
+          <SettingRow
+            label="Shared background"
+            desc="your image from media/kit/background/ · themes with their own scenery ignore it"
+          >
+            <Switch
+              on={kitBackgroundVisible}
+              label="Shared background"
+              onToggle={() => setGlobal({ kitBackgroundVisible: !kitBackgroundVisible })}
             />
           </SettingRow>
           {/* Global, per-device (local — not synced like motion/perf): every theme's Root honors it.

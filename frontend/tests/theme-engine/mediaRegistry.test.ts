@@ -56,23 +56,69 @@ describe("applicableNs", () => {
   });
 });
 
-describe("the kit row (D53 M3)", () => {
-  it("is ALWAYS-ON and holds the one role folder the backend registry declares", () => {
+describe("the kit row (D53 M3 + the Kit Art System)", () => {
+  it("is ALWAYS-ON and holds the four role folders the backend registry declares, in order", () => {
     // The server's list is `KIT_ROLES` in core/media.py. Always-on is the mechanism, not a preference:
     // no theme owns this namespace, so nothing else could reach its gallery.
     expect(MEDIA_NS.kit.alwaysOn).toBe(true);
-    expect(Object.keys(MEDIA_NS.kit.roles)).toEqual(["services"]);
+    expect(Object.keys(MEDIA_NS.kit.roles)).toEqual([
+      "services",
+      "service-banners",
+      "hosts",
+      "background",
+    ]);
   });
 
-  it("is NAMED with DATA-derived keys — no static list, and no pins", () => {
-    const services = MEDIA_NS.kit.roles.services;
-    expect(services.kind).toBe("named");
-    expect(services.keySource).toBe("services");
-    // The keys are the fleet's service identities, which live in config.yaml — a static list here would
-    // be a second, always-wrong copy of them.
-    expect(services.keys).toBeUndefined();
-    // Nothing to pin: the FILENAME is the binding, exactly as for the frontier stack.
-    expect(MEDIA_NS.kit.slots).toBeUndefined();
+  it("the three NAMED roles have DATA-derived keys — no static list — and no pin of their own", () => {
+    for (const [role, source] of [
+      ["services", "services"],
+      ["service-banners", "services"],
+      ["hosts", "hosts"],
+    ] as const) {
+      const def = MEDIA_NS.kit.roles[role];
+      expect(def.kind, role).toBe("named");
+      expect(def.keySource, role).toBe(source);
+      // The keys are the fleet's own identities, which live in config.yaml — a static list here would
+      // be a second, always-wrong copy of them.
+      expect(def.keys, role).toBeUndefined();
+    }
+    // The two service roles share ONE identity on purpose: one service, one name to remember, two
+    // pictures of it. What differs is the ASSET each is (the word the gallery composes sentences from).
+    expect(MEDIA_NS.kit.roles["service-banners"].asset).not.toBe(MEDIA_NS.kit.roles.services.asset);
+  });
+
+  it("the shared BACKGROUND is the one pool, and the one pin — the wallpaper/hero shape", () => {
+    expect(MEDIA_NS.kit.roles.background.kind).toBe("pool");
+    const slots = MEDIA_NS.kit.slots ?? [];
+    expect(slots.map((s) => s.key)).toEqual(["background"]);
+    // A pin's options come from a real role, and a NAMED role never offers one (its stems ARE its
+    // bindings) — the same two invariants the gacha and frontier rows are held to.
+    for (const slot of slots) expect(MEDIA_NS.kit.roles[slot.from].kind).toBe("pool");
+  });
+
+  it("prices a service BANNER between an icon and full-bleed art (the per-role bounds' whole point)", () => {
+    const banner = MEDIA_NS.kit.roles["service-banners"].bounds;
+    const icon = MEDIA_NS.kit.roles.services.bounds;
+    const full = MEDIA_NS.kit.roles.background.bounds;
+    for (const axis of ["bytes", "pixels"] as const) {
+      expect(banner[axis]).toBeGreaterThan(icon[axis]);
+      expect(banner[axis]).toBeLessThan(full[axis]);
+    }
+  });
+
+  it("every DERIVED-key role names the asset its files ARE (the gallery composes sentences from it)", () => {
+    // The generic derived-key renderer (Codex A1) has no per-source copy: the SOURCE supplies the words
+    // for the list, and the ROLE supplies the word for the picture. A role that declared none would
+    // silently render "no file" where it means "no banner".
+    for (const [nsName, ns] of Object.entries(MEDIA_NS)) {
+      for (const [roleName, role] of Object.entries(ns.roles)) {
+        if (role.keySource !== undefined) {
+          expect(role.asset, `${nsName}/${roleName}`).toBeTruthy();
+          // Article-free by contract — every sentence using it reads "no <asset>", "this <asset>".
+          expect(role.asset, `${nsName}/${roleName}`).not.toMatch(/^(a|an|the)\s/i);
+        }
+      }
+    }
   });
 
   it("prices icons far below every art role — the reason bounds went per-role at all", () => {

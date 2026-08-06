@@ -232,13 +232,14 @@ const ROUTES: Record<string, unknown> = {
     roles: { rigs: [], hero: [], stack: [] },
     slots: {},
   },
-  // D53 M3 — the kit service icons. This one is read under EVERY theme (the service rows are the
-  // consumer, not a theme's art), so the empty baseline is what keeps every other spec's rows in their
-  // fresh-install, icon-less shape. The spec that proves the icons land overrides it.
+  // D53 M3 + the Kit Art System — the kit's shared art. This one is read under EVERY theme (the service
+  // rows are the consumer, not a theme's art), so the empty baseline is what keeps every other spec's
+  // rows, sheets and shells in their fresh-install shape: no icons, no banners, no machine pictures and
+  // no shared background layer. The specs that prove any of them land override it.
   "/api/media/kit": {
     ns: "kit",
     collation: "casefold-natural",
-    roles: { services: [] },
+    roles: { services: [], "service-banners": [], hosts: [], background: [] },
     slots: {},
   },
   "/api/actions": ACTIONS,
@@ -307,6 +308,7 @@ export async function mockApi(page: Page): Promise<void> {
     motion: null,
     perf: null,
     theme_settings: null,
+    kit_background_visible: null, // the Kit Art System's shared-background switch — unseeded like the rest
     updated_at: null,
   };
   await page.route("**/api/**", async (route) => {

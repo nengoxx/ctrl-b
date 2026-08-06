@@ -4119,3 +4119,57 @@ than G5's roles-only check); slot VALUES stay unvalidated on purpose (parity: th
 clear-pin writes `""`/`null`, filtered in the projection). Consequence until M2: a
 hand-authored `media.frontier` block 422s (no registry row yet). Dev configs verified to
 carry no old keys — the hand-clean item was a no-op.
+
+## D54 — The Kit Art System: owner-droppable banners, PC images + the shared background, kit-wide ✏️ LOCKED + BUILT 2026-08-06 (owner rulings in conversation, same day; spec of record = MEDIA_PLAN §12; council = Codex pre-build design round BUILD-WITH-CHANGES [A1–A7, all adopted] + Codex post-build round SHIP-WITH-FIXES [1 MED + 3 LOW, all taken])
+
+**The decision.** The D53 media architecture is completed into the full owner-art system the
+owner asked for ("no seams"): THREE more roles on the `kit` namespace — `service-banners`
+(named, service identity), `hosts` (named, machine NAME — a new derived key source), and
+`background` (pool + pin) — plus KIT render primitives on the ServiceIcon model: pure
+URL→parent-props helpers + mechanics-only variable-driven classes (`.kit-svc-banner`,
+`.kit-host-art`, `.kit-bg`), so the kit's own surfaces render owner art natively and any
+bespoke theme adopts by embedding + supplying its own colour tokens. Everything is dormant by
+absence: empty folders ⇒ byte-identical rendering, per theme, proven populated AND empty.
+
+**The load-bearing rulings:** banners paint wherever files exist, kit rows natively, cosmos
+first via DEAL-THEN-OVERRIDE (its bundled pool deals exactly as before; an owner file replaces
+only its own row) · PC images are theme-specific ADOPTION (cosmos's host sheet, faded, first) ·
+the shared background = the gacha-wallpaper mechanism generalized, gated by
+`kit_background_visible` — a nullable SYNCED appearance field (unseeded convention, default ON)
+— and mounted BY THE THEME: an optional `DefaultRoot kitBackground` prop, `false` on the three
+scenery themes (A3: "the theme does not mount the layer"; a ThemeDef flag risks the
+registry→Root import cycle) · precedence is a SURFACE-SCOPED matrix (A5): each kit surface
+resolves owner file → that surface's own theme default → nothing; theme-owned art surfaces
+(frontier hero/rigs, gacha wallpaper/banners/roster) never consult kit roles; full-app scenery
+is exclusive (kit background XOR the theme's own) · host keys = the machine name; a rename
+orphans the file VISIBLY (gallery "no match" + the new key's empty row on one screen; A7, no
+speculative art_id) · the gallery's derived-key path is ONE generic view model + per-source
+adapters (A1 — the second dynamic source was the rule-of-two moment; the service-shaped path
+was DELETED, no legacy branch).
+
+**Build + reviews (all same day):** Opus build (31 files, +1123/−303; `serviceIcons.ts` →
+`kit/ownerArt.ts`) → main-seat audit (13 reported judgement calls, all accepted — headline:
+role-shaped `MediaRoleDef.asset`; per-role CSS vars against inheritance leaks; no `background`
+shorthand in kit art classes, theme layer wins per-property) → Codex post-build SHIP-WITH-FIXES
+→ fix wave (5 items): cosmos chevron-vs-drag-strip stacking regression (the MED — `isolation`
+on the host-art sheet trapped the z2 chevrons under the sibling handle strip; adopter
+`isolation:auto` + a falsification-proven populated click-through e2e) · result-memoized
+resolutions (EAGER `stemIndex` in lib/media.ts — the lazy cache is a repo lint ERROR;
+`resolveNamed` delegates, order semantics pinned) · `?rev=` owner-file cache-buster (SW matcher
+unaffected — pathname-anchored; the gallery's own thumbnail `<img>` stays bare-URL, a recorded
+standing LOW) · docstring · **the owner-reported "light border" on banner rows — a REGRESSION
+this slice introduced and pixel-proven** (the blanket `background-repeat: no-repeat` stopped
+the scrim/veil gradients tiling into the border strip, exposing a 1px rim of raw art; the old
+shorthand had per-layer repeat). Fix = `background-clip: padding-box` on the kit banner class
+(border-box painting area agrees with the padding-box origin; `background-color` follows the
+bottom layer's clip by spec — checked deliberately, every row reads one consistent hairline;
+non-banner rows 0 differing pixels; the pre-slice edge-to-edge look is one `background-repeat`
+list away if ever re-ruled). Gates at close: full 6/6 · FULL local Playwright green (populated
+opt-out arms on all five roots) — main-seat re-run per wave. Ships in v1.5.0 with the gacha
+theme (owner re-ruled the timing: BEFORE the release, not after).
+
+**Recorded nuances (for the next art consumer):** `isolation: isolate` on `.kit` exists only
+while `.kit-bg` is mounted — a FUTURE participating theme with a Root-SIBLING overlay (gacha's
+reel idiom) would find that sibling stacking above the shell (all three sibling-overlay themes
+opt out today) · custom properties inherit, so parent-painted roles need per-role variable
+names · the kit namespace gallery heading is now "Shared art".

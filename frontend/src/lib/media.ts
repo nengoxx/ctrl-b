@@ -111,6 +111,20 @@ export function keyFor(service: ServiceIdentity): string {
   return normalizeMediaKey(kind !== "" ? kind : service.name.trim());
 }
 
+/** The KEY a MACHINE's art file must be named after (the Kit Art System's `kit/hosts` role): its NAME,
+ *  normalized. Its own function rather than `keyFor({name})` because the two identities are different
+ *  rules that happen to coincide today — a service prefers its `kind`, a machine has no such shared
+ *  identity — and the normalization (the part that must never fork) is the shared call underneath.
+ *
+ *  The NAME is the right key even though it is renameable, because nothing stabler is owner-facing:
+ *  `Host.id` is a slug DERIVED from the name and rekeys with it (config.py `hosts()`, hosts.py's rename),
+ *  a MAC is optional and carries colons no stem may hold, and an IP or VPN name moves. A case- or
+ *  NFC-only rename keeps matching (that is what the normalization is); a SUBSTANTIVE rename leaves the
+ *  old file unmatched in the gallery, and the remedy is to rename the file. */
+export function hostKeyFor(host: { name: string }): string {
+  return normalizeMediaKey(host.name.trim());
+}
+
 //: Characters no stem may carry. The set is WINDOWS' (a superset of POSIX's, which forbids only `/`),
 //: and that is deliberate rather than paranoid: `$CTRLB_HOME/media/` lives on the SERVER's filesystem,
 //: and a Windows server is a supported deployment profile (ARCHITECTURE §6). The rule has to be the
@@ -190,12 +204,33 @@ export function resolveNamed<T extends MediaNamed>(
 ): Map<string, T> {
   const wanted = wantedKeys(keys);
   const bound = new Map<string, T>();
-  for (const f of orderedUsable(files)) {
-    const key = wanted.get(normalizeMediaKey(f.name));
-    // First-wins: a later file reaching a key that already bound is ignored, never an overwrite.
-    if (key !== undefined && !bound.has(key)) bound.set(key, f);
+  // In FILE order (that is `stemIndex`'s own insertion order), so the map is built in exactly the sequence
+  // the per-file loop this replaced built it in.
+  for (const [stem, f] of stemIndex(files)) {
+    const key = wanted.get(stem);
+    if (key !== undefined) bound.set(key, f);
   }
   return bound;
+}
+
+/** normalized STEM -> the file that owns it: both of `resolveNamed`'s contested rules, and nothing else.
+ *
+ *  Its own function because the two callers want it at different granularities and must not answer
+ *  differently (the whole reason the binding lives in one place): `resolveNamed` above intersects it with a
+ *  declared key list, while a render path that asks about ONE identity at a time — every service row of
+ *  every theme, on every poll render — memoizes this map per media index and then only ever LOOKS UP
+ *  (`kit/ownerArt.ts`). Building it there by hand would have been the fork.
+ *
+ *  Insertion order is the server's index order, which is what makes the first-wins tie-break the owner's
+ *  own collation (and their gallery reorder) rather than a hash-map accident. */
+export function stemIndex<T extends MediaNamed>(files: readonly T[]): Map<string, T> {
+  const byStem = new Map<string, T>();
+  for (const f of orderedUsable(files)) {
+    const stem = normalizeMediaKey(f.name);
+    // First-wins: a later file reaching a stem that already bound is ignored, never an overwrite.
+    if (!byStem.has(stem)) byStem.set(stem, f);
+  }
+  return byStem;
 }
 
 /** normalized key -> the DECLARED spelling that claimed it. First-DECLARED wins when two keys normalize
@@ -228,6 +263,66 @@ export interface NamedBinding<T> {
   shadowed: Set<T>;
   /** Files whose stem matches no declared key at all: a typo, a rename, or art for something gone. */
   unmatched: Set<T>;
+}
+
+/** One CONSUMER of a DATA-derived `named` role: the key its file must be named after, and what to call
+ *  it in the gallery. The two sources that produce these — a fleet's services, a fleet's machines — turn
+ *  their own identities into this one shape (`theme-engine/mediaKeySources.ts`), so nothing downstream
+ *  knows which source it is reading. */
+export interface KeyedConsumer {
+  key: string;
+  label: string;
+}
+
+/** One derived KEY row: what the owner would name a file, who uses it, and what currently answers. */
+export interface DerivedKeyRow<T> {
+  /** The normalized key — what the file's stem has to match. */
+  key: string;
+  /** Every consumer collapsing to this key, in source order. More than one is a consumer/consumer
+   *  collision: consumers are not in the media index, so there is no winner to pick — they SHARE the
+   *  file (§5), and the gallery says so. */
+  consumers: string[];
+  /** The file that took it, if any. */
+  file?: T;
+  /** False when no file could ever be named this (a path separator in the key, or an empty one). */
+  representable: boolean;
+}
+
+export interface DerivedKeyBinding<T> {
+  rows: DerivedKeyRow<T>[];
+  /** The files' side of the same answer — bound / shadowed / unmatched, from the SHARED classifier, so
+   *  a derived-key role and a static-key one diagnose a drop identically (Codex M3 MED-1). */
+  binding: NamedBinding<T>;
+}
+
+/** Everything the gallery says about a DATA-derived `named` role: the KEY rows (which the static-key
+ *  roles get from the registry instead) plus the generic file classification.
+ *
+ *  SOURCE-AGNOSTIC by construction (Codex A1): it takes `{key,label}` pairs, so services and machines —
+ *  and whatever the next dynamic source is — share one view model rather than growing a branch each. */
+export function deriveKeyBindings<T extends MediaNamed>(
+  consumers: readonly KeyedConsumer[],
+  files: readonly T[],
+): DerivedKeyBinding<T> {
+  const byKey = new Map<string, DerivedKeyRow<T>>();
+  for (const consumer of consumers) {
+    const row = byKey.get(consumer.key);
+    if (row) row.consumers.push(consumer.label);
+    else
+      byKey.set(consumer.key, {
+        key: consumer.key,
+        consumers: [consumer.label],
+        representable: isStemRepresentable(consumer.key),
+      });
+  }
+  const binding = classifyNamed(files, [...byKey.keys()]);
+  for (const [key, file] of binding.byKey) {
+    // The row is present by construction (the keys came from it) — the classifier returns only keys it
+    // was given. Both directions are recorded because the gallery asks the question both ways.
+    const row = byKey.get(key);
+    if (row) row.file = file;
+  }
+  return { rows: [...byKey.values()], binding };
 }
 
 export function classifyNamed<T extends MediaNamed>(

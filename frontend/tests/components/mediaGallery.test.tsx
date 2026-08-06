@@ -499,7 +499,10 @@ describe("MediaGallery · kit service icons", () => {
     // than showing an empty key panel the owner cannot act on.
     await screen.findByText(/nothing to name a file after/);
     expect(container.querySelector(".mgal-head .path")!.textContent).toBe("media/kit/services/");
-    expect(screen.getByText(/every service row renders without an icon/)).toBeTruthy();
+    expect(screen.getByText(/no icon is painted anywhere yet/)).toBeTruthy();
+    // The sentence is COMPOSED (Codex A1): the role says what a file of it is ("icon"), the source says
+    // what the keys come from ("services") — neither is written into the gallery.
+    expect(screen.getByText(/named after the services above/)).toBeTruthy();
     expect(keyRows(container)).toEqual([]);
   });
 
@@ -565,7 +568,7 @@ describe("MediaGallery · kit service icons", () => {
     const { container } = renderKitGallery([], [{ name: "media/plex" }, { name: "CON" }]);
     await settled(container);
     for (const row of keyRows(container)) {
-      expect(row.hint).toContain("cannot have an icon: no file on the server could be named this");
+      expect(row.hint).toContain("no icon: no file on the server could be named this");
       expect(row.bound).toBe("—");
     }
   });
@@ -611,6 +614,88 @@ describe("MediaGallery · kit service icons", () => {
     expect(container.querySelector(".mgal-empty")!.textContent).not.toContain("reading the fleet");
     expect(keyRows(container)).toEqual([]);
     expect(badgesOf(container, "jellyfin.png")).toEqual(["unknown"]);
+  });
+});
+
+// ── the SECOND derived source: machines (the Kit Art System / Codex A1) ─────────────────────────
+//
+// The whole point of the generic view model is that this panel needed no new gallery code — so what is
+// under test is that the generic path SAYS THE RIGHT THINGS here: machine keys, machine wording, and the
+// picture noun. A hosts panel that said "service" would be the A1 failure mode made visible.
+
+/** The kit gallery showing ONLY the `hosts` role, against its own index + the `/api/hosts` list it
+ *  fetches itself. `hosts: null` leaves that request pending forever. */
+function renderHostsGallery(files: MediaFile[], hosts: { id: string; name: string }[] | null) {
+  api.getJSON.mockImplementation((url: string) => {
+    if (url === "/api/hosts") {
+      if (hosts === null) return new Promise(() => {});
+      return Promise.resolve(hosts);
+    }
+    return Promise.resolve({
+      ns: "kit",
+      collation: "casefold-natural",
+      roles: { hosts: files },
+      slots: {},
+    });
+  });
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MediaGallery ns="kit" def={MEDIA_NS.kit} />
+    </QueryClientProvider>,
+  );
+}
+
+const hostFile = (name: string): MediaFile => ({
+  ...svcFile(name),
+  url: `/api/media/kit/files/hosts/${name}.png`,
+});
+
+describe("MediaGallery · kit machine pictures", () => {
+  it("one row per MACHINE, keyed by its name, showing the file that answers it", async () => {
+    const { container } = renderHostsGallery(
+      [hostFile("corsair")],
+      [
+        { id: "corsair", name: "Corsair" },
+        { id: "vault", name: "vault" },
+      ],
+    );
+    await settled(container);
+    expect(keyRows(container)).toEqual([
+      { key: "corsair", hint: "Corsair", bound: "corsair.png" },
+      { key: "vault", hint: "vault", bound: "no picture" },
+    ]);
+    expect(container.querySelector(".mgal-head .path")!.textContent).toBe("media/kit/hosts/");
+  });
+
+  it("speaks about MACHINES and PICTURES — the generic renderer never leaks the other source's words", async () => {
+    const { container } = renderHostsGallery([], []);
+    await screen.findByText(/nothing to name a file after/);
+    expect(screen.getByText(/No machines are configured yet/)).toBeTruthy();
+    expect(screen.getByText(/no picture is painted anywhere yet/)).toBeTruthy();
+    expect(screen.getByText(/named after the machines above/)).toBeTruthy();
+    expect(container.textContent).not.toContain("service");
+  });
+
+  it("says it is reading the MACHINES while that list is in flight", async () => {
+    const { container } = renderHostsGallery([hostFile("corsair")], null);
+    await screen.findByText("corsair.png");
+    expect(container.querySelector(".mgal-empty")!.textContent).toContain("machines");
+    expect(badgesOf(container, "corsair.png")).toEqual(["unknown"]);
+  });
+
+  it("a RENAMED machine leaves its old picture UNMATCHED, and the new key shows what to call the file", async () => {
+    // The A7 accepted cost, made visible where the owner can act on it: the remedy is one rename, and
+    // both halves of it are on screen — the orphaned file and the key it should carry.
+    const { container } = renderHostsGallery(
+      [hostFile("corsair")],
+      [{ id: "corsair-2", name: "corsair-2" }],
+    );
+    await settled(container);
+    expect(badgesOf(container, "corsair.png")).toEqual(["no match"]);
+    expect(keyRows(container)).toEqual([
+      { key: "corsair-2", hint: "corsair-2", bound: "no picture" },
+    ]);
   });
 });
 

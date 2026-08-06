@@ -12,7 +12,35 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE NOW (2026-08-06 evening, Fable — G6 IS BUILT; SUPERSEDES the morning block below)
+> ## ▶ THE STATE NOW (2026-08-06 night, Fable — G6 + G6.1 + THE KIT ART SYSTEM all BUILT; SUPERSEDES both blocks below)
+>
+> ### Where the release train stands (v1.5.0 = gacha + the Kit Art System, owner-ruled)
+> **① SHIPPED ON MAIN (all local — push on the owner's word):** G6 `ffeda6b` (two pickers ·
+> wordmark · NEW-ribbon demo; as-built GACHA_PLAN §7.7) · G6.1 `7dfddab` (+cyber-teal &
+> forest-green dossiers; shipped-four verified CLEAN vs the example; §7.7 addendum) · **the KIT
+> ART SYSTEM (D54; MEDIA_PLAN §12 = the record)** — three owner-droppable kit roles
+> (service-banners · hosts "PC images" · background + synced visibility), kit primitives on the
+> ServiceIcon model, cosmos first adopter (deal-then-override banners + faded host art),
+> everything dormant-by-absence. Its arc: Codex pre-build design round (A1–A7 adopted) → Opus
+> build → main-seat audit → Codex SHIP-WITH-FIXES → 5-item fix wave (incl. the owner-caught
+> banner-border REGRESSION, pixel-proven: blanket no-repeat exposed raw art in the border strip;
+> fixed `background-clip: padding-box` at the kit class) → Codex fix-set verify → main-seat
+> chevron-test geometry fix (the strip is 38px under cosmos, not the kit's 16 — derived live
+> now) + falsification re-run. Gates at every step re-run by the main seat.
+> **② NEXT = the FINAL WAVE, then the owner DEVICE ROUND, then v1.5.0:** (a) G6.2 — an eighth
+> ACCENT, green-leaning family-2 ("jade": green trio + deep green-navy ramp, §4.4 recipe,
+> expect the eridu status-chrome carve-out to fire), owner-asked to pair with the Teal/Forest
+> dossiers; (b) per-tab SCROLL RESTORATION (owner-asked: settings loses its place —
+> DefaultRoot.tsx's deliberate reset-to-top on section switch becomes a per-view position map;
+> the design is in the task list). Then the round: 14 gacha combos (esp. ember ribbon · glacier
+> tri-strip · eridu walk · slip's lighter-means-dim dots · the two new dossiers) + kit art on
+> device (drop real files; cosmos tone values are eyeball items) + the border fix + release per
+> `deploy/linux/README.md` §Release (rollback v1.4.6; schema untouched at 5).
+> **③ Standing cross-project items:** F1 notifications device-round result STILL unasked ·
+> web-push PARKED · the ~80 MB untracked gacha originals stay untracked · stop the dev units
+> when iteration ends · the gallery-thumbnail bare-URL staleness = a recorded standing LOW.
+>
+> ## ▶ PREVIOUS (2026-08-06 evening — G6 only; historical since the block above)
 >
 > ### What this session did (the G6 BUILD session)
 > **① G6 is BUILT + REVIEW-COMPLETE — the as-built is GACHA_PLAN §7.7 (read it; it is the

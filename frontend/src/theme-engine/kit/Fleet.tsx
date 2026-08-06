@@ -3,6 +3,7 @@ import type { MouseEvent } from "react";
 import { useFleet } from "../../hooks/useFleet";
 import { relativeTime } from "../../lib/relativeTime";
 import type { Host, Service } from "../../types";
+import { ownerArtUrl, serviceBannerProps, useServiceBanners } from "./ownerArt";
 import { ServiceIcon } from "./ServiceIcon";
 
 // Kit Fleet view (D29 §14.4) — the standard device-list Fleet for reskin themes (minimal now; phosphor/
@@ -111,6 +112,10 @@ interface RowProps {
 }
 
 function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: RowProps) {
+  // The owner's BANNER for each service (the Kit Art System). The kit has no bundled pool of its own, so
+  // the ladder is one rung: the owner's file, else nothing — and "nothing" means no class and no custom
+  // property reach the row, i.e. the exact markup that shipped before this slice (§A5's kit-surface row).
+  const bannerFor = useServiceBanners();
   const online = !!host.status?.online;
   const ping = host.status?.ping_ms ?? null;
   const svcCount = services.length ? ` · ${services.length} svc` : "";
@@ -219,10 +224,12 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
               services.map((s) => {
                 const svcOn = !!s.status?.online;
                 const addr = `${host.name}:${s.port ?? "—"}`;
+                const art = serviceBannerProps(ownerArtUrl(bannerFor(s)));
                 return svcOn && s.url ? (
                   <a
                     key={s.id}
-                    className="srow on"
+                    className={"srow on" + (art ? ` ${art.className}` : "")}
+                    style={art?.style}
                     href={s.url}
                     target="_blank"
                     rel="noopener"
@@ -252,7 +259,12 @@ function DeviceRow({ host, services, open, busy, onToggle, onWake, onStop }: Row
                     </span>
                   </a>
                 ) : (
-                  <div key={s.id} className="srow off" aria-label={`${s.name} ${addr} — offline`}>
+                  <div
+                    key={s.id}
+                    className={"srow off" + (art ? ` ${art.className}` : "")}
+                    style={art?.style}
+                    aria-label={`${s.name} ${addr} — offline`}
+                  >
                     <span className="led" />
                     <ServiceIcon service={s} />
                     <span className="nm2">

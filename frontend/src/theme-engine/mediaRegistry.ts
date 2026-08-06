@@ -48,9 +48,13 @@ export interface MediaKeyDef {
 /** The live data a `named` role's keys are DERIVED from, when they are not a static list (MEDIA_PLAN §2's
  *  second key source). The gallery dispatches on this to fetch that data and annotate the keys with it —
  *  a descriptor field rather than an inference from "named with no `keys`", so the generic gallery never
- *  has to invent the knowledge of WHICH data a derived role means. One source today: the fleet's
- *  services, whose identities `lib/media.ts#keyFor` turns into keys. */
-export type MediaKeySource = "services";
+ *  has to invent the knowledge of WHICH data a derived role means.
+ *
+ *  Two sources: the fleet's SERVICES (`lib/media.ts#keyFor` — kind, else name) and the fleet's MACHINES
+ *  (`hostKeyFor` — the name). Each is one row in `theme-engine/mediaKeySources.ts`, which is where the
+ *  data-fetch and the gallery's per-source wording live; the gallery itself branches on neither (Codex
+ *  A1 — the third source must be a row, not a third branch). */
+export type MediaKeySource = "services" | "hosts";
 
 /** One role folder under `media/<ns>/`. The server's index is the authority on which roles EXIST; this
  *  supplies the words and the policy for them, because "what does `reel/` mean" is knowledge no generic
@@ -65,6 +69,13 @@ export interface MediaRoleDef {
   keys?: readonly MediaKeyDef[];
   /** `named` roles whose keys come from live DATA (kit's services). Mutually exclusive with `keys`. */
   keySource?: MediaKeySource;
+  /** What ONE file of this role IS, as a bare noun ("icon", "banner", "picture") — the word the gallery
+   *  composes its per-key sentences from. It belongs to the ROLE and not to the `keySource`, because two
+   *  roles can share a source and mean different pictures (the kit's icons and its service banners are
+   *  both keyed by service identity). Article-free by contract: every sentence that uses it is phrased so
+   *  no "a/an" is needed. Required in practice for a `keySource` role (a registry invariant test pins
+   *  it); the static-key and pool roles say what they are in their own `hint`. */
+  asset?: string;
 }
 
 /** A `slots` pin the gallery offers: binding one named file INTO a role, overriding that role folder's own
@@ -117,6 +128,14 @@ const LAYER_ART: MediaBounds = { bytes: 500_000, pixels: 1_000_000 };
  *  large transparent PNG at that ceiling. The advisory changes nothing about what is served: an oversize
  *  icon still paints (MEDIA_PLAN §5 — these are the gallery's badges, not a gate). */
 const ICON_ART: MediaBounds = { bytes: 200_000, pixels: 262_144 };
+
+/** Service BANNERS: the strip of art behind a service ROW, priced against that box rather than against
+ *  a full-bleed surface. Every row that paints one is ~40-42px tall and at most a phone wide (cosmos's
+ *  `.hd-svc` is the shipped reference), so ~1000x300 is already comfortably past what a 3x screen can
+ *  use — half of `FULL_ART`'s pixels, and 400 KB is a generous WebP at that size. Between `ICON_ART` and
+ *  `FULL_ART` for the same reason the bounds are per-role at all (Opus M6): a 4 MP ceiling on a 42px row
+ *  would never warn. Advisory only — an oversize banner still paints. */
+const BANNER_ART: MediaBounds = { bytes: 400_000, pixels: 2_000_000 };
 
 /** ns -> its row. The single front-end authority the Conf tab and the gallery read, mirroring the backend
  *  registry row-for-row. A new namespace is one row here + one row there. */
@@ -207,24 +226,55 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
     // owner may override by name). The stack needs none — its stems ARE its bindings (§4).
     slots: [{ key: "hero", label: "Map cover", from: "hero" }],
   },
-  // kit (D53 M3): per-SERVICE icons — the namespace no theme owns, which is exactly why it is
-  // ALWAYS-ON. All five service-row surfaces read it (kit Fleet, vapor, cosmos, frontier, gacha), so
-  // gating its gallery on the active theme would have hidden the only place the owner can learn what to
-  // name a file — while three of those five themes painted icons from it (the draft bug, Opus H2).
+  // kit (D53 M3, extended by the Kit Art System): the art that belongs to no theme, which is exactly why
+  // this row is ALWAYS-ON. All five service-row surfaces read the icons (kit Fleet, vapor, cosmos,
+  // frontier, gacha), so gating its gallery on the active theme would have hidden the only place the
+  // owner can learn what to name a file — while three of those five themes painted icons from it (the
+  // draft bug, Opus H2).
   //
-  // No pins and no static keys: the keys are the FLEET's service identities (`keyFor` = kind, else
-  // name), so they live in `config.yaml`, and the gallery derives them from the live service list.
+  // Three of the four roles are NAMED with DATA-derived keys and therefore carry no pin: the keys are the
+  // FLEET's own identities (a service's `kind`-else-`name`, a machine's name), so they live in
+  // `config.yaml` and the gallery derives them from the live lists. The one POOL — the shared background —
+  // takes the ordinary first-wins pin, exactly like the gacha wallpaper and the frontier map cover.
+  //
+  // WHERE each role paints is the THEME's choice, and the hints say so rather than promising a surface a
+  // theme may not have adopted (the surface-scoped precedence matrix, Codex A5): a theme's own art wins on
+  // a theme's own surfaces, and a theme with its own full-app scenery ignores the shared background.
   kit: {
-    title: "Service icons",
+    title: "Shared art",
     alwaysOn: true,
     roles: {
       services: {
         kind: "named",
         keySource: "services",
+        asset: "icon",
         hint: "One file per service, named after its KIND (the `kind:` field of a machine's service) — or after its NAME when it declares no kind. Services that share a kind share one icon. A service you drop nothing for keeps today's icon-less row.",
         bounds: ICON_ART,
       },
+      "service-banners": {
+        kind: "named",
+        keySource: "services",
+        asset: "banner",
+        // Same keys as the icons above, deliberately: one identity per service, two pictures of it.
+        hint: "The wide art behind a service's row, named exactly like its icon above (KIND, else NAME). Wide and short — it is cropped to the row and dimmed under the text. A service you drop nothing for keeps whatever that theme already paints behind it.",
+        bounds: BANNER_ART,
+      },
+      hosts: {
+        kind: "named",
+        keySource: "hosts",
+        asset: "picture",
+        hint: "One picture per MACHINE, named after it. Themes that adopt it paint it faded behind that machine's detail sheet. Renaming a machine leaves its old file unmatched here — rename the file to match.",
+        bounds: FULL_ART,
+      },
+      background: {
+        kind: "pool",
+        hint: "A shared background for the whole app. The first image wins (or pin one below), and the Appearance switch turns it off. Themes with scenery of their own ignore it.",
+        bounds: FULL_ART,
+      },
     },
+    // The one pin, and the same shape as the gacha wallpaper pin: a pool with a first-wins default the
+    // owner may override by name. The three NAMED roles need none — their stems ARE their bindings.
+    slots: [{ key: "background", label: "Background", from: "background" }],
   },
 };
 

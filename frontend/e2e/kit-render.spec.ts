@@ -95,3 +95,75 @@ for (const c of COMBOS) {
     expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
   });
 }
+
+// ── the SHARED owner background (the Kit Art System / Codex A6) ──────────────────────────────────
+//
+// The opt-out can only be proved POPULATED: with an empty `media/kit/background/` no theme paints a layer,
+// so an empty-folder assertion says nothing about whether a scenery theme opted out. Both arms below run
+// with a real file in the index and the Appearance switch on, in the REAL built app — the one place the
+// @layer/@scope cascade and the fixed layer's actual paint exist at all.
+const BG_INDEX = {
+  ns: "kit",
+  collation: "casefold-natural",
+  roles: {
+    services: [],
+    "service-banners": [],
+    hosts: [],
+    background: [
+      {
+        name: "nebula",
+        file: "nebula.png",
+        url: "/api/media/kit/files/background/nebula.png",
+        format: "png",
+        size_bytes: 90_000,
+        revision: "1:90000",
+        width: 1600,
+        height: 900,
+        unusable: false,
+        unusable_reason: null,
+      },
+    ],
+  },
+  slots: {},
+};
+
+for (const [theme, layers] of [
+  ["minimal", 1], // no scenery of its own → participates
+  ["cosmos", 0], // its own starfield → the theme does not mount the shared layer
+] as const) {
+  test(`the shared kit background mounts ${layers}x under ${theme} — with art present + enabled`, async ({
+    page,
+  }) => {
+    await page.addInitScript((ui) => localStorage.setItem("ctrlb.ui", JSON.stringify(ui)), {
+      theme,
+      mode: "dark",
+      accent: theme === "cosmos" ? "violet" : "cyan",
+      tab: "fleet",
+      v: 1,
+    });
+    await page.route("**/api/media/kit", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(BG_INDEX),
+      }),
+    );
+
+    await page.goto("/");
+    await page.waitForSelector(".kit-appbar");
+    await expect(page.locator(".kit-bg")).toHaveCount(layers);
+    if (layers > 0) {
+      // It really is the owner's file, and it really is behind the shell (a layer that paints over the
+      // content would be a very different bug from one that does not paint at all).
+      const bg = page.locator(".kit-bg");
+      await expect(bg).toHaveCSS("z-index", "-1");
+      expect(await bg.evaluate((el) => getComputedStyle(el).backgroundImage)).toContain(
+        "/api/media/kit/files/background/nebula.png",
+      );
+      // …and the shell's own flat page fill has stepped aside for it, or nothing would be visible.
+      expect(
+        await page.locator(".kit").evaluate((el) => getComputedStyle(el).backgroundColor),
+      ).toBe("rgba(0, 0, 0, 0)");
+    }
+  });
+}

@@ -99,6 +99,7 @@ export interface SwitchTarget {
   motion?: Motion;
   perf?: Perf;
   themeSettings?: ThemeSettingsMap;
+  kitBackgroundVisible?: boolean;
 }
 
 /** The outcome of a switch attempt, so a caller can persist the choice ONLY when it actually applied.
@@ -163,6 +164,9 @@ async function runSwitch(
       ...(target.motion !== undefined && { motion: target.motion }),
       ...(target.perf !== undefined && { perf: target.perf }),
       ...(target.themeSettings !== undefined && { themeSettings: target.themeSettings }),
+      ...(target.kitBackgroundVisible !== undefined && {
+        kitBackgroundVisible: target.kitBackgroundVisible,
+      }),
     }),
   );
   return "applied";
@@ -186,6 +190,7 @@ export function switchTheme(next: ThemeId, target: SwitchTarget): Promise<Switch
     motion: target.motion,
     perf: target.perf,
     themeSettings: target.themeSettings,
+    kitBackgroundVisible: target.kitBackgroundVisible,
   });
   if (inFlight && inFlight.key === key) return inFlight.done; // same target already running → join it
 

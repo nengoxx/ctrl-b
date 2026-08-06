@@ -55,6 +55,42 @@
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
+/* ── the SHARED owner background (the Kit Art System) ────────────────────────────────────────────
+ * `KitBackground` mounts this as the shell's FIRST child — and only when the theme participates, the
+ * owner has dropped an image into `media/kit/background/`, and the Appearance switch is on. Everything
+ * about it is gated on the NODE existing, so an empty folder is byte-identical to the pre-slice shell.
+ *
+ * `z-index: -1` inside the shell's own stacking context: the layer then paints above `.kit`'s background
+ * and below every child, whether that child is positioned (`.kit-main`, the composer) or in flow (the
+ * nav bar) — the one placement that cannot get in front of a bar. `isolation: isolate` is what makes
+ * `.kit` that stacking context WITHOUT position/z-index (which would change how a theme's own fixed
+ * overlays stack), and nulling the page fill is what lets a negative-z child be seen at all — the layer
+ * paints its own opaque `--bg` underneath the art, so the result is the same flat page when no art
+ * resolves. `:has()` scopes both to the mounted case; a theme that opts out never matches either. */
+.kit:has(> .kit-bg) {
+  background-color: transparent;
+  isolation: isolate;
+}
+.kit-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--bg);
+  /* FADED by ruling: a veil of the page colour over the art, not `opacity` on the element — the veil is
+   * one tunable (`--kit-bg-veil`) a future off|faded|full widening would move, and it composites without
+   * making the whole layer translucent over whatever the browser paints behind a fixed element. */
+  background-image:
+    linear-gradient(
+      0deg,
+      color-mix(in oklch, var(--bg) var(--kit-bg-veil, 86%), transparent),
+      color-mix(in oklch, var(--bg) var(--kit-bg-veil, 86%), transparent)
+    ),
+    var(--kit-bg-img, none);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+}
 .kit-main {
   position: relative; /* positioning context for the floating composer + the bottom fade */
   flex: 1 1 auto;
@@ -1611,8 +1647,10 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   color: inherit;
   min-height: 42px;
 }
+/* `background-color`, not the `background` shorthand: a shorthand here would reset `background-image` and
+ * wipe an owner BANNER off the row for the duration of the press (see `.kit-svc-banner` below). */
 .kit-device .srow:active {
-  background: var(--surface-2);
+  background-color: var(--surface-2);
 }
 .kit-device .srow .led {
   width: 7px;
@@ -1671,6 +1709,88 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
  * unchanged by construction rather than by re-measurement. */
 .kit-device .srow:has(.kit-svcicon) {
   grid-template-columns: auto auto 1fr auto;
+}
+/* ── owner art painted ON a parent surface (the Kit Art System) ──────────────────────────────────
+ * Two classes an adopting surface SPREADS onto its own element (`kit/ownerArt.ts` returns them, and
+ * returns nothing when there is no file — so an un-adopted or un-dropped surface never matches these).
+ *
+ * MECHANICS ONLY, and variable-driven (Codex A2): which layer the image is, how it is cropped, the
+ * readability scrim and the veil. Every COLOUR arrives from the adopter, because the row a banner sits
+ * behind is a different colour in every theme — cosmos's sheet rows are `--surface-2`, gacha's dossier
+ * rows are `--gc-dossier-card` in five palettes, vapor maps its own. Hardwiring one of them here is
+ * exactly what would stop the fourth theme adopting. The `--kit-*-base` fallbacks are the KIT's own
+ * values (it is an adopter too — see `.kit-device .srow` below), never a claim about anyone else.
+ *
+ * Deliberately NOT the `background` shorthand: the adopter keeps `background-color` for the surface's own
+ * fill, and theme CSS lives in a LATER layer than this one, so the two must not fight over one property. */
+.kit .kit-svc-banner {
+  --kit-banner-fill: var(--kit-banner-base, var(--surface-2));
+  background-image:
+    /* ① a LEFT→right scrim: opaque fill over the art on the left, gone by mid-row, so the name stays
+     * readable whatever the picture is doing behind it. */
+    linear-gradient(
+      90deg,
+      var(--kit-banner-fill) var(--kit-banner-scrim, 22%),
+      transparent var(--kit-banner-scrim-end, 64%)
+    ),
+    /* ② a uniform veil that mutes the whole picture (an adopter bumps it for a dimmed/offline row). */
+    linear-gradient(
+      0deg,
+      color-mix(in oklch, var(--kit-banner-fill) var(--kit-banner-veil, 42%), transparent),
+      color-mix(in oklch, var(--kit-banner-fill) var(--kit-banner-veil, 42%), transparent)
+    ),
+    /* ③ the art itself. */ var(--kit-banner-img, none);
+  background-repeat: no-repeat;
+  /* PAINT INSIDE THE PADDING BOX, and only there. The default painting area is the BORDER box while the
+   * positioning area is the padding box, and the two disagree exactly where an adopter draws a border: the
+   * art is sized `cover` against the padding box, overflows it, and so bleeds RAW into the 1px border strip
+   * — while the scrim and the veil above it, sized `auto`, stop at the padding box and never reach there.
+   * The result on cosmos's `.hd-svc` (1px `--line`) was a bright, unscrimmed 1px rim of the picture around
+   * every bannered row, which is the "weird light border" the owner caught on a light image (2026-08-06).
+   * Clipping the whole stack — colour included, since it follows the bottom-most layer — makes the art
+   * stop where the row's content stops, for every adopter and any border width. */
+  background-clip: padding-box;
+  background-position: 0 0, 0 0, var(--kit-banner-pos, right center);
+  background-size: auto, auto, var(--kit-banner-size, cover);
+}
+/* The faded machine picture behind a host-detail surface — an OWN LAYER rather than a background stack,
+ * and for a reason the banner does not have: this one sits behind a whole sheet, and a veil painted in
+ * the surface's colour would make that sheet opaque (cosmos's is deliberately translucent glass). A
+ * low-opacity pseudo-element fades the picture against whatever the surface already shows, so the class
+ * needs no base COLOUR at all — one strength knob, and nothing to get wrong per theme.
+ *
+ * `isolation` (not position/z-index) makes the surface a stacking context so the -1 layer sits above its
+ * own background and below its content. It leaves the surface's OWN place among its siblings alone — but a
+ * stacking context also TRAPS its descendants, and that half is not free: a control inside that had raised
+ * itself above an outside sibling loses the fight, because from then on the whole surface competes as one
+ * z-auto box. Cosmos's planet-switcher chevrons (z-index 2, deliberately above the sheet's `.bs-handle`
+ * drag hit-strip at z-index 1) are exactly that case, so an ADOPTER whose surface holds such a control puts
+ * `isolation: auto` back and leans on an ancestor stacking context to host the -1 layer instead — cosmos
+ * does (the transformed `.bs-sheet`), and cosmos.css says so where it does it. */
+.kit .kit-host-art {
+  position: relative;
+  isolation: isolate;
+}
+.kit .kit-host-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--kit-host-img, none);
+  background-repeat: no-repeat;
+  background-position: var(--kit-host-pos, center);
+  background-size: var(--kit-host-size, cover);
+  opacity: var(--kit-host-strength, 0.14);
+}
+/* The KIT's own service row as an ADOPTER: its base fill + a deeper veil for a disconnected service
+ * (which is already at 50% opacity — the veil keeps the art from being the loudest thing in a row the
+ * whole point of which is that it is dimmed). */
+.kit-device .srow.kit-svc-banner {
+  --kit-banner-base: var(--surface-2);
+}
+.kit-device .srow.off.kit-svc-banner {
+  --kit-banner-veil: 68%;
 }
 .kit-device .no-svc {
   font-size: 12px;

@@ -262,26 +262,48 @@ def test_the_frontier_namespace_serves_its_three_roles(home: Path) -> None:
         assert c.get(body["roles"]["stack"][0]["url"]).status_code == 200
 
 
-def test_the_kit_namespace_serves_its_one_named_role_and_offers_no_pin(home: Path) -> None:
-    """D53 M3's registry row. `kit/services/` is the namespace no THEME owns — every theme's service
-    rows read it — and its keys are DATA-DERIVED: the server reports stems and knows nothing about what
-    a service is called, because the binding (`normalizeMediaKey(stem) == keyFor(service)`) is computed
-    client-side only. So the whole server-side contract is: the role lists, the stems are reported, the
-    files serve, and there is no pin to configure."""
+def test_the_kit_namespace_serves_its_four_roles_and_the_one_background_pin(home: Path) -> None:
+    """D53 M3's registry row, as the Kit Art System extended it. `kit/` is the namespace no THEME owns —
+    every theme's service rows read it — and three of its four roles have DATA-DERIVED keys: the server
+    reports stems and knows nothing about what a service or a machine is called, because the binding
+    (`normalizeMediaKey(stem) == keyFor(service)` / `hostKeyFor(host)`) is computed client-side only. So
+    the server-side contract is: the four roles list, the stems are reported, the files serve — including
+    out of the HYPHENATED role folder, which is the one shape none of the earlier roles exercised — and
+    the only pin that exists is the background pool's."""
     with make_client() as c:
         (ns_dir(home, "kit") / "services" / "Jellyfin.png").write_bytes(png_bytes())
+        (ns_dir(home, "kit") / "service-banners" / "Jellyfin.webp").write_bytes(webp_bytes())
+        (ns_dir(home, "kit") / "hosts" / "corsair.png").write_bytes(png_bytes())
+        (ns_dir(home, "kit") / "background" / "nebula.png").write_bytes(png_bytes())
         body = c.get("/api/media/kit").json()
+        assert list(body["roles"]) == ["services", "service-banners", "hosts", "background"]
         assert [f["name"] for f in body["roles"]["services"]] == ["Jellyfin"]
-        assert list(body["roles"]) == ["services"]
+        assert [f["name"] for f in body["roles"]["service-banners"]] == ["Jellyfin"]
+        assert [f["name"] for f in body["roles"]["hosts"]] == ["corsair"]
         assert body["slots"] == {}
-        assert c.get(body["roles"]["services"][0]["url"]).status_code == 200
+        for role in ("services", "service-banners", "hosts", "background"):
+            assert c.get(body["roles"][role][0]["url"]).status_code == 200, role
 
-        # An empty `media.kit` block is valid config (the namespace has nothing to persist: no order
-        # worth keeping for a role where the FILENAME is the assignment, and no pins at all)…
+        # An empty `media.kit` block is valid config (there may be nothing to persist: no order worth
+        # keeping for a role where the FILENAME is the assignment, and no pin chosen)…
         assert c.put("/api/settings", json={"media": {"kit": {}}}).status_code == 200
-        # …but a pin is refused, like every other slot typo: the registry row declares none.
+        # …the ONE declared pin is accepted and echoed for the client resolver…
+        r = c.put("/api/settings", json={"media": {"kit": {"slots": {"background": "nebula"}}}})
+        assert r.status_code == 200, r.text
+        assert c.get("/api/media/kit").json()["slots"] == {"background": "nebula"}
+        # …and a pin naming a NAMED role is refused, like every other slot typo: those bind by filename,
+        # so a pin for one would be a knob that silently did nothing.
         assert (
             c.put("/api/settings", json={"media": {"kit": {"slots": {"services": "x"}}}}).status_code == 422
+        )
+        # The owner's ORDER is persistable per role, including the hyphenated one (it is the tie-break
+        # for two files reaching one key — the one thing order still buys on a named role).
+        assert (
+            c.put(
+                "/api/settings",
+                json={"media": {"kit": {"roles": {"service-banners": {"order": ["Jellyfin.webp"]}}}}},
+            ).status_code
+            == 200
         )
 
 

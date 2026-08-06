@@ -78,6 +78,9 @@ const service: Service = {
 };
 
 const ICON_URL = "/api/media/kit/files/services/jellyfin.png";
+/** What the `<img>` actually points at: the mount URL plus the `?rev=` stamp every owner-art consumer
+ *  carries (`ownerArt.ts#ownerArtUrl`), so an in-place overwrite is not answered from the HTTP/SW cache. */
+const src = (revision: string) => `${ICON_URL}?rev=${encodeURIComponent(revision)}`;
 
 const iconFile = (revision: string): MediaFile => ({
   name: "jellyfin",
@@ -193,7 +196,7 @@ describe.each(SURFACES)("service icons · $name", ({ row, element }) => {
   it("paints the owner's file for a service whose KIND names it", () => {
     media.data = withIcon();
     const icon = iconIn(render(element()));
-    expect(icon?.getAttribute("src")).toBe(ICON_URL);
+    expect(icon?.getAttribute("src")).toBe(src("1:4000"));
     // Decorative: the row already carries the service NAME as text (§5).
     expect(icon?.getAttribute("alt")).toBe("");
     expect(icon?.getAttribute("aria-hidden")).toBe("true");
@@ -226,18 +229,20 @@ describe.each(SURFACES)("service icons · $name", ({ row, element }) => {
     fireEvent.error(iconIn(r)!);
     expect(imgsIn(r)).toHaveLength(0);
 
-    // The owner overwrites `jellyfin.png`: the URL is unchanged (it must be — the SW's media cache is
-    // keyed on it), and only `revision` says the bytes are new. SAME tree, so the latch is the one that
-    // was tripped a moment ago — a remount here would reset it and prove nothing.
+    // The owner overwrites `jellyfin.png`: the mount PATH is unchanged (it must be — the SW's media route
+    // is keyed on it), and only `revision` says the bytes are new — which is what both the latch key and
+    // the `?rev=` on the src are made of. SAME tree, so the latch is the one that was tripped a moment
+    // ago — a remount here would reset it and prove nothing.
     media.data = withIcon("2:5000");
     r.rerender(element());
-    expect(iconIn(r)?.getAttribute("src")).toBe(ICON_URL);
+    expect(iconIn(r)?.getAttribute("src")).toBe(src("2:5000"));
   });
 
   it("a LATE error from the replaced revision cannot latch the repaired one (Codex M3 MED-2)", () => {
-    // The race: revision A's request is still outstanding when B's props arrive. The URL is stable
-    // across a repair, so without a `key` React would re-use the same <img> — and A's later `error`
-    // would fire the UPDATED handler, latching B and hiding a picture that is perfectly good.
+    // The race: revision A's request is still outstanding when B's props arrive. The mount PATH is
+    // stable across a repair, so without a `key` React would re-use the same <img> — and A's later
+    // `error` would fire the UPDATED handler, latching B and hiding a picture that is perfectly good.
+    // (Still the arm that pins it: the latch is keyed on the identity, not on the src spelling.)
     media.data = withIcon("1:4000");
     const r = render(element());
     const stale = iconIn(r)!;
@@ -246,7 +251,7 @@ describe.each(SURFACES)("service icons · $name", ({ row, element }) => {
     r.rerender(element());
     fireEvent.error(stale); // A's load fails, late
 
-    expect(iconIn(r)?.getAttribute("src")).toBe(ICON_URL);
+    expect(iconIn(r)?.getAttribute("src")).toBe(src("2:5000"));
     // …and B's OWN failure still latches: the fix detaches the stale request, it does not disarm the latch.
     fireEvent.error(iconIn(r)!);
     expect(imgsIn(r)).toHaveLength(0);

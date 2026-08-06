@@ -511,6 +511,24 @@
     .cosmos-hd {
       padding: 2px 18px calc(18px + env(safe-area-inset-bottom));
     }
+    /* The owner's picture for THIS machine (the Kit Art System, `media/kit/hosts/`), faded behind the
+     * sheet's info section. Cosmos is the first ADOPTER — nothing about this is automatic for a theme;
+     * the mechanics are the kit's `.kit-host-art` and only the tone is here. Weaker than the kit default
+     * because the panel behind it is already a dotted glass with a lot going on, and biased to the TOP so
+     * the picture reads behind the name hero rather than behind the services list. */
+    .cosmos-hd.kit-host-art {
+      --kit-host-strength: 0.11;
+      --kit-host-pos: center top;
+      /* …and the one MECHANICAL override the adopter owes: the kit class isolates so its z-index:-1 pseudo
+       * clears the surface's own background, and that stacking context would TRAP the planet-switcher
+       * chevrons below — they sit at z-index 2 precisely to beat the sheet handle's invisible drag hit-strip
+       * (`.bs-handle::after`, z 1, kit.css), which overlaps the top of the name row. Isolated, the whole
+       * `.cosmos-hd` competes as one z-auto box and the strip swallows chevron taps again (the bug this
+       * theme already live-caught once, 2026-07-15). Nothing is lost by dropping it: the sheet itself is a
+       * stacking context (`.bs-sheet` is transformed + backdrop-filtered), so the -1 layer still lands above
+       * the sheet's glass and its dot texture, and below every bit of in-flow content. */
+      isolation: auto;
+    }
     /* name row — the h2 flanked by the planet-switcher chevrons (CosmosHostDetail); the name keeps its
      * centred look and the chevrons align on its optical centre. The h2's vertical breathing room lives on
      * this row (so the three items centre as one). `min-width: 0` on the h2 (§14.11 flex rule) lets a long
@@ -752,7 +770,6 @@
       gap: 8px;
     }
     .cosmos-hd .hd-svc {
-      --svc-veil: 42%; /* how much --surface-2 mutes the artwork (offline bumps it below) */
       display: flex;
       align-items: center;
       gap: 11px;
@@ -762,22 +779,18 @@
       border: 1px solid var(--line);
       text-decoration: none;
       color: inherit;
-      /* per-service artwork (serviceBanners.ts — owner's `designs/asdff` crops, used as-is), calmed for the
-       * dark sheet via the scrim pattern: a LEFT→right scrim (opaque --surface-2 over the art on the left,
-       * fading off by mid-row) keeps the name readable, and a uniform `--svc-veil` mutes the bright art.
-       * `--svc-banner` is the per-row `url(...)`; `cover` fills the rounded banner (clipped by border-radius). */
-      background:
-        linear-gradient(90deg, var(--surface-2) 22%, transparent 64%),
-        linear-gradient(
-          0deg,
-          color-mix(in oklch, var(--surface-2) var(--svc-veil), transparent),
-          color-mix(in oklch, var(--surface-2) var(--svc-veil), transparent)
-        ),
-        var(--svc-banner, none) right center / cover no-repeat,
-        var(--surface-2);
+      /* The ROW's own fill. The artwork on top of it is the Kit's `.kit-svc-banner` recipe — this theme's
+       * scrim+veil pattern, LIFTED to kit.css now that a second surface paints banners (the kit's own
+       * service rows) and the art can be the owner's file as well as a bundled one. What stays here is
+       * exactly what is cosmos's: the fill the scrim is drawn from and how hard the picture is muted.
+       * `background-color`, not the shorthand: the kit class owns `background-image` in a LOWER layer, so
+       * a shorthand here would silently erase it (@layer theme beats @layer base per property). */
+      background-color: var(--surface-2);
+      --kit-banner-base: var(--surface-2);
+      --kit-banner-veil: 42%;
     }
     .cosmos-hd .hd-svc.off {
-      --svc-veil: 68%; /* a disconnected service: dim its artwork further (echoes the dimmed led + name) */
+      --kit-banner-veil: 68%; /* a disconnected service: dim its artwork further (echoes the dimmed led + name) */
     }
     .cosmos-hd .hd-svc .led {
       width: 7px;

@@ -18,7 +18,10 @@ export function CosmosRoot() {
       {/* The orbital Fleet stays cosmos's signature view. Since A4, DefaultRoot OWNS the plan composition
           (the `planPlacement` setting picks inline pill+sheet vs. the pinned panel) — cosmos defaults to
           `inline`, so this is render-identical to the old explicit `composerSlots={kitPlanComposerSlots}`. */}
-      <DefaultRoot appbarMode={appbarMode} bodies={{ fleet: CosmosFleet }} />
+      {/* `kitBackground={false}`: cosmos HAS full-bleed scenery (the starfield above), and full-app
+          scenery is exclusive by default (the Kit Art System / Codex A5) — the shared kit background layer
+          would paint straight through this theme's deliberately transparent `.kit`. */}
+      <DefaultRoot appbarMode={appbarMode} bodies={{ fleet: CosmosFleet }} kitBackground={false} />
     </>
   );
 }

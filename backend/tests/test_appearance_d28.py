@@ -92,6 +92,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
                 "motion": None,  # unseeded → client keeps local until first authored
                 "perf": None,
                 "theme_settings": None,
+                "kit_background_visible": None,  # unseeded too — a pre-slice config is not "turned off"
                 "updated_at": None,
             }
 
@@ -106,6 +107,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
                         "motion": "reduced",
                         "perf": "lite",
                         "theme_settings": {"minimal": {"hideAppbar": True}},
+                        "kit_background_visible": False,
                     }
                 },
             )
@@ -117,6 +119,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
             assert saved["motion"] == "reduced"
             assert saved["perf"] == "lite"
             assert saved["theme_settings"] == {"minimal": {"hideAppbar": True}}
+            assert saved["kit_background_visible"] is False
             assert saved["updated_at"] is not None  # server-stamped
 
             # GET reflects it (the cheap always-on read the ui store reconciles against).
@@ -128,6 +131,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
             reloaded = load_settings(cfg)
             assert reloaded.appearance.theme == "minimal"
             assert reloaded.appearance.accent == "indigo"
+            assert reloaded.appearance.kit_background_visible is False
             assert reloaded.appearance.updated_at is not None
 
             # A second write re-stamps a newer time (monotonic-ish; at least not older).

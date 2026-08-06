@@ -93,6 +93,7 @@ describe("ui store", () => {
     motion: "full",
     perf: "full",
     themeSettings: {},
+    kitBackgroundVisible: true,
     appbarMode: "visible",
     layout: "auto",
   };

@@ -32,6 +32,7 @@ import { ThemedComposer, useComposerLayout } from "./composer/ThemedComposer";
 import { kitToolsMenuSlots } from "./composer/toolsMenu";
 import type { ComposerSlots } from "./composer/types";
 import { KitFleet } from "./Fleet";
+import { KitBackground } from "./KitBackground";
 import { KitNavBar } from "./NavBar";
 import { appbarShown, type AppbarMode } from "../../store/ui";
 
@@ -80,6 +81,16 @@ interface Props {
   /** The appbar brand-TEXT slot (D52 / GACHA_PLAN §4.3), threaded to KitAppBar — the theme's own wordmark
    *  (gacha's katakana). Omitted → the Kit default (the literal `ctrl·b`). */
   brandText?: ReactNode;
+  /** Whether this theme participates in the SHARED kit background layer (the Kit Art System / Codex A3).
+   *  Default TRUE: a theme that has no full-bleed scenery of its own simply gets it. A theme that DOES —
+   *  cosmos's starfield, frontier's map, gacha's wallpaper — passes `false`, because full-app scenery is
+   *  exclusive by default (§A5): the shared background XOR the theme's own, never both competing.
+   *
+   *  A PROP rather than a ThemeDef flag or a CSS trick, deliberately: "the theme does not mount the layer"
+   *  is the semantic, nothing else computes on the capability, and a registry read from here would risk
+   *  the registry→VaporRoot→DefaultRoot import cycle (resolve.ts). A future bespoke Root that does not use
+   *  DefaultRoot simply chooses whether to render `<KitBackground/>` itself. */
+  kitBackground?: boolean;
 }
 
 // The Kit's DEFAULT id→body map (component space — this is the "lazy COMPONENTS" home the pure `tabs.ts`
@@ -100,6 +111,7 @@ export function DefaultRoot({
   brandMeta,
   brandMark,
   brandText,
+  kitBackground = true,
 }: Props) {
   // The headless sections controller (D35): the full section list (mount loop), the resolved layout, the
   // on-/off-bar/hosted partitions, the active section, and the shared `navigate` chokepoint. `active` is
@@ -236,6 +248,10 @@ export function DefaultRoot({
 
   return (
     <div className="kit">
+      {/* The shared owner background (the Kit Art System), FIRST so it sits behind the shell. It renders
+          nothing unless this theme participates AND the owner has both dropped an image in and left the
+          Appearance switch on — so an empty folder leaves the shell byte-identical. */}
+      {kitBackground && <KitBackground />}
       {/* `.kit-main` is the positioning context: the scroller fills it, the composer floats over it (so
           the content scrolls behind the composer and shows in the gaps around it). The nav bar stays an
           in-flow bar below. Per-tab CSS hooks: `body[data-tab]` (ui.ts) — cosmos/frontier tune the Fleet

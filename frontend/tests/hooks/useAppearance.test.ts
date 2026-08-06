@@ -8,7 +8,7 @@ import {
 
 // Phase 11 / D28 §9.11 + M3 §14.3 — the cross-device reconcile decision (compare-then-set, server-wins,
 // but only when the server has a recorded preference). The synced unit is
-// {theme,mode,accent,motion,perf,themeSettings}. Pure function → tested directly.
+// {theme,mode,accent,motion,perf,themeSettings,kitBackgroundVisible}. Pure function → tested directly.
 
 const local: AppearanceLocal = {
   theme: "vapor",
@@ -17,6 +17,7 @@ const local: AppearanceLocal = {
   motion: "full",
   perf: "full",
   themeSettings: { vapor: { heroOn: true } },
+  kitBackgroundVisible: true,
 };
 const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
   theme: "vapor",
@@ -25,6 +26,7 @@ const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
   motion: "full",
   perf: "full",
   theme_settings: { vapor: { heroOn: true } },
+  kit_background_visible: true,
   updated_at: "2026-06-26T12:00:00Z",
   ...o,
 });
@@ -52,6 +54,7 @@ describe("reconcileAppearance", () => {
       motion: "full",
       perf: "full",
       themeSettings: { vapor: { heroOn: true } },
+      kitBackgroundVisible: true,
     });
   });
 
@@ -60,6 +63,22 @@ describe("reconcileAppearance", () => {
       "reduced",
     );
     expect(reconcileAppearance(server({ perf: "lite" }), local, always)?.perf).toBe("lite");
+  });
+
+  // The Kit Art System's shared-background switch joins the synced unit on exactly the same terms as
+  // motion/perf: it governs ONE shared image, so it is not a per-device choice — and it ships NULLABLE,
+  // so an existing config (stamped `updated_at`, no such key) must not read as "the owner turned it off".
+  it("server wins on a differing shared-background switch, and UNSEEDED keeps local", () => {
+    expect(
+      reconcileAppearance(server({ kit_background_visible: false }), local, always)
+        ?.kitBackgroundVisible,
+    ).toBe(false);
+    // …and a pre-slice doc (null) coalesces to local rather than looking authored — no-op, no wipe.
+    expect(reconcileAppearance(server({ kit_background_visible: null }), local, always)).toBeNull();
+    expect(
+      reconcileAppearance(server({ kit_background_visible: null, accent: "ember" }), local, always)
+        ?.kitBackgroundVisible,
+    ).toBe(true);
   });
 
   it("server wins on a differing per-theme setting", () => {
@@ -132,6 +151,7 @@ describe("reconcileAppearance", () => {
       motion: "full",
       perf: "full",
       themeSettings: { vapor: { heroOn: true } },
+      kitBackgroundVisible: true,
     });
   });
 
@@ -161,6 +181,7 @@ describe("reconcileAppearance", () => {
         motion: "reduced", // global lever still applied
         perf: "lite", // global lever still applied
         themeSettings: { vapor: { heroOn: false } }, // namespaced settings still applied
+        kitBackgroundVisible: true, // global lever, unchanged here — still carried whole
       });
     });
 

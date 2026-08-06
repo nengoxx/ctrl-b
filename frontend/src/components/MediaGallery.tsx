@@ -1,7 +1,12 @@
 import { useMediaIndex, type MediaFile } from "../hooks/useMedia";
 import { useSaveSettings } from "../hooks/useSettings";
-import { classifyNamed, normalizeMediaKey, type NamedBinding } from "../lib/media";
-import { serviceKeyBindings, useDerivedServiceKeys } from "../theme-engine/kit/serviceIcons";
+import {
+  classifyNamed,
+  deriveKeyBindings,
+  normalizeMediaKey,
+  type NamedBinding,
+} from "../lib/media";
+import { useMediaKeySource } from "../theme-engine/mediaKeySources";
 import type { MediaNsDef, MediaRoleDef } from "../theme-engine/mediaRegistry";
 
 // The owner-media gallery (D52/G5, GACHA_PLAN §5.4) — the Conf half of the read-only media surface.
@@ -217,7 +222,11 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
  *
  *  Its own component because of the key panel's second source (D53 M3): a `named` role's keys are either a
  *  static registry list or DATA — and reading that data is a hook, which a `.map()` inside the gallery
- *  could not call once per role. Everything else here is the M2 render, moved verbatim. */
+ *  could not call once per role. Everything else here is the M2 render, moved verbatim.
+ *
+ *  The DERIVED-key path is source-agnostic (Codex A1): `useMediaKeySource` answers with one shape for
+ *  every `keySource`, the role's own `asset` noun supplies the word for what a file of it IS, and the
+ *  sentences below compose the two. Adding a source is a row in `mediaKeySources.ts` — never a branch here. */
 function RoleSection({
   ns,
   role,
@@ -233,15 +242,18 @@ function RoleSection({
   busy: boolean;
   onMove: (role: string, from: number, to: number) => void;
 }) {
-  // The role's own data dependency, and only its own: a role with no `keySource` passes `false` and this
-  // adds no fetcher (the hook is still CALLED — rules of hooks — it just does not subscribe to a poll).
-  const derives = roleDef?.keySource === "services";
-  const { services, failed } = useDerivedServiceKeys(derives);
-  // "We do not know yet" is a THIRD state, not an empty list: annotating files against an empty service
-  // list would flag every correctly-named one as unmatched for as long as the fleet query takes (§5).
-  // And it has two causes with two different sentences — still loading, or it will never arrive.
-  const unknown = derives && services === undefined;
-  const derived = derives && services !== undefined ? serviceKeyBindings(services, files) : null;
+  // The role's own data dependency, and only its own: a role with no `keySource` gets `null` back and
+  // no fetcher is enabled (the hook is still CALLED — rules of hooks).
+  const source = useMediaKeySource(roleDef?.keySource);
+  // What ONE file of this role is, in the sentences below. Every phrase using it is article-free by
+  // contract, so a role that declares nothing still reads correctly with the generic fallback.
+  const asset = roleDef?.asset ?? "file";
+  // "We do not know yet" is a THIRD state, not an empty list: annotating files against an empty list
+  // would flag every correctly-named one as unmatched for as long as the query takes (§5). And it has
+  // two causes with two different sentences — still loading, or it will never arrive.
+  const unknown = source != null && source.consumers === undefined;
+  const derived =
+    source?.consumers !== undefined ? deriveKeyBindings(source.consumers, files) : null;
   // A NAMED role is not a list the owner orders — it is a set of slots they FILL by filename, so the keys
   // are shown with what each one currently resolves to. Without this a named role would render
   // indistinguishably from a pool, and the one thing the owner must know (what to call the file) would
@@ -278,40 +290,39 @@ function RoleSection({
       )}
       {/* The two UNKNOWN states, told apart (Codex M3 LOW-2): a spinner sentence for a request that will
           never arrive is the one thing worse than saying the bindings cannot be shown. */}
-      {unknown && (
-        <p className="mgal-empty">
-          {failed ? "service list unavailable — bindings unknown" : "reading the fleet’s services…"}
-        </p>
+      {source != null && source.consumers === undefined && (
+        <p className="mgal-empty">{source.failed ? source.def.failed : source.def.loading}</p>
       )}
-      {derived != null &&
+      {source != null &&
+        derived != null &&
         (derived.rows.length === 0 ? (
-          <p className="mgal-empty">
-            No services are declared on any machine yet — nothing to name a file after.
-          </p>
+          <p className="mgal-empty">{source.def.none}</p>
         ) : (
           <ul className="mgal-keys">
             {derived.rows.map((row) => (
               <li key={row.key}>
                 <code>{row.key}</code>
                 <span className="h">
-                  {/* Every collision is stated where the owner meets it. A service/service collision has
-                      no winner to pick — services are not in the media index — so BOTH rows share the one
-                      file, and saying so is the whole remedy (per-host binding is out of scope, §0). */}
-                  {row.services.join(" · ")}
+                  {/* Every collision is stated where the owner meets it. A consumer/consumer collision has
+                      no winner to pick — services and machines are not in the media index — so BOTH rows
+                      share the one file, and saying so is the whole remedy (§0). */}
+                  {row.consumers.join(" · ")}
                   {/* …and only "share" it when there IS one (Codex M3 LOW-1): on a fresh install, or
                       when the only candidate file is unusable, the truthful statement is about the KEY
-                      they collapse to, not about an icon neither of them has. */}
-                  {row.services.length > 1 &&
-                    (row.file ? " — these share this icon" : " — these use the same icon key")}
+                      they collapse to, not about a picture neither of them has. */}
+                  {row.consumers.length > 1 &&
+                    (row.file
+                      ? ` — these share this ${asset}`
+                      : ` — these use the same ${asset} key`)}
                   {/* The REASON stays general (Codex M3-R1 NEW-1): the rule is the conservative
                       cross-platform stem set (separators, reserved characters and names, edge dots/
                       spaces — lib/media.ts#isStemRepresentable), so naming one character class here
                       would be a false diagnosis for the others. */}
                   {!row.representable &&
-                    " — cannot have an icon: no file on the server could be named this"}
+                    ` — no ${asset}: no file on the server could be named this`}
                 </span>
                 <span className={"b" + (row.file ? "" : " none")}>
-                  {row.file ? row.file.file : row.representable ? "no icon" : "—"}
+                  {row.file ? row.file.file : row.representable ? `no ${asset}` : "—"}
                 </span>
               </li>
             ))}
@@ -319,8 +330,8 @@ function RoleSection({
         ))}
       {files.length === 0 ? (
         <p className="mgal-empty">
-          {derives
-            ? "Empty — every service row renders without an icon. Copy .png/.jpg/.webp files named after the services above into this folder."
+          {source != null
+            ? `Empty — no ${asset} is painted anywhere yet. Copy .png/.jpg/.webp files named after the ${source.def.consumers} above into this folder.`
             : "Empty — the theme uses its bundled art. Copy .png/.jpg/.webp files into this folder."}
         </p>
       ) : (

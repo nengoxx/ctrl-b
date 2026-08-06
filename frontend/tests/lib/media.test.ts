@@ -5,7 +5,9 @@ import {
   classifyNamed,
   cycleAssign,
   cycleAt,
+  deriveKeyBindings,
   firstUsable,
+  hostKeyFor,
   isStemRepresentable,
   keyFor,
   normalizeMediaKey,
@@ -143,6 +145,25 @@ describe("keyFor — the service identity a file is named after (D53 M3)", () =>
 
   it("normalizes exactly like a stem, so the two ends of the binding are ONE rule", () => {
     expect(keyFor({ name: "Café" })).toBe(normalizeMediaKey("café"));
+  });
+});
+
+describe("hostKeyFor — the MACHINE identity a file is named after (the Kit Art System)", () => {
+  it("is the machine's NAME, normalized through the one shared rule", () => {
+    expect(hostKeyFor({ name: "Corsair" })).toBe("corsair");
+    expect(hostKeyFor({ name: " vault " })).toBe("vault");
+    expect(hostKeyFor({ name: "Café" })).toBe(normalizeMediaKey("café"));
+  });
+
+  it("has no `kind` rung — a machine has no shared identity to prefer (that is what makes it a second rule)", () => {
+    // Distinct from `keyFor`, which would have taken a `kind` if one existed. Passing a service-shaped
+    // object here still keys on the NAME, which is the whole difference between the two.
+    expect(hostKeyFor({ name: "corsair", kind: "windows" } as { name: string })).toBe("corsair");
+  });
+
+  it("a case- or NFC-only RENAME keeps matching; a substantive one does not (the A7 accepted cost)", () => {
+    expect(hostKeyFor({ name: "CORSAIR" })).toBe(hostKeyFor({ name: "corsair" }));
+    expect(hostKeyFor({ name: "corsair-2" })).not.toBe(hostKeyFor({ name: "corsair" }));
   });
 });
 
@@ -290,5 +311,94 @@ describe("resolveNamed — stem binds to key (the `named` kind)", () => {
     const bound = resolveNamed([f("cube")], ["Cube", "CUBE"]);
     expect([...bound.keys()]).toEqual(["Cube"]);
     expect(bound.get("Cube")?.name).toBe("cube");
+  });
+});
+
+// ── the generic DERIVED-KEY view model (the Kit Art System / Codex A1) ──────────────────────────
+//
+// Two dynamic key sources exist now (the fleet's services and its machines), so the rows the gallery
+// renders are built ONCE from `{key,label}` pairs rather than per source. Everything the M3 service-only
+// model had to get right is the same here, and none of it mentions a service:
+//
+//  · one row per KEY, in source order, carrying the file that answers it;
+//  · consumer/consumer collisions — no winner exists (consumers are not in the media index), so BOTH
+//    share the winning file and the row lists both;
+//  · file/file collisions and unmatched files come from the SHARED classifier, so a derived-key role and
+//    a static-key one diagnose a drop identically;
+//  · a key no file could ever be named is flagged rather than left to be discovered.
+
+const mf = (name: string, unusable?: boolean) => ({ name, ...(unusable === true && { unusable }) });
+const consumer = (key: string, label: string) => ({ key, label });
+
+describe("deriveKeyBindings — the source-agnostic key rows", () => {
+  it("one row per key, in source order, each carrying the file that answers it", () => {
+    const jelly = mf("jellyfin");
+    const out = deriveKeyBindings(
+      [consumer("jellyfin", "Media"), consumer("grafana", "Grafana")],
+      [jelly],
+    );
+    expect(out.rows.map((r) => r.key)).toEqual(["jellyfin", "grafana"]);
+    expect(out.rows[0].file).toBe(jelly);
+    expect(out.rows[1].file).toBeUndefined();
+    expect(out.binding.keyOf.get(jelly)).toBe("jellyfin");
+  });
+
+  it("consumer/consumer collision: BOTH labels on ONE row, sharing the winning file", () => {
+    // Two hosts each running a `jellyfin` service collapse to one key — and so would two machines named
+    // the same way. There is no index order over CONSUMERS to break the tie with, so there is no tie.
+    const jelly = mf("jellyfin");
+    const out = deriveKeyBindings(
+      [consumer("jellyfin", "media-a"), consumer("jellyfin", "media-b")],
+      [jelly],
+    );
+    expect(out.rows).toHaveLength(1);
+    expect(out.rows[0].consumers).toEqual(["media-a", "media-b"]);
+    expect(out.rows[0].file).toBe(jelly);
+  });
+
+  it("file/file collision: the FIRST in the server's index order wins, and the loser is SHADOWED", () => {
+    const png = mf("jellyfin");
+    const webp = mf("Jellyfin");
+    const keys = [consumer("jellyfin", "media")];
+
+    const first = deriveKeyBindings(keys, [png, webp]);
+    expect(first.rows[0].file).toBe(png);
+    expect(first.binding.shadowed.has(webp)).toBe(true);
+    expect(first.binding.unmatched.size).toBe(0);
+
+    // …and in the other order the other file wins — the tie-break IS the listing the owner can reorder.
+    const second = deriveKeyBindings(keys, [webp, png]);
+    expect(second.rows[0].file).toBe(webp);
+    expect(second.binding.shadowed.has(png)).toBe(true);
+  });
+
+  it("a file no key wants is UNMATCHED — the state a renamed machine's old picture lands in (A7)", () => {
+    const stray = mf("corsair");
+    const out = deriveKeyBindings([consumer("corsair-2", "corsair-2")], [stray]);
+    expect(out.binding.unmatched.has(stray)).toBe(true);
+    expect(out.binding.shadowed.size).toBe(0);
+    expect(out.rows[0].file).toBeUndefined();
+  });
+
+  it("an UNUSABLE file is neither: the server's verdict is the reason, and it already carries it", () => {
+    const broken = mf("plex", true);
+    const out = deriveKeyBindings([consumer("plex", "plex")], [broken]);
+    expect(out.rows[0].file).toBeUndefined();
+    expect(out.binding.shadowed.size + out.binding.unmatched.size).toBe(0);
+  });
+
+  it("flags a key that can never be a filename, and offers it no file", () => {
+    const out = deriveKeyBindings(
+      [consumer(keyFor({ name: "media/plex" }), "media/plex"), consumer("plex", "plex")],
+      [mf("plex")],
+    );
+    expect(out.rows[0].representable).toBe(false);
+    expect(out.rows[0].file).toBeUndefined();
+    expect(out.rows[1].representable).toBe(true);
+  });
+
+  it("no consumers and no files are both empty, never a throw", () => {
+    expect(deriveKeyBindings([], [mf("plex")]).binding.unmatched.size).toBe(1);
+    expect(deriveKeyBindings([consumer("plex", "plex")], []).rows[0].file).toBeUndefined();
   });
 });

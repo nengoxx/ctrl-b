@@ -184,7 +184,8 @@ no new surface class. No write API anywhere.
 | M1b | `lib/media.ts` operations + the FE registry inversion (+ ConfTab `applicableNs`) + gacha refactored on top — behavior-identical (the §2 parity arms) + backend `warnings[]` removal with the gallery taking over | gate + gacha e2e unchanged |
 | M2 | frontier: registry rows (BE+FE), descriptor kinds land with their second consumer, rigs/hero/stack consumers, the `image` retirement, stack combo matrix | gate + owner eyeball (drop art on dev) |
 | M3 | kit services: registry row, `keyFor`, `ServiceIcon`, five surfaces, keyed gallery UI + collision/unmatched annotations | gate + owner eyeball on ≥2 themes + automated icon arms on all five |
-| — | then G6 palettes → v1.5.0 | |
+| ◐ M4 | **the KIT ART SYSTEM (D54, owner-ruled 2026-08-06 — BUILT same night; §12 below is the record).** Three more kit roles (`service-banners` · `hosts` · `background`) + the parent-surface primitives + the generic derived-key gallery model + the DefaultRoot background layer + cosmos as first adopter | gate + populated opt-out arms + owner device round (pre-v1.5.0, owner-ruled) |
+| — | then G6 palettes → v1.5.0 (M4 rides the same release — owner re-ruled 2026-08-06) | |
 
 Each slice: Opus build → main-seat audit → Codex → owner eyeball (the standing cadence).
 
@@ -233,3 +234,50 @@ unmatched + unknown-pending annotations.
 | *Confirm round:* service/service collisions have no index-order winner — both share the winning file | Codex confirm | **ACCEPTED** (§5) |
 | *Confirm round:* pin the normalization — JS `toLowerCase` after NFC IS the contract (no full casefold in JS; client-side-only keys) | Codex confirm | **ACCEPTED** (§5) |
 | *Confirm round:* stale `poolAssign` name in §5 | both | **FIXED** (§5 names the §2 operations) |
+
+## 12. M4 — THE KIT ART SYSTEM (D54; owner-ruled 2026-08-06, ✅ BUILT same night — this section is the as-built record)
+
+**The want (owner, verbatim intent):** not seams — the complete owner-droppable art system, part
+of the kit so any current or future theme uses it cleanly: per-service BANNER images (what cosmos
+ships bundled), per-machine "PC images", and a faded whole-app BACKGROUND — beside the M3 icons.
+
+**The rulings:** banners render in the KIT (kit rows natively; any theme adoptable) with cosmos
+first (DEAL-THEN-OVERRIDE over its bundled pool — one drop changes exactly its own row) · PC
+images are THEME-SPECIFIC adoption (cosmos first: a faded background of the host-detail sheet;
+no image + no theme default ⇒ untouched) · the background is the gacha-wallpaper mechanism
+generalized (faded, a synced visibility setting, renders only when an image exists); frontier's
+hero and gacha's banner/wallpaper roles stay theme-custom · everything DORMANT: empty folders ⇒
+byte-identical. **Ships BEFORE v1.5.0** (owner re-ruling; rides the gacha release).
+
+**The design went through a Codex PRE-BUILD council round (BUILD WITH CHANGES, no HIGH — all
+seven adopted):** A1 ONE generic derived-key gallery model (source adapters over `keySource`;
+the service-shaped path deleted) · A2 the parent-surface primitive API pinned (pure helpers →
+`{className, style}` or nothing; mechanics-only variable-driven kit classes; the adopter owns
+every colour — no hardwired row base) · A3 background opt-out = an optional DefaultRoot PROP
+(`kitBackground={false}` on the three scenery themes; "the theme does not mount the layer") ·
+A4 visibility = `kit_background_visible`, a nullable SYNCED appearance field (unseeded
+convention; default ON) · A5 the SURFACE-SCOPED precedence matrix (each kit surface: owner file
+→ that surface's own theme default → nothing; theme-owned surfaces never consult kit roles;
+full-app scenery is exclusive) · A6 opt-out proven POPULATED (all five roots, jsdom + e2e) ·
+A7 host keys = the machine NAME (rename ⇒ unmatched + on-screen remedy; no art_id).
+
+**As built (the implementer's report is authoritative; headline deltas):** adapter renamed
+`kit/ownerArt.ts` (the frontier `ownerArt.ts` precedent) · NEW `MediaRoleDef.asset` — the noun is
+ROLE-shaped, two roles share the `services` source · distinct CSS vars per role (custom
+properties inherit; the host-art sheet is an ancestor of banner rows) · kit art classes never use
+the `background` shorthand (theme layer wins per-property; two shorthand→`background-color`
+conversions rode along) · `.kit-host-art` = a low-opacity `::before` (keeps cosmos's glass
+translucent) · `.kit-bg` = fixed, z-index −1 inside an `isolation: isolate`d shell that goes
+`background-color: transparent` only `:has(> .kit-bg)` — the layer paints its own opaque `--bg`
+· kit namespace gallery title → "Shared art". Recorded nuance: `isolation` on `.kit` exists only
+while the layer is mounted; a future PARTICIPATING theme with a Root-sibling overlay (the gacha
+reel idiom) would stack that sibling above the shell — all three sibling-overlay themes opt out
+today. **Post-build Codex round: SHIP WITH FIXES (1 MED + 3 LOW, all taken):** the MED was
+cosmos's chevron-vs-drag-strip regression re-created by `isolation` on the host-art sheet
+(adopter override + a populated click-through e2e); the LOWs: result-memoized resolutions ·
+`?rev=` cache-buster for owner-file overwrite-in-place · the appearance docstring.
+
+**Owner manual (the gallery hints are the on-screen copy):** `$CTRLB_HOME/media/kit/` —
+`services/<kind>.png` icons · `service-banners/<kind>.png` banners · `hosts/<machine-name>.png`
+PC images · `background/` any images, pick/order in the gallery; the "Shared background" switch
+lives in Conf → Appearance.

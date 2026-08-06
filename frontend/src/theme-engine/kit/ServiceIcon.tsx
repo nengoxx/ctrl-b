@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { artIdentity, type ServiceIdentity } from "../../lib/media";
-import { useServiceIcons } from "./serviceIcons";
+import { ownerArtUrl, useServiceIcons } from "./ownerArt";
 
 // The owner's per-service ICON (D53 M3 / MEDIA_PLAN §5) — ONE component for all five service-row
 // surfaces (kit `Fleet`, vapor `DeviceRow`, cosmos/frontier/gacha host detail).
@@ -37,13 +37,19 @@ export function ServiceIcon({ service }: { service: ServiceIdentity }) {
   return (
     <img
       // KEYED ON THE IDENTITY, so a new revision REPLACES the element rather than re-using it (Codex M3
-      // MED-2). The URL is stable across a repair, so React would otherwise keep the same <img> — and
-      // the old request is still in flight on it. Its late `error` would then fire the UPDATED handler
+      // MED-2). The mount PATH is stable across a repair, so React would otherwise keep the same <img> —
+      // and the old request is still in flight on it. Its late `error` would then fire the UPDATED handler
       // and latch the key of the file that just arrived, hiding a picture that is perfectly good until
-      // the next revision or a remount. Replacing the node detaches that request with it.
+      // the next revision or a remount. Replacing the node detaches that request with it. (The `?rev=`
+      // below now moves the src too, which aborts that request as well — the key stays the GUARANTEE:
+      // it is what the latch is keyed on, and it holds whatever the URL rule is.)
       key={key}
       className="kit-svcicon"
-      src={icon.url}
+      // `?rev=`-stamped like the CSS-painted roles (`ownerArtUrl`). The `key` above already REPLACES the
+      // element on a repair, but a fresh <img> pointed at an unchanged URL is still answered from the HTTP
+      // cache — or from the SW's stale-while-revalidate copy — so the repaired bytes could take a reload to
+      // appear. One URL rule for every owner-art consumer, and this is the one that also reads it back.
+      src={ownerArtUrl(icon)}
       alt=""
       aria-hidden
       decoding="async"

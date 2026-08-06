@@ -260,7 +260,9 @@ test("Fleet — an owner icon named after a service paints on its row (D53 M3)",
   await row.locator(".top .name").click();
 
   const icon = row.locator(".svc-row", { hasText: "ssh" }).locator("img.kit-svcicon");
-  await expect(icon).toHaveAttribute("src", ICON);
+  // …at the mount PATH plus the file's `?rev=` stamp: owner media is mutable in place under a stable URL,
+  // so every owner-art consumer carries the revision on the query string (`ownerArt.ts#ownerArtUrl`).
+  await expect(icon).toHaveAttribute("src", `${ICON}?rev=${encodeURIComponent("1:68")}`);
   // …and it DECODED: a broken image reports zero natural width, which is the state the latch removes.
   await expect.poll(() => icon.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBe(1);
   // The service with no file named for it keeps the icon-less row.

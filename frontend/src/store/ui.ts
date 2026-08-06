@@ -53,6 +53,12 @@ export interface UIState {
   // per-device speed lever (`backdrop-filter: blur()` is ~10× slower on Firefox-Android than Chrome),
   // but SYNCED with the rest of appearance (owner directive: consistent across devices).
   perf: Perf;
+  // The SHARED owner background layer (`media/kit/background/`) — whether a participating theme paints
+  // it at all. SYNCED with the rest of appearance rather than device-local, because the asset it governs
+  // is one shared image: the owner's answer to "do I want my picture behind the app" should not depend on
+  // which phone they are holding. Default ON, so dropping a file in is the whole action; themes with
+  // scenery of their own never mount the layer and are unaffected either way (the Kit Art System / A4).
+  kitBackgroundVisible: boolean;
   // Theme-namespaced options (skyline/loz/hero/waveform for vapor; "density" for minimal, …). The
   // theme owns the schema (`ThemeDef.settings`); this is the override store. SYNCED via appearance.
   themeSettings: ThemeSettingsMap;
@@ -93,6 +99,7 @@ const DEFAULTS: UIState = {
   ttsAuto: true,
   motion: defaultMotion(),
   perf: "full", // default to the full glass look; the owner opts into "lite" on a slow device
+  kitBackgroundVisible: true, // a dropped background shows without a second step (it is off until one exists)
   themeSettings: {}, // per-theme overrides resolve against each ThemeDef.settings default
   appbarMode: "visible", // global per-device chrome lever; every theme's Root honors it
   layout: "auto", // global per-device section-layout lever (NOT synced); auto = the active theme's default

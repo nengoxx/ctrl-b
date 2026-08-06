@@ -838,6 +838,11 @@ class AppearanceCfg(BaseModel):
     motion: str | None = None  # ambient animations: "full" | "reduced"; None = unseeded → client keeps local
     perf: str | None = None  # frosted-bar blur: "full" | "lite"; None = unseeded → client keeps local
     theme_settings: dict[str, dict[str, Any]] | None = None  # open per-theme options (§14.3); None = unseeded
+    #: The shared kit BACKGROUND layer (`media/kit/background/`) — whether a participating theme paints it
+    #: at all. An appearance field rather than a per-theme setting because the asset is shared: the owner's
+    #: choice must survive a theme switch. Same unseeded-until-written contract as the two above (a
+    #: pre-existing config keeps the client's local value, which defaults to ON so a dropped image shows).
+    kit_background_visible: bool | None = None
     updated_at: datetime | None = None  # server-stamped on each write; None until first saved
 
 

@@ -1406,3 +1406,200 @@ test("the tools-menu trigger's open RING belongs to the `outline` skin alone", a
   expect(outline.open.glyph).not.toBe(outline.rest.glyph);
   expect(pageErrors).toEqual([]);
 });
+
+// ── the Kit Art System's one STACKING obligation (the fix-wave MED) ──────────────────────────────
+//
+// Cosmos's planet-switcher chevrons sit at `z-index: 2` for exactly one reason, live-caught on a device in
+// 2026-07-15: the BottomSheet handle's invisible 16px drag hit-strip (`.bs-handle::after`, z 1) overlaps the
+// top of the name row and would otherwise SWALLOW chevron taps. The kit's machine-picture class then arrived
+// with `isolation: isolate` — which leaves the surface's own place among its siblings alone but TRAPS its
+// descendants, so with a picture present the whole `.cosmos-hd` competed as one z-auto box and the strip won
+// again. cosmos.css puts `isolation: auto` back; this is the arm that says so in the real cascade.
+//
+// Both arms run the SAME probe, and that is the point: the chevron must behave identically whether or not the
+// owner has dropped a picture for the machine. A populated-only test would not have caught the regression.
+const HOST_ART = (names: string[]) => ({
+  ns: "kit",
+  collation: "casefold-natural",
+  roles: {
+    services: [],
+    "service-banners": [],
+    hosts: names.map((name) => ({
+      name,
+      file: `${name}.png`,
+      url: `/api/media/kit/files/hosts/${name}.png`,
+      format: "png",
+      size_bytes: 90_000,
+      revision: "1:90000",
+      width: 1600,
+      height: 900,
+      unusable: false,
+      unusable_reason: null,
+    })),
+    background: [],
+  },
+  slots: {},
+});
+
+for (const withArt of [true, false]) {
+  test(`cosmos · a chevron tap where the sheet's drag strip overlaps it steps the planet — machine picture ${
+    withArt ? "PRESENT" : "absent"
+  }`, async ({ page, pageErrors }) => {
+    // `motion: reduced` so the orbit is STATIC: Playwright refuses to click a moving target, and the
+    // claim here is about hit-testing, not about animation. The sheet snaps rather than slides for the
+    // same reason (kit.css's reduced-motion rule) — the stacking cascade is identical either way.
+    await seedUI(page, {
+      theme: "cosmos",
+      mode: "dark",
+      accent: "violet",
+      tab: "fleet",
+      motion: "reduced",
+      v: 1,
+    });
+    if (withArt)
+      await page.route("**/api/media/kit", (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(HOST_ART(["vault", "corsair"])),
+        }),
+      );
+    await page.goto("/");
+
+    // Open the sheet on `vault` (the first fixture host, online).
+    await page.locator(".cosmos-planet.on").first().click();
+    await expect(page.locator(".cosmos-hd")).toBeVisible();
+    await expect(page.locator(".hd-name")).toHaveText("vault");
+    // The art arm must really be the art arm — otherwise "it still works" says nothing about isolation.
+    await expect(page.locator(".cosmos-hd.kit-host-art")).toHaveCount(withArt ? 1 : 0);
+    // The exact point the 2026-07-15 bug was about: inside the chevron's 44px expander AND inside the
+    // handle's drag strip. Everything is computed live — INCLUDING the strip's height: the kit default is
+    // 16px but cosmos overrides `.bs-handle::after` to 38px (cosmos.css), and a hardcoded 16 aimed both
+    // the probe AND the "settled" precondition at points whose meaning depended on the very stacking fix
+    // under test (Codex fix-set R2). A layout change now moves the probe instead of silently defeating it.
+    const measure = () =>
+      page.evaluate(() => {
+        const chev = document.querySelector<HTMLElement>('.hd-chev[aria-label="Next planet"]');
+        const handle = document.querySelector<HTMLElement>(".bs-handle");
+        if (!chev || !handle) return null;
+        const c = chev.getBoundingClientRect();
+        const cx = c.left + c.width / 2;
+        const cy = c.top + c.height / 2;
+        const expanderTop = cy - 22; // the chevron's ::after is 44px, centred on the glyph
+        const expanderBottom = cy + 22;
+        const h = handle.getBoundingClientRect();
+        const stripH = parseFloat(getComputedStyle(handle, "::after").height) || 0; // the REAL strip
+        const stripTop = h.bottom;
+        const stripBottom = stripTop + stripH;
+        // The diagnostic point: the centre of the TRUE intersection of strip and expander.
+        const overlap = Math.min(expanderBottom, stripBottom) - Math.max(expanderTop, stripTop);
+        const y = (Math.max(expanderTop, stripTop) + Math.min(expanderBottom, stripBottom)) / 2;
+        // The SETTLED precondition point: inside the expander but strictly BELOW the strip, so it is
+        // reachable whatever the stacking says — the precondition must never depend on the fix under
+        // test. If no such point exists the geometry is reported (settleable:false) and the test fails
+        // loudly instead of timing out at the poll. Until the sheet has finished sliding in, the row is
+        // off-screen and every reading below is a measurement of nothing.
+        const sy = Math.min(expanderBottom - 2, Math.max(stripBottom + 2, cy));
+        const settleable = sy > stripBottom && sy < expanderBottom;
+        const at = (px: number, py: number) => document.elementFromPoint(px, py);
+        return {
+          overlap,
+          settleable,
+          x: cx,
+          y,
+          onChevron: !!at(cx, y)?.closest(".hd-chev"),
+          settled: settleable && !!at(cx, sy)?.closest(".hd-chev"),
+          hit: String(at(cx, y)?.className ?? "(nothing)"),
+        };
+      });
+    await expect.poll(async () => (await measure())?.settled).toBe(true);
+    const probe = await measure();
+
+    // VACUITY GUARDS: if the strip and the expander ever stop overlapping, or no fix-independent settled
+    // point exists, this test proves nothing and must say so rather than pass (or time out).
+    expect(probe, "the sheet did not render its chevrons").not.toBeNull();
+    expect(
+      probe!.settleable,
+      "no chevron point exists below the drag strip — the settled precondition cannot be established",
+    ).toBe(true);
+    expect(
+      probe!.overlap,
+      "the drag strip no longer overlaps the chevron's tap target",
+    ).toBeGreaterThan(0);
+    expect(probe!.onChevron, `the drag strip swallows the chevron (hit: ${probe!.hit})`).toBe(true);
+
+    // …and the tap really steps the selection, without closing the sheet.
+    await page.mouse.click(probe!.x, probe!.y);
+    await expect(page.locator(".hd-name")).toHaveText("corsair");
+    await expect(page.locator(".cosmos-hd")).toBeVisible();
+    expect(pageErrors).toEqual([]);
+  });
+}
+
+// ── the banner class paints INSIDE the row, not into its border (owner-caught 2026-08-06) ────────
+//
+// The kit banner recipe sizes the art `cover` against the POSITIONING area (the padding box) while the
+// default painting area is the BORDER box, so on an adopter that draws a border the picture overflowed raw
+// into that 1px strip — past the scrim and the veil, which are sized `auto` and stop at the padding box.
+// On cosmos's `.hd-svc` (1px `--line`) a light image therefore grew a bright rim. `background-clip:
+// padding-box` on the kit class is the fix, and it has to hold in the REAL cascade — cosmos declares its
+// own `background-color` for the same element in a later layer, which is exactly the kind of neighbour
+// that could take the clip back to its initial value.
+test("cosmos · an owner banner is clipped to the row's padding box, not its border box", async ({
+  page,
+  pageErrors,
+}) => {
+  await seedUI(page, {
+    theme: "cosmos",
+    mode: "dark",
+    accent: "violet",
+    tab: "fleet",
+    motion: "reduced",
+    v: 1,
+  });
+  await page.route("**/api/media/kit", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...HOST_ART([]),
+        roles: {
+          ...HOST_ART([]).roles,
+          "service-banners": [
+            {
+              name: "ssh",
+              file: "ssh.png",
+              url: "/api/media/kit/files/service-banners/ssh.png",
+              format: "png",
+              size_bytes: 90_000,
+              revision: "1:90000",
+              width: 1000,
+              height: 300,
+              unusable: false,
+              unusable_reason: null,
+            },
+          ],
+        },
+      }),
+    }),
+  );
+  await page.goto("/");
+  await page.locator(".cosmos-planet.on").first().click();
+  const row = page.locator(".hd-svc.kit-svc-banner").first();
+  await expect(row).toBeVisible();
+
+  const paint = await row.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return {
+      clip: s.backgroundClip,
+      // …and the row really is painting the OWNER's file, or the clip claim is about nothing.
+      owner: s.backgroundImage.includes("/api/media/kit/files/service-banners/ssh.png"),
+      bordered: parseFloat(s.borderTopWidth) > 0,
+    };
+  });
+  expect(paint.owner, "the row is not painting the owner's banner").toBe(true);
+  expect(paint.bordered, "this row no longer draws a border — the rim class is moot").toBe(true);
+  // EVERY layer, and the colour with them (it follows the bottom-most layer's value).
+  expect(new Set(paint.clip.split(", "))).toEqual(new Set(["padding-box"]));
+  expect(pageErrors).toEqual([]);
+});

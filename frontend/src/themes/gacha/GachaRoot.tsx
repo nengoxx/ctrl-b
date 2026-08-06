@@ -82,6 +82,9 @@ export function GachaRoot() {
     <>
       <DefaultRoot
         appbarMode={appbarMode}
+        // gacha's own WALLPAPER is the full-app scenery here (published as `--gc-wallpaper-img` above), so
+        // the theme does not mount the shared kit background — scenery is exclusive by default (A5).
+        kitBackground={false}
         brandText={<span className="gc-word">{GACHA_COPY.brandWordmark}</span>}
         brandMeta={GACHA_COPY.brandMeta}
         composerSlots={COMPOSER_SLOTS}

@@ -17,6 +17,9 @@ export function FrontierRoot() {
       appbarMode={appbarMode}
       bodies={{ fleet: FrontierFleet, agent: FrontierAgent }}
       brandMeta={<FrontierBrandMeta />}
+      // frontier owns its own full-bleed art (the badlands map cover + the rig stack), so it opts out of
+      // the shared kit background: full-app scenery is exclusive by default (the Kit Art System / A5).
+      kitBackground={false}
     />
   );
 }

@@ -50,13 +50,24 @@ function selfFirst(hosts: Host[]): Host[] {
 }
 
 /** Fleet + derived status, polled at the configured cadence (DESIGN.md §13). Presentation-ordered per
- *  `order` — see `FleetOrder` above (default self-first). */
-export function useHosts(pollSeconds: number, order: FleetOrder = "self-first") {
+ *  `order` — see `FleetOrder` above (default self-first).
+ *
+ *  `pollSeconds` and `opts` are per-OBSERVER, exactly as on `useServices` (which grew the same pair at
+ *  D53 M3 for the same reason): since the Kit Art System the media gallery reads this list to derive its
+ *  `hosts` key panel, and it wants the identities rather than the liveness. `false` = read it, do not
+ *  drive a poll; `enabled: false` adds no fetcher at all, which is what lets the gallery call the hook
+ *  unconditionally (rules of hooks) and pay only on the role that applies. */
+export function useHosts(
+  pollSeconds: number | false,
+  order: FleetOrder = "self-first",
+  opts?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: ["hosts"],
     queryFn: () => getJSON<Host[]>("/api/hosts"),
-    refetchInterval: Math.max(1, pollSeconds) * 1000,
+    refetchInterval: pollSeconds === false ? false : Math.max(1, pollSeconds) * 1000,
     select: order === "config" ? undefined : selfFirst,
+    ...opts,
   });
 }
 
