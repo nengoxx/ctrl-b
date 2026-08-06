@@ -27,12 +27,12 @@
 > fixed `background-clip: padding-box` at the kit class) → Codex fix-set verify → main-seat
 > chevron-test geometry fix (the strip is 38px under cosmos, not the kit's 16 — derived live
 > now) + falsification re-run. Gates at every step re-run by the main seat.
-> **② NEXT = the FINAL WAVE, then the owner DEVICE ROUND, then v1.5.0:** (a) G6.2 — an eighth
-> ACCENT, green-leaning family-2 ("jade": green trio + deep green-navy ramp, §4.4 recipe,
-> expect the eridu status-chrome carve-out to fire), owner-asked to pair with the Teal/Forest
-> dossiers; (b) per-tab SCROLL RESTORATION (owner-asked: settings loses its place —
-> DefaultRoot.tsx's deliberate reset-to-top on section switch becomes a per-view position map;
-> the design is in the task list). Then the round: 14 gacha combos (esp. ember ribbon · glacier
+> **② THE FINAL WAVE IS DONE (`fa74a8a`) — NEXT = the owner DEVICE ROUND, then v1.5.0:**
+> (a) G6.2 "jade" shipped — the eighth accent (green trio + deep green-navy ramp; the carve-out
+> fired on the SHARPENED object-identity mechanism now recorded in §4.4 — hue clearance alone
+> would have cleared it); (b) per-tab SCROLL RESTORATION shipped (DefaultRoot's reset-to-top →
+> a per-section position map at the same chokepoint, all three skips preserved, mutation-checked
+> tests). Then the round: 15 gacha combos (esp. ember ribbon · glacier
 > tri-strip · eridu walk · slip's lighter-means-dim dots · the two new dossiers) + kit art on
 > device (drop real files; cosmos tone values are eyeball items) + the border fix + release per
 > `deploy/linux/README.md` §Release (rollback v1.4.6; schema untouched at 5).
