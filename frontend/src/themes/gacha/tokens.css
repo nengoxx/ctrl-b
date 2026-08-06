@@ -15,9 +15,9 @@
  *
  * PALETTE VARIANTS — SHIPPED AT G6 (2026-08-06 pre-build rulings, §4.4). TWO INDEPENDENT PICKERS, and the
  * two axes are DISJOINT IN WRITES:
- *   · the ACCENT axis (`body[data-accent]`, the shared D51 V2 axis) — SEVEN variants: arcade (default) +
- *     midnight + indigo (family 1, base ramp only) + ember + glacier + nebula + eridu (family 2, the trio
- *     moves too). An accent block NEVER writes a `--gc-dossier-*` token.
+ *   · the ACCENT axis (`body[data-accent]`, the shared D51 V2 axis) — EIGHT variants: arcade (default) +
+ *     midnight + indigo (family 1, base ramp only) + ember + glacier + nebula + eridu + jade (family 2, the
+ *     trio moves too; jade added at G6.2). An accent block NEVER writes a `--gc-dossier-*` token.
  *   · the DOSSIER axis (`body[data-gc-dossier]`, gacha-private — a `settings` seg stamped by GachaRoot) —
  *     SEVEN options: slip (the G2 light sheet; NO block at all, it is the absence of an override) + six
  *     dark palettes, default `neon-purple`. A dossier block writes ONLY `--gc-dossier-*`.
@@ -32,9 +32,9 @@
  *     the mid stop must re-check THIS pair first.
  *   --text on --surface 16.7 · --text on --bg 18.2 · --text-2 on --surface 8.7 · --ok 12.9 · --warn 11.7 ·
  *   --danger 6.0 — all far clear of their floors.
- *   The six G6 accent variants all clear the same pairs with MORE room (their accent-ink/accent-fill worst
- *   stops run 4.53–7.51, arcade's 4.55 staying the tightest); every one is measured by its own row in
- *   e2e/contrast-matrix.ts, and the five dossier options by theirs. */
+ *   The seven non-default accent variants all clear the same pairs with MORE room (their accent-ink/
+ *   accent-fill worst stops run 4.53–7.51, arcade's 4.55 staying the tightest); every one is measured by
+ *   its own row in e2e/contrast-matrix.ts, and the dossier options by theirs. */
 @layer theme {
   @scope ([data-skin="gacha"]) {
     :scope {
@@ -443,7 +443,7 @@
      * prototype's own #725bff. Arcade is UNTOUCHED (it keeps its literals); the variants take the recipe
      * as written, so their step sits a few units off arcade's. Recorded rather than fudged. */
 
-    /* The DEFAULT variant (§4.4 family 1). Declared explicitly rather than left implicit so the six
+    /* The DEFAULT variant (§4.4 family 1). Declared explicitly rather than left implicit so the seven
      * siblings below slot in beside it as pure additions. */
     body[data-accent="arcade"] {
       --accent: var(--gc-brand-1);
@@ -634,6 +634,68 @@
       --gc-banner-glow: radial-gradient(60% 40% at 15% 25%, #3a86ff4d, transparent 70%),
         radial-gradient(50% 40% at 85% 80%, #3fe9bd3d, transparent 70%);
       --gc-display-shadow: 0 3px 0 #13182f, 0 10px 24px #000;
+    }
+    /* JADE (family 2, GREEN — G6.2, owner 2026-08-06: arcade/midnight/indigo "read too similar" (family 1
+     * shares the trio BY DESIGN), and the ask was a green-leaning variant "to fit the teal dossier"). The
+     * app-wide cousin of the forest-green/cyber-teal DOSSIER palettes, so those two sheets sit inside their
+     * own family rather than on a violet page: the ramp is a deep green-navy (bg/card LCh hue 207, where
+     * every other variant's ramp sits at 281-308) and the radial's crown is jade (174).
+     *
+     * The trio is BUILD-DERIVED under the §4.4 rules: a MONOTONIC hue walk inside the green family,
+     * LCh hue 135.9 -> 164.4 -> 191.8 (a 55.9deg span — the TIGHTEST walk in the set, under glacier's 63deg,
+     * the previous tightest — so glacier's "reads as ~2.5 colours at small size" caution applies here MOST
+     * to the tri-strip here too and is a device-round item), L* 64.1 -> 68.4 -> 72.1 (inside the ruled
+     * 60-72 band, which eridu's own 57/80/83 sits outside), chroma maximal for each stop. Clearance from
+     * star gold #ffd464 (H 87.3) is 48.6/77.0/104.4 and from warn #ffc76a (H 79.5) 56.4/84.8/112.3, both
+     * far over the 25deg floor: the floor is what pushes the walk off yellow-green, and it binds only on
+     * slot 1. Worst trio-on-card 6.11 (arcade's own weakest link is 4.10; no card tuning was needed —
+     * greens carry most of sRGB's luminance, so this ramp had headroom the indigo draft did not).
+     * accent-ink/accent-fill 6.90.
+     *
+     * THE CARVE-OUT FIRED — but NOT on the hue number, and the distinction is worth recording. Slot 3
+     * sits 36.3deg / dE76 36.6 from ok-green #74f3ad, which is where glacier's own far stop #79f2e6
+     * (31.8deg / dE76 31.2) ALREADY SHIPS UNPINNED — so the mechanical clearance test alone would have
+     * cleared it. What fires the carve-out is the collision only a green trio can make, and it is visible
+     * on ONE capsule card: `.state.on` (the ONLINE ribbon, `--gc-online-fill`) is a 92deg green->far-stop
+     * lozenge at the top RIGHT, and `.gc-new` (`--gc-brand-fill`) is a 92deg green->far-stop lozenge at
+     * the top LEFT — under a green trio those two become the same object, one of which is live status and
+     * one of which means nothing. So both named tokens are pinned OFF the trio to arcade's verified
+     * values, exactly as ruled: the status lozenge ends in a CYAN that appears nowhere else in this
+     * palette (H 218 vs the brand's 192), which is what keeps "cyan lozenge = status" learnable here.
+     * The recipe's own values are recorded beside each pin. */
+    body[data-accent="jade"] {
+      --gc-brand-1: #5bae49;
+      --gc-brand-2: #2fbc8d;
+      --gc-brand-3: #06c5bf;
+      --bg: #041213;
+      --surface: #0b2022;
+      --surface-2: #102426;
+      --gc-backdrop: radial-gradient(circle at 30% 0, #0e5546, #0a2321 48%, #030f10);
+      --gc-bar: #08191be8;
+      --gc-bar-grad: linear-gradient(#08191bee, #08191b99 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#041213e8, #04121366 70%, transparent);
+      --gc-pill-bg: #041213cc;
+      --gc-wallpaper-scrim: linear-gradient(#041213f2 4%, #041213c4 30%, #041213e8 66%, #041213);
+      --gc-slide-scrim: linear-gradient(95deg, #0412138c 4%, #0412134d 32%, transparent 60%),
+        linear-gradient(#0000 52%, #04121380);
+      --gc-card-wall: #0b2022e6;
+      --gc-composer: #0b2022;
+      --gc-card-scrim: linear-gradient(#0000 42%, #041111e6 92%);
+      --gc-bubble-bot: #1f3234;
+      --gc-heading: #81c173;
+      /* PINNED (carve-out) — the recipe's lighten(b3,.43) is #71dedb, a pale mint 38.9deg from --ok. 13.17
+       * on the card, where the recipe value measures 10.59; both clear, this one is not a green. */
+      --gc-caption: #9ff0ff;
+      /* PINNED (carve-out) — the recipe's far stop is the trio's own #06c5bf (see the note above). */
+      --gc-online-fill: linear-gradient(92deg, #74f3ad, #54e5ff);
+      --gc-reel-slat: linear-gradient(#5bae49, #2fbc8d, #06c5bf);
+      --gc-switch-fill: linear-gradient(90deg, #5bae49, #2cb185);
+      --gc-ind-shadow: 5px 5px 0 #5bae49;
+      --gc-bubble-user-shadow: 5px 5px 0 #5bae49;
+      --gc-dot-shadow: 0 2px 8px #5bae4999;
+      --gc-banner-glow: radial-gradient(60% 40% at 15% 25%, #5bae494d, transparent 70%),
+        radial-gradient(50% 40% at 85% 80%, #06c5bf3d, transparent 70%);
+      --gc-display-shadow: 0 3px 0 #072b23, 0 10px 24px #000;
     }
 
     /* ══ THE DOSSIER AXIS (§4.4 family 3, G6) ═════════════════════════════════════════════════════════

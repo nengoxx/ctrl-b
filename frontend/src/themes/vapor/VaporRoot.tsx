@@ -9,7 +9,8 @@ import type { Skyline } from "./index";
 
 // The vapor theme's Root (D29 §14.7 · D51 V4 — THE PIVOT). Vapor took cosmos's shape: a THIN Root over
 // **DefaultRoot**, which now owns every piece of shell plumbing VaporRoot used to hand-roll — the `.kit`
-// dvh flex column, the scroller (`#app-scroll`) + its scroll-reset/group-scroll handoff + scrollKeep, the
+// dvh flex column, the scroller (`#app-scroll`) + its per-section scroll restoration / group-scroll handoff
+// + scrollKeep, the
 // keep-mounted `active`-gated section bodies, the lazy-Conf latch with its ErrorBoundary/Suspense fallbacks,
 // the `--appbar-h`/`--composer-h` measurements, the Conf-chunk prefetch, the SECTION LAYOUT partition
 // (bar/menu/hosted + the hosted-section boot coercion — vapor honors all three presets since D51 V6

@@ -192,9 +192,19 @@ better") — G6 swaps the shipped カプセルアーケード string; subtitle u
 
 **4.4 Palette variants (R9) — ✅ RULED Q8.5: two families, five variants. AMENDED at the G6
 pre-build rulings (owner, 2026-08-06, from live renders): TWO INDEPENDENT PICKERS — the theme
-ACCENT picker ships SEVEN variants (families 1+2, all four shifter candidates kept), and the
+ACCENT picker ships SEVEN variants (families 1+2, all four shifter candidates kept; an EIGHTH —
+**jade**, green-leaning family-2 — added at G6.2 the same night, owner-asked to pair with the
+cool dossiers; the §7.7 G6.2 addendum), and the
 DOSSIER gets its OWN picker (family 3: the light slip + the four dark palettes; +2 MORE cool
-darks at G6.1 same day — cyber-teal · forest-green, the §7.7 G6.1 addendum).** The registry
+darks at G6.1 same day — cyber-teal · forest-green, the §7.7 G6.1 addendum).**
+**THE CARVE-OUT MECHANISM, SHARPENED at G6.2:** the "trio never touches status chrome" rule is
+NOT a hue-distance test — jade's slot 3 sits 32.5° from ok-green (the same distance glacier's
+UN-pinned far stop ships at) and fires anyway, because under a GREEN trio the ONLINE lozenge
+(`--gc-online-fill`) and the NEW ribbon (`--gc-brand-fill`) become the same green→cyan object
+on one capsule card — one live status, one decoration. The operative rule: **if the trio's
+family makes brand chrome and status chrome read as the same object, pin `--gc-online-fill` +
+`--gc-caption` off the trio** (arcade's verified values); clearance numbers inform, the
+object-identity test decides. The registry
 models the accent axis natively: `ThemeDef.palettes.accents` (`{id, label, swatch}` list +
 `defaultAccent`) feeds the SHARED `data-accent` axis (D51 V2: one axis, every skin) — each gacha
 "accent" is a tokens.css block. The dossier axis is gacha-private: a per-theme settings row
@@ -1265,7 +1275,23 @@ SETTINGS_MATRIX 4→6 (the coverage guard demanded them red-first), 235 e2e / 15
 6/6, all main-seat re-run. Strip advisories: teal 4.00 · forest 3.74 (better than every
 shipped dark except neon).
 
-- **OPEN (the G6+G6.1 gate): the owner device round** — the palettes themselves on all 14 combos,
+**G6.2 ADDENDUM (2026-08-06 night — owner: the family-1 trio-constant siblings read too similar;
+"another that leans more greenish to fit the teal dossier").** The EIGHTH accent: **jade** —
+trio `#5bae49 → #2fbc8d → #06c5bf` (LCh hue 135.9°→164.4°→191.8° monotonic, span 55.9°; L*
+64.1/68.4/72.1 inside the ruled band; ≥48.6° clearance from gold, ≥56.4° from warn) on a deep
+GREEN-NAVY ramp (`--bg #041213` · `--surface #0b2022` · radial `#0e5546→#0a2321→#030f10` —
+every other variant's ramp sits at LCh hue 281–308; jade's 207 is what seats the Teal/Forest
+dossiers in their own family). ZERO tuning steps (greens carry sRGB's luminance — worst
+trio-on-card 6.11 vs arcade's own 4.10 floor); accent-ink/fill 6.90; strip advisory 6.64 (best
+in the set). **The carve-out FIRED on the sharpened mechanism above** (not clearance — the
+ONLINE/NEW lozenge object-identity); `--gc-online-fill` + `--gc-caption` pinned to arcade's
+values, recipe values recorded beside the pins. Matrix 7→8 red-first; the completeness/chip
+guards auto-followed. Device-round flags: the 55.9° tri-strip span (glacier's ~2.5-colors
+caution applies) · on KIT surfaces `--accent` (slot 1) and ok-green are now both greens
+(outside the carve-out's scope — eyeball) · arcade's cyan caption/ONLINE living inside a green
+palette (reads coherently in renders).
+
+- **OPEN (the G6+G6.1+G6.2 gate): the owner device round** — the palettes themselves on all 15 combos,
   plus the named items: ember's green→violet ONLINE ribbon · the top strip on the darks (the
   1.19/1.79 advisories say slip/sunset are where to look) · the NEW-ribbon verdict
   (keep/drop/meaning) · glacier's tri-strip at small size · the wordmark · dossier dots'

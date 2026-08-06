@@ -904,8 +904,8 @@ export function ConfTab({ active }: Props) {
   // `useSections.navigate` coercing a `utils` navigation to Conf, or a deep link from elsewhere in the app
   // (`openConfGroup`, e.g. the chat's created-automation card). Consume it here — force-EXPAND the group (a
   // plain toggle can't guarantee the open state), scroll it to the top, then clear. The clear is deferred to
-  // a MICROTASK so DefaultRoot's parent scroll-reset effect (which runs AFTER this child effect in the same
-  // passive-effect flush) still peeks a pending target and SKIPS its `scrollTo(0,0)` — otherwise it would
+  // a MICROTASK so DefaultRoot's parent section-switch effect (which runs AFTER this child effect in the
+  // same passive-effect flush) still peeks a pending target and SKIPS its scroll restore — otherwise it would
   // cancel this scroll. The hosted-utils target additionally waits for `hostsUtils`: that group only exists
   // in Conf while the layout hosts it, and consuming the handoff before it renders would scroll to nothing.
   useEffect(() => {

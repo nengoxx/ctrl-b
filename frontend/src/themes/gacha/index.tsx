@@ -39,15 +39,20 @@ export const gacha: ThemeDef = {
   label: "Gacha",
   Root,
   loadRoot: preload,
-  // Dark-only, SEVEN accents (§4.4 as amended at the 2026-08-06 G6 pre-build rulings — all four family-2
+  // Dark-only, EIGHT accents (§4.4 as amended at the 2026-08-06 G6 pre-build rulings — all four family-2
   // shifter candidates kept, "a bunch of variety could be good"): family 1 re-tints only the base ramp
   // (arcade · midnight · indigo, the brand trio constant), family 2 moves the trio too (ember · glacier ·
-  // nebula · eridu). Each id is one `body[data-accent]` block in tokens.css and one row in
+  // nebula · eridu · jade). Each id is one `body[data-accent]` block in tokens.css and one row in
   // e2e/contrast-matrix.ts.
+  //
+  // JADE is G6.2 (owner, 2026-08-06 night): family 1's three "read too similar" — they share the trio BY
+  // DESIGN — so the eighth is a GREEN-leaning family-2 variant, the app-wide cousin of the forest-green /
+  // cyber-teal dossier palettes. Its derivation record (the hue walk, the gold/warn clearances and the
+  // status-chrome carve-out it fires) is the comment on its tokens.css block.
   //
   // THE SWATCHES ARE LITERALS, and that is a deliberate REVERSAL of the Codex-G0 #4 note that used to sit
   // here. Reading `var(--gc-brand-fill)` previewed the ACTIVE accent — correct while there was exactly one,
-  // and wrong with seven: every chip in the picker would show whichever palette is currently applied, so
+  // and wrong with eight: every chip in the picker would show whichever palette is currently applied, so
   // the control could not preview what it picks. So each chip re-states its own trio, vapor's literal
   // gradient-string idiom (themes/vapor/index.tsx). The values are DATA in TS, not CSS, so gacha's
   // no-literal-colors stylelint fence — which governs the theme's .css files — is untouched; the risk the
@@ -82,6 +87,11 @@ export const gacha: ThemeDef = {
         id: "eridu",
         label: "Eridu",
         swatch: rampSwatch("#26305e", ["#3a86ff", "#2fd8f5", "#3fe9bd"]),
+      },
+      {
+        id: "jade",
+        label: "Jade",
+        swatch: rampSwatch("#0e5546", ["#5bae49", "#2fbc8d", "#06c5bf"]),
       },
     ],
     defaultAccent: "arcade",

@@ -35,7 +35,8 @@ export function openConfGroup(id: string): void {
 }
 
 /** Non-reactive read — for effects that must PEEK the pending target without subscribing (DefaultRoot's
- *  scroll-reset skips its `scrollTo(0,0)` when a target is pending, read via this getter, not a hook). */
+ *  section-switch effect skips its scroll RESTORE when a target is pending, read via this getter, not a
+ *  hook). */
 export function getGroupScrollTarget(): string | null {
   return target;
 }

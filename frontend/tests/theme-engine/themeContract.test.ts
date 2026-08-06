@@ -422,7 +422,7 @@ describe("e2e contrast matrix ↔ registry palettes (drift guard)", () => {
   );
 
   // …and the other half: every seg option of a settings-driven palette axis must HAVE a row. gacha's
-  // dossier picker is the first (its default rides the seven accent rows, the rest ride SETTINGS_MATRIX),
+  // dossier picker is the first (its default rides the accent rows, the rest ride SETTINGS_MATRIX),
   // so a sixth palette added without a row would go unmeasured — exactly the hole G6 opened the schema to
   // close. Keyed off the declared options rather than a hand-list, so it auto-follows the theme.
   it("every gacha dossierPalette option is covered by a contrast row", () => {
@@ -600,30 +600,36 @@ describe("root-owned attr lifecycle (mounted Root) — MinimalRoot data-density"
   });
 });
 
-// ── The Root scroll-reset contract (post-14d review, MED). Both Roots reset the content pane to the top
-//    on a section switch, and both must SKIP that reset while a scroll-to-group handoff is pending: the
-//    Root's effect runs AFTER the host body's (parent-after-child), so on a WARM Conf tab it lands last
-//    and cancels the group scroll outright — making every deep link into a Conf group (a coerced
+// ── The Root scroll-positioning contract (post-14d review, MED). The Root positions the content pane on
+//    a section switch — a reset to the top until 2026-08-06, a restore of that section's own last offset
+//    since — and it must SKIP that positioning while a scroll-to-group handoff is pending: the Root's
+//    effect runs AFTER the host body's (parent-after-child), so on a WARM Conf tab it lands last and
+//    cancels the group scroll outright — making every deep link into a Conf group (a coerced
 //    hosted-navigate, the chat's created-automation card) silently inert. vapor shipped without the guard
 //    the kit Root had. A source-level check, deliberately: the alternative is an effect-ORDERING test
 //    across two component trees, which is exactly the flaky shape this repo avoids — and the failure mode
 //    is a MISSING line, which reading the source proves and a render test would only prove by accident.
 //    D51 V4 dropped `themes/vapor/VaporRoot.tsx` from this list — not because the guard stopped mattering,
 //    but because VaporRoot stopped OWNING a scroller: it hosts DefaultRoot now, so the one implementation
-//    below is the one every theme runs (exactly the duplication this ladder exists to remove). ──
+//    below is the one every theme runs (exactly the duplication this ladder exists to remove).
+//    (The BEHAVIOUR the guard protects — and the restoration around it — is driven in
+//    `tests/theme-engine/sectionScroll.test.tsx` and `e2e/layout.spec.ts`; this stays the missing-line
+//    guard those two cannot be.) ──
 describe("theme Roots ↔ the group-scroll handoff", () => {
   it.each([["src/theme-engine/kit/DefaultRoot.tsx"]])(
-    "%s guards its scroll-reset on a pending group-scroll target",
+    "%s guards its section-switch scroll on a pending group-scroll target",
     (file) => {
       const src = readFileSync(resolve(process.cwd(), file), "utf8");
       expect(
-        /scrollTo\(0,\s*0\)/.test(src),
-        `${file} no longer resets the scroll — drop it from this list if that is intended`,
+        /\.scrollTo\(0,/.test(src),
+        `${file} no longer positions the scroll on a section switch — drop it from this list if that is intended`,
       ).toBe(true);
+      // The guard and the call sit on adjacent lines (`} else if (…) {` / `el.scrollTo(…)`), so this spans
+      // the newline — bounded, so an unrelated `scrollTo` further down the file cannot satisfy it.
       expect(
-        /!getGroupScrollTarget\(\)[^\n]*scrollTo\(0,\s*0\)/.test(src),
-        `${file} must skip its scroll-reset while a group-scroll handoff is pending: ` +
-          `\`if (tab !== "agent" && !getGroupScrollTarget()) scrollRef.current?.scrollTo(0, 0)\``,
+        /!getGroupScrollTarget\(\)[\s\S]{0,80}?\.scrollTo\(0,/.test(src),
+        `${file} must skip its section-switch scroll while a group-scroll handoff is pending: ` +
+          `\`else if (tab !== "agent" && !getGroupScrollTarget()) { el.scrollTo(0, <this section's offset>) }\``,
       ).toBe(true);
     },
   );

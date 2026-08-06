@@ -1603,3 +1603,89 @@ test("cosmos · an owner banner is clipped to the row's padding box, not its bor
   expect(new Set(paint.clip.split(", "))).toEqual(new Set(["padding-box"]));
   expect(pageErrors).toEqual([]);
 });
+
+// ── PER-SECTION SCROLL RESTORATION (owner ask, 2026-08-06) ────────────────────────────────────────────
+// Driven on the real built app because the claim is about a real scroller: jsdom has no layout, so the
+// jsdom arms (tests/theme-engine/sectionScroll.test.tsx) can only prove the bookkeeping. Here Conf is a
+// genuinely long page in a 393px viewport, so "keeps your place" is the thing the owner asked for.
+
+test("kit shell: a section returns to where it was left; a fresh boot still starts at the top", async ({
+  page,
+  pageErrors,
+}) => {
+  await seedUI(page, { theme: "minimal", mode: "dark", accent: "cyan", v: 1 });
+  await page.goto("/");
+  const scroller = page.locator("#app-scroll");
+  const scrollTop = () => scroller.evaluate((el) => el.scrollTop);
+
+  // A cold boot lands at the top — the map is empty, which is the pre-restoration behaviour.
+  await expect(page.locator("#tab-fleet")).toBeVisible();
+  expect(await scrollTop()).toBe(0);
+
+  // Conf is a LAZY chunk whose groups arrive with their queries, so its scroll range starts at zero and
+  // grows: wait for the real page before measuring, or the offset is taken against a stub.
+  await page.locator("#tabbtn-conf").click();
+  await expect(page.locator("#tab-conf")).toBeVisible();
+  await expect(page.locator("#providers")).toBeVisible();
+  await expect
+    .poll(() => scroller.evaluate((el) => el.scrollHeight - el.clientHeight))
+    .toBeGreaterThan(1000);
+
+  // Scroll it down. The target is derived from the real range, so the arm can neither pass vacuously on a
+  // short page nor ask for an offset the page cannot reach.
+  const target = await scroller.evaluate((el) => {
+    el.scrollTo(0, Math.floor((el.scrollHeight - el.clientHeight) / 2));
+    return el.scrollTop;
+  });
+  expect(target, "Conf is not scrollable here — the arm would prove nothing").toBeGreaterThan(100);
+
+  // Away to Fleet — never scrolled, so it opens at the top…
+  await page.locator("#tabbtn-fleet").click();
+  await expect(page.locator("#tab-fleet")).toBeVisible();
+  await expect.poll(scrollTop).toBe(0);
+
+  // …and back to Conf, which is where the owner left it (±1px: a scroll range can be fractional).
+  await page.locator("#tabbtn-conf").click();
+  await expect(page.locator("#tab-conf")).toBeVisible();
+  await expect.poll(scrollTop).toBeGreaterThan(target - 1.5);
+  expect(await scrollTop()).toBeLessThan(target + 1.5);
+  expect(pageErrors).toEqual([]);
+});
+
+test("kit shell: restoration does not eat the scroll-to-group handoff (utils hosted in Conf)", async ({
+  page,
+  pageErrors,
+}) => {
+  // The one flow the section-switch scroll must YIELD to. A stale `utils` deep-link under a hosting preset
+  // is coerced through the nav chokepoint, which arms the group handoff; the host body (ConfTab) expands
+  // the group and scrolls it into view, and DefaultRoot's parent effect runs AFTER that child effect — so
+  // without the `getGroupScrollTarget()` skip it lands last and cancels the scroll outright, leaving the
+  // pane at the top of Conf. The pre-restoration code carried the same guard for the same reason; this
+  // drives the OUTCOME rather than the source line (themeContract.test.ts owns the source check).
+  await seedUI(page, {
+    theme: "minimal",
+    mode: "dark",
+    accent: "cyan",
+    layout: "2-tab",
+    tab: "utils",
+    v: 1,
+  });
+  await page.goto("/");
+
+  await expect(page.locator("#tab-conf")).toBeVisible(); // coerced off the stale deep-link
+  await expect(page.locator("#utils-hosted")).toBeVisible();
+
+  // The pane travelled a long way down Conf and the group is on screen — not the scrollTop 0 an
+  // unguarded restore would have left (the map is empty on a cold boot, so its restore IS a reset).
+  await expect
+    .poll(() => page.locator("#app-scroll").evaluate((el) => el.scrollTop))
+    .toBeGreaterThan(500);
+  const seen = await page.evaluate(() => {
+    const s = document.getElementById("app-scroll")!;
+    const g = document.getElementById("utils-hosted")!;
+    const y = g.getBoundingClientRect().y - s.getBoundingClientRect().y;
+    return y >= 0 && y < s.clientHeight;
+  });
+  expect(seen, "the Tools group is not inside the scroller's viewport").toBe(true);
+  expect(pageErrors).toEqual([]);
+});

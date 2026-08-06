@@ -40,7 +40,7 @@ import { appbarShown, type AppbarMode } from "../../store/ui";
 // floating composer + bottom-nav layout, used by reskin themes (minimal/phosphor) so a theme's `Root` is
 // just `<DefaultRoot/>` + a `tokens.css`. It owns the theme-agnostic LAYOUT plumbing: the `.kit` dvh flex
 // column, the `.kit-main` positioning context (the composer floats over the scroller so content shows in the
-// gaps around it), the generalized lazy-body latch, scroll-reset on section change, lazy-chunk prefetch, and
+// gaps around it), the generalized lazy-body latch, per-section scroll restoration, lazy-chunk prefetch, and
 // the `--appbar-h`/`--composer-h` measurements.
 //
 // Section bodies (D35's "eager DATA, lazy COMPONENTS" ruling): this module owns the id→body DEFAULT map in
@@ -181,16 +181,63 @@ export function DefaultRoot({
   // scrollKeep restores the old Root's position in the mount layout-effect, before the VT snapshot).
   const restoredScrollRef = useScrollKeep(scrollRef);
 
-  // Reset the content pane to the top on section switch (Agent scrolls itself). SKIP when a scroll-to-group
-  // handoff is pending (a coerced hosted navigate) — otherwise this parent effect, which runs AFTER the host
-  // body's child effect, would cancel the group scroll. Read via getState (a peek), not a subscription.
-  // Also skip the ONE mount-run that follows a scrollKeep restore (a theme switch, not a section switch).
+  // PER-SECTION SCROLL RESTORATION (owner ask, 2026-08-06: "switching to settings always jumps to the top").
+  // Every section body shares ONE scroller (`#app-scroll`) — a section switch swaps which body is visible
+  // underneath it, so a position is only meaningful together with the section it was taken in. This ref is
+  // that map: the ScrollRestoration/bfcache pattern, at the reset effect's existing chokepoint rather than
+  // beside it.
+  //
+  // Fed by a PASSIVE listener rather than captured at switch time, deliberately: by the time an effect runs
+  // the DOM has already swapped bodies, so the scroller's live `scrollTop` no longer belongs to the section
+  // being left (and may already have been CLAMPED by the browser to a shorter body). The listener records
+  // continuously, so the last value written for a section is always one taken while that section was up.
+  //
+  // A REF, not a module slot and not persistence: a pixel offset is meaningless on another device or in a
+  // later session, and it is equally meaningless against re-shaped content — so the map is scoped to this
+  // Root instance, which means a THEME switch drops it for free (a different skin lays every body out
+  // differently). `useScrollKeep` still carries the ACTIVE section's position across that switch, which is
+  // the Gate-B behaviour and is unchanged here.
+  const tabScrollRef = useRef<Partial<Record<TabId, number>>>({});
+
+  // A LAYOUT switch (D35 presets) re-shapes the page under the same section ids — utils becomes a group
+  // INSIDE Conf, sections leave the bar for the menu — so every stored offset is an offset into a document
+  // that no longer exists. Dropping the map is the honest answer (the next switch lands at the top, the
+  // pre-restoration behaviour); keeping it would scroll to an arbitrary point of the new shape. Declared
+  // BEFORE the restore effect so that on a commit which changes both, the clear is what the restore sees.
   useEffect(() => {
+    tabScrollRef.current = {};
+  }, [sectionLayout]);
+
+  // Restore the content pane to this section's last position on a section switch — 0 for a section not yet
+  // visited, which is the previous reset-to-top behaviour and what a fresh boot always gets. A stored offset
+  // taller than the new content needs no special case: `scrollTo` clamps to the scroller's own range.
+  //
+  // The three SKIPS are the reset effect's, unchanged in meaning:
+  //   · Agent scrolls itself (ChatThread sticks its thread to the bottom) — so it is neither restored NOR
+  //     recorded; a value nothing reads would be dead data.
+  //   · a pending scroll-to-group handoff WINS (a coerced hosted navigate): this parent effect runs AFTER
+  //     the host body's child effect, so without the skip it would cancel the group scroll. Read via the
+  //     getState peek, not a subscription.
+  //   · the ONE mount-run that follows a scrollKeep restore (a theme switch, not a section switch) — the
+  //     position is already correct in the DOM. The listener below still attaches, so the restored value
+  //     lands in the fresh map as soon as the scroller moves.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
     if (restoredScrollRef.current) {
       restoredScrollRef.current = false;
-      return;
+    } else if (tab !== "agent" && !getGroupScrollTarget()) {
+      el.scrollTo(0, tabScrollRef.current[tab] ?? 0);
     }
-    if (tab !== "agent" && !getGroupScrollTarget()) scrollRef.current?.scrollTo(0, 0);
+    if (tab === "agent") return;
+    // Re-attached per section so the handler can never attribute a position to the wrong one, and reading
+    // `scrollTop` live (not a captured value) so the entry it writes is whatever the scroller actually
+    // holds at that moment.
+    const onScroll = () => {
+      tabScrollRef.current[tab] = el.scrollTop;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
     // `restoredScrollRef` is a stable ref (lint can't see through the custom hook) — a dep for hygiene only.
   }, [tab, restoredScrollRef]);
 

@@ -229,7 +229,8 @@ describe("gacha sources — no non-ASCII outside copy.ts", () => {
 });
 
 // ── G6: THE TWO PALETTE PICKERS (D52 §4.4) ────────────────────────────────────────────────────────
-// Seven accent variants + five dossier options, and the failure mode both share is SILENT: a variant
+// Eight accent variants (G6.2 appended `jade`) + seven dossier options, and the failure mode both share
+// is SILENT: a variant
 // block that skips one of the recipe's derived tokens does not break — it inherits arcade's value, so a
 // new trio ships with arcade's pink caption and arcade's cyan ribbon beside it, and only an eyeball on
 // the right screen would ever notice. So the completeness of each block is machine-checked here, against
@@ -292,7 +293,7 @@ const RAMP_ONLY = new Set(["midnight", "indigo"]);
 describe("gacha G6 — the ACCENT axis (§4.4 families 1+2)", () => {
   const accents = (gacha.palettes.accents ?? []).map((a) => a.id);
 
-  it("declares the seven ruled variants, arcade first + default", () => {
+  it("declares the eight ruled variants, arcade first + default", () => {
     expect(accents).toEqual([
       "arcade",
       "midnight",
@@ -301,6 +302,8 @@ describe("gacha G6 — the ACCENT axis (§4.4 families 1+2)", () => {
       "glacier",
       "nebula",
       "eridu",
+      // G6.2 — APPENDED after eridu, so an existing owner selection keeps its position in the picker
+      "jade",
     ]);
     expect(gacha.palettes.defaultAccent).toBe("arcade");
   });
@@ -335,7 +338,7 @@ describe("gacha G6 — the ACCENT axis (§4.4 families 1+2)", () => {
 
   it("each picker chip re-states its OWN palette's trio (the literal-swatch trade-off)", () => {
     // The chips are LITERALS on purpose: `var(--gc-brand-fill)` would preview the ACTIVE accent, so all
-    // seven chips would show one palette. The cost of literals is drift, and this is the guard that pays
+    // eight chips would show one palette. The cost of literals is drift, and this is the guard that pays
     // it — every chip's three brand hexes must equal the ones its own block declares (family 1 inherits
     // the base trio from `:scope`, so those three are checked against that).
     const baseTrio = ["--gc-brand-1", "--gc-brand-2", "--gc-brand-3"].map(

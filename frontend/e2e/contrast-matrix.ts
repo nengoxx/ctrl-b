@@ -80,20 +80,21 @@ export const CONTRAST_MATRIX: ThemeMatrix[] = [
     bar: FULL_BAR,
   },
   {
-    // gacha (D52 G6): dark-only, SEVEN accents on the shared body[data-accent] axis. Like frontier it
-    // defaults to 3-tab (the prototype's Fleet/Agent/Settings shape), so utils is hosted in Conf → off-bar.
-    // No `settings` seed → the theme's own default dossier palette (`neon-purple`) is what these seven rows
-    // are measured under, which is the §4.4 "7 accent rows, dossier at default" half of the promise.
+    // gacha (D52 G6 · G6.2): dark-only, EIGHT accents on the shared body[data-accent] axis (`jade` is the
+    // green-leaning family-2 variant the owner asked for on 2026-08-06). Like frontier it defaults to
+    // 3-tab (the prototype's Fleet/Agent/Settings shape), so utils is hosted in Conf → off-bar.
+    // No `settings` seed → the theme's own default dossier palette (`neon-purple`) is what these rows
+    // are measured under, which is the §4.4 "accent rows, dossier at default" half of the promise.
     theme: "gacha",
     modes: ["dark"],
-    accents: ["arcade", "midnight", "indigo", "ember", "glacier", "nebula", "eridu"],
+    accents: ["arcade", "midnight", "indigo", "ember", "glacier", "nebula", "eridu", "jade"],
     bar: ["fleet", "agent", "conf"],
   },
 ];
 
 /** The extra rows the ACCENT-cross-MODE product cannot express: a theme's own palette axis, seeded through
  *  `ThemeMatrix.settings` (D52 G6, §4.4 "Gate coverage"). Each is the theme's DEFAULT accent + one value of
- *  its private axis — the other half of "7 accent rows + 7 dossier rows" (§4.4 ruled five; G6.1
+ *  its private axis — the other half of "8 accent rows + 7 dossier rows" (§4.4 ruled five; G6.1
  *  appended two).
  *
  *  Kept as a separate export rather than folded into `CONTRAST_MATRIX` because that list has three other
