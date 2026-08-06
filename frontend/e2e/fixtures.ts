@@ -221,7 +221,7 @@ const ROUTES: Record<string, unknown> = {
   "/api/media/gacha": {
     ns: "gacha",
     collation: "casefold-natural",
-    roles: { characters: [], banner: [], wallpaper: [], reel: [], oracle: [] },
+    roles: { characters: [], banner: [], reel: [], oracle: [] },
     slots: {},
   },
   // D53 M2 — the same shape for frontier's rows (empty for the same reason: the specs assert the
@@ -239,7 +239,7 @@ const ROUTES: Record<string, unknown> = {
   "/api/media/kit": {
     ns: "kit",
     collation: "casefold-natural",
-    roles: { services: [], "service-banners": [], hosts: [], background: [] },
+    roles: { services: [], "service-banners": [], hosts: [], background: [], brand: [] },
     slots: {},
   },
   "/api/actions": ACTIONS,
@@ -309,6 +309,7 @@ export async function mockApi(page: Page): Promise<void> {
     perf: null,
     theme_settings: null,
     kit_background_visible: null, // the Kit Art System's shared-background switch — unseeded like the rest
+    appbar_subtitle_visible: null, // the app bar's brand-subtitle switch — unseeded like the rest
     updated_at: null,
   };
   await page.route("**/api/**", async (route) => {

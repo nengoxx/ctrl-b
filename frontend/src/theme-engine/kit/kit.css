@@ -213,7 +213,10 @@ body[data-motion="reduced"] .kit .tab.active {
   gap: 8px;
   flex: 1;
   min-width: 0;
-  font-size: 16px;
+  /* 16→18px at G6.3 (owner: the bar is icon + title only now — the title takes the room the subtitle
+   * held). The `.meta` slot below survives for a theme with live DATA to show (frontier's rig count);
+   * nothing renders it by default any more. */
+  font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -223,6 +226,22 @@ body[data-motion="reduced"] .kit .tab.active {
   border-radius: 50%;
   background: var(--accent);
   flex: none;
+}
+/* The OWNER's brand mark (G6.3 / the Kit Art System) — `media/kit/brand/`, painted as a MASK rather than
+ * as an image. The file supplies only its ALPHA; the colour is the app's, which is what makes one dropped
+ * silhouette work under five themes instead of matching one. `--kit-brand-fill` is the theme hook (the K2
+ * `--accent-fill` precedent): a theme with a brand gradient of its own points the mark at it, and a theme
+ * that says nothing gets the accent fill every other kit control uses. Sized on the `.kit-brand` row's own
+ * rhythm — 21px against the 18px wordmark, a touch larger than the 7px dot it replaces because a
+ * silhouette needs area where a dot needs none. `contain` + `center`: an off-ratio drop letterboxes inside
+ * the box rather than distorting, and `flex: none` keeps it out of the row's shrink. */
+.kit-brand-mark {
+  width: 21px;
+  height: 21px;
+  flex: none;
+  background: var(--kit-brand-fill, var(--accent-fill));
+  -webkit-mask: var(--kit-brand-mask) center / contain no-repeat;
+  mask: var(--kit-brand-mask) center / contain no-repeat;
 }
 .kit-brand .meta {
   font-size: 11.5px;
@@ -238,7 +257,10 @@ body[data-motion="reduced"] .kit .tab.active {
   justify-content: center;
   width: 34px;
   height: 34px;
-  border-radius: 999px;
+  /* SQUARED with rounded corners in every mode (owner 2026-08-06): the clear-mode variant's 9px shape,
+   * adopted bar-wide — "keep the colors, change the shape." Colors stay this rule's own (`--line` ring,
+   * no frost); the transparent block below still re-declares its full prototype contract. */
+  border-radius: 9px;
   border: 1px solid var(--line);
   color: var(--text-2);
   flex: none;
@@ -1899,7 +1921,10 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   height: 10px;
   margin-right: 6px;
   border-radius: 50%;
-  border: 1px solid var(--line-2);
+  /* Same inset-hairline move as `.sw-chip` above (G6.3), for the same-system reason the comment above this
+   * rule states: at 10px a 1px `border` ring is ~36% of the chip's area, and this picker sits directly
+   * under the palette row it must read as one system with. */
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 .kit .switch {
   display: inline-flex;
@@ -1966,12 +1991,25 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* An OVAL, not a circle (G6.3, owner ruling 2026-08-06). The chip has two things to say — the palette's
+ * scenery (its gradient) and the flat `--accent` every control will take — and a 22px circle has room for
+ * one. The extra width is spent on the accent band `chipBackground` composes into the same background list;
+ * a theme that declares no `accent` simply fills the wider shape with its gradient. Height drops 22→20 so
+ * the row's control height is unchanged and the pill reads as a swatch rather than a button. The selected
+ * RING and the focus outline are untouched: they live on `.sw`, which is already `border-radius: 999px`. */
 .kit .swatches .sw-chip {
   display: block;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 1px solid var(--line-2);
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  /* An INSET hairline, not a `border` (G6.3 device round). With a border, the background layers — sized to
+   * the padding box but painted to the border box by default — TILE into the 1px ring, so the rim showed
+   * the accent band's hottest stop as a chromatic fringe at ~3.5x the neighbouring fill's luminance (the
+   * owner's "edges too bright"; measured, kit-wide, pre-G6.3). A box-shadow takes no layout and stays
+   * inside the fill's own silhouette, and `--line` is the QUIETER rung of each theme's hairline ladder, so
+   * it inverts correctly on the light themes where a hardcoded white would vanish. The React Aria /
+   * Mantine ColorSwatch treatment (both ship exactly this inset-hairline default). */
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 /* ── overlay: ConfirmDialog (.modal) — a centered decision dialog (Material-3 default for confirms). ── */
@@ -5880,4 +5918,14 @@ body[data-perf="lite"] .kit .navmenu-pop {
 }
 .kit .mgal-pin select:disabled {
   opacity: 0.5;
+}
+/* The optional per-pin line (G6.3). Second column, under the select, so it reads as belonging to THAT
+ * control rather than to the label opposite it — the pin row is a 2-col grid, and a third child would
+ * otherwise land under the label. Only rendered when the registry declares a hint, so every other pin
+ * row is untouched. */
+.kit .mgal-pin-hint {
+  grid-column: 2;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-3);
 }

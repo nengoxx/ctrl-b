@@ -843,6 +843,14 @@ class AppearanceCfg(BaseModel):
     #: choice must survive a theme switch. Same unseeded-until-written contract as the two above (a
     #: pre-existing config keeps the client's local value, which defaults to ON so a dropped image shows).
     kit_background_visible: bool | None = None
+    #: The app bar's BRAND SUBTITLE — whether the bar shows the active theme's own subtitle line beside the
+    #: wordmark (gacha's Japanese line, frontier's live rig count). Synced rather than per-device for the
+    #: same reason as the switch above: it is one answer to "how much text do I want in my bar", not a
+    #: per-screen layout choice. The client default is **off** (G6.3's owner ruling — icon + title only —
+    #: kept as the resting state; the switch is how the subtitle comes back). A theme that fills no subtitle
+    #: shows nothing in EITHER state: there is no default text, the kit's retired "dashboard" literal
+    #: included. Same unseeded-until-written contract as the fields above.
+    appbar_subtitle_visible: bool | None = None
     updated_at: datetime | None = None  # server-stamped on each write; None until first saved
 
 

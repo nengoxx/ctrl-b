@@ -21,7 +21,7 @@
 // G5 wired the OWNER's files in (§5.4's ruled option (b)): `rosterFromIndex` below builds a `Roster` out
 // of the media index's per-role listings, and `defaultRoster()` is now the FALLBACK — the bundled set a
 // fresh install shows before a single file has been dropped in. Every fallback is per ROLE, so a fleet
-// with owner characters and no owner wallpaper still gets the bundled wallpaper; only what the owner
+// with owner characters and no owner reel cutout still gets the bundled cutout; only what the owner
 // actually supplied is replaced.
 
 import type { MediaFile, MediaIndex } from "../../hooks/useMedia";
@@ -39,7 +39,7 @@ export interface RosterEntry {
   image: string;
   /** Optional transparent cutout — the ONLY entries eligible for the reel figure. */
   cutout?: string;
-  /** Optional landscape variant for wide-consuming slots (banner / wallpaper / oracle). */
+  /** Optional landscape variant for wide-consuming slots (banner / backdrop / oracle). */
   wide?: string;
   /** Optional `object-position` focal point; absent → the theme's default crop. */
   focus?: string;
@@ -69,9 +69,12 @@ export interface RosterSlots {
  *  hands them over already ordered, so "first" is the owner's own pick with no pinning ceremony.
  *
  *  EMPTY is the normal state, not a defect: a role the owner has dropped nothing into leaves its
- *  consumer on the bundled default, which is what keeps a fresh install identical to G1–G4. */
+ *  consumer on the bundled default, which is what keeps a fresh install identical to G1–G4.
+ *
+ *  There is no `wallpaper` pool (G6.3, owner ruling): the fleet backdrop's drop-in home is the SHARED
+ *  `kit/background` folder, so a gacha-only twin of it would be two homes for one idea. Its ladder is
+ *  in `wallpaperArt` below and reads the kit file directly. */
 export interface RolePools {
-  wallpaper: NamedArt[];
   reel: NamedArt[];
   oracle: NamedArt[];
 }
@@ -131,10 +134,8 @@ export function defaultRoster(): Roster {
     slots: {},
     scenes: ART.scenes.map((s) => ({ name: s.name, url: s.url })),
     pools: {
-      // Wallpaper and oracle are EMPTY on purpose: their bundled art is SCENE art, addressed by no name
-      // and pinnable through no slot, so it belongs on the last rung of each ladder below rather than in
-      // a pool.
-      wallpaper: [],
+      // Oracle is EMPTY on purpose: its bundled art is SCENE art, addressed by no name and pinnable
+      // through no slot, so it belongs on the last rung of that ladder below rather than in a pool.
       oracle: [],
       // The reel pool is different, and the difference is the PIN (§5.2 / Codex F4): the figure can be
       // chosen, so its bundled option needs a name the owner can select — and it has to survive the
@@ -155,7 +156,7 @@ export function defaultRoster(): Roster {
  *  a backend hiccup both show art rather than placeholders.
  *
  *  The fallback is PER ROLE, not all-or-nothing: an empty `characters/` keeps the bundled cast while an
- *  owner-filled `wallpaper/` still wins its own slot. That is what makes "drop one file in" a complete,
+ *  owner-filled `banner/` still wins its own slides. That is what makes "drop one file in" a complete,
  *  useful action instead of an all-or-nothing switch to a half-empty theme.
  *
  *  UNUSABLE files are treated differently in the two positions, and deliberately (§5.3): a broken
@@ -179,7 +180,6 @@ export function rosterFromIndex(index: MediaIndex | undefined): Roster {
     slots: index.slots ?? {},
     scenes: scenes.length > 0 ? scenes.map((f) => ({ name: f.name, url: f.url })) : bundled.scenes,
     pools: {
-      wallpaper: pool(role("wallpaper")),
       // Per-role fallback, the same rule the cast and the scenes follow: an empty `reel/` keeps the
       // BUNDLED cutout, whatever the owner did to the other roles.
       reel: role("reel").length > 0 ? pool(role("reel")) : bundled.pools.reel,
@@ -189,8 +189,8 @@ export function rosterFromIndex(index: MediaIndex | undefined): Roster {
 }
 
 /** One owner file as a roster ENTRY. No `wide`/`cutout`/`focus`: under the role re-rule those fields
- *  describe the BUNDLED defaults only — an owner's landscape art lives in `wallpaper/`, their cutout in
- *  `reel/`, and the folder a file sits in is the whole of its assignment. */
+ *  describe the BUNDLED defaults only — an owner's backdrop lives in the shared `kit/background/`, their
+ *  cutout in `reel/`, and the folder a file sits in is the whole of its assignment. */
 function toEntry(f: MediaFile): RosterEntry {
   return { name: f.name, image: f.url, ...(f.unusable && { unusable: true }) };
 }
@@ -255,21 +255,58 @@ function toArt(entry: RosterEntry | null | undefined): ResolvedArt | null {
 }
 
 // ── the slot ladders. Every one reads the same three rungs, in the same order (§5.4): a `slots` PIN
-//    naming an entry (the owner binding a character into a role) → the role FOLDER's first file (the
-//    owner's drop-in assignment) → the BUNDLED default. The bundled art is the fallback rather than a
-//    roster entry so it can never be dealt to a host as a capsule portrait (the art.ts partition rule).
+//    naming an entry (the owner binding a character into a role) → the owner's DROP-IN pick → the BUNDLED
+//    default. The bundled art is the fallback rather than a roster entry so it can never be dealt to a
+//    host as a capsule portrait (the art.ts partition rule).
+//
+//    The middle rung is a gacha role FOLDER for every ladder but one: the fleet backdrop's is the SHARED
+//    `kit/background` pool, since G6.3 removed gacha's twin of it (owner ruling — one home per idea).
 
-/** The fleet wallpaper / pickup-banner backdrop. */
-export function wallpaperArt(roster: Roster): ResolvedArt {
+/** The SHARED kit background as a rung of a gacha ladder (G6.3, owner ruling 2026-08-06). Already resolved
+ *  by `kit/ownerArt.ts#backgroundArtFrom` — i.e. the kit's own pin-then-first-usable pick — so this only
+ *  restates it as `ResolvedArt`. `undefined` in, `null` out: the rung is simply absent.
+ *
+ *  No focal point: the kit role has none to declare, so the surface keeps tokens.css's default crop. */
+function toKitArt(file: MediaFile | undefined): ResolvedArt | null {
+  if (file === undefined) return null;
+  return { url: file.url, rev: file.revision };
+}
+
+/** The fleet wallpaper / pickup-banner backdrop — THREE rungs, and only the first is gacha's own folder:
+ *
+ *    ① the `wallpaper:` PIN, which names a CHARACTER (the theme-specific mechanism: bind a cast portrait
+ *       to the backdrop, through the wide ladder so it crops as a landscape);
+ *    ② the SHARED kit background (`media/kit/background/`) — the owner's drop-in home for "a big picture
+ *       behind the app", for every theme;
+ *    ③ the bundled scene.
+ *
+ *  gacha used to own a `wallpaper/` drop folder here, and G6.3 REMOVED it outright (owner ruling
+ *  2026-08-06: "just having the background in the kit is the better approach — no duplicated systems").
+ *  The two folders were one idea with two homes, and the confusion was real: the owner dropped a file
+ *  into the shared one, saw nothing change under gacha — whose scenery is exclusive, so `GachaRoot`
+ *  passes `kitBackground={false}` and the kit's own layer never mounts (D54 A5) — and read the app as
+ *  broken. Now the shared folder IS the drop-in rung, and what stays gacha's is the half the kit has no
+ *  equivalent for: pinning a character. Clean removal, no compat rung — media v2 never shipped to prod.
+ *
+ *  The kit file arrives as an ARGUMENT (`useKitBackgroundArt()` at the two call sites) rather than being
+ *  read here, because this module is pure — no store, no queries, no React — which is what makes the whole
+ *  ladder an ordinary unit test. Omitted ⇒ pin, else the bundled scene.
+ *
+ *  VISIBILITY stays split, deliberately: gacha's own "Banner wallpaper" switch governs this surface (it is
+ *  gacha's), and the kit's "Shared background" switch governs the kit LAYER, which gacha does not mount. A
+ *  theme's own switch owning its own surface is the same rule §4.4 already runs on. */
+export function wallpaperArt(roster: Roster, kitBackground?: MediaFile): ResolvedArt {
   return (
-    toWideArt(slotEntry(roster, "wallpaper")) ??
-    firstUsable(roster.pools.wallpaper) ?? { url: ART.banner }
+    toWideArt(slotEntry(roster, "wallpaper")) ?? toKitArt(kitBackground) ?? { url: ART.banner }
   );
 }
 
-/** The fixed hero slide's art — its own pin, else the wallpaper pick (§5.2's stated default). */
-export function heroArt(roster: Roster): ResolvedArt {
-  return toWideArt(slotEntry(roster, "hero")) ?? wallpaperArt(roster);
+/** The fixed hero slide's art — its own pin, else the whole wallpaper ladder above (§5.2's stated default),
+ *  kit rung included: the hero slide and the fleet backdrop resolving to two different pictures is exactly
+ *  the disagreement §5.3's one-resolver ruling exists to prevent, so the argument is threaded rather than
+ *  dropped one call deep. */
+export function heroArt(roster: Roster, kitBackground?: MediaFile): ResolvedArt {
+  return toWideArt(slotEntry(roster, "hero")) ?? wallpaperArt(roster, kitBackground);
 }
 
 /** The agent oracle's backdrop. */

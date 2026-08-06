@@ -21,6 +21,7 @@ import {
   type CarouselEvent,
   type CarouselState,
 } from "./carousel";
+import { revUrl } from "../../lib/media";
 import { GACHA_COPY } from "./copy";
 import { openLabel, promoCopy, sceneTitle } from "./fleet";
 import { safeRafLoop, type SafeRafLoop } from "../../theme-engine/safeRafLoop";
@@ -81,6 +82,9 @@ interface Props {
   active: boolean;
   /** The rate pill's text, resolved by the Fleet body (one source for the star mode + the online count). */
   rate: string;
+  /** The pity pill's text — 天井 + the fleet-wide online-SERVICE count (owner 2026-08-06; was the
+   *  prototype's frozen `200` flavour). Resolved by the Fleet body on the same terms as `rate`. */
+  pity: string;
   /** The shared host-open handler — the SAME one the capsule cards use (main-seat ruling). */
   onOpenHost: (hostId: string) => void;
 }
@@ -91,7 +95,7 @@ const KEY_SEP = "\u0000";
 const splitKeys = (sig: string): string[] => (sig === "" ? [] : sig.split(KEY_SEP));
 const keysOf = (list: BannerSlide[]): string => list.map((s) => s.key).join(KEY_SEP);
 
-export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
+export function GachaBanner({ slides, active, rate, pity, onOpenHost }: Props) {
   const motion = useUISlice((s) => s.motion);
   const reeling = useGachaReelRunning();
 
@@ -436,7 +440,10 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
             >
               {s.art && (
                 <img
-                  src={s.art.url}
+                  // `?rev=`-stamped like the backdrop publish (Codex G6.3 MED-1): the hero and the fleet
+                  // backdrop can resolve to the SAME shared-background file, and a bare URL here let an
+                  // in-place overwrite show two different versions of one picture on one screen.
+                  src={revUrl(s.art.url, s.art.rev)}
                   alt=""
                   draggable={false}
                   style={s.art.focus === undefined ? undefined : { objectPosition: s.art.focus }}
@@ -467,7 +474,7 @@ export function GachaBanner({ slides, active, rate, onOpenHost }: Props) {
 
       <div className="gc-banner-rate">
         <span>{rate}</span>
-        <span>{GACHA_COPY.pityLabel} 200</span>
+        <span>{pity}</span>
       </div>
 
       {count > 1 &&

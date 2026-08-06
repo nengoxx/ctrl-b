@@ -5,8 +5,12 @@
 declare module "culori" {
   /** WCAG 2.1 contrast ratio (1–21) between two colors (concrete color strings resolve fine). */
   export function wcagContrast(a: string, b: string): number;
-  /** Parse + convert any CSS color to the sRGB gamut; `undefined` for an unparseable string. r/g/b in [0,1]. */
-  export function rgb(color: string): { r: number; g: number; b: number } | undefined;
+  /** Parse + convert any CSS color to the sRGB gamut; `undefined` for an unparseable string. r/g/b in [0,1].
+   *  `alpha` is present only when the source color carried one (culori omits it for opaque colors) — the
+   *  G6.3 translucent-token compositing reads it, defaulting to 1. */
+  export function rgb(
+    color: string,
+  ): { r: number; g: number; b: number; alpha?: number } | undefined;
 }
 
 declare module "apca-w3" {

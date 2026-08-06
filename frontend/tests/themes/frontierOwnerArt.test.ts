@@ -98,7 +98,7 @@ describe("rigs — the pool dealt over the fleet's display order", () => {
   });
 });
 
-describe("hero — a pool with a pin (the gacha wallpaper shape)", () => {
+describe("hero — a pool with a pin (the kit-background shape)", () => {
   it("first usable wins with no pin", () => {
     const art = frontierArtFromIndex(index({ hero: [file("one"), file("two")] }));
     expect(art.hero).toBe(file("one").url);

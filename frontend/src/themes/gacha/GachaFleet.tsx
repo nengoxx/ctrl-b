@@ -10,6 +10,7 @@ import {
 import { useGachaReelRunning } from "../../store/gachaReel";
 import { setPlanSheetOpen } from "../../store/planSheet";
 import { getSheetSnap, setSheetSnap } from "../../store/sheetSnap";
+import { useKitBackgroundArt } from "../../theme-engine/kit/ownerArt";
 import { useThemeSetting } from "../../theme-engine/settings";
 import type { Host } from "../../types";
 import { GachaArtShowcase } from "./GachaArtShowcase";
@@ -24,6 +25,7 @@ import {
   counterText,
   hostsResolved,
   pickRibbonHost,
+  pityText,
   rateText,
 } from "./fleet";
 import { artForHost, heroArt, wideArtForHost } from "./roster";
@@ -51,8 +53,20 @@ export function GachaFleet({ active }: { active: boolean }) {
   // The roster the theme resolves against (§5.2's read path): the owner's media folders when they hold
   // anything, the bundled set otherwise. One query, shared with the Root/reel/Agent by its key.
   const roster = useGachaRoster();
+  // The SHARED kit background, as the hero slide's MIDDLE rung (G6.3) — the same value the Root feeds the
+  // fleet backdrop's ladder. Threaded here too because `heroArt` defaults to the wallpaper pick: without
+  // it, an owner with only a `media/kit/background/` drop would get that image as the backdrop and the
+  // BUNDLED banner on the hero slide, which is precisely the two-pictures disagreement §5.3 rules out.
+  // Its own query is the kit one, deduped by TanStack against every other kit-art consumer.
+  const kitBackground = useKitBackgroundArt();
 
   const onlineCount = hosts.filter((h) => h.status?.online).length;
+  // The pity pill's input (owner 2026-08-06): ONLINE SERVICES fleet-wide, the service-level twin of the
+  // host count above — same live map the dossier rows read, so the two can never disagree.
+  const onlineServices = [...svcByHost.values()].reduce(
+    (n, svcs) => n + svcs.filter((s) => s.status?.online).length,
+    0,
+  );
   // §6.3's loading semantics, shared by the rate pill and (G1's track) the counter: an unresolved fleet
   // reads as a held value, never as a confident "0".
   const resolved = hostsResolved(isLoading, error, hasData);
@@ -435,7 +449,7 @@ export function GachaFleet({ active }: { active: boolean }) {
   // a SEPARATE pool from the entries, which is what keeps a scene from ever being dealt to a machine as
   // its capsule portrait (the art.ts partition rule, now enforced by the role folders themselves).
   const slides: BannerSlide[] = [
-    { kind: "hero", key: HERO_KEY, art: heroArt(roster) },
+    { kind: "hero", key: HERO_KEY, art: heroArt(roster, kitBackground) },
     ...roster.scenes.map((scene, i) => ({
       kind: "scene" as const,
       key: SCENE_KEY_PREFIX + scene.name,
@@ -466,6 +480,7 @@ export function GachaFleet({ active }: { active: boolean }) {
         slides={slides}
         active={active}
         rate={rateText(MAX_STARS[starMode], onlineCount, resolved)}
+        pity={pityText(onlineServices, resolved)}
         onOpenHost={openHostDossier}
       />
 

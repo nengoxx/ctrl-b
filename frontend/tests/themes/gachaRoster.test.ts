@@ -30,8 +30,10 @@ import {
 //      ① scenes — "banner/ becomes the SCENE slides" + the broken-scene case (`orderedUsable`);
 //      ② unusable-position deal stability — "unusable entries hold their position" (`cycleAt`, the whole
 //        list dealt: one broken file must not re-deal the fleet);
-//      ③ wallpaper/oracle fallback — "slots — pins, and what happens when a pin dangles" + the pin-outranks-
-//        folder case (`firstUsable` as the ladder's middle rung);
+//      ③ oracle fallback — "slots — pins, and what happens when a pin dangles" + the pin-outranks-folder
+//        case (`firstUsable` as the ladder's middle rung). The wallpaper half of this arm was RETIRED at
+//        G6.3 with the gacha `wallpaper/` role itself (owner ruling — one shared background home); the
+//        backdrop's own ladder is pinned in its describe at the bottom of this file;
 //      ④ reel bundled replacement — "reel/ outranks the bundled cutout" + the legacy-pin cases
 //        (`firstUsable` with its pin).
 
@@ -50,7 +52,7 @@ function roster(
     entries,
     slots,
     scenes: [],
-    pools: { wallpaper: [], reel: [], oracle: [] },
+    pools: { reel: [], oracle: [] },
     ...over,
   };
 }
@@ -303,9 +305,7 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
   });
 
   it("an index with nothing in it is ALSO the bundled set — every role falls back on its own", () => {
-    const r = rosterFromIndex(
-      index({ characters: [], banner: [], wallpaper: [], reel: [], oracle: [] }),
-    );
+    const r = rosterFromIndex(index({ characters: [], banner: [], reel: [], oracle: [] }));
     expect(r.entries).toEqual(defaultRoster().entries);
     expect(r.scenes).toEqual(defaultRoster().scenes);
     expect(wallpaperArt(r)).toEqual({ url: ART.banner });
@@ -340,11 +340,11 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
   it("a broken file in a first-wins POOL is SKIPPED — there its position only buys a blank surface", () => {
     const r = rosterFromIndex(
       index({
-        wallpaper: [file("bad", { unusable: true }), file("good")],
+        oracle: [file("bad", { unusable: true }), file("good")],
         banner: [file("s1", { unusable: true })],
       }),
     );
-    expect(wallpaperArt(r)).toMatchObject({ url: file("good").url });
+    expect(oracleArt(r)).toMatchObject({ url: file("good").url });
     expect(r.scenes).toEqual(defaultRoster().scenes); // the only scene was broken ⇒ the bundled pair
   });
 
@@ -367,17 +367,16 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
   });
 
   it("a slots PIN still outranks the role folder (the owner binding a character into a role)", () => {
-    const withWide = index(
-      { characters: [file("kira")], wallpaper: [file("w")] },
-      { wallpaper: "kira" },
-    );
-    expect(wallpaperArt(rosterFromIndex(withWide))).toMatchObject({ url: file("kira").url });
+    // Read on the ORACLE ladder since G6.3: it is the surviving pin-over-folder pair (the backdrop's
+    // folder is gone, and its own three rungs are pinned at the bottom of this file).
+    const withWide = index({ characters: [file("kira")], oracle: [file("w")] }, { oracle: "kira" });
+    expect(oracleArt(rosterFromIndex(withWide))).toMatchObject({ url: file("kira").url });
     // …and a pin naming nothing on disk degrades to the folder rather than blanking the surface.
     const dangling = index(
-      { characters: [file("kira")], wallpaper: [file("w")] },
-      { wallpaper: "ghost" },
+      { characters: [file("kira")], oracle: [file("w")] },
+      { oracle: "ghost" },
     );
-    expect(wallpaperArt(rosterFromIndex(dangling))).toMatchObject({ url: file("w").url });
+    expect(oracleArt(rosterFromIndex(dangling))).toMatchObject({ url: file("w").url });
   });
 
   it("owner characters carry no wide/cutout/focus — under the role rule the FOLDER is the assignment", () => {
@@ -440,5 +439,91 @@ describe("reelFigureArt — the pin selects a CUTOUT, never a portrait", () => {
       .entries.filter((e) => e.cutout !== undefined)
       .map((e) => e.name);
     expect(declared).toEqual(withCutouts);
+  });
+});
+
+// ── G6.3 · THE FLEET BACKDROP'S THREE-RUNG LADDER ────────────────────────────────────────────────────
+//
+// gacha's scenery is exclusive (D54 A5): the Root passes `kitBackground={false}`, so the kit's own layer
+// never mounts under this theme. Before G6.3 that meant a file dropped into `media/kit/background/` did
+// NOTHING here while every other theme picked it up — which the owner hit on the device round and read as
+// a bug. The first fix was a RUNG (the kit picture as gacha's backdrop); the owner then ruled the rest:
+// "just having the background in the kit is the better approach — no duplicated systems", so gacha's own
+// `wallpaper/` drop folder was REMOVED outright rather than kept above it. Two folders for one picture
+// was the confusion itself.
+//
+// What survives is the theme-SPECIFIC half — the `wallpaper:` PIN, which names a CHARACTER, something the
+// kit has no equivalent of. So the ladder these arms pin is exactly three rungs:
+//
+//     the gacha pin (a cast portrait, wide-cropped) → the SHARED kit background → the bundled scene
+//
+// …plus the two things that could silently go wrong around it: `heroArt` must read the SAME ladder (a
+// backdrop and a hero slide showing different pictures is the §5.3 disagreement), and the kit rung must
+// not leak onto gacha's other surfaces.
+
+const kitFile = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
+  ...file(name),
+  url: `/api/media/kit/files/background/${name}.webp`,
+  ...over,
+});
+
+describe("wallpaperArt — the three-rung fleet backdrop (G6.3)", () => {
+  it("takes the SHARED kit background when nothing is pinned, INSTEAD of the bundled scene", () => {
+    const kit = kitFile("shared");
+    expect(wallpaperArt(roster([entry("a")]), kit)).toEqual({ url: kit.url, rev: kit.revision });
+  });
+
+  it("loses to the gacha PIN — binding a cast portrait is the half the theme kept", () => {
+    const kit = kitFile("shared");
+    const pinned = roster([entry("a", { wide: "a-wide.webp" })], { wallpaper: "a" });
+    expect(wallpaperArt(pinned, kit)).toEqual({ url: "a-wide.webp" });
+    // …and the pin goes through the WIDE ladder, so a portrait with no landscape variant still crops
+    // rather than being skipped.
+    const noWide = roster([entry("a", { focus: "50% 10%" })], { wallpaper: "a" });
+    expect(wallpaperArt(noWide, kit)).toEqual({ url: "a.webp", focus: "50% 10%" });
+  });
+
+  it("there is NO gacha wallpaper pool left to sit between them — the Roster has no such field", () => {
+    // The removal is structural, not a skipped branch: `RolePools` carries `reel` and `oracle` only, so
+    // a re-added middle rung would not typecheck rather than quietly reappearing.
+    expect(Object.keys(defaultRoster().pools).sort()).toEqual(["oracle", "reel"]);
+    expect(Object.keys(rosterFromIndex(index({ reel: [file("cut")] })).pools).sort()).toEqual([
+      "oracle",
+      "reel",
+    ]);
+  });
+
+  it("falls through to the BUNDLED scene when there is no kit file either", () => {
+    expect(wallpaperArt(roster([entry("a")]), undefined)).toEqual({ url: ART.banner });
+    expect(wallpaperArt(roster([entry("a")]))).toEqual({ url: ART.banner }); // omitted ⇒ pin, else bundled
+  });
+
+  it("a DANGLING pin falls through to the kit picture, never to a hole", () => {
+    const kit = kitFile("shared");
+    const r = roster([entry("a")], { wallpaper: "ghost" });
+    expect(wallpaperArt(r, kit)).toEqual({ url: kit.url, rev: kit.revision });
+  });
+
+  it("an UNUSABLE pinned entry falls through too (the pin is found, but not painted)", () => {
+    const kit = kitFile("shared");
+    const r = roster([entry("a", { wide: "a-wide.webp", unusable: true })], { wallpaper: "a" });
+    expect(wallpaperArt(r, kit)).toEqual({ url: kit.url, rev: kit.revision });
+  });
+
+  it("the HERO slide reads the SAME ladder — the two must never show different pictures (§5.3)", () => {
+    // `heroArt` defaults to the wallpaper pick, so dropping the argument one call deep would give the
+    // backdrop the shared image and the hero slide the bundled banner.
+    const kit = kitFile("shared");
+    expect(heroArt(roster([entry("a")]), kit)).toEqual(wallpaperArt(roster([entry("a")]), kit));
+    // …and a hero PIN still outranks it, exactly as it outranks the wallpaper pick.
+    const pinned = roster([entry("a", { wide: "a-wide.webp" })], { hero: "a" });
+    expect(heroArt(pinned, kit)).toEqual({ url: "a-wide.webp" });
+  });
+
+  it("does NOT reach the oracle backdrop — a rung is added to one ladder, not to the theme", () => {
+    // The operator art is its own surface with its own folder and its own bundled default; the owner
+    // asked for the fleet backdrop, and a shared picture silently taking over every gacha surface is
+    // not that.
+    expect(oracleArt(roster([entry("a")]))).toEqual({ url: ART.oracle });
   });
 });

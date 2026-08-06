@@ -77,6 +77,13 @@ export function rateText(maxStars: number, onlineCount: number, resolved: boolea
   return `${GACHA_COPY.star}${maxStars} RATE ${resolved ? onlineCount.toFixed(1) : PENDING}%`;
 }
 
+/** The pity pill — 天井 + the live count of ONLINE SERVICES fleet-wide (owner 2026-08-06: the prototype's
+ *  frozen `天井 200` flavour "should make some sense" — its partner pill already counts online machines, so
+ *  this one counts online services). Same held convention as the two above. */
+export function pityText(onlineServices: number, resolved: boolean): string {
+  return `${GACHA_COPY.pityLabel} ${resolved ? onlineServices : PENDING}`;
+}
+
 /** The track counter — the prototype's zero-padded `04 / 04` (online / total), and a held pair until the
  *  fleet resolves. Zero-padding is the prototype's look and stops the head jittering between 9 and 10
  *  hosts; past 99 the natural width takes over. */

@@ -810,6 +810,7 @@ export function ConfTab({ active }: Props) {
   const motion = useUISlice((s) => s.motion);
   const perf = useUISlice((s) => s.perf);
   const kitBackgroundVisible = useUISlice((s) => s.kitBackgroundVisible); // the shared kit background switch
+  const appbarSubtitleVisible = useUISlice((s) => s.appbarSubtitleVisible); // the app bar's brand-subtitle switch
   const appbarMode = useUISlice((s) => s.appbarMode); // global, per-device (local) — every theme honors it
   const layout = useUISlice((s) => s.layout); // the RAW section-layout lever (auto/4/3/2) — device-local like App bar
   // The resolved partition (D35 §F0): `hostsUtils` = the active layout renders utils INSIDE Conf, so this
@@ -830,10 +831,13 @@ export function ConfTab({ active }: Props) {
   // Adding a theme makes all three appear here automatically (one registry row, zero Conf change).
   const themeOptions = registeredThemes().map((d) => ({ val: d.id, label: d.label }));
   const activeDef = registry[theme];
-  const accentOptions = (activeDef?.palettes.accents ?? []).map((a) => ({
-    val: a.id,
-    label: a.label,
-    swatch: a.swatch,
+  // `id` → `val`, and every OTHER field rides through by spread (the D52 §4.9 ledger's lesson, learned on
+  // the seg options one row down: re-listing the fields silently strips whatever a theme added next, which
+  // is how gacha's dossier chips almost never reached `Seg`). That is what carries the G6.3 `accent` — and
+  // the field after it — into `Swatches` with no edit here.
+  const accentOptions = (activeDef?.palettes.accents ?? []).map(({ id, ...rest }) => ({
+    val: id,
+    ...rest,
   }));
   const modeOptions = (activeDef?.palettes.modes ?? []).map((m) => ({
     val: m,
@@ -892,6 +896,7 @@ export function ConfTab({ active }: Props) {
     motion?: typeof motion;
     perf?: typeof perf;
     kitBackgroundVisible?: boolean;
+    appbarSubtitleVisible?: boolean;
   }) => {
     setUI(patch);
     saveAppearance.mutate(currentAppearancePatch());
@@ -2459,11 +2464,14 @@ export function ConfTab({ active }: Props) {
           </SettingRow>
           {/* The SHARED owner background (the Kit Art System). Synced, like the two levers above, because
               it governs ONE shared image rather than a per-screen preference — and the copy has to stay
-              truthful under every theme (Codex A4): a theme with scenery of its own never mounts the
-              layer, so the switch is genuinely inert there rather than broken. */}
+              truthful under every theme (Codex A4). G6.3 corrected it: what a scenery theme declines is
+              the shared LAYER, so the switch is inert THERE — but the picture itself may still reach that
+              theme's own backdrop through its own ladder and its own switch (gacha's wallpaper), which is
+              the half the old wording ("themes with their own scenery ignore it") denied. The owner read
+              that as the app being broken after dropping a file in. */}
           <SettingRow
             label="Shared background"
-            desc="your image from media/kit/background/ · themes with their own scenery ignore it"
+            desc="your image from media/kit/background/ · this switch is for the shared layer; a theme with its own scenery has its own"
           >
             <Switch
               on={kitBackgroundVisible}
@@ -2488,6 +2496,23 @@ export function ConfTab({ active }: Props) {
                 { val: "minimal", label: "Min" },
               ]}
               onPick={(v) => setUI({ appbarMode: v })}
+            />
+          </SettingRow>
+          {/* The bar's brand SUBTITLE — next to the App bar row because it is the same surface, but SYNCED
+              (setGlobal) rather than device-local: "how much text do I want in my bar" is one answer, not a
+              per-screen layout choice like the mode above. Default OFF — G6.3's icon + title only stands as
+              the resting state, and this is the opt-in back. The desc has to be truthful under every theme
+              (the Codex A4 rule the shared-background copy learned): what appears is the ACTIVE theme's own
+              subtitle, and a theme that has none shows nothing with the switch either way — there is no
+              default text to fall back on. */}
+          <SettingRow
+            label="Bar subtitle"
+            desc="show the theme's own subtitle beside the title · a theme without one shows nothing"
+          >
+            <Switch
+              on={appbarSubtitleVisible}
+              label="Bar subtitle"
+              onToggle={() => setGlobal({ appbarSubtitleVisible: !appbarSubtitleVisible })}
             />
           </SettingRow>
           {/* Section layout (D35 §F0) — global, per-device (local, NOT synced — like App bar). `current` is

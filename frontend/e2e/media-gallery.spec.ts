@@ -56,7 +56,7 @@ test("Conf · Theme art — a reorder writes `media.<ns>` and survives a reload"
         body: JSON.stringify({
           ns: "gacha",
           collation: "casefold-natural",
-          roles: { characters: order.map(file), banner: [], wallpaper: [], reel: [], oracle: [] },
+          roles: { characters: order.map(file), banner: [], reel: [], oracle: [] },
           slots: {},
         }),
       });

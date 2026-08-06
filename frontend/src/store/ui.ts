@@ -59,6 +59,13 @@ export interface UIState {
   // which phone they are holding. Default ON, so dropping a file in is the whole action; themes with
   // scenery of their own never mount the layer and are unaffected either way (the Kit Art System / A4).
   kitBackgroundVisible: boolean;
+  // The app bar's BRAND SUBTITLE — whether the bar renders the active theme's own subtitle line beside the
+  // wordmark (gacha's Japanese line, frontier's live rig count). SYNCED with the rest of appearance, not
+  // per-device: it is one answer to "how much text do I want in my bar", not a per-screen layout choice
+  // (unlike `appbarMode` below, which really is one). Default OFF — G6.3's ruling (icon + title only) is
+  // the resting state and this switch is how the subtitle comes back. A theme that fills no subtitle shows
+  // nothing in either state: there is no default text (the kit's old "dashboard" literal is dead).
+  appbarSubtitleVisible: boolean;
   // Theme-namespaced options (skyline/loz/hero/waveform for vapor; "density" for minimal, …). The
   // theme owns the schema (`ThemeDef.settings`); this is the override store. SYNCED via appearance.
   themeSettings: ThemeSettingsMap;
@@ -100,6 +107,7 @@ const DEFAULTS: UIState = {
   motion: defaultMotion(),
   perf: "full", // default to the full glass look; the owner opts into "lite" on a slow device
   kitBackgroundVisible: true, // a dropped background shows without a second step (it is off until one exists)
+  appbarSubtitleVisible: false, // G6.3's icon + title only stands as the default; the switch opts back in
   themeSettings: {}, // per-theme overrides resolve against each ThemeDef.settings default
   appbarMode: "visible", // global per-device chrome lever; every theme's Root honors it
   layout: "auto", // global per-device section-layout lever (NOT synced); auto = the active theme's default

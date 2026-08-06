@@ -64,34 +64,63 @@ export const gacha: ThemeDef = {
     accents: [
       // Each chip is ITS OWN radial-crown stop for the first third, then its own trio: family 1's three
       // share the brand trio and differ only in the ramp, so a trio-only chip would draw three identical
-      // circles; family 2's differ in both. One 22px chip, both halves of what a variant actually changes.
-      { id: "arcade", label: "Arcade", swatch: rampSwatch("#3a205b", arcadeTrio) },
-      { id: "midnight", label: "Midnight", swatch: rampSwatch("#1d2450", arcadeTrio) },
-      { id: "indigo", label: "Indigo", swatch: rampSwatch("#26377f", arcadeTrio) },
+      // circles; family 2's differ in both. One chip, both halves of what a variant actually changes.
+      //
+      // `accent` is the G6.3 addition (owner ruling 2026-08-06 device round): the OVAL chip's right band,
+      // and it is the variant's flat `--accent` — the hue every switch, ring and fill in the app takes.
+      // The gradient alone could not say it: family 1's three share their trio BY DESIGN, so their chips
+      // differ only in the crown, and `--accent` is `var(--gc-brand-1)` for all three — the band is what
+      // makes "these three keep the pink accent, ember takes the orange one" visible in the picker.
+      // LITERALS, exactly like the trios above and for the same reason (`var(--accent)` would preview the
+      // ACTIVE palette on all eight chips). Each is the value its `body[data-accent]` block in tokens.css
+      // resolves `--accent` to: family 1 inherits the base `--gc-brand-1`, family 2 redefines it.
+      {
+        id: "arcade",
+        label: "Arcade",
+        swatch: rampSwatch("#3a205b", arcadeTrio),
+        accent: "#ff6cae",
+      },
+      {
+        id: "midnight",
+        label: "Midnight",
+        swatch: rampSwatch("#1d2450", arcadeTrio),
+        accent: "#ff6cae",
+      },
+      {
+        id: "indigo",
+        label: "Indigo",
+        swatch: rampSwatch("#26377f", arcadeTrio),
+        accent: "#ff6cae",
+      },
       {
         id: "ember",
         label: "Ember",
         swatch: rampSwatch("#5b2350", ["#ff6f52", "#ff4f93", "#c46bff"]),
+        accent: "#ff6f52",
       },
       {
         id: "glacier",
         label: "Glacier",
         swatch: rampSwatch("#1d3f7a", ["#7c6cff", "#2fb8ff", "#79f2e6"]),
+        accent: "#7c6cff",
       },
       {
         id: "nebula",
         label: "Nebula",
         swatch: rampSwatch("#43276b", ["#eb77ea", "#9c96f4", "#5ec7db"]),
+        accent: "#eb77ea",
       },
       {
         id: "eridu",
         label: "Eridu",
         swatch: rampSwatch("#26305e", ["#3a86ff", "#2fd8f5", "#3fe9bd"]),
+        accent: "#3a86ff",
       },
       {
         id: "jade",
         label: "Jade",
         swatch: rampSwatch("#0e5546", ["#5bae49", "#2fbc8d", "#06c5bf"]),
+        accent: "#5bae49",
       },
     ],
     defaultAccent: "arcade",
@@ -101,35 +130,13 @@ export const gacha: ThemeDef = {
   loadStyles: () => Promise.all([import("./tokens.css"), import("./gacha.css")]),
   // The COMMITTED subsets (§10.4) — see fonts.ts. Awaited by `ensureThemeLoaded` before the skin flips.
   loadFonts,
-  // Per-theme settings (§14.3), auto-rendered by the Conf Appearance picker in DECLARATION order: the shared
-  // kit axes first (composer pair adjacent, the round-2 convention), then gacha's own three.
+  // Per-theme settings (§14.3), auto-rendered by the Conf Appearance picker in DECLARATION order — which
+  // is the whole reason THE DOSSIER PICKER LEADS (owner ruling, the 2026-08-06 G6 device round: "they go
+  // hand in hand"). The Appearance group renders the accent Palette row and then this map, so declaring
+  // `dossierPalette` first is what puts the two colour pickers ADJACENT — the only two controls in the
+  // group that pick a palette, and the pair the owner tunes together. The shared kit axes follow (composer
+  // pair still adjacent, the round-2 convention), then gacha's own remaining three.
   settings: {
-    composer: composerLayoutSetting("stacked"),
-    // The prototype's composer is a flat, opaque panel with a hairline edge, tight corners and no shadow
-    // at all — measured against every existing skin at G3, four of its five defining properties differ
-    // from the closest (`outline`), so the CATALOG gained the look-named `arcade` value (D37: composer
-    // chrome is a SHARED catalog value, never theme CSS) and gacha declares it as its default.
-    composerSkin: composerSkinSetting("arcade"),
-    planPlacement: planPlacementSetting("inline"),
-    // The prototype's chat bubbles are borderless (fill + a hard offset shadow, no outline), so gacha takes
-    // the kit's no-outlines chat; the toggle restores the bordered chrome live. Confirmed at the G3 eyeball.
-    outlines: outlinesSetting(false),
-    // ── gacha's own three (§6.1 / R6) ──
-    // The star ladder's SINGLE config home (council M5: nothing star-shaped lives in the roster YAML).
-    // Default 5★ (ruled Q8.4): emma already carries 5–6 configured services, so the flagship rolls a full
-    // row on day one; 3★ is one seg-tap away for a calmer track.
-    // Every non-ASCII string below comes from `copy.ts` — the descriptors are production copy, so their
-    // glyphs must ride the frozen subset (★ U+2605 is in no Latin subset; Codex G0 #1).
-    starMode: {
-      type: "seg",
-      label: "Stars",
-      desc: GACHA_COPY.settingStarsDesc,
-      options: [
-        { val: "five", label: GACHA_COPY.starModeFive },
-        { val: "three", label: GACHA_COPY.starModeThree },
-      ],
-      default: "five",
-    },
     // THE DOSSIER PALETTE (§4.4 family 3 / THE PICKER CONTRACT, G6). The dark trial is signed off AS A
     // PICKER, not a flip: `slip` — the shipped G2 light sheet — survives as an option, which is what
     // dissolved the "one light surface is the identity" objection. Default `neon-purple`, the owner's own
@@ -159,6 +166,32 @@ export const gacha: ThemeDef = {
         { val: "forest-green", label: "Forest", swatch: "#337848" },
       ],
       default: "neon-purple",
+    },
+    composer: composerLayoutSetting("stacked"),
+    // The prototype's composer is a flat, opaque panel with a hairline edge, tight corners and no shadow
+    // at all — measured against every existing skin at G3, four of its five defining properties differ
+    // from the closest (`outline`), so the CATALOG gained the look-named `arcade` value (D37: composer
+    // chrome is a SHARED catalog value, never theme CSS) and gacha declares it as its default.
+    composerSkin: composerSkinSetting("arcade"),
+    planPlacement: planPlacementSetting("inline"),
+    // The prototype's chat bubbles are borderless (fill + a hard offset shadow, no outline), so gacha takes
+    // the kit's no-outlines chat; the toggle restores the bordered chrome live. Confirmed at the G3 eyeball.
+    outlines: outlinesSetting(false),
+    // ── gacha's own remaining three (§6.1 / R6) — the fourth, the dossier picker, leads the map above ──
+    // The star ladder's SINGLE config home (council M5: nothing star-shaped lives in the roster YAML).
+    // Default 5★ (ruled Q8.4): emma already carries 5–6 configured services, so the flagship rolls a full
+    // row on day one; 3★ is one seg-tap away for a calmer track.
+    // Every non-ASCII string below comes from `copy.ts` — the descriptors are production copy, so their
+    // glyphs must ride the frozen subset (★ U+2605 is in no Latin subset; Codex G0 #1).
+    starMode: {
+      type: "seg",
+      label: "Stars",
+      desc: GACHA_COPY.settingStarsDesc,
+      options: [
+        { val: "five", label: GACHA_COPY.starModeFive },
+        { val: "three", label: GACHA_COPY.starModeThree },
+      ],
+      default: "five",
     },
     // R6 — both ship ON, flipping the prototype's own OFF defaults (owner-ruled).
     wallpaper: {

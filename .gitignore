@@ -42,3 +42,9 @@ docs/screenshot/
 
 # ── local demo videos (never committed — the README embeds a GitHub user-attachment) ──
 assets/*.mp4
+
+# owner-ruled UNTRACKED (2026-08-06): the gacha art originals + session research/candidate sheets
+design/prototypes/gacha/banner images/
+design/prototypes/gacha/chars/
+design/prototypes/gacha/brand-icons/
+design/prototypes/gacha/research-sheets/

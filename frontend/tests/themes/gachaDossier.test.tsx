@@ -8,6 +8,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { relativeTime } from "../../src/lib/relativeTime";
+import { rebaseServiceUrl, serviceBase } from "../../src/lib/serviceBase";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
 import { GachaHostDetail } from "../../src/themes/gacha/GachaHostDetail";
 import { CLOSE_DOSSIER_LABEL, dossierSub, showArtLabel } from "../../src/themes/gacha/fleet";
@@ -286,11 +287,13 @@ describe("the host action bar", () => {
 describe("the live service rows", () => {
   it("drives each dot off the LIVE status and names the state for AT", () => {
     const services = [
-      svc({ id: "up", name: "grafana", port: 3000 }),
+      // no URL on either, so both stay the `role="group"` div — the LINK arm is the suite below
+      svc({ id: "up", name: "grafana", port: 3000, url: null }),
       svc({
         id: "dn",
         name: "prometheus",
         port: 9090,
+        url: null,
         status: { service_id: "dn", online: false, checked_at: "x", error: null },
       }),
     ];
@@ -305,7 +308,7 @@ describe("the live service rows", () => {
   });
 
   it("a port-less service reads its liveness word instead of an address", () => {
-    const { container } = renderD({ services: [svc({ port: null })] });
+    const { container } = renderD({ services: [svc({ port: null, url: null })] });
     expect(container.querySelector(".gc-svc small")?.textContent).toBe("healthy");
   });
 
@@ -313,6 +316,211 @@ describe("the live service rows", () => {
     const { container } = renderD({ services: [] });
     expect(container.querySelectorAll(".gc-svc")).toHaveLength(0);
     expect(container.querySelector(".gc-svc-empty")).not.toBeNull();
+  });
+});
+
+// ── THE ROWS ARE LINKS (G6.4, owner device round 2026-08-06) ────────────────────────────────────────
+// Gacha's rows were the ONE dossier that did not open its services. The wiring is the cosmos/frontier/kit
+// one verbatim — the same `svcOn && s.url` gate, the same `rebaseServiceUrl(s.url, serviceBase(...))` href,
+// the same target/rel — so what these pin is the CONTRACT rather than the markup: a reachable service opens,
+// everything else stays a non-link with its state spelled out for AT.
+describe("a live service with a URL opens", () => {
+  const anchors = (c: HTMLElement): HTMLAnchorElement[] => [
+    ...c.querySelectorAll<HTMLAnchorElement>("a.gc-svc"),
+  ];
+
+  it("renders an anchor whose href is REBASED onto the address this client reached the host on", () => {
+    const { container, h } = renderD({ services: [svc()] });
+    const [a] = anchors(container);
+    expect(a).toBeDefined();
+    // the same call the sibling dossiers make — asserted through the shared helper, not a hardcoded URL,
+    // so a change to the rebasing rule is a `serviceBase` decision and not four copies to chase
+    expect(a.getAttribute("href")).toBe(
+      rebaseServiceUrl(svc().url!, serviceBase(h, window.location)),
+    );
+    expect(a.target).toBe("_blank");
+    expect(a.rel).toBe("noopener");
+    // the row's own layout is untouched: same class/box, same LED + icon slot + name + port
+    expect(a.className).toBe("gc-svc on");
+    expect(a.querySelector("strong")?.textContent).toBe("grafana");
+    expect(a.querySelector("small")?.textContent).toBe(":3000");
+    // …and the link text IS the accessible name (the sibling pattern) — no `role`/`aria-label` override
+    expect(a.getAttribute("role")).toBeNull();
+    expect(a.getAttribute("aria-label")).toBeNull();
+  });
+
+  it("a service with no URL, and an OFFLINE one that has one, stay non-links", () => {
+    const services = [
+      svc({ id: "nourl", name: "ssh", port: 22, url: null }),
+      svc({
+        id: "down",
+        name: "grafana",
+        port: 3000,
+        status: { service_id: "down", online: false, checked_at: "x", error: null },
+      }),
+    ];
+    const { container } = renderD({ services });
+    expect(anchors(container)).toHaveLength(0);
+    const rows = [...container.querySelectorAll<HTMLElement>(".gc-svc")];
+    expect(rows.map((r) => r.tagName)).toEqual(["DIV", "DIV"]);
+    // the un-linked arm keeps the group role + the spelled-out state it always had
+    expect(rows[0].getAttribute("aria-label")).toBe("ssh online");
+    expect(rows[1].getAttribute("aria-label")).toBe("grafana offline");
+  });
+
+  it("paints its affordance from the dossier tokens, on both lightings", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
+    // the UA's blue underline must not survive on either surface
+    expect(css).toMatch(/a\.gc-svc\s*{[^}]*color: inherit/);
+    expect(css).toMatch(/a\.gc-svc\s*{[^}]*text-decoration: none/);
+    // hover is a TOKEN mix over the row's own card (so it re-derives per dossier palette), and it is
+    // gated behind a real pointer — a sticky :hover on a phone would leave the last-tapped row lit
+    expect(css).toMatch(/@media \(hover: hover\)\s*{\s*a\.gc-svc:hover\s*{[^}]*/);
+    expect(css).toMatch(/a\.gc-svc:hover\s*{[^}]*background: var\(--gc-dossier-row-hover\)/);
+    expect(tokens).toContain(
+      "--gc-dossier-row-hover: color-mix(in srgb, var(--gc-dossier-accent) 10%, var(--gc-dossier-card))",
+    );
+    // §14.11 — the press is opacity, never a layout/paint property transition
+    expect(css).toMatch(/a\.gc-svc\s*{[^}]*transition: opacity 160ms/);
+    expect(css).toMatch(/a\.gc-svc:active\s*{[^}]*opacity: 0\.82/);
+    expect(css).toContain('body[data-motion="reduced"] a.gc-svc');
+  });
+});
+
+// ── THE CHARACTER WATERMARK (G6.4, owner: "the character image as a background of the bottom sheet, like
+//    the dotted texture — faded, so it's visible, positioned center-right") ────────────────────────────
+describe("the character watermark", () => {
+  const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
+  const mark = (c: HTMLElement) => c.querySelector<HTMLImageElement>(".gc-dossier-mark");
+
+  it("echoes the SAME resolved file the portrait draws, decorative and inert", () => {
+    const { container } = renderD({ index: 1 });
+    const m = mark(container)!;
+    expect(m).not.toBeNull();
+    // one resolver, one URL — the portrait and the watermark can never disagree (and the browser reuses
+    // the decode rather than fetching a second image)
+    expect(m.src).toBe(container.querySelector<HTMLImageElement>(".avatar")!.src);
+    expect(m.getAttribute("alt")).toBe("");
+    expect(m.getAttribute("aria-hidden")).toBe("true");
+    expect(m.draggable).toBe(false);
+  });
+
+  it("takes the roster entry's own focal point, exactly as the portrait does", () => {
+    const { container } = renderD({ index: 3 }); // entry 3 declares a focus
+    expect(mark(container)!.style.objectPosition).toBe(artForHost(ROSTER, 3)!.focus);
+  });
+
+  it("no art → no watermark (a placeholder frame has nothing to echo)", () => {
+    const { container } = renderD({ art: null });
+    expect(mark(container)).toBeNull();
+  });
+
+  it("is NEVER captured as part of a morph group", () => {
+    // `capsule-shell` is named on `.avatar` alone. A second node under the same name would make the
+    // browser skip the whole transition on a duplicate-name error — the failure this pins against.
+    expect(css).not.toContain(".gc-dossier-mark {\n      view-transition-name");
+    for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      if (/view-transition-name:/.test(m[2])) expect(m[1]).not.toContain("gc-dossier-mark");
+    }
+  });
+
+  it("sits under the content by POSITION, not by a z-index that would isolate the sheet", () => {
+    // `.gc-dossier` must stay a non-stacking-context: `.gc-dossier-close`'s z-index 2 has to reach the
+    // SHEET's context to clear the handle's z-1 drag strip. So the mark carries no z-index of its own and
+    // the four content blocks are positioned instead, which orders them after it in tree order.
+    const rule = /\n\s*\.gc-dossier-mark \{([^}]*)\}/.exec(css)![1];
+    expect(rule).not.toContain("z-index");
+    expect(rule).toContain("position: absolute");
+    expect(rule).toContain("pointer-events: none");
+    expect(rule).toContain("opacity: var(--gc-dossier-mark-opacity)");
+    expect(rule).toContain("mask-image: var(--gc-dossier-mark-mask)");
+    expect(css).not.toMatch(/\.gc-dossier \{[^}]*isolation/);
+    for (const block of [".gc-dossier-head", ".gc-metrics", ".gc-acts", ".gc-svcs"]) {
+      const body = new RegExp(`\\n\\s*\\${block} \\{([^}]*)\\}`).exec(css)![1];
+      expect(body, `${block} must be positioned to paint over the watermark`).toContain(
+        "position: relative",
+      );
+    }
+  });
+
+  it("is OFF on the light slip and ON for the darks, by token", () => {
+    // slip is arcade prize PAPER (owner-signed as shipped); the six darks are what the watermark and the
+    // dot texture were asked for. Both switch on a token value, so neither needs a selector fork.
+    expect(tokens).toContain("--gc-dossier-mark-opacity: 0;");
+    expect(tokens).toMatch(/--gc-dossier-mark-opacity: 0\.\d+;/);
+    expect(tokens).toContain("--gc-dossier-texture: none;");
+    expect(tokens).toMatch(/--gc-dossier-texture: radial-gradient\(#[0-9a-f]{8} 1px/);
+  });
+});
+
+// ── THE SHEET TEXTURE (G6.4) — a PORT of cosmos's dot grid ("the Cosmos bottom sheets have this dotted
+//    pattern baked in, faded … it fades out from the centre; it aligns with the drag handle"). ────────
+describe("the dark sheet's dotted texture", () => {
+  const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
+  const rule = /\.bs-sheet::after\s*\{([^}]*)\}/.exec(css)![1];
+
+  it("takes its OWN pseudo, under the brand strip and under the dossier", () => {
+    // `::before` is the brand strip and the two cannot share a box: the FADE mask would eat the strip's
+    // ends. `z-index: -1` puts the dots above the sheet's gradient background (a transformed `.bs-sheet`
+    // is a stacking context, so a negative rung still paints over its own background) and below both the
+    // strip (z 0) and the whole `.gc-dossier` subtree — watermark included.
+    expect(rule).toContain("z-index: -1");
+    expect(rule).toContain("background-image: var(--gc-dossier-texture)");
+    expect(rule).toContain("background-size: var(--gc-dossier-texture-size)");
+    // the strip's own layer stays single, and wears its OWN mask (the corner dissolve), not the texture's
+    const strip = /\.bs-sheet::before\s*\{([^}]*)\}/.exec(css)![1];
+    expect(strip).toContain("background-image: var(--gc-brand-fill)");
+    expect(strip).toContain("mask-image: var(--gc-dossier-strip-fade)");
+    expect(strip).not.toContain("--gc-dossier-texture");
+  });
+
+  it("aligns a dot row with the grab bar and fades out from the centre (cosmos's own shape)", () => {
+    // the 13px grid's phase — cosmos's own `6px`, kept to the pixel because the geometry it solves is the
+    // KIT's: a 13px tile centres its dot 6.5px in, so +6 lands the first row on the grab bar (measured on
+    // a render: grip centre y 380.0, dot row y 380.5)
+    expect(rule).toContain("background-position: center 6px");
+    expect(tokens).toContain("--gc-dossier-texture-size: 13px 13px");
+    expect(rule).toContain("mask-image: var(--gc-dossier-texture-mask)");
+    // cosmos's stop shape (solid to 22%, gone by 72%, anchored 46px down), vertical radius grown for a
+    // panel that is several times taller
+    expect(tokens).toMatch(
+      /--gc-dossier-texture-mask: radial-gradient\(\s*260px 340px at 50% 46px,/,
+    );
+    expect(tokens).toMatch(/#000000 22%,\s*#00000000 72%/);
+  });
+
+  it("lets the brand strip DISSOLVE into the rim at the corners, on the darks only", () => {
+    // G6.4 item 7: a 4px band clipped by the sheet's 23px arc stops ~10px in with a near-vertical cut,
+    // while the 1px rim keeps curving — the "clunky" corner the owner reported. The fix is the strip's own
+    // end fade; slip keeps `none`, so the light sheet is byte-identical.
+    expect(tokens).toContain("--gc-dossier-strip-fade: none;");
+    expect(tokens).toMatch(
+      /--gc-dossier-strip-fade: linear-gradient\(\s*90deg,\s*#00000000,\s*#000000 34px/,
+    );
+    // …and the RIM is untouched: the two-value per-side border the mock measured stays exactly as ruled
+    const sheet = /\n\s*\.bs-sheet \{([^}]*)\}/.exec(css)![1];
+    expect(sheet).toContain("border: 1px solid var(--gc-dossier-outline)");
+    expect(sheet).toContain(
+      "border-color: var(--gc-dossier-outline-top) var(--gc-dossier-outline)",
+    );
+  });
+
+  it("keeps its strength in the dot's own alpha, never in an element opacity", () => {
+    // one number tunes the texture — the alpha in `--gc-dossier-texture`. An element `opacity` here would
+    // be a second, invisible knob multiplying the first.
+    expect(rule).not.toMatch(/(^|[;\s])opacity:/);
   });
 });
 
@@ -328,9 +536,18 @@ describe("the dossier's light surface reads from the dossier tokens", () => {
   );
   const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
 
-  it("inverts the sheet itself: the two-stop light fill, the dark ink, the violet halo", () => {
-    expect(css).toContain(
-      "background: linear-gradient(var(--gc-dossier-from), var(--gc-dossier-to))",
+  it("inverts the sheet itself: the 3-stop fill, the dark ink, the violet halo, the panel rim", () => {
+    // THREE stops since G6.3 — the mock's panels are front-loaded (a bright top band that reaches its floor
+    // by ~30%), which a two-stop line cannot say. `mid` is each palette's former `from`, at the position it
+    // was actually sampled from; slip's is the exact 30% point of its own line, so the light sheet is
+    // unchanged.
+    expect(css).toMatch(
+      /background: linear-gradient\(\s*var\(--gc-dossier-from\),\s*var\(--gc-dossier-mid\) 30%,\s*var\(--gc-dossier-to\)\s*\)/,
+    );
+    // …and the 1px accent rim, brighter on the TOP edge (the mock's own; slip's pair is `transparent`)
+    expect(css).toContain("border: 1px solid var(--gc-dossier-outline)");
+    expect(css).toMatch(
+      /border-color: var\(--gc-dossier-outline-top\) var\(--gc-dossier-outline\)/,
     );
     expect(css).toContain("color: var(--gc-dossier-ink)");
     expect(css).toContain("box-shadow: var(--gc-dossier-shadow)");
@@ -369,6 +586,26 @@ describe("the close corner", () => {
     expect(close.getAttribute("aria-label")).toBe(CLOSE_DOSSIER_LABEL);
     fireEvent.click(close);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws its × as GEOMETRY, so the ink is centred identically on every engine", () => {
+    // It was `content: "\\d7"`. A text glyph cannot be centred exactly here — `place-items: center` centres
+    // the LINE BOX and the ink's place inside it follows the font's ascent/descent, which Blink and Gecko
+    // resolve ~1.6px apart (measured on the shipped 38px disc: the best single optical `translateY` left
+    // the ink 1.0px high on one and 0.6px low on the other). A clipped square rotated about its own centre
+    // has no such freedom. This also retires the ASCII-fence workaround the glyph existed for.
+    const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const rule = /\.gc-dossier-close::before\s*\{([^}]*)\}/.exec(css)![1];
+    expect(rule).toMatch(/content:\s*""/);
+    expect(rule).not.toContain("\\d7");
+    expect(rule).toContain("clip-path: polygon(");
+    expect(rule).toContain("transform: rotate(45deg)");
+    // both operations are symmetric about the box's own centre — an offsetting translate would defeat it
+    expect(rule).not.toContain("translate");
+    expect(rule).toContain("background: currentColor");
   });
 
   it("is stacked ABOVE the handle's invisible drag strip (the cosmos chevron lesson)", () => {

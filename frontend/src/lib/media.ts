@@ -179,6 +179,15 @@ export function artIdentity(url: string, revision?: string): string {
   return `${url}\u0000${revision ?? ""}`;
 }
 
+/** The `?rev=` cache-busting SPELLING — one home (G6.3), shared by `kit/ownerArt.ts#ownerArtUrl` and the
+ *  gacha wallpaper publish (`GachaRoot`). The same mutable-in-place fact `artIdentity` answers for the
+ *  failure latch, put where the caches look: the query moves only when the bytes move, so a poll still
+ *  hits, and an in-place overwrite moves the cache entry instead of serving the stale decode. No/empty
+ *  revision ⇒ the bare URL (bundled art, or the empty string the server writes when it could not `stat`). */
+export function revUrl(url: string, revision?: string): string {
+  return revision ? `${url}?rev=${encodeURIComponent(revision)}` : url;
+}
+
 /** Bind a role's files to KEYS by casefolded stem — the `named` kind's whole mechanism (MEDIA_PLAN §2).
  *
  *  A file binds to the key its `normalizeMediaKey`d stem EQUALS. Nothing else binds: a stem matching no

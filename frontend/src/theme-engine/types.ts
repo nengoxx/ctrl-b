@@ -52,7 +52,16 @@ export interface PaletteModel {
   // owns its palette identity, co-located here). A single CSS color/gradient → one chip (minimal's hues,
   // vapor's per-accent gradient); a string[] → a conic multi-token preview (the seam for richer "design
   // framework" palettes — additive, no app/registry change). Omitted → a neutral chip.
-  accents?: { id: string; label: string; swatch?: string | string[] }[];
+  //
+  // `accent` is the OPTIONAL second half of the chip (G6.3, owner ruling 2026-08-06): the variant's FLAT
+  // `--accent` — the colour the app actually tints its controls with — shown as a hard band down the right
+  // of the oval, over the `swatch` gradient. A gradient chip previews the SCENERY a palette paints; it does
+  // not say which single hue every switch, ring and fill will take, and on gacha's eight variants that is
+  // the difference the owner picks between (family 1's three share their brand trio and differ only in the
+  // ramp). Declared per option, so a theme that omits it keeps the plain gradient oval and nothing about
+  // its picker changes. A LITERAL by the same convention as `swatch`: `var(--accent)` would preview the
+  // ACTIVE palette on every chip in the group, so the control could not preview what it picks.
+  accents?: { id: string; label: string; swatch?: string | string[]; accent?: string }[];
   defaultMode?: Mode;
   defaultAccent?: string;
 }

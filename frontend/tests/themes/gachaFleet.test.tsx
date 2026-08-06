@@ -325,6 +325,7 @@ describe("the scenes make a carousel out of an EMPTY fleet", () => {
           slides={[{ kind: "hero", key: HERO_KEY, art: { url: "hero.webp" } }]}
           active
           rate="x"
+          pity="x"
           onOpenHost={() => undefined}
         />,
       );

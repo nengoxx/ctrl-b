@@ -419,10 +419,19 @@ describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)",
       const has = new Set(declared(block!));
       for (const token of [
         "--gc-dossier-from",
+        // G6.3: the sheet is a 3-STOP gradient (front-loaded, per the re-sampled panel profiles), the
+        // panel carries its own 1px rim, and five roles the mock states per palette left the shared block
+        // — the row a dark palette must fill grew by six names.
+        "--gc-dossier-mid",
         "--gc-dossier-to",
+        "--gc-dossier-outline",
+        "--gc-dossier-outline-top",
         "--gc-dossier-card",
+        "--gc-dossier-ink-2",
+        "--gc-dossier-name",
         "--gc-dossier-accent",
         "--gc-dossier-kicker",
+        "--gc-dossier-led",
         "--gc-dossier-led-dim",
         "--gc-dossier-act-fill",
         "--gc-dossier-act-ink",
@@ -461,7 +470,8 @@ describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)",
     const has = new Set(declared(block!));
     for (const token of [
       "--gc-dossier-ink",
-      "--gc-dossier-ink-2",
+      // `--gc-dossier-ink-2` LEFT this list at G6.3: the mock's role line is palette-tinted on every panel,
+      // so all six state their own and a shared value here would be dead code.
       "--gc-dossier-line",
       "--gc-dossier-badge",
       "--gc-dossier-art-shadow",

@@ -12,11 +12,19 @@ import { chipBackground } from "../lib/chipBackground";
 //
 // An option's `swatch` is a single CSS color/gradient → one chip, OR a string[] → a conic multi-token
 // preview (the seam for richer "design framework" palettes). Omitted → a neutral chip.
+//
+// An option may also carry `accent` — the palette's flat accent colour — and then the chip is an OVAL whose
+// right band is that colour over the swatch (G6.3, owner ruling 2026-08-06: a gradient alone previews the
+// scenery, not the hue every control will take). The oval geometry is CSS (`.sw-chip`) and the two-part
+// paint is `chipBackground`; nothing here branches on it, so a theme that declares no `accent` renders the
+// same single-swatch chip it always has, just in the wider shape.
 
 export interface SwatchOption {
   val: string;
   label: string;
   swatch?: string | string[];
+  /** The variant's flat `--accent`, banded over the swatch. Omitted → a plain swatch-only chip. */
+  accent?: string;
 }
 
 export function Swatches(props: {
@@ -65,7 +73,7 @@ export function Swatches(props: {
             tabIndex={sel || (selectedIdx < 0 && i === 0) ? 0 : -1}
             onClick={() => props.onPick(o.val)}
           >
-            <span className="sw-chip" style={chipBackground(o.swatch)} aria-hidden />
+            <span className="sw-chip" style={chipBackground(o.swatch, o.accent)} aria-hidden />
           </button>
         );
       })}

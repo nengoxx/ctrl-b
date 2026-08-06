@@ -1,7 +1,9 @@
 import { useLayoutEffect } from "react";
 
 import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
+import { useKitBackgroundArt } from "../../theme-engine/kit/ownerArt";
 import { useThemeSetting } from "../../theme-engine/settings";
+import { revUrl } from "../../lib/media";
 import { useUISlice } from "../../store/ui";
 import { GACHA_COPY } from "./copy";
 import { GachaAgent } from "./GachaAgent";
@@ -11,9 +13,12 @@ import { wallpaperArt } from "./roster";
 import { useGachaRoster } from "./useGachaRoster";
 
 // gacha's Root ("Capsule Arcade", D52 / GACHA_PLAN §3). A scaffold Root at G0: it maps the arcade palette
-// onto the REUSED Kit shell (DefaultRoot, colored by gacha's tokens.css) and fills the two appbar brand
-// slots the theme's identity needs — the gradient katakana WORDMARK (`brandText`, the §4.3 ruling) and the
-// Japanese subtitle (`brandMeta`). The bespoke Fleet (G1) and Agent (G3) bodies arrive through DefaultRoot's
+// onto the REUSED Kit shell (DefaultRoot, colored by gacha's tokens.css) and fills the appbar brand slots
+// the theme's identity needs — the gradient katakana WORDMARK (`brandText`, the §4.3 ruling) and the
+// Japanese subtitle (`brandMeta`, ネットワーク景品所). The subtitle is TOGGLE-GATED, not unconditional: the
+// kit renders it only under the synced "Bar subtitle" switch, which ships OFF (the refined G6.3 ruling,
+// owner 2026-08-06 — icon + title only by default, the line available to whoever wants it). gacha passes it
+// always; the owner's one switch decides, for every theme at once. The bespoke Fleet (G1) and Agent (G3) bodies arrive through DefaultRoot's
 // `bodies` override map; the reel overlay (G0's mechanism) mounts as a Root SIBLING after DefaultRoot.
 // Honors the global `ui.appbarMode` lever (all themes). gacha omits `layouts` (offers every preset) and
 // declares `defaultLayout: "3-tab"` (registry) — the prototype's own Fleet/Agent/Settings shape.
@@ -48,12 +53,18 @@ export function GachaRoot() {
   // against the declared options, so a stale/corrupt synced value can only ever stamp a palette that
   // exists — and `slip` stamps a value no tokens.css block matches, which IS how slip is expressed.
   const dossier = useThemeSetting<string>("gacha", "dossierPalette");
-  // The fleet wallpaper's resolved art (M10), through the theme's ONE art seam (G5): a `wallpaper:` pin,
-  // else the owner's `media/gacha/wallpaper/` pick, else the bundled scene. The layout effect below
-  // depends on the two VALUES rather than the object, so a re-fetch that resolves to the same art cannot
-  // re-stamp `body` for nothing.
-  const art = wallpaperArt(useGachaRoster());
-  const artUrl = art.url;
+  // The fleet wallpaper's resolved art (M10), through the theme's ONE art seam (G5). THREE rungs since
+  // G6.3: a `wallpaper:` pin naming a character, else the SHARED kit background, else the bundled scene —
+  // gacha's own `wallpaper/` drop folder was removed at the same ruling, so the shared one is the drop-in
+  // home. The kit rung comes from the kit's own hook (one shared `["media","kit"]` query, so this costs
+  // no extra request) and is passed IN, because the resolver is pure. The layout effect below depends on
+  // the two VALUES rather than the object, so a re-fetch that resolves to the same art cannot re-stamp
+  // `body` for nothing.
+  const art = wallpaperArt(useGachaRoster(), useKitBackgroundArt());
+  // `?rev=`-stamped like every CSS-painted owner surface (`lib/media.ts#revUrl`, G6.3): the wallpaper is a
+  // background with no element to re-key, so an in-place overwrite must move the URL or the stale decode
+  // survives the repair. Bundled art has no `rev` and keeps its bare URL.
+  const artUrl = revUrl(art.url, art.rev);
   const artFocus = art.focus;
 
   useLayoutEffect(() => {
@@ -83,7 +94,11 @@ export function GachaRoot() {
       <DefaultRoot
         appbarMode={appbarMode}
         // gacha's own WALLPAPER is the full-app scenery here (published as `--gc-wallpaper-img` above), so
-        // the theme does not mount the shared kit background — scenery is exclusive by default (A5).
+        // the theme does not mount the shared kit background LAYER — scenery is exclusive by default (A5),
+        // and the sibling reel overlay is one of the shapes `.kit`'s mounted-layer isolation would trap.
+        // G6.3 does not change that; it changes what the wallpaper RESOLVES to. `media/kit/background/`
+        // is now gacha's drop-in rung (above), so one shared drop dresses gacha too — painted by gacha's
+        // surface, under gacha's own switch, rather than by a second layer or a second folder.
         kitBackground={false}
         brandText={<span className="gc-word">{GACHA_COPY.brandWordmark}</span>}
         brandMeta={GACHA_COPY.brandMeta}

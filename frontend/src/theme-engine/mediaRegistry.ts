@@ -88,12 +88,18 @@ export interface MediaRoleDef {
  *
  *  `bundled` names what the THEME can supply for the slot while `from` is still empty, so the pin is useful
  *  on a fresh install instead of an empty select. They must be names that theme's own resolver would
- *  accept — a theme test keeps the two in step. */
+ *  accept — a theme test keeps the two in step.
+ *
+ *  `hint` is the per-pin line under the select, on exactly the terms `MediaRoleDef.hint` is (G6.3): the
+ *  section's own copy describes what a pin GENERALLY is, and a pin whose ladder differs from that needs a
+ *  sentence of its own or the owner reads the generic one as the whole truth. Optional — a pin without one
+ *  renders as it always has. */
 export interface MediaSlotDef {
   key: string;
   label: string;
   from: string;
   bundled?: string[];
+  hint?: string;
 }
 
 export interface MediaNsDef {
@@ -152,11 +158,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         bounds: FULL_ART,
       },
       banner: { kind: "pool", hint: "One extra pickup-banner slide per image.", bounds: FULL_ART },
-      wallpaper: {
-        kind: "pool",
-        hint: "The fleet backdrop. The first image wins.",
-        bounds: FULL_ART,
-      },
+      // NO `wallpaper` ROLE — removed at G6.3 on the owner's ruling ("just having the background in the
+      // kit is the better approach — no duplicated systems"). The fleet backdrop's drop-in home is the
+      // SHARED `kit/background` pool: one folder for "a big picture behind the app", not one per theme
+      // that wants one. What stays gacha's is the `wallpaper` PIN below — binding a CAST portrait to the
+      // backdrop, which is a theme-specific idea the kit has no equivalent for.
       // The G4 carry, put where the owner will actually meet it: the bundled cutout has its two shadows
       // BAKED INTO the file (a runtime `drop-shadow()` on a large moving image re-rasterizes every frame on
       // Gecko — the §10.1 rider), and nothing bakes one for a drop-in. See gacha/art.ts for the recipe.
@@ -171,11 +177,21 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         bounds: FULL_ART,
       },
     },
-    // The §5.2 pins that survived the role re-rule. The role folders cover the ordinary case on their own,
-    // so these stay optional in every sense. Three of them bind a CHARACTER into a role — a portrait crops
-    // fine as a backdrop. The FIGURE does not (Codex F4, above).
+    // The §5.2 pins that survived the role re-rule. Three of them bind a CHARACTER into a role — a
+    // portrait crops fine as a backdrop. The FIGURE does not (Codex F4, above).
+    //
+    // `wallpaper` is the one whose ROLE FOLDER no longer exists (G6.3), and it is therefore the one pin
+    // that is not merely an override of a folder's first pick: it is now the TOP of gacha's backdrop
+    // ladder, above the shared kit background. Its hint says so, because the pins section's own copy
+    // ("bind one image into a role, overriding that folder's own first pick") is no longer the whole
+    // truth for it and the owner has nowhere else to read where their backdrop comes from.
     slots: [
-      { key: "wallpaper", label: "Fleet backdrop", from: "characters" },
+      {
+        key: "wallpaper",
+        label: "Fleet backdrop",
+        from: "characters",
+        hint: "Unpinned, the fleet uses your Shared art background — then the bundled scene.",
+      },
       { key: "hero", label: "Hero slide", from: "characters" },
       { key: "oracle", label: "Operator backdrop", from: "characters" },
       // `bundled` mirrors the cutout-bearing entries of `defaultRoster()` (themes/gacha/roster.ts) — a
@@ -222,8 +238,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         ],
       },
     },
-    // The one pin: the same shape as the gacha wallpaper pin (a pool with a first-wins default the
-    // owner may override by name). The stack needs none — its stems ARE its bindings (§4).
+    // The one pin: a pool with a first-wins default the owner may override by name (the kit background
+    // pin is the same shape). The stack needs none — its stems ARE its bindings (§4).
     slots: [{ key: "hero", label: "Map cover", from: "hero" }],
   },
   // kit (D53 M3, extended by the Kit Art System): the art that belongs to no theme, which is exactly why
@@ -232,14 +248,17 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
   // owner can learn what to name a file — while three of those five themes painted icons from it (the
   // draft bug, Opus H2).
   //
-  // Three of the four roles are NAMED with DATA-derived keys and therefore carry no pin: the keys are the
+  // Three of the five roles are NAMED with DATA-derived keys and therefore carry no pin: the keys are the
   // FLEET's own identities (a service's `kind`-else-`name`, a machine's name), so they live in
-  // `config.yaml` and the gallery derives them from the live lists. The one POOL — the shared background —
-  // takes the ordinary first-wins pin, exactly like the gacha wallpaper and the frontier map cover.
+  // `config.yaml` and the gallery derives them from the live lists. The two POOLS — the shared background
+  // and the app-bar brand mark — take the ordinary first-wins pin, exactly like the frontier map cover.
   //
   // WHERE each role paints is the THEME's choice, and the hints say so rather than promising a surface a
   // theme may not have adopted (the surface-scoped precedence matrix, Codex A5): a theme's own art wins on
-  // a theme's own surfaces, and a theme with its own full-app scenery ignores the shared background.
+  // a theme's own surfaces, and a theme with its own full-app scenery declines the shared background
+  // LAYER — which is not the same as ignoring the picture (G6.3): gacha reads that file as the last owner
+  // drop-in rung of its OWN backdrop ladder (G6.3 removed gacha's twin folder for exactly that reason),
+  // so a shared drop dresses every theme, each through its own surface and its own switch.
   kit: {
     title: "Shared art",
     alwaysOn: true,
@@ -268,13 +287,31 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
       },
       background: {
         kind: "pool",
-        hint: "A shared background for the whole app. The first image wins (or pin one below), and the Appearance switch turns it off. Themes with scenery of their own ignore it.",
+        // Re-worded at G6.3 (owner device round). The old sentence ended "Themes with scenery of their
+        // own ignore it", which stopped being true the moment gacha made this image the last rung of its
+        // OWN wallpaper ladder — the owner dropped a file here, saw nothing change under gacha, and read
+        // the copy as a promise the app was breaking. The truth now has two halves and the hint says
+        // both: the shared LAYER is what a scenery theme declines to mount, and that theme may still use
+        // the picture on its own backdrop, under its own switch.
+        hint: "A shared background for the whole app. The first image wins (or pin one below), and the Appearance switch turns off the shared layer. A theme with scenery of its own paints this picture on its own backdrop instead, under its own switch.",
         bounds: FULL_ART,
       },
+      brand: {
+        kind: "pool",
+        // ALPHA is the shape (G6.3): the file is painted as a CSS mask, never as an image, so only its
+        // transparency is read and every theme tints the result with its own accent. Said plainly in the
+        // hint because it is the one thing an owner cannot discover by looking at the file — a fully
+        // opaque photo drops in happily and paints a solid accent-coloured rectangle.
+        hint: "Your own mark beside the app title. A transparent PNG or WebP — only the SHAPE is used, and each theme colours it with its own accent, so a flat silhouette works best. The first image wins (or pin one below).",
+        bounds: ICON_ART,
+      },
     },
-    // The one pin, and the same shape as the gacha wallpaper pin: a pool with a first-wins default the
-    // owner may override by name. The three NAMED roles need none — their stems ARE their bindings.
-    slots: [{ key: "background", label: "Background", from: "background" }],
+    // One pin per POOL, each the same shape as the frontier map cover's: a first-wins default the owner
+    // may override by name. The three NAMED roles need none — their stems ARE their bindings.
+    slots: [
+      { key: "background", label: "Background", from: "background" },
+      { key: "brand", label: "App icon", from: "brand" },
+    ],
   },
 };
 

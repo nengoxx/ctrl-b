@@ -4173,3 +4173,46 @@ while `.kit-bg` is mounted — a FUTURE participating theme with a Root-SIBLING 
 reel idiom) would find that sibling stacking above the shell (all three sibling-overlay themes
 opt out today) · custom properties inherit, so parent-painted roles need per-role variable
 names · the kit namespace gallery heading is now "Shared art".
+
+**AMENDMENT — G6.3 (owner device round 2026-08-06; built same day, spec of record = MEDIA_PLAN
+§12.1).** Two additions, both inside D54's own frame and neither reopening a ruling above.
+
+**① A sixth kit role, `brand` — the owner-droppable APP-BAR MARK.** The `background` shape exactly
+(a pool + one first-wins pin; `KIT_ROLES`/`KIT_SLOTS` are the whole backend change, the
+registry-driven ensure-dir/mounts/index following on their own). What is new is the PAINT: the file
+is rendered as a CSS **mask** over `--kit-brand-fill` (default `--accent-fill`, the K2 precedent),
+so only its ALPHA is read and one dropped silhouette is re-tinted by every theme's accent instead
+of the owner owing a picture per skin. Precedence in the brand row is A5's ordinary rule — **owner
+file → the theme's `brandMark` slot → the kit's accent dot** — i.e. owner art outranks theme art on
+a KIT surface, which is what `brandMark` already meant. Dormant by absence, like every other role.
+The mask is why the role is worth having and also its one trap (a fully opaque file paints a solid
+accent rectangle), so the gallery hint says alpha is the shape. Bounds are `ICON_ART`; the format
+allowlist is untouched — **no SVG**, transparent PNG/WebP only.
+
+**② ONE HOME FOR THE BACKDROP — A5 unchanged, its hint corrected, and `gacha/wallpaper/` DELETED.**
+A5 says full-app scenery is exclusive: the kit background LAYER and the theme's own scenery are XOR,
+and gacha therefore passes `kitBackground={false}`. The M4 gallery copy compressed that into *"Themes
+with scenery of their own ignore it"* — true of the layer, false of the PICTURE, and the owner hit it
+by dropping a file in and watching nothing happen under gacha. The first fix kept the ruling and
+added a RUNG, not a layer: the kit background under gacha's own `wallpaper/` folder. **The owner then
+ruled against carrying both** — *"just having the background in the kit is the better approach — no
+duplicated systems"* — so the gacha `wallpaper` ROLE was removed outright. Two drop folders for one
+picture were the confusion itself.
+
+The fleet backdrop's ladder is now exactly **the gacha `wallpaper` PIN (a CAST portrait, wide-cropped)
+→ the shared `kit/background` → the bundled scene**, with `heroArt` reading the same one (§5.3
+forbids the backdrop and the hero slide resolving to different pictures). The PIN survives on
+purpose: binding a character to the backdrop is theme-specific and the kit has no equivalent, while
+"a big picture behind the app" is one idea that deserves one folder. `GACHA_SLOTS` keeps `wallpaper`
+with its role folder gone, which is an ordinary shape — a pin key is validated against `row.slots`
+and never against `row.roles`, and `reel_figure` has always sourced from a different role. A CLEAN
+removal: no compat rung, no migration, no legacy branch (media v2 never shipped to prod, so there is
+no owner data on disk — the no-legacy-seams rule).
+
+Visibility stays split and per-surface, which is the point: the theme's own switch governs the
+theme's own surface, and the kit's "Shared background" switch governs the kit layer that theme never
+mounts. The hint states both halves, and the gacha pin gained the registry's first per-pin `hint`
+(`MediaSlotDef.hint`) because with its folder gone there is nowhere else to read where the backdrop
+comes from. **The general contract for any future scenery theme: adopt the shared picture as the last
+OWNER rung of your own ladder — above your bundled art, below anything the owner aimed at you
+specifically — and do not grow a private twin of `kit/background`.**

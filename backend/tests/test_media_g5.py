@@ -262,35 +262,51 @@ def test_the_frontier_namespace_serves_its_three_roles(home: Path) -> None:
         assert c.get(body["roles"]["stack"][0]["url"]).status_code == 200
 
 
-def test_the_kit_namespace_serves_its_four_roles_and_the_one_background_pin(home: Path) -> None:
-    """D53 M3's registry row, as the Kit Art System extended it. `kit/` is the namespace no THEME owns —
-    every theme's service rows read it — and three of its four roles have DATA-DERIVED keys: the server
-    reports stems and knows nothing about what a service or a machine is called, because the binding
-    (`normalizeMediaKey(stem) == keyFor(service)` / `hostKeyFor(host)`) is computed client-side only. So
-    the server-side contract is: the four roles list, the stems are reported, the files serve — including
-    out of the HYPHENATED role folder, which is the one shape none of the earlier roles exercised — and
-    the only pin that exists is the background pool's."""
+def test_the_kit_namespace_serves_its_five_roles_and_its_two_pool_pins(home: Path) -> None:
+    """D53 M3's registry row, as the Kit Art System extended it and G6.3 extended it again. `kit/` is the
+    namespace no THEME owns — every theme's service rows read it — and three of its five roles have
+    DATA-DERIVED keys: the server reports stems and knows nothing about what a service or a machine is
+    called, because the binding (`normalizeMediaKey(stem) == keyFor(service)` / `hostKeyFor(host)`) is
+    computed client-side only. So the server-side contract is: the five roles list, the stems are
+    reported, the files serve — including out of the HYPHENATED role folder, which is the one shape none
+    of the earlier roles exercised — and the only pins that exist are the two POOLS' (`background` and
+    G6.3's `brand`, the app bar's owner-dropped mark). The brand role is the background's shape exactly:
+    nothing here knows it is painted as a mask."""
     with make_client() as c:
         (ns_dir(home, "kit") / "services" / "Jellyfin.png").write_bytes(png_bytes())
         (ns_dir(home, "kit") / "service-banners" / "Jellyfin.webp").write_bytes(webp_bytes())
         (ns_dir(home, "kit") / "hosts" / "corsair.png").write_bytes(png_bytes())
         (ns_dir(home, "kit") / "background" / "nebula.png").write_bytes(png_bytes())
+        (ns_dir(home, "kit") / "brand" / "sigil.png").write_bytes(png_bytes())
         body = c.get("/api/media/kit").json()
-        assert list(body["roles"]) == ["services", "service-banners", "hosts", "background"]
+        assert list(body["roles"]) == [
+            "services",
+            "service-banners",
+            "hosts",
+            "background",
+            "brand",
+        ]
         assert [f["name"] for f in body["roles"]["services"]] == ["Jellyfin"]
         assert [f["name"] for f in body["roles"]["service-banners"]] == ["Jellyfin"]
         assert [f["name"] for f in body["roles"]["hosts"]] == ["corsair"]
+        assert [f["name"] for f in body["roles"]["brand"]] == ["sigil"]
         assert body["slots"] == {}
-        for role in ("services", "service-banners", "hosts", "background"):
+        for role in ("services", "service-banners", "hosts", "background", "brand"):
             assert c.get(body["roles"][role][0]["url"]).status_code == 200, role
 
         # An empty `media.kit` block is valid config (there may be nothing to persist: no order worth
         # keeping for a role where the FILENAME is the assignment, and no pin chosen)…
         assert c.put("/api/settings", json={"media": {"kit": {}}}).status_code == 200
-        # …the ONE declared pin is accepted and echoed for the client resolver…
-        r = c.put("/api/settings", json={"media": {"kit": {"slots": {"background": "nebula"}}}})
+        # …both declared pins are accepted and echoed for the client resolver, independently…
+        r = c.put(
+            "/api/settings",
+            json={"media": {"kit": {"slots": {"background": "nebula", "brand": "sigil"}}}},
+        )
         assert r.status_code == 200, r.text
-        assert c.get("/api/media/kit").json()["slots"] == {"background": "nebula"}
+        assert c.get("/api/media/kit").json()["slots"] == {
+            "background": "nebula",
+            "brand": "sigil",
+        }
         # …and a pin naming a NAMED role is refused, like every other slot typo: those bind by filename,
         # so a pin for one would be a knob that silently did nothing.
         assert (
@@ -730,6 +746,40 @@ def test_a_bad_media_patch_is_a_422_not_a_500(home: Path) -> None:
     with make_client() as c:
         r = c.put("/api/settings", json={"media": {"gacha": {"roles": {"nope": {"order": []}}}}})
         assert r.status_code == 422, r.text
+
+
+def test_the_gacha_wallpaper_PIN_outlives_its_deleted_role_folder(home: Path) -> None:
+    """G6.3's removal, as the contract it actually is. The owner ruled that one shared background folder
+    beats two (`kit/background` + a gacha twin), so `wallpaper` left `GACHA_ROLES` — but it STAYS in
+    `GACHA_SLOTS`, because the pin is the theme-specific half (bind a CAST portrait to the backdrop) and
+    the kit has no equivalent of it.
+
+    The two tuples are validated independently (`Settings._known_media_namespaces_roles_and_slots` checks
+    a slot against `row.slots` and never against `row.roles`), which is what makes a pin sourced from
+    another role an ordinary shape here — `reel_figure` has always been one. So: the folder is gone from
+    the index and un-configurable, and the pin is still accepted and still echoed."""
+    with make_client() as c:
+        assert "wallpaper" not in c.get("/api/media/gacha").json()["roles"]
+        assert list(c.get("/api/media/gacha").json()["roles"]) == [
+            "characters",
+            "banner",
+            "reel",
+            "oracle",
+        ]
+        # The folder is not merely unlisted — it cannot be configured either, so a leftover `order:`
+        # block is a visible 422 rather than a knob that silently does nothing.
+        assert (
+            c.put(
+                "/api/settings",
+                json={"media": {"gacha": {"roles": {"wallpaper": {"order": ["a.png"]}}}}},
+            ).status_code
+            == 422
+        )
+        # …while the PIN, whose options come from `characters/`, is untouched.
+        (role(home, "characters") / "kira.png").write_bytes(png_bytes())
+        r = c.put("/api/settings", json={"media": {"gacha": {"slots": {"wallpaper": "kira"}}}})
+        assert r.status_code == 200, r.text
+        assert c.get("/api/media/gacha").json()["slots"] == {"wallpaper": "kira"}
 
 
 #: The G5 development shape, which never reached a tagged release (prod was pre-media) — so D53 §4

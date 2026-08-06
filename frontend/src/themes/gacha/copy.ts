@@ -25,7 +25,10 @@ export const GACHA_COPY = {
   brandWordmark: "コントロール・ビー",
   /** "Capsule Arcade" — the prototype's own brand, in katakana; the alternative reading (§4.3). */
   brandWordmarkAlt: "カプセルアーケード",
-  /** ネットワーク景品所 (nettowāku keihinjo) — "network prize parlour"; the appbar subtitle. */
+  /** ネットワーク景品所 (nettowāku keihinjo) — "network prize parlour". The app bar's SUBTITLE, and since
+   *  the refined G6.3 ruling (owner 2026-08-06) it is TOGGLE-GATED rather than retired: GachaRoot passes it
+   *  as `brandMeta` on every render, and the kit shows it only while the synced "Bar subtitle" Appearance
+   *  switch is on (it ships OFF — icon + title only is the resting bar). */
   brandMeta: "ネットワーク景品所",
 
   // ── Nav sub-labels (Q8.6b — all four verified as genuine words; the 4-tab layout fence needs Utils too) ──

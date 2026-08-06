@@ -11,6 +11,7 @@ import {
   pingText,
   plateSub,
   promoCopy,
+  pityText,
   rateText,
   sceneTitle,
 } from "../../src/themes/gacha/fleet";
@@ -118,6 +119,17 @@ describe("rateText — the §6.3 pill", () => {
 
   it("…and reads a real 0.0% once the fleet has genuinely answered with nothing online", () => {
     expect(rateText(5, 0, true)).toBe(`${GACHA_COPY.star}5 RATE 0.0%`);
+  });
+});
+
+describe("pityText — the 天井 pill made live (owner 2026-08-06)", () => {
+  it("is the pity label + the fleet-wide online-service count", () => {
+    expect(pityText(7, true)).toBe(`${GACHA_COPY.pityLabel} 7`);
+    expect(pityText(0, true)).toBe(`${GACHA_COPY.pityLabel} 0`);
+  });
+
+  it("reads a HELD value while unresolved — the rate pill's own convention", () => {
+    expect(pityText(0, false)).toBe(`${GACHA_COPY.pityLabel} ${PENDING}`);
   });
 });
 

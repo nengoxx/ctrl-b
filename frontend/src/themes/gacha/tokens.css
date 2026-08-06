@@ -92,9 +92,14 @@
        * The TOPBAR is a GRADIENT that dissolves to transparent, not a flat fill — that dissolve IS the
        * prototype's glass (theme.css `.topbar`), and it is also why the bar carries no border and no
        * shadow: there is no hard edge to seal. The wallpaper-on variant re-tints it to the page black so
-       * the art reads through (prototype `body[data-wallpaper="on"] .topbar`). */
-      --gc-bar-grad: linear-gradient(#11142eee, #11142e99 70%, transparent);
-      --gc-bar-grad-wall: linear-gradient(#0a0b19e8, #0a0b1966 70%, transparent);
+       * the art reads through (prototype `body[data-wallpaper="on"] .topbar`).
+       * ALPHAS RE-TUNED off the prototype's at G6.4 (owner, on device 2026-08-06): its ee/99 + e8/66 tops
+       * (and the scrim's f2 top stop below) stacked to a flat navy at scroll-top — no backdrop or art
+       * colour survived into the 14px-blur glass. Now b3/66 (bar), 99/4d (wall), b8 (scrim top 4%): the
+       * radial's violet crown / the wallpaper's own colour tints the bar. Uniform across every accent
+       * block — same three alpha positions, each block's own hexes. */
+      --gc-bar-grad: linear-gradient(#11142eb3, #11142e66 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#0a0b1999, #0a0b194d 70%, transparent);
       --gc-bar: #11142ee8; /* the NAV pill's flat fill */
       --gc-bar-line: #ffffff18;
       --gc-nav-shadow: 0 18px 45px #0009;
@@ -188,7 +193,7 @@
       /* The FLEET WALLPAPER (M10): the prototype's four-stop scrim over the art, and the default focal
        * crop its `.wallpaper img` uses. A roster entry that declares its own `focus` overrides the crop
        * inline; the art URL itself is a runtime value the Root publishes as `--gc-wallpaper-img`. */
-      --gc-wallpaper-scrim: linear-gradient(#0a0b19f2 4%, #0a0b19c4 30%, #0a0b19e8 66%, #0a0b19);
+      --gc-wallpaper-scrim: linear-gradient(#0a0b19b8 4%, #0a0b19c4 30%, #0a0b19e8 66%, #0a0b19);
       --gc-wallpaper-pos: 56% 30%;
 
       /* ── The FLEET's own roles (G1 — the pickup banner + the capsule track) ──────────────────────
@@ -303,7 +308,23 @@
       /* The dossier's INVERTED light sheet (prototype `.detail-panel`) — G2. A surface, not a light
        * MODE: gacha stays `modes: ["dark"]`, so these never reach the mode axis. */
       --gc-dossier-from: #f9f8ff;
+      /* The sheet's THIRD stop (G6.3). The mock's dark panels do not fall linearly: they are FRONT-LOADED
+       * — a bright top band that reaches its floor in the first third — which is why G6's two-stop
+       * `from`/`to` (sampled at y≈133, a third of the way down) read as "too blue / missing the top band"
+       * on the device. The sheet rule is now `linear-gradient(from, mid 30%, to)`, and every dark palette's
+       * `mid` IS its former `from` (the same measured pixel, now at the position it was actually taken
+       * from) with a new `from` re-taken from the panel's own top band. SLIP keeps its two-stop look: this
+       * value is the EXACT 30% point of its `#f9f8ff → #dfe4ff` line, so the light sheet renders
+       * byte-identically to what shipped. */
+      --gc-dossier-mid: #f1f2ff;
       --gc-dossier-to: #dfe4ff;
+      /* THE PANEL RIM (G6.3). Every dark panel in the mock is drawn with a 1px accent-tinted outline, and
+       * its TOP edge is a brighter member of the same family (measured: aurora 167,105,198 on top against
+       * 120,85,158 on the sides) — the same "one element, two values" per-side border the dark action
+       * button already uses. Slip has NO rim in the mock, so its value is `transparent`: the border still
+       * exists (border-box, so no layout moves) and paints nothing. */
+      --gc-dossier-outline: transparent;
+      --gc-dossier-outline-top: transparent;
       --gc-dossier-ink: #17172c;
       /* The muted SECONDARY ink (labels, the role line, service ports) — a real token rather than
        * `opacity` on the full ink, because an alpha-blended gray is invisible to the token contrast gate
@@ -345,6 +366,54 @@
        * Shut down button from a danger rule to the accent, 2026-08-04 — the old token had no consumer
        * left, and the gate row that watched it now watches this.) */
       --gc-dossier-accent: #b03578;
+      /* ── G6.4: THE SHEET TEXTURE + THE CHARACTER WATERMARK (owner device round 2026-08-06) ──────────
+       * Both are OFF on slip and both are switched by a TOKEN, not by a selector: slip is arcade prize
+       * PAPER — a dot field and a ghosted character are what the owner asked for on the DARK sheet ("the
+       * Cosmos bottom sheets have this dotted pattern baked in, faded"), and the shipped light slip is
+       * signed off as-is. `none` / `0` here means the pre-mount frame (no `data-gc-dossier` yet) also
+       * paints neither, which is the same safe default the rest of this family falls through to. */
+      /* The repeating texture layer, painted by `.bs-sheet::after` (cosmos paints its own dot grid on the
+       * sheet's `::before`; gacha's is taken by the brand strip). An `<image>`, so `none` is a legal value
+       * and the light sheet renders byte-identically to what shipped. */
+      --gc-dossier-texture: none;
+      /* The brand strip's END FADE (G6.4 item 7). `none` on slip — its rim is transparent, so its strip has
+       * no arc to collide with and the owner asked for the light sheet to stay exactly as signed off. */
+      --gc-dossier-strip-fade: none;
+      /* THE TUNING KNOBS. Cosmos's grid is 13px with a 1px dot, and gacha keeps the pitch so the two
+       * sheets read as one family; the STRENGTH lives in the dot's own alpha (below, per surface) rather
+       * than in an element `opacity`, so one number does the whole job. */
+      --gc-dossier-texture-size: 13px 13px;
+      /* THE FADE, cosmos's own shape (`radial-gradient(260px 200px at 50% 46px, #000 0%, #000 22%,
+       * transparent 72%)`) with the VERTICAL radius grown for gacha's much taller panel: solid through the
+       * first 22% of the ellipse, gone by 72%, anchored 46px down so the pool tracks the unit name rather
+       * than drifting with the sheet's height. In a token because it carries colours — the stylelint fence
+       * keeps every literal in this file. Shared by every palette (slip simply has no texture to mask). */
+      --gc-dossier-texture-mask: radial-gradient(
+        260px 340px at 50% 46px,
+        #000000 0%,
+        #000000 22%,
+        #00000000 72%
+      );
+      /* The watermark's fade. `0` = absent (slip); the darks state the owner-tunable strength. */
+      --gc-dossier-mark-opacity: 0;
+      /* …and the edge dissolve that makes it a WATERMARK rather than a sticker (the owner's device rounds
+       * set every edge of it): an ellipse anchored NEAR THE RIGHT of the box — 84%/46% — SOLID through the
+       * first 44% and gone by 95%. It is deliberately not centred: the art must stay at full strength from
+       * the subject at 67% of the sheet out to the sheet's right edge, and fade only leftward and away
+       * vertically. Read against the shipped 66%-wide, 210px-tall box at a 393px viewport:
+       *   · TOP/BOTTOM — a 50% vertical radius against a 46% anchor puts BOTH of the box's own edge rows
+       *     past the fade's end, so the horizontal CUT the owner reported dissolves instead of ending, and
+       *     the art never reaches the metric grid below.
+       *   · LEFT — half strength at the middle of the unit name, zero by the box's own left edge (which is
+       *     the portrait's right edge): the "fade lands more or less in the middle of the name" ruling.
+       *   · The solid core spans the whole right third, so the SUBJECT is never touched by the mask.
+       * Static, one paint, no animation. */
+      --gc-dossier-mark-mask: radial-gradient(
+        88% 50% at 84% 46%,
+        #000000 0%,
+        #000000 44%,
+        #00000000 95%
+      );
     }
 
     /* Page text color. The page BACKGROUND lives in the bespoke gacha.css (the cosmos/frontier precedent:
@@ -366,6 +435,11 @@
         var(--gc-brand-2) 52%,
         var(--gc-brand-3)
       );
+      /* The app-bar BRAND MARK deliberately declares NO `--kit-brand-fill` override: it takes the kit's
+       * default `--accent-fill` — the same calm two-stop every filled control wears — NOT the trio. Ruled
+       * by the owner on device (2026-08-06): the full trio compressed into a 21px silhouette read as "too
+       * much range of colors"; the mark is a small filled control and dresses like one (it also joins the
+       * `--gc-fill-spread` consumer list in gacha.css, so it shows the ramp's calm middle like the rest). */
       /* --accent-fill is the <image>-capable channel the KIT paints filled controls with: the two-stop
        * pink→violet (see the note above — one edit sweeps seg/send/mic/save/mini-player/ticks). The
        * frontier K2 precedent for a gradient fill beside a flat `--accent`. */
@@ -395,9 +469,16 @@
       /* ── THE DOSSIER's DERIVED roles (G6) — on `body` for the same reason as everything above: each is a
        * var() formula over a token the `body[data-gc-dossier]` blocks below override, so on `:scope` they
        * would compute once from slip's values and never re-derive. ── */
-      /* The service LED, up state. It IS the palette's accent (the owner's vapor-style ruling), so it is
-       * DERIVED rather than restated five times — a fifth palette gets its dot for free. */
+      /* The service LED, up state. On the LIGHT slip it is the palette's accent (the owner's vapor-style
+       * ruling), so slip keeps the derivation. The DARK palettes state their own at G6.3: measured on the
+       * mock, every dark panel's dot is the BUTTON-violet family (neon 92,54,171 against its button's
+       * #511cab), not the sheet accent — "hot-pink LEDs where the mock is muted violet" was one of the
+       * owner's named fidelity findings. */
       --gc-dossier-led: var(--gc-dossier-accent);
+      /* The host NAME (the `h2`). Slip keeps the sheet ink it already used; the darks state a
+       * palette-tinted literal, because the mock draws the name in the DISPLAY SERIF, italic, tinted
+       * toward the palette — never plain white (owner: "plain white name"). */
+      --gc-dossier-name: var(--gc-dossier-ink);
       /* The close disc. Slip's pairing is the shipped one — a dark ink disc with a sheet-coloured glyph —
        * which is exactly what INVERTS into a white blob when the sheet goes dark, so the dark blocks
        * re-pair it (dark lozenge + light glyph, the mock's own). Two tokens rather than two rules: the
@@ -415,6 +496,13 @@
        * at almost full-strength accent). Slip's value is the measured 60% mix it already shipped: 45%
        * lands at 2.79 against the 3:1 non-text floor, 60% at 3.44. */
       --gc-dossier-act-line: color-mix(in srgb, var(--gc-dossier-accent) 60%, var(--gc-dossier-line));
+      /* The SERVICE ROW's hover lift (G6.4 — the rows became links at the owner's device round). Derived
+       * on `body` for the §14.6 reason the block's other formulas are: it mixes the surface's own accent
+       * into the row's own card, so it re-derives per dossier palette and is a LIFT on both lightings
+       * (10% rose on slip's white card; 10% of the palette accent into a dark palette's translucent card,
+       * which stays translucent). Not gated for contrast: it is a background swap under the SAME ink, and
+       * a 10% mix moves the row's luminance far less than the sheet gradient already does under it. */
+      --gc-dossier-row-hover: color-mix(in srgb, var(--gc-dossier-accent) 10%, var(--gc-dossier-card));
       /* The action bar's hard offset shadow — the theme's "this sits ON the surface" motif (the nav
        * indicator, the user chat bubble), here in the dossier's own ink so a filled ticket reads as
        * printed onto the slip. MOVED to `body` at G6 (it was on `:scope`): it composes
@@ -458,10 +546,10 @@
       --surface-2: #121528;
       --gc-backdrop: radial-gradient(circle at 30% 0, #1d2450, #0a0d22 48%, #04050c);
       --gc-bar: #090c1ae8;
-      --gc-bar-grad: linear-gradient(#090c1aee, #090c1a99 70%, transparent);
-      --gc-bar-grad-wall: linear-gradient(#05070fe8, #05070f66 70%, transparent);
+      --gc-bar-grad: linear-gradient(#090c1ab3, #090c1a66 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#05070f99, #05070f4d 70%, transparent);
       --gc-pill-bg: #05070fcc;
-      --gc-wallpaper-scrim: linear-gradient(#05070ff2 4%, #05070fc4 30%, #05070fe8 66%, #05070f);
+      --gc-wallpaper-scrim: linear-gradient(#05070fb8 4%, #05070fc4 30%, #05070fe8 66%, #05070f);
       --gc-slide-scrim: linear-gradient(95deg, #05070f8c 4%, #05070f4d 32%, transparent 60%),
         linear-gradient(#0000 52%, #05070f80);
       --gc-card-wall: #0d1024e6;
@@ -480,10 +568,10 @@
       --surface-2: #131b35;
       --gc-backdrop: radial-gradient(circle at 30% 0, #26377f, #0d1737 48%, #040716);
       --gc-bar: #0a1024e8;
-      --gc-bar-grad: linear-gradient(#0a1024ee, #0a102499 70%, transparent);
-      --gc-bar-grad-wall: linear-gradient(#050918e8, #05091866 70%, transparent);
+      --gc-bar-grad: linear-gradient(#0a1024b3, #0a102466 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#05091899, #0509184d 70%, transparent);
       --gc-pill-bg: #050918cc;
-      --gc-wallpaper-scrim: linear-gradient(#050918f2 4%, #050918c4 30%, #050918e8 66%, #050918);
+      --gc-wallpaper-scrim: linear-gradient(#050918b8 4%, #050918c4 30%, #050918e8 66%, #050918);
       --gc-slide-scrim: linear-gradient(95deg, #0509188c 4%, #0509184d 32%, transparent 60%),
         linear-gradient(#0000 52%, #05091880);
       --gc-card-wall: #0e1631e6;
@@ -504,10 +592,10 @@
       --surface-2: #221937;
       --gc-backdrop: radial-gradient(circle at 30% 0, #5b2350, #2a1330 48%, #100810);
       --gc-bar: #181026e8;
-      --gc-bar-grad: linear-gradient(#181026ee, #18102699 70%, transparent);
-      --gc-bar-grad-wall: linear-gradient(#120b18e8, #120b1866 70%, transparent);
+      --gc-bar-grad: linear-gradient(#181026b3, #18102666 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#120b1899, #120b184d 70%, transparent);
       --gc-pill-bg: #120b18cc;
-      --gc-wallpaper-scrim: linear-gradient(#120b18f2 4%, #120b18c4 30%, #120b18e8 66%, #120b18);
+      --gc-wallpaper-scrim: linear-gradient(#120b18b8 4%, #120b18c4 30%, #120b18e8 66%, #120b18);
       --gc-slide-scrim: linear-gradient(95deg, #120b188c 4%, #120b184d 32%, transparent 60%),
         linear-gradient(#0000 52%, #120b1880);
       --gc-card-wall: #1e1433e6;
@@ -537,10 +625,10 @@
       --surface-2: #151f37;
       --gc-backdrop: radial-gradient(circle at 30% 0, #1d3f7a, #0d1730 48%, #05080f);
       --gc-bar: #0c1428e8;
-      --gc-bar-grad: linear-gradient(#0c1428ee, #0c142899 70%, transparent);
-      --gc-bar-grad-wall: linear-gradient(#070d1ce8, #070d1c66 70%, transparent);
+      --gc-bar-grad: linear-gradient(#0c1428b3, #0c142866 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#070d1c99, #070d1c4d 70%, transparent);
       --gc-pill-bg: #070d1ccc;
-      --gc-wallpaper-scrim: linear-gradient(#070d1cf2 4%, #070d1cc4 30%, #070d1ce8 66%, #070d1c);
+      --gc-wallpaper-scrim: linear-gradient(#070d1cb8 4%, #070d1cc4 30%, #070d1ce8 66%, #070d1c);
       --gc-slide-scrim: linear-gradient(95deg, #070d1c8c 4%, #070d1c4d 32%, transparent 60%),
         linear-gradient(#0000 52%, #070d1c80);
       --gc-card-wall: #101a33e6;
@@ -570,10 +658,10 @@
       --surface-2: #1c1b38;
       --gc-backdrop: radial-gradient(circle at 30% 0, #43276b, #141334 48%, #08070f);
       --gc-bar: #121028e8;
-      --gc-bar-grad: linear-gradient(#121028ee, #12102899 70%, transparent);
-      --gc-bar-grad-wall: linear-gradient(#0c0a1ce8, #0c0a1c66 70%, transparent);
+      --gc-bar-grad: linear-gradient(#121028b3, #12102866 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#0c0a1c99, #0c0a1c4d 70%, transparent);
       --gc-pill-bg: #0c0a1ccc;
-      --gc-wallpaper-scrim: linear-gradient(#0c0a1cf2 4%, #0c0a1cc4 30%, #0c0a1ce8 66%, #0c0a1c);
+      --gc-wallpaper-scrim: linear-gradient(#0c0a1cb8 4%, #0c0a1cc4 30%, #0c0a1ce8 66%, #0c0a1c);
       --gc-slide-scrim: linear-gradient(95deg, #0c0a1c8c 4%, #0c0a1c4d 32%, transparent 60%),
         linear-gradient(#0000 52%, #0c0a1c80);
       --gc-card-wall: #171634e6;
@@ -613,10 +701,10 @@
       --surface-2: #171923;
       --gc-backdrop: radial-gradient(circle at 30% 0, #26305e, #0f1120 48%, #06070c);
       --gc-bar: #0e0f18e8;
-      --gc-bar-grad: linear-gradient(#0e0f18ee, #0e0f1899 70%, transparent);
-      --gc-bar-grad-wall: linear-gradient(#0a0a12e8, #0a0a1266 70%, transparent);
+      --gc-bar-grad: linear-gradient(#0e0f18b3, #0e0f1866 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#0a0a1299, #0a0a124d 70%, transparent);
       --gc-pill-bg: #0a0a12cc;
-      --gc-wallpaper-scrim: linear-gradient(#0a0a12f2 4%, #0a0a12c4 30%, #0a0a12e8 66%, #0a0a12);
+      --gc-wallpaper-scrim: linear-gradient(#0a0a12b8 4%, #0a0a12c4 30%, #0a0a12e8 66%, #0a0a12);
       --gc-slide-scrim: linear-gradient(95deg, #0a0a128c 4%, #0a0a124d 32%, transparent 60%),
         linear-gradient(#0000 52%, #0a0a1280);
       --gc-card-wall: #12141fe6;
@@ -672,10 +760,10 @@
       --surface-2: #102426;
       --gc-backdrop: radial-gradient(circle at 30% 0, #0e5546, #0a2321 48%, #030f10);
       --gc-bar: #08191be8;
-      --gc-bar-grad: linear-gradient(#08191bee, #08191b99 70%, transparent);
-      --gc-bar-grad-wall: linear-gradient(#041213e8, #04121366 70%, transparent);
+      --gc-bar-grad: linear-gradient(#08191bb3, #08191b66 70%, transparent);
+      --gc-bar-grad-wall: linear-gradient(#04121399, #0412134d 70%, transparent);
       --gc-pill-bg: #041213cc;
-      --gc-wallpaper-scrim: linear-gradient(#041213f2 4%, #041213c4 30%, #041213e8 66%, #041213);
+      --gc-wallpaper-scrim: linear-gradient(#041213b8 4%, #041213c4 30%, #041213e8 66%, #041213);
       --gc-slide-scrim: linear-gradient(95deg, #0412138c 4%, #0412134d 32%, transparent 60%),
         linear-gradient(#0000 52%, #04121380);
       --gc-card-wall: #0b2022e6;
@@ -729,21 +817,62 @@
     body[data-gc-dossier="cyber-teal"],
     body[data-gc-dossier="forest-green"] {
       --gc-dossier-ink: #f4f2ff;
-      --gc-dossier-ink-2: #b9b4d8;
-      --gc-dossier-line: #ffffff20;
+      /* THE INNER HAIRLINE (G6.3). Was a flat `#ffffff20`. In the mock the tile / row border is not white —
+       * it is a dimmer member of the panel's own RIM (`--gc-dossier-outline`), which is why the components
+       * read as parts of the panel rather than as boxes drawn on it. Measured across the six panels the
+       * implied strength runs 10–27% with a median at ~22%, so ONE derived declaration replaces six
+       * literals; it re-derives per palette because it is a var() formula on `body` (§14.6). The two loud
+       * panels (sunset/rose) measure hotter than 22% — their borders carry a glow the sample cannot
+       * separate — and are the one recorded under-fit. `--gc-dossier-ink-2` LEFT this block at the same
+       * time: all six palettes now carry their own (the mock's role line is palette-tinted, not a shared
+       * lavender), so a shared value here would be dead. */
+      --gc-dossier-line: color-mix(in srgb, var(--gc-dossier-outline) 22%, transparent);
       /* the NIGHT badge, back in its element at 13.7:1 against the gold stars */
       --gc-dossier-badge: #0c0a24e6;
       --gc-dossier-art-shadow: 0 10px 22px #00000066;
       /* The close disc, RE-PAIRED for a dark sheet (the mock's dark lozenge + light glyph). It reads the
        * badge because that is the same role on this surface — the one dark lozenge the sheet allows —
        * and the glyph takes the sheet's own ink: 17.5:1. */
-      --gc-dossier-close-bg: var(--gc-dossier-badge);
+      /* G6.4 — and THINNED (owner device round: "more opaque than not, but not completely opaque", so the
+       * watermark shows through the disc faintly). The thinning is a step ON TOP of the badge rather than
+       * an edit TO it: `--gc-dossier-badge` is shared with the rarity lozenge over the portrait, where a
+       * translucent tile would let the artwork wash the gold stars out. 85% of a 0.9-alpha badge lands the
+       * disc at α 0.765 — a clear majority, which is what "more opaque than not" asks for. WORST measured
+       * glyph pair, over the brightest plausible composite (a near-white art pixel at the watermark's own
+       * 0.16, under the thinned disc): 14.0:1 on sunset-orange, the lightest sheet in the set — the
+       * 4.5 floor is never in play here, the disc is dark on every dark palette. */
+      --gc-dossier-close-bg: color-mix(in srgb, var(--gc-dossier-badge) 78%, transparent);
       --gc-dossier-close-ink: var(--gc-dossier-ink);
       /* The secondary outline: mixed against the CARD, not `--gc-dossier-line` (which is a near-transparent
        * white here, so the slip formula would land at almost full-strength accent). 70% is the lowest step
        * that clears the 3:1 non-text floor on all six cards — sunset-orange is the binding one at 3.13
        * (neon 3.99 · rose 5.78 · aurora 4.92 · teal 5.15 · forest 4.86). */
       --gc-dossier-act-line: color-mix(in srgb, var(--gc-dossier-accent) 70%, var(--gc-dossier-card));
+      /* G6.4 — the DARK sheet's two owner additions, shared because neither is palette-specific: the dot
+       * field is a white lift on a dark panel whatever its hue, and the watermark's strength is a property
+       * of the ART, not of the palette. Both are `--gc-dossier-*` names, so the write-disjointness rule
+       * holds.
+       *  · TEXTURE: cosmos's own recipe — a 1px dot on a 13px grid — at an alpha that lands where cosmos's
+       *    composite does (its `rgba(255,255,255,.9)` dot under an `opacity: .13` layer ≈ .117 effective).
+       *    #ffffff14 is .078: DELIBERATELY fainter, because the mock's panels read nearly flat and this is
+       *    an owner taste addition. The knob is this alpha (and `--gc-dossier-texture-size` for the pitch).
+       *  · WATERMARK: 0.16. It shipped this round at 0.12 (the middle of the owner's own 0.10-0.14
+       *    bracket) and the owner asked for one clear step MORE from the live build ("the background image
+       *    should be a little bit more visible"). See the §7.7 G6.4 addendum's ink advisory + knob table:
+       *    this is the value that trades against the role line's small-text pair, and nothing else in the
+       *    slice depends on it. */
+      --gc-dossier-texture: radial-gradient(#ffffff14 1px, #ffffff00 1.6px);
+      --gc-dossier-mark-opacity: 0.16;
+      /* …and the strip's END FADE (item 7): 34px is the shortest ramp that still reads as a dissolve rather
+       * than as a short strip — the band is already clipped to nothing by the sheet's own 23px arc at ~10px
+       * in, so the ramp only has to be comfortably longer than that. */
+      --gc-dossier-strip-fade: linear-gradient(
+        90deg,
+        #00000000,
+        #000000 34px,
+        #000000 calc(100% - 34px),
+        #00000000
+      );
     }
     /* NEON-PURPLE - the DEFAULT (the owner's pick: "the first top-left image... I like the button there"), and
      * the panel every dark button's treatment was measured from. Its table stop pair is the ONE that had to
@@ -751,12 +880,27 @@
      * horizontal gradient is flat), where the measured VERTICAL falloff on this button is 21%. So the bottom
      * stop is darken(#511cab, .10) - a deepening, which only widens the white label's 10.0:1 margin. */
     body[data-gc-dossier="neon-purple"] {
-      --gc-dossier-from: #140e35;
+      /* G6.3: `from` re-taken from the panel's own top band (36,23,71 — the shipped value was the pixel at
+       * 30% of the ramp, which is where it now sits as `mid`); ships AS MEASURED, no normalisation. */
+      --gc-dossier-from: #241747;
+      --gc-dossier-mid: #140e35;
       --gc-dossier-to: #070b25;
-      --gc-dossier-card: #130f32;
+      --gc-dossier-outline: #6e4c9c;
+      --gc-dossier-outline-top: #724f9b;
+      /* The TRANSLUCENT tile/row lift (G6.3), solved from seven measured composite/backdrop pairs on this
+       * panel (four metric tiles + three service rows): rgb(171,145,253) at 4.2%, residual ±2/255 — the
+       * best fit of the six. The old flat `#130f32` sat BELOW the local gradient at the tile band and above
+       * it at the rows, which is the "flat tiles / nearly invisible" the owner named. */
+      --gc-dossier-card: #ab91fd0b;
+      --gc-dossier-ink-2: #9080c5;
+      --gc-dossier-name: #c5c7f7;
       --gc-dossier-accent: #f46adf;
-      --gc-dossier-kicker: #f46adf;
-      --gc-dossier-led-dim: #9e479d;
+      /* the mock's kicker is a MUTED lavender, not the sheet accent (measured 168,149,218) */
+      --gc-dossier-kicker: #a895da;
+      /* the button-violet dot, NORMALISED: as measured (91,54,170) it lands 2.18 on the composited card,
+       * under the 3:1 non-text floor the LED is held to; raised in HSL lightness to 3.13 */
+      --gc-dossier-led: #7751c8;
+      --gc-dossier-led-dim: #725d9f;
       --gc-dossier-act-fill: linear-gradient(180deg, #511cab, #49199a);
       --gc-dossier-act-ink: #ffffff;
       --gc-dossier-act-rim: #5623ad;
@@ -771,16 +915,33 @@
      * 3.87 against this sheet's #843e3c top stop, under the 4.5 small-text floor the role line sits at.
      * #d0cce8 lands 4.93/9.87/7.42 on from/to/card. The brick top is the identity, so the ink moved. */
     body[data-gc-dossier="sunset-orange"] {
+      /* G6.3 — THE ONE PALETTE THE TOP-BAND CORRECTION COULD NOT KEEP. Its measured band is (189,85,67):
+       * bright enough that the sheet's own near-white ink lands at 4.18 and its peach kicker could only
+       * clear 4.5 by going essentially white. Normalised 100% back onto `mid` (the standing rule — the
+       * mock literal that fails its floor is nudged, never restored), so the brick simply HOLDS for the
+       * first 30% of the ramp and then falls, which is still closer to the panel's front-loaded shape than
+       * the straight two-stop line it replaces. */
       --gc-dossier-from: #843e3c;
+      --gc-dossier-mid: #843e3c;
       --gc-dossier-to: #2f1f34;
+      --gc-dossier-outline: #ac645e;
+      --gc-dossier-outline-top: #d48059;
+      /* …and the ONE palette that keeps a SOLID card. Its sheet is the theme's brightest, so any
+       * translucent LIFT (the measured fit is rgb(254,116,88) at 19%) pushes the composite up until
+       * `--gc-dossier-accent` — the Shut down label — falls to 3.16 against its 4.5 floor, and no alpha
+       * clears it: at zero lift the bare sheet already measures 3.58 there. The buttons are owner-frozen,
+       * so the card stays the dark chip that keeps the label at 4.76. Recorded, not fudged. */
       --gc-dossier-card: #502f3e;
-      --gc-dossier-ink-2: #d0cce8;
+      /* the mock's role line is PEACH here, not the retired shared lavender (measured 244,163,127),
+       * lightened 27% toward white to clear 4.63 on the brick */
+      --gc-dossier-ink-2: #f7bca2;
+      --gc-dossier-name: #fefaf8;
       --gc-dossier-accent: #f28c53;
-      /* the table's #f7ba98 lands at 4.54 on the brick top — 0.04 of margin over the small-text floor, too
-       * thin to survive a rounding difference between the author-time computation and the engine's own.
-       * Lightened one more step within the same peach: 4.85/9.71. */
-      --gc-dossier-kicker: #f9c2a3;
-      --gc-dossier-led-dim: #cb764e;
+      /* re-sampled at G6.3 (244,147,121) and lightened 36% toward white — the G6 value was the same rule
+       * applied to the same glyphs, and lands within 3/255 of this one. 4.60/4.60/9.21 on from/mid/to. */
+      --gc-dossier-kicker: #f8baa9;
+      --gc-dossier-led: #d66e49;
+      --gc-dossier-led-dim: #af7866;
       --gc-dossier-act-fill: linear-gradient(180deg, #d97943, #ce6144);
       --gc-dossier-act-ink: #0a0b19;
       --gc-dossier-act-rim: #dc8452;
@@ -791,12 +952,21 @@
     /* ROSE-PINK. Table stops as authored (a 31% fall). Its fill was LIGHTENED 8% at the normalisation pass
      * BECAUSE it carries a dark label - the mirror of the two deepenings the unshipped candidates needed. */
     body[data-gc-dossier="rose-pink"] {
-      --gc-dossier-from: #34202b;
+      /* G6.3: top band (98,52,67), as measured — every gated pair clears on it. */
+      --gc-dossier-from: #623443;
+      --gc-dossier-mid: #34202b;
       --gc-dossier-to: #15141e;
-      --gc-dossier-card: #221b23;
+      --gc-dossier-outline: #ac6371;
+      --gc-dossier-outline-top: #f0a1ab;
+      /* the lift, rgb(252,124,140) at 7.7% (residual ±11 — this panel's tiles are lifted ~3.5x harder than
+       * its service rows, and ONE token serves both; the fit splits the difference) */
+      --gc-dossier-card: #fc7c8c14;
+      --gc-dossier-ink-2: #e1a4aa;
+      --gc-dossier-name: #f8e2e5;
       --gc-dossier-accent: #f3bfc0;
-      --gc-dossier-kicker: #f3bfc0;
-      --gc-dossier-led-dim: #866a6e;
+      --gc-dossier-kicker: #f3b6ba;
+      --gc-dossier-led: #dc6d78;
+      --gc-dossier-led-dim: #ad666d;
       --gc-dossier-act-fill: linear-gradient(180deg, #da7b7a, #c55e74);
       --gc-dossier-act-ink: #0a0b19;
       --gc-dossier-act-rim: #dd8686;
@@ -808,12 +978,21 @@
      * horizontal gradient in the set, which re-reads as a pronounced vertical falloff here. Kept: it is
      * within the family the neon-purple measurement defines, and it is the loudest of the four by design. */
     body[data-gc-dossier="aurora-violet"] {
-      --gc-dossier-from: #171643;
+      /* G6.3: top band (57,30,97), as measured — the loudest correction in the set. */
+      --gc-dossier-from: #391e61;
+      --gc-dossier-mid: #171643;
       --gc-dossier-to: #08112d;
-      --gc-dossier-card: #10143a;
+      --gc-dossier-outline: #74549e;
+      --gc-dossier-outline-top: #a769c6;
+      /* the lift, rgb(176,105,252) at 7.0% (residual ±8) */
+      --gc-dossier-card: #b069fc12;
+      --gc-dossier-ink-2: #a78dd0;
+      --gc-dossier-name: #dcc6ee;
       --gc-dossier-accent: #d5a5f1;
-      --gc-dossier-kicker: #d5a5f1;
-      --gc-dossier-led-dim: #7a629d;
+      --gc-dossier-kicker: #b48cd7;
+      /* measured (146,74,177), raised to 3.10 on the composited card */
+      --gc-dossier-led: #9851b6;
+      --gc-dossier-led-dim: #866295;
       --gc-dossier-act-fill: linear-gradient(180deg, #7e37a5, #562a90);
       --gc-dossier-act-ink: #ffffff;
       --gc-dossier-act-rim: #833ea8;
@@ -849,12 +1028,25 @@
      * The authored pair's 50% top-to-bottom fall is the steepest shipped (aurora-violet's 43% was) — kept
      * for the same reason aurora's was: it is the panel's own gradient, and this one is the loudest. */
     body[data-gc-dossier="cyber-teal"] {
-      --gc-dossier-from: #001e2d;
+      /* G6.3: this palette ALREADY had the top-band correction (see (1) above), so `from` only refines by
+       * 1/255 on the fresh sample — what it GAINS is the `mid` stop that the correction implied and the
+       * two-stop form could not express: the panel is at its floor by 30%, which is exactly the
+       * front-loaded shape §7.7 G6.1 described in prose. */
+      --gc-dossier-from: #001f2e;
+      --gc-dossier-mid: #00111f;
       --gc-dossier-to: #01111f;
-      --gc-dossier-card: #001522;
+      --gc-dossier-outline: #1e6678;
+      --gc-dossier-outline-top: #39637a;
+      /* the lift, rgb(1,56,71) at 25% — the alpha ceiling. This panel's sheet is nearly flat below the
+       * knee, so the solve has almost no backdrop spread to work with and runs to the cap; capped it keeps
+       * the tile a LIFT that tracks the gradient rather than a repaint (residual ±5). */
+      --gc-dossier-card: #01384740;
+      --gc-dossier-ink-2: #33a2b2;
+      --gc-dossier-name: #72e4ee;
       --gc-dossier-accent: #23cbde;
-      --gc-dossier-kicker: #23cbde;
-      --gc-dossier-led-dim: #3c7278;
+      --gc-dossier-kicker: #44bacc;
+      --gc-dossier-led: #2494ae;
+      --gc-dossier-led-dim: #3d6e79;
       --gc-dossier-act-fill: linear-gradient(180deg, #007c8c, #01596a);
       --gc-dossier-act-ink: #ffffff;
       --gc-dossier-act-rim: #0d8392;
@@ -871,12 +1063,20 @@
      * darks were authored from — the more faithful reading of the axis we actually paint, and it lands
      * mid-family between neon's 21% and aurora's 43%. */
     body[data-gc-dossier="forest-green"] {
-      --gc-dossier-from: #08261f;
+      /* G6.3: top band (25,66,45), as measured. */
+      --gc-dossier-from: #19422d;
+      --gc-dossier-mid: #08261f;
       --gc-dossier-to: #011a1c;
-      --gc-dossier-card: #05231e;
+      --gc-dossier-outline: #507c56;
+      --gc-dossier-outline-top: #588d63;
+      /* the lift, rgb(115,252,122) at 4.8% (residual ±6) */
+      --gc-dossier-card: #73fc7a0c;
+      --gc-dossier-ink-2: #5ebf8a;
+      --gc-dossier-name: #acf0d6;
       --gc-dossier-accent: #68ce7b;
-      --gc-dossier-kicker: #68ce7b;
-      --gc-dossier-led-dim: #4e7c56;
+      --gc-dossier-kicker: #74ce95;
+      --gc-dossier-led: #58a260;
+      --gc-dossier-led-dim: #5e7e61;
       --gc-dossier-act-fill: linear-gradient(180deg, #337848, #226540);
       --gc-dossier-act-ink: #ffffff;
       --gc-dossier-act-rim: #3b7e4f;

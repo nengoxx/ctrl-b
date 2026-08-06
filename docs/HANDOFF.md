@@ -41,6 +41,65 @@
 > All session-scratchpad artifacts (briefs, Codex reviews, render shots) are TMPFS-DEAD for
 > you — the docs above are the complete record; nothing load-bearing lives outside the repo.
 >
+> ### ⚑⚑ THE G6.3/G6.4 WAVE (2026-08-06 LATE — SUPERSEDES the block below where they conflict; the
+> ### owner ended the session on a LOW-USAGE handoff order: EVERYTHING open is captured here)
+>
+> **WHAT LANDED (all committed on `main`, LOCAL/UNPUSHED like the five commits before it; prod = v1.4.6
+> untouched; dev units RUNNING with it all live):** the owner's first device round produced a large
+> fidelity + feature wave, built by four Opus agents + main-seat slices, each part audited:
+> · **Dossier fidelity re-sample** (all 6 darks): 3-stop from/mid/to sheets (top band re-sampled — the
+>   "too blue" fix), violet 1px rim (`--gc-dossier-outline{,-top}`), translucent card/line lifts, serif
+>   italic per-palette-tinted names, muted kickers, violet LEDs; sunset-orange keeps gated-floor
+>   normalizations (recorded). Method + full measured tables: **GACHA_PLAN §7.7 G6.3 + G6.4 addenda**.
+> · **Dossier enrichment**: service rows are real LINKS (rebaseServiceUrl, the sibling-dossier pattern);
+>   cosmos-style dot TEXTURE (handle-aligned, dark sheets only); the unit-art WATERMARK (owner-tuned
+>   opacity 0.16, subject at 67%, left-fade at the name's middle; role-line halo carries the recorded
+>   legibility trade); drawn pixel-centered × (38px disc, translucent 70%, forced-color-adjust guarded).
+> · **VT work**: same-tab nav guard (useSections); content-scoped scale (dark-rims fix) + `gacha-reel`
+>   + Blink-only `gacha-appbar`/`gacha-tabbar` stationary groups (chrome-pop fix) + no entry delay +
+>   root canvas painted (white-seam class); Gecko keeps a lean 3-group flight (engine-branch, §14.11).
+>   A flight-fill for Blink's blur dropout was tried and OWNER-REVERTED ("better before").
+> · **Kit/app-bar**: brandMeta = synced OFF-default "Bar subtitle" switch (full appearance-sync mirror,
+>   backend field incl.); brand row icon+title sized up; owner-droppable **`media/kit/brand/`** icon slot
+>   (masked through `--accent-fill` + gacha's calm-spread; candidates in `design/prototypes/gacha/
+>   brand-icons/`, owner shortlist №5/6/9/12, four PNGs already in the dev folder); oval swatches
+>   (gradient + flat-accent band) with the inset-hairline fix (the border-tiling chromatic fringe,
+>   kit-wide); squared 9px icon buttons in all bar modes; gacha wallpaper POOL folder REMOVED (pin +
+>   shared `media/kit/background/` + bundled = the 3-rung ladder, D54 AMENDED); banner hairlines
+>   removed; bar/scrim alphas thinned (glass shows color); pity pill = LIVE online-services count.
+>
+> ### ▶▶ THE CLEAN-SESSION AGENDA (in order; the wave is DO-NOT-RELEASE until ① lands)
+> ① **Codex-B HIGH — the contrast gate models an incomplete stack** (false greens): card pairs must
+>   composite the dot TEXTURE layer; the `--gc-dossier-row-hover` pairs are ungated; the watermark
+>   reaches the metric grid contra comments (separate from the accepted role-line trade). Fix the
+>   `Pair.over` stacks, re-measure, re-normalize the failing inks/dim-LEDs (numbers in the review).
+> ② **Codex MEDs**: dossier-swap badge resurrect (reopen-during-exit names the OLD badge — suppress
+>   like the avatar prep does) · pity lifecycle (`useFleet` services readiness + sum via current host
+>   ids — brief in review-A MED-2) · frontier's null subtitle leaves an empty `.meta` span (resolve
+>   data in FrontierRoot, pass a real node-or-null). Then LOWs: stale +100ms comments, the close-token
+>   85%-vs-78% comment drift. Reviews live at **`design/prototypes/gacha/research-sheets/
+>   codex-review-{A,B}.md`** (+ the VT audit + both prompts; scratchpad is tmpfs-dead).
+> ③ **The THREE open VT problems (owner-experienced, research commissioned → `docs/research/R12`)**:
+>   Blink glass dropout during flight (flight-fill reverted; find the real technique) · Gecko flight
+>   still "clunky/glitchy" on Fennec even at 3 groups (options incl. reverting Gecko to the original
+>   single-root composition — rims never afflicted it) · **TAP-TO-START LATENCY (owner, last report of
+>   the session): a tab tap takes ~0.5–1 s to even START the transition sometimes — profile what runs
+>   between the tap and the first VT frame (startViewTransition capture cost, the update callback's
+>   synchronous work, the reel mount, scroll restore) — likely a large piece of the perceived clunk.**
+>   R12 may still be DRAFTING — verify it exists and index it in docs/research/README.md first.
+> ④ **Owner visual re-round on the dev units**, then the remaining release path: full gates
+>   (`python tools/check.py` + FE check-all + FULL local Playwright), push on the owner's word, then
+>   §Release. **Rollback = v1.4.6; schema untouched at 5.**
+> ⑤ **The STARS redesign** (fleet: small; dossier: plain/small/off-center pill — pill much quieter,
+>   stars bigger, outlined style) and **the PC-NAME FONT + owner-droppable FONT SYSTEM design session**
+>   — research commissioned: **R13 (star styles + rendered candidate sheets)**, **R14 (name-font
+>   specimens + font-system seam survey)**, sheets in `design/prototypes/gacha/research-sheets/`.
+>   All three research agents may still be WRITING at session end — check docs/research/ + the sheets
+>   folder first; re-commission from the prompts in the dossiers only if a draft is missing.
+> · Also parked from the wave: mock tiles lift 2–4× harder than rows (one shared card token — split
+>   needs a 2nd token); mock inks captions/ports greyer than the role line (one-token follow-up);
+>   sunset/rose rim under-fit (glow the sampler can't separate). All recorded in the G6.3/G6.4 addenda.
+>
 > ### NEXT ① — the OWNER DEVICE ROUND (the v1.5.0 gate; eyeball-heavy, budget rounds)
 > On the dev units, owner's phone (Fennec + Chrome):
 > · **Accents ×8** — jade (the owner's own ask — green trio/green-navy ramp; its tri-strip is

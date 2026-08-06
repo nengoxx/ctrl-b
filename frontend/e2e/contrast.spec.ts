@@ -60,6 +60,19 @@ interface Pair {
    *  palettes spuriously. With `band`, a gradient `bg` contributes the MIDPOINT of its stop list instead —
    *  the band the label actually covers. Flat `bg` tokens are unaffected either way. */
   band?: boolean;
+  /** THE BACKDROP STACK for a TRANSLUCENT token (D52 G6.3). Gacha's dark dossier cards became translucent
+   *  LIFTS over the sheet gradient — which is the mock's own construction, and it means the colour a user
+   *  sees is not the token: it is the token composited over whatever is under it. `wcagContrast` reads a
+   *  colour's alpha as opaque, so an un-composited probe would measure `rgb(171 145 253)` — a light
+   *  lavender — where the screen shows near-black, and every pair on that card would go blind.
+   *
+   *  Each entry is one LAYER *under `bg`*, bottom-first; each layer lists the alternative tokens that can
+   *  be there (a sheet spans two stops, so the layer names both), and the WORST resulting composite gates —
+   *  the same "worst stop wins" discipline the gradient handling already uses, one dimension further. The
+   *  bottom layer must be opaque. A translucent `fg` is then flattened over the flattened `bg`, which is
+   *  exactly where it is painted (gacha's Shut-down outline is a color-mix with the card, so it inherits
+   *  the card's alpha). */
+  over?: string[][];
 }
 const PAIRS: Pair[] = [
   { fg: "--accent-ink", bg: "--accent-fill", min: 4.5 }, // ink on the accent-filled controls (item ①)
@@ -71,32 +84,61 @@ const PAIRS: Pair[] = [
   { fg: "--danger", bg: "--surface", min: 3 },
 ];
 
+/** The sheet stops gacha's dossier CARD is painted over (D52 G6.3) — see the `over` doc + the card-stack
+ *  note on the pairs below for why `--gc-dossier-from` is not among them. */
+const CARD_UNDER = ["--gc-dossier-mid", "--gc-dossier-to"];
+
 /** THEME-SPECIFIC pairs beyond the kit's semantic set — surfaces only that theme paints, gated at the
  *  same floors. Gacha's UNIT DOSSIER (G2) is the theme's ONE light surface: its tokens are gacha-private
  *  (`--gc-*`, resolvable only inside the theme's @scope — hence the probe mounting in `#app-scroll`,
  *  the vapor-tokens.spec precedent), but the sheet is body text + affordances like any other surface. */
 const THEME_PAIRS: Record<string, Pair[]> = {
   gacha: [
-    { fg: "--gc-dossier-ink", bg: "--gc-dossier-card", min: 4.5 }, // metric values, names, buttons
+    // THE CARD STACK (G6.3): the metric tiles / service rows / secondary button are a translucent lift over
+    // the sheet, and the sheet under them runs from `--gc-dossier-mid` (its 30% knee) down to
+    // `--gc-dossier-to`. `--gc-dossier-from` is deliberately NOT in the stack: no card-bearing block exists
+    // in the sheet's top 30% — the head (portrait + kicker + name + role line) occupies all of it, in the
+    // mock and in our own layout — so naming it here would gate these pairs against a backdrop they never
+    // touch. Slip's card is opaque, so the stack is a no-op there.
+    { fg: "--gc-dossier-ink", bg: "--gc-dossier-card", min: 4.5, over: [CARD_UNDER] }, // metric values, names, buttons
     { fg: "--gc-dossier-ink", bg: "--gc-dossier-from", min: 4.5 }, // title on the sheet's top stop
+    { fg: "--gc-dossier-ink", bg: "--gc-dossier-mid", min: 4.5 }, // …its 30% knee (G6.3)…
     { fg: "--gc-dossier-ink", bg: "--gc-dossier-to", min: 4.5 }, // …and its bottom stop
-    { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-card", min: 4.5 }, // muted labels are still small text
+    { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-card", min: 4.5, over: [CARD_UNDER] }, // muted labels are still small text
     { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-from", min: 4.5 }, // the role line under the name
+    { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-mid", min: 4.5 },
     { fg: "--gc-dossier-ink-2", bg: "--gc-dossier-to", min: 4.5 },
     { fg: "--gc-dossier-kicker", bg: "--gc-dossier-from", min: 4.5 }, // the UNIT DOSSIER kicker
+    { fg: "--gc-dossier-kicker", bg: "--gc-dossier-mid", min: 4.5 },
     { fg: "--gc-dossier-kicker", bg: "--gc-dossier-to", min: 4.5 },
+    // The host NAME (G6.3) — 27px at weight 900 is WCAG LARGE text, so its floor is 3:1, not 4.5. It is
+    // gated at all because the darks tint it toward their own palette instead of painting it white.
+    { fg: "--gc-dossier-name", bg: "--gc-dossier-from", min: 3 },
+    { fg: "--gc-dossier-name", bg: "--gc-dossier-mid", min: 3 },
+    { fg: "--gc-dossier-name", bg: "--gc-dossier-to", min: 3 },
     // The SECONDARY (Shut down) pair — its label AND its outline. The outline became a token at G6
-    // precisely so it could be gated: as an inline color-mix it was invisible here.
-    { fg: "--gc-dossier-accent", bg: "--gc-dossier-card", min: 4.5 },
-    { fg: "--gc-dossier-act-line", bg: "--gc-dossier-card", min: 3 },
+    // precisely so it could be gated: as an inline color-mix it was invisible here. At G6.3 that mix has a
+    // TRANSLUCENT second term on the darks (the card), so the outline itself is translucent and rides the
+    // same stack — one layer further down than its own background.
+    { fg: "--gc-dossier-accent", bg: "--gc-dossier-card", min: 4.5, over: [CARD_UNDER] },
+    { fg: "--gc-dossier-act-line", bg: "--gc-dossier-card", min: 3, over: [CARD_UNDER] },
     // The PRIMARY's label over the band it actually covers (band-sample — the label is centred).
     { fg: "--gc-dossier-act-ink", bg: "--gc-dossier-act-fill", min: 4.5, band: true },
     // The service LED, both states. Non-text affordances, and on a port-bearing row the ONLY visible
     // status cue — so the DIM state is gated at the same floor as the bright one, no exemption.
-    { fg: "--gc-dossier-led", bg: "--gc-dossier-card", min: 3 },
-    { fg: "--gc-dossier-led-dim", bg: "--gc-dossier-card", min: 3 },
+    { fg: "--gc-dossier-led", bg: "--gc-dossier-card", min: 3, over: [CARD_UNDER] },
+    { fg: "--gc-dossier-led-dim", bg: "--gc-dossier-card", min: 3, over: [CARD_UNDER] },
     // The close disc's glyph on its own disc (the pair that exists because the old composition inverted).
-    { fg: "--gc-dossier-close-ink", bg: "--gc-dossier-close-bg", min: 4.5 },
+    // G6.4 THINNED the dark palettes' disc to α 0.765 (the owner wanted the watermark to show through it),
+    // so the disc joined the translucent club and needs its own backdrop stack — the sheet's TOP band, not
+    // the card's: the corner sits in the head, above the 30% knee. Slip's disc is opaque, so the stack is
+    // a no-op there, exactly as it is for slip's card.
+    {
+      fg: "--gc-dossier-close-ink",
+      bg: "--gc-dossier-close-bg",
+      min: 4.5,
+      over: [["--gc-dossier-from", "--gc-dossier-mid"]],
+    },
     // The two things the dossier surface reads off the OTHER axis — the bounded cross-axis checks (§4.4).
     // The star badge is GATED on every dossier sheet. The sheet's top brand STRIP is the other one, and it
     // is ADVISORY-ONLY — see THEME_ADVISORIES below for why a hard floor is not available to it.
@@ -132,7 +174,7 @@ const pairsFor = (theme: string): Pair[] => [...PAIRS, ...(THEME_PAIRS[theme] ??
 const advisoriesFor = (theme: string): Advisory[] => THEME_ADVISORIES[theme] ?? [];
 const probeTokensFor = (theme: string): string[] => [
   ...new Set([
-    ...pairsFor(theme).flatMap((p) => [p.fg, p.bg]),
+    ...pairsFor(theme).flatMap((p) => [p.fg, p.bg, ...(p.over ?? []).flat()]),
     ...advisoriesFor(theme).flatMap((a) => [a.fg, ...a.bgs]),
   ]),
 ];
@@ -262,12 +304,38 @@ for (const c of COMBOS) {
       return [toSrgb(`rgb(${avg("r") * 255}, ${avg("g") * 255}, ${avg("b") * 255})`)];
     };
 
+    /** SOURCE-OVER composite of `top` onto the opaque `base`, in sRGB — what the screen shows when a
+     *  translucent token is painted on something (D52 G6.3). An opaque `top` passes straight through, so
+     *  every non-translucent token in the matrix is untouched by this. */
+    const composite = (top: string, base: string): string => {
+      const t = rgb(top);
+      const b = rgb(base);
+      if (!t || !b) return top;
+      const a = t.alpha ?? 1;
+      if (a >= 1) return top;
+      const mix = (k: "r" | "g" | "b") => a * t[k] + (1 - a) * b[k];
+      return toSrgb(`rgb(${mix("r") * 255}, ${mix("g") * 255}, ${mix("b") * 255})`);
+    };
+    /** Flatten a token's colours down a backdrop stack (bottom-first), keeping every combination — the
+     *  worst of them is what gates, exactly as with gradient stops. */
+    const flatten = (colors: string[], stack: string[][]): string[] => {
+      let bases = stack.length ? stack[0].flatMap((n) => colorsOf(n)) : [];
+      for (const layer of stack.slice(1))
+        bases = layer.flatMap((n) =>
+          colorsOf(n).flatMap((cc) => bases.map((b) => composite(cc, b))),
+        );
+      return bases.length ? colors.flatMap((cc) => bases.map((b) => composite(cc, b))) : colors;
+    };
+
     for (const p of pairsFor(c.theme)) {
-      // Gate the WORST fg-stop × bg-stop pairing (fg tokens are flat today; bg may be a gradient).
-      const bgColors = p.band ? bandOf(colorsOf(p.bg), p.bg) : colorsOf(p.bg);
+      // Gate the WORST fg-stop × bg-stop pairing (fg tokens are flat today; bg may be a gradient). A `bg`
+      // with an `over` stack is flattened onto it first, and the fg onto the flattened bg (G6.3).
+      const rawBg = p.band ? bandOf(colorsOf(p.bg), p.bg) : colorsOf(p.bg);
+      const bgColors = p.over ? flatten(rawBg, p.over) : rawBg;
       let worst = { ratio: Infinity, fg: "", bg: "" };
-      for (const fg of colorsOf(p.fg))
+      for (const fgRaw of colorsOf(p.fg))
         for (const bg of bgColors) {
+          const fg = p.over ? composite(fgRaw, bg) : fgRaw;
           const ratio = wcag(fg, bg);
           if (ratio < worst.ratio) worst = { ratio, fg, bg };
         }

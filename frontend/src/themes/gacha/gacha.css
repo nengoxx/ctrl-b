@@ -22,6 +22,14 @@
       background-color: var(--bg);
       background-image: var(--gc-pinstripe), var(--gc-backdrop);
     }
+    /* …and the ROOT element paints the page black too (G6.4): Chromium's View-Transition snapshots can
+     * leave SUB-PIXEL SEAMS at group edges under a fractional DPR, and an unpainted root exposes the
+     * UA's WHITE base canvas through them — the owner's "white ring at the top of the app bar",
+     * Chrome-only. The root background propagates to the canvas, so the seam class goes dark and
+     * invisible. Gecko is unaffected either way; costs one flat fill. */
+    :scope {
+      background: var(--bg);
+    }
 
     /* ── Brand row (the appbar's `brandMark` / `brandText` / `brandMeta` slot family) ──────────────
      * The wordmark is the prototype's gradient-clipped katakana: `--accent-fill` painted through the
@@ -46,7 +54,9 @@
        * prototype's own height (round-3 item E). */
       line-height: 1;
       font-weight: 900;
-      font-size: 15px;
+      /* 15→17px at G6.3 with the bar's icon-+-title-only ruling: the retired-by-default subtitle gave its
+       * room to the title (the kit's own wordmark took the same step, 16→18 — kit.css `.kit-brand`). */
+      font-size: 17px;
       letter-spacing: 0.16em;
       /* The BRAND trio, not the control fill: the wordmark is the one surface the prototype paints with
        * all three stops (owner round 2, items C+D — `--accent-fill` is now the calmer two-stop the kit's
@@ -106,6 +116,11 @@
     body[data-wallpaper="on"] .kit-appbar {
       background: var(--gc-bar-grad-wall);
     }
+    /* NO flight fill (owner-ruled 2026-08-06 after trying one): `backdrop-filter` cannot survive a View
+     * Transition capture on Blink, so during a tab flight the bar's glass momentarily stops blurring and
+     * scrolled content shows through the thin gradient. A near-opaque flight fill was tried and REVERTED
+     * — the whole-bar recolor read worse than the brief blur dropout ("it was better before"). The
+     * proper technique is an OPEN research item (HANDOFF ⚑ / docs/research) for the next session. */
     /* THE "SHADOW" the owner saw is not the bar — it is the kit's top edge scrim, a 30px flat `--bg` haze
      * painted just BELOW the bar to seal the seam between it and scrolling content (kit.css says as much
      * for the transparent mode: "reads as a stray SHADOW band"). A dissolving bar has no seam to seal, so
@@ -212,7 +227,11 @@
     .kit-composer .kit-send,
     .kit-composer .kit-cbtn.mic.line-btn,
     .kit .seg button.active,
-    .kit .mini-player .mp-play {
+    .kit .mini-player .mp-play,
+    /* the app-bar brand mark (G6.3 owner ruling): a 21px masked silhouette is the smallest filled control
+       in the app — the full ramp across it read as "too much range of colors", so it takes the same calm
+       window as the composer pair (its background is its colour, exactly like the mp-play case above) */
+    .kit-brand-mark {
       background-size: var(--gc-fill-spread) 100%;
       background-position: 50%;
     }
@@ -573,12 +592,117 @@
      * which is what made M2 worth shipping at all: a frozen snapshot would stall the reel mid-sweep.
      *
      * Reduced motion needs no rule here: `runViewTransition` bypasses the API entirely on the app's own
-     * motion axis, so there is no pseudo-element to style (the house rule — never the OS media query). */
-    :scope[data-transition="tab"]::view-transition-old(root) {
+     * motion axis, so there is no pseudo-element to style (the house rule — never the OS media query).
+     *
+     * ── WHAT SCALES: `gacha-page`, NOT the root (G6.3, owner device round) ───────────────────────────
+     * The scale used to ride `::view-transition-old/new(root)`, and the ROOT snapshot is the whole page —
+     * which under gacha includes the fixed app BACKDROP (`.kit`'s radial + pinstripe, top of this file).
+     * Two copies of that backdrop, one at 96% and one at 104%, cross-fading over each other, do not line
+     * up at the edges: on Chrome that reads as a dark rim / seam sweeping the frame (owner-reported). The
+     * prototype never had it because its own transition scales CONTENT over a backdrop that holds still.
+     *
+     * So the kit's content region takes its own name for the flight and the scale moves onto it; the root
+     * pair keeps a plain opacity cross-fade (the UA's own), and since the backdrop and the nav bar are
+     * IDENTICAL in both captures that cross-fade is invisible — they simply hold still. The name is
+     * stamped through the SCOPED-naming idiom the dossier avatar already uses below (a
+     * `[data-transition=…] <selector>` rule, never a constant): a `view-transition-name` left on a node
+     * outside its own flight makes the NEXT transition skip on a duplicate-name error.
+     *
+     * The keyframes are unchanged in SHAPE (96%/104%, 240/380 ms) — but the 100 ms head start is GONE
+     * (G6.4, the Codex composition audit): with the appbar INSIDE `.kit-main` (DefaultRoot mounts the bar
+     * in the content region), the `both`-fill delay held the incoming page — bar, glass and all — at
+     * opacity 0 for its first 100 ms, which the owner saw as "the page isn't rendered until the
+     * transition ends". The new page now fades in from frame one. */
+    :scope[data-transition="tab"] .kit-main,
+    :scope[data-transition="detail"] .kit-main {
+      view-transition-name: gacha-page;
+    }
+    :scope[data-transition="tab"]::view-transition-old(gacha-page) {
       animation: gacha-root-out 240ms ease both;
     }
+    :scope[data-transition="tab"]::view-transition-new(gacha-page) {
+      animation: gacha-root-in 380ms var(--gc-ease-out) both;
+    }
+    /* ── THE CHROME HOLDS STILL: appbar + tab bar as STATIONARY groups (G6.4, Codex audit) ────────────
+     * The appbar lives INSIDE `.kit-main`, so `gacha-page` was scaling and fading the bar — and its
+     * 14px-blur glass — with the page: the glass visibly "switched on" only when the flight ended
+     * (owner-reported pop). The tab bar rode the root pair's 380 ms cross-fade, diluting its new state
+     * for most of the flight. Both now take the REEL's OWN idiom one rule up: a tab-scoped name, no
+     * animation on any of their pseudos (the `new` side of a named group is a LIVE representation, so
+     * the bar — glass included — renders exactly as the settled page will), and the redundant `old`
+     * capture hidden. Spec mechanics: a named group's computed `backdrop-filter` is copied onto
+     * `::view-transition-group()`, where it blurs the VT layers painted below it — which is precisely
+     * the glass-over-content the settled page shows. Level-1 pseudos only; Chromium + Gecko. */
+    /* BLINK-ONLY (§14.11 engine-branch allowlist, the cosmos/frontier gecko precedent): the chrome pops
+     * these groups fix are a CHROMIUM failure — Gecko renders the live bar's glass through the flight
+     * correctly (owner-verified on device), and every extra named group is real compositor cost there
+     * (the owner's Fennec turned visibly janky at five groups). So Gecko keeps the lean three-group
+     * flight (root · page · reel) and never mints these names; the pseudo rules below then match
+     * nothing on it — no group, no cost. */
+    :scope[data-transition="tab"] body:not([data-engine="gecko"]) .kit-appbar {
+      view-transition-name: gacha-appbar;
+    }
+    :scope[data-transition="tab"] body:not([data-engine="gecko"]) .kit-tabbar {
+      view-transition-name: gacha-tabbar;
+    }
+    :scope[data-transition="tab"]::view-transition-group(gacha-appbar),
+    :scope[data-transition="tab"]::view-transition-group(gacha-tabbar),
+    :scope[data-transition="tab"]::view-transition-old(gacha-appbar),
+    :scope[data-transition="tab"]::view-transition-old(gacha-tabbar),
+    :scope[data-transition="tab"]::view-transition-new(gacha-appbar),
+    :scope[data-transition="tab"]::view-transition-new(gacha-tabbar) {
+      animation: none;
+    }
+    :scope[data-transition="tab"]::view-transition-old(gacha-appbar),
+    :scope[data-transition="tab"]::view-transition-old(gacha-tabbar) {
+      opacity: 0;
+    }
+    /* …and the page BEHIND the content region (now just the backdrop) keeps the UA's own opacity
+     * cross-fade, timed to the flight. Identical in both captures ⇒ visually stationary. */
+    :scope[data-transition="tab"]::view-transition-old(root),
     :scope[data-transition="tab"]::view-transition-new(root) {
-      animation: gacha-root-in 380ms 100ms var(--gc-ease-out) both;
+      animation-duration: 380ms;
+    }
+    /* (The kit's per-body `kit-fade` entrance is already retired under gacha — the G3 §10.1 rider rule
+     * further down this file; G6.4's audit confirmed that retirement is also what keeps the VT the page's
+     * ONE entrance.) */
+    /* ── …AND THE REEL HAS TO COME WITH IT (G6.3, second owner device report, both engines) ────────────
+     * Extracting `.kit-main` re-ordered the paint stack, and the REEL was the casualty: the slats and the
+     * figure suddenly swept UNDER the tab contents instead of over them.
+     *
+     * The mechanism, confirmed: `::view-transition-*` is a flat pseudo tree whose GROUPS are ordered by the
+     * paint order of the elements they were captured from, and the root group is always first. With one
+     * group everything sat inside the root snapshot in its natural order, so the reel (z-rung 45, a sibling
+     * painted after `.kit`) drew above the content. The moment `gacha-page` became a second group it began
+     * painting ABOVE the whole root snapshot — content over reel.
+     *
+     * Re-ordering the two GROUPS cannot fix it, and that is the load-bearing observation: the root snapshot
+     * holds BOTH the app backdrop (which must stay below the content) and the reel (which must sit above
+     * it), so no single z-index for the root group can be right. The reel has to become a group of its own.
+     * Given one, it lands where it belongs for free — it paints after `.kit-main`, so its group sorts after
+     * `gacha-page`, in both engines.
+     *
+     * Its old/new pair takes `animation: none` rather than the UA cross-fade, for two reasons: the reel is
+     * LIVE inside `::view-transition-new` (the §10.1 outcome-(a) property this whole effect already rides),
+     * so a fade-in would dim the first 380 ms of its own sweep; and `animation: none` also drops the UA's
+     * `plus-lighter` blend, which has nothing to blend against here. The OLD capture is explicitly
+     * zeroed — the resting reel is invisible anyway (its slats park at `translateY(-110%)`), but a
+     * transparent snapshot painted over a live one is exactly the kind of ghost worth ruling out.
+     * The GROUP keeps its own animation: both rects are the full shell, so it is a no-op that costs nothing.
+     *
+     * Scoped to `tab` alone: the reel node lingers (invisible) after a sweep, and a `detail`/`showcase`
+     * flight has no business extracting it — the fewer live names, the fewer duplicate-name skips.
+     * Reduced motion and engines without View Transitions need nothing: `GachaReel` returns null under the
+     * former, and under the latter the reel is a plain z-45 overlay that was never in a snapshot. */
+    :scope[data-transition="tab"] .gc-reel {
+      view-transition-name: gacha-reel;
+    }
+    :scope[data-transition="tab"]::view-transition-old(gacha-reel) {
+      animation: none;
+      opacity: 0;
+    }
+    :scope[data-transition="tab"]::view-transition-new(gacha-reel) {
+      animation: none;
     }
     @keyframes gacha-root-out {
       to {
@@ -730,8 +854,9 @@
       position: relative;
       height: 232px;
       overflow: hidden;
-      border-top: 1px solid var(--gc-hair);
-      border-bottom: 1px solid var(--gc-hair);
+      /* The prototype's top/bottom `--gc-hair` hairlines were REMOVED here (owner, on device 2026-08-06):
+       * under the G6.4 thinner bar/scrim veils they read as visible light edges. The shadow alone seats
+       * the banner; the token survives for the oracle's bottom hairline. */
       box-shadow: var(--gc-banner-shadow);
       touch-action: pan-y;
       -webkit-user-select: none;
@@ -1220,9 +1345,27 @@
     .bs-sheet {
       /* the prototype's own ceiling — a dossier never becomes a full-screen page */
       max-height: min(68dvh, 620px);
-      border: 0;
+      /* THE PANEL RIM (G6.3). The mock draws every dark panel with a 1px accent-tinted outline whose TOP
+       * edge is a brighter member of the same family — the same "one element, two values" the dark action
+       * button uses (`border-color: hi rim rim`, below), for the same reason: exactly one bright row sits
+       * at the top, so a border plus an inset highlight would stack two lifts and be 1px too tall. Slip's
+       * pair is `transparent`, so the LIGHT sheet paints nothing and — because the kit gives `.bs-sheet`
+       * `box-sizing: border-box` and pins it `left: 0; right: 0` — nothing moves either. */
+      border: 1px solid var(--gc-dossier-outline);
+      border-color: var(--gc-dossier-outline-top) var(--gc-dossier-outline)
+        var(--gc-dossier-outline);
       border-radius: 24px 24px 0 0;
-      background: linear-gradient(var(--gc-dossier-from), var(--gc-dossier-to));
+      /* THE 3-STOP SHEET (G6.3). The mock's panels are FRONT-LOADED — a bright top band that has reached
+       * its floor by roughly a third of the panel — and a two-stop gradient cannot say that. `mid` is each
+       * palette's former `from` (the pixel at ~30% of the ramp, which is where it was sampled), so the 30%
+       * position here is not a taste value: it is where that measurement was taken. Fitted against the
+       * per-row profile of all six panels the reshape halves the error of the straight line (rms 1.5–4.3
+       * against 4.4–15.1). Slip's `mid` is the exact 30% point of its own line ⇒ visually unchanged. */
+      background: linear-gradient(
+        var(--gc-dossier-from),
+        var(--gc-dossier-mid) 30%,
+        var(--gc-dossier-to)
+      );
       color: var(--gc-dossier-ink);
       box-shadow: var(--gc-dossier-shadow);
     }
@@ -1235,14 +1378,70 @@
        * degenerate and the band pokes outside the sheet's curve — owner eyeball). At full height the
        * radius is real, so the band's corners clip to exactly the sheet's arc. */
       inset: 0;
-      border-radius: 24px 24px 0 0;
+      /* 23px, not 24 (G6.3): an absolutely-positioned child's containing block is the PADDING box, so
+       * `inset: 0` already sits inside the sheet's new 1px rim — and the rim's INNER curve is the sheet's
+       * 24px minus that 1px. Matching it is what keeps the strip from riding 1px over the rim at the two
+       * top corners; the strip and the rim never double up, because the rim is outside this box entirely. */
+      border-radius: 23px 23px 0 0;
       background-image: var(--gc-brand-fill);
       background-size: 100% 4px;
       background-repeat: no-repeat;
       background-position: top;
+      /* THE CORNER JUNCTION (G6.4, owner device round r3: "there's a little bit of an outline in the upper
+       * corners … the gradient shows the border — it looks a little clunky"). The mock's panels carry the
+       * lit 1px rim and NO strip; we carry both, and at the 24px arc they collide: a 4px band clipped by a
+       * 23px radius simply STOPS ~10px in, with a near-vertical cut, while the rim keeps curving — so the
+       * eye reads a bright band butting into a bright arc. Four candidates were rendered and compared at
+       * 12x on both corners (see §7.7's G6.4 shots): giving the top border the SIDE outline value changed
+       * nothing (on most palettes the two values are within a hair of each other), and running the strip
+       * OVER the border box with a transparent top rim fixed the junction but opened a visible GAP in the
+       * arc where the side rim picks up. What reads calm is letting the strip DISSOLVE into the rim: the
+       * band fades over its first/last 34px, so nothing is cut and the rim's arc is the only line at the
+       * corner. Token-switched (slip's value is `none`), so the light sheet is byte-identical — the owner's
+       * "keep slip unaffected". */
+      -webkit-mask-image: var(--gc-dossier-strip-fade);
+      mask-image: var(--gc-dossier-strip-fade);
       /* above the sheet's own background box, below the in-flow handle/body content */
       z-index: 0;
       pointer-events: none;
+    }
+    /* ── THE DOTTED TEXTURE (G6.4, owner: "the Cosmos bottom sheets have this dotted pattern baked in,
+     *    faded … it fades out from the centre more or less; it aligns with the drag handle") ───────────
+     * A PORT of cosmos.css's `.bs-sheet::before` dot grid, recipe intact: a 1px dot on a 13px grid, phase-
+     * aligned so a dot ROW lands on the grab bar, radially masked from the top-centre so the field is
+     * densest behind the handle/name and fades outward in every direction — not a hard cut.
+     *
+     * ITS OWN PSEUDO, unlike cosmos's. Gacha's `::before` is already the brand strip, and the two cannot
+     * share a box: the mask that makes this a FADE would eat the strip's ends (at the sheet's top corners
+     * cosmos's own mask is already transparent), and cosmos's element `opacity` would fade the strip with
+     * it. So the strip keeps `::before` and the texture takes `::after` — with `z-index: -1`, which lands
+     * it exactly where it belongs: ABOVE the sheet's own gradient background (a negative rung still paints
+     * over its stacking context's background — and `.bs-sheet` IS one, it is transformed) and BELOW both
+     * the strip (z 0) and the whole `.gc-dossier` subtree, watermark included.
+     * SWITCHED BY THE TOKEN, not by a selector: slip's `--gc-dossier-texture` is `none` (clean prize
+     * paper), so the light sheet paints exactly what shipped. Static paint, no animation. */
+    .bs-sheet::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 23px 23px 0 0; /* the strip's own reasoning — the rim's INNER curve */
+      z-index: -1;
+      pointer-events: none;
+      background-image: var(--gc-dossier-texture);
+      background-size: var(--gc-dossier-texture-size);
+      /* `center` x → the grid is symmetric about the sheet's centre line (cosmos's own reasoning), and the
+       * y PHASE is what aligns the field with the DRAG HANDLE — cosmos's `6px`, kept to the pixel because
+       * the geometry it solves is the kit's and therefore identical: a 13px tile centres its dot 6.5px in,
+       * so +6 lands the first row 12.5px below this box's top, and the grip's centre measures 12px there
+       * (`.bs-handle` padding-top 10px + half a 5px grip). Verified on a render: grip centre y 380.0, dot
+       * row y 380.5. */
+      background-position: center 6px;
+      /* THE FADE. Cosmos's shape exactly — solid to 22% of the ellipse, gone by 72%, anchored 46px down so
+       * the pool tracks the name whether the sheet is short or tall — with the VERTICAL radius grown for
+       * gacha's much taller panel (cosmos's sheet is a header + a few rows; a full-detent dossier is ~500px
+       * of portrait, metrics, actions and service rows). In a token because it carries colours. */
+      -webkit-mask-image: var(--gc-dossier-texture-mask);
+      mask-image: var(--gc-dossier-texture-mask);
     }
     /* The grab bar inverts with the surface: the kit's translucent-white grip is invisible on a light
      * panel (the prototype's own dark handle at 30%). */
@@ -1295,12 +1494,70 @@
      * This is what carries the sheet's ARRIVAL now that the sheet cannot slide under a transition (the
      * capture is a single frame: a sliding sheet would freeze the morph's destination at its off-screen
      * start). Shorter than the tab's, exactly as the prototype has it: a panel arriving over a page that
-     * stays put needs less travel than a whole screen being replaced. */
-    :scope[data-transition="detail"]::view-transition-old(root) {
+     * stays put needs less travel than a whole screen being replaced.
+     *
+     * The scale rides `gacha-page` here for the SAME reason the tab flight's does (G6.3, see the M2 block):
+     * on the root snapshot it dragged the fixed backdrop through two misaligned scaled copies and rimmed
+     * the frame. The root pair keeps the plain opacity cross-fade at the incoming leg's own duration. */
+    :scope[data-transition="detail"]::view-transition-old(gacha-page) {
       animation: gacha-root-out 200ms ease both;
     }
-    :scope[data-transition="detail"]::view-transition-new(root) {
+    :scope[data-transition="detail"]::view-transition-new(gacha-page) {
       animation: gacha-root-in 300ms ease both;
+    }
+    :scope[data-transition="detail"]::view-transition-old(root),
+    :scope[data-transition="detail"]::view-transition-new(root) {
+      animation-duration: 300ms;
+    }
+    /* ── THE RARITY BADGE, held back until the portrait lands (G6.3, owner device round) ──────────────
+     * `.gc-dossier .art-rar` is the star lozenge tucked into the portrait's bottom-left. It is NOT part of
+     * the `capsule-shell` morph (the morph flies the `<img>`), so in the NEW capture it was simply part of
+     * the page — painted at its FINAL position from the first frame, hanging in empty space while the
+     * portrait was still crossing the screen, and then re-painted by the live DOM on top of the image at
+     * finish. The owner saw both halves: a badge that arrives early and a jump at the end.
+     *
+     * The fix is at the VT layer, not in the component: the badge takes its own name for the flight and
+     * its snapshot is held at zero opacity until the LAST ~150 ms of the 560 ms arc, so it fades up exactly
+     * as the frame lands. Opacity only (§14.11).
+     *
+     * BOTH LEGS of the pair are written, because `detail` has two shapes: a fresh open (no dossier in the
+     * old capture → there IS no `::view-transition-old(dossier-rar)`, and the `new` rule alone is the whole
+     * story) and a SWAP (a dossier already on screen → the badge exists in both captures, at the same
+     * rect). Without an `old` rule the swap would blink: the UA's default fade-out empties the badge over
+     * the first 250 ms while `new` is still held back. Mirroring the hold keeps it lit through the flight
+     * and cross-fades the two in the same final window.
+     *
+     * NOT named under `showcase`, deliberately. There the dossier stays mounted BEHIND the full-screen art
+     * overlay — so on the open leg the badge exists in the new capture too, and a named element is lifted
+     * OUT of the root snapshot and painted above it: the badge would float over the artwork it is supposed
+     * to be behind. The reported artefact is the `detail` morph; `showcase` keeps the badge inside the page
+     * snapshot, where occlusion still works. */
+    :scope[data-transition="detail"] .gc-dossier .art-rar {
+      view-transition-name: dossier-rar;
+    }
+    :scope[data-transition="detail"]::view-transition-old(dossier-rar) {
+      animation: gacha-rar-out 560ms both;
+    }
+    :scope[data-transition="detail"]::view-transition-new(dossier-rar) {
+      animation: gacha-rar-in 560ms both;
+    }
+    @keyframes gacha-rar-in {
+      0%,
+      73% {
+        opacity: 0;
+      }
+      100% {
+        opacity: 1;
+      }
+    }
+    @keyframes gacha-rar-out {
+      0%,
+      73% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+      }
     }
 
     /* ── THE ART SHOWCASE's transition, the `showcase` type (owner request 2026-08-02) ─────────────────
@@ -1338,8 +1595,64 @@
     }
 
     .gc-dossier {
-      position: relative; /* anchors the close corner below */
+      position: relative; /* anchors the close corner below — and the G6.4 watermark */
       padding-bottom: calc(2px + env(safe-area-inset-bottom));
+    }
+    /* ── THE CHARACTER WATERMARK (G6.4, owner: "the character image as a background of the bottom sheet,
+     *    like the dotted texture — faded, so it's visible, positioned center-right, in the empty zone
+     *    right of the PC name") ──────────────────────────────────────────────────────────────────────
+     * The same resolved file the portrait draws, a second time, decorative (`alt=""` + aria-hidden +
+     * `draggable={false}`) and inert. It carries NO `view-transition-name`: `capsule-shell` is declared on
+     * `.avatar` alone, so the detail and showcase morphs still fly exactly one portrait.
+     *
+     * PAINT ORDER without a z-index. `.gc-dossier` is `position: relative` with `z-index: auto`, so it is
+     * NOT a stacking context — deliberately, because `.gc-dossier-close`'s z-index 2 has to reach the
+     * SHEET's context to clear the handle's z-1 drag strip (see the close block above). That rules out the
+     * obvious `z-index: -1`: with no local context the mark would escape to `.bs-sheet` and paint below the
+     * sheet's own `::before` — i.e. under the texture it is supposed to sit on. So the ordering is
+     * POSITIONAL instead: this is the first positioned child, and the four content blocks below are all
+     * `position: relative` too, so every one of them paints after it in tree order. The whole `.gc-dossier`
+     * subtree still paints after `.bs-sheet::before`, which puts the mark above the gradient AND the dots.
+     *
+     * THE SUBJECT LANDS ONE THIRD IN FROM THE RIGHT (owner device round r3: "~67% horizontal, the emptiest
+     * zone should showcase the character's centre"). The box is `right: 0` and 66% wide, so its own centre
+     * — and therefore the art's, see the crop note below — sits at 100% − 33% = 67% of the sheet, by
+     * construction rather than by a magic offset. Widening the box to reach further left would drag the
+     * subject left with it, which is why the LEFT REACH is the mask's job and not the box's.
+     *
+     * THE TOP EDGE (round r2: "it reads cut at the top"). The alternative — running it up to the sheet's
+     * own rounded top — is NOT available from here: `.gc-dossier` lives inside `.bs-body`, which is
+     * `overflow-y: auto`, so anything above the body's top box is clipped at the SAME line the cut was on,
+     * only 21px higher. The mask does it instead: its ellipse is anchored 46% down with a short vertical
+     * radius, so this box's own top row is already past the fade's end. The bottom does the same, and
+     * lands clear of the metric grid.
+     *
+     * THE LEFT REACH (round r2: the dissolve stopped at the sheet's centre line). The mask's horizontal
+     * fade is drawn so the art is at HALF strength at the middle of the unit name and has reached zero by
+     * the box's own left edge — the owner's "the fade lands more or less in the middle of the name" — while
+     * its solid core still covers the subject at 67%. At 0.12 base that leaves ~0.02 of the art under the
+     * title inks, which are gated tokens on the sheet gradient: a lift that small cannot move a measured
+     * pair (verified by a with/without diff on a render). */
+    .gc-dossier-mark {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 66%;
+      height: 210px;
+      object-fit: cover;
+      /* the portrait's own crop — faces sit high in this art — with the roster entry's focal point
+       * overriding it inline, exactly as on the portrait and the cards (ONE resolver contract).
+       * NOTE on the x half: at this box's aspect a PORTRAIT source covers the width exactly and is cropped
+       * only vertically, so the horizontal component is inert and the art's own centre lands at the box's
+       * centre — which is precisely why the 67% anchor is expressed as the box's width. The y half is live
+       * and is what an entry's `focus` actually steers, exactly as on the portrait. */
+      object-position: 50% 14%;
+      opacity: var(--gc-dossier-mark-opacity);
+      -webkit-mask-image: var(--gc-dossier-mark-mask);
+      mask-image: var(--gc-dossier-mark-mask);
+      pointer-events: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
     /* THE CLOSE CORNER (the prototype's `.close-detail`: a 34px dark-ink tile with a white glyph, tucked
      * into the panel's top-right). Two things it must survive:
@@ -1358,8 +1671,10 @@
       z-index: 2;
       display: grid;
       place-items: center;
-      width: 34px;
-      height: 34px;
+      /* 34→38px + the glyph 15→21px (owner 2026-08-06, "like the example ones"): the example sheet's disc
+       * measures ~34 mock px ≈ 38 CSS px with an ~11 mock px ≈ 12px × — ours rendered ~9px of ink. */
+      width: 38px;
+      height: 38px;
       padding: 0;
       border: 0;
       /* a CIRCLE (owner 2026-08-04, from the palette-study mock) — but the mock's thin ring is NOT adopted:
@@ -1371,12 +1686,51 @@
        * its own pair: slip's values ARE the old composition (tokens.css `body`), the darks re-pair it. */
       background: var(--gc-dossier-close-bg);
       color: var(--gc-dossier-close-ink);
-      font-size: 15px;
+      font-size: 21px;
       line-height: 1;
       cursor: pointer;
+      /* Forced-colors (Windows High Contrast) replaces background paint, and the × is now a drawn
+       * `currentColor` shape rather than a glyph — without this the disc goes visually blank while
+       * keeping its label (Codex G6.4 MED). The pair is already high-contrast by construction. */
+      forced-color-adjust: none;
     }
+    /* THE × — DRAWN, not set (G6.4, owner device round: "the × sits low in the disc … make sure it is in
+     * the EXACT centre"). It was `content: "\d7"`, and a text glyph cannot be centred exactly here:
+     * `place-items: center` centres the LINE BOX, and where the ink sits inside that box is a function of
+     * the font's ascent/descent metrics — which the two engines resolve differently. Measured on the
+     * shipped 38px disc with a single optical `translateY`, the best common value still left the ink 1.0px
+     * HIGH on Blink and 0.6px LOW on Gecko: no one transform lands both.
+     * So the mark becomes GEOMETRY: a plus clipped out of a square of `currentColor`, rotated 45°. Both
+     * operations are symmetric about the box's own centre, and the box is centred by the grid — so the ink
+     * is centred by construction, identically on every engine, at every DPR. It also retires the
+     * ASCII-fence workaround the glyph existed for (gacha's TypeScript is fenced ASCII-only, so the ×
+     * could not be markup) — there is no character here at all now.
+     * SIZE: the plus's arms reach the box edges, so rotating puts its four tips at 6.5px from the centre,
+     * i.e. a 9.2x9.2px ×, which is what the 21px glyph measured (9.5px). The 13% arm gives a 1.7px stroke
+     * against the glyph's ~1.6px. Nothing about the disc, its colour pair or its hit area changes. */
     .gc-dossier-close::before {
-      content: "\d7";
+      content: "";
+      /* 12px, not 13 (measured): the disc is 38px, so an ODD child leaves a 12.5px half-gap and both
+       * engines resolved it the same way — half a pixel down-right. An EVEN child divides the 38 exactly
+       * (13 + 12 + 13), which is what takes the offset to 0.00 on both. */
+      width: 12px;
+      height: 12px;
+      background: currentColor;
+      clip-path: polygon(
+        43% 0,
+        57% 0,
+        57% 43%,
+        100% 43%,
+        100% 57%,
+        57% 57%,
+        57% 100%,
+        43% 100%,
+        43% 57%,
+        0 57%,
+        0 43%,
+        43% 43%
+      );
+      transform: rotate(45deg);
     }
     .gc-dossier-close::after {
       content: "";
@@ -1390,6 +1744,10 @@
       gap: 14px;
       align-items: flex-start;
       padding: 0 16px 14px;
+      /* G6.4 — POSITIONED so it paints after `.gc-dossier-mark` (see that block): the watermark is an
+       * absolutely-positioned earlier sibling, and an in-flow block would otherwise paint UNDER it. This
+       * is the head's turn of the same rule the three blocks below carry. */
+      position: relative;
     }
     .gc-dossier .art-frame {
       position: relative;
@@ -1460,9 +1818,9 @@
       min-width: 0;
       flex: 1;
       padding-top: 4px;
-      /* the close corner is absolutely positioned over this block's trailing edge (34px wide, 18px in);
+      /* the close corner is absolutely positioned over this block's trailing edge (38px wide, 18px in);
        * reserve its lane so a long host name wraps beside the circle instead of running under it. */
-      padding-right: 56px;
+      padding-right: 60px;
     }
     .gc-dossier-title .unit-no {
       display: block;
@@ -1476,11 +1834,20 @@
     }
     .gc-dossier-title h2 {
       margin: 7px 0 0;
+      /* THE DISPLAY SERIF (G6.3). The mock sets the unit name in the theme's serif accent face, italic and
+       * palette-tinted — "plain white name" was one of the owner's fidelity findings. `--font-display` is
+       * the same Shippori Mincho B1 stack the subtitles and 編成/設定 headings already use, so no new face
+       * ships. NOTE the §10.4 degradation contract: the committed subset covers COMPILE-TIME copy plus each
+       * face's full latin range, so a Latin host name draws from the real face and a runtime JAPANESE host
+       * name falls through to the system serif tail. Accepted — the fallback is a serif either way, and the
+       * alternative is un-freezing the subset. */
+      font-family: var(--font-display);
       font-size: 27px;
       line-height: 1;
       font-weight: 900;
       font-style: italic;
-      color: var(--gc-dossier-ink);
+      /* its own role: slip derives it from the sheet ink, the darks state the mock's palette tint */
+      color: var(--gc-dossier-name);
       /* a real fleet's names are not the prototype's four short words (the long-name matrix row) */
       overflow-wrap: anywhere;
     }
@@ -1489,6 +1856,15 @@
       font-size: 9px;
       letter-spacing: 0.16em;
       text-transform: uppercase;
+      /* The role line crosses the watermark's widest band, and at the owner's ruled 0.16 art opacity its
+       * worst RENDERED pixel measures 2.87 against the 4.5 small-text floor (G6.4 addendum — the token
+       * pair still gates clean; art is not a token). The owner asked for MORE art visibility twice, so
+       * the art stays and the TEXT gets the kit's text-over-art idiom instead: a sheet-coloured halo
+       * (the clear-appbar precedent — mode-proof because it rides the surface's own token). Darkens the
+       * art only directly under the glyphs. */
+      text-shadow:
+        0 1px 2px var(--gc-dossier-from),
+        0 0 6px var(--gc-dossier-from);
       /* the muted TOKEN, not `opacity` on the ink: an alpha blend is invisible to the contrast gate, and
        * the 0.6 this shipped with blended under the 4.5 small-text floor (same for the two below) */
       color: var(--gc-dossier-ink-2);
@@ -1501,6 +1877,7 @@
       grid-template-columns: repeat(4, 1fr);
       gap: 7px;
       padding: 0 14px 12px;
+      position: relative; /* G6.4 — paints over the watermark (`.gc-dossier-mark`) */
     }
     /* Geometry re-ruled 2026-08-04 against the palette-study mock. Measured, the mock's boxes are NOT
      * smaller than ours — scaled to this width its metric cell is 77px against our 76 — but they are
@@ -1561,6 +1938,7 @@
       display: flex;
       gap: 8px;
       padding: 0 14px 12px;
+      position: relative; /* G6.4 — paints over the watermark (`.gc-dossier-mark`) */
     }
     .gc-act {
       flex: 1;
@@ -1672,6 +2050,7 @@
       display: grid;
       gap: 7px;
       padding: 0 14px 14px;
+      position: relative; /* G6.4 — paints over the watermark (`.gc-dossier-mark`) */
     }
     .gc-svc {
       display: flex;
@@ -1681,6 +2060,37 @@
       background: var(--gc-dossier-card);
       border: 1px solid var(--gc-dossier-line);
       border-radius: 8px;
+    }
+    /* ── THE ROW AS A LINK (G6.4, owner device round) ──────────────────────────────────────────────────
+     * A live service with a URL renders as an `<a>` carrying the SAME class and therefore the SAME box —
+     * the row's geometry, LED, icon, name and port are untouched, exactly as on the cosmos/frontier
+     * dossiers this mirrors. What is added is only the affordance: the anchor must not inherit the UA's
+     * blue underline on either surface, and it needs a hover/press that reads on a sheet that may be
+     * light OR dark, so both states are TOKENS derived from the surface (`--gc-dossier-row-hover` is a
+     * mix over the row's own card, `--gc-dossier-act-line` is the accent outline the secondary button
+     * already wears). The FOCUS ring is not restated here: `.bs-sheet:has(.gc-dossier) :focus-visible`
+     * already re-colours it for this surface, and an anchor is focusable by construction.
+     * The hover is behind `(hover: hover)` — on a touch phone a sticky :hover would leave the last-tapped
+     * row lit after the browser returns from the service. */
+    a.gc-svc {
+      color: inherit;
+      text-decoration: none;
+      cursor: pointer;
+      /* §14.11: opacity/transform only — the press is the flat opacity dip the dark action buttons use
+       * rather than slip's 3px sticker slide, because a row has no offset shadow to sink into. */
+      transition: opacity 160ms var(--gc-ease-out);
+    }
+    @media (hover: hover) {
+      a.gc-svc:hover {
+        background: var(--gc-dossier-row-hover);
+        border-color: var(--gc-dossier-act-line);
+      }
+    }
+    a.gc-svc:active {
+      opacity: 0.82;
+    }
+    body[data-motion="reduced"] a.gc-svc {
+      transition: none;
     }
     .gc-svc i {
       flex: none;

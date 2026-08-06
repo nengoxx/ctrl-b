@@ -1,5 +1,6 @@
 import type { FleetAction } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
+import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
@@ -110,6 +111,28 @@ export function GachaHostDetail({
           onClick={onClose}
         />
       )}
+      {/* THE CHARACTER WATERMARK (G6.4, owner request 2026-08-06: "put the character image as a background
+          of the bottom sheet, like the dotted texture — faded, so it's visible, positioned center-right, in
+          the empty zone right of the PC name"). A SECOND, purely decorative copy of the SAME resolved file
+          the portrait draws — no second resolver, no second fetch (identical URL ⇒ the browser reuses the
+          decode), and no art means no watermark: a placeholder frame has nothing to echo.
+          It is NOT part of any View Transition group — `capsule-shell` is named on `.avatar` alone
+          (gacha.css), and this node carries no name, so the detail/showcase morphs are untouched.
+          PAINT ORDER is positional, not z-index'd: this is the first POSITIONED child of `.gc-dossier`, and
+          the four content blocks below it are positioned too (gacha.css), so every one of them paints after
+          it in tree order. Deliberately NOT `z-index: -1` + `isolation` on `.gc-dossier`: isolating it would
+          trap `.gc-dossier-close`'s z-index 2 inside a local context, and that 2 exists precisely to clear
+          the handle's z-1 drag strip in the SHEET's stacking context. */}
+      {art && (
+        <img
+          className="gc-dossier-mark"
+          src={art.url}
+          alt=""
+          aria-hidden
+          draggable={false}
+          style={art.focus === undefined ? undefined : { objectPosition: art.focus }}
+        />
+      )}
       {/* data-bs-peek: the PEEK detent ends here — the sheet opens showing the portrait, the rarity and the
           name/role line; drag-up reveals the metrics + services. The only interactive thing in the top 16px
           — where the handle's invisible drag hit-strip (`.bs-handle::after`, z 1) overlaps the body — is the
@@ -209,19 +232,42 @@ export function GachaHostDetail({
         ) : (
           services.map((s) => {
             const svcOn = !!s.status?.online;
-            return (
-              <div
-                className={"gc-svc" + (svcOn ? " on" : "")}
-                key={s.id}
-                role="group"
-                aria-label={`${s.name} ${svcOn ? "online" : "offline"}`}
-              >
+            // ONE row body, two wrappings — the portrait's own idiom, and the reason the LED/icon/name/port
+            // layout cannot drift between the linked and the un-linked case.
+            const row = (
+              <>
                 <i aria-hidden />
                 {/* The owner's icon for this service (D53 M3) — nothing at all when they have dropped
                     none, which is every fresh install. */}
                 <ServiceIcon service={s} />
                 <strong>{s.name}</strong>
                 <small>{s.port == null ? (svcOn ? "healthy" : "offline") : `:${s.port}`}</small>
+              </>
+            );
+            // THE ROW IS A LINK (G6.4, owner device round — every sibling dossier already opens its
+            // services and gacha's did not). The gate and the wire are the cosmos/frontier/kit ones,
+            // verbatim: a LIVE service that declares a `url` becomes an anchor, rebased onto whichever
+            // address this client can actually reach the host on (`serviceBase` prefers the tailnet name
+            // when we arrived over it); everything else — offline, or up but with no URL to open — stays
+            // the `role="group"` div it has always been, so there is never a dead link to tap.
+            return svcOn && s.url ? (
+              <a
+                key={s.id}
+                className="gc-svc on"
+                href={rebaseServiceUrl(s.url, serviceBase(host, window.location))}
+                target="_blank"
+                rel="noopener"
+              >
+                {row}
+              </a>
+            ) : (
+              <div
+                className={"gc-svc" + (svcOn ? " on" : "")}
+                key={s.id}
+                role="group"
+                aria-label={`${s.name} ${svcOn ? "online" : "offline"}`}
+              >
+                {row}
               </div>
             );
           })

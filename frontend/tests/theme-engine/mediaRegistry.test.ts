@@ -57,15 +57,18 @@ describe("applicableNs", () => {
 });
 
 describe("the kit row (D53 M3 + the Kit Art System)", () => {
-  it("is ALWAYS-ON and holds the four role folders the backend registry declares, in order", () => {
+  it("is ALWAYS-ON and holds the five role folders the backend registry declares, in order", () => {
     // The server's list is `KIT_ROLES` in core/media.py. Always-on is the mechanism, not a preference:
-    // no theme owns this namespace, so nothing else could reach its gallery.
+    // no theme owns this namespace, so nothing else could reach its gallery. `brand` is G6.3's addition
+    // and is APPENDED — the order is what the gallery lists sections in, so an insertion would reshuffle
+    // a screen the owner already knows.
     expect(MEDIA_NS.kit.alwaysOn).toBe(true);
     expect(Object.keys(MEDIA_NS.kit.roles)).toEqual([
       "services",
       "service-banners",
       "hosts",
       "background",
+      "brand",
     ]);
   });
 
@@ -87,13 +90,40 @@ describe("the kit row (D53 M3 + the Kit Art System)", () => {
     expect(MEDIA_NS.kit.roles["service-banners"].asset).not.toBe(MEDIA_NS.kit.roles.services.asset);
   });
 
-  it("the shared BACKGROUND is the one pool, and the one pin — the wallpaper/hero shape", () => {
+  it("the two POOLS each carry a pin, and only they do — the wallpaper/hero shape, twice", () => {
     expect(MEDIA_NS.kit.roles.background.kind).toBe("pool");
+    expect(MEDIA_NS.kit.roles.brand.kind).toBe("pool");
     const slots = MEDIA_NS.kit.slots ?? [];
-    expect(slots.map((s) => s.key)).toEqual(["background"]);
+    expect(slots.map((s) => s.key)).toEqual(["background", "brand"]);
     // A pin's options come from a real role, and a NAMED role never offers one (its stems ARE its
     // bindings) — the same two invariants the gacha and frontier rows are held to.
     for (const slot of slots) expect(MEDIA_NS.kit.roles[slot.from].kind).toBe("pool");
+    // Each pin reads its OWN folder. Crossing them would let the owner pin a wallpaper as the app icon —
+    // the same class of mistake the gacha reel pin is fenced against (Codex F4).
+    for (const slot of slots) expect(slot.from).toBe(slot.key);
+  });
+
+  it("prices the BRAND mark as an icon, not as full-bleed art (G6.3)", () => {
+    // It paints at ~18px in the app bar — the same box class as a service icon, and three orders of
+    // magnitude off the background's ceiling, which would never warn on anything.
+    expect(MEDIA_NS.kit.roles.brand.bounds).toEqual(MEDIA_NS.kit.roles.services.bounds);
+  });
+
+  it("the brand hint says ALPHA is the shape — the one thing the file cannot tell the owner", () => {
+    // A fully opaque photo drops in happily and paints a solid accent-coloured rectangle, because the
+    // surface reads the file as a MASK. The hint is the only place that can warn.
+    const hint = MEDIA_NS.kit.roles.brand.hint ?? "";
+    expect(hint).toMatch(/transparent/i);
+    expect(hint).toMatch(/shape/i);
+  });
+
+  it("the background hint no longer promises that scenery themes IGNORE the picture (G6.3)", () => {
+    // gacha made it a rung of its own backdrop ladder, so the old sentence became a lie the
+    // owner caught on the device round: they dropped a file in and nothing happened under gacha. What a
+    // scenery theme declines is the shared LAYER; the picture itself still reaches its own backdrop.
+    const hint = MEDIA_NS.kit.roles.background.hint ?? "";
+    expect(hint).not.toMatch(/ignore/i);
+    expect(hint).toMatch(/layer/i);
   });
 
   it("prices a service BANNER between an icon and full-bleed art (the per-role bounds' whole point)", () => {
@@ -148,13 +178,8 @@ describe("the gacha row", () => {
   it("describes every role folder the backend registry declares, and prices them all as full-bleed art", () => {
     // The two registries mirror each other: a role the server lists with no row here would render hintless
     // and unbounded. (The server's list is `GACHA_ROLES` in core/media.py.)
-    expect(Object.keys(MEDIA_NS.gacha.roles)).toEqual([
-      "characters",
-      "banner",
-      "wallpaper",
-      "reel",
-      "oracle",
-    ]);
+    // `wallpaper` was REMOVED at G6.3 (owner ruling: one shared background home, not one per theme).
+    expect(Object.keys(MEDIA_NS.gacha.roles)).toEqual(["characters", "banner", "reel", "oracle"]);
     for (const role of Object.values(MEDIA_NS.gacha.roles)) {
       expect(role.kind).toBe("pool");
       // G5's server-side WARN_BYTES/WARN_PIXELS, moved here whole when the policy went client-side.
@@ -164,10 +189,23 @@ describe("the gacha row", () => {
 
   it("offers every pin the backend registry accepts, each sourced from a real role", () => {
     const slots = MEDIA_NS.gacha.slots ?? [];
+    // The pin list is UNCHANGED by G6.3's role removal: a pin key and a role folder are validated
+    // independently on both ends (`GACHA_SLOTS` vs `GACHA_ROLES`), and `wallpaper` survives because the
+    // theme-specific half — bind a CAST portrait to the backdrop — has no kit equivalent.
     expect(slots.map((s) => s.key)).toEqual(["wallpaper", "hero", "oracle", "reel_figure"]);
     for (const slot of slots) expect(MEDIA_NS.gacha.roles[slot.from]).toBeDefined();
+    expect(slots.find((s) => s.key === "wallpaper")?.from).toBe("characters");
     // The ruled shape (Codex F4): the figure's options come from the REEL role, never the cast.
     expect(slots.find((s) => s.key === "reel_figure")?.from).toBe("reel");
+  });
+
+  it("the backdrop pin carries the HINT that names its fallback — the folder it used to have is gone", () => {
+    // With no `wallpaper/` role there is nowhere else in the gallery to learn where the fleet backdrop
+    // comes from, and the pins section's generic copy ("overriding that folder's own first pick") is no
+    // longer the whole truth for this one. It is the only gacha pin that needs a line of its own.
+    const hint = MEDIA_NS.gacha.slots?.find((s) => s.key === "wallpaper")?.hint ?? "";
+    expect(hint).toMatch(/shared/i);
+    expect(MEDIA_NS.gacha.slots?.filter((s) => s.hint !== undefined)).toHaveLength(1);
   });
 });
 

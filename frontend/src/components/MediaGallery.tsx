@@ -207,6 +207,10 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
                       <option value={current}>{current} (missing)</option>
                     )}
                   </select>
+                  {/* The per-pin line (G6.3), for a pin whose ladder the section's generic copy above
+                      does not describe — gacha's backdrop, which falls through to the SHARED background
+                      rather than to a folder of its own. Rendered only when the registry declares one. */}
+                  {slot.hint != null && <small className="mgal-pin-hint">{slot.hint}</small>}
                 </label>
               );
             })}

@@ -46,9 +46,21 @@ MEDIA_FILES_SEGMENT = "files"
 
 #: The gacha role folders (§5.4). `oracle` has its own folder for symmetry (the G5-brief default).
 #: Order matters only for the ensure-dir walk and for how the Conf gallery lists sections.
-GACHA_ROLES: tuple[str, ...] = ("characters", "banner", "wallpaper", "reel", "oracle")
+#:
+#: **`wallpaper` was REMOVED at G6.3** (owner ruling 2026-08-06: "just having the background in the kit
+#: is the better approach — no duplicated systems"). The fleet backdrop now falls back to the SHARED
+#: `kit/background` pool, so a second drop folder for the same picture is a second home for one idea.
+#: What survives is the theme-SPECIFIC half: the `wallpaper` PIN below, which sources from `characters`
+#: — that is gacha's own mechanism (bind a cast portrait to the backdrop) and the kit has no equivalent.
+#: A clean removal, not a deprecation: media v2 has never shipped to prod, so there is no owner data to
+#: migrate and no compat branch to carry (the no-legacy-seams rule).
+GACHA_ROLES: tuple[str, ...] = ("characters", "banner", "reel", "oracle")
 
-#: The gacha `slots` pin keys (§5.2) — the cross-role bindings the Conf gallery offers.
+#: The gacha `slots` pin keys (§5.2) — the cross-role bindings the Conf gallery offers. `wallpaper` is
+#: still here with its folder gone, and the two are deliberately independent: a pin key names a SLOT the
+#: client resolver fills, and `Settings._known_media_namespaces_roles_and_slots` validates it against
+#: this tuple alone (never against `roles`), so a pin whose options come from another role is an
+#: ordinary shape here — `reel_figure` has always been one.
 GACHA_SLOTS: tuple[str, ...] = ("wallpaper", "hero", "oracle", "reel_figure")
 
 #: The frontier role folders (D53 / MEDIA_PLAN §3). `rigs` and `hero` are POOLS (the badlands cards and
@@ -56,8 +68,8 @@ GACHA_SLOTS: tuple[str, ...] = ("wallpaper", "hero", "oracle", "reel_figure")
 #: (`cube`/`platform-mid`/`platform-base`), so the drop-in IS the binding and no pin exists for it.
 FRONTIER_ROLES: tuple[str, ...] = ("rigs", "hero", "stack")
 
-#: The frontier `slots` pin keys. Only `hero`, and it is the same shape as the gacha wallpaper pin: a
-#: pool with a first-wins default that the owner may override by name. The named role gets none.
+#: The frontier `slots` pin keys. Only `hero`: a pool with a first-wins default that the owner may
+#: override by name (the kit pins are the same shape). The named role gets none.
 FRONTIER_SLOTS: tuple[str, ...] = ("hero",)
 
 #: The kit role folders (D53 M3, extended by the Kit Art System). They belong to no theme: every theme's
@@ -65,17 +77,20 @@ FRONTIER_SLOTS: tuple[str, ...] = ("hero",)
 #:
 #:   * `services` / `service-banners` — NAMED, keyed by the SERVICE identity (`kind`, else `name`);
 #:   * `hosts` — NAMED, keyed by the MACHINE's name;
-#:   * `background` — a POOL (the shared whole-app backdrop), with the one pin below.
+#:   * `background` — a POOL (the shared whole-app backdrop), with a pin below;
+#:   * `brand` — a POOL (the app bar's mark), with a pin below. Added at G6.3 on the owner's ruling; it
+#:     is the `background` shape exactly, and deliberately so — the server's job for both is "list this
+#:     folder, honour one pin", and the only thing that differs is which surface paints the result.
 #:
 #: The three named roles' keys are DATA-DERIVED — a file binds to the service or the machine whose
 #: identity its stem matches — which is why there is no key list here: those live in `config.yaml`, not
 #: in this registry. They get no pin for the same reason the frontier stack has none: the filename IS the
-#: binding. Only the pool needs one.
-KIT_ROLES: tuple[str, ...] = ("services", "service-banners", "hosts", "background")
+#: binding. Only the pools need one.
+KIT_ROLES: tuple[str, ...] = ("services", "service-banners", "hosts", "background", "brand")
 
-#: The kit `slots` pin keys. Only `background`, and it is the same shape as the gacha wallpaper pin and
-#: the frontier hero pin: a pool with a first-wins default that the owner may override by name.
-KIT_SLOTS: tuple[str, ...] = ("background",)
+#: The kit `slots` pin keys — one per POOL, and each is the same shape as the frontier hero pin: a
+#: first-wins default the owner may override by name.
+KIT_SLOTS: tuple[str, ...] = ("background", "brand")
 
 
 @dataclass(frozen=True)

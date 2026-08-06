@@ -92,18 +92,21 @@ describe("themeSettingsSpec", () => {
   });
 });
 
-// ── gacha's declared schema (D52 G0) — the shared kit axes first (the cosmos/vapor ordering convention),
-//    then the theme's own three. Order IS the contract: ConfTab auto-renders the keys as declared. ──
+// ── gacha's declared schema (D52 G0) — the DOSSIER PICKER first (G6.3, owner ruling at the 2026-08-06
+//    device round: "they go hand in hand"), then the shared kit axes (the cosmos/vapor ordering
+//    convention), then the theme's own remaining three. Order IS the contract: ConfTab auto-renders the
+//    keys as declared, immediately after the accent Palette row — which is the whole point of the move,
+//    since those are the group's only two palette pickers. ──
 describe("themeSettingsSpec — gacha", () => {
-  it("declares the four kit axes then starMode / dossierPalette / wallpaper / oracle, in that order", () => {
+  it("leads with dossierPalette, then the four kit axes, then starMode / wallpaper / oracle", () => {
     expect(Object.keys(themeSettingsSpec("gacha") ?? {})).toEqual([
+      // Declared FIRST so the Appearance group renders it adjacent to the accent Palette swatches.
+      "dossierPalette",
       "composer",
       "composerSkin",
       "planPlacement",
       "outlines",
       "starMode",
-      // G6's dossier picker sits with the theme's own rows, next to the other surface-shaping one
-      "dossierPalette",
       "wallpaper",
       "oracle",
     ]);

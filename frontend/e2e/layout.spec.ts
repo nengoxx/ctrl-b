@@ -719,6 +719,9 @@ test("gacha · appbar: prototype padding in the default mode; a dissolve + no in
     mode: "dark",
     accent: "arcade",
     appbarMode: "transparent",
+    // The subtitle is a SWITCH since the refined G6.3 ruling (`ui.appbarSubtitleVisible`, synced, default
+    // OFF) — so the halo claim below has to seed it ON, or the `.meta` span this arm measures never exists.
+    appbarSubtitleVisible: true,
     tab: "fleet",
     v: 1,
   });

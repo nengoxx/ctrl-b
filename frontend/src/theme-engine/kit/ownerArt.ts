@@ -1,7 +1,7 @@
 // The `kit` media namespace's ADAPTER (D53 M3 + the Kit Art System / MEDIA_PLAN §3 + §5) — the owner's
 // SHARED art, from the wire payload to the surfaces that paint it: service icons (through `ServiceIcon`),
 // service banners and machine pictures (through the parent-prop primitives at the bottom of this file),
-// and the whole-app background layer (`KitBackground`).
+// the whole-app background layer (`KitBackground`), and the app bar's brand mark (`KitAppBar`).
 //
 // SPLIT the way `themes/frontier/ownerArt.ts` and gacha's `roster.ts` are, and for the same reason: the
 // resolution is PURE (a payload + an identity in, a file out), so every acceptance row — the collisions,
@@ -11,17 +11,26 @@
 // It lives under `kit/` rather than in a theme because the namespace belongs to no theme: every theme's
 // service rows read the icons, and any theme may adopt the rest. That is also why its registry row is
 // `alwaysOn`. It is named `ownerArt.ts` (the frontier precedent) rather than `serviceIcons.ts` (its M3
-// name): three of its four roles are not icons, and two are not about services at all.
+// name): four of its five roles are not icons, and three are not about services at all.
 //
 // WHAT IT DOES NOT DECIDE is the precedence (Codex A5): each role resolves the OWNER's file for one
 // identity and stops. Whether that beats, loses to, or composes with a theme's own art is the ADOPTING
 // SURFACE's ladder — cosmos deals its bundled banner pool and then overrides per service, and a theme's
-// own hero/roster/wallpaper never consults these roles at all.
+// own hero/roster never consults these roles at all. (One exception, ruled: gacha's fleet BACKDROP reads
+// the shared background as a rung of its own ladder — G6.3 deleted its private twin of that folder rather
+// than run two. It still does not mount the kit LAYER.)
 
 import { useCallback, useMemo, type CSSProperties } from "react";
 
 import { useMediaIndex, type MediaFile, type MediaIndex } from "../../hooks/useMedia";
-import { firstUsable, hostKeyFor, keyFor, normalizeMediaKey, stemIndex } from "../../lib/media";
+import {
+  firstUsable,
+  hostKeyFor,
+  keyFor,
+  normalizeMediaKey,
+  revUrl,
+  stemIndex,
+} from "../../lib/media";
 import type { ServiceIdentity } from "../../lib/media";
 
 /** The namespace and its role folders — named once so the hooks, the gallery and the tests cannot drift
@@ -31,8 +40,10 @@ const ICON_ROLE = "services";
 const BANNER_ROLE = "service-banners";
 const HOST_ROLE = "hosts";
 const BACKGROUND_ROLE = "background";
-/** The pool's pin (`media.kit.slots.background`) — the owner overriding the folder's first-wins pick. */
+const BRAND_ROLE = "brand";
+/** Each pool's pin (`media.kit.slots.<key>`) — the owner overriding that folder's first-wins pick. */
 const BACKGROUND_SLOT = "background";
+const BRAND_SLOT = "brand";
 
 /** A role's files out of a payload, defensively. Wire data: a stub or partial response (an e2e mock, a
  *  proxy answering `{}`) must degrade to "no art" rather than throw inside a render — the
@@ -84,10 +95,21 @@ export function hostArtFrom(
 }
 
 /** The shared whole-app background: the `background` PIN, else that folder's first usable file, else
- *  nothing. The gacha-wallpaper / frontier-hero pin shape, through the same `firstUsable` rung — a pin
- *  naming a file the folder no longer holds falls through rather than blanking the layer. */
+ *  nothing. The frontier-hero pin shape, through the same `firstUsable` rung — a pin naming a file the
+ *  folder no longer holds falls through rather than blanking the layer. */
 export function backgroundArtFrom(index: MediaIndex | undefined): MediaFile | undefined {
   return firstUsable(roleFiles(index, BACKGROUND_ROLE), index?.slots?.[BACKGROUND_SLOT]);
+}
+
+/** The owner's BRAND MARK — the silhouette the app bar shows instead of the kit's accent dot (G6.3). The
+ *  same pool+pin ladder as the background above, and the same degrade: no folder, no usable file or a
+ *  dangling pin ⇒ `undefined` ⇒ the bar renders exactly what it rendered before this slice.
+ *
+ *  Only the file's ALPHA is used — `KitAppBar` paints it as a CSS mask over the accent fill — but that is
+ *  the SURFACE's business, not this resolver's (the §A5 split: this module answers "which file", never
+ *  "how it is painted"). */
+export function brandArtFrom(index: MediaIndex | undefined): MediaFile | undefined {
+  return firstUsable(roleFiles(index, BRAND_ROLE), index?.slots?.[BRAND_SLOT]);
 }
 
 // ── the hooks: ONE query, one policy, four readings of it ────────────────────────────────────────
@@ -157,9 +179,15 @@ export function useHostArt(): (host: { name: string }) => MediaFile | undefined 
   return useNamedArt(HOST_ROLE, hostKeyFor);
 }
 
-/** The shared background layer's own read (`KitBackground`). */
+/** The shared background layer's own read (`KitBackground`) — and, since G6.3, gacha's wallpaper ladder,
+ *  which takes the same resolved file as its last owner rung rather than mounting the layer. */
 export function useKitBackgroundArt(): MediaFile | undefined {
   return backgroundArtFrom(useKitMedia());
+}
+
+/** The app bar's read of the owner's brand mark (`KitAppBar`). */
+export function useKitBrandArt(): MediaFile | undefined {
+  return brandArtFrom(useKitMedia());
 }
 
 // ── the URL every consumer paints from ───────────────────────────────────────────────────────────
@@ -185,7 +213,8 @@ export function useKitBackgroundArt(): MediaFile | undefined {
  *  to the primitives below directly — cosmos's dealt banner pool). */
 export function ownerArtUrl(file: MediaFile | undefined): string | undefined {
   if (file === undefined) return undefined;
-  return file.revision ? `${file.url}?rev=${encodeURIComponent(file.revision)}` : file.url;
+  // The spelling itself lives in `lib/media.ts#revUrl` (G6.3) — the gacha wallpaper publish shares it.
+  return revUrl(file.url, file.revision);
 }
 
 // ── the PARENT-surface primitives (Codex A2) ─────────────────────────────────────────────────────

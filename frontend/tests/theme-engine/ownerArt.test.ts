@@ -31,6 +31,7 @@ vi.mock("../../src/lib/media", async (importOriginal) => {
 import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
 import {
   backgroundArtFrom,
+  brandArtFrom,
   hostArtFrom,
   hostArtProps,
   KIT_NS,
@@ -40,6 +41,7 @@ import {
   serviceIconFrom,
   useHostArt,
   useKitBackgroundArt,
+  useKitBrandArt,
   useServiceIcons,
 } from "../../src/theme-engine/kit/ownerArt";
 
@@ -194,6 +196,40 @@ describe("backgroundArtFrom — the shared background's pool + pin ladder", () =
   });
 });
 
+describe("brandArtFrom — the app bar's mark, on the SAME pool + pin ladder (G6.3)", () => {
+  // Deliberately the background's shape, rung for rung: a second pool role must not invent a second
+  // resolution rule, or "first wins unless you pin one" would mean two things in one namespace.
+  it("takes the folder's first usable file, and a PIN overrides it by stem", () => {
+    const first = file("a");
+    expect(brandArtFrom(index({ brand: [first, file("b")] }))).toBe(first);
+    const b = file("b");
+    expect(brandArtFrom(index({ brand: [file("a"), b] }, { brand: "b" }))).toBe(b);
+  });
+
+  it("a DANGLING pin falls through, an UNUSABLE file is skipped — never a broken mark", () => {
+    const a = file("a");
+    expect(brandArtFrom(index({ brand: [a] }, { brand: "deleted" }))).toBe(a);
+    const good = file("b");
+    expect(brandArtFrom(index({ brand: [file("a", { unusable: true }), good] }))).toBe(good);
+  });
+
+  it("reads ONLY its own folder, and is undefined when empty — the bar keeps its old mark", () => {
+    // The empty answer is the ordinary one, and it is what makes the whole role dormant by absence:
+    // no file ⇒ the theme's `brandMark` ⇒ the kit dot, exactly as before this slice.
+    expect(brandArtFrom(index({ background: [file("a")], brand: [] }))).toBeUndefined();
+    expect(brandArtFrom(index({}))).toBeUndefined();
+    expect(brandArtFrom(undefined)).toBeUndefined();
+  });
+
+  it("is INDEPENDENT of the background — two pools, two pins, no leakage either way", () => {
+    const bg = file("wall");
+    const mark = file("logo");
+    const idx = index({ background: [bg], brand: [mark] }, { background: "wall", brand: "logo" });
+    expect(backgroundArtFrom(idx)).toBe(bg);
+    expect(brandArtFrom(idx)).toBe(mark);
+  });
+});
+
 describe("ownerArtUrl — the `?rev=` every owner-art consumer paints from (Codex LOW)", () => {
   it("stamps the file's revision onto the mount URL, encoded", () => {
     // `mtime_ns:size` carries a colon, which is legal in a query value but is encoded anyway: one rule,
@@ -306,15 +342,17 @@ describe("the kit index's OWN query policy (Opus M3)", () => {
     expect(opts.staleTime).toBeGreaterThanOrEqual(10 * 60_000);
   });
 
-  it("every role reads that ONE query, so four surfaces cost one request", () => {
-    wire.useMediaIndex.mockClear();
-    renderHook(() => useKitBackgroundArt());
-    const [ns, opts] = wire.useMediaIndex.mock.calls.at(-1) as unknown as [
-      string,
-      { refetchOnWindowFocus: boolean },
-    ];
-    expect(ns).toBe(KIT_NS);
-    expect(opts.refetchOnWindowFocus).toBe(false); // the same policy object, not a second one
+  it("every role reads that ONE query, so five surfaces cost one request", () => {
+    for (const hook of [useKitBackgroundArt, useKitBrandArt]) {
+      wire.useMediaIndex.mockClear();
+      renderHook(() => hook());
+      const [ns, opts] = wire.useMediaIndex.mock.calls.at(-1) as unknown as [
+        string,
+        { refetchOnWindowFocus: boolean },
+      ];
+      expect(ns).toBe(KIT_NS);
+      expect(opts.refetchOnWindowFocus).toBe(false); // the same policy object, not a second one
+    }
   });
 
   it("degrades SILENTLY: an unreachable index resolves to no art, never to an error branch", () => {

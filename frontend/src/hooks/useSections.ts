@@ -74,6 +74,14 @@ export function useSections(): SectionsController {
       // chunk was still loading, the armed target was never consumed — left alone it would (a) keep the
       // scroll-reset skipped and (b) surprise-scroll the NEXT Conf visit to the Tools group.
       clearGroupScrollTarget();
+      // …and a SAME-TAB tap stops here (G6.3). `setUI({ tab })` on the tab we are already on is a no-op for
+      // every theme — the ui store is a value-subscriber — but `runNavTransition` is NOT: under gacha it
+      // starts a real root View Transition, so re-tapping the active tab replayed the whole cross-fade over
+      // a screen that never changed (owner device round). The guard lives HERE rather than in the decorator
+      // because "did anything change?" is the chokepoint's question, not the transition's. Deliberately NOT
+      // in the hosted branch above: re-tapping a hosted section RE-SCROLLS its host to the group, which is
+      // the feature, and that branch has already re-armed the handoff by this point.
+      if (id === active) return;
       // `runNavTransition` is the navigation-transition decorator (D52 / GACHA_PLAN §10.1 M2): a plain
       // `setUI({ tab: id })` for every theme but gacha, which wraps it in a root View Transition so its
       // tab reel sweeps over a cross-fade rather than over a hard swap. The gate lives in the decorator,

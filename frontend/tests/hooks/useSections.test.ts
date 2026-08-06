@@ -105,6 +105,41 @@ describe("useSections", () => {
     expect(getGroupScrollTarget()).toBeNull(); // stale target cleared
   });
 
+  // ── the SAME-TAB guard (G6.3, owner device round) — re-tapping the active tab must not re-run the
+  //    navigation transition. Under gacha `runNavTransition` starts a real root View Transition, so an
+  //    unguarded same-tab tap replayed the cross-fade over a screen that never changed.
+  it("navigate(active id) still disarms a stale scroll target, and leaves the section alone", () => {
+    const { result } = renderHook(() => useSections());
+    expect(result.current.active).toBe("fleet");
+    act(() => setGroupScrollTarget(HOSTED_UTILS_GROUP_ID)); // a stale handoff is still cleared…
+    act(() => result.current.navigate("fleet")); // …and that is ALL a same-tab tap does
+    expect(result.current.active).toBe("fleet");
+    expect(getGroupScrollTarget()).toBeNull();
+  });
+
+  it("navigate(active id) under gacha does NOT run the nav transition (the replayed cross-fade)", () => {
+    setUI({ theme: "gacha", tab: "fleet", motion: "full" });
+    const { result } = renderHook(() => useSections());
+    const started: (() => void)[] = [];
+    // The structural shape `runViewTransition` actually calls (lib.dom's `ViewTransition` carries members
+    // the wrapper never touches) — the same minimal-typing stance viewTransition.ts itself takes.
+    const doc = document as unknown as { startViewTransition?: (cb: () => void) => unknown };
+    const prev = doc.startViewTransition;
+    doc.startViewTransition = (cb: () => void) => {
+      started.push(cb);
+      cb();
+      return { ready: Promise.resolve(), finished: Promise.resolve() };
+    };
+    try {
+      act(() => result.current.navigate("fleet")); // same tab → no transition at all
+      expect(started).toHaveLength(0);
+      act(() => result.current.navigate("agent")); // a real move → exactly one
+      expect(started).toHaveLength(1);
+    } finally {
+      doc.startViewTransition = prev; // jsdom has none, so this restores "absent" too
+    }
+  });
+
   it("appbarMode 'minimal' → empty bar; the menu lists the unhosted sections", () => {
     setUI({ appbarMode: "minimal" }); // vapor, 4-tab → nothing hosted
     const { result } = renderHook(() => useSections());

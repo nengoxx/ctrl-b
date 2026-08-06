@@ -27,12 +27,13 @@ export function FrontierRoot() {
 // The appbar brand subtitle — the prototype's live "N/M rigs · online" (frontier fills the Kit's `brandMeta`
 // slot, the D30 slot-composition pattern applied to the appbar; owner-ratified at the F1 pre-flight). Reads
 // the SAME query pair `useFleet` itself composes (useServerInfo → poll cadence, useHosts → the fleet), so it
-// shares the fleet query cache with no new wiring. While the fleet is loading or empty it renders the Kit's
-// default "dashboard" copy (no invented text).
+// shares the fleet query cache with no new wiring. While the fleet is loading or empty it renders NOTHING —
+// the G6.3 owner ruling retired every decorative subtitle ("dashboard" included); this slot survives only
+// because its filled state is live DATA.
 function FrontierBrandMeta() {
   const { data: server } = useServerInfo();
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
-  if (hosts.length === 0) return <>dashboard</>;
+  if (hosts.length === 0) return null;
   const on = hosts.filter((h) => h.status?.online).length;
   return (
     <>

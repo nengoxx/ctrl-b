@@ -28,6 +28,8 @@ def test_appearance_defaults_config_layer() -> None:
     assert s.appearance.motion is None  # M3: unseeded → client keeps local until first authored
     assert s.appearance.perf is None
     assert s.appearance.theme_settings is None  # M3: open per-theme options map, unseeded until written
+    assert s.appearance.kit_background_visible is None  # unseeded — not "the owner turned it off"
+    assert s.appearance.appbar_subtitle_visible is None  # same contract for the brand-subtitle switch
     assert s.appearance.updated_at is None  # stamped only on first write
 
 
@@ -93,6 +95,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
                 "perf": None,
                 "theme_settings": None,
                 "kit_background_visible": None,  # unseeded too — a pre-slice config is not "turned off"
+                "appbar_subtitle_visible": None,  # ditto: unseeded ≠ "the owner hid the subtitle"
                 "updated_at": None,
             }
 
@@ -108,6 +111,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
                         "perf": "lite",
                         "theme_settings": {"minimal": {"hideAppbar": True}},
                         "kit_background_visible": False,
+                        "appbar_subtitle_visible": True,
                     }
                 },
             )
@@ -120,6 +124,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
             assert saved["perf"] == "lite"
             assert saved["theme_settings"] == {"minimal": {"hideAppbar": True}}
             assert saved["kit_background_visible"] is False
+            assert saved["appbar_subtitle_visible"] is True
             assert saved["updated_at"] is not None  # server-stamped
 
             # GET reflects it (the cheap always-on read the ui store reconciles against).
@@ -132,6 +137,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
             assert reloaded.appearance.theme == "minimal"
             assert reloaded.appearance.accent == "indigo"
             assert reloaded.appearance.kit_background_visible is False
+            assert reloaded.appearance.appbar_subtitle_visible is True
             assert reloaded.appearance.updated_at is not None
 
             # A second write re-stamps a newer time (monotonic-ish; at least not older).

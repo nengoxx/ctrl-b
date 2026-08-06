@@ -6,11 +6,13 @@
 // reconcile-on-mount hook (`useAppearanceSync`, mounted once in App), and the optimistic write
 // (`useSaveAppearance`, used by the Conf picker).
 //
-// The synced unit is {theme, mode, accent, motion, perf, themeSettings, kitBackgroundVisible} — one LWW
-// stamp covers all of them (owner directive 2026-06-26: motion + perf are device levers but kept
-// consistent across devices; themeSettings carries each theme's namespaced options; the kit background
-// switch governs one SHARED image, so it is not a per-device choice either). The WIRE uses snake_case
-// `theme_settings` / `kit_background_visible` (matching the existing `updated_at`); the store uses
+// The synced unit is {theme, mode, accent, motion, perf, themeSettings, kitBackgroundVisible,
+// appbarSubtitleVisible} — one LWW stamp covers all of them (owner directive 2026-06-26: motion + perf are
+// device levers but kept consistent across devices; themeSettings carries each theme's namespaced options;
+// the kit background switch governs one SHARED image, so it is not a per-device choice either; the app-bar
+// brand-subtitle switch is one answer to "how much text do I want in my bar", not a per-screen layout
+// choice — unlike `ui.appbarMode`, which stays device-local). The WIRE uses snake_case `theme_settings` /
+// `kit_background_visible` / `appbar_subtitle_visible` (matching the existing `updated_at`); the store uses
 // camelCase — bridged here.
 
 import { useEffect } from "react";
@@ -42,6 +44,7 @@ export interface AppearanceDoc {
   perf: string | null;
   theme_settings: ThemeSettingsMap | null; // snake on the wire (mirrors AppearanceCfg); → store `themeSettings`
   kit_background_visible: boolean | null; // the Kit Art System's shared-background switch; → store `kitBackgroundVisible`
+  appbar_subtitle_visible: boolean | null; // the app bar's brand-subtitle switch; → store `appbarSubtitleVisible`
   updated_at: string | null; // server-stamped; carried for a future conflict check (none built — LWW)
 }
 
@@ -54,6 +57,7 @@ export interface AppearanceLocal {
   perf: string;
   themeSettings: ThemeSettingsMap;
   kitBackgroundVisible: boolean;
+  appbarSubtitleVisible: boolean;
 }
 
 /** The fields the reconcile applies (server-wins). Skin-change goes through `switchTheme`; the rest are
@@ -66,6 +70,7 @@ export interface AppearanceApply {
   perf: Perf;
   themeSettings: ThemeSettingsMap;
   kitBackgroundVisible: boolean;
+  appbarSubtitleVisible: boolean;
 }
 
 const KEY = ["appearance"] as const;
@@ -104,6 +109,7 @@ export function reconcileAppearance(
   const motion = server.motion ?? local.motion;
   const perf = server.perf ?? local.perf;
   const kitBackgroundVisible = server.kit_background_visible ?? local.kitBackgroundVisible;
+  const appbarSubtitleVisible = server.appbar_subtitle_visible ?? local.appbarSubtitleVisible;
   // Strip the dead per-theme `hideAppbar` (now the global appbarMode) so a stale SYNCED copy can't re-dirty
   // local each load (it's already stripped from local by the migration → compares clean, no spurious apply;
   // a later appearance save then propagates the clean value to the server).
@@ -122,6 +128,7 @@ export function reconcileAppearance(
     motion === local.motion &&
     perf === local.perf &&
     kitBackgroundVisible === local.kitBackgroundVisible &&
+    appbarSubtitleVisible === local.appbarSubtitleVisible &&
     stableStringify(themeSettings) === stableStringify(local.themeSettings)
   ) {
     return null; // already matches → no-op
@@ -134,6 +141,7 @@ export function reconcileAppearance(
     perf: perf as Perf,
     themeSettings,
     kitBackgroundVisible,
+    appbarSubtitleVisible,
   };
 }
 
@@ -161,6 +169,7 @@ export function useAppearanceSync(): void {
       perf: ui.perf,
       themeSettings: ui.themeSettings,
       kitBackgroundVisible: ui.kitBackgroundVisible,
+      appbarSubtitleVisible: ui.appbarSubtitleVisible,
     };
     // Real registry predicate for the reconcile skin door (item ⑥). Importing `registry` here is fine —
     // this module already pulls it transitively via `switchTheme`.
@@ -191,6 +200,7 @@ export function useAppearanceSync(): void {
         perf: next.perf,
         themeSettings: next.themeSettings,
         kitBackgroundVisible: next.kitBackgroundVisible,
+        appbarSubtitleVisible: next.appbarSubtitleVisible,
       });
     } else {
       setUI({
@@ -200,6 +210,7 @@ export function useAppearanceSync(): void {
         perf: next.perf,
         themeSettings: next.themeSettings,
         kitBackgroundVisible: next.kitBackgroundVisible,
+        appbarSubtitleVisible: next.appbarSubtitleVisible,
       });
     }
   }, [data, anyDirty]);
@@ -213,6 +224,7 @@ export interface AppearancePatch {
   perf: Perf;
   themeSettings: ThemeSettingsMap;
   kitBackgroundVisible: boolean;
+  appbarSubtitleVisible: boolean;
 }
 
 /** Build the full appearance patch from the current `ui` store — every appearance write sends the whole
@@ -227,6 +239,7 @@ export function currentAppearancePatch(): AppearancePatch {
     perf: ui.perf,
     themeSettings: ui.themeSettings,
     kitBackgroundVisible: ui.kitBackgroundVisible,
+    appbarSubtitleVisible: ui.appbarSubtitleVisible,
   };
 }
 
@@ -248,6 +261,7 @@ export function useSaveAppearance() {
           perf: patch.perf,
           theme_settings: patch.themeSettings, // camel store → snake wire
           kit_background_visible: patch.kitBackgroundVisible,
+          appbar_subtitle_visible: patch.appbarSubtitleVisible,
         },
       }),
     onMutate: async (patch) => {
@@ -261,6 +275,7 @@ export function useSaveAppearance() {
         perf: patch.perf,
         theme_settings: patch.themeSettings,
         kit_background_visible: patch.kitBackgroundVisible,
+        appbar_subtitle_visible: patch.appbarSubtitleVisible,
         updated_at: old?.updated_at ?? null,
       }));
       return { prev };

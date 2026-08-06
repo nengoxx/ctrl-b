@@ -8,7 +8,8 @@ import {
 
 // Phase 11 / D28 §9.11 + M3 §14.3 — the cross-device reconcile decision (compare-then-set, server-wins,
 // but only when the server has a recorded preference). The synced unit is
-// {theme,mode,accent,motion,perf,themeSettings,kitBackgroundVisible}. Pure function → tested directly.
+// {theme,mode,accent,motion,perf,themeSettings,kitBackgroundVisible,appbarSubtitleVisible}. Pure function
+// → tested directly.
 
 const local: AppearanceLocal = {
   theme: "vapor",
@@ -18,6 +19,7 @@ const local: AppearanceLocal = {
   perf: "full",
   themeSettings: { vapor: { heroOn: true } },
   kitBackgroundVisible: true,
+  appbarSubtitleVisible: false,
 };
 const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
   theme: "vapor",
@@ -27,6 +29,7 @@ const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
   perf: "full",
   theme_settings: { vapor: { heroOn: true } },
   kit_background_visible: true,
+  appbar_subtitle_visible: false,
   updated_at: "2026-06-26T12:00:00Z",
   ...o,
 });
@@ -55,6 +58,7 @@ describe("reconcileAppearance", () => {
       perf: "full",
       themeSettings: { vapor: { heroOn: true } },
       kitBackgroundVisible: true,
+      appbarSubtitleVisible: false,
     });
   });
 
@@ -78,6 +82,28 @@ describe("reconcileAppearance", () => {
     expect(
       reconcileAppearance(server({ kit_background_visible: null, accent: "ember" }), local, always)
         ?.kitBackgroundVisible,
+    ).toBe(true);
+  });
+
+  // The app bar's brand-subtitle switch joins on the same terms again (the third global lever): synced
+  // because "how much text do I want in my bar" is one answer, and NULLABLE because an existing config
+  // (stamped `updated_at`, no such key) must not read as "the owner turned the subtitle off".
+  it("server wins on a differing bar-subtitle switch, and UNSEEDED keeps local", () => {
+    expect(
+      reconcileAppearance(server({ appbar_subtitle_visible: true }), local, always)
+        ?.appbarSubtitleVisible,
+    ).toBe(true);
+    // A pre-slice doc (null) coalesces to local — no apply at all when nothing else differs…
+    expect(
+      reconcileAppearance(server({ appbar_subtitle_visible: null }), local, always),
+    ).toBeNull();
+    // …and it does not get dragged to a default by an UNRELATED change either.
+    expect(
+      reconcileAppearance(
+        server({ appbar_subtitle_visible: null, accent: "ember" }),
+        { ...local, appbarSubtitleVisible: true },
+        always,
+      )?.appbarSubtitleVisible,
     ).toBe(true);
   });
 
@@ -152,6 +178,7 @@ describe("reconcileAppearance", () => {
       perf: "full",
       themeSettings: { vapor: { heroOn: true } },
       kitBackgroundVisible: true,
+      appbarSubtitleVisible: false,
     });
   });
 
@@ -182,6 +209,7 @@ describe("reconcileAppearance", () => {
         perf: "lite", // global lever still applied
         themeSettings: { vapor: { heroOn: false } }, // namespaced settings still applied
         kitBackgroundVisible: true, // global lever, unchanged here — still carried whole
+        appbarSubtitleVisible: false, // ditto — the subtitle switch rides the same whole-doc apply
       });
     });
 

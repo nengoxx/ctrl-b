@@ -72,8 +72,11 @@ interface Props {
    *  the theme's OWN addon seam, unused by any theme today. It is MERGED with the Kit's addons (it used to
    *  be dropped whenever the plan was inline — see the merge below), and lands last in the controls row. */
   composerSlots?: ComposerSlots;
-  /** The appbar brand-subtitle slot (D30 slot composition), threaded to KitAppBar — a theme's live/bespoke
-   *  subtitle (frontier's rig count). Omitted → the Kit default ("dashboard"). */
+  /** The appbar brand-subtitle slot (D30 slot composition), threaded to KitAppBar — the theme's OWN
+   *  subtitle (frontier's live rig count, gacha's Japanese line). What a theme fills here shows only when
+   *  the owner turns the synced "Bar subtitle" switch on (`ui.appbarSubtitleVisible`, default OFF — the
+   *  G6.3 icon + title only ruling is the resting state); the kit's old "dashboard" default is retired for
+   *  good, so a theme that omits this renders nothing in EITHER state. */
   brandMeta?: ReactNode;
   /** The appbar brand-MARK slot (D51 §4.1), threaded to KitAppBar — the theme's leading brand mark (vapor's
    *  gradient-ring lozenge). Omitted → the Kit default (its accent dot). */
