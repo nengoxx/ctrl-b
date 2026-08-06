@@ -29,6 +29,11 @@ const WARM = [
   "900 1em 'Zen Kaku Gothic New'",
   "600 1em 'Shippori Mincho B1'",
   "800 1em 'Shippori Mincho B1'",
+  /* Bungee is UNCONDITIONAL since the card-name pin (owner, 2026-08-07): the fleet plates paint it on
+   * every boot regardless of the `nameFont` picker, which now steers the DOSSIER alone. Latin-only face —
+   * it rides this list's latin probe and its jp probe resolves to nothing, which is fine. When the
+   * deferred second selector lands, this line moves back into the per-setting map. */
+  "400 1em 'Bungee'",
 ];
 
 /** The NAME face to warm, per `nameFont` value (R17 / the machine-name role) — LATIN-ONLY faces, so one

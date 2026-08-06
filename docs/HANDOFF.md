@@ -72,7 +72,12 @@
 > §Release END-TO-END (tag gate runs e2e; re-pin; install; verify). **Rollback v1.4.6; schema
 > UNTOUCHED at 5.**
 >
-> **Deferred by the owner (budget), with assets banked:** the NAME-EFFECTS design session — the
+> **Deferred by the owner (budget), with assets banked:** the PER-SURFACE NAME-FONT — the owner
+> wants the CARDS in Bungee while the dossier follows the picker (currently maru): the card face
+> is PINNED to Bungee upright as an owner-ruled interim (`gacha.css` `.plate b`, prewarmed
+> unconditionally in `fonts.ts` — both comments point here); the clean shape next session = a
+> second selector (a card-name axis beside `nameFont`), at which point the pin dissolves back into
+> tokens and the warm line returns to the per-setting map. Also deferred: the NAME-EFFECTS design session — the
 > rendered sheet EXISTS and is COMPLETE (`design/prototypes/gacha/research-sheets/
 > name-effect-candidates.html`, gitignored dir; C6 = shipped, C1 accent-initial = the owner's
 > maybe-next); its dossier (R18) was cut mid-write — re-commission the write-up only if the sheet

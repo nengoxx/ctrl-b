@@ -1343,19 +1343,19 @@
       text-align: left;
     }
     .gc-card .plate b {
-      /* THE MACHINE NAME, second surface (the R17 rider, owner 2026-08-06 — scope widened from the dossier
-       * to "wherever a PC's name is printed"). Face + weight are the shared `--gc-name-*` pair the dossier
-       * `h2` reads, driven by the `nameFont` picker; the SIZE stays this surface's own (20px, 27px on the
-       * feature card below) because it is tuned to the plate over art, not to the sheet.
-       * The ITALIC stays, and is the one thing here that is NOT the dossier's: it is the PROTOTYPE's own
-       * `.plate b` (theme.css), an owner-signed part of the card's look — where the dossier's italic was
-       * ours, added at G6.3, and was the synthetic shear R17 caught. Flagged for the device round rather
-       * than changed unasked: on a face with no italic (all three options) it is still a synthesised
-       * skew. */
-      font-family: var(--gc-name-font);
+      /* THE MACHINE NAME, second surface. The face is PINNED to Bungee here (owner ruling, 2026-08-07
+       * end-of-session): the owner wants the CARDS in Bungee while the dossier follows the `nameFont`
+       * picker (currently maru) — a per-surface choice the ONE shared `--gc-name-*` pair cannot express.
+       * The clean shape is a second selector (a card-name axis beside `nameFont`), RECORDED in the
+       * HANDOFF's deferred list for the next design session; until then this pin is the owner-ruled
+       * interim, with the picker face as fallback should Bungee ever fail to load. The SIZE stays this
+       * surface's own (20px, 27px on the feature card below), tuned to the plate over art.
+       * The prototype's italic is GONE (same ruling): Bungee ships caps-only with no italic, so the
+       * skew was synthetic (the R17 class) — upright is the true face. */
+      font-family: "Bungee", var(--gc-name-font);
       font-size: 20px;
-      font-weight: var(--gc-name-weight);
-      font-style: italic;
+      font-weight: 400;
+      font-style: normal;
       letter-spacing: 0.01em;
       /* The prototype's names are four fixed words; a real fleet's are not (the long-name matrix row). */
       overflow-wrap: anywhere;
