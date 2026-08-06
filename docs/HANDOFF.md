@@ -67,17 +67,54 @@
 > schema UNTOUCHED at 5 — no migration risk.** A fidelity fix wave before the tag is NEW code:
 > its own review round (the standing rule).
 >
-> ### Standing/open (do not lose)
-> · Recorded LOWs, deliberate: the Conf gallery THUMBNAILS use bare URLs (stale after an
->   in-place overwrite; the surfaces themselves use `?rev=`) · the scroll listener's
->   commit→passive-flush window (worst case = one lost position, i.e. the old behavior) ·
->   `isolation` on `.kit` exists only while `.kit-bg` is mounted — a FUTURE participating
->   theme with a Root-SIBLING overlay (gacha's reel idiom) stacks that sibling above the
->   shell (all three scenery themes opt out today; D54 records it).
-> · Cross-project: **F1 notifications device-round result (owner tested ~2026-07-30 PM) is
->   STILL UNREPORTED — ask** · web-push PARKED (its memory) · the deferred eyeball rounds
->   (G5 file-drop/gallery · M2 frontier art · M3 icons) largely COLLAPSE INTO the kit-art
->   device round above — one pass covers them.
+> ### THE LEFTOVER LEDGER — every open/deferred/parked item, project-wide (each with its home; verify in the home before acting)
+> **Gates on v1.5.0 (this arc):**
+> · The owner DEVICE ROUND (NEXT ① above) — including the deferred eyeball rounds that
+>   COLLAPSE into it: M2 frontier art on device + M3 icons on ≥2 themes + most of G5. One G5
+>   piece does NOT collapse: **REAL-TOUCH gallery reorder on the phone** (verified only at
+>   layout level — GACHA_PLAN §7.6). The final frontier hero art (long-reserved) is now just
+>   a file drop into `media/frontier/hero/` — part of the same round if the owner has art.
+> · amber-gold dossier: PASSED OVER (star-gold collision); ONE tokens block + option row
+>   re-adds it on owner overrule (§7.7 G6.1 addendum holds its measured panel).
+>
+> **Recorded LOWs / deliberate non-fixes (all in D54 or the as-builts):**
+> · Conf gallery THUMBNAILS use bare URLs — stale after an in-place overwrite (surfaces use
+>   `?rev=`) · the scroll listener's commit→passive-flush window (worst case = one lost
+>   position = the old behavior) · `isolation` on `.kit` exists only while `.kit-bg` mounts —
+>   a future PARTICIPATING theme with a Root-sibling overlay stacks it above the shell ·
+>   `appbarMode` change does NOT clear scroll positions (recorded non-decision, fa74a8a) ·
+>   under jade, `--accent` and ok-green are both greens on KIT surfaces (outside the
+>   carve-out — device-round eyeball) · the pre-existing `--gc-tag-ink` 4.27 on arcade's
+>   brand fill (shipped since G1; §7.7 records it; a G7+/owner call).
+>
+> **Standing KIT items (older, still live — homes verified today):**
+> · `getJSON` has NO global timeout (the 5s bounded media-invalidation await works around it
+>   — GACHA_PLAN §7.6/:1136) · kit sr-only sheet-close duplicates the ×'s accessible name
+>   (kit-level; GACHA_PLAN :964) · the a11y e2e sweeps TABS only — no arm opens a bottom
+>   sheet/dossier (e2e/a11y.spec.ts) · `skipActiveViewTransition` is global, not per-layer
+>   (G2 standing note) · kit-wide `appbarMode: minimal` pinned-plan header × mini-player
+>   OVERLAP (VAPOR_ASSIMILATION_PLAN §7.1/:343, pre-existing) · the 42 eslint warnings = the
+>   F13 React-Compiler-prep backlog (UI_AUDIT; deliberately deferred) · SYS-16's ASYNC240
+>   lexical blind-spot list (SYSTEM_AUDIT addendum).
+>
+> **Owner-court items (ask, don't assume):**
+> · **F1 notifications device-round result — owner tested ~2026-07-30 PM, NEVER reported;
+>   STILL UNASKED** · web-push PARKED pending the two Fennec/Firefox checks (its memory:
+>   which build + the "Site notifications" channel) · the ~80 MB untracked
+>   `design/prototypes/gacha/` originals — standing "leave untracked for now"; eventual call
+>   = leave/move out/delete · D2-A monitor: the owner DAILY-USE round on prod (its memory;
+>   per-host switches OFF until then) · cosmos "Alive/uptime" stat shows "—" (backend has no
+>   boot time; additive later — its memory) · the vault/wiki spec stays PARKED (owner
+>   designing elsewhere; the binding requirement = whole-functionality enable/disable
+>   toggles) · stop the dev units when iteration truly ends.
+>
+> **Future-feature seams (ROADMAP/plan-recorded, no action owed):**
+> · The D54 sixth-theme adopter contract (a future theme must swap `background` shorthand →
+>   `background-color` on banner rows; MEDIA_PLAN §12) · a future `hosts`-style derived key
+>   source is one `SOURCES` row (mediaKeySources.ts) · the kit background's off|faded|full
+>   enum widening (additive, only if asked) · `media/kit/hosts/` adoption by more themes =
+>   per-theme fidelity slices · ROADMAP §P holds the owner-ruled-OUT ideas (QR-to-phone,
+>   picker disclosure) — never re-propose; sweeps skip §P.
 >
 > ### Traps this day bought (do not re-pay; the durable ones are also in the memory)
 > · **A kit `:root` var() FORMULA freezes under `@scope`** (`--accent-ink: var(--bg)`
