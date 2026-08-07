@@ -858,6 +858,33 @@ test("gacha · the fleet WALLPAPER paints on .kit-main, only on the fleet tab, o
   expect(pageErrors).toEqual([]);
 });
 
+test("gacha · R19: the carved card stars — the def, its tokened ink, the rule reaching the star", async ({
+  page,
+  pageErrors,
+}) => {
+  // The carve is a CSS `filter: url(#gc-star-carve)` — an owner-granted §14.11 waiver (THEME_ENGINE's
+  // closed SVG-filter list). Three things can kill it SILENTLY, and none is visible to a source-level
+  // unit test (Codex R19 wave review, LOW-1): the def unmounting (a dangling `url(#)` UNPAINTS the
+  // referencing element on Gecko), the feFlood's `var()` dangling to BLACK (the token must reach the def
+  // through the gacha scope), and the card rule not resolving on the star. Computed styles on the real
+  // cascade, and this spec runs on both engines.
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab: "fleet", v: 1 });
+  await page.goto("/");
+  await expect(page.locator(".gc-banner")).toBeVisible();
+
+  await expect(page.locator("filter#gc-star-carve")).toHaveCount(1);
+  // `--gc-star-carve-ink` (#120726bf) resolved on the flood — a dangled var computes to solid black.
+  const flood = await page
+    .locator("#gc-star-carve feFlood")
+    .evaluate((el) => getComputedStyle(el).floodColor);
+  expect(flood).toContain("18, 7, 38");
+  // …and the card row's rule reaches a real star with the live reference.
+  const star = page.locator(".gc-card .rar .gc-star").first();
+  await expect(star).toBeVisible();
+  expect(await star.evaluate((el) => getComputedStyle(el).filter)).toContain("gc-star-carve");
+  expect(pageErrors).toEqual([]);
+});
+
 test("gacha · M7: the oracle ghosts as ONE SURFACE — art and copy together — and both perf gates hold", async ({
   page,
   pageErrors,

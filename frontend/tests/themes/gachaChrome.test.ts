@@ -760,9 +760,12 @@ describe("gacha G7 — the DRAWN rarity star (R16)", () => {
     // their row steps above the card base — same reasoning, one more rung. The rule itself must re-bind
     // the pair on the ROW (the dossier idiom), never restate a size on the star.
     expect(sizeFull).toBeGreaterThan(size);
-    expect(ruleBlock(rules, ".gc-card.feat .rar,")).toContain(
-      "--gc-star-size: var(--gc-star-size-full)",
-    );
+    // BOTH full-width selectors and BOTH rebinds (Codex R19 LOW-2: pinning only feat's size let `.wide`
+    // or the gap rebind vanish silently — the pitch would drift off 1.30 with the size still green).
+    expect(rules).toContain(".gc-card.wide .rar {");
+    const fullRow = ruleBlock(rules, ".gc-card.feat .rar,");
+    expect(fullRow).toContain("--gc-star-size: var(--gc-star-size-full)");
+    expect(fullRow).toContain("--gc-star-gap: var(--gc-star-gap-full)");
     for (const [what, s, g] of [
       ["card", size, gap],
       ["dossier", sizeLg, gapLg],

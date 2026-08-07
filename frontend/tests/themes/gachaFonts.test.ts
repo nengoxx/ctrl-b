@@ -197,7 +197,16 @@ describe("the NAME face's prewarm follows the SETTING (Codex wave-12 #2)", () =>
 
   it("covers EVERY declared option — a new face cannot ship unwarmed", () => {
     expect(values.length).toBeGreaterThan(0);
-    for (const v of values) expect(nameFaceProbes(v), `no probe entry for "${v}"`).toBeDefined();
+    // NOT `toBeDefined()` — `nameFaceProbes` returns `[]` for unknown values BY CONTRACT (the runtime
+    // degradation path), so that assertion was vacuous (Codex R19 LOW-3). The real invariant: every
+    // declared option except `mincho` (empty BY DESIGN — it IS `--font-display`, warmed in the primary
+    // list) must map to at least one probe, so an option added without a NAME_FACE entry fails here.
+    for (const v of values)
+      if (v !== "mincho")
+        expect(
+          nameFaceProbes(v).length,
+          `"${v}" is a declared option with no NAME_FACE entry — it would ship unwarmed`,
+        ).toBeGreaterThan(0);
     // …and every probe it does name must be a face the manifest actually ships, at that weight.
     const shipped = new Map(manifest.faces.map((f) => [f.family, f.weights]));
     for (const v of values) {

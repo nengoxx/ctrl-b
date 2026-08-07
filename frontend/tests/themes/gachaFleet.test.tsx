@@ -758,8 +758,8 @@ describe("the capsule track (§6.1/§6.2)", () => {
     expect(container.querySelector("filter#gc-star-carve")).not.toBeNull();
     // …and the def is the ONE place the carve is parameterized: the flood ink rides the token, so the
     // palette owns the colour (council M7) and the chrome test's waiver-scope count stays honest.
-    const flood = container.querySelector("filter#gc-star-carve feFlood") as SVGElement | null;
-    expect(flood?.style.floodColor).toBe("var(--gc-star-carve-ink)");
+    const flood = container.querySelector("filter#gc-star-carve feFlood");
+    expect(flood?.getAttribute("style")).toContain("flood-color: var(--gc-star-carve-ink)");
   });
 
   it("gives every card the SAME roster entry its promo slide got", () => {
