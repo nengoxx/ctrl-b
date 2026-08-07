@@ -1214,6 +1214,38 @@
       inset: 0;
       background: var(--gc-card-scrim);
     }
+    /* ── THE INNER FRAME (owner ask 2026-08-08, two rounds): a white band flush at the edge, matting
+     * the art like a trading-card border — and following the FULL capsule silhouette, notch included
+     * (round 2's ruling: "the cutout should also have the border"). On the FACE's `::before`, which
+     * the face's mask + overflow clip to the silhouette, the band is two strokes in one paint:
+     *   · the BORDER draws the four sides + rounded corners; the mask cuts its two ends off at the
+     *     notch diagonal, exactly where the diagonal leg takes over;
+     *   · the DIAGONAL LEG is the background — a stripe in the very gradient geometry the mask is
+     *     written in (same 315° axis, same `--gc-notch` start stop, `--gc-frame-w` wide), so it lies
+     *     flush against the mask's cut edge and joins the border's cut ends by construction. One
+     *     shared token pair; the two cannot drift.
+     * `currentColor` carries the ink into both strokes so the sleeping dim is ONE declaration.
+     * Z-rung 2: above the img and the scrim (both z-auto), below the z-3 overlays — the state chip,
+     * the NEW ribbon, the stars and the plate keep their edge geometry and paint over the band,
+     * which is the owner's "below the online ribbon and such". */
+    .gc-card-face::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      color: var(--gc-frame-ink);
+      border: var(--gc-frame-w) solid currentColor;
+      border-radius: var(--radius);
+      background: linear-gradient(
+        315deg,
+        transparent 0 var(--gc-notch),
+        currentColor var(--gc-notch) calc(var(--gc-notch) + var(--gc-frame-w)),
+        transparent calc(var(--gc-notch) + var(--gc-frame-w))
+      );
+    }
+    .gc-card.sleep .gc-card-face::before {
+      color: var(--gc-frame-ink-dim);
+    }
     /* ── THE RARITY STAR (G7 — the R16 redesign, owner ruling 2026-08-06) ─────────────────────────────
      * The ONE rule for the drawn primitive both surfaces share (GachaStar.tsx); each row below then sets
      * only its own SIZE and GAP. `fill: currentColor` is what keeps the whole existing tinting story

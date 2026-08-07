@@ -307,9 +307,25 @@
        * is the half the card actually wears. Left intact because the token is the prototype's own value and
        * trimming it changes no pixel; a deliberate call, not an oversight. */
       --gc-card-shadow: 0 16px 34px #0008, inset 0 0 0 1px #ffffff1f;
-      --gc-card-mask: linear-gradient(315deg, transparent 0 20px, #000 20px);
+      /* The notch DEPTH, its own token since the inner frame landed: the mask cuts the corner at this
+       * distance along the 315° axis, and the frame's diagonal leg is a stripe drawn in the SAME
+       * gradient geometry starting at the same stop (gacha.css) — one number, or the two drift. */
+      --gc-notch: 20px;
+      --gc-card-mask: linear-gradient(315deg, transparent 0 var(--gc-notch), #000 var(--gc-notch));
       --gc-card-scrim: linear-gradient(#0000 42%, #0a0817e6 92%);
       --gc-shine: linear-gradient(112deg, transparent 34%, #ffffff40 48%, transparent 60%);
+      /* The card's INNER FRAME (owner ask 2026-08-08, ruled over two rounds): a white band flush at
+       * the face's edge, wrapping the art like a trading-card border — round 1's inset matting line
+       * lost its gap ("the visible offset as the actual white border"), and round 2 gave the NOTCH
+       * edge the band too, so the frame follows the FULL capsule silhouette (the diagonal leg is a
+       * stripe in the mask's own gradient geometry — gacha.css). It rides UNDER the z-3 tabs (state
+       * chip, NEW ribbon) and the stars/plate, so the overlays keep their edge-flush geometry and
+       * paint over it; at 5px its inner edge still sits just outside the star row (left 9 / top 8).
+       * The dim twin is the sleeping card's, beside `--gc-star-dim` in spirit: alpha-white rather
+       * than a hue, because the frame sits on grayscaled art. */
+      --gc-frame-w: 5px;
+      --gc-frame-ink: #fff;
+      --gc-frame-ink-dim: #ffffff96;
       /* The nameplate's legibility halo. NO LIVE CONSUMER since the owner picked C6 (2026-08-06): a
        * `background-clip: text` fill and a `text-shadow` are mutually exclusive — the shadow paints ON TOP
        * of the clipped fill — so the plate name ships shadowless and states `text-shadow: none` itself.

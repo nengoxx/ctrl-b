@@ -884,6 +884,33 @@ describe("gacha — the ARCADE DROP on the two art surfaces (owner ask 2026-08-0
   });
 });
 
+describe("gacha — the card's INNER FRAME (owner ask 2026-08-08, two rounds)", () => {
+  it("draws the band flush on the face's pseudo, notch leg in the mask's own geometry", () => {
+    const frame = ruleBlock(rules, ".gc-card-face::before {");
+    // FLUSH at the edge (round 1's ruling walked the inset away) — the face's mask + overflow do the
+    // silhouette clipping, so the pseudo needs no mask of its own.
+    expect(frame).toContain("inset: 0");
+    expect(frame).not.toContain("mask");
+    // Both strokes ride currentColor, so the sleeping dim is ONE declaration.
+    expect(frame).toContain("border: var(--gc-frame-w) solid currentColor");
+    expect(frame).toContain("color: var(--gc-frame-ink)");
+    expect(ruleBlock(rules, ".gc-card.sleep .gc-card-face::before {")).toContain(
+      "color: var(--gc-frame-ink-dim)",
+    );
+    // THE DRIFT FENCE (round 2's ruling — the notch edge wears the band too): the diagonal leg is a
+    // background stripe that must START at the exact stop the mask CUTS at, or the leg detaches from
+    // the edge. Both must read the shared `--gc-notch`; neither may restate the depth as a literal.
+    expect(frame).toContain("transparent 0 var(--gc-notch)");
+    expect(frame).toContain(
+      "currentColor var(--gc-notch) calc(var(--gc-notch) + var(--gc-frame-w))",
+    );
+    expect(tokens).toMatch(/--gc-card-mask:[^;]*transparent 0 var\(--gc-notch\)/);
+    expect(tokens).toMatch(/--gc-notch:\s*\d+px/);
+    // Under the z-3 overlays (the chip/ribbon/stars/plate paint over the band), above the art+scrim.
+    expect(frame).toContain("z-index: 2");
+  });
+});
+
 describe("gacha M7 — the oracle's BOTTOM DISSOLVE, split in two (owner reports 2026-08-06)", () => {
   it("dissolves the COMB always, and the ART only once it starts ghosting", () => {
     // ① the scanline's own mask runs for the whole of fade mode — the owner likes the softened comb at
