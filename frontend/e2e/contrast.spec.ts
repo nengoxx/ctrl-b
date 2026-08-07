@@ -195,7 +195,8 @@ const THEME_PAIRS: Record<string, Pair[]> = {
     { fg: "--gc-dossier-led", bg: "--gc-dossier-row-hover", min: 3, over: CARD_STACK },
     { fg: "--gc-dossier-led-dim", bg: "--gc-dossier-row-hover", min: 3, over: CARD_STACK },
     // The close disc's glyph on its own disc (the pair that exists because the old composition inverted).
-    // G6.4 THINNED the dark palettes' disc to α 0.702 (the owner wanted the watermark to show through it),
+    // G6.4 THINNED the dark palettes' disc (the owner wanted the watermark to show through it; the
+    // 2026-08-07 re-look thinned it further, 78%→55% of the badge — the token holds the current share),
     // so the disc joined the translucent club and needs its own backdrop stack — the sheet's TOP band, not
     // the card's: the corner sits in the head, above the 30% knee. G6.5 completes that stack with the two
     // layers the token's own derivation always named but the gate did not carry: the dot texture and a

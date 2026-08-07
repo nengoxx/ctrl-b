@@ -453,7 +453,7 @@
       --gc-dossier-art-shadow: 0 10px 22px #3f426a55;
       /* The dark LOZENGE role. Its rarity-badge consumer went at G7 (the R16 restyle turned that badge into
        * a hairline tab reading `--gc-dossier-rar-bg`); what still reads it is the CLOSE DISC, whose dark
-       * blocks mix it at 78%. Slip pairs its own disc off `--gc-dossier-ink` instead, so this value has no
+       * blocks mix it at 55%. Slip pairs its own disc off `--gc-dossier-ink` instead, so this value has no
        * live consumer on THIS palette — kept so the role is declared identically across the family and the
        * light sheet has a lozenge to hand the day something else needs one. */
       --gc-dossier-badge: #17172ce6;
@@ -677,9 +677,9 @@
        * caught it — gold `#ffd464` measured 1.32:1 against it, against a 3:1 non-text floor. Measured over
        * slip's head band (`from`|`mid`, worst wins), by thinning step:
        *   72% → gold 3.99 / rose-gold 2.62 ✗ · **78% → 4.79 / 3.15 ✓** · 84% → 5.79 / 3.80
-       * 78% is the smallest step that clears BOTH stars, and it is the same share the close disc's own
-       * thinning uses on the dark sheets — one "more opaque than not, but not completely opaque" value for
-       * both of this surface's dark lozenges. */
+       * 78% is the smallest step that clears BOTH stars. (It matched the close disc's dark-sheet share
+       * until the owner's 2026-08-07 re-look thinned that disc to 55% — the two lozenges derive
+       * independently now; this one is pinned by the gold-star floors above.) */
       --gc-dossier-rar-bg: color-mix(in srgb, var(--gc-dossier-badge) 78%, transparent);
       /* The primary action's fill + ink. Slip KEEPS the sticker ticket (owner ruling: each identity stays
        * coherent), so its values ARE the brand two-stop and the kit's verified ink — the dark palettes
@@ -1068,17 +1068,18 @@
       /* The close disc, RE-PAIRED for a dark sheet (the mock's dark lozenge + light glyph). It reads the
        * badge because that is the same role on this surface — the one dark lozenge the sheet allows —
        * and the glyph takes the sheet's own ink: 17.5:1. */
-      /* G6.4 — and THINNED (owner device round: "more opaque than not, but not completely opaque", so the
-       * watermark shows through the disc faintly). The thinning is a step ON TOP of the badge rather than
-       * an edit TO it: `--gc-dossier-badge` is shared with the rarity lozenge over the portrait, where a
-       * translucent tile would let the artwork wash the gold stars out. 78% of a 0.9-alpha badge lands the
-       * disc at α 0.702 — a clear majority, which is what "more opaque than not" asks for. WORST measured
-       * glyph pair, over the brightest plausible composite (a near-white art pixel at the watermark's own
-       * 0.16, under the thinned disc): 12.6:1 on sunset-orange, the lightest sheet in the set — the
-       * 4.5 floor is never in play here, the disc is dark on every dark palette. That composite is what the
-       * gate now measures too (G6.5: the close pair's stack carries the texture + `--gc-dossier-mark-head`,
-       * so this derivation is re-checked on every run rather than being a comment). */
-      --gc-dossier-close-bg: color-mix(in srgb, var(--gc-dossier-badge) 78%, transparent);
+      /* G6.4 thinned it to 78% ("more opaque than not"); the owner's 2026-08-07 re-look SUPERSEDED that
+       * ruling — at 78% the disc read as an opaque foreign blue on the warm sheets ("looks like the blue,
+       * and that's it"). 55% is the fix for both halves of the new ask at once: the disc is visibly more
+       * transparent, AND what shows through is the sheet's own palette, so the night-navy base reads as a
+       * tinted dimming of THIS dossier rather than a color of its own. Still a step ON TOP of the badge,
+       * never an edit to it: `--gc-dossier-badge` is shared with the portrait's rarity lozenge, where a
+       * translucent tile would let artwork wash the gold stars out. 55% of the 0.9-alpha badge = disc
+       * α 0.495. The glyph pair had 12.6:1 of headroom at 78% on the brightest composite (sunset-orange),
+       * so the 4.5 floor stays far away — and the gate re-measures this exact composite on every run
+       * (G6.5: the close pair's stack carries the texture + `--gc-dossier-mark-head`), so the claim is
+       * checked, not asserted. */
+      --gc-dossier-close-bg: color-mix(in srgb, var(--gc-dossier-badge) 55%, transparent);
       --gc-dossier-close-ink: var(--gc-dossier-ink);
       /* The secondary outline: mixed against the CARD, not `--gc-dossier-line` (which is a near-transparent
        * white here, so the slip formula would land at almost full-strength accent). 70% is the lowest step
