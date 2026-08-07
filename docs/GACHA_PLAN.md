@@ -2836,3 +2836,91 @@ throughout the plan as "council H#/M#/L#" (Opus) and "Codex R4-#".*
 `modes:["dark"]`, the layout-fence posture, the §10.5 contract/e2e enrollment list, the
 two-family palette structure on the shared accent axis, the 5★ fold's consistency, and the
 transform-only banner mechanics.
+
+---
+
+## 12. The ensemble fleet — the ALTERNATIVE card layout (owner ask 2026-08-08; **PROPOSED — design drafted, awaiting the owner ruling; post-1.5.0, unscheduled**)
+
+*Evidence base: [R18](./research/R18-ensemble-collage-fleet.md) (probed 2026-08-07, both desktop
+engines) + the four reference images in `design/prototypes/gacha/Alt fleets/`. Nothing here is
+built; the section exists so the next session starts from a ruled design instead of re-buying the
+research.*
+
+### 12.1 What the references actually say (main-seat image analysis)
+
+Four references, one grammar: **the fleet stops being N independent cards and becomes ONE POSTER** —
+sheared panels stacked into a single composition, one character per slice. Three load-bearing
+observations:
+
+1. **The art stays upright; only the panel edges are diagonal.** The ZZZ roster and the True Damage
+   poster cut slanted gutters through upright crops — nothing shears the artwork itself. So the core
+   technique is polygon *clipping* over normal `object-fit: cover` images, never a skewed container.
+2. **Only the band form generates from a count.** The two systematic references (ZZZ's stacked
+   bands, True Damage's equal slices) are a pure function of N. The two comic-collage references
+   (tilted overlapping panels, hand-drawn borders) are per-item art direction — R18 §5-② confirms
+   the collage archetype has no generator (every panel is a hand-authored polygon + z-index). The
+   ensemble is therefore the BAND form; the collage form is ruled out for a dynamic fleet.
+3. **Grayscale-with-accent maps onto our online/sleeping semantics.** The references run mono art
+   over flat colour; gacha already greyscales sleeping cards. The ensemble makes that the language:
+   ONLINE = colour slice, SLEEPING = the existing grayscale filter — state reads at poster distance.
+
+### 12.2 The design (what is reused vs built)
+
+**The axis.** A gacha ThemeDef setting `fleetLayout: "capsule" | "ensemble"`, default `capsule` —
+the `cardNameFont` precedent exactly: theme_settings pass-through, Conf picker beside the existing
+gacha settings, **zero backend change**.
+
+**Reused, untouched:** the whole `GachaFleet` controller — `useFleet`, the §5.3 one-shared-resolver
+roster (`artForHost`), the banner + slides, the dossier + M3 morph machinery, the NEW-ribbon pick,
+the counter/rate/pity derivations. The axis swaps ONLY the track region below `.gc-track-head`:
+`cardShapes(count)` gains a sibling `ensembleBands(count)` in `fleet.ts` (same pure-function-of-count
+contract), and the map renders `GachaEnsembleBand` instead of `GachaCard`. One host, one band, one
+real `<button>`, the same `onOpen(hostId, img)` seam — the dossier cannot tell which layout opened it.
+
+**Built (the R18-verified stack):**
+- **Band = `clip-path: polygon()` on the `<button>`** — R18's decisive probe: clip-path clips the
+  HIT AREA and the clipped-off triangle falls through to the band beneath, so interlocking bands
+  tile with zero dead taps (mask never does this; `skewY` would shear the type). Bands interlock via
+  the cbolson negative-margin pattern (§5-①).
+- **Constant shear** via `--gc-shear` (angle token) and `calc(100cqw * tan(var(--gc-shear)))` on a
+  `container-type: inline-size` track — verified identical in both engines, constant 320→430px.
+  (`calc(100% * tan())` silently fails — R18 §4.) Band height from a locked `aspect-ratio`, so the
+  composition height is a pure function of N and width.
+- **The arcade lift survives** as the union-hexagon clip (parallelogram ∪ lifted copy on the button;
+  `.drop`/`.face` spans clipped to the plain parallelogram) — R18 probed it painting AND tappable.
+  Never `filter: drop-shadow` on the panel (the clip erases it — the mask/box-shadow probe's cousin).
+- **An explicit inset focus indicator** — the UA focus ring is clipped away entirely on Firefox
+  (R18 §1.4-③); a `:focus-visible` inner ring inside the polygon is an a11y REQUIREMENT, not polish.
+- **Art = `<img>` + `object-fit: cover`**, roster focus + M3 morph seam untouched. Panel colour
+  (per-band hue cycle off the accent family) shows in the gutters/edge/scrim, not as a blend:
+  **duotone flavour, if wanted, is a static `filter` chain on the img** (option A) — `mix-blend-mode`
+  on a scroller is the §14.11 Gecko tile-cache trap, held in reserve only.
+- **Type**: the machine name rotated to the shear angle (`--gc-card-name-font` — the cardNameFont
+  axis applies), allowed to cross gutters as a `pointer-events: none` + `aria-hidden` overlay
+  (button label already names the machine). Stars + status chip stay HORIZONTAL in-band (legibility;
+  the chip is real status).
+
+**Deliberate v1 cuts (each with its reason on record):** breakout ART (needs alpha-cutout art we
+don't have; a tap on the overhang opens the panel UNDERNEATH — R18 §3; the True Damage reference
+itself keeps art inside the slices, only type crosses) · the collage layout (no generator, §12.1-2)
+· blend-mode duotone (Gecko scroller cost, §14.11).
+
+### 12.3 Open for the owner ruling
+
+① Confirm the BAND direction (ZZZ/True-Damage stack) over the comic-collage flavour — the research
+says collage cannot generate, but the owner picks the look. ② Shear angle + band height are
+taste — device-round numbers, walked live like the star rounds. ③ The per-band panel-hue cycle:
+accent-family-derived vs a fixed poster palette. ④ Whether ONLINE=colour / SLEEPING=mono carries
+state alone in the ensemble, or the chip stays (recommendation: chip stays — real status never
+rides on decoration alone). ⑤ Naming: `ensemble` vs something arcadier for the picker label.
+
+### 12.4 Slice sketch + acceptance
+
+**E0** — `fleetLayout` axis + `ensembleBands(count)` + the geometry spike behind it (bands, union
+clip, interlock, tap fall-through) with an e2e arm that TAPS the clipped-off triangle of band k and
+asserts band k+1's dossier opens (the R18 fact, pinned in our own suite). **E1** — full band
+anatomy: stars/chip/rotated name/lift/focus ring/sleep treatment. **E2** — Conf picker + polish +
+the §10.5-style contract tests. **E3** — the §14.11 on-device round (Fennec + Chrome), which is the
+REAL acceptance: R18's one hole is that no mobile-engine cost numbers exist for N polygon clips on
+a scroller — the device round is where that gets bought (its §7 lists what desktop probes cannot
+prove).

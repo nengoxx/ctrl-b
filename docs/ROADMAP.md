@@ -825,6 +825,13 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
   treatment (the cosmos planet precedent says a bespoke Fleet body is viable); art
   sourcing/licensing for any baked-in imagery. **v1.5.0 is RESERVED for this theme (owner ruling
   re-confirmed 2026-08-02).**
+- **Follow-on: the ENSEMBLE fleet layout (owner ask 2026-08-08 — researched + design drafted,
+  post-1.5.0, unscheduled).** An alternative gacha fleet presentation: the capsule grid becomes ONE
+  poster of interlocking sheared bands (ZZZ-roster / True-Damage grammar; references in
+  `design/prototypes/gacha/Alt fleets/`), switched by a `fleetLayout` theme-settings axis
+  (`capsule` default). Evidence = [R18](./research/R18-ensemble-collage-fleet.md) (clip-path
+  hit-area fall-through, `tan()`+cqw shear, union-hexagon lift — probed both engines); the drafted
+  design + slice sketch + open owner rulings = **GACHA_PLAN §12**.
 
 ## Settings tab — organized by functionality (informs v1 Conf layout)
 
