@@ -1223,7 +1223,10 @@
      *   · the DIAGONAL LEG is the background — a stripe in the very gradient geometry the mask is
      *     written in (same 315° axis, same `--gc-notch` start stop, `--gc-frame-w` wide), so it lies
      *     flush against the mask's cut edge and joins the border's cut ends by construction. One
-     *     shared token pair; the two cannot drift.
+     *     shared token pair; the two cannot drift. `background-origin: border-box` is LOAD-BEARING
+     *     in that claim: backgrounds position against the padding-box by default, which the border
+     *     shrinks — the stripe sat ~7px inside the cut (an image sliver between edge and leg, the
+     *     owner's round-4 report) until the origin was pinned to the box the mask measures from.
      * `currentColor` carries the ink into both strokes so the sleeping dim is ONE declaration.
      * Z-rung 2: above the img and the scrim (both z-auto), below the z-3 overlays — the state chip,
      * the NEW ribbon, the stars and the plate keep their edge geometry and paint over the band,
@@ -1242,6 +1245,8 @@
         currentColor var(--gc-notch) calc(var(--gc-notch) + var(--gc-frame-w)),
         transparent calc(var(--gc-notch) + var(--gc-frame-w))
       );
+      /* AFTER the shorthand — `background:` resets origin to padding-box, undoing this if reordered. */
+      background-origin: border-box;
     }
     .gc-card.sleep .gc-card-face::before {
       color: var(--gc-frame-ink-dim);

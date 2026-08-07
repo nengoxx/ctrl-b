@@ -901,6 +901,10 @@ describe("gacha — the card's INNER FRAME (owner ask 2026-08-08, two rounds)", 
     // background stripe that must START at the exact stop the mask CUTS at, or the leg detaches from
     // the edge. Both must read the shared `--gc-notch`; neither may restate the depth as a literal.
     expect(frame).toContain("transparent 0 var(--gc-notch)");
+    // …and the stripe must measure from the SAME box the mask does: backgrounds position against the
+    // padding-box by default, which the 5px border shrinks — without this the leg floats ~7px inside
+    // the cut (the owner's round-4 report). Must stay AFTER the shorthand, which resets it.
+    expect(frame).toMatch(/background:[\s\S]*background-origin: border-box/);
     expect(frame).toContain(
       "currentColor var(--gc-notch) calc(var(--gc-notch) + var(--gc-frame-w))",
     );
