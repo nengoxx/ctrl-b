@@ -472,6 +472,17 @@ test("gacha · a 5★ pair card's stars are never under the status pill, at any 
   // stating it here keeps this arm honest about what is being fixed.
   expect(narrow.overlapX).toBeGreaterThan(0);
 
+  // The cutoff's own two edges (Codex confirm round): 364 is the LAST measured colliding width — a
+  // regression that narrows the media query below it would leave a real collision while 320 still
+  // passed — and 381 is the first width past it, where the base rung must already be safe again.
+  await page.setViewportSize({ width: 364, height: 800 });
+  expect((await probe()).pillTop).toBe(32);
+
+  await page.setViewportSize({ width: 381, height: 800 });
+  const past = await probe();
+  expect(past.pillTop).toBe(9);
+  expect(past.overlapX).toBeLessThan(0);
+
   await page.setViewportSize({ width: 412, height: 800 });
   const wide = await probe();
   expect(wide.pillTop).toBe(9); // a real phone keeps the designed single rung
