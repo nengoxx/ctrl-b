@@ -1270,6 +1270,15 @@
       gap: var(--gc-star-gap);
       color: var(--gc-star);
     }
+    /* The FULL-WIDTH shapes re-bind the pair on their ROW (the dossier's own idiom below — never restate
+     * a size on the star): feat and wide carry ~twice a pair card's art, so their stars take the one-step-
+     * up `-full` pair (owner, sixth round — tokens.css walks the reasoning). The carve rides along free:
+     * its primitives are objectBoundingBox fractions. */
+    .gc-card.feat .rar,
+    .gc-card.wide .rar {
+      --gc-star-size: var(--gc-star-size-full);
+      --gc-star-gap: var(--gc-star-gap-full);
+    }
     .gc-card.sleep .rar {
       color: var(--gc-star-dim);
     }

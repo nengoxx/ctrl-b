@@ -352,6 +352,15 @@
       --gc-star-gap: 4.2px;
       --gc-star-size-lg: 11.5px;
       --gc-star-gap-lg: 3.5px;
+      /* The FULL-WIDTH shapes' pair (owner, sixth round 2026-08-07, on the approved carve: "on the top
+       * and the bottom images the stars look a little bit too small for the images itself"). `feat` and
+       * `wide` span the whole track — roughly twice a pair card's art — so their rows take one step up
+       * from the card base, the same equal-PERCEIVED reasoning that put the card above the dossier.
+       * Rebound on the row (the dossier idiom, gacha.css), never restated on the star; the carve needs
+       * nothing — its objectBoundingBox primitives scale with whatever size the row asks for.
+       * The RATIO holds through this step too: (16 + 4.8) / 16 = 1.30. */
+      --gc-star-size-full: 16px;
+      --gc-star-gap-full: 4.8px;
       /* The primitive's STROKE, in its USER UNITS (the viewBox is 96.5 wide) — 9 units is 7.3% of whatever
        * size a row asks for, so it scales with the star instead of needing a per-size table. It is the
        * candidate sheet's own number; in CSS rather than as an SVG attribute so a surface can tune it. */

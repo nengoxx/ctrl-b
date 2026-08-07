@@ -747,16 +747,26 @@ describe("gacha G7 — the DRAWN rarity star (R16)", () => {
     // put the card above the dossier's 11.5 (tokens.css walks the whole size history). The primitive's
     // viewBox is cropped to the star's stroked extent, so `-size` IS ink and this arithmetic is the real
     // rendered ratio.
-    const [size, gap, sizeLg, gapLg] = [
+    const [size, gap, sizeLg, gapLg, sizeFull, gapFull] = [
       px("--gc-star-size"),
       px("--gc-star-gap"),
       px("--gc-star-size-lg"),
       px("--gc-star-gap-lg"),
+      px("--gc-star-size-full"),
+      px("--gc-star-gap-full"),
     ];
     expect(size).toBeGreaterThan(sizeLg); // the owner's equal-perceived ruling, 2026-08-06
+    // …extended by the sixth round: the FULL-WIDTH shapes (feat/wide) carry ~twice a pair card's art, so
+    // their row steps above the card base — same reasoning, one more rung. The rule itself must re-bind
+    // the pair on the ROW (the dossier idiom), never restate a size on the star.
+    expect(sizeFull).toBeGreaterThan(size);
+    expect(ruleBlock(rules, ".gc-card.feat .rar,")).toContain(
+      "--gc-star-size: var(--gc-star-size-full)",
+    );
     for (const [what, s, g] of [
       ["card", size, gap],
       ["dossier", sizeLg, gapLg],
+      ["full-width card", sizeFull, gapFull],
     ] as const) {
       const ratio = (s + g) / s;
       expect(ratio, `${what} pitch÷ink`).toBeGreaterThan(1.25);
