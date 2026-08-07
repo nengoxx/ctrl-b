@@ -2900,6 +2900,27 @@ real `<button>`, the same `onOpen(hostId, img)` seam — the dossier cannot tell
   (button label already names the machine). Stars + status chip stay HORIZONTAL in-band (legibility;
   the chip is real status).
 
+**The composition geometry — card SHAPE and POSITION (noted per the owner's 2026-08-08 word):**
+- **Shape = parallelogram slices with PARALLEL gutters, one constant shear, one direction.** Both
+  systematic references run every diagonal parallel (ZZZ's bands, True Damage's slices) — no
+  alternating angles, no per-band tilt; the tilt flavour belongs to the ruled-out collage form.
+- **`ensembleBands(count)` returns the per-count shape list, the `cardShapes` contract mirrored:**
+  N=1 → one full-height panel (shear kept on top+bottom edges so it still reads as the poster);
+  small N (2–3) → taller bands; larger N → bands at a clamped `aspect-ratio` and the ONE poster
+  simply scrolls (never chunked into multiple posters). Whether band 1 runs TALLER as the featured
+  slice (the capsule track's `feat` analogue — host[0] precedent) is an owner taste call at the
+  device round; the references show both equal-slice (True Damage) and weighted stacks.
+- **The SAFE ZONE positions everything:** each band's usable content box is the inscribed rectangle
+  between its two diagonals (the shear offset inset on opposing corners) — overlays anchor inside
+  it so nothing clips. Art crops bias the character's face toward the band's unsheared MIDDLE via
+  the existing roster focus (`object-position` — the sheared corners crop unpredictably and are
+  where the neighbouring band's art meets).
+- **Per-band content placement:** the machine NAME rotated to the shear angle, anchored at the
+  band's leading edge and allowed to cross the lower gutter (the poster's type language); stars
+  HORIZONTAL in the safe zone's upper corner; the ONLINE/SLEEPING chip HORIZONTAL at the trailing
+  edge (real status stays level); the NEW ribbon keeps its own rung, carried from the capsule
+  grammar. Exact insets are device-round numbers, walked live like the star rounds.
+
 **Deliberate v1 cuts (each with its reason on record):** breakout ART (needs alpha-cutout art we
 don't have; a tap on the overhang opens the panel UNDERNEATH — R18 §3; the True Damage reference
 itself keeps art inside the slices, only type crosses) · the collage layout (no generator, §12.1-2)

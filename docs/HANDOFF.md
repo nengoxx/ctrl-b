@@ -16,7 +16,12 @@
 >
 > ### What you are releasing
 > **v1.5.0** = Phase 17 gacha "Capsule Arcade" (G0–G6 + the R-rounds, D52) + the Kit Art System (D54)
-> + media v2 (M1a–M3, D53) + the pre-release audit's fix wave (R21). Prod runs **v1.4.6**; **schema
+> + media v2 (M1a–M3, D53) + the pre-release audit's fix wave (R21) **+ the 2026-08-08 pre-push wave
+> (owner-ordered, 4 live rounds): the capsule card's INNER FRAME — a flush 5px white band on the FULL
+> silhouette, notch leg included (`5bc763e` + the `background-origin: border-box` seat fix `db593d6`;
+> pinned in gachaChrome incl. the `--gc-notch` drift fence) — plus the ensemble-fleet R18 dossier +
+> GACHA_PLAN §12 plan, docs-only (`8de613e` + the shape/position notes commit). Gate `--e2e` 7/7
+> re-run 2026-08-08 at `db593d6`; only docs commits follow it.** Prod runs **v1.4.6**; **schema
 > UNTOUCHED at 5** → rollback = **v1.4.6 exactly** (v1.4.5 and v1.3.1 are burned tags — NEVER rollback
 > targets). **No config migration in this release**: the only config additions are two nullable
 > appearance fields + the `media:` map, which is ABSENT from prod's `config.yaml` (audit-verified
