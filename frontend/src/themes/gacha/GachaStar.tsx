@@ -49,8 +49,34 @@
 // scrolling track — the class §14.11 bans and R16 retired the glyph's glow for — so this ships as an
 // OWNER-GRANTED WAIVER, scoped to exactly this def (recorded in THEME_ENGINE §14.11; the contrast test
 // pins the sheet to ONE svg-filter reference). The buffers are star-sized (~14px), not card-sized; the
-// banked fallback if a device round ever finds jank is the sheet's variant C, the same carve as pure
-// layered geometry.
+// banked fallback if a device round ever finds jank is the sheet's variant C, the same carve as layered
+// geometry.
+//
+// ── THAT FALLBACK, BANKED (variant C, "deep carve" — geometry + one shared mask, no filter) ────────────
+// The candidate sheet lives under `design/prototypes/gacha/research-sheets/`, which is GITIGNORED — so
+// every citation above points somewhere git cannot follow, and a waiver whose retreat exists on exactly
+// one machine is not a retreat. C is copied here from the sheet so backing out is a diff rather than an
+// excavation. Three moves: swap the card row's `filter: url(#gc-star-carve)` (gacha.css) for the layered
+// draw below, delete `GachaStarDefs` and its mount in GachaFleet, and strike the §14.11 waiver entry.
+//
+// The construction is the SAME polygon painted twice: a darkened copy of the star's own colour underneath,
+// and the ordinary star on top pushed DOWN 9 user units, clipped back to the true stroked silhouette by a
+// shared mask. What the drop leaves uncovered along the top inner edge IS the carve band (~1.3px at 14px
+// ink) — the same cue the filter blurs, except the offset is geometry, so it costs no offscreen buffer.
+// The silhouette never moves: the mask carries the same 9-unit round-joined stroke the star already has.
+//
+//   <mask id="sil" maskUnits="userSpaceOnUse" x="-30" y="-30" width="160" height="160">   ← one shared def
+//     <polygon points={POINTS} fill="#fff" stroke="#fff" strokeWidth="9" strokeLinejoin="round" />
+//   </mask>
+//   .gc-star .carve { fill: color-mix(in srgb, currentColor 34%, #1a0e2c); stroke: <same>; }   ← the mix
+//   <polygon className="carve" points={POINTS} />              ← under: the recessed copy
+//   <g mask="url(#sil)"><polygon points={POINTS} transform="translate(0 9)" /></g>   ← over: the star
+//
+// The dark end of that mix is the sheet's own literal and would become a token beside
+// `--gc-star-carve-ink` on the way in — it is NOT that token: the filter floods one flat ink through an
+// alpha band, while C mixes the star's live colour toward a dark, so the two values are not interchangeable.
+// (A and B are the same stack at 5 units with a lighter mix — a quieter carve; D drops the mask for a 0.94
+// scale-down, the cheapest of the four. C is banked because the sheet measured it most legible at 14px.)
 //
 // `primitiveUnits="objectBoundingBox"` is what makes the def SIZE-BLIND: dy 0.0622 and stdDeviation
 // 0.0363 are the sheet's own 6 and 3.5 user units as fractions of its 96.5-unit box, so the carve scales

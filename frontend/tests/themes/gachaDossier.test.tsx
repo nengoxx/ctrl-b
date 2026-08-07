@@ -617,6 +617,14 @@ describe("the close corner", () => {
     // both operations are symmetric about the box's own centre — an offsetting translate would defeat it
     expect(rule).not.toContain("translate");
     expect(rule).toContain("background: currentColor");
+    // …and the mark stays EVEN-sized: an odd child inside the 38px disc leaves a half pixel that both
+    // engines resolve down-right, which is the very off-centre the geometry replaced the glyph to kill
+    // (12 + 14 + 12 divides 38 exactly). Parsed, not spelled, so a later 13 or 15 fails here.
+    const [w, h] = [/\bwidth:\s*(\d+)px/, /\bheight:\s*(\d+)px/].map((re) =>
+      Number(re.exec(rule)![1]),
+    );
+    expect(w % 2).toBe(0);
+    expect(h).toBe(w); // square, or rotating about the centre stops being the symmetric operation
   });
 
   it("is stacked ABOVE the handle's invisible drag strip (the cosmos chevron lesson)", () => {

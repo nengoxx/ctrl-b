@@ -520,6 +520,17 @@ describe("gacha G6 — the DOSSIER axis (§4.4 family 3 / THE PICKER CONTRACT)",
     expect(rules).toContain("background: var(--gc-dossier-close-bg)");
     expect(rules).toContain("color: var(--gc-dossier-close-ink)");
   });
+
+  it("…and its transparency is the owner's 55%, not G6.4's 78%", () => {
+    // The 2026-08-07 re-look SUPERSEDED G6.4's 78% ("looks like the blue, and that's it"), and nothing
+    // else could see the number: the contrast gate measures the COMPOSITE, which only gets safer as the
+    // disc thins, so a silent walk back toward opaque would pass every other check in the suite. The
+    // WHOLE declaration is the needle — the prose above it argues the figure, and a bare "55%" would
+    // match the argument instead of the value.
+    expect(tokens).toContain(
+      "--gc-dossier-close-bg: color-mix(in srgb, var(--gc-dossier-badge) 55%, transparent)",
+    );
+  });
 });
 
 describe("gacha G6 — the wordmark (§4.3 re-ruling)", () => {
