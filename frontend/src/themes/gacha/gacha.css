@@ -1302,6 +1302,25 @@
       background: var(--gc-online-fill);
       color: var(--gc-online-ink);
     }
+    /* ── THE SECOND RUNG on a narrow phone — MEASURED, not reasoned (the e2e arm below this theme's
+     * layout spec walks 320→400 and pins it). A PAIR card's face is 135px wide at a 320px viewport, and
+     * five 14px stars plus their gaps reach ~96px into it while the SLEEPING pill — 62px, flush right —
+     * starts at ~73px. The pill is later in the DOM, so it paints OVER the last two stars: the rarity the
+     * card exists to announce is the thing that loses. The two only stop colliding at 366px (they exactly
+     * touch there; 364 is the last width that genuinely overlaps), so five stars and the pill cannot share
+     * the top rung below ~366 — 380 is that boundary plus air, taking the swap while there is still a
+     * visible gap rather than at the pixel where they kiss.
+     *
+     * Below it the pill drops to `top: 32px` — the RIBBON's rung, not a new number. The `NEW` tab on the
+     * opposite corner was put there for exactly this reason (clear of the stars' ~15px line box, well
+     * above the plate), so a narrow card reads as this card's own two-tab rung instead of a nudge. The
+     * FULL-WIDTH shapes are untouched: `.feat`/`.wide` carry twice the face, and even their one-step-up
+     * 16px stars end far short of the pill. */
+    @media (max-width: 380px) {
+      .gc-card:not(.feat):not(.wide) .state {
+        top: 32px;
+      }
+    }
     /* ── THE `NEW` RIBBON — a DEMO (G6 item iv). The prototype hand-assigns a third `state` value on one
      * fixture card ("NEW"); no live field exists for it and none is invented here, so ONE card in the
      * track wears it purely so the owner can judge the look and rule on keep/drop/meaning at the device

@@ -403,6 +403,82 @@ test("gacha · chrome fidelity: floating nav pill, white indicator + pink hard s
   expect(pageErrors).toEqual([]);
 });
 
+// ── gacha · the 5★ pair card's narrow-viewport rung ───────────────────────────────────────────────────
+// The rarity row and the status pill both hang off a pair card's top edge from opposite corners, and the
+// pill is later in the DOM — so on a narrow phone it PAINTED OVER the last stars, losing the one thing a
+// capsule card exists to announce. Measured rather than argued: at a 320px viewport the row reaches ~96px
+// into a 135px face while the SLEEPING pill starts at ~73px, and the two only stop colliding at 366px.
+// gacha.css therefore drops the pill to the `NEW` ribbon's rung below 380px, and this arm drives BOTH ends
+// of that rule in the real built app — a media query nobody exercises is a comment.
+//
+// The fixture is its own: the baseline mock's hosts carry no `services`, and `starsFor` reads the
+// CONFIGURED count, so the worst case (five stars + the wider SLEEPING pill) has to be dealt deliberately.
+// Three hosts is the shape that puts a pair card in the track at all — `cardShapes` makes host[0] featured
+// and pairs the rest, with no trailing odd host to take the wide slot.
+const FIVE_STAR_HOSTS = [true, false, false].map((online, i) => ({
+  id: ["vault", "corsair", "emma"][i],
+  name: ["vault", "corsair", "emma"][i],
+  ip: `192.168.1.${137 + i}`,
+  mac: null,
+  os_type: "linux",
+  role: "server",
+  tags: [],
+  services: Array.from({ length: 5 }, (_, s) => ({ name: `svc${s}`, port: 1000 + s })),
+  status: { online, latency_ms: online ? 3 : null, checked_at: "2026-06-24T00:00:00Z" },
+}));
+
+test("gacha · a 5★ pair card's stars are never under the status pill, at any phone width", async ({
+  page,
+  pageErrors,
+}) => {
+  await page.route("**/api/hosts", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(FIVE_STAR_HOSTS),
+    }),
+  );
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab: "fleet", v: 1 });
+  await page.goto("/");
+
+  // The SLEEPING pair card — the wide-pill worst case. `.feat`/`.wide` are excluded exactly as the CSS
+  // rule excludes them: they carry twice the face and were never in the collision.
+  const card = page.locator(".gc-track .gc-card.pair.sleep").first();
+  await expect(card).toBeVisible();
+  // Geometry measured against the FACE, which is the containing block both are absolute to — so the
+  // numbers mean the same thing the CSS's `top` does, at any viewport.
+  const probe = () =>
+    card.evaluate((el) => {
+      const face = el.querySelector(".gc-card-face")!.getBoundingClientRect();
+      const rar = el.querySelector(".rar")!.getBoundingClientRect();
+      const pill = el.querySelector(".state")!.getBoundingClientRect();
+      return {
+        stars: el.querySelectorAll(".rar .gc-star").length,
+        pillText: el.querySelector(".state")!.textContent,
+        pillTop: Math.round(pill.top - face.top),
+        // The bbox intersection itself: positive on BOTH axes is what "the pill covers a star" means.
+        overlapX: Math.min(rar.right, pill.right) - Math.max(rar.left, pill.left),
+        overlapY: Math.min(rar.bottom, pill.bottom) - Math.max(rar.top, pill.top),
+      };
+    });
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  const narrow = await probe();
+  expect(narrow.stars).toBe(5); // the fixture really is the worst case
+  expect(narrow.pillText).toBe("SLEEPING");
+  expect(narrow.pillTop).toBe(32); // the ribbon's rung, one below the stars
+  expect(narrow.overlapY).toBeLessThanOrEqual(0); // …so the boxes cannot intersect, however wide the row
+  // Horizontally they DO still share a column at 320 — which is the whole reason the rung moved, and
+  // stating it here keeps this arm honest about what is being fixed.
+  expect(narrow.overlapX).toBeGreaterThan(0);
+
+  await page.setViewportSize({ width: 412, height: 800 });
+  const wide = await probe();
+  expect(wide.pillTop).toBe(9); // a real phone keeps the designed single rung
+  expect(wide.overlapX).toBeLessThan(0); // …because at that width there is room for both
+  expect(pageErrors).toEqual([]);
+});
+
 // ── vapor · the waiver's replacement (D51 V6) ─────────────────────────────────────────────────────────
 // vapor declared `layouts:["4-tab"]` from D35 until D51 V6; the test here used to assert the coercion. The
 // retirement's bar (R13 / Codex #11) was REAL relocation tests, so these two drive the same partitions
