@@ -35,15 +35,13 @@
 > wave: verdict SHIP**, 0 HIGH/MED, 3 LOW test-hardening findings all folded (`2a9f405`). The complete
 > record: **GACHA_PLAN §7.7 R19 addendum** + THEME_ENGINE §14.11 (the waiver entry).
 >
-> ### THE REMAINING PATH TO v1.5.0
-> ① The owner's LAST eyeball list (all quick rulings): ~~star legibility over WHITE art highlights~~
-> **CLOSED 2026-08-07 ("the stars look good for now" — carved treatment approved on device)** · the
-> composer's lighter+thinner drop beside the
-> gacha drops (coherence call; kit-skin ruling 2026-08-03 owns it) · the wave-2 4-line-name/tab-overlap
-> note · the scan-mask 7s phase pulse (fix = one wrapper node if it bothers) · the "white bar atop the
-> appbar" discriminator (check another theme — likely browser chrome). ② On the owner's word: PUSH,
-> then `deploy/linux/README.md` **§Release END-TO-END** (tag v1.5.0 → tag gate runs e2e → re-pin →
-> install → verify). ③ After: stop the dev units.
+> ### THE REMAINING PATH TO v1.5.0 — the eyeball list is CLOSED (owner, 2026-08-07)
+> ~~① the owner's LAST eyeball list~~ **ALL CLOSED**: star legibility over white highlights closed on
+> device ("the stars look good for now"); the other four (composer's quieter drop · 4-line-name/tab
+> touch · scan-mask 7s pulse · white-bar discriminator) **owner-ruled NOTED FOR POST-1.5.0 refinement —
+> none blocks the release; the full details are pinned in GACHA_PLAN §7.7 R20 addendum.**
+> ② On the owner's word: PUSH, then `deploy/linux/README.md` **§Release END-TO-END** (tag v1.5.0 →
+> tag gate runs e2e → re-pin → install → verify). ③ After: stop the dev units.
 >
 > ### Small notes for the next session
 > · The gacha research-sheet server (:8901) is STOPPED; sheets live in

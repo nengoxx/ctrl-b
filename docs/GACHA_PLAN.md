@@ -2314,6 +2314,28 @@ rulings before they could ambush the tag gate.
 defended it is gone; the carve band is the new distinctness cue, so the owner re-checks bright frames on
 device with the carve live. The other wave-1 items stand as above.
 
+**R20 ADDENDUM — THE EYEBALL LIST CLOSED BY DEFERRAL (owner, 2026-08-07): nothing remains before the
+push word.** The stars-over-white re-check closed on device ("the stars look good for now"). The four
+remaining items the owner ruled **noted for post-1.5.0 refinement** — none blocks the release; details
+pinned here so they survive HANDOFF supersession:
+
+- **The composer's quieter drop (coherence call, deferred).** The gacha signature drop is a hard SOLID
+  accent offset (cards 4px · dossier portrait 5px), but the chat composer wears the shared kit `arcade`
+  skin (ruled 2026-08-03), which paints its drop at **3px / 60% α** — thinner and washier than every
+  drop beside it. The binary when picked up: ACCEPT (a deliberately quieter input-box shadow on a
+  kit-wide component) or ALIGN (make the arcade skin itself take the solid 4px — one edit in the shared
+  skin; gacha is the only theme defaulting to it).
+- **The 4-line-name / rarity-tab touch (measured; recommendation = accept as recorded).** A ~30-char
+  host name wraps to FOUR lines at phone width in the dossier and the fourth line's edge overlaps the
+  rarity-star tab top by ~5.5px — a touch, nothing clips. Names ≤ ~21 chars (three lines) clear
+  comfortably; the owner's fleet runs 4–7 chars. Guarding against it would be speculative padding; a
+  spacing guard is the option if it's ever wanted.
+- **The scan-mask 7s phase pulse.** The oracle's bottom dissolve shows one subtle visible pulse per
+  7-second cycle; the fix, if it ever bothers, is one wrapper node.
+- **The "white bar atop the appbar" (reported once, undiagnosed).** Discriminator when picked up:
+  switch to cosmos/another theme — if the bar shows there too it is Fennec's own browser chrome, not
+  the theme.
+
 ## 8. Owner questions (the §5-of-vapor-plan analogue) — **✅ ALL RULED (prep session + the lock session, both 2026-08-02); nothing remains open**
 
 **✅ Answered (rulings folded into the sections cited):**
