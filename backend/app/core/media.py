@@ -290,13 +290,22 @@ def is_served_file(path: Path) -> bool:
     non-regular files disposes of directories and fifos in the same line. Owner drops are real files;
     a link is not a supported shape at any level of this tree.
 
+    The NAME belongs to the same rule, and that is why it is checked here rather than in `file_url`: a
+    filename whose bytes are not UTF-8 — a raw-byte name from a tar or an SMB client, which Python
+    hands back surrogate-escaped — cannot be percent-encoded into a URL, and the mount could not
+    receive one either (a request path is decoded UTF-8-with-replacement, so those bytes are not
+    addressable at all). It is unservable by construction, so this gate refuses it and the contract
+    stays exactly true; the alternative was one undecodable drop raising `UnicodeEncodeError` out of
+    the index and taking the whole namespace's listing down with it (degrade, never brick).
+
     Any `OSError` (a dangling link, a revoked permission, a vanished mount) is a plain False: the caller
     is either a listing walking a directory the owner writes to behind our back, or a 404 path where
     "not there" is the only thing a probe should be able to learn.
     """
     try:
+        path.name.encode("utf-8")
         return stat.S_ISREG(path.lstat().st_mode)
-    except OSError:
+    except OSError, UnicodeEncodeError:
         return False
 
 

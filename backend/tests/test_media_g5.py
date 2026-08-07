@@ -353,6 +353,28 @@ def test_symlinked_FILES_inside_a_role_are_neither_listed_nor_served(home: Path,
         assert c.get("/api/media/gacha/files/characters/real.png").status_code == 200
 
 
+@pytest.mark.skipif(os.name == "nt", reason="NTFS names are UTF-16; raw-byte filenames are POSIX-only")
+def test_a_non_utf8_filename_is_skipped_instead_of_500ing_the_namespace(home: Path) -> None:
+    """A raw-byte name (an untarred archive, an SMB drop) comes back surrogate-escaped, and
+    percent-encoding it raised `UnicodeEncodeError` straight out of the index — one undecodable file
+    took the WHOLE namespace's listing with it. It is unservable by construction (no request path can
+    address those bytes), so `is_served_file` refuses it like any other unservable entry: the good
+    sibling is listed and served, and the index is a 200."""
+    with make_client() as c:
+        chars = role(home, "characters")
+        (chars / "real.png").write_bytes(png_bytes())
+        fd = os.open(os.fsencode(str(chars)) + b"/raw\xff\xfe.png", os.O_WRONLY | os.O_CREAT, 0o644)
+        try:
+            os.write(fd, png_bytes())
+        finally:
+            os.close(fd)
+
+        r = c.get("/api/media/gacha")
+        assert r.status_code == 200, r.text
+        assert [f["file"] for f in r.json()["roles"]["characters"]] == ["real.png"]
+        assert c.get("/api/media/gacha/files/characters/real.png").status_code == 200
+
+
 # ── ③ the Content-Type allowlist + nosniff ────────────────────────────────────────────────────────
 
 
