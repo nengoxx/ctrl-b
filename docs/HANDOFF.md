@@ -12,7 +12,37 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶▶▶ THE RELEASE HANDOFF (2026-08-08, Fable — SUPERSEDES every block below. The owner ordered the v1.5.0 PROD RELEASE executed from a CLEAN SESSION; this block is that session's complete brief. Everything is DONE except the release itself.)
+> ## ✅✅✅ v1.5.0 RELEASED — LIVE ON PROD (2026-08-08, Fable — THE CURRENT RECORD; every block below is history)
+>
+> **The release executed CLEAN, end-to-end, by the ordered shape** (Opus ops subagent ran the
+> runbook; the main seat verified every transition independently): push `ed45651..b499662` → push CI
+> success (run 31180641344) → tag `v1.5.0` @ `b4996622` → RELEASE GATE success incl. e2e (run
+> 31181141687) → `update.sh v1.5.0` plain form (DB snapshot `ctrlb-20260807-151413.db.gz`; config
+> migration **no-op as designed** — config_version 1, schema 5) → verified: `describe --exact-match`
+> = v1.5.0 · health `{"status":"ok","version":"1.5.0","schema_version":5}` · prod unit active.
+> **Prod = v1.5.0 · rollback = `update.sh v1.4.6` exactly** (v1.4.5/v1.3.1 stay burned, never
+> targets). Dev units STOPPED. Zero unpushed commits.
+>
+> **The same-day pre-release wave (owner-ordered, shipped IN v1.5.0):** the capsule card's INNER
+> FRAME — flush 5px white band on the full silhouette, notch leg included — walked over 4 live
+> rounds (`5bc763e` + `db593d6`; durable gotcha: the `background` shorthand RESETS
+> `background-origin`, and backgrounds measure from the PADDING-box while masks measure from the
+> BORDER-box — the notch leg floated ~7px inside the cut until the origin was pinned) · R18
+> ensemble-collage research + GACHA_PLAN **§12** banked (`8de613e`, `ca05991`).
+>
+> **Still outstanding:** the owner's phone spot-check of prod (gacha is PICKED in Conf, not the
+> default; a stale PWA shell wants one reload for the new SW).
+>
+> **NEXT SESSION, in the owner's order:**
+> ① **The alt-fleet design DISCUSSION** — the owner's word: "we will be discussing the ideas and
+>   design." GACHA_PLAN **§12 is the PRIMER** (references analysis · R18-verified technique stack ·
+>   composition geometry/shape/position · §12.3 open questions), NOT a locked spec; prose
+>   back-and-forth per the converse-on-design rule. Nothing builds before that session rules.
+> ② The post-1.5.0 backlog: R20's four owner-deferred refinements + R21's four deferred LOWs + the
+>   LEFTOVER LEDGER (`9afe78c`).
+> ③ HANDOFF hygiene (R21 deferral ④): this file is ~650 KB — archive the superseded ▶/⚑ blocks.
+>
+> ## ▶▶ THE EXECUTED RELEASE BRIEF (2026-08-08 — ✅ DONE, kept as the procedure record; SUPERSEDED by the block above)
 >
 > ### What you are releasing
 > **v1.5.0** = Phase 17 gacha "Capsule Arcade" (G0–G6 + the R-rounds, D52) + the Kit Art System (D54)
