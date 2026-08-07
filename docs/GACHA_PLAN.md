@@ -2945,3 +2945,71 @@ the §10.5-style contract tests. **E3** — the §14.11 on-device round (Fennec 
 REAL acceptance: R18's one hole is that no mobile-engine cost numbers exist for N polygon clips on
 a scroller — the device round is where that gets bought (its §7 lists what desktop probes cannot
 prove).
+
+### 12.5 The design LAB — the multi-session discussion plan (2026-08-07; **THE COMEBACK POINT** for every alt-fleet design session)
+
+**What this is.** The owner's word (2026-08-07): the alt-fleet work is a **multi-session design
+conversation** — "we will be discussing the ideas and design… maybe we do different fleet designs…
+just to try different designs." This subsection is the standing plan for that conversation: where
+the evidence lives, what the candidate designs are, and how a session picks up the thread. Nothing
+in the catalogue below is ruled; §12.1–§12.4 remain the PRODUCTION primer (the R18-verified band
+construction); this §12.5 is the **exploration wrapper around it**.
+
+**The evidence base (buy once — read these, never re-commission):**
+
+| Artifact | What it holds |
+|---|---|
+| [R22](./research/R22-select-screen-grammar.md) | Character-select grammar (Strive/SF6/Tekken/Smash/Persona…): the 12 principles, the 390px translation, 5 concepts, the build checklist |
+| [R23](./research/R23-gacha-roster-banner-grammar.md) | Gacha roster/banner grammar (ZZZ/HSR/Genshin/Arknights/BA/NIKKE/FGO/AL/Uma/K-DA): the 10 principles, the fits/fights-fleet mapping, 5 concepts |
+| [R24](./research/R24-game-feel-web-techniques.md) | Game-feel → web mechanisms: 19 effect→mechanism pairs (each with the mobile-Gecko caveat), **the motion-grammar token spec (§B — adopt wholesale)**, 5 diegetic framings ranked |
+| [R18](./research/R18-ensemble-collage-fleet.md) | The probed construction stack: clip-path hit-area fall-through, cqw·tan() shear, union-hexagon lift, inset focus ring |
+| `design/prototypes/gacha/Alt fleets/` | The owner's four reference images (ZZZ roster · Double Dragon collage · True Damage poster · VIEWTRADE gig flyer) — analyzed in §12.1 |
+| `design/prototypes/gacha/alt-fleet-showcase/` | **Lab v1** (2026-08-07): 8 layout compositions in a design-review frame — evidence, superseded as the discussion vehicle |
+| `design/prototypes/gacha/alt-fleet-showcase-v2/` | **Lab v2 — THE discussion vehicle**: full-bleed immersive concept screens (below), phone-first, standalone (`python3 -m http.server` from the folder; no app integration) |
+
+**The four load-bearing findings a session should re-read first:**
+① the hero-vs-roster **size disparity** is what makes a screen read as a game (R22 P1) — not art
+quality; ② **pick the institution/fiction first** and the vocabulary, field names and chrome follow
+for free (R23 §A1) — and the capsule-toy machine is ranked the best-fit fiction, which is literally
+this theme's own name (R24 §C①); ③ the wake outcome is not uncertain, just slow — **dramatize
+latency and confirmation, never fake tier suspense** (R23 §B); ④ every ceremony obeys the R24 §B
+grammar (5 beats ≤900ms, tap-to-skip mandatory, transform/opacity only, ≤3 concurrent layers).
+
+**The concept catalogue (lab v2). Ten built candidates — each a full screen with its own fiction,
+palette, type system, idle motion and wake ceremony, all on the same 4-host mock roster + the same
+four art crops:**
+
+| # | Concept | Fiction / lineage | Source |
+|---|---|---|---|
+| 01 | **SIGNAL BANDS** | The ZZZ diagonal band poster — the §12.2 PRODUCTION form: parallel sheared bands, mono-art + accent, marquee band, outline names crossing gutters | ref img 1 · R23 C2 · R18 |
+| 02 | **SLICE STACK** | The True Damage premium poster: one black-field parallelogram of equal slices, giant vertical wordmark, maximal negative space | ref img 3 · R22 P1–P3 |
+| 03 | **CHARACTER SELECT** | The fighting-game slab (Strive×SF6): hero ~60vh bleeding off-edge + a 4-tile rail, nameplate-slam ceremony, epithets | R22 C1 |
+| 04 | **THE DOCK** | 2×2 berth quadrant (Azur Lane × the R22 Quadrant): all four visible zero-scroll, hierarchy by cell span, wake = seams-glow + REAL boot timer + takeover | R22 C3 × R23 C3 |
+| 05 | **OPERATOR FILE** | The Arknights personnel dossier: chamfered cards, hazard tape, letter-graded spec exam, DISPATCHING→stamp ceremony, print-artifact kit | R23 C1 · R24 ⑤ |
+| 06 | **FLEET/4** | The K/DA group poster: shallow arc, 4 members = 4 colors, cropped wordmark, footer name strip, FGO card-flip wake (back face pre-lit = the tell) | R23 C5 |
+| 07 | **THE CUT-IN** | Persona two-tone diagonal: skewed band, contour-stroke cut-outs, silhouette-flash hover swap, triple-ghost name collapse | R22 C5 |
+| 08 | **GIG FLYER** | The VIEWTRADE riso flyer: duotone art (SVG filter, def pinned), halftone ramp, role-prefixed names, big event-footer wordmark, stamp/QR blocks | ref img 4 · R24 A2/A3/A16 |
+| 09 | **MANGA COLLAGE** | The Double Dragon comic page: hand-authored tilted panels, torn edges, bursts, stickers — the ruled-out-for-generation form (§12.1-2), shown so the LOOK gets a fair hearing at N=4 fixed | ref img 2 |
+| 10 | **CAPSULE DOME** | The gashapon machine itself: four capsules in a dome, crank = wake (crank resists → gives → capsule drops → cracks open), the theme's own fiction made literal | R24 C① |
+
+*Reserves (documented in the dossiers, buildable on request, not in lab v2): the MARQUEE deco
+theatre (R22 C2) · MOMOROSTER contact list (R23 C4 — lowest fiction-tax) · HANGAR SORTIE board
+(R24 ④ — best verb map, drifts military).*
+
+**The lab contract (what every concept obeys, so comparisons are fair):** same mock roster
+(Pegasus/Atlas/Rook/Lyra, one SLEEPING) · same art assets · ONLINE=color/SLEEPING=grayscale ·
+one real `<button>` per machine opening the same simulated dossier action · a simulated wake
+ceremony per the concept's fiction (latency-dramatizing, tap-to-skip) · R24 §B tokens ·
+reduced-motion honored · smooth on Fennec AND Chrome (transform/opacity only; the §14.11
+discipline) · 320–430px first.
+
+**How a session picks up the thread:** ① read this subsection + skim the four load-bearing
+findings; ② serve lab v2, owner walks it on the phone; ③ per concept the owner rules
+**kill / keep / harvest** (harvest = a named element migrates into another concept or into the
+§12.2 production form); ④ rulings get recorded HERE as a dated addendum list (the star-rounds
+pattern — rulings-from-renders, walked live); ⑤ when a direction stabilizes, §12.2's build slices
+(E0–E3) absorb it — `fleetLayout` stays the axis, and whether the lab yields ONE ensemble value or
+several named variants is itself an owner call (§12.3 gains that as question ⑥).
+
+**Rulings log (append dated entries below; empty = nothing ruled yet):**
+- *(none yet — lab v2 built 2026-08-07, awaiting the first owner walk)*

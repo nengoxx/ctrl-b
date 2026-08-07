@@ -38,6 +38,14 @@
 >   design." GACHA_PLAN **§12 is the PRIMER** (references analysis · R18-verified technique stack ·
 >   composition geometry/shape/position · §12.3 open questions), NOT a locked spec; prose
 >   back-and-forth per the converse-on-design rule. Nothing builds before that session rules.
+>   **UPDATE 2026-08-07 evening (Fable): the discussion now starts from GACHA_PLAN §12.5** — the
+>   deep-research pass is BANKED (R22 select-screen grammar · R23 gacha roster/banner grammar ·
+>   R24 game-feel→web mechanisms incl. the adoptable motion-grammar spec), the 10-concept catalogue
+>   is pinned there, and **lab v2** (`design/prototypes/gacha/alt-fleet-showcase-v2/` — full-bleed
+>   immersive concept screens, owner-walkable on the phone) is the discussion vehicle. §12.5 also
+>   holds the multi-session protocol (kill/keep/harvest rulings → its dated rulings log) — it is
+>   THE comeback point; the owner asked for exactly this durability ("multisession talk… have both
+>   the research and the plan available, clearly specified, easy to come back to").
 > ② The post-1.5.0 backlog: R20's four owner-deferred refinements + R21's four deferred LOWs + the
 >   LEFTOVER LEDGER (`9afe78c`).
 > ③ HANDOFF hygiene (R21 deferral ④): this file is ~650 KB — archive the superseded ▶/⚑ blocks.
