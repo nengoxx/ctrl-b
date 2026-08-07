@@ -12,7 +12,50 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-06 END OF DAY, Fable — written for a COLD session; SUPERSEDES every block below. v1.5.0 IS CODE-COMPLETE — the next session's job is the OWNER DEVICE ROUND, any fidelity fixes it produces, then PUSH + RELEASE.)
+> ## ▶▶ THE STATE (2026-08-07 EVENING, Fable — SUPERSEDES every block below, including 2026-08-06's. The OWNER DAY ROUND IS DONE and audited; v1.5.0 is RELEASE-READY — what remains is the owner's LAST eyeball list, then the push word, then §Release.)
+>
+> ### The tree
+> **21 commits LOCAL on `main`, UNPUSHED** (owner pushes by word; prod = **v1.4.6 untouched**; schema
+> untouched at 5, rollback v1.4.6). Today's live wave (each commit its own ruling, owner on device all
+> day): the dossier CLOSE CORNER finished (disc 78→55% of the badge — "opaque foreign blue" fixed; drawn
+> × 12→14px, even-child exactness kept) · the card stars walked outline-only → **CARVED** (R19: the
+> owner picked the blurred-inner-shadow variant E off the commissioned candidate sheet — a **§14.11
+> SVG-filter WAIVER, owner-granted**, recorded in THEME_ENGINE's new closed list; geometry fallback =
+> sheet variant C, banked; def presence + flood token + rule-reaches-star all test-pinned) · FULL-WIDTH
+> shapes (feat/wide) re-bind stars to 16px (ratio 1.30 holds on all three rows) · the **`cardNameFont`
+> AXIS landed** (Opus subagent, pinned brief, main-seat reviewed: "Card face" picker, default bungee,
+> the plate's interim pin dissolved; `nameFont` steers the dossier alone; zero backend change — the
+> theme_settings map is pass-through) · 2026-08-06's TEST DEBT reconciled (three stale pins caught
+> before the tag gate could trip on them).
+>
+> ### Gates + audit — ALL green at close (2026-08-07)
+> `tools/check.py` **6/6** (ruff · pyright · backend pytest full · FE check-all) · FE vitest **1757** ·
+> **FULL local Playwright 254** incl. the contrast gate 74/74 and a NEW R19 carve e2e guard (remember:
+> push CI SKIPS e2e — but the full suite ran LOCALLY today, post-wave) · **Codex round on the whole
+> wave: verdict SHIP**, 0 HIGH/MED, 3 LOW test-hardening findings all folded (`2a9f405`). The complete
+> record: **GACHA_PLAN §7.7 R19 addendum** + THEME_ENGINE §14.11 (the waiver entry).
+>
+> ### THE REMAINING PATH TO v1.5.0
+> ① The owner's LAST eyeball list (all quick rulings): **star legibility over WHITE art highlights —
+> RESHAPED by the carve** (the accent edge that defended bright frames is gone; the carve band is the
+> new cue — check a card with a bright/white frame) · the composer's lighter+thinner drop beside the
+> gacha drops (coherence call; kit-skin ruling 2026-08-03 owns it) · the wave-2 4-line-name/tab-overlap
+> note · the scan-mask 7s phase pulse (fix = one wrapper node if it bothers) · the "white bar atop the
+> appbar" discriminator (check another theme — likely browser chrome). ② On the owner's word: PUSH,
+> then `deploy/linux/README.md` **§Release END-TO-END** (tag v1.5.0 → tag gate runs e2e → re-pin →
+> install → verify). ③ After: stop the dev units.
+>
+> ### Small notes for the next session
+> · The gacha research-sheet server (:8901) is STOPPED; sheets live in
+>   `design/prototypes/gacha/research-sheets/` (`star-carved-candidates.html` = the R19 pick record).
+> · A latent trap documented in-code (gachaFonts.test.ts): a TEST importing a theme index before its
+>   fonts module evaluates the registry mid-cycle → every setting silently `undefined`. Worth a
+>   main-seat look someday: registry getters instead of captured values.
+> · Carve fallback if a device round ever finds fleet-scroll jank: sheet variant C (same carve, pure
+>   geometry) — swap the card-row rule, delete the def, strike the §14.11 entry.
+> · The dossier `--gc-star-drop`/`--gc-star-edge`/drop-polygon machinery is DELETED (git holds it).
+>
+> ## ▶ THE STATE THIS SESSION HANDS YOU (2026-08-06 END OF DAY, Fable — written for a COLD session; SUPERSEDED ABOVE. v1.5.0 IS CODE-COMPLETE — the next session's job is the OWNER DEVICE ROUND, any fidelity fixes it produces, then PUSH + RELEASE.)
 >
 > ### The tree (verify first: `git log --oneline -6`, `git status`)
 > **FIVE commits sit LOCAL on `main`, UNPUSHED** (the owner pushes by word — standing rule):
