@@ -3957,10 +3957,10 @@ then).
   re-confirmed 1:1/≥5-caps. Ladders remain design constants; `stars.ts` + plan §6.1 amended
   together.
 - **The media directory is ROLE-SCOPED (amends this decision's flat-dir media seam):**
-  `$CTRLB_HOME/media/<ns>/{characters,banner,wallpaper,reel}/` — a dropped file is ASSIGNED
-  by its folder, no pinning ceremony; `slots` pins survive as optional overrides; the G5
-  index endpoint reports per-role. Full shape: plan §5.4. The §10.4 hardening/threat model
-  is unchanged and applies per subfolder.
+  `$CTRLB_HOME/media/<ns>/{characters,banner,reel}/` (wallpaper removed at G6.3 — D54 ②) —
+  a dropped file is ASSIGNED by its folder, no pinning ceremony; `slots` pins survive as
+  optional overrides; the G5 index endpoint reports per-role. Full shape: plan §5.4. The
+  §10.4 hardening/threat model is unchanged and applies per subfolder.
 - **The banner slide set gains SCENE slides** (hero → N scenes → per-host promos): one slide
   per image in the banner role pool (bundled `ART.scenes` until G5), inert non-buttons
   wearing hero-style TEMPLATED copy — tag 限定イベント + caption 開催中 (frozen glyphs, no

@@ -15,7 +15,7 @@
 > ## ▶▶ THE STATE (2026-08-07 EVENING, Fable — SUPERSEDES every block below, including 2026-08-06's. The OWNER DAY ROUND IS DONE and audited; v1.5.0 is RELEASE-READY — what remains is the owner's LAST eyeball list, then the push word, then §Release.)
 >
 > ### The tree
-> **21 commits LOCAL on `main`, UNPUSHED** (owner pushes by word; prod = **v1.4.6 untouched**; schema
+> **28 commits LOCAL on `main`, UNPUSHED** (owner pushes by word; prod = **v1.4.6 untouched**; schema
 > untouched at 5, rollback v1.4.6). Today's live wave (each commit its own ruling, owner on device all
 > day): the dossier CLOSE CORNER finished (disc 78→55% of the badge — "opaque foreign blue" fixed; drawn
 > × 12→14px, even-child exactness kept) · the card stars walked outline-only → **CARVED** (R19: the
