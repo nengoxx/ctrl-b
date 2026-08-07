@@ -1826,16 +1826,17 @@
      * is centred by construction, identically on every engine, at every DPR. It also retires the
      * ASCII-fence workaround the glyph existed for (gacha's TypeScript is fenced ASCII-only, so the ×
      * could not be markup) — there is no character here at all now.
-     * SIZE: the plus's arms reach the box edges, so rotating puts its four tips at 6.5px from the centre,
-     * i.e. a 9.2x9.2px ×, which is what the 21px glyph measured (9.5px). The 13% arm gives a 1.7px stroke
-     * against the glyph's ~1.6px. Nothing about the disc, its colour pair or its hit area changes. */
+     * SIZE: the plus's arms reach the box edges, so rotating puts its tips at the box's half-width from
+     * the centre. 12px matched the 21px glyph's ink (~9.2px of × at a 1.7px stroke); the owner's
+     * 2026-08-07 round asked for the × itself SLIGHTLY bigger, and 14px is the one slight step that keeps
+     * the exactness rule below — ~10.7px of × at a ~2.0px stroke, disc/pair/hit area untouched. */
     .gc-dossier-close::before {
       content: "";
-      /* 12px, not 13 (measured): the disc is 38px, so an ODD child leaves a 12.5px half-gap and both
-       * engines resolved it the same way — half a pixel down-right. An EVEN child divides the 38 exactly
-       * (13 + 12 + 13), which is what takes the offset to 0.00 on both. */
-      width: 12px;
-      height: 12px;
+      /* EVEN, never odd (measured at 12 vs 13): the disc is 38px, so an ODD child leaves a half-pixel gap
+       * both engines resolve the same way — half a pixel down-right. An EVEN child divides the 38 exactly
+       * (12 + 14 + 12), which is what takes the offset to 0.00 on both. */
+      width: 14px;
+      height: 14px;
       background: currentColor;
       clip-path: polygon(
         43% 0,
