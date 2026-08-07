@@ -2839,7 +2839,7 @@ transform-only banner mechanics.
 
 ---
 
-## 12. The ensemble fleet — the ALTERNATIVE card layout (owner ask 2026-08-08; **PROPOSED — design drafted, awaiting the owner ruling; post-1.5.0, unscheduled**)
+## 12. The ensemble fleet — the ALTERNATIVE card layout (owner ask 2026-08-08; **PROPOSED — design drafted; post-1.5.0, unscheduled. The owner's word (2026-08-08): the ideas + design get a live DISCUSSION session — this section is the PRIMER for that conversation (prose back-and-forth, the converse-on-design rule), NOT a locked spec; nothing here builds before that session rules.**)
 
 *Evidence base: [R18](./research/R18-ensemble-collage-fleet.md) (probed 2026-08-07, both desktop
 engines) + the four reference images in `design/prototypes/gacha/Alt fleets/`. Nothing here is
