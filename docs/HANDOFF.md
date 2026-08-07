@@ -12,11 +12,71 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ▶▶ THE STATE (2026-08-07 EVENING, Fable — SUPERSEDES every block below, including 2026-08-06's. The OWNER DAY ROUND IS DONE and audited; v1.5.0 is RELEASE-READY — what remains is the owner's LAST eyeball list, then the push word, then §Release.)
+> ## ▶▶▶ THE RELEASE HANDOFF (2026-08-08, Fable — SUPERSEDES every block below. The owner ordered the v1.5.0 PROD RELEASE executed from a CLEAN SESSION; this block is that session's complete brief. Everything is DONE except the release itself.)
+>
+> ### What you are releasing
+> **v1.5.0** = Phase 17 gacha "Capsule Arcade" (G0–G6 + the R-rounds, D52) + the Kit Art System (D54)
+> + media v2 (M1a–M3, D53) + the pre-release audit's fix wave (R21). Prod runs **v1.4.6**; **schema
+> UNTOUCHED at 5** → rollback = **v1.4.6 exactly** (v1.4.5 and v1.3.1 are burned tags — NEVER rollback
+> targets). **No config migration in this release**: the only config additions are two nullable
+> appearance fields + the `media:` map, which is ABSENT from prod's `config.yaml` (audit-verified
+> against the real file — the unknown-role raise cannot fire); first boot creates `$CTRLB_HOME/media/*`
+> itself, and a bad media layout DISABLES that namespace, never bricks boot (audit-verified).
+>
+> ### The state — verify, don't trust
+> `git status` clean (except the owner-ruled untracked `design/prototypes/gacha/` art dirs — **NEVER
+> `git add -A`**) · unpushed count: `git rev-list --count origin/main..main` · prod:
+> `git -C ~/apps/ctrl-b describe --tags` = v1.4.6 · dev units RUNNING (:5434/:5173).
+> **Gates at handoff (2026-08-08, at HEAD): `check.py --e2e` ALL 7 PASSED** (ruff lint+format ·
+> pyright · backend pytest full · FE check-all · prettier · the FULL Playwright e2e suite) — the
+> audit's own precondition, run after the last code commit. The complete audit record =
+> **GACHA_PLAN §7.7 R19 / R20 / R21** (R21 = the two-lane pre-release audit: Codex SHIP + Opus
+> RELEASE, 2 MEDs fixed, both confirm rounds closed clean).
+>
+> ### THE PROCEDURE (the owner's 2026-08-08 order authorizes this release; still get the explicit
+> ### go-word at session start before pushing — pushing is by owner word, always)
+> ① **PUSH `main`** — the pre-push hook reruns the full gate locally (minutes); then WAIT for push CI
+> green (`gh run list --branch main --limit 1` → success). Push CI **SKIPS e2e** — green here does
+> not prove the arms; the tag gate does.
+> ② **`deploy/linux/README.md` §Release END-TO-END**: tag `v1.5.0` on the pushed, CI-green sha
+> (semver: feature release) → push the tag → `gh run watch … --exit-status` the **RELEASE GATE**
+> (full gate + Playwright e2e on ubuntu-latest). NEVER re-pin on red or pending; NEVER re-point a
+> tag. If the tag gate fails, the number burns (v1.4.5 precedent) — fix forward on main, tag v1.5.1.
+> ③ Steps 5–6 via the **proven plain form**: `bash ~/apps/ctrl-b/deploy/linux/update.sh v1.5.0`
+> (tag checks + CI-gate check + compatibility precheck + install + its own health verify; clean runs
+> since v1.4.0). Never edit the prod tree in place.
+> ④ **VERIFY**: `git -C ~/apps/ctrl-b describe --tags --exact-match` prints v1.5.0 ·
+> `curl -s -m5 localhost:5433/api/health` reports version 1.5.0 (hatch-vcs derives it from the tag
+> at install) · spot-check `https://emma.lobster-vector.ts.net` on the phone — gacha is picked in
+> Conf (not the default; cosmos is), and a stale PWA shell wants one reload for the new SW.
+> ⑤ **AFTER**: stop the dev units (`systemctl --user stop ctrl-b-dashboard-dev
+> ctrl-b-dashboard-dev-web`) · record the release (HANDOFF + memory: prod=v1.5.0, rollback stays
+> v1.4.6) · the post-1.5.0 backlog = R20's four owner-deferred refinements + R21's four deferred
+> LOWs + the LEFTOVER LEDGER (`9afe78c`).
+> Execution shape per the methodology: an **Opus ops subagent runs ①–④ from this brief** (runbook
+> releases are workforce work — v1.1.1+ precedent); the main seat verifies each gate transition.
+>
+> ### Edge cases already closed — do not re-derive
+> · The new e2e arms are CI-safe on a cold runner: the populated-media arms route-mock everything,
+>   the 320px pill arm carries its own fixture (verified by reading; the tag gate is the execution
+>   proof). · Schema 5 ⇒ update.sh's migration step is a NO-OP — expected, not an error. · The new
+>   fonts (Bungee/Maru + regenerated JP subsets) are committed, content-hashed by Vite, SW-cached by
+>   pattern — nothing manual. · `~/.ctrl-b-dev` carries a forward-compatible `media:` block —
+>   dev-only, irrelevant to prod. · The carve's variant-C rollback now lives IN-REPO
+>   (`GachaStar.tsx` comment — it is geometry+**mask**, and its dark-mix paint is NOT
+>   `--gc-star-carve-ink`).
+>
+> ### Small notes carried forward
+> · The research-sheet server (:8901) is STOPPED; sheets on disk, gitignored. · The gachaFonts
+>   import-order trap stays documented in-code (registry getters = a someday item). · HANDOFF is
+>   ~650 KB — post-release, archive the superseded ▶/⚑ blocks (R21 deferral ④).
+>
+> ## ▶▶ THE STATE (2026-08-07 EVENING, Fable — SUPERSEDED ABOVE. The OWNER DAY ROUND IS DONE and audited; v1.5.0 is RELEASE-READY — what remains is the owner's LAST eyeball list, then the push word, then §Release.)
 >
 > ### The tree
-> **28 commits LOCAL on `main`, UNPUSHED** (owner pushes by word; prod = **v1.4.6 untouched**; schema
-> untouched at 5, rollback v1.4.6). Today's live wave (each commit its own ruling, owner on device all
+> **LOCAL commits on `main`, UNPUSHED** — count them, don't trust a digit: `git rev-list --count
+> origin/main..main` (this line went stale twice in one day as a number; owner pushes by word; prod =
+> **v1.4.6 untouched**; schema untouched at 5, rollback v1.4.6). Today's live wave (each commit its own ruling, owner on device all
 > day): the dossier CLOSE CORNER finished (disc 78→55% of the badge — "opaque foreign blue" fixed; drawn
 > × 12→14px, even-child exactness kept) · the card stars walked outline-only → **CARVED** (R19: the
 > owner picked the blurred-inner-shadow variant E off the commissioned candidate sheet — a **§14.11
@@ -40,6 +100,14 @@
 > device ("the stars look good for now"); the other four (composer's quieter drop · 4-line-name/tab
 > touch · scan-mask 7s pulse · white-bar discriminator) **owner-ruled NOTED FOR POST-1.5.0 refinement —
 > none blocks the release; the full details are pinned in GACHA_PLAN §7.7 R20 addendum.**
+> ~~①b the owner-ordered PRE-RELEASE AUDIT~~ **DONE (the R21 addendum is the record): two lanes
+> (Codex adversarial correctness · Opus release-integrity) over the whole unpushed stack → both
+> verdicts RELEASE/SHIP; 2 confirmed MEDs fixed (a non-UTF-8 filename 500'd a media namespace — the
+> `is_served_file` chokepoint now rejects it; the 5★ pair-card pill painted over stars ≤364px — it
+> drops to the ribbon's 32px rung below 380px, measured), owner-ruled literals test-pinned (55% disc ·
+> even ×), the carve's variant-C rollback banked IN-REPO (GachaStar.tsx comment), 4 LOWs deferred
+> post-1.5.0 (R21 lists them); both confirm rounds closed clean; full gate + FULL local Playwright
+> re-run green at the audited HEAD.**
 > ② On the owner's word: PUSH, then `deploy/linux/README.md` **§Release END-TO-END** (tag v1.5.0 →
 > tag gate runs e2e → re-pin → install → verify). ③ After: stop the dev units.
 >

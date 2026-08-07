@@ -2336,6 +2336,62 @@ pinned here so they survive HANDOFF supersession:
   switch to cosmos/another theme — if the bar shows there too it is Fennec's own browser chrome, not
   the theme.
 
+**R21 ADDENDUM — THE OWNER-ORDERED PRE-RELEASE AUDIT (2026-08-08, before the push word): two fresh
+lanes over the ENTIRE unpushed stack, a fix wave, and both confirm rounds closed.** The owner asked for
+"an audit with a subagent and codex for the latest things we implemented and touched" before deploying.
+Two independent lanes ran on the same scope (the 24 then-unpushed commits) with disjoint lenses, per the
+council split: **Codex `gpt-5.6-sol` high = line-level correctness** (verdict: SHIP WITH FIXES — 2 MED,
+2 LOW, and it independently cleared the carve def lifetime, the `cardNameFont` axis, and every other
+theme against the kit-wide changes) · **an Opus release-integrity lane** (verdict: RELEASE, no HIGH —
+re-ran the full gate at HEAD, verified schema/migrations/`install.sh`/`update.sh`/`deploy/` are
+byte-untouched by the stack, proved the one boot-brick candidate inert against the real prod config,
+and swept hygiene: no secrets, no debug leftovers, the ~80 MB art dirs excluded, the only new binaries
+two content-hashed woff2). Main-seat rulings and the fold, all commits local:
+
+- **MED FIXED (`39c39f6`) — a non-UTF-8 filename 500'd its whole media namespace.** `describe_file →
+  file_url → quote()` raised `UnicodeEncodeError` on a surrogate-escaped POSIX name (an archive/SMB
+  drop), killing `/api/media/{ns}` instead of skipping one file — a degrade-never-brick violation.
+  The fix lives at the ONE advertised==served chokepoint: `is_served_file()` now rejects a name that
+  cannot encode UTF-8, which is exactly the set uvicorn can never address anyway (both HTTP impls
+  decode request targets with `errors="replace"`, so such a name is unreachable — verified against
+  uvicorn's source, not assumed). POSIX-only regression test beside it.
+- **MED FIXED (`10f146b`) — the 5★ pair card's stars sat under the status pill on narrow phones.**
+  Measured in the built app (2px steps): last colliding width **364px**, first clear width 366px.
+  Below **380px** the pair card's pill now drops to the NEW-ribbon's existing 32px rung (no new
+  number minted; `.feat`/`.wide` untouched, star geometry untouched); the owner's 393/412px views
+  never change. E2e arm drives 320/**364/381**/412 — the cutoff's own edges are pinned (Codex
+  confirm-round LOW, folded `0665869`).
+- **Test-pinning the owner's day-round literals (`527e042`)** — the 55% close-disc is pinned as its
+  full declaration and the drawn × must stay even-and-square (the 38 = 12+14+12 zero-offset rule);
+  both mutation-checked. And **the carve's variant-C rollback is now IN THE REPO**: the §14.11
+  waiver's banked fallback lived only in the gitignored research sheet — git could not produce the
+  documented revert. Its geometry+mask construction (the sheet tags C geometry+mask, not "pure
+  geometry" — corrected) is banked verbatim as the GachaStar.tsx comment block, with the trap named:
+  C's dark-mix paint is NOT `--gc-star-carve-ink` (mix-toward-dark vs flood-through-alpha).
+- **Doc truth (`109bf05`, `41581d6`, this commit):** D52's role list learned `oracle` (added at G5,
+  never recorded) and dropped `wallpaper`; the badge-token comments and the 78% test pin stopped
+  claiming the close disc (its real reader since the 55% re-look is the base rarity tab — the pin is
+  re-anchored to `--gc-dossier-rar-bg` so it can never false-pass again); HANDOFF's unpushed-commit
+  count became the `git rev-list --count` command after going stale twice in one day as a digit.
+
+**DEFERRED POST-1.5.0 (ruled, not built — the reviewers' prescriptions were heavier than the findings):**
+① media `revision` is `mtime_ns:size`, not content identity — a same-size, same-mtime replacement keeps
+stale art cached; trigger judged contrived (D53 chose the cheap form deliberately; lean close if it ever
+bites: fold `ctime_ns` in). ② picking an unwarmed name-face while gacha is live paints one fallback frame
+until the woff2 arrives (self-healing; the warm-the-resolved-union design is deliberate). ③ the §14.11
+waiver counter only scans `gacha.css` — a `url(#` in another sheet widens the waiver silently; widen the
+scan's source. ④ HANDOFF is 647 KB and every cold session reads it first — archive the superseded ▶/⚑
+blocks. (①–② Codex LOWs, ③–④ the integrity lane's.)
+
+**Confirm rounds, both closed:** Codex re-reviewed the wave diff alone — both MED fixes CONFIRMED
+correct, zero new runtime defects, its 3 LOWs (the cutoff probes, the count, one comment clause) all
+folded. The integrity lane re-verified every one of its findings RESOLVED against the commits (its
+words: "the retreat is now a diff, not an excavation") and kept RELEASE, with ONE precondition: the
+full Playwright suite had only run targeted since `gacha.css` changed, so the pre-deploy `check.py
+--e2e` must be green at the final HEAD before the tag. **Run at HEAD 2026-08-08: ALL 7 CHECKS PASSED**
+(ruff lint+format · pyright · backend pytest · FE check-all · prettier · the full Playwright e2e
+suite, 76s). v1.5.0 is release-handoff-ready; the release brief = HANDOFF's ▶▶▶ block.
+
 ## 8. Owner questions (the §5-of-vapor-plan analogue) — **✅ ALL RULED (prep session + the lock session, both 2026-08-02); nothing remains open**
 
 **✅ Answered (rulings folded into the sections cited):**
