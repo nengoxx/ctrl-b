@@ -36,9 +36,9 @@
 > record: **GACHA_PLAN §7.7 R19 addendum** + THEME_ENGINE §14.11 (the waiver entry).
 >
 > ### THE REMAINING PATH TO v1.5.0
-> ① The owner's LAST eyeball list (all quick rulings): **star legibility over WHITE art highlights —
-> RESHAPED by the carve** (the accent edge that defended bright frames is gone; the carve band is the
-> new cue — check a card with a bright/white frame) · the composer's lighter+thinner drop beside the
+> ① The owner's LAST eyeball list (all quick rulings): ~~star legibility over WHITE art highlights~~
+> **CLOSED 2026-08-07 ("the stars look good for now" — carved treatment approved on device)** · the
+> composer's lighter+thinner drop beside the
 > gacha drops (coherence call; kit-skin ruling 2026-08-03 owns it) · the wave-2 4-line-name/tab-overlap
 > note · the scan-mask 7s phase pulse (fix = one wrapper node if it bothers) · the "white bar atop the
 > appbar" discriminator (check another theme — likely browser chrome). ② On the owner's word: PUSH,
