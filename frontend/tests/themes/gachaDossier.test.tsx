@@ -576,10 +576,13 @@ describe("the dossier's light surface reads from the dossier tokens", () => {
       expect(css).toContain(`var(${token})`);
     }
     // `--gc-dossier-badge` keeps its value but LOST its gacha.css consumer at G7: the rarity lozenge it
-    // filled is now a hairline tab (`--gc-dossier-rar-bg`). Its live reader is the dark palettes' close
-    // disc, inside tokens.css — so the pin moves there rather than being dropped.
+    // filled is now a hairline tab. Its live readers are both inside tokens.css — the RARITY TAB at 78%
+    // (pinned as the full declaration here) and the close disc at 55% (pinned in gachaChrome) — so the
+    // pin moves there rather than being dropped.
     expect(tokens).toContain("--gc-dossier-badge: #17172ce6");
-    expect(tokens).toContain("color-mix(in srgb, var(--gc-dossier-badge) 78%, transparent)");
+    expect(tokens).toContain(
+      "--gc-dossier-rar-bg: color-mix(in srgb, var(--gc-dossier-badge) 78%, transparent)",
+    );
   });
 });
 

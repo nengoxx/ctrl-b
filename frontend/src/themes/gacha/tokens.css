@@ -1077,7 +1077,7 @@
        * lavender), so a shared value here would be dead. */
       --gc-dossier-line: color-mix(in srgb, var(--gc-dossier-outline) 22%, transparent);
       /* The NIGHT lozenge. Its rarity-badge consumer went at G7 (see the base declaration); what reads it
-       * here is the close disc below, at 78%. */
+       * here is the close disc below, at 55% (the owner's 2026-08-07 re-look), and the rarity tab at 78%. */
       --gc-dossier-badge: #0c0a24e6;
       /* THE RARITY TAB, dark-sheet direction (G7). The base takes the dark lozenge thinned, because on the
        * light slip sheet the quiet step is downward; on a DARK sheet the same idea is the sheet's own top

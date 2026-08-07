@@ -3957,7 +3957,8 @@ then).
   re-confirmed 1:1/≥5-caps. Ladders remain design constants; `stars.ts` + plan §6.1 amended
   together.
 - **The media directory is ROLE-SCOPED (amends this decision's flat-dir media seam):**
-  `$CTRLB_HOME/media/<ns>/{characters,banner,reel}/` (wallpaper removed at G6.3 — D54 ②) —
+  `$CTRLB_HOME/media/<ns>/{characters,banner,reel,oracle}/` (oracle added at G5; wallpaper
+  removed at G6.3 — D54 ②) —
   a dropped file is ASSIGNED by its folder, no pinning ceremony; `slots` pins survive as
   optional overrides; the G5 index endpoint reports per-role. Full shape: plan §5.4. The
   §10.4 hardening/threat model is unchanged and applies per subfolder.
