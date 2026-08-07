@@ -28,33 +28,40 @@
 // `--gc-star-size` mean the star's real INK width — so the row's pitch÷ink ratio is a number you can read
 // off the CSS and compare with R16's table.
 //
-// ── ONE PRIMITIVE, TWO TREATMENTS — and the split is entirely CSS's (owner rulings, 2026-08-06) ───────
-// The component draws the same two polygons everywhere; each SURFACE then says how they are painted, the
-// way this theme does everything else. Nothing here branches, and there is no second component:
+// ── ONE PRIMITIVE, TWO TREATMENTS — and the split is entirely CSS's (owner rulings, final 2026-08-07) ─
+// The component draws the same polygon everywhere; each SURFACE then says how it is painted, the way this
+// theme does everything else. Nothing here branches, and there is no second component:
 //
-//   · the DOSSIER's tab wants a clean mark — self-coloured stroke (so it fattens and rounds the
-//     silhouette into one solid, plumper star rather than outlining it) and NO drop. "They look better
-//     without."
-//   · the CARD's row sits on ARTWORK, so its stroke is ACCENT-coloured: an edge for visibility over a
-//     bright frame, thin enough to read as an edge and not a ring (`paint-order` hides its inner half
-//     under the fill). Its drop was retired on the owner's 2026-08-07 round ("only the outline").
+//   · the DOSSIER's tab wants the clean mark — self-coloured stroke (so it fattens and rounds the
+//     silhouette into one solid, plumper star rather than outlining it) and nothing else. "The dossier
+//     looks good."
+//   · the CARD's row is CARVED: the R19 blurred inner shadow (`filter: url(#gc-star-carve)`, switched on
+//     by the card row in gacha.css). The owner walked the 2026-08-06/07 rounds through a contrasting dark
+//     contour ("reads as an outline"), an accent edge + arcade drop, then outline-only — and settled on
+//     the carve off `research-sheets/star-carved-candidates.html`, variant E ("I like it that much").
+//     The drop machinery those rounds left dormant is REMOVED with the pick; git holds it if a surface
+//     ever wants an offset copy again.
 //
-// The sheet's original contrasting DARK contour is retired on both — the owner read it as an outline.
+// ── THE CARVE FILTER (R19 E) — and the §14.11 waiver it ships under ───────────────────────────────────
+// The canonical SVG inner shadow: offset the star's alpha down, blur it, keep the part of the original
+// alpha the blurred copy no longer covers (`feComposite out` — the top-facing inner band), flood it with
+// the carve ink and merge it over the star. A per-star filter is an offscreen rasterization on a
+// scrolling track — the class §14.11 bans and R16 retired the glyph's glow for — so this ships as an
+// OWNER-GRANTED WAIVER, scoped to exactly this def (recorded in THEME_ENGINE §14.11; the contrast test
+// pins the sheet to ONE svg-filter reference). The buffers are star-sized (~14px), not card-sized; the
+// banked fallback if a device round ever finds jank is the sheet's variant C, the same carve as pure
+// layered geometry.
 //
-// ── THE DROP: the arcade signature, at star scale — ⚠ DORMANT since 2026-08-07 ────────────────────────
-// The same hard, unblurred offset the capsule cards and the dossier portrait wear. It is a SECOND POLYGON
-// rather than `filter: drop-shadow()` — the cheaper and crisper form: a filter would rasterize an
-// offscreen buffer per star on a scrolling track (the §14.11 class this theme converts away from), while
-// a translated copy is plain geometry the same rasterizer already walks. Painted FIRST so the star sits
-// on top of it; hidden by default and switched on per-surface. NO surface switches it on any more: the
-// dossier never wore it ("they look better without", 2026-08-06) and the card's rule went on the owner's
-// 2026-08-07 round ("only the outline"). Kept with its `--gc-star-drop` token while that round settles —
-// strip both together if outline-only sticks through the v1.5.0 device pass.
+// `primitiveUnits="objectBoundingBox"` is what makes the def SIZE-BLIND: dy 0.0622 and stdDeviation
+// 0.0363 are the sheet's own 6 and 3.5 user units as fractions of its 96.5-unit box, so the carve scales
+// with whatever `--gc-star-size` a row asks for — the same property the stroke gets from user units.
+// The flood ink is a TOKEN (`--gc-star-carve-ink`, council M7) referenced through a style var; one dark
+// mixed over whatever the star's own colour is, which is how gold, rose-gold and the sleep row's dim all
+// carve without per-colour rules (the construction is alpha-based, so `.hi` keeps re-tinting the STAR).
 //
 // Colour is CSS's throughout: `fill: currentColor` inherits the row's `color`, so the existing
-// `--gc-star` / `--gc-star-hi` / `--gc-star-dim` tinting keeps working unchanged (the drop and the card's
-// edge read accent tokens instead, so `.hi` re-tints the STAR without dragging either along) and
-// `isHighStar` still decides WHICH.
+// `--gc-star` / `--gc-star-hi` / `--gc-star-dim` tinting keeps working unchanged and `isHighStar` still
+// decides WHICH star is rose-gold.
 
 /** C2's round star: 5 points, inner/outer ≈ 0.47, in the sheet's own 100-unit coordinate space. */
 const POINTS =
@@ -66,8 +73,40 @@ const POINTS =
 export function GachaStar({ hi }: { hi?: boolean }) {
   return (
     <svg className={"gc-star" + (hi ? " hi" : "")} viewBox="1.75 1.75 96.5 96.5">
-      <polygon className="drop" points={POINTS} strokeLinejoin="round" />
       <polygon points={POINTS} strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** The carve filter's ONE document-wide definition — mounted by GachaFleet, the only surface whose star
+ *  row is carved (`.gc-card .rar .gc-star` in gacha.css consumes it; the dossier's plain mark needs no
+ *  def). Mounted as a 0×0 absolutely-positioned svg, deliberately NOT `display: none`: a hidden-subtree
+ *  def is the classic way engines drop filter references, and a broken `filter: url(#…)` does not degrade
+ *  to "no filter" everywhere — Gecko has historically not painted the referencing element at all, which
+ *  would vanish every card star. The def must live exactly as long as any card can. */
+export function GachaStarDefs() {
+  return (
+    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden focusable="false">
+      <defs>
+        <filter
+          id="gc-star-carve"
+          x="-0.3"
+          y="-0.3"
+          width="1.6"
+          height="1.6"
+          primitiveUnits="objectBoundingBox"
+        >
+          <feOffset dy="0.0622" in="SourceAlpha" result="o" />
+          <feGaussianBlur stdDeviation="0.0363" in="o" result="b" />
+          <feComposite operator="out" in="SourceAlpha" in2="b" result="band" />
+          <feFlood style={{ floodColor: "var(--gc-star-carve-ink)" }} result="ink" />
+          <feComposite operator="in" in="ink" in2="band" result="carve" />
+          <feMerge>
+            <feMergeNode in="SourceGraphic" />
+            <feMergeNode in="carve" />
+          </feMerge>
+        </filter>
+      </defs>
     </svg>
   );
 }

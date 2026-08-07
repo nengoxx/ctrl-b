@@ -2272,6 +2272,48 @@ them. Flagged in the token and in the gate pair.
 the 4-line-name/rarity-tab overlap; star legibility over a white art highlight; the scan mask's phase
 pulse).
 
+**R19 ADDENDUM — THE CARVED STARS · THE CARD FACE AXIS · THE CLOSE CORNER (2026-08-07, the owner's live
+day round).** Four rulings landed live, each committed separately:
+
+**① THE CLOSE CORNER, finished.** The disc's badge mix thinned 78%→55% (the owner's re-look superseded
+G6.4's "more opaque than not": at 78% it read as "an opaque foreign blue" — at 55% the sheet's own palette
+tints through, so the navy reads as a dimming of THIS dossier). The drawn × walked 12→14px — the one step
+that keeps the even-child exactness rule (38 = 12+14+12, zero centring offset on both engines). Gate
+re-measured: 74/74.
+
+**② THE CARD STARS ARE CARVED (R19).** The owner walked the treatment through outline-only+14px (drop
+retired, "they don't look that good with the shadow") and then, off the commissioned candidate sheet
+(`research-sheets/star-carved-candidates.html` — six treatments over the white/dark/busy art crops, each
+cost-labeled), picked **variant E, the blurred inner shadow** ("I like it that much"): the star's own
+colour falling into shadow along its top inner edge, the letterpress deboss cue. Ships as
+`filter: url(#gc-star-carve)` on the card row alone — the def in `GachaStar.tsx` (GachaStarDefs, mounted
+by GachaFleet; presence PINNED in gachaFleet.test.tsx because a dangling `url(#)` unpaints the element on
+Gecko), `primitiveUnits="objectBoundingBox"` so the carve scales with any `--gc-star-size` (probe-verified:
+the oBB fractions render byte-alike to the sheet's user-unit form at 14px and 56px), flood ink =
+`--gc-star-carve-ink` (the sheet's own `#120726bf`, one ink for gold/rose/dim — the construction is
+alpha-based). **This is a §14.11 waiver, owner-granted with the cost labeled on the sheet** — recorded in
+THEME_ENGINE §14.11's new closed SVG-filter list; scope pinned by gachaChrome's `url(#` count; the banked
+fallback if a device round finds fleet-scroll jank is the sheet's variant C (the same carve as pure layered
+geometry). The 2026-08-06 treatments' machinery went with the pick: the drop polygon, `--gc-star-drop` and
+`--gc-star-edge` are deleted, silhouette and 14px ink untouched (the owner's own condition).
+
+**③ THE CARD NAME-FACE AXIS (`cardNameFont`).** The deferred per-surface selector landed (Opus subagent,
+pinned brief, main-seat reviewed): a second "Card face" seg (mincho/bungee/maru, **default bungee** — the
+absence-of-a-block base, mincho's idiom one value over) beside `nameFont`, which now steers the dossier
+alone. The plate's interim `"Bungee"` pin dissolved into `--gc-card-name-*`; fonts.ts warms the RESOLVED
+union of both axes (the unconditional warm line returned to the per-setting map as its comment promised);
+zero backend change (theme_settings is an open pass-through map, verified both sides). +6 tests. One trap
+documented in-code: a TEST importing a theme index before its fonts module evaluates the registry
+mid-cycle and silently resolves every setting to `undefined` — the gachaFonts import order is load-bearing.
+
+**④ TEST DEBT RECONCILED.** The 2026-08-06 night commits (13px re-inversion, the Bungee pin) had landed on
+the fast pre-commit hook only, leaving three gachaChrome pins stale — caught and re-pinned to the current
+rulings before they could ambush the tag gate.
+
+**OPEN AFTER R19:** the star-legibility-over-white-highlight eyeball CHANGES SHAPE — the accent edge that
+defended it is gone; the carve band is the new distinctness cue, so the owner re-checks bright frames on
+device with the carve live. The other wave-1 items stand as above.
+
 ## 8. Owner questions (the §5-of-vapor-plan analogue) — **✅ ALL RULED (prep session + the lock session, both 2026-08-02); nothing remains open**
 
 **✅ Answered (rulings folded into the sections cited):**

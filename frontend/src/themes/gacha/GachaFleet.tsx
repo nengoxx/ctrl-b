@@ -17,6 +17,7 @@ import { GachaArtShowcase } from "./GachaArtShowcase";
 import { GachaBanner, type BannerSlide } from "./GachaBanner";
 import { GachaCard } from "./GachaCard";
 import { GachaHostDetail } from "./GachaHostDetail";
+import { GachaStarDefs } from "./GachaStar";
 import { HERO_KEY, HOST_KEY_PREFIX, SCENE_KEY_PREFIX } from "./carousel";
 import { GACHA_COPY } from "./copy";
 import {
@@ -528,6 +529,9 @@ export function GachaFleet({ active }: { active: boolean }) {
       role="tabpanel"
       aria-labelledby="tabbtn-fleet"
     >
+      {/* The card stars' carve filter def (R19) — mounted HERE because the card row is the one carved
+          surface, and the def must live exactly as long as any card can (see GachaStarDefs). */}
+      <GachaStarDefs />
       <GachaBanner
         slides={slides}
         active={active}

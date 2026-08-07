@@ -749,6 +749,19 @@ describe("the capsule track (§6.1/§6.2)", () => {
     expect(container.querySelectorAll(".gc-card > .gc-card-face")).toHaveLength(4);
   });
 
+  it("mounts the carve filter def WITH the track (R19 — a dangling url(#) can vanish the stars)", () => {
+    // `.gc-card .rar .gc-star` carries `filter: url(#gc-star-carve)` (gacha.css; the owner's carved-star
+    // pick). A broken SVG filter reference does not degrade to "no filter" on every engine — Gecko has
+    // historically not painted the referencing element at all — so the def's presence beside the cards is
+    // a contract, not decor: GachaStarDefs must live exactly as long as any card can.
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector("filter#gc-star-carve")).not.toBeNull();
+    // …and the def is the ONE place the carve is parameterized: the flood ink rides the token, so the
+    // palette owns the colour (council M7) and the chrome test's waiver-scope count stays honest.
+    const flood = container.querySelector("filter#gc-star-carve feFlood") as SVGElement | null;
+    expect(flood?.style.floodColor).toBe("var(--gc-star-carve-ink)");
+  });
+
   it("gives every card the SAME roster entry its promo slide got", () => {
     const { container } = render(<GachaFleet active />);
     const cardArt = [...container.querySelectorAll<HTMLImageElement>(".gc-card img")].map((i) =>

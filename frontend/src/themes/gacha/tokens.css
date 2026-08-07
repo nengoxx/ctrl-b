@@ -356,11 +356,14 @@
        * size a row asks for, so it scales with the star instead of needing a per-size table. It is the
        * candidate sheet's own number; in CSS rather than as an SVG attribute so a surface can tune it. */
       --gc-star-stroke: 9px;
-      /* The star drop offset, user units. ⚠ ZERO consumers since the owner's 2026-08-07 round retired
-       * the CARD row's drop too ("only the outline" — the dossier had already dropped it 2026-08-06,
-       * "they look better without"). Kept with the primitive's dormant `.drop` polygon while the round
-       * settles; strip both together if outline-only sticks through the v1.5.0 device pass. */
-      --gc-star-drop: 12px;
+      /* THE CARVE INK (R19, the owner's pick off `research-sheets/star-carved-candidates.html` variant E:
+       * "as if they looked just carved… I like it that much"). The flood colour of the card row's
+       * inner-shadow filter (GachaStar's `#gc-star-carve`) — the sheet's own literal, a night violet at
+       * 0.75 that the filter composites INSIDE the star's top edge. ONE ink for gold, rose-gold and the
+       * sleep row's dim alike, deliberately: the construction is alpha-based, so the band always reads as
+       * the star's own colour fallen into shadow, and the approved render used exactly this value over
+       * all of them. A literal (no var()), so `:scope` is a fine home. */
+      --gc-star-carve-ink: #120726bf;
 
       /* The ONLINE state ribbon + its ink. */
       --gc-online-fill: linear-gradient(92deg, #74f3ad, #54e5ff);
@@ -646,22 +649,15 @@
        * `--gc-brand-1`), so this re-points at a source rather than minting a parallel literal, and all eight
        * accent variants re-tint it for free.
        *
-       * ONE token for the whole drop family — the capsule cards, the dossier portrait and the stars' own
-       * offsets all read it, so the owner's "all of those things" is one edit and cannot drift apart.
+       * ONE token for the whole drop family — the capsule cards and the dossier portrait read it, so the
+       * owner's "all of those things" is one edit and cannot drift apart. (The star rows read it too
+       * until R19 replaced their drops with the carve.)
        *
        * On `body` for exactly the reason `--accent-ink` above is, and MEASURED rather than assumed: with
        * this on `:scope` the capsule cards' drop rendered TEAL — a custom property substitutes its `var()`
        * where it is DECLARED and is inherited already-substituted, so on `html` it took the KIT's base
        * `--accent` (which gacha only re-points on `body`) and no accent variant could ever move it. */
       --gc-lift-color: var(--accent);
-      /* THE CAPSULE CARD's star EDGE (owner ruling 2026-08-06). The same `--accent` family as the drop
-       * above, kept as a near-opaque MIX rather than re-pointed at the flat token with it: this one is not
-       * a drop but a 0.47px stroke half sitting ON the gold, and the sliver of translucency is what stops
-       * it reading as a hard ring at the row's 11px ink. It was already the tightest share that survives
-       * bright artwork — a 60% edge that thin washes out, which is the exact case it exists for.
-       * On `body` for the §14.6 reason `--gc-lift-color` is: it is an `--accent` formula, and on `:scope`
-       * it would freeze at the kit's base accent. */
-      --gc-star-edge: color-mix(in oklch, var(--accent) 85%, transparent);
       /* ── THE DOSSIER's DERIVED roles (G6) — on `body` for the same reason as everything above: each is a
        * var() formula over a token the `body[data-gc-dossier]` blocks below override, so on `:scope` they
        * would compute once from slip's values and never re-derive. ── */

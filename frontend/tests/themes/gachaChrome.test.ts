@@ -699,7 +699,7 @@ describe("gacha G7 — the DRAWN rarity star (R16)", () => {
     }
   });
 
-  it("splits the treatment per SURFACE from one primitive — clean tab, edged card", () => {
+  it("splits the treatment per SURFACE from one primitive — clean tab, CARVED card (R19)", () => {
     const star = ruleBlock(rules, ".gc-star {");
     // THE DEFAULT is the clean mark (and IS the dossier tab's treatment, so that surface needs no rule):
     // both paints from `currentColor`, so the stroke is SHAPE — it fattens and rounds the silhouette — and
@@ -711,27 +711,29 @@ describe("gacha G7 — the DRAWN rarity star (R16)", () => {
     expect(tokens, "the dark-contour token has no consumer left").not.toContain(
       "--gc-star-contour",
     );
-    // …the drop is OFF by default — and since the owner's 2026-08-07 round, off EVERYWHERE: the card's
-    // switch-on rule was retired ("only the outline"), so the primitive's dormant `.drop` has exactly its
-    // base display:none rule and no surface re-enables it (the polygon + `--gc-star-drop` stay with the
-    // primitive while the round settles — strip them together if outline-only sticks, then this block
-    // tightens to "no .drop at all").
-    expect(ruleBlock(rules, ".gc-star .drop {")).toContain("display: none");
-    expect(rules).not.toContain(".gc-card .rar .gc-star .drop");
-    // …and the CARD — the row that sits on artwork — re-colours its edge to the accent.
-    expect(ruleBlock(rules, ".gc-card .rar .gc-star {")).toContain("stroke: var(--gc-star-edge)");
-    // Not `currentColor` — that is what keeps `.hi` re-tinting the STAR alone.
-    expect(ruleBlock(rules, ".gc-card .rar .gc-star {")).not.toContain("currentColor");
-    // The DOSSIER tab takes no override at all — owner, "they look better without".
+    // The 2026-08-06 card treatments are GONE WITH THEIR MACHINERY — the accent edge, the arcade drop
+    // polygon and the drop's dormant remains all fell to the owner's R19 carve pick. Dead tokens must
+    // not linger (the --gc-star-glow precedent, one describe up).
+    for (const dead of [".gc-star .drop", "--gc-star-drop", "--gc-star-edge"]) {
+      expect(rules, `${dead} has no business in the sheet any more`).not.toContain(dead);
+      expect(tokens).not.toContain(dead);
+    }
+    // …the CARD — the row that sits on artwork — is CARVED: the R19-E blurred inner shadow, switched on
+    // per-surface exactly as every retired treatment was. The def lives in GachaStar (GachaStarDefs,
+    // mounted by GachaFleet — its presence is pinned in gachaFleet.test.tsx, because a dangling
+    // `url(#…)` does not degrade to "no filter" on every engine).
+    expect(ruleBlock(rules, ".gc-card .rar .gc-star {")).toContain("filter: url(#gc-star-carve)");
+    // The DOSSIER tab takes no override at all — owner: "the dossier looks good".
     expect(rules).not.toContain(".gc-dossier .art-rar .gc-star");
-    // The edge derives from the accent on `body` (the §14.6 freeze), translucent because it is a ~0.5px
-    // stroke half sitting ON the gold rather than a shadow behind it.
-    expect(tokens).toMatch(/--gc-star-edge: color-mix\(in oklch, var\(--accent\) \d+%/);
+    // THE WAIVER SCOPE (§14.11): a per-star filter ships as an owner-granted waiver scoped to exactly
+    // ONE def — a second `url(#` filter reference in this sheet would widen that waiver silently.
+    expect(rules.match(/filter: url\(#/g)).toHaveLength(1);
+    // The carve's flood ink is a TOKEN (council M7), so the palette owns it, not the filter def.
+    expect(tokens).toContain("--gc-star-carve-ink:");
     // USER units for the stroke (the viewBox is 96.5 wide), so it scales with the row.
     expect(tokens).toMatch(/--gc-star-stroke:\s*\d+px/);
     expect(star).toContain("stroke-width: var(--gc-star-stroke)");
-    // …and still no filter anywhere: even the dormant drop is a polygon, never an offscreen
-    // rasterization per star.
+    // …and the base mark itself still carries no filter: the waiver is the card row's alone.
     expect(star).not.toContain("filter");
   });
 

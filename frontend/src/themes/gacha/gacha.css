@@ -1224,21 +1224,18 @@
      * contrasting dark contour — it read as an outline): the stroke is `currentColor`, so it stops being a
      * contour and becomes SHAPE. 9 user units of round-joined stroke fatten and round the silhouette and
      * the mark reads as one solid, plumper star; `paint-order` tucks the inner half under the fill, so the
-     * only thing the stroke ever adds is the outer half. The DROP is off here and switched on by the one
-     * surface that wants it (the card row, below) — the plain mark is what a new surface should inherit.
-     * That default IS the dossier tab's treatment, so it needs no rule of its own.
+     * only thing the stroke ever adds is the outer half. The plain mark is what a new surface inherits,
+     * and it IS the dossier tab's treatment, so that surface needs no rule of its own.
      *
      * `display: block` kills the inline baseline gap that would otherwise make a flex row of SVGs taller
-     * than the stars in it; `overflow: visible` lets the dormant drop polygon leave the cropped viewBox
-     * should a surface ever switch it back on (cropping the box to the star's ink is what makes
-     * `--gc-star-size` mean ink).
+     * than the stars in it; the viewBox is cropped to the star's stroked extent, which is what makes
+     * `--gc-star-size` mean ink.
      *
-     * The glyph's 12px gold GLOW stays retired (R16 §2), and no `filter` appears anywhere here: the drop is
-     * a second polygon, i.e. geometry rather than an offscreen rasterization per star on a scrolling
-     * track — the §14.11 class this theme converts away from. */
+     * The glyph's 12px gold GLOW stays retired (R16 §2). The card row below carries the ONE filter this
+     * sheet is allowed — the R19 carve, an owner-granted §14.11 waiver scoped to that def (the star test
+     * counts the sheet's `url(#` filters); everything else about the mark stays plain geometry. */
     .gc-star {
       display: block;
-      overflow: visible;
       width: var(--gc-star-size);
       height: var(--gc-star-size);
       flex: none;
@@ -1247,21 +1244,17 @@
       stroke-width: var(--gc-star-stroke);
       paint-order: stroke fill;
     }
-    .gc-star .drop {
-      display: none;
-    }
-    /* ── THE CARD's treatment: an ACCENT EDGE (owner ruling 2026-08-06, narrowed 2026-08-07) ───────────
-     * The card's row is the one that sits on ARTWORK — a frame can be bright anywhere behind those five
-     * marks — so its stroke is re-coloured to the ACCENT, which makes the star's edge legible against art
-     * of any value instead of relying on the gold reading against it. `paint-order: stroke fill` above is
-     * what keeps it an EDGE and not a ring: only the outer half survives, ~0.5px at the row's ink. Not
-     * `currentColor`, which is what keeps a `.hi` rose-gold star re-tinting the STAR alone.
-     * The arcade DROP the row wore beside the edge was RETIRED on the owner's 2026-08-07 round ("they
-     * don't look that good with the shadow — only the outline, a little bit bigger"): the rule that
-     * switched the dormant `.drop` polygon on is gone, so both rows now share the primitive's plain
-     * form + one size step (13→14, tokens.css walks the history). */
+    /* ── THE CARD's treatment: CARVED (owner pick 2026-08-07, R19 variant E — "as if they looked just
+     * carved… same colors, without the outline"). The row sits on ARTWORK, and the owner walked its
+     * defense through a dark contour ("reads as an outline"), an accent edge + arcade drop, and
+     * outline-only before settling on the carve: the star's own colour falling into shadow along its
+     * top inner edge, the letterpress deboss cue. The filter is GachaStar's `#gc-star-carve` (mounted by
+     * GachaFleet; construction + the §14.11 waiver documented there), size-blind via objectBoundingBox
+     * primitives, its flood ink the `--gc-star-carve-ink` token. Silhouette and 14px ink are UNTOUCHED —
+     * the carve paints inside the mark, so nothing got smaller when the outline went (the owner's own
+     * condition on the pick). */
     .gc-card .rar .gc-star {
-      stroke: var(--gc-star-edge);
+      filter: url(#gc-star-carve);
     }
     /* The top rungs of the ladder in rose-gold (§6.2) — `isHighStar` decides WHICH, this decides how it
      * looks, so the mode switch re-tints without a second rule. On the ELEMENT, so it works in both rows. */
