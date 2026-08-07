@@ -23,7 +23,7 @@ import { useGachaRoster } from "./useGachaRoster";
 // Honors the global `ui.appbarMode` lever (all themes). gacha omits `layouts` (offers every preset) and
 // declares `defaultLayout: "3-tab"` (registry) — the prototype's own Fleet/Agent/Settings shape.
 //
-// The FOUR cosmetic settings are applied as body ATTRS (the MinimalRoot/VaporRoot precedent: settings →
+// The FIVE cosmetic settings are applied as body ATTRS (the MinimalRoot/VaporRoot precedent: settings →
 // pre-paint body attr → CSS), not as props: they change how things LOOK, never what is rendered. Every one
 // is cleared on unmount so a switched-to skin can never inherit gacha's stale attrs (the §10.5 switch-out
 // cleanup ledger — `applyBodyAttrs` doesn't own these).
@@ -54,11 +54,16 @@ export function GachaRoot() {
   // exists — and `slip` stamps a value no tokens.css block matches, which IS how slip is expressed.
   const dossier = useThemeSetting<string>("gacha", "dossierPalette");
   // The NAME FACE (the R17 rider) — a fourth body ATTR on exactly the terms of the three above: it changes
-  // which face the machine name is SET IN on the dossier and the capsule cards, never what is rendered, so
-  // it is a CSS axis (`body[data-gc-namefont]`) rather than a prop threaded into two bodies. `mincho` is
-  // the theme's own serif and stamps a value no tokens.css block matches — the `slip` idiom: the default
-  // IS the base declaration, and the two alternates are one block each.
+  // which face the machine name is SET IN on the dossier, never what is rendered, so it is a CSS axis
+  // (`body[data-gc-namefont]`) rather than a prop threaded into a body. `mincho` is the theme's own serif
+  // and stamps a value no tokens.css block matches — the `slip` idiom: the default IS the base
+  // declaration, and the two alternates are one block each.
   const nameFont = useThemeSetting<string>("gacha", "nameFont");
+  // …and the CARD name face (owner 2026-08-07, the per-surface split): the same role for the capsule
+  // plate, landed as its own attr because the two surfaces are now independently pickable. Identical
+  // mechanism, opposite default — `bungee` is this axis's base declaration, so it is the value that
+  // stamps an attr no tokens.css block matches.
+  const cardNameFont = useThemeSetting<string>("gacha", "cardNameFont");
   // The fleet wallpaper's resolved art (M10), through the theme's ONE art seam (G5). THREE rungs since
   // G6.3: a `wallpaper:` pin naming a character, else the SHARED kit background, else the bundled scene —
   // gacha's own `wallpaper/` drop folder was removed at the same ruling, so the shared one is the drop-in
@@ -79,6 +84,7 @@ export function GachaRoot() {
     b.dataset.oracle = oracle ? "fade" : "scroll";
     b.dataset.gcDossier = dossier;
     b.dataset.gcNamefont = nameFont;
+    b.dataset.gcCardnamefont = cardNameFont;
     // The fleet wallpaper's ART (M10). It is published as a custom property on `body` rather than rendered,
     // because the layer itself is a BACKGROUND on `.kit-main` — a node DefaultRoot owns — and a custom
     // property only reaches it from an ancestor. Same resolver as every other gacha surface, so a
@@ -92,10 +98,11 @@ export function GachaRoot() {
       delete b.dataset.oracle;
       delete b.dataset.gcDossier;
       delete b.dataset.gcNamefont;
+      delete b.dataset.gcCardnamefont;
       b.style.removeProperty("--gc-wallpaper-img");
       b.style.removeProperty("--gc-wallpaper-pos");
     };
-  }, [wallpaper, oracle, dossier, nameFont, artUrl, artFocus]);
+  }, [wallpaper, oracle, dossier, nameFont, cardNameFont, artUrl, artFocus]);
 
   return (
     <>

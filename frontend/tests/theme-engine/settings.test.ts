@@ -98,12 +98,14 @@ describe("themeSettingsSpec", () => {
 //    keys as declared, immediately after the accent Palette row — which is the whole point of the move,
 //    since those are the group's only two palette pickers. ──
 describe("themeSettingsSpec — gacha", () => {
-  it("leads with dossierPalette + nameFont, then the four kit axes, then starMode / wallpaper / oracle", () => {
+  it("leads with dossierPalette + the two name faces, then the kit axes, then starMode / wallpaper / oracle", () => {
     expect(Object.keys(themeSettingsSpec("gacha") ?? {})).toEqual([
       // Declared FIRST so the Appearance group renders it adjacent to the accent Palette swatches.
       "dossierPalette",
-      // …and the name-face picker second, so the two IDENTITY pickers stay together (R17 rider).
+      // …and the name-face pickers next, so the IDENTITY pickers stay together (R17 rider) — two of them
+      // since the owner's 2026-08-07 split: `nameFont` steers the dossier, `cardNameFont` the plates.
       "nameFont",
+      "cardNameFont",
       "composer",
       "composerSkin",
       "planPlacement",

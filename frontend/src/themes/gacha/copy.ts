@@ -133,6 +133,13 @@ export const GACHA_COPY = {
    *  six JP files (+~200 B total) and leaves all eight LATIN files byte-identical, which is the property
    *  worth checking after any re-run. */
   settingNameFontDesc: "the display face for machine names · 名",
+  /** The SECOND name-face row (the per-surface split, owner 2026-08-07) — same 名 as its sibling above, so
+   *  this string adds NOTHING to the frozen subset: `gachaGlyphSet()` is a set over every value in this
+   *  object, and both of its non-ASCII glyphs (· and 名) already ride `settingNameFontDesc`. That is the
+   *  rule for any new descriptor, not a happy accident — reach for a word the subset already carries, and
+   *  the copy edit stays a copy edit instead of a font regeneration. The wording names the SURFACE
+   *  (capsule cards) because that is the only thing distinguishing this row from the one above it. */
+  settingCardNameFontDesc: "the display face on the capsule cards · 名",
 } as const;
 
 export type GachaCopyKey = keyof typeof GACHA_COPY;

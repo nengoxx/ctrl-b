@@ -1340,18 +1340,17 @@
       text-align: left;
     }
     .gc-card .plate b {
-      /* THE MACHINE NAME, second surface. The face is PINNED to Bungee here (owner ruling, 2026-08-07
-       * end-of-session): the owner wants the CARDS in Bungee while the dossier follows the `nameFont`
-       * picker (currently maru) — a per-surface choice the ONE shared `--gc-name-*` pair cannot express.
-       * The clean shape is a second selector (a card-name axis beside `nameFont`), RECORDED in the
-       * HANDOFF's deferred list for the next design session; until then this pin is the owner-ruled
-       * interim, with the picker face as fallback should Bungee ever fail to load. The SIZE stays this
-       * surface's own (20px, 27px on the feature card below), tuned to the plate over art.
-       * The prototype's italic is GONE (same ruling): Bungee ships caps-only with no italic, so the
-       * skew was synthetic (the R17 class) — upright is the true face. */
-      font-family: "Bungee", var(--gc-name-font);
+      /* THE MACHINE NAME, second surface — and since the `cardNameFont` axis landed, its own PICKABLE
+       * one. The interim pin (a literal `"Bungee"` here, from the owner's 2026-08-07 ruling that the
+       * cards want Bungee while the dossier follows `nameFont`) is GONE: that per-surface choice is now
+       * a second selector beside `nameFont`, so the plate reads a card-specific pair and the default
+       * still resolves to Bungee — the base declaration on that axis. The SIZE stays this surface's own
+       * (20px, 27px on the feature card below), tuned to the plate over art.
+       * The prototype's italic is GONE (same ruling): every face this axis offers publishes no italic, so
+       * the skew was synthetic (the R17 class) — upright is the true face, whichever face is picked. */
+      font-family: var(--gc-card-name-font);
       font-size: 20px;
-      font-weight: 400;
+      font-weight: var(--gc-card-name-weight);
       font-style: normal;
       letter-spacing: 0.01em;
       /* The prototype's names are four fixed words; a real fleet's are not (the long-name matrix row). */

@@ -169,8 +169,9 @@ export const gacha: ThemeDef = {
     },
     // THE NAME FACE (the R17 rider, owner 2026-08-06 — declared second so the two IDENTITY pickers sit
     // together, right under the accent Palette row the group opens with). It sets the face for the
-    // MACHINE NAME on both surfaces that carry one — the dossier's `h2` and the capsule card's plate —
-    // and deliberately not the banner/promo titles, which are the ROSTER's copy rather than a machine's.
+    // MACHINE NAME on the DOSSIER — the sheet's `h2` — and deliberately not the banner/promo titles,
+    // which are the ROSTER's copy rather than a machine's. It started as one face on BOTH name-carrying
+    // surfaces; the owner's 2026-08-07 ruling split them, and the capsule plate is `cardNameFont` below.
     //
     // A PICKER rather than a token default because the owner tried the alternative live and ruled on it:
     // Bungee "reads too bulky as a default", so it stays on offer and `mincho` — the theme's own Shippori
@@ -190,6 +191,32 @@ export const gacha: ThemeDef = {
         { val: "maru", label: "Zen Maru" },
       ],
       default: "mincho",
+    },
+    // THE CARD NAME FACE (owner 2026-08-07) — the same role on the OTHER surface that prints a machine's
+    // name, declared immediately after its sibling so the identity pickers stay one block. The owner ruled
+    // the two surfaces apart at the device round: the cards want Bungee's arcade signage over art, the
+    // dossier wants whatever `nameFont` says (maru, at the time of the ruling). One shared `--gc-name-*`
+    // pair cannot express that, so the plate carried a PINNED `font-family: "Bungee"` as the owner-ruled
+    // interim — and this axis is the clean shape that pin was written to anticipate. It dissolves here.
+    //
+    // Default `bungee` because that is what the pin shipped, and a picker must not move the look it is
+    // extracted from. Which makes the DEFAULT the absence of a block on this axis: the `:scope` base
+    // declares the Bungee pair and each of the other two is one `body[data-gc-cardnamefont]` block —
+    // `mincho`'s idiom on the sibling axis, one value over (slip's precedent, three axes deep now).
+    //
+    // Same three options as `nameFont`, and deliberately not a superset: the values name FACES, the
+    // tokens.css blocks are per-value, and `fonts.ts` warms per-value across both axes from ONE map. A
+    // fourth face is one entry in each of those three places, for both surfaces at once.
+    cardNameFont: {
+      type: "seg",
+      label: "Card face",
+      desc: GACHA_COPY.settingCardNameFontDesc,
+      options: [
+        { val: "mincho", label: "Mincho" },
+        { val: "bungee", label: "Bungee" },
+        { val: "maru", label: "Zen Maru" },
+      ],
+      default: "bungee",
     },
     composer: composerLayoutSetting("stacked"),
     // The prototype's composer is a flat, opaque panel with a hairline edge, tight corners and no shadow

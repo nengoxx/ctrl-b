@@ -541,9 +541,15 @@ describe("gacha G6 — the wordmark (§4.3 re-ruling)", () => {
   });
 });
 
-describe("gacha — the NAME-FACE axis (`nameFont`, the R17 rider)", () => {
+describe("gacha — the NAME-FACE axes (`nameFont` + `cardNameFont`, the R17 rider and its 08-07 split)", () => {
   const field = gacha.settings?.nameFont;
   const options = field?.type === "seg" ? field.options : [];
+  // The CARD axis (owner 2026-08-07): the same role on the capsule plate, split off so the two surfaces
+  // are pickable apart. Asserted BESIDE its sibling throughout this group rather than in a group of its
+  // own, because the property worth pinning is that the two axes are the same mechanism with one
+  // difference — which VALUE is the base, i.e. which one ships no tokens.css block.
+  const cardField = gacha.settings?.cardNameFont;
+  const cardOptions = cardField?.type === "seg" ? cardField.options : [];
 
   it("is a seg of three, defaulting to the theme's own serif", () => {
     expect(field?.type).toBe("seg");
@@ -557,11 +563,33 @@ describe("gacha — the NAME-FACE axis (`nameFont`, the R17 rider)", () => {
     expect(options.every((o) => o.swatch === undefined)).toBe(true);
   });
 
+  it("the CARD axis offers the SAME three, defaulting to the face the plate pin shipped", () => {
+    expect(cardField?.type).toBe("seg");
+    // Same values as the sibling and deliberately not a superset: the values name FACES, and one face is
+    // one entry in each of tokens.css / `NAME_FACE` / both option lists.
+    expect(cardOptions.map((o) => o.val)).toEqual(options.map((o) => o.val));
+    expect(cardOptions.map((o) => o.label)).toEqual(options.map((o) => o.label));
+    // `bungee`, because the axis was extracted from an owner-ruled PIN on the plate — a picker must not
+    // move the look it is extracted from, so an untouched install keeps painting Bungee cards.
+    expect(cardField?.type === "seg" && cardField.default).toBe("bungee");
+    expect(cardOptions.every((o) => o.swatch === undefined)).toBe(true);
+  });
+
   it("`mincho` has NO tokens.css block — it is the `:scope` base, the `slip` idiom one axis over", () => {
     expect(blockFor(tokens, 'body[data-gc-namefont="mincho"]')).toBeNull();
     const base = blockFor(tokens, ":scope")!;
     expect(base).toContain("--gc-name-font: var(--font-display)");
     expect(base).toContain("--gc-name-weight: 900");
+  });
+
+  it("…and on the CARD axis it is `bungee` that has no block — the same idiom, the other value", () => {
+    // The mirror of the test above, and the ONE way the two axes differ: each axis's DEFAULT is the
+    // absence of a block, and their defaults differ, so the base declares the serif pair for the dossier
+    // and the Bungee pair for the card.
+    expect(blockFor(tokens, 'body[data-gc-cardnamefont="bungee"]')).toBeNull();
+    const base = blockFor(tokens, ":scope")!;
+    expect(base).toContain('--gc-card-name-font: "Bungee", var(--font-display)');
+    expect(base).toContain("--gc-card-name-weight: 400");
   });
 
   it("each ALTERNATE declares exactly the pair, and nothing else", () => {
@@ -574,6 +602,17 @@ describe("gacha — the NAME-FACE axis (`nameFont`, the R17 rider)", () => {
       // …and `--font-display` stays the TAIL of every stack, which is what makes a runtime JAPANESE
       // machine name fall through to the system JP serif (the §10.4 degradation contract) — both
       // alternates are latin-only subsets.
+      expect(block).toContain("var(--font-display)");
+    }
+  });
+
+  it("…and so does each CARD alternate — face and weight, never a size or a palette", () => {
+    for (const id of ["mincho", "maru"]) {
+      const block = blockFor(tokens, `body[data-gc-cardnamefont="${id}"]`);
+      expect(block, `no body[data-gc-cardnamefont="${id}"] block`).toBeTruthy();
+      expect(declared(block!).sort()).toEqual(["--gc-card-name-font", "--gc-card-name-weight"]);
+      // The plate's 20/27px sizing and its C6 gradient clip stay with the SURFACE (gacha.css): this axis
+      // may only change which face the name is set in.
       expect(block).toContain("var(--font-display)");
     }
   });
@@ -594,15 +633,27 @@ describe("gacha — the NAME-FACE axis (`nameFont`, the R17 rider)", () => {
       expect(shipped.get(family), `${family} is not in the committed manifest`).toContain(weight);
       expect(block).toContain(`--gc-name-weight: ${weight}`);
     }
+    // The CARD axis, same check against the same manifest — but read from where each value LIVES: its
+    // `bungee` is the `:scope` base (no block), and `mincho` resolves through `--font-display` to
+    // Shippori, which needs no row here for the same reason the sibling axis omits it — the token is one
+    // definition, already covered by the base's own stack.
+    for (const [selector, family, weight] of [
+      [":scope", "Bungee", 400],
+      ['body[data-gc-cardnamefont="maru"]', "Zen Maru Gothic", 900],
+    ] as const) {
+      const block = blockFor(tokens, selector)!;
+      expect(block, `${selector} must name ${family}`).toContain(`"${family}"`);
+      expect(shipped.get(family), `${family} is not in the committed manifest`).toContain(weight);
+      expect(block).toContain(`--gc-card-name-weight: ${weight}`);
+    }
   });
 
-  it("the DOSSIER `h2` reads the pair; the capsule plate is PINNED to Bungee (owner interim)", () => {
-    // The axis started as one face on two surfaces; the owner's 2026-08-07 ruling split them — CARDS in
-    // Bungee while the dossier follows the picker. The shared `--gc-name-*` pair cannot express a
-    // per-surface choice, so the plate pins the face with the picker's as its loaded-face fallback (the
-    // clean shape — a second selector — is in the HANDOFF's deferred list; this test re-pins to
-    // `var(--gc-name-font)` alone when that axis lands and the pin dissolves). The banner/promo titles
-    // are roster copy and deliberately read neither.
+  it("each SURFACE reads its own pair — the dossier `h2` the name one, the plate the card one", () => {
+    // The axis started as one face on two surfaces; the owner's 2026-08-07 ruling split them (CARDS in
+    // Bungee while the dossier followed the picker), which the plate first wore as a literal `"Bungee"`
+    // PIN because one shared pair cannot express a per-surface choice. `cardNameFont` is the clean shape
+    // that pin anticipated, so the pin is gone and both surfaces are token-driven again — each from its
+    // own pair. The banner/promo titles are roster copy and deliberately read neither.
     const dossier = ruleBlock(rules, ".gc-dossier-title h2");
     expect(dossier, "the dossier name must read --gc-name-font").toContain(
       "font-family: var(--gc-name-font)",
@@ -611,11 +662,17 @@ describe("gacha — the NAME-FACE axis (`nameFont`, the R17 rider)", () => {
       "font-weight: var(--gc-name-weight)",
     );
     const plate = ruleBlock(rules, ".gc-card .plate b");
-    expect(plate, "the plate pins Bungee with the picker face as fallback").toContain(
-      'font-family: "Bungee", var(--gc-name-font)',
+    expect(plate, "the plate must read --gc-card-name-font").toContain(
+      "font-family: var(--gc-card-name-font)",
     );
-    // Synthetic ITALIC is retired on BOTH surfaces now (R17's headline: no shipped face publishes one —
-    // the plate's prototype skew went with the Bungee pin, upright is the true face).
+    expect(plate, "the plate must read --gc-card-name-weight").toContain(
+      "font-weight: var(--gc-card-name-weight)",
+    );
+    // …and no literal face survives on either surface: a hardcoded family here is a picker that silently
+    // does nothing, which is exactly what the interim pin was.
+    expect(plate, "the plate must not pin a family").not.toContain('"Bungee"');
+    // Synthetic ITALIC is retired on BOTH surfaces (R17's headline: no shipped face publishes one — the
+    // plate's prototype skew went with the Bungee pin, upright is the true face whichever face is picked).
     expect(dossier).toContain("font-style: normal");
     expect(plate).toContain("font-style: normal");
   });

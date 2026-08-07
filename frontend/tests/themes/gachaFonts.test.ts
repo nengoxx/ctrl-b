@@ -5,11 +5,19 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { GACHA_COPY, gachaGlyphSet } from "../../src/themes/gacha/copy";
+// ⚠ IMPORT ORDER IS LOAD-BEARING for the `loadFonts` group at the bottom of this file: `fonts.ts` reaches
+// the settings through the REGISTRY, and `registry.ts` captures each theme's def by VALUE when its own body
+// runs. Entering the theme cluster at `themes/gacha` (the index) first makes registry.ts evaluate mid-cycle
+// and capture `gacha: undefined`, so every `resolveThemeSetting("gacha", …)` returns undefined and nothing
+// is warmed. Pulling a registry-side module (fonts → settings → registry) FIRST evaluates the index inside
+// registry's own dependency pass, which is how the app itself enters the cluster. Reordering these two
+// lines fails the group loudly rather than silently — but it fails, so keep them as they are.
+import { loadFonts, nameFaceProbes } from "../../src/themes/gacha/fonts";
 import { gacha } from "../../src/themes/gacha";
-import { nameFaceProbes } from "../../src/themes/gacha/fonts";
+import { setUI } from "../../src/store/ui";
 
 // The FROZEN-SUBSET GUARD (D52 / GACHA_PLAN §10.4 — "a guard test re-derives the glyph set from the theme's
 // copy constants and fails if a glyph is missing from the subset manifest — that's what keeps 'frozen copy'
@@ -170,8 +178,15 @@ describe("the NAME face's prewarm follows the SETTING (Codex wave-12 #2)", () =>
   // they never paint, and a synced `maru` was not warmed at all — so activation could finish before Zen
   // Maru was ready and the dossier name would land in the fallback and swap under the owner, which is the
   // exact FOUT this module exists to prevent.
+  //
+  // Since the owner's 2026-08-07 surface split there are TWO axes (`nameFont` → dossier, `cardNameFont` →
+  // capsule plate) reading ONE value-keyed map, so the cases below run over both option lists.
   const options = gacha.settings?.nameFont;
-  const values = options?.type === "seg" ? options.options.map((o) => o.val) : [];
+  const cardOptions = gacha.settings?.cardNameFont;
+  const values = [
+    ...(options?.type === "seg" ? options.options.map((o) => o.val) : []),
+    ...(cardOptions?.type === "seg" ? cardOptions.options.map((o) => o.val) : []),
+  ];
 
   it("warms exactly the selected alternate — and nothing for the default", () => {
     // `mincho` IS `--font-display`, already covered by Shippori's two weights in the primary warm list.
@@ -204,5 +219,62 @@ describe("the NAME face's prewarm follows the SETTING (Codex wave-12 #2)", () =>
     // falls through to `--font-display`; warming a guess would fetch bytes nothing paints.
     expect(nameFaceProbes("bogus")).toEqual([]);
     expect(nameFaceProbes(undefined)).toEqual([]);
+  });
+});
+
+describe("loadFonts warms the UNION of BOTH name axes (the owner's 2026-08-07 surface split)", () => {
+  // The mapping above is pure; THIS is the wiring — which is where the split could regress silently, in
+  // either of two directions: warming only `nameFont` leaves a picked card face unwarmed (the FOUT), and
+  // warming Bungee unconditionally (as the interim card PIN required) puts a face nobody paints on the
+  // activation critical path for anyone who moves both axes off it.
+  //
+  // jsdom has no `document.fonts`, so the real module's calls are swallowed by its own try/catch — the
+  // probe recorder below is what makes them observable. Latin-only: every bilingual face in the primary
+  // warm list is also probed with the frozen JP text, and the name faces are latin-only by contract.
+  async function latinProbes(settings: Record<string, string>): Promise<string[]> {
+    const seen: string[] = [];
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: {
+        load: (font: string, text?: string) => {
+          if (text === undefined) seen.push(font);
+          return Promise.resolve([]);
+        },
+      },
+    });
+    setUI({ themeSettings: { gacha: settings } });
+    await loadFonts();
+    return seen;
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(document, "fonts");
+    setUI({ themeSettings: {} });
+  });
+
+  it("warms Bungee for a DEFAULT install — the card axis ships on it", async () => {
+    // An untouched install resolves `cardNameFont` to `bungee` (the extracted pin), so the plates paint
+    // it on every boot and it must be ready before activation. `nameFont` still defaults to the serif,
+    // which is `--font-display` and already covered by Shippori's two weights.
+    const seen = await latinProbes({});
+    expect(seen).toContain("400 1em 'Bungee'");
+    expect(seen).not.toContain("900 1em 'Zen Maru Gothic'");
+  });
+
+  it("warms BOTH faces when the two surfaces differ, and one when they agree", async () => {
+    const split = await latinProbes({ nameFont: "maru", cardNameFont: "bungee" });
+    expect(split).toContain("900 1em 'Zen Maru Gothic'");
+    expect(split).toContain("400 1em 'Bungee'");
+    // …and the union DEDUPES: the same face asked for by both axes is one probe, not two.
+    const same = await latinProbes({ nameFont: "bungee", cardNameFont: "bungee" });
+    expect(same.filter((p) => p === "400 1em 'Bungee'")).toHaveLength(1);
+  });
+
+  it("warms NEITHER alternate when both axes sit on the serif — Bungee is no longer unconditional", async () => {
+    // The regression guard on the pin's removal: while the plate hardcoded Bungee, the warm list carried
+    // it for everyone. With both axes on `mincho` nothing outside the primary list may be fetched.
+    const seen = await latinProbes({ nameFont: "mincho", cardNameFont: "mincho" });
+    expect(seen).not.toContain("400 1em 'Bungee'");
+    expect(seen).not.toContain("900 1em 'Zen Maru Gothic'");
   });
 });

@@ -99,8 +99,9 @@
        * frozen 70-glyph woff2 subset — no new download, on any device. */
       --font-mono: ui-monospace, "JetBrains Mono", monospace;
       /* ── The MACHINE-NAME face (owner rider 2026-08-06, off docs/research/R17) ──────────────────────
-       * ONE pair for both surfaces that print a machine's name: the dossier's `h2` and the capsule card's
-       * plate. NOT the banner/promo titles — those are the ROSTER's copy, a different voice.
+       * A pair per SURFACE that prints a machine's name — this one is the dossier's `h2`, the card's
+       * plate has its own below (they were one pair until the 2026-08-07 split). NOT the banner/promo
+       * titles — those are the ROSTER's copy, a different voice.
        *
        * Why the role has its own face at all: the dossier name borrowed `--font-display` at weight 900,
        * ITALIC, and R17's headline finding is that the italic was a synthetic SHEAR — Shippori Mincho B1
@@ -125,6 +126,20 @@
        * (`--gc-dossier-name`). */
       --gc-name-font: var(--font-display);
       --gc-name-weight: 900;
+      /* The CARD's own pair (owner 2026-08-07 — the per-surface split). The role above shipped as ONE
+       * pair for both name-carrying surfaces; the owner then wanted the capsule plates in Bungee while
+       * the dossier followed the picker, which a single pair cannot express. So the card is its own axis
+       * (`cardNameFont` → `body[data-gc-cardnamefont]`), and the plate's interim `font-family: "Bungee"`
+       * pin dissolves into it.
+       *
+       * The BASE here is BUNGEE, not the serif: the pin is what shipped, and an axis extracted from a
+       * pinned look must resolve to that look for everyone who never touches the picker. So this axis's
+       * default is the absence of a block on the value `bungee`, exactly as the sibling's is on `mincho`
+       * — same idiom, different value, because the two surfaces resolved differently. `--font-display`
+       * stays the TAIL for the same §10.4 reason: Bungee is latin-only, so a runtime JAPANESE machine
+       * name falls through to the serif stack's system JP tail. 400 because Bungee ships ONE weight. */
+      --gc-card-name-font: "Bungee", var(--font-display);
+      --gc-card-name-weight: 400;
 
       /* ── THEME-PRIVATE roles (§15 token rule: named here, never re-purposing a contract token) ──
        * Every one is a role from the §1 palette inventory. They exist NOW, before their consumers, so the
@@ -1369,6 +1384,27 @@
     body[data-gc-namefont="maru"] {
       --gc-name-font: "Zen Maru Gothic", var(--font-display);
       --gc-name-weight: 900;
+    }
+
+    /* ══ THE CARD NAME-FACE ALTERNATES (the `cardNameFont` picker, owner 2026-08-07) ══════════════════
+     * The same three faces one AXIS over, for the capsule plate. What differs from the block above is
+     * which value is absent: `bungee` has no block here because it IS this axis's `:scope` base (the
+     * interim plate pin, preserved as the default), so the two blocks below are the serif and the
+     * rounded gothic. Face + weight only, for the same reason — the plate's 20/27px sizing and its C6
+     * gradient clip belong to the SURFACE (gacha.css), which is tuned to a plate over artwork.
+     *
+     * The faces themselves are described once, on the `nameFont` blocks above; nothing about Bungee's
+     * caps-only widths or Zen Maru's superfamily coherence changes by being asked for from a card. */
+    /* SHIPPORI MINCHO B1 900 — the theme's own display serif, i.e. the same face `--font-display` already
+     * resolves to; naming the token rather than the family keeps the ONE stack definition (§10.4's system
+     * JP tail included) and costs no manifest row. */
+    body[data-gc-cardnamefont="mincho"] {
+      --gc-card-name-font: var(--font-display);
+      --gc-card-name-weight: 900;
+    }
+    body[data-gc-cardnamefont="maru"] {
+      --gc-card-name-font: "Zen Maru Gothic", var(--font-display);
+      --gc-card-name-weight: 900;
     }
   }
 }

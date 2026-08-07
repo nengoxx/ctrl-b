@@ -221,10 +221,11 @@ const THEME_PAIRS: Record<string, Pair[]> = {
     // G6.5 addendum drew for the dossier head), and losing the plate's dark halo to the clip is precisely
     // the trade the owner picked C6 knowing.
     //
-    // FLOOR: 3.0 (large text). At 20px the name is `--gc-name-weight` 900 under mincho/maru — ≥18.66px AND
-    // bold, WCAG large — and the feature card's 27px clears the ≥24px rule outright. ⚠ Under BUNGEE the
-    // weight is 400, so a 20px pair/wide card's name is NOT large by WCAG and its real floor is 4.5; that
-    // is reported in §7.7 rather than gated here, because the treatment and the face are both owner picks.
+    // FLOOR: 3.0 (large text). The plate reads `--gc-card-name-weight` since the per-surface split
+    // (owner 2026-08-07): the DEFAULT is now Bungee at 400, where a 20px pair/wide card's name is NOT
+    // WCAG-large and its real floor is 4.5 — reported in §7.7 rather than gated here, because the
+    // treatment and the face are both owner picks. Under the axis's mincho/maru (900) the 20px name is
+    // ≥18.66px AND bold — WCAG large — and the feature card's 27px clears the ≥24px rule outright.
     { fg: "--gc-name-fill-window", bg: "--surface", min: 3 },
     // The two things the dossier surface reads off the OTHER axis — the bounded cross-axis checks (§4.4).
     // The star tab is GATED on every dossier sheet. The sheet's top brand STRIP is the other one, and it
