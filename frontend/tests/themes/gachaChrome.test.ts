@@ -596,26 +596,28 @@ describe("gacha — the NAME-FACE axis (`nameFont`, the R17 rider)", () => {
     }
   });
 
-  it("BOTH machine-name surfaces read the pair — dossier `h2` and the capsule plate", () => {
-    // One name, one face, two surfaces (the owner's widened scope). The banner/promo titles are roster
-    // copy and deliberately do NOT read it.
+  it("the DOSSIER `h2` reads the pair; the capsule plate is PINNED to Bungee (owner interim)", () => {
+    // The axis started as one face on two surfaces; the owner's 2026-08-07 ruling split them — CARDS in
+    // Bungee while the dossier follows the picker. The shared `--gc-name-*` pair cannot express a
+    // per-surface choice, so the plate pins the face with the picker's as its loaded-face fallback (the
+    // clean shape — a second selector — is in the HANDOFF's deferred list; this test re-pins to
+    // `var(--gc-name-font)` alone when that axis lands and the pin dissolves). The banner/promo titles
+    // are roster copy and deliberately read neither.
     const dossier = ruleBlock(rules, ".gc-dossier-title h2");
+    expect(dossier, "the dossier name must read --gc-name-font").toContain(
+      "font-family: var(--gc-name-font)",
+    );
+    expect(dossier, "the dossier name must read --gc-name-weight").toContain(
+      "font-weight: var(--gc-name-weight)",
+    );
     const plate = ruleBlock(rules, ".gc-card .plate b");
-    for (const [what, block] of [
-      ["the dossier name", dossier],
-      ["the card plate", plate],
-    ] as const) {
-      expect(block, `${what} must read --gc-name-font`).toContain(
-        "font-family: var(--gc-name-font)",
-      );
-      expect(block, `${what} must read --gc-name-weight`).toContain(
-        "font-weight: var(--gc-name-weight)",
-      );
-    }
-    // The dossier's synthetic ITALIC is retired (R17's headline: no shipped face publishes one). The
-    // card's is the PROTOTYPE's own and survives — pinned so neither drifts into the other by accident.
+    expect(plate, "the plate pins Bungee with the picker face as fallback").toContain(
+      'font-family: "Bungee", var(--gc-name-font)',
+    );
+    // Synthetic ITALIC is retired on BOTH surfaces now (R17's headline: no shipped face publishes one —
+    // the plate's prototype skew went with the Bungee pin, upright is the true face).
     expect(dossier).toContain("font-style: normal");
-    expect(plate).toContain("font-style: italic");
+    expect(plate).toContain("font-style: normal");
   });
 });
 
@@ -652,45 +654,47 @@ describe("gacha G7 — the DRAWN rarity star (R16)", () => {
     expect(tokens, "the dark-contour token has no consumer left").not.toContain(
       "--gc-star-contour",
     );
-    // …the drop is OFF by default, so a new surface inherits the plain mark…
+    // …the drop is OFF by default — and since the owner's 2026-08-07 round, off EVERYWHERE: the card's
+    // switch-on rule was retired ("only the outline"), so the primitive's dormant `.drop` has exactly its
+    // base display:none rule and no surface re-enables it (the polygon + `--gc-star-drop` stay with the
+    // primitive while the round settles — strip them together if outline-only sticks, then this block
+    // tightens to "no .drop at all").
     expect(ruleBlock(rules, ".gc-star .drop {")).toContain("display: none");
-    // …and the CARD — the row that sits on artwork — turns it on and re-colours its edge to the accent.
+    expect(rules).not.toContain(".gc-card .rar .gc-star .drop");
+    // …and the CARD — the row that sits on artwork — re-colours its edge to the accent.
     expect(ruleBlock(rules, ".gc-card .rar .gc-star {")).toContain("stroke: var(--gc-star-edge)");
-    const cardDrop = ruleBlock(rules, ".gc-card .rar .gc-star .drop {");
-    expect(cardDrop).toContain("fill: var(--gc-lift-color)"); // the SAME token the cards + portrait use
-    expect(cardDrop).toContain("transform: translate(var(--gc-star-drop), var(--gc-star-drop))");
-    // Neither is `currentColor` — that is what keeps `.hi` re-tinting the STAR alone.
-    expect(cardDrop).not.toContain("currentColor");
+    // Not `currentColor` — that is what keeps `.hi` re-tinting the STAR alone.
     expect(ruleBlock(rules, ".gc-card .rar .gc-star {")).not.toContain("currentColor");
-    // The DOSSIER tab takes neither: no drop rule, no stroke override — owner, "they look better without".
+    // The DOSSIER tab takes no override at all — owner, "they look better without".
     expect(rules).not.toContain(".gc-dossier .art-rar .gc-star");
-    // Both accent paints come from the SAME source and both live on `body` (the §14.6 freeze): the drop
-    // takes it flat, the edge keeps a sliver of translucency because it is a 0.47px stroke half sitting ON
-    // the gold rather than a shadow behind it.
-    expect(tokens).toContain("--gc-lift-color: var(--accent)");
+    // The edge derives from the accent on `body` (the §14.6 freeze), translucent because it is a ~0.5px
+    // stroke half sitting ON the gold rather than a shadow behind it.
     expect(tokens).toMatch(/--gc-star-edge: color-mix\(in oklch, var\(--accent\) \d+%/);
-    // USER units for both the stroke and the offset (the viewBox is 96.5 wide), so they scale with the row.
+    // USER units for the stroke (the viewBox is 96.5 wide), so it scales with the row.
     expect(tokens).toMatch(/--gc-star-stroke:\s*\d+px/);
-    expect(tokens).toMatch(/--gc-star-drop:\s*\d+px/);
     expect(star).toContain("stroke-width: var(--gc-star-stroke)");
-    // …and still no filter anywhere: the drop is a polygon, not an offscreen rasterization per star.
+    // …and still no filter anywhere: even the dormant drop is a polygon, never an offscreen
+    // rasterization per star.
     expect(star).not.toContain("filter");
-    expect(cardDrop).not.toContain("filter");
   });
 
-  it("un-inverts the two rows: the DOSSIER star is bigger than the card's, and both pack at ~1.3", () => {
-    // R16's finding, and the reason this slice exists: what shipped was pitch÷ink 1.23 on the card and
-    // 1.37 on the dossier — LOOSER at the smaller size, which no measured reference does. The field packs
-    // small rows tight and lets big ones breathe at ~1.3 (Arknights 1.32 · Epic Seven 1.31 · Genshin
-    // detail 1.33). The primitive's viewBox is cropped to the star's stroked extent, so `-size` IS ink and
-    // this arithmetic is the real rendered ratio.
+  it("sizes the rows by the owner's eye — CARD above dossier — and both pack at ~1.3", () => {
+    // R16's finding was the RATIO: the field packs small rows tight and lets big ones breathe at ~1.3
+    // (Arknights 1.32 · Epic Seven 1.31 · Genshin detail 1.33) — what shipped before the slice was 1.23
+    // card / 1.37 dossier, looser at the smaller size, which no measured reference does. The ratio band
+    // is the durable invariant here. The size RELATION is the owner's: R16 first un-inverted it
+    // (dossier > card, equal-measured), then the fourth device round deliberately re-inverted it — the
+    // card row sits over ART at arm's length, the dossier on a calm sheet up close, so equal-PERCEIVED
+    // put the card above the dossier's 11.5 (tokens.css walks the whole size history). The primitive's
+    // viewBox is cropped to the star's stroked extent, so `-size` IS ink and this arithmetic is the real
+    // rendered ratio.
     const [size, gap, sizeLg, gapLg] = [
       px("--gc-star-size"),
       px("--gc-star-gap"),
       px("--gc-star-size-lg"),
       px("--gc-star-gap-lg"),
     ];
-    expect(sizeLg).toBeGreaterThan(size); // the inversion, gone
+    expect(size).toBeGreaterThan(sizeLg); // the owner's equal-perceived ruling, 2026-08-06
     for (const [what, s, g] of [
       ["card", size, gap],
       ["dossier", sizeLg, gapLg],

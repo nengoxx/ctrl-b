@@ -1229,8 +1229,9 @@
      * That default IS the dossier tab's treatment, so it needs no rule of its own.
      *
      * `display: block` kills the inline baseline gap that would otherwise make a flex row of SVGs taller
-     * than the stars in it; `overflow: visible` lets the card's drop leave the cropped viewBox (cropping it
-     * to the star's ink is what makes `--gc-star-size` mean ink).
+     * than the stars in it; `overflow: visible` lets the dormant drop polygon leave the cropped viewBox
+     * should a surface ever switch it back on (cropping the box to the star's ink is what makes
+     * `--gc-star-size` mean ink).
      *
      * The glyph's 12px gold GLOW stays retired (R16 §2), and no `filter` appears anywhere here: the drop is
      * a second polygon, i.e. geometry rather than an offscreen rasterization per star on a scrolling
@@ -1249,27 +1250,18 @@
     .gc-star .drop {
       display: none;
     }
-    /* ── THE CARD's treatment: an ACCENT EDGE + the arcade drop (owner ruling, same round) ─────────────
+    /* ── THE CARD's treatment: an ACCENT EDGE (owner ruling 2026-08-06, narrowed 2026-08-07) ───────────
      * The card's row is the one that sits on ARTWORK — a frame can be bright anywhere behind those five
-     * marks — so it gets the two things the dossier's quiet tab does not need:
-     *   · the stroke re-coloured to the ACCENT, which makes the star's edge legible against art of any
-     *     value instead of relying on the gold reading against it. `paint-order: stroke fill` above is
-     *     what keeps it an EDGE and not a ring: only the outer half survives, ≈0.47px at the row's 10px
-     *     ink. Same `color-mix(… var(--accent) N%, transparent)` FORM as the drop it sits under — a
-     *     higher share, because half a pixel of edge needs opacity where a 1.2px offset block does not.
-     *   · the DROP: the theme's shared arcade offset at star scale. It reads `--gc-lift-color`, the very
-     *     token the capsule cards and the dossier portrait paint their own drops with, so one accent
-     *     change moves all three.
-     * Neither is `currentColor`, which is what keeps a `.hi` rose-gold star re-tinting the STAR alone. The
-     * drop's offset is in USER UNITS, so it stays proportional if the row is ever resized (≈1.24px at 10px). */
+     * marks — so its stroke is re-coloured to the ACCENT, which makes the star's edge legible against art
+     * of any value instead of relying on the gold reading against it. `paint-order: stroke fill` above is
+     * what keeps it an EDGE and not a ring: only the outer half survives, ~0.5px at the row's ink. Not
+     * `currentColor`, which is what keeps a `.hi` rose-gold star re-tinting the STAR alone.
+     * The arcade DROP the row wore beside the edge was RETIRED on the owner's 2026-08-07 round ("they
+     * don't look that good with the shadow — only the outline, a little bit bigger"): the rule that
+     * switched the dormant `.drop` polygon on is gone, so both rows now share the primitive's plain
+     * form + one size step (13→14, tokens.css walks the history). */
     .gc-card .rar .gc-star {
       stroke: var(--gc-star-edge);
-    }
-    .gc-card .rar .gc-star .drop {
-      display: inline;
-      fill: var(--gc-lift-color);
-      stroke: var(--gc-lift-color);
-      transform: translate(var(--gc-star-drop), var(--gc-star-drop));
     }
     /* The top rungs of the ladder in rose-gold (§6.2) — `isHighStar` decides WHICH, this decides how it
      * looks, so the mode switch re-tints without a second rule. On the ELEMENT, so it works in both rows. */

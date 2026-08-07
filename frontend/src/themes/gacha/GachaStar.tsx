@@ -35,22 +35,21 @@
 //   · the DOSSIER's tab wants a clean mark — self-coloured stroke (so it fattens and rounds the
 //     silhouette into one solid, plumper star rather than outlining it) and NO drop. "They look better
 //     without."
-//   · the CARD's row sits on ARTWORK, so it keeps the drop and its stroke is ACCENT-coloured: an edge for
-//     visibility over a bright frame, thin enough to read as an edge and not a ring (`paint-order` hides
-//     its inner half under the fill).
+//   · the CARD's row sits on ARTWORK, so its stroke is ACCENT-coloured: an edge for visibility over a
+//     bright frame, thin enough to read as an edge and not a ring (`paint-order` hides its inner half
+//     under the fill). Its drop was retired on the owner's 2026-08-07 round ("only the outline").
 //
 // The sheet's original contrasting DARK contour is retired on both — the owner read it as an outline.
 //
-// ── THE DROP: the arcade signature, at star scale ─────────────────────────────────────────────────────
-// The same hard, unblurred offset the capsule cards and the dossier portrait wear — "in the same style as
-// the buttons and the images". It is a SECOND POLYGON rather than `filter: drop-shadow()`, and that is the
-// cheaper as well as the crisper form: a filter would rasterize an offscreen buffer per star on a
-// scrolling track (the §14.11 class this theme converts away from), while a translated copy is plain
-// geometry the same rasterizer already walks. It is offset in USER UNITS, so it scales with whatever size
-// the row asks for. Painted FIRST so the star sits on top of it. The svg is `overflow: visible`
-// (gacha.css) because the drop deliberately leaves the cropped viewBox; a shadow that fitted inside the
-// box would have shrunk the ink. It is hidden by default and switched ON by the card's row, so the mark's
-// plain form is the one a new surface inherits.
+// ── THE DROP: the arcade signature, at star scale — ⚠ DORMANT since 2026-08-07 ────────────────────────
+// The same hard, unblurred offset the capsule cards and the dossier portrait wear. It is a SECOND POLYGON
+// rather than `filter: drop-shadow()` — the cheaper and crisper form: a filter would rasterize an
+// offscreen buffer per star on a scrolling track (the §14.11 class this theme converts away from), while
+// a translated copy is plain geometry the same rasterizer already walks. Painted FIRST so the star sits
+// on top of it; hidden by default and switched on per-surface. NO surface switches it on any more: the
+// dossier never wore it ("they look better without", 2026-08-06) and the card's rule went on the owner's
+// 2026-08-07 round ("only the outline"). Kept with its `--gc-star-drop` token while that round settles —
+// strip both together if outline-only sticks through the v1.5.0 device pass.
 //
 // Colour is CSS's throughout: `fill: currentColor` inherits the row's `color`, so the existing
 // `--gc-star` / `--gc-star-hi` / `--gc-star-dim` tinting keeps working unchanged (the drop and the card's

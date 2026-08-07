@@ -324,26 +324,27 @@
        * and they fix the INVERSION R16 caught: what shipped was 1.23 on the card and 1.37 on the dossier —
        * looser at the SMALLER size, which no reference does.
        *
-       * SIZES, after FOUR owner rounds and now settled by the owner's eye outright. The dossier went UP
-       * (9.5px of glyph ink → 11.5). The card walked 7 → 10 → 11 → 13: C2's own 7px read "way too small"
-       * on device, 10 was R16's nearest analogue (the Arknights operator card, ink ~10 at pitch 13.2),
-       * 11 was "one step under the dossier" — and the final round overshot the dossier deliberately
-       * ("still too small" at 11): the card row sits OVER art at arm's length, the dossier row on a calm
-       * sheet up close, so equal-perceived beats equal-measured and the card lands ABOVE the dossier's
-       * 11.5. The RATIO is the constant through all of it: (13 + 3.9) / 13 = 1.30, the same 1.30 the
-       * dossier row carries, both inside R16's reference family (Arknights 1.32 / E7 1.31 / Genshin 1.33). */
-      --gc-star-size: 13px;
-      --gc-star-gap: 3.9px;
+       * SIZES, after FIVE owner rounds and now settled by the owner's eye outright. The dossier went UP
+       * (9.5px of glyph ink → 11.5). The card walked 7 → 10 → 11 → 13 → 14: C2's own 7px read "way too
+       * small" on device, 10 was R16's nearest analogue (the Arknights operator card, ink ~10 at pitch
+       * 13.2), 11 was "one step under the dossier", 13 overshot the dossier deliberately ("still too
+       * small" at 11 — the card row sits OVER art at arm's length, the dossier row on a calm sheet up
+       * close, so equal-perceived beats equal-measured) — and the fifth round (2026-08-07) took one more
+       * step alongside retiring the card's drop ("only the outline and a little bit bigger"). The RATIO
+       * is the constant through all of it: (14 + 4.2) / 14 = 1.30, the same 1.30 the dossier row
+       * carries, both inside R16's reference family (Arknights 1.32 / E7 1.31 / Genshin 1.33). */
+      --gc-star-size: 14px;
+      --gc-star-gap: 4.2px;
       --gc-star-size-lg: 11.5px;
       --gc-star-gap-lg: 3.5px;
       /* The primitive's STROKE, in its USER UNITS (the viewBox is 96.5 wide) — 9 units is 7.3% of whatever
        * size a row asks for, so it scales with the star instead of needing a per-size table. It is the
        * candidate sheet's own number; in CSS rather than as an SVG attribute so a surface can tune it. */
       --gc-star-stroke: 9px;
-      /* The CARD row's drop offset, same user units: ≈1.24px at the row's 10px ink — the 1–1.5px bracket
-       * the owner named. Not a px length, deliberately: a px offset would read heavy at one size and as a
-       * hairline at another. (The dossier tab takes no drop — owner, 2026-08-06: "they look better
-       * without" — so this has exactly one consumer today.) */
+      /* The star drop offset, user units. ⚠ ZERO consumers since the owner's 2026-08-07 round retired
+       * the CARD row's drop too ("only the outline" — the dossier had already dropped it 2026-08-06,
+       * "they look better without"). Kept with the primitive's dormant `.drop` polygon while the round
+       * settles; strip both together if outline-only sticks through the v1.5.0 device pass. */
       --gc-star-drop: 12px;
 
       /* The ONLINE state ribbon + its ink. */
