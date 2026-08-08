@@ -193,8 +193,9 @@ export function pickLabel(host: Host, stars: number, selected: boolean): string 
     : `${head}Tap to select; tap again to ${what}.`;
 }
 
-/** How many stops the per-unit hue ring carries (tokens.css `--gc-unit-1..8`). */
-export const UNIT_HUES = 8;
+/** How many stops the per-unit hue ring carries (tokens.css `--gc-unit-1..5`). FIVE because that is how
+ *  many per-unit colours the finalists lab defines — a floor, not a choice. */
+export const UNIT_HUES = 5;
 
 /** The per-machine HUE for the slice at fleet position `index` — a `--gc-unit-N` token reference (owner
  *  ruling, the E1 dev-unit walk: §12.6 ruling 8's rarity->hue binding is OVERRULED).
@@ -205,9 +206,9 @@ export const UNIT_HUES = 8;
  *  keep rarity, so the two signals are now genuinely two.
  *
  *  BY FLEET POSITION, not by id hash: the roster resolver's positional idiom (`artForHost`), so a machine's
- *  colour sits beside its portrait under one rule and a poll cannot reshuffle either. The ring itself —
- *  eight stops 45 degrees apart in OKLCH, anchored at the ACTIVE accent — is derived once in tokens.css, so
- *  every accent palette re-tints the whole fleet for free.
+ *  colour sits beside its portrait under one rule and a poll cannot reshuffle either. The stops themselves
+ *  are the PROTOTYPE's own five `--rar-*` literals in the lab's card order (owner ruling — see tokens.css),
+ *  so the owner's four machines reproduce the walked screen exactly.
  *
  *  Wraps past the eighth stop rather than clamping (a ninth machine restarts the ring, which is what a ring
  *  is for), and survives a negative or non-finite index at stop 1 — it is on a render path. */

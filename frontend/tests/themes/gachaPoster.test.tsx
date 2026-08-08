@@ -865,32 +865,33 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
       expect(blockFor(sel), `${sel} must paint the RESOLVED hue`).toContain("var(--po-hue)");
   });
 
-  it("derives the per-unit RING off the accent token, once, with L and C held", () => {
-    // The owner's "in line with the theme" ask, as a structural claim: eight stops 45deg apart, derived
-    // from `--accent` in OKLCH rather than fitted as 6x8 literals — so every accent palette re-tints the
-    // whole fleet for free and a ninth palette needs no colour work. Read from tokens.css, since jsdom
-    // resolves none of it.
+  it("declares the ring as the PROTOTYPE's own literals, once, at the base scope", () => {
+    // OWNER RULING (second dev-unit walk): "make it just like the prototype exactly". These are the
+    // finalists lab's five `--rar-*` values verbatim, in the lab's CARD order (its ROSTER runs
+    // pegasus/atlas/rook/lyra and `hueOf` maps each by star count 5/4/2/3 → gold, purple, green, cyan),
+    // so the owner's four machines reproduce the walked screen. They supersede the accent-derived OKLCH
+    // ring; a colour-theory pass on harmonizing them with the accent is banked for later.
     const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
-    // stop 1 IS the accent, unrotated
-    expect(tokens).toContain("--gc-unit-1: var(--accent);");
-    for (let k = 1; k < 8; k++) {
-      // `calc(h + 45)`, NOT `+ 45deg`: inside `oklch(from …)` the `h` keyword substitutes a NUMBER of
-      // degrees, so an angle there is a type error — and an invalid custom-property value is dropped at
-      // computed-value time, unpainting every slice with no error anywhere. Verified against both
-      // shipped engines; this row is what keeps the `deg` from creeping back in.
-      const decl = `--gc-unit-${k + 1}: oklch(from var(--accent) l c calc(h + ${k * 45}));`;
-      expect(tokens, `stop ${k + 1} must be the accent rotated ${k * 45}deg`).toContain(decl);
-    }
-    // …exactly once each — a duplicate in the same scope would let a later one win silently (the LOW-6
-    // lesson, which this file learned the hard way)
-    for (let k = 1; k <= 8; k++)
+    const RING = ["#ffd464", "#b07cff", "#5fe0a0", "#4dd7ff", "#cdd2e0"];
+    RING.forEach((hex, i) =>
+      expect(tokens, `--gc-unit-${i + 1} must be the lab's ${hex}`).toMatch(
+        new RegExp(`--gc-unit-${i + 1}: ${hex};`),
+      ),
+    );
+    // exactly once each — a duplicate in the same scope lets a later one win silently (the LOW-6 lesson)
+    for (let k = 1; k <= RING.length; k++)
       expect(tokens.split(`--gc-unit-${k}:`).length - 1, `--gc-unit-${k} declared twice`).toBe(1);
     expect(tokens.split("--gc-unit-off:").length - 1).toBe(1);
-    // and the RARITY ladder is gone outright — nothing maps a star count to a hue any more
+    // FIVE stops, not more: the lab defines five per-unit colours and inventing a sixth is the banked
+    // colour work, so a sixth token appearing means someone did it anyway
+    expect(tokens, "the ring has exactly five stops").not.toContain("--gc-unit-6");
+    // PALETTE-INDEPENDENT theme identity (the `--gc-star-hi` precedent): no accent block may restate one,
+    // and nothing derives them from the accent any more
+    const accentBlocks = tokens.slice(tokens.indexOf('body[data-accent="arcade"]'));
+    expect(accentBlocks, "an accent block must not restate a unit hue").not.toContain("--gc-unit-");
+    expect(tokens, "the accent-derived ring is gone").not.toMatch(/--gc-unit-\d: oklch\(from/);
+    // and the rarity ladder stays gone
     expect(tokens, "the rarity->hue ladder has no consumer left").not.toContain("--gc-rar-");
-    expect(tokens, "an <angle> in the hue channel is a silent type error").not.toMatch(
-      /--gc-unit-\d: oklch\([^;]*deg\)/,
-    );
   });
 
   it("does NOT dress the page or the banner — the owner cut both (standing negative)", () => {

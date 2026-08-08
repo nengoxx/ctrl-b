@@ -411,33 +411,35 @@ describe("resolvePick — the selection the view actually shows", () => {
 });
 
 // ── unitHueToken — the PER-UNIT hue ring (owner ruling: §12.6 ruling 8's rarity->hue binding is overruled) ──
-// The colour a poster slice wears is this machine's IDENTITY now, not its rarity — the owner's fleet is two
+// The colour a poster slice wears is this machine's IDENTITY, not its rarity — the owner's fleet is two
 // 2-star and two 3-star machines, so a rarity ladder painted it near-homogeneous. Stars keep rarity.
+// The STOPS are the finalists lab's own five `--rar-*` literals in its card order (tokens.css).
 describe("unitHueToken — the per-unit hue ring", () => {
-  it("walks the eight stops in fleet order", () => {
-    expect([0, 1, 2, 3, 4, 5, 6, 7].map(unitHueToken)).toEqual([
+  it("walks the five stops in fleet order", () => {
+    expect([0, 1, 2, 3, 4].map(unitHueToken)).toEqual([
       "var(--gc-unit-1)",
       "var(--gc-unit-2)",
       "var(--gc-unit-3)",
       "var(--gc-unit-4)",
       "var(--gc-unit-5)",
-      "var(--gc-unit-6)",
-      "var(--gc-unit-7)",
-      "var(--gc-unit-8)",
     ]);
+  });
+
+  it("is FIVE stops — the lab defines five per-unit colours, so the ring is that long", () => {
+    expect(UNIT_HUES).toBe(5);
   });
 
   it("WRAPS past the last stop rather than clamping — a ring, not a ladder", () => {
     expect(unitHueToken(UNIT_HUES)).toBe(unitHueToken(0));
     expect(unitHueToken(UNIT_HUES + 3)).toBe(unitHueToken(3));
-    expect(unitHueToken(UNIT_HUES * 7 + 5)).toBe(unitHueToken(5));
+    expect(unitHueToken(UNIT_HUES * 7 + 2)).toBe(unitHueToken(2));
   });
 
   it("survives a negative or non-finite index at stop 1 (it is on a render path)", () => {
     // JS `%` keeps the sign, so a bare modulo would emit `--gc-unit-0` and `--gc-unit--2` — tokens that
     // do not exist, which resolve to nothing and unpaint the whole slice silently.
-    expect(unitHueToken(-1)).toBe("var(--gc-unit-8)");
-    expect(unitHueToken(-9)).toBe("var(--gc-unit-8)");
+    expect(unitHueToken(-1)).toBe(`var(--gc-unit-${UNIT_HUES})`);
+    expect(unitHueToken(-UNIT_HUES - 1)).toBe(`var(--gc-unit-${UNIT_HUES})`);
     expect(unitHueToken(Number.NaN)).toBe("var(--gc-unit-1)");
     expect(unitHueToken(2.9)).toBe("var(--gc-unit-3)"); // truncated, like every other index rule here
   });

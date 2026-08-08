@@ -345,6 +345,34 @@
       --gc-star-hi: #ff8fa8;
       --gc-star-dim: #b9b3d6; /* sleeping cards de-saturate */
 
+      /* ── THE PER-UNIT HUE RING — THE PROTOTYPE'S OWN COLOURS (owner ruling, second dev-unit walk:
+       * "make it just like the prototype exactly — the colors for the shadows and the name colors") ────
+       * A poster slice's colour is a per-MACHINE identity (that half of the first ruling stands; §12.6
+       * ruling 8's rarity->hue binding is still overruled, and STARS still carry rarity). What changed is
+       * where the values come from: these are the finalists lab's five `--rar-*` literals, verbatim, and
+       * they SUPERSEDE the accent-derived OKLCH ring — a colour-theory pass on harmonizing them with the
+       * accent is banked for a future session and is deliberately not attempted here.
+       *
+       * THEME-IDENTITY CONSTANTS, so they live at `:scope` and are PALETTE-INDEPENDENT — the
+       * `--gc-star`/`--gc-star-hi` precedent, and the reason they are not in the `body` block above: they
+       * derive from nothing an accent block can move, so a var() formula would be pointless indirection.
+       * An accent variant must never restate them.
+       *
+       * THE ORDER IS THE LAB'S CARD ORDER, so the owner's four machines reproduce the walked screen
+       * exactly: `app.js`'s ROSTER runs pegasus/atlas/rook/lyra and `hueOf` maps each by its star count
+       * (5/4/2/3), which lands gold, purple, green, cyan — NOT the ladder's own 1..5 sequence. Stop 5 is
+       * the one `--rar-*` the walk never showed (the star-1 silver floor), APPENDED rather than
+       * interleaved so nothing in the walked run moves.
+       *
+       * FIVE STOPS, NOT EIGHT, and that is a floor rather than a choice: the lab defines exactly five
+       * per-unit colours. Extending to eight would mean inventing three, which IS the banked colour work.
+       * `fleet.ts#unitHueToken` wraps at five, so a sixth machine restarts at gold. */
+      --gc-unit-1: #ffd464; /* pegasus — the lab's star-5 gold (== --gc-star)  */
+      --gc-unit-2: #b07cff; /* atlas   — star-4 purple                        */
+      --gc-unit-3: #5fe0a0; /* rook    — star-2 green                         */
+      --gc-unit-4: #4dd7ff; /* lyra    — star-3 cyan                          */
+      --gc-unit-5: #cdd2e0; /* the star-1 silver floor, unused in the walk    */
+
       /* The SLEEPING suppression for a poster slice — the per-unit hue stood down to one neutral (§12.6
        * ruling 8's sleeping clause, which survives its rarity clause): five faded colours read as five
        * machines in trouble, one grey reads as "not here". It floods back the moment a poll says the
@@ -635,59 +663,6 @@
       /* --accent is the flat <color> channel (focus ring, borders, accent text, the color-mix softs): the
        * brand PINK, the trio's leading hue and its most legible member on this bg. */
       --accent: var(--gc-brand-1);
-
-      /* ── THE PER-UNIT HUE RING (owner ruling, dev-unit walk — it OVERRULES §12.6 ruling 8's rarity->hue
-       * binding) ───────────────────────────────────────────────────────────────────────────────────────
-       * A poster slice's colour is now a per-MACHINE identity, not a rarity read-out. The owner's own
-       * fleet is two 2-star and two 3-star machines, so a rarity ladder rendered it near-homogeneous —
-       * and the lab's grammar was per-unit all along (`hueOf(u)`). STARS still carry rarity: the gold /
-       * rose-gold row is untouched, and the two signals are now genuinely two signals.
-       *
-       * EIGHT STOPS, 45 degrees apart, ANCHORED AT THE ACTIVE ACCENT and rotated in OKLCH with lightness
-       * and chroma held — a perceptual space, so every stop carries the same visual weight against the
-       * dark ground instead of the yellows leaping out and the blues sinking (which is exactly what an
-       * HSL ring does). Stop 1 IS the accent. `fleet.ts#unitHueToken` assigns stop `i mod 8` by FLEET
-       * POSITION, the roster resolver's positional idiom, so a poll cannot reshuffle the palette.
-       *
-       * DERIVED FROM THE ACCENT TOKEN, ONCE — not 6x8 fitted literals. That is the whole of the owner's
-       * "in line with the theme" ask: every accent palette re-derives its own ring for free, and a ninth
-       * palette needs no colour work at all. It lives on `body` for the §14.13 reason the rest of this
-       * block does: `--accent` is accent-overridable, and a var() formula on `:scope` would compute once
-       * against the base statics and never re-derive.
-       *
-       * NO CLAMP ON L OR C, and that is a MEASURED result rather than an omission. The ring was first
-       * written with a `max(l, 0.72)` lightness floor, on a model that predicted stops as dark as 1.92:1
-       * against `--bg`; probing the real engines showed the model's sRGB round-trip was simply wrong.
-       * Measured over 6 accent bases x 8 stops, by painting each resolved stop to a canvas and reading
-       * the sRGB bytes back: WITHOUT any clamp the worst case is 4.88:1 (glacier stop 2) — already clear
-       * of the 4.5 normal-text bar, never mind the 3:1 large-text one the hostname actually sits under.
-       * The floor bought 4.88 -> 5.07 and cost the anchor its exactness, so it went.
-       * Leaving L and C alone is also the truer derivation: every stop then holds the accent's OWN
-       * lightness and chroma, and stop 1 IS the accent for every palette by construction. An
-       * out-of-sRGB combination is gamut-mapped by the engine (chroma reduced, L and H preserved), which
-       * is the degradation we want anyway — and is where those minima already come from.
-       * ⚠ Do not add a floor back without re-measuring; the obvious model is the one that was wrong.
-       *
-       * ⚠ `calc(h + 45)`, NOT `calc(h + 45deg)`. Inside `oklch(from …)` the `h` keyword substitutes a
-       * <number> of degrees, not an <angle>, so adding `45deg` is a TYPE ERROR — and it fails the way
-       * every invalid custom-property value fails: the declaration is dropped at computed-value time, the
-       * `var()` resolves to nothing, and every slice loses its keyline, its drop, its wash and its name at
-       * once with no error anywhere. Caught by probing both shipped engines rather than by reading the
-       * spec; the same probe confirmed all eight stops resolve DISTINCT on Chromium 149 and Firefox 151,
-       * off all six accent bases, with the floor biting on exactly the four dark ones.
-       *
-       * BROWSER FLOOR: relative colour syntax is Firefox 128+ / Chrome 119+. The app already requires
-       * `@scope` (Firefox 128 / Chrome 118), so this adds no NEW floor — the same engines. Worth an
-       * explicit look at the E5 device round all the same, since Fennec is the target. */
-      --gc-unit-1: var(--accent);
-      --gc-unit-2: oklch(from var(--accent) l c calc(h + 45));
-      --gc-unit-3: oklch(from var(--accent) l c calc(h + 90));
-      --gc-unit-4: oklch(from var(--accent) l c calc(h + 135));
-      --gc-unit-5: oklch(from var(--accent) l c calc(h + 180));
-      --gc-unit-6: oklch(from var(--accent) l c calc(h + 225));
-      --gc-unit-7: oklch(from var(--accent) l c calc(h + 270));
-      --gc-unit-8: oklch(from var(--accent) l c calc(h + 315));
-
       /* The brand trio — wordmark, tag pills, the dossier strip, and the Conf palette chip. */
       --gc-brand-fill: linear-gradient(
         92deg,
