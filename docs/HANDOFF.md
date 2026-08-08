@@ -49,7 +49,10 @@
 >   23-pin list → E5 the Fennec+Chrome device round = real acceptance). Opus subagents from
 >   pinned briefs, Codex per slice, owner pause between slices.
 > - Still owed from before: the owner's phone spot-check of prod v1.5.0 · R20's four + R21's four
->   LOWs + the leftover ledger (`9afe78c`) · the HANDOFF archive sweep (~650KB).
+>   LOWs + the leftover ledger (`9afe78c`) · the HANDOFF archive sweep (~650KB — **owner
+>   2026-08-08: a STANDALONE session of its own**, not a side-task: the superseded blocks likely
+>   hide unfinished threads from past features, so the sweep is an audit-then-archive, done with
+>   fresh context) · picker copy (§12.3⑤) rides the E1 brief (owner, same day).
 >
 > ## ✅✅✅ v1.5.0 RELEASED — LIVE ON PROD (2026-08-08, Fable — the release record; every block below is history)
 >

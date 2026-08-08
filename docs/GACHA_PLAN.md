@@ -3383,7 +3383,8 @@ build → self-audit → Codex round → owner pause):**
   (un-retuned since the lab widened the stack) · the trailing-end air · the cover column
   scroller on Fennec · the hero-shift constant.
 
-**Open items:** §12.3⑤ picker labels/desc (copy.ts) · §12.3② shear/height numbers · the E5 list
+**Open items:** §12.3⑤ picker labels/desc (copy.ts — **owner 2026-08-08: ruled AT E1**, settled in
+the E1 brief where the row first appears) · §12.3② shear/height numbers · the E5 list
 above. *(Everything else is ruled.)*
 
 **Process:** dev branch only, after the owner's E0 go-word · Opus subagents from pinned briefs
