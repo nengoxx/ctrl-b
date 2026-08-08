@@ -12,7 +12,25 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ✅✅ 2026-08-08 NIGHT (Fable) — E0 + E1 SHIPPED **+ THE FOUR-WALK OWNER EYEBALL SERIES FOLDED + SESSION-CLOSE CODEX CLEAN** on `alt-fleet`; NEXT SESSION = the E2 go-word (cover, §12.6)
+> ## ✅✅ 2026-08-08 LATE NIGHT (Fable) — **E2 THE COVER SHIPPED + REVIEW-CLOSED (final Codex verdict SHIP) + owner-eyeball-folded** on `alt-fleet`; NEXT SESSION = the E3 go-word (banner tri-state, §12.6)
+>
+> **E2 closed in one session, owner live for the eyeball wave.** The full record — build (Opus,
+> pinned brief), the two defects only the MAIN-SEAT RENDER AUDIT caught (composer painted over ·
+> footer buried: `isolation: isolate` + the `--gc-composer-b` anchor-token seed), the owner's
+> three live rulings (unit-hue names both seats · top scrim 0.82→0.45 · masthead seats swapped),
+> the Codex arc (1 HIGH: the beat-170 re-route → the `onCommitSelect` select-only commit seam ·
+> 3 MED · 5 LOW → confirm reopened F3/F4 + NEW M1 plausible-not-reproduced-fixed-defensively →
+> final scoped confirm **SHIP, zero new defects**), the durable gotchas, and **THE WALK LIST**
+> (AWAKE wording · hero-name-in-hue · paper contrast · N=4 clip · edge scrims · the UNRENDERED
+> develop ceremony — sleep a machine to see it) — **all live in GACHA_PLAN §12.6's E2 bullet.
+> READ IT before E3.** Also this session: pegasus/`3` framed at face height (per-entry roster
+> `focus`, `f400d1c`) + **ROADMAP H2** banks the owner's visual art manager (upload + visual
+> crop for every selectable image — "specify for later", owner). State: `alt-fleet` local-only
+> (~50 commits, ZERO pushed; prod untouched at v1.5.0) · FE 2027 / full gate 6/6 · dev units
+> STOPPED at close · fresh-session Codex runs = setsid-detach + Monitor, never plain
+> background-Bash (it killed a full run again).
+>
+> ## ✅✅ 2026-08-08 NIGHT (Fable) — E0 + E1 SHIPPED **+ THE FOUR-WALK OWNER EYEBALL SERIES FOLDED + SESSION-CLOSE CODEX CLEAN** on `alt-fleet`; ~~NEXT SESSION = the E2 go-word (cover, §12.6)~~ *(E2 SHIPPED — see the block above)*
 >
 > **E1 closed OWNER-WALKED, not just reviewed.** After the E1 build + two Codex rounds (record
 > below), the owner ran FOUR live walks on the dev units; ~20 ruling commits folded same-session.

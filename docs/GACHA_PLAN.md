@@ -3435,8 +3435,82 @@ build → self-audit → Codex round → owner pause):**
   select-then-act + wake + busy + the poll-truthful ceremony + tap-skip + the live region · the
   data block · `fleetLayout` gains `poster` + `posterName` appears (blade default) · unit/render/
   action/a11y tests land IN-SLICE (the R25 ⑦–⑫ pins) · long-hostname/long-services renders.
-- **E2 — COVER, complete with its value:** ruling-9 anatomy · promote + develop ceremonies +
-  focus restoration · `fleetLayout` gains `cover` · the R25 ⑬ pins + N=1/N=0 renders.
+- **E2 — COVER, complete with its value** *(✅ SHIPPED + REVIEW-CLOSED **SHIP** 2026-08-08 late
+  night, same day as the E1 close; `9077a76..ad28c19` on `alt-fleet` — 9 commits: build 4 · the
+  render-audit + owner-wave fix `270bb37` · the Codex-round pair `68490e2`/`fc5d8d9` · the
+  confirm-round pair `9afca9c`/`ad28c19`. Opus build from the pinned brief; FE tests 1901→2027,
+  full gate 6/6 at every wave; local-only, nothing pushed. **Same-session pre-slice item:**
+  pegasus/`3` framed at face height via the per-entry roster `focus` seam (`f400d1c`, owner ask —
+  one value re-aims every surface, the entry-4 precedent; capsule fence snapshot updated with
+  exactly the two inline styles) + ROADMAP **H2** banks the owner's future VISUAL ART MANAGER
+  (upload + crop/focal-point editing over that same seam; owner drops carry NO focus today — the
+  gap it closes).
+  **The E2-brief rulings (main seat):** cover keeps the LAB's walked tap grammar — a cut-in always
+  PROMOTES; the E1 one-tap narrowing stays poster/capsule-only — as ONE grammar-parameterized
+  `tapAction` + `tapGrammarFor`, the grammar read through `fleetSurface.useVariantId()` (never a
+  second resolution path) · cover opens the dossier PLAIN (the hero morph = a banked walk
+  question; 5② as signed for cover) · the NEW ribbon does NOT render under cover (lab truth; the
+  contract docstring's "cover rules at E2" is closed) · `counter` unused — the live ISSUE line is
+  cover's own read · **ruling 7's banner-as-slot landed here**: `banner: ReactNode` on
+  `GachaTrackProps`, capsule/poster seat it first-in-flow (the E0 fence held byte-identical
+  through the refactor), cover seats the STRAPLINE at the lab's 88px strip form — the eyeball-①
+  enumeration test was CONSCIOUSLY AMENDED: capsule↔poster banner/ground identity stays pinned,
+  cover's strip is a signed exception asserted as its own list · the develop ceremony's lab
+  ONLINE-flip / persistent stamp / `banner.refresh()` are all CUT (poll-truthful; every artifact
+  render-gated on `waking`) · hero crop shift = the DERIVED `coverHeroFocus` (X − 20pp clamped,
+  exported const, stacking on the roster focus values — the lab's per-id map did not port) · the
+  masthead carries the h1, track head suppressed · fonts: 特/集/¥ regenerated, every latin file
+  byte-identical · the `fleetLayout` desc gained the truthful cover×no-appbar pairing sentence.
+  **The main-seat RENDER AUDIT caught two defects the suite couldn't (both owner-confirmed
+  live):** the composer painted OVER — `.cv-frame` made no stacking context, so its internal z
+  rungs fought the app chrome app-wide (fix: `isolation: isolate`, the kit's own
+  `.kit:has(> .kit-bg)` idiom) · the gag footer buried behind the tab bar — the floor chain
+  seeded off `--composer-h` alone (fix: the composer's OWN anchor extracted as `--gc-composer-b`,
+  consumed by BOTH the composer rule and the cover floors — measure off the expression that
+  positions the thing you must clear).
+  **The owner's live eyeball wave (same session):** machine names wear the UNIT HUE in both seats
+  (cut-in plate + hero display; the hero half = a flagged main-seat interpretation, its own
+  single-declaration rule, a 3-line revert) · the hero scrim's TOP band softened 0.82→0.45 alpha
+  (leading/bottom bands untouched) · the masthead seats SWAPPED — top colored slot = the live
+  ISSUE line, bottom grey = CTRL/B (classes renamed to the SEATS, `cv-mast-over`/`-under`).
+  **Codex round 1 (DO-NOT-SHIP → all closed):** 1 HIGH — the beat-170 promote dispatch re-ROUTED
+  through the router, so a poll that swapped the resolved hero converted "put B on the cover"
+  into a real WAKE (or an open); fixed as **`onCommitSelect(hostId): boolean`** — a select-only
+  commit seam owned by `GachaFleet`; route ONCE at tap time, the beat spends the commit, refusal
+  suppresses the settled sentence (accepted deviation: the sentence stays on beat 860 gated on
+  the verdict — two sentences 170 ms apart collapse in a polite live region) — + 3 MED (develop
+  artifacts outliving a settled/failed wake → `devLive` render-gating, beats keep lab timing ·
+  focus armed too late → captured at tap, then re-keyed to the HOST ID so an intermediate
+  fallback hero cannot spend it · the `data-gc-fleet` enumeration's multiline-selector escape →
+  `tests/themes/cssRules.ts`, a quote/escape/paren-aware header scanner with the adversarial
+  fixtures pinned) + 5 LOW (reduced motion announces ONLY the settled sentence — RULED correct,
+  test renamed to claim it · held-Enter repeats swallowed, keyup clears for Space's
+  click-on-release · timer-count asserted at the swap · an `Infinity%` finite guard in
+  `coverHeroFocus` · oracle tightenings). **Confirm round:** F1/F2 verified clean; F3/F4 reopened
+  sharper; + NEW M1 — the stale-pick normalizer undoing an accepted commit. The functional
+  compare-and-clear shipped, but the builder could NOT reproduce the race (React COALESCES
+  passive effects to the latest commit, so the stale closure never survives to run) — recorded as
+  plausible-not-reproduced, fixed defensively, its test labelled CONTRACT; Codex endorsed the
+  coalescing argument in the final pass. **Final scoped confirm: SHIP, zero new defects.**
+  **Durable:** a fixed full-viewport layout under the kit must ISOLATE its stacking context or
+  its internal z rungs fight the app chrome app-wide · seat floors off the ANCHOR + height of the
+  thing you must clear, extracted as ONE token both consume · SW-originated fetches BYPASS
+  Playwright page routes (dev-unit renders cannot stub host state — the develop ceremony shipped
+  UNRENDERED; it needs a sleeping machine on glass) · a revert-proof is only proof if the revert
+  is FAITHFUL (a stale-closure revert passed falsely once) · React coalesces passive effects to
+  the latest commit (the M1 class) · the chrome fence strips only FULL-LINE comments — trailing
+  `//` comments in gacha TS are effectively ASCII-only · a MutationObserver oracle must drain
+  `takeRecords()` after `act` · the ~10 min background-Bash kill took a full Codex run AGAIN —
+  setsid-detach + a Monitor on the output file FROM THE START.
+  **THE WALK LIST (next session, judged on glass; overlaps E5):** the `AWAKE` stamp wording
+  (poll-truth vs walked flavor) · the hero-name-in-hue interpretation (3-line revert if unwanted)
+  · cut-in name contrast on paper (measured 1.34–2.78:1, all sub-AA — owner-ruled literal) · the
+  N=4 cut-in column clip at 390×844 (designed internal scroll) · the kit edge scrims over the
+  frame + the wallpaper decoding under an opaque cover (accepted waivers) · the DEVELOP ceremony
+  (sleep a machine first) · the seeded numbers (`--cv-*` floors · `--cv-bn-h` 88 ·
+  `--cv-stamp-top` · `COVER_HERO_SHIFT` 20) = E5's device round.)*: ruling-9 anatomy · promote +
+  develop ceremonies + focus restoration · `fleetLayout` gains `cover` · the R25 ⑬ pins +
+  N=1/N=0 renders.
 - **E3 — banner tri-state, complete with its setting:** `off` unmount + top-space null +
   scroll-reset · the re-authored `minimal` strip + token height · capsule rendered + tested under
   BOTH non-default states · timer/wallpaper/state-matrix tests (R25 ⑰–⑱).
