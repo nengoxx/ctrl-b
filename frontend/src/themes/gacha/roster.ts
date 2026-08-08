@@ -114,11 +114,14 @@ export interface NamedArt extends ResolvedArt {
  *  partition rule, art.ts). Slots left empty on purpose — the fallbacks below are the intended defaults, so
  *  shipping pins would only be a second place to change them. */
 const BUNDLED_ENTRIES: RosterEntry[] = [
-  { name: "pegasus", image: ART.characters[0] },
+  // Focal points (owner, 2026-08-08 — "frame at face height, like the other two"): pegasus's and 3's
+  // faces sit high in their art (eyes ~17% / ~20% from the top), so the poster band's default crop
+  // (50% 26%) landed on the chest and hood. Same one-value-re-aims-every-surface contract as `4` below.
+  { name: "pegasus", image: ART.characters[0], focus: "50% 12%" },
   { name: "atlas", image: ART.characters[1] },
   // The owner's own drops (G1 eyeball round 3): dealt to display positions 2 and 3 — vault and g5 on
   // the owner's fleet. `rook` left the deal for them; the file stays bundled for the G5 gallery.
-  { name: "3", image: ART.characters[2] },
+  { name: "3", image: ART.characters[2], focus: "50% 14%" },
   // Focal point (owner round 3): a full-body seated composition with the face ~18% from the top — the
   // wide CARD's default crop (50% 46%, tuned for lyra's art) landed on the shirt. One per-entry value
   // re-aims every surface (card shapes + promo); measured against simulated 16:9 and banner bands.

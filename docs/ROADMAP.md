@@ -833,6 +833,26 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
   hit-area fall-through, `tan()`+cqw shear, union-hexagon lift — probed both engines); the drafted
   design + slice sketch + open owner rulings = **GACHA_PLAN §12**.
 
+### H2. Visual art manager — upload + crop/focal-point editing (**owner, 2026-08-08 — future, unscheduled**)
+
+- **What (owner's words, condensed):** an in-app, visual way to edit every selectable image — the
+  per-PC portraits, the banner/scene art, "every single image that you can select." Upload a file
+  and **cut/frame it beforehand, so you know exactly how it will look** on the surfaces that
+  consume it (capsule card, poster slice, promo slide, dossier mark, wallpaper…), like any image
+  software with a crop tool.
+- **The v1 seams already in place (build against these, don't reinvent):** ① the gacha roster's
+  per-entry `focus` (an `object-position` string, `roster.ts`) — ONE value re-aims every consuming
+  surface via the single-resolver contract, proven by hand-tuned bundled entries (`4` 2026-08-05,
+  `pegasus`/`3` 2026-08-08); a crop editor's output is exactly this field, so the editor is UI over
+  an existing data path. ② G5's role-scoped media folders + the Conf gallery = the upload/manage
+  surface to extend. ③ The known GAP the feature closes: owner runtime drops deliberately carry
+  **no** `focus` today (the role rule, `roster.ts` `toEntry`) — bundled art can be framed, owner
+  art cannot; the editor is what makes per-owner-file focus data worth storing (likely a sidecar in
+  the media index, a design question for then).
+- **Scope note:** this is the *bigger feature* behind the 2026-08-08 quick fix (framing pegasus/3
+  at face height). Interim policy stands: bundled-entry focus values are hand-tuned in `roster.ts`;
+  owner drops rely on each surface's tuned default crop.
+
 ## Settings tab — organized by functionality (informs v1 Conf layout)
 
 Even pre-implementation, lay out the Conf tab in **functional groups** so these land in obvious
