@@ -650,12 +650,13 @@ describe("the poster's states match the capsule track's", () => {
   });
 });
 
-// ── THE BODY STAMP + the per-layout banner SKIN (ruling 7) ───────────────────────────────────────────
-// The pickup banner is a SLOT the layout dresses, not a component the layout forks — so the poster's gold
-// furniture is CSS keyed on `body[data-gc-fleet]`, stamped by the Root from the RESOLVED variant id. Two
-// halves, tested where each of them lives: the stamp against a real Root render, the rules against the
-// stylesheet (jsdom applies no @scope/@layer CSS, so the paint itself is an E5 device-round claim).
-describe("body[data-gc-fleet] — the stamp the banner skin keys off", () => {
+// ── THE BODY STAMP ───────────────────────────────────────────────────────────────────────────────────
+// `body[data-gc-fleet]` carries the RESOLVED layout id, stamped by the Root. Its consumer is the SEAM
+// COMPACTION below: the poster's track head is the capsule track's own markup, so the only way to give it
+// tighter vertical air without moving the shipped capsule look is to scope the override by this attribute.
+// (It briefly also drove a gold banner skin and a black page ground; the owner cut both — see the seam
+// tests for the standing rule that neither may come back.)
+describe("body[data-gc-fleet] — the resolved-layout stamp", () => {
   const drawRoot = () =>
     render(
       <QueryClientProvider
@@ -697,24 +698,30 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
       expect(blockFor(sel), `${sel} must paint the RESOLVED hue`).toContain("var(--po-hue)");
   });
 
-  it("installs the BLACK GROUND, scoped so only the poster ON THE FLEET TAB goes black", () => {
-    // The signed composition is a black field; the shipped `wallpaper: on` default would otherwise show
-    // the wallpaper through the 22px gutters (Codex E1 MED-2). Three claims, and the last two are what
-    // keep the fix from being a regression of its own.
-    const ground = blockFor('body[data-gc-fleet="poster"][data-tab="fleet"] .kit-main')!;
-    expect(ground, "the poster must install a ground").toBeTruthy();
-    expect(ground).toContain("background-color: var(--gc-po-field)");
-    // it REPLACES the wallpaper rather than layering over it…
-    expect(ground).toContain("background-image: none");
-    // …which needs it to be the SAME specificity declared LATER than the wallpaper's own `.kit-main` rule
-    const wall = css.indexOf('body[data-wallpaper="on"][data-tab="fleet"] .kit-main');
-    expect(wall).toBeGreaterThan(-1);
-    expect(css.indexOf('body[data-gc-fleet="poster"][data-tab="fleet"] .kit-main')).toBeGreaterThan(
-      wall,
-    );
-    // …and the `[data-tab="fleet"]` half is what stops the Agent and Conf tabs going black too. No
-    // unscoped `.kit-main` ground may exist anywhere in the file.
-    expect(blockFor('body[data-gc-fleet="poster"] .kit-main')).toBeNull();
+  it("does NOT dress the page or the banner — the owner cut both (standing negative)", () => {
+    // OWNER RULING (dev-unit walk, after E1's Codex round): the top banner keeps the capsule styling
+    // exactly, and the fleet background is not to change either. That OVERRIDES Codex MED-2, whose
+    // reasoning was fidelity to the lab's black field — the owner is the authority on the composition.
+    //
+    // What the owner actually saw is worth recording, because it is subtler than "the black is wrong":
+    // the rule paired `background-color: #000` with `background-image: none` on `.kit-main`, and the
+    // `none` killed the WALLPAPER while the opaque black covered `.kit`'s own coloured backdrop — so with
+    // the wallpaper switched OFF the poster still did not look like capsule. Both halves are gone.
+    //
+    // A NEGATIVE test rather than nothing, because both were argued for once and would be argued for
+    // again: the lab really is a black field with gold furniture, so the next reader of the finalists
+    // prototype will reach for exactly these rules. The stamp itself stays — it has a real consumer now
+    // (the seam compaction below).
+    for (const sel of [
+      'body[data-gc-fleet="poster"][data-tab="fleet"] .kit-main',
+      'body[data-gc-fleet="poster"] .kit-main',
+      'body[data-gc-fleet="poster"] .gc-banner',
+      'body[data-gc-fleet="poster"] .gc-banner-copy .tag',
+      'body[data-gc-fleet="poster"] .gc-banner-glow',
+      'body[data-gc-fleet="poster"] .gc-dot.on .pip',
+    ])
+      expect(blockFor(sel), `${sel} was CUT by the owner and must not come back`).toBeNull();
+    expect(css, "the banner-skin tokens went with the rules").not.toContain("gc-po-banner");
   });
 
   it("pairs the keyline with the art's inset, both on the `outlines` axis (gacha ships it OFF)", () => {
@@ -735,23 +742,6 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     expect(stars).toContain("var(--gc-star)");
     expect(stars).not.toContain("--po-hue");
     expect(blockFor(".po-slice.asleep .po-stars")).toContain("var(--gc-star-dim)");
-  });
-
-  it("skins the ONE banner instance through the stamp, from the rarity ladder's own gold", () => {
-    for (const sel of [
-      'body[data-gc-fleet="poster"] .gc-banner',
-      'body[data-gc-fleet="poster"] .gc-banner-copy .tag',
-      'body[data-gc-fleet="poster"] .gc-banner-glow',
-      'body[data-gc-fleet="poster"] .gc-dot.on .pip',
-    ])
-      expect(blockFor(sel), `no rule for ${sel}`).toBeTruthy();
-    // gold, from the ladder — never a second gold that could drift from a slice's own top rung
-    expect(blockFor('body[data-gc-fleet="poster"] .gc-banner-copy .tag')).toContain(
-      "background: var(--gc-rar-5)",
-    );
-    expect(blockFor('body[data-gc-fleet="poster"] .gc-dot.on .pip')).toContain(
-      "background: var(--gc-rar-5)",
-    );
   });
 
   it("gates every ambient motion on the app's own axis, and uses no OS media query", () => {

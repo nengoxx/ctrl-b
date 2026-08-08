@@ -383,17 +383,14 @@
       --gc-po-veil:
         linear-gradient(to top right, #000000e6 0%, #00000080 32%, transparent 62%),
         linear-gradient(to left, #0000008c, transparent 40%);
-      --gc-po-field: #000; /* the black field the art sits on, and the poster's own ground */
+      /* The black field a slice's art sits on — SLICE-INTERNAL only. The lab makes the whole poster
+       * page black; the owner ruled that out on the dev-unit walk (the fleet wallpaper shows through the
+       * gutters exactly as it does under capsule), so this token dresses the art box and nothing above it. */
+      --gc-po-field: #000;
       --gc-po-name-shadow: 3px 3px 0 #07050a;
       --gc-po-fname-shadow: 2px 2px 0 #07050a;
       --gc-po-role-shadow: 0 1px 5px #000000e6;
       --gc-po-flash: #fff; /* the wake ceremony's sweeping line */
-      /* The poster's BANNER SKIN (the lab's `--bn-*` block): the pickup banner above a gold-accented black
-       * field wears gold furniture, hard-edged, over a deeper drop. Composed from the rarity ladder's own
-       * top rung rather than a second gold, so the two can never drift. */
-      --gc-po-banner-glow: radial-gradient(70% 50% at 12% 22%, #ffd46426, transparent 70%);
-      --gc-po-banner-shadow: 0 20px 44px #000000bf;
-      --gc-po-banner-caption: #ffffffa8;
       /* ── The star's DRAWN metrics (G7 — the R16 redesign; see GachaStar.tsx) ─────────────────────────
        * The glyph's `font-size`/`letter-spacing`/`text-shadow` trio is gone with it: a drawn star is a box
        * and a gap, so both surfaces are tunable in the vocabulary R16 measured the field in.
