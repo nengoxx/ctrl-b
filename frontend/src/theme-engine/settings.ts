@@ -52,6 +52,44 @@ export function themeRowValue(
   return resolveThemeSetting(themeId, key, raw) ?? field.default;
 }
 
+/** Is one declared settings ROW currently visible? The `showWhen` predicate (GACHA_PLAN §12.6 — the ONE
+ *  engine change the alt-fleet port needs), pure and exported for the same reason `themeRowValue` above is:
+ *  the claim is about a VALUE, so it is tested as one rather than as the presence of a call in ConfTab.
+ *
+ *  `rawSibling` is the CONTROLLING setting's stored override, straight off the same `themeSettings[theme]`
+ *  map the row's own value comes from — resolved here through `resolveThemeSetting`, never compared raw.
+ *  That is the whole reason this is a function: a stale or corrupt sibling value (a seg id this build no
+ *  longer declares) has already been coerced to the sibling's default everywhere else, so gating on the raw
+ *  string would hide a row the app's own state says belongs on screen.
+ *
+ *  Two deliberate degradations, both FAIL-OPEN — a row that cannot be evaluated is shown, never silently
+ *  lost: a `showWhen` naming an undeclared sibling (`resolveThemeSetting` → undefined), and a
+ *  self-reference, which could otherwise hide the only control able to un-hide it. `themeContract.test.ts`
+ *  makes both unreachable for a registered theme; these are the belts, in the `?? field.default` idiom.
+ *
+ *  A DECLARED sibling that is not a `seg` is a different case and is NOT fail-open: `is` is string-only, so
+ *  a switch's boolean can never match and the row stays hidden. The contract test bans that shape too — a
+ *  boolean controller would be a different feature (an enable toggle), not this one.
+ *
+ *  Visibility is a RENDER concern only. Nothing here writes, and a hidden row's stored value is never
+ *  pruned: it keeps syncing in the appearance doc and reappears with its old pick when the controller
+ *  returns (the explicit §12.6 contract). */
+export function settingRowVisible(
+  themeId: ThemeId,
+  key: string,
+  field: ThemeSettingField,
+  rawSibling: ThemeSettingValue | undefined,
+): boolean {
+  const cond = field.showWhen;
+  if (!cond) return true; // unconditional — the shape every existing row has
+  if (cond.key === key) return true; // self-reference: unhonorable, so it is not honored
+  const sibling = resolveThemeSetting(themeId, cond.key, rawSibling);
+  if (sibling === undefined) return true; // the sibling isn't declared by this theme
+  return (
+    typeof sibling === "string" && (Array.isArray(cond.is) ? cond.is : [cond.is]).includes(sibling)
+  );
+}
+
 /** Resolve one per-theme setting: the stored override validated against the theme's spec, else the theme's
  *  declared default. Routes through `resolveThemeSetting` (§14.15.1 ⑦ / COMPOSER_SURFACE_PLAN §2.0) so a
  *  stale/corrupt synced value degrades to the default instead of casting through. Generic over the value

@@ -15,7 +15,7 @@ import { setUI } from "../../src/store/ui";
 import { LAYOUT_PRESETS, partitionSections, resolveLayout } from "../../src/theme-engine/layout";
 import { registeredThemes } from "../../src/theme-engine/registry";
 import { tabsFor } from "../../src/theme-engine/tabs";
-import type { ThemeId } from "../../src/theme-engine/types";
+import type { ThemeId, ThemeSettingField, ThemeSettingsSpec } from "../../src/theme-engine/types";
 import type { Host } from "../../src/types";
 
 // The token-list group parses raw tokens.css DECLARATIONS, NOT computed styles (jsdom can't replay
@@ -558,8 +558,145 @@ describe.each(registeredThemes().map((d) => [d.id, d] as const))(
       const ids = tabs.map((t) => t.id);
       expect(new Set(ids).size, `${id}: duplicate tab ids`).toBe(ids.length);
     });
+
+    it("every `showWhen` names a declared, UNCONDITIONAL seg sibling declared immediately before it", () => {
+      expect(showWhenViolations(def.settings ?? {}), `${id}: showWhen contract`).toEqual([]);
+    });
   },
 );
+
+// ── THE `showWhen` CONTRACT (GACHA_PLAN §12.6, slice E0 — the council-hardened clause). `showWhen` gates a
+//    settings row on a SIBLING's value, and the engine's own predicate deliberately fails OPEN rather than
+//    policing the spec at runtime. This is where the spec is policed instead — statically, over every
+//    registered theme, so a broken declaration is a red test rather than a row the owner can never reach.
+//
+//    Five rules, each with a reason: the sibling must EXIST (a typo'd key would gate on nothing) and must be
+//    a `seg` (a switch's boolean can never match a string `is`; an enable-toggle is a different feature); it
+//    must be UNCONDITIONAL, which bans both chains (a controller that can itself vanish leaves its dependent
+//    stranded) and self-reference (a row able to hide the only control that un-hides it); every `is` value
+//    must be one of the sibling's declared options (else the row is unreachable — the same class of drift
+//    the palettes/defaults assertions above catch); and the dependent must be declared IMMEDIATELY AFTER its
+//    controller, because declaration order IS render order and the owner's ruling was "it pops up right
+//    below". Vacuous today — no registered theme declares `showWhen` (gacha's `posterName` lands at E1) —
+//    so the fixture suite below is what proves the rules actually bite. ──
+function showWhenViolations(spec: ThemeSettingsSpec): string[] {
+  const keys = Object.keys(spec);
+  const out: string[] = [];
+  for (const [key, field] of Object.entries(spec)) {
+    const cond = field.showWhen;
+    if (!cond) continue;
+    if (cond.key === key) {
+      out.push(`${key}: showWhen is SELF-REFERENTIAL`);
+      continue;
+    }
+    const controller = spec[cond.key];
+    if (!controller) {
+      out.push(`${key}: showWhen names UNDECLARED sibling "${cond.key}"`);
+      continue;
+    }
+    if (controller.type !== "seg") {
+      out.push(`${key}: controller "${cond.key}" is a ${controller.type}, must be a seg`);
+      continue;
+    }
+    if (controller.showWhen)
+      out.push(`${key}: controller "${cond.key}" is itself CONDITIONAL (no chains)`);
+    const vals = controller.options.map((o) => o.val);
+    for (const want of Array.isArray(cond.is) ? cond.is : [cond.is]) {
+      if (!vals.includes(want))
+        out.push(`${key}: showWhen value "${want}" is not an option of "${cond.key}"`);
+    }
+    if (keys.indexOf(key) !== keys.indexOf(cond.key) + 1)
+      out.push(`${key}: must be declared IMMEDIATELY AFTER its controller "${cond.key}"`);
+  }
+  return out;
+}
+
+describe("the showWhen contract — the checker itself (deliberately-broken fixtures)", () => {
+  const seg = (over: Partial<Extract<ThemeSettingField, { type: "seg" }>> = {}) =>
+    ({
+      type: "seg",
+      label: "Layout",
+      options: [
+        { val: "capsule", label: "Capsule" },
+        { val: "poster", label: "Poster" },
+      ],
+      default: "capsule",
+      ...over,
+    }) satisfies ThemeSettingField;
+
+  it("passes a WELL-FORMED pair (seg controller, valid value, declared immediately after)", () => {
+    expect(
+      showWhenViolations({
+        fleetLayout: seg(),
+        posterName: seg({ label: "Name", showWhen: { key: "fleetLayout", is: "poster" } }),
+      }),
+    ).toEqual([]);
+    // …and an ARRAY `is` is well-formed too, as long as every member is a declared option
+    expect(
+      showWhenViolations({
+        fleetLayout: seg(),
+        posterName: seg({ showWhen: { key: "fleetLayout", is: ["poster", "capsule"] } }),
+      }),
+    ).toEqual([]);
+  });
+
+  it("catches an undeclared sibling", () => {
+    expect(
+      showWhenViolations({ posterName: seg({ showWhen: { key: "nope", is: "poster" } }) }),
+    ).toEqual(['posterName: showWhen names UNDECLARED sibling "nope"']);
+  });
+
+  it("catches a self-reference", () => {
+    expect(
+      showWhenViolations({ posterName: seg({ showWhen: { key: "posterName", is: "poster" } }) }),
+    ).toEqual(["posterName: showWhen is SELF-REFERENTIAL"]);
+  });
+
+  it("catches a non-seg controller", () => {
+    expect(
+      showWhenViolations({
+        wallpaper: { type: "switch", label: "Wallpaper", default: true },
+        posterName: seg({ showWhen: { key: "wallpaper", is: "true" } }),
+      }),
+    ).toEqual(['posterName: controller "wallpaper" is a switch, must be a seg']);
+  });
+
+  it("catches a CHAIN (a controller that is itself conditional)", () => {
+    expect(
+      showWhenViolations({
+        theme: seg(),
+        fleetLayout: seg({ showWhen: { key: "theme", is: "poster" } }),
+        posterName: seg({ showWhen: { key: "fleetLayout", is: "poster" } }),
+      }),
+    ).toEqual(['posterName: controller "fleetLayout" is itself CONDITIONAL (no chains)']);
+  });
+
+  it("catches an `is` value the controller does not offer", () => {
+    expect(
+      showWhenViolations({
+        fleetLayout: seg(),
+        posterName: seg({ showWhen: { key: "fleetLayout", is: ["poster", "cover"] } }),
+      }),
+    ).toEqual(['posterName: showWhen value "cover" is not an option of "fleetLayout"']);
+  });
+
+  it("catches a dependent that is NOT declared immediately after its controller", () => {
+    expect(
+      showWhenViolations({
+        fleetLayout: seg(),
+        starMode: seg({ label: "Rarity" }),
+        posterName: seg({ showWhen: { key: "fleetLayout", is: "poster" } }),
+      }),
+    ).toEqual(['posterName: must be declared IMMEDIATELY AFTER its controller "fleetLayout"']);
+    // …declared BEFORE its controller is the same violation
+    expect(
+      showWhenViolations({
+        posterName: seg({ showWhen: { key: "fleetLayout", is: "poster" } }),
+        fleetLayout: seg(),
+      }),
+    ).toEqual(['posterName: must be declared IMMEDIATELY AFTER its controller "fleetLayout"']);
+  });
+});
 
 // ── A1 DELTA — root-owned attr lifecycle (§7: "extend the switch-chain test to the root-owned attrs"). The
 //    file's `applyBodyAttrs` switch-chain test above covers the GLOBAL attrs (data-skin/theme/mode/accent).

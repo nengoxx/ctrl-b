@@ -92,12 +92,23 @@ export type Present = (
 // live in the open `ui.themeSettings[id]` map and sync via the appearance channel. Mirrors VS Code's
 // `configuration` contribution points (each entry = {type, default, label/desc}; resolve to `default`
 // when there's no override) — the dominant external convention for plugin-namespaced settings.
+//
+// `showWhen` is the second ADDITIVE slot on this union (D52 §4.9 ledger / GACHA_PLAN §12.6 — the `swatch`
+// precedent below, declared on BOTH members because either kind of row can be layout-scoped): a row that
+// only makes sense while a SIBLING setting holds one of a named set of values. Honored at exactly one point
+// — ConfTab's auto-render loop skips the row — through `settingRowVisible`, which resolves the sibling the
+// way the app does rather than reading the store raw. Omitted → the row always renders, so every existing
+// spec is unchanged. `is` is string-only by contract: the controlling sibling must be a declared,
+// UNCONDITIONAL `seg` in the same theme (no chains, no self-reference, declared immediately before its
+// dependent) — pinned by `themeContract.test.ts`. A hidden row's stored value PERSISTS and still syncs; it
+// reappears with its old pick when the controller comes back.
 export type ThemeSettingField =
-  | { type: "switch"; label: string; desc?: string; default: boolean }
+  | { type: "switch"; label: string; desc?: string; showWhen?: ShowWhen; default: boolean }
   | {
       type: "seg";
       label: string;
       desc?: string;
+      showWhen?: ShowWhen;
       // `swatch` is the ADDITIVE slot the D52 §4.9 ledger committed for gacha's dossier picker (G6): a
       // colour CHIP rendered inside the seg option beside its label, so a palette row previews what it
       // picks. Typed exactly like `PaletteModel.accents[].swatch` above and read by the same
@@ -107,6 +118,13 @@ export type ThemeSettingField =
       options: { val: string; label: string; swatch?: string | string[] }[];
       default: string;
     };
+
+/** A settings row's visibility CONDITION (see `ThemeSettingField`): the sibling setting key it depends on,
+ *  and the value — or set of values — that sibling must resolve to for the row to render. */
+export interface ShowWhen {
+  key: string;
+  is: string | string[];
+}
 
 // An open record keyed by setting name. Open (not a closed union) so a theme adds an option additively
 // — no app/core/backend change (owner directive: shape data to extend, not migrate).

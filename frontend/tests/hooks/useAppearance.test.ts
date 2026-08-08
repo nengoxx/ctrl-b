@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  currentAppearancePatch,
   reconcileAppearance,
   type AppearanceDoc,
   type AppearanceLocal,
 } from "../../src/hooks/useAppearance";
+import { getUI, setThemeSetting, setUI } from "../../src/store/ui";
+import { settingRowVisible } from "../../src/theme-engine/settings";
+import type { ThemeSettingField } from "../../src/theme-engine/types";
 
 // Phase 11 / D28 §9.11 + M3 §14.3 — the cross-device reconcile decision (compare-then-set, server-wins,
 // but only when the server has a recorded preference). The synced unit is
@@ -252,6 +256,42 @@ describe("reconcileAppearance", () => {
         always,
       );
       expect(out?.themeSettings).toEqual({ vapor: { heroOn: false, skyline: "city" } });
+    });
+  });
+});
+
+// ── HIDDEN ≠ DROPPED (GACHA_PLAN §12.6, slice E0). `showWhen` hides a settings ROW; it must not touch the
+//    stored value. The explicit contract is that a layout-scoped pick survives being hidden and comes back
+//    when its controller does — which requires it to keep riding the appearance doc while it is off screen,
+//    because that doc is the whole synced unit (a value dropped from the patch would be reconciled away on
+//    the next cross-device read). Visibility lives entirely in ConfTab's render; nothing in the write path
+//    knows about it, and this is the test that says so. ──
+describe("a HIDDEN settings row still syncs (the showWhen contract)", () => {
+  afterEach(() => {
+    setUI({ themeSettings: {} });
+  });
+
+  it("a value for a currently-hidden key rides currentAppearancePatch() unchanged", () => {
+    setUI({ theme: "gacha", themeSettings: {} });
+    setThemeSetting("gacha", "starMode", "five");
+    setThemeSetting("gacha", "posterName", "plate");
+    // The row is HIDDEN: this fixture only renders while starMode is `three`, and it resolves to `five`.
+    const gated: ThemeSettingField = {
+      type: "seg",
+      label: "Name position",
+      options: [
+        { val: "plate", label: "Plate" },
+        { val: "blade", label: "Blade" },
+      ],
+      default: "blade",
+      showWhen: { key: "starMode", is: "three" },
+    };
+    const raw = getUI().themeSettings.gacha?.starMode;
+    expect(settingRowVisible("gacha", "posterName", gated, raw)).toBe(false);
+    // …and the pick is still in the doc every appearance write sends, verbatim.
+    expect(currentAppearancePatch().themeSettings.gacha).toMatchObject({
+      starMode: "five",
+      posterName: "plate",
     });
   });
 });

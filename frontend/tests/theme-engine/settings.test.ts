@@ -4,10 +4,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import {
   resolveThemeSetting,
+  settingRowVisible,
   themeRowValue,
   themeSettingsSpec,
   useThemeSetting,
 } from "../../src/theme-engine/settings";
+import type { ThemeSettingField } from "../../src/theme-engine/types";
 
 // D29 §14.3 — per-theme settings resolution: the stored override, else the theme's declared default
 // (the VS Code `configuration` model). Reads vapor's real ThemeDef.settings from the registry.
@@ -167,5 +169,66 @@ describe("themeRowValue", () => {
   it("falls back to the field's own default for an UNDECLARED key (the unreachable-in-practice belt)", () => {
     // `resolveThemeSetting` returns undefined only here; the row still has to render something.
     expect(themeRowValue("gacha", "nope", "whatever", spec.starMode)).toBe("five");
+  });
+});
+
+// ── `settingRowVisible` — the `showWhen` predicate (GACHA_PLAN §12.6, slice E0). A LAYOUT-SCOPED row renders
+//    only while its controlling sibling holds one of the named values; ConfTab's auto-render loop is the one
+//    consumer. NO registered theme declares `showWhen` yet (gacha's `posterName` arrives at E1), so the
+//    fields here are local fixtures — which is the right shape anyway: the predicate takes the field as an
+//    argument precisely so its rule is testable without a theme having to declare one. The THEME ids are
+//    real, because the sibling resolution deliberately goes through the registry. ──
+describe("settingRowVisible", () => {
+  const spec = themeSettingsSpec("gacha")!;
+  /** A dependent row gated on `starMode` — gacha's one real seg with two options (five · three). */
+  const gated = (is: string | string[], key = "starMode"): ThemeSettingField => ({
+    type: "seg",
+    label: "Name position",
+    options: [
+      { val: "plate", label: "Plate" },
+      { val: "blade", label: "Blade" },
+    ],
+    default: "blade",
+    showWhen: { key, is },
+  });
+
+  it("a row with NO showWhen always renders (every existing row's shape)", () => {
+    expect(settingRowVisible("gacha", "starMode", spec.starMode, undefined)).toBe(true);
+    expect(settingRowVisible("gacha", "wallpaper", spec.wallpaper, undefined)).toBe(true);
+  });
+
+  it("shows on a match and hides on a mismatch", () => {
+    expect(settingRowVisible("gacha", "posterName", gated("three"), "three")).toBe(true);
+    expect(settingRowVisible("gacha", "posterName", gated("three"), "five")).toBe(false);
+  });
+
+  it("accepts an ARRAY of values (the row is shared by more than one sibling value)", () => {
+    expect(settingRowVisible("gacha", "posterName", gated(["five", "three"]), "three")).toBe(true);
+    expect(settingRowVisible("gacha", "posterName", gated(["five", "three"]), "five")).toBe(true);
+    expect(settingRowVisible("gacha", "posterName", gated(["three"]), "five")).toBe(false);
+  });
+
+  it("degrades a STALE sibling value to the sibling's default BEFORE matching (never the raw store value)", () => {
+    // The bug this shape exists to prevent (R25 Q3d): `seven` is not a declared starMode, so the app has
+    // already coerced it to `five` everywhere — a raw comparison would gate the row on a value nothing is in.
+    expect(settingRowVisible("gacha", "posterName", gated("five"), "seven")).toBe(true);
+    expect(settingRowVisible("gacha", "posterName", gated("three"), "seven")).toBe(false);
+    // …and no override at all resolves to the declared default the same way.
+    expect(settingRowVisible("gacha", "posterName", gated("five"), undefined)).toBe(true);
+  });
+
+  it("FAILS OPEN for an undeclared sibling, a theme with no settings, and a self-reference", () => {
+    expect(settingRowVisible("gacha", "posterName", gated("x", "nope"), "x")).toBe(true);
+    expect(settingRowVisible("phosphor", "posterName", gated("five"), "five")).toBe(true);
+    // self-reference: honoring it could hide the only control able to un-hide itself
+    expect(settingRowVisible("gacha", "posterName", gated("plate", "posterName"), "blade")).toBe(
+      true,
+    );
+  });
+
+  it("a declared NON-seg sibling can never match (a switch is a different feature), so the row hides", () => {
+    // `is` is string-only by contract; a boolean sibling resolves to a boolean, which is in no `is` set.
+    // Banned by the contract test — this pins what the predicate does if one ever slipped through.
+    expect(settingRowVisible("gacha", "posterName", gated("true", "wallpaper"), true)).toBe(false);
   });
 });

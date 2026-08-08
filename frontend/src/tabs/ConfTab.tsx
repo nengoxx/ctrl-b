@@ -54,7 +54,7 @@ import { HOSTED_UTILS_GROUP_ID } from "../theme-engine/layout";
 import { applicableNs, MEDIA_NS } from "../theme-engine/mediaRegistry";
 import { registry, registeredThemes } from "../theme-engine/registry";
 import { defaultSwitchTarget } from "../theme-engine/resolve";
-import { themeRowValue } from "../theme-engine/settings";
+import { settingRowVisible, themeRowValue } from "../theme-engine/settings";
 import { switchTheme } from "../theme-engine/switchTheme";
 import type { LayoutId, Mode, ThemeId, ThemeSettingValue } from "../theme-engine/types";
 import { setThemeSetting, setUI, useUISlice, type AppbarMode } from "../store/ui";
@@ -2418,6 +2418,13 @@ export function ConfTab({ active }: Props) {
               values resolve against the theme's declared defaults. A new theme's options appear here with
               zero Conf change. */}
           {settingsSpec.map(([key, field]) => {
+            // A LAYOUT-SCOPED row (`showWhen`, GACHA_PLAN §12.6) renders only while its controlling sibling
+            // holds one of the named values — the ONE place that field is honored. The sibling's stored
+            // override is read here and RESOLVED inside the predicate (never compared raw), and a hidden
+            // row's value is left completely alone: no prune, no write, so it still syncs and comes back
+            // with its old pick when the controller does.
+            const sibling = field.showWhen ? themeVals?.[field.showWhen.key] : undefined;
+            if (!settingRowVisible(theme, key, field, sibling)) return null;
             // The row's displayed value goes through the SAME resolution the app uses (a pre-existing LOW
             // found in the D52 §10.5 pass: a corrupt/stale synced override was rendered RAW here while
             // every consumer had already coerced it to the default, so the row lied about the app's
