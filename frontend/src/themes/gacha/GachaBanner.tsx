@@ -452,7 +452,10 @@ export function GachaBanner({ slides, active, rate, pity, onOpenHost }: Props) {
               {s.kind === "promo" ? (
                 <button
                   type="button"
-                  className="gc-slide-hit"
+                  // …and the second carrier of the semantic host-control marker (GACHA_PLAN §12.6 ruling
+                  // 5① — see GachaCard). A promo opens a MACHINE; the hero/scene `div` below opens
+                  // nothing and is deliberately not marked.
+                  className="gc-slide-hit gc-host-hit"
                   aria-label={openLabel(s.host.name, s.online)}
                   onClick={() => onOpenHost(s.host.id)}
                 >

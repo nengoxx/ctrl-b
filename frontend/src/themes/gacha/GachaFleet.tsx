@@ -480,9 +480,17 @@ export function GachaFleet({ active }: { active: boolean }) {
       // Dismissing the sheet under a surface it spawned (on the tap that dismisses THAT surface, no
       // less) would be the wrong reading of "outside". Same cooperative posture the primitive's Escape
       // handler takes toward a layer above it.
+      // `.gc-host-hit` is the SEMANTIC exemption (GACHA_PLAN §12.6 ruling 5①), replacing the hardcoded
+      // `.gc-card` this list used to name: every control that opens or SELECTS a machine wears it — the
+      // capsule card, the banner's promo hit, a poster slice — so a new fleet layout is exempt by
+      // construction. Without it the second tap of select-then-act would dismiss the dossier on the very
+      // click that opened it. `.gc-slide-hit` STAYS beside it, and is not redundant: the hero and scene
+      // slides render that class on an inert `div` which names no machine and therefore carries no
+      // `gc-host-hit` — dropping it would newly close the dossier on a tap in the banner's copy block,
+      // which is a behavior change this slice is not making.
       if (
         target?.closest(
-          ".bs-root, .gc-card, .gc-slide-hit, .gc-art-view, .modal-backdrop, .pm-backdrop",
+          ".bs-root, .gc-host-hit, .gc-slide-hit, .gc-art-view, .modal-backdrop, .pm-backdrop",
         )
       )
         return;

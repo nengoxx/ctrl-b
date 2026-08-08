@@ -59,7 +59,12 @@ export function GachaCard({ host, art, shape, mode, onOpen, isNew }: Props) {
     // the button carried the mask — so none of their geometry moves.
     <button
       type="button"
-      className={"gc-card " + shape + (online ? "" : " sleep")}
+      // `gc-host-hit` is the SEMANTIC marker every gacha control that opens or selects a MACHINE carries
+      // (GACHA_PLAN §12.6 ruling 5①): the capsule card, the banner's promo hit and — from E1 — a poster
+      // slice. `GachaFleet`'s tap-outside listener exempts it by that one name instead of naming each
+      // layout's own class, so a new fleet layout's host control is exempt by construction rather than by
+      // a remembered edit. Purely semantic — no CSS reads it.
+      className={"gc-card gc-host-hit " + shape + (online ? "" : " sleep")}
       aria-label={openLabel(host.name, online)}
       onPointerDown={armShine}
       onClick={(e) => onOpen(host.id, e.currentTarget.querySelector("img"))}

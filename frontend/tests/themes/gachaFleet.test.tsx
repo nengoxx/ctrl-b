@@ -745,7 +745,14 @@ describe("the capsule track (§6.1/§6.2)", () => {
     // `.gc-card-face`, one per card.
     expect(
       [...container.querySelectorAll(".gc-track > .gc-card")].map((el) => el.className),
-    ).toEqual(["gc-card feat", "gc-card pair", "gc-card pair sleep", "gc-card wide"]);
+      // `gc-host-hit` is the SEMANTIC host-control marker every opener carries since §12.6 ruling 5① —
+      // it is what GachaFleet's tap-outside listener exempts, so it belongs on the card unconditionally.
+    ).toEqual([
+      "gc-card gc-host-hit feat",
+      "gc-card gc-host-hit pair",
+      "gc-card gc-host-hit pair sleep",
+      "gc-card gc-host-hit wide",
+    ]);
     expect(container.querySelectorAll(".gc-card > .gc-card-face")).toHaveLength(4);
   });
 
