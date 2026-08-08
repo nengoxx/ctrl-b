@@ -254,11 +254,86 @@ describe("⑩ busy reaches the slice", () => {
   });
 
   it("refuses a second wake while one is already in flight on that machine", () => {
-    setFleet({ busy: new Set(["atlas"]) });
-    const { container } = render(<GachaFleet active />);
-    act(() => void fireEvent.click(slices(container)[1])); // select
-    act(() => void fireEvent.click(slices(container)[1])); // would wake — but it is busy
+    // Rewritten after Codex E1 LOW-7: the first version seeded atlas BUSY, so its slice was `disabled`
+    // from the first paint and neither click ever reached React — removing the handler's busy guard would
+    // not have failed it. The machine has to be SELECTED while free, then go busy, so the second
+    // activation is a real attempt at the guard.
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[1])); // atlas selected while free
+    expect(slices(container)[1].getAttribute("aria-pressed")).toBe("true");
     expect(runFn()).not.toHaveBeenCalled();
+
+    setFleet({ busy: new Set(["atlas"]), run: fleet.view.run }); // an action lands on it
+    rerender(<GachaFleet active />);
+    expect(slices(container)[1].getAttribute("aria-pressed")).toBe("true"); // still the selection
+    expect(slices(container)[1].disabled).toBe(true);
+
+    // the guard is SYNCHRONOUS in the handler, not just the disabled attribute: jsdom will dispatch into
+    // a disabled button where a real engine would not, so the handler is invoked directly here — which is
+    // exactly the path a stale render or a programmatic activation would take.
+    act(() => void slices(container)[1].dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(runFn()).not.toHaveBeenCalled();
+  });
+});
+
+// ── OVERLAPPING WAKES + REPEATED ANNOUNCEMENTS (Codex E1 LOW-4 + LOW-5) ──────────────────────────────
+// Both need the previous ceremony to be OVER before the next gesture: a tap while one is running is a
+// SKIP by design (R24 §B.3), not a second action — so these run on fake timers and step past the budget.
+describe("a second gesture, after the first ceremony has finished", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** select then act on slice `i`, and let its ceremony run out. */
+  const act2 = (c: HTMLElement, i: number) => {
+    act(() => void fireEvent.click(slices(c)[i]));
+    act(() => void fireEvent.click(slices(c)[i]));
+    act(() => void vi.advanceTimersByTime(1000));
+  };
+
+  it("keeps WAKING on a machine whose request is still flying while ANOTHER is woken", () => {
+    // One `wakingHost` SLOT could not represent two overlapping requests: dispatching B made A's chip
+    // drop straight to SLEEPING while A's own request was still in the air — a false negative about a
+    // request the app had genuinely sent. It is a Set now, and each machine leaves on its OWN settle.
+    let settleA = () => {};
+    const run = vi.fn((_action: string, h: Host) =>
+      h.id === "atlas" ? new Promise<void>((r) => (settleA = r)) : Promise.resolve(),
+    );
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false), host("relay", false)], run });
+    const { container } = render(<GachaFleet active />);
+    const chip = (i: number) => slices(container)[i].querySelector(".po-chip")!.textContent;
+
+    act2(container, 1); // atlas — its request never settles
+    expect(chip(1)).toBe("WAKING");
+    act2(container, 2); // relay — settles immediately
+    expect(chip(1)).toBe("WAKING"); // atlas is STILL in flight and still says so
+    expect(run).toHaveBeenCalledTimes(2);
+
+    return act(async () => {
+      settleA();
+      await Promise.resolve();
+    }).then(() => {
+      // …and it leaves on its own settle, back to the SERVER's word — never to ONLINE
+      expect(chip(1)).toBe("SLEEPING");
+    });
+  });
+
+  it("RE-ANNOUNCES an identical message — a retry of the same failed wake is not silent", () => {
+    // Writing the same string twice is a React bail-out: no re-render, no DOM mutation, and a polite
+    // region only speaks when its content CHANGES — so the second attempt at the same machine said
+    // nothing at all. The region renders a child keyed on a monotonic sequence now, so the claim is that
+    // the NODE swaps, which is the mutation an AT can actually see.
+    const { container } = render(<GachaFleet active />);
+    const spoken = () => container.querySelector(".gc-live span")!;
+    act2(container, 1);
+    const first = spoken();
+    expect(first.textContent).toBe("Waking atlas.");
+
+    // the request has settled and the machine is still asleep; the owner taps it again
+    act(() => void fireEvent.click(slices(container)[1]));
+    const second = spoken();
+    expect(second.textContent).toBe("Waking atlas.");
+    expect(second).not.toBe(first); // a real node swap, not the same node re-asserted
+    expect(runFn()).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -453,9 +528,26 @@ describe("the poster's states match the capsule track's", () => {
   });
 
   it("a long hostname and a long service list cannot run out of their boxes", () => {
-    // The GEOMETRY is a device-round claim; what is assertable here is that the two unbounded strings
-    // are drawn by the elements that carry the wrapping/clipping rules (gacha.css `.po-fname`,
-    // `.po-fsvc`, `.po-plate { overflow: clip }`) — the long-name acceptance-matrix row.
+    // The GEOMETRY is a device-round claim. What is assertable here is that the two unbounded strings are
+    // drawn by elements that CARRY the containment rules — and after Codex E1 LOW-7 that means reading
+    // the declarations out of the stylesheet, not just finding the nodes (node existence would survive
+    // someone deleting every one of those rules).
+    const sheet = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8");
+    const decls = (sel: string): string => {
+      const at = sheet.indexOf(`\n    ${sel} {`);
+      return at < 0 ? "" : sheet.slice(at, sheet.indexOf("}", at));
+    };
+    expect(decls(".po-fname"), ".po-fname must wrap an unbroken hostname").toContain(
+      "overflow-wrap: anywhere",
+    );
+    expect(decls(".po-fsvc"), ".po-fsvc must wrap an unbroken service list").toContain(
+      "overflow-wrap: anywhere",
+    );
+    // `clip-path` hides paint but does NOT contain scrollable overflow — the plate needs `overflow: clip`
+    // or a blade's nowrap name shows up as real scrollWidth on the tab scroller.
+    expect(decls(".po-plate"), ".po-plate must contain its own overflow").toContain(
+      "overflow: clip",
+    );
     setFleet({
       hosts: [
         host("this-is-an-extremely-long-machine-hostname-for-a-homelab", true, {

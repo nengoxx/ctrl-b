@@ -57,11 +57,14 @@ export interface GachaTrackProps {
   /** `useFleet().busy` — per-HOST, not per-action (R25 §Q1b). A slice lights and disables for ANY in-flight
    *  action on its machine, which is the correct read of a shared busy set. */
   busy: ReadonlySet<string>;
-  /** The machine whose WAKE REQUEST is currently in flight, or `null`. Distinct from `busy` because busy
-   *  cannot say WHICH action: this is the only fact that licenses a `WAKING` presentation, and it ends when
-   *  the request settles — the card goes back to the SERVER-REPORTED state, and only a poll may flip it
-   *  online (ruling 4, poll-truthful). */
-  wakingHost: string | null;
+  /** The machines whose WAKE REQUEST is currently in flight. Distinct from `busy` because busy cannot say
+   *  WHICH action: this is the only fact that licenses a `WAKING` presentation, and a machine leaves the
+   *  set when its request settles — the card goes back to the SERVER-REPORTED state, and only a poll may
+   *  flip it online (ruling 4, poll-truthful).
+   *
+   *  A SET rather than one id: two wakes can genuinely overlap (wake A, then wake B while A is still
+   *  pending), and one slot made A stop saying `WAKING` while its own request was still in the air. */
+  waking: ReadonlySet<string>;
 }
 
 export function GachaTrack({

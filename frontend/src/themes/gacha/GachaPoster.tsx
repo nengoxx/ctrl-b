@@ -75,7 +75,7 @@ export function GachaPoster({
   picked,
   onTapHost,
   busy,
-  wakingHost,
+  waking,
 }: GachaTrackProps) {
   // Read HERE rather than threaded down from `GachaFleet`: `posterName` is meaningless to every other
   // layout (it is `showWhen`-scoped to this one in Conf for exactly that reason), so a prop would put a
@@ -219,7 +219,7 @@ export function GachaPoster({
                       and by nothing else — when it settles the chip returns to the server's word, which
                       stays SLEEPING until a poll says otherwise. */}
                     <span className="po-chip">
-                      {host.id === wakingHost ? "WAKING" : online ? "ONLINE" : "SLEEPING"}
+                      {waking.has(host.id) ? "WAKING" : online ? "ONLINE" : "SLEEPING"}
                     </span>
                     <span className="po-flashline" aria-hidden />
                   </span>

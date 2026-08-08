@@ -11,6 +11,7 @@ import {
   pickLabel,
   pickRibbonHost,
   pingText,
+  resolvePick,
   plateSub,
   promoCopy,
   pityText,
@@ -375,5 +376,34 @@ describe("partingStep — how the stack parts for a wake ceremony", () => {
     expect(partingStep(Number.NaN, 0)).toBe(0);
     expect(partingStep(0, Number.NaN)).toBe(0);
     expect(partingStep(1.9, 0)).toBe(1); // truncated, like every other index rule here
+  });
+});
+
+describe("resolvePick — the selection the view actually shows", () => {
+  const fleet = [host({ id: "a" }), host({ id: "b" }), host({ id: "c" })];
+
+  it("keeps a stored pick the fleet still has", () => {
+    expect(resolvePick("b", fleet)).toBe("b");
+  });
+
+  it("falls back to hosts[0] when nothing is stored (the boot selection, with no state write)", () => {
+    expect(resolvePick(null, fleet)).toBe("a");
+  });
+
+  it("RE-DERIVES a vanished pick in the same call — no effect, no transient frame", () => {
+    // The Codex LOW-3 regression, as a value. `pickedId ?? hosts[0]?.id` returns the GONE id here, which
+    // is one committed render with no selected slice and no registry — and a tap in that window selects
+    // instead of acting. The rule has to be "still present?", not "non-null?".
+    // (`pickedId ?? hosts[0]?.id` would have answered "gone" here — that is the whole finding.)
+    expect(resolvePick("gone", fleet)).toBe("a");
+  });
+
+  it("is null only for an empty fleet, stored pick or not", () => {
+    expect(resolvePick(null, [])).toBeNull();
+    expect(resolvePick("a", [])).toBeNull();
+  });
+
+  it("follows a re-order rather than an index", () => {
+    expect(resolvePick("c", [host({ id: "c" }), host({ id: "a" })])).toBe("c");
   });
 });

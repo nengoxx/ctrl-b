@@ -153,6 +153,21 @@ export function roleLabel(host: Host): string {
 /** What a tap on a machine does under select-then-act. */
 export type FleetTap = "select" | "open" | "wake";
 
+/** The RESOLVED selection — the machine an alt layout is actually showing as picked (§12.6 ruling 2).
+ *
+ *  "The stored pick if the fleet still has it, else the first machine." A named function rather than an
+ *  inline `??` because the naive form is subtly wrong and shipped that way once (Codex E1 LOW-3):
+ *  `pickedId ?? hosts[0]?.id` lets a non-null-but-VANISHED id win, so between the poll that removed the
+ *  machine and the passive effect that clears the state there is one committed frame with no selected
+ *  slice and no registry — and a tap in that window selects instead of acting.
+ *
+ *  It is resolved in RENDER and never written back, which is what makes host[0] the boot selection with no
+ *  state write and what keeps this from needing an effect at all. `null` only for an empty fleet. */
+export function resolvePick(pickedId: string | null, hosts: readonly Host[]): string | null {
+  if (pickedId !== null && hosts.some((h) => h.id === pickedId)) return pickedId;
+  return hosts[0]?.id ?? null;
+}
+
 /** Route one tap. `selectedId` is the RESOLVED selection the view is rendering (`picked ?? hosts[0]?.id`,
  *  §12.6 ruling 2 — resolved in the view, never written to state), `tappedId` the machine that was tapped,
  *  and `online` its liveness AS CURRENTLY RENDERED. */
