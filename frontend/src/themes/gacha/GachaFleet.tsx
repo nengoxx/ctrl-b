@@ -372,7 +372,7 @@ export function GachaFleet({ active }: { active: boolean }) {
   //    table of tests; this is the half that has to touch the world, and it is here rather than in a layout
   //    so all three layouts route identically and none of them can invent a second wake path.
   const onTapHost = useCallback(
-    (hostId: string): FleetTap | null => {
+    (hostId: string, morphImg?: HTMLImageElement | null): FleetTap | null => {
       // Liveness from the CURRENT render (the council clause): a machine that woke between the two taps
       // must OPEN, not be woken again — so this reads `hosts`, never a value captured at tap one.
       const host = hosts.find((h) => h.id === hostId);
@@ -384,10 +384,16 @@ export function GachaFleet({ active }: { active: boolean }) {
         return "select";
       }
       if (action === "open") {
-        // NO morph image (ruling 5②): the capsule<->dossier View-Transition morph stays CAPSULE-ONLY by
-        // design — a morph clone sourced from a sheared clip-path has never been seen — so a poster or a
-        // cover opens on the sheet's own plain slide-up.
-        openHostDossier(hostId);
+        // THE MORPH IS AVAILABLE TO EVERY LAYOUT (owner ruling, dev-unit walk — §12.6 ruling 5②'s
+        // "capsule-only" is AMENDED). That clause's stated basis was only that a morph clone sourced from
+        // a sheared clip-path had never been SEEN; the owner has now asked to see it, so the layout hands
+        // over its own portrait and this seam simply passes it on.
+        //
+        // Nothing else changes: `openHostDossier` still owns the generations, the prep ownership, the
+        // avatar suppression and `enterInstant`, so there is one morph implementation and no layout can
+        // grow a second. A layout that passes nothing (or a machine with no art) gets the plain open it
+        // always got — the fallback lives in that function, not in each caller.
+        openHostDossier(hostId, morphImg);
         return "open";
       }
       // WAKE. A synchronous busy guard, because `busy` is per-host: a second wake fired into an action

@@ -52,8 +52,13 @@ export interface GachaTrackProps {
    *  outcome (the poster's wake ceremony) without re-deriving the routing — and without ever being the
    *  place that decides it. `null` means NOTHING happened: the machine left between render and click, or
    *  a wake was refused because an action on that host is already in flight. A layout must not stage a
-   *  ceremony for a request that was never sent. */
-  onTapHost: (hostId: string) => FleetTap | null;
+   *  ceremony for a request that was never sent.
+   *
+   *  `morphImg` is the M3 image morph's FROM element, handed over on the same terms `onOpenHost` takes it:
+   *  it is used only when the routed action is `open`, and only when a View Transition can actually carry
+   *  it. Pass the tapped control's own `<img>`, or `null`/nothing for a plain open — a machine with no
+   *  resolved art has no portrait to fly, and degrades to the sheet's own slide-up by itself. */
+  onTapHost: (hostId: string, morphImg?: HTMLImageElement | null) => FleetTap | null;
   /** `useFleet().busy` — per-HOST, not per-action (R25 §Q1b). A slice lights and disables for ANY in-flight
    *  action on its machine, which is the correct read of a shared busy set. */
   busy: ReadonlySet<string>;

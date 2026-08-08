@@ -29,7 +29,9 @@ import { isHighStar, rarityToken, starsFor, type StarMode } from "./stars";
 //  · SELECT-THEN-ACT: the first tap selects, the second opens (online) or wakes (asleep). Still exactly one
 //    button per machine. The ROUTING is `GachaFleet`'s (`onTapHost`) — this file only dramatizes what came
 //    back, and the dramatization is poll-truthful (ruling 4): the request is what is staged, the STATE is
-//    the server's, and only a hosts poll flips a slice online.
+//    the server's, and only a hosts poll flips a slice online. An `open` carries the capsule's own image
+//    MORPH (owner ruling — §12.6 5②'s capsule-only clause is amended): the slice hands its portrait to the
+//    one shared opener, which owns every part of the transition.
 //  · BLADE IS THE NAME'S SEAT AND NOTHING ELSE (the owner's amended WALK-3 ruling): same face, same size,
 //    same hue, same hard shadow as PLATE; it sits lower, on the diagonal, with the role line lifted above
 //    it. Both treatments are one `[data-name]` attribute on the root, exactly as the lab walked them.
@@ -107,7 +109,7 @@ export function GachaPoster({
   /** One tap on a slice. A tap DURING a ceremony is swallowed into a skip: R24 §B.3's tap-anywhere-skip
    *  already reaches here through the hook's own document listener, and letting the same gesture ALSO
    *  re-select would move the stack out from under the finger that is skipping it. */
-  const onSliceTap = (hostId: string) => {
+  const onSliceTap = (hostId: string, morphImg: HTMLImageElement | null) => {
     if (skippedGesture.current) {
       // this finger's pointerdown already ended a ceremony; the click it produced is spent
       skippedGesture.current = false;
@@ -119,7 +121,7 @@ export function GachaPoster({
       ceremony.skip();
       return;
     }
-    if (onTapHost(hostId) !== "wake") return;
+    if (onTapHost(hostId, morphImg) !== "wake") return;
     // THE WAKE CEREMONY — the lab's beats verbatim (`app.js`: 0 part · 180 flashline · 700 part off · 880
     // flashline off) MINUS its 520 ms ONLINE flip, which is prototype fiction and does not port. The
     // ANNOUNCEMENT is not here: `GachaFleet` owns the live region and speaks "Waking X." as it dispatches,
@@ -215,7 +217,10 @@ export function GachaPoster({
                   onKeyDownCapture={() => {
                     skippedGesture.current = false;
                   }}
-                  onClick={() => onSliceTap(host.id)}
+                  // The tapped slice hands over its own portrait as the morph's FROM (the GachaCard
+                  // idiom, verbatim). An art-less slice renders `.po-art-blank`, a span — so this is
+                  // `null` there and the open degrades to the sheet's slide-up with no branch of its own.
+                  onClick={(e) => onSliceTap(host.id, e.currentTarget.querySelector("img"))}
                 >
                   {/* THE HARD OFFSET DROP — the theme's `5px 5px 0` motif, as a DUPLICATED POLYGON (see the
                     header note: a clip-path erases a real box-shadow). */}

@@ -15,7 +15,8 @@ const fleet = vi.hoisted(() => {
   return { view };
 });
 vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
-vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => ({ data: undefined }) }));
+const media = vi.hoisted((): { data: unknown } => ({ data: undefined }));
+vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 
 // jsdom shims for the ONE case below that renders gacha's whole Root (the body-attr stamp): the kit shell
 // measures with ResizeObserver and resets the scroller on a section change. House convention — setup.ts
@@ -97,10 +98,54 @@ const dossierName = (): string | null =>
   document.querySelector(".gc-dossier-title h2")?.textContent ?? null;
 const runFn = (): ReturnType<typeof vi.fn> => fleet.view.run as ReturnType<typeof vi.fn>;
 
+/** A media index whose ONE character file is UNUSABLE — the resolver's placeholder case (`toArt` returns
+ *  null for it), and the only way to reach `.po-art-blank`: an EMPTY `characters` role falls back to the
+ *  bundled cast, so "no owner files" is not the same thing as "no art". */
+const unusableIndex = {
+  ns: "gacha",
+  collation: "casefold-natural",
+  roles: {
+    characters: [
+      {
+        name: "broken",
+        file: "broken.webp",
+        url: "/api/media/gacha/files/characters/broken.webp",
+        format: "webp",
+        size_bytes: 1,
+        revision: "1:1",
+        width: 1,
+        height: 1,
+        unusable: true,
+        unusable_reason: "decode failed",
+      },
+    ],
+  },
+  slots: {},
+};
+
+/** Stub `document.startViewTransition` and hold its callbacks (the `gachaFleet.test.tsx` idiom). Without
+ *  it `viewTransitionsActive()` is false in jsdom and every open takes the plain path — which would make a
+ *  morph assertion silently vacuous. Torn down in the file's own `afterEach`. */
+function deferVT() {
+  const pending: (() => void)[] = [];
+  const start = vi.fn((cb: () => void) => {
+    pending.push(cb);
+    return { ready: Promise.resolve(), finished: Promise.resolve() };
+  });
+  (document as { startViewTransition?: unknown }).startViewTransition = start;
+  return {
+    start,
+    pending,
+    /** Run one held callback (React state lands inside it, so it needs `act`). */
+    run: (i: number) => act(() => void pending[i]()),
+  };
+}
+
 beforeEach(() => {
   setUI({ theme: "gacha", tab: "fleet", motion: "full", themeSettings: {} });
   setThemeSetting("gacha", "fleetLayout", "poster");
   setFleet();
+  media.data = undefined; // no owner files ⇒ the bundled cast, which is every case but the blank one
   vi.spyOn(Math, "random").mockReturnValue(0); // the NEW ribbon's roll (unused here, pinned anyway)
 });
 afterEach(() => {
@@ -108,6 +153,7 @@ afterEach(() => {
     cleanup();
   } finally {
     vi.restoreAllMocks();
+    delete (document as { startViewTransition?: unknown }).startViewTransition;
     setGachaReelRunning(false);
     setUI({ themeSettings: {} });
   }
@@ -212,22 +258,51 @@ describe("select-then-act", () => {
     expect(dossierName()).toBe("atlas");
   });
 
-  it("the poster opens the dossier PLAIN — no morph image is handed over (ruling 5②)", () => {
-    // The capsule<->dossier View-Transition morph stays capsule-only by design: a morph clone sourced
-    // from a sheared clip-path has never been seen. The observable half here is that the dossier opens
-    // at all, and that the slice hands the opener no portrait — the slice's `img` is never named.
+  it("the SECOND tap carries the capsule's image MORPH — the slice hands over its own portrait", () => {
+    // OWNER RULING (dev-unit walk): §12.6 5②'s "capsule-only" is AMENDED. Its stated basis was only that
+    // a morph clone sourced from a sheared clip-path had never been seen — the owner asked to see it.
+    // The observable claim is the one that matters: the tapped slice's `<img>` is the element named for
+    // the OLD capture, exactly as a capsule card's is, and the name is cleared inside the callback so a
+    // stray one cannot dup-skip the next transition.
+    const vt = deferVT();
     const { container } = render(<GachaFleet active />);
-    act(() => void fireEvent.click(slices(container)[2]));
-    act(() => void fireEvent.click(slices(container)[2]));
+    const img = () => container.querySelectorAll<HTMLElement>(".po-art img")[2];
+    act(() => void fireEvent.click(slices(container)[2])); // select vault
+    act(() => void fireEvent.click(slices(container)[2])); // open — through a transition
+    expect(vt.start).toHaveBeenCalledTimes(1);
+    // named NOW: the old capture happens after the call returns, and the sheet has not opened yet
+    expect(img().style.getPropertyValue("view-transition-name")).toBe("capsule-shell");
+    expect(dossierName()).toBeNull();
+
+    vt.run(0);
     expect(dossierName()).toBe("vault");
-    for (const img of container.querySelectorAll<HTMLElement>(".po-art img"))
-      expect(img.style.getPropertyValue("view-transition-name")).toBe("");
+    expect(img().style.getPropertyValue("view-transition-name")).toBe("");
+  });
+
+  it("an ART-LESS slice opens PLAIN, with no branch of its own", () => {
+    // `.po-art-blank` is a span, so the GachaCard idiom (`currentTarget.querySelector("img")`) yields
+    // null and the shared opener takes its own plain path. The degradation is the opener's, not the
+    // layout's — which is why there is no `art ? … : …` anywhere in the tap handler.
+    setFleet({ hosts: [host("solo", true, { services: [] })] });
+    media.data = unusableIndex;
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".po-art-blank")).not.toBeNull();
+    act(() => void fireEvent.click(slices(container)[0]));
+    act(() => void fireEvent.click(slices(container)[0]));
+    expect(vt.start).not.toHaveBeenCalled(); // no transition was ever started
+    expect(dossierName()).toBe("solo");
   });
 
   it("the second tap does NOT dismiss the dossier it just opened (the `.gc-host-hit` exemption)", () => {
+    // Re-verified ON THE MORPH PATH (it is the shipped one now): the opening click is the same click the
+    // document listener sees, and the transition only changes WHEN the sheet commits — so the exemption
+    // has to hold with the callback landing a tick later, not just on the plain open.
+    const vt = deferVT();
     const { container } = render(<GachaFleet active />);
     act(() => void fireEvent.click(slices(container)[2]));
     act(() => void fireEvent.click(slices(container)[2]));
+    vt.run(0);
     expect(dossierName()).toBe("vault");
     expect(document.body.dataset.sheet).toBe("open");
     // the tap-outside listener runs on the document; a slice is exempt by its semantic class
@@ -642,9 +717,16 @@ describe("the poster's states match the capsule track's", () => {
   });
 
   it("draws a slice with NO art rather than dropping the machine (the placeholder case)", () => {
+    // It has to be an UNUSABLE file, not an absent one: an empty `characters` role falls back to the
+    // bundled cast, so the first version of this case rendered a perfectly good portrait and proved
+    // nothing about the placeholder at all.
     setFleet({ hosts: [host("solo", true)] });
+    media.data = unusableIndex;
     const { container } = render(<GachaFleet active />);
     expect(slices(container)).toHaveLength(1);
+    expect(container.querySelector(".po-art img")).toBeNull();
+    expect(container.querySelector(".po-art-blank")).not.toBeNull();
+    // hue, name, role and chip all still read — a slice without art is still a slice
     expect(container.querySelector(".po-name b")?.textContent).toBe("SOLO");
     expect(container.querySelector(".po-chip")?.textContent).toBe("ONLINE");
   });
