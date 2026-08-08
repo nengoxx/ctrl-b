@@ -12,7 +12,22 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ✅✅ 2026-08-08 EVENING (Fable) — ALT-FLEET DESIGN SETTLED · §12.6 SIGNED · **E0 + E1 BOTH SHIPPED SAME DAY on `alt-fleet`**; NEXT = owner pause (walk the poster on :5173) then the E2 go-word
+> ## ✅✅ 2026-08-08 NIGHT (Fable) — E0 + E1 SHIPPED **+ THE FOUR-WALK OWNER EYEBALL SERIES FOLDED + SESSION-CLOSE CODEX CLEAN** on `alt-fleet`; NEXT SESSION = the E2 go-word (cover, §12.6)
+>
+> **E1 closed OWNER-WALKED, not just reviewed.** After the E1 build + two Codex rounds (record
+> below), the owner ran FOUR live walks on the dev units; ~20 ruling commits folded same-session.
+> **The complete walked record + all supersessions = GACHA_PLAN §12.6's E1 bullet** (read it before
+> E2 — several signed §12.6 lines were re-ruled on renders: tap table narrowed to one-tap-open /
+> two-step-only-for-sleepers · lab's five hue literals per-unit, rarity→hue DEAD · banner/ground
+> reverts · keyline always-on off the outlines axis · kanji corner tag in · ribbon out of poster ·
+> 編成 accent drop · the R26 morph NAMING fix — the cutout itself flies, both engines, owner-
+> accepted). **R26 dossier banked** (`docs/research/R26-clipped-source-vt-morph.md` + index row):
+> an element's OWN clip-path bakes into its VT snapshot — the unfold choreography stays probed-
+> ready there if ever wanted. Session-close Codex over the whole series: **ZERO runtime defects**,
+> 2 LOWs closed in the close pair. **Banked (owner): the ROOT-cross-fade "screenshot flicker"
+> refinement (eyeball, don't remove blind) · the color-theory unit-palette research session · the
+> head side-padding vs poster lead alignment.** Dev units STOPPED at close; branch local-only,
+> zero pushed.
 >
 > The multi-session design conversation CONVERGED in one live session (owner present throughout,
 > ~12 ruling waves, 4 lab build rounds by Opus subagents). **The record: GACHA_PLAN §12.5's
@@ -62,11 +77,11 @@
 >   + durable gotchas live in GACHA_PLAN §12.6's E1 bullet** — the MEDs were the skip-tap
 >   two-event double-route and the missing black field (now `body[data-gc-fleet="poster"]`-
 >   scoped on `.kit-main`, the wallpaper's own shape).
-> - **NEXT: owner pause — walk the poster (dev units on :5434/:5173, gacha → Conf → Fleet
->   layout: Poster), rule on the standing E1-brief rulings + the black-field-over-wallpaper
->   composition — then the E2 go-word → §12.6's E2 cover** (→ E3 banner → E4 hardening incl.
->   the R25 Q7 pin list → E5 the Fennec+Chrome device round = real acceptance). Opus subagents
->   from pinned briefs, Codex per slice, owner pause between slices.
+> - **NEXT: the E2 go-word → §12.6's E2 cover** (→ E3 banner → E4 hardening incl. the R25 Q7
+>   pin list → E5 the Fennec+Chrome device round = real acceptance). The owner pause happened
+>   LIVE this session (the four-walk eyeball series above — every standing E1-brief ruling is
+>   settled and recorded in §12.6's E1 bullet). Opus subagents from pinned briefs, Codex per
+>   slice, owner pause between slices.
 > - Still owed from before: the owner's phone spot-check of prod v1.5.0 · R20's four + R21's four
 >   LOWs + the leftover ledger (`9afe78c`) · the HANDOFF archive sweep (~650KB — **owner
 >   2026-08-08: a STANDALONE session of its own**, not a side-task: the superseded blocks likely

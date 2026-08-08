@@ -3389,7 +3389,47 @@ build → self-audit → Codex round → owner pause):**
   every selector — split input (`--po-rar`) from resolved (`--po-hue`) when a state class must
   override · a two-browser-event race needs one `act()` PER native event or the test passes
   vacuously · the FULL gate catches unhandled-rejection leaks that targeted vitest reports green
-  on. E5 owes: the black-ground-vs-wallpaper composition is now real — eyeball it.)*: geometry
+  on. **THE SAME-DAY OWNER EYEBALL SERIES (four live walks, 20 commits `e64d1bd..3d4f0ab` + the
+  close pair) then re-ruled the slice on renders — every verdict below SUPERSEDES the matching
+  line above:** ① banner skin + black page ground REVERTED (the banner and the background render
+  byte-identically under every layout — pinned by a test enumerating every `data-gc-fleet` rule;
+  the `background-image:none` half was also killing the theme's colored base, owner-diagnosed) ·
+  ② the seam went through three walked rounds to: counter raised beside 編成 (`align-self:
+  flex-start`, tap-inert — at 1200px its corners hit-tested into the scaled picked slice),
+  head tucked INTO the shear's void (`--po-head-overlap` 36px, pad-top 8px; the head is
+  pointer-inert, the void strip still falls through; a REAL z-bug found here — `.po-body` makes
+  no stacking context so the picked slice's z:3 beat the head's z:1, now z:5) · ③ the TAP TABLE
+  narrowed (owner): ONLINE = ONE tap opens (and selects); the two-step select→wake survives ONLY
+  for sleeping machines · ④ unit hues = per-UNIT IDENTITY, the LAB'S FIVE LITERALS in walked
+  order (gold `#ffd464`·purple`#b07cff`·green`#5fe0a0`·cyan`#4dd7ff`·silver`#cdd2e0`, i mod 5;
+  rarity→hue is DEAD — stars alone carry rarity; an accent-derived OKLCH ring was built,
+  measured, then owner-superseded — **the color-theory harmony palette is a BANKED FUTURE
+  RESEARCH SESSION**; durable from the ring: inside `oklch(from …)` the `h` keyword is a NUMBER
+  — `calc(h + 45deg)` is a silently-dropped type error) · ⑤ the pixel chip (Silkscreen) was
+  tried and CUT — chip rides the theme's own status grammar; Silkscreen left the pipeline
+  (14 files/78 glyphs end-state, byte-identical survivors) · ⑥ the corner KANJI TAG shipped (the
+  lab's `.po-jp` seat; 天地星月風雷海火 positional pool — the SCENE_TITLES pattern, flavor never
+  host data; +6 glyphs) · ⑦ 編成 wears the theme's `5px 5px 0 var(--accent)` hard drop (shared
+  head, both layouts) · ⑧ keyline ALWAYS-ON — un-bound from the `outlines` axis (the §12.6
+  economy the eyeball overruled); `outlines` is chat-chrome-only again · ⑨ the NEW ribbon was
+  walked through outline form then REMOVED from poster entirely (capsule keeps its G6-confirmed
+  one; `ribbonHost` stays in the contract — capsule reads it, cover rules at E2) · ⑩ **the MORPH
+  ships and 5② is re-amended by R26** (`docs/research/R26-clipped-source-vt-morph.md`): the
+  full-image pop was a NAMING bug — an element's OWN clip-path bakes into its VT snapshot, only
+  ANCESTOR clipping is lost — so the poster names `.po-art` (the clip carrier; capsule stays on
+  its `<img>`) and the CUTOUT ITSELF flies, 0 leaked frames both engines; owner: "the transition
+  looks better now" · ⑪ stack 5px left (35/25 lead/trail — the ruling-8 trail budget proving
+  tight under `.picked`). **Banked for later: the R26-probed unfold-then-morph choreography
+  (owner's staging, verified both engines, layers ON the naming fix) if the cutout-fly ever
+  wants ceremony · suppressing/subduing the detail morph's ROOT cross-fade ("the whole screen
+  screenshot flicker" — owner wants it EYEBALLED, not removed blind) · the head's 14px side
+  padding vs the poster's 40px lead (flagged, unruled).** Session-close Codex round over the
+  whole series: ZERO runtime defects, 2 LOWs (a disk-vs-manifest font-complement gap + three
+  stale comments), both closed in the close pair; verdict SHIP WITH CHANGES → changes shipped.
+  Durable: a builder's anchor-to-anchor test-file slice silently swallowed the keyline pin for
+  two commits (behavior never regressed; self-caught, restored) — every removal must assert the
+  removed text first. E5 additionally owes: the five-literal wrap on fleets >5 · the kanji tag
+  legibility on device.)*: geometry
   (R18 `cqw·tan()` shear; the
   `ensembleBands(count)`-shaped helper with N=0/1/2/many contract tests) · the ruling-8 anatomy ·
   select-then-act + wake + busy + the poll-truthful ceremony + tap-skip + the live region · the
