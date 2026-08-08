@@ -299,30 +299,41 @@ describe("pickRibbonHost — the NEW-ribbon demo pick (G6)", () => {
 // instead of branches, and the two-step label is checked against `openLabel` staying byte-identical.
 
 describe("tapAction — the tap router", () => {
-  // [selection, tapped, online, expected] — every permutation that matters, including the vanished
-  // selection (`null`, which is what a view resolves to when the fleet is empty) and the offline splits.
+  // AMENDED by the owner's third-walk ruling: "by default I don't want the double tap — only when the PC
+  // needs to be woken up." So the two-step survives for exactly the case it was worth paying for.
+  // [selection, tapped, online, expected]
   const CASES: [string | null, string, boolean, string][] = [
-    [null, "a", true, "select"], // nothing selected yet: the first tap can only select
+    // ONLINE — one tap, always, whatever the selection is. Opening IS the act; the caller selects on the
+    // way through, so a bare `select` can never come back for a live machine.
+    [null, "a", true, "open"],
+    ["b", "a", true, "open"],
+    ["a", "a", true, "open"],
+    // SLEEPING — the two-step stands: the first tap is the guard against waking a machine by mistake.
     [null, "a", false, "select"],
-    ["b", "a", true, "select"], // a DIFFERENT machine: always select, never act
     ["b", "a", false, "select"],
-    ["a", "a", true, "open"], // the same machine, up: open its dossier
-    ["a", "a", false, "wake"], // the same machine, asleep: run the wake sequence
+    ["a", "a", false, "wake"],
   ];
 
   it.each(CASES)("selected=%s tapped=%s online=%s -> %s", (selected, tapped, online, want) => {
     expect(tapAction(selected, tapped, online)).toBe(want);
   });
 
+  it("ignores the selection entirely while a machine is UP", () => {
+    // The sharp form of the amendment: for an online machine the first argument cannot change the answer.
+    for (const sel of [null, "a", "b", "somebody-else"])
+      expect(tapAction(sel, "a", true)).toBe("open");
+  });
+
   it("routes on the CURRENT liveness, not on a remembered one", () => {
-    // The council clause the caller has to honour: a machine that woke between the two taps OPENS. The
-    // function has no memory at all, which is what makes that the caller's only job.
+    // The council clause the caller has to honour: a machine that woke between the two taps OPENS rather
+    // than being woken again. The function has no memory at all, which is what makes that the caller's
+    // only job.
     expect(tapAction("a", "a", false)).toBe("wake");
     expect(tapAction("a", "a", true)).toBe("open");
   });
 });
 
-describe("pickLabel — the TWO-STEP accessible name", () => {
+describe("pickLabel — a name that says as many steps as the control HAS", () => {
   const online = host({ id: "a", name: "pegasus", status: { ...host().status!, online: true } });
   const asleep = host({
     id: "b",
@@ -332,13 +343,16 @@ describe("pickLabel — the TWO-STEP accessible name", () => {
     status: { ...host().status!, online: false, ping_ms: null },
   });
 
-  it("names BOTH steps while unselected, and the remaining one once selected (4 strings)", () => {
-    expect(pickLabel(online, 5, false)).toBe(
-      "pegasus, workstation, 5 stars, online. Tap to select; tap again to open the unit dossier.",
-    );
-    expect(pickLabel(online, 5, true)).toBe(
-      "pegasus, workstation, 5 stars, online. Selected. Tap to open the unit dossier.",
-    );
+  it("gives an ONLINE machine the ONE-step sentence, selected or not", () => {
+    // Since the amendment a live machine opens on one tap, so a label promising a select that no longer
+    // happens would be its own trap — the mirror of the one the two-step wording exists to avoid. This is
+    // the lab's own single-step form (`labelFor`, app.js:94-96).
+    const want = "pegasus, workstation, 5 stars, online. Opens the unit dossier.";
+    expect(pickLabel(online, 5, false)).toBe(want);
+    expect(pickLabel(online, 5, true)).toBe(want);
+  });
+
+  it("keeps BOTH steps named while a machine is asleep, and swaps once it is selected", () => {
     expect(pickLabel(asleep, 1, false)).toBe(
       "atlas, windows, 1 stars, sleeping. Tap to select; tap again to run the wake sequence.",
     );
@@ -347,9 +361,9 @@ describe("pickLabel — the TWO-STEP accessible name", () => {
     );
   });
 
-  it("leaves `openLabel` BYTE-IDENTICAL — the cards and the banner promos still say one step", () => {
-    // R25 §Q1d: `openLabel` is shared by two one-tap surfaces, so the two-step wording had to be a NEW
-    // function. This is the assertion that it was.
+  it("leaves `openLabel` BYTE-IDENTICAL — the cards and the banner promos are its own", () => {
+    // R25 §Q1d: `openLabel` is shared by two other surfaces, so the poster's wording had to be a NEW
+    // function. This is the assertion that it still is.
     expect(openLabel("pegasus", true)).toBe("open pegasus dossier, online");
     expect(openLabel("atlas", false)).toBe("open atlas dossier, sleeping");
   });

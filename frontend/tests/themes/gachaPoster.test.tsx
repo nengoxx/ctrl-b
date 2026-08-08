@@ -204,12 +204,14 @@ describe("the poster resolves through the fleet Surface", () => {
     expect(container.querySelector(".po-poster")?.getAttribute("data-name")).toBe("plate");
   });
 
-  it("gives every slice ONE accessible name that spells BOTH steps (the two-step contract)", () => {
+  it("gives every slice a name that says as many steps as that machine's tap HAS", () => {
+    // The owner's third-walk amendment, as the thing a screen-reader user actually hears: a live machine
+    // is one tap, so it says so; a sleeping one keeps both steps named.
     const { container } = render(<GachaFleet active />);
     expect(slices(container).map((b) => b.getAttribute("aria-label"))).toEqual([
-      "pegasus, workstation, 2 stars, online. Selected. Tap to open the unit dossier.",
+      "pegasus, workstation, 2 stars, online. Opens the unit dossier.",
       "atlas, workstation, 2 stars, sleeping. Tap to select; tap again to run the wake sequence.",
-      "vault, workstation, 2 stars, online. Tap to select; tap again to open the unit dossier.",
+      "vault, workstation, 2 stars, online. Opens the unit dossier.",
     ]);
   });
 
@@ -252,16 +254,28 @@ describe("the poster resolves through the fleet Surface", () => {
 
 // ── ⑦ ⑧ ⑨ · SELECT-THEN-ACT ─────────────────────────────────────────────────────────────────────────
 describe("select-then-act", () => {
-  it("⑦ the FIRST tap selects and opens nothing; the SECOND opens the dossier", () => {
+  it("⑦ an ONLINE machine opens on ONE tap — and that tap SELECTS it, so the registry follows", () => {
+    // OWNER AMENDMENT (third walk): "by default I don't want the double tap — only when the PC needs to
+    // be woken up." Opening is the act; selecting rides along (the cosmos one-tap select-and-open
+    // precedent), which is what keeps the registry pointing at the machine you just opened.
     const { container } = render(<GachaFleet active />);
-    act(() => void fireEvent.click(slices(container)[2])); // vault, online, not selected
-    expect(dossierName()).toBeNull();
+    expect(slices(container)[0].getAttribute("aria-pressed")).toBe("true"); // host[0] resolved at boot
+    act(() => void fireEvent.click(slices(container)[2])); // vault, online, NOT selected
+    expect(dossierName()).toBe("vault");
     expect(slices(container)[2].getAttribute("aria-pressed")).toBe("true");
     expect(slices(container)[0].getAttribute("aria-pressed")).toBe("false");
+    expect(data(container)!.querySelector(".po-fname")!.textContent).toBe("vault");
     expect(runFn()).not.toHaveBeenCalled();
+  });
 
-    act(() => void fireEvent.click(slices(container)[2]));
-    expect(dossierName()).toBe("vault");
+  it("⑦b a SLEEPING machine still takes two taps — the guard the double-tap was kept FOR", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[1])); // atlas, asleep
+    expect(dossierName()).toBeNull();
+    expect(runFn()).not.toHaveBeenCalled();
+    expect(slices(container)[1].getAttribute("aria-pressed")).toBe("true");
+    act(() => void fireEvent.click(slices(container)[1]));
+    expect(runFn()).toHaveBeenCalledTimes(1);
   });
 
   it("⑧ the second tap on a SLEEPING machine wakes it — same seam, and no confirm dialog", () => {
@@ -281,10 +295,14 @@ describe("select-then-act", () => {
     expect(dossierName()).toBeNull();
   });
 
-  it("⑨ tapping a DIFFERENT slice re-selects and sends nothing", () => {
+  it("⑨ moving between SLEEPING machines re-selects and sends nothing", () => {
+    // The re-select case only exists among asleep machines now — tapping a live one opens it. Two
+    // sleeping machines are what makes "the second tap went to a DIFFERENT machine, so it selects rather
+    // than wakes" a real case rather than a hypothetical.
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false), host("relay", false)] });
     const { container } = render(<GachaFleet active />);
-    act(() => void fireEvent.click(slices(container)[1]));
-    act(() => void fireEvent.click(slices(container)[2]));
+    act(() => void fireEvent.click(slices(container)[1])); // select atlas
+    act(() => void fireEvent.click(slices(container)[2])); // a DIFFERENT sleeping one: select, never wake
     expect(slices(container).map((b) => b.getAttribute("aria-pressed"))).toEqual([
       "false",
       "false",
@@ -307,7 +325,7 @@ describe("select-then-act", () => {
     expect(dossierName()).toBe("atlas");
   });
 
-  it("the SECOND tap carries the capsule's image MORPH — the slice hands over its own portrait", () => {
+  it("the ONE-tap open carries the capsule's image MORPH — the slice hands over its own portrait", () => {
     // OWNER RULING (dev-unit walk): §12.6 5②'s "capsule-only" is AMENDED. Its stated basis was only that
     // a morph clone sourced from a sheared clip-path had never been seen — the owner asked to see it.
     // The observable claim is the one that matters: the tapped slice's `<img>` is the element named for
@@ -316,8 +334,7 @@ describe("select-then-act", () => {
     const vt = deferVT();
     const { container } = render(<GachaFleet active />);
     const img = () => container.querySelectorAll<HTMLElement>(".po-art img")[2];
-    act(() => void fireEvent.click(slices(container)[2])); // select vault
-    act(() => void fireEvent.click(slices(container)[2])); // open — through a transition
+    act(() => void fireEvent.click(slices(container)[2])); // vault is online: one tap opens
     expect(vt.start).toHaveBeenCalledTimes(1);
     // named NOW: the old capture happens after the call returns, and the sheet has not opened yet
     expect(img().style.getPropertyValue("view-transition-name")).toBe("capsule-shell");
@@ -337,19 +354,19 @@ describe("select-then-act", () => {
     const vt = deferVT();
     const { container } = render(<GachaFleet active />);
     expect(container.querySelector(".po-art-blank")).not.toBeNull();
-    act(() => void fireEvent.click(slices(container)[0]));
-    act(() => void fireEvent.click(slices(container)[0]));
+    act(() => void fireEvent.click(slices(container)[0])); // online: one tap opens
     expect(vt.start).not.toHaveBeenCalled(); // no transition was ever started
     expect(dossierName()).toBe("solo");
   });
 
-  it("the second tap does NOT dismiss the dossier it just opened (the `.gc-host-hit` exemption)", () => {
+  it("the OPENING tap does not dismiss the dossier it just opened (the `.gc-host-hit` exemption)", () => {
     // Re-verified ON THE MORPH PATH (it is the shipped one now): the opening click is the same click the
     // document listener sees, and the transition only changes WHEN the sheet commits — so the exemption
-    // has to hold with the callback landing a tick later, not just on the plain open.
+    // has to hold with the callback landing a tick later, not just on the plain open. Since the
+    // amendment this is the FIRST tap, which makes it strictly harder: there is no earlier tap to have
+    // settled anything.
     const vt = deferVT();
     const { container } = render(<GachaFleet active />);
-    act(() => void fireEvent.click(slices(container)[2]));
     act(() => void fireEvent.click(slices(container)[2]));
     vt.run(0);
     expect(dossierName()).toBe("vault");
@@ -630,7 +647,10 @@ describe("the wake ceremony", () => {
     // the beats completed (a skip COMPLETES, it does not abandon) …
     expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
     expect(container.querySelector(".po-slice.waking")).toBeNull();
-    // … and the gesture did NOT also re-select
+    // … and the gesture did NOT also act. Since the tap policy amendment this is sharper than it was: an
+    // unsuppressed tap on a LIVE machine now OPENS ITS DOSSIER rather than merely re-selecting, so the
+    // cost of the leak went up and this is what it would look like.
+    expect(dossierName()).toBeNull();
     expect(slices(container).map((b) => b.getAttribute("aria-pressed"))).toEqual([
       "false",
       "true",
@@ -666,6 +686,7 @@ describe("the wake ceremony", () => {
     act(() => void vi.advanceTimersByTime(200));
     act(() => void fireEvent.click(slices(container)[2])); // a click with no pointer gesture behind it
     expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
+    expect(dossierName()).toBeNull(); // it skipped; it did not open the live machine it landed on
     expect(slices(container)[2].getAttribute("aria-pressed")).toBe("false");
     expect(runFn()).toHaveBeenCalledTimes(1);
   });

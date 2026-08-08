@@ -379,11 +379,19 @@ export function GachaFleet({ active }: { active: boolean }) {
       if (!host) return null; // the machine left between render and click
       const action = tapAction(resolvedPick, hostId, !!host.status?.online);
       if (action === "select") {
+        // Only a SLEEPING machine can land here since the owner's third-walk amendment, and it is the only
+        // tap whose whole outcome is off-screen (a transform and a registry below the fold) — which is why
+        // it is the one selection that announces.
         setPickedId(hostId);
         announce(pickAnnounce(host, starsFor((host.services ?? []).length, starMode)));
         return "select";
       }
       if (action === "open") {
+        // The open SELECTS too (the amendment's "and that tap also selects it, so the registry follows" —
+        // the cosmos one-tap select-and-open precedent). Deliberately NOT announced: the dossier is a
+        // focus-trapping sheet that names the machine itself, so a live-region sentence would be the
+        // second thing saying it.
+        setPickedId(hostId);
         // THE MORPH IS AVAILABLE TO EVERY LAYOUT (owner ruling, dev-unit walk — §12.6 ruling 5②'s
         // "capsule-only" is AMENDED). That clause's stated basis was only that a morph clone sourced from
         // a sheared clip-path had never been SEEN; the owner has now asked to see it, so the layout hands

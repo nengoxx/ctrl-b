@@ -140,15 +140,18 @@ export function roleLabel(host: Host): string {
   return (host.role ?? host.os_type).toUpperCase();
 }
 
-// ── SELECT-THEN-ACT (GACHA_PLAN §12.6 rulings 2 + 3) — the alt layouts' interaction policy ─────────────
-// The capsule track keeps ONE-TAP-OPENS. Poster (E1) and cover (E2) are select-then-act: the first tap on a
-// machine SELECTS it (the grow + the data block below the fold are the feedback), and a second tap on the
-// SAME machine acts — open its dossier if it is up, run the wake sequence if it is not.
+// ── THE TAP POLICY (GACHA_PLAN §12.6 rulings 2 + 3, AMENDED by owner ruling on the third dev-unit walk) ──
+// "By default I don't want the double tap — only when the PC needs to be woken up."
+//
+// So select-then-act survives for exactly the case it was worth paying for: an accidental WAKE. An ONLINE
+// machine opens on ONE tap (and that tap selects it too, so the registry follows — the cosmos one-tap
+// select-and-open precedent); a SLEEPING machine keeps the two-step, where the first tap is the guard
+// against waking a machine by mistake and the second is the ceremony's cue.
 //
 // The rule is a pure function so it can be read as a table, and so the render tests assert an OUTCOME
 // rather than the presence of a branch. Two council clauses live in the CALLER, not here, and are worth
 // naming: liveness must come from the CURRENT render (never captured at the first tap — a machine that woke
-// between the two taps must open, not wake again), and a `wake` result NO-OPS while that host is busy.
+// between two taps must open, not wake again), and a `wake` result NO-OPS while that host is busy.
 
 /** What a tap on a machine does under select-then-act. */
 export type FleetTap = "select" | "open" | "wake";
@@ -170,27 +173,34 @@ export function resolvePick(pickedId: string | null, hosts: readonly Host[]): st
 
 /** Route one tap. `selectedId` is the RESOLVED selection the view is rendering (`picked ?? hosts[0]?.id`,
  *  §12.6 ruling 2 — resolved in the view, never written to state), `tappedId` the machine that was tapped,
- *  and `online` its liveness AS CURRENTLY RENDERED. */
+ *  and `online` its liveness AS CURRENTLY RENDERED.
+ *
+ *  An ONLINE machine never returns a bare `select`: opening its dossier IS the act, and the caller selects
+ *  it on the way through. `selectedId` therefore only matters while a machine is asleep. */
 export function tapAction(selectedId: string | null, tappedId: string, online: boolean): FleetTap {
-  if (tappedId !== selectedId) return "select";
-  return online ? "open" : "wake";
+  if (online) return "open";
+  return tappedId !== selectedId ? "select" : "wake";
 }
 
-/** The alt layouts' TWO-STEP accessible name (the lab's `labelPoster`, wording verbatim). A two-step control
- *  whose label promises one step is a trap for anyone who cannot see the selected nudge, so both steps are
- *  named and the sentence swaps once the machine is selected.
+/** The alt layouts' accessible name, and it says exactly as many steps as the control HAS (the lab's own
+ *  two forms, `labelFor` and `labelPoster`, wording verbatim).
+ *
+ *  ONLINE machines are one-tap since the owner's third-walk amendment, so they take the ONE-step sentence —
+ *  a label promising a select that no longer happens would be its own trap, the mirror of the one the
+ *  two-step wording exists to avoid. SLEEPING machines keep both steps named, because that is where the
+ *  two-step survives and nobody who cannot see the selected nudge should have to discover it.
  *
  *  A NEW function rather than an edit to `openLabel` (R25 §Q1d): that one is shared by the capsule cards AND
- *  the banner promos, which are one-tap openers and must keep saying so byte-for-byte. */
+ *  the banner promos, and must keep saying what it says byte-for-byte. */
 export function pickLabel(host: Host, stars: number, selected: boolean): string {
   const online = !!host.status?.online;
-  const what = online ? "open the unit dossier" : "run the wake sequence";
   const head = `${host.name}, ${roleLabel(host).toLowerCase()}, ${stars} stars, ${
     online ? "online" : "sleeping"
   }. `;
+  if (online) return `${head}Opens the unit dossier.`;
   return selected
-    ? `${head}Selected. Tap to ${what}.`
-    : `${head}Tap to select; tap again to ${what}.`;
+    ? `${head}Selected. Tap to run the wake sequence.`
+    : `${head}Tap to select; tap again to run the wake sequence.`;
 }
 
 /** How many stops the per-unit hue ring carries (tokens.css `--gc-unit-1..5`). FIVE because that is how
