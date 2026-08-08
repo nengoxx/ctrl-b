@@ -67,11 +67,6 @@ const RULED_FACES = [
   { family: "Shippori Mincho B1", weights: [600, 800], subsets: ["jp", "latin"] },
   { family: "Bungee", weights: [400], subsets: ["latin"] },
   { family: "Zen Maru Gothic", weights: [900], subsets: ["latin"] },
-  // The poster's STATUS CHIP pixel face (owner ruling, the third E1 dev-unit walk — the theme's one
-  // sanctioned new family). Latin-only on the same terms and one sharper one: the chip's strings are
-  // ONLINE / SLEEPING / WAKING, ASCII by construction AND by the theme's own non-ASCII fence, and
-  // Silkscreen is a Latin pixel design with no Japanese at all.
-  { family: "Silkscreen", weights: [400], subsets: ["latin"] },
 ];
 
 describe("gacha font subset — the frozen glyph set", () => {

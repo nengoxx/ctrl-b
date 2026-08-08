@@ -409,22 +409,6 @@
        * offset gives the glyph its own edge regardless of what it sits on (7.74:1 against this ink), which
        * is the theme's answer everywhere else and the one the ruling asked for over re-opaquing. */
       --gc-po-new-shadow: 1px 1px 0 #07050a;
-      /* ── THE STATUS CHIP, the LAB's exact skin (owner, third walk: "the online badge in the prototype
-       * looked much better — pixel font") ──────────────────────────────────────────────────────────────
-       * Ported wholesale from the finalists lab's `.po-chip`, values verbatim. They are theme-identity
-       * constants and palette-INDEPENDENT (the `--gc-star-hi` precedent, and the same reasoning as the
-       * unit ring above): a machine's liveness is not a property of the palette the owner is wearing, so
-       * an accent block must never restate them.
-       *
-       * The ONLINE pair is the lab's flat green — deliberately NOT the theme's `--gc-online-fill`, which
-       * is a two-stop gradient: the chip is a 7.5px pixel-font tab and a ramp inside it reads as noise.
-       * The asleep skin is a translucent lavender with a 1px inset ring rather than a fill, so a sleeping
-       * chip recedes without going invisible over dark art. */
-      --gc-po-chip-on: #5fe0a0;
-      --gc-po-chip-on-ink: #062015;
-      --gc-po-chip-off: #8c80ba33; /* the lab's rgba(140,128,186,.2) */
-      --gc-po-chip-off-ring: #baace873; /* the lab's rgba(186,172,238,.45) */
-      --gc-po-chip-off-ink: #cfc6ea;
       /* ── The star's DRAWN metrics (G7 — the R16 redesign; see GachaStar.tsx) ─────────────────────────
        * The glyph's `font-size`/`letter-spacing`/`text-shadow` trio is gone with it: a drawn star is a box
        * and a gap, so both surfaces are tunable in the vocabulary R16 measured the field in.

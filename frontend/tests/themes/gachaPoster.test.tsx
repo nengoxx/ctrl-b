@@ -1087,35 +1087,20 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     expect(ring).toContain("var(--accent)"); // the kit's own ring token, not a poster literal
   });
 
-  it("takes the LAB's status chip wholesale, pixel face included", () => {
-    // Owner, third walk: "the online badge in the prototype looked much better — pixel font". The values
-    // are the lab's `.po-chip` verbatim; the face is Silkscreen, the theme's one sanctioned new family.
+  it("keeps the chip on the THEME's own status grammar, not a bespoke one", () => {
+    // The lab's pixel chip was tried and CUT (owner, fourth walk: "the new chip doesn't really look that
+    // good, let's not use it in this fleet"), so the chip is back on the tokens every other gacha surface
+    // reads — the capsule card's ONLINE ribbon, its sleeping pill, and the accent for a request in
+    // flight. Nothing here is poster-private, which is the point: one theme, one status grammar.
     const chip = blockFor(".po-chip")!;
-    expect(chip).toContain(`font-family: "Silkscreen", var(--font-body)`);
-    expect(chip).toContain("font-size: 7.5px");
-    expect(chip).toContain("letter-spacing: 0.18em");
-    expect(chip).toContain("background: var(--gc-po-chip-on)");
-    expect(chip).toContain("color: var(--gc-po-chip-on-ink)");
-    // the asleep skin is a translucent lavender with a RING, not a fill — it recedes without vanishing
-    const off = blockFor(".po-slice.asleep .po-chip")!;
-    expect(off).toContain("background: var(--gc-po-chip-off)");
-    expect(off).toContain("box-shadow: inset 0 0 0 1px var(--gc-po-chip-off-ring)");
-    expect(off).toContain("color: var(--gc-po-chip-off-ink)");
-    // the lab's own literals, as palette-INDEPENDENT theme identity (the `--gc-star-hi` precedent)
+    expect(chip).toContain("background: var(--gc-online-fill)");
+    expect(chip).toContain("color: var(--gc-online-ink)");
+    expect(blockFor(".po-slice.asleep .po-chip")).toContain("background: var(--gc-pill-bg)");
+    expect(blockFor(".po-slice.busy .po-chip")).toContain("background: var(--accent-fill)");
+    // …and the pixel face left with it, tokens and all — no dead assets, no orphan tokens
+    expect(chip, "the cut face must not linger").not.toContain("Silkscreen");
     const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
-    for (const [name, hex] of [
-      ["--gc-po-chip-on", "#5fe0a0"],
-      ["--gc-po-chip-on-ink", "#062015"],
-      ["--gc-po-chip-off", "#8c80ba33"],
-      ["--gc-po-chip-off-ring", "#baace873"],
-      ["--gc-po-chip-off-ink", "#cfc6ea"],
-    ])
-      expect(tokens, `${name} must be the lab's ${hex}`).toContain(`${name}: ${hex};`);
-    // WAKING is a THIRD skin, not a dimmed green — a dimmed green would read as "nearly online", which is
-    // precisely the claim a poll-truthful chip must not make.
-    const busy = blockFor(".po-slice.busy .po-chip")!;
-    expect(busy).toContain("background: var(--accent-fill)");
-    expect(busy).not.toContain("--gc-po-chip-on");
+    expect(tokens, "the chip's bespoke tokens have no consumer left").not.toContain("--gc-po-chip");
   });
 
   it("seats the CORNER TAG clear of the shear, in the unit's own hue", () => {

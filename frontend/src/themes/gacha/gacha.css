@@ -1872,33 +1872,21 @@
       z-index: 6;
       right: 10px;
       bottom: calc(var(--run) + 10px);
-      /* the lab's own padding — it pairs with the 7.5px face below, not with the 8px sans it replaced */
-      padding: 4px 7px;
-      background: var(--gc-po-chip-on);
-      color: var(--gc-po-chip-on-ink);
-      /* THE PIXEL FACE (owner, third walk: "the online badge in the prototype looked much better — pixel
-       * font"). Silkscreen is the lab's own chip face and the theme's one sanctioned new family; it is
-       * warmed unconditionally in `fonts.ts` because this chip is above the fold and a pixel face falling
-       * back to the body sans is not a subtle swap. Size and tracking are the lab's verbatim. */
-      font-family: "Silkscreen", var(--font-body);
-      font-size: 7.5px;
-      font-weight: 400;
-      letter-spacing: 0.18em;
+      padding: 4px 8px;
+      background: var(--gc-online-fill);
+      color: var(--gc-online-ink);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
       pointer-events: none;
     }
     .po-slice.asleep .po-chip {
-      background: var(--gc-po-chip-off);
-      box-shadow: inset 0 0 0 1px var(--gc-po-chip-off-ring);
-      color: var(--gc-po-chip-off-ink);
+      background: var(--gc-pill-bg);
+      box-shadow: inset 0 0 0 1px var(--gc-pill-line);
+      color: var(--gc-pill-ink);
     }
     /* A REQUEST IN FLIGHT (ruling 4) — poll-truthful: this says the app is ASKING, never that the machine
-     * is up. It ends when the request settles and the chip goes back to the server's word.
-     *
-     * WAKING KEEPS THE ACCENT FILL rather than a dimmed copy of the lab's green (my call, flagged for the
-     * walk). The lab has no WAKING state to port, and the two candidates say different things: a dimmed
-     * green reads as "nearly online", which is exactly the claim a poll-truthful chip must not make, while
-     * the accent is the theme's own in-flight colour and is a THIRD thing, distinct from both the green
-     * and the lavender at 7.5px. It inherits the pixel face from the base rule. */
+     * is up. It ends when the request settles and the chip goes back to the server's word. */
     .po-slice.busy .po-chip {
       background: var(--accent-fill);
       box-shadow: none;

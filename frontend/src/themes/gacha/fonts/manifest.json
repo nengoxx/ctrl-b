@@ -24,11 +24,6 @@
       "family": "Zen Maru Gothic",
       "weights": [900],
       "subsets": ["latin"]
-    },
-    {
-      "family": "Silkscreen",
-      "weights": [400],
-      "subsets": ["latin"]
     }
   ],
   "files": [
@@ -157,16 +152,7 @@
       "bytes": 11564,
       "sha256": "3e04ec1d29dcfdd8dc0a52169a7ba78c0c07259ab6085cd6b1179ad955136dca",
       "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD"
-    },
-    {
-      "file": "silkscreen-400-latin.woff2",
-      "family": "Silkscreen",
-      "weight": 400,
-      "subset": "latin",
-      "bytes": 8404,
-      "sha256": "e6c72ea4702249202bcdd79d3343057e4e25ef1f04e3fcffd8602ab53b40b4cc",
-      "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD"
     }
   ],
-  "totalBytes": 235824
+  "totalBytes": 227420
 }
