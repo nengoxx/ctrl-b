@@ -3349,7 +3349,15 @@ focus-return-on-remote-row-removal nicety = a LOW E-slice note.
 **The slices (⚖ council-reordered — a setting NEVER ships before its implementation; each slice:
 build → self-audit → Codex round → owner pause):**
 
-- **E0 — the seams, zero visual change:** the `showWhen` field + hardened contract tests · the
+- **E0 — the seams, zero visual change** *(✅ SHIPPED on `alt-fleet` 2026-08-08, 5 commits
+  `c287d99..98f879a`: fence-first order held; capsule DOM/a11y snapshots byte-unchanged; 390px
+  screenshot sha256-identical pre/post; Codex round = 1 HIGH — a module-init TDZ crash on the
+  `variants.ts` entry order, reproduced then fixed as a render-time read + the permanent
+  `importOrder.test.ts` — + 5 LOWs, all closed lean; confirm round: all CLOSED, no new findings,
+  verdict SHIP. Deferred to E1 as ruled: the ConfTab showWhen integration test + widening
+  `GachaTrackProps` for select-then-act. Durable rule now stated in `surface.ts`: inside an ESM
+  cycle a module may declare and import but must never READ THROUGH a cycle binding at module
+  scope — property access included.)*: the `showWhen` field + hardened contract tests · the
   `createSurface` extraction (factor the composer concrete; composer's tests + a behavior-parity
   pass are the fence) · the fleet surface instance + the `GachaTrack` extraction behind it ·
   **the capsule EQUALITY FENCE, defined before extraction** (Codex): a frozen capsule

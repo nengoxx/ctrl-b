@@ -44,10 +44,20 @@
 >   R25 §Q2d carries its correction. Slices REORDERED: no setting ships before its
 >   implementation; E0 = showWhen + createSurface + GachaTrack behind a concretely-defined
 >   equality fence.
-> - **NEXT SESSION: get the owner's explicit E0 go-word, then build §12.6's E0–E5 on a dev
->   branch** (E0 seams → E1 poster → E2 cover → E3 banner → E4 hardening incl. the R25 Q7
->   23-pin list → E5 the Fennec+Chrome device round = real acceptance). Opus subagents from
->   pinned briefs, Codex per slice, owner pause between slices.
+> - **E0 ✅ SHIPPED (2026-08-08, same day — owner gave the go-word live): branch `alt-fleet`,
+>   5 commits `c287d99..98f879a`** — fence-first (frozen capsule DOM/a11y snapshots + 390px
+>   sha256-identical screenshot, all held through the refactor) · `showWhen` + `settingRowVisible`
+>   + the contract checker proven on broken fixtures · `createSurface` extracted, composer
+>   re-pointed zero-churn · `GachaTrack` + gacha-owned `fleetSurface` (`fleetLayout` stays
+>   UNDECLARED until E1) · full gate 6/6, FE 1800 tests. Codex round: 1 HIGH (module-init TDZ
+>   crash entering the cycle at `variants.ts` — reproduced, fixed as a render-time read, pinned
+>   by `importOrder.test.ts`) + 5 LOWs → fix wave `98f879a` → confirm round all CLOSED, verdict
+>   **SHIP**. E1 owes: the ConfTab showWhen integration test · `GachaTrackProps` widening ·
+>   picker copy (§12.3⑤).
+> - **NEXT: owner pause, then the E1 go-word → build §12.6's E1 poster on `alt-fleet`**
+>   (→ E2 cover → E3 banner → E4 hardening incl. the R25 Q7 23-pin list → E5 the Fennec+Chrome
+>   device round = real acceptance). Opus subagents from pinned briefs, Codex per slice, owner
+>   pause between slices.
 > - Still owed from before: the owner's phone spot-check of prod v1.5.0 · R20's four + R21's four
 >   LOWs + the leftover ledger (`9afe78c`) · the HANDOFF archive sweep (~650KB — **owner
 >   2026-08-08: a STANDALONE session of its own**, not a side-task: the superseded blocks likely
