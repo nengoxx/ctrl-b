@@ -40,6 +40,8 @@ import { resolve } from "node:path";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { selectorsMentioning } from "./cssRules";
+
 import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
@@ -915,22 +917,51 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     // through this stamp: the field is painted on `.cv-frame`, the strip is scoped to `.cv-strap`, and
     // both are markup only the cover renders, so this enumeration is EXACTLY the poster's and the
     // capsule↔poster identity invariant is untouched. The exception has its own enumerated list in
-    // `gachaCover.test.tsx` ("THE SIGNED STRUCTURAL EXCEPTION"), and the arm below is what stops it
+    // `gachaCover.test.tsx` ("THE SIGNED STRUCTURAL EXCEPTION"), and the last arm here is what stops it
     // migrating onto the stamp — where it would escape both enumerations at once.
-    const scoped = [...css.matchAll(/\n {4}([^\n{]*\[data-gc-fleet[^\n{]*)\{([^}]*)\}/g)];
+    //
+    // IT READS THE STYLESHEET AS RULES, NOT AS LINES (Codex E2 MED-4). The first form of this test matched
+    // single-line headers at one indent, which an ordinary multi-line selector list walks straight past —
+    // a false NEGATIVE in a guard whose whole job is to fail. `selectorsMentioning` collects complete
+    // headers across newlines and splits the list, so each offending selector is judged on its own.
+    const scoped = selectorsMentioning(css, "[data-gc-fleet");
     expect(scoped.length, "the stamp must still have consumers").toBeGreaterThan(0);
-    for (const [, sel, body] of scoped) {
-      expect(body, `${sel.trim()} must not paint a background`).not.toMatch(/(^|[\s;])background/);
+    for (const { selector, rule } of scoped) {
+      expect(rule.declarations, `${selector} must not paint a background`).not.toMatch(
+        /(^|[\s;])background/,
+      );
       // …and nothing may reach the shell or the tab box either, whatever it declares
-      expect(sel, `${sel.trim()} must not target the shell or the tab`).not.toMatch(
+      expect(selector, `${selector} must not target the shell or the tab`).not.toMatch(
         /\.kit-main|\.kit\b|#tab-|\.tab\b/,
       );
     }
     // every consumer the stamp has is still POSTER's — the seam compaction and nothing else
     expect(
-      scoped.map(([, sel]) => sel.trim()).filter((s) => !s.includes('data-gc-fleet="poster"')),
+      scoped.map(({ selector }) => selector).filter((s) => !s.includes('data-gc-fleet="poster"')),
       "a new layout-scoped rule appeared — enumerate it deliberately, do not let it in here",
     ).toEqual([]);
+  });
+
+  it("…and CATCHES the multi-line escape that the line-anchored form let through (the fixture)", () => {
+    // Codex's own counter-example, run through the same classifier this suite uses. It has to FAIL, or
+    // the guard above is decorative. Kept as a fixture rather than as a comment because the failure mode
+    // was invisible: the old regex simply did not see the rule at all.
+    const escape = `
+@layer theme {
+  @scope ([data-skin="gacha"]) {
+    body[data-gc-fleet="cover"] .gc-banner,
+    .some-other-selector {
+      background: red;
+    }
+  }
+}`;
+    const caught = selectorsMentioning(escape, "[data-gc-fleet");
+    expect(caught.map(({ selector }) => selector)).toEqual([
+      'body[data-gc-fleet="cover"] .gc-banner',
+    ]);
+    expect(caught[0].rule.declarations).toMatch(/(^|[\s;])background/);
+    // …and it is not poster's, so the last arm above would reject it too
+    expect(caught[0].selector.includes('data-gc-fleet="poster"')).toBe(false);
   });
 
   it("compacts the banner->head->stack seam, POSTER-ONLY and vertical-only", () => {

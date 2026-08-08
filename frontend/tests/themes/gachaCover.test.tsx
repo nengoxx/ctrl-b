@@ -24,6 +24,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { setGachaReelRunning } from "../../src/store/gachaReel";
+import { selectorsMentioning } from "./cssRules";
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import { settingRowVisible } from "../../src/theme-engine/settings";
 import { registry } from "../../src/theme-engine/registry";
@@ -349,15 +350,22 @@ describe("the promote ceremony", () => {
     expect(heroName(container)).toBe("ATLAS");
   });
 
-  it("collapses to an INSTANT swap under reduced motion, both sentences intact", () => {
+  it("collapses to an INSTANT swap under reduced motion, announcing ONLY the settled sentence", () => {
+    // RULED (main seat, Codex E2 LOW-5): under collapsed motion the promote makes ONE announcement, and it
+    // is the settled one. The runner fires every beat synchronously, React batches both `announce` writes
+    // and only the final keyed child reaches the DOM — and that is the CORRECT outcome, not a gap to
+    // engineer around: with no theatre there is no "takes the cover" moment to narrate, so a second
+    // sentence would be describing a page turn that never happened. The previous title claimed both
+    // sentences and asserted one; the claim is what was wrong.
     act(() => setUI({ motion: "reduced" }));
     const { container } = render(<GachaFleet active />);
     act(() => void fireEvent.click(cutCards(container)[0]));
     expect(heroName(container)).toBe("ATLAS");
     expect(page(container).classList.contains("turning")).toBe(false);
     expect(container.querySelector(".cv-mast")!.classList.contains("beating")).toBe(false);
-    // the runner fires every beat, so the last one's announcement still lands
     expect(live(container)).toBe("atlas is on the cover. WORKSTATION, 2 stars, SLEEPING.");
+    // exactly ONE live-region child, i.e. one committed announcement for the whole gesture
+    expect(container.querySelectorAll(".gc-live span")).toHaveLength(1);
   });
 
   it("narrates BOTH ends in the lab's wording, and the body stays quiet under this grammar", () => {
@@ -438,6 +446,117 @@ describe("the promote ceremony", () => {
     expect(hero).not.toBe(tapped);
   });
 
+  it("A POLL THAT REMOVES THE HERO MID-TURN cannot turn the promote into a wake (Codex E2 HIGH-1)", () => {
+    // THE RELEASE-BLOCKING RACE. A is the hero, sleeping B is tapped as a cut-in — a promote. Before the
+    // commit beat a routine poll removes A, which makes B the RESOLVED selection. The old code called the
+    // ROUTER again at that beat, and `tapAction(B, B, offline, "select-first")` reads a selected sleeping
+    // machine as a WAKE — so a gesture that meant "put B on the cover" sent a real wake request.
+    //
+    // The commit seam cannot do that: it selects a still-present machine or refuses, and it never reads
+    // liveness at all.
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false)] });
+    const { container, rerender } = render(<GachaFleet active />);
+    expect(heroName(container)).toBe("PEGASUS");
+    act(() => void fireEvent.click(cutCards(container)[0])); // atlas, asleep — a promote
+    act(() => void vi.advanceTimersByTime(50)); // still inside the fold, before the commit
+
+    setFleet({ hosts: [host("atlas", false)], run: fleet.view.run }); // the poll drops the hero
+    rerender(<GachaFleet active />);
+    act(() => void vi.advanceTimersByTime(1000)); // the commit beat lands on the NEW fleet
+
+    expect(runFn(), "the promote must never become a wake").not.toHaveBeenCalled();
+    expect(dossierName(), "…nor a dossier open").toBeNull();
+    expect(heroName(container)).toBe("ATLAS"); // the selection landed, which is all it could ever do
+    expect(container.querySelector(".cv-card.developing")).toBeNull();
+  });
+
+  it("…and the ONLINE form of the same race cannot open a dossier either", () => {
+    // The other half of the finding: with an ONLINE tapped machine the old re-route returned `open`.
+    setFleet({ hosts: [host("pegasus", true), host("vault", true)] });
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0])); // vault, ONLINE — still a promote under cover
+    act(() => void vi.advanceTimersByTime(50));
+    setFleet({ hosts: [host("vault", true)], run: fleet.view.run });
+    rerender(<GachaFleet active />);
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(dossierName()).toBeNull();
+    expect(document.body.dataset.sheet).toBeUndefined();
+    expect(heroName(container)).toBe("VAULT");
+  });
+
+  it("REFUSES cleanly when the tapped machine itself leaves mid-turn, and says nothing settled", () => {
+    // The seam's other verdict. The beat-0 "takes the cover" has already spoken — accepted, it described
+    // an intent that was true when it was said — but nothing may claim the machine IS on the cover.
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0])); // atlas
+    act(() => void vi.advanceTimersByTime(50));
+    expect(live(container)).toBe("atlas takes the cover.");
+    setFleet({ hosts: [host("pegasus", true), host("vault", true)], run: fleet.view.run });
+    rerender(<GachaFleet active />);
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(live(container)).toBe("atlas takes the cover."); // no settled sentence followed
+    expect(heroName(container)).toBe("PEGASUS");
+    expect(runFn()).not.toHaveBeenCalled();
+  });
+
+  it("RESTORES FOCUS when the old hero leaves BEFORE the commit beat (Codex E2 MED-3)", () => {
+    // Arming at the commit beat was too late: if the old hero goes away first, the POLL's own render
+    // reparents the focused cut-in into the hero slot, React remounts it, focus falls to <body>, and by
+    // the beat there is nothing left to read. Armed at promote START, the id survives that reparent.
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false)] });
+    const { container, rerender } = render(<GachaFleet active />);
+    const tapped = cutCards(container)[0];
+    act(() => void tapped.focus());
+    act(() => void fireEvent.click(tapped));
+    act(() => void vi.advanceTimersByTime(50)); // before the commit
+
+    setFleet({ hosts: [host("atlas", false)], run: fleet.view.run });
+    rerender(<GachaFleet active />); // the poll reparents atlas into the hero slot, right now
+
+    const hero = heroCard(container);
+    expect(hero.dataset.gcHost).toBe("atlas");
+    expect(hero).not.toBe(tapped); // it really was remounted
+    expect(document.activeElement).toBe(hero);
+  });
+
+  it("swallows a HELD key's repeat activations (Codex E2 LOW-6)", () => {
+    // Auto-repeat turns one press into a stream of keydown/click pairs. The first is the gesture; the
+    // rest are the same gesture still being held, and after a skip the first repeat would land on a
+    // ceremony that has just ended and route for real.
+    const { container } = render(<GachaFleet active />);
+    const target = cutCards(container)[1]; // vault
+    // a genuine press acts …
+    act(() => void fireEvent.keyDown(target, { key: "Enter" }));
+    act(() => void fireEvent.click(target));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container)).toBe("VAULT");
+
+    // … and the repeats of a NEW held press do not, however many arrive
+    const next = cutCards(container)[0];
+    act(() => void fireEvent.keyDown(next, { key: "Enter", repeat: true }));
+    act(() => void fireEvent.click(next));
+    act(() => void fireEvent.keyDown(next, { key: "Enter", repeat: true }));
+    act(() => void fireEvent.click(next));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container)).toBe("VAULT"); // unmoved
+
+    // …and the ref never goes stale: the next real press works, and so does a pointer gesture
+    act(() => void fireEvent.keyDown(next, { key: "Enter" }));
+    act(() => void fireEvent.click(next));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container)).not.toBe("VAULT");
+  });
+
+  it("a POINTER gesture is never swallowed by a stale key-repeat flag", () => {
+    const { container } = render(<GachaFleet active />);
+    const target = cutCards(container)[1];
+    act(() => void fireEvent.keyDown(target, { key: "Enter", repeat: true })); // arms the flag
+    act(() => void fireEvent.pointerDown(target)); // a new POINTER gesture clears it
+    act(() => void fireEvent.click(target));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container)).toBe("VAULT");
+  });
+
   it("does NOT steal focus when nobody was standing on a card", () => {
     // The restore is spent per promote, so a pointer-driven swap on a page whose focus is elsewhere must
     // leave that focus exactly where it was.
@@ -504,6 +623,60 @@ describe("the develop ceremony", () => {
     // flip a machine up, and nothing here polled.
     expect(heroChip(container)).toBe("SLEEPING");
     expect(heroCard(container).classList.contains("asleep")).toBe(true);
+  });
+
+  it("STRIPS the theatre the moment the request settles — no stamp for a fast wake (Codex E2 MED-2)", async () => {
+    // THE POLL-TRUTH LEAK. The request starts synchronously but the presentation ran on its own 880 ms
+    // clock, so a wake that came back at 40 ms still got a flash, a wash and — at 600 ms — an AWAKE stamp
+    // over a machine whose request had already returned. `aria-hidden` hid that false claim from one
+    // audience only; it was still synthetic liveness on screen, which is exactly what ruling 4 forbids.
+    // Every artifact is licensed by `waking` now, so the settle strips them in the same commit.
+    let settle = () => {};
+    setFleet({
+      hosts: [host("atlas", false), host("pegasus", true)],
+      run: vi.fn(() => new Promise<void>((r) => (settle = r))),
+    });
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    act(() => void vi.advanceTimersByTime(150));
+    expect(heroCard(container).classList.contains("developing")).toBe(true);
+    expect(container.querySelector(".cv-flash")!.classList.contains("fire")).toBe(true);
+
+    // the request comes back LONG before the stamp's beat
+    await act(async () => {
+      settle();
+      await Promise.resolve();
+    });
+    expect(heroChip(container)).toBe("SLEEPING"); // the server's word, unchanged by the wake
+    expect(container.querySelector(".cv-card.developing")).toBeNull();
+    expect(container.querySelector(".cv-flash")!.classList.contains("fire")).toBe(false);
+    expect(container.querySelector(".cv-shake")!.classList.contains("shaking")).toBe(false);
+
+    // …and the stamp's beat lands on a stripped stage: it must NEVER appear
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(container.querySelector(".cv-stamp")).toBeNull();
+    expect(container.querySelector(".cv-card.stamped")).toBeNull();
+  });
+
+  it("…and a REJECTED request takes the theatre with it at the next commit", async () => {
+    let fail = (_e?: unknown) => {};
+    setFleet({
+      hosts: [host("atlas", false), host("pegasus", true)],
+      run: vi.fn(() => new Promise<void>((_r, j) => (fail = j))),
+    });
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    act(() => void vi.advanceTimersByTime(600)); // past the stamp's own beat
+    expect(container.querySelector(".cv-stamp")).not.toBeNull();
+
+    await act(async () => {
+      fail(new Error("wake refused"));
+      await Promise.resolve();
+    });
+    // the request failed, so nothing on screen may still be claiming it is happening
+    expect(container.querySelector(".cv-stamp")).toBeNull();
+    expect(container.querySelector(".cv-card.developing")).toBeNull();
+    expect(heroChip(container)).toBe("SLEEPING");
   });
 
   it("stages NOTHING when the router did not send a wake", () => {
@@ -658,18 +831,44 @@ describe("the banner slot", () => {
 
   it("REPARENTS across a layout switch with no leaked timer (ruling 7's accepted cost)", () => {
     // The remount itself is signed off — autoplay and slide state reset, the owner switches layouts
-    // rarely. What is NOT acceptable is a cadence timer surviving the move or the unmount, which is what
-    // this holds (the `gachaFleet.test.tsx` unmount-hygiene pattern).
+    // rarely. What is NOT acceptable is a cadence timer surviving the move.
+    //
+    // MEASURED AT THE SWITCH, not after a long advance (Codex E2 LOW-7): the old form advanced far enough
+    // for a LEAKED timer to fire and drain before the final `getTimerCount()`, so it could not tell "the
+    // old one was cleared" from "the old one ran itself out". The count is taken immediately after each
+    // swap and compared to the steady state — one cadence timer, never old plus new.
     vi.useFakeTimers();
     try {
       const { container, unmount, rerender } = render(<GachaFleet active />);
       act(() => void vi.advanceTimersByTime(5200 * 2));
+      const steady = vi.getTimerCount();
+      expect(steady, "the banner must have a live cadence to begin with").toBeGreaterThan(0);
+      const bannerNode = () => container.querySelector(".gc-banner");
+      const before = bannerNode();
+
+      /** Count the timers a swap LEFT BEHIND. The 1 ms drain is not slack for a leak — a cadence timer is
+       *  5200 ms and a snap is 620, so neither can fire in it: it clears REACT'S OWN scheduler callback,
+       *  which is a sub-millisecond `setTimeout` the commit posts and which would otherwise be miscounted
+       *  as the banner's. A leaked old cadence would still be pending here, giving 2. */
+      const settledCount = () => {
+        act(() => void vi.advanceTimersByTime(1));
+        return vi.getTimerCount();
+      };
+
       act(() => setThemeSetting("gacha", "fleetLayout", "capsule"));
       rerender(<GachaFleet active />);
+      expect(container.querySelectorAll(".gc-banner")).toHaveLength(1);
+      expect(settledCount(), "old + new cadence would be a leak").toBe(steady);
+      // the REPARENT is real — a remounted node, which is the accepted cost the ruling names
+      expect(bannerNode()).not.toBe(before);
+      const afterCapsule = bannerNode();
+
       act(() => setThemeSetting("gacha", "fleetLayout", "cover"));
       rerender(<GachaFleet active />);
       expect(container.querySelectorAll(".gc-banner")).toHaveLength(1);
-      act(() => void vi.advanceTimersByTime(5200 * 2));
+      expect(settledCount()).toBe(steady);
+      expect(bannerNode()).not.toBe(afterCapsule);
+
       unmount();
       expect(() => act(() => void vi.advanceTimersByTime(5200 * 4))).not.toThrow();
       expect(vi.getTimerCount()).toBe(0);
@@ -743,7 +942,9 @@ describe("the cover's stylesheet claims", () => {
     // The sharp form, and the twin of the poster's own enumeration: every rule in this file that names a
     // `.cv-` class is checked for a selector that could touch a box gacha does not own. The layout is a
     // fixed page drawn INSIDE the tab, not a re-dressing of the shell around it.
-    const scoped = [...css.matchAll(/\n {4}([^\n{]*\.cv-[^\n{]*)\{/g)].map((m) => m[1].trim());
+    // Read as RULES, not as lines (Codex E2 MED-4): a multi-line selector list walks straight past a
+    // line-anchored regex, which is a false negative in a guard whose whole job is to fail.
+    const scoped = selectorsMentioning(css, ".cv-").map(({ selector }) => selector);
     expect(scoped.length, "the cover must have rules").toBeGreaterThan(20);
     for (const sel of scoped)
       expect(sel, `${sel} must not target the shell or the tab`).not.toMatch(
@@ -918,9 +1119,9 @@ describe("the cover's stylesheet claims", () => {
     // and E2 signs off a strip form for it. Enumerated HERE, as its own list, so new drift still fails:
     // every banner rule the cover adds must be scoped by `.cv-strap`, which is markup only this layout
     // renders — it cannot leak to a banner sitting anywhere else.
-    const bannerRules = [...css.matchAll(/\n {4}([^\n{]*\.gc-banner[^\n{]*)\{/g)].map((m) =>
-      m[1].trim(),
-    );
+    // Same rule reader as the poster's enumeration, for the same reason: a multi-line list must not be
+    // able to smuggle a banner rule past this list (Codex E2 MED-4).
+    const bannerRules = selectorsMentioning(css, ".gc-banner").map(({ selector }) => selector);
     const covered = bannerRules.filter((s) => s.includes(".cv-"));
     expect(covered.sort()).toEqual(
       [

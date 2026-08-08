@@ -657,4 +657,16 @@ describe("coverHeroFocus — the DERIVED hero crop (ruling 9: not a per-id map)"
   it("keeps a fractional X fractional", () => {
     expect(coverHeroFocus("50.5% 30%")).toBe("30.5% 30%");
   });
+
+  it("refuses a percentage that PARSES but is not finite (Codex E2 LOW-8)", () => {
+    // A 400-digit percentage matches the shape and converts through `Number()` to Infinity, and
+    // `Infinity% 20%` is not a crop — it is an invalid declaration the browser drops, taking the entry's
+    // own focus down with it. Degrade to the input, like every other junk case.
+    const huge = `${"9".repeat(400)}% 20%`;
+    expect(Number("9".repeat(400)), "the fixture must really overflow").toBe(
+      Number.POSITIVE_INFINITY,
+    );
+    expect(coverHeroFocus(huge)).toBe(huge);
+    expect(coverHeroFocus(`-${"9".repeat(400)}% 20%`)).toBe(`-${"9".repeat(400)}% 20%`);
+  });
 });
