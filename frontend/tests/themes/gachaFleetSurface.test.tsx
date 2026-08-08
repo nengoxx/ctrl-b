@@ -19,8 +19,11 @@ const fleet = vi.hoisted(() => {
 vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => ({ data: undefined }) }));
 
+import type { ComponentType } from "react";
+
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import { registry } from "../../src/theme-engine/registry";
+import type { ThemeSettingField } from "../../src/theme-engine/types";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
 import { fleetSurface } from "../../src/themes/gacha/fleetSurface";
 import type { GachaTrackProps } from "../../src/themes/gacha/GachaTrack";
@@ -54,6 +57,18 @@ function DummyLayout({ hosts }: GachaTrackProps) {
 
 const GACHA = registry.gacha!;
 
+// The two registry slots this file borrows, snapshotted BEFORE each mutation and RESTORED after — not
+// deleted. Restore rather than delete because E1 declares a real `fleetLayout` row and registers real
+// variants: a teardown that deleted would then quietly strip them for every later test in the run. Both
+// restores sit in a `finally`, so a throwing `cleanup()` (an unmount error, a leaked listener) cannot leave
+// the app's registries carrying this file's fixtures.
+let priorVariant: ComponentType<GachaTrackProps> | undefined;
+let priorSpec: ThemeSettingField | undefined;
+const restore = (key: string, prior: unknown, target: Record<string, unknown>) => {
+  if (prior === undefined) delete target[key];
+  else target[key] = prior;
+};
+
 beforeEach(() => {
   setUI({ theme: "gacha", tab: "fleet", motion: "full", themeSettings: {} });
   fleet.view = {
@@ -68,6 +83,8 @@ beforeEach(() => {
     svcLoading: false,
     svcError: null,
   };
+  priorVariant = fleetSurface.variants.dummy;
+  priorSpec = GACHA.settings!.fleetLayout;
   fleetSurface.register("dummy", DummyLayout);
   // the E1-shaped declaration, borrowed: the resolver validates against the theme's own option list, so an
   // undeclared value could never resolve to a variant (D31's per-theme capability list)
@@ -82,10 +99,13 @@ beforeEach(() => {
   };
 });
 afterEach(() => {
-  cleanup();
-  delete fleetSurface.variants.dummy;
-  delete GACHA.settings!.fleetLayout;
-  setUI({ themeSettings: {} });
+  try {
+    cleanup();
+  } finally {
+    restore("dummy", priorVariant, fleetSurface.variants);
+    restore("fleetLayout", priorSpec, GACHA.settings!);
+    setUI({ themeSettings: {} });
+  }
 });
 
 describe("the fleet surface under gacha", () => {

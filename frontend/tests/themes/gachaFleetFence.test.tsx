@@ -87,8 +87,13 @@ beforeEach(() => {
   vi.spyOn(Math, "random").mockReturnValue(0);
 });
 afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
+  // `finally`, so a throwing `cleanup()` cannot leave `Math.random` stubbed for the rest of the run — a
+  // global that stayed pinned would silently freeze the ribbon roll in every other suite.
+  try {
+    cleanup();
+  } finally {
+    vi.restoreAllMocks();
+  }
 });
 
 /** React's `useId` values (`GachaFleet` labels the dossier sheet with one) encode a per-root counter, so they

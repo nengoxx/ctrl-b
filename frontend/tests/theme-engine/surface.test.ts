@@ -66,6 +66,37 @@ describe("createSurface — the registry", () => {
     expect(s.name).toBe("composer");
     expect(s.defaultId).toBe("stacked");
   });
+
+  it("has NO prototype, so an inherited key is not a variant (`toString` → the fallback)", () => {
+    // Variant ids arrive from persisted, cross-device-synced user data. On a plain object `toString` and
+    // `constructor` resolve to inherited junk, and a bare index read would hand React a function that is not
+    // a component. A null-prototype map has nothing to inherit.
+    const s = createSurface<Slots>("composer", "stacked", Alpha);
+    expect(Object.getPrototypeOf(s.variants)).toBeNull();
+    expect(mark(render(createElement(s.Themed, { layout: "toString" })).container)).toBe("alpha");
+    cleanup();
+    expect(mark(render(createElement(s.Themed, { layout: "constructor" })).container)).toBe(
+      "alpha",
+    );
+  });
+
+  it("registering `__proto__` stores an ORDINARY own key — no pollution of anything else", () => {
+    const s = createSurface<Slots>("composer", "stacked", Alpha);
+    const other = createSurface<Slots>("composer", "stacked", Alpha);
+    s.register("__proto__", Beta);
+
+    // it is a real own entry on THIS surface (on a plain object the assignment would have been swallowed
+    // by the prototype setter and stored nothing at all)…
+    expect(Object.hasOwn(s.variants, "__proto__")).toBe(true);
+    expect(mark(render(createElement(s.Themed, { layout: "__proto__" })).container)).toBe("beta");
+    cleanup();
+    // …and nothing leaked: a second surface, and plain objects, are untouched
+    expect(Object.hasOwn(other.variants, "__proto__")).toBe(false);
+    expect(mark(render(createElement(other.Themed, { layout: "__proto__" })).container)).toBe(
+      "alpha",
+    );
+    expect(({} as Record<string, unknown>).nope).toBeUndefined();
+  });
 });
 
 describe("createSurface — useVariantId", () => {
@@ -90,7 +121,7 @@ describe("createSurface — useVariantId", () => {
     expect(renderHook(() => s.useVariantId()).result.current).toBe("stacked");
   });
 
-  it("degrades a DECLARED-but-unregistered id to defaultId (the `id in variants` guard)", () => {
+  it("degrades a DECLARED-but-unregistered id to defaultId (the `Object.hasOwn` guard)", () => {
     // `line` is a real cosmos option; this surface never registered it — a theme-owned variant whose chunk
     // hasn't loaded, or an id from a newer build. The id resolves, the registry doesn't hold it, so the
     // resolver hands back the default rather than a hole.

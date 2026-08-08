@@ -570,12 +570,14 @@ describe.each(registeredThemes().map((d) => [d.id, d] as const))(
 //    policing the spec at runtime. This is where the spec is policed instead — statically, over every
 //    registered theme, so a broken declaration is a red test rather than a row the owner can never reach.
 //
-//    Five rules, each with a reason: the sibling must EXIST (a typo'd key would gate on nothing) and must be
+//    Six rules, each with a reason: the sibling must EXIST (a typo'd key would gate on nothing) and must be
 //    a `seg` (a switch's boolean can never match a string `is`; an enable-toggle is a different feature); it
 //    must be UNCONDITIONAL, which bans both chains (a controller that can itself vanish leaves its dependent
 //    stranded) and self-reference (a row able to hide the only control that un-hides it); every `is` value
 //    must be one of the sibling's declared options (else the row is unreachable — the same class of drift
-//    the palettes/defaults assertions above catch); and the dependent must be declared IMMEDIATELY AFTER its
+//    the palettes/defaults assertions above catch) and the set must be NON-EMPTY (`is: []` matches nothing,
+//    so the row could never show — a dead declaration, not a hidden one); and the dependent must be declared
+//    IMMEDIATELY AFTER its
 //    controller, because declaration order IS render order and the owner's ruling was "it pops up right
 //    below". Vacuous today — no registered theme declares `showWhen` (gacha's `posterName` lands at E1) —
 //    so the fixture suite below is what proves the rules actually bite. ──
@@ -601,7 +603,9 @@ function showWhenViolations(spec: ThemeSettingsSpec): string[] {
     if (controller.showWhen)
       out.push(`${key}: controller "${cond.key}" is itself CONDITIONAL (no chains)`);
     const vals = controller.options.map((o) => o.val);
-    for (const want of Array.isArray(cond.is) ? cond.is : [cond.is]) {
+    const wanted = Array.isArray(cond.is) ? cond.is : [cond.is];
+    if (wanted.length === 0) out.push(`${key}: showWhen 'is' is EMPTY — the row can never show`);
+    for (const want of wanted) {
       if (!vals.includes(want))
         out.push(`${key}: showWhen value "${want}" is not an option of "${cond.key}"`);
     }
@@ -669,6 +673,15 @@ describe("the showWhen contract — the checker itself (deliberately-broken fixt
         posterName: seg({ showWhen: { key: "fleetLayout", is: "poster" } }),
       }),
     ).toEqual(['posterName: controller "fleetLayout" is itself CONDITIONAL (no chains)']);
+  });
+
+  it("catches an EMPTY `is` (a row that could never show is a dead declaration, not a hidden one)", () => {
+    expect(
+      showWhenViolations({
+        fleetLayout: seg(),
+        posterName: seg({ showWhen: { key: "fleetLayout", is: [] } }),
+      }),
+    ).toEqual(["posterName: showWhen 'is' is EMPTY — the row can never show"]);
   });
 
   it("catches an `is` value the controller does not offer", () => {
