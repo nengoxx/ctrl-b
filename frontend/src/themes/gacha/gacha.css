@@ -2075,6 +2075,695 @@
       overflow-wrap: anywhere;
     }
 
+    /* ══ THE COVER (E2 — GACHA_PLAN §12.6, the finalists lab's screen B) ═══════════════════════════════
+     * gacha's THIRD and last fleet layout: a FIXED full-viewport magazine cover. One hero machine fills
+     * the frame, the rest are printed cut-outs down the leading edge, and the masthead / strapline /
+     * barcode furniture prints around them. Every number below is the lab's
+     * (`design/prototypes/gacha/alt-fleet-finalists/styles.css` §6) and every one of them is a custom
+     * property, because the E5 device round is where a fixed composition gets its real test.
+     *
+     * ── THE FRAME, and why it is absolute rather than fixed ──────────────────────────────────────────
+     * A magazine cover does not scroll (ruling 9), so the composition fills the fleet tab's FRAME and
+     * contributes no in-flow height at all — the tab's scroller then has nothing to move, without a
+     * single rule reaching for `overflow: hidden` on a box this theme does not own. The containing block
+     * is `.kit-scroll` (`position: absolute` in kit.css), which is the nearest positioned ancestor:
+     * `.tab` is static, and gacha already nulls the kit's `kit-fade` entrance on `.tab.active` — the one
+     * thing that would otherwise put a TRANSFORM on that box for 250 ms and make it the containing block
+     * instead. `position: fixed` is deliberately NOT used: §10.3's ruling (a fixed layer breaks under any
+     * transformed ancestor, and the detail morph transforms plenty).
+     *
+     * The BLACK FIELD is painted by the frame ITSELF, and that is the whole difference from the poster's
+     * withdrawn attempt (owner ruling ①, E1): nothing here touches `.kit-main`, so the theme's coloured
+     * backdrop and the fleet wallpaper are exactly the rules they always were — this layout simply draws
+     * an opaque page over them, the way the lab's own screen does.
+     *
+     * ── THE FLOORS ARE THE APP'S, NOT THE LAB'S ─────────────────────────────────────────────────────
+     * The lab authored `foot: 70 / strap: 102 / side: 202 / herocopy: 212` against a BARE viewport. Here
+     * the composer floats over the bottom of the same box the frame fills, so every floor is expressed
+     * off the measured `--composer-h` (DefaultRoot publishes it on the root element). The chain is
+     * written as the lab's own INTERVALS on top of that floor, which reproduces 70/102/202/212 exactly at
+     * the composer's 64 px resting height and rides up with it when the textarea grows. Same for the top:
+     * the masthead clears `--appbar-h`, which is 0 in the bar-hidden mode the picker's copy recommends.
+     *
+     * §14.11 THROUGHOUT: every animated property in this block is `transform` or `opacity`. */
+    .cv-frame {
+      /* the drawn column, the lab's `--u`, capped so a desktop-width shell does not grow poster-sized
+         display type. Declared on the container and substituted in its DESCENDANTS — an element
+         establishes a container for its descendants, never for itself. */
+      container-type: inline-size;
+      --cv-u: min(100cqw, 520px);
+      /* the app's real bottom chrome; the four floors below are the lab's intervals stacked on it */
+      --cv-floor: var(--composer-h, 64px);
+      --cv-foot: calc(var(--cv-floor) + 6px);
+      --cv-strap: calc(var(--cv-foot) + 32px);
+      --cv-side-floor: calc(var(--cv-strap) + 100px);
+      --cv-herocopy: calc(var(--cv-strap) + 110px);
+      /* …and the top: the lab's 16 px, below whatever app bar is showing */
+      --cv-mast-top: calc(var(--appbar-h, 0px) + 16px);
+      /* THE CUT-IN COLUMN STARTS JUST UNDER THE MASTHEAD (the lab's owner-ruled derivation, restated
+         against production's own top inset): 54 px of fixed masthead rows — the kicker, the ISSUE line,
+         their margins and the ~3.5 px the -2deg rotation drops the leading corner — plus the two display
+         lines, which SCALE with the column (2 x .108u x .8 line-height). Deriving it is what keeps a
+         CONSTANT ~15 px of air under the masthead at every width instead of 30 / 17 / 10. */
+      --cv-side-top: calc(var(--cv-mast-top) + 54px + var(--cv-u) * 0.173);
+      /* the strapline's banner height — the lab's `--bn-h-strip` */
+      --cv-bn-h: 88px;
+      /* where the develop ceremony's stamp lands on the hero (the lab's seat; device-round tunable) */
+      --cv-stamp-top: 168px;
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: var(--gc-cv-field);
+    }
+    .cv-shake {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+    .cv-page {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      transition:
+        transform 320ms var(--gc-ease-out),
+        opacity 320ms var(--gc-ease-out);
+    }
+    /* THE PAGE TURN — the fold a promote commits inside. The hero swap lands at beat 170, while the page
+     * is scaled down and dimmed, so the reparent is never seen mid-flight. */
+    .cv-page.turning {
+      transform: scale(0.962);
+      opacity: 0.3;
+    }
+    .cv-heroslot {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+    }
+    .cv-heroslot.entering {
+      animation: gacha-cv-enter 380ms var(--gc-ease-out) both;
+    }
+    @keyframes gacha-cv-enter {
+      from {
+        transform: scale(1.05);
+        opacity: 0;
+      }
+    }
+
+    /* ── the card, in both of its seats ───────────────────────────────────────────────────────────────
+     * ONE control per machine, and the SAME element whether it is the hero or a cut-in — which is what
+     * lets a promote move a node between the two containers instead of trading one component for
+     * another. The two copy blocks are both present and the seat decides which one shows. */
+    .cv-card {
+      /* the RESOLVED hue: the input arrives inline as `--cv-rar` and every painted thing reads THIS, so
+         a class can override it — an inline custom property beats every selector short of `!important`,
+         which is the trap the poster's `--po-rar`/`--po-hue` split records in full */
+      --cv-hue: var(--cv-rar);
+      display: block;
+      overflow: hidden;
+      padding: 0;
+      border: 0;
+      background: var(--gc-cv-field);
+      color: inherit;
+      cursor: pointer;
+      /* kills the double-tap-zoom delay (ruling 3): two fast taps on a cover are a legitimate gesture */
+      touch-action: manipulation;
+    }
+    /* A SLEEPING machine's hue is SUPPRESSED to one neutral rather than dimmed per machine — the theme's
+     * sleeping grammar, shared with the poster: five faded colours read as five machines in trouble, one
+     * grey reads as "not here". It floods back the moment a poll says the machine is up, and the develop
+     * ceremony's wash is that flood made visible. */
+    .cv-card.asleep {
+      --cv-hue: var(--gc-unit-off);
+    }
+    .cv-card.busy {
+      cursor: default;
+    }
+    .cv-card.is-hero {
+      position: absolute;
+      inset: 0;
+    }
+    .cv-shot {
+      position: absolute;
+      inset: 0;
+    }
+    .cv-shot img,
+    .cv-shot-blank {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: var(--cv-focus, 50% 22%);
+    }
+    /* THE HERO CROP IS THE COVER'S OWN (ruling 9, DERIVED — `fleet.ts#coverHeroFocus`). Raising the
+     * cut-in column under the masthead puts paper over the leading edge of the frame, so the hero art
+     * shifts its focal point LEFT: a LOWER object-position X shows more of the image's left, which slides
+     * the subject RIGHTWARDS on screen, out from under the stack. The chain below is what makes the
+     * derivation optional — art that declares no focus at all (the owner's own drops) falls through to
+     * the lab's default and nothing is computed. */
+    .cv-card.is-hero .cv-shot img {
+      object-position: var(--cv-hero-focus, var(--cv-focus, 50% 22%));
+    }
+    .cv-card.asleep .cv-shot img {
+      /* the capsule track's own sleep treatment, so all three layouts read one machine the same way */
+      filter: grayscale(1) brightness(0.72);
+    }
+    .cv-scrim {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+    .cv-card.is-hero .cv-scrim {
+      background: var(--gc-cv-hero-scrim);
+    }
+    .cv-card.is-cut .cv-scrim {
+      background: var(--gc-cv-cut-scrim);
+    }
+    /* THE DEVELOP WASH — the unit's hue flooding the mono plate for the length of the ceremony. Opacity
+     * and transform only, and it paints nothing at rest.
+     *
+     * ⚠ IT READS THE INPUT (`--cv-rar`), NOT THE RESOLVED HUE. Every other painted thing on a card reads
+     * `--cv-hue`, which a sleeping machine suppresses to grey — and this is the ONE surface that must not
+     * be suppressed, because the machine being developed is by definition the asleep one and the whole
+     * gesture of the ceremony is its TRUE colour flooding back into a mono plate. Reading `--cv-hue` here
+     * would wash grey over grey. */
+    .cv-dev {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      opacity: 0;
+      background: radial-gradient(120% 78% at 50% 58%, var(--cv-rar), transparent 70%);
+    }
+    .cv-card.developing .cv-dev {
+      animation: gacha-cv-dev 720ms var(--gc-ease-out) both;
+    }
+    @keyframes gacha-cv-dev {
+      0% {
+        opacity: 0;
+        transform: scale(1.18);
+      }
+      34% {
+        opacity: 0.5;
+      }
+      100% {
+        opacity: 0;
+        transform: none;
+      }
+    }
+
+    /* ── the HERO's copy: the bottom-trailing name block ──────────────────────────────────────────── */
+    .cv-herocopy {
+      position: absolute;
+      z-index: 3;
+      left: 8px;
+      right: 14px;
+      bottom: var(--cv-herocopy);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      text-align: right;
+      gap: 6px;
+      pointer-events: none;
+    }
+    /* the lab's Silkscreen captions map onto the POSTER's caption treatment (E1's face mapping — the
+     * pixel face was walked and cut, and left the pipeline with the owner's ruling) */
+    .cv-herocopy small {
+      font-size: 7.5px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: var(--cv-hue);
+    }
+    .cv-herocopy b {
+      /* the MACHINE NAME over art — the capsule plate's own pickable face (`cardNameFont`), so ONE owner
+         choice dresses all three fleet layouts (the poster's `.po-name b` states the same rule) */
+      font-family: var(--gc-card-name-font);
+      font-weight: var(--gc-card-name-weight);
+      font-size: calc(var(--cv-u) * 0.115);
+      line-height: 0.86;
+      letter-spacing: -0.025em;
+      text-shadow: var(--gc-cv-display-shadow);
+      /* a real fleet's names are not four fixed words (the long-name matrix row) */
+      overflow-wrap: anywhere;
+    }
+    .cv-herocopy i {
+      font-style: normal;
+      font-family: var(--font-body);
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      color: var(--text-2);
+    }
+    .cv-line {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .cv-stars {
+      display: flex;
+      gap: var(--gc-star-gap);
+      /* STARS ARE NEVER TINTED BY THE UNIT HUE (§12.6 ruling 8): gold / rose-gold is a different signal,
+         and two signals must not wear one colour. The row is the card's own, one size down. */
+      --gc-star-size: 11.5px;
+      --gc-star-gap: 3.5px;
+      color: var(--gc-star);
+    }
+    .cv-card.asleep .cv-stars {
+      color: var(--gc-star-dim);
+    }
+    /* STATUS NEVER RIDES ON DECORATION ALONE (§12.3 (4)) — and it rides the THEME's status grammar, not a
+     * bespoke one: the capsule card's ONLINE ribbon, its sleeping pill, and the accent fill for a request
+     * in flight. The lab's three hand-picked greens and purples do not port for the same reason the
+     * poster's pixel chip did not survive its walk. */
+    .cv-chip {
+      padding: 4px 8px;
+      background: var(--gc-online-fill);
+      color: var(--gc-online-ink);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+    }
+    .cv-card.asleep .cv-chip {
+      background: var(--gc-pill-bg);
+      box-shadow: inset 0 0 0 1px var(--gc-pill-line);
+      color: var(--gc-pill-ink);
+    }
+    /* A REQUEST IN FLIGHT (ruling 4) — poll-truthful: it says the app is ASKING, never that the machine
+     * is up. It ends when the request settles and the chip goes back to the server's word. */
+    .cv-card.busy .cv-chip {
+      background: var(--accent-fill);
+      box-shadow: none;
+      color: var(--accent-ink);
+    }
+    /* one card, two seats: each hides the other's copy block */
+    .cv-card.is-cut .cv-herocopy {
+      display: none;
+    }
+    .cv-card.is-hero .cv-cutcopy {
+      display: none;
+    }
+
+    /* ── the CUT-IN column down the leading edge ──────────────────────────────────────────────────── */
+    .cv-side {
+      position: absolute;
+      z-index: 4;
+      left: 9px;
+      top: var(--cv-side-top);
+      bottom: var(--cv-side-floor);
+      width: 118px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    /* THE ONE THING THAT SCROLLS (ruling 9). The page is fixed; when the fleet outgrows the column this
+     * scroller takes it, bounded and contained so a flick never chains out to the shell. The bar is
+     * hidden because the column is 118 px of printed paper, not a list. */
+    .cv-stack {
+      min-height: 0;
+      flex: 0 1 auto;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 2px 6px 2px 2px;
+    }
+    .cv-stack::-webkit-scrollbar {
+      display: none;
+    }
+    .cv-card.is-cut {
+      position: relative;
+      flex: 0 0 auto;
+      width: 100%;
+      height: 112px;
+      border: 4px solid var(--gc-cv-paper);
+      clip-path: polygon(4% 0, 100% 5%, 96% 100%, 0 94%);
+      transform: translate3d(var(--cv-shift, 0px), 0, 0) rotate(var(--cv-tilt, 0deg))
+        scale(var(--cv-press, 1));
+      transition: transform 140ms var(--gc-ease-out);
+    }
+    /* The lab's alternating tilt, expressed as VARIABLES rather than as three competing `transform`
+     * declarations: the lab's own `:active` rule sets a bare `scale()`, which silently clobbers the
+     * rotation it is meant to compose with. One transform, three inputs, no clobber. */
+    .cv-stack .cv-card:nth-child(odd) {
+      --cv-tilt: -2deg;
+    }
+    .cv-stack .cv-card:nth-child(even) {
+      --cv-tilt: 1.8deg;
+      --cv-shift: 9px;
+    }
+    .cv-card.is-cut:active {
+      --cv-press: 0.97;
+    }
+    /* the name on its own row: at 110 px of card the status word and a full hostname cannot share a line
+     * without one of them ellipsing away (the lab's measured finding) */
+    .cv-cutcopy {
+      position: absolute;
+      z-index: 3;
+      left: 4px;
+      right: 4px;
+      bottom: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      padding: 3px 5px 4px 6px;
+      background: var(--gc-cv-slip);
+      color: var(--gc-cv-slip-ink);
+      border-left: 4px solid var(--cv-hue);
+    }
+    .cv-cutcopy b {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--gc-card-name-font);
+      font-weight: var(--gc-card-name-weight);
+      font-size: 12px;
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    /* the cut-in's chip sits on PAPER, so it takes the theme's status grammar inverted: the online fill
+     * as INK on the slip rather than as a field, which keeps one status vocabulary at 6 px */
+    .cv-cchip {
+      flex: 0 0 auto;
+      padding: 2px 5px;
+      background: var(--gc-online-fill);
+      color: var(--gc-online-ink);
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+    }
+    .cv-card.asleep .cv-cchip {
+      background: var(--gc-unit-off);
+      color: var(--gc-cv-slip);
+    }
+    .cv-card.busy .cv-cchip {
+      background: var(--accent-fill);
+      color: var(--accent-ink);
+    }
+    .cv-hint {
+      flex: 0 0 auto;
+      margin: 0;
+      padding-top: 6px;
+      border-top: 1px solid var(--gc-pill-line);
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--text-3);
+      line-height: 1.9;
+    }
+
+    /* ── the MASTHEAD (the tab's ONE heading, ruling 9) + the fine print ──────────────────────────── */
+    .cv-mast {
+      position: absolute;
+      z-index: 5;
+      left: 14px;
+      top: var(--cv-mast-top);
+      margin: 0;
+      pointer-events: none;
+      transform: rotate(-2deg);
+    }
+    .cv-kicker {
+      display: block;
+      font-family: var(--font-body);
+      font-size: 8.5px;
+      font-weight: 700;
+      letter-spacing: 0.3em;
+      color: var(--cv-cover);
+    }
+    .cv-mast b {
+      display: block;
+      margin-top: 3px;
+      /* THE SANS at 900, not `--font-display` — that token is Shippori Mincho in this theme, and the
+         lab's masthead is Archivo Black, which E1 mapped onto Zen Kaku 900 (`--font-body`'s family, a
+         weight already generated and warmed). The poster's `.po-jp` records the same choice. */
+      font-family: var(--font-body);
+      font-size: calc(var(--cv-u) * 0.108);
+      font-weight: 900;
+      line-height: 0.8;
+      letter-spacing: -0.035em;
+      text-shadow: var(--gc-cv-display-shadow);
+    }
+    .cv-issue {
+      display: block;
+      margin-top: 9px;
+      /* `text-shadow` INHERITS, so the display line's hard drop has to be nulled on the caption under it */
+      text-shadow: none;
+      font-size: 7.5px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      color: var(--text-3);
+    }
+    .cv-mast.beating {
+      animation: gacha-cv-beat 280ms var(--gc-ease-out) both;
+    }
+    @keyframes gacha-cv-beat {
+      0% {
+        transform: rotate(-2deg) scale(1);
+      }
+      38% {
+        transform: rotate(-2deg) scale(1.055);
+      }
+      100% {
+        transform: rotate(-2deg) scale(1);
+      }
+    }
+    /* The two answered-with-nothing states, seated where the composition would have started. Absolute,
+     * because the page's own children all are — a static message would stack under the masthead. */
+    .cv-page > .gc-msg {
+      position: absolute;
+      z-index: 5;
+      left: 14px;
+      right: 14px;
+      top: var(--cv-side-top);
+      padding: 0;
+    }
+    .cv-foot {
+      position: absolute;
+      z-index: 5;
+      left: 14px;
+      right: 14px;
+      bottom: var(--cv-foot);
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 10px;
+      pointer-events: none;
+    }
+    /* the lab's three coprime layers — `currentColor`, so it costs no token */
+    .cv-barcode {
+      width: 76px;
+      height: 28px;
+      opacity: 0.78;
+      background-image:
+        repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 6px),
+        repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 10px),
+        repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 13px);
+    }
+    .cv-fine {
+      font-size: 7px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--text-3);
+      line-height: 2;
+      text-align: center;
+    }
+    .cv-price {
+      font-family: var(--font-body);
+      font-weight: 900;
+      font-size: 15px;
+      line-height: 1;
+    }
+
+    /* ── the DEVELOP ceremony's own furniture ─────────────────────────────────────────────────────────
+     * The stamp is decoration with a 320 ms life (`aria-hidden`, unmounted at cleanup): the machine's
+     * real state is the chip beside it, which says the SERVER's word. The lab's persistent `.stamped` —
+     * a badge that outlived the ceremony and claimed the machine was up — is exactly the fiction ruling 4
+     * cuts. */
+    .cv-stamp {
+      position: absolute;
+      z-index: 6;
+      right: 18px;
+      top: var(--cv-stamp-top);
+      padding: 5px 12px;
+      border: 4px solid var(--gc-cv-stamp-ink);
+      color: var(--gc-cv-stamp-ink);
+      /* the theme's one slab display face — `cardNameFont`'s default IS the lab's Bungee, and reading the
+         token rather than naming the family is what keeps the stamp on a face `fonts.ts` has actually
+         warmed (a hardcoded family would either arrive unwarmed or force Bungee back onto every install's
+         activation path, which is the regression `gachaFonts.test.ts` pins) */
+      font-family: var(--gc-card-name-font);
+      font-weight: var(--gc-card-name-weight);
+      font-size: 24px;
+      letter-spacing: 0.05em;
+      pointer-events: none;
+      animation: gacha-cv-thud 320ms var(--gc-ease-out) both;
+    }
+    @keyframes gacha-cv-thud {
+      0% {
+        opacity: 0;
+        transform: rotate(16deg) scale(2.2);
+      }
+      60% {
+        opacity: 1;
+        transform: rotate(8deg) scale(0.94);
+      }
+      100% {
+        opacity: 0.92;
+        transform: rotate(9deg) scale(1);
+      }
+    }
+    /* the one-frame white — a PRE-EXISTING node on an opacity-only animation, so the ceremony never
+     * mounts anything mid-flight (the lab's `.flash`, R24 A9) */
+    .cv-flash {
+      position: absolute;
+      inset: 0;
+      z-index: 9;
+      background: var(--gc-cv-flash);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .cv-flash.fire {
+      animation: gacha-cv-flash 200ms linear both;
+    }
+    @keyframes gacha-cv-flash {
+      0% {
+        opacity: 0;
+      }
+      20% {
+        opacity: 0.55;
+      }
+      100% {
+        opacity: 0;
+      }
+    }
+    /* the shake root — never `<body>`, and the flash stays OUTSIDE it so the white does not travel */
+    .cv-shake.shaking {
+      animation: gacha-cv-shake 130ms var(--gc-ease-out) both;
+    }
+    @keyframes gacha-cv-shake {
+      0% {
+        transform: translate3d(0, 0, 0);
+      }
+      25% {
+        transform: translate3d(4px, -1px, 0);
+      }
+      50% {
+        transform: translate3d(-4px, 1px, 0);
+      }
+      75% {
+        transform: translate3d(2.4px, 0, 0);
+      }
+      100% {
+        transform: translate3d(0, 0, 0);
+      }
+    }
+
+    /* ── FOCUS, and the two shapes it has to survive ─────────────────────────────────────────────────
+     * A CUT-IN is clipped to a polygon, and a clip-path erases the UA ring outright (R18) — so its ring
+     * is drawn as a pseudo INSIDE the clip, wearing the card's own shape. The HERO is unclipped, but it
+     * fills the frame edge to edge, so an OUTSIDE ring lands entirely in the frame's overflow and a
+     * keyboard user sees nothing at all: it takes the banner promo's own answer (`.gc-slide-hit`), which
+     * is the kit ring with only its offset pulled in. */
+    .cv-card.is-hero:focus-visible {
+      outline-offset: -3px;
+    }
+    .cv-card.is-cut:focus-visible {
+      outline: none;
+    }
+    .cv-card.is-cut:focus-visible::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      clip-path: polygon(4% 0, 100% 5%, 96% 100%, 0 94%);
+      box-shadow: inset 0 0 0 2px var(--accent);
+      pointer-events: none;
+    }
+
+    /* ── THE STRAPLINE: the pickup banner, printed onto the cover (§12.6 ruling 7) ───────────────────
+     * THE SIGNED STRUCTURAL EXCEPTION. Owner ruling ① (E1) says the banner renders byte-identically
+     * under every layout, and it still does under capsule and poster — that invariant is untouched and
+     * still pinned. The cover is the one composition that gives the banner a DIFFERENT SEAT rather than
+     * a different skin: a 232 px hero band cannot sit inside a magazine cover that already has a hero,
+     * so the same instance is re-scaled into the strip form the lab walked, and the strip's paper
+     * keyline and issue-hue tag are what make it read as printed ON the cover instead of dropped over it.
+     *
+     * Scoped by `.cv-strap` — the SEAT — rather than by the `body[data-gc-fleet]` stamp. The seat is
+     * cover-exclusive markup, so the scoping is exact rather than modal, it cannot leak to a banner that
+     * is somewhere else, and the layout stamp's own rules stay poster-only (which is what keeps the
+     * enumerated capsule<->poster identity test literally unchanged). */
+    .cv-strap {
+      position: absolute;
+      z-index: 5;
+      left: 14px;
+      right: 14px;
+      bottom: var(--cv-strap);
+    }
+    .cv-strap .gc-banner {
+      height: var(--cv-bn-h);
+      /* the paper keyline, inside the banner's own shadow: the strip is TRIMMED onto the page */
+      box-shadow:
+        var(--gc-banner-shadow),
+        inset 0 0 0 2px var(--gc-cv-paper);
+    }
+    .cv-strap .gc-banner-copy {
+      left: 11px;
+      right: 11px;
+      bottom: 9px;
+    }
+    .cv-strap .gc-banner-copy .tag {
+      /* the ISSUE's own hue, which is the hero's — the one place the cover's colour reaches the banner */
+      background: var(--cv-cover);
+      color: var(--gc-cv-slip-ink);
+      padding: 3px 8px;
+      font-size: 7px;
+    }
+    .cv-strap .gc-banner-copy b {
+      margin-top: 5px;
+      font-size: calc(var(--cv-u) * 0.042);
+    }
+    /* the caption is the first thing a strip cannot afford: at 88 px it would push the display line into
+     * the dot rail (the lab's own strip drops it too) */
+    .cv-strap .gc-banner-copy small {
+      display: none;
+    }
+    .cv-strap .gc-banner-rate {
+      top: 6px;
+      gap: 3px;
+    }
+    .cv-strap .gc-banner-rate span {
+      padding: 3px 8px 3px 10px;
+      font-size: 7px;
+    }
+    .cv-strap .gc-banner-dots {
+      right: 10px;
+      bottom: 8px;
+    }
+
+    /* ── the motion axis, the app's own and never an OS media query (ruling 10) ──────────────────────
+     * `useCeremony` already collapses every beat under `data-motion="reduced"`, so no ceremony class is
+     * ever committed there and none of these animations can start. The nulls below are the belt: they
+     * are what a reader checks, and they cover the two properties that are NOT ceremony-driven — the
+     * page's own transition and the cut-in press. */
+    body[data-motion="reduced"] .cv-page {
+      transition: none;
+    }
+    body[data-motion="reduced"] .cv-card.is-cut {
+      transition: none;
+    }
+    body[data-motion="reduced"] .cv-heroslot.entering,
+    body[data-motion="reduced"] .cv-card.developing .cv-dev,
+    body[data-motion="reduced"] .cv-mast.beating,
+    body[data-motion="reduced"] .cv-stamp,
+    body[data-motion="reduced"] .cv-flash.fire,
+    body[data-motion="reduced"] .cv-shake.shaking {
+      animation: none;
+    }
+
     /* ── THE FLEET's LIVE REGION ──────────────────────────────────────────────────────────────────────
      * Select-then-act's only feedback is a transform and a below-the-fold readout, so the sentence is
      * carried here instead. The recipe is the kit's own sr-only one (`.bs-close-sr`), restated rather than

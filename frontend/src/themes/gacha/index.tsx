@@ -234,11 +234,12 @@ export const gacha: ThemeDef = {
     // three rows that refine what it draws (stars · banner wallpaper · operator art): declaration order is
     // render order, and the layout is the decision the other three read as refinements of.
     //
-    // TWO OPTIONS, not three: `cover` joins at E2, when the layout it names exists. That is the "no lying
-    // options" rule the E0 slice held to by declaring nothing at all — a seg option is a promise that the
-    // value resolves to something, and `resolveThemeSetting` enforces the promise in the other direction
-    // (only a declared option can ever reach the registry). The CAP IS THREE (owner: "maximum three… I
-    // don't wanna clutter the app"), and this list is what enforces it.
+    // THREE OPTIONS, and the list is now CLOSED: `cover` joined at E2, when the layout it names came to
+    // exist. That is the "no lying options" rule the E0 slice held to by declaring nothing at all — a seg
+    // option is a promise that the value resolves to something, and `resolveThemeSetting` enforces the
+    // promise in the other direction (only a declared option can ever reach the registry). The CAP IS
+    // THREE (owner: "maximum three… I don't wanna clutter the app"), and this list is what enforces it:
+    // concept C is parked, and a fourth entry here is an owner ruling, not an edit.
     fleetLayout: {
       type: "seg",
       label: "Fleet layout",
@@ -246,6 +247,7 @@ export const gacha: ThemeDef = {
       options: [
         { val: "capsule", label: "Capsule" },
         { val: "poster", label: "Poster" },
+        { val: "cover", label: "Cover" },
       ],
       default: "capsule",
     },

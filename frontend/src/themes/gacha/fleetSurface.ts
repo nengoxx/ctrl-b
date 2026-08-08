@@ -1,4 +1,5 @@
 import { createSurface } from "../../theme-engine/surface";
+import { GachaCover } from "./GachaCover";
 import { GachaPoster } from "./GachaPoster";
 import { GachaTrack, type GachaTrackProps } from "./GachaTrack";
 
@@ -18,7 +19,8 @@ import { GachaTrack, type GachaTrackProps } from "./GachaTrack";
 //
 // `capsule` is the seeded default and the fallback, so a fresh install and every unknown/stale value still
 // land on GachaTrack. E1 adds `poster` — and with it the `fleetLayout` settings row, which E0 deliberately
-// withheld (§12.6: "no lying options" — a value is offered only once the layout it names exists).
+// withheld (§12.6: "no lying options" — a value is offered only once the layout it names exists). E2 adds
+// `cover`, which CLOSES the catalog: three is the owner's cap, and a fourth needs a ruling, not a call.
 export const fleetSurface = createSurface<GachaTrackProps>("fleetLayout", "capsule", GachaTrack);
 
 // MODULE SCOPE, per the Surface's registration contract: a variant registers as its module loads, and
@@ -26,3 +28,4 @@ export const fleetSurface = createSurface<GachaTrackProps>("fleetLayout", "capsu
 // here is safe under the import-cycle rule (surface.ts's ⚠ note) — it is this module's OWN binding, already
 // initialized on the line above, not a binding read through the cycle.
 fleetSurface.register("poster", GachaPoster);
+fleetSurface.register("cover", GachaCover);
