@@ -6,6 +6,9 @@ import {
   cardShapes,
   counterText,
   dossierSub,
+  openLabel,
+  partingStep,
+  pickLabel,
   pickRibbonHost,
   pingText,
   plateSub,
@@ -13,7 +16,9 @@ import {
   pityText,
   queryResolved,
   rateText,
+  roleLabel,
   sceneTitle,
+  tapAction,
 } from "../../src/themes/gacha/fleet";
 import type { Host } from "../../src/types";
 
@@ -283,5 +288,92 @@ describe("pickRibbonHost — the NEW-ribbon demo pick (G6)", () => {
   it("defaults to Math.random and always returns a member of the fleet", () => {
     const ids = ["a", "b", "c", "d"];
     for (let i = 0; i < 50; i++) expect(ids).toContain(pickRibbonHost(ids, null));
+  });
+});
+
+// ── SELECT-THEN-ACT (GACHA_PLAN §12.6 rulings 2 + 3) — the alt layouts' interaction policy, as VALUES ──
+// The R25 §Q7 ④ + ⑤ pins. The router is read as a table here so the render tests can assert outcomes
+// instead of branches, and the two-step label is checked against `openLabel` staying byte-identical.
+
+describe("tapAction — the tap router", () => {
+  // [selection, tapped, online, expected] — every permutation that matters, including the vanished
+  // selection (`null`, which is what a view resolves to when the fleet is empty) and the offline splits.
+  const CASES: [string | null, string, boolean, string][] = [
+    [null, "a", true, "select"], // nothing selected yet: the first tap can only select
+    [null, "a", false, "select"],
+    ["b", "a", true, "select"], // a DIFFERENT machine: always select, never act
+    ["b", "a", false, "select"],
+    ["a", "a", true, "open"], // the same machine, up: open its dossier
+    ["a", "a", false, "wake"], // the same machine, asleep: run the wake sequence
+  ];
+
+  it.each(CASES)("selected=%s tapped=%s online=%s -> %s", (selected, tapped, online, want) => {
+    expect(tapAction(selected, tapped, online)).toBe(want);
+  });
+
+  it("routes on the CURRENT liveness, not on a remembered one", () => {
+    // The council clause the caller has to honour: a machine that woke between the two taps OPENS. The
+    // function has no memory at all, which is what makes that the caller's only job.
+    expect(tapAction("a", "a", false)).toBe("wake");
+    expect(tapAction("a", "a", true)).toBe("open");
+  });
+});
+
+describe("pickLabel — the TWO-STEP accessible name", () => {
+  const online = host({ id: "a", name: "pegasus", status: { ...host().status!, online: true } });
+  const asleep = host({
+    id: "b",
+    name: "atlas",
+    role: null,
+    os_type: "windows",
+    status: { ...host().status!, online: false, ping_ms: null },
+  });
+
+  it("names BOTH steps while unselected, and the remaining one once selected (4 strings)", () => {
+    expect(pickLabel(online, 5, false)).toBe(
+      "pegasus, workstation, 5 stars, online. Tap to select; tap again to open the unit dossier.",
+    );
+    expect(pickLabel(online, 5, true)).toBe(
+      "pegasus, workstation, 5 stars, online. Selected. Tap to open the unit dossier.",
+    );
+    expect(pickLabel(asleep, 1, false)).toBe(
+      "atlas, windows, 1 stars, sleeping. Tap to select; tap again to run the wake sequence.",
+    );
+    expect(pickLabel(asleep, 1, true)).toBe(
+      "atlas, windows, 1 stars, sleeping. Selected. Tap to run the wake sequence.",
+    );
+  });
+
+  it("leaves `openLabel` BYTE-IDENTICAL — the cards and the banner promos still say one step", () => {
+    // R25 §Q1d: `openLabel` is shared by two one-tap surfaces, so the two-step wording had to be a NEW
+    // function. This is the assertion that it was.
+    expect(openLabel("pegasus", true)).toBe("open pegasus dossier, online");
+    expect(openLabel("atlas", false)).toBe("open atlas dossier, sleeping");
+  });
+
+  it("speaks the same role `roleLabel` prints, only lower-cased", () => {
+    expect(roleLabel(asleep)).toBe("WINDOWS");
+    expect(pickLabel(asleep, 1, false)).toContain(", windows, ");
+  });
+});
+
+describe("partingStep — how the stack parts for a wake ceremony", () => {
+  it("lifts everything above the waking slice and drops everything below it", () => {
+    expect([0, 1, 2, 3].map((i) => partingStep(i, 2))).toEqual([-2, -1, 0, 1]);
+  });
+
+  it("never moves the waking slice itself (it carries the selected grow)", () => {
+    for (let n = 0; n < 6; n++) expect(partingStep(n, n)).toBe(0);
+  });
+
+  it("clamps at two rungs, so a long fleet does not fling its ends off screen", () => {
+    expect(partingStep(0, 19)).toBe(-2);
+    expect(partingStep(19, 0)).toBe(2);
+  });
+
+  it("survives impossible input at rest rather than throwing (it is on a render path)", () => {
+    expect(partingStep(Number.NaN, 0)).toBe(0);
+    expect(partingStep(0, Number.NaN)).toBe(0);
+    expect(partingStep(1.9, 0)).toBe(1); // truncated, like every other index rule here
   });
 });

@@ -131,9 +131,64 @@ export function dossierSub(host: Host, online: boolean): string {
 }
 
 /** A machine's role in the arcade's voice: its configured role, falling back to the OS when it declares
- *  none — the same pair the Kit's own device row uses. Upper-case because every gacha caption is. */
-function roleLabel(host: Host): string {
+ *  none — the same pair the Kit's own device row uses. Upper-case because every gacha caption is.
+ *
+ *  EXPORTED since E1 (§12.6 ruling 8): the poster's slice caption and its data block print the same role in
+ *  the same voice as a capsule plate and a dossier subtitle, and a second `(role ?? os_type).toUpperCase()`
+ *  somewhere else is exactly the near-duplicate the one-source rule exists to stop. */
+export function roleLabel(host: Host): string {
   return (host.role ?? host.os_type).toUpperCase();
+}
+
+// ── SELECT-THEN-ACT (GACHA_PLAN §12.6 rulings 2 + 3) — the alt layouts' interaction policy ─────────────
+// The capsule track keeps ONE-TAP-OPENS. Poster (E1) and cover (E2) are select-then-act: the first tap on a
+// machine SELECTS it (the grow + the data block below the fold are the feedback), and a second tap on the
+// SAME machine acts — open its dossier if it is up, run the wake sequence if it is not.
+//
+// The rule is a pure function so it can be read as a table, and so the render tests assert an OUTCOME
+// rather than the presence of a branch. Two council clauses live in the CALLER, not here, and are worth
+// naming: liveness must come from the CURRENT render (never captured at the first tap — a machine that woke
+// between the two taps must open, not wake again), and a `wake` result NO-OPS while that host is busy.
+
+/** What a tap on a machine does under select-then-act. */
+export type FleetTap = "select" | "open" | "wake";
+
+/** Route one tap. `selectedId` is the RESOLVED selection the view is rendering (`picked ?? hosts[0]?.id`,
+ *  §12.6 ruling 2 — resolved in the view, never written to state), `tappedId` the machine that was tapped,
+ *  and `online` its liveness AS CURRENTLY RENDERED. */
+export function tapAction(selectedId: string | null, tappedId: string, online: boolean): FleetTap {
+  if (tappedId !== selectedId) return "select";
+  return online ? "open" : "wake";
+}
+
+/** The alt layouts' TWO-STEP accessible name (the lab's `labelPoster`, wording verbatim). A two-step control
+ *  whose label promises one step is a trap for anyone who cannot see the selected nudge, so both steps are
+ *  named and the sentence swaps once the machine is selected.
+ *
+ *  A NEW function rather than an edit to `openLabel` (R25 §Q1d): that one is shared by the capsule cards AND
+ *  the banner promos, which are one-tap openers and must keep saying so byte-for-byte. */
+export function pickLabel(host: Host, stars: number, selected: boolean): string {
+  const online = !!host.status?.online;
+  const what = online ? "open the unit dossier" : "run the wake sequence";
+  const head = `${host.name}, ${roleLabel(host).toLowerCase()}, ${stars} stars, ${
+    online ? "online" : "sleeping"
+  }. `;
+  return selected
+    ? `${head}Selected. Tap to ${what}.`
+    : `${head}Tap to select; tap again to ${what}.`;
+}
+
+/** How far a slice steps out of the way while the stack PARTS for a wake ceremony (the lab's `.parting`
+ *  block, generalized off its four hardcoded `nth-child` offsets). Signed rungs, not pixels: the CSS
+ *  multiplies by its own step token, so the distance stays tunable at the device round.
+ *
+ *  The lab parts a FIXED four-slice stack; a real fleet is any length, so the part is expressed around the
+ *  waking slice — everything above it lifts, everything below it drops — and clamped at two rungs so a
+ *  twenty-machine stack doesn't fling its ends off screen. The waking slice itself never moves (it is the
+ *  one being looked at, and it carries the selected grow). */
+export function partingStep(index: number, wakingIndex: number): number {
+  if (!Number.isFinite(index) || !Number.isFinite(wakingIndex)) return 0;
+  return Math.max(-2, Math.min(2, Math.trunc(index) - Math.trunc(wakingIndex)));
 }
 
 /** The accessible name for the two surfaces that OPEN a machine — a capsule card and its promo slide. One
