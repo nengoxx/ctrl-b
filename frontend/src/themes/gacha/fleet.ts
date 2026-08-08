@@ -320,12 +320,17 @@ export const COVER_HERO_SHIFT = 20;
  *    vertical crop is the entry's own framing decision (the bundled entries now carry real ones —
  *    `pegasus` 50% 12%, `3` 50% 14%, `4` 50% 8% — and the shift stacks on top of them).
  *  · anything else → the input, unchanged. This is a RENDER path: an unparseable focus (a hand-edited
- *    roster, a future syntax) must degrade to what the other surfaces already draw, never throw. */
+ *    roster, a future syntax) must degrade to what the other surfaces already draw, never throw. That
+ *    includes a value that PARSES but is not a number the arithmetic can carry: a 400-digit percentage
+ *    matches the shape and converts to `Infinity`, and `Infinity% 20%` is not a crop — it is an invalid
+ *    declaration the browser drops, taking the entry's own focus down with it (Codex E2 LOW-8). */
 export function coverHeroFocus(focus: string | undefined): string | undefined {
   if (focus === undefined) return undefined;
   const m = /^\s*(-?\d+(?:\.\d+)?)%\s+(\S+)\s*$/.exec(focus);
   if (!m) return focus;
-  return `${Math.max(0, Number(m[1]) - COVER_HERO_SHIFT)}% ${m[2]}`;
+  const x = Number(m[1]);
+  if (!Number.isFinite(x)) return focus;
+  return `${Math.max(0, x - COVER_HERO_SHIFT)}% ${m[2]}`;
 }
 
 /** How many stops the per-unit hue ring carries (tokens.css `--gc-unit-1..5`). FIVE because that is how

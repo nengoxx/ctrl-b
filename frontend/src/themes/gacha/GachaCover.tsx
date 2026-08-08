@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 import type { Host } from "../../types";
 import { GACHA_COPY } from "./copy";
@@ -82,6 +82,7 @@ export function GachaCover({
   art,
   picked,
   onTapHost,
+  onCommitSelect,
   busy,
   waking,
   announce,
@@ -105,21 +106,52 @@ export function GachaCover({
   // clicked cannot leave a `true` behind, and `keydown` clears it because a keyboard activation is a click
   // with no pointerdown to overwrite it.
   const skippedGesture = useRef(false);
+  /** Whether the activation now arriving is a HELD key REPEATING (Codex E2 LOW-6). One press is one
+   *  gesture however long it is held: a repeat must neither clear the pointer suppression above nor act
+   *  on its own — a held Enter would otherwise fire the control dozens of times, and the first repeat
+   *  after a keyboard skip lands on a ceremony that has just ended and routes for real. Cleared by every
+   *  genuine gesture START (a pointerdown, or a keydown that is not a repeat), so it can never go stale
+   *  and swallow a real tap. */
+  const keyRepeat = useRef(false);
   /** The frame, for the two DOM reads the focus restoration needs. */
   const frameRef = useRef<HTMLDivElement>(null);
-  /** Which machine's control should get focus back after the next hero swap, or `null`. Written ONLY when
-   *  a promote's dispatch actually COMMITTED a swap, so a stale id can never be spent by an unrelated
-   *  hero change (a poll that removed the machine on the cover, say). */
+  /** Which machine's control should get focus back on the next hero swap, or `null`.
+   *
+   *  ARMED AT PROMOTE START, not at the commit beat (Codex E2 MED-3). If the OLD hero leaves the fleet in
+   *  the 170 ms before the commit, the poll's own render reparents the focused cut-in into the hero slot —
+   *  React remounts it, focus falls to `<body>`, and by the commit beat there is nothing left to read. So
+   *  the id is taken while the finger is still on the control, and spent by whichever hero-identity commit
+   *  comes first — validated, so a machine that has left the fleet restores nothing.
+   *
+   *  IT IS NOT CLEARED ON A BEAT. That was tried and is a race: `advanceTimersByTime` (and a real 880 ms
+   *  of wall clock under a busy main thread) can run several beats inside ONE React commit, so a "clear at
+   *  the last beat" runs BEFORE the layout effect that was supposed to spend it and the restore is lost.
+   *  The arm is overwritten by the next promote instead, and the worst residue is that a promote which
+   *  never swapped anything hands focus back to the machine the user was standing on — which is where
+   *  they were. */
   const focusReturn = useRef<string | null>(null);
   /** THE BEATS FIRE LATE — up to 880 ms after the gesture — and a closure created when the ceremony
    *  STARTED would read the fleet as it was then. This ref is what they read through instead, so the
-   *  dispatch at beat 170 routes against the CURRENT poll and the settled sentence reports the machine's
-   *  CURRENT status word rather than the one it had when the finger went down (ruling 4 again: the
-   *  narration must not be able to describe a fleet the app no longer has). */
-  const latest = useRef({ hosts, onTapHost, starMode });
-  useEffect(() => {
-    latest.current = { hosts, onTapHost, starMode };
+   *  commit lands against the CURRENT poll and the settled sentence reports the machine's CURRENT status
+   *  word rather than the one it had when the finger went down (ruling 4 again: the narration must not be
+   *  able to describe a fleet the app no longer has).
+   *
+   *  A LAYOUT effect, not a passive one (Codex E2 HIGH-1's rider): a passive update leaves a window
+   *  between the commit that changed `hosts` and the effect that records it, and a beat firing inside that
+   *  window would read the previous fleet — the exact staleness this ref exists to remove. */
+  const latest = useRef({ hosts, onCommitSelect, starMode });
+  useLayoutEffect(() => {
+    latest.current = { hosts, onCommitSelect, starMode };
   });
+
+  // THE DEVELOP THEATRE IS LICENSED BY THE REQUEST, NOT BY THE CLOCK (Codex E2 MED-2). The beats keep the
+  // lab's timing, but every artifact they raise — the hue wash, the frame flash, the page shake, the AWAKE
+  // stamp — RENDERS only while that machine's wake is genuinely in flight. A request that resolves (or
+  // fails) at 40 ms used to leave the cover flashing and then stamping a machine whose request had already
+  // come back: synthetic liveness, which is precisely what ruling 4 forbids. `waking` is cleared in the
+  // same commit the request settles, so the theatre goes with it, and the chip is back to the server's
+  // word. `aria-hidden` on the stamp was never enough — it hid the false claim from one audience only.
+  const devLive = dev !== null && waking.has(dev.id);
 
   // `picked` is RESOLVED above (`resolvePick`), so on a non-empty fleet it always names a live machine;
   // the clamp is the render-path belt for the one frame a caller could hand over something else.
@@ -141,12 +173,25 @@ export function GachaCover({
 
   /** PROMOTE — a cut-in takes the cover (the lab's `promote()`, beats verbatim).
    *
-   *  The SELECT is dispatched at beat 170, INSIDE the fold, which is the whole point of the choreography:
-   *  the page is scaled down and dimmed while the hero swaps, so the reparent is never seen mid-flight. A
-   *  skip COMPLETES rather than abandons (the runner fires every remaining beat, in order), so the select
+   *  ROUTED ONCE, AT THE TAP; COMMITTED AT BEAT 170 (Codex E2 HIGH-1). The router decides what the gesture
+   *  means while the finger is still down — and under the cover grammar a cut-in can only ever mean
+   *  `select` — and the beat then spends `onCommitSelect`, which can select a still-present machine and
+   *  nothing else. That split is the whole fix: calling the ROUTER again at 170 let a poll that removed the
+   *  old hero turn the very same gesture into a wake, because the tapped machine had meanwhile become the
+   *  selection. Committing inside the fold is what keeps the swap unseen; committing through a seam that
+   *  cannot route is what keeps it harmless.
+   *
+   *  A skip COMPLETES rather than abandons (the runner fires every remaining beat, in order), so the commit
    *  still lands; under reduced motion the runner collapses the sequence and the swap is instant. */
   const promote = (hostId: string) => {
     const tapped = hosts.find((h) => h.id === hostId);
+    // ARMED HERE, while the control is still under the finger — see `focusReturn`. A poll can reparent it
+    // before the commit beat, and by then there is nothing left to read.
+    focusReturn.current =
+      cardNodes(frameRef.current).find((c) => c === document.activeElement)?.dataset.gcHost ?? null;
+    // Whether the commit was accepted, for the beats that speak about a swap. A ref rather than state:
+    // nothing renders off it, and it is written and read inside one ceremony's own beats.
+    let committed = false;
     ceremony.start(
       [
         [
@@ -156,17 +201,7 @@ export function GachaCover({
             announce(coverPromoteAnnounce(tapped?.name ?? hostId));
           },
         ],
-        [
-          170,
-          () => {
-            // Read the keyboard's place BEFORE the swap detaches the node it is standing on — and arm the
-            // restore only if the dispatch really committed one. A refused route (the machine left the
-            // fleet between render and beat) must not leave an id armed for the next unrelated swap.
-            const focused = cardNodes(frameRef.current).find((c) => c === document.activeElement);
-            const was = focused?.dataset.gcHost ?? null;
-            focusReturn.current = latest.current.onTapHost(hostId) === "select" ? was : null;
-          },
-        ],
+        [170, () => (committed = latest.current.onCommitSelect(hostId))],
         [
           300,
           () => {
@@ -180,10 +215,14 @@ export function GachaCover({
           () => {
             setEntering(false);
             setBeating(false);
+            // REFUSED means the machine left mid-turn: there is no cover to report, so the settled
+            // sentence is suppressed. (The beat-0 "takes the cover" has already spoken by then — accepted:
+            // it described an intent that was true when it was said.)
+            if (!committed) return;
             // The SETTLED sentence, poll-truthful by construction: it reads the machine out of the LATEST
             // fleet (see `latest`), so it reports the status the app currently has rather than the one it
             // had 880 ms ago — and the lab's "{name} is online.", which claimed a wake that had not
-            // happened, is not what lands here. A machine that left in the meantime says nothing at all.
+            // happened, is not what lands here.
             const now = latest.current;
             const settled = now.hosts.find((h) => h.id === hostId);
             if (settled)
@@ -231,6 +270,7 @@ export function GachaCover({
   /** One tap on a machine's control. A tap DURING a ceremony is swallowed into a SKIP (R24 §B.3) and never
    *  doubles as a second route — the same guard the poster carries, for the same two-event reason. */
   const onCardTap = (hostId: string, isHero: boolean) => {
+    if (keyRepeat.current) return; // a held key repeating is ONE gesture, and it is already spent
     if (skippedGesture.current) {
       // this finger's pointerdown already ended a ceremony; the click it produced is spent
       skippedGesture.current = false;
@@ -241,8 +281,14 @@ export function GachaCover({
       ceremony.skip();
       return;
     }
-    if (isHero) develop(hostId);
-    else promote(hostId);
+    if (isHero) {
+      develop(hostId);
+      return;
+    }
+    // THE ROUTE HAPPENS HERE, ONCE (Codex E2 HIGH-1): the decision is made while the finger is down, and
+    // it is what starts the ceremony. Under the cover grammar a cut-in can only route to `select`;
+    // anything else means the machine left between render and click, and there is nothing to dramatize.
+    if (onTapHost(hostId) === "select") promote(hostId);
   };
 
   /** One machine's control. The hero and a cut-in are the SAME button, with the same accessible-name shape
@@ -252,7 +298,7 @@ export function GachaCover({
     const online = !!host.status?.online;
     const stars = starsFor((host.services ?? []).length, starMode);
     const isBusy = busy.has(host.id);
-    const stamped = !!dev?.stamped && dev.id === host.id;
+    const stamped = devLive && dev.stamped && dev.id === host.id;
     const entry = art(index);
     const focus = entry?.focus;
     const heroFocus = coverHeroFocus(focus);
@@ -267,7 +313,7 @@ export function GachaCover({
           (isHero ? " is-hero" : " is-cut") +
           (online ? "" : " asleep") +
           (isBusy ? " busy" : "") +
-          (dev?.id === host.id ? " developing" : "") +
+          (devLive && dev.id === host.id ? " developing" : "") +
           (stamped ? " stamped" : "")
         }
         style={
@@ -287,12 +333,15 @@ export function GachaCover({
         disabled={isBusy}
         // CAPTURE phase, recording the ceremony's state rather than acting on it (see `skippedGesture`).
         onPointerDownCapture={() => {
+          keyRepeat.current = false; // a new POINTER gesture: no held key can still be in progress
           skippedGesture.current = ceremony.running;
         }}
         // A keyboard activation is click-without-pointerdown: any suppression still standing belongs to a
-        // pointer gesture that never clicked, and this key must not pay for it.
-        onKeyDownCapture={() => {
-          skippedGesture.current = false;
+        // pointer gesture that never clicked, and this key must not pay for it. A REPEAT is not a new
+        // gesture, though — it clears nothing and marks itself so the click it produces is swallowed.
+        onKeyDownCapture={(e) => {
+          keyRepeat.current = e.repeat;
+          if (!e.repeat) skippedGesture.current = false;
         }}
         // No morph element is handed over: the cover opens PLAIN (see the header note).
         onClick={() => onCardTap(host.id, isHero)}
@@ -354,7 +403,7 @@ export function GachaCover({
       // the strapline's tag sit OUTSIDE the hero card and cannot inherit it (the lab's `--cover-rar`).
       style={{ "--cv-cover": unitHueToken(heroIndex) } as CSSProperties}
     >
-      <div className={"cv-shake" + (dev?.flash ? " shaking" : "")}>
+      <div className={"cv-shake" + (devLive && dev.flash ? " shaking" : "")}>
         <div className={"cv-page" + (turning ? " turning" : "")}>
           {/* THE MASTHEAD carries the h1 (ruling 9). It renders in EVERY state — including the one where
               nothing else does — because a magazine with no contents is still a magazine, and the tab
@@ -430,7 +479,7 @@ export function GachaCover({
       </div>
       {/* The develop FLASH — a pre-existing node on an opacity-only animation (the lab's `.flash`), so the
           ceremony never mounts anything mid-flight. */}
-      <span className={"cv-flash" + (dev?.flash ? " fire" : "")} aria-hidden />
+      <span className={"cv-flash" + (devLive && dev.flash ? " fire" : "")} aria-hidden />
     </div>
   );
 }

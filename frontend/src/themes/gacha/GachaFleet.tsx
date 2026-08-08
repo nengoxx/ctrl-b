@@ -391,14 +391,18 @@ export function GachaFleet({ active }: { active: boolean }) {
       if (action === "select") {
         // Under `act-first` only a SLEEPING machine can land here (the owner's third-walk amendment), and
         // it is the only tap whose whole outcome is off-screen — a transform plus a registry below the
-        // fold — which is why it is the one selection that announces.
-        setPickedId(hostId);
-        // …and under `select-first` the layout narrates instead: a cover's promote is a full-screen page
-        // turn with its own two sentences on its own beats (`coverPromoteAnnounce` / `coverSettledAnnounce`),
-        // so a generic "X selected." fired from here would be a third voice inside one gesture. Same
-        // reasoning the `open` branch below already applies to the dossier.
-        if (grammar === "act-first")
+        // fold — which is why it is the one selection that announces. It lands IMMEDIATELY: the poster's
+        // selection has no theatre to wait for.
+        //
+        // Under `select-first` the router only DECIDES: a cover's selection IS a ceremony, so the layout
+        // that runs the ceremony commits it — through `onCommitSelect`, on its own beat, inside the page
+        // fold that hides the swap (Codex E2 HIGH-1: re-routing at that beat could turn a promote into a
+        // wake). A SELECTION THAT IS DRAMATIZED IS COMMITTED BY ITS DRAMA; this branch is what the tap
+        // MEANT, and the seam below is where it takes effect. The layout narrates for the same reason.
+        if (grammar === "act-first") {
+          setPickedId(hostId);
           announce(pickAnnounce(host, starsFor((host.services ?? []).length, starMode)));
+        }
         return "select";
       }
       if (action === "open") {
@@ -443,6 +447,21 @@ export function GachaFleet({ active }: { active: boolean }) {
       return "wake";
     },
     [hosts, resolvedPick, grammar, starMode, busy, run, openHostDossier, announce],
+  );
+  // ── THE DEFERRED SELECT's COMMIT (Codex E2 HIGH-1). The narrow, select-ONLY counterpart to the router
+  //    above: a layout whose selection is a ceremony calls this on the beat where the swap should land,
+  //    and it can do exactly one thing. There is no `tapAction` here on purpose — re-routing at that beat
+  //    is the defect this exists to make unreachable, because a poll that removes the old hero in the
+  //    meantime makes the tapped machine the selection, and the router would then read the same gesture
+  //    as a wake. Liveness is not even read: the decision was made at the tap, and the only question left
+  //    is whether the machine is still here to be selected.
+  const onCommitSelect = useCallback(
+    (hostId: string): boolean => {
+      if (!hosts.some((h) => h.id === hostId)) return false; // it left mid-ceremony; nothing to commit
+      setPickedId(hostId);
+      return true;
+    },
+    [hosts],
   );
   // Leaving the tab (or unmounting) CLOSES the dossier — the M3-confirm ruling: a nav tap is "outside"
   // under the owner's tap-outside wording, so the click listener already closes on pointer navigation;
@@ -723,6 +742,7 @@ export function GachaFleet({ active }: { active: boolean }) {
         // removed it. The router reads this identical value, so the two can never disagree.
         picked={resolvedPick}
         onTapHost={onTapHost}
+        onCommitSelect={onCommitSelect}
         busy={busy}
         waking={waking}
         // The fleet's live region stays THIS component's; a layout that dramatizes a request on its own

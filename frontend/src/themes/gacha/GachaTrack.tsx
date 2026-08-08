@@ -87,6 +87,20 @@ export interface GachaTrackProps {
    *  the element CARRYING the clip, not the picture inside it — the poster hands its `.po-art` span, the
    *  capsule keeps handing its `<img>` (its crop already is its capture). */
   onTapHost: (hostId: string, morphImg?: HTMLElement | null) => FleetTap | null;
+  /** COMMIT a selection the router ALREADY DECIDED — the deferred half of a dramatized select, and the
+   *  narrow seam that makes a mid-ceremony commit safe (Codex E2 HIGH-1).
+   *
+   *  WHY IT EXISTS. Under the cover grammar a selection is not instantaneous: it is a page turn, and the
+   *  swap has to land INSIDE the fold, ~170 ms after the finger. Calling the ROUTER again at that beat is
+   *  what makes it dangerous — a poll can remove the old hero in those 170 ms, which promotes the tapped
+   *  machine to `selectedId`, and `tapAction` would then read the very same tap as a `wake` (or an `open`).
+   *  A gesture that meant "put this on the cover" would send a real wake request. So the beat spends THIS
+   *  instead: it can select, and it can do nothing at all. It can never open and it can never wake.
+   *
+   *  Returns whether the commit was ACCEPTED — `false` only when the machine has left the fleet, which is
+   *  the one case where there is nothing to select. A layout uses the verdict to suppress whatever it was
+   *  going to say about a swap that did not happen. */
+  onCommitSelect: (hostId: string) => boolean;
   /** `useFleet().busy` — per-HOST, not per-action (R25 §Q1b). A slice lights and disables for ANY in-flight
    *  action on its machine, which is the correct read of a shared busy set. */
   busy: ReadonlySet<string>;
