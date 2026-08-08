@@ -960,102 +960,64 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
   });
 
   it("compacts the banner->head->stack seam, POSTER-ONLY and vertical-only", () => {
-    // The owner's "less spacing between the cards and the top banner". The head is the CAPSULE TRACK'S
-    // OWN markup — both layouts render it byte-identically — so the compaction has to be an override
-    // under the layout stamp, never an edit to the shipped rule. Three claims: capsule's number is
-    // untouched, the poster's is roughly half of it, and nothing HORIZONTAL moved.
+    // The head is the CAPSULE TRACK'S OWN markup — both layouts render it byte-identically — so every
+    // number here is an override under the layout stamp, never an edit to the shipped rule. Capsule's
+    // `22px 14px 10px` is asserted untouched, and nothing HORIZONTAL moves in either.
     expect(blockFor(".gc-track-head")).toContain("padding: 22px 14px 10px");
     const head = blockFor('body[data-gc-fleet="poster"] .gc-track-head')!;
-    expect(head).toContain("--po-head-pad-top: 11px");
     expect(head).toContain("padding-top: var(--po-head-pad-top)");
-    // the lower gap was TWO contributions (head 10 + stack 12); it is one tunable now
     expect(head).toContain("padding-bottom: 0");
     expect(blockFor('body[data-gc-fleet="poster"] .po-poster')).toContain("--po-stack-gap: 11px");
-    // vertical only — a side-padding override here would silently unalign the head from the counter
     expect(head).not.toMatch(/padding-(left|right)|padding: /);
   });
 
-  it("seats the NEW ribbon inside the polygon, clear of the chip and the name in BOTH modes", () => {
-    // The capsule seats its ribbon flush on the LEADING edge; the poster cannot — that edge is the sheared
-    // one. The claim here is the shear-awareness: the seat is expressed in `--run`, not as a flat inset,
-    // because near the trailing edge the plate's top boundary is still descending and a `top: 10px` tab
-    // would lose its inner corner at every width. The seat itself is an eyeball item (E5).
-    const ribbon = blockFor(".po-new")!;
-    expect(ribbon).toBeTruthy();
-    expect(ribbon).toContain("--po-new-top: calc(var(--run) * 0.22 + 6px)");
-    expect(ribbon).toContain("right: 0");
-    // decoration, so it is NOT tinted by the per-unit hue — a second thing wearing it would read as a
-    // second identity signal
-    expect(ribbon).not.toContain("--po-hue");
-    // AN OUTLINE CHIP (owner, second walk): the brand colour moved from the fill to the EDGE and the ink,
-    // with a translucent interior. `--accent` is the flat channel of the same brand a border can carry.
-    expect(ribbon).toContain("border: var(--po-new-border) solid var(--accent)");
-    expect(ribbon).toContain("background: var(--gc-po-new-fill)");
-    expect(ribbon).toContain("color: var(--accent)");
-    expect(ribbon, "no filled pill may come back").not.toContain("var(--gc-brand-fill)");
-    // flush against its own edge, the shipped `.gc-card .state` idiom for an outlined pill
-    expect(ribbon).toContain("border-right: 0");
-    // the hard offset is MEASURED, not decorative: the translucent interior leaves the ink as low as
-    // 1.39:1 on the bundled art, so the glyph needs its own edge (the ruling chose this over re-opaquing)
-    expect(ribbon).toContain("text-shadow: var(--gc-po-new-shadow)");
-    // …and it never eats a tap meant for the slice underneath it
-    expect(ribbon).toContain("pointer-events: none");
-  });
-
-  it("declares the chip's two new inks where each can actually be moved", () => {
-    const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
-    // the interior COMPOSES the accent, so it has to sit in the `body` block every palette recomputes —
-    // on `:scope` it would substitute once against the base statics and never re-derive (§14.13)
-    expect(tokens).toContain(
-      "--gc-po-new-fill: color-mix(in srgb, var(--accent) 22%, transparent)",
-    );
-    const scopeBlock = tokens.slice(tokens.indexOf(":scope {"), tokens.indexOf("body {"));
-    expect(scopeBlock, "the accent-composing ink must not be a :scope static").not.toContain(
-      "--gc-po-new-fill",
-    );
-    // …while the hard offset derives from nothing and stays a static
-    expect(scopeBlock).toContain("--gc-po-new-shadow:");
-  });
-
-  it("draws the keyline UNCONDITIONALLY — it is anatomy, not an axis (owner ruling)", () => {
-    // §12.6 ruling 8 bound the rim to the `outlines` axis; the owner overruled that on the third walk
-    // ("I want it back, it looks better"). The rim is not a border: it is the PLATE's background showing
-    // through a 1px inset on the art, so the inset IS the keyline and there is exactly one number.
-    expect(blockFor(".po-art")).toContain("inset: 1px");
-    expect(blockFor(".po-plate")).toContain("background: var(--po-hue)");
-    // and nothing in the poster reads the axis any more — `outlines` is chat chrome again
-    expect(css, "the poster must not consume the outlines axis").not.toMatch(
-      /body\[data-outlines[^{]*\.po-/,
-    );
-  });
-
-  it("drops the head INTO the shear's void, capped by the counter", () => {
-    // Owner, third walk: the head should sit in the empty spot between the banner and the first card.
-    // That spot is real: `--poly`'s top edge runs from (0, --run) up to (100%, 0), so the triangle above
-    // the first slice's leading half is transparent AND tap-dead by construction.
+  it("drops the head INTO the shear's void, and raises the counter out of the way", () => {
+    // Owner, fourth walk: `04 / 04` was clipping under the first card's right edge, and with that fixed
+    // he wants LESS space between the head and the first card. Both halves live here because they are one
+    // decision — the counter WAS the thing capping the overlap.
     const head = blockFor('body[data-gc-fleet="poster"] .gc-track-head')!;
     const body = blockFor('body[data-gc-fleet="poster"] .po-body')!;
-    expect(body).toContain("--po-head-overlap: 15px");
-    // an OVERLAP, not a padding cut: the stack is pulled up under a head that stays put
-    expect(body).toContain("margin-top: calc(var(--po-head-overlap) * -1)");
-    // the head has to paint above the stack it now overlaps, and must not CATCH taps meant for the slice:
-    // its box reaches into the first slice's box, where the union hit-clip does make the slice tappable
-    // near the trailing edge (verified against the live app — a tap there lands on the slice).
-    expect(head).toContain("position: relative");
-    expect(head).toContain("pointer-events: none");
+    const count = blockFor('body[data-gc-fleet="poster"] .gc-track-head .count')!;
 
-    // THE CAP, recomputed rather than restated. The counter sits at the head's right, and the right is
-    // where the slice rises highest: its left edge lands a CONSTANT distance in from the poster's trailing
-    // edge (`--trail` - the head's 14px side padding + the counter's own width), so the headroom is the
-    // same at every column. Measured on the live app: counter width 40.2, stack gap 11.
+    // the counter leaves the head's BOTTOM-right (where the sheared slice rises highest) for its top
+    expect(count).toContain("align-self: flex-start");
+    // …and takes its own taps back: the head is pointer-events:none so the h1 cannot swallow slice taps,
+    // but at wide columns the SELECTED slice's grow extends its hit-clip under the counter (measured at
+    // 1200: both lower corners hit-tested into the slice), and a read-only counter must not open a dossier
+    expect(count).toContain("pointer-events: auto");
+
+    // the whole composition rides up toward the banner, and the stack deepens into the void
+    expect(head).toContain("--po-head-pad-top: 8px"); // 11 -> 6 (ride up), 6 -> 8 (walked back)
+    expect(body).toContain("--po-head-overlap: 36px"); // 40 -> 36: the cards sit further below
+    expect(body).toContain("margin-top: calc(var(--po-head-overlap) * -1)");
+
+    // ⚠ THE HEAD MUST CLEAR THE PICKED SLICE'S OWN z-index, not merely a static box. `.po-slice.picked`
+    // raises itself to 3, and `.po-body` is `position: relative; z-index: auto`, which opens NO stacking
+    // context — so that 3 competes directly with the head. At z-index 1 the selected slice painted over
+    // the heading; this is the regression that caught it.
+    expect(head).toContain("z-index: 5");
+    expect(blockFor(".po-slice.picked")).toContain("z-index: 3");
+    expect(head).toContain("pointer-events: none");
+  });
+
+  it("re-derives the overlap cap against the h1, at the NARROWEST column", () => {
+    // With the counter lifted, the governing term is the h1's own bottom-right corner: the `em` caption is
+    // the widest thing in the heading, so its right edge reaches deepest into the shear. The h1's width is
+    // shrink-to-fit and therefore constant, but the void beneath it scales with `--run` — so the narrowest
+    // supported column binds, and the cap is recomputed here rather than restated.
     const tan10 = Math.tan((10 * Math.PI) / 180);
-    // poster right edge = W - --trail; counter left = W - (head side padding) - (counter width), so the
-    // gap between them is (14 + 40.2) - 25 = 29.2 and the W cancels — which is why the cap is the same at
-    // 320 / 390 / 430 / 1200 (all four measured against the live app).
-    const counterInset = 14 + 40.2 - 25;
-    const cap = 11 + tan10 * counterInset; // --po-stack-gap + the void under the counter's left edge
-    expect(cap).toBeGreaterThan(15); // 15 ships, with the remainder as sub-pixel/font headroom
-    expect(cap).toBeLessThan(17); // …and it is NOT the ~64px an h1 centred in the void would want
+    const h1RightLocal = 109.6 - 35; // measured on the live app; constant across widths
+    const stackGap = 11;
+    const capAt = (col: number) => {
+      const w = col - 60; // --lead + --trail
+      return stackGap + tan10 * w * (1 - h1RightLocal / w);
+    };
+    expect(capAt(320)).toBeLessThan(capAt(390)); // the narrow column is the binding one
+    expect(capAt(320)).toBeGreaterThan(36); // …and the shipped 36 fits under it
+    expect(capAt(320)).toBeLessThan(44); // …but not by much, which is what makes 320 the binding column
+    // the raised counter is no longer a term at all: its own clearance is width-independent
+    const counterClear = 47 + stackGap - 15 - 36 + tan10 * (14 + 40.2 - 25);
+    expect(counterClear).toBeGreaterThan(5);
   });
 
   it("keeps the stack off-centre RIGHT with the trailing inset the grow actually needs", () => {

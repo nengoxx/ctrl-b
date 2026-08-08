@@ -1546,22 +1546,57 @@
      * Capsule's 22/14/10 is untouched. Vertical only: the head keeps capsule's 14px side padding, which is
      * deliberately NOT aligned to the poster's own 40px `--lead` — an eyeball item, not a measured one. */
     body[data-gc-fleet="poster"] .gc-track-head {
-      --po-head-pad-top: 11px;
+      /* 8. It went 11 -> 6 when the owner asked the composition to ride up toward the banner, then 6 -> 8
+       * when he walked it and called the result "a little bit too tight" — he asked for the whole head
+       * line (kanji, caption and counter together) to drop 2-3px. Trimming or growing this moves the head
+       * AND the stack together, because the stack is positioned off the head's bottom, so it never
+       * changes the overlap cap below — it only spends air above the heading. */
+      --po-head-pad-top: 8px;
       padding-top: var(--po-head-pad-top);
       /* the lower gap is expressed ONCE, on the stack below — see `--po-stack-gap` */
       padding-bottom: 0;
       /* The head paints ABOVE the stack it now overlaps: `.po-slice` is positioned, so a static head would
        * lose to it. And it must not CATCH anything — the head has no interactive content, but its box spans
-       * the full width and reaches a few px into the first slice's box, where the union hit-clip does make
-       * the slice tappable near the trailing edge. Without this, taps in that strip would land on a
-       * heading. */
+       * the full width and reaches into the first slice's box, where the union hit-clip does make the slice
+       * tappable near the trailing edge. Without that, taps in the strip would land on a heading.
+       *
+       * ⚠ THE Z MUST CLEAR THE PICKED SLICE'S 3, not merely beat a static box. `.po-slice.picked` raises
+       * itself to 3 so its grow overlaps its neighbours, and `.po-body` is `position: relative` with
+       * `z-index: auto` — which does NOT open a stacking context — so that 3 competes directly with this
+       * rule. At `z-index: 1` the selected slice painted OVER the heading, which the deeper overlap made
+       * visible as a sliver across the counter (caught by pixel-diffing the counter's box, not by reading
+       * the geometry). 5 clears the whole poster ladder, `.po-data`'s 4 included. */
       position: relative;
-      z-index: 1;
+      z-index: 5;
       pointer-events: none;
     }
     body[data-gc-fleet="poster"] .po-poster {
       --po-stack-gap: 11px;
       padding-top: var(--po-stack-gap);
+    }
+    /* THE COUNTER RIDES UP TO THE HEADING'S TOP (owner, fourth walk: `04 / 04` was clipping under the
+     * first card's right edge, and he wants it clearly above it).
+     *
+     * The head is `align-items: flex-end`, which sat the counter level with the CAPTION — i.e. at the
+     * head's bottom, on the right, which is exactly where the sheared slice rises HIGHEST. That is why it
+     * was the term capping the overlap at 16px. `align-self: flex-start` lifts it level with the 編成
+     * line's top instead; it stays right-aligned, because `justify-content: space-between` owns the
+     * horizontal axis and is untouched.
+     *
+     * With it out of the way the counter stops being a constraint at all: it now clears the first slice's
+     * PAINTED edge by 8.15px at every width, and the governing term becomes the h1's own bottom-right
+     * corner (see the overlap below). */
+    body[data-gc-fleet="poster"] .gc-track-head .count {
+      align-self: flex-start;
+      /* …and it takes its OWN taps back. The head is `pointer-events: none` so the h1's full-width box
+       * cannot swallow taps meant for the slice underneath it, but that also makes the counter
+       * transparent to the pointer — and at wide columns the SELECTED slice's grow (1.05 about its own
+       * centre, plus the 4px nudge) extends its union hit-clip up and right far enough to sit under the
+       * counter. Measured: at 1200 the counter's two lower corners hit-tested into the slice, so tapping
+       * a read-only counter would have opened the first machine's dossier. Re-enabling pointer events on
+       * this 40x15 box makes it inert instead of surprising, and it is the only part of the head that
+       * needs it (nothing else in the head ever overlaps a slice's hit area). */
+      pointer-events: auto;
     }
 
     /* ── THE HEAD DROPS INTO THE SHEAR'S VOID (owner, third walk: still too much air — he wants the 編成 /
@@ -1574,22 +1609,30 @@
      * IT IS AN OVERLAP, NOT A PADDING CUT: the stack is pulled up under a head that stays where it is, so
      * the head keeps its own rhythm against the banner and only the space BELOW it closes.
      *
-     * ⚑ THE NUMBER IS CAPPED BY THE COUNTER, and the cap is what makes this 15px instead of ~64px.
-     * Measured on the live app at the 390 column: head bottom 340, slice box top 351, `--run` 58.19.
-     *   · the head's h1 is 47px tall, so CENTRED in the 58.19px void it would want an overlap of 63.6px;
-     *   · but `02 / 04` sits at the head's right, and the right is exactly where the slice rises HIGHEST.
-     *     The counter's left edge lands 29.2px in from the poster's trailing edge, where the plate's top
-     *     boundary has descended only tan(10deg) x 29.2 = 5.15px — so the overlap can be at most
-     *     11 + 5.15 = 16.15px before the counter touches the first slice's shoulder.
-     * That cap is WIDTH-INDEPENDENT: the counter's inset from the poster's trailing edge is a constant
-     * (`--trail` - the head's 14px side padding + the counter's own width), so the same 16.15 comes out at
-     * 320 / 390 / 430 / 768 / 1200. 15px ships, leaving ~1.15px for sub-pixel and font variance.
+     * THE CAP MOVED WHEN THE COUNTER DID. It used to be the counter — pinned at the head's bottom-right,
+     * where the slice rises highest, which allowed only 16.15px — and the owner has now asked for exactly
+     * that to be fixed. With the counter lifted (see the rule above), the constraint passes to the h1's
+     * own BOTTOM-RIGHT corner: the `em` caption is the widest thing in the heading, so its right edge is
+     * the deepest point the head reaches into the shear.
      *
-     * Going further needs the COUNTER to move (raising it inside the head would hand the constraint to the
-     * h1's right edge, ~56px of headroom) — a design change the owner has not asked for, so it is his call
-     * rather than mine. Flagged, not taken. */
+     * The h1's width is shrink-to-fit and therefore CONSTANT (95.6px, right edge at page x 109.6), but the
+     * void beneath it is not — it scales with `--run`, so the NARROWEST column binds:
+     *     column   poster W    --run    void at the h1's right edge     cap
+     *       320       260      45.85            32.69                  43.69   <- binds
+     *       390       330      58.19            45.03                  56.03
+     *       430       370      65.24            52.09                  63.09
+     *      1200      1140     201.01           187.86                 198.86
+     * 36px ships — 40 first, then 36 when the owner walked it and asked for the cards to sit 3-4px further
+     * below the letters. That leaves 7.69px of clearance at 320 and 20.03px at 390 (it was 3.69 / 16.03 at
+     * 40, so the nudge also bought back margin at the narrow end). The RAISED counter clears the slice's
+     * painted edge by 12.15px at every width, so it is not the binding term either — all four widths
+     * verified against the live app on a four-machine fleet, which is what makes `04 / 04` the real
+     * string rather than a shorter placeholder.
+     *
+     * (For the record, the ideal this is still short of: an h1 CENTRED in the void wants ~63.6px at 390.
+     * Its own caption is what stops it now, and shortening that string is a copy decision, not mine.) */
     body[data-gc-fleet="poster"] .po-body {
-      --po-head-overlap: 15px;
+      --po-head-overlap: 36px;
       margin-top: calc(var(--po-head-overlap) * -1);
     }
 
