@@ -12,7 +12,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ✅✅ 2026-08-08 EVENING (Fable) — THE ALT-FLEET DESIGN IS SETTLED; §12.6 TRANSLATION PLAN **SIGNED**; NEXT = E0 (dev branch, owner go-word first)
+> ## ✅✅ 2026-08-08 EVENING (Fable) — ALT-FLEET DESIGN SETTLED · §12.6 SIGNED **+ COUNCIL-AMENDED** (Codex `SHIP WITH CHANGES` + Opus fidelity `NEEDS AMENDMENTS`, both reconciled ⚖ in place); NEXT = E0 (dev branch, owner go-word first)
 >
 > The multi-session design conversation CONVERGED in one live session (owner present throughout,
 > ~12 ruling waves, 4 lab build rounds by Opus subagents). **The record: GACHA_PLAN §12.5's
@@ -31,8 +31,19 @@
 >   binds to the EXISTING `outlines` axis (gacha defaults false ⇒ off by default, zero new
 >   settings). Select-then-act (tap=select, tap again=dossier/WAKE) = component state in
 >   GachaFleet + a pure tap-router in `themes/gacha/fleet.ts`; wake is NOT confirm-gated
->   (registry decides, D8). Fleet stays Root-pinned; layouts = gacha-private map; frontier
->   adaptation = the documented §14.14 graduation path (§12.6 item 9), NOT built.
+>   (registry decides, D8) and ceremonies are POLL-TRUTHFUL (WAKING rides busy; only the poll
+>   flips ONLINE). **⚖ COUNCIL REVERSAL: Fleet GRADUATES to a user-selectable Surface at E0**
+>   (D31's own trigger text — createSurface extracted by factoring composer; gacha registers its
+>   three variants theme-owned; every other theme untouched; frontier later = register + skin).
+>   Two recorded dossier edits: the `.gc-host-hit` outside-click exemption class + the morph
+>   stays CAPSULE-ONLY (poster/cover open plain, as walked). The FULL walked anatomy (blade =
+>   plate style+size · no-interlock 22px gutters · unpinned data block · chip/sleeping/stars
+>   laws · veil+inset-ring · mode-relative rarity ladder · cover fixed-frame + column scroll +
+>   derived hero shift · JP per-host tag DROPPED · motion via UIState.motion · copy.ts+font
+>   pipeline) is now pinned in §12.6 rulings 8–10; §12.2 carries a partial-supersession banner;
+>   R25 §Q2d carries its correction. Slices REORDERED: no setting ships before its
+>   implementation; E0 = showWhen + createSurface + GachaTrack behind a concretely-defined
+>   equality fence.
 > - **NEXT SESSION: get the owner's explicit E0 go-word, then build §12.6's E0–E5 on a dev
 >   branch** (E0 seams → E1 poster → E2 cover → E3 banner → E4 hardening incl. the R25 Q7
 >   23-pin list → E5 the Fennec+Chrome device round = real acceptance). Opus subagents from

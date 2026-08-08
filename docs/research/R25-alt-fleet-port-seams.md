@@ -206,7 +206,17 @@ Also relevant as an explicit **anti**-precedent: `theme-engine/kit/composer/plan
 axis is a registry because every variant is one interchangeable composer component; placements are
 not)"*.
 
-### 2d. Verdict for poster/cover: **an internal switch inside gacha, driven by a gacha `seg` setting**
+### 2d. Verdict for poster/cover — **⚠ OVERRULED at the 2026-08-08 council round (GACHA_PLAN §12.6 ruling 1)**
+
+> This subsection's recommendation (gacha-private map, no graduation) misread the D31 trigger:
+> the locked text graduates a surface when "a THEME genuinely offers a fleet choice" — which gacha
+> now does — and names `createSurface` as the extraction target for the SECOND user-selectable
+> surface, which Fleet is. Fleet therefore GRADUATES at E0 (composer's machinery factored into
+> `createSurface`; gacha registers its three variants theme-owned, per D31's "vapor registers its
+> own bespoke variants" clause). The findings below remain correct as CODE FACTS; only the verdict
+> was wrong.
+
+*(original text, kept for the reasoning record)* — an internal switch inside gacha, driven by a gacha `seg` setting
 
 Run the 3-gate (`docs/THEME_ENGINE.md:1476-1484`) on "Fleet as a user-selectable Surface":
 

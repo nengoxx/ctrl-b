@@ -2866,6 +2866,16 @@ observations:
 
 ### 12.2 The design (what is reused vs built)
 
+> **⚠ SUPERSEDED IN PART (2026-08-08, the council round — §12.6 ruling 8 is the authority):** four
+> of this section's bullets were OVERRULED by the owner's walked rulings: ① bands **no longer
+> interlock** (open ~22px gutters; the negative-margin pattern is dead — gutters are what make the
+> selected-grow legible); ② the name does NOT cross gutters as an overlay (it lives inside its
+> slice's plate under `overflow: clip`, rotated to the shear); ③ "stars + chip stay HORIZONTAL"
+> is reversed for name/stars/role (they rotate with the shear; only the CHIP stays horizontal);
+> ④ the parked "does band 1 run taller" question is ANSWERED — the SELECTED band grows
+> (`--pick-grow`). The R18 construction facts (clip-path hit areas, cqw·tan shear, union lift,
+> inset focus ring) all still stand.
+
 **The axis.** A gacha ThemeDef setting `fleetLayout: "capsule" | "ensemble"`, default `capsule` —
 the `cardNameFont` precedent exactly: theme_settings pass-through, Conf picker beside the existing
 gacha settings, **zero backend change**.
@@ -3162,111 +3172,220 @@ several named variants is itself an owner call (§12.3 gains that as question �
     calls toward the leanest existing pattern (selection = component state in GachaFleet's own
     established shape; the only engine addition = the `showWhen` field, ~10 lines mirroring the
     `swatch` additive-slot precedent).
+- **2026-08-08 — THE COUNCIL ROUND (owner-ordered, pre-handoff): Codex `gpt-5.6-sol` high
+  (code-integration lane, 7 questions) = SHIP WITH CHANGES · one Opus fidelity lane (every ruling
+  vs §12.6 vs the lab) = NEEDS AMENDMENTS · main seat reconciled BOTH into the §12.6 rewrite
+  (marked ⚖ in place).** The load-bearing outcomes: ① **the gacha-private layout map is REVERSED —
+  Fleet GRADUATES at E0** (Codex HIGH, main-seat-verified against D31/§14.14's own text: gacha
+  offering a real fleet choice IS the written trigger, and Fleet is the second user-selectable
+  surface = the createSurface extraction moment; R25 §Q2d carries a correction banner); ② wake
+  ceremonies are POLL-TRUTHFUL (the lab's ONLINE ending was fiction; WAKING rides busy, the poll
+  owns truth); ③ two recorded dossier-machinery edits (`.gc-host-hit` exemption class; the morph
+  stays CAPSULE-ONLY by design — poster/cover open plain, as walked); ④ the fidelity lane's 8
+  amendments all folded (blade anatomy = plate style+size pinned · no-interlock gutters ·
+  data block unpinned-in-flow · chip/sleeping/never-tinted-stars law · veil+glow+inset-ring ·
+  mode-relative rarity ladder [five=silver/green/cyan/purple/gold, three=silver/cyan/gold] ·
+  cover = fixed frame + internal column scroll + N=1/0 + derived hero shift · JP per-host tag
+  DROPPED · motion via UIState.motion never a media query · copy.ts+font-pipeline clause ·
+  §12.2 partially superseded with a banner); ⑤ slices REORDERED so no setting ships before its
+  implementation, with the E0 equality fence concretely defined; ⑥ E5 gains the unrendered-state
+  list (keyline-off default · A+MIN · layouts under the inherited track head). Overruled-with-
+  reasons: Codex's useFleetActions rewrite (pre-existing race, all themes — recorded standing
+  item, handler-level guard instead) · the showWhen focus-return nicety (LOW, E-slice note).
 
-### 12.6 THE TRANSLATION PLAN — porting POSTER + COVER to production (2026-08-08; **DRAFT, awaiting owner sign-off; supersedes §12.4's E-slice sketch**)
+### 12.6 THE TRANSLATION PLAN — porting POSTER + COVER to production (2026-08-08; **SIGNED, then COUNCIL-AMENDED same day** — Codex `SHIP WITH CHANGES` + the Opus fidelity lane `NEEDS AMENDMENTS`, both reconciled below; supersedes §12.4's E-slice sketch AND §12.2's overruled bullets)
 
-**Inputs:** the finalists lab (`design/prototypes/gacha/alt-fleet-finalists/`, final walk state) ·
-the [R25 seam map](./research/R25-alt-fleet-port-seams.md) (code-verified, file:line) · the §12.5
-rulings log. **First principle (owner directive): reuse-first** — no new code or seams unless
-needed; everything consistent with the theme engine + gacha architecture, nothing slapped on top.
-Second: the §14.14 cheapest-band rule. Third: the capsule track stays the UNTOUCHED default;
-`fleetLayout`'s three-value set IS the "maximum three" cap fence (C is parked — no fourth value
-without an owner ruling).
+**Inputs:** the finalists lab (`design/prototypes/gacha/alt-fleet-finalists/`, final walk state — the
+lab's `app.js`/`styles.css` are the NUMERIC authority wherever this plan says "the lab's numbers") ·
+the [R25 seam map](./research/R25-alt-fleet-port-seams.md) (note its §Q2d verdict is **overruled**,
+below) · the §12.5 rulings log · the council round (Codex 7-question code-integration lane + an Opus
+rulings-fidelity lane, 2026-08-08). **First principle (owner directive): reuse-first** — no new code
+or seams unless needed; consistent with the theme engine + gacha architecture, nothing slapped on
+top. Second: the §14.14 cheapest-band rule. Third: the capsule track stays the UNTOUCHED default;
+the cap = **three ALT layouts beside capsule, C's slot parked** — no fourth alt without an owner
+ruling.
 
-**The settings surface (gacha `ThemeDef.settings`, auto-rendered by ConfTab's existing loop — zero
-Conf code):**
+**The settings surface (gacha `ThemeDef.settings`, auto-rendered by ConfTab's existing loop):**
 
 | Key (stable, named once) | Type | Values | Default | Notes |
 |---|---|---|---|---|
-| `fleetLayout` | seg | `capsule` · `poster` · `cover` | `capsule` | Desc carries the truthful cover×no-appbar recommended-pairing sentence (the R25 Q5 ruling — copy, not coupling) |
-| `posterName` | seg | `plate` · `blade` | **`blade`** (owner, 2026-08-08) | **`showWhen: {key:"fleetLayout", is:"poster"}`** — appears only under poster, per the owner's "pops up right below" |
-| `banner` | seg | `on` · `minimal` · `off` | `on` | Theme-wide (GachaBanner), read ONCE in GachaFleet above the layout switch — the `starMode` shape. **The owner's "minimal by default for cover" is satisfied STRUCTURALLY**: cover seats the banner in its strapline slot, which IS the strip form — under cover, `on` and `minimal` render identically; `minimal` only shrinks the poster/capsule banner. No per-layout setting needed (owner-confirmed reading, 2026-08-08) |
+| `fleetLayout` | seg | `capsule` · `poster` · `cover` | `capsule` | Labels/desc = §12.3⑤, STILL OPEN — picker copy comes from `copy.ts` (non-ASCII fence) and the desc carries the truthful cover×no-appbar pairing sentence |
+| `posterName` | seg | `plate` · `blade` | **`blade`** (owner) | `showWhen: {key:"fleetLayout", is:"poster"}` |
+| `banner` | seg | `on` · `minimal` · `off` | `on` | Theme-wide, read ONCE in GachaFleet — the `starMode` shape. Cover's strapline seat IS the strip (owner-confirmed): under cover, `on`≡`minimal`. `minimal`/`off` also restyle the CAPSULE track's banner — accepted by design, E3 renders + tests capsule under both |
 
-**The ONE engine change:** `showWhen?: {key; is}` as an additive optional field on
-`ThemeSettingField` (the `swatch` additive-slot precedent), honored at exactly one point in
-ConfTab's settings loop **through `themeRowValue`** (never the raw store value — the coercion rule
-R25 Q3d names), plus the contract-test extension (every `showWhen.key` names a declared sibling;
-`is` ∈ its declared options). This is the declarative form of ConfTab's existing hand-written
-row-conditional precedent — not a new subsystem.
+**The ONE engine change:** `showWhen?: {key; is}` on the settings-field base (the `swatch`
+additive-slot precedent), honored at exactly one ConfTab point **through `themeRowValue`** (never
+raw store values). **Council-hardened contract:** the controlling sibling must be a DECLARED,
+UNCONDITIONAL `seg` in the same theme (no self-reference, no chains); hidden values PERSIST and
+reappear (an explicit contract, tested — flipping poster→cover→poster restores the old pick);
+contract tests pin sibling-exists / value-valid / no-cycle / declaration-order adjacency
+(`posterName` immediately after `fleetLayout`); LWW-reconcile + backend round-trip tested. The
+focus-return-on-remote-row-removal nicety = a LOW E-slice note.
 
-**Placement rulings (main-seat, from R25 + the reuse directive):**
+**Placement rulings (main-seat; council-reconciled — changes from the pre-council text are marked ⚖):**
 
-1. **Selection state = component state in `GachaFleet`**, a sibling to the dossier's own
-   `selected`, cleared in the SAME `!active` branch and the SAME host-gone effect (the exact
-   existing pattern in the exact file). NOT a new store, NOT `featured` (index-keyed +
-   auto-cycled + 8s hold — R25 Q1e). The ruled reset semantics (tab-leave + host-gone, no
-   timeout) are precisely what this pattern already provides; no cross-surface consumer exists.
-   *Graduation path documented, not built:* if a second fleet view ever wants select-then-act,
-   state moves to `store/fleet.ts` as an id-keyed sibling field and the router to a `useFleet`
-   helper — rule of three, then.
-2. **The tap router = a pure function in `themes/gacha/fleet.ts`** beside `openLabel`/`pingText`:
-   `(selectedId, tappedId, online) → select | open | wake`, unit-tested as a reducer. A NEW
-   two-step label builder beside it; `openLabel` stays byte-identical (it also labels the banner
-   promos — R25 Q1d).
-3. **Wake from the card = the same `run("wake", host)`** the dossier calls — no new execution
-   path, no UI-side confirm (the registry decides, D8; wake is Risk.LOW/no-confirm —
-   R25 Q1c). **Busy** reaches the slice as a prop → `aria-busy` + `disabled` + a gacha class (the
-   kit's card precedent + the dossier's aria pattern). Per-host busy lighting during ANY in-flight
-   action for that host is accepted as correct UX (R25 risk 2).
-4. **`fleetLayout` mechanics:** Fleet stays Root-pinned (THEME_ENGINE's own graduation rule).
-   A gacha-private, module-level stable-ref layout map + a `ThemedComposer`-shaped resolver
-   (`id in map ? id : default`). `GachaFleet` splits out ONLY the track body: `GachaTrack`
-   (the extracted current capsule track — **equality-fenced, zero visual change**, the V-slice
-   pattern) · `GachaPoster` · `GachaCover`. The dossier/morph/showcase machinery
-   (`GachaFleet.tsx:125-453`) does not move (R25 risk 8 — remount hazard).
-5. **Banner tri-state:** `off` = conditional render in `GachaFleet` (must UNMOUNT — the autoplay
-   loop has no hidden-gate; R25 Q4b), with the track-head top-space null keyed on a
-   `body[data-gc-banner]` GachaRoot stamp (the existing five-attr pattern; `:first-child` is
-   structurally unavailable — R25 Q4d/risk 4). `minimal` = the same stamp + `gacha.css`
-   overrides (height + caption hide only; tag/display/pills/dots stay). The minimal height ships
-   as a TOKEN whose number the device round sets (R25 risk 5).
-6. **The banner as a SLOT:** `GachaFleet` keeps the single banner instance and hands it to the
-   layout as a slot child — `capsule`/`poster` seat it first-in-scroll-flow (production's current
-   truth), `cover` seats it in the strapline position (the ruled bottom slot). Placement is
-   layout-owned; banner logic stays single-sourced.
-7. **Poster specifics:** the three-box slice reuses the SHIPPED clip-vs-shadow idiom (the capsule
-   card's wrapper, `gacha.css` ~1121 — clip-path erases box-shadow; R18/R25 corollary) · rarity
-   hues = `rarityToken(stars)` added beside `starsFor` in `stars.ts` (pure, single source), values
-   as `tokens.css` tokens ONLY (the no-literal-colors fence) · the data block = a new gacha
-   presentational component consuming `hostDetailFacts` / `pingText` / `dossierSub` / `roleLabel`
-   / `relativeTime` verbatim (the "ONE formatter" mandate) — uptime prints the ruled dash ·
-   name/stars/role rotated to the shear, bottom-leading anchor, selected slice grows
-   (transform-only) · **the 1px keyline binds to the EXISTING `outlines` axis** (owner,
-   2026-08-08: "off by default, on with the outlines option" — `useOutlines("gacha")`, D29;
-   gacha declares `outlinesSetting(false)`, so the keyline is OFF by default and returns with the
-   Appearance → Outlines switch; ZERO new settings).
-8. **Cover specifics:** promote-to-hero (§B swap ceremony) · the per-host hero focus table ·
-   sleeping-hero two-step (promote, then wake — as walked) · NO nested scroller: the cut-in stack
-   flows in the single `#app-scroll` (R25 risk 9); at N=4 the cover fits, larger fleets scroll the
-   page — device-round verified.
-9. **Adapting the layouts to OTHER themes (frontier asked, 2026-08-08) — the documented graduation path, not built now.** A second theme wanting poster/cover is EXACTLY the trigger THEME_ENGINE §14.14 defines for graduating Fleet to a user-selectable Surface: extract `createSurface(name, fallback)` by factoring the concretes (the path Composer already walked — registry + per-theme `seg` + resolver, verbatim). What carries for free because §12.6 already keeps the disciplines: the tap router (pure, theme-free) · busy/wake plumbing (`useFleet`) · the geometry skeletons (clip-path shear parameterized by custom properties) · the banner-slot composition. What each theme supplies: its FICTION — gacha's rarity hues/stars/JP registry vs frontier's gradient-accent + line grammar, and its own hue source (frontier has no rarity ladder; it maps its accent system instead). Cost when wanted: one createSurface extraction + a per-theme skin pass, no architectural rework. **Until then: gacha-private, per the reuse directive and the engine's own "don't pre-graduate" rule.**
-10. **Left as-is, deliberately:** `useFleetCycle` ticking under gacha (moot — component-state
-   selection subscribes to nothing; R25 risk 3) · cosmos/frontier selection stores (different
-   semantics: their selection IS the sheet) · the banner-feeding derivations under `off` (cheap,
-   documented, don't "clean up").
+1. **⚖ Fleet GRADUATES to a user-selectable Surface at E0 — the pre-council "gacha-private map"
+   ruling is REVERSED (Codex HIGH, verified against the locked text).** D31/§14.14 say a surface
+   graduates "the moment ≥2 variants + a user choice are actually wanted… until a THEME genuinely
+   offers a fleet choice" — gacha now offers three — and `createSurface(name, fallback)` is "the
+   extraction target for the SECOND user-selectable surface" — Fleet IS that second surface. E0
+   therefore extracts `createSurface` by factoring the composer concrete (`variants.ts` +
+   `setting.ts` + `ThemedComposer` — its tests are the refactor fence), re-points composer onto it,
+   and registers gacha's three fleet variants. The variants remain GACHA-OWNED components (the D31
+   "vapor registers its own bespoke variants" clause pre-authorizes theme-registered variants);
+   every other theme stays Root-pinned and untouched; the settings surface above is unchanged.
+   Frontier later = register + skin, now genuinely free.
+2. **Selection state = component state in `GachaFleet`**, sibling to the dossier's own `selected`,
+   cleared in the same `!active` branch + host-gone effect. NOT a store, NOT `featured` (index +
+   auto-cycle + 8s hold). **Initial selection = hosts[0] resolved in the VIEW (`selectedId ??
+   hosts[0]?.id`), never written to state**; a vanished selection re-derives the same way, so the
+   data block never dereferences a gone host and never renders empty while hosts exist. **The
+   capsule default keeps its one-tap-opens-dossier behavior** — select-then-act ships with
+   poster/cover only (stated so nobody is surprised).
+3. **The tap router = a pure function in `themes/gacha/fleet.ts`**: `(selectedId, tappedId,
+   online) → select | open | wake`, unit-tested. **⚖ Council rules folded:** routing reads the
+   tapped host's liveness from the CURRENT render, never from first-tap capture · a `wake` result
+   NO-OPS while that host is busy (synchronous guard at the layout handler — the pre-existing
+   shared `useFleetActions` overlap race is a recorded standing item, NOT rewritten in this port) ·
+   host buttons take `touch-action: manipulation` (kills double-tap-zoom delay; no selection
+   timeout — two fast taps legitimately mean select-then-act) · the selected control exposes
+   `aria-pressed` and selections are announced via ONE `aria-live="polite"` region (gacha has none
+   today — E1 adds it; it is the only feedback for the below-fold data block) · a NEW two-step
+   label builder (lab wording; `openLabel` stays byte-identical for cards + banner promos).
+4. **⚖ Wake stays POLL-TRUTHFUL (Codex HIGH).** The card ceremony dramatizes the REQUEST — a
+   `WAKING` presentation riding the busy state — and ends back at the SERVER-REPORTED state; only
+   a hosts poll may flip a card to ONLINE. The lab ceremonies' final ONLINE frame is prototype
+   fiction and does NOT port. No optimistic host patch, no synthetic liveness (`useActions`'s own
+   documented wake posture). Same `run("wake", host)` the dossier calls — no new path, no UI
+   confirm (registry decides, D8). Busy reaches the slice as a prop → `aria-busy` + `disabled` +
+   a gacha class; per-host busy lighting during ANY in-flight action is correct UX.
+5. **⚖ The dossier's shared machinery takes TWO recorded edits (Codex HIGH), state still doesn't
+   move:** ① the outside-click exemption list (`GachaFleet` ~`:480`) is hardcoded to
+   `.gc-card, .gc-slide-hit` — a semantic `.gc-host-hit` class goes on the capsule card AND both
+   new layouts' host controls, and the listener exempts it (else the second tap's dossier closes
+   on its own opening click). ② the capsule↔dossier VIEW-TRANSITION MORPH stays **capsule-only by
+   design** — the walked lab opens poster/cover dossiers with the plain non-VT path, and a morph
+   clone sourced from a sheared clip-path has never been seen; poster/cover pass NO image to
+   `openHostDossier`. A layout switch bumps the dossier generation and cleans pending morph prep
+   without closing a settled sheet.
+6. **Banner tri-state:** `off` = conditional render in `GachaFleet` (must UNMOUNT — the autoplay
+   loop has no hidden-gate), with the track-head top-space null keyed on a `body[data-gc-banner]`
+   GachaRoot stamp. **⚖ `minimal` is a RE-AUTHORED strip form, not "height + caption hide"** (the
+   fidelity lane, vs the lab's actual strip: re-scaled tag/display/pill/dot geometry — the lab's
+   strip block is the spec); same stamp + `gacha.css`; height ships as a token, device-round
+   number; the wallpaper banner shadow under `minimal` is explicitly accepted-or-overridden at E3.
+   **⚖ Fleet scroll restoration resets when effective layout/banner geometry changes** (Codex MED:
+   stored pixel offsets survive a 232px geometry change and restore into the wrong content) — a
+   gacha-local effect scrolls `#app-scroll` to 0 on that change, nothing engine-wide.
+7. **The banner as a SLOT:** one banner instance, handed to the layout — capsule/poster seat it
+   first-in-scroll-flow, cover in the strapline. **⚖ Reparenting across layout components
+   remounts it — accepted** (autoplay/slide/gesture state resets on a layout switch; rare owner
+   action; cleanup + no-leaked-timer tested). Per-layout banner SKIN via the accent-custom-property
+   pattern (lab `--bn-*`) is E1/E2 brief material.
+8. **⚖ POSTER anatomy (the fidelity lane's HIGH block — the walked truth, now pinned):** slices
+   do NOT interlock — §12.2's negative-margin interlock bullet is OVERRULED; open gutters (lab
+   22px) are what make the selected-grow legible · the stack sits off-center RIGHT (lab
+   `--lead:40/--trail:20` asymmetry, owner likes) · the hard offset drop is a **duplicated
+   polygon underlay + a union hit-clip** (`--poly`/`--poly-hit` — NOT the capsule card's
+   rectangular wrapper shadow, which cannot shear) · **BLADE = plate typography AND plate size,
+   the modes differ ONLY in the name's seat** (lab: plate `--run×.6+4px`, blade `--run×.18`;
+   the display-scale contour and the chip-lift are DEAD; the role line reorders above the name
+   in blade) · name/stars/role rotate to the shear, bottom-leading anchor, `overflow: clip` on
+   the plate (clip-path hides paint but does NOT contain scrollable overflow — the lab measured
+   396px scrollWidth without it) · **the status chip STAYS** (trailing edge; ONLINE lit /
+   SLEEPING dim skins — status never rides on decoration alone) · **stars are NEVER tinted by
+   the rarity hue** (gold/rose grammar holds) · SLEEPING = hue suppressed to grey + mono art +
+   idle stopped, hue floods back on wake · legibility rides the lab's `.po-veil` two-gradient
+   scrim + `.po-glow` wash + ONE hard `3px 3px 0` name shadow (a soft halo is mud) · the INSET
+   focus ring (`:focus-visible` ring clipped to the polygon) is an a11y REQUIREMENT (the UA ring
+   is erased by clip-path — R18) · selected-grow = `--pick-grow: 1.05` + `--pick-nudge: 4px`
+   with the trailing-inset budget `--trail ≥ halfWidth·(grow−1) + drop + nudge` · the keyline =
+   1px plate-background rim consuming the existing `body[data-outlines]` stamp (off by default —
+   gacha's `outlinesSetting(false)`; keyline-off also drops `.po-art`'s 1px inset so no black
+   hairline remains) · **⚖ the RARITY LADDER is MODE-RELATIVE like `isHighStar`**: five-mode =
+   `[silver, green, cyan, purple, gold]` by star count; three-mode = `[silver, cyan, gold]`
+   (top rung always reads gold, the `isHighStar` precedent); values are `tokens.css` tokens
+   ONLY · the data block sits **UNPINNED, LAST IN THE SCROLL FLOW** (the bottom zone belongs to
+   the tab bar + composer — a sticky readout is the natural WRONG implementation), leads with
+   the hostname as a display line in the rarity hue (the identity lives there alone), consumes
+   `hostDetailFacts`/`pingText`/`dossierSub`/`roleLabel`/`relativeTime` verbatim, uptime prints
+   the ruled dash, NO buttons · both dead accent lines STAY dead (the gold under-banner drop,
+   B's top stripe) · **the per-host JP glyph tag (天馬…) is DROPPED in production** — it was
+   mock-roster fiction; hostnames have no JP source · the NEW ribbon question (does
+   `pickRibbonHost` render under poster?) = an E1 brief ruling with a default of NOT rendering
+   (the lab shows none).
+9. **⚖ COVER anatomy + the two formerly-unsolved problems, now RULED:** the cover is a FIXED
+   full-viewport composition — the page does NOT scroll under it (a magazine cover doesn't);
+   the CUT-IN COLUMN alone scrolls internally when the fleet outgrows it (the lab's walked
+   truth; the internal scroller is bounded and the page-level restoration is moot here — Fennec
+   verifies at E5). N=1 → hero only, stack + `CHANGE COVER` hint hidden; N=0 → the existing
+   `gc-msg` empty state. **Hero crop shift = a DERIVED rule, not new data**: the hero slot
+   applies a fixed rightward `object-position` bias (~+30%, clamped) to whatever focus the art
+   entry resolves — works for owner art (which deliberately carries none); device round tunes
+   the constant. The cut-in stack rises to just under the masthead (the lab's derived
+   `top: calc(70px + …)`, constant ~15px air). Promote-to-hero keeps the lab's §B swap ceremony
+   + explicit FOCUS RESTORATION across the reparent; the sleeping-hero two-step stands. **The
+   track head is SUPPRESSED under cover** — the masthead carries the h1 role (one heading;
+   capsule + poster keep the inherited track head, and the poster's lab-local "Fleet" kicker
+   dies as its duplicate). The `¥0`/barcode/`ISSUE`/gag copy = static fiction via `copy.ts`
+   (LOW, E2 brief).
+10. **Motion + copy clauses (fidelity HIGHs):** ceremonies and idle motion route through
+    **`UIState.motion` / `body[data-motion]`** — NEVER an OS `prefers-reduced-motion` media
+    query (the repo's named parallel-implementation trap; the lab's `matchMedia` is prototype
+    scaffolding) · **tap-anywhere-skip is mandatory** on every ceremony (R24 §B.3, no gacha
+    precedent — E1 builds it) · the three ceremonies' beats port verbatim from the lab
+    (`app.js` poster wake · cover promote · cover develop) into the E1/E2 briefs, with ruling
+    4's poll-truthful ending · idle = the lab's one staggered breathe, off when asleep/reduced ·
+    **every new string goes through `copy.ts` + the frozen-font pipeline** (`gen-theme-fonts.mjs`
+    re-run + committed subsets — `特集` is a NEW glyph; `gachaFonts.test.ts` pins drift).
+11. **Rarity-hue derivation home:** `rarityToken(stars, mode)` beside `starsFor` in `stars.ts`
+    (pure, single source, mode-relative per ruling 8); future kit share = `ThemeDef.present` —
+    not built now.
+12. **Left as-is, deliberately:** `useFleetCycle` ticking under gacha (component-state selection
+    subscribes to nothing) · cosmos/frontier selection stores (their selection IS the sheet) ·
+    the banner-feeding derivations under `off` (cheap; don't "clean up") · the shared
+    `useFleetActions` overlap race (pre-existing, all themes — recorded, not this port's fix).
 
-**The slices (each: build → self-audit → Codex round → owner pause, per the standing method):**
+**The slices (⚖ council-reordered — a setting NEVER ships before its implementation; each slice:
+build → self-audit → Codex round → owner pause):**
 
-- **E0 — the seams** (small, no visual change): the `showWhen` engine field + settings/contract
-  tests · the three settings declared (stable keys) · the `GachaTrack` extraction + layout
-  map/resolver, equality-fenced.
-- **E1 — POSTER**: geometry (R18's `cqw·tan()` shear), three-box slices + rarity ladder,
-  select-then-act + wake + busy + the R24 §B ceremony, the data block, both name seats.
-- **E2 — COVER**: hero + cut-ins, promote ceremony, focus table, strapline banner seat,
-  sleeping-hero two-step.
-- **E3 — banner tri-state**: `off` unmount + top-space null, `minimal` stamp + CSS, token height.
-- **E4 — hardening**: the R25 Q7 pin list (unit ①–⑤ · store ⑥ · render ⑦–⑱ · contract ⑲–⑳ ·
-  e2e ㉑–㉓, incl. the select-then-wake flow with the no-confirm-dialog negative and the poster
-  axe arm).
-- **E5 — the §14.11 DEVICE ROUND (Fennec + Chrome) = the REAL acceptance**: N-clip-path scroller
-  cost (R18's stated hole) · rarity-hue collision on the real fleet · minimal-banner height ·
-  name-on-art contrast · the trailing-end air number. *(Defaults already ruled 2026-08-08:
-  blade · banner on · keyline→outlines off · grow approved — E5 only verifies them on glass.)*
+- **E0 — the seams, zero visual change:** the `showWhen` field + hardened contract tests · the
+  `createSurface` extraction (factor the composer concrete; composer's tests + a behavior-parity
+  pass are the fence) · the fleet surface instance + the `GachaTrack` extraction behind it ·
+  **the capsule EQUALITY FENCE, defined before extraction** (Codex): a frozen capsule
+  DOM/a11y-tree snapshot · a canonical 390px screenshot before/after · every existing capsule
+  open/morph/reel test unchanged · a no-remount test (layout swap must not remount `GachaFleet`
+  or lose settled dossier state). NO new Conf rows yet (`fleetLayout` registers with capsule as
+  its only offered value, or stays undeclared until E1 — no lying options).
+- **E1 — POSTER, complete WITH its settings:** geometry (R18 `cqw·tan()` shear; the
+  `ensembleBands(count)`-shaped helper with N=0/1/2/many contract tests) · the ruling-8 anatomy ·
+  select-then-act + wake + busy + the poll-truthful ceremony + tap-skip + the live region · the
+  data block · `fleetLayout` gains `poster` + `posterName` appears (blade default) · unit/render/
+  action/a11y tests land IN-SLICE (the R25 ⑦–⑫ pins) · long-hostname/long-services renders.
+- **E2 — COVER, complete with its value:** ruling-9 anatomy · promote + develop ceremonies +
+  focus restoration · `fleetLayout` gains `cover` · the R25 ⑬ pins + N=1/N=0 renders.
+- **E3 — banner tri-state, complete with its setting:** `off` unmount + top-space null +
+  scroll-reset · the re-authored `minimal` strip + token height · capsule rendered + tested under
+  BOTH non-default states · timer/wallpaper/state-matrix tests (R25 ⑰–⑱).
+- **E4 — cross-layout hardening:** the remaining R25 Q7 pins (⑭ per-layout a11y invariant ·
+  ⑮ reel gate · ⑯ stable refs · contract ⑲–⑳ · e2e ㉑–㉓ incl. select-then-wake with the
+  no-confirm negative + the poster axe arm) · **the DOCS step (Codex):** D52's shared-extension
+  ledger gains `showWhen` · the D31 Fleet-graduation record · THEME_ENGINE §14.14 updated
+  (conditional-setting contract + fleet's graduation) · R25's Q2d correction banner verified in
+  place.
+- **E5 — the §14.11 DEVICE ROUND (Fennec + Chrome) = the REAL acceptance:** N-clip-path scroller
+  cost · rarity-hue collision on the real fleet (incl. three-star mode + the all-asleep grey
+  case) · minimal-banner height · name-on-art contrast under the SHIPPED default (keyline off —
+  **no rendered artifact of that state exists**; same for A+MIN and poster/cover under the
+  inherited track head/appbar — first render happens here) · the below-fold data block under
+  `banner:on` (the grow + live region are the only tap-1 feedback — judged on glass) · blade
+  legibility on the sleeping/light slices · §12.3② shear angle + slice height numbers
+  (un-retuned since the lab widened the stack) · the trailing-end air · the cover column
+  scroller on Fennec · the hero-shift constant.
 
-**Open items the device round settles (no build blocks on them):** A's trailing-end air ·
-minimal height number · hue-collision acceptability. *(Ruled 2026-08-08: `posterName` default =
-blade · banner = `on` with cover's structural strip · keyline → the outlines axis, off by
-default · the grow approved as-is.)*
+**Open items:** §12.3⑤ picker labels/desc (copy.ts) · §12.3② shear/height numbers · the E5 list
+above. *(Everything else is ruled.)*
 
-**Process:** dev branch only, after owner sign-off of this §12.6 · Opus subagents build from
-pinned briefs · Codex co-reviews every slice · pause between slices for the owner's go.
+**Process:** dev branch only, after the owner's E0 go-word · Opus subagents from pinned briefs
+(the E1/E2 briefs carry the lab's ceremony beats + exact numbers verbatim) · Codex co-reviews
+every slice · owner pause between slices.
