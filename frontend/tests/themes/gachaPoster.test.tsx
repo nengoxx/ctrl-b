@@ -290,7 +290,7 @@ describe("a second gesture, after the first ceremony has finished", () => {
     act(() => void vi.advanceTimersByTime(1000));
   };
 
-  it("keeps WAKING on a machine whose request is still flying while ANOTHER is woken", () => {
+  it("keeps WAKING on a machine whose request is still flying while ANOTHER is woken", async () => {
     // One `wakingHost` SLOT could not represent two overlapping requests: dispatching B made A's chip
     // drop straight to SLEEPING while A's own request was still in the air — a false negative about a
     // request the app had genuinely sent. It is a Set now, and each machine leaves on its OWN settle.
@@ -308,13 +308,16 @@ describe("a second gesture, after the first ceremony has finished", () => {
     expect(chip(1)).toBe("WAKING"); // atlas is STILL in flight and still says so
     expect(run).toHaveBeenCalledTimes(2);
 
-    return act(async () => {
+    // AWAITED, not returned as a `.then` chain (caught by the FULL run, not by the targeted one): an
+    // assertion inside a trailing `.then` can be flushed by React's async-act machinery after the test's
+    // own teardown has unmounted the tree, and it then throws `container.querySelector of undefined` as
+    // an UNHANDLED error while every test still reports green.
+    await act(async () => {
       settleA();
       await Promise.resolve();
-    }).then(() => {
-      // …and it leaves on its own settle, back to the SERVER's word — never to ONLINE
-      expect(chip(1)).toBe("SLEEPING");
     });
+    // …and it leaves on its own settle, back to the SERVER's word — never to ONLINE
+    expect(chip(1)).toBe("SLEEPING");
   });
 
   it("RE-ANNOUNCES an identical message — a retry of the same failed wake is not silent", () => {
