@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { Host } from "../../types";
 import { GachaCard } from "./GachaCard";
 import { GACHA_COPY } from "./copy";
@@ -32,12 +34,26 @@ export interface GachaTrackProps {
   starMode: StarMode;
   /** Which machine wears the `NEW` ribbon (G6 item iv) — a sticky pick made above, `null` for none.
    *
-   *  CAPSULE-ONLY IN PRACTICE, and that is a ruling rather than an oversight: the poster wore it briefly
-   *  and the owner cut it ("I don't want it anymore"), so `GachaPoster` deliberately does not destructure
-   *  this. The prop stays on the shared contract because the capsule track — where the demo was
-   *  owner-confirmed at G6.1 and shipped in v1.5.0 — still reads it, and because cover gets its own
-   *  ruling at E2. Do not "fix" the poster's omission. */
+   *  CAPSULE-ONLY, and that is a ruling rather than an oversight: the poster wore it briefly and the owner
+   *  cut it ("I don't want it anymore"), and the COVER never wore one — the walked lab shows none, and a
+   *  magazine already says which machine is featured by putting it on the front. So `GachaPoster` and
+   *  `GachaCover` both deliberately decline to destructure this, and neither omission is a bug to fix. The
+   *  prop stays on the shared contract because the capsule track — where the demo was owner-confirmed at
+   *  G6.1 and shipped in v1.5.0 — still reads it. */
   ribbonHost: string | null;
+  /** THE PICKUP BANNER, as a SLOT (§12.6 ruling 7, deferred from E1 to E2 where its second seat exists).
+   *
+   *  `GachaFleet` builds exactly ONE `<GachaBanner>` and hands it here, because the three layouts do not
+   *  agree about where it goes: capsule and poster seat it FIRST IN SCROLL FLOW (which is byte-identically
+   *  where the body used to mount it — the fence test is the proof), while the cover seats it inside the
+   *  composition as a printed STRAPLINE between the hero copy and the barcode footer. A prop is the only
+   *  shape that lets one instance land in two places.
+   *
+   *  ⚠ A LAYOUT SWITCH REMOUNTS IT, and that is accepted (ruling 7): React reparents the element into a
+   *  different tree, so its autoplay index, its snap state and any in-flight gesture reset. The owner
+   *  switches layouts rarely; what is NOT acceptable is a leaked timer, which is why the banner's own
+   *  cadence effect is unmount-clean and tested that way. */
+  banner: ReactNode;
   /** The shared roster resolution (§5.3's ONE resolver), passed as a lookup so the roster query itself stays
    *  with the derivations: `art(i)` is the same entry the host's promo slide and dossier portrait use. */
   art: (index: number) => ResolvedArt | null;
@@ -82,6 +98,14 @@ export interface GachaTrackProps {
    *  A SET rather than one id: two wakes can genuinely overlap (wake A, then wake B while A is still
    *  pending), and one slot made A stop saying `WAKING` while its own request was still in the air. */
   waking: ReadonlySet<string>;
+  /** Speak into the fleet's ONE live region (ruling 3). The region itself stays `GachaFleet`'s — a layout
+   *  never owns an ARIA landmark — but WHO speaks follows the tap grammar: under `act-first` the body
+   *  narrates at the dispatch (`pickAnnounce` / `wakeAnnounce`) and the layouts say nothing, while the
+   *  COVER narrates its own two-ended ceremonies on their own beats, because "X takes the cover" and "X is
+   *  on the cover" are separated by a 880 ms page turn that only the layout knows about.
+   *
+   *  Stable identity (a `useCallback` with no deps up there), so it is safe in a ceremony beat's closure. */
+  announce: (text: string) => void;
 }
 
 export function GachaTrack({
@@ -92,12 +116,19 @@ export function GachaTrack({
   shapes,
   starMode,
   ribbonHost,
+  banner,
   art,
   counter,
   onOpenHost,
 }: GachaTrackProps) {
   return (
     <>
+      {/* THE PICKUP BANNER, seated FIRST IN SCROLL FLOW — which is byte-identically where `GachaFleet`
+          mounted it before the slot existed (§12.6 ruling 7). It moved into the layout so the COVER can
+          seat the same instance in its strapline; capsule's markup did not change, and the E0 equality
+          fence is what holds that claim. */}
+      {banner}
+
       {/* THE CAPSULE TRACK. The head is the prototype's 編成 / "Select a unit" / counter row; the grid is
           its two-column track, with the geometry rule deciding which cards span the full width. */}
       <div className="gc-track-head">

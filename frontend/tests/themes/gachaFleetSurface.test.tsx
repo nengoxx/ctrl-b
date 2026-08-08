@@ -50,9 +50,16 @@ const host = (id: string, online: boolean): Host => ({
 });
 
 /** A stand-in second layout: it renders none of the capsule markup, so "the dossier is still open" cannot be
- *  an artifact of the track having stayed the same. */
-function DummyLayout({ hosts }: GachaTrackProps) {
-  return <div data-testid="dummy-layout">{hosts.length}</div>;
+ *  an artifact of the track having stayed the same. It DOES seat the banner, because since E2 that is part
+ *  of the contract every variant implements (§12.6 ruling 7) — a layout that dropped it would be testing a
+ *  shape no real variant has. */
+function DummyLayout({ hosts, banner }: GachaTrackProps) {
+  return (
+    <div data-testid="dummy-layout">
+      {banner}
+      {hosts.length}
+    </div>
+  );
 }
 
 const GACHA = registry.gacha!;
@@ -135,12 +142,17 @@ describe("the fleet surface under gacha", () => {
     expect(container.querySelector(".gc-track")).toBeNull();
     expect(container.querySelector(".gc-track-head")).toBeNull();
     // …and everything OUTSIDE the track body stood still: same DOM nodes (a remount would have rebuilt
-    // them), the banner intact, and the dossier still open on the same machine with its kit stamp held
+    // them), and the dossier still open on the same machine with its kit stamp held
     expect(container.querySelector("#tab-fleet")).toBe(tab);
     expect(container.querySelector("#gc-star-carve")).toBe(starDefs);
-    expect(container.querySelector(".gc-banner")).not.toBeNull();
     expect(document.querySelector(".gc-dossier h2")?.textContent).toBe("atlas");
     expect(document.body.dataset.sheet).toBe("open");
+    // The BANNER is the one thing that legitimately moves (§12.6 ruling 7, E2): it is a SLOT now, so a
+    // layout swap REPARENTS it into the new variant's tree and React remounts it. It is still there and
+    // still exactly one — an accepted, signed cost (autoplay/slide state resets), and the invariant that
+    // matters is that nothing leaks, which `gachaCover.test.tsx` holds with a timer-count assertion.
+    expect(container.querySelectorAll(".gc-banner")).toHaveLength(1);
+    expect(container.querySelector("[data-testid=dummy-layout] .gc-banner")).not.toBeNull();
   });
 
   it("an unknown stored layout degrades to capsule (the validated resolver, end to end)", () => {

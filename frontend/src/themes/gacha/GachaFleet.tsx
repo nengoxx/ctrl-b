@@ -684,13 +684,6 @@ export function GachaFleet({ active }: { active: boolean }) {
       {/* The card stars' carve filter def (R19) — mounted HERE because the card row is the one carved
           surface, and the def must live exactly as long as any card can (see GachaStarDefs). */}
       <GachaStarDefs />
-      <GachaBanner
-        slides={slides}
-        active={active}
-        rate={rateText(MAX_STARS[starMode], onlineCount, resolved)}
-        pity={pityText(onlineServices, svcResolved)}
-        onOpenHost={openHostDossier}
-      />
 
       {/* THE TRACK BODY — the one region a fleet LAYOUT replaces (§12.6: capsule today, poster/cover at
           E1/E2). The resolution happens HERE, inside the body, and not at the Root: everything above and
@@ -708,6 +701,20 @@ export function GachaFleet({ active }: { active: boolean }) {
         shapes={shapes}
         starMode={starMode}
         ribbonHost={ribbonHost}
+        // THE BANNER AS A SLOT (§12.6 ruling 7). ONE instance, built here because this is the body that
+        // knows the three slide sources — handed to whichever layout is drawing, which seats it where its
+        // own composition wants it (capsule/poster: first in scroll flow, exactly where this component used
+        // to mount it; cover: the strapline). Reparenting across a layout switch REMOUNTS it, which is the
+        // ruling's accepted cost — the banner's timers are unmount-clean, and that is the tested part.
+        banner={
+          <GachaBanner
+            slides={slides}
+            active={active}
+            rate={rateText(MAX_STARS[starMode], onlineCount, resolved)}
+            pity={pityText(onlineServices, svcResolved)}
+            onOpenHost={openHostDossier}
+          />
+        }
         art={(i) => artForHost(roster, i)}
         counter={counterText(onlineCount, hosts.length, resolved)}
         onOpenHost={openHostDossier}
@@ -718,6 +725,10 @@ export function GachaFleet({ active }: { active: boolean }) {
         onTapHost={onTapHost}
         busy={busy}
         waking={waking}
+        // The fleet's live region stays THIS component's; a layout that dramatizes a request on its own
+        // beats borrows the voice (see the prop's contract). Stable identity, so a ceremony beat's closure
+        // over it is safe.
+        announce={announce}
       />
 
       {/* THE FLEET's ONE LIVE REGION (ruling 3). gacha had none until E1, and select-then-act is why it

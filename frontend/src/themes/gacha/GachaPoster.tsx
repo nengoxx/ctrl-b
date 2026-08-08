@@ -74,6 +74,7 @@ export function GachaPoster({
   isLoading,
   reeling,
   starMode,
+  banner,
   art,
   counter,
   picked,
@@ -147,6 +148,11 @@ export function GachaPoster({
 
   return (
     <>
+      {/* THE PICKUP BANNER, in the seat it has had since G1 — FIRST in the tab's scroll flow, above the
+          head, scrolling away with everything else (§12.6 ruling 7's slot; the poster's DOM is unchanged
+          by the refactor, which the fence test holds). */}
+      {banner}
+
       {/* The INHERITED head (§12.6 ruling 9): capsule and poster keep it, and the poster's lab-local
           "Fleet" kicker dies as its duplicate. Byte-identical to the capsule track's, deliberately — one
           fleet, one heading, whichever layout draws the machines. */}
