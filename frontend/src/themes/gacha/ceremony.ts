@@ -20,8 +20,17 @@ import { useUISlice } from "../../store/ui";
 //     has not run yet, in order, so the sequence can never leave half of its state applied. A `pointerdown`
 //     capture listener on the document is what makes it ANYWHERE (the lab appends a full-screen catcher
 //     element; a listener needs no z-index rung of its own, and gacha's ladder is already crowded — §10.1).
-//     It does not preventDefault: swallowing a tap is the caller's business (the poster ignores slice taps
-//     while its own ceremony runs), and a document-level swallow would eat the tab bar too.
+//     It does not preventDefault: swallowing a tap is the caller's business, and a document-level swallow
+//     would eat the tab bar too.
+//
+//     ⚠ A SKIP GESTURE SPANS TWO BROWSER EVENTS, and a caller that swallows by reading `running` in its
+//     CLICK handler will not swallow anything (Codex E1 MED-1, found in the poster). This listener skips on
+//     `pointerdown`; React then commits `running: false`; the browser dispatches `click` afterwards, by
+//     which time the flag says the ceremony is over — so the finger that stopped the theatre also fires the
+//     control it landed on. The fix belongs to the CALLER because only it knows what its controls do:
+//     record `running` in an `onPointerDownCapture` (which runs inside the pointerdown's own dispatch,
+//     still pre-skip) and consume that record in `onClick`. `GachaPoster#skippedGesture` is the worked
+//     example, keyboard belt included — Enter/Space produce a click with no pointerdown to record.
 //  3. EVERY TIMER IS CLEARED — on skip, on finish, and on unmount. A ceremony that outlives its component
 //     would call `setState` on a dead tree, and (worse) a wake ceremony's beats close over a host id that
 //     may have left the fleet.
