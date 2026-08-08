@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { GACHA_COPY, gachaGlyphSet } from "../../src/themes/gacha/copy";
+import { GACHA_COPY, gachaGlyphSet, unitTags } from "../../src/themes/gacha/copy";
 // ⚠ IMPORT ORDER IS LOAD-BEARING for the `loadFonts` group at the bottom of this file: `fonts.ts` reaches
 // the settings through the REGISTRY, and `registry.ts` captures each theme's def by VALUE when its own body
 // runs. Entering the theme cluster at `themes/gacha` (the index) first makes registry.ts evaluate mid-cycle
@@ -67,6 +67,11 @@ const RULED_FACES = [
   { family: "Shippori Mincho B1", weights: [600, 800], subsets: ["jp", "latin"] },
   { family: "Bungee", weights: [400], subsets: ["latin"] },
   { family: "Zen Maru Gothic", weights: [900], subsets: ["latin"] },
+  // The poster's STATUS CHIP pixel face (owner ruling, the third E1 dev-unit walk — the theme's one
+  // sanctioned new family). Latin-only on the same terms and one sharper one: the chip's strings are
+  // ONLINE / SLEEPING / WAKING, ASCII by construction AND by the theme's own non-ASCII fence, and
+  // Silkscreen is a Latin pixel design with no Japanese at all.
+  { family: "Silkscreen", weights: [400], subsets: ["latin"] },
 ];
 
 describe("gacha font subset — the frozen glyph set", () => {
@@ -101,6 +106,17 @@ describe("gacha font subset — the frozen glyph set", () => {
     // A spot check that the frozen list really is the theme's copy and not a hand-kept duplicate.
     for (const ch of GACHA_COPY.tabFleet) expect(manifest.glyphs).toContain(ch);
     for (const ch of GACHA_COPY.brandMeta) expect(manifest.glyphs).toContain(ch);
+  });
+
+  it("carries the UNIT TAG pool, every glyph of it", () => {
+    // The poster's corner tag draws these one at a time by fleet position, so a missing one is not a
+    // degraded string — it is one machine in the fleet showing a tofu box where its neighbours show a
+    // kanji. Checked as its own arm because the pool is the newest and least-exercised copy in the module.
+    const tags = unitTags();
+    expect(tags).toHaveLength(8);
+    expect(new Set(tags).size, "the pool must not repeat a glyph").toBe(tags.length);
+    for (const ch of tags)
+      expect(manifest.glyphs, `unit tag ${ch} is not in the subset`).toContain(ch);
   });
 });
 

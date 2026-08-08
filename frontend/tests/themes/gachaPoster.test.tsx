@@ -1058,6 +1058,55 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     expect(ring).toContain("var(--accent)"); // the kit's own ring token, not a poster literal
   });
 
+  it("takes the LAB's status chip wholesale, pixel face included", () => {
+    // Owner, third walk: "the online badge in the prototype looked much better — pixel font". The values
+    // are the lab's `.po-chip` verbatim; the face is Silkscreen, the theme's one sanctioned new family.
+    const chip = blockFor(".po-chip")!;
+    expect(chip).toContain(`font-family: "Silkscreen", var(--font-body)`);
+    expect(chip).toContain("font-size: 7.5px");
+    expect(chip).toContain("letter-spacing: 0.18em");
+    expect(chip).toContain("background: var(--gc-po-chip-on)");
+    expect(chip).toContain("color: var(--gc-po-chip-on-ink)");
+    // the asleep skin is a translucent lavender with a RING, not a fill — it recedes without vanishing
+    const off = blockFor(".po-slice.asleep .po-chip")!;
+    expect(off).toContain("background: var(--gc-po-chip-off)");
+    expect(off).toContain("box-shadow: inset 0 0 0 1px var(--gc-po-chip-off-ring)");
+    expect(off).toContain("color: var(--gc-po-chip-off-ink)");
+    // the lab's own literals, as palette-INDEPENDENT theme identity (the `--gc-star-hi` precedent)
+    const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
+    for (const [name, hex] of [
+      ["--gc-po-chip-on", "#5fe0a0"],
+      ["--gc-po-chip-on-ink", "#062015"],
+      ["--gc-po-chip-off", "#8c80ba33"],
+      ["--gc-po-chip-off-ring", "#baace873"],
+      ["--gc-po-chip-off-ink", "#cfc6ea"],
+    ])
+      expect(tokens, `${name} must be the lab's ${hex}`).toContain(`${name}: ${hex};`);
+    // WAKING is a THIRD skin, not a dimmed green — a dimmed green would read as "nearly online", which is
+    // precisely the claim a poll-truthful chip must not make.
+    const busy = blockFor(".po-slice.busy .po-chip")!;
+    expect(busy).toContain("background: var(--accent-fill)");
+    expect(busy).not.toContain("--gc-po-chip-on");
+  });
+
+  it("seats the CORNER TAG clear of the shear, in the unit's own hue", () => {
+    // The lab's `.po-jp` seat verbatim. It reads `--po-hue`, so it greys with the slice when the machine
+    // sleeps for free — unlike status, decoration IS allowed to ride on colour alone.
+    const tag = blockFor(".po-jp")!;
+    expect(tag).toContain("writing-mode: vertical-rl");
+    expect(tag).toContain("right: 9px");
+    expect(tag).toContain("top: 9px");
+    expect(tag).toContain("color: var(--po-hue)");
+    // the SANS, not `--font-display` — that token is Shippori Mincho in this theme, and the lab's tag is
+    // Zen Kaku, which is what `--font-body` resolves to
+    expect(tag).toContain("font-family: var(--font-body)");
+    // checked on the DECLARATION, not the block — the comment above it names the token it rejects
+    expect(tag).not.toMatch(/font-family:[^;]*--font-display/);
+    // the seat clears the diagonal: a ~13px glyph at right:9px puts its far corner ~22px in, where the
+    // plate's top boundary has descended tan(10deg)*22 = 3.9px — under the 9px top inset
+    expect(Math.tan((10 * Math.PI) / 180) * 22).toBeLessThan(9);
+  });
+
   it("never tints the star row by the rarity hue (two signals, two colours)", () => {
     const stars = blockFor(".po-stars")!;
     expect(stars).toContain("var(--gc-star)");

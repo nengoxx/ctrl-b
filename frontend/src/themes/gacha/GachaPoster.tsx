@@ -6,7 +6,7 @@ import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
 import { GachaStar } from "./GachaStar";
 import { useCeremony } from "./ceremony";
-import { partingStep, pickLabel, pingText, roleLabel, unitHueToken } from "./fleet";
+import { partingStep, pickLabel, pingText, roleLabel, unitHueToken, unitTag } from "./fleet";
 import type { GachaTrackProps } from "./GachaTrack";
 import { isHighStar, starsFor } from "./stars";
 
@@ -259,6 +259,13 @@ export function GachaPoster({
                       stays SLEEPING until a poll says otherwise. */}
                     <span className="po-chip">
                       {waking.has(host.id) ? "WAKING" : online ? "ONLINE" : "SLEEPING"}
+                    </span>
+                    {/* THE CORNER TAG (owner, third walk) — the lab's `.po-jp`, revived as FLAVOUR: a
+                      frozen pool glyph picked by fleet POSITION, never anything host-derived. It says
+                      nothing about the machine, which is why it is `aria-hidden` and why the pool is in
+                      `copy.ts` beside the scene titles rather than in the roster. */}
+                    <span className="po-jp" aria-hidden>
+                      {unitTag(i)}
                     </span>
                     {/* THE `NEW` RIBBON (G6 item iv) — the owner overturned E1's poster-off default at the
                       dev-unit walk: he wants the capsule's own mount-sticky random pick here too. Same

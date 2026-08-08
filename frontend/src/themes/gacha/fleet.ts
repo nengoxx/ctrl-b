@@ -4,7 +4,7 @@
 // that has not resolved yet, a host with no role) are then ordinary unit tests rather than render assertions.
 
 import type { Host } from "../../types";
-import { GACHA_COPY, SCENE_TITLES } from "./copy";
+import { GACHA_COPY, SCENE_TITLES, unitTags } from "./copy";
 
 /** A capsule card's shape in the track. The prototype's three: `pair` is the default 3/4 portrait (two per
  *  row), `feat` and `wide` both span the full width at their own aspect ratios. */
@@ -299,6 +299,21 @@ export function sceneTitle(position: number): string {
   const n = SCENE_TITLES.length;
   const i = Number.isFinite(position) ? ((Math.trunc(position) % n) + n) % n : 0;
   return SCENE_TITLES[i];
+}
+
+/** The poster slice's CORNER TAG — one kanji from the frozen pool, by fleet POSITION (owner ruling, the
+ *  third dev-unit walk). Deliberately the `sceneTitle` idiom rather than anything host-derived: §12.6
+ *  ruling 8 dropped the lab's per-HOST JP as mock-roster fiction, and this revives the LOOK without the
+ *  claim — the tag is decoration, is `aria-hidden`, and says nothing about the machine it sits on.
+ *
+ *  Cycles, so any fleet size is tagged deterministically with no per-host authoring, and a nonsense index
+ *  resolves to the first glyph rather than throwing on a render path (`sceneTitle`'s own contract). */
+export function unitTag(index: number): string {
+  const pool = unitTags();
+  const i = Number.isFinite(index)
+    ? ((Math.trunc(index) % pool.length) + pool.length) % pool.length
+    : 0;
+  return pool[i];
 }
 
 /** A promo slide's templated copy (§6.4 / the R8 amendment): the tag pill and the JP caption are per-STATE

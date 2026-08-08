@@ -82,6 +82,17 @@ const FACES = [
   // the browser fetches a face only when something paints in it.
   { family: "Bungee", slug: "bungee", weights: [400], subsets: ["latin"] },
   { family: "Zen Maru Gothic", slug: "zen-maru-gothic", weights: [900], subsets: ["latin"] },
+  // The poster's STATUS CHIP (owner ruling, the third dev-unit walk: "the online badge in the prototype
+  // looked much better — pixel font"). The finalists lab sets its chip in Silkscreen, and the owner asked
+  // for that look wholesale, which makes this the one sanctioned NEW FAMILY in the theme — every other
+  // face here predates E1.
+  //
+  // LATIN-ONLY, on the Bungee/Zen-Maru terms above and for a sharper reason: the chip's strings are
+  // ONLINE / SLEEPING / WAKING, ASCII by construction and by the theme's own non-ASCII fence. Silkscreen
+  // is a Latin pixel design with no Japanese at all, so asking the CSS2 API for a JP `text=` subset of it
+  // would return a file of .notdefs plus a `unicode-range` that would SHADOW the real JP faces for those
+  // codepoints.
+  { family: "Silkscreen", slug: "silkscreen", weights: [400], subsets: ["latin"] },
 ];
 
 /** Fetch a CSS2 response as text, or throw with the status (a silent 4xx would write a broken file). */

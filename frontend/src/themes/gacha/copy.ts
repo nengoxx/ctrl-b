@@ -150,6 +150,27 @@ export const GACHA_COPY = {
    *  chooses only WHERE the machine name sits on a slice. Same 名 as the two face pickers above — a third
    *  rider on a glyph the subset already carries. */
   settingPosterNameDesc: "the name's seat on each poster slice · 名",
+
+  /** THE UNIT TAG POOL (owner, third dev-unit walk: "in the upper right corner there was a small icon —
+   *  I would like something like that"). Eight single kanji, drawn by POSITION, for the poster slice's
+   *  vertical corner tag.
+   *
+   *  FLAVOUR, NEVER DATA. §12.6 ruling 8 dropped the lab's per-HOST JP (天馬 for pegasus, 地図 for atlas…)
+   *  as mock-roster fiction — a real hostname has no Japanese reading, and inventing one per machine is
+   *  the thing that was wrong with it. This revives the LOOK on the `SCENE_TITLES` pattern instead: a
+   *  frozen pool assigned deterministically by fleet position, carrying no claim about the machine at
+   *  all. `aria-hidden` in the markup for the same reason.
+   *
+   *  SINGLE kanji, deliberately: the lab's tags are two glyphs and the tag is set VERTICALLY, so a
+   *  two-glyph tag is twice as tall in a corner the shear is already eating into. One glyph keeps it
+   *  small enough to clear the diagonal at every column width.
+   *
+   *  ONE STRING rather than an array, because `gachaGlyphSet()` walks this object's values AS STRINGS —
+   *  an array here would corrupt the derivation the frozen subset is generated from (the reason
+   *  `SCENE_TITLES` lives outside this object). `unitTags()` splits it, so there is still one source.
+   *  Read: 天 heaven · 地 earth · 星 star · 月 moon · 風 wind · 雷 thunder · 海 sea · 火 fire — the
+   *  elemental register a gacha roster names its units in, and eight NEW glyphs to the frozen subset. */
+  unitTagGlyphs: "天地星月風雷海火",
 } as const;
 
 export type GachaCopyKey = keyof typeof GACHA_COPY;
@@ -177,6 +198,12 @@ export const SCENE_TITLES = [
   "AURORA PROTOCOL",
   "GOLDEN UPTIME",
 ] as const;
+
+/** The unit-tag pool as a LIST, split from its one frozen string (see `unitTagGlyphs`). Derived rather
+ *  than declared twice, so the pool and the subset can never disagree about what ships. */
+export function unitTags(): string[] {
+  return [...GACHA_COPY.unitTagGlyphs];
+}
 
 /** The theme's frozen glyph set: every NON-ASCII character used by `GACHA_COPY`, sorted by code point.
  *  Pure + dependency-free so both the generator script and the guard test derive the SAME list from the
