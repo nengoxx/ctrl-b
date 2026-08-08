@@ -1536,10 +1536,47 @@
       padding-top: var(--po-head-pad-top);
       /* the lower gap is expressed ONCE, on the stack below — see `--po-stack-gap` */
       padding-bottom: 0;
+      /* The head paints ABOVE the stack it now overlaps: `.po-slice` is positioned, so a static head would
+       * lose to it. And it must not CATCH anything — the head has no interactive content, but its box spans
+       * the full width and reaches a few px into the first slice's box, where the union hit-clip does make
+       * the slice tappable near the trailing edge. Without this, taps in that strip would land on a
+       * heading. */
+      position: relative;
+      z-index: 1;
+      pointer-events: none;
     }
     body[data-gc-fleet="poster"] .po-poster {
       --po-stack-gap: 11px;
       padding-top: var(--po-stack-gap);
+    }
+
+    /* ── THE HEAD DROPS INTO THE SHEAR'S VOID (owner, third walk: still too much air — he wants the 編成 /
+     * "Select a unit" head sitting in the empty spot between the banner and the first card) ──────────────
+     * The shear leaves a genuine triangle above the first slice: `--poly`'s top edge runs from (0, --run)
+     * up to (100%, 0), so at the leading edge there is a full `--run` of space that is transparent AND
+     * tap-dead by construction (outside the clip, and the button's hit area is the union clip). Dropping
+     * the head into it costs nothing and buys back the whole gap.
+     *
+     * IT IS AN OVERLAP, NOT A PADDING CUT: the stack is pulled up under a head that stays where it is, so
+     * the head keeps its own rhythm against the banner and only the space BELOW it closes.
+     *
+     * ⚑ THE NUMBER IS CAPPED BY THE COUNTER, and the cap is what makes this 15px instead of ~64px.
+     * Measured on the live app at the 390 column: head bottom 340, slice box top 351, `--run` 58.19.
+     *   · the head's h1 is 47px tall, so CENTRED in the 58.19px void it would want an overlap of 63.6px;
+     *   · but `02 / 04` sits at the head's right, and the right is exactly where the slice rises HIGHEST.
+     *     The counter's left edge lands 29.2px in from the poster's trailing edge, where the plate's top
+     *     boundary has descended only tan(10deg) x 29.2 = 5.15px — so the overlap can be at most
+     *     11 + 5.15 = 16.15px before the counter touches the first slice's shoulder.
+     * That cap is WIDTH-INDEPENDENT: the counter's inset from the poster's trailing edge is a constant
+     * (`--trail` - the head's 14px side padding + the counter's own width), so the same 16.15 comes out at
+     * 320 / 390 / 430 / 768 / 1200. 15px ships, leaving ~1.15px for sub-pixel and font variance.
+     *
+     * Going further needs the COUNTER to move (raising it inside the head would hand the constraint to the
+     * h1's right edge, ~56px of headroom) — a design change the owner has not asked for, so it is his call
+     * rather than mine. Flagged, not taken. */
+    body[data-gc-fleet="poster"] .po-body {
+      --po-head-overlap: 15px;
+      margin-top: calc(var(--po-head-overlap) * -1);
     }
 
     /* THE POSTER'S OWN COLUMN — the stack AND its registry as one box. It exists so the two agree about

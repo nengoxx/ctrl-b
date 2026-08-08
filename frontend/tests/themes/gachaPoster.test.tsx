@@ -1029,6 +1029,35 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     );
   });
 
+  it("drops the head INTO the shear's void, capped by the counter", () => {
+    // Owner, third walk: the head should sit in the empty spot between the banner and the first card.
+    // That spot is real: `--poly`'s top edge runs from (0, --run) up to (100%, 0), so the triangle above
+    // the first slice's leading half is transparent AND tap-dead by construction.
+    const head = blockFor('body[data-gc-fleet="poster"] .gc-track-head')!;
+    const body = blockFor('body[data-gc-fleet="poster"] .po-body')!;
+    expect(body).toContain("--po-head-overlap: 15px");
+    // an OVERLAP, not a padding cut: the stack is pulled up under a head that stays put
+    expect(body).toContain("margin-top: calc(var(--po-head-overlap) * -1)");
+    // the head has to paint above the stack it now overlaps, and must not CATCH taps meant for the slice:
+    // its box reaches into the first slice's box, where the union hit-clip does make the slice tappable
+    // near the trailing edge (verified against the live app — a tap there lands on the slice).
+    expect(head).toContain("position: relative");
+    expect(head).toContain("pointer-events: none");
+
+    // THE CAP, recomputed rather than restated. The counter sits at the head's right, and the right is
+    // where the slice rises highest: its left edge lands a CONSTANT distance in from the poster's trailing
+    // edge (`--trail` - the head's 14px side padding + the counter's own width), so the headroom is the
+    // same at every column. Measured on the live app: counter width 40.2, stack gap 11.
+    const tan10 = Math.tan((10 * Math.PI) / 180);
+    // poster right edge = W - --trail; counter left = W - (head side padding) - (counter width), so the
+    // gap between them is (14 + 40.2) - 25 = 29.2 and the W cancels — which is why the cap is the same at
+    // 320 / 390 / 430 / 1200 (all four measured against the live app).
+    const counterInset = 14 + 40.2 - 25;
+    const cap = 11 + tan10 * counterInset; // --po-stack-gap + the void under the counter's left edge
+    expect(cap).toBeGreaterThan(15); // 15 ships, with the remainder as sub-pixel/font headroom
+    expect(cap).toBeLessThan(17); // …and it is NOT the ~64px an h1 centred in the void would want
+  });
+
   it("keeps the stack off-centre RIGHT with the trailing inset the grow actually needs", () => {
     // Owner, third walk: the selected card's edge "gets too close to the actual right edge". `.picked`
     // scales 1.05 about its own centre and nudges 4px, and its DROP rides 5px further out again — at
