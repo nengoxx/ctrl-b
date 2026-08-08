@@ -17,9 +17,32 @@ const fleet = vi.hoisted(() => {
 vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => ({ data: undefined }) }));
 
+// jsdom shims for the ONE case below that renders gacha's whole Root (the body-attr stamp): the kit shell
+// measures with ResizeObserver and resets the scroller on a section change. House convention — setup.ts
+// keeps only the unavoidable ones (the `kitBackground.test.tsx` precedent).
+vi.stubGlobal(
+  "ResizeObserver",
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+);
+Element.prototype.scrollTo = vi.fn();
+Element.prototype.scrollIntoView = vi.fn();
+
+/// <reference types="node" />
+// ^ the CSS-reading block at the end reads gacha's stylesheet from disk (fs/path/process); the tests
+//   tsconfig pins `types:["vitest"]`, so node's globals are pulled in explicitly.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
 import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
+import { GachaRoot } from "../../src/themes/gacha/GachaRoot";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
 import type { Host, HostServiceCfg } from "../../src/types";
 
@@ -452,5 +475,101 @@ describe("the poster's states match the capsule track's", () => {
     expect(slices(container)).toHaveLength(1);
     expect(container.querySelector(".po-name b")?.textContent).toBe("SOLO");
     expect(container.querySelector(".po-chip")?.textContent).toBe("ONLINE");
+  });
+});
+
+// ── THE BODY STAMP + the per-layout banner SKIN (ruling 7) ───────────────────────────────────────────
+// The pickup banner is a SLOT the layout dresses, not a component the layout forks — so the poster's gold
+// furniture is CSS keyed on `body[data-gc-fleet]`, stamped by the Root from the RESOLVED variant id. Two
+// halves, tested where each of them lives: the stamp against a real Root render, the rules against the
+// stylesheet (jsdom applies no @scope/@layer CSS, so the paint itself is an E5 device-round claim).
+describe("body[data-gc-fleet] — the stamp the banner skin keys off", () => {
+  const drawRoot = () =>
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <GachaRoot />
+      </QueryClientProvider>,
+    );
+
+  it("stamps the RESOLVED layout, follows the setting, and is cleared on unmount", () => {
+    const view = drawRoot();
+    expect(document.body.dataset.gcFleet).toBe("poster");
+    act(() => setThemeSetting("gacha", "fleetLayout", "capsule"));
+    expect(document.body.dataset.gcFleet).toBe("capsule");
+    // a corrupt/newer synced id resolves to the fallback, exactly as the Surface renders it
+    act(() => setThemeSetting("gacha", "fleetLayout", "not-a-layout"));
+    expect(document.body.dataset.gcFleet).toBe("capsule");
+    // …and a switched-to skin can never inherit gacha's stale attrs (the §10.5 cleanup ledger)
+    view.unmount();
+    expect(document.body.dataset.gcFleet).toBeUndefined();
+  });
+});
+
+describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
+  const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8");
+  /** One selector's declaration block (values carry no braces, so scanning to the next `}` is exact). */
+  const blockFor = (sel: string): string | null => {
+    const at = css.indexOf(`\n    ${sel} {`);
+    return at < 0 ? null : css.slice(at, css.indexOf("}", at));
+  };
+
+  it("resolves the rarity INPUT into a hue a class can override (the inline-style trap)", () => {
+    // An inline custom property beats every selector short of `!important`, so the property the component
+    // writes and the property the paint reads MUST be different — else `.asleep` could never suppress the
+    // hue. This is the regression: `--po-rar` in, `--po-hue` out, both stylesheet-decided.
+    expect(blockFor(".po-slice")).toContain("--po-hue: var(--po-rar)");
+    expect(blockFor(".po-slice.asleep")).toContain("--po-hue: var(--gc-rar-off)");
+    for (const sel of [".po-drop", ".po-plate", ".po-name b"])
+      expect(blockFor(sel), `${sel} must paint the RESOLVED hue`).toContain("var(--po-hue)");
+  });
+
+  it("pairs the keyline with the art's inset, both on the `outlines` axis (gacha ships it OFF)", () => {
+    // Keyline off must also drop the art's 1px inset, or a black hairline survives where the rim was.
+    expect(blockFor(".po-art")).toContain("inset: 0");
+    expect(blockFor('body[data-outlines="on"] .po-art')).toContain("inset: 1px");
+  });
+
+  it("draws the focus ring INSIDE the polygon (a clip-path erases the UA ring — R18)", () => {
+    expect(blockFor(".po-slice:focus-visible")).toContain("outline: none");
+    const ring = blockFor(".po-slice:focus-visible::after")!;
+    expect(ring).toContain("clip-path: var(--poly)");
+    expect(ring).toContain("var(--accent)"); // the kit's own ring token, not a poster literal
+  });
+
+  it("never tints the star row by the rarity hue (two signals, two colours)", () => {
+    const stars = blockFor(".po-stars")!;
+    expect(stars).toContain("var(--gc-star)");
+    expect(stars).not.toContain("--po-hue");
+    expect(blockFor(".po-slice.asleep .po-stars")).toContain("var(--gc-star-dim)");
+  });
+
+  it("skins the ONE banner instance through the stamp, from the rarity ladder's own gold", () => {
+    for (const sel of [
+      'body[data-gc-fleet="poster"] .gc-banner',
+      'body[data-gc-fleet="poster"] .gc-banner-copy .tag',
+      'body[data-gc-fleet="poster"] .gc-banner-glow',
+      'body[data-gc-fleet="poster"] .gc-dot.on .pip',
+    ])
+      expect(blockFor(sel), `no rule for ${sel}`).toBeTruthy();
+    // gold, from the ladder — never a second gold that could drift from a slice's own top rung
+    expect(blockFor('body[data-gc-fleet="poster"] .gc-banner-copy .tag')).toContain(
+      "background: var(--gc-rar-5)",
+    );
+    expect(blockFor('body[data-gc-fleet="poster"] .gc-dot.on .pip')).toContain(
+      "background: var(--gc-rar-5)",
+    );
+  });
+
+  it("gates every ambient motion on the app's own axis, and uses no OS media query", () => {
+    for (const sel of [
+      'body[data-motion="reduced"] .po-slice img',
+      'body[data-motion="reduced"] .po-slice.waking .po-flashline',
+      'body[data-motion="reduced"] .po-data',
+    ])
+      expect(blockFor(sel), `no reduced-motion rule for ${sel}`).toBeTruthy();
+    // the repo's named parallel-implementation trap: gacha models the preference itself
+    expect(css).not.toContain("prefers-reduced-motion");
   });
 });

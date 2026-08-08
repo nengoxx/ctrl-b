@@ -165,11 +165,13 @@ export function GachaPoster({
                   }
                   style={
                     {
-                      // The rarity hue, per slice: the keyline, the drop, the wash and the name all read this
-                      // ONE property, so a star-mode change re-tints a whole slice from one place. The
-                      // SLEEPING suppression is the CSS's job (`.asleep` rebinds it to `--gc-rar-off`) — a
-                      // machine that is asleep still HAS its rarity.
-                      "--gc-rar": rarityToken(stars, starMode),
+                      // The rarity hue INPUT, per slice. The CSS resolves it into `--po-hue`, which is
+                      // what the keyline, the drop, the wash and the name actually read — because an
+                      // inline custom property beats every selector, so a `.asleep` rule writing THIS
+                      // one could never override it, and the sleeping suppression IS that override
+                      // (gacha.css states the trap in full). A machine that is asleep still HAS its
+                      // rarity, which is why the suppression is presentation and not this value.
+                      "--po-rar": rarityToken(stars, starMode),
                       // How far this slice steps aside while the stack parts. Zero at rest so the ceremony's
                       // transition has a resting value to animate from and back to.
                       "--po-part": parting ? partingStep(i, stageIndex) : 0,
@@ -246,7 +248,7 @@ function PosterData({ host, mode }: { host: Host; mode: StarMode }) {
   const services = (host.services ?? []).map((s) => s.name);
   const sep = ` ${GACHA_COPY.sep} `;
   return (
-    <div className="po-data" style={{ "--gc-rar": rarityToken(stars, mode) } as CSSProperties}>
+    <div className="po-data" style={{ "--po-rar": rarityToken(stars, mode) } as CSSProperties}>
       {/* The hostname as a DISPLAY line in the machine's own rarity hue — with the lab's left rail cut,
           this block is the only place the selected machine is named. */}
       <b className="po-fname">{host.name}</b>

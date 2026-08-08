@@ -1556,6 +1556,9 @@
       padding: 12px 0 16px;
     }
     .po-slice {
+      /* the RESOLVED hue (see the note above `.po-slice.asleep`): the input arrives inline, the paint
+       * reads this, and a class can therefore override it */
+      --po-hue: var(--po-rar);
       position: relative;
       display: block;
       width: 100%;
@@ -1573,11 +1576,18 @@
     .po-slice + .po-slice {
       margin-top: calc((var(--run) - var(--gut)) * -1);
     }
-    /* A SLEEPING machine's hue is SUPPRESSED to one neutral (§12.6 ruling 8) rather than dimmed per
+    /* THE INPUT vs THE RESOLVED HUE (`--po-rar` -> `--po-hue`, declared on `.po-slice` above), and the
+     * split is load-bearing rather than tidy. `--po-rar` is what the component writes INLINE
+     * (`rarityToken(stars, mode)`); `--po-hue` is what every painted thing on the slice reads. They cannot be one property, because an inline declaration beats every selector
+     * short of `!important` — a `.asleep` rule writing `--po-rar` would lose to the element's own style
+     * attribute, silently, and the suppression would never fire. Two stylesheet rules on the same element
+     * decide it by specificity instead, which is a rule the cascade actually enforces.
+     *
+     * A SLEEPING machine's hue is SUPPRESSED to one neutral (§12.6 ruling 8) rather than dimmed per
      * rarity: five faded colours read as five machines in trouble, one grey reads as "not here". It
      * floods back the moment a poll says the machine is up. */
     .po-slice.asleep {
-      --gc-rar: var(--gc-rar-off);
+      --po-hue: var(--gc-rar-off);
     }
     /* THE HARD OFFSET DROP — the same polygon, translated, in the hue. */
     .po-drop {
@@ -1585,7 +1595,7 @@
       inset: 0;
       z-index: 0;
       pointer-events: none;
-      background: var(--gc-rar);
+      background: var(--po-hue);
       clip-path: var(--poly);
       transform: translate(var(--drop), var(--drop));
     }
@@ -1594,7 +1604,7 @@
       inset: 0;
       z-index: 1;
       /* the plate's background IS the keyline (see the block note) */
-      background: var(--gc-rar);
+      background: var(--po-hue);
       clip-path: var(--poly);
       /* `clip-path` hides paint but does NOT contain SCROLLABLE OVERFLOW: the ceremony's flashline runs
        * 4% past both edges and a blade's nowrap name can run past the trailing one, and the lab measured
@@ -1653,7 +1663,7 @@
       animation: none;
     }
     /* The hue pools at the bottom-leading corner — where the name lives. An inline `color-mix` because the
-     * input is the slice's own live `--gc-rar`, which no static token can capture. */
+     * input is the slice's own live `--po-hue`, which no static token can capture. */
     .po-glow {
       position: absolute;
       inset: 0;
@@ -1662,7 +1672,7 @@
       background: linear-gradient(
         196deg,
         transparent 44%,
-        color-mix(in srgb, var(--gc-rar) 30%, transparent) 100%
+        color-mix(in srgb, var(--po-hue) 30%, transparent) 100%
       );
     }
     .po-veil {
@@ -1743,7 +1753,7 @@
       font-weight: var(--gc-card-name-weight);
       line-height: 1;
       letter-spacing: 0.005em;
-      color: var(--gc-rar);
+      color: var(--po-hue);
       text-shadow: var(--gc-po-name-shadow);
       white-space: nowrap;
     }
@@ -1879,7 +1889,7 @@
       font-weight: var(--gc-card-name-weight);
       line-height: 1.15;
       letter-spacing: -0.005em;
-      color: var(--gc-rar);
+      color: var(--po-rar);
       text-shadow: var(--gc-po-fname-shadow);
       /* a real fleet's names are not four fixed words (the long-name matrix row) */
       overflow-wrap: anywhere;
