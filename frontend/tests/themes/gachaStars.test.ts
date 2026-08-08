@@ -123,11 +123,13 @@ describe("rarityToken — the mode-relative rarity ladder", () => {
     expect(rarityToken(3.9, "five")).toBe("var(--gc-rar-3)"); // floored, like starsFor
   });
 
-  it("every token it can name is DECLARED in tokens.css (a var() typo paints nothing)", () => {
-    // The failure mode is silent: `var(--gc-rar-6)` resolves to the empty value and the slice loses its
-    // keyline, its drop and its name colour at once, with no error anywhere. So the ladder's output is
-    // checked against the stylesheet that has to back it, plus the sleeping suppression the poster's CSS
-    // reaches for by name.
+  it("every token it can name is declared in tokens.css EXACTLY ONCE", () => {
+    // TWO silent failure modes, one assertion. Missing: `var(--gc-rar-6)` resolves to the empty value and
+    // the slice loses its keyline, its drop and its name colour at once, with no error anywhere.
+    // DUPLICATED (Codex E1 review, LOW-6 — a real one shipped in this slice's own first pass): two
+    // declarations in the same scope means the later one wins, so an E5 retune edits the documented
+    // ladder and the UI silently keeps the old colours. Counting is what catches the second case, which
+    // is why this asserts a count rather than presence.
     const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
     const named = new Set(
       [1, 2, 3, 4, 5]
@@ -136,7 +138,8 @@ describe("rarityToken — the mode-relative rarity ladder", () => {
     );
     for (const value of named) {
       const name = value.slice("var(".length, -1);
-      expect(tokens, `${name} is not declared in gacha's tokens.css`).toContain(`${name}:`);
+      const hits = tokens.split(`${name}:`).length - 1;
+      expect(hits, `${name} must be declared exactly once in gacha's tokens.css`).toBe(1);
     }
   });
 });
