@@ -12,7 +12,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ✅✅ 2026-08-08 EVENING (Fable) — ALT-FLEET DESIGN SETTLED · §12.6 SIGNED **+ COUNCIL-AMENDED** (Codex `SHIP WITH CHANGES` + Opus fidelity `NEEDS AMENDMENTS`, both reconciled ⚖ in place); NEXT = E0 (dev branch, owner go-word first)
+> ## ✅✅ 2026-08-08 EVENING (Fable) — ALT-FLEET DESIGN SETTLED · §12.6 SIGNED · **E0 + E1 BOTH SHIPPED SAME DAY on `alt-fleet`**; NEXT = owner pause (walk the poster on :5173) then the E2 go-word
 >
 > The multi-session design conversation CONVERGED in one live session (owner present throughout,
 > ~12 ruling waves, 4 lab build rounds by Opus subagents). **The record: GACHA_PLAN §12.5's
@@ -54,10 +54,19 @@
 >   by `importOrder.test.ts`) + 5 LOWs → fix wave `98f879a` → confirm round all CLOSED, verdict
 >   **SHIP**. E1 owes: the ConfTab showWhen integration test · `GachaTrackProps` widening ·
 >   picker copy (§12.3⑤).
-> - **NEXT: owner pause, then the E1 go-word → build §12.6's E1 poster on `alt-fleet`**
->   (→ E2 cover → E3 banner → E4 hardening incl. the R25 Q7 23-pin list → E5 the Fennec+Chrome
->   device round = real acceptance). Opus subagents from pinned briefs, Codex per slice, owner
->   pause between slices.
+> - **E1 ✅ SHIPPED (2026-08-08 evening, same session — the owner's "lets continue" was the
+>   go-word): `49de4b1..` on `alt-fleet`** — the POSTER complete WITH its settings (Opus build
+>   from the pinned brief · Codex round 2 MED + 5 LOW all closed · confirm round 7/7 CLOSED +
+>   1 new LOW fixed by the main seat, both-directions test) · full gate 6/6 · FE 1828→1882.
+>   **The record + the E1-brief rulings (picker copy, ribbon-off, banner-slot→E2, font mapping)
+>   + durable gotchas live in GACHA_PLAN §12.6's E1 bullet** — the MEDs were the skip-tap
+>   two-event double-route and the missing black field (now `body[data-gc-fleet="poster"]`-
+>   scoped on `.kit-main`, the wallpaper's own shape).
+> - **NEXT: owner pause — walk the poster (dev units on :5434/:5173, gacha → Conf → Fleet
+>   layout: Poster), rule on the standing E1-brief rulings + the black-field-over-wallpaper
+>   composition — then the E2 go-word → §12.6's E2 cover** (→ E3 banner → E4 hardening incl.
+>   the R25 Q7 pin list → E5 the Fennec+Chrome device round = real acceptance). Opus subagents
+>   from pinned briefs, Codex per slice, owner pause between slices.
 > - Still owed from before: the owner's phone spot-check of prod v1.5.0 · R20's four + R21's four
 >   LOWs + the leftover ledger (`9afe78c`) · the HANDOFF archive sweep (~650KB — **owner
 >   2026-08-08: a STANDALONE session of its own**, not a side-task: the superseded blocks likely

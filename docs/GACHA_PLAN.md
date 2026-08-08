@@ -3365,7 +3365,32 @@ build → self-audit → Codex round → owner pause):**
   open/morph/reel test unchanged · a no-remount test (layout swap must not remount `GachaFleet`
   or lose settled dossier state). NO new Conf rows yet (`fleetLayout` registers with capsule as
   its only offered value, or stays undeclared until E1 — no lying options).
-- **E1 — POSTER, complete WITH its settings:** geometry (R18 `cqw·tan()` shear; the
+- **E1 — POSTER, complete WITH its settings** *(✅ SHIPPED on `alt-fleet` 2026-08-08 evening,
+  `49de4b1..` — Opus build from the pinned brief, 7 commits + the Codex fix wave (6) + the
+  confirm-round close. The E1-brief rulings, all standing for the owner pause: picker copy =
+  "Fleet layout" Capsule/Poster + "Poster name" Plate/Blade (plain voice, desc in house style
+  with JP tails riding existing glyphs — zero new glyphs, no font regen) · the NEW ribbon does
+  NOT render under poster (§12.6's default, as walked) · ruling 7's banner-as-slot DEFERRED to
+  E2 (poster seats the banner exactly where capsule does; the slot seam earns its churn only
+  when cover's strapline seat exists) — the poster's gold banner SKIN did ship, keyed off a new
+  `body[data-gc-fleet]` GachaRoot stamp · lab faces map onto shipped faces (Archivo Black→Zen
+  Kaku 900, Silkscreen→the caption treatment), no new families. Codex round: 2 MED — the
+  SKIP-TAP DOUBLE-ROUTE (a skip and a tap are one finger but TWO browser events, and the
+  ceremony ends between them: pointerdown skips, React commits `running:false`, the click then
+  routes — fixed as a per-gesture suppression ref written in the pointerdown's own dispatch,
+  where the closure is still the pre-skip render) and the MISSING BLACK FIELD (fixed as
+  `body[data-gc-fleet="poster"][data-tab="fleet"] .kit-main` — the wallpaper's own scoped shape;
+  the tab box CANNOT carry it, `.tab.active` is content-sized) — + 5 LOW (vanished-pick
+  transient → `resolvePick` shared by prop and router · `waking` became a Set · seq-keyed
+  live-region child so a retry re-announces · a same-scope duplicate rarity ladder · a vacuous
+  busy test), all closed; confirm round: 7/7 CLOSED + 1 new LOW (a CLICKLESS skip swallowing the
+  next keyboard activation — `keydown` clears the ref), fixed by the main seat, test verified in
+  both directions. Full gate 6/6; FE tests 1828→1882. Durable: an INLINE custom property beats
+  every selector — split input (`--po-rar`) from resolved (`--po-hue`) when a state class must
+  override · a two-browser-event race needs one `act()` PER native event or the test passes
+  vacuously · the FULL gate catches unhandled-rejection leaks that targeted vitest reports green
+  on. E5 owes: the black-ground-vs-wallpaper composition is now real — eyeball it.)*: geometry
+  (R18 `cqw·tan()` shear; the
   `ensembleBands(count)`-shaped helper with N=0/1/2/many contract tests) · the ruling-8 anatomy ·
   select-then-act + wake + busy + the poll-truthful ceremony + tap-skip + the live region · the
   data block · `fleetLayout` gains `poster` + `posterName` appears (blade default) · unit/render/
