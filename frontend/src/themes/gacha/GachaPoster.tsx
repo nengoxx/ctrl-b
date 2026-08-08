@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { useThemeSetting } from "../../theme-engine/settings";
@@ -83,6 +83,18 @@ export function GachaPoster({
   const nameMode = toPosterName(useThemeSetting<string>("gacha", "posterName"));
   const [stage, setStage] = useState<WakeStage | null>(null);
   const ceremony = useCeremony();
+  // ONE GESTURE, ONE EFFECT (Codex E1 MED-1). A skip and a tap are the SAME finger, but they are two
+  // browser events, and the ceremony ends between them: `useCeremony`'s document `pointerdown` listener
+  // skips, React commits `running: false`, and by the time the browser dispatches the `click` the guard
+  // below reads a ceremony that is no longer running — so the gesture that meant "stop the theatre" also
+  // selected another machine, or (if the wake request had already settled and re-enabled the slice) sent
+  // a SECOND wake.
+  //
+  // The ref closes the gap because it is written in the pointerdown's OWN dispatch, where this closure is
+  // still the pre-skip render and `ceremony.running` is still true. It is written on EVERY pointerdown,
+  // not only on a skipping one: a `true` left behind by a gesture that never produced a click (a drag, a
+  // scroll, a pointer that left the button) would otherwise swallow the NEXT real tap.
+  const skippedGesture = useRef(false);
 
   // The staged machine's index. A machine that left the fleet mid-ceremony resolves to -1, which stands the
   // whole parting down rather than translating every slice by a bogus distance.
@@ -93,7 +105,14 @@ export function GachaPoster({
    *  already reaches here through the hook's own document listener, and letting the same gesture ALSO
    *  re-select would move the stack out from under the finger that is skipping it. */
   const onSliceTap = (hostId: string) => {
+    if (skippedGesture.current) {
+      // this finger's pointerdown already ended a ceremony; the click it produced is spent
+      skippedGesture.current = false;
+      return;
+    }
     if (ceremony.running) {
+      // the keyboard path, and the belt for any dispatch that reaches here with the ceremony still live:
+      // Enter/Space produce a `click` with no pointerdown at all, so the ref above can never cover them.
       ceremony.skip();
       return;
     }
@@ -183,6 +202,11 @@ export function GachaPoster({
                   aria-pressed={isPicked}
                   aria-busy={isBusy || undefined}
                   disabled={isBusy}
+                  // CAPTURE phase, and it records the ceremony's state RATHER than acting on it — the
+                  // hook's own document listener does the skipping. See `skippedGesture`.
+                  onPointerDownCapture={() => {
+                    skippedGesture.current = ceremony.running;
+                  }}
                   onClick={() => onSliceTap(host.id)}
                 >
                   {/* THE HARD OFFSET DROP — the theme's `5px 5px 0` motif, as a DUPLICATED POLYGON (see the

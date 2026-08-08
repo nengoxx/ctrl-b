@@ -483,6 +483,66 @@ describe("the wake ceremony", () => {
     expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
   });
 
+  it("a SKIP GESTURE does not also route: the real pointerdown -> click sequence (Codex E1 MED-1)", () => {
+    // The regression the previous suite could not see, because it only ever fired `pointerDown` on
+    // `document.body` — never the two-event sequence a real finger produces on a SLICE. The skip listener
+    // ends the ceremony on pointerdown, React commits `running: false`, and the click that follows used
+    // to find the guard already down: one gesture, two effects.
+    const { container } = render(<GachaFleet active />);
+    wake(container); // atlas
+    act(() => void vi.advanceTimersByTime(200));
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(true);
+    expect(runFn()).toHaveBeenCalledTimes(1);
+
+    // The SAME finger, on a DIFFERENT machine, mid-ceremony — as TWO separate `act`s, which is the
+    // whole point: a real browser dispatches pointerdown and click as separate tasks and React commits
+    // the skip's `running: false` in between. Batching them into one `act` hides the finding entirely
+    // (verified: the single-act form passes with the fix REMOVED).
+    act(() => void fireEvent.pointerDown(slices(container)[2]));
+    act(() => void fireEvent.click(slices(container)[2]));
+    // the beats completed (a skip COMPLETES, it does not abandon) …
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
+    expect(container.querySelector(".po-slice.waking")).toBeNull();
+    // … and the gesture did NOT also re-select
+    expect(slices(container).map((b) => b.getAttribute("aria-pressed"))).toEqual([
+      "false",
+      "true",
+      "false",
+    ]);
+    expect(runFn()).toHaveBeenCalledTimes(1);
+
+    // …and the NEXT gesture is a normal one — the suppression is per-gesture, never sticky
+    act(() => void fireEvent.pointerDown(slices(container)[2]));
+    act(() => void fireEvent.click(slices(container)[2]));
+    expect(slices(container)[2].getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("a skip gesture on the SAME sleeping slice cannot send a second wake", () => {
+    // The sharper half of MED-1: a wake request that settles inside the 900 ms re-enables the still-
+    // sleeping slice, so the skip tap lands on a live control whose second-tap action is `wake`.
+    const { container } = render(<GachaFleet active />);
+    wake(container);
+    act(() => void vi.advanceTimersByTime(200));
+    expect(runFn()).toHaveBeenCalledTimes(1);
+    act(() => void fireEvent.pointerDown(slices(container)[1]));
+    act(() => void fireEvent.click(slices(container)[1]));
+    expect(runFn()).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
+  });
+
+  it("a KEYBOARD activation mid-ceremony still skips rather than acting (no pointerdown to record)", () => {
+    // Enter/Space produce a `click` with no pointerdown at all, so the per-gesture ref can never cover
+    // them — the handler's own `ceremony.running` guard is what does, and this is the case that proves
+    // the belt is load-bearing rather than dead code.
+    const { container } = render(<GachaFleet active />);
+    wake(container);
+    act(() => void vi.advanceTimersByTime(200));
+    act(() => void fireEvent.click(slices(container)[2])); // a click with no pointer gesture behind it
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
+    expect(slices(container)[2].getAttribute("aria-pressed")).toBe("false");
+    expect(runFn()).toHaveBeenCalledTimes(1);
+  });
+
   it("collapses to the end state under REDUCED motion, request and announcement intact", () => {
     act(() => setUI({ motion: "reduced" }));
     const { container } = render(<GachaFleet active />);
