@@ -1610,16 +1610,18 @@
     }
     /* THE INPUT vs THE RESOLVED HUE (`--po-rar` -> `--po-hue`, declared on `.po-slice` above), and the
      * split is load-bearing rather than tidy. `--po-rar` is what the component writes INLINE
-     * (`rarityToken(stars, mode)`); `--po-hue` is what every painted thing on the slice reads. They cannot be one property, because an inline declaration beats every selector
+     * (`unitHueToken(i)`); `--po-hue` is what every painted thing on the slice reads. They cannot be one
+     * property, because an inline declaration beats every selector
      * short of `!important` — a `.asleep` rule writing `--po-rar` would lose to the element's own style
      * attribute, silently, and the suppression would never fire. Two stylesheet rules on the same element
      * decide it by specificity instead, which is a rule the cascade actually enforces.
      *
-     * A SLEEPING machine's hue is SUPPRESSED to one neutral (§12.6 ruling 8) rather than dimmed per
-     * rarity: five faded colours read as five machines in trouble, one grey reads as "not here". It
-     * floods back the moment a poll says the machine is up. */
+     * A SLEEPING machine's hue is SUPPRESSED to one neutral rather than dimmed per machine: five faded
+     * colours read as five machines in trouble, one grey reads as "not here". It floods back the moment a
+     * poll says the machine is up. (§12.6 ruling 8's SLEEPING clause survives; its rarity->hue clause was
+     * overruled by the owner — the input is a per-unit identity now, not a rarity read-out.) */
     .po-slice.asleep {
-      --po-hue: var(--gc-rar-off);
+      --po-hue: var(--gc-unit-off);
     }
     /* THE HARD OFFSET DROP — the same polygon, translated, in the hue. */
     .po-drop {

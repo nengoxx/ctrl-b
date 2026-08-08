@@ -6,9 +6,9 @@ import type { Host, Service } from "../../types";
 import { GACHA_COPY } from "./copy";
 import { GachaStar } from "./GachaStar";
 import { useCeremony } from "./ceremony";
-import { partingStep, pickLabel, pingText, roleLabel } from "./fleet";
+import { partingStep, pickLabel, pingText, roleLabel, unitHueToken } from "./fleet";
 import type { GachaTrackProps } from "./GachaTrack";
-import { isHighStar, rarityToken, starsFor, type StarMode } from "./stars";
+import { isHighStar, starsFor } from "./stars";
 
 // THE POSTER (GACHA_PLAN §12.6 E1, anatomy ruling 8) — gacha's second fleet layout and the finalists lab's
 // screen A, ported: one black field carrying a parallelogram of equal SHEARED slices with open gutters, the
@@ -141,7 +141,8 @@ export function GachaPoster({
   // The machine the registry describes. `picked` is resolved ABOVE (`pickedId ?? hosts[0]?.id`), so a
   // selection whose machine left the fleet has already re-derived by the time it arrives here — this can
   // never dereference a gone host, and it is never empty while the fleet has machines.
-  const shown = hosts.find((h) => h.id === picked) ?? null;
+  const shownIndex = hosts.findIndex((h) => h.id === picked);
+  const shown = shownIndex >= 0 ? hosts[shownIndex] : null;
 
   return (
     <>
@@ -190,13 +191,13 @@ export function GachaPoster({
                   }
                   style={
                     {
-                      // The rarity hue INPUT, per slice. The CSS resolves it into `--po-hue`, which is
-                      // what the keyline, the drop, the wash and the name actually read — because an
-                      // inline custom property beats every selector, so a `.asleep` rule writing THIS
-                      // one could never override it, and the sleeping suppression IS that override
-                      // (gacha.css states the trap in full). A machine that is asleep still HAS its
-                      // rarity, which is why the suppression is presentation and not this value.
-                      "--po-rar": rarityToken(stars, starMode),
+                      // The PER-UNIT hue INPUT, by fleet position (owner ruling — the colour is this
+                      // machine's identity now, not its rarity; the stars keep that). The CSS resolves
+                      // it into `--po-hue`, which is what the keyline, the drop, the wash and the name
+                      // actually read — because an inline custom property beats every selector, so a
+                      // `.asleep` rule writing THIS one could never override it, and the sleeping
+                      // suppression IS that override (gacha.css states the trap in full).
+                      "--po-rar": unitHueToken(i),
                       // How far this slice steps aside while the stack parts. Zero at rest so the ceremony's
                       // transition has a resting value to animate from and back to.
                       "--po-part": parting ? partingStep(i, stageIndex) : 0,
@@ -281,7 +282,7 @@ export function GachaPoster({
               no buttons, because the poster already owns exactly one control per machine. Keyed on the
               machine so a re-selection REPLAYS its entrance (the lab's `replay(foot)`): React would
               otherwise reuse the node and the swap would land with no acknowledgement at all. */}
-          {shown && <PosterData key={shown.id} host={shown} mode={starMode} />}
+          {shown && <PosterData key={shown.id} host={shown} hue={unitHueToken(shownIndex)} />}
         </div>
       )}
     </>
@@ -290,14 +291,13 @@ export function GachaPoster({
 
 /** The selected machine's registry block. Every value comes from a formatter the DOSSIER already uses, so
  *  the two surfaces can never describe one machine differently. */
-function PosterData({ host, mode }: { host: Host; mode: StarMode }) {
+function PosterData({ host, hue }: { host: Host; hue: string }) {
   const facts = hostDetailFacts(host, NO_LIVE_SERVICES);
-  const stars = starsFor((host.services ?? []).length, mode);
   const ping = facts.online && facts.ping != null ? pingText(facts.ping) : GACHA_COPY.metricPending;
   const services = (host.services ?? []).map((s) => s.name);
   const sep = ` ${GACHA_COPY.sep} `;
   return (
-    <div className="po-data" style={{ "--po-rar": rarityToken(stars, mode) } as CSSProperties}>
+    <div className="po-data" style={{ "--po-rar": hue } as CSSProperties}>
       {/* The hostname as a DISPLAY line in the machine's own rarity hue — with the lab's left rail cut,
           this block is the only place the selected machine is named. */}
       <b className="po-fname">{host.name}</b>

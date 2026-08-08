@@ -345,29 +345,12 @@
       --gc-star-hi: #ff8fa8;
       --gc-star-dim: #b9b3d6; /* sleeping cards de-saturate */
 
-      /* ── THE RARITY -> HUE LADDER (GACHA_PLAN §12.6 rulings 8 + 11; `stars.ts#rarityToken` is the ONE
-       * reader) ────────────────────────────────────────────────────────────────────────────────────────
-       * The alt-fleet POSTER derives a slice's colour from its STAR COUNT rather than from a per-host
-       * accent — one machine, one hue, and the same number the star row already draws. Values are the
-       * finalists lab's own (`design/prototypes/gacha/alt-fleet-finalists/styles.css`), walked with the
-       * owner across two rounds; the device round (E5) is where they get their real test against a live
-       * fleet (rarity-hue collision is a recorded open item).
-       *
-       * Held CONSTANT across the accent axis, exactly like `--gc-star*` above it: a machine's rarity is a
-       * property of the machine, not of the palette the owner is wearing, so an accent block must never
-       * restate these. The top rung IS `--gc-star` by identity rather than by a duplicated literal — a
-       * ★5 slice and a ★5 star row are the same gold BY CONSTRUCTION. (`--gc-star` is a `:scope` static
-       * that no accent block overrides, so substituting it here is safe on the §14.13 rule.)
-       *
-       * `-off` is the SLEEPING suppression (§12.6 ruling 8: hue suppressed to grey + mono art + idle
-       * stopped, hue floods back on wake). A neutral slate rather than a de-saturation of the live hue,
-       * so every asleep machine reads as one uniform "not here" instead of five dim colours. */
-      --gc-rar-1: #cdd2e0; /* silver floor */
-      --gc-rar-2: #5fe0a0; /* green        */
-      --gc-rar-3: #4dd7ff; /* cyan         */
-      --gc-rar-4: #b07cff; /* purple       */
-      --gc-rar-5: var(--gc-star); /* gold — the theme's own star, by identity */
-      --gc-rar-off: #6b6f7d; /* asleep: the hue suppressed */
+      /* The SLEEPING suppression for a poster slice — the per-unit hue stood down to one neutral (§12.6
+       * ruling 8's sleeping clause, which survives its rarity clause): five faded colours read as five
+       * machines in trouble, one grey reads as "not here". It floods back the moment a poll says the
+       * machine is up. Its ring siblings are derived on `body` (see THE PER-UNIT HUE RING); this one is a
+       * flat neutral with nothing to derive from, so it stays a `:scope` static. */
+      --gc-unit-off: #6b6f7d;
 
       /* ── THE POSTER's own inks (E1 / §12.6 ruling 8) ─────────────────────────────────────────────────
        * Everything the sheared slice paints that is NOT the rarity hue. They live here because gacha.css
@@ -376,7 +359,7 @@
        *
        * LEGIBILITY over art is three layers and no more (the lab walked the alternatives): a two-gradient
        * VEIL — bottom-leading for the name, trailing for the chip — a rarity WASH pooling at the corner
-       * the name sits in (composed per slice in gacha.css, since it mixes the live `--gc-rar`), and ONE
+       * the name sits in (composed per slice in gacha.css, since it mixes the live `--po-hue`), and ONE
        * HARD offset shadow on the name. Deliberately no soft halo: at this size a blurred shadow under a
        * coloured name turns into mud on busy art, which is the same finding the capsule plate recorded
        * when it shipped shadowless. */
@@ -652,6 +635,48 @@
       /* --accent is the flat <color> channel (focus ring, borders, accent text, the color-mix softs): the
        * brand PINK, the trio's leading hue and its most legible member on this bg. */
       --accent: var(--gc-brand-1);
+
+      /* ── THE PER-UNIT HUE RING (owner ruling, dev-unit walk — it OVERRULES §12.6 ruling 8's rarity->hue
+       * binding) ───────────────────────────────────────────────────────────────────────────────────────
+       * A poster slice's colour is now a per-MACHINE identity, not a rarity read-out. The owner's own
+       * fleet is two 2-star and two 3-star machines, so a rarity ladder rendered it near-homogeneous —
+       * and the lab's grammar was per-unit all along (`hueOf(u)`). STARS still carry rarity: the gold /
+       * rose-gold row is untouched, and the two signals are now genuinely two signals.
+       *
+       * EIGHT STOPS, 45 degrees apart, ANCHORED AT THE ACTIVE ACCENT and rotated in OKLCH with lightness
+       * and chroma held — a perceptual space, so every stop carries the same visual weight against the
+       * dark ground instead of the yellows leaping out and the blues sinking (which is exactly what an
+       * HSL ring does). Stop 1 IS the accent. `fleet.ts#unitHueToken` assigns stop `i mod 8` by FLEET
+       * POSITION, the roster resolver's positional idiom, so a poll cannot reshuffle the palette.
+       *
+       * DERIVED FROM THE ACCENT TOKEN, ONCE — not 6x8 fitted literals. That is the whole of the owner's
+       * "in line with the theme" ask: every accent palette re-derives its own ring for free, and a ninth
+       * palette needs no colour work at all. It lives on `body` for the §14.13 reason the rest of this
+       * block does: `--accent` is accent-overridable, and a var() formula on `:scope` would compute once
+       * against the base statics and never re-derive.
+       *
+       * THE ONE CLAMP, and it is measured rather than guessed: `max(l, 0.72)`. Rotating hue at the
+       * accent's own lightness is fine for the light accents but not for the dark ones — glacier
+       * (L 0.624), eridu (0.637) and jade (0.676) produced stops as low as 1.92:1 against `--bg`, which
+       * is illegible for the data block's hostname. A 0.72 floor lifts exactly those three and leaves
+       * arcade (0.730) and nebula (0.742) mathematically UNTOUCHED — so on the default palette stop 1 is
+       * the accent, unmodified. Measured worst case across 6 accent bases x 8 stops: 3.34:1, clearing
+       * the 3:1 non-text / large-text floor (the hostname is 16-22px bold).
+       * CHROMA IS DELIBERATELY NOT CLAMPED: an out-of-sRGB combination is gamut-mapped by the engine
+       * (chroma reduced, lightness and hue preserved), which is the degradation we want anyway.
+       *
+       * BROWSER FLOOR: relative colour syntax is Firefox 128+ / Chrome 119+. The app already requires
+       * `@scope` (Firefox 128 / Chrome 118), so this adds no NEW floor — the same engines. Worth an
+       * explicit look at the E5 device round all the same, since Fennec is the target. */
+      --gc-unit-1: var(--accent);
+      --gc-unit-2: oklch(from var(--accent) max(l, 0.72) c calc(h + 45deg));
+      --gc-unit-3: oklch(from var(--accent) max(l, 0.72) c calc(h + 90deg));
+      --gc-unit-4: oklch(from var(--accent) max(l, 0.72) c calc(h + 135deg));
+      --gc-unit-5: oklch(from var(--accent) max(l, 0.72) c calc(h + 180deg));
+      --gc-unit-6: oklch(from var(--accent) max(l, 0.72) c calc(h + 225deg));
+      --gc-unit-7: oklch(from var(--accent) max(l, 0.72) c calc(h + 270deg));
+      --gc-unit-8: oklch(from var(--accent) max(l, 0.72) c calc(h + 315deg));
+
       /* The brand trio — wordmark, tag pills, the dossier strip, and the Conf palette chip. */
       --gc-brand-fill: linear-gradient(
         92deg,

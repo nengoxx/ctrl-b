@@ -193,6 +193,29 @@ export function pickLabel(host: Host, stars: number, selected: boolean): string 
     : `${head}Tap to select; tap again to ${what}.`;
 }
 
+/** How many stops the per-unit hue ring carries (tokens.css `--gc-unit-1..8`). */
+export const UNIT_HUES = 8;
+
+/** The per-machine HUE for the slice at fleet position `index` — a `--gc-unit-N` token reference (owner
+ *  ruling, the E1 dev-unit walk: §12.6 ruling 8's rarity->hue binding is OVERRULED).
+ *
+ *  WHY IT IS NOT RARITY ANY MORE: the owner's fleet is two 2-star and two 3-star machines, so a rarity
+ *  ladder painted it near-homogeneous — the colour was reporting a number he already reads off the stars.
+ *  It carries per-unit IDENTITY instead, which is the lab's own grammar (`hueOf(u)` was per-unit). STARS
+ *  keep rarity, so the two signals are now genuinely two.
+ *
+ *  BY FLEET POSITION, not by id hash: the roster resolver's positional idiom (`artForHost`), so a machine's
+ *  colour sits beside its portrait under one rule and a poll cannot reshuffle either. The ring itself —
+ *  eight stops 45 degrees apart in OKLCH, anchored at the ACTIVE accent — is derived once in tokens.css, so
+ *  every accent palette re-tints the whole fleet for free.
+ *
+ *  Wraps past the eighth stop rather than clamping (a ninth machine restarts the ring, which is what a ring
+ *  is for), and survives a negative or non-finite index at stop 1 — it is on a render path. */
+export function unitHueToken(index: number): string {
+  const n = Number.isFinite(index) ? Math.trunc(index) : 0;
+  return `var(--gc-unit-${(((n % UNIT_HUES) + UNIT_HUES) % UNIT_HUES) + 1})`;
+}
+
 /** What the fleet's live region says when a machine is SELECTED (the lab's own sentence). Selection is the
  *  only interaction in this app whose feedback is a grow plus a data block BELOW THE FOLD, so the announce
  *  is not a nicety — for anyone who cannot see either, it is the whole outcome. */

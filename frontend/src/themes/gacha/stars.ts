@@ -2,6 +2,10 @@
 // theme draws: capsule cards (G1), the dossier's portrait badge (G2) and the banner's `★N RATE` pill (G1)
 // all read it, because a card showing ★★★ beside a pill promising ★5 would read as a bug.
 //
+// STARS ARE THE RARITY SIGNAL AND THE ONLY ONE (owner ruling, the E1 dev-unit walk). A poster slice's
+// COLOUR used to be rarity-derived too; it is a per-MACHINE identity now (`fleet.ts#unitHueToken`), so
+// nothing in this module maps a star count to a hue any more — two signals, two encodings.
+//
 // THE INPUT IS CONFIGURED SERVICES, NOT LIVE ONES (the owner's ruling): `(host.services ?? []).length`,
 // which arrives ON the host object with the hosts query — no join, no second loading state, and no star
 // flicker when a service goes down. Stars change only when the owner edits a machine's services.
@@ -43,33 +47,6 @@ export function starsFor(configuredServices: number, mode: StarMode): number {
   // 5★ walks 1:1 up to the cap; 3★ compresses above two — 2 → ★2, three-or-more → ★3 (the G1 re-rule).
   const raw = mode === "five" ? n : n === 2 ? 2 : 3;
   return Math.min(raw, max);
-}
-
-/** The rarity LADDER — which `tokens.css` custom property carries the hue for a given star count, per MODE
- *  (GACHA_PLAN §12.6 rulings 8 + 11). MODE-RELATIVE, exactly like `isHighStar` below and for the same
- *  reason: the top rung has to read GOLD on both scales, so 3-star mode walks the five-rung token set at
- *  1 / 3 / 5 rather than stopping at cyan. Five values, one ladder, no second token family.
- *
- *  Silver floor -> green -> cyan -> purple -> gold; the gold rung IS the theme's own `--gc-star` (tokens.css
- *  states that identity), which is why a five-star machine's slice and its star row agree without either
- *  knowing about the other. */
-const RARITY_TOKENS: Record<StarMode, readonly string[]> = {
-  five: ["--gc-rar-1", "--gc-rar-2", "--gc-rar-3", "--gc-rar-4", "--gc-rar-5"],
-  three: ["--gc-rar-1", "--gc-rar-3", "--gc-rar-5"],
-};
-
-/** The rarity hue for a star count, as a ready-to-use CSS value (`var(--gc-rar-N)`) — the SINGLE source for
- *  every surface that tints itself by rarity (the poster's slice keyline, its offset drop, its name and its
- *  data block). A token reference and never a literal, so G6's palette work stays a token edit.
- *
- *  Clamped into the ladder at both ends on `starsFor`'s own terms: a count below the floor resolves to
- *  silver, one above the mode's ceiling to gold. SLEEPING SUPPRESSION IS NOT HERE — a machine that is asleep
- *  still HAS its rarity; that the poster paints it grey is a presentation choice its CSS makes (§12.6
- *  ruling 8), and folding it in would make this function need a liveness it has no business reading. */
-export function rarityToken(stars: number, mode: StarMode): string {
-  const ladder = RARITY_TOKENS[mode] ?? RARITY_TOKENS.five;
-  const n = Number.isFinite(stars) ? Math.floor(stars) : 1;
-  return `var(${ladder[Math.min(ladder.length - 1, Math.max(0, n - 1))]})`;
 }
 
 /** Whether the star at `index` (0-based, left to right) is a ROSE-gold star rather than a plain gold one
