@@ -15,11 +15,9 @@ import { useThemeSetting } from "../../theme-engine/settings";
 import type { Host } from "../../types";
 import { GachaArtShowcase } from "./GachaArtShowcase";
 import { GachaBanner, type BannerSlide } from "./GachaBanner";
-import { GachaCard } from "./GachaCard";
 import { GachaHostDetail } from "./GachaHostDetail";
 import { GachaStarDefs } from "./GachaStar";
 import { HERO_KEY, HOST_KEY_PREFIX, SCENE_KEY_PREFIX } from "./carousel";
-import { GACHA_COPY } from "./copy";
 import {
   CLOSE_DOSSIER_LABEL,
   cardShapes,
@@ -29,6 +27,7 @@ import {
   queryResolved,
   rateText,
 } from "./fleet";
+import { fleetSurface } from "./fleetSurface";
 import { artForHost, heroArt, wideArtForHost } from "./roster";
 import { MAX_STARS, toStarMode } from "./stars";
 import { useGachaRoster } from "./useGachaRoster";
@@ -41,6 +40,12 @@ import { useGachaRoster } from "./useGachaRoster";
 // The body owns the DERIVATIONS the two surfaces must agree on — the roster assignment (§5.3's one shared
 // resolver), the star mode, the online count — and hands each surface the resolved values. That is what keeps
 // a host's promo slide and its capsule card showing the same character with the same rarity.
+//
+// Since GACHA_PLAN §12.6 E0 the TRACK BODY is a Surface variant (`fleetSurface.ts` → `GachaTrack` today,
+// poster/cover at E1/E2) and this component is everything AROUND it: the derivations above, the dossier, the
+// View-Transition morph machinery, the art showcase, the banner and the one "open this machine" seam. That
+// boundary is the §12.6 sizing rule — a layout replaces only what it draws, so the three can never disagree
+// about the fleet, and a layout swap re-renders the track while the sheet it may have open stands.
 
 /** The dossier sheet's persisted detent — a stable key into the shared, theme-agnostic `sheetSnap` store,
  *  with a module-level setter so `onSnapChange` keeps a constant identity per the prop's contract (the
@@ -540,41 +545,26 @@ export function GachaFleet({ active }: { active: boolean }) {
         onOpenHost={openHostDossier}
       />
 
-      {/* THE CAPSULE TRACK. The head is the prototype's 編成 / "Select a unit" / counter row; the grid is
-          its two-column track, with the geometry rule deciding which cards span the full width. */}
-      <div className="gc-track-head">
-        <h1>
-          {GACHA_COPY.trackHead}
-          <em>Select a unit</em>
-        </h1>
-        <span className="count">{counterText(onlineCount, hosts.length, resolved)}</span>
-      </div>
-
-      {/* The states, on the Kit Fleet's own shape (Fleet.tsx:52-55) rather than a ternary chain: the error
-          notice renders BESIDE whatever the last successful poll left, so a failed background refetch
-          reports itself without deleting a track the banner above is still showing promos for — the two
-          surfaces read the same fleet or they contradict each other. An error with no data ever is the only
-          case where the notice stands alone; while the FIRST poll is in flight nothing renders below the
-          head at all, because an empty grid under "Select a unit" would be dishonest chrome. */}
-      {error && <div className="gc-msg">backend unreachable: {error.message}</div>}
-      {!error && hosts.length === 0 && !isLoading && (
-        <div className="gc-msg">no hosts in config.yaml</div>
-      )}
-      {hosts.length > 0 && (
-        <div className="gc-track" inert={reeling}>
-          {shapes.map((shape, i) => (
-            <GachaCard
-              key={hosts[i].id}
-              host={hosts[i]}
-              art={artForHost(roster, i)}
-              shape={shape}
-              mode={starMode}
-              onOpen={openHostDossier}
-              isNew={hosts[i].id === ribbonHost}
-            />
-          ))}
-        </div>
-      )}
+      {/* THE TRACK BODY — the one region a fleet LAYOUT replaces (§12.6: capsule today, poster/cover at
+          E1/E2). The resolution happens HERE, inside the body, and not at the Root: everything above and
+          below this line is state this component owns — the dossier, the morph generations, the showcase,
+          the banner — so a layout swap must re-render the track and leave the rest standing. `Themed`
+          subscribes for itself, so a swap doesn't even re-render GachaFleet.
+          Every prop is a RESOLVED value (the §12.6 sizing rule): no derivation moves into a layout, so the
+          three cannot drift from each other. `artForHost` rides down as a lookup because the roster query
+          belongs to the derivations up here — it is the same entry the promo slide and the dossier use. */}
+      <fleetSurface.Themed
+        hosts={hosts}
+        error={error}
+        isLoading={isLoading}
+        reeling={reeling}
+        shapes={shapes}
+        starMode={starMode}
+        ribbonHost={ribbonHost}
+        art={(i) => artForHost(roster, i)}
+        counter={counterText(onlineCount, hosts.length, resolved)}
+        onOpenHost={openHostDossier}
+      />
 
       {/* THE UNIT DOSSIER — the shared C3 primitive, skinned by gacha.css into the theme's one light
           surface. `catchOutside={false}` (the owner-ruled precedent): the track stays interactive, so
