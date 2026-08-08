@@ -12,7 +12,35 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ✅✅✅ v1.5.0 RELEASED — LIVE ON PROD (2026-08-08, Fable — THE CURRENT RECORD; every block below is history)
+> ## ✅✅ 2026-08-08 EVENING (Fable) — THE ALT-FLEET DESIGN IS SETTLED; §12.6 TRANSLATION PLAN **SIGNED**; NEXT = E0 (dev branch, owner go-word first)
+>
+> The multi-session design conversation CONVERGED in one live session (owner present throughout,
+> ~12 ruling waves, 4 lab build rounds by Opus subagents). **The record: GACHA_PLAN §12.5's
+> rulings log (five dated blocks, 2026-08-08) + §12.6 THE TRANSLATION PLAN (FULLY SIGNED — design
+> closed, only three device-round numbers remain) + the [R25 seam map](./research/R25-alt-fleet-port-seams.md)
+> (code-verified, file:line).** The essentials:
+> - **Ship A THE POSTER + B THE COVER only; C THE CLUB PAGE is PARKED** (§P discipline — never
+>   re-propose). The lab (`design/prototypes/gacha/alt-fleet-finalists/`, UNTRACKED like all
+>   gacha prototype dirs — never `git add -A`) holds the walked final state; a
+>   `python3 -m http.server 8914` may still be running there (owner-walkable at
+>   `http://emma:8914/`; kill or keep freely).
+> - **Settings (gacha ThemeDef, §12.6 table):** `fleetLayout` capsule(default)/poster/cover ·
+>   `posterName` plate/**blade(default)** shown only under poster via the NEW `showWhen` field
+>   (the port's ONLY engine change, ~10 lines) · `banner` **on(default)**/minimal/off — cover's
+>   strapline seat IS the strip, so "minimal for cover" is structural. The POSTER **keyline**
+>   binds to the EXISTING `outlines` axis (gacha defaults false ⇒ off by default, zero new
+>   settings). Select-then-act (tap=select, tap again=dossier/WAKE) = component state in
+>   GachaFleet + a pure tap-router in `themes/gacha/fleet.ts`; wake is NOT confirm-gated
+>   (registry decides, D8). Fleet stays Root-pinned; layouts = gacha-private map; frontier
+>   adaptation = the documented §14.14 graduation path (§12.6 item 9), NOT built.
+> - **NEXT SESSION: get the owner's explicit E0 go-word, then build §12.6's E0–E5 on a dev
+>   branch** (E0 seams → E1 poster → E2 cover → E3 banner → E4 hardening incl. the R25 Q7
+>   23-pin list → E5 the Fennec+Chrome device round = real acceptance). Opus subagents from
+>   pinned briefs, Codex per slice, owner pause between slices.
+> - Still owed from before: the owner's phone spot-check of prod v1.5.0 · R20's four + R21's four
+>   LOWs + the leftover ledger (`9afe78c`) · the HANDOFF archive sweep (~650KB).
+>
+> ## ✅✅✅ v1.5.0 RELEASED — LIVE ON PROD (2026-08-08, Fable — the release record; every block below is history)
 >
 > **The release executed CLEAN, end-to-end, by the ordered shape** (Opus ops subagent ran the
 > runbook; the main seat verified every transition independently): push `ed45651..b499662` → push CI
