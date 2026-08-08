@@ -30,8 +30,8 @@ import { isHighStar, starsFor } from "./stars";
 //    button per machine. The ROUTING is `GachaFleet`'s (`onTapHost`) — this file only dramatizes what came
 //    back, and the dramatization is poll-truthful (ruling 4): the request is what is staged, the STATE is
 //    the server's, and only a hosts poll flips a slice online. An `open` carries the capsule's own image
-//    MORPH (owner ruling — §12.6 5②'s capsule-only clause is amended): the slice hands its portrait to the
-//    one shared opener, which owns every part of the transition.
+//    MORPH (owner ruling — §12.6 5②'s capsule-only clause is amended): the slice hands its `.po-art` — the
+//    element carrying the shear clip, per R26 — to the one shared opener, which owns the transition.
 //  · BLADE IS THE NAME'S SEAT AND NOTHING ELSE (the owner's amended WALK-3 ruling): same face, same size,
 //    same hue, same hard shadow as PLATE; it sits lower, on the diagonal, with the role line lifted above
 //    it. Both treatments are one `[data-name]` attribute on the root, exactly as the lab walked them.
@@ -110,7 +110,7 @@ export function GachaPoster({
   /** One tap on a slice. A tap DURING a ceremony is swallowed into a skip: R24 §B.3's tap-anywhere-skip
    *  already reaches here through the hook's own document listener, and letting the same gesture ALSO
    *  re-select would move the stack out from under the finger that is skipping it. */
-  const onSliceTap = (hostId: string, morphImg: HTMLImageElement | null) => {
+  const onSliceTap = (hostId: string, morphImg: HTMLElement | null) => {
     if (skippedGesture.current) {
       // this finger's pointerdown already ended a ceremony; the click it produced is spent
       skippedGesture.current = false;
@@ -219,10 +219,18 @@ export function GachaPoster({
                   onKeyDownCapture={() => {
                     skippedGesture.current = false;
                   }}
-                  // The tapped slice hands over its own portrait as the morph's FROM (the GachaCard
-                  // idiom, verbatim). An art-less slice renders `.po-art-blank`, a span — so this is
-                  // `null` there and the open degrades to the sheet's slide-up with no branch of its own.
-                  onClick={(e) => onSliceTap(host.id, e.currentTarget.querySelector("img"))}
+                  // THE MORPH'S FROM IS `.po-art`, NOT THE `<img>` (R26). A captured element's OWN
+                  // `clip-path` bakes into its View-Transition snapshot — only ANCESTOR clipping is
+                  // lost — so naming the picture one level below the clip made the FULL rectangle fly
+                  // and pop. Handing over the span that carries `--poly` makes the actual sheared
+                  // cutout fly instead, verified 0 leaked frames on both engines.
+                  // Still only when it really holds a picture: an art-less slice renders
+                  // `.po-art-blank`, so this stays `null` there and the open degrades to the sheet's
+                  // own slide-up, exactly as before.
+                  onClick={(e) => {
+                    const art = e.currentTarget.querySelector<HTMLElement>(".po-art");
+                    onSliceTap(host.id, art?.querySelector("img") ? art : null);
+                  }}
                 >
                   {/* THE HARD OFFSET DROP — the theme's `5px 5px 0` motif, as a DUPLICATED POLYGON (see the
                     header note: a clip-path erases a real box-shadow). */}

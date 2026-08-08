@@ -325,24 +325,44 @@ describe("select-then-act", () => {
     expect(dossierName()).toBe("atlas");
   });
 
-  it("the ONE-tap open carries the capsule's image MORPH — the slice hands over its own portrait", () => {
-    // OWNER RULING (dev-unit walk): §12.6 5②'s "capsule-only" is AMENDED. Its stated basis was only that
-    // a morph clone sourced from a sheared clip-path had never been seen — the owner asked to see it.
-    // The observable claim is the one that matters: the tapped slice's `<img>` is the element named for
-    // the OLD capture, exactly as a capsule card's is, and the name is cleared inside the callback so a
-    // stray one cannot dup-skip the next transition.
+  it("names the CLIP CARRIER `.po-art` for the morph, never the `<img>` inside it (R26)", () => {
+    // R26's verified result: a captured element's OWN `clip-path` bakes into its View-Transition
+    // snapshot — only ANCESTOR clipping is lost — so naming the picture one level BELOW the clip made
+    // the full rectangle fly and pop. Naming the span that carries `--poly` makes the actual sheared
+    // cutout fly (0 leaked frames on both engines). The name still lands before the old capture and is
+    // cleared inside the callback, so a stray one cannot dup-skip the next transition.
     const vt = deferVT();
     const { container } = render(<GachaFleet active />);
-    const img = () => container.querySelectorAll<HTMLElement>(".po-art img")[2];
-    act(() => void fireEvent.click(slices(container)[2])); // vault is online: one tap opens
+    const slice = () => slices(container)[2];
+    const art = () => slice().querySelector<HTMLElement>(".po-art")!;
+    const img = () => slice().querySelector<HTMLElement>(".po-art img")!;
+    act(() => void fireEvent.click(slice())); // vault is online: one tap opens
     expect(vt.start).toHaveBeenCalledTimes(1);
     // named NOW: the old capture happens after the call returns, and the sheet has not opened yet
-    expect(img().style.getPropertyValue("view-transition-name")).toBe("capsule-shell");
+    expect(art().style.getPropertyValue("view-transition-name")).toBe("capsule-shell");
+    // …and emphatically NOT the picture: naming both would put two `capsule-shell` nodes in one capture,
+    // which makes the browser skip the transition outright
+    expect(img().style.getPropertyValue("view-transition-name")).toBe("");
     expect(dossierName()).toBeNull();
 
     vt.run(0);
     expect(dossierName()).toBe("vault");
-    expect(img().style.getPropertyValue("view-transition-name")).toBe("");
+    expect(art().style.getPropertyValue("view-transition-name")).toBe("");
+  });
+
+  it("the CAPSULE path still hands over its `<img>` — only the poster re-targets", () => {
+    // The capsule card's crop already IS its capture (no ancestor clip between the picture and what you
+    // see), so R26's finding does not apply to it and its morph source is unchanged. Widening the seam
+    // to `HTMLElement` is what lets the two layouts differ without a second opener.
+    act(() => setThemeSetting("gacha", "fleetLayout", "capsule"));
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    const card = container.querySelectorAll<HTMLElement>(".gc-card")[0];
+    act(() => void fireEvent.click(card));
+    expect(vt.start).toHaveBeenCalledTimes(1);
+    expect(card.querySelector("img")!.style.getPropertyValue("view-transition-name")).toBe(
+      "capsule-shell",
+    );
   });
 
   it("an ART-LESS slice opens PLAIN, with no branch of its own", () => {

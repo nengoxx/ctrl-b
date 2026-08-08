@@ -209,7 +209,7 @@ export function GachaFleet({ active }: { active: boolean }) {
   // can reuse both the avatar and the card). So: every new intent cleans the pending prep synchronously
   // and takes ownership; a callback restores only while it still holds it.
   const prep = useRef<{
-    card: HTMLImageElement;
+    card: HTMLElement;
     avatar: HTMLElement | null;
     badge: HTMLElement | null;
   } | null>(null);
@@ -284,7 +284,7 @@ export function GachaFleet({ active }: { active: boolean }) {
   }, [releaseArtName]);
 
   const openHostDossier = useCallback(
-    (hostId: string, morphImg?: HTMLImageElement | null) => {
+    (hostId: string, morphImg?: HTMLElement | null) => {
       if (reeling) return;
       // Every open takes a ticket, morph or not: a plain open must also void a morph still in flight.
       const mine = ++gen.current;
@@ -372,7 +372,7 @@ export function GachaFleet({ active }: { active: boolean }) {
   //    table of tests; this is the half that has to touch the world, and it is here rather than in a layout
   //    so all three layouts route identically and none of them can invent a second wake path.
   const onTapHost = useCallback(
-    (hostId: string, morphImg?: HTMLImageElement | null): FleetTap | null => {
+    (hostId: string, morphImg?: HTMLElement | null): FleetTap | null => {
       // Liveness from the CURRENT render (the council clause): a machine that woke between the two taps
       // must OPEN, not be woken again — so this reads `hosts`, never a value captured at tap one.
       const host = hosts.find((h) => h.id === hostId);

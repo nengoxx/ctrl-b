@@ -37,8 +37,10 @@ export interface GachaTrackProps {
   art: (index: number) => ResolvedArt | null;
   /** The already-formatted online/total counter (`counterText`), including its unresolved-poll form. */
   counter: string;
-  /** The theme's ONE "open this machine" seam. A card also hands over its portrait — the M3 morph's FROM. */
-  onOpenHost: (hostId: string, morphImg?: HTMLImageElement | null) => void;
+  /** The theme's ONE "open this machine" seam. A layout also hands over the M3 morph's FROM element.
+   *  `HTMLElement`, not `HTMLImageElement`: a capsule card hands its `<img>` (its crop is its capture),
+   *  while a poster slice hands the SPAN that carries the shear clip — see `onTapHost`. */
+  onOpenHost: (hostId: string, morphImg?: HTMLElement | null) => void;
 
   // ── SELECT-THEN-ACT (§12.6 rulings 2-4) — the four the ALT layouts read and capsule ignores ──────────
   // Widened at E1 (the E0 deferral): ONE prop shape for every variant, resolved values only. The capsule
@@ -54,11 +56,15 @@ export interface GachaTrackProps {
    *  a wake was refused because an action on that host is already in flight. A layout must not stage a
    *  ceremony for a request that was never sent.
    *
-   *  `morphImg` is the M3 image morph's FROM element, handed over on the same terms `onOpenHost` takes it:
-   *  it is used only when the routed action is `open`, and only when a View Transition can actually carry
-   *  it. Pass the tapped control's own `<img>`, or `null`/nothing for a plain open — a machine with no
-   *  resolved art has no portrait to fly, and degrades to the sheet's own slide-up by itself. */
-  onTapHost: (hostId: string, morphImg?: HTMLImageElement | null) => FleetTap | null;
+   *  `morphImg` is the M3 morph's FROM element, handed over on the same terms `onOpenHost` takes it: used
+   *  only when the routed action is `open`, and only when a View Transition can actually carry it. `null`
+   *  or nothing gives a plain open — a machine with no resolved art has no portrait to fly.
+   *
+   *  IT IS AN `HTMLElement`, AND WHICH ELEMENT MATTERS (R26). A captured element's OWN `clip-path` bakes
+   *  into its snapshot; only ANCESTOR clipping is lost. So a layout whose art is clipped must hand over
+   *  the element CARRYING the clip, not the picture inside it — the poster hands its `.po-art` span, the
+   *  capsule keeps handing its `<img>` (its crop already is its capture). */
+  onTapHost: (hostId: string, morphImg?: HTMLElement | null) => FleetTap | null;
   /** `useFleet().busy` — per-HOST, not per-action (R25 §Q1b). A slice lights and disables for ANY in-flight
    *  action on its machine, which is the correct read of a shared busy set. */
   busy: ReadonlySet<string>;

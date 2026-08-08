@@ -20,7 +20,7 @@ interface Props {
   mode: StarMode;
   /** The shared open seam. A card also hands over its portrait node — the M3 morph's FROM element; the
    *  promo slides pass nothing and open plain. */
-  onOpen: (hostId: string, morphImg?: HTMLImageElement | null) => void;
+  onOpen: (hostId: string, morphImg?: HTMLElement | null) => void;
   /** Wear the `NEW` ribbon (G6's demo — one card in the track; see `pickRibbonHost`). Decoration only. */
   isNew?: boolean;
 }
