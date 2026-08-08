@@ -1550,11 +1550,20 @@
     .po-body {
       container-type: inline-size;
       position: relative;
-      /* the stack sits slightly OFF-CENTRE RIGHT (owner: "cards stay slightly off-center right") — a
-       * deliberate 40/20 asymmetry. The trailing inset is also the overflow budget for the grown slice:
-       * it has to cover halfWidth x (grow - 1) + the drop + the nudge at the widest column. */
-      --lead: 40px;
-      --trail: 20px;
+      /* The stack sits slightly OFF-CENTRE RIGHT (owner: "cards stay slightly off-center right"). The
+       * asymmetry is deliberate; so is which side carries the slack.
+       *
+       * 35/25, WAS 40/20 (owner, third walk: the selected card's edge "gets too close to the actual right
+       * edge… a couple pixels, five at most"). The width is UNCHANGED — the pair still sums to 60 — so the
+       * stack simply moves 5px left and the freed air lands exactly on the trailing edge, which is the
+       * side that needed it. `--run` and every derived number are untouched.
+       *
+       * The trailing inset IS the §12.6 overflow budget for the grown slice, and 20 was under it: `.picked`
+       * scales 1.05 about the slice's own centre and nudges 4px, and its DROP rides 5px further out again,
+       * so at the 390 column the drop's right edge landed at page x 387.5 — 2.5px of clearance. At 25 it
+       * lands at 382.5, clearing by 7.5px. (Budget: halfWidth x (grow-1) + drop + nudge.) */
+      --lead: 35px;
+      --trail: 25px;
     }
     .po-poster {
       container-type: inline-size;
@@ -1646,18 +1655,21 @@
        * `clip` contains them without making the plate a scroll container of its own. */
       overflow: clip;
     }
-    /* THE KEYLINE IS THE `outlines` AXIS (§12.6 ruling 8). gacha declares `outlinesSetting(false)`, so the
-     * SHIPPED default is no rim at all — and the art then has to sit flush, or a black hairline survives
-     * where the keyline used to be. Both halves move together, which is why they are one rule. */
+    /* THE KEYLINE IS UNCONDITIONAL (owner, third walk: "the keyline we ended up removing — I want it back,
+     * it looks better"). §12.6 ruling 8 bound it to the `outlines` axis, which was an ECONOMY — a rim the
+     * theme already had a switch for — and the eyeball overruled it: the lab always drew the keyline, and
+     * this is the lab's look. So the axis binding is gone entirely and gacha's `outlines` setting goes back
+     * to meaning what it means everywhere else (chat chrome).
+     *
+     * The rim is not a border: it is the PLATE's own background showing through a 1px inset on the art,
+     * both wearing the same polygon (an inset box-shadow would be laid on the border-box rectangle and
+     * clipped away by the shear). So the inset IS the keyline, and there is exactly one number. */
     .po-art {
       position: absolute;
-      inset: 0;
+      inset: 1px;
       overflow: hidden;
       background: var(--gc-po-field);
       clip-path: var(--poly);
-    }
-    body[data-outlines="on"] .po-art {
-      inset: 1px;
     }
     .po-art img,
     .po-art-blank {

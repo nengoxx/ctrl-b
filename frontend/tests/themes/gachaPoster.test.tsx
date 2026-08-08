@@ -996,10 +996,38 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     expect(scopeBlock).toContain("--gc-po-new-shadow:");
   });
 
-  it("pairs the keyline with the art's inset, both on the `outlines` axis (gacha ships it OFF)", () => {
-    // Keyline off must also drop the art's 1px inset, or a black hairline survives where the rim was.
-    expect(blockFor(".po-art")).toContain("inset: 0");
-    expect(blockFor('body[data-outlines="on"] .po-art')).toContain("inset: 1px");
+  it("draws the keyline UNCONDITIONALLY — it is anatomy, not an axis (owner ruling)", () => {
+    // §12.6 ruling 8 bound the rim to the `outlines` axis; the owner overruled that on the third walk
+    // ("I want it back, it looks better"). The rim is not a border: it is the PLATE's background showing
+    // through a 1px inset on the art, so the inset IS the keyline and there is exactly one number.
+    expect(blockFor(".po-art")).toContain("inset: 1px");
+    expect(blockFor(".po-plate")).toContain("background: var(--po-hue)");
+    // and nothing in the poster reads the axis any more — `outlines` is chat chrome again
+    expect(css, "the poster must not consume the outlines axis").not.toMatch(
+      /body\[data-outlines[^{]*\.po-/,
+    );
+  });
+
+  it("keeps the stack off-centre RIGHT with the trailing inset the grow actually needs", () => {
+    // Owner, third walk: the selected card's edge "gets too close to the actual right edge". `.picked`
+    // scales 1.05 about its own centre and nudges 4px, and its DROP rides 5px further out again — at
+    // 40/20 the drop landed 2.5px from the viewport edge at the 390 column. 35/25 keeps the WIDTH
+    // (the pair still sums to 60, so `--run` and every derived number are untouched) and moves the stack
+    // 5px left, putting the freed air on the side that needed it: 7.5px of clearance.
+    const body = blockFor(".po-body")!;
+    expect(body).toContain("--lead: 35px");
+    expect(body).toContain("--trail: 25px");
+    const lead = 35,
+      trail = 25,
+      col = 390,
+      drop = 5,
+      grow = 1.05,
+      nudge = 4;
+    const w = col - lead - trail;
+    const dropRight = lead + w / 2 + (w + drop - w / 2) * grow + nudge;
+    expect(col - dropRight, "the picked slice's drop must clear the viewport edge").toBeGreaterThan(
+      5,
+    );
   });
 
   it("draws the focus ring INSIDE the polygon (a clip-path erases the UA ring — R18)", () => {
