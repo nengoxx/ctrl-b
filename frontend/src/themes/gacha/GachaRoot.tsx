@@ -68,9 +68,9 @@ export function GachaRoot() {
   // stamps an attr no tokens.css block matches.
   const cardNameFont = useThemeSetting<string>("gacha", "cardNameFont");
   // The RESOLVED fleet layout, as a sixth body attr (§12.6 ruling 7). It is stamped — rather than passed —
-  // for the same reason the five above are: the surfaces that need to know are OUTSIDE the fleet body. The
-  // pickup banner is a SLOT the layout dresses, not a component the layout forks, so the poster's gold
-  // furniture is `body[data-gc-fleet="poster"] .gc-banner …` in gacha.css over the one banner instance.
+  // for the same reason the five above are: the rules that key on it live OUTSIDE the variant's own render
+  // (today: the poster's head/seam spacing in gacha.css; the owner REVERTED the banner skin and page ground
+  // that first motivated it, so the banner renders identically under every layout — do not re-dress it).
   // Read through the Surface's own resolver at RENDER time (never at module scope — surface.ts's
   // import-cycle rule), so it is the same validated value `Themed` renders and the two cannot disagree.
   const fleetLayout = fleetSurface.useVariantId();

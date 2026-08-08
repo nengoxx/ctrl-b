@@ -26,8 +26,10 @@ import { isHighStar, starsFor } from "./stars";
 //    the UNION of the slice and its drop as its hit shape; `.po-drop` is the same polygon translated, in the
 //    rarity hue; `.po-plate` is the slice, whose BACKGROUND is the keyline with the art one pixel inside the
 //    SAME polygon (an inset box-shadow would be laid on the border-box rectangle and clipped away by it).
-//  · SELECT-THEN-ACT: the first tap selects, the second opens (online) or wakes (asleep). Still exactly one
-//    button per machine. The ROUTING is `GachaFleet`'s (`onTapHost`) — this file only dramatizes what came
+//  · THE TAP TABLE (owner ruling, walk 3 — the original select-then-act narrowed): an ONLINE machine opens
+//    its dossier on ONE tap, which also selects it so the registry follows; only a SLEEPING machine keeps
+//    the two-step (tap 1 selects, tap 2 wakes — the guard a real action earns). Still exactly one button
+//    per machine. The ROUTING is `GachaFleet`'s (`onTapHost`) — this file only dramatizes what came
 //    back, and the dramatization is poll-truthful (ruling 4): the request is what is staged, the STATE is
 //    the server's, and only a hosts poll flips a slice online. An `open` carries the capsule's own image
 //    MORPH (owner ruling — §12.6 5②'s capsule-only clause is amended): the slice hands its `.po-art` — the

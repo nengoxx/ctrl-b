@@ -2279,7 +2279,8 @@
     }
     /* ── THE RARITY BADGE, held back until the portrait lands (G6.3, owner device round) ──────────────
      * `.gc-dossier .art-rar` is the star lozenge tucked into the portrait's bottom-left. It is NOT part of
-     * the `capsule-shell` morph (the morph flies the `<img>`), so in the NEW capture it was simply part of
+     * the `capsule-shell` morph (the morph flies the named SOURCE element — the capsule card's `<img>`, or
+     * the poster slice's `.po-art` clip carrier per R26), so in the NEW capture it was simply part of
      * the page — painted at its FINAL position from the first frame, hanging in empty space while the
      * portrait was still crossing the screen, and then re-painted by the live DOM on top of the image at
      * finish. The owner saw both halves: a badge that arrives early and a jump at the end.

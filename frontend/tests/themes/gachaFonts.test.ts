@@ -2,7 +2,7 @@
 // ^ this file reads the committed font manifest from disk (fs/path/process); the tests tsconfig pins
 //   `types:["vitest"]`, so node's globals are pulled in explicitly here rather than widening the suite.
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -164,6 +164,33 @@ describe("gacha font subset — the committed files", () => {
     // …and every entry must actually carry one, so a hand-edited manifest cannot opt a file out.
     for (const f of manifest.files)
       expect(f.sha256, `${f.file} has no sha256`).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("the DISK is the manifest's complement too — no unreferenced woff2, no unruled face (Codex E1-close)", () => {
+    // The direction the earlier pins missed (Codex, the E1 session-close round): every test above
+    // enumerates the MANIFEST, so a file RESTORED on disk without a manifest row — Silkscreen's exact
+    // exit path, reversed — passed all of them. Disk and manifest must be the same set, the generator's
+    // face list must be exactly the ruling, and the face sheet may declare no family outside it (every
+    // runtime load goes through a faces.css declaration, so this is the reference chokepoint; fonts.ts
+    // gets the one named-face spot check for the face that actually left).
+    const onDisk = readdirSync(fontsDir)
+      .filter((f) => f.endsWith(".woff2"))
+      .sort();
+    expect(
+      onDisk,
+      "disk and manifest disagree — a woff2 exists with no manifest row (or vice versa)",
+    ).toEqual(manifest.files.map((f) => f.file).sort());
+    expect(manifest.faces.map((f) => f.family).sort()).toEqual(
+      RULED_FACES.map((f) => f.family).sort(),
+    );
+    const declared = [...facesCss.matchAll(/font-family:\s*"([^"]+)"/g)].map((m) => m[1]);
+    const ruled = new Set(RULED_FACES.map((f) => f.family));
+    expect(
+      declared.filter((f) => !ruled.has(f)),
+      "faces.css declares a family outside the ruling",
+    ).toEqual([]);
+    const fontsTs = readFileSync(resolve(process.cwd(), "src/themes/gacha/fonts.ts"), "utf8");
+    expect(fontsTs, "the cut face must not linger in the loader either").not.toMatch(/silkscreen/i);
   });
 
   it("faces.css declares every committed file, with a unicode-range on the JP faces", () => {
