@@ -1510,6 +1510,38 @@
      * §14.11 THROUGHOUT: every animated property here is `transform` or `opacity`. The selected slice
      * GROWS by a transform rather than by a height, so its neighbours never reflow — they are simply
      * overlapped a little inside the gutters, and the slice you tapped stays where you tapped it. */
+    /* ── THE SEAM: banner -> head -> stack, POSTER-ONLY (owner, dev-unit walk) ────────────────────────
+     * "A little bit less spacing between the cards and the top banner… more compact with the selected
+     * unit and the left Japanese letters."
+     *
+     * THE CHAIN AS SHIPPED, measured rather than guessed — three numbers, all vertical, none of them the
+     * head's own type:
+     *     banner bottom -> head top      `.gc-track-head` padding-top      22px
+     *     head bottom   -> stack top     `.gc-track-head` padding-bottom   10px
+     *                                  + `.po-poster`     padding-top      12px
+     *     = 44px of air across the seam, of which 22px sits in a single gap the owner reads as one space.
+     *
+     * HALVED, as the first cut: 11 above the head, 11 below it, and the two contributions to that lower
+     * gap collapse into ONE number so the owner can walk it with a single edit. Both live as custom
+     * properties on the rules that consume them — that is the tunable surface, and E5 is where they settle.
+     *
+     * POSTER-SCOPED THROUGH `body[data-gc-fleet]`, and that is the whole reason the stamp survived the
+     * banner/ground reverts. The head is the CAPSULE TRACK'S OWN MARKUP, rendered byte-identically by both
+     * layouts (one fleet, one heading) — so the only honest way to give the poster tighter air is to
+     * override it under the attribute rather than to fork the head or to move a shipped v1.5.0 number.
+     * Capsule's 22/14/10 is untouched. Vertical only: the head keeps capsule's 14px side padding, which is
+     * deliberately NOT aligned to the poster's own 40px `--lead` — an eyeball item, not a measured one. */
+    body[data-gc-fleet="poster"] .gc-track-head {
+      --po-head-pad-top: 11px;
+      padding-top: var(--po-head-pad-top);
+      /* the lower gap is expressed ONCE, on the stack below — see `--po-stack-gap` */
+      padding-bottom: 0;
+    }
+    body[data-gc-fleet="poster"] .po-poster {
+      --po-stack-gap: 11px;
+      padding-top: var(--po-stack-gap);
+    }
+
     /* THE POSTER'S OWN COLUMN — the stack AND its registry as one box. It exists so the two agree about
      * where the poster's leading edge is (`--lead`/`--trail` are declared here and read by both) and so the
      * registry's display line can scale off the COLUMN while the slices scale off the stack: an element

@@ -724,6 +724,40 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     expect(css, "the banner-skin tokens went with the rules").not.toContain("gc-po-banner");
   });
 
+  it("no layout-scoped rule paints a BACKGROUND at all — the two layouts share every background rule", () => {
+    // The sharp form of the ruling, and the one that survives someone re-adding the ground under a
+    // different selector. Every rule in this file keyed on `data-gc-fleet` is enumerated and checked for
+    // background properties: if none of them paints, then under poster the fleet tab resolves EXACTLY the
+    // background cascade capsule does — `.kit`'s coloured backdrop, plus the wallpaper's own
+    // `[data-wallpaper="on"][data-tab="fleet"] .kit-main` rule, which is layout-blind. That covers both
+    // states the owner named (wallpaper ON and OFF) without needing to render either.
+    const scoped = [...css.matchAll(/\n {4}([^\n{]*\[data-gc-fleet[^\n{]*)\{([^}]*)\}/g)];
+    expect(scoped.length, "the stamp must still have consumers").toBeGreaterThan(0);
+    for (const [, sel, body] of scoped) {
+      expect(body, `${sel.trim()} must not paint a background`).not.toMatch(/(^|[\s;])background/);
+      // …and nothing may reach the shell or the tab box either, whatever it declares
+      expect(sel, `${sel.trim()} must not target the shell or the tab`).not.toMatch(
+        /\.kit-main|\.kit\b|#tab-|\.tab\b/,
+      );
+    }
+  });
+
+  it("compacts the banner->head->stack seam, POSTER-ONLY and vertical-only", () => {
+    // The owner's "less spacing between the cards and the top banner". The head is the CAPSULE TRACK'S
+    // OWN markup — both layouts render it byte-identically — so the compaction has to be an override
+    // under the layout stamp, never an edit to the shipped rule. Three claims: capsule's number is
+    // untouched, the poster's is roughly half of it, and nothing HORIZONTAL moved.
+    expect(blockFor(".gc-track-head")).toContain("padding: 22px 14px 10px");
+    const head = blockFor('body[data-gc-fleet="poster"] .gc-track-head')!;
+    expect(head).toContain("--po-head-pad-top: 11px");
+    expect(head).toContain("padding-top: var(--po-head-pad-top)");
+    // the lower gap was TWO contributions (head 10 + stack 12); it is one tunable now
+    expect(head).toContain("padding-bottom: 0");
+    expect(blockFor('body[data-gc-fleet="poster"] .po-poster')).toContain("--po-stack-gap: 11px");
+    // vertical only — a side-padding override here would silently unalign the head from the counter
+    expect(head).not.toMatch(/padding-(left|right)|padding: /);
+  });
+
   it("pairs the keyline with the art's inset, both on the `outlines` axis (gacha ships it OFF)", () => {
     // Keyline off must also drop the art's 1px inset, or a black hairline survives where the rim was.
     expect(blockFor(".po-art")).toContain("inset: 0");
