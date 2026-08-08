@@ -525,6 +525,26 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
       expect(blockFor(sel), `${sel} must paint the RESOLVED hue`).toContain("var(--po-hue)");
   });
 
+  it("installs the BLACK GROUND, scoped so only the poster ON THE FLEET TAB goes black", () => {
+    // The signed composition is a black field; the shipped `wallpaper: on` default would otherwise show
+    // the wallpaper through the 22px gutters (Codex E1 MED-2). Three claims, and the last two are what
+    // keep the fix from being a regression of its own.
+    const ground = blockFor('body[data-gc-fleet="poster"][data-tab="fleet"] .kit-main')!;
+    expect(ground, "the poster must install a ground").toBeTruthy();
+    expect(ground).toContain("background-color: var(--gc-po-field)");
+    // it REPLACES the wallpaper rather than layering over it…
+    expect(ground).toContain("background-image: none");
+    // …which needs it to be the SAME specificity declared LATER than the wallpaper's own `.kit-main` rule
+    const wall = css.indexOf('body[data-wallpaper="on"][data-tab="fleet"] .kit-main');
+    expect(wall).toBeGreaterThan(-1);
+    expect(css.indexOf('body[data-gc-fleet="poster"][data-tab="fleet"] .kit-main')).toBeGreaterThan(
+      wall,
+    );
+    // …and the `[data-tab="fleet"]` half is what stops the Agent and Conf tabs going black too. No
+    // unscoped `.kit-main` ground may exist anywhere in the file.
+    expect(blockFor('body[data-gc-fleet="poster"] .kit-main')).toBeNull();
+  });
+
   it("pairs the keyline with the art's inset, both on the `outlines` axis (gacha ships it OFF)", () => {
     // Keyline off must also drop the art's 1px inset, or a black hairline survives where the rim was.
     expect(blockFor(".po-art")).toContain("inset: 0");

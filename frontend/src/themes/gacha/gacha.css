@@ -1510,6 +1510,29 @@
      * §14.11 THROUGHOUT: every animated property here is `transform` or `opacity`. The selected slice
      * GROWS by a transform rather than by a height, so its neighbours never reflow — they are simply
      * overlapped a little inside the gutters, and the slice you tapped stays where you tapped it. */
+    /* ── THE BLACK GROUND (the lab's `.c-poster{ background:#000 }`, Codex E1 MED-2) ──────────────────
+     * The signed composition is a BLACK FIELD carrying gold-accented slices; without this rule the
+     * shipped `wallpaper: on` default leaves the fleet wallpaper showing through the 22px gutters and
+     * around the track head, which changes both the contrast the name shadow was tuned against and the
+     * separation the selected grow reads by.
+     *
+     * IT IS HOSTED ON `.kit-main`, and that is a deliberate correction of two nearer-looking homes:
+     *   · `#tab-fleet` CANNOT carry it. A `.kit .tab.active` is a plain block sized to its CONTENT inside
+     *     an absolutely-positioned scroller, so on a short fleet — or above the composer's scroll pad —
+     *     the ground would simply stop and the app backdrop would show below it.
+     *   · `.kit-main` UNSCOPED cannot carry it either: it is the container for every tab, so the Agent
+     *     and Conf tabs would go black the moment the owner picked the poster layout.
+     * The pairing `[data-gc-fleet="poster"][data-tab="fleet"]` is what makes it correct, and it is not a
+     * new idea — it is the WALLPAPER's own shape one block up (`[data-wallpaper="on"][data-tab="fleet"]
+     * .kit-main`), which exists for exactly this "full-bleed, non-scrolling, fleet-only" problem. Same
+     * specificity as that rule, declared LATER, so the poster's ground replaces the wallpaper rather than
+     * layering over it — and `background-image: none` is what does the replacing. Capsule is untouched:
+     * under it this selector never matches and the wallpaper stays live. */
+    body[data-gc-fleet="poster"][data-tab="fleet"] .kit-main {
+      background-color: var(--gc-po-field);
+      background-image: none;
+    }
+
     /* THE POSTER'S OWN COLUMN — the stack AND its registry as one box. It exists so the two agree about
      * where the poster's leading edge is (`--lead`/`--trail` are declared here and read by both) and so the
      * registry's display line can scale off the COLUMN while the slices scale off the stack: an element
