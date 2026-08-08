@@ -963,12 +963,37 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     expect(ribbon).toBeTruthy();
     expect(ribbon).toContain("--po-new-top: calc(var(--run) * 0.22 + 6px)");
     expect(ribbon).toContain("right: 0");
-    // decoration, so it is NOT tinted by the rarity hue — a second thing wearing it would read as a
-    // second rarity signal
+    // decoration, so it is NOT tinted by the per-unit hue — a second thing wearing it would read as a
+    // second identity signal
     expect(ribbon).not.toContain("--po-hue");
-    expect(ribbon).toContain("background: var(--gc-brand-fill)");
+    // AN OUTLINE CHIP (owner, second walk): the brand colour moved from the fill to the EDGE and the ink,
+    // with a translucent interior. `--accent` is the flat channel of the same brand a border can carry.
+    expect(ribbon).toContain("border: var(--po-new-border) solid var(--accent)");
+    expect(ribbon).toContain("background: var(--gc-po-new-fill)");
+    expect(ribbon).toContain("color: var(--accent)");
+    expect(ribbon, "no filled pill may come back").not.toContain("var(--gc-brand-fill)");
+    // flush against its own edge, the shipped `.gc-card .state` idiom for an outlined pill
+    expect(ribbon).toContain("border-right: 0");
+    // the hard offset is MEASURED, not decorative: the translucent interior leaves the ink as low as
+    // 1.39:1 on the bundled art, so the glyph needs its own edge (the ruling chose this over re-opaquing)
+    expect(ribbon).toContain("text-shadow: var(--gc-po-new-shadow)");
     // …and it never eats a tap meant for the slice underneath it
     expect(ribbon).toContain("pointer-events: none");
+  });
+
+  it("declares the chip's two new inks where each can actually be moved", () => {
+    const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
+    // the interior COMPOSES the accent, so it has to sit in the `body` block every palette recomputes —
+    // on `:scope` it would substitute once against the base statics and never re-derive (§14.13)
+    expect(tokens).toContain(
+      "--gc-po-new-fill: color-mix(in srgb, var(--accent) 22%, transparent)",
+    );
+    const scopeBlock = tokens.slice(tokens.indexOf(":scope {"), tokens.indexOf("body {"));
+    expect(scopeBlock, "the accent-composing ink must not be a :scope static").not.toContain(
+      "--gc-po-new-fill",
+    );
+    // …while the hard offset derives from nothing and stays a static
+    expect(scopeBlock).toContain("--gc-po-new-shadow:");
   });
 
   it("pairs the keyline with the art's inset, both on the `outlines` axis (gacha ships it OFF)", () => {

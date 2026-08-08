@@ -1869,13 +1869,27 @@
       right: 0;
       top: var(--po-new-top);
       padding: 4px 9px;
+      /* AN OUTLINE CHIP, not a filled pill (owner, second walk: "slightly transparent or translucent").
+       * The colour is unchanged — it is the brand accent the filled version wore, moved from the fill to
+       * the EDGE and the ink, with the interior at a fraction so the art shows through. `--accent` is the
+       * flat channel of that same brand (tokens.css: "the brand PINK, the trio's leading hue"), which is
+       * what a border can carry — `--gc-brand-fill` is a gradient, and a gradient border would have to be
+       * `border-image`, which ignores `border-radius` and would square the tab off.
+       * `border-right: 0` is the shipped `.gc-card .state` idiom for an outlined pill flush against its
+       * own edge, so the chip reads as cut off by the slice rather than as floating inside it. */
+      --po-new-border: 1.5px;
+      border: var(--po-new-border) solid var(--accent);
+      border-right: 0;
       /* the capsule tab, mirrored: flush to its own edge, rounded on the inner end */
       border-radius: 99px 0 0 99px;
-      background: var(--gc-brand-fill);
-      color: var(--gc-tag-ink);
+      background: var(--gc-po-new-fill);
+      color: var(--accent);
       font-size: 7px;
       font-weight: 900;
       letter-spacing: 0.14em;
+      /* MEASURED, not decorative — see the token's note: the translucent interior leaves the ink as low as
+       * 1.39:1 on the bundled art, and this is what gives the glyph its own edge. */
+      text-shadow: var(--gc-po-new-shadow);
       pointer-events: none;
     }
 
