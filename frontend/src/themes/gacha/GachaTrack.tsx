@@ -1,7 +1,7 @@
 import type { Host } from "../../types";
 import { GachaCard } from "./GachaCard";
 import { GACHA_COPY } from "./copy";
-import type { CapsuleShape } from "./fleet";
+import type { CapsuleShape, FleetTap } from "./fleet";
 import type { ResolvedArt } from "./roster";
 import type { StarMode } from "./stars";
 
@@ -39,6 +39,29 @@ export interface GachaTrackProps {
   counter: string;
   /** The theme's ONE "open this machine" seam. A card also hands over its portrait — the M3 morph's FROM. */
   onOpenHost: (hostId: string, morphImg?: HTMLImageElement | null) => void;
+
+  // ── SELECT-THEN-ACT (§12.6 rulings 2-4) — the four the ALT layouts read and capsule ignores ──────────
+  // Widened at E1 (the E0 deferral): ONE prop shape for every variant, resolved values only. The capsule
+  // track keeps its one-tap-opens behavior and simply does not destructure these — a surface's variants
+  // are interchangeable presenters, not four different contracts.
+  /** The RESOLVED selection — `pickedId ?? hosts[0]?.id`, resolved in the view and never written to state
+   *  (ruling 2), so a vanished selection re-derives instead of leaving the layout pointing at a gone host.
+   *  `null` only when the fleet is empty. */
+  picked: string | null;
+  /** Route one tap through `tapAction` and execute it. Returns what it DID, so a layout can dramatize the
+   *  outcome (the poster's wake ceremony) without re-deriving the routing — and without ever being the
+   *  place that decides it. `null` means NOTHING happened: the machine left between render and click, or
+   *  a wake was refused because an action on that host is already in flight. A layout must not stage a
+   *  ceremony for a request that was never sent. */
+  onTapHost: (hostId: string) => FleetTap | null;
+  /** `useFleet().busy` — per-HOST, not per-action (R25 §Q1b). A slice lights and disables for ANY in-flight
+   *  action on its machine, which is the correct read of a shared busy set. */
+  busy: ReadonlySet<string>;
+  /** The machine whose WAKE REQUEST is currently in flight, or `null`. Distinct from `busy` because busy
+   *  cannot say WHICH action: this is the only fact that licenses a `WAKING` presentation, and it ends when
+   *  the request settles — the card goes back to the SERVER-REPORTED state, and only a poll may flip it
+   *  online (ruling 4, poll-truthful). */
+  wakingHost: string | null;
 }
 
 export function GachaTrack({

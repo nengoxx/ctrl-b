@@ -178,6 +178,23 @@ export function pickLabel(host: Host, stars: number, selected: boolean): string 
     : `${head}Tap to select; tap again to ${what}.`;
 }
 
+/** What the fleet's live region says when a machine is SELECTED (the lab's own sentence). Selection is the
+ *  only interaction in this app whose feedback is a grow plus a data block BELOW THE FOLD, so the announce
+ *  is not a nicety — for anyone who cannot see either, it is the whole outcome. */
+export function pickAnnounce(host: Host, stars: number): string {
+  const online = !!host.status?.online;
+  return `${host.name} selected. ${roleLabel(host)}, ${stars} stars, ${
+    online ? "ONLINE" : "SLEEPING"
+  }.`;
+}
+
+/** …and what it says when a wake is DISPATCHED. It reports the REQUEST and stops there (§12.6 ruling 4):
+ *  there is deliberately no "X is online" counterpart, because only a hosts poll can know that, and the
+ *  poll speaks through the machine's own chip. */
+export function wakeAnnounce(name: string): string {
+  return `Waking ${name}.`;
+}
+
 /** How far a slice steps out of the way while the stack PARTS for a wake ceremony (the lab's `.parting`
  *  block, generalized off its four hardcoded `nth-child` offsets). Signed rungs, not pixels: the CSS
  *  multiplies by its own step token, so the distance stays tunable at the device round.

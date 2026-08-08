@@ -228,7 +228,48 @@ export const gacha: ThemeDef = {
     // The prototype's chat bubbles are borderless (fill + a hard offset shadow, no outline), so gacha takes
     // the kit's no-outlines chat; the toggle restores the bordered chrome live. Confirmed at the G3 eyeball.
     outlines: outlinesSetting(false),
-    // ── gacha's own remaining three (§6.1 / R6) — the fourth, the dossier picker, leads the map above ──
+    // ── gacha's own remaining rows (§6.1 / R6) — the dossier picker leads the map above ──────────────
+    // THE FLEET LAYOUT (§12.6 E1, ruling 1) — the theme's `fleetLayout` Surface setting, resolved by
+    // `fleetSurface` to one of gacha's registered track bodies. It OPENS gacha's own block, ahead of the
+    // three rows that refine what it draws (stars · banner wallpaper · operator art): declaration order is
+    // render order, and the layout is the decision the other three read as refinements of.
+    //
+    // TWO OPTIONS, not three: `cover` joins at E2, when the layout it names exists. That is the "no lying
+    // options" rule the E0 slice held to by declaring nothing at all — a seg option is a promise that the
+    // value resolves to something, and `resolveThemeSetting` enforces the promise in the other direction
+    // (only a declared option can ever reach the registry). The CAP IS THREE (owner: "maximum three… I
+    // don't wanna clutter the app"), and this list is what enforces it.
+    fleetLayout: {
+      type: "seg",
+      label: "Fleet layout",
+      desc: GACHA_COPY.settingFleetLayoutDesc,
+      options: [
+        { val: "capsule", label: "Capsule" },
+        { val: "poster", label: "Poster" },
+      ],
+      default: "capsule",
+    },
+    // THE POSTER NAME — the first LAYOUT-SCOPED row in the app (`showWhen`, the E0 engine change): it is
+    // meaningless under capsule, so it is not shown under capsule. Declared IMMEDIATELY AFTER its
+    // controller, which is contract-tested rather than conventional — declaration order is render order,
+    // and the owner's ruling was that it "pops up right below". Its stored value PERSISTS while hidden and
+    // comes back with the old pick when poster does.
+    //
+    // BLADE is the default (owner). The two values are the name's SEAT and nothing else — same face, same
+    // size, same rarity fill, same hard shadow; plate sits mid-slice with the role beneath it, blade rides
+    // the lower diagonal with the role lifted above. No `swatch`: these differ by SHAPE, and the surface
+    // re-renders live, so the labels are the preview (the `nameFont` precedent).
+    posterName: {
+      type: "seg",
+      label: "Poster name",
+      desc: GACHA_COPY.settingPosterNameDesc,
+      showWhen: { key: "fleetLayout", is: "poster" },
+      options: [
+        { val: "plate", label: "Plate" },
+        { val: "blade", label: "Blade" },
+      ],
+      default: "blade",
+    },
     // The star ladder's SINGLE config home (council M5: nothing star-shaped lives in the roster YAML).
     // Default 5★ (ruled Q8.4): emma already carries 5–6 configured services, so the flagship rolls a full
     // row on day one; 3★ is one seg-tap away for a calmer track.

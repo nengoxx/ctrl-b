@@ -22,14 +22,18 @@ import {
   CLOSE_DOSSIER_LABEL,
   cardShapes,
   counterText,
+  pickAnnounce,
   pickRibbonHost,
   pityText,
   queryResolved,
   rateText,
+  tapAction,
+  wakeAnnounce,
+  type FleetTap,
 } from "./fleet";
 import { fleetSurface } from "./fleetSurface";
 import { artForHost, heroArt, wideArtForHost } from "./roster";
-import { MAX_STARS, toStarMode } from "./stars";
+import { MAX_STARS, starsFor, toStarMode } from "./stars";
 import { useGachaRoster } from "./useGachaRoster";
 
 // The gacha bespoke FLEET (D52 / GACHA_PLAN §6) — the prototype's capsule-arcade fleet screen, injected into
@@ -132,6 +136,26 @@ export function GachaFleet({ active }: { active: boolean }) {
   //    cosmos selection stores exist because their maps and grids select each other two ways — here nothing
   //    outside this body reads the selection, and a store would be state living further from its only user).
   const [selected, setSelected] = useState<string | null>(null);
+  // ── SELECT-THEN-ACT (§12.6 rulings 2-4) — the ALT layouts' selection, a SIBLING of the dossier's own.
+  //    Component state for the same reason `selected` above is: nothing outside this body reads it, and it
+  //    is emphatically NOT `store/fleet.ts#featured` (an INDEX, auto-cycled every 6 s with an 8 s hold —
+  //    a poster selection that silently jumped to another machine after eight seconds, skipping every
+  //    sleeping one, would be wrong on both counts).
+  //
+  //    NULL IS "the owner has not picked yet", never "nothing is selected": the VIEW resolves
+  //    `pickedId ?? hosts[0]?.id` (below) and that resolution is never written back. Two things fall out
+  //    for free — the first machine is selected at boot without a state write, and a selection whose
+  //    machine leaves the fleet re-derives to the new first machine instead of leaving the layout pointing
+  //    at a gone host or blanking its data block while machines exist.
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  // The machine whose WAKE REQUEST is in flight. Distinct from `busy`, which is per-HOST and cannot say
+  // which action (R25 §Q1b) — this is the single fact that licenses a `WAKING` chip, and it ends when the
+  // request settles. The card then reads the SERVER's word again: only a hosts poll may flip it online
+  // (ruling 4 — `useActions` gives wake no optimism by design, and this adds none).
+  const [wakingHost, setWakingHost] = useState<string | null>(null);
+  // The fleet's ONE live region (ruling 3). gacha had none; select-then-act needs one because its only
+  // feedback is a transform and a data block below the fold.
+  const [live, setLive] = useState("");
   // Whether THIS open is being carried by the M3 morph — handed to the sheet as `enterInstant`. A morph
   // needs the dossier mounted AT REST inside the update callback (see BottomSheet's prop doc); every other
   // open keeps the primitive's slide-up.
@@ -301,7 +325,9 @@ export function GachaFleet({ active }: { active: boolean }) {
     [reeling, cleanMorphPrep, dropShowcase],
   );
   // Drop a selection whose machine has left the fleet (a config edit, a removal) so the sheet can never
-  // reference a gone host — the cosmos/frontier precedent.
+  // reference a gone host — the cosmos/frontier precedent. The ALT layouts' selection is cleared on the
+  // same terms and in the same effect (ruling 2), and so is a wake whose machine went away mid-flight: the
+  // request will still settle, but there is nothing left to light.
   useEffect(() => {
     if (selected && !hosts.some((h) => h.id === selected)) {
       gen.current++;
@@ -310,7 +336,47 @@ export function GachaFleet({ active }: { active: boolean }) {
       setMorphOpen(false);
       setSelected(null);
     }
-  }, [selected, hosts, cleanMorphPrep, dropShowcase]);
+    if (pickedId && !hosts.some((h) => h.id === pickedId)) setPickedId(null);
+    if (wakingHost && !hosts.some((h) => h.id === wakingHost)) setWakingHost(null);
+  }, [selected, pickedId, wakingHost, hosts, cleanMorphPrep, dropShowcase]);
+
+  // ── THE TAP ROUTER's execution (rulings 3 + 4). The DECISION is `tapAction`, a pure function with its own
+  //    table of tests; this is the half that has to touch the world, and it is here rather than in a layout
+  //    so all three layouts route identically and none of them can invent a second wake path.
+  const onTapHost = useCallback(
+    (hostId: string): FleetTap | null => {
+      // Liveness from the CURRENT render (the council clause): a machine that woke between the two taps
+      // must OPEN, not be woken again — so this reads `hosts`, never a value captured at tap one.
+      const host = hosts.find((h) => h.id === hostId);
+      if (!host) return null; // the machine left between render and click
+      const action = tapAction(pickedId ?? hosts[0]?.id ?? null, hostId, !!host.status?.online);
+      if (action === "select") {
+        setPickedId(hostId);
+        setLive(pickAnnounce(host, starsFor((host.services ?? []).length, starMode)));
+        return "select";
+      }
+      if (action === "open") {
+        // NO morph image (ruling 5②): the capsule<->dossier View-Transition morph stays CAPSULE-ONLY by
+        // design — a morph clone sourced from a sheared clip-path has never been seen — so a poster or a
+        // cover opens on the sheet's own plain slide-up.
+        openHostDossier(hostId);
+        return "open";
+      }
+      // WAKE. A synchronous busy guard, because `busy` is per-host: a second wake fired into an action
+      // already in flight would be a duplicate request, not a retry. (The pre-existing `useFleetActions`
+      // overlap race is a recorded standing item across all five fleets, deliberately not rewritten here.)
+      if (busy.has(hostId)) return null;
+      setWakingHost(hostId);
+      setLive(wakeAnnounce(host.name));
+      // The SAME seam the dossier's Wake button calls — no new execution path, no UI confirm (D8: the
+      // registry decides, and `wake_host` is risk=LOW with no `confirm`). Settled either way, so a failed
+      // request cannot leave a machine lit as waking forever; `run` reports its own outcome as a toast.
+      const done = () => setWakingHost((w) => (w === hostId ? null : w));
+      void run("wake", host).then(done, done);
+      return "wake";
+    },
+    [hosts, pickedId, starMode, busy, run, openHostDossier],
+  );
   // Leaving the tab (or unmounting) CLOSES the dossier — the M3-confirm ruling: a nav tap is "outside"
   // under the owner's tap-outside wording, so the click listener already closes on pointer navigation;
   // clearing here makes keyboard/programmatic navigation behave identically instead of resurrecting the
@@ -325,6 +391,12 @@ export function GachaFleet({ active }: { active: boolean }) {
       dropShowcase();
       setMorphOpen(false);
       setSelected(null);
+      // …and the alt layouts' selection with it (ruling 2, the same branch), plus the live region: a
+      // sentence left standing would be re-announced by some ATs on return to a tab whose selection has
+      // just been reset. The wake FLIGHT is not cleared here — the request is still in the air, and its
+      // own settle handler owns that flag.
+      setPickedId(null);
+      setLive("");
     }
     const artTicket = artGen;
     return () => {
@@ -572,7 +644,24 @@ export function GachaFleet({ active }: { active: boolean }) {
         art={(i) => artForHost(roster, i)}
         counter={counterText(onlineCount, hosts.length, resolved)}
         onOpenHost={openHostDossier}
+        // The selection RESOLVED in the view (ruling 2) — never written back to state, so host[0] is
+        // selected at boot without a write and a vanished pick re-derives to the new first machine.
+        picked={pickedId ?? hosts[0]?.id ?? null}
+        onTapHost={onTapHost}
+        busy={busy}
+        wakingHost={wakingHost}
       />
+
+      {/* THE FLEET's ONE LIVE REGION (ruling 3). gacha had none until E1, and select-then-act is why it
+          needs one: a selection's only feedback is a transform on the slice and a data block below the
+          fold, and a wake's is a 900 ms ceremony — none of which reaches anyone who cannot see it. It is
+          mounted UNCONDITIONALLY (an aria-live region has to exist before its text changes, or the first
+          message is silently missed) and under every layout, because it belongs to the fleet body rather
+          than to whichever variant is drawing. `role="status"` carries the polite live semantics; the
+          redundant `aria-live` is the belt every other region in the app wears. */}
+      <div className="gc-live" role="status" aria-live="polite">
+        {live}
+      </div>
 
       {/* THE UNIT DOSSIER — the shared C3 primitive, skinned by gacha.css into the theme's one light
           surface. `catchOutside={false}` (the owner-ruled precedent): the track stays interactive, so

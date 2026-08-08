@@ -1485,6 +1485,451 @@
       transition: none;
     }
 
+    /* ══ THE POSTER (E1 — GACHA_PLAN §12.6, the finalists lab's screen A) ══════════════════════════════
+     * gacha's SECOND fleet layout, behind the fleet Surface: one parallelogram of equal sheared slices
+     * with open gutters, off-centre right, the selected one grown, and the selected machine's registry
+     * beneath. Every number below is the lab's (`design/prototypes/gacha/alt-fleet-finalists/styles.css`)
+     * and every one of them is a CUSTOM PROPERTY on the root, because the E5 device round is where the
+     * shear angle, the slice height and the gutters get their real test.
+     *
+     * THE GEOMETRY, in one paragraph. `--run` is how far the 10-degree shear rises across the poster's
+     * own width — `tan(a) * 100cqw`, so it follows the column at every phone size instead of being a
+     * pinned pixel count (R18). It is declared HERE and substituted in the CHILDREN, which is what makes
+     * the container query legal: an element establishes a container for its descendants, not for itself.
+     * `--poly` is the slice; `--poly-hit` is the union of the slice AND its offset drop, worn by the
+     * BUTTON so the clipped-off triangle falls through to the neighbour while the drop stays tappable.
+     * Slices then overlap by `--run` minus the gutter, which is what turns four sheared boxes into one
+     * parallelogram with 22px of air between them.
+     *
+     * THREE BOXES PER SLICE, and the reason is the one the capsule card already paid for above: a
+     * clip-path erases an offset shadow. So the drop is a DUPLICATED POLYGON (`.po-drop`), not a
+     * `box-shadow`; the keyline is the plate's own BACKGROUND with the art inset 1px inside the SAME
+     * polygon, not an `inset` shadow (which would be laid on the border-box rectangle and then clipped
+     * away by the shear, leaving two stray bars).
+     *
+     * §14.11 THROUGHOUT: every animated property here is `transform` or `opacity`. The selected slice
+     * GROWS by a transform rather than by a height, so its neighbours never reflow — they are simply
+     * overlapped a little inside the gutters, and the slice you tapped stays where you tapped it. */
+    /* THE POSTER'S OWN COLUMN — the stack AND its registry as one box. It exists so the two agree about
+     * where the poster's leading edge is (`--lead`/`--trail` are declared here and read by both) and so the
+     * registry's display line can scale off the COLUMN while the slices scale off the stack: an element
+     * establishes a container for its descendants, so `.po-poster` nested inside is the nearer container
+     * for everything in a slice, and this one is what `.po-fname` measures against. */
+    .po-body {
+      container-type: inline-size;
+      position: relative;
+      /* the stack sits slightly OFF-CENTRE RIGHT (owner: "cards stay slightly off-center right") — a
+       * deliberate 40/20 asymmetry. The trailing inset is also the overflow budget for the grown slice:
+       * it has to cover halfWidth x (grow - 1) + the drop + the nudge at the widest column. */
+      --lead: 40px;
+      --trail: 20px;
+    }
+    .po-poster {
+      container-type: inline-size;
+      position: relative;
+      /* the shear, and everything derived from it */
+      --a: 10deg;
+      --run: calc(tan(var(--a)) * 100cqw);
+      --gut: 22px;
+      /* the hard offset — the theme's own `5px 5px 0` motif (`--gc-lift`, `--gc-ind-shadow`) */
+      --drop: 5px;
+      --poly: polygon(0 var(--run), 100% 0, 100% calc(100% - var(--run)), 0 100%);
+      --poly-hit: polygon(
+        0 var(--run),
+        100% 0,
+        calc(100% + var(--drop)) var(--drop),
+        calc(100% + var(--drop)) calc(100% - var(--run) + var(--drop)),
+        var(--drop) calc(100% + var(--drop)),
+        0 100%
+      );
+      --pick-grow: 1.05;
+      --pick-nudge: 4px;
+      /* The lab's `clamp(148px, --u * .44, 180px)`, re-expressed against the POSTER's own width: the lab
+       * measured off the column and the poster is the column minus lead+trail, so 44% of the column is
+       * 52% of this box. Identical at 320 / 390 / 430. */
+      --po-h: clamp(148px, 52cqw, 180px);
+      /* one rung of the wake ceremony's parting (`partingStep` returns -2..2) */
+      --po-part-step: 7px;
+      width: calc(100% - var(--lead) - var(--trail));
+      margin-left: var(--lead);
+      /* the grown slice overshoots its own box by ~half of 5%, on top of the 5px drop */
+      padding: 12px 0 16px;
+    }
+    .po-slice {
+      position: relative;
+      display: block;
+      width: 100%;
+      height: var(--po-h);
+      padding: 0;
+      border: 0;
+      background: none;
+      color: inherit;
+      cursor: pointer;
+      /* kills the double-tap-zoom delay: select-then-act means two fast taps are a legitimate gesture */
+      touch-action: manipulation;
+      clip-path: var(--poly-hit);
+      transition: transform 220ms var(--gc-ease-out);
+    }
+    .po-slice + .po-slice {
+      margin-top: calc((var(--run) - var(--gut)) * -1);
+    }
+    /* A SLEEPING machine's hue is SUPPRESSED to one neutral (§12.6 ruling 8) rather than dimmed per
+     * rarity: five faded colours read as five machines in trouble, one grey reads as "not here". It
+     * floods back the moment a poll says the machine is up. */
+    .po-slice.asleep {
+      --gc-rar: var(--gc-rar-off);
+    }
+    /* THE HARD OFFSET DROP — the same polygon, translated, in the hue. */
+    .po-drop {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background: var(--gc-rar);
+      clip-path: var(--poly);
+      transform: translate(var(--drop), var(--drop));
+    }
+    .po-plate {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      /* the plate's background IS the keyline (see the block note) */
+      background: var(--gc-rar);
+      clip-path: var(--poly);
+      /* `clip-path` hides paint but does NOT contain SCROLLABLE OVERFLOW: the ceremony's flashline runs
+       * 4% past both edges and a blade's nowrap name can run past the trailing one, and the lab measured
+       * both as real scrollWidth (396px at a 390 column) on the scroller even though nothing was visible.
+       * `clip` contains them without making the plate a scroll container of its own. */
+      overflow: clip;
+    }
+    /* THE KEYLINE IS THE `outlines` AXIS (§12.6 ruling 8). gacha declares `outlinesSetting(false)`, so the
+     * SHIPPED default is no rim at all — and the art then has to sit flush, or a black hairline survives
+     * where the keyline used to be. Both halves move together, which is why they are one rule. */
+    .po-art {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: var(--gc-po-field);
+      clip-path: var(--poly);
+    }
+    body[data-outlines="on"] .po-art {
+      inset: 1px;
+    }
+    .po-art img,
+    .po-art-blank {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: var(--po-focus, 50% 26%);
+      transform-origin: 60% 40%;
+    }
+    /* IDLE: one staggered breath, the lab's. Transform-only and both global axes gate it — `data-motion`
+     * stops it, and a SLEEPING slice never breathes at all (the machine is not doing anything). */
+    .po-slice img {
+      animation: gacha-po-breathe 24s ease-in-out infinite alternate;
+    }
+    .po-slice:nth-child(4n + 2) img {
+      animation-delay: -6s;
+    }
+    .po-slice:nth-child(4n + 3) img {
+      animation-delay: -12s;
+    }
+    .po-slice:nth-child(4n + 4) img {
+      animation-delay: -18s;
+    }
+    @keyframes gacha-po-breathe {
+      to {
+        transform: scale(1.04);
+      }
+    }
+    .po-slice.asleep img {
+      animation: none;
+      /* the capsule track's own sleep treatment, so the two layouts read one machine the same way */
+      filter: grayscale(1) brightness(0.72);
+    }
+    body[data-motion="reduced"] .po-slice img {
+      animation: none;
+    }
+    /* The hue pools at the bottom-leading corner — where the name lives. An inline `color-mix` because the
+     * input is the slice's own live `--gc-rar`, which no static token can capture. */
+    .po-glow {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: linear-gradient(
+        196deg,
+        transparent 44%,
+        color-mix(in srgb, var(--gc-rar) 30%, transparent) 100%
+      );
+    }
+    .po-veil {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background: var(--gc-po-veil);
+    }
+    /* SELECTION READS AS SIZE (owner ruling): the registry is the only place the selected machine is
+     * NAMED, so the stack itself has to say which band is selected — and the strongest thing a band can do
+     * is be bigger. A transform, never a height: one compositor property, no layout, and the neighbours
+     * are overlapped inside the gutters rather than pushed. */
+    .po-slice.picked {
+      z-index: 3;
+      transform: translate3d(var(--pick-nudge), 0, 0) scale(var(--pick-grow));
+    }
+    /* THE INSET FOCUS RING is an A11Y REQUIREMENT, not a nicety (R18): the button is clipped to a polygon,
+     * and a clip-path erases the UA ring outright — a keyboard user would otherwise see nothing at all.
+     * Drawn as a pseudo INSIDE the clip and wearing the slice's own shape, so it traces the shear rather
+     * than a footprint rectangle. Kit width, kit token, offset pulled in. */
+    .po-slice:focus-visible {
+      outline: none;
+    }
+    .po-slice:focus-visible::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      clip-path: var(--poly);
+      box-shadow: inset 0 0 0 2px var(--accent);
+      pointer-events: none;
+    }
+    /* ── the in-band furniture ────────────────────────────────────────────────────────────────────────
+     * NAME + STARS + ROLE anchor at the BOTTOM-LEADING edge, never the top: a top-anchored name reads as
+     * the caption of the band ABOVE it (the ruled v2-01 defect). The lower-left safe zone is bounded by
+     * the rising bottom diagonal, so the block clears it by a fraction of `--run` rather than by a flat
+     * inset, which would put the role line under the shear.
+     *
+     * ROTATED TO THE SHEAR, about its own bottom-leading corner: the baselines then run PARALLEL to the
+     * slice's edges and the clearance from the bottom edge becomes CONSTANT along the slice instead of
+     * shrinking toward the trailing end — which is exactly what lets BLADE ride the diagonal at all.
+     * Rotating about that corner also drags everything above it leftwards by height x sin(a) (~9-11px at
+     * 10 degrees, enough to chop the first letter of the role line against the edge), which the 20px
+     * leading offset pays for. */
+    .po-zone {
+      position: absolute;
+      z-index: 6;
+      left: 20px;
+      bottom: calc(var(--run) * 0.6 + 4px);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 5px;
+      transform: rotate(calc(var(--a) * -1));
+      transform-origin: 0 100%;
+      pointer-events: none;
+    }
+    .po-stars {
+      display: flex;
+      gap: var(--gc-star-gap);
+      /* STARS ARE NEVER TINTED BY THE RARITY HUE (§12.6 ruling 8): the gold / rose-gold grammar is a
+       * different signal, and two signals must not wear one colour. The row is the card's own, one size
+       * down for a caption-scale block. */
+      --gc-star-size: 11.5px;
+      --gc-star-gap: 3.5px;
+      color: var(--gc-star);
+    }
+    .po-slice.asleep .po-stars {
+      color: var(--gc-star-dim);
+    }
+    .po-name b {
+      display: block;
+      /* the MACHINE NAME over art — the capsule plate's own pickable face (`cardNameFont`), so one owner
+       * choice dresses both fleet layouts */
+      font-family: var(--gc-card-name-font);
+      font-size: 20px;
+      font-weight: var(--gc-card-name-weight);
+      line-height: 1;
+      letter-spacing: 0.005em;
+      color: var(--gc-rar);
+      text-shadow: var(--gc-po-name-shadow);
+      white-space: nowrap;
+    }
+    .po-role {
+      display: block;
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: var(--text-2);
+      text-shadow: var(--gc-po-role-shadow);
+      white-space: nowrap;
+    }
+    /* BLADE — THE NAME'S SEAT, AND NOTHING ELSE (the owner's amended WALK-3 ruling: the blade-scale name
+     * "looks way too big", and it takes the plate's typography AND the plate's size). The treatment
+     * therefore collapsed to one variable: PLATE sits mid-slice with the role beneath it, BLADE rides the
+     * lower diagonal with the role lifted ABOVE it (under the name, the shear would slice the role away).
+     * Two whole mechanisms dissolved with the size — the oversized blade's ~5.6px black text contour, and
+     * the status-chip LIFT it used to need — and neither is coming back. */
+    .po-poster[data-name="blade"] .po-zone {
+      bottom: calc(var(--run) * 0.18);
+    }
+    .po-poster[data-name="blade"] .po-stars {
+      order: -2;
+    }
+    .po-poster[data-name="blade"] .po-role {
+      order: -1;
+    }
+    /* STATUS NEVER RIDES ON DECORATION ALONE (§12.3 (4)) — the chip stays, at the trailing edge, in one
+     * authored seat in both treatments. Its three skins are the theme's existing status grammar: the
+     * capsule card's ONLINE ribbon, its sleeping pill, and the accent fill for a request in flight. */
+    .po-chip {
+      position: absolute;
+      z-index: 6;
+      right: 10px;
+      bottom: calc(var(--run) + 10px);
+      padding: 4px 8px;
+      background: var(--gc-online-fill);
+      color: var(--gc-online-ink);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      pointer-events: none;
+    }
+    .po-slice.asleep .po-chip {
+      background: var(--gc-pill-bg);
+      box-shadow: inset 0 0 0 1px var(--gc-pill-line);
+      color: var(--gc-pill-ink);
+    }
+    /* A REQUEST IN FLIGHT (ruling 4) — poll-truthful: this says the app is ASKING, never that the machine
+     * is up. It ends when the request settles and the chip goes back to the server's word. */
+    .po-slice.busy .po-chip {
+      background: var(--accent-fill);
+      box-shadow: none;
+      color: var(--accent-ink);
+    }
+    .po-slice.busy {
+      cursor: default;
+    }
+    /* ── the WAKE CEREMONY (the lab's beats; `useCeremony` owns the timing) ───────────────────────────
+     * The stack PARTS around the waking slice and a hard line sweeps it. Transform + opacity only, and
+     * the whole thing collapses to its end state under `data-motion="reduced"` because the runner fires
+     * every beat at once there — no media query of its own, and nothing to gate here but the transition. */
+    .po-flashline {
+      position: absolute;
+      left: -4%;
+      right: -4%;
+      top: 50%;
+      z-index: 7;
+      height: 2px;
+      background: var(--gc-po-flash);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .po-slice.waking .po-flashline {
+      animation: gacha-po-line 520ms cubic-bezier(0.77, 0, 0.175, 1) both;
+    }
+    @keyframes gacha-po-line {
+      0% {
+        opacity: 0;
+        transform: translate3d(-70%, 0, 0) scaleX(0.4);
+      }
+      20% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+        transform: translate3d(70%, 0, 0) scaleX(1);
+      }
+    }
+    /* Everything ABOVE the waking slice lifts and everything below it drops (`partingStep` sets the signed
+     * rung inline). `:not(.picked)` so the selected slice keeps its grow — the waking slice IS the
+     * selected one, and a parting rule outranks `.picked` on specificity otherwise. */
+    .po-poster.parting .po-slice:not(.picked) {
+      transform: translate3d(0, calc(var(--po-part, 0) * var(--po-part-step)), 0);
+    }
+    body[data-motion="reduced"] .po-slice.waking .po-flashline {
+      animation: none;
+    }
+    body[data-motion="reduced"] .po-slice {
+      transition: none;
+    }
+
+    /* ── THE REGISTRY (the selected machine's data) ────────────────────────────────────────────────────
+     * IN THE FLOW, LAST, and never pinned: production's bottom belongs to the tab bar and the composer
+     * floating over the cards, so a sticky readout there would be the natural wrong implementation. A
+     * READOUT — no buttons; the poster already owns exactly one control per machine. */
+    .po-data {
+      position: relative;
+      z-index: 4;
+      padding: 12px var(--trail) 64px var(--lead);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      line-height: 1.95;
+      color: var(--text-3);
+      animation: gacha-po-swap 200ms var(--gc-ease-out) both;
+    }
+    @keyframes gacha-po-swap {
+      from {
+        opacity: 0;
+      }
+    }
+    body[data-motion="reduced"] .po-data {
+      animation: none;
+    }
+    /* The hostname as a DISPLAY line in the machine's own rarity hue — with the lab's left rail cut, this
+     * is the only place the selected machine is named. */
+    .po-fname {
+      display: block;
+      margin-bottom: 6px;
+      font-family: var(--gc-card-name-font);
+      font-size: clamp(16px, 5.2cqw, 22px);
+      font-weight: var(--gc-card-name-weight);
+      line-height: 1.15;
+      letter-spacing: -0.005em;
+      color: var(--gc-rar);
+      text-shadow: var(--gc-po-fname-shadow);
+      /* a real fleet's names are not four fixed words (the long-name matrix row) */
+      overflow-wrap: anywhere;
+    }
+    .po-fsvc {
+      opacity: 0.8;
+      /* a machine can carry a dozen services with no space in the list at all */
+      overflow-wrap: anywhere;
+    }
+
+    /* ── THE POSTER's BANNER SKIN (the lab's `--bn-*` block, §12.6 ruling 7) ──────────────────────────
+     * The pickup banner is a SLOT the layout dresses, not a component the layout forks: one instance,
+     * re-skinned through `body[data-gc-fleet]` (stamped by GachaRoot from the resolved variant id). Over
+     * the poster's black gold-accented field the furniture goes gold and hard-edged, on a deeper drop.
+     * The lab's gold `0 5px 0` under-banner drop is CUT (owner, round 5): the banner ends cleanly against
+     * the field with nothing drawn under it, and the depth shadow stays because it is depth, not a line. */
+    body[data-gc-fleet="poster"] .gc-banner {
+      box-shadow: var(--gc-po-banner-shadow);
+    }
+    body[data-gc-fleet="poster"] .gc-banner-copy .tag {
+      border-radius: 0;
+      background: var(--gc-rar-5);
+      color: var(--gc-tag-ink);
+    }
+    body[data-gc-fleet="poster"] .gc-banner-copy small {
+      color: var(--gc-po-banner-caption);
+    }
+    body[data-gc-fleet="poster"] .gc-banner-glow {
+      background: var(--gc-po-banner-glow);
+    }
+    body[data-gc-fleet="poster"] .gc-dot.on .pip {
+      background: var(--gc-rar-5);
+    }
+
+    /* ── THE FLEET's LIVE REGION ──────────────────────────────────────────────────────────────────────
+     * Select-then-act's only feedback is a transform and a below-the-fold readout, so the sentence is
+     * carried here instead. The recipe is the kit's own sr-only one (`.bs-close-sr`), restated rather than
+     * shared: adding a third user to a kit rule is a kit change, and this region is gacha's. */
+    .gc-live {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
     /* ── THE UNIT DOSSIER (G2 — the prototype's `.detail-panel` family, theme.css:112-129 + base.css
      *    :34-55) ──────────────────────────────────────────────────────────────────────────────────
      * The theme's ONE light surface, and the only place in gacha where the ink is dark. It is a SURFACE,

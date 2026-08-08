@@ -140,6 +140,16 @@ export const GACHA_COPY = {
    *  the copy edit stays a copy edit instead of a font regeneration. The wording names the SURFACE
    *  (capsule cards) because that is the only thing distinguishing this row from the one above it. */
   settingCardNameFontDesc: "the display face on the capsule cards · 名",
+  /** 編成 (hensei) — "formation"; the FLEET LAYOUT picker (§12.6 E1). The same word the Fleet tab's own
+   *  sub-label and track heading carry, which is the point: this row picks how that formation is drawn.
+   *  Both of its non-ASCII glyphs already ride the frozen subset (編 + 成 via `tabFleet`/`trackHead`, ·
+   *  via every descriptor above), so declaring it costs the font manifest nothing — the rule for a new
+   *  descriptor, not a happy accident. */
+  settingFleetLayoutDesc: "how the fleet presents its machines · 編成",
+  /** 名 (na/mei) — "name"; the POSTER NAME picker, which is layout-scoped (`showWhen`) to the poster and
+   *  chooses only WHERE the machine name sits on a slice. Same 名 as the two face pickers above — a third
+   *  rider on a glyph the subset already carries. */
+  settingPosterNameDesc: "the name's seat on each poster slice · 名",
 } as const;
 
 export type GachaCopyKey = keyof typeof GACHA_COPY;

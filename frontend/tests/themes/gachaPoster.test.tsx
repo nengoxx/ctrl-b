@@ -1,0 +1,456 @@
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// THE POSTER, RENDERED (GACHA_PLAN §12.6 E1) — the R25 §Q7 pins ⑦-⑫ plus the anatomy claims that are
+// checkable without a browser. `useFleet` is mocked to a fixed FleetView and the media index to the
+// fresh-install state (the `gachaFleet.test.tsx` harness), so these exercise the LAYOUT's own wiring
+// rather than the query layer.
+//
+// The layout is driven through the real Surface: `themeSettings.gacha.fleetLayout = "poster"` is what
+// `fleetSurface` resolves against, so every case here also proves the E0 seam resolves a REGISTERED
+// variant end to end rather than a component imported directly.
+
+const fleet = vi.hoisted(() => {
+  const view: Record<string, unknown> = {};
+  return { view };
+});
+vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
+vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => ({ data: undefined }) }));
+
+import { setGachaReelRunning } from "../../src/store/gachaReel";
+import { setThemeSetting, setUI } from "../../src/store/ui";
+import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
+import { GACHA_COPY } from "../../src/themes/gacha/copy";
+import type { Host, HostServiceCfg } from "../../src/types";
+
+/** N CONFIGURED services — the rarity input, and the registry's SERVICES line. */
+const cfg = (names: string[]): HostServiceCfg[] =>
+  names.map((name) => ({ name, kind: null, port: null, path: "/", autostart: false, cmd: {} }));
+
+const host = (id: string, online: boolean, over: Partial<Host> = {}): Host => ({
+  id,
+  name: id,
+  ip: "10.0.0.7",
+  mac: null,
+  ssh_username: null,
+  ssh_port: 22,
+  os_type: "linux",
+  role: "workstation",
+  tags: [],
+  services: cfg(["grafana", "sonarr"]),
+  status: {
+    host_id: id,
+    online,
+    ping_ms: online ? 18 : null,
+    last_seen: "2026-01-01T00:00:00Z",
+    checked_at: "2026-01-01T00:00:00Z",
+    error: null,
+  },
+  ...over,
+});
+
+function setFleet(over: Record<string, unknown> = {}): void {
+  fleet.view = {
+    hosts: [host("pegasus", true), host("atlas", false), host("vault", true)],
+    svcByHost: new Map(),
+    run: vi.fn(() => Promise.resolve()),
+    busy: new Set<string>(),
+    isLoading: false,
+    error: null,
+    hasData: true,
+    svcHasData: true,
+    svcLoading: false,
+    svcError: null,
+    ...over,
+  };
+}
+
+const slices = (c: HTMLElement): HTMLButtonElement[] => [
+  ...c.querySelectorAll<HTMLButtonElement>(".po-slice"),
+];
+const data = (c: HTMLElement): HTMLElement | null => c.querySelector<HTMLElement>(".po-data");
+const live = (c: HTMLElement): string => c.querySelector(".gc-live")?.textContent ?? "";
+const dossierName = (): string | null =>
+  document.querySelector(".gc-dossier-title h2")?.textContent ?? null;
+const runFn = (): ReturnType<typeof vi.fn> => fleet.view.run as ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  setUI({ theme: "gacha", tab: "fleet", motion: "full", themeSettings: {} });
+  setThemeSetting("gacha", "fleetLayout", "poster");
+  setFleet();
+  vi.spyOn(Math, "random").mockReturnValue(0); // the NEW ribbon's roll (unused here, pinned anyway)
+});
+afterEach(() => {
+  try {
+    cleanup();
+  } finally {
+    vi.restoreAllMocks();
+    setGachaReelRunning(false);
+    setUI({ themeSettings: {} });
+  }
+});
+
+// ── the layout resolves, and it is the poster ────────────────────────────────────────────────────────
+describe("the poster resolves through the fleet Surface", () => {
+  it("renders one slice per machine, the INHERITED track head, and no capsule track", () => {
+    const { container } = render(<GachaFleet active />);
+    expect(slices(container)).toHaveLength(3);
+    expect(container.querySelector(".gc-track")).toBeNull();
+    // §12.6 ruling 9: capsule and poster keep the inherited head; the lab's local "Fleet" kicker dies.
+    expect(container.querySelector(".gc-track-head h1")?.textContent).toContain(
+      GACHA_COPY.trackHead,
+    );
+    expect(container.querySelector(".gc-track-head .count")?.textContent).toBe("02 / 03");
+  });
+
+  it("stamps the name treatment on the stack, and the setting moves it", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    // BLADE is the owner's default — declared, not assumed
+    expect(container.querySelector(".po-poster")?.getAttribute("data-name")).toBe("blade");
+    act(() => setThemeSetting("gacha", "posterName", "plate"));
+    rerender(<GachaFleet active />);
+    expect(container.querySelector(".po-poster")?.getAttribute("data-name")).toBe("plate");
+  });
+
+  it("gives every slice ONE accessible name that spells BOTH steps (the two-step contract)", () => {
+    const { container } = render(<GachaFleet active />);
+    expect(slices(container).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "pegasus, workstation, 2 stars, online. Selected. Tap to open the unit dossier.",
+      "atlas, workstation, 2 stars, sleeping. Tap to select; tap again to run the wake sequence.",
+      "vault, workstation, 2 stars, online. Tap to select; tap again to open the unit dossier.",
+    ]);
+  });
+
+  it("selects host[0] at boot by RESOLVING it, and marks it with aria-pressed", () => {
+    const { container } = render(<GachaFleet active />);
+    expect(slices(container).map((b) => b.getAttribute("aria-pressed"))).toEqual([
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(data(container)?.querySelector(".po-fname")?.textContent).toBe("pegasus");
+  });
+});
+
+// ── ⑦ ⑧ ⑨ · SELECT-THEN-ACT ─────────────────────────────────────────────────────────────────────────
+describe("select-then-act", () => {
+  it("⑦ the FIRST tap selects and opens nothing; the SECOND opens the dossier", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[2])); // vault, online, not selected
+    expect(dossierName()).toBeNull();
+    expect(slices(container)[2].getAttribute("aria-pressed")).toBe("true");
+    expect(slices(container)[0].getAttribute("aria-pressed")).toBe("false");
+    expect(runFn()).not.toHaveBeenCalled();
+
+    act(() => void fireEvent.click(slices(container)[2]));
+    expect(dossierName()).toBe("vault");
+  });
+
+  it("⑧ the second tap on a SLEEPING machine wakes it — same seam, and no confirm dialog", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[1])); // atlas: select
+    expect(runFn()).not.toHaveBeenCalled();
+    act(() => void fireEvent.click(slices(container)[1])); // atlas: wake
+    // The SAME `run("wake", host)` the dossier's Wake button calls — no new execution path exists here.
+    expect(runFn()).toHaveBeenCalledTimes(1);
+    expect(runFn().mock.calls[0][0]).toBe("wake");
+    expect((runFn().mock.calls[0][1] as Host).id).toBe("atlas");
+    // …and nothing gates it in the UI: `wake_host` is risk=LOW with no `confirm`, so the registry (D8)
+    // lets it through. The real POST + the no-dialog negative are e2e ㉒ at E4; this is the render-level
+    // half — no dialog, and no dossier either (a wake must not double as an open).
+    expect(document.querySelector(".modal-backdrop")).toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(dossierName()).toBeNull();
+  });
+
+  it("⑨ tapping a DIFFERENT slice re-selects and sends nothing", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[1]));
+    act(() => void fireEvent.click(slices(container)[2]));
+    expect(slices(container).map((b) => b.getAttribute("aria-pressed"))).toEqual([
+      "false",
+      "false",
+      "true",
+    ]);
+    expect(runFn()).not.toHaveBeenCalled();
+    expect(dossierName()).toBeNull();
+  });
+
+  it("routes on the CURRENT liveness — a machine that woke between taps OPENS, it is not re-woken", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[1])); // atlas, asleep: select
+    setFleet({
+      hosts: [host("pegasus", true), host("atlas", true), host("vault", true)],
+      run: fleet.view.run,
+    });
+    rerender(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[1])); // the poll says it is up now
+    expect(runFn()).not.toHaveBeenCalled();
+    expect(dossierName()).toBe("atlas");
+  });
+
+  it("the poster opens the dossier PLAIN — no morph image is handed over (ruling 5②)", () => {
+    // The capsule<->dossier View-Transition morph stays capsule-only by design: a morph clone sourced
+    // from a sheared clip-path has never been seen. The observable half here is that the dossier opens
+    // at all, and that the slice hands the opener no portrait — the slice's `img` is never named.
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[2]));
+    act(() => void fireEvent.click(slices(container)[2]));
+    expect(dossierName()).toBe("vault");
+    for (const img of container.querySelectorAll<HTMLElement>(".po-art img"))
+      expect(img.style.getPropertyValue("view-transition-name")).toBe("");
+  });
+
+  it("the second tap does NOT dismiss the dossier it just opened (the `.gc-host-hit` exemption)", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[2]));
+    act(() => void fireEvent.click(slices(container)[2]));
+    expect(dossierName()).toBe("vault");
+    expect(document.body.dataset.sheet).toBe("open");
+    // the tap-outside listener runs on the document; a slice is exempt by its semantic class
+    expect(slices(container)[2].classList.contains("gc-host-hit")).toBe(true);
+    // …and a real outside tap still closes it. Read through `body[data-sheet]` rather than through the
+    // dossier's presence: the sheet RETAINS its content for the 420 ms exit slide, so the h2 outlives
+    // the close by design.
+    act(() => void fireEvent.click(document.body));
+    expect(document.body.dataset.sheet).toBeUndefined();
+  });
+});
+
+// ── ⑩ · BUSY ────────────────────────────────────────────────────────────────────────────────────────
+describe("⑩ busy reaches the slice", () => {
+  it("disables it, marks aria-busy and carries a class — for ANY in-flight action on that machine", () => {
+    setFleet({ busy: new Set(["atlas"]) });
+    const { container } = render(<GachaFleet active />);
+    const [, atlas, vault] = slices(container);
+    expect(atlas.disabled).toBe(true);
+    expect(atlas.getAttribute("aria-busy")).toBe("true");
+    expect(atlas.classList.contains("busy")).toBe(true);
+    expect(vault.disabled).toBe(false);
+    expect(vault.hasAttribute("aria-busy")).toBe(false);
+  });
+
+  it("refuses a second wake while one is already in flight on that machine", () => {
+    setFleet({ busy: new Set(["atlas"]) });
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[1])); // select
+    act(() => void fireEvent.click(slices(container)[1])); // would wake — but it is busy
+    expect(runFn()).not.toHaveBeenCalled();
+  });
+});
+
+// ── ⑪ ⑫ · THE REGISTRY, AND SELECTION ACROSS POLLS ───────────────────────────────────────────────────
+describe("⑪ the registry follows the live machine", () => {
+  it("prints role / status / ping, the UPTIME dash and the configured services", () => {
+    const { container } = render(<GachaFleet active />);
+    const rows = [...data(container)!.querySelectorAll("div")].map((d) => d.textContent);
+    expect(rows[0]).toBe("WORKSTATION · ONLINE · PING 18 ms");
+    // UPTIME is the DEFERRED seam's ruled em dash — the same one the dossier's metric grid prints.
+    expect(rows[1]).toContain(`UPTIME ${GACHA_COPY.metricPending}`);
+    expect(rows[1]).toContain("SEEN NOW");
+    expect(rows[2]).toBe("SERVICES · GRAFANA · SONARR");
+    // A READOUT: no buttons anywhere in it (the poster owns exactly one control per machine).
+    expect(data(container)!.querySelector("button")).toBeNull();
+  });
+
+  it("follows a POLL that changes the selected machine's own facts", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    expect(data(container)!.textContent).toContain("ONLINE");
+    setFleet({
+      hosts: [host("pegasus", false), host("atlas", false), host("vault", true)],
+      run: fleet.view.run,
+    });
+    rerender(<GachaFleet active />);
+    expect(data(container)!.textContent).toContain("SLEEPING");
+    expect(data(container)!.textContent).toContain(`PING ${GACHA_COPY.metricPending}`);
+  });
+
+  it("says NONE rather than an empty line for a machine with no services", () => {
+    setFleet({ hosts: [host("bare", true, { services: [] })] });
+    const { container } = render(<GachaFleet active />);
+    expect(data(container)!.textContent).toContain("SERVICES · NONE");
+  });
+});
+
+describe("⑫ the selection across polls", () => {
+  it("SURVIVES a re-order — it is keyed on the machine, never on its index", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[2])); // vault
+    setFleet({
+      hosts: [host("vault", true), host("pegasus", true), host("atlas", false)],
+      run: fleet.view.run,
+    });
+    rerender(<GachaFleet active />);
+    expect(slices(container).map((b) => b.getAttribute("aria-pressed"))).toEqual([
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(data(container)?.querySelector(".po-fname")?.textContent).toBe("vault");
+  });
+
+  it("RE-DERIVES when the selected machine leaves the fleet (the view falls back to hosts[0])", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[2])); // vault
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false)], run: fleet.view.run });
+    rerender(<GachaFleet active />);
+    // never empty while machines exist, and never pointing at the gone one
+    expect(slices(container)[0].getAttribute("aria-pressed")).toBe("true");
+    expect(data(container)?.querySelector(".po-fname")?.textContent).toBe("pegasus");
+  });
+
+  it("clears on leaving the tab, and comes back at the resolved default", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[2]));
+    rerender(<GachaFleet active={false} />);
+    rerender(<GachaFleet active />);
+    expect(slices(container)[0].getAttribute("aria-pressed")).toBe("true");
+    expect(live(container)).toBe("");
+  });
+});
+
+// ── THE LIVE REGION (ruling 3) ───────────────────────────────────────────────────────────────────────
+describe("the fleet's live region", () => {
+  it("exists before it is needed, and announces the selection", () => {
+    const { container } = render(<GachaFleet active />);
+    const region = container.querySelector(".gc-live")!;
+    expect(region.getAttribute("aria-live")).toBe("polite");
+    expect(region.getAttribute("role")).toBe("status");
+    expect(region.textContent).toBe(""); // mounted empty — a region added WITH its text is missed
+    act(() => void fireEvent.click(container.querySelectorAll<HTMLElement>(".po-slice")[1]));
+    expect(live(container)).toBe("atlas selected. WORKSTATION, 2 stars, SLEEPING.");
+  });
+
+  it("announces the wake REQUEST, and never claims the machine came up", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(slices(container)[1]));
+    act(() => void fireEvent.click(slices(container)[1]));
+    expect(live(container)).toBe("Waking atlas.");
+  });
+});
+
+// ── THE WAKE CEREMONY (ruling 4 + 10) ────────────────────────────────────────────────────────────────
+describe("the wake ceremony", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const wake = (c: HTMLElement) => {
+    act(() => void fireEvent.click(slices(c)[1]));
+    act(() => void fireEvent.click(slices(c)[1]));
+  };
+
+  it("parts the stack, sweeps the waking slice, and lands back at rest", () => {
+    const { container } = render(<GachaFleet active />);
+    wake(container);
+    act(() => void vi.advanceTimersByTime(0));
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(true);
+    // the parting is expressed around the WAKING slice: above it lifts, below it drops, it stays put
+    expect(slices(container).map((b) => b.style.getPropertyValue("--po-part"))).toEqual([
+      "-1",
+      "0",
+      "1",
+    ]);
+    act(() => void vi.advanceTimersByTime(180));
+    expect(slices(container)[1].classList.contains("waking")).toBe(true);
+    act(() => void vi.advanceTimersByTime(520));
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
+    act(() => void vi.advanceTimersByTime(200));
+    expect(container.querySelector(".po-slice.waking")).toBeNull();
+  });
+
+  it("is POLL-TRUTHFUL: the chip says WAKING while the request flies, then the SERVER's word", async () => {
+    let settle = () => {};
+    setFleet({ run: vi.fn(() => new Promise<void>((r) => (settle = r))) });
+    const { container } = render(<GachaFleet active />);
+    wake(container);
+    expect(slices(container)[1].querySelector(".po-chip")!.textContent).toBe("WAKING");
+    await act(async () => {
+      settle();
+      await Promise.resolve();
+    });
+    // …and it falls back to SLEEPING, not to ONLINE: only a hosts poll may flip a machine up.
+    expect(slices(container)[1].querySelector(".po-chip")!.textContent).toBe("SLEEPING");
+  });
+
+  it("TAP-ANYWHERE-SKIP completes every remaining beat at once (R24 §B.3)", () => {
+    const { container } = render(<GachaFleet active />);
+    wake(container);
+    act(() => void vi.advanceTimersByTime(200));
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(true);
+    act(() => void fireEvent.pointerDown(document.body));
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
+    expect(container.querySelector(".po-slice.waking")).toBeNull();
+    // completed, not abandoned: advancing past the budget changes nothing further
+    act(() => void vi.advanceTimersByTime(2000));
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
+  });
+
+  it("collapses to the end state under REDUCED motion, request and announcement intact", () => {
+    act(() => setUI({ motion: "reduced" }));
+    const { container } = render(<GachaFleet active />);
+    wake(container);
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
+    expect(container.querySelector(".po-slice.waking")).toBeNull();
+    expect(runFn()).toHaveBeenCalledTimes(1);
+    expect(live(container)).toBe("Waking atlas.");
+  });
+});
+
+// ── THE SHARED STATES + the resilience rows ──────────────────────────────────────────────────────────
+describe("the poster's states match the capsule track's", () => {
+  it("renders the empty-fleet message once a poll has answered with nothing", () => {
+    setFleet({ hosts: [] });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-msg")?.textContent).toBe("no hosts in config.yaml");
+    expect(container.querySelector(".po-poster")).toBeNull();
+    expect(container.querySelector(".po-data")).toBeNull();
+  });
+
+  it("renders NOTHING below the head while the first poll is in flight", () => {
+    setFleet({ hosts: [], isLoading: true, hasData: false });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-msg")).toBeNull();
+    expect(container.querySelector(".po-poster")).toBeNull();
+  });
+
+  it("renders the error BESIDE the stack the last good poll left", () => {
+    setFleet({ error: new Error("boom") });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-msg")?.textContent).toBe("backend unreachable: boom");
+    expect(slices(container)).toHaveLength(3);
+  });
+
+  it("refuses input while the reel sweeps (§6.4/F3), like the capsule track", () => {
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".po-body")!.hasAttribute("inert")).toBe(false);
+    act(() => setGachaReelRunning(true));
+    expect(container.querySelector(".po-body")!.hasAttribute("inert")).toBe(true);
+    act(() => setGachaReelRunning(false));
+    expect(container.querySelector(".po-body")!.hasAttribute("inert")).toBe(false);
+  });
+
+  it("a long hostname and a long service list cannot run out of their boxes", () => {
+    // The GEOMETRY is a device-round claim; what is assertable here is that the two unbounded strings
+    // are drawn by the elements that carry the wrapping/clipping rules (gacha.css `.po-fname`,
+    // `.po-fsvc`, `.po-plate { overflow: clip }`) — the long-name acceptance-matrix row.
+    setFleet({
+      hosts: [
+        host("this-is-an-extremely-long-machine-hostname-for-a-homelab", true, {
+          services: cfg(["grafana", "prometheus", "sonarr", "radarr", "jellyfin", "qbittorrent"]),
+        }),
+      ],
+    });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".po-fname")).not.toBeNull();
+    expect(container.querySelector(".po-fsvc")!.textContent).toContain("QBITTORRENT");
+    expect(container.querySelector(".po-plate")).not.toBeNull();
+  });
+
+  it("draws a slice with NO art rather than dropping the machine (the placeholder case)", () => {
+    setFleet({ hosts: [host("solo", true)] });
+    const { container } = render(<GachaFleet active />);
+    expect(slices(container)).toHaveLength(1);
+    expect(container.querySelector(".po-name b")?.textContent).toBe("SOLO");
+    expect(container.querySelector(".po-chip")?.textContent).toBe("ONLINE");
+  });
+});

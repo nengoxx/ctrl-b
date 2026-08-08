@@ -9,6 +9,7 @@ import { GACHA_COPY } from "./copy";
 import { GachaAgent } from "./GachaAgent";
 import { GachaFleet } from "./GachaFleet";
 import { GachaReel } from "./GachaReel";
+import { fleetSurface } from "./fleetSurface";
 import { wallpaperArt } from "./roster";
 import { useGachaRoster } from "./useGachaRoster";
 
@@ -23,10 +24,12 @@ import { useGachaRoster } from "./useGachaRoster";
 // Honors the global `ui.appbarMode` lever (all themes). gacha omits `layouts` (offers every preset) and
 // declares `defaultLayout: "3-tab"` (registry) — the prototype's own Fleet/Agent/Settings shape.
 //
-// The FIVE cosmetic settings are applied as body ATTRS (the MinimalRoot/VaporRoot precedent: settings →
+// The SIX cosmetic axes are applied as body ATTRS (the MinimalRoot/VaporRoot precedent: settings →
 // pre-paint body attr → CSS), not as props: they change how things LOOK, never what is rendered. Every one
 // is cleared on unmount so a switched-to skin can never inherit gacha's stale attrs (the §10.5 switch-out
-// cleanup ledger — `applyBodyAttrs` doesn't own these).
+// cleanup ledger — `applyBodyAttrs` doesn't own these). The sixth, `data-gc-fleet`, is the RESOLVED fleet
+// layout: it is the hook the pickup banner's per-layout SKIN keys off, and the banner lives above the fleet
+// body, so a body-scoped prop could never have reached it.
 // The theme's composer addons. gacha fills exactly one field: the input's PLACEHOLDER, which the prototype
 // writes in Japanese (index.html: `<input placeholder="コマンド入力…">`). It rides `composerSlots` rather
 // than a new Root prop because that object IS the theme's channel into whichever composer VARIANT is active,
@@ -64,6 +67,13 @@ export function GachaRoot() {
   // mechanism, opposite default — `bungee` is this axis's base declaration, so it is the value that
   // stamps an attr no tokens.css block matches.
   const cardNameFont = useThemeSetting<string>("gacha", "cardNameFont");
+  // The RESOLVED fleet layout, as a sixth body attr (§12.6 ruling 7). It is stamped — rather than passed —
+  // for the same reason the five above are: the surfaces that need to know are OUTSIDE the fleet body. The
+  // pickup banner is a SLOT the layout dresses, not a component the layout forks, so the poster's gold
+  // furniture is `body[data-gc-fleet="poster"] .gc-banner …` in gacha.css over the one banner instance.
+  // Read through the Surface's own resolver at RENDER time (never at module scope — surface.ts's
+  // import-cycle rule), so it is the same validated value `Themed` renders and the two cannot disagree.
+  const fleetLayout = fleetSurface.useVariantId();
   // The fleet wallpaper's resolved art (M10), through the theme's ONE art seam (G5). THREE rungs since
   // G6.3: a `wallpaper:` pin naming a character, else the SHARED kit background, else the bundled scene —
   // gacha's own `wallpaper/` drop folder was removed at the same ruling, so the shared one is the drop-in
@@ -85,6 +95,7 @@ export function GachaRoot() {
     b.dataset.gcDossier = dossier;
     b.dataset.gcNamefont = nameFont;
     b.dataset.gcCardnamefont = cardNameFont;
+    b.dataset.gcFleet = fleetLayout;
     // The fleet wallpaper's ART (M10). It is published as a custom property on `body` rather than rendered,
     // because the layer itself is a BACKGROUND on `.kit-main` — a node DefaultRoot owns — and a custom
     // property only reaches it from an ancestor. Same resolver as every other gacha surface, so a
@@ -99,10 +110,11 @@ export function GachaRoot() {
       delete b.dataset.gcDossier;
       delete b.dataset.gcNamefont;
       delete b.dataset.gcCardnamefont;
+      delete b.dataset.gcFleet;
       b.style.removeProperty("--gc-wallpaper-img");
       b.style.removeProperty("--gc-wallpaper-pos");
     };
-  }, [wallpaper, oracle, dossier, nameFont, cardNameFont, artUrl, artFocus]);
+  }, [wallpaper, oracle, dossier, nameFont, cardNameFont, fleetLayout, artUrl, artFocus]);
 
   return (
     <>

@@ -1,4 +1,5 @@
 import { createSurface } from "../../theme-engine/surface";
+import { GachaPoster } from "./GachaPoster";
 import { GachaTrack, type GachaTrackProps } from "./GachaTrack";
 
 // THE FLEET SURFACE — gacha's fleet LAYOUT registry (GACHA_PLAN §12.6 ruling 1). Fleet graduated from
@@ -15,7 +16,13 @@ import { GachaTrack, type GachaTrackProps } from "./GachaTrack";
 // (E2). Concept C is PARKED, not killed — no fourth variant without an owner ruling, and the `fleetLayout`
 // seg's option list is what enforces it (`resolveThemeSetting` only resolves an id the theme declared).
 //
-// `capsule` is the seeded default and the fallback, so today every resolution lands on GachaTrack: E0 ships
-// the seam with NO settings row at all (§12.6: "no lying options" — `fleetLayout` stays undeclared until the
-// layout it names exists).
+// `capsule` is the seeded default and the fallback, so a fresh install and every unknown/stale value still
+// land on GachaTrack. E1 adds `poster` — and with it the `fleetLayout` settings row, which E0 deliberately
+// withheld (§12.6: "no lying options" — a value is offered only once the layout it names exists).
 export const fleetSurface = createSurface<GachaTrackProps>("fleetLayout", "capsule", GachaTrack);
+
+// MODULE SCOPE, per the Surface's registration contract: a variant registers as its module loads, and
+// `switchTheme`'s preload guarantees gacha's chunk has run before its Root renders. Reading `fleetSurface`
+// here is safe under the import-cycle rule (surface.ts's ⚠ note) — it is this module's OWN binding, already
+// initialized on the line above, not a binding read through the cycle.
+fleetSurface.register("poster", GachaPoster);
