@@ -942,26 +942,42 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     ).toEqual([]);
   });
 
-  it("…and CATCHES the multi-line escape that the line-anchored form let through (the fixture)", () => {
-    // Codex's own counter-example, run through the same classifier this suite uses. It has to FAIL, or
-    // the guard above is decorative. Kept as a fixture rather than as a comment because the failure mode
-    // was invisible: the old regex simply did not see the rule at all.
-    const escape = `
-@layer theme {
-  @scope ([data-skin="gacha"]) {
+  it("…and CATCHES the escapes a naive scan lets through (the adversarial fixtures)", () => {
+    // Codex's own counter-examples, run through the same reader this suite uses. They have to be CAUGHT,
+    // or the guard above is decorative — and each failure mode was invisible from the outside: the rule
+    // was simply never seen. Kept as fixtures rather than as comments for exactly that reason.
+    const caught = (css: string) => selectorsMentioning(css, "[data-gc-fleet");
+
+    // (a) the ordinary MULTI-LINE list — the escape the line-anchored form was blind to
+    const multiline = `
     body[data-gc-fleet="cover"] .gc-banner,
     .some-other-selector {
       background: red;
-    }
-  }
-}`;
-    const caught = selectorsMentioning(escape, "[data-gc-fleet");
-    expect(caught.map(({ selector }) => selector)).toEqual([
+    }`;
+    expect(caught(multiline).map((c) => c.selector)).toEqual([
       'body[data-gc-fleet="cover"] .gc-banner',
     ]);
-    expect(caught[0].rule.declarations).toMatch(/(^|[\s;])background/);
-    // …and it is not poster's, so the last arm above would reject it too
-    expect(caught[0].selector.includes('data-gc-fleet="poster"')).toBe(false);
+    expect(caught(multiline)[0].rule.declarations).toMatch(/(^|[\s;])background/);
+
+    // (b) a QUOTED BRACE inside an attribute selector — brace counting ends the header early and the
+    //     rule vanishes from the enumeration entirely
+    const quotedBrace = `body[data-gc-fleet="cover"][data-probe="}"] .gc-banner { background: red; }`;
+    expect(caught(quotedBrace).map((c) => c.selector)).toEqual([
+      'body[data-gc-fleet="cover"][data-probe="}"] .gc-banner',
+    ]);
+    expect(caught(quotedBrace)[0].rule.declarations).toMatch(/(^|[\s;])background/);
+
+    // (c) a nested comma inside `:is()` — splitting every comma tears the selector in half and the
+    //     `.kit-main` half walks out of the list unexamined
+    const isList = `body[data-gc-fleet="poster"] :is(.x, .kit-main) { color: red; }`;
+    const isCaught = caught(isList);
+    expect(isCaught).toHaveLength(1);
+    expect(isCaught[0].selector, "the :is() list must survive whole").toContain(".kit-main");
+    expect(isCaught[0].selector).toMatch(/\.kit-main|\.kit\b|#tab-|\.tab\b/); // the guard would reject it
+
+    // (d) a quoted brace in a DECLARATION — it truncated the body before the property that matters
+    const quotedDecl = `body[data-gc-fleet="poster"] .x { content: "}"; background: red; }`;
+    expect(caught(quotedDecl)[0].rule.declarations).toMatch(/(^|[\s;])background/);
   });
 
   it("compacts the banner->head->stack seam, POSTER-ONLY and vertical-only", () => {

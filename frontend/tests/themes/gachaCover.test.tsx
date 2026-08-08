@@ -364,8 +364,27 @@ describe("the promote ceremony", () => {
     expect(page(container).classList.contains("turning")).toBe(false);
     expect(container.querySelector(".cv-mast")!.classList.contains("beating")).toBe(false);
     expect(live(container)).toBe("atlas is on the cover. WORKSTATION, 2 stars, SLEEPING.");
-    // exactly ONE live-region child, i.e. one committed announcement for the whole gesture
-    expect(container.querySelectorAll(".gc-live span")).toHaveLength(1);
+  });
+
+  it("…and that ONE announcement is one COMMITTED mutation, not one surviving span", () => {
+    // The previous oracle counted `.gc-live span`, of which there is always exactly one — structural, and
+    // true whatever happened (Codex E2-confirm L2). What the ruling actually claims is that the region
+    // MUTATES once, so the region is observed across the whole gesture and every committed text recorded.
+    act(() => setUI({ motion: "reduced" }));
+    const { container } = render(<GachaFleet active />);
+    const region = container.querySelector(".gc-live")!;
+    const obs = new MutationObserver(() => {});
+    obs.observe(region, { childList: true });
+    act(() => void fireEvent.click(cutCards(container)[0]));
+    // DRAINED SYNCHRONOUSLY: a MutationObserver's callback is a microtask, so reading it after the act
+    // returns nothing at all. `takeRecords` is the queue itself, and each announcement is one keyed-child
+    // swap — so the records ARE the committed announcements.
+    const spoken = obs
+      .takeRecords()
+      .flatMap((r) => [...r.addedNodes])
+      .map((n) => n.textContent ?? "");
+    obs.disconnect();
+    expect(spoken).toEqual(["atlas is on the cover. WORKSTATION, 2 stars, SLEEPING."]);
   });
 
   it("narrates BOTH ends in the lab's wording, and the body stays quiet under this grammar", () => {
@@ -454,29 +473,34 @@ describe("the promote ceremony", () => {
     //
     // The commit seam cannot do that: it selects a still-present machine or refuses, and it never reads
     // liveness at all.
-    setFleet({ hosts: [host("pegasus", true), host("atlas", false)] });
+    // A SPARE MACHINE OUTLIVES THE POLL (Codex E2-confirm L2): if the target were the only host left, the
+    // render-derived FALLBACK would make it hero even when the commit was lost, and the oracle could not
+    // tell the two apart. `relay` is hosts[0] after the poll, so it is what the fallback would choose —
+    // "atlas is on the cover" can therefore only mean the commit survived.
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false), host("relay", true)] });
     const { container, rerender } = render(<GachaFleet active />);
     expect(heroName(container)).toBe("PEGASUS");
     act(() => void fireEvent.click(cutCards(container)[0])); // atlas, asleep — a promote
     act(() => void vi.advanceTimersByTime(50)); // still inside the fold, before the commit
 
-    setFleet({ hosts: [host("atlas", false)], run: fleet.view.run }); // the poll drops the hero
+    setFleet({ hosts: [host("relay", true), host("atlas", false)], run: fleet.view.run });
     rerender(<GachaFleet active />);
     act(() => void vi.advanceTimersByTime(1000)); // the commit beat lands on the NEW fleet
 
     expect(runFn(), "the promote must never become a wake").not.toHaveBeenCalled();
     expect(dossierName(), "…nor a dossier open").toBeNull();
-    expect(heroName(container)).toBe("ATLAS"); // the selection landed, which is all it could ever do
+    expect(heroName(container)).toBe("ATLAS"); // the COMMIT landed — the fallback would have said RELAY
     expect(container.querySelector(".cv-card.developing")).toBeNull();
   });
 
   it("…and the ONLINE form of the same race cannot open a dossier either", () => {
     // The other half of the finding: with an ONLINE tapped machine the old re-route returned `open`.
-    setFleet({ hosts: [host("pegasus", true), host("vault", true)] });
+    setFleet({ hosts: [host("pegasus", true), host("vault", true), host("relay", true)] });
     const { container, rerender } = render(<GachaFleet active />);
     act(() => void fireEvent.click(cutCards(container)[0])); // vault, ONLINE — still a promote under cover
     act(() => void vi.advanceTimersByTime(50));
-    setFleet({ hosts: [host("vault", true)], run: fleet.view.run });
+    // …and again a spare survives, so RELAY is what a lost commit would fall back to
+    setFleet({ hosts: [host("relay", true), host("vault", true)], run: fleet.view.run });
     rerender(<GachaFleet active />);
     act(() => void vi.advanceTimersByTime(1000));
     expect(dossierName()).toBeNull();
@@ -497,6 +521,88 @@ describe("the promote ceremony", () => {
     expect(live(container)).toBe("atlas takes the cover."); // no settled sentence followed
     expect(heroName(container)).toBe("PEGASUS");
     expect(runFn()).not.toHaveBeenCalled();
+  });
+
+  it("an ACCEPTED commit survives a poll that strands the PREVIOUS pick (Codex E2-confirm M1)", () => {
+    // ⚠ A CONTRACT TEST, NOT A REGRESSION TEST, and the distinction is stated because it was measured:
+    // this case passes on the pre-fix code too. The finding reasoned that the passive stale-pick
+    // normalizer, holding `pickedId` in its closure, could clear a newer accepted commit — but React
+    // COALESCES passive effects to the LATEST commit, so by the time the effect runs its closure already
+    // carries the committed value and the stale one it was supposed to act on no longer exists. Every
+    // ordering tried (poll-then-beat in one act, and the beat landing before the flush) produced the same
+    // hero either way. The functional compare-and-clear still SHIPS — it is the canonical form, it costs
+    // nothing, and it removes the reliance on that coalescing entirely — but this test pins the INVARIANT
+    // rather than proving a fix, and it should not be read as evidence the race was live.
+    //
+    // The setup needs a STORED pick that goes stale, which under cover only `onCommitSelect` can create:
+    // promote atlas first, then promote relay while atlas is being polled away.
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false), host("relay", true)] });
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0])); // promote atlas …
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container)).toBe("ATLAS"); // …so `pickedId` now STORES atlas
+
+    act(() => void fireEvent.click(cutCards(container)[1])); // promote relay
+    act(() => void vi.advanceTimersByTime(50));
+    // the poll drops atlas — the stored pick — in the SAME window the commit lands in
+    act(() => {
+      setFleet({ hosts: [host("pegasus", true), host("relay", true)], run: fleet.view.run });
+      rerender(<GachaFleet active />);
+      vi.advanceTimersByTime(1000);
+    });
+
+    // pegasus is hosts[0] and is still here, so it is what a LOST commit would fall back to
+    expect(heroName(container), "the accepted commit must survive normalization").toBe("RELAY");
+    // …and the sentence describes the machine that is actually on the cover
+    expect(live(container)).toBe("relay is on the cover. WORKSTATION, 2 stars, ONLINE.");
+  });
+
+  it("RESTORES FOCUS across an INTERMEDIATE hero change, then on its own (Codex E2-confirm F3)", () => {
+    // `[pegasus, relay, atlas]`: focus and promote ATLAS, then poll pegasus away before the commit. relay
+    // becomes the fallback hero — a hero change that has nothing to do with this gesture. Spending the arm
+    // there left atlas's own promotion, 120 ms later, to reparent it with no restoration at all.
+    setFleet({ hosts: [host("pegasus", true), host("relay", true), host("atlas", false)] });
+    const { container, rerender } = render(<GachaFleet active />);
+    const tapped = cutCards(container)[1]; // atlas
+    expect(tapped.dataset.gcHost).toBe("atlas");
+    act(() => void tapped.focus());
+    act(() => void fireEvent.click(tapped));
+    act(() => void vi.advanceTimersByTime(50)); // before the commit
+
+    setFleet({ hosts: [host("relay", true), host("atlas", false)], run: fleet.view.run });
+    rerender(<GachaFleet active />);
+    // the INTERMEDIATE hero — not ours, and it must not consume the arm
+    expect(heroCard(container).dataset.gcHost).toBe("relay");
+
+    act(() => void vi.advanceTimersByTime(1000)); // now atlas's own commit lands
+    const hero = heroCard(container);
+    expect(hero.dataset.gcHost).toBe("atlas");
+    expect(hero).not.toBe(tapped);
+    expect(document.activeElement, "the arm waits for ITS host's promotion").toBe(hero);
+  });
+
+  it("drops the focus arm when its machine leaves, or when the commit REFUSES", () => {
+    // The two bounds on an arm that will never be spent. Neither may leave it live for an unrelated turn.
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false), host("relay", true)] });
+    const { container, rerender } = render(<GachaFleet active />);
+    const tapped = cutCards(container)[0]; // atlas
+    act(() => void tapped.focus());
+    act(() => void fireEvent.click(tapped));
+    act(() => void vi.advanceTimersByTime(50));
+
+    // atlas itself leaves: the commit refuses AND the armed machine is gone
+    setFleet({ hosts: [host("pegasus", true), host("relay", true)], run: fleet.view.run });
+    rerender(<GachaFleet active />);
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container)).toBe("PEGASUS");
+
+    // a LATER, unrelated promotion of a machine that happens to reuse the id must not be focus-stolen by
+    // the dead arm: relay takes the cover, and focus stays where the (pointer) user left it
+    act(() => void document.body.focus());
+    act(() => void fireEvent.click(cutCards(container)[0])); // relay
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container)).toBe("RELAY");
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("RESTORES FOCUS when the old hero leaves BEFORE the commit beat (Codex E2 MED-3)", () => {
@@ -523,28 +629,50 @@ describe("the promote ceremony", () => {
     // Auto-repeat turns one press into a stream of keydown/click pairs. The first is the gesture; the
     // rest are the same gesture still being held, and after a skip the first repeat would land on a
     // ceremony that has just ended and route for real.
+    // REPRODUCED FROM THE START OF THE GESTURE (Codex E2-confirm L2): a genuine first keydown, the click
+    // it produces landing mid-ceremony as a SKIP, and only then the repeats. Starting the test at
+    // `repeat: true` skipped the very sequence the finding describes.
     const { container } = render(<GachaFleet active />);
-    const target = cutCards(container)[1]; // vault
-    // a genuine press acts …
-    act(() => void fireEvent.keyDown(target, { key: "Enter" }));
-    act(() => void fireEvent.click(target));
+    act(() => void fireEvent.click(cutCards(container)[0])); // a promote is running (atlas)
+    act(() => void vi.advanceTimersByTime(50));
+    const held = cutCards(container)[1]; // vault — the key is held down on THIS control
+
+    // 1. the held key's FIRST activation: it lands on a live ceremony, so it is a skip and nothing else
+    act(() => void fireEvent.keyDown(held, { key: "Enter" }));
+    act(() => void fireEvent.click(held));
+    expect(page(container).classList.contains("turning")).toBe(false); // it skipped
+    expect(heroName(container)).toBe("ATLAS"); // the skipped promote completed; vault was NOT promoted
+
+    // 2. the SAME key, still held: the ceremony is over now, so an unswallowed repeat would route for real
+    act(() => void fireEvent.keyDown(held, { key: "Enter", repeat: true }));
+    act(() => void fireEvent.click(held));
+    act(() => void fireEvent.keyDown(held, { key: "Enter", repeat: true }));
+    act(() => void fireEvent.click(held));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container), "repeats of a held key are one spent gesture").toBe("ATLAS");
+
+    // 3. …and the flag never goes stale: a genuine new press works
+    act(() => void fireEvent.keyDown(held, { key: "Enter" }));
+    act(() => void fireEvent.click(held));
     act(() => void vi.advanceTimersByTime(1000));
     expect(heroName(container)).toBe("VAULT");
+  });
 
-    // … and the repeats of a NEW held press do not, however many arrive
-    const next = cutCards(container)[0];
-    act(() => void fireEvent.keyDown(next, { key: "Enter", repeat: true }));
-    act(() => void fireEvent.click(next));
-    act(() => void fireEvent.keyDown(next, { key: "Enter", repeat: true }));
-    act(() => void fireEvent.click(next));
+  it("a held SPACE still activates — exactly once, on its release (Codex E2-confirm L1)", () => {
+    // Enter activates on KEYDOWN, so its repeats are extra activations and are rightly swallowed. SPACE
+    // activates on KEYUP — its repeats produce no click at all, and the one real click arrives after they
+    // have set the flag. Without a keyup reset a held Space did nothing whatsoever.
+    const { container } = render(<GachaFleet active />);
+    const held = cutCards(container)[1]; // vault
+    act(() => void fireEvent.keyDown(held, { key: " " }));
+    act(() => void fireEvent.keyDown(held, { key: " ", repeat: true }));
+    act(() => void fireEvent.keyDown(held, { key: " ", repeat: true }));
+    // no click has been produced yet — Space does not activate until it is released
+    expect(heroName(container)).toBe("PEGASUS");
+    act(() => void fireEvent.keyUp(held, { key: " " }));
+    act(() => void fireEvent.click(held)); // the browser's own activation, after keyup
     act(() => void vi.advanceTimersByTime(1000));
-    expect(heroName(container)).toBe("VAULT"); // unmoved
-
-    // …and the ref never goes stale: the next real press works, and so does a pointer gesture
-    act(() => void fireEvent.keyDown(next, { key: "Enter" }));
-    act(() => void fireEvent.click(next));
-    act(() => void vi.advanceTimersByTime(1000));
-    expect(heroName(container)).not.toBe("VAULT");
+    expect(heroName(container), "held Space must activate exactly once").toBe("VAULT");
   });
 
   it("a POINTER gesture is never swallowed by a stale key-repeat flag", () => {
