@@ -579,8 +579,9 @@ describe.each(registeredThemes().map((d) => [d.id, d] as const))(
 //    so the row could never show — a dead declaration, not a hidden one); and the dependent must be declared
 //    IMMEDIATELY AFTER its
 //    controller, because declaration order IS render order and the owner's ruling was "it pops up right
-//    below". Vacuous today — no registered theme declares `showWhen` (gacha's `posterName` lands at E1) —
-//    so the fixture suite below is what proves the rules actually bite. ──
+//    below". LIVE since E1 — gacha's `posterName` is gated on `fleetLayout` — so the auto-iterated
+//    assertion above now has a real declaration to check; the fixture suite below is what proves each
+//    individual rule bites, since one passing theme cannot demonstrate six failure modes. ──
 function showWhenViolations(spec: ThemeSettingsSpec): string[] {
   const keys = Object.keys(spec);
   const out: string[] = [];
