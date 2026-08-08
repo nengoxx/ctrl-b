@@ -148,13 +148,38 @@ export function roleLabel(host: Host): string {
 // select-and-open precedent); a SLEEPING machine keeps the two-step, where the first tap is the guard
 // against waking a machine by mistake and the second is the ceremony's cue.
 //
-// The rule is a pure function so it can be read as a table, and so the render tests assert an OUTCOME
-// rather than the presence of a branch. Two council clauses live in the CALLER, not here, and are worth
-// naming: liveness must come from the CURRENT render (never captured at the first tap — a machine that woke
-// between two taps must open, not wake again), and a `wake` result NO-OPS while that host is busy.
+// …EXCEPT ON THE COVER (§12.6 ruling 9 + the walked lab, ruled by the main seat at E2), which keeps the
+// ORIGINAL select-then-act table: a cut-in is not a machine you act on, it is the NEXT COVER — tapping one
+// always promotes it, online or not, because the promotion IS the composition changing. The third-walk
+// narrowing was about a STACK of equal slices, where "open the one I tapped" is the obvious read; a cover
+// has one hero and N supporting cut-ins, and there the obvious read is "put that one on the cover".
+//
+// The rule is ONE pure function so both grammars can be read as one table, and so the render tests assert an
+// OUTCOME rather than the presence of a branch. Two grammars, ONE function, because they differ in exactly
+// one row (an online machine that is not the selection) — two near-duplicate three-line tables would be the
+// classic way to let that row drift. Two council clauses live in the CALLER, not here, and are worth naming:
+// liveness must come from the CURRENT render (never captured at the first tap — a machine that woke between
+// two taps must open, not wake again), and a `wake` result NO-OPS while that host is busy.
 
 /** What a tap on a machine does under select-then-act. */
 export type FleetTap = "select" | "open" | "wake";
+
+/** WHICH tap table a fleet layout reads.
+ *
+ *  · `act-first` — capsule/poster (the owner's third-walk narrowing): an ONLINE machine acts on tap ONE.
+ *  · `select-first` — cover (the walked lab): a machine that is not the current selection is SELECTED
+ *    first, whatever its liveness; only the selection itself acts. */
+export type TapGrammar = "act-first" | "select-first";
+
+/** The grammar a registered fleet layout uses. Keyed on the layout id `fleetSurface` resolves, and it
+ *  DEGRADES THE SAME WAY that resolver does — an unknown id there falls back to `capsule`, and an unknown
+ *  id here falls back to capsule's grammar, so the two can never disagree about a stale synced value.
+ *
+ *  It lives beside the table rather than in `fleetSurface.ts` because it IS part of the table: the two
+ *  grammars and the map from layout to grammar are one decision, unit-tested in one place. */
+export function tapGrammarFor(layoutId: string): TapGrammar {
+  return layoutId === "cover" ? "select-first" : "act-first";
+}
 
 /** The RESOLVED selection — the machine an alt layout is actually showing as picked (§12.6 ruling 2).
  *
@@ -173,13 +198,30 @@ export function resolvePick(pickedId: string | null, hosts: readonly Host[]): st
 
 /** Route one tap. `selectedId` is the RESOLVED selection the view is rendering (`picked ?? hosts[0]?.id`,
  *  §12.6 ruling 2 — resolved in the view, never written to state), `tappedId` the machine that was tapped,
- *  and `online` its liveness AS CURRENTLY RENDERED.
+ *  `online` its liveness AS CURRENTLY RENDERED, and `grammar` the tapped layout's table (`tapGrammarFor`).
  *
- *  An ONLINE machine never returns a bare `select`: opening its dossier IS the act, and the caller selects
- *  it on the way through. `selectedId` therefore only matters while a machine is asleep. */
-export function tapAction(selectedId: string | null, tappedId: string, online: boolean): FleetTap {
+ *  THE WHOLE TABLE, both grammars, eight rows:
+ *
+ *    selected?  online?  act-first (capsule/poster)   select-first (cover)
+ *    ─────────  ───────  ─────────────────────────    ────────────────────
+ *       yes       yes    open                         open      (the hero opens its dossier)
+ *       yes        no    wake                         wake      (the hero develops)
+ *        no       yes    open  (+ selects on the way)  select   (the cut-in takes the cover)
+ *        no        no    select                       select
+ *
+ *  Under `act-first` an ONLINE machine never returns a bare `select`: opening its dossier IS the act, and
+ *  the caller selects it on the way through — so `selectedId` only matters while a machine is asleep. */
+export function tapAction(
+  selectedId: string | null,
+  tappedId: string,
+  online: boolean,
+  grammar: TapGrammar,
+): FleetTap {
+  const selected = tappedId === selectedId;
+  // the one row the two grammars disagree on — a cover's cut-in is promoted, never opened
+  if (!selected && grammar === "select-first") return "select";
   if (online) return "open";
-  return tappedId !== selectedId ? "select" : "wake";
+  return selected ? "wake" : "select";
 }
 
 /** The alt layouts' accessible name, and it says exactly as many steps as the control HAS (the lab's own
@@ -201,6 +243,89 @@ export function pickLabel(host: Host, stars: number, selected: boolean): string 
   return selected
     ? `${head}Selected. Tap to run the wake sequence.`
     : `${head}Tap to select; tap again to run the wake sequence.`;
+}
+
+/** THE COVER's accessible names (E2 — the lab's `labelCover`, wording verbatim). Two forms, because a
+ *  cover has two kinds of control and they do two different things: the HERO opens or develops, a CUT-IN
+ *  always puts itself on the cover. Same law as `pickLabel` — a control's name says exactly what it does,
+ *  and it carries the liveness because an `aria-label` REPLACES the chip text inside the button.
+ *
+ *  A THIRD builder rather than a mode on `pickLabel`: cover's sentences are not that one's with a word
+ *  changed (they name the cover, not a selection), and `openLabel` — the capsule card + banner promo's —
+ *  still has to stay byte-identical (R25 §Q1d). */
+export function labelCover(host: Host, stars: number, isHero: boolean): string {
+  const online = !!host.status?.online;
+  const head = `${host.name}, ${roleLabel(host).toLowerCase()}, ${stars} stars, `;
+  if (isHero)
+    return (
+      `${head}on the cover, ` +
+      (online ? "online. Opens the unit dossier." : "sleeping. Develops the cover and wakes it.")
+    );
+  return `${head}${online ? "online" : "sleeping"}. Supporting cut-in. Puts it on the cover.`;
+}
+
+/** The cover's ISSUE line — `ISSUE 01 · ONLINE`, the masthead's own read of which machine is on the cover
+ *  and how it is doing. The lab's `ISSUE 0${hero+1} · ${status}` with the zero-pad made honest past nine
+ *  (`counterText`'s idiom: pad to two, then let the natural width take over).
+ *
+ *  It is why cover ignores the shared `counter` prop: `NN / NN` is the TRACK's read, and a magazine states
+ *  its issue number instead. A nonsense index resolves to issue 01 rather than throwing on a render path. */
+export function issueLine(heroIndex: number, online: boolean): string {
+  const n = Number.isFinite(heroIndex) ? Math.max(0, Math.trunc(heroIndex)) + 1 : 1;
+  return `${GACHA_COPY.coverIssue} ${String(n).padStart(2, "0")} ${GACHA_COPY.sep} ${
+    online ? "ONLINE" : "SLEEPING"
+  }`;
+}
+
+/** What the live region says when a cut-in is PROMOTED (the lab's own sentence, at the ceremony's first
+ *  beat). The cover NARRATES ITS OWN promote — two sentences, one per end of the page turn — which is why
+ *  `GachaFleet` stays quiet under the `select-first` grammar: a generic "X selected." fired from the
+ *  dispatch would be a third voice inside one gesture. */
+export function coverPromoteAnnounce(name: string): string {
+  return `${name} takes the cover.`;
+}
+
+/** …and what it says once the turn has landed. This one is POLL-TRUTHFUL by construction: it reads the
+ *  machine's CURRENT status word, so it reports what the fleet says rather than the lab's "{name} is
+ *  online." — which was the prototype's fiction about a wake that had not happened (§12.6 ruling 4). */
+export function coverSettledAnnounce(host: Host, stars: number): string {
+  const online = !!host.status?.online;
+  return `${host.name} is on the cover. ${roleLabel(host)}, ${stars} stars, ${
+    online ? "ONLINE" : "SLEEPING"
+  }.`;
+}
+
+/** …and when a sleeping HERO is developed. It reports the REQUEST and stops there, `wakeAnnounce`'s exact
+ *  posture: there is deliberately no settled counterpart, because only a hosts poll can know. */
+export function coverDevelopAnnounce(name: string): string {
+  return `Developing the cover. Waking ${name}.`;
+}
+
+/** How far the HERO slot shifts its art's focal point LEFT, in `object-position` percentage points.
+ *
+ *  A LOWER X shows more of the image's left, which slides the SUBJECT rightwards on screen — out from
+ *  under the cut-in column that runs down the leading edge. Exported because §12.6 §12.3② hands the number
+ *  to the E5 device round: the lab's four hand-authored heroes land between 14 and 20 points of shift
+ *  (50% → 30/34/34/36), and 20 is the deepest of them, which is the right default for a column that only
+ *  gets wider as the fleet grows. */
+export const COVER_HERO_SHIFT = 20;
+
+/** The HERO crop, DERIVED from whatever focal point the art entry resolved (§12.6 ruling 9 — the lab's
+ *  per-id `COVER_HERO_FOCUS` map does NOT port: it was authored against a fixture roster, and the owner's
+ *  own art deliberately carries no focus at all).
+ *
+ *  · no focus → no override, so the CSS default chain stands (`--cv-hero-focus` → `--cv-focus` → the lab's
+ *    `50% 22%`), which is exactly the case the owner's art is in.
+ *  · a focus → its X moves LEFT by `COVER_HERO_SHIFT`, clamped at 0; the Y is untouched, because the
+ *    vertical crop is the entry's own framing decision (the bundled entries now carry real ones —
+ *    `pegasus` 50% 12%, `3` 50% 14%, `4` 50% 8% — and the shift stacks on top of them).
+ *  · anything else → the input, unchanged. This is a RENDER path: an unparseable focus (a hand-edited
+ *    roster, a future syntax) must degrade to what the other surfaces already draw, never throw. */
+export function coverHeroFocus(focus: string | undefined): string | undefined {
+  if (focus === undefined) return undefined;
+  const m = /^\s*(-?\d+(?:\.\d+)?)%\s+(\S+)\s*$/.exec(focus);
+  if (!m) return focus;
+  return `${Math.max(0, Number(m[1]) - COVER_HERO_SHIFT)}% ${m[2]}`;
 }
 
 /** How many stops the per-unit hue ring carries (tokens.css `--gc-unit-1..5`). FIVE because that is how

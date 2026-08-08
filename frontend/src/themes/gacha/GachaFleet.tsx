@@ -29,6 +29,7 @@ import {
   rateText,
   resolvePick,
   tapAction,
+  tapGrammarFor,
   wakeAnnounce,
   type FleetTap,
 } from "./fleet";
@@ -367,6 +368,15 @@ export function GachaFleet({ active }: { active: boolean }) {
   // so no committed frame can disagree with it and `tapAction` can never route against a selection the
   // poster is not showing.
   const resolvedPick = resolvePick(pickedId, hosts);
+  // WHICH TAP TABLE is in force (§12.6 ruling 9 + the E2 main-seat ruling). The cover keeps the ORIGINAL
+  // select-then-act grammar — a cut-in always promotes — while capsule and poster carry the owner's
+  // third-walk narrowing. The routing stays HERE either way; only the table changes.
+  //
+  // Read through the SURFACE's own resolver, never a second read of the raw setting: `useVariantId`
+  // validates against the registry and degrades an unknown/stale id to `capsule`, and `tapGrammarFor`
+  // degrades the same id to capsule's grammar — so the layout that renders and the table that routes can
+  // never disagree about a value neither of them recognizes.
+  const grammar = tapGrammarFor(fleetSurface.useVariantId());
 
   // ── THE TAP ROUTER's execution (rulings 3 + 4). The DECISION is `tapAction`, a pure function with its own
   //    table of tests; this is the half that has to touch the world, and it is here rather than in a layout
@@ -377,13 +387,18 @@ export function GachaFleet({ active }: { active: boolean }) {
       // must OPEN, not be woken again — so this reads `hosts`, never a value captured at tap one.
       const host = hosts.find((h) => h.id === hostId);
       if (!host) return null; // the machine left between render and click
-      const action = tapAction(resolvedPick, hostId, !!host.status?.online);
+      const action = tapAction(resolvedPick, hostId, !!host.status?.online, grammar);
       if (action === "select") {
-        // Only a SLEEPING machine can land here since the owner's third-walk amendment, and it is the only
-        // tap whose whole outcome is off-screen (a transform and a registry below the fold) — which is why
-        // it is the one selection that announces.
+        // Under `act-first` only a SLEEPING machine can land here (the owner's third-walk amendment), and
+        // it is the only tap whose whole outcome is off-screen — a transform plus a registry below the
+        // fold — which is why it is the one selection that announces.
         setPickedId(hostId);
-        announce(pickAnnounce(host, starsFor((host.services ?? []).length, starMode)));
+        // …and under `select-first` the layout narrates instead: a cover's promote is a full-screen page
+        // turn with its own two sentences on its own beats (`coverPromoteAnnounce` / `coverSettledAnnounce`),
+        // so a generic "X selected." fired from here would be a third voice inside one gesture. Same
+        // reasoning the `open` branch below already applies to the dossier.
+        if (grammar === "act-first")
+          announce(pickAnnounce(host, starsFor((host.services ?? []).length, starMode)));
         return "select";
       }
       if (action === "open") {
@@ -409,7 +424,10 @@ export function GachaFleet({ active }: { active: boolean }) {
       // overlap race is a recorded standing item across all five fleets, deliberately not rewritten here.)
       if (busy.has(hostId)) return null;
       setWaking((prev) => (prev.has(hostId) ? prev : new Set(prev).add(hostId)));
-      announce(wakeAnnounce(host.name));
+      // Same split as the select above: the cover's develop ceremony speaks its own sentence at its own
+      // first beat (`coverDevelopAnnounce`), so this body stays quiet under that grammar rather than
+      // announcing the same request twice in two different wordings.
+      if (grammar === "act-first") announce(wakeAnnounce(host.name));
       // The SAME seam the dossier's Wake button calls — no new execution path, no UI confirm (D8: the
       // registry decides, and `wake_host` is risk=LOW with no `confirm`). Settled either way, so a failed
       // request cannot leave a machine lit as waking forever; `run` reports its own outcome as a toast.
@@ -424,7 +442,7 @@ export function GachaFleet({ active }: { active: boolean }) {
       void run("wake", host).then(done, done);
       return "wake";
     },
-    [hosts, resolvedPick, starMode, busy, run, openHostDossier, announce],
+    [hosts, resolvedPick, grammar, starMode, busy, run, openHostDossier, announce],
   );
   // Leaving the tab (or unmounting) CLOSES the dossier — the M3-confirm ruling: a nav tap is "outside"
   // under the owner's tap-outside wording, so the click listener already closes on pointer navigation;

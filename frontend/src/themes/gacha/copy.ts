@@ -83,6 +83,43 @@ export const GACHA_COPY = {
   /** The track heading (編成 again — kept as its own key so the heading can move independently). */
   trackHead: "編成",
 
+  // ── Fleet: the COVER layout's static fiction (E2 / §12.6 ruling 9) ──────────────────────────────
+  // A magazine cover is mostly PRINT, and none of this print is data: the masthead, the featured-unit
+  // eyebrow, the change-cover hint, the registry fine print and the price are the composition's own
+  // furniture. They live here for the same reason every other string does — whatever is not in this file
+  // is not in the shipped font — and each LINE is its own key rather than one string with `\n`, because
+  // the markup breaks them with `<br>` and a split helper would be a second place for them to live.
+  //
+  // 特集 (tokushū) — "special feature"; the eyebrow over the hero's name. The ONE pair of new glyphs this
+  // slice adds (the E1 workflow, verbatim: edit here → `npm run fonts:gacha` → commit the subsets). ¥ is
+  // the third new character and is not a kanji at all — U+00A5 already rides every LATIN subset's
+  // `U+0000-00FF` range, so it paints in-face today; it joins the frozen set only because
+  // `gachaGlyphSet()` collects every non-ASCII value in this object, which is the fence working, not a
+  // cost worth avoiding.
+  /** The masthead's kicker — the app's own wordmark, in the cover's small caps. */
+  coverKicker: "CTRL/B",
+  /** The masthead display line, first row. */
+  coverTitle1: "FLEET",
+  /** …and its second row. */
+  coverTitle2: "STORY",
+  /** The eyebrow over the hero's name — "FEATURED UNIT" with its Japanese reading. */
+  coverFeatured: "FEATURED UNIT · 特集",
+  /** The ISSUE line's leading word; `fleet.ts#issueLine` composes the number and the status onto it. */
+  coverIssue: "ISSUE",
+  /** The cut-in column's standing hint, first line. */
+  coverHint1: "CHANGE COVER",
+  /** …and its second line. */
+  coverHint2: "TAP A CUT-IN",
+  /** The footer's registry fine print, first line. */
+  coverFine1: "CTRL/B FLEET STORY · SERIES 2026",
+  /** …and its second line. */
+  coverFine2: "PRINTED ON THE TAILNET · NOT FOR RESALE",
+  /** The cover price gag. ¥ (U+00A5) — see the block note: latin-subset coverage, frozen-set membership. */
+  coverPrice: "¥0",
+  /** The develop ceremony's landed stamp. Decoration with a 320 ms life, `aria-hidden` in the markup: the
+   *  machine's real state is the chip beside it, which says the SERVER's word (§12.6 ruling 4). */
+  coverStamp: "AWAKE",
+
   // ── Agent: the oracle (G3) ──
   /** ラッキーリレー (rakkī rirē) — "Lucky Relay"; the operator's name. */
   oracleName: "ラッキーリレー",
@@ -144,8 +181,14 @@ export const GACHA_COPY = {
    *  sub-label and track heading carry, which is the point: this row picks how that formation is drawn.
    *  Both of its non-ASCII glyphs already ride the frozen subset (編 + 成 via `tabFleet`/`trackHead`, ·
    *  via every descriptor above), so declaring it costs the font manifest nothing — the rule for a new
-   *  descriptor, not a happy accident. */
-  settingFleetLayoutDesc: "how the fleet presents its machines · 編成",
+   *  descriptor, not a happy accident.
+   *
+   *  It gained its middle clause at E2 (main-seat ruling, §12.3⑤ house style): the cover is a FIXED
+   *  full-viewport composition, so it is the one layout whose look genuinely depends on another switch —
+   *  the app bar eats the top of its masthead. Saying so in the desc is cheaper and more honest than a
+   *  second conditional row, and it rides existing glyphs only. */
+  settingFleetLayoutDesc:
+    "how the fleet presents its machines · cover pairs best with the app bar hidden · 編成",
   /** 名 (na/mei) — "name"; the POSTER NAME picker, which is layout-scoped (`showWhen`) to the poster and
    *  chooses only WHERE the machine name sits on a slice. Same 名 as the two face pickers above — a third
    *  rider on a glyph the subset already carries. */

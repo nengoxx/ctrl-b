@@ -103,6 +103,21 @@ describe("gacha font subset — the frozen glyph set", () => {
     for (const ch of GACHA_COPY.brandMeta) expect(manifest.glyphs).toContain(ch);
   });
 
+  it("carries the COVER's own glyphs — the E2 regen actually happened", () => {
+    // 特集 is the pair E2 added (`coverFeatured`), and it is the whole reason this slice re-ran the
+    // generator. ¥ (U+00A5) rides in with it: it is covered by every LATIN subset's `U+0000-00FF` range
+    // already, so it paints in-face either way — but `gachaGlyphSet()` collects every non-ASCII value in
+    // the copy module, so a manifest without it means the committed subsets are STALE, which is the
+    // dangerous direction whatever the glyph.
+    for (const ch of [...GACHA_COPY.coverFeatured, ...GACHA_COPY.coverPrice])
+      if (ch.codePointAt(0)! > 0x7f)
+        expect(manifest.glyphs, `cover glyph ${ch} is not in the subset`).toContain(ch);
+    // …and the JP faces' own `unicode-range` has to have grown with it, or the file is fetched and then
+    // never consulted for these codepoints (the split that makes the two-file-per-weight scheme work).
+    for (const cp of ["7279", "96c6"])
+      expect(facesCss, `U+${cp} missing from the jp unicode-range`).toContain(`U+${cp}`);
+  });
+
   it("carries the UNIT TAG pool, every glyph of it", () => {
     // The poster's corner tag draws these one at a time by fleet position, so a missing one is not a
     // degraded string — it is one machine in the fleet showing a tofu box where its neighbours show a

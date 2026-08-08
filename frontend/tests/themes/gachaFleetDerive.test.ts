@@ -2,10 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import { GACHA_COPY, SCENE_TITLES } from "../../src/themes/gacha/copy";
 import {
+  COVER_HERO_SHIFT,
   PENDING,
   cardShapes,
   counterText,
+  coverDevelopAnnounce,
+  coverHeroFocus,
+  coverPromoteAnnounce,
+  coverSettledAnnounce,
   dossierSub,
+  issueLine,
+  labelCover,
   openLabel,
   partingStep,
   pickLabel,
@@ -22,6 +29,7 @@ import {
   roleLabel,
   sceneTitle,
   tapAction,
+  tapGrammarFor,
 } from "../../src/themes/gacha/fleet";
 import type { Host } from "../../src/types";
 
@@ -315,21 +323,78 @@ describe("tapAction — the tap router", () => {
   ];
 
   it.each(CASES)("selected=%s tapped=%s online=%s -> %s", (selected, tapped, online, want) => {
-    expect(tapAction(selected, tapped, online)).toBe(want);
+    expect(tapAction(selected, tapped, online, "act-first")).toBe(want);
   });
 
   it("ignores the selection entirely while a machine is UP", () => {
     // The sharp form of the amendment: for an online machine the first argument cannot change the answer.
     for (const sel of [null, "a", "b", "somebody-else"])
-      expect(tapAction(sel, "a", true)).toBe("open");
+      expect(tapAction(sel, "a", true, "act-first")).toBe("open");
   });
 
   it("routes on the CURRENT liveness, not on a remembered one", () => {
     // The council clause the caller has to honour: a machine that woke between the two taps OPENS rather
     // than being woken again. The function has no memory at all, which is what makes that the caller's
     // only job.
-    expect(tapAction("a", "a", false)).toBe("wake");
-    expect(tapAction("a", "a", true)).toBe("open");
+    expect(tapAction("a", "a", false, "act-first")).toBe("wake");
+    expect(tapAction("a", "a", true, "act-first")).toBe("open");
+  });
+});
+
+describe("tapAction — the COVER's grammar (E2, the walked lab's original table)", () => {
+  // §12.6 ruling 9 + the E2 main-seat ruling: the cover keeps the ORIGINAL select-then-act table, which
+  // the third walk narrowed only for the STACK layouts. A cut-in is not a machine you act on — it is the
+  // next cover — so tapping one always promotes it, online or not. EVERY ROW, because the two grammars
+  // differ in exactly one of them and that is precisely the row a refactor would lose.
+  // [selection (= the hero), tapped, online, expected]
+  const CASES: [string | null, string, boolean, string][] = [
+    // A CUT-IN — always promoted (= selected), whatever its liveness. This is the divergent pair.
+    [null, "a", true, "select"],
+    ["b", "a", true, "select"],
+    [null, "a", false, "select"],
+    ["b", "a", false, "select"],
+    // THE HERO — the only control that acts: it opens when up, and develops when asleep.
+    ["a", "a", true, "open"],
+    ["a", "a", false, "wake"],
+  ];
+
+  it.each(CASES)("hero=%s tapped=%s online=%s -> %s", (selected, tapped, online, want) => {
+    expect(tapAction(selected, tapped, online, "select-first")).toBe(want);
+  });
+
+  it("differs from the stack grammar in EXACTLY one row (an online non-selection)", () => {
+    // Stated as a claim rather than left implicit: if a future edit widens the divergence, this is what
+    // notices. Walked over the whole input space the two tables share.
+    const rows: [string | null, string, boolean][] = [
+      [null, "a", true],
+      [null, "a", false],
+      ["b", "a", true],
+      ["b", "a", false],
+      ["a", "a", true],
+      ["a", "a", false],
+    ];
+    const differ = rows.filter(
+      ([sel, id, on]) =>
+        tapAction(sel, id, on, "act-first") !== tapAction(sel, id, on, "select-first"),
+    );
+    expect(differ.every(([sel, id, on]) => on && id !== sel)).toBe(true);
+    expect(differ).toHaveLength(2); // the two ways of being "not the selection": null, and another id
+  });
+});
+
+describe("tapGrammarFor — which table a layout reads", () => {
+  it("gives the cover its own grammar and every stack layout the narrowed one", () => {
+    expect(tapGrammarFor("cover")).toBe("select-first");
+    expect(tapGrammarFor("capsule")).toBe("act-first");
+    expect(tapGrammarFor("poster")).toBe("act-first");
+  });
+
+  it("degrades an unknown id the same way the SURFACE does — to capsule's grammar", () => {
+    // The one property that matters: `fleetSurface.useVariantId()` falls back to `capsule` for a stale or
+    // corrupt synced value, so a second resolution path that guessed differently would route one way and
+    // render another. Both fall back to capsule; the id below is exactly what a future build could sync.
+    for (const id of ["", "not-a-layout", "COVER", "club"])
+      expect(tapGrammarFor(id)).toBe("act-first");
   });
 });
 
@@ -464,5 +529,132 @@ describe("unitHueToken — the per-unit hue ring", () => {
       expect(n).toBeGreaterThanOrEqual(1);
       expect(n).toBeLessThanOrEqual(UNIT_HUES);
     }
+  });
+});
+
+// ── THE COVER's own derivations (E2 / §12.6 ruling 9) ───────────────────────────────────────────────
+// Everything the magazine layout computes rather than renders: the two accessible-name forms, the issue
+// line, the three ceremony sentences, and the DERIVED hero crop that replaces the lab's per-id map.
+
+describe("labelCover — the cover's two accessible names (the lab's wording, verbatim)", () => {
+  const online = host({ id: "a", name: "pegasus", status: { ...host().status!, online: true } });
+  const asleep = host({
+    id: "b",
+    name: "atlas",
+    role: null,
+    os_type: "windows",
+    status: { ...host().status!, online: false, ping_ms: null },
+  });
+
+  it("tells the HERO what its own tap does — open, or develop", () => {
+    expect(labelCover(online, 5, true)).toBe(
+      "pegasus, workstation, 5 stars, on the cover, online. Opens the unit dossier.",
+    );
+    expect(labelCover(asleep, 1, true)).toBe(
+      "atlas, windows, 1 stars, on the cover, sleeping. Develops the cover and wakes it.",
+    );
+  });
+
+  it("tells a CUT-IN the one thing it does, whatever its liveness", () => {
+    // The cover's grammar in a sentence: a cut-in never opens and never wakes, so its name promises
+    // exactly one outcome for both liveness states — which is what makes it honest.
+    expect(labelCover(online, 5, false)).toBe(
+      "pegasus, workstation, 5 stars, online. Supporting cut-in. Puts it on the cover.",
+    );
+    expect(labelCover(asleep, 1, false)).toBe(
+      "atlas, windows, 1 stars, sleeping. Supporting cut-in. Puts it on the cover.",
+    );
+  });
+
+  it("carries the LIVENESS in every form — an aria-label replaces the chip inside the button", () => {
+    for (const isHero of [true, false]) {
+      expect(labelCover(online, 3, isHero)).toContain("online");
+      expect(labelCover(asleep, 3, isHero)).toContain("sleeping");
+    }
+  });
+
+  it("leaves `openLabel` and `pickLabel` untouched — three surfaces, three sentences", () => {
+    expect(openLabel("pegasus", true)).toBe("open pegasus dossier, online");
+    expect(pickLabel(online, 5, false)).toBe(
+      "pegasus, workstation, 5 stars, online. Opens the unit dossier.",
+    );
+  });
+});
+
+describe("issueLine — the masthead's own read (why cover ignores the counter)", () => {
+  it("numbers the issue from the hero's fleet POSITION, zero-padded", () => {
+    expect(issueLine(0, true)).toBe(`ISSUE 01 ${GACHA_COPY.sep} ONLINE`);
+    expect(issueLine(3, false)).toBe(`ISSUE 04 ${GACHA_COPY.sep} SLEEPING`);
+  });
+
+  it("keeps padding honest past nine (the counter's own idiom, not the lab's `0${n}`)", () => {
+    // The lab writes `ISSUE 0${hero + 1}`, which prints `ISSUE 010` on an eleven-machine fleet.
+    expect(issueLine(9, true)).toBe(`ISSUE 10 ${GACHA_COPY.sep} ONLINE`);
+    expect(issueLine(99, true)).toBe(`ISSUE 100 ${GACHA_COPY.sep} ONLINE`);
+  });
+
+  it("survives a nonsense index at issue 01 rather than throwing (it is on a render path)", () => {
+    expect(issueLine(Number.NaN, true)).toBe(`ISSUE 01 ${GACHA_COPY.sep} ONLINE`);
+    expect(issueLine(-4, true)).toBe(`ISSUE 01 ${GACHA_COPY.sep} ONLINE`);
+  });
+});
+
+describe("the cover's three ceremony sentences (lab wording, poll-truthful endings)", () => {
+  const online = host({ id: "a", name: "pegasus", status: { ...host().status!, online: true } });
+  const asleep = host({
+    id: "b",
+    name: "atlas",
+    status: { ...host().status!, online: false, ping_ms: null },
+  });
+
+  it("opens and closes the PROMOTE", () => {
+    expect(coverPromoteAnnounce("atlas")).toBe("atlas takes the cover.");
+    expect(coverSettledAnnounce(online, 5)).toBe(
+      "pegasus is on the cover. WORKSTATION, 5 stars, ONLINE.",
+    );
+  });
+
+  it("reports the machine's CURRENT word when it settles — never the lab's `is online`", () => {
+    // §12.6 ruling 4. The lab ends its promote with "{name} is online.", which is a claim about liveness
+    // the app has no basis for. This sentence reads the host it was handed, so a cover that lands on a
+    // sleeping machine says so.
+    expect(coverSettledAnnounce(asleep, 2)).toBe(
+      "atlas is on the cover. WORKSTATION, 2 stars, SLEEPING.",
+    );
+    expect(coverSettledAnnounce(asleep, 2)).not.toContain("is online");
+  });
+
+  it("announces the DEVELOP as a request, with no settled counterpart", () => {
+    expect(coverDevelopAnnounce("atlas")).toBe("Developing the cover. Waking atlas.");
+  });
+});
+
+describe("coverHeroFocus — the DERIVED hero crop (ruling 9: not a per-id map)", () => {
+  it("shifts the X left by the constant and leaves the Y alone", () => {
+    expect(COVER_HERO_SHIFT).toBe(20);
+    expect(coverHeroFocus("50% 26%")).toBe("30% 26%");
+    // the bundled entries carry real focal points now, and the shift STACKS on top of them
+    expect(coverHeroFocus("50% 12%")).toBe("30% 12%");
+    expect(coverHeroFocus("50% 8%")).toBe("30% 8%");
+  });
+
+  it("passes NO focus through as no override — the CSS default chain stands", () => {
+    // The owner's own art deliberately declares none, which is the case this branch exists for: a
+    // computed `30% …` would be a claim about a crop nobody authored.
+    expect(coverHeroFocus(undefined)).toBeUndefined();
+  });
+
+  it("clamps at zero rather than going negative", () => {
+    expect(coverHeroFocus("10% 40%")).toBe("0% 40%");
+    expect(coverHeroFocus("0% 40%")).toBe("0% 40%");
+  });
+
+  it("degrades junk to the INPUT rather than throwing (it is on a render path)", () => {
+    for (const junk of ["center top", "", "50%", "left 20%", "not a focus at all"])
+      expect(coverHeroFocus(junk)).toBe(junk);
+  });
+
+  it("keeps a fractional X fractional", () => {
+    expect(coverHeroFocus("50.5% 30%")).toBe("30.5% 30%");
   });
 });
