@@ -402,13 +402,6 @@
       --gc-po-fname-shadow: 2px 2px 0 #07050a;
       --gc-po-role-shadow: 0 1px 5px #000000e6;
       --gc-po-flash: #fff; /* the wake ceremony's sweeping line */
-      /* The NEW chip's hard offset (owner: the ribbon goes OUTLINE + translucent). At 7px caps the name's
-       * `3px 3px 0` would be absurd, so it is the same ink one pixel out — and it is not decoration:
-       * measured over the six bundled character crops, accent-pink text on a 22%-accent interior ranges
-       * 1.39-5.00:1 against the art underneath, which is unreadable at the bottom of that range. The hard
-       * offset gives the glyph its own edge regardless of what it sits on (7.74:1 against this ink), which
-       * is the theme's answer everywhere else and the one the ruling asked for over re-opaquing. */
-      --gc-po-new-shadow: 1px 1px 0 #07050a;
       /* ── The star's DRAWN metrics (G7 — the R16 redesign; see GachaStar.tsx) ─────────────────────────
        * The glyph's `font-size`/`letter-spacing`/`text-shadow` trio is gone with it: a drawn star is a box
        * and a gap, so both surfaces are tunable in the vocabulary R16 measured the field in.
@@ -688,12 +681,6 @@
        * line box is 29px at line-height 1 and the `em` sits 7px below it, so a 5px drop lands inside that
        * gap. Verified by pixel-diffing the caption's box with the shadow on and off. */
       --gc-head-shadow: 5px 5px 0 var(--accent);
-      /* The NEW chip's translucent interior — the ribbon's own colour at a fraction, so the chip reads as
-       * an outline with the art showing through rather than as a second filled pill beside the status one.
-       * A TOKEN rather than an inline `color-mix` (the G6.5 lesson: an inline mix is invisible to the
-       * contrast gate), and on `body` rather than `:scope` because it composes `--accent`, which every
-       * family-2 palette moves. 22% is the first cut and is meant to be walked. */
-      --gc-po-new-fill: color-mix(in srgb, var(--accent) 22%, transparent);
       /* The brand trio — wordmark, tag pills, the dossier strip, and the Conf palette chip. */
       --gc-brand-fill: linear-gradient(
         92deg,

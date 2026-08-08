@@ -30,7 +30,13 @@ export interface GachaTrackProps {
   shapes: CapsuleShape[];
   /** The rarity mode the whole theme reads (`starMode`), so the card and its promo slide agree. */
   starMode: StarMode;
-  /** Which machine wears the `NEW` ribbon (G6 item iv) — a sticky pick made above, `null` for none. */
+  /** Which machine wears the `NEW` ribbon (G6 item iv) — a sticky pick made above, `null` for none.
+   *
+   *  CAPSULE-ONLY IN PRACTICE, and that is a ruling rather than an oversight: the poster wore it briefly
+   *  and the owner cut it ("I don't want it anymore"), so `GachaPoster` deliberately does not destructure
+   *  this. The prop stays on the shared contract because the capsule track — where the demo was
+   *  owner-confirmed at G6.1 and shipped in v1.5.0 — still reads it, and because cover gets its own
+   *  ruling at E2. Do not "fix" the poster's omission. */
   ribbonHost: string | null;
   /** The shared roster resolution (§5.3's ONE resolver), passed as a lookup so the roster query itself stays
    *  with the derivations: `art(i)` is the same entry the host's promo slide and dossier portrait use. */

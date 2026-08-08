@@ -1987,53 +1987,6 @@
       pointer-events: none;
     }
 
-    /* THE `NEW` RIBBON (owner, dev-unit walk: the poster gets the capsule's demo ribbon too). The capsule
-     * seats it flush on the LEADING edge; the poster cannot — that edge is the sheared one, and a flush
-     * tab there is sliced off. So it mirrors to the TRAILING edge, which is vertical, and takes the
-     * chip's own positioning idiom.
-     *
-     * THE SEAT IS SHEAR-AWARE, which is the whole difficulty. The top boundary runs from (0, run) down to
-     * (100%, 0), so near the trailing edge the plate begins only a few pixels below y=0 — a `top: 10px`
-     * ribbon would have its inner top corner clipped away at every width, because the corner sits ~50px
-     * IN from the edge where the boundary is still descending. `--run * .22` puts the whole tab below
-     * that diagonal with room to spare at 320 / 390 / 430, and it scales with the shear rather than
-     * against it. It is a custom property because the owner is eyeballing this seat.
-     *
-     * CLEAR OF BOTH NEIGHBOURS IN BOTH TREATMENTS: the status chip sits mid-trailing (`--run + 10px` up
-     * from the bottom) and the name zone owns the bottom-LEADING corner in plate and blade alike, so the
-     * top-trailing corner is the one piece of furniture-free real estate on the slice — it is where the
-     * lab hung its JP glyph tag, which production dropped. */
-    .po-new {
-      --po-new-top: calc(var(--run) * 0.22 + 6px);
-      position: absolute;
-      z-index: 6;
-      right: 0;
-      top: var(--po-new-top);
-      padding: 4px 9px;
-      /* AN OUTLINE CHIP, not a filled pill (owner, second walk: "slightly transparent or translucent").
-       * The colour is unchanged — it is the brand accent the filled version wore, moved from the fill to
-       * the EDGE and the ink, with the interior at a fraction so the art shows through. `--accent` is the
-       * flat channel of that same brand (tokens.css: "the brand PINK, the trio's leading hue"), which is
-       * what a border can carry — `--gc-brand-fill` is a gradient, and a gradient border would have to be
-       * `border-image`, which ignores `border-radius` and would square the tab off.
-       * `border-right: 0` is the shipped `.gc-card .state` idiom for an outlined pill flush against its
-       * own edge, so the chip reads as cut off by the slice rather than as floating inside it. */
-      --po-new-border: 1.5px;
-      border: var(--po-new-border) solid var(--accent);
-      border-right: 0;
-      /* the capsule tab, mirrored: flush to its own edge, rounded on the inner end */
-      border-radius: 99px 0 0 99px;
-      background: var(--gc-po-new-fill);
-      color: var(--accent);
-      font-size: 7px;
-      font-weight: 900;
-      letter-spacing: 0.14em;
-      /* MEASURED, not decorative — see the token's note: the translucent interior leaves the ink as low as
-       * 1.39:1 on the bundled art, and this is what gives the glyph its own edge. */
-      text-shadow: var(--gc-po-new-shadow);
-      pointer-events: none;
-    }
-
     /* ── the WAKE CEREMONY (the lab's beats; `useCeremony` owns the timing) ───────────────────────────
      * The stack PARTS around the waking slice and a hard line sweeps it. Transform + opacity only, and
      * the whole thing collapses to its end state under `data-motion="reduced"` because the runner fires

@@ -43,9 +43,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
-import { GachaPoster } from "../../src/themes/gacha/GachaPoster";
 import { GachaRoot } from "../../src/themes/gacha/GachaRoot";
-import type { GachaTrackProps } from "../../src/themes/gacha/GachaTrack";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
 import type { Host, HostServiceCfg } from "../../src/types";
 
@@ -143,33 +141,12 @@ function deferVT() {
   };
 }
 
-/** The layout's props, filled with inert values — for the handful of claims that are about the CONTRACT
- *  rather than about the body above it. `ribbonHost: null` is the sharp case: `GachaFleet`'s effect always
- *  picks a machine while the fleet has one, so "no ribbon" is unreachable through it. */
-const posterProps = (over: Partial<GachaTrackProps> = {}): GachaTrackProps => ({
-  hosts: [host("pegasus", true), host("atlas", false)],
-  error: null,
-  isLoading: false,
-  reeling: false,
-  shapes: [],
-  starMode: "five",
-  ribbonHost: null,
-  art: () => null,
-  counter: "01 / 02",
-  onOpenHost: vi.fn(),
-  picked: "pegasus",
-  onTapHost: vi.fn(),
-  busy: new Set<string>(),
-  waking: new Set<string>(),
-  ...over,
-});
-
 beforeEach(() => {
   setUI({ theme: "gacha", tab: "fleet", motion: "full", themeSettings: {} });
   setThemeSetting("gacha", "fleetLayout", "poster");
   setFleet();
   media.data = undefined; // no owner files ⇒ the bundled cast, which is every case but the blank one
-  vi.spyOn(Math, "random").mockReturnValue(0); // the NEW ribbon's roll (unused here, pinned anyway)
+  vi.spyOn(Math, "random").mockReturnValue(0); // pins `pickRibbonHost`'s roll (the CAPSULE still uses it)
 });
 afterEach(() => {
   try {
@@ -822,42 +799,6 @@ describe("the poster's states match the capsule track's", () => {
   });
 });
 
-// ── THE `NEW` RIBBON (owner, dev-unit walk — E1's poster-off default overturned) ─────────────────────
-describe("the NEW ribbon", () => {
-  it("rides exactly ONE slice, the one `ribbonHost` names", () => {
-    // The pick is `pickRibbonHost`'s, made once in GachaFleet and STICKY — the same demo the capsule
-    // track runs, off the same prop. `Math.random` is pinned to 0 in this file's setup, so the roll
-    // lands on hosts[0] and the assertion is about WHICH slice wears it, not about the roll.
-    const { container } = render(<GachaFleet active />);
-    const ribbons = [...container.querySelectorAll(".po-slice .po-new")];
-    expect(ribbons).toHaveLength(1);
-    expect(slices(container)[0].querySelector(".po-new")).not.toBeNull();
-    expect(slices(container)[1].querySelector(".po-new")).toBeNull();
-    expect(slices(container)[2].querySelector(".po-new")).toBeNull();
-    // DECORATION, not name material: the same posture the capsule card takes.
-    expect(ribbons[0].getAttribute("aria-hidden")).toBe("true");
-    expect(ribbons[0].textContent).toBe("NEW");
-    // …and it must not leak into the accessible name, which `aria-label` owns outright
-    expect(slices(container)[0].getAttribute("aria-label")).not.toContain("NEW");
-  });
-
-  it("is ABSENT when nothing is picked", () => {
-    // Driven at the props, because it cannot be driven above them: GachaFleet's effect always picks a
-    // machine while the fleet has one, so `ribbonHost: null` only exists as a contract state.
-    const { container } = render(<GachaPoster {...posterProps({ ribbonHost: null })} />);
-    expect(container.querySelectorAll(".po-slice")).toHaveLength(2);
-    expect(container.querySelector(".po-new")).toBeNull();
-  });
-
-  it("follows the prop rather than an index", () => {
-    const { container } = render(<GachaPoster {...posterProps({ ribbonHost: "atlas" })} />);
-    expect(container.querySelectorAll(".po-new")).toHaveLength(1);
-    expect(
-      container.querySelectorAll<HTMLElement>(".po-slice")[1].querySelector(".po-new"),
-    ).not.toBeNull();
-  });
-});
-
 // ── THE BODY STAMP ───────────────────────────────────────────────────────────────────────────────────
 // `body[data-gc-fleet]` carries the RESOLVED layout id, stamped by the Root. Its consumer is the SEAM
 // COMPACTION below: the poster's track head is the capsule track's own markup, so the only way to give it
@@ -989,6 +930,18 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     expect(head).toContain("padding-bottom: 0");
     expect(blockFor('body[data-gc-fleet="poster"] .po-poster')).toContain("--po-stack-gap: 11px");
     expect(head).not.toMatch(/padding-(left|right)|padding: /);
+  });
+
+  it("draws the keyline UNCONDITIONALLY — it is anatomy, not an axis (owner ruling)", () => {
+    // §12.6 ruling 8 bound the rim to the `outlines` axis; the owner overruled that on the third walk
+    // ("I want it back, it looks better"). The rim is not a border: it is the PLATE's background showing
+    // through a 1px inset on the art, so the inset IS the keyline and there is exactly one number.
+    expect(blockFor(".po-art")).toContain("inset: 1px");
+    expect(blockFor(".po-plate")).toContain("background: var(--po-hue)");
+    // and nothing in the poster reads the axis any more — `outlines` is chat chrome again
+    expect(css, "the poster must not consume the outlines axis").not.toMatch(
+      /body\[data-outlines[^{]*\.po-/,
+    );
   });
 
   it("drops the head INTO the shear's void, and raises the counter out of the way", () => {

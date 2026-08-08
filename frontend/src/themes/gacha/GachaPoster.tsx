@@ -72,7 +72,6 @@ export function GachaPoster({
   isLoading,
   reeling,
   starMode,
-  ribbonHost,
   art,
   counter,
   picked,
@@ -275,17 +274,6 @@ export function GachaPoster({
                     <span className="po-jp" aria-hidden>
                       {unitTag(i)}
                     </span>
-                    {/* THE `NEW` RIBBON (G6 item iv) — the owner overturned E1's poster-off default at the
-                      dev-unit walk: he wants the capsule's own mount-sticky random pick here too. Same
-                      DEMO semantics, so the same posture: `aria-hidden`, because it carries nothing
-                      about the machine and the button's label already names it and its state.
-                      Deliberately NOT tinted by the rarity hue — it is decoration, and a second thing
-                      wearing the rarity colour would read as a second rarity signal. */}
-                    {host.id === ribbonHost && (
-                      <span className="po-new" aria-hidden>
-                        NEW
-                      </span>
-                    )}
                     <span className="po-flashline" aria-hidden />
                   </span>
                 </button>
