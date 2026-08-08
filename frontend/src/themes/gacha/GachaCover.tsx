@@ -358,18 +358,24 @@ export function GachaCover({
         <div className={"cv-page" + (turning ? " turning" : "")}>
           {/* THE MASTHEAD carries the h1 (ruling 9). It renders in EVERY state — including the one where
               nothing else does — because a magazine with no contents is still a magazine, and the tab
-              would otherwise be blank while the first poll is in flight. The issue line joins it only once
-              there is a machine to number, so the heading never claims an issue that does not exist. */}
+              would otherwise be blank while the first poll is in flight.
+
+              TWO SEATS, one over the display lines and one under them, and the OWNER SWAPPED WHAT THEY
+              SAY (eyeball wave 2): the coloured seat on top now carries the LIVE issue line and the grey
+              seat below carries the static brand. The classes name the SEATS rather than their contents
+              for exactly that reason — the styling belongs to the position, the text is a ruling that has
+              already moved once. The live seat renders only once there is a machine to number, so the
+              heading never claims an issue that does not exist. */}
           <h1 className={"cv-mast" + (beating ? " beating" : "")}>
-            <span className="cv-kicker">{GACHA_COPY.coverKicker}</span>
+            {hero && (
+              <span className="cv-mast-over">{issueLine(heroIndex, !!hero.status?.online)}</span>
+            )}
             <b>
               {GACHA_COPY.coverTitle1}
               <br />
               {GACHA_COPY.coverTitle2}
             </b>
-            {hero && (
-              <span className="cv-issue">{issueLine(heroIndex, !!hero.status?.online)}</span>
-            )}
+            <span className="cv-mast-under">{GACHA_COPY.coverKicker}</span>
           </h1>
 
           {/* The state semantics are the capsule track's, to the letter (the poster's, verbatim): the

@@ -148,10 +148,26 @@ describe("the cover resolves through the fleet Surface", () => {
     // The `counter` prop is deliberately unused here: `NN / NN` is the TRACK's read of the fleet, and a
     // magazine states its issue number. hosts[0] opens the issue, so it is ISSUE 01.
     const { container } = render(<GachaFleet active />);
-    expect(container.querySelector(".cv-issue")?.textContent).toBe(
+    expect(container.querySelector(".cv-mast-over")?.textContent).toBe(
       `ISSUE 01 ${GACHA_COPY.sep} ONLINE`,
     );
     expect(container.textContent).not.toContain("01 / 03");
+  });
+
+  it("seats the LIVE line over the display and the static brand under it (owner swap, wave 2)", () => {
+    // The owner swapped what the masthead's two seats SAY without touching how they look: the coloured
+    // seat on top carries the live issue line, the grey seat below carries CTRL/B. The classes name the
+    // seats, so this is the assertion that the CONTENT is on the right one — and that the h1 still reads
+    // as one sensible heading in document order.
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".cv-mast-over")?.textContent).toContain("ISSUE 01");
+    expect(container.querySelector(".cv-mast-under")?.textContent).toBe(GACHA_COPY.coverKicker);
+    const parts = [...container.querySelectorAll(".cv-mast > *")].map((n) => n.textContent);
+    expect(parts).toEqual([
+      `ISSUE 01 ${GACHA_COPY.sep} ONLINE`,
+      `${GACHA_COPY.coverTitle1}${GACHA_COPY.coverTitle2}`,
+      GACHA_COPY.coverKicker,
+    ]);
   });
 
   it("opens the issue with hosts[0], marked with aria-pressed", () => {
@@ -549,7 +565,9 @@ describe("the cover's states match the capsule track's", () => {
     expect(container.querySelector(".cv-foot")).toBeNull();
     // the masthead survives — a magazine with no contents is still a magazine — but it claims no issue
     expect(container.querySelector(".cv-mast")).not.toBeNull();
-    expect(container.querySelector(".cv-issue")).toBeNull();
+    expect(container.querySelector(".cv-mast-over")).toBeNull();
+    // …and the STATIC seat survives, because the brand is not a claim about the fleet
+    expect(container.querySelector(".cv-mast-under")?.textContent).toBe(GACHA_COPY.coverKicker);
   });
 
   it("renders NOTHING but the masthead while the first poll is in flight", () => {
@@ -613,7 +631,7 @@ describe("the cover's states match the capsule track's", () => {
     setFleet({ hosts: [host("atlas", false), host("vault", true)], run: fleet.view.run });
     rerender(<GachaFleet active />);
     expect(heroName(container)).toBe("ATLAS");
-    expect(container.querySelector(".cv-issue")?.textContent).toBe(
+    expect(container.querySelector(".cv-mast-over")?.textContent).toBe(
       `ISSUE 01 ${GACHA_COPY.sep} SLEEPING`,
     );
   });
@@ -733,25 +751,70 @@ describe("the cover's stylesheet claims", () => {
       );
   });
 
-  it("floors the composition on the app's REAL bottom chrome, not the lab's bare viewport", () => {
-    // The lab's 70 / 102 / 202 / 212 were authored with nothing floating over the page. Here the composer
-    // does, so the floors are its measured height plus the lab's own INTERVALS — which reproduces the
-    // lab exactly at the composer's 64 px resting height and rides up when the textarea grows.
+  it("floors the composition on the COMPOSER'S TOP EDGE, not on its height (the fix-wave seed)", () => {
+    // THE LAB'S FOUR NUMBERS ARE ONE SEED AND THREE INTERVALS. 70 / 102 / 202 / 212 = a floor plus
+    // 6 / 32 / 100 / 110, authored against a BARE viewport where nothing floated over the page.
+    // Production keeps the intervals and replaces the seed: under gacha the tab bar FLOATS over
+    // `.kit-main` instead of shortening it and the composer floats above the bar, so the frame's bottom
+    // edge is the shell's bottom and a floor of "the composer's HEIGHT" lands INSIDE the chrome — which
+    // is exactly what the render audit measured (the strapline covering the composer, the gag footer
+    // behind the nav bar). The floor is therefore where the composer's TOP is.
     const frame = blockFor(".cv-frame")!;
-    expect(frame).toContain("--cv-floor: var(--composer-h, 64px)");
+    expect(frame).toContain("--cv-floor: calc(var(--gc-composer-b) + var(--composer-h, 64px))");
     expect(frame).toContain("--cv-foot: calc(var(--cv-floor) + 6px)");
     expect(frame).toContain("--cv-strap: calc(var(--cv-foot) + 32px)");
     expect(frame).toContain("--cv-side-floor: calc(var(--cv-strap) + 100px)");
     expect(frame).toContain("--cv-herocopy: calc(var(--cv-strap) + 110px)");
     expect(frame).toContain("--cv-mast-top: calc(var(--appbar-h, 0px) + 16px)");
-    // the arithmetic the intervals encode: the lab's numbers at a 64 px composer and a hidden bar
-    const floor = 64;
-    const foot = floor + 6;
-    const strap = foot + 32;
-    expect([foot, strap, strap + 100, strap + 110]).toEqual([70, 102, 202, 212]);
+    // …and the seed REUSES the composer's own anchor rather than restating or guessing it, so the two
+    // can never drift (the `--gc-nav-zone` precedent one element up).
+    expect(blockFor(".kit-composer")).toContain("bottom: var(--gc-composer-b)");
+    // (`blockFor` would find the FIRST `.kit {` — the app backdrop — so the shell's two declarations are
+    // read off the file: the base anchor, and the SHEET layout's flush-above-the-bar override. Declared
+    // on the shell rather than on the composer because the cover and the composer are not each other's
+    // descendants, and a custom property only travels downward.)
+    expect(css).toContain("--gc-composer-b: calc(12px + var(--gc-nav-zone));");
+    expect(css).toContain("--gc-composer-b: var(--gc-nav-zone);");
+    expect(css.split("--gc-composer-b:").length - 1, "exactly two declarations").toBe(2);
+    // …and the retired inline override must not come back beside them
+    expect(blockFor(".kit-composer.sheet")).toBeNull();
+    // THE INTERVALS ARE THE LAB'S, unchanged — stated as the deltas they are, applied to whatever floor
+    // the app resolves. The lab's own four numbers are what this chain yields at ITS seed of 64.
+    const chain = (floor: number) => {
+      const foot = floor + 6;
+      const strap = foot + 32;
+      return [foot, strap, strap + 100, strap + 110];
+    };
+    expect(chain(64), "the lab's own numbers are this chain at the lab's own floor").toEqual([
+      70, 102, 202, 212,
+    ]);
+    // …and at the audited device geometry (390x844: nav zone 68+14, composer inset 12, height 50) the
+    // whole composition clears the chrome: the footer's floor sits just above the composer's top edge,
+    // which is 94 + 50 = 144 from the frame's bottom.
+    const navZone = 68 + 14;
+    const composerB = 12 + navZone;
+    const composerH = 50;
+    const floor = composerB + composerH;
+    expect(floor).toBe(144);
+    expect(chain(floor)[0], "the footer must clear the composer's top edge").toBeGreaterThan(floor);
     // …and every floor is a TOKEN, so §12.3② has one place to tune (no magic number inline)
     for (const sel of [".cv-foot", ".cv-strap", ".cv-side", ".cv-herocopy"])
       expect(blockFor(sel), `${sel} must consume a --cv-* floor`).toMatch(/var\(--cv-/);
+  });
+
+  it("makes the frame its OWN stacking context, so its rungs stay internal (fix-wave defect 1)", () => {
+    // `.cv-frame` declared no z-index, so it created NO stacking context and its internal rungs — the
+    // strapline's 5, the masthead's 5, the stamp's 6 — competed in the app-wide context, beating the
+    // floating composer's 4 and the kit's edge scrims' 3. Measured: `elementFromPoint` at the composer's
+    // centre returned a node inside the strapline. `isolation: isolate` is the kit's own idiom for a
+    // stacking context WITHOUT a position/z-index that would change how anything else stacks
+    // (`.kit:has(> .kit-bg)`), and it is deliberately NOT the `position: relative; z-index: N` form §10.1
+    // bans one element up — that one would claim a rung in the shell's ladder.
+    expect(blockFor(".cv-frame")).toContain("isolation: isolate");
+    expect(blockFor(".cv-frame")).not.toMatch(/\n\s+z-index:/);
+    // the consequence, stated: the composer (4) and the scrims (3) now paint OVER the cover, which is
+    // the posture capsule and poster already have
+    expect(blockFor(".kit-composer")).not.toBeNull();
   });
 
   it("makes the CUT-IN COLUMN the only thing that scrolls (ruling 9)", () => {
@@ -795,6 +858,37 @@ describe("the cover's stylesheet claims", () => {
     expect(blockFor(".cv-card.asleep")).toContain("--cv-hue: var(--gc-unit-off)");
     for (const sel of [".cv-herocopy small", ".cv-cutcopy"])
       expect(blockFor(sel), `${sel} must paint the RESOLVED hue`).toContain("var(--cv-hue)");
+  });
+
+  it("names every machine in ITS OWN hue, in both seats (owner eyeball wave 2)", () => {
+    // "the name of the computer to be of the colour that it has — Corsair is purple, vault is green, g5
+    // is blue — so it's not just white and plain." Both seats read the RESOLVED hue, which is what makes
+    // the sleeping law apply for free: an asleep machine's name greys with its card.
+    expect(blockFor(".cv-cutcopy b")).toContain("color: var(--cv-hue)");
+    expect(blockFor(".cv-card.is-hero .cv-herocopy b")).toContain("color: var(--cv-hue)");
+    // the hero keeps its hard drop — that is what holds a coloured name legible over art
+    expect(blockFor(".cv-herocopy b")).toContain("text-shadow: var(--gc-cv-display-shadow)");
+    // …and the HERO half is a main-seat reading of a cut-in ruling, so it stays trivially revertible:
+    // its own single-declaration rule, never folded into the block above
+    expect(blockFor(".cv-card.is-hero .cv-herocopy b")!.split(":").length - 1).toBe(1);
+    // no darkening mechanism was invented for the paper slip — the literal ruling ships (E5 measures it)
+    expect(blockFor(".cv-cutcopy")).toContain("background: var(--gc-cv-slip)");
+  });
+
+  it("halves the hero scrim's TOP band only (owner eyeball wave 2)", () => {
+    // "the dark gradient on top of the image… at the bottom is fine, but at the top it looks a little bit
+    // too strong." One lean change — the top band's alpha, 0.82 -> 0.45 — with its run untouched and the
+    // bottom and leading bands byte-identical to the lab's.
+    const scrim = tokens.slice(
+      tokens.indexOf("--gc-cv-hero-scrim:"),
+      tokens.indexOf(";", tokens.indexOf("--gc-cv-hero-scrim:")),
+    );
+    expect(scrim).toContain(
+      "linear-gradient(0deg, #08070cf5 0 8%, #08070c8c 26%, transparent 52%)",
+    );
+    expect(scrim).toContain("linear-gradient(90deg, #08070ce0, #08070c3d 36%, transparent 58%)");
+    expect(scrim).toContain("linear-gradient(180deg, #08070c73 0 11%, transparent 33%)");
+    expect(scrim, "the lab's heavy top band must not come back").not.toContain("#08070cd1");
   });
 
   it("floods the DEVELOP wash with the unit's TRUE hue, not the suppressed one", () => {

@@ -420,11 +420,17 @@
       --gc-cv-slip-ink: #141118;
       /* THE HERO SCRIM — three gradients, and each one buys a specific piece of legibility: the bottom
        * band carries the name block, the leading band carries the cut-in column's edge, the top band
-       * carries the masthead. Nothing here is decoration. */
+       * carries the masthead. Nothing here is decoration.
+       *
+       * THE TOP BAND IS HALF THE LAB'S INK (owner eyeball wave 2: "the dark gradient on top of the
+       * image… at the bottom is fine, but at the top it looks a little bit too strong"). The lab's
+       * `d1` (0.82 alpha) drops to `73` (0.45) — one lean change, the alpha only: its 0-11% run and
+       * 33% fade-out are untouched, and the bottom and leading bands are exactly as they were. It is
+       * there for MASTHEAD legibility, so it is eyeball-tunable and the owner re-judges at the walk. */
       --gc-cv-hero-scrim:
         linear-gradient(0deg, #08070cf5 0 8%, #08070c8c 26%, transparent 52%),
         linear-gradient(90deg, #08070ce0, #08070c3d 36%, transparent 58%),
-        linear-gradient(180deg, #08070cd1 0 11%, transparent 33%);
+        linear-gradient(180deg, #08070c73 0 11%, transparent 33%);
       /* …and a cut-in needs one band only: its name slip is opaque, so this is just the foot of the card. */
       --gc-cv-cut-scrim: linear-gradient(0deg, #08070c99, transparent 58%);
       /* ONE hard offset shadow under the display type (the poster's finding restated: at this size a

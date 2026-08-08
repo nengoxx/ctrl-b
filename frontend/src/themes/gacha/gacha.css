@@ -322,9 +322,24 @@
       --gc-nav-zone: 0px;
       /* Bottom inset, shared by the bar and the zone so the two can never disagree. */
       --gc-nav-inset-b: max(14px, env(safe-area-inset-bottom));
+      /* …and the COMPOSER's own bottom anchor, on exactly the same terms (E2 fix wave): the composer is
+       * positioned off this, and anything that has to CLEAR the composer measures off it too, so the two
+       * can never drift. It was inline on `.kit-composer` until the cover needed to know where the
+       * composer's top edge is — a floor that guessed would be wrong every time the nav zone or the
+       * composer layout moved. `--gc-nav-zone` is the precedent this copies. */
+      --gc-composer-b: calc(12px + var(--gc-nav-zone));
     }
     .kit:has(> .kit-tabbar) {
       --gc-nav-zone: calc(var(--gc-nav-bar-h) + var(--gc-nav-inset-b));
+    }
+    /* The SHEET composer layout docks FLUSH (kit: `bottom: 0`) — which, with the bar now floating there,
+     * means flush ABOVE the bar rather than at the shell's edge. Declared on the SHELL rather than on the
+     * composer because the value is now read by two elements that are not each other's descendants; the
+     * `:has()` scoping is the same idiom the nav zone above uses. (It also retires the old
+     * `.kit-composer.sheet { bottom }` override, which existed only because the theme's own base rule
+     * clobbered kit's on layer order — with one token there is nothing left to clobber.) */
+    .kit:has(.kit-composer.sheet) {
+      --gc-composer-b: var(--gc-nav-zone);
     }
     .kit-tabbar {
       position: absolute;
@@ -350,14 +365,7 @@
       scroll-padding-bottom: calc(var(--composer-h, 64px) + 24px + var(--gc-nav-zone));
     }
     .kit-composer {
-      bottom: calc(12px + var(--gc-nav-zone));
-    }
-    /* The SHEET composer layout docks flush at the shell's bottom (`bottom: 0`) — which, with the bar now
-     * floating there, means flush ABOVE the bar. Called out explicitly because the theme rule above would
-     * otherwise clobber it on layer order alone (the layer trap again) and give the docked variant a
-     * stray 12px gap it is designed not to have. */
-    .kit-composer.sheet {
-      bottom: var(--gc-nav-zone);
+      bottom: var(--gc-composer-b);
     }
     /* ── The composer's SATELLITE overlays (Codex G0 M1) ───────────────────────────────────────────
      * `.kit-suggest` (@-mention autocomplete), `.tools-sheet` (the tools/skills menu) and `.plan-sheet`
@@ -2098,12 +2106,27 @@
      * an opaque page over them, the way the lab's own screen does.
      *
      * ── THE FLOORS ARE THE APP'S, NOT THE LAB'S ─────────────────────────────────────────────────────
-     * The lab authored `foot: 70 / strap: 102 / side: 202 / herocopy: 212` against a BARE viewport. Here
-     * the composer floats over the bottom of the same box the frame fills, so every floor is expressed
-     * off the measured `--composer-h` (DefaultRoot publishes it on the root element). The chain is
-     * written as the lab's own INTERVALS on top of that floor, which reproduces 70/102/202/212 exactly at
-     * the composer's 64 px resting height and rides up with it when the textarea grows. Same for the top:
-     * the masthead clears `--appbar-h`, which is 0 in the bar-hidden mode the picker's copy recommends.
+     * The lab authored `foot: 70 / strap: 102 / side: 202 / herocopy: 212` against a BARE viewport, so
+     * those four numbers are really ONE seed (70) plus three intervals (32 / 100 / 110). Production keeps
+     * the intervals and replaces the seed, because the frame's bottom edge is NOT the bottom of the usable
+     * page: under gacha the tab bar FLOATS over `.kit-main` rather than shortening it, and the composer
+     * floats above the bar. So the floor is where the COMPOSER'S TOP EDGE is —
+     * `--gc-composer-b` (the composer's own bottom anchor, reused rather than restated) plus its measured
+     * `--composer-h`. Seeding off the height alone put the whole chain inside the bottom chrome: the
+     * strapline covered the composer outright and the gag footer landed behind the nav bar (the E2 fix
+     * wave's measured defect 2).
+     *
+     * Same idea at the top: the masthead clears `--appbar-h`, which is 0 in the bar-hidden mode the
+     * picker's copy recommends.
+     *
+     * ── THE FRAME IS ITS OWN STACKING CONTEXT ───────────────────────────────────────────────────────
+     * `isolation: isolate` (the kit's own idiom for `.kit:has(> .kit-bg)` — a stacking context WITHOUT a
+     * position/z-index that would change how anything else stacks). Without it the frame's internal rungs
+     * — the strapline's 5, the masthead's 5, the stamp's 6 — are not internal at all: they compete in the
+     * app-wide context and beat the floating composer's 4 and the kit's edge scrims' 3, which is what
+     * painted the cover clean over the composer and made it un-tappable (defect 1). Isolated, the whole
+     * cover sits BELOW both, which is the posture every other layout already has, and the rungs go back to
+     * ordering only the frame's own children.
      *
      * §14.11 THROUGHOUT: every animated property in this block is `transform` or `opacity`. */
     .cv-frame {
@@ -2112,8 +2135,10 @@
          establishes a container for its descendants, never for itself. */
       container-type: inline-size;
       --cv-u: min(100cqw, 520px);
-      /* the app's real bottom chrome; the four floors below are the lab's intervals stacked on it */
-      --cv-floor: var(--composer-h, 64px);
+      /* THE FLOOR = the composer's TOP edge, measured from the frame's bottom (see the block note): its
+         own bottom anchor plus its measured height. The four floors below are the lab's intervals
+         stacked on it, so the composition sits entirely ABOVE the app's floating chrome. */
+      --cv-floor: calc(var(--gc-composer-b) + var(--composer-h, 64px));
       --cv-foot: calc(var(--cv-floor) + 6px);
       --cv-strap: calc(var(--cv-foot) + 32px);
       --cv-side-floor: calc(var(--cv-strap) + 100px);
@@ -2132,6 +2157,8 @@
       --cv-stamp-top: 168px;
       position: absolute;
       inset: 0;
+      /* the frame's rungs are the frame's own — see the block note */
+      isolation: isolate;
       overflow: hidden;
       background: var(--gc-cv-field);
     }
@@ -2303,9 +2330,21 @@
       font-size: calc(var(--cv-u) * 0.115);
       line-height: 0.86;
       letter-spacing: -0.025em;
+      /* the hard drop stays: it is what keeps a coloured name legible over busy art */
       text-shadow: var(--gc-cv-display-shadow);
       /* a real fleet's names are not four fixed words (the long-name matrix row) */
       overflow-wrap: anywhere;
+    }
+    /* THE HERO NAME WEARS THE MACHINE'S OWN HUE (owner eyeball wave 2: "the name of the computer to be of
+     * the colour that it has… so it's not just white and plain"). He enumerated the CUT-INS; carrying it
+     * to the hero is the main seat's consistent reading — the poster already names every machine in its
+     * own hue — and it is flagged for his walk, which is why it is this ONE declaration in its own rule
+     * rather than a line folded into the block above: reverting is deleting three lines.
+     *
+     * It reads the RESOLVED hue, so the sleeping law applies for free: an asleep machine's name greys
+     * with the rest of its card instead of shouting a colour the machine is not currently earning. */
+    .cv-card.is-hero .cv-herocopy b {
+      color: var(--cv-hue);
     }
     .cv-herocopy i {
       font-style: normal;
@@ -2444,6 +2483,12 @@
       font-size: 12px;
       line-height: 1;
       letter-spacing: -0.02em;
+      /* THE MACHINE'S OWN HUE (owner eyeball wave 2, the seat he enumerated): "Corsair is purple, vault is
+         green, g5 is blue — so it's not just white and plain". The RESOLVED hue, so an asleep machine's
+         name greys with its card under the sleeping law rather than shouting a colour it is not earning.
+         The slip stays paper (`--gc-cv-slip`) and NO darkening mechanism is invented for the mid hues —
+         the literal ruling ships, and the contrast of a name on paper is an E5 device-round item. */
+      color: var(--cv-hue);
     }
     /* the cut-in's chip sits on PAPER, so it takes the theme's status grammar inverted: the online fill
      * as INK on the slip rather than as a field, which keeps one status vocabulary at 6 px */
@@ -2486,7 +2531,12 @@
       pointer-events: none;
       transform: rotate(-2deg);
     }
-    .cv-kicker {
+    /* THE MASTHEAD's TWO SEATS. Named for POSITION, not for content: the owner swapped what they say at
+     * the eyeball (the coloured seat on top carries the live ISSUE line now, the grey seat under the
+     * display lines carries the static CTRL/B), and a class called `cv-kicker` printing an issue number
+     * is exactly the drift that misleads the next reader. Styling belongs to the seat; the text is one
+     * JSX line either way round. */
+    .cv-mast-over {
       display: block;
       font-family: var(--font-body);
       font-size: 8.5px;
@@ -2507,7 +2557,7 @@
       letter-spacing: -0.035em;
       text-shadow: var(--gc-cv-display-shadow);
     }
-    .cv-issue {
+    .cv-mast-under {
       display: block;
       margin-top: 9px;
       /* `text-shadow` INHERITS, so the display line's hard drop has to be nulled on the caption under it */
