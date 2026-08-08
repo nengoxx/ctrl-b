@@ -93,7 +93,10 @@ export function GachaPoster({
   // The ref closes the gap because it is written in the pointerdown's OWN dispatch, where this closure is
   // still the pre-skip render and `ceremony.running` is still true. It is written on EVERY pointerdown,
   // not only on a skipping one: a `true` left behind by a gesture that never produced a click (a drag, a
-  // scroll, a pointer that left the button) would otherwise swallow the NEXT real tap.
+  // scroll, a pointer that left the button) would otherwise swallow the NEXT real tap. That overwrite
+  // reaches only POINTER gestures, though — a keyboard activation produces a `click` with no pointerdown —
+  // so `keydown` clears the ref too (Codex E1 confirm-round LOW): a skip whose gesture never clicked (the
+  // finger dragged away) must not swallow an Enter/Space that arrives next.
   const skippedGesture = useRef(false);
 
   // The staged machine's index. A machine that left the fleet mid-ceremony resolves to -1, which stands the
@@ -206,6 +209,11 @@ export function GachaPoster({
                   // hook's own document listener does the skipping. See `skippedGesture`.
                   onPointerDownCapture={() => {
                     skippedGesture.current = ceremony.running;
+                  }}
+                  // A keyboard activation is click-without-pointerdown: any suppression still standing
+                  // belongs to a pointer gesture that never clicked, and this key must not pay for it.
+                  onKeyDownCapture={() => {
+                    skippedGesture.current = false;
                   }}
                   onClick={() => onSliceTap(host.id)}
                 >

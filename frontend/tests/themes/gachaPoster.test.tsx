@@ -546,6 +546,23 @@ describe("the wake ceremony", () => {
     expect(runFn()).toHaveBeenCalledTimes(1);
   });
 
+  it("a CLICKLESS skip cannot swallow the next keyboard activation (Codex confirm-round LOW)", () => {
+    // A pointerdown that skips but never produces a click (the finger dragged away) leaves the
+    // suppression standing — and a keyboard activation, being click-without-pointerdown, has nothing to
+    // overwrite it with. `keydown` clearing the ref is what keeps that Enter from paying for a pointer
+    // gesture that already spent itself.
+    const { container } = render(<GachaFleet active />);
+    wake(container); // atlas
+    act(() => void vi.advanceTimersByTime(200));
+    // the skip's pointerdown lands on a slice, but the gesture never clicks (a drag)
+    act(() => void fireEvent.pointerDown(slices(container)[2]));
+    expect(container.querySelector(".po-poster")!.classList.contains("parting")).toBe(false);
+    // the NEXT activation is keyboard: keydown then click, no pointerdown
+    act(() => void fireEvent.keyDown(slices(container)[2], { key: "Enter" }));
+    act(() => void fireEvent.click(slices(container)[2]));
+    expect(slices(container)[2].getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("collapses to the end state under REDUCED motion, request and announcement intact", () => {
     act(() => setUI({ motion: "reduced" }));
     const { container } = render(<GachaFleet active />);
