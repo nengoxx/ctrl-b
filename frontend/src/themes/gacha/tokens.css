@@ -655,27 +655,38 @@
        * block does: `--accent` is accent-overridable, and a var() formula on `:scope` would compute once
        * against the base statics and never re-derive.
        *
-       * THE ONE CLAMP, and it is measured rather than guessed: `max(l, 0.72)`. Rotating hue at the
-       * accent's own lightness is fine for the light accents but not for the dark ones — glacier
-       * (L 0.624), eridu (0.637) and jade (0.676) produced stops as low as 1.92:1 against `--bg`, which
-       * is illegible for the data block's hostname. A 0.72 floor lifts exactly those three and leaves
-       * arcade (0.730) and nebula (0.742) mathematically UNTOUCHED — so on the default palette stop 1 is
-       * the accent, unmodified. Measured worst case across 6 accent bases x 8 stops: 3.34:1, clearing
-       * the 3:1 non-text / large-text floor (the hostname is 16-22px bold).
-       * CHROMA IS DELIBERATELY NOT CLAMPED: an out-of-sRGB combination is gamut-mapped by the engine
-       * (chroma reduced, lightness and hue preserved), which is the degradation we want anyway.
+       * NO CLAMP ON L OR C, and that is a MEASURED result rather than an omission. The ring was first
+       * written with a `max(l, 0.72)` lightness floor, on a model that predicted stops as dark as 1.92:1
+       * against `--bg`; probing the real engines showed the model's sRGB round-trip was simply wrong.
+       * Measured over 6 accent bases x 8 stops, by painting each resolved stop to a canvas and reading
+       * the sRGB bytes back: WITHOUT any clamp the worst case is 4.88:1 (glacier stop 2) — already clear
+       * of the 4.5 normal-text bar, never mind the 3:1 large-text one the hostname actually sits under.
+       * The floor bought 4.88 -> 5.07 and cost the anchor its exactness, so it went.
+       * Leaving L and C alone is also the truer derivation: every stop then holds the accent's OWN
+       * lightness and chroma, and stop 1 IS the accent for every palette by construction. An
+       * out-of-sRGB combination is gamut-mapped by the engine (chroma reduced, L and H preserved), which
+       * is the degradation we want anyway — and is where those minima already come from.
+       * ⚠ Do not add a floor back without re-measuring; the obvious model is the one that was wrong.
+       *
+       * ⚠ `calc(h + 45)`, NOT `calc(h + 45deg)`. Inside `oklch(from …)` the `h` keyword substitutes a
+       * <number> of degrees, not an <angle>, so adding `45deg` is a TYPE ERROR — and it fails the way
+       * every invalid custom-property value fails: the declaration is dropped at computed-value time, the
+       * `var()` resolves to nothing, and every slice loses its keyline, its drop, its wash and its name at
+       * once with no error anywhere. Caught by probing both shipped engines rather than by reading the
+       * spec; the same probe confirmed all eight stops resolve DISTINCT on Chromium 149 and Firefox 151,
+       * off all six accent bases, with the floor biting on exactly the four dark ones.
        *
        * BROWSER FLOOR: relative colour syntax is Firefox 128+ / Chrome 119+. The app already requires
        * `@scope` (Firefox 128 / Chrome 118), so this adds no NEW floor — the same engines. Worth an
        * explicit look at the E5 device round all the same, since Fennec is the target. */
       --gc-unit-1: var(--accent);
-      --gc-unit-2: oklch(from var(--accent) max(l, 0.72) c calc(h + 45deg));
-      --gc-unit-3: oklch(from var(--accent) max(l, 0.72) c calc(h + 90deg));
-      --gc-unit-4: oklch(from var(--accent) max(l, 0.72) c calc(h + 135deg));
-      --gc-unit-5: oklch(from var(--accent) max(l, 0.72) c calc(h + 180deg));
-      --gc-unit-6: oklch(from var(--accent) max(l, 0.72) c calc(h + 225deg));
-      --gc-unit-7: oklch(from var(--accent) max(l, 0.72) c calc(h + 270deg));
-      --gc-unit-8: oklch(from var(--accent) max(l, 0.72) c calc(h + 315deg));
+      --gc-unit-2: oklch(from var(--accent) l c calc(h + 45));
+      --gc-unit-3: oklch(from var(--accent) l c calc(h + 90));
+      --gc-unit-4: oklch(from var(--accent) l c calc(h + 135));
+      --gc-unit-5: oklch(from var(--accent) l c calc(h + 180));
+      --gc-unit-6: oklch(from var(--accent) l c calc(h + 225));
+      --gc-unit-7: oklch(from var(--accent) l c calc(h + 270));
+      --gc-unit-8: oklch(from var(--accent) l c calc(h + 315));
 
       /* The brand trio — wordmark, tag pills, the dossier strip, and the Conf palette chip. */
       --gc-brand-fill: linear-gradient(

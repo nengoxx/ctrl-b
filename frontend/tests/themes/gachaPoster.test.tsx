@@ -865,7 +865,7 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
       expect(blockFor(sel), `${sel} must paint the RESOLVED hue`).toContain("var(--po-hue)");
   });
 
-  it("derives the per-unit RING off the accent token, once, with the measured lightness floor", () => {
+  it("derives the per-unit RING off the accent token, once, with L and C held", () => {
     // The owner's "in line with the theme" ask, as a structural claim: eight stops 45deg apart, derived
     // from `--accent` in OKLCH rather than fitted as 6x8 literals — so every accent palette re-tints the
     // whole fleet for free and a ninth palette needs no colour work. Read from tokens.css, since jsdom
@@ -874,7 +874,11 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     // stop 1 IS the accent, unrotated
     expect(tokens).toContain("--gc-unit-1: var(--accent);");
     for (let k = 1; k < 8; k++) {
-      const decl = `--gc-unit-${k + 1}: oklch(from var(--accent) max(l, 0.72) c calc(h + ${k * 45}deg));`;
+      // `calc(h + 45)`, NOT `+ 45deg`: inside `oklch(from …)` the `h` keyword substitutes a NUMBER of
+      // degrees, so an angle there is a type error — and an invalid custom-property value is dropped at
+      // computed-value time, unpainting every slice with no error anywhere. Verified against both
+      // shipped engines; this row is what keeps the `deg` from creeping back in.
+      const decl = `--gc-unit-${k + 1}: oklch(from var(--accent) l c calc(h + ${k * 45}));`;
       expect(tokens, `stop ${k + 1} must be the accent rotated ${k * 45}deg`).toContain(decl);
     }
     // …exactly once each — a duplicate in the same scope would let a later one win silently (the LOW-6
@@ -884,6 +888,9 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     expect(tokens.split("--gc-unit-off:").length - 1).toBe(1);
     // and the RARITY ladder is gone outright — nothing maps a star count to a hue any more
     expect(tokens, "the rarity->hue ladder has no consumer left").not.toContain("--gc-rar-");
+    expect(tokens, "an <angle> in the hue channel is a silent type error").not.toMatch(
+      /--gc-unit-\d: oklch\([^;]*deg\)/,
+    );
   });
 
   it("does NOT dress the page or the banner — the owner cut both (standing negative)", () => {
