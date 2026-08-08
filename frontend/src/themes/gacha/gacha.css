@@ -1078,10 +1078,24 @@
       font-weight: 900;
       line-height: 1;
       letter-spacing: 0.04em;
+      /* THE HARD ACCENT DROP (owner, fourth walk: "like the fleet button and the user bubbles"). The
+       * theme's "sits ON the surface" motif — see the token for why it is derived rather than restated,
+       * and why 5px.
+       *
+       * SCOPE: the SHARED head, so it shows under capsule AND poster. That is deliberate — one fleet, one
+       * heading, and the head is byte-identical markup in both layouts — and it is ONE SELECTOR either
+       * way: prefixing this rule with `body[data-gc-fleet="poster"]` makes it poster-only, with nothing
+       * else to move. */
+      text-shadow: var(--gc-head-shadow);
     }
     .gc-track-head h1 em {
       display: block;
       margin-top: 7px;
+      /* `text-shadow` INHERITS, so the drop has to be nulled here explicitly: the motif belongs to the
+       * display kanji line alone, and an 11px caption wearing a 5px offset would read as a printing
+       * error rather than as depth. (`.count` is a SIBLING of the h1, not a child, so it never inherits
+       * it — asserted in the tests rather than assumed.) */
+      text-shadow: none;
       font-family: var(--font-body);
       font-style: normal;
       font-size: 11px;

@@ -670,6 +670,24 @@
       /* --accent is the flat <color> channel (focus ring, borders, accent text, the color-mix softs): the
        * brand PINK, the trio's leading hue and its most legible member on this bg. */
       --accent: var(--gc-brand-1);
+      /* ── THE TRACK HEAD's HARD DROP (owner, fourth walk: "can it have a shadow like the fleet button? So
+       * it's not just white… like the fleet button and the user bubbles, the accent shadow") ─────────────
+       * The theme's "sits ON the surface" motif, applied to the fleet heading's display kanji.
+       *
+       * SAME SHAPE, SAME COLOUR SOURCE, DERIVED RATHER THAN RESTATED. `--gc-ind-shadow` (the nav pill) and
+       * `--gc-bubble-user-shadow` (the user bubble) are both `5px 5px 0 <that palette's brand-1>`, written
+       * out as a literal in each accent block. `--accent` IS `var(--gc-brand-1)` on `body`, and every
+       * family-2 block redefines that trio — so this one declaration reproduces the same six values the
+       * siblings spell out, and a ninth palette gets it for free. Not a new accent read: the bubble's own
+       * base value `#ff6cae` is exactly what `--accent` resolves to.
+       *
+       * 5px, matching the family rather than scaling the text precedent. The in-family TEXT drop is the
+       * poster name's `3px 3px 0` at 20px, which scales to ~4.35px at the head's 29px — so 4 and 5 both
+       * had a claim, and 5 wins because it is the number the motif is actually made of (the nav pill and
+       * the bubble are both 5) and because it demonstrably clears the caption line beneath it: the kanji
+       * line box is 29px at line-height 1 and the `em` sits 7px below it, so a 5px drop lands inside that
+       * gap. Verified by pixel-diffing the caption's box with the shadow on and off. */
+      --gc-head-shadow: 5px 5px 0 var(--accent);
       /* The NEW chip's translucent interior — the ribbon's own colour at a fraction, so the chip reads as
        * an outline with the art showing through rather than as a second filled pill beside the status one.
        * A TOKEN rather than an inline `color-mix` (the G6.5 lesson: an inline mix is invisible to the

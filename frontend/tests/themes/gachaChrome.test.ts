@@ -206,6 +206,51 @@ describe("gacha chrome — the values live in tokens.css (council M7)", () => {
 // The fence is absolute rather than a list of allowed exceptions: outside `copy.ts`, gacha's TypeScript
 // contains no non-ASCII at all. Comments are stripped first — prose about 編成 or a `→` in a diagram is
 // documentation, not shipped text.
+// ── THE TRACK HEAD's HARD ACCENT DROP (owner ruling, the fourth E1 dev-unit walk) ────────────────────
+// "Can it have a shadow like the fleet button? So it's not just white… like the fleet button and the user
+// bubbles, the accent shadow." The theme's "sits ON the surface" motif, on the fleet heading's kanji.
+describe("gacha — the track head's accent drop", () => {
+  it("reuses the motif's SHAPE and colour source, derived rather than restated", () => {
+    // `--gc-ind-shadow` (nav pill) and `--gc-bubble-user-shadow` (user bubble) are both
+    // `5px 5px 0 <that palette's brand-1>`, spelled out as a literal in every accent block. `--accent` IS
+    // `var(--gc-brand-1)`, so ONE derived declaration reproduces the same six values — and a ninth
+    // palette gets it free. This asserts it is the same shape, not a new accent read.
+    expect(tokens).toContain("--gc-head-shadow: 5px 5px 0 var(--accent);");
+    expect(tokens).toContain("--gc-bubble-user-shadow: 5px 5px 0 #ff6cae;");
+    // …and being derived, no accent block may restate it (that is what the siblings have to do)
+    const accentBlocks = tokens.slice(tokens.indexOf('body[data-accent="arcade"]'));
+    expect(accentBlocks, "a derived token must not be restated per accent").not.toContain(
+      "--gc-head-shadow",
+    );
+  });
+
+  it("puts the drop on the DISPLAY KANJI only — not the caption, not the counter", () => {
+    // `text-shadow` INHERITS, so the caption has to null it explicitly or an 11px line wears a 5px
+    // offset. `.count` is a SIBLING of the h1, so it never inherits — checked structurally rather than
+    // assumed, because that is the fact keeping it out of a rule of its own.
+    expect(blockFor(css, ".gc-track-head h1")).toContain("text-shadow: var(--gc-head-shadow)");
+    expect(blockFor(css, ".gc-track-head h1 em")).toContain("text-shadow: none");
+    expect(blockFor(css, ".gc-track-head .count")).not.toContain("text-shadow");
+    // (Verified on the live app by pixel-diffing the head with the drop on and off: 789 px change over
+    // the head, 0 over the caption's box and 0 over the counter's.)
+  });
+
+  it("is SHARED by both fleet layouts, and is one selector away from poster-only", () => {
+    // The head is byte-identical markup under capsule and poster (one fleet, one heading), so the drop
+    // shows under both by design. If the owner vetoes that, prefixing this ONE rule with
+    // `body[data-gc-fleet="poster"]` is the whole pullback — nothing else moves. The test states the
+    // shape so the flip stays a one-liner.
+    const heads = [...css.matchAll(/\n {4}([^\n{]*\.gc-track-head h1) \{/g)].map((m) =>
+      m[1].trim(),
+    );
+    expect(heads, "the head's h1 rule must be unscoped (shared)").toContain(".gc-track-head h1");
+    expect(
+      heads.filter((h) => h.includes("data-gc-fleet")),
+      "no layout-scoped copy of the h1 rule — the flip is a prefix, not a second rule",
+    ).toEqual([]);
+  });
+});
+
 describe("gacha sources — no non-ASCII outside copy.ts", () => {
   const dir = resolve(process.cwd(), "src/themes/gacha");
   const files = readdirSync(dir, { recursive: true, encoding: "utf8" })
