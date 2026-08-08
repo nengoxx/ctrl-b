@@ -355,7 +355,13 @@ export function GachaFleet({ active }: { active: boolean }) {
       setMorphOpen(false);
       setSelected(null);
     }
-    if (pickedId && !hosts.some((h) => h.id === pickedId)) setPickedId(null);
+    // COMPARE-AND-CLEAR, through a FUNCTIONAL setter (Codex E2-confirm M1). This effect is passive, so it
+    // runs one commit after the poll that changed `hosts` — and a cover's deferred promote can commit a
+    // NEW selection inside that window. Reading `pickedId` out of this closure and clearing
+    // unconditionally then threw the accepted value away: the seam had already returned `true`, so the
+    // ceremony went on to announce a machine the state no longer held. The updater reads what the state
+    // ACTUALLY holds now and clears only if THAT is the gone one, so a newer commit survives untouched.
+    setPickedId((prev) => (prev !== null && !hosts.some((h) => h.id === prev) ? null : prev));
     setWaking((prev) => {
       if (prev.size === 0) return prev;
       const next = new Set([...prev].filter((id) => hosts.some((h) => h.id === id)));

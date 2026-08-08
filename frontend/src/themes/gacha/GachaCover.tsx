@@ -110,8 +110,8 @@ export function GachaCover({
    *  gesture however long it is held: a repeat must neither clear the pointer suppression above nor act
    *  on its own — a held Enter would otherwise fire the control dozens of times, and the first repeat
    *  after a keyboard skip lands on a ceremony that has just ended and routes for real. Cleared by every
-   *  genuine gesture START (a pointerdown, or a keydown that is not a repeat), so it can never go stale
-   *  and swallow a real tap. */
+   *  genuine gesture START (a pointerdown, or a keydown that is not a repeat) and by the key's own RELEASE,
+   *  so it can never go stale and swallow a real tap — including Space's, which is dispatched on keyup. */
   const keyRepeat = useRef(false);
   /** The frame, for the two DOM reads the focus restoration needs. */
   const frameRef = useRef<HTMLDivElement>(null);
@@ -159,17 +159,28 @@ export function GachaCover({
   const heroIndex = heroIndexRaw >= 0 ? heroIndexRaw : 0;
   const hero = hosts[heroIndex] ?? null;
 
-  // FOCUS SURVIVES THE REPARENT (ruling 9). Keyed on the HERO's identity, which is the only change that
-  // moves a node between the two containers, and it spends `focusReturn` in one go — so a swap nobody was
-  // keyboarding through costs nothing, and a promote driven from the keyboard lands with focus still on
-  // the machine the user was standing on.
+  // FOCUS SURVIVES THE REPARENT (ruling 9), and it is keyed to the ARMED MACHINE rather than to "the next
+  // hero change" (Codex E2-confirm F3). Those are not the same event: with `[A, C, B]`, focusing B and
+  // promoting it, a poll that drops A first makes C the FALLBACK hero — a hero change that has nothing to
+  // do with this gesture. Spending the arm there left B's own promotion, 170 ms later, to reparent it with
+  // no restoration at all. So the arm waits for ITS host to become the hero; an intermediate hero is
+  // simply not its swap.
+  //
+  // It is also bounded in the two ways it can go stale: the armed machine LEAVING the fleet clears it
+  // (nothing to restore, and it must not outlive its host), and a REFUSED commit clears it at the beat.
   useLayoutEffect(() => {
     const id = focusReturn.current;
-    focusReturn.current = null;
     if (id === null) return;
+    if (!hosts.some((h) => h.id === id)) {
+      focusReturn.current = null; // its machine is gone; the arm goes with it
+      return;
+    }
+    // some other machine took the cover: that is not this gesture's swap, so the arm keeps waiting
+    if (hero?.id !== id) return;
+    focusReturn.current = null;
     const node = cardNodes(frameRef.current).find((c) => c.dataset.gcHost === id);
     if (node && document.activeElement !== node) node.focus({ preventScroll: true });
-  }, [hero?.id]);
+  }, [hero?.id, hosts]);
 
   /** PROMOTE — a cut-in takes the cover (the lab's `promote()`, beats verbatim).
    *
@@ -201,7 +212,15 @@ export function GachaCover({
             announce(coverPromoteAnnounce(tapped?.name ?? hostId));
           },
         ],
-        [170, () => (committed = latest.current.onCommitSelect(hostId))],
+        [
+          170,
+          () => {
+            committed = latest.current.onCommitSelect(hostId);
+            // refused ⇒ no swap is coming, so the arm must not sit waiting for one (Codex E2-confirm F3's
+            // tail: a later reappearance of the same id could otherwise steal focus on an unrelated turn)
+            if (!committed) focusReturn.current = null;
+          },
+        ],
         [
           300,
           () => {
@@ -342,6 +361,13 @@ export function GachaCover({
         onKeyDownCapture={(e) => {
           keyRepeat.current = e.repeat;
           if (!e.repeat) skippedGesture.current = false;
+        }}
+        // …and the HELD KEY ends here (Codex E2-confirm L1). ENTER activates on keydown, so a repeat is a
+        // second activation and is rightly swallowed; SPACE activates on KEYUP, so its one real click
+        // arrives after the repeats have set the flag — without this it was swallowed and a held Space
+        // did nothing at all. Keyup runs before that default click, which is what makes this the release.
+        onKeyUpCapture={() => {
+          keyRepeat.current = false;
         }}
         // No morph element is handed over: the cover opens PLAIN (see the header note).
         onClick={() => onCardTap(host.id, isHero)}
