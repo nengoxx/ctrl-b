@@ -1,6 +1,18 @@
+/// <reference types="node" />
+// ^ the rarity-ladder guard below reads gacha's tokens.css from disk (fs/path/process); the tests tsconfig
+//   pins `types:["vitest"]`, so node's globals are pulled in explicitly (the gachaChrome precedent).
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { isHighStar, MAX_STARS, starsFor, toStarMode } from "../../src/themes/gacha/stars";
+import {
+  isHighStar,
+  MAX_STARS,
+  rarityToken,
+  starsFor,
+  toStarMode,
+} from "../../src/themes/gacha/stars";
 
 // The ruled star ladders (D52 / GACHA_PLAN §6.1) — the owner's verbatim tables, transcribed as a data-driven
 // case list so the test reads like the spec table it enforces. The input is CONFIGURED services (not live
@@ -73,5 +85,58 @@ describe("isHighStar — the rose-gold rungs (§6.2)", () => {
 
   it("3★ mode: only the third is rosy", () => {
     expect([0, 1, 2].map((i) => isHighStar(i, "three"))).toEqual([false, false, true]);
+  });
+});
+
+// ── rarityToken — the alt-fleet POSTER's hue ladder (GACHA_PLAN §12.6 rulings 8 + 11) ──────────────────
+// MODE-RELATIVE, which is the whole ruling: the top rung must read GOLD on both scales (the `isHighStar`
+// precedent), so 3★ mode walks the SAME five-rung token set at 1 / 3 / 5 rather than stopping at cyan.
+describe("rarityToken — the mode-relative rarity ladder", () => {
+  it("5★ mode walks silver → green → cyan → purple → gold, one rung per star", () => {
+    expect([1, 2, 3, 4, 5].map((n) => rarityToken(n, "five"))).toEqual([
+      "var(--gc-rar-1)",
+      "var(--gc-rar-2)",
+      "var(--gc-rar-3)",
+      "var(--gc-rar-4)",
+      "var(--gc-rar-5)",
+    ]);
+  });
+
+  it("3★ mode is silver → cyan → GOLD (the top rung is gold on both scales)", () => {
+    expect([1, 2, 3].map((n) => rarityToken(n, "three"))).toEqual([
+      "var(--gc-rar-1)",
+      "var(--gc-rar-3)",
+      "var(--gc-rar-5)",
+    ]);
+  });
+
+  it("the top rung of BOTH modes is the same token — a ★5 and a ★3 flagship read alike", () => {
+    expect(rarityToken(MAX_STARS.five, "five")).toBe(rarityToken(MAX_STARS.three, "three"));
+  });
+
+  it("clamps at both ends and survives impossible input (it is on a render path)", () => {
+    expect(rarityToken(0, "five")).toBe("var(--gc-rar-1)");
+    expect(rarityToken(-4, "three")).toBe("var(--gc-rar-1)");
+    expect(rarityToken(9, "five")).toBe("var(--gc-rar-5)");
+    expect(rarityToken(9, "three")).toBe("var(--gc-rar-5)");
+    expect(rarityToken(Number.NaN, "five")).toBe("var(--gc-rar-1)");
+    expect(rarityToken(3.9, "five")).toBe("var(--gc-rar-3)"); // floored, like starsFor
+  });
+
+  it("every token it can name is DECLARED in tokens.css (a var() typo paints nothing)", () => {
+    // The failure mode is silent: `var(--gc-rar-6)` resolves to the empty value and the slice loses its
+    // keyline, its drop and its name colour at once, with no error anywhere. So the ladder's output is
+    // checked against the stylesheet that has to back it, plus the sleeping suppression the poster's CSS
+    // reaches for by name.
+    const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
+    const named = new Set(
+      [1, 2, 3, 4, 5]
+        .flatMap((n) => [rarityToken(n, "five"), rarityToken(n, "three")])
+        .concat("var(--gc-rar-off)"),
+    );
+    for (const value of named) {
+      const name = value.slice("var(".length, -1);
+      expect(tokens, `${name} is not declared in gacha's tokens.css`).toContain(`${name}:`);
+    }
   });
 });

@@ -344,6 +344,30 @@
        * salmon — pulled toward the brand pink so the top rungs read pink-gold at card size. */
       --gc-star-hi: #ff8fa8;
       --gc-star-dim: #b9b3d6; /* sleeping cards de-saturate */
+
+      /* ── THE RARITY -> HUE LADDER (GACHA_PLAN §12.6 rulings 8 + 11; `stars.ts#rarityToken` is the ONE
+       * reader) ────────────────────────────────────────────────────────────────────────────────────────
+       * The alt-fleet POSTER derives a slice's colour from its STAR COUNT rather than from a per-host
+       * accent — one machine, one hue, and the same number the star row already draws. Values are the
+       * finalists lab's own (`design/prototypes/gacha/alt-fleet-finalists/styles.css`), walked with the
+       * owner across two rounds; the device round (E5) is where they get their real test against a live
+       * fleet (rarity-hue collision is a recorded open item).
+       *
+       * Held CONSTANT across the accent axis, exactly like `--gc-star*` above it: a machine's rarity is a
+       * property of the machine, not of the palette the owner is wearing, so an accent block must never
+       * restate these. The top rung IS `--gc-star` by identity rather than by a duplicated literal — a
+       * ★5 slice and a ★5 star row are the same gold BY CONSTRUCTION. (`--gc-star` is a `:scope` static
+       * that no accent block overrides, so substituting it here is safe on the §14.13 rule.)
+       *
+       * `-off` is the SLEEPING suppression (§12.6 ruling 8: hue suppressed to grey + mono art + idle
+       * stopped, hue floods back on wake). A neutral slate rather than a de-saturation of the live hue,
+       * so every asleep machine reads as one uniform "not here" instead of five dim colours. */
+      --gc-rar-1: #cdd2e0; /* silver floor */
+      --gc-rar-2: #5fe0a0; /* green        */
+      --gc-rar-3: #4dd7ff; /* cyan         */
+      --gc-rar-4: #b07cff; /* purple       */
+      --gc-rar-5: var(--gc-star); /* gold — the theme's own star, by identity */
+      --gc-rar-off: #6b6f7d; /* asleep: the hue suppressed */
       /* ── The star's DRAWN metrics (G7 — the R16 redesign; see GachaStar.tsx) ─────────────────────────
        * The glyph's `font-size`/`letter-spacing`/`text-shadow` trio is gone with it: a drawn star is a box
        * and a gap, so both surfaces are tunable in the vocabulary R16 measured the field in.
