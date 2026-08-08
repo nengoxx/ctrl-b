@@ -122,10 +122,17 @@ describe("themeSettingsSpec — gacha", () => {
       "wallpaper",
       "oracle",
     ]);
-    expect(themeSettingsSpec("gacha")?.fleetLayout).toMatchObject({
-      type: "seg",
-      default: "capsule",
-    });
+    const layout = themeSettingsSpec("gacha")?.fleetLayout;
+    expect(layout).toMatchObject({ type: "seg", default: "capsule" });
+    // THREE OPTIONS, IN THIS ORDER, and the list is CLOSED (E2): capsule is the untouched default and the
+    // resolver's fallback, poster and cover are the two alt layouts, and the owner's cap is three
+    // ("maximum three… I don't wanna clutter the app"). A fourth entry here is a ruling, not an edit —
+    // and the order is the picker's reading order, default first.
+    expect(layout?.type === "seg" && layout.options).toEqual([
+      { val: "capsule", label: "Capsule" },
+      { val: "poster", label: "Poster" },
+      { val: "cover", label: "Cover" },
+    ]);
     expect(themeSettingsSpec("gacha")?.posterName).toMatchObject({
       type: "seg",
       default: "blade",

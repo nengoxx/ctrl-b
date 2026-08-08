@@ -909,6 +909,14 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
     // background cascade capsule does — `.kit`'s coloured backdrop, plus the wallpaper's own
     // `[data-wallpaper="on"][data-tab="fleet"] .kit-main` rule, which is layout-blind. That covers both
     // states the owner named (wallpaper ON and OFF) without needing to render either.
+    //
+    // ⚠ CONSCIOUSLY RE-CONFIRMED AT E2, NOT LOOSENED. The cover is a fixed magazine page and does need a
+    // black field and a re-scaled banner — a SIGNED structural exception (§12.6 E2). It does NOT take it
+    // through this stamp: the field is painted on `.cv-frame`, the strip is scoped to `.cv-strap`, and
+    // both are markup only the cover renders, so this enumeration is EXACTLY the poster's and the
+    // capsule↔poster identity invariant is untouched. The exception has its own enumerated list in
+    // `gachaCover.test.tsx` ("THE SIGNED STRUCTURAL EXCEPTION"), and the arm below is what stops it
+    // migrating onto the stamp — where it would escape both enumerations at once.
     const scoped = [...css.matchAll(/\n {4}([^\n{]*\[data-gc-fleet[^\n{]*)\{([^}]*)\}/g)];
     expect(scoped.length, "the stamp must still have consumers").toBeGreaterThan(0);
     for (const [, sel, body] of scoped) {
@@ -918,6 +926,11 @@ describe("the poster's stylesheet claims (jsdom paints none of this)", () => {
         /\.kit-main|\.kit\b|#tab-|\.tab\b/,
       );
     }
+    // every consumer the stamp has is still POSTER's — the seam compaction and nothing else
+    expect(
+      scoped.map(([, sel]) => sel.trim()).filter((s) => !s.includes('data-gc-fleet="poster"')),
+      "a new layout-scoped rule appeared — enumerate it deliberately, do not let it in here",
+    ).toEqual([]);
   });
 
   it("compacts the banner->head->stack seam, POSTER-ONLY and vertical-only", () => {

@@ -1,0 +1,883 @@
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// THE COVER, RENDERED (GACHA_PLAN §12.6 E2) — the R25 §Q7 ⑬ pin plus the ruling-9 anatomy claims that are
+// checkable without a browser. `useFleet` is mocked to a fixed FleetView and the media index to the
+// fresh-install state (the `gachaFleet.test.tsx` / `gachaPoster.test.tsx` harness), so these exercise the
+// LAYOUT's own wiring rather than the query layer.
+//
+// The layout is driven through the real Surface: `themeSettings.gacha.fleetLayout = "cover"` is what
+// `fleetSurface` resolves against, so every case here also proves the E2 registration resolves end to end.
+
+const fleet = vi.hoisted(() => {
+  const view: Record<string, unknown> = {};
+  return { view };
+});
+vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
+const media = vi.hoisted((): { data: unknown } => ({ data: undefined }));
+vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
+
+/// <reference types="node" />
+// ^ the stylesheet block at the end reads gacha's CSS from disk (fs/path/process); the tests tsconfig
+//   pins `types:["vitest"]`, so node's globals are pulled in explicitly.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { setGachaReelRunning } from "../../src/store/gachaReel";
+import { setThemeSetting, setUI } from "../../src/store/ui";
+import { settingRowVisible } from "../../src/theme-engine/settings";
+import { registry } from "../../src/theme-engine/registry";
+import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
+import { GACHA_COPY } from "../../src/themes/gacha/copy";
+import type { Host, HostServiceCfg } from "../../src/types";
+
+/** N CONFIGURED services — the rarity input. */
+const cfg = (names: string[]): HostServiceCfg[] =>
+  names.map((name) => ({ name, kind: null, port: null, path: "/", autostart: false, cmd: {} }));
+
+const host = (id: string, online: boolean, over: Partial<Host> = {}): Host => ({
+  id,
+  name: id,
+  ip: "10.0.0.7",
+  mac: null,
+  ssh_username: null,
+  ssh_port: 22,
+  os_type: "linux",
+  role: "workstation",
+  tags: [],
+  services: cfg(["grafana", "sonarr"]),
+  status: {
+    host_id: id,
+    online,
+    ping_ms: online ? 18 : null,
+    last_seen: "2026-01-01T00:00:00Z",
+    checked_at: "2026-01-01T00:00:00Z",
+    error: null,
+  },
+  ...over,
+});
+
+function setFleet(over: Record<string, unknown> = {}): void {
+  fleet.view = {
+    hosts: [host("pegasus", true), host("atlas", false), host("vault", true)],
+    svcByHost: new Map(),
+    run: vi.fn(() => Promise.resolve()),
+    busy: new Set<string>(),
+    isLoading: false,
+    error: null,
+    hasData: true,
+    svcHasData: true,
+    svcLoading: false,
+    svcError: null,
+    ...over,
+  };
+}
+
+const cards = (c: HTMLElement): HTMLButtonElement[] => [
+  ...c.querySelectorAll<HTMLButtonElement>(".cv-card"),
+];
+const heroCard = (c: HTMLElement): HTMLButtonElement =>
+  c.querySelector<HTMLButtonElement>(".cv-heroslot .cv-card")!;
+const cutCards = (c: HTMLElement): HTMLButtonElement[] => [
+  ...c.querySelectorAll<HTMLButtonElement>(".cv-stack .cv-card"),
+];
+const heroName = (c: HTMLElement): string | null =>
+  heroCard(c).querySelector(".cv-herocopy b")?.textContent ?? null;
+const heroChip = (c: HTMLElement): string | null =>
+  heroCard(c).querySelector(".cv-chip")?.textContent ?? null;
+const live = (c: HTMLElement): string => c.querySelector(".gc-live")?.textContent ?? "";
+const dossierName = (): string | null =>
+  document.querySelector(".gc-dossier-title h2")?.textContent ?? null;
+const runFn = (): ReturnType<typeof vi.fn> => fleet.view.run as ReturnType<typeof vi.fn>;
+
+/** Stub `document.startViewTransition` and hold its callbacks (the `gachaFleet.test.tsx` idiom). The
+ *  COVER must never use it — without the stub `viewTransitionsActive()` is false in jsdom and the
+ *  "opens plain" assertion would pass vacuously. */
+function deferVT() {
+  const pending: (() => void)[] = [];
+  const start = vi.fn((cb: () => void) => {
+    pending.push(cb);
+    return { ready: Promise.resolve(), finished: Promise.resolve() };
+  });
+  (document as { startViewTransition?: unknown }).startViewTransition = start;
+  return { start, pending };
+}
+
+beforeEach(() => {
+  setUI({ theme: "gacha", tab: "fleet", motion: "full", themeSettings: {} });
+  setThemeSetting("gacha", "fleetLayout", "cover");
+  setFleet();
+  media.data = undefined; // no owner files ⇒ the bundled cast
+  vi.spyOn(Math, "random").mockReturnValue(0);
+});
+afterEach(() => {
+  try {
+    cleanup();
+  } finally {
+    vi.restoreAllMocks();
+    delete (document as { startViewTransition?: unknown }).startViewTransition;
+    setGachaReelRunning(false);
+    setUI({ themeSettings: {} });
+  }
+});
+
+// ── the layout resolves, and it is the cover ─────────────────────────────────────────────────────────
+describe("the cover resolves through the fleet Surface", () => {
+  it("draws one hero, the rest as cut-ins, and NO capsule track", () => {
+    const { container } = render(<GachaFleet active />);
+    expect(cards(container)).toHaveLength(3);
+    expect(cutCards(container)).toHaveLength(2);
+    expect(container.querySelector(".gc-track")).toBeNull();
+    expect(container.querySelector(".po-poster")).toBeNull();
+  });
+
+  it("SUPPRESSES the inherited track head — the MASTHEAD is the tab's one heading (ruling 9)", () => {
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-track-head")).toBeNull();
+    const heads = container.querySelectorAll("h1");
+    expect(heads).toHaveLength(1);
+    expect(heads[0].classList.contains("cv-mast")).toBe(true);
+    // It is REAL heading content, not the lab's aria-hidden mock scaffolding.
+    expect(heads[0].hasAttribute("aria-hidden")).toBe(false);
+    expect(heads[0].textContent).toContain(GACHA_COPY.coverKicker);
+    expect(heads[0].textContent).toContain(GACHA_COPY.coverTitle1);
+    expect(heads[0].textContent).toContain(GACHA_COPY.coverTitle2);
+  });
+
+  it("prints the ISSUE line rather than the track counter", () => {
+    // The `counter` prop is deliberately unused here: `NN / NN` is the TRACK's read of the fleet, and a
+    // magazine states its issue number. hosts[0] opens the issue, so it is ISSUE 01.
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".cv-issue")?.textContent).toBe(
+      `ISSUE 01 ${GACHA_COPY.sep} ONLINE`,
+    );
+    expect(container.textContent).not.toContain("01 / 03");
+  });
+
+  it("opens the issue with hosts[0], marked with aria-pressed", () => {
+    const { container } = render(<GachaFleet active />);
+    expect(heroName(container)).toBe("PEGASUS");
+    expect(heroCard(container).getAttribute("aria-pressed")).toBe("true");
+    expect(cutCards(container).map((b) => b.getAttribute("aria-pressed"))).toEqual([
+      "false",
+      "false",
+    ]);
+  });
+
+  it("⑬ gives every machine EXACTLY ONE accessibly-named button, at N=4", () => {
+    // R25 §Q7 ⑬, the invariant every layout owes: one control per machine, each with a real name, and
+    // the promote/reparent must not leave a second copy of anything behind.
+    setFleet({
+      hosts: [
+        host("pegasus", true),
+        host("atlas", false),
+        host("vault", true),
+        host("relay", false),
+      ],
+    });
+    const { container } = render(<GachaFleet active />);
+    const named = cards(container).map((b) => b.getAttribute("aria-label"));
+    expect(named).toHaveLength(4);
+    expect(named.every((n) => !!n && n.length > 0)).toBe(true);
+    expect(new Set(named).size).toBe(4);
+    // …and the hero's name says what the HERO does, while a cut-in's says what a cut-in does
+    expect(named[0]).toBe(
+      "pegasus, workstation, 2 stars, on the cover, online. Opens the unit dossier.",
+    );
+    expect(named[1]).toBe(
+      "atlas, workstation, 2 stars, sleeping. Supporting cut-in. Puts it on the cover.",
+    );
+  });
+
+  it("marks every host control `.gc-host-hit` (the dossier's outside-click exemption, ruling 5①)", () => {
+    const { container } = render(<GachaFleet active />);
+    expect(cards(container).every((b) => b.classList.contains("gc-host-hit"))).toBe(true);
+  });
+
+  it("wears the PER-UNIT hue by fleet POSITION, and the frame carries the ISSUE's own", () => {
+    const { container } = render(<GachaFleet active />);
+    expect(cards(container).map((b) => b.style.getPropertyValue("--cv-rar"))).toEqual([
+      "var(--gc-unit-1)",
+      "var(--gc-unit-2)",
+      "var(--gc-unit-3)",
+    ]);
+    // the masthead kicker and the strapline tag sit outside the hero card, so the hue is published on
+    // the frame for them (the lab's `--cover-rar`)
+    expect(
+      container.querySelector<HTMLElement>(".cv-frame")!.style.getPropertyValue("--cv-cover"),
+    ).toBe("var(--gc-unit-1)");
+  });
+
+  it("DERIVES the hero crop, and leaves art with no focus alone (ruling 9)", () => {
+    const { container } = render(<GachaFleet active />);
+    // the bundled entry at display position 0 declares `50% 12%`; the hero slot shifts its X left by 20
+    const pegasus = cards(container)[0];
+    expect(pegasus.style.getPropertyValue("--cv-focus")).toBe("50% 12%");
+    expect(pegasus.style.getPropertyValue("--cv-hero-focus")).toBe("30% 12%");
+    // …and the entry at position 1 declares none, so NEITHER variable is written and the CSS default
+    // chain stands — a computed override would be a claim about a crop nobody authored
+    const atlas = cards(container)[1];
+    expect(atlas.style.getPropertyValue("--cv-focus")).toBe("");
+    expect(atlas.style.getPropertyValue("--cv-hero-focus")).toBe("");
+  });
+});
+
+// ── THE TAP GRAMMAR (the E2 main-seat ruling) ────────────────────────────────────────────────────────
+describe("the cover's tap grammar", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("a CUT-IN always PROMOTES — even an ONLINE one, which is where the poster differs", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[1])); // vault, ONLINE
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container)).toBe("VAULT");
+    // it did NOT open a dossier and it did NOT wake anything
+    expect(dossierName()).toBeNull();
+    expect(runFn()).not.toHaveBeenCalled();
+  });
+
+  it("the ONLINE HERO opens its dossier on one tap", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    expect(dossierName()).toBe("pegasus");
+    expect(runFn()).not.toHaveBeenCalled();
+  });
+
+  it("the SLEEPING HERO develops — the same `run('wake', host)` seam, and no confirm dialog", () => {
+    setFleet({ hosts: [host("atlas", false), host("pegasus", true)] });
+    const { container } = render(<GachaFleet active />);
+    expect(heroName(container)).toBe("ATLAS");
+    act(() => void fireEvent.click(heroCard(container)));
+    expect(runFn()).toHaveBeenCalledTimes(1);
+    expect(runFn().mock.calls[0][0]).toBe("wake");
+    expect((runFn().mock.calls[0][1] as Host).id).toBe("atlas");
+    expect(document.querySelector(".modal-backdrop")).toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(dossierName()).toBeNull();
+  });
+
+  it("OPENS PLAIN — the cover hands over no morph element (ruling 5②, as signed for cover)", () => {
+    const vt = deferVT();
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    // the stub is installed, so a morph WOULD have been carried had one been offered
+    expect(vt.start).not.toHaveBeenCalled();
+    expect(dossierName()).toBe("pegasus");
+  });
+
+  it("the opening tap does not dismiss the dossier it just opened", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    expect(document.body.dataset.sheet).toBe("open");
+    // …and a real outside tap still closes it
+    act(() => void fireEvent.click(document.body));
+    expect(document.body.dataset.sheet).toBeUndefined();
+  });
+
+  it("refuses a develop while an action on that machine is already in flight", () => {
+    setFleet({ hosts: [host("atlas", false), host("pegasus", true)], busy: new Set(["atlas"]) });
+    const { container } = render(<GachaFleet active />);
+    const hero = heroCard(container);
+    expect(hero.disabled).toBe(true);
+    expect(hero.getAttribute("aria-busy")).toBe("true");
+    // the guard is SYNCHRONOUS in the router, not merely the disabled attribute: jsdom dispatches into a
+    // disabled button where a real engine would not, which is the path a stale render would take
+    act(() => void hero.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(runFn()).not.toHaveBeenCalled();
+    // …and no ceremony was staged for a request that was never sent
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(container.querySelector(".cv-card.developing")).toBeNull();
+  });
+});
+
+// ── THE PROMOTE CEREMONY (lab beats verbatim) ────────────────────────────────────────────────────────
+describe("the promote ceremony", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const page = (c: HTMLElement) => c.querySelector(".cv-page")!;
+
+  it("folds the page, commits the SELECT at beat 170, then lands and beats the masthead", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0])); // atlas
+    act(() => void vi.advanceTimersByTime(0));
+    expect(page(container).classList.contains("turning")).toBe(true);
+    expect(heroName(container)).toBe("PEGASUS"); // not yet — the swap is INSIDE the fold
+
+    act(() => void vi.advanceTimersByTime(170));
+    expect(heroName(container)).toBe("ATLAS");
+
+    act(() => void vi.advanceTimersByTime(130)); // 300
+    expect(page(container).classList.contains("turning")).toBe(false);
+    expect(container.querySelector(".cv-heroslot")!.classList.contains("entering")).toBe(true);
+
+    act(() => void vi.advanceTimersByTime(220)); // 520
+    expect(container.querySelector(".cv-mast")!.classList.contains("beating")).toBe(true);
+
+    act(() => void vi.advanceTimersByTime(400)); // past 880
+    expect(container.querySelector(".cv-heroslot")!.classList.contains("entering")).toBe(false);
+    expect(container.querySelector(".cv-mast")!.classList.contains("beating")).toBe(false);
+  });
+
+  it("SKIPPING still commits the select — a skip completes, it never abandons (R24 §B.3)", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0]));
+    act(() => void vi.advanceTimersByTime(50)); // well before beat 170
+    expect(heroName(container)).toBe("PEGASUS");
+    act(() => void fireEvent.pointerDown(document.body));
+    expect(heroName(container)).toBe("ATLAS");
+    expect(page(container).classList.contains("turning")).toBe(false);
+    // completed, not abandoned: advancing past the budget changes nothing further
+    act(() => void vi.advanceTimersByTime(2000));
+    expect(heroName(container)).toBe("ATLAS");
+  });
+
+  it("collapses to an INSTANT swap under reduced motion, both sentences intact", () => {
+    act(() => setUI({ motion: "reduced" }));
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0]));
+    expect(heroName(container)).toBe("ATLAS");
+    expect(page(container).classList.contains("turning")).toBe(false);
+    expect(container.querySelector(".cv-mast")!.classList.contains("beating")).toBe(false);
+    // the runner fires every beat, so the last one's announcement still lands
+    expect(live(container)).toBe("atlas is on the cover. WORKSTATION, 2 stars, SLEEPING.");
+  });
+
+  it("narrates BOTH ends in the lab's wording, and the body stays quiet under this grammar", () => {
+    // §12.6 ruling 10 + the E2 announcement split: cover's promote is a full-screen page turn with two
+    // sentences on its own beats, so `GachaFleet`'s generic "X selected." must NOT also fire — three
+    // voices inside one gesture is the thing the split exists to prevent.
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0]));
+    act(() => void vi.advanceTimersByTime(0));
+    expect(live(container)).toBe("atlas takes the cover.");
+    act(() => void vi.advanceTimersByTime(200)); // past the dispatch at 170
+    expect(live(container)).toBe("atlas takes the cover."); // still — nothing else spoke
+    act(() => void vi.advanceTimersByTime(900));
+    expect(live(container)).toBe("atlas is on the cover. WORKSTATION, 2 stars, SLEEPING.");
+  });
+
+  it("a tap DURING a ceremony is a skip, never a second route (Codex E1 MED-1, verbatim)", () => {
+    // The same finger, two browser events, as TWO separate `act`s — which is the whole point: a real
+    // browser dispatches pointerdown and click as separate tasks and React commits the skip's
+    // `running: false` in between. Batching them hides the finding entirely.
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0])); // promote atlas
+    act(() => void vi.advanceTimersByTime(50));
+    const target = cutCards(container)[1]; // vault — an ONLINE machine, so an unsuppressed tap promotes
+    act(() => void fireEvent.pointerDown(target));
+    act(() => void fireEvent.click(target));
+    // the ceremony completed …
+    expect(page(container).classList.contains("turning")).toBe(false);
+    // … and the gesture did NOT also promote the machine it landed on
+    expect(heroName(container)).toBe("ATLAS");
+    expect(dossierName()).toBeNull();
+    // …and the NEXT gesture is a normal one — the suppression is per-gesture, never sticky
+    const next = cutCards(container)[0];
+    act(() => void fireEvent.pointerDown(next));
+    act(() => void fireEvent.click(next));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container)).not.toBe("ATLAS");
+  });
+
+  it("a KEYBOARD activation mid-ceremony skips rather than acting (no pointerdown to record)", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0]));
+    act(() => void vi.advanceTimersByTime(50));
+    act(() => void fireEvent.click(cutCards(container)[1])); // a click with no pointer gesture behind it
+    expect(page(container).classList.contains("turning")).toBe(false);
+    expect(heroName(container)).toBe("ATLAS");
+  });
+
+  it("a CLICKLESS skip cannot swallow the next keyboard activation (Codex confirm-round LOW)", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0]));
+    act(() => void vi.advanceTimersByTime(50));
+    // the skip's pointerdown lands on a card, but the gesture never clicks (a drag)
+    act(() => void fireEvent.pointerDown(cutCards(container)[1]));
+    expect(page(container).classList.contains("turning")).toBe(false);
+    // the NEXT activation is keyboard: keydown then click, no pointerdown
+    const target = cutCards(container)[1];
+    act(() => void fireEvent.keyDown(target, { key: "Enter" }));
+    act(() => void fireEvent.click(target));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(heroName(container)).toBe("VAULT");
+  });
+
+  it("RESTORES FOCUS across the reparent (ruling 9 — React remounts the moved control)", () => {
+    // The hero slot and the internal scroller are two containers, so a promote unmounts the tapped
+    // button and mounts a new one in the other seat. Without the explicit restore, focus falls to <body>
+    // and a keyboard user loses their place entirely.
+    const { container } = render(<GachaFleet active />);
+    const tapped = cutCards(container)[0];
+    act(() => void tapped.focus());
+    expect(document.activeElement).toBe(tapped);
+    act(() => void fireEvent.click(tapped));
+    act(() => void vi.advanceTimersByTime(1000));
+    const hero = heroCard(container);
+    expect(hero.dataset.gcHost).toBe("atlas");
+    expect(document.activeElement).toBe(hero);
+    // …and the node really is a NEW one (a passing test on an unchanged node would prove nothing)
+    expect(hero).not.toBe(tapped);
+  });
+
+  it("does NOT steal focus when nobody was standing on a card", () => {
+    // The restore is spent per promote, so a pointer-driven swap on a page whose focus is elsewhere must
+    // leave that focus exactly where it was.
+    const { container } = render(<GachaFleet active />);
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    outside.focus();
+    act(() => void fireEvent.click(cutCards(container)[0]));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+});
+
+// ── THE DEVELOP CEREMONY (poll-truthful, ruling 4) ───────────────────────────────────────────────────
+describe("the develop ceremony", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    setFleet({ hosts: [host("atlas", false), host("pegasus", true)] });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("flashes, shakes, thuds the stamp down and cleans up", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    act(() => void vi.advanceTimersByTime(0));
+    expect(heroCard(container).classList.contains("developing")).toBe(true);
+    expect(container.querySelector(".cv-flash")!.classList.contains("fire")).toBe(false);
+
+    act(() => void vi.advanceTimersByTime(150));
+    expect(container.querySelector(".cv-flash")!.classList.contains("fire")).toBe(true);
+    expect(container.querySelector(".cv-shake")!.classList.contains("shaking")).toBe(true);
+
+    act(() => void vi.advanceTimersByTime(450)); // 600
+    expect(container.querySelector(".cv-stamp")?.textContent).toBe(GACHA_COPY.coverStamp);
+    // decoration, and it says so: the machine's real state is the chip beside it
+    expect(container.querySelector(".cv-stamp")!.getAttribute("aria-hidden")).toBe("true");
+
+    act(() => void vi.advanceTimersByTime(400)); // past 880
+    expect(container.querySelector(".cv-stamp")).toBeNull();
+    expect(container.querySelector(".cv-card.developing")).toBeNull();
+    expect(container.querySelector(".cv-flash")!.classList.contains("fire")).toBe(false);
+  });
+
+  it("is POLL-TRUTHFUL: WAKING while the request flies, then the SERVER's word — never ONLINE", async () => {
+    let settle = () => {};
+    setFleet({
+      hosts: [host("atlas", false), host("pegasus", true)],
+      run: vi.fn(() => new Promise<void>((r) => (settle = r))),
+    });
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    expect(heroChip(container)).toBe("WAKING");
+    act(() => void vi.advanceTimersByTime(1000)); // the whole ceremony runs out
+    expect(heroChip(container)).toBe("WAKING"); // the REQUEST is still in the air
+
+    // AWAITED, not chained: an assertion inside a trailing `.then` can be flushed after teardown and
+    // throws as an UNHANDLED error while the test still reports green (the E1 lesson).
+    await act(async () => {
+      settle();
+      await Promise.resolve();
+    });
+    // …and it falls back to SLEEPING. The lab's 430 ms ONLINE flip is fiction: only a hosts poll may
+    // flip a machine up, and nothing here polled.
+    expect(heroChip(container)).toBe("SLEEPING");
+    expect(heroCard(container).classList.contains("asleep")).toBe(true);
+  });
+
+  it("stages NOTHING when the router did not send a wake", () => {
+    // The poster's pattern: route first, stage only on `"wake"`. An ONLINE hero opens instead, and a
+    // ceremony for a request that was never sent would be theatre about nothing.
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false)] });
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(container.querySelector(".cv-card.developing")).toBeNull();
+    expect(container.querySelector(".cv-stamp")).toBeNull();
+    expect(dossierName()).toBe("pegasus");
+  });
+
+  it("announces the REQUEST in the cover's own wording, and the body stays quiet", () => {
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    // the request is dispatched synchronously; the SENTENCE is the ceremony's first beat
+    expect(live(container)).toBe("");
+    act(() => void vi.advanceTimersByTime(0));
+    expect(live(container)).toBe("Developing the cover. Waking atlas.");
+    // …not the stack layouts' sentence, which would be the same request said twice
+    expect(live(container)).not.toBe("Waking atlas.");
+    act(() => void vi.advanceTimersByTime(2000));
+    // and there is NO settled counterpart — only a hosts poll can know (ruling 4)
+    expect(live(container)).toBe("Developing the cover. Waking atlas.");
+  });
+
+  it("collapses under reduced motion, request and announcement intact", () => {
+    act(() => setUI({ motion: "reduced" }));
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    expect(runFn()).toHaveBeenCalledTimes(1);
+    expect(live(container)).toBe("Developing the cover. Waking atlas.");
+    expect(container.querySelector(".cv-card.developing")).toBeNull();
+    expect(container.querySelector(".cv-stamp")).toBeNull();
+  });
+});
+
+// ── THE SHARED STATES + the fleet-size rows ──────────────────────────────────────────────────────────
+describe("the cover's states match the capsule track's", () => {
+  it("N=1 → the hero ALONE: no cut-in column, no CHANGE COVER hint (ruling 9)", () => {
+    setFleet({ hosts: [host("solo", true)] });
+    const { container } = render(<GachaFleet active />);
+    expect(cards(container)).toHaveLength(1);
+    expect(container.querySelector(".cv-side")).toBeNull();
+    expect(container.querySelector(".cv-stack")).toBeNull();
+    expect(container.querySelector(".cv-hint")).toBeNull();
+    // …and the rest of the composition is still a cover
+    expect(container.querySelector(".cv-strap .gc-banner")).not.toBeNull();
+    expect(container.querySelector(".cv-foot")).not.toBeNull();
+  });
+
+  it("N=0 → the shared empty-state message, and no composition at all", () => {
+    setFleet({ hosts: [] });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-msg")?.textContent).toBe("no hosts in config.yaml");
+    expect(cards(container)).toHaveLength(0);
+    expect(container.querySelector(".cv-foot")).toBeNull();
+    // the masthead survives — a magazine with no contents is still a magazine — but it claims no issue
+    expect(container.querySelector(".cv-mast")).not.toBeNull();
+    expect(container.querySelector(".cv-issue")).toBeNull();
+  });
+
+  it("renders NOTHING but the masthead while the first poll is in flight", () => {
+    setFleet({ hosts: [], isLoading: true, hasData: false });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-msg")).toBeNull();
+    expect(container.querySelector(".cv-mast")).not.toBeNull();
+    expect(container.querySelector(".cv-heroslot")).toBeNull();
+  });
+
+  it("renders the error BESIDE the cover the last good poll left", () => {
+    setFleet({ error: new Error("boom") });
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".gc-msg")?.textContent).toBe("backend unreachable: boom");
+    expect(cards(container)).toHaveLength(3);
+  });
+
+  it("refuses input while the reel sweeps (§6.4/F3), like every other layout", () => {
+    const { container } = render(<GachaFleet active />);
+    const frame = container.querySelector(".cv-frame")!;
+    expect(frame.hasAttribute("inert")).toBe(false);
+    act(() => setGachaReelRunning(true));
+    expect(frame.hasAttribute("inert")).toBe(true);
+    act(() => setGachaReelRunning(false));
+    expect(frame.hasAttribute("inert")).toBe(false);
+  });
+
+  it("draws a card with NO art rather than dropping the machine", () => {
+    setFleet({ hosts: [host("solo", true)] });
+    media.data = {
+      ns: "gacha",
+      collation: "casefold-natural",
+      roles: {
+        characters: [
+          {
+            name: "broken",
+            file: "broken.webp",
+            url: "/api/media/gacha/files/characters/broken.webp",
+            format: "webp",
+            size_bytes: 1,
+            revision: "1:1",
+            width: 1,
+            height: 1,
+            unusable: true,
+            unusable_reason: "decode failed",
+          },
+        ],
+      },
+      slots: {},
+    };
+    const { container } = render(<GachaFleet active />);
+    expect(container.querySelector(".cv-shot img")).toBeNull();
+    expect(container.querySelector(".cv-shot-blank")).not.toBeNull();
+    expect(heroName(container)).toBe("SOLO");
+    expect(heroChip(container)).toBe("ONLINE");
+  });
+
+  it("survives a poll that removes the machine on the cover (the pick re-derives)", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    expect(heroName(container)).toBe("PEGASUS");
+    setFleet({ hosts: [host("atlas", false), host("vault", true)], run: fleet.view.run });
+    rerender(<GachaFleet active />);
+    expect(heroName(container)).toBe("ATLAS");
+    expect(container.querySelector(".cv-issue")?.textContent).toBe(
+      `ISSUE 01 ${GACHA_COPY.sep} SLEEPING`,
+    );
+  });
+});
+
+// ── THE BANNER AS A SLOT (ruling 7) ──────────────────────────────────────────────────────────────────
+describe("the banner slot", () => {
+  it("seats ONE banner in the STRAPLINE under cover, and first in flow under the others", () => {
+    const { container, rerender } = render(<GachaFleet active />);
+    expect(container.querySelectorAll(".gc-banner")).toHaveLength(1);
+    expect(container.querySelector(".cv-strap .gc-banner")).not.toBeNull();
+
+    act(() => setThemeSetting("gacha", "fleetLayout", "capsule"));
+    rerender(<GachaFleet active />);
+    expect(container.querySelectorAll(".gc-banner")).toHaveLength(1);
+    expect(container.querySelector(".cv-strap")).toBeNull();
+    // FIRST IN SCROLL FLOW — byte-identically where `GachaFleet` used to mount it. Read as document
+    // order against the head that follows it, which is what "first" means for a scrolling layout.
+    const tab = container.querySelector("#tab-fleet")!;
+    const banner = tab.querySelector(".gc-banner")!;
+    const head = tab.querySelector(".gc-track-head")!;
+    expect(banner.compareDocumentPosition(head) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("REPARENTS across a layout switch with no leaked timer (ruling 7's accepted cost)", () => {
+    // The remount itself is signed off — autoplay and slide state reset, the owner switches layouts
+    // rarely. What is NOT acceptable is a cadence timer surviving the move or the unmount, which is what
+    // this holds (the `gachaFleet.test.tsx` unmount-hygiene pattern).
+    vi.useFakeTimers();
+    try {
+      const { container, unmount, rerender } = render(<GachaFleet active />);
+      act(() => void vi.advanceTimersByTime(5200 * 2));
+      act(() => setThemeSetting("gacha", "fleetLayout", "capsule"));
+      rerender(<GachaFleet active />);
+      act(() => setThemeSetting("gacha", "fleetLayout", "cover"));
+      rerender(<GachaFleet active />);
+      expect(container.querySelectorAll(".gc-banner")).toHaveLength(1);
+      act(() => void vi.advanceTimersByTime(5200 * 2));
+      unmount();
+      expect(() => act(() => void vi.advanceTimersByTime(5200 * 4))).not.toThrow();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ── THE SETTINGS ROW (the E2 contract half) ──────────────────────────────────────────────────────────
+describe("`fleetLayout` gains cover, and `posterName` stays poster-scoped", () => {
+  const gacha = registry.gacha!;
+
+  it("offers exactly capsule · poster · cover, in that order, with capsule still the default", () => {
+    const field = gacha.settings!.fleetLayout;
+    expect(field.type).toBe("seg");
+    expect(field.type === "seg" && field.options.map((o) => o.val)).toEqual([
+      "capsule",
+      "poster",
+      "cover",
+    ]);
+    expect(field.type === "seg" && field.options.map((o) => o.label)).toEqual([
+      "Capsule",
+      "Poster",
+      "Cover",
+    ]);
+    expect(field.default).toBe("capsule");
+  });
+
+  it("hides `posterName` under cover and brings it back under poster, value intact", () => {
+    const posterName = gacha.settings!.posterName;
+    const visible = (layout: string) =>
+      settingRowVisible("gacha", "posterName", posterName, layout);
+    expect(visible("poster")).toBe(true);
+    expect(visible("cover")).toBe(false);
+    expect(visible("capsule")).toBe(false);
+  });
+
+  it("says WHY cover wants the app bar hidden, in the picker's own copy (§12.3⑤)", () => {
+    expect(gacha.settings!.fleetLayout.desc).toBe(GACHA_COPY.settingFleetLayoutDesc);
+    expect(GACHA_COPY.settingFleetLayoutDesc).toContain("cover pairs best with the app bar hidden");
+  });
+});
+
+// ── THE STYLESHEET CLAIMS (jsdom paints none of this) ────────────────────────────────────────────────
+describe("the cover's stylesheet claims", () => {
+  const css = readFileSync(resolve(process.cwd(), "src/themes/gacha/gacha.css"), "utf8");
+  const tokens = readFileSync(resolve(process.cwd(), "src/themes/gacha/tokens.css"), "utf8");
+  /** One selector's declaration block (values carry no braces, so scanning to the next `}` is exact). */
+  const blockFor = (sel: string): string | null => {
+    const at = css.indexOf(`\n    ${sel} {`);
+    return at < 0 ? null : css.slice(at, css.indexOf("}", at));
+  };
+
+  it("paints the black field on ITS OWN frame — never on the shell (the E1 owner ruling holds)", () => {
+    // Owner ruling ① killed the poster's `.kit-main` ground because its `background-image: none` half
+    // also killed the wallpaper and its opaque black covered `.kit`'s coloured backdrop. The cover needs
+    // a black page too, and gets it WITHOUT that class of rule: the frame is an element of its own, so
+    // the theme's backdrop and the wallpaper are exactly the cascade they always were.
+    const frame = blockFor(".cv-frame")!;
+    expect(frame).toContain("background: var(--gc-cv-field)");
+    expect(frame).toContain("position: absolute");
+    expect(frame).toContain("inset: 0");
+    expect(css, "the withdrawn ground rule must not come back under cover").not.toContain(
+      'body[data-gc-fleet="cover"]',
+    );
+    expect(tokens).toContain("--gc-cv-field: #0b0910");
+  });
+
+  it("reaches the shell through NOTHING — every cover rule is scoped to cover's own markup", () => {
+    // The sharp form, and the twin of the poster's own enumeration: every rule in this file that names a
+    // `.cv-` class is checked for a selector that could touch a box gacha does not own. The layout is a
+    // fixed page drawn INSIDE the tab, not a re-dressing of the shell around it.
+    const scoped = [...css.matchAll(/\n {4}([^\n{]*\.cv-[^\n{]*)\{/g)].map((m) => m[1].trim());
+    expect(scoped.length, "the cover must have rules").toBeGreaterThan(20);
+    for (const sel of scoped)
+      expect(sel, `${sel} must not target the shell or the tab`).not.toMatch(
+        /\.kit-main|\.kit\b|#tab-|\.tab\b/,
+      );
+  });
+
+  it("floors the composition on the app's REAL bottom chrome, not the lab's bare viewport", () => {
+    // The lab's 70 / 102 / 202 / 212 were authored with nothing floating over the page. Here the composer
+    // does, so the floors are its measured height plus the lab's own INTERVALS — which reproduces the
+    // lab exactly at the composer's 64 px resting height and rides up when the textarea grows.
+    const frame = blockFor(".cv-frame")!;
+    expect(frame).toContain("--cv-floor: var(--composer-h, 64px)");
+    expect(frame).toContain("--cv-foot: calc(var(--cv-floor) + 6px)");
+    expect(frame).toContain("--cv-strap: calc(var(--cv-foot) + 32px)");
+    expect(frame).toContain("--cv-side-floor: calc(var(--cv-strap) + 100px)");
+    expect(frame).toContain("--cv-herocopy: calc(var(--cv-strap) + 110px)");
+    expect(frame).toContain("--cv-mast-top: calc(var(--appbar-h, 0px) + 16px)");
+    // the arithmetic the intervals encode: the lab's numbers at a 64 px composer and a hidden bar
+    const floor = 64;
+    const foot = floor + 6;
+    const strap = foot + 32;
+    expect([foot, strap, strap + 100, strap + 110]).toEqual([70, 102, 202, 212]);
+    // …and every floor is a TOKEN, so §12.3② has one place to tune (no magic number inline)
+    for (const sel of [".cv-foot", ".cv-strap", ".cv-side", ".cv-herocopy"])
+      expect(blockFor(sel), `${sel} must consume a --cv-* floor`).toMatch(/var\(--cv-/);
+  });
+
+  it("makes the CUT-IN COLUMN the only thing that scrolls (ruling 9)", () => {
+    const stack = blockFor(".cv-stack")!;
+    expect(stack).toContain("overflow-y: auto");
+    expect(stack).toContain("overscroll-behavior: contain");
+    expect(stack).toContain("scrollbar-width: none");
+    expect(blockFor(".cv-stack::-webkit-scrollbar")).toContain("display: none");
+    // …and the page itself does NOT scroll: the frame is absolute (asserted above) and clips.
+    expect(blockFor(".cv-frame")).toContain("overflow: hidden");
+  });
+
+  it("depends on gacha nulling the kit's tab entrance — a transform there would break the frame", () => {
+    // `.cv-frame` is absolute, so its containing block is the nearest POSITIONED ancestor (`.kit-scroll`).
+    // `kit-fade` animates `transform`, and a transformed `.tab` would become the containing block instead
+    // — collapsing the frame to a zero-height box for 250 ms on every entry. gacha already nulls that
+    // animation for its own reasons (§10.1: the reel IS the transition); this is the assertion that the
+    // cover now DEPENDS on it, so nobody restores it without meeting this test.
+    expect(blockFor(".kit .tab.active")).toContain("animation: none");
+  });
+
+  it("gives host controls `touch-action: manipulation` (ruling 3)", () => {
+    expect(blockFor(".cv-card")).toContain("touch-action: manipulation");
+  });
+
+  it("draws a focus ring that survives BOTH shapes (R18)", () => {
+    // A cut-in is clipped to a polygon and a clip-path erases the UA ring outright, so its ring is a
+    // pseudo INSIDE the clip wearing the card's own shape. The hero is unclipped but fills the frame,
+    // so an outside ring lands in the overflow — it takes the banner promo's own answer instead.
+    expect(blockFor(".cv-card.is-cut:focus-visible")).toContain("outline: none");
+    const ring = blockFor(".cv-card.is-cut:focus-visible::after")!;
+    expect(ring).toContain("clip-path: polygon(");
+    expect(ring).toContain("var(--accent)"); // the kit's own ring token, not a cover literal
+    expect(blockFor(".cv-card.is-hero:focus-visible")).toContain("outline-offset: -3px");
+  });
+
+  it("suppresses a sleeping card's hue through the RESOLVED property, not the inline one", () => {
+    // The E1 trap, restated: an inline custom property beats every selector, so the property the
+    // component writes (`--cv-rar`) and the property the paint reads (`--cv-hue`) must be different.
+    expect(blockFor(".cv-card")).toContain("--cv-hue: var(--cv-rar)");
+    expect(blockFor(".cv-card.asleep")).toContain("--cv-hue: var(--gc-unit-off)");
+    for (const sel of [".cv-herocopy small", ".cv-cutcopy"])
+      expect(blockFor(sel), `${sel} must paint the RESOLVED hue`).toContain("var(--cv-hue)");
+  });
+
+  it("floods the DEVELOP wash with the unit's TRUE hue, not the suppressed one", () => {
+    // The one deliberate exception to the rule above, and it is the whole gesture of the ceremony: the
+    // machine being developed is by definition asleep, so its `--cv-hue` is the grey suppression — a wash
+    // reading it would put grey over grey. It reads the INPUT, which is the colour flooding back in.
+    const wash = blockFor(".cv-dev")!;
+    expect(wash).toContain("var(--cv-rar)");
+    expect(wash).not.toContain("var(--cv-hue)");
+    expect(blockFor(".cv-card.developing .cv-dev")).toContain("animation: gacha-cv-dev");
+  });
+
+  it("keeps the chip on the THEME's status grammar and never tints the stars by the hue", () => {
+    expect(blockFor(".cv-chip")).toContain("background: var(--gc-online-fill)");
+    expect(blockFor(".cv-card.asleep .cv-chip")).toContain("background: var(--gc-pill-bg)");
+    expect(blockFor(".cv-card.busy .cv-chip")).toContain("background: var(--accent-fill)");
+    const stars = blockFor(".cv-stars")!;
+    expect(stars).toContain("var(--gc-star)");
+    expect(stars).not.toContain("--cv-hue");
+    expect(blockFor(".cv-card.asleep .cv-stars")).toContain("var(--gc-star-dim)");
+  });
+
+  it("THE SIGNED STRUCTURAL EXCEPTION: the strapline restyles the banner, and only there", () => {
+    // Owner ruling ① (E1) — the banner renders byte-identically under every layout — is a claim about
+    // the LAYOUT STAMP, and it still holds: no `body[data-gc-fleet]` rule touches the banner (the poster
+    // suite enumerates that). The cover is the one composition that gives the banner a different SEAT,
+    // and E2 signs off a strip form for it. Enumerated HERE, as its own list, so new drift still fails:
+    // every banner rule the cover adds must be scoped by `.cv-strap`, which is markup only this layout
+    // renders — it cannot leak to a banner sitting anywhere else.
+    const bannerRules = [...css.matchAll(/\n {4}([^\n{]*\.gc-banner[^\n{]*)\{/g)].map((m) =>
+      m[1].trim(),
+    );
+    const covered = bannerRules.filter((s) => s.includes(".cv-"));
+    expect(covered.sort()).toEqual(
+      [
+        ".cv-strap .gc-banner",
+        ".cv-strap .gc-banner-copy",
+        ".cv-strap .gc-banner-copy .tag",
+        ".cv-strap .gc-banner-copy b",
+        ".cv-strap .gc-banner-copy small",
+        ".cv-strap .gc-banner-dots",
+        ".cv-strap .gc-banner-rate",
+        ".cv-strap .gc-banner-rate span",
+      ].sort(),
+    );
+    // …and every one of them really is seat-scoped, never mode-scoped
+    for (const sel of covered) expect(sel.startsWith(".cv-strap ")).toBe(true);
+    // the strip's own two structural facts: a height token, and the paper keyline that makes it printed
+    expect(blockFor(".cv-strap .gc-banner")).toContain("height: var(--cv-bn-h)");
+    expect(blockFor(".cv-strap .gc-banner")).toContain("inset 0 0 0 2px var(--gc-cv-paper)");
+    expect(blockFor(".cv-frame")).toContain("--cv-bn-h: 88px");
+  });
+
+  it("gates every ceremony on the app's own motion axis, with no OS media query", () => {
+    for (const sel of [
+      'body[data-motion="reduced"] .cv-page',
+      'body[data-motion="reduced"] .cv-card.is-cut',
+    ])
+      expect(blockFor(sel), `no reduced-motion rule for ${sel}`).toBeTruthy();
+    expect(css).toContain('body[data-motion="reduced"] .cv-shake.shaking');
+    expect(css).toContain('body[data-motion="reduced"] .cv-flash.fire');
+    // the repo's named parallel-implementation trap: gacha models the preference itself
+    expect(css).not.toContain("prefers-reduced-motion");
+    // …and every cover animation is transform/opacity only (§14.11)
+    const frames = [...css.matchAll(/@keyframes (gacha-cv-[\w-]+) \{([\s\S]*?)\n {4}\}/g)];
+    expect(frames.length).toBeGreaterThanOrEqual(6);
+    for (const [, name, body] of frames)
+      for (const decl of body.matchAll(/\n\s+([a-z-]+):/g))
+        expect(["transform", "opacity"], `${name} animates ${decl[1]}`).toContain(decl[1]);
+  });
+
+  it("writes no literal colour of its own — every ink is a token (council M7)", () => {
+    for (const t of [
+      "--gc-cv-field",
+      "--gc-cv-paper",
+      "--gc-cv-slip",
+      "--gc-cv-slip-ink",
+      "--gc-cv-hero-scrim",
+      "--gc-cv-cut-scrim",
+      "--gc-cv-display-shadow",
+      "--gc-cv-stamp-ink",
+      "--gc-cv-flash",
+    ])
+      expect(tokens.split(`${t}:`).length - 1, `${t} must be declared exactly once`).toBe(1);
+  });
+});
