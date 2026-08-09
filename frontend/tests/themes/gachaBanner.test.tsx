@@ -10,7 +10,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 //
 // The setting is theme-wide, so the render cases run under all three LAYOUTS: the banner is one instance
 // handed to whichever layout is drawing (ruling 7's slot), and the slice line asks for the capsule — the
-// untouched default — to be rendered and tested under both non-default values in particular.
+// untouched default LAYOUT — to be rendered and tested under every banner form in particular.
+//
+// ⚠ WHICH FORM IS WHICH, since the two are easy to conflate: `on` is the BASE form (the shipped v1.5.0
+// band, and the stylesheet's own base declaration) while `minimal` is the SHIPPING DEFAULT since the
+// owner's 2026-08-09 ruling — an override on top of that base. So the cases that want the band set `on`
+// EXPLICITLY (the fence does the same), and the cases that want a real geometry change never write
+// `minimal`, which is now a no-op write.
 
 const fleet = vi.hoisted(() => {
   const view: Record<string, unknown> = {};
