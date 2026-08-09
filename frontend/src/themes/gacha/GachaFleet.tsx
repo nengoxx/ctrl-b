@@ -60,6 +60,10 @@ import { useGachaRoster } from "./useGachaRoster";
 const SHEET_KEY = "gacha-host-detail";
 const persistSheetSnap = (snap: SheetDetent) => setSheetSnap(SHEET_KEY, snap);
 
+/** The kit's ONE content pane, named here for the reason `GachaAgent` and `ChatThread` name it: a body
+ *  reaches the shell's scroller by id, and every reader must agree on which pane that is. */
+const SCROLLER_ID = "app-scroll";
+
 export function GachaFleet({ active }: { active: boolean }) {
   const {
     hosts,
@@ -390,7 +394,40 @@ export function GachaFleet({ active }: { active: boolean }) {
   // validates against the registry and degrades an unknown/stale id to `capsule`, and `tapGrammarFor`
   // degrades the same id to capsule's grammar — so the layout that renders and the table that routes can
   // never disagree about a value neither of them recognizes.
-  const grammar = tapGrammarFor(fleetSurface.useVariantId());
+  const layoutId = fleetSurface.useVariantId();
+  const grammar = tapGrammarFor(layoutId);
+
+  // ── THE GEOMETRY RESET (§12.6 ruling 6's ⚖ clause) ────────────────────────────────────────────────
+  // The shell restores a per-section SCROLL OFFSET (DefaultRoot's `tabScrollRef`), and a pixel offset is
+  // only meaningful against the content it was taken in. Switching layout re-shapes the fleet body
+  // entirely, and switching the banner adds or removes up to 232px ABOVE everything else — so a stored
+  // offset restores into content that is no longer there, which is Codex's MED against this slice.
+  //
+  // The fix is gacha-local by ruling: this body knows its own geometry changed; the shell does not, and
+  // teaching it would mean an engine-wide seam for one theme's setting. So the fleet simply lands at the
+  // TOP after a change, which is the honest answer for a page that has been re-laid-out.
+  //
+  // TWO THINGS MAKE IT NON-OBVIOUS, and both are load-bearing:
+  //   · IT WAITS FOR THE TAB. Both settings live in Conf, so the change almost always lands while the
+  //     fleet is hidden — and `#app-scroll` is ONE shared scroller, so resetting it then would yank the
+  //     Conf page the owner is reading to the top and record that as Conf's own position. The change is
+  //     therefore latched and spent when the fleet is next showing.
+  //   · IT RUNS IN A MICROTASK. Effects flush child-first, so this one runs BEFORE DefaultRoot's own
+  //     restore effect on the very commit that shows the fleet again — a plain call here would be
+  //     overwritten by the stale offset it exists to discard. A microtask queued from inside the flush
+  //     runs after the whole flush and still before paint, so the reset lands last and never flickers.
+  const geomKey = `${layoutId}/${bannerMode}`;
+  const geomRef = useRef(geomKey);
+  const geomDirty = useRef(false);
+  useEffect(() => {
+    if (geomRef.current !== geomKey) {
+      geomRef.current = geomKey;
+      geomDirty.current = true;
+    }
+    if (!geomDirty.current || !active) return;
+    geomDirty.current = false;
+    queueMicrotask(() => document.getElementById(SCROLLER_ID)?.scrollTo(0, 0));
+  }, [geomKey, active]);
 
   // ── THE TAP ROUTER's execution (rulings 3 + 4). The DECISION is `tapAction`, a pure function with its own
   //    table of tests; this is the half that has to touch the world, and it is here rather than in a layout

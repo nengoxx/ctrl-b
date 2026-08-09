@@ -30,6 +30,7 @@ import {
   sceneTitle,
   tapAction,
   tapGrammarFor,
+  toBannerMode,
 } from "../../src/themes/gacha/fleet";
 import type { Host } from "../../src/types";
 
@@ -395,6 +396,31 @@ describe("tapGrammarFor — which table a layout reads", () => {
     // render another. Both fall back to capsule; the id below is exactly what a future build could sync.
     for (const id of ["", "not-a-layout", "COVER", "club"])
       expect(tapGrammarFor(id)).toBe("act-first");
+  });
+});
+
+describe("toBannerMode — the pickup banner's three forms (§12.6 ruling 6)", () => {
+  it("passes the three declared values through", () => {
+    expect(toBannerMode("on")).toBe("on");
+    expect(toBannerMode("minimal")).toBe("minimal");
+    expect(toBannerMode("off")).toBe("off");
+  });
+
+  it("degrades ANYTHING else to `on` — an unreadable setting must not delete a surface", () => {
+    // The asymmetry is the point, and it is why this is a named function rather than a cast: `on` is both
+    // the declared default and the only value that renders the shipped banner. A bridge that fell back to
+    // `off` would let a stale/corrupt synced value silently remove the fleet's whole top half.
+    const raws: (string | boolean | undefined)[] = [
+      "",
+      "ON",
+      "minimum",
+      "hidden",
+      "true",
+      undefined,
+      true,
+      false,
+    ];
+    for (const raw of raws) expect(toBannerMode(raw)).toBe("on");
   });
 });
 
