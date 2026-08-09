@@ -189,14 +189,23 @@ export function tapGrammarFor(layoutId: string): TapGrammar {
  *  · `off` — nothing rendered at all. */
 export type BannerMode = "on" | "minimal" | "off";
 
+/** The form an unreadable value falls back to — and it MUST equal the `banner` row's declared default
+ *  (`themes/gacha/index.tsx`), which a test pins so the two cannot drift. It is restated here rather than
+ *  read from the registry for the reason `stars.ts` restates `five`: this module is pure and is imported
+ *  BY the theme descriptor, so reaching back into the registry would close an import cycle for a constant.
+ *
+ *  `minimal` since the owner's 2026-08-09 live ruling. Note what did NOT change with it: the fallback is
+ *  still a form that RENDERS. An unreadable setting must never be the reason a surface disappears, so
+ *  whichever value this tracks, it can never be `off`. */
+const BANNER_FALLBACK: BannerMode = "minimal";
+
 /** Narrow a raw setting value to a `BannerMode` — the `toStarMode` bridge, one axis over.
  *
  *  `useThemeSetting` has already validated the value against the declared options, so this is the TYPE
- *  bridge and the last line of defence for a non-hook caller, not a second validation layer. It degrades
- *  to `on`, which is both the declared default and the only value that renders the shipped banner: an
- *  unreadable setting must never be the reason a surface disappears. */
+ *  bridge and the last line of defence for a non-hook caller, not a second validation layer. */
 export function toBannerMode(raw: string | boolean | undefined): BannerMode {
-  return raw === "minimal" || raw === "off" ? raw : "on";
+  if (raw === "on" || raw === "minimal" || raw === "off") return raw;
+  return BANNER_FALLBACK;
 }
 
 /** The RESOLVED selection — the machine an alt layout is actually showing as picked (§12.6 ruling 2).

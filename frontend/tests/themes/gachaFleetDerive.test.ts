@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { GACHA_COPY, SCENE_TITLES } from "../../src/themes/gacha/copy";
+import { gacha } from "../../src/themes/gacha";
 import {
   COVER_HERO_SHIFT,
   PENDING,
@@ -406,10 +407,12 @@ describe("toBannerMode — the pickup banner's three forms (§12.6 ruling 6)", (
     expect(toBannerMode("off")).toBe("off");
   });
 
-  it("degrades ANYTHING else to `on` — an unreadable setting must not delete a surface", () => {
-    // The asymmetry is the point, and it is why this is a named function rather than a cast: `on` is both
-    // the declared default and the only value that renders the shipped banner. A bridge that fell back to
-    // `off` would let a stale/corrupt synced value silently remove the fleet's whole top half.
+  it("degrades ANYTHING else to the DECLARED DEFAULT — and the two cannot drift", () => {
+    // The bridge restates the default rather than reading the registry (this module is pure and is
+    // imported BY the theme descriptor — reaching back would close an import cycle for a constant), so
+    // the drift is what needs pinning. Asserted against the descriptor itself, not against a literal:
+    // when the owner moves the row's default again, THIS is the test that says the bridge must follow.
+    const declared = gacha.settings!.banner.default;
     const raws: (string | boolean | undefined)[] = [
       "",
       "ON",
@@ -420,7 +423,14 @@ describe("toBannerMode — the pickup banner's three forms (§12.6 ruling 6)", (
       true,
       false,
     ];
-    for (const raw of raws) expect(toBannerMode(raw)).toBe("on");
+    for (const raw of raws) expect(toBannerMode(raw)).toBe(declared);
+  });
+
+  it("…and that fallback can never be `off` — an unreadable setting must not delete a surface", () => {
+    // The invariant the flip did NOT move (the default went `on` -> `minimal` on 2026-08-09). Whatever
+    // the row defaults to, the bridge's fallback has to be a form that RENDERS: a stale or corrupt synced
+    // value must never be the reason the fleet loses its whole top half.
+    expect(toBannerMode("garbage")).not.toBe("off");
   });
 });
 

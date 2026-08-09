@@ -292,11 +292,17 @@ export const gacha: ThemeDef = {
     // (ruling 7's slot), so its form is a property of the THEME and every layout inherits it. The lab
     // modelled it as one stage-level switch for exactly that reason.
     //
-    // THREE VALUES, in this order, because it is a LADDER and the picker reads left to right from the
-    // default: `on` is the shipped 232 px hero band, `minimal` the 88 px strip (a re-authored form, not a
-    // cropped one — see gacha.css), `off` renders nothing at all. `off` is a real UNMOUNT in `GachaFleet`,
-    // never a CSS hide: the autoplay loop has no hidden-gate, and a banner nobody can see must not still
-    // be ticking.
+    // THREE VALUES, in this order, because it is a LADDER read most-to-least: `on` is the shipped 232 px
+    // hero band, `minimal` the 88 px strip (a re-authored form, not a cropped one — see gacha.css), `off`
+    // renders nothing at all. The order is the ladder's, NOT default-first. `off` is a real UNMOUNT in
+    // `GachaFleet`, never a CSS hide: the autoplay loop has no hidden-gate, and a banner nobody can see
+    // must not still be ticking.
+    //
+    // THE DEFAULT IS `minimal` (OWNER RULING, live on the dev units 2026-08-09: "it looks better than the
+    // full on banner"). It supersedes the §12.6 settings table's `on (default)`, which was written before
+    // the strip existed to be walked. `on` is still the middle rung's parent form and still the base
+    // declaration in gacha.css — the strip is an override on top of it — so flipping the default moves
+    // what SHIPS without moving what the stylesheet calls normal.
     //
     // Declared IMMEDIATELY BEFORE `wallpaper`, whose own label is "Banner wallpaper": the two rows are
     // about the same surface, and declaration order is render order. It stays theme-wide under cover too,
@@ -311,7 +317,7 @@ export const gacha: ThemeDef = {
         { val: "minimal", label: "Minimal" },
         { val: "off", label: "Off" },
       ],
-      default: "on",
+      default: "minimal",
     },
     // R6 — both ship ON, flipping the prototype's own OFF defaults (owner-ruled).
     wallpaper: {

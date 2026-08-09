@@ -12,7 +12,35 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ✅✅ 2026-08-08 LATE NIGHT (Fable) — **E2 THE COVER SHIPPED + REVIEW-CLOSED (final Codex verdict SHIP) + owner-eyeball-folded** on `alt-fleet`; NEXT SESSION = the E3 go-word (banner tri-state, §12.6)
+> ## 🔶 2026-08-09 (Fable) — **E3 BUILT + the re-flow fix wave folded — NOT YET CLOSED: Codex round IN FLIGHT** on `alt-fleet`
+>
+> **E3 (banner tri-state) built by Opus from the pinned brief; 6 commits `06523ce..70cf9b2`
+> (= HEAD), full gate 6/6 at both waves, FE tests 2036, capsule fence byte-identical.** What
+> shipped: the `banner` seg (on·minimal·off, default on, theme-wide, NO showWhen; desc rides 開催
+> so zero new glyphs) · read ONCE in GachaFleet, `off` = slot-null UNMOUNT · the SEVENTH body
+> stamp `data-gc-banner` · off top-space null via `.tab > .gc-track-head` (seat-scoped, beats
+> poster's head pad on specificity) · `minimal` = the re-authored strip (tag 7/display 16/pills/
+> 14×5 pips, caption dropped; dot hit-box −9/−5 for an 18px target), height token
+> **`--gc-bn-h-min: 88px` → E5's seeded-numbers list** · the scroll-reset effect **BUILT WHOLE**
+> (the brief's "extend the layout half" was wrong — none existed): one layout+banner geomKey,
+> LATCHES until the fleet tab is showing, fires in `queueMicrotask` to beat DefaultRoot's
+> child-first restore. **Main-seat RULING folded (`70cf9b2`): the cover RE-FLOWS under `off`** —
+> the lab's walked 126/116 ported as `--cv-side-floor: strap+24` / `--cv-herocopy: strap+14`
+> (the pair INVERTS vs on-state 100/110 — pinned both ways); the tri-state scoping enumeration
+> consciously amended via an exact two-way `COVER_REFLOW` exception list. **Baseline correction:
+> pre-E3 FE count was 1999, not the E2 block's 2027 — fix at the E4 docs step.** Eyeball-banked
+> (on glass): the wallpaper shadow SKIRT under minimal (88px strip wearing the 232px band's
+> shadow — accepted-or-overridden, a test pins wallpaper rules blind to the banner axis) · the
+> lab strip scrim non-port · the pre-existing `.gc-banner-nav` overlap.
+> **OWNER RULING (live, 2026-08-09): `banner` DEFAULT = `minimal` ("looks better than the full
+> banner") — §12.6 table's `on (default)` superseded; GACHA_PLAN fold at the E4 docs step.**
+> **REMAINING TO CLOSE E3:
+> the Codex round (launched detached over `06523ce^..HEAD`; prompt + output land in the session
+> scratchpad `…/bcd3ee5e-…/scratchpad/codex-{prompt.txt,review.md,full.log}`) → triage + fix
+> wave + confirm → the main-seat RENDER AUDIT (dev units) → the owner walk (overlaps the E2 walk
+> list). Then E4.** Nothing pushed; prod untouched at v1.5.0; dev units not started.
+>
+> ## ✅✅ 2026-08-08 LATE NIGHT (Fable) — **E2 THE COVER SHIPPED + REVIEW-CLOSED (final Codex verdict SHIP) + owner-eyeball-folded** on `alt-fleet`; ~~NEXT SESSION = the E3 go-word (banner tri-state, §12.6)~~ *(E3 BUILT — see the block above)*
 >
 > **E2 closed in one session, owner live for the eyeball wave.** The full record — build (Opus,
 > pinned brief), the two defects only the MAIN-SEAT RENDER AUDIT caught (composer painted over ·

@@ -227,6 +227,11 @@ describe("the autoplay timer across the three forms (R25 ⑰'s second half)", ()
     // with it. The oracle is the shape `gachaFleet.test.tsx` already uses for a leak — let time pass and
     // count what is left — because the cadence RE-ARMS itself: a banner that is merely hidden would keep
     // exactly one timer pending forever, whatever the clock does.
+    //
+    // Started from `on` EXPLICITLY rather than from the default (which is `minimal` since the owner's
+    // 08-09 ruling): the case is about the shipped hero band's teardown, and a case should not change
+    // which form it exercises because a picker's default moved.
+    setThemeSetting("gacha", "banner", "on");
     const { container } = render(<GachaFleet active />);
     act(() => {
       vi.advanceTimersByTime(AUTOPLAY_MS / 2);
@@ -244,6 +249,7 @@ describe("the autoplay timer across the three forms (R25 ⑰'s second half)", ()
   it("…and that oracle is NOT vacuous: the same clock with the banner ON leaves it armed", () => {
     // The control for the case above. Without it, "0 timers after advancing" would also pass for a
     // stylesheet-only `off` in a build where the cadence had stopped re-arming for some other reason.
+    setThemeSetting("gacha", "banner", "on"); // the form this case's own name claims
     render(<GachaFleet active />);
     act(() => {
       vi.advanceTimersByTime(AUTOPLAY_MS * 4);
@@ -285,15 +291,17 @@ describe("body[data-gc-banner] — the resolved-form stamp (R25 ⑱)", () => {
 
   it("stamps the RESOLVED form, follows the setting, and is cleared on unmount", () => {
     const view = drawRoot();
-    expect(document.body.dataset.gcBanner).toBe("on"); // the declared default
-    act(() => setThemeSetting("gacha", "banner", "minimal"));
-    expect(document.body.dataset.gcBanner).toBe("minimal");
+    expect(document.body.dataset.gcBanner).toBe("minimal"); // the declared default (owner, 08-09)
+    // …and it FOLLOWS the row, in both directions. `on` first, deliberately: with `minimal` now the
+    // default, writing `minimal` here would assert nothing at all.
+    act(() => setThemeSetting("gacha", "banner", "on"));
+    expect(document.body.dataset.gcBanner).toBe("on");
     act(() => setThemeSetting("gacha", "banner", "off"));
     expect(document.body.dataset.gcBanner).toBe("off");
     // a stale/corrupt synced value resolves to the default, exactly as `GachaFleet`'s own bridge does —
     // the two readers of this one setting can never disagree about a value neither recognizes
     act(() => setThemeSetting("gacha", "banner", "not-a-form"));
-    expect(document.body.dataset.gcBanner).toBe("on");
+    expect(document.body.dataset.gcBanner).toBe("minimal");
     // …and a switched-to skin can never inherit gacha's stale attr (the §10.5 cleanup ledger)
     view.unmount();
     expect(document.body.dataset.gcBanner).toBeUndefined();
@@ -360,7 +368,9 @@ describe("the fleet lands at the TOP after a geometry change", () => {
     // change is latched and spent when the fleet comes back.
     const { rerender } = render(<GachaFleet active={false} />);
     await drain();
-    act(() => setThemeSetting("gacha", "banner", "minimal"));
+    // `off`, not `minimal`: `minimal` IS the default since the owner's 08-09 ruling, so writing it would
+    // leave the geometry key unchanged and the case would pass without ever arming the latch.
+    act(() => setThemeSetting("gacha", "banner", "off"));
     await drain();
     expect(scrollTo).not.toHaveBeenCalled();
     rerender(<GachaFleet active />);
@@ -371,7 +381,7 @@ describe("the fleet lands at the TOP after a geometry change", () => {
   it("spends the latch ONCE — coming back to a fleet nobody re-shaped does not move it", async () => {
     const { rerender } = render(<GachaFleet active />);
     await drain();
-    act(() => setThemeSetting("gacha", "banner", "minimal"));
+    act(() => setThemeSetting("gacha", "banner", "off")); // a real change from the `minimal` default
     await drain();
     expect(scrollTo).toHaveBeenCalledTimes(1);
     rerender(<GachaFleet active={false} />);
@@ -385,7 +395,7 @@ describe("the fleet lands at the TOP after a geometry change", () => {
 describe("`banner` — the row itself", () => {
   const gacha = registry.gacha!;
 
-  it("offers exactly on · minimal · off, in that order, with `on` the default", () => {
+  it("offers exactly on · minimal · off, in that ladder order, with `minimal` the default", () => {
     const field = gacha.settings!.banner;
     expect(field.type).toBe("seg");
     expect(field.type === "seg" && field.options.map((o) => o.val)).toEqual([
@@ -398,7 +408,10 @@ describe("`banner` — the row itself", () => {
       "Minimal",
       "Off",
     ]);
-    expect(field.default).toBe("on");
+    // OWNER RULING (live on the dev units, 2026-08-09): "it looks better than the full on banner".
+    // The §12.6 settings table's `on (default)` is superseded — it was written before the strip existed
+    // to be walked. The ORDER is untouched: it is the ladder's, not default-first.
+    expect(field.default).toBe("minimal");
     expect(field.label).toBe("Pickup banner");
     expect(field.desc).toBe(GACHA_COPY.settingBannerDesc);
   });
@@ -492,7 +505,11 @@ describe("the tri-state's stylesheet claims", () => {
       expect(selector, `${selector} must not read the banner axis`).not.toContain("data-gc-banner");
   });
 
-  it("the DEFAULT form has no rule at all — `on` cannot move by accident", () => {
+  it("the `on` form has no rule at all — the shipped band is the BASE declaration", () => {
+    // Unchanged by the 08-09 default flip, and worth saying why: `minimal` ships now, but it ships as an
+    // OVERRIDE on top of the band, which is still what the stylesheet calls normal. So the axis has no
+    // `on` block, the band cannot move by accident, and picking `On` in the picker resolves to exactly
+    // the v1.5.0 form rather than to a re-derivation of it.
     expect(css).not.toContain('[data-gc-banner="on"]');
   });
 

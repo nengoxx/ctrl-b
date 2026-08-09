@@ -69,7 +69,18 @@ const HOSTS = [
 ];
 
 beforeEach(() => {
-  setUI({ theme: "gacha", tab: "fleet", motion: "full", themeSettings: {} });
+  // THE BANNER FORM IS PINNED EXPLICITLY, not inherited from the declared default (owner ruling
+  // 2026-08-09: the default moved `on` -> `minimal`). The record this file holds was taken against the ON
+  // form, and a fence that silently followed the default would re-describe itself the moment a picker's
+  // default moves — which is the one thing a frozen record must never do. `minimal` renders the SAME DOM
+  // (it is a stylesheet form; the caption node stays), so this is not a workaround for a difference: it is
+  // the record naming its own conditions. E3's own suite covers the other two values.
+  setUI({
+    theme: "gacha",
+    tab: "fleet",
+    motion: "full",
+    themeSettings: { gacha: { banner: "on" } },
+  });
   fleet.view = {
     hosts: HOSTS,
     svcByHost: new Map(),
