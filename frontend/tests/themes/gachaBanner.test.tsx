@@ -311,7 +311,8 @@ describe("the fleet lands at the TOP after a geometry change", () => {
     pane = document.createElement("div");
     pane.id = "app-scroll";
     scrollTo = vi.fn();
-    pane.scrollTo = scrollTo;
+    // the DOM signature is overloaded (options | x,y), which a bare mock cannot satisfy
+    pane.scrollTo = scrollTo as unknown as typeof pane.scrollTo;
     document.body.appendChild(pane);
   });
   afterEach(() => pane.remove());
