@@ -1,4 +1,6 @@
-import { act, cleanup, render } from "@testing-library/react";
+import { StrictMode } from "react";
+
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // THE BANNER TRI-STATE (GACHA_PLAN §12.6 ruling 6, slice E3) — the R25 §Q7 pins ⑰-⑱ plus the stylesheet
@@ -28,7 +30,14 @@ vi.stubGlobal(
     disconnect() {}
   },
 );
-Element.prototype.scrollTo = vi.fn();
+/** Every `scrollTo` the SHELL makes, in order — and it applies the scroll, so both "what was asked for"
+ *  and "where the pane ended up" are observable (the `sectionScroll.test.tsx` idiom; jsdom implements
+ *  neither). The per-element spy in the unit cases below shadows this on its own synthetic pane. */
+const scrollCalls: [number, number][] = [];
+Element.prototype.scrollTo = function (this: Element, x: number, y: number) {
+  scrollCalls.push([x, y]);
+  (this as HTMLElement).scrollTop = y;
+} as typeof Element.prototype.scrollTo;
 Element.prototype.scrollIntoView = vi.fn();
 
 /// <reference types="node" />
@@ -378,6 +387,37 @@ describe("the fleet lands at the TOP after a geometry change", () => {
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
   });
 
+  it("does NOT reset on a NET-ZERO hidden round trip (Codex E3 LOW)", async () => {
+    // The state is the geometry LAST SHOWN, not a dirty flag, and this is the case that tells them apart:
+    // leave for another section, flip the banner and flip it back, return. The stored offset is still an
+    // offset into exactly the page it was taken on, so throwing it away would be a pointless jump to the
+    // top. `minimal -> off -> minimal` because `minimal` is the default since 2026-08-09 — the round trip
+    // has to START from what actually ships.
+    const { rerender } = render(<GachaFleet active />);
+    await drain();
+    rerender(<GachaFleet active={false} />);
+    act(() => setThemeSetting("gacha", "banner", "off"));
+    act(() => setThemeSetting("gacha", "banner", "minimal"));
+    await drain();
+    rerender(<GachaFleet active />);
+    await drain();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("…but a hidden round trip that does NOT net out still resets", async () => {
+    // The control for the case above: same shape, one different endpoint. Without it, "no reset after a
+    // round trip" would also pass for a latch that had simply stopped working while hidden.
+    const { rerender } = render(<GachaFleet active />);
+    await drain();
+    rerender(<GachaFleet active={false} />);
+    act(() => setThemeSetting("gacha", "banner", "off"));
+    act(() => setThemeSetting("gacha", "banner", "on"));
+    await drain();
+    rerender(<GachaFleet active />);
+    await drain();
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+  });
+
   it("spends the latch ONCE — coming back to a fleet nobody re-shaped does not move it", async () => {
     const { rerender } = render(<GachaFleet active />);
     await drain();
@@ -388,6 +428,94 @@ describe("the fleet lands at the TOP after a geometry change", () => {
     rerender(<GachaFleet active />);
     await drain();
     expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── …AND THE SAME RESET THROUGH THE REAL SHELL (Codex E3 MED) ───────────────────────────────────────
+// The unit cases above mount `GachaFleet` beside a SYNTHETIC `#app-scroll`, where `DefaultRoot`'s own
+// per-section restore never runs — so they cannot see the one property the microtask exists for. Replace
+// the `queueMicrotask` with a direct call and every one of them still passes.
+//
+// This mounts the real shell: `GachaRoot` renders `DefaultRoot`, which owns the scroller, the section
+// switch and the stored-offset map. The claim is an ORDERING one — on the commit that shows the fleet
+// again, the shell restores its stale offset and gacha's reset has to land AFTER it — and ordering is
+// only observable where both effects actually exist.
+//
+// StrictMode, per the review: the double-invoked mount effects are exactly where a reset keyed on
+// anything less stable than "the geometry last shown" would fire spuriously.
+//
+// The intermediate section is UTILS on the 4-tab preset, not Conf: Conf is a lazy chunk (the reason
+// `sectionScroll.test.tsx` avoids it too) and the Agent section is the one the shell deliberately never
+// positions, which would make the "hidden section untouched" arm vacuous. Utils is on-bar and eager.
+describe("the geometry reset, through the REAL shell (the ordering pin)", () => {
+  const drawShell = (): HTMLElement => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <StrictMode>
+        <QueryClientProvider client={qc}>
+          <GachaRoot />
+        </QueryClientProvider>
+      </StrictMode>,
+    );
+    const scroller = container.querySelector<HTMLElement>("#app-scroll")!;
+    // `useScrollKeep` is a MODULE slot: a previous test's unmount saved into it and this mount just
+    // consumed the one-run skip. Normalise to a known 0 and record it, as a real scroll would.
+    act(() => {
+      scroller.scrollTop = 0;
+      fireEvent.scroll(scroller);
+    });
+    scrollCalls.length = 0;
+    return scroller;
+  };
+  /** Scroll the pane like a finger would: move it, then let the shell's passive listener see it. */
+  const scrollPane = (el: HTMLElement, y: number): void => {
+    act(() => {
+      el.scrollTop = y;
+      fireEvent.scroll(el);
+    });
+  };
+  const go = (tab: string) => act(() => setUI({ tab: tab as never }));
+  const drain = () => act(async () => {});
+
+  beforeEach(() => {
+    // 4-tab so utils is an on-bar, unhosted, EAGER section (gacha's own default is 3-tab, which hosts
+    // utils inside the lazy Conf chunk). Set before anything is recorded: a section-layout change drops
+    // the shell's whole offset map by design.
+    setUI({ layout: "4-tab", appbarMode: "visible" });
+    scrollCalls.length = 0;
+  });
+  afterEach(() => setUI({ layout: "auto" }));
+
+  it("beats the shell's own restore — the fleet lands at 0 even though a stale offset was restored", async () => {
+    const scroller = drawShell();
+    scrollPane(scroller, 240); // the shell records fleet:240 against the CURRENT geometry
+    go("utils");
+    scrollCalls.length = 0;
+
+    // …the owner changes the banner while the fleet is hidden. `off`, because `minimal` is the default
+    // since 2026-08-09 and writing the default would be a no-op change that proves nothing.
+    act(() => setThemeSetting("gacha", "banner", "off"));
+    await drain();
+    expect(scrollCalls, "the section the owner is actually reading must not move").toEqual([]);
+
+    go("fleet");
+    await drain();
+    // BOTH halves, and the first is what makes the second mean anything: the shell really did try to put
+    // the pane back at 240, and gacha's reset still had the last word.
+    expect(scrollCalls[0], "the shell must have attempted its stored restore").toEqual([0, 240]);
+    expect(scrollCalls.at(-1), "…and the reset must land AFTER it").toEqual([0, 0]);
+    expect(scroller.scrollTop).toBe(0);
+  });
+
+  it("leaves an UNCHANGED fleet on its stored offset — the shell's feature still works under gacha", async () => {
+    // The other side of the ordering claim. If the reset fired on every return to the fleet, the shell's
+    // per-section restoration would be dead under this theme and nobody would notice from the tests above.
+    const scroller = drawShell();
+    scrollPane(scroller, 180);
+    go("utils");
+    go("fleet");
+    await drain();
+    expect(scroller.scrollTop).toBe(180);
   });
 });
 
