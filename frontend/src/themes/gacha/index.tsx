@@ -231,8 +231,8 @@ export const gacha: ThemeDef = {
     // ── gacha's own remaining rows (§6.1 / R6) — the dossier picker leads the map above ──────────────
     // THE FLEET LAYOUT (§12.6 E1, ruling 1) — the theme's `fleetLayout` Surface setting, resolved by
     // `fleetSurface` to one of gacha's registered track bodies. It OPENS gacha's own block, ahead of the
-    // three rows that refine what it draws (stars · banner wallpaper · operator art): declaration order is
-    // render order, and the layout is the decision the other three read as refinements of.
+    // rows that refine what it draws (stars · the banner's room · its wallpaper · operator art):
+    // declaration order is render order, and the layout is the decision the others read as refinements of.
     //
     // THREE OPTIONS, and the list is now CLOSED: `cover` joined at E2, when the layout it names came to
     // exist. That is the "no lying options" rule the E0 slice held to by declaring nothing at all — a seg
@@ -286,6 +286,32 @@ export const gacha: ThemeDef = {
         { val: "three", label: GACHA_COPY.starModeThree },
       ],
       default: "five",
+    },
+    // THE PICKUP BANNER's FORM (§12.6 ruling 6, slice E3) — theme-wide, with NO `showWhen`, and that is a
+    // ruling rather than an omission: the banner is one instance handed to whichever layout is drawing
+    // (ruling 7's slot), so its form is a property of the THEME and every layout inherits it. The lab
+    // modelled it as one stage-level switch for exactly that reason.
+    //
+    // THREE VALUES, in this order, because it is a LADDER and the picker reads left to right from the
+    // default: `on` is the shipped 232 px hero band, `minimal` the 88 px strip (a re-authored form, not a
+    // cropped one — see gacha.css), `off` renders nothing at all. `off` is a real UNMOUNT in `GachaFleet`,
+    // never a CSS hide: the autoplay loop has no hidden-gate, and a banner nobody can see must not still
+    // be ticking.
+    //
+    // Declared IMMEDIATELY BEFORE `wallpaper`, whose own label is "Banner wallpaper": the two rows are
+    // about the same surface, and declaration order is render order. It stays theme-wide under cover too,
+    // where the strapline seat IS the strip — so `on` and `minimal` are structurally the same page there
+    // and only `off` changes what the cover renders.
+    banner: {
+      type: "seg",
+      label: "Pickup banner",
+      desc: GACHA_COPY.settingBannerDesc,
+      options: [
+        { val: "on", label: "On" },
+        { val: "minimal", label: "Minimal" },
+        { val: "off", label: "Off" },
+      ],
+      default: "on",
     },
     // R6 — both ship ON, flipping the prototype's own OFF defaults (owner-ruled).
     wallpaper: {

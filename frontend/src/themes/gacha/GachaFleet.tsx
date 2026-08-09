@@ -30,6 +30,7 @@ import {
   resolvePick,
   tapAction,
   tapGrammarFor,
+  toBannerMode,
   wakeAnnounce,
   type FleetTap,
 } from "./fleet";
@@ -73,6 +74,13 @@ export function GachaFleet({ active }: { active: boolean }) {
     svcError,
   } = useFleet();
   const starMode = toStarMode(useThemeSetting<string>("gacha", "starMode"));
+  // THE PICKUP BANNER's FORM (§12.6 ruling 6). Read ONCE, here, for the same reason `starMode` is: the
+  // banner is built in this body and handed to whichever layout is drawing (ruling 7's slot), so this is
+  // the one place that can decide whether it exists at all. `on`/`minimal` are a CSS difference the Root's
+  // `data-gc-banner` stamp carries; `off` is this component's, and it is a real UNMOUNT rather than a
+  // hidden node — GachaBanner's autoplay loop has no hidden-gate, so a CSS hide would leave a carousel
+  // ticking, re-rendering and announcing behind `display: none`.
+  const bannerMode = toBannerMode(useThemeSetting<string>("gacha", "banner"));
   // The roster the theme resolves against (§5.2's read path): the owner's media folders when they hold
   // anything, the bundled set otherwise. One query, shared with the Root/reel/Agent by its key.
   const roster = useGachaRoster();
@@ -731,14 +739,21 @@ export function GachaFleet({ active }: { active: boolean }) {
         // own composition wants it (capsule/poster: first in scroll flow, exactly where this component used
         // to mount it; cover: the strapline). Reparenting across a layout switch REMOUNTS it, which is the
         // ruling's accepted cost — the banner's timers are unmount-clean, and that is the tested part.
+        //
+        // …and under `banner: off` the slot is `null` — the same unmount, reached the same way. Every
+        // layout gets it for free, including the cover, whose strapline seat simply has nothing in it.
+        // The derivations feeding the banner (the slide set, the two pills) still run: they are cheap and
+        // §12.6 ruling 12 says so explicitly — "don't clean up".
         banner={
-          <GachaBanner
-            slides={slides}
-            active={active}
-            rate={rateText(MAX_STARS[starMode], onlineCount, resolved)}
-            pity={pityText(onlineServices, svcResolved)}
-            onOpenHost={openHostDossier}
-          />
+          bannerMode === "off" ? null : (
+            <GachaBanner
+              slides={slides}
+              active={active}
+              rate={rateText(MAX_STARS[starMode], onlineCount, resolved)}
+              pity={pityText(onlineServices, svcResolved)}
+              onOpenHost={openHostDossier}
+            />
+          )
         }
         art={(i) => artForHost(roster, i)}
         counter={counterText(onlineCount, hosts.length, resolved)}

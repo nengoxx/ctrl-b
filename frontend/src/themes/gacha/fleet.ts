@@ -181,6 +181,24 @@ export function tapGrammarFor(layoutId: string): TapGrammar {
   return layoutId === "cover" ? "select-first" : "act-first";
 }
 
+/** THE PICKUP BANNER's FORM — the `banner` setting's three values (§12.6 ruling 6, slice E3).
+ *
+ *  · `on` — the shipped 232 px hero band.
+ *  · `minimal` — the 88 px strip: a RE-AUTHORED form (re-scaled tag, display line, pills and dots, no
+ *    caption), not the same band with its height clipped.
+ *  · `off` — nothing rendered at all. */
+export type BannerMode = "on" | "minimal" | "off";
+
+/** Narrow a raw setting value to a `BannerMode` — the `toStarMode` bridge, one axis over.
+ *
+ *  `useThemeSetting` has already validated the value against the declared options, so this is the TYPE
+ *  bridge and the last line of defence for a non-hook caller, not a second validation layer. It degrades
+ *  to `on`, which is both the declared default and the only value that renders the shipped banner: an
+ *  unreadable setting must never be the reason a surface disappears. */
+export function toBannerMode(raw: string | boolean | undefined): BannerMode {
+  return raw === "minimal" || raw === "off" ? raw : "on";
+}
+
 /** The RESOLVED selection — the machine an alt layout is actually showing as picked (§12.6 ruling 2).
  *
  *  "The stored pick if the fleet still has it, else the first machine." A named function rather than an

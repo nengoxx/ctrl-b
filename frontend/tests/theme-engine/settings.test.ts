@@ -112,13 +112,17 @@ describe("themeSettingsSpec — gacha", () => {
       "composerSkin",
       "planPlacement",
       "outlines",
-      // THE FLEET BLOCK opens gacha's own rows (E1): the LAYOUT is the decision the three below it refine,
+      // THE FLEET BLOCK opens gacha's own rows (E1): the LAYOUT is the decision the ones below it refine,
       // and `posterName` is declared IMMEDIATELY AFTER its `showWhen` controller — declaration order is
       // render order, so adjacency is what makes the layout-scoped row "pop up right below" the picker
       // that reveals it. `themeContract.test.ts` enforces that adjacency for every registered theme.
       "fleetLayout",
       "posterName",
       "starMode",
+      // E3's `banner` sits IMMEDIATELY BEFORE `wallpaper` — whose label is "Banner wallpaper" — because the
+      // two rows govern the same surface and the reader meets "does it show, and how big" before "what is
+      // painted behind it". Theme-wide, so it carries no `showWhen` (asserted in `gachaFleet.test.tsx`).
+      "banner",
       "wallpaper",
       "oracle",
     ]);

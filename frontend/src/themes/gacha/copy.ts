@@ -193,6 +193,15 @@ export const GACHA_COPY = {
    *  chooses only WHERE the machine name sits on a slice. Same 名 as the two face pickers above — a third
    *  rider on a glyph the subset already carries. */
   settingPosterNameDesc: "the name's seat on each poster slice · 名",
+  /** 開催 (kaisai) — "an event being held"; the PICKUP BANNER's form (§12.6 E3). It is the BANNER'S OWN
+   *  WORD — `heroTag` prints 開催中 on the hero slide this row governs — so the descriptor names the thing
+   *  in the same voice the thing uses, and both glyphs already ride the frozen subset through that tag.
+   *  Zero new glyphs, no font re-run: the standing rule for a new descriptor (see
+   *  `settingCardNameFontDesc`), not a happy accident.
+   *
+   *  It names the ROOM rather than a switch, because the row is a three-value seg and "off" is only one of
+   *  them: `on` is the 232 px hero band, `minimal` the 88 px strip, `off` nothing at all. */
+  settingBannerDesc: "how much room the pickup banner takes above the fleet · 開催",
 
   /** THE UNIT TAG POOL (owner, third dev-unit walk: "in the upper right corner there was a small icon —
    *  I would like something like that"). Eight single kanji, drawn by POSITION, for the poster slice's
