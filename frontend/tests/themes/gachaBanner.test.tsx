@@ -496,27 +496,70 @@ describe("the tri-state's stylesheet claims", () => {
     expect(css).not.toContain('[data-gc-banner="on"]');
   });
 
-  it("every tri-state rule is scoped to the FLOW SEAT, and none of them reaches the cover", () => {
+  /** THE ONE SIGNED EXCEPTION to the flow-seat scoping (main-seat ruling, E3 fix wave). Listed here, as
+   *  its own constant, so the guard below stays a guard: a new `[data-gc-banner` selector is either
+   *  flow-seat-scoped or it is literally in this list, and there is no third way to get in. */
+  const COVER_REFLOW = ['body[data-gc-banner="off"] .cv-frame'];
+
+  it("every tri-state rule is scoped to the FLOW SEAT — with ONE enumerated cover exception", () => {
     // THE DISJOINTNESS CLAIM, enumerated. The cover seats the same banner instance inside `.cv-strap` and
     // already ships its own authored strip (the E2 signed exception); this block must not be able to
     // reach it, or picking `minimal` would silently restyle the cover's strapline — its display line in
     // particular, which is container-relative there and a fixed 16px here.
     //
+    // ⚠ CONSCIOUSLY AMENDED, NOT LOOSENED (the E2 eyeball-① precedent). The first form of this test
+    // required EVERY tri-state rule to be flow-seat-scoped, which was right for `minimal` — a skin — and
+    // wrong for `off`, which is a re-flow: the cover's floors RESERVE the strapline, so leaving them
+    // alone under `off` keeps ~88px of empty band over the footer. The lab ruled that case explicitly
+    // ("each screen must RE-FLOW, not just lose a strip") and the main seat ruled it in for E3, so the
+    // exception is PINNED BY NAME below rather than let through by relaxing the predicate.
+    //
     // Read as RULES, not as lines (Codex E2 MED-4): a multi-line selector list walks straight past a
     // line-anchored regex, which is a false negative in a guard whose whole job is to fail.
-    const scoped = selectorsMentioning(css, "[data-gc-banner");
+    const scoped = selectorsMentioning(css, "[data-gc-banner").map(({ selector }) => selector);
     expect(scoped.length, "the stamp must have consumers").toBeGreaterThan(0);
-    for (const { selector } of scoped) {
+    for (const selector of scoped.filter((s) => !COVER_REFLOW.includes(s))) {
       expect(selector, `${selector} must address the tab's own flow`).toContain(".tab > ");
       expect(selector, `${selector} must not reach the cover's seat`).not.toContain(".cv-");
       // it may only ever address the banner or the head the banner's absence exposes
       expect(selector).toMatch(/\.tab > \.gc-(banner|track-head)/);
     }
+    // the exception list is EXACT in both directions — every member present, no member unused
+    expect(scoped.filter((s) => s.includes(".cv-")).sort()).toEqual([...COVER_REFLOW].sort());
     // …and the converse: no rule anywhere else in the file has quietly taken the stamp into the cover's
-    // enumeration (`gachaCover.test.tsx` lists every `.cv-`-scoped banner rule and would fail too).
+    // own banner enumeration (`gachaCover.test.tsx` lists every `.cv-strap`-scoped banner rule and would
+    // fail too). The re-flow is scoped to `.cv-frame`, the SEAT's container, never to the seat.
     const covered = selectorsMentioning(css, ".cv-strap").map(({ selector }) => selector);
     for (const sel of covered)
       expect(sel, `${sel} must not mix the seat with the stamp`).not.toContain("[data-gc-banner");
+  });
+
+  it("the cover RE-FLOWS under `off` — the lab's walked floors, on production's anchor", () => {
+    // THE LAB'S NUMBERS, VERIFIED IN ITS OWN STYLESHEET, not echoed: B seats `.cv-foot` at 70 and
+    // `.cv-strap` at 102, floors the hero copy at 212 and the cut-in stack at 202 WITH the strip, and
+    // drops them to 116 and 126 without it. Against the strap anchor those are +110/+100 on and
+    // +14/+24 off — and production's `--cv-strap` is the composer-derived twin of that 102 (the E2 seed
+    // swap), so the intervals port unchanged while the whole composition still clears the real chrome.
+    const off = blockFor('body[data-gc-banner="off"] .cv-frame')!;
+    expect(off).toContain("--cv-herocopy: calc(var(--cv-strap) + 14px)");
+    expect(off).toContain("--cv-side-floor: calc(var(--cv-strap) + 24px)");
+    // it moves FLOORS and nothing else — no paint, no new box, no second chain
+    expect(off.replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(
+      /(^|[\s;])(background|position|inset|display|height|width)/,
+    );
+    // …and the ON chain it overrides is untouched, still derived off the same anchor
+    const frame = blockFor(".cv-frame")!;
+    expect(frame).toContain("--cv-side-floor: calc(var(--cv-strap) + 100px)");
+    expect(frame).toContain("--cv-herocopy: calc(var(--cv-strap) + 110px)");
+    // THE PAIR INVERTS, by ruling rather than by arithmetic: with the strip gone the bottom-TRAILING
+    // hero copy comes down closer to the footer than the cut-in COLUMN does, because the column runs
+    // down the leading edge straight into the barcode at the footer's left. So a "both floors drop by
+    // the strip height" simplification is a regression, not a tidy-up — pinned as the relation, which
+    // is the part that carries the meaning.
+    const gap = (block: string, name: string): number =>
+      Number(new RegExp(`${name}: calc\\(var\\(--cv-strap\\) \\+ (\\d+)px\\)`).exec(block)![1]);
+    expect(gap(off, "--cv-herocopy")).toBeLessThan(gap(off, "--cv-side-floor"));
+    expect(gap(frame, "--cv-herocopy")).toBeGreaterThan(gap(frame, "--cv-side-floor"));
   });
 
   it("leaves the WALLPAPER banner shadow exactly as it is — an OPEN E3 question, recorded", () => {

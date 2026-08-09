@@ -1092,7 +1092,12 @@
      *     `on` and `minimal` are therefore the same page, which is the owner-confirmed reading: the
      *     strapline seat IS the strip.
      *   · it also makes the `off` null beat the poster's tuned seam (`--po-head-pad-top`) on SPECIFICITY
-     *     rather than on source order, so neither block has to be read to understand the other. */
+     *     rather than on source order, so neither block has to be read to understand the other.
+     *
+     * THE ONE SIGNED EXCEPTION to that scoping is the COVER's `off` RE-FLOW (`body[data-gc-banner="off"]
+     * .cv-frame`, in the cover block beside the chain it overrides): the cover's floors RESERVE the strip,
+     * so under `off` they have to collapse or the page keeps an empty band. It is enumerated as its own
+     * list in `gachaBanner.test.tsx` rather than let through this block's guard. */
     /* The head becomes the tab's first child when the banner leaves, and inherits a job it was never
      * shaped for: the 22px was air between a full-bleed banner and a heading, not the appbar→content
      * seam. Nulled to the kit's own first-block convention (`.kit .tab > .kit-sec:first-child`), which
@@ -2249,6 +2254,32 @@
       isolation: isolate;
       overflow: hidden;
       background: var(--gc-cv-field);
+    }
+    /* ── THE COVER RE-FLOWS WHEN THE STRIP LEAVES (§12.6 ruling 6 + the E3 main-seat ruling) ─────────
+     * The lab's own law for `banner: off` — "each screen must RE-FLOW, not just lose a strip" — and it
+     * applies here because the two floors above are not decoration: they are the intervals that RESERVE
+     * the strapline. With the banner unmounted (`GachaFleet` hands the slot `null`) they would hold ~88 px
+     * of empty band over the footer, which is precisely the "just lose a strip" failure.
+     *
+     * THE NUMBERS ARE THE LAB'S, WALKED, re-expressed on production's anchor rather than copied as
+     * absolutes. B's floors are 212/202 with the strip and 116/126 without it, over a `.cv-foot` seated at
+     * 70 and a `.cv-strap` at 102 — so against that same strap anchor the OFF pair is +14 (hero copy) and
+     * +24 (cut-in stack). Production's `--cv-strap` is the composer-derived twin of the lab's 102 (the E2
+     * seed swap: same intervals, a floor that clears the real chrome), so the two gaps port unchanged and
+     * the whole composition still floats above the composer.
+     *
+     * THE PAIR INVERTS, and that is the lab's ruling rather than an arithmetic slip: with the strip gone
+     * the hero copy — bottom-TRAILING, over the hero's own art — comes down closer to the footer than the
+     * cut-in COLUMN does, because the column runs down the leading edge straight into the barcode that
+     * sits at the footer's left. 14 under 24.
+     *
+     * `--cv-strap` STAYS THE ANCHOR even though nothing is seated on it: it names the line above the
+     * footer where the composition may begin, which is exactly as true with the strip as without it —
+     * and keeping one chain is what stops an `off` cover from drifting away from an `on` one when the
+     * composer's height changes underneath both. */
+    body[data-gc-banner="off"] .cv-frame {
+      --cv-side-floor: calc(var(--cv-strap) + 24px);
+      --cv-herocopy: calc(var(--cv-strap) + 14px);
     }
     .cv-shake {
       position: absolute;
