@@ -408,24 +408,28 @@ export function GachaFleet({ active }: { active: boolean }) {
   // TOP after a change, which is the honest answer for a page that has been re-laid-out.
   //
   // TWO THINGS MAKE IT NON-OBVIOUS, and both are load-bearing:
-  //   · IT WAITS FOR THE TAB. Both settings live in Conf, so the change almost always lands while the
-  //     fleet is hidden — and `#app-scroll` is ONE shared scroller, so resetting it then would yank the
-  //     Conf page the owner is reading to the top and record that as Conf's own position. The change is
-  //     therefore latched and spent when the fleet is next showing.
+  //   · IT WAITS FOR THE TAB, AND IT COMPARES AGAINST THE GEOMETRY LAST SHOWN. Both settings live in
+  //     Conf, so the change almost always lands while the fleet is hidden — and `#app-scroll` is ONE
+  //     shared scroller, so resetting it then would yank the Conf page the owner is reading to the top
+  //     and record that as Conf's own position. The state is therefore the LAST GEOMETRY THIS BODY WAS
+  //     SEEN IN, not a dirty flag: ruling 6 resets when the geometry the offset was taken against no
+  //     longer matches, and a flag answers a different question ("did anything happen while hidden?").
+  //     They differ on the net-zero round trip — leave for Conf, flip the banner, flip it back, return —
+  //     where the offset is still valid and a flag would have thrown it away for nothing (Codex E3 LOW).
   //   · IT RUNS IN A MICROTASK. Effects flush child-first, so this one runs BEFORE DefaultRoot's own
   //     restore effect on the very commit that shows the fleet again — a plain call here would be
   //     overwritten by the stale offset it exists to discard. A microtask queued from inside the flush
   //     runs after the whole flush and still before paint, so the reset lands last and never flickers.
+  //     That ordering is pinned by a REAL-SHELL test, not by this comment: mounted beside a synthetic
+  //     scroller the two orderings are indistinguishable.
   const geomKey = `${layoutId}/${bannerMode}`;
-  const geomRef = useRef(geomKey);
-  const geomDirty = useRef(false);
+  const shownGeomRef = useRef(geomKey);
   useEffect(() => {
-    if (geomRef.current !== geomKey) {
-      geomRef.current = geomKey;
-      geomDirty.current = true;
-    }
-    if (!geomDirty.current || !active) return;
-    geomDirty.current = false;
+    // While hidden the last SHOWN geometry stands — whatever the settings do in the meantime, this body
+    // is not on screen and the shared scroller is not its to move.
+    if (!active) return;
+    if (shownGeomRef.current === geomKey) return;
+    shownGeomRef.current = geomKey;
     queueMicrotask(() => document.getElementById(SCROLLER_ID)?.scrollTo(0, 0));
   }, [geomKey, active]);
 
