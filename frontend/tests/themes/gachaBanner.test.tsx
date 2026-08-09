@@ -298,6 +298,18 @@ describe("body[data-gc-banner] — the resolved-form stamp (R25 ⑱)", () => {
     view.unmount();
     expect(document.body.dataset.gcBanner).toBeUndefined();
   });
+
+  it("is INDEPENDENT of the WALLPAPER axis — the two stamps stand together", () => {
+    // The two rows are adjacent in the picker and read as one subject ("Pickup banner" / "Banner
+    // wallpaper"), but they are separate axes: the wallpaper is the FLEET BACKGROUND, painted on
+    // `.kit-main`, and it has to survive a banner the owner turned off. Both halves are asserted — the
+    // stamps here, the stylesheet's own blindness below.
+    setThemeSetting("gacha", "banner", "off");
+    const view = drawRoot();
+    expect(document.body.dataset.wallpaper).toBe("on"); // R6's flipped-ON default
+    expect(document.body.dataset.gcBanner).toBe("off");
+    view.unmount();
+  });
 });
 
 // ── THE GEOMETRY RESET (ruling 6's ⚖ clause) ─────────────────────────────────────────────────────────
@@ -469,6 +481,15 @@ describe("the tri-state's stylesheet claims", () => {
     // Shrinking the pip without growing the box would quietly hand the owner an 18px touch target.
     expect(blockFor(".gc-dot::before")).toContain("inset: -9px -2px");
     expect(min(" .gc-dot::before")).toContain("inset: -9px -5px");
+  });
+
+  it("the FLEET WALLPAPER is banner-blind — `off` removes a banner, not the backdrop", () => {
+    // The matrix cell the two adjacent rows invite someone to break. The wallpaper paints on `.kit-main`
+    // under its own two-attribute rule; if any wallpaper rule ever read the banner axis, turning the
+    // banner off would take the fleet's scenery with it.
+    expect(blockFor('body[data-wallpaper="on"][data-tab="fleet"] .kit-main')).toBeTruthy();
+    for (const { selector } of selectorsMentioning(css, "data-wallpaper"))
+      expect(selector, `${selector} must not read the banner axis`).not.toContain("data-gc-banner");
   });
 
   it("the DEFAULT form has no rule at all — `on` cannot move by accident", () => {
