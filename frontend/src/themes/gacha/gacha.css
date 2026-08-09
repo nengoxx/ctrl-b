@@ -1071,6 +1071,94 @@
       letter-spacing: 0.14em;
     }
 
+    /* ── THE BANNER TRI-STATE (§12.6 ruling 6, slice E3) — `body[data-gc-banner]`'s two non-default forms
+     * ────────────────────────────────────────────────────────────────────────────────────────────────
+     * The `banner` setting is theme-wide and the stamp carries its RESOLVED value. `on` is everything
+     * above this line, unchanged and untested-by-omission: the default state has no rule here at all, so
+     * a shipped v1.5.0 number cannot move by accident. What is here is the other two:
+     *
+     *   off      the banner is UNMOUNTED in `GachaFleet` (the autoplay loop has no hidden-gate), so all
+     *            the stylesheet owes is the top space the missing box used to carry.
+     *   minimal  a RE-AUTHORED STRIP, not the same band with a shorter height (the ⚖ ruling, against the
+     *            lab's own `.bn[data-size="strip"]` block): every number that reads as "hero band" is
+     *            re-scaled, and the caption — the first thing a strip cannot afford — is dropped.
+     *
+     * THE SEAT, NOT THE MODE, IS WHAT SCOPES THEM. Both use `.tab > …`, addressing the box that is FIRST
+     * IN THE TAB'S FLOW, and that is load-bearing twice over:
+     *   · the cover seats the same banner instance inside `.cv-strap` (an ABSOLUTE strip, not a flow
+     *     child), which already ships its own strip form — so the child combinator is what keeps the two
+     *     authored strips disjoint instead of fighting on specificity, and the E2 enumeration test
+     *     ("every banner rule the cover adds is scoped to `.cv-strap`") stays literally true. Under cover
+     *     `on` and `minimal` are therefore the same page, which is the owner-confirmed reading: the
+     *     strapline seat IS the strip.
+     *   · it also makes the `off` null beat the poster's tuned seam (`--po-head-pad-top`) on SPECIFICITY
+     *     rather than on source order, so neither block has to be read to understand the other. */
+    /* The head becomes the tab's first child when the banner leaves, and inherits a job it was never
+     * shaped for: the 22px was air between a full-bleed banner and a heading, not the appbar→content
+     * seam. Nulled to the kit's own first-block convention (`.kit .tab > .kit-sec:first-child`), which
+     * lands the head on the app bar's 14px bottom pad — the prototype's seam. Poster's 8px is the same
+     * number for the same reason and nulls with it. Vertical only; the head's 14px sides are untouched. */
+    body[data-gc-banner="off"] .tab > .gc-track-head {
+      padding-top: 0;
+    }
+    /* THE STRIP. Its height is the ONE new number this slice ships — the lab's `--bn-h-strip`, which the
+     * cover already carries as `--cv-bn-h`. It is declared as a custom property on the rule that consumes
+     * it (the `.cv-frame` precedent) because it is the tunable the E5 device round will walk, and a
+     * device-round number wants a name rather than a literal buried in a `height`. */
+    body[data-gc-banner="minimal"] .tab > .gc-banner {
+      --gc-bn-h-min: 88px;
+      height: var(--gc-bn-h-min);
+    }
+    /* The copy block moves in with the edges — the strip's own margins, not the band's. */
+    body[data-gc-banner="minimal"] .tab > .gc-banner .gc-banner-copy {
+      left: 11px;
+      right: 11px;
+      bottom: 9px;
+    }
+    body[data-gc-banner="minimal"] .tab > .gc-banner .gc-banner-copy .tag {
+      padding: 3px 8px;
+      font-size: 7px;
+    }
+    /* 16px = the lab's `calc(var(--u) * .042)` at the 390px device width, which is how every other type
+     * size in this port was resolved (the band's own 27px is the lab's `.069u` at the same width). A fixed
+     * number rather than a container query because the flow-seated banner has no container to query — the
+     * cover's strip keeps the `--cv-u` form because its frame declares one. */
+    body[data-gc-banner="minimal"] .tab > .gc-banner .gc-banner-copy b {
+      margin-top: 5px;
+      font-size: 16px;
+    }
+    /* THE CAPTION IS DROPPED, and it is the one thing the strip genuinely cannot carry: at 88px a third
+     * line pushes the display line into the dot rail. The lab's strip drops it and so does the cover's. */
+    body[data-gc-banner="minimal"] .tab > .gc-banner .gc-banner-copy small {
+      display: none;
+    }
+    body[data-gc-banner="minimal"] .tab > .gc-banner .gc-banner-rate {
+      top: 6px;
+      gap: 3px;
+    }
+    body[data-gc-banner="minimal"] .tab > .gc-banner .gc-banner-rate span {
+      padding: 3px 8px 3px 10px;
+      font-size: 7px;
+    }
+    body[data-gc-banner="minimal"] .tab > .gc-banner .gc-banner-dots {
+      right: 10px;
+      bottom: 8px;
+      gap: 5px;
+    }
+    /* The dots re-scale to the lab's strip pips (20x7 -> 14x5). `scaleX(0.35)` is a RATIO, so the
+     * inactive pill follows without a second number. */
+    body[data-gc-banner="minimal"] .tab > .gc-banner .gc-dot {
+      width: 14px;
+      height: 5px;
+    }
+    /* …and the invisible hit area GROWS to keep the target, which is the one place this port must not
+     * follow the lab: its dots are decorative `<i>` elements, ours are real buttons. -5px sides over a
+     * 14px pip is the same 24px box the 20px pip gets from -2px, so a strip dot is exactly as tappable
+     * as a band dot. */
+    body[data-gc-banner="minimal"] .tab > .gc-banner .gc-dot::before {
+      inset: -9px -5px;
+    }
+
     /* ── THE CAPSULE TRACK (G1 — the prototype's `.track-head` + `.capsule-track`, theme.css:44-70) ──
      * The head is a serif 編成 over its Latin gloss, with the online/total counter aligned to its baseline. */
     .gc-track-head {
