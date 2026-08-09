@@ -12,7 +12,7 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## 🔶 2026-08-09 (Fable) — **E3 BUILT + the re-flow fix wave folded — NOT YET CLOSED: Codex round IN FLIGHT** on `alt-fleet`
+> ## ✅✅ 2026-08-09 (Fable) — **E3 THE BANNER TRI-STATE SHIPPED + REVIEW-CLOSED (Codex confirm SHIP) + OWNER-WALKED LIVE** on `alt-fleet`; NEXT SESSION = the E4 go-word (cross-layout hardening + docs, §12.6)
 >
 > **E3 (banner tri-state) built by Opus from the pinned brief; 6 commits `06523ce..70cf9b2`
 > (= HEAD), full gate 6/6 at both waves, FE tests 2036, capsule fence byte-identical.** What
@@ -34,11 +34,22 @@
 > lab strip scrim non-port · the pre-existing `.gc-banner-nav` overlap.
 > **OWNER RULING (live, 2026-08-09): `banner` DEFAULT = `minimal` ("looks better than the full
 > banner") — §12.6 table's `on (default)` superseded; GACHA_PLAN fold at the E4 docs step.**
-> **REMAINING TO CLOSE E3:
-> the Codex round (launched detached over `06523ce^..HEAD`; prompt + output land in the session
-> scratchpad `…/bcd3ee5e-…/scratchpad/codex-{prompt.txt,review.md,full.log}`) → triage + fix
-> wave + confirm → the main-seat RENDER AUDIT (dev units) → the owner walk (overlaps the E2 walk
-> list). Then E4.** Nothing pushed; prod untouched at v1.5.0; dev units not started.
+> **THE CLOSE: Codex round 1 =
+> SHIP WITH FIXES** (MED: the scroll ordering had NO real-shell pin — the new tests mounted a
+> synthetic scroller so DefaultRoot's restore never ran; fixed mirroring `sectionScroll.test.tsx`
+> (StrictMode + the REAL DefaultRoot), and the microtask→direct-call mutation now FAILS showing
+> the shell's stale `[0,240]` restore · LOW, a real defect: the latch fired on net-zero hidden
+> round trips — `shownGeomRef` now compares against the geometry LAST SHOWN, more faithful to
+> ruling 6 than the dirty flag) → the fix pair `80fa8da`+`f6ba4ed`, both mutation-proven → the
+> **scoped confirm: SHIP, close E3**, + 1 doc-only LOW folded as the close commit (`on` = the
+> BASE form / `minimal` = the shipping default — comments follow the ruling). **The owner walked
+> it LIVE on the dev units mid-session ("seems to work fine") and ruled the default flip from
+> that walk — the formal render-audit pass is absorbed by it; deep visual acceptance = E5's
+> device round as designed** (its E3 adds: the minimal SKIRT call · `--gc-bn-h-min` retune ·
+> strip scrim). Series = 10 commits `06523ce..6f24293`, FE 2041, full gate 6/6 at every wave. **E4's
+> docs step also owes: the 1999 pre-E3 baseline correction (the E2 record's 2027 was wrong) ·
+> the §12.6 banner-default supersession · this block's own earlier "default on" narrative.**
+> Nothing pushed; prod untouched at v1.5.0; **dev units RUNNING at close (owner ask, :5434 + :5173).**
 >
 > ## ✅✅ 2026-08-08 LATE NIGHT (Fable) — **E2 THE COVER SHIPPED + REVIEW-CLOSED (final Codex verdict SHIP) + owner-eyeball-folded** on `alt-fleet`; ~~NEXT SESSION = the E3 go-word (banner tri-state, §12.6)~~ *(E3 BUILT — see the block above)*
 >
