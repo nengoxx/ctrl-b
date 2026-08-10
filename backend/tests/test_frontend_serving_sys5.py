@@ -18,6 +18,8 @@ reaches them and, having no file extension, would be answered with the shell.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -106,18 +108,23 @@ def test_bare_api_returns_json_404_without_redirecting(spa_client: TestClient, p
     assert r.json() == {"detail": "Not Found"}
 
 
-def test_a_real_api_route_is_not_shadowed(spa_client: TestClient) -> None:
-    """The guard route is a catch-all under `/api`, so it must stay LAST. If a router is ever
-    registered below it, this fails — which is the entire point of asserting against a real endpoint.
+def test_the_api_guard_stays_registered_last(spa_client: TestClient) -> None:
+    """The guard is a catch-all under `/api`, so every real `/api` route must be registered BEFORE it.
 
-    The assertion is "not the guard's 404", not "200": this fixture builds the app without running the
-    lifespan (by design — it is a routing test), so `/api/health` reaches its real handler and then
-    fails on the `app.state.db` the lifespan would have set. Reaching the handler at all is exactly the
-    invariant under test; a shadowed route would never get there — hence `raise_server_exceptions=False`,
-    which turns that downstream failure into a 500 we can distinguish from a 404.
+    Asserted structurally, over the route table, because the obvious behavioural version does not
+    actually test this: requesting an existing endpoint like `/api/health` passes whatever happens
+    below the guard, since that route is already above it. Only ordering catches a router appended
+    later — which is the failure this pins.
     """
-    routed = TestClient(spa_client.app, raise_server_exceptions=False, follow_redirects=False)
-    assert routed.get("/api/health").status_code != 404
+    routes = spa_client.app.routes
+    assert [getattr(r, "path", None) for r in routes[-2:]] == ["/api/{rest:path}", "/api"], (
+        "the SYS-5 guard routes must be the LAST entries in the route table — anything registered "
+        "under /api after them is silently shadowed for GET"
+    )
+    # Sanity, so the ordering above means something: the real API IS registered, ahead of the guard.
+    # `include_router` keeps its routes inside `_IncludedRouter` entries rather than flattening them
+    # onto `app.routes`, so the endpoints are confirmed through the schema rather than by path match.
+    assert "/api/health" in spa_client.get("/openapi.json").json()["paths"]
 
 
 def test_unknown_api_method_stays_405(spa_client: TestClient) -> None:
@@ -130,9 +137,35 @@ def test_unknown_api_method_stays_405(spa_client: TestClient) -> None:
 
 
 def test_the_guard_routes_stay_out_of_the_openapi_schema(spa_client: TestClient) -> None:
+    """BOTH decorators carry `include_in_schema=False` — check both, or dropping it from one
+    would leak a synthetic 404 operation into the published schema unnoticed."""
     paths = spa_client.get("/openapi.json").json()["paths"]
     assert "/api/{rest}" not in paths
+    assert "/api" not in paths
     assert "/api/health" in paths
+
+
+def test_a_dist_without_index_html_degrades_to_api_only(tmp_path, monkeypatch, caplog) -> None:
+    """DEGRADE, NEVER BRICK (W2). An explicit `fallback` validates at CONSTRUCTION and raises, and
+    `create_app()` runs after the exit-78 preflight — so a half-written dist (interrupted build, a
+    partial `install.sh` swap) would crash-loop the service and take the API down with it. The guard
+    must skip the SPA, say so, and leave the API serving."""
+    import app.main as main
+
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)  # a dist directory, but no index.html
+    monkeypatch.setattr(main, "_FRONTEND_DIST", dist)
+
+    with caplog.at_level(logging.ERROR):
+        app = main.create_app()  # must NOT raise
+
+    assert "no index.html" in caplog.text
+    client = TestClient(app, follow_redirects=False)
+    # the API is still fully wired…
+    assert "/api/health" in client.get("/openapi.json").json()["paths"]
+    # …and no SPA is served: an unmatched path is an honest 404, never a shell
+    assert client.get("/somepage").status_code == 404
+    assert client.get("/").status_code == 404
 
 
 # ── The SPA shell still resolves ───────────────────────────────────────────────────────────────────

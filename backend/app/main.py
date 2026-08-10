@@ -1,8 +1,8 @@
 """App factory + ASGI entrypoint.
 
-Dev: Vite proxies `/api` → uvicorn (single origin, no CORS). Prod (Phase 9): this also serves
-the built `frontend/dist` via FastAPI's native `app.frontend()` SPA route (D55). Phase 0 only
-wires lifespan (db + settings) and the `/api/health` checkpoint.
+Dev: Vite proxies `/api` → uvicorn (single origin, no CORS). Prod: this also serves the built
+`frontend/dist` via FastAPI's native `app.frontend()` SPA route (D55). `create_app()` wires the
+full API, the owner-media mounts and that frontend route; `lifespan` owns the runtime state.
 
 Run:  uvicorn app.main:app --port 5433   (from backend/)
 
