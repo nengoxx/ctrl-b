@@ -12,6 +12,50 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
+> ## ⏸ 2026-08-10 (Opus) — **PROD FRONTEND-SERVING BUG FIXED (D55/SYS-19), 4 commits on `alt-fleet`, NOT released. AWAITING THE OWNER'S DECISION + A FABLE SECOND OPINION — owner asked to park it for the 2026-08-11 afternoon session.** This does NOT displace the E4 go-word below; it is a parallel stream.
+>
+> **The bug.** `create_app()` mounted only `/assets`, so every ROOT-level `dist` file — `favicon.ico`,
+> the PWA icons, `manifest.webmanifest`, `sw.js`, `workbox-*.js` — fell into the SPA catch-all and was
+> served as `index.html` with `text/html` 200. **Verified on the live prod server** (each returned 5232
+> bytes = `dist/index.html`). Present since the Phase 0 scaffold `510302d`; **prod has never served
+> these correctly.** Owner-visible symptom: Chrome-Android draws a letter tile for the bookmark instead
+> of the app icon. Invisible ones: the PWA manifest never parsed and **no service worker has ever
+> registered**, so `SwUpdatePrompt` + the D52/G5 font/media `runtimeCaching` rules have never run.
+>
+> **The fix** (`0673c9b` · `89b6b86` · `40dac62` · `5fa859e`, LOCAL-ONLY, nothing pushed): FastAPI's
+> native `app.frontend()` (0.138+) replaces the hand-rolled mount + catch-all; SYS-5's `/api` JSON-404
+> moves into two real GET routes registered last. **It is a DELETION — 7 executable lines replacing 9,
+> 27 insertions against 119 deletions.** Council: Codex correctness + Opus architecture lens (both SHIP
+> WITH CHANGES, all folded) + post-build Codex (SHIP) + a cuts-only round after the owner challenged
+> the scope (CUT AS LISTED, taken except three recorded overrules). Full record = **D55**; the defect
+> itself = **SYS-19**. Gate 6/6; 13 tests, non-vacuous (6 fail against the true pre-fix code); pinned
+> against the real built dist (9 root artifacts byte-for-byte, manifest parsing its 4 icons).
+>
+> **⚠ THE DECISIONS WAITING (this is what needs the second opinion):**
+> 1. **THE BRANCH — the big one.** `alt-fleet` is **67 commits ahead of `main`**; 63 are the in-flight
+>    gacha E0–E3. **Tagging from `alt-fleet` would ship all of it.** The 4 commits cherry-pick cleanly
+>    onto `main`, whose own 5 unreleased commits are **docs-only, no config/schema ⇒ no migration**.
+> 2. **THE SERVICE WORKER IS A ONE-WAY DOOR.** Shipping registers a worker on the owner's phone for the
+>    first time ever. Rolling back *past* that tag leaves it live — the older backend serves `sw.js` as
+>    `text/html` again and a browser will not UPDATE a worker fetched with a non-JS MIME — so recovery
+>    is device-side (clear site data). Argues for a lone `v1.5.1` patch tag, one hop back, not bundled.
+> 3. **Two runbook one-liners, offered but NOT written** (owner watching scope): a content-type check in
+>    `deploy/linux/README.md` §Release verify, and a §Rollback note about the worker.
+>
+> **THE GAP THAT LET THIS LIVE FOR MONTHS — worth a ruling of its own.** Playwright runs against
+> `vite preview`, which serves `dist` correctly, so **the prod serving path is structurally invisible to
+> the release gate**. It survived the system audit, the QH audit AND the pre-deploy gate because every
+> check asserted a STATUS CODE and none asserted a CONTENT TYPE. Nothing 404'd, so prod read healthy
+> while being entirely broken client-side. The post-deploy check that would have caught it:
+> `curl -sI https://emma.lobster-vector.ts.net/icon-192.png` → must be `image/png`, never `text/html`.
+>
+> **Scope swept, so the picture is not partial:** a live-prod content-type sweep found the **API surface
+> entirely clean** (every `/api` path proper JSON) and the **media mount correct** (`image/png`). The
+> corruption was confined to root-level catch-all files. No second instance found.
+>
+> **When it ships:** deploy → reload the page → **delete and recreate the bookmark** (Chrome caches the
+> old tile). A server fix alone does not repair what the phone already cached.
+>
 > ## ✅✅ 2026-08-09 (Fable) — **E3 THE BANNER TRI-STATE SHIPPED + REVIEW-CLOSED (Codex confirm SHIP) + OWNER-WALKED LIVE** on `alt-fleet`; NEXT SESSION = the E4 go-word (cross-layout hardening + docs, §12.6)
 >
 > **E3 (banner tri-state) built by Opus from the pinned brief; 6 commits `06523ce..70cf9b2`
