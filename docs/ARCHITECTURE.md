@@ -98,6 +98,14 @@ state) · **`THEME_ENGINE.md` §14** (the theme layer: tokens · Kit · Surfaces
 | **macOS** | `uvicorn app.main:app` (`--reload` ok for dev) | sibling POSIX path |
 | **Android / Termux** *(exp.)* | `uvicorn` in Termux + `termux-wake-lock` + foreground service, charger | phone = host; WOL only on its LAN; high port (no root) |
 
+**Serving the SPA (D55).** In **dev** Vite owns the SPA and proxies `/api` to uvicorn. In **prod**
+there is no Vite: uvicorn serves `frontend/dist` single-origin via FastAPI's native `app.frontend()`
+(a low-priority route consulted only after every path operation and mount), so build artifacts keep
+their own content types. The one thing registered after the API routers is the SYS-5 `/api` guard,
+which must stay last. This path exists **only** in prod, which is why a bug in it stayed invisible to
+dev, to the Playwright suite (it runs against `vite preview`, which serves `dist` correctly) and to
+every status-code health check for the app's whole life — see SYS-19.
+
 **Data root (`$CTRLB_HOME`, D15 #2).** All data — `config.yaml`, `ctrlb.db`, `SOUL.md`, `memories/`,
 `skills/`, `agents/` — lives under one relocatable root (env `CTRLB_HOME`; mirrors Hermes' `HERMES_HOME`).
 Resolution: explicit `CTRLB_CONFIG`/`CTRLB_DB` override their specific path (back-compat + temp-config

@@ -166,12 +166,42 @@ with the tailnet trust model, but it is **not written down** — `SECURITY_MODEL
 front the backend-served SPA (5433) — `DEPLOY_EMMA.md` presumably sets it, but the *default*
 encodes the dev topology, which is the wrong safe-default direction.
 
-### SYS-5 · SPA fallback swallows unknown `/api/*` into `index.html` — **LOW**
+### SYS-5 · SPA fallback swallows unknown `/api/*` into `index.html` — **LOW** — ✅ **DONE**
 
-`create_app`'s catch-all (`main.py:235‑237`) returns `index.html` (HTTP 200) for **any** unmatched
-path when `dist` exists — including a typo'd `/api/...`. A misspelled endpoint in prod returns
-200 + HTML where the client expects JSON (the `client.ts` error path then reports a confusing
-parse failure instead of a 404). One-line guard: 404 when `full_path.startswith("api/")`.
+*Original finding.* `create_app`'s catch-all returned `index.html` (HTTP 200) for **any** unmatched
+path when `dist` exists — including a typo'd `/api/...`. A misspelled endpoint in prod returned
+200 + HTML where the client expects JSON (the `client.ts` error path then reported a confusing
+parse failure instead of a 404).
+
+*Closed* by the string guard `full_path.startswith("api/")`, then **re-implemented** at D55 when the
+catch-all itself was deleted. The invariant now lives in a pair of real GET routes (`/api` and
+`/api/{rest:path}`, both `include_in_schema=False`) registered **last** in `create_app`. It is no
+longer optional: `app.frontend()`'s routes are *low-priority*, so an unmatched `/api/...` reaches
+them and — having no file extension — would be answered with the SPA shell. Three subtleties are
+pinned by `test_frontend_serving_sys5.py`: the guard must stay last (a router added under `/api`
+below it is silently shadowed for GET), it is GET-only (with HEAD, the partial match a real GET-only
+endpoint produces becomes a full match, so `HEAD /api/health` would answer 404 rather than 405), and
+the bare `/api` route is not redundant (`/api/{rest:path}` does not match it, and the resulting 307
+echoes the proxy-visible host into `Location`).
+
+### SYS-19 · Prod served every root-level `dist` file as `text/html` — **HIGH** — ✅ **DONE (D55)**
+
+`create_app` mounted only `/assets`, so every **root-level** build artifact — `favicon.ico`, the PWA
+icons, `manifest.webmanifest`, `sw.js`, `workbox-*.js` — fell into the SPA catch-all and was served
+as `index.html` with HTTP 200. Verified against the live prod server: each returned 5232 bytes of
+HTML, exactly `dist/index.html`.
+
+Nothing 404'd, so every health check and every audit read clean — the damage was entirely client-side
+and invisible from the server. The PWA manifest never parsed (no manifest icons, no `standalone`),
+the service worker never registered (a worker cannot install from a `text/html` MIME, so the
+`SwUpdatePrompt` component and the D52/G5 font + media `runtimeCaching` rules have never once run),
+and Chrome-Android drew a letter tile for the bookmark instead of the app icon.
+
+Present since the Phase 0 scaffold `510302d` (2026-05-27) — prod never served these files correctly
+in its entire life. It survived this audit, the QH audit and the pre-deploy gate, because every check
+asserted status codes and none asserted a **content type**. Fixed at D55 by replacing the hand-rolled
+mount + catch-all with FastAPI's native `app.frontend()`. *Lesson for future passes: for a static
+serving path, the content type is the assertion that carries the information, not the status.*
 
 ### SYS-6 · `save_settings` is a comment-destroying writer kept alive as public API — **LOW (footgun)**
 
@@ -399,7 +429,8 @@ Unlike ACA, nothing here warrants a multi-slice program. Map:
 | SYS-15 coverage reporting (measure-only) + fleet/svc characterization tests | M | **PARTLY DONE** — the Compactor/adapter/subagent halves rode ACA Slices 6/1/3 (all shipped). What remains is coverage measurement (it adds deps) + the fleet/svc characterization tests. |
 | ~~SYS-4 SECURITY_MODEL dev-exposure paragraph + `target_port` default decision~~ | S | **✅ DONE** — both halves closed by the QH pass: the §2.1 paragraph (QH-6, `4c30c70`) and the `target_port` flip 5173→5433 (QH-11). |
 | SYS-17 voice caps (tts text / stt upload) | XS | Opportunistic robustness posture. |
-| SYS-5 `/api` 404 guard in SPA fallback | XS | Opportunistic. |
+| ~~SYS-5 `/api` 404 guard in SPA fallback~~ | XS | **✅ DONE.** Shipped as the string guard, then re-implemented as real routes at D55 when the catch-all was deleted — see the entry. |
+| ~~SYS-19 root-level `dist` files served as `text/html`~~ | S | **✅ DONE.** D55 (`0673c9b`→`40dac62`): native `app.frontend()` replaces the mount + catch-all. |
 | SYS-6 fence `save_settings` | XS | Opportunistic. |
 | SYS-9.2 editor `loadSkills()` verify · SYS-18a kit-class comments | XS | Opportunistic. |
 | SYS-3 overlay-at-read for tool overrides | M | **Still open, unscheduled.** The *race* was closed 2026-07-20 (`f0bbef4`: `PUT /api/settings` 409s on a `tool_overrides` patch while a turn is live). The structural inversion — resolve overrides at `to_openai_tools`/catalog time so specs are immutable and `tool_spec_orig` disappears — is now a standalone refactor; ACA is closed, so "decide inside Slice 2" no longer applies. |

@@ -9,7 +9,9 @@ requires-python = ">=3.14"
 # Phase 0 only exercises fastapi/uvicorn/pydantic(-settings)/pyyaml/aiosqlite; the rest are
 # declared now so later phases (SSH, WOL, agent, voice, utils) add code, not deps.
 dependencies = [
-    "fastapi==0.138.1",            # 0.137+ raises the Starlette floor to >=1.3.1 (official Python 3.14 support)
+    "fastapi==0.138.1",            # 0.137+ raises the Starlette floor to >=1.3.1 (official Python 3.14 support).
+                                   # HARD FLOOR >=0.138: prod SPA serving calls `app.frontend()` (D55), added
+                                   # in 0.138.0. Downgrading below it breaks the frontend at import, not at test.
     "uvicorn[standard]==0.48.0",
     "pydantic==2.13.4",            # latest stable (2.14 is pre-release only)
     "pydantic-settings==2.14.2",   # 2.14.2 = Dependabot GHSA fix (NestedSecrets symlink read) + 3.14-ready

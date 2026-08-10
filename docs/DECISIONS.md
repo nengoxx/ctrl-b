@@ -4217,3 +4217,64 @@ mounts. The hint states both halves, and the gacha pin gained the registry's fir
 comes from. **The general contract for any future scenery theme: adopt the shared picture as the last
 OWNER rung of your own ladder — above your bundled art, below anything the owner aimed at you
 specifically — and do not grow a private twin of `kit/background`.**
+
+---
+
+## D55 — Prod frontend serving: FastAPI's native `app.frontend()` replaces the hand-rolled mount + catch-all ✏️ LOCKED + BUILT 2026-08-10 (owner asked for the record after pushing back on scope; council = Codex correctness round + Opus architecture lens [both SHIP WITH CHANGES, all findings folded] + a third Codex round briefed to argue only for CUTS [CUT AS LISTED, taken except three overrules])
+
+**The decision.** Prod serves `frontend/dist` through `app.frontend("/", directory=_FRONTEND_DIST,
+fallback="index.html")` — FastAPI's native SPA route, added in 0.138.0 — instead of an `/assets`
+`StaticFiles` mount plus a hand-written `@app.get("/{full_path:path}")` fallback. The SYS-5 `/api`
+JSON-404 invariant moves from a string test inside that fallback into two real GET routes registered
+last. **This is a deletion, not an addition:** 7 executable lines replace 9, and the change removed
+119 lines against 27 added.
+
+**Why it was needed.** The old block mounted only `/assets`, so every ROOT-level artifact —
+`favicon.ico`, the PWA icons, `manifest.webmanifest`, `sw.js`, `workbox-*.js` — was answered by the
+catch-all with `index.html` and a `text/html` content type. Present since the Phase 0 scaffold
+`510302d`; prod never served them correctly. The visible symptom was the owner's: Chrome-Android drew
+a letter tile for the bookmark instead of the app icon. The invisible ones were larger — the PWA
+manifest never parsed and the service worker never registered, so `SwUpdatePrompt` and the D52/G5 font
+and media `runtimeCaching` rules have never run. Full record: SYS-19.
+
+**Native over hand-rolled.** Two hand-rolled fixes were built and verified first (manual containment
+with `FileResponse`; an unmounted `StaticFiles` with a 404-to-shell fallback) before the native API was
+found. Both were dropped: serving build output is the framework's job, and the native route brings MIME
+inference, HEAD, byte ranges and conditional 304s that the hand-rolled pair lacked — the first version
+would have re-sent every icon on every load, because Starlette's `FileResponse` *emits* ETag but does
+not *evaluate* `If-None-Match`. The rejected alternatives are recorded because they look reasonable and
+will be re-proposed otherwise. `StaticFiles(html=True)` mounted at `/` is NOT among them: it gives no
+SPA fallback (unknown routes 404; `html=True` covers only directory indexes and `404.html`).
+
+**The load-bearing rulings.** `fallback="index.html"` is EXPLICIT, not the `"auto"` default — `auto`
+prefers a root `404.html` whenever one exists, so a future Vite plugin emitting one would silently flip
+every SPA miss from 200-shell to 404 · the `/api` guard is GET-only, because adding HEAD turns the
+PARTIAL match a real GET-only endpoint produces into a FULL match, so `HEAD /api/health` would answer
+404 ("no such endpoint") rather than an honest 405 · the bare `/api` route is kept beside
+`/api/{rest:path}`, which does not match it, because the resulting 307 to `/api/` echoes the
+proxy-visible host into `Location` (Codex raised this as a MED pre-build, then argued to cut it when
+briefed to find cuts; the pre-build reading wins — the reversal was the priming, not new evidence) ·
+the guard must stay LAST, pinned structurally over the route table rather than behaviourally, because
+requesting an existing endpoint passes regardless of what is registered below it.
+
+**What was CUT after the owner's over-engineering challenge** ("this is a bug fix, really?"): an
+`index.html` existence guard with a `logger.error` degrade branch, and its test. It was defended as
+crash-loop protection, but the OLD code raised at construction in exactly the same case
+(`StaticFiles(check_dir=True)` on a `dist/` without `assets/`), `install.sh` already swaps `dist`
+atomically after stopping the service, and a present-but-invalid production bundle SHOULD fail loudly
+rather than degrade silently to API-only. Comment density was cut from 3.3:1 to 2.3:1 against the
+file's established 1.5:1, and the suite from 18 tests to 13 — the ones asserting *Starlette's*
+behaviour rather than ours went.
+
+**The version floor.** `app.frontend()` sets a hard `fastapi>=0.138` floor, recorded in the
+`pyproject.toml` pin comment. The pin is exact, so the upgrade moment is ours. The upgrade risk is not
+API removal but silent heuristic drift in navigation detection — and the hand-rolled alternative faced
+the same drift from `StaticFiles` underneath it. What neutralizes it is our own behaviour tests, which
+is why the content-type assertions are the load-bearing ones: **a status-only test passes happily
+against the original bug.** Escape hatch if the API ever misbehaves: ~12 lines, one commit.
+
+**Release note.** Shipping this registers a service worker on the owner's devices for the first time.
+Rolling back *past* this tag leaves that worker live — the older backend serves `sw.js` as `text/html`
+again, and a browser will not update a worker fetched with a non-JS MIME — so recovery is device-side
+(clear site data). Ship it as its own tag, and expect the icon to need a delete-and-recreate of the
+bookmark, since Chrome caches the old tile.
