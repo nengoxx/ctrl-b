@@ -559,58 +559,28 @@ def create_app() -> FastAPI:
         )
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
-    #
-    # `app.frontend()` (D55) is FastAPI's NATIVE SPA serving, added in 0.138.0 — a `StaticFiles`
-    # subclass registered as LOW-PRIORITY routes, consulted only after every path operation and mount
-    # above has missed. It replaces a hand-rolled `/assets` mount + catch-all pair that mounted ONLY
-    # `/assets`, so every root-level dist file — `favicon.ico`, the PWA icons, `manifest.webmanifest`,
-    # `sw.js`, `workbox-*.js` — fell into the catch-all and was served as `text/html` with a 200. That
-    # shipped in the Phase 0 scaffold and stood for the whole life of the app: the PWA manifest never
-    # parsed, the service worker never registered, and Chrome-Android drew a letter tile for the
-    # bookmark instead of the icon. Serving those files is the framework's job, not ours — the native
-    # route also brings MIME inference, HEAD, byte ranges and conditional 304s, none of which the
-    # hand-rolled version had.
     if _FRONTEND_DIST.is_dir():
-        # `index.html` is checked HERE, not left to `check_dir`: with an explicit `fallback` the
-        # frontend route validates the fallback file at CONSTRUCTION and raises. This code runs after
-        # the exit-78 config preflight, so a raise would surface as an ordinary uvicorn failure that
-        # `Restart=on-failure` retries every 5s — a half-written dist (interrupted build, a partial
-        # `install.sh` swap) must not crash-loop the control panel and take the API down with it.
-        # DEGRADE, NEVER BRICK (W2), the same rule the media mounts above follow. A dist directory that
-        # is absent entirely is the normal dev profile and stays silent; one that exists but is broken
-        # is an operator error and says so.
-        if (_FRONTEND_DIST / "index.html").is_file():
-            # SYS-5: an unmatched `/api/...` (or `/api` itself) is a mistyped/removed endpoint, not an
-            # SPA route — a JSON 404, never the shell, which would mask the client bug behind an HTML
-            # body. This is the SERVER-side half of an invariant the service worker also holds client
-            # side (`navigateFallbackDenylist: [/^\/api\//]` in vite.config.ts).
-            #
-            # A real route rather than a string test inside the fallback, because the frontend route is
-            # low-priority: an unmatched `/api/...` matches no path operation, so it WOULD reach the
-            # frontend and — having no file extension — be answered with the shell. Three details are
-            # load-bearing:
-            #   ① it MUST STAY LAST. Normal routes match in registration order, so any router mounted
-            #     under `/api` below this line would be silently shadowed for GET.
-            #     `test_a_real_api_route_is_not_shadowed` pins a real endpoint against exactly that.
-            #   ② GET-only, deliberately. Adding HEAD turns the PARTIAL match a real GET-only endpoint
-            #     produces into a FULL match here, so `HEAD /api/health` would answer 404 ("no such
-            #     endpoint") instead of an honest 405. Non-API HEAD is served by the frontend route.
-            #   ③ the bare `/api` sibling is not redundant: `/api/{rest:path}` does not match `/api`,
-            #     which would otherwise 307-redirect to `/api/` and leak the proxy-visible host.
-            @app.get("/api", include_in_schema=False)
-            @app.get("/api/{rest:path}", include_in_schema=False)
-            async def api_not_found() -> Response:
-                return JSONResponse(status_code=404, content={"detail": "Not Found"})
+        # SYS-5: an unmatched `/api/...` is a mistyped/removed endpoint, not an SPA route — a JSON 404,
+        # never the shell, which would mask the client bug behind an HTML body. A real route rather
+        # than a check inside the fallback because the frontend route below is LOW-PRIORITY: an
+        # unmatched `/api/...` matches no path operation, reaches it, and — having no file extension —
+        # would be answered with the shell. Three non-obvious details:
+        #   ① MUST STAY LAST — a router registered under `/api` below this is shadowed for GET.
+        #   ② GET-only: with HEAD, the PARTIAL match a real GET-only endpoint produces becomes a FULL
+        #     match here, so `HEAD /api/health` would answer 404 instead of an honest 405.
+        #   ③ the bare `/api` sibling is not redundant — `/api/{rest:path}` does not match it, and the
+        #     307 to `/api/` it would otherwise take echoes the proxy-visible host into `Location`.
+        @app.get("/api", include_in_schema=False)
+        @app.get("/api/{rest:path}", include_in_schema=False)
+        async def api_not_found() -> Response:
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
-            # `fallback="index.html"` is EXPLICIT rather than the "auto" default: `auto` prefers a root
-            # `404.html` whenever one exists, so a future Vite plugin that emits one would silently
-            # flip every SPA miss from 200-shell to 404 with no change here.
-            app.frontend("/", directory=_FRONTEND_DIST, fallback="index.html")
-        else:
-            logger.error(
-                "frontend dist at %s has no index.html — serving the API only, no SPA",
-                _FRONTEND_DIST,
-            )
+        # FastAPI's native SPA route (0.138+, D55): serves every dist file with its own content type,
+        # falling back to the shell. Replaces a hand-rolled `/assets` mount + catch-all that mounted
+        # ONLY `/assets`, so every ROOT-level file — the icons, `manifest.webmanifest`, `sw.js` — was
+        # served as `text/html`. `fallback` is explicit because the "auto" default prefers a root
+        # `404.html`, which would silently flip every SPA miss from 200-shell to 404.
+        app.frontend("/", directory=_FRONTEND_DIST, fallback="index.html")
 
     return app
 
