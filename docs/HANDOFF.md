@@ -12,7 +12,32 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ✅✅✅ 2026-08-11 NIGHT (Fable) — **E5 THE DEVICE ROUND PASSED (owner, on glass, Fennec + Chrome) — THE ALT-FLEET TRANSLATION PLAN IS COMPLETE (E0–E5 all shipped + accepted).** NEXT = **branch integration: rebase `alt-fleet` onto `main`, push, and the release ruling** — all owner-gated
+> ## ✅✅✅✅ 2026-08-11 MIDNIGHT (Fable) — **v1.6.0 RELEASED + LIVE ON PROD: the ALT-FLEET feature release** (owner-ordered same session as the E5 pass; the updater's 4th clean plain-form run). **Prod = v1.6.0 @ `fcc42ad`; rollback = `update.sh v1.5.1` exactly (the sw.js floor STANDS — v1.5.1 is both the floor and the target).**
+>
+> **What shipped:** the complete alt-fleet series (E0–E5: poster + cover layouts, `fleetLayout`/
+> `posterName`/`banner` settings, the `showWhen` engine field, the Fleet Surface graduation, the E5
+> typography fixes) **+ the SW UPDATE-PROMPT FIX** (registerType autoUpdate→prompt: the F26
+> toast was DEAD CODE — the autoUpdate register client never fires `onNeedRefresh` and force-reloads
+> instead; prompt is the plugin DEFAULT, verified against the installed plugin source + the built
+> worker; + the every-tab `controllerchange` takeover guard, autoUpdate-parity; Codex SHIP WITH
+> FIXES → fix wave → CONFIRMED CLOSED zero findings; the living record = `SwUpdatePrompt.tsx`'s
+> header + UI_AUDIT F26's status banner) **+ two lockfile-only
+> security bumps** (js-yaml 4.3.1 closing GitHub alert #58 HIGH · nanoid 3.3.18; both dev-only
+> transitives, npm audit 0). **The release path:** rebase `alt-fleet` onto main (84 commits, serving-
+> stream dupes auto-skipped, tree byte-identical) → full gate 6/6 + LOCAL Playwright 263/263 → push
+> (CI success) → tag `v1.6.0` (release gate success incl. e2e) → `update.sh v1.6.0` (DB snapshot
+> `ctrlb-20260811-234758.db.gz`) → verify: describe + health 1.6.0 + content-type probes both
+> origins + **the deployed worker confirmed the PROMPT build** (skipWaiting only in the SKIP_WAITING
+> listener, no clients.claim). **VERSION RULING (owner): v1.6.0 over v1.5.2** — feature clusters bump
+> the minor, per the repo's own precedent.
+>
+> **⚠ OWNER PHONE EXPECTATION (the SW transition, one-time):** the installed PWA still runs the
+> v1.5.1 autoUpdate worker. On next open it downloads the new worker, which **waits silently** (the
+> old client never shows a toast); **fully close and reopen the app** to land on v1.6.0. The update
+> toast's first real appearance is the NEXT release after this one. Also owed on the phone: the alt
+> layouts + pickers on prod, whenever convenient.
+>
+> ## ✅✅✅ 2026-08-11 NIGHT (Fable) — **E5 THE DEVICE ROUND PASSED (owner, on glass, Fennec + Chrome) — THE ALT-FLEET TRANSLATION PLAN IS COMPLETE (E0–E5 all shipped + accepted).** ~~NEXT = **branch integration: rebase `alt-fleet` onto `main`, push, and the release ruling** — all owner-gated~~ *(→ RELEASED as v1.6.0, the block above)*
 >
 > **The round:** "everything looks good as expected" — the §12.6 E5 list passed WHOLESALE (scroller
 > cost, rarity hues, minimal banner, the never-rendered keyline-off name-on-art state, the §12.3②
