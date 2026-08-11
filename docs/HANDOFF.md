@@ -76,6 +76,38 @@
 > **When it ships:** deploy → reload the page → **delete and recreate the bookmark** (Chrome caches the
 > old tile). A server fix alone does not repair what the phone already cached.
 >
+> ### ▶ NEXT FOR THIS OPUS STREAM (owner, 2026-08-11): **the DEFAULT PROMPTS deep audit** — started, then parked mid-sweep at the owner's word; resume here BEFORE going back to Fable
+>
+> **The ask, in the owner's words:** *"audit deeply the default prompts, where they are, and how to
+> change them easily — I feel like the defaults might need some work and/or easy editing/modifying, but
+> I'm not sure every one of them is handled in some way or another."* So the deliverable is an
+> INVENTORY + an editability classification (config.yaml · Conf UI · on-disk file · hardcoded), and the
+> gaps it exposes. **No code yet — audit first, then propose.**
+>
+> **Banked from the partial sweep (verified by reading, not assumed):**
+> * **The MAIN agent prompt is well-handled — a clean 3-level chain.** `session.py:479 _system_prompt()`
+>   = `AgentDef.prompt` → `inference.system_prompt` → the baked `DEFAULT_SYSTEM_PROMPT`
+>   (`session.py:118`), so an empty agent inherits today's behaviour exactly. Plus a separate ADDITIVE
+>   axis (`_appends()`, 7e-a): global `inference.system_prompt_append` + per-agent `prompt_append`, with
+>   a per-agent `inherit_append=False` opt-out. The Conf editor is backed by `GET` in
+>   `api/agent.py:1327`, which serves the baked default text so the UI can show/restore it. Persona
+>   lives separately in `SOUL.md` (`api/agent.py:1579`, incl. `default` → root SOUL.md).
+> * **The owner's hunch looks RIGHT for everything else.** Secondary prompts appear to be inline Python
+>   with no config or UI path — at minimum: compaction's `_SUMMARIZER_SYSTEM` + `_SUMMARIZER_SECTIONS`
+>   (`compaction.py:57,64`, the fixed five-section summary contract) and the periodic-reflection nudge
+>   (`session.py _reflection_nudge()` — assembled from config VALUES like `reflection_interval`, but its
+>   TEXT is hardcoded). Long instruction-shaped literals also sit in `question.py` (6), `steering.py`
+>   (4), `memory.py` (4), `planning.py` (3), `subagents.py` (3), `skills.py` (3), `proposals.py` (1);
+>   `routing.py` and `selector.py` have none (keyword-driven, not prompt-driven).
+> * **Where the sweep stopped:** each of those modules' literals still needs reading to separate a real
+>   PROMPT from an ordinary string, then classifying. Next step is exactly that, module by module.
+> * **Do not forget the frontend + the non-agent prompts** when resuming: tool descriptions
+>   (`tool_overrides.{tool}.description`, already an owner-editable seam per Phase 8), automation
+>   prompts (`services/automations/`), and anything the voice/STT path injects.
+> * **Design constraint to carry in:** the standing owner directive on shaping data to EXTEND, not
+>   migrate — if several prompts become configurable, they belong in ONE per-item object with optional
+>   fields, never parallel sibling maps keyed by name (the `tool_overrides` precedent).
+>
 > ## ✅✅ 2026-08-09 (Fable) — **E3 THE BANNER TRI-STATE SHIPPED + REVIEW-CLOSED (Codex confirm SHIP) + OWNER-WALKED LIVE** on `alt-fleet`; NEXT SESSION = the E4 go-word (cross-layout hardening + docs, §12.6)
 >
 > **E3 (banner tri-state) built by Opus from the pinned brief; 6 commits `06523ce..70cf9b2`
