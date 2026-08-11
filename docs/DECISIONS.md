@@ -3929,8 +3929,8 @@ then).
   composer hint (last-defined-wins scalar on the existing theme→composer contract object; each
   variant's original string is the fallback, other themes byte-identical; gacha fills the
   prototype's コマンド入力… from `GACHA_COPY`). Shipped `0bb0b51`. **ADDENDUM 2 (the alt-fleet
-  port's ONLY engine change — GACHA_PLAN §12.6 ruling 2, shipped at E0 2026-08-08):
-  `showWhen?: { key, is }`** — conditional visibility on ThemeDef settings rows (gacha's
+  port's only NEW engine capability beyond D31's own predicted factory extraction — GACHA_PLAN
+  §12.6 ruling 2, shipped at E0 2026-08-08): `showWhen?: { key, is }`** — conditional visibility on ThemeDef settings rows (gacha's
   `posterName` renders only under `fleetLayout: "poster"`). Additive on the existing union,
   every other theme byte-identical; the full contract (seg-controller-only, no chains,
   declare-after-controller, hidden ≠ cleared, fail-open degradations) lives in THEME_ENGINE

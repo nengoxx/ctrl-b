@@ -1515,7 +1515,8 @@ the semantic contract, so they're portable across any contract-providing theme.
    crashes); the theme lists the offered ids + default as a `seg` setting (§14.3, auto-rendered in Appearance +
    auto-synced); a shared resolver maps `active theme → its <surface> setting → variant` and renders it. The resolver
    is usable by **any** Root — `DefaultRoot` AND bespoke Roots (vapor/frontier) — so the switch is **not Kit-only**.
-   **This is Composer** (stacked/docked, user-picked).
+   **This is Composer** (stacked/docked, user-picked) **— and, since 2026-08-08, gacha's Fleet** (`fleetLayout`:
+   capsule/poster/cover).
 
 **Graduation path:** a surface starts Root-pinned and **graduates** to user-selectable the moment ≥2 variants + a user
 choice are actually wanted (the second-instance trigger). Composer has **graduated in code (2026-07-11)** —
@@ -1533,7 +1534,8 @@ per theme; the prop is correct and cheaper.
 > `composerSkin` axis's glass/sleek skins, §14.16; the `rootClass`/`sendIcon` seam itself remains)*, the shared
 > `useComposerChrome` presentational hook, and the A4 `planPlacement` axis (inline pill+sheet, owned by
 > DefaultRoot · pinned `PinnedPlanPanel`, mounted by AgentTab). The `DefaultRoot Composer={…}` prop is
-> REMOVED (D30's banner covers the history). Fleet remains the one Root-pinned multi-impl surface.
+> REMOVED (D30's banner covers the history). Fleet remains the one Root-pinned multi-impl surface
+> *(true when written — Fleet graduated for gacha on 2026-08-08; see the graduation note above)*.
 
 **The factory is concrete-first.** There was exactly ONE user-selectable surface at first (Composer), so its
 registry + resolver were built **concretely** in `kit/composer/` (`composerVariants` map + `composerLayoutSetting`
