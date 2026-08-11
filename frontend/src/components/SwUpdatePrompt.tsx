@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 
 import { pushToast } from "../store/toast";
@@ -27,5 +28,23 @@ export function SwUpdatePrompt() {
       });
     },
   });
+  // EVERY tab follows an approved takeover (Codex SW-round MED). Activation is registration-wide,
+  // but the register client only reloads the tab whose toast was tapped — a second same-origin tab
+  // would keep the old shell, whose unvisited lazy chunks 404 once activation cleans the old
+  // precache. `controllerchange` fires in every controlled tab when the new worker takes over
+  // (and only then: no clientsClaim in the prompt build, so a first install never triggers it) —
+  // the once-latch is because the initiating tab hears both this and the client's own reload.
+  // This is autoUpdate-parity, not new protection: the auto client reloaded every tab too.
+  useEffect(() => {
+    let reloaded = false;
+    const onTakeover = () => {
+      if (!reloaded) {
+        reloaded = true;
+        window.location.reload();
+      }
+    };
+    navigator.serviceWorker?.addEventListener("controllerchange", onTakeover);
+    return () => navigator.serviceWorker?.removeEventListener("controllerchange", onTakeover);
+  }, []);
   return null;
 }
