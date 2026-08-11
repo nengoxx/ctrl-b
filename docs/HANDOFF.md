@@ -12,6 +12,37 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
+> ## ▶▶ NEXT SESSION — PICK A PATH (written 2026-08-12 at the v1.6.0 close; everything below is clean, nothing is half-open)
+>
+> The gacha/alt-fleet arc is DONE end to end (Phase 17: G0–G6 + M-series + E0–E5, released v1.5.0 →
+> v1.6.0). Prod is healthy on v1.6.0; no fix waves pending, no reviews open. The candidate paths, in
+> rough order of standing priority:
+>
+> 1. **The PROMPTS planning session** — the owner parked THREE design questions explicitly for a
+>    Fable planning seat (PROMPTS_AUDIT §5 carries them verbatim): ① mechanism A (a `prompts:` config
+>    map on the Settings chokepoint — the Opus recommendation) vs B (`$CTRLB_HOME/prompts/` file
+>    drop-in) · ② are the 8 guard-coupled steering nudges read-only or editable · ③ is PR-1
+>    (parameter descriptions) worth inventing with no peer precedent, or fold into the editable tool
+>    description. PR-6 (interpolating prompts need a placeholder syntax first) GATES any build.
+>    Read PROMPTS_AUDIT.md + R27 first; this is a design conversation, then a slice.
+> 2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code: SYS-19 meant
+>    `showNotification()` had never had a registered worker when it "failed"; it may just work on
+>    v1.6.0. Outcome decides whether the parked Web Push plan (the `web-push-researched-parked`
+>    memory, R10/R11) is re-premised or unblocked.
+> 3. **SYS-20 product half** — env sanitization at `GitMemoryBackup._run` (`memory_backup.py`):
+>    hook-exported `GIT_DIR` overrides `git -C` in subprocesses. Small bounded slice; the gate half
+>    already shipped in `_gate.sh`.
+> 4. **Gacha banked follow-ups** (owner-eyeball-heavy): the color-theory unit-palette research
+>    session (owner-flagged) · root-cross-fade flicker refinement · R20's four + R21's four LOWs ·
+>    the leftover ledger (`9afe78c`) · kit-wide minimal plan/player overlap (GACHA_PLAN §7.1).
+> 5. **Hygiene: the HANDOFF archive sweep** (~665 KB — this file no longer fits a single Read; R21
+>    deferral ④; standalone session).
+> 6. **The R28 installed-icon improvement** — ⏸ owner-gated pickup; R28 §9 is the ready-to-build brief.
+>
+> **Owner-side standing items:** on the phone — fully close + reopen the PWA once to land v1.6.0
+> (the old autoUpdate worker holds it waiting, no toast this one time), eyeball the alt layouts +
+> pickers on prod; the update toast's first real exercise arrives at the NEXT release.
+>
 > ## ✅✅✅✅ 2026-08-11 MIDNIGHT (Fable) — **v1.6.0 RELEASED + LIVE ON PROD: the ALT-FLEET feature release** (owner-ordered same session as the E5 pass; the updater's 4th clean plain-form run). **Prod = v1.6.0 @ `fcc42ad`; rollback = `update.sh v1.5.1` exactly (the sw.js floor STANDS — v1.5.1 is both the floor and the target).**
 >
 > **What shipped:** the complete alt-fleet series (E0–E5: poster + cover layouts, `fleetLayout`/

@@ -3606,8 +3606,9 @@ build → self-audit → Codex round → owner pause):**
 
 **Open items:** ~~§12.3⑤ picker labels/desc~~ (ruled at E1) · ~~§12.3② shear/height numbers~~ ·
 ~~the E5 list~~ (**all closed by the E5 pass, 2026-08-11**). *(E0–E5 are ALL SHIPPED + the round
-passed — the alt-fleet translation plan is COMPLETE; what remains is branch integration: rebase
-onto `main`, push, and the release ruling.)*
+passed — the alt-fleet translation plan is COMPLETE. **RELEASED as v1.6.0, LIVE ON PROD 2026-08-11
+midnight** — the same-night release record lives in HANDOFF's top block; rollback = v1.5.1 exactly.
+Phase 17 is DONE end to end: G0–G6 + M-series + E0–E5, v1.5.0 → v1.6.0.)*
 
 **Process:** dev branch only, after the owner's E0 go-word · Opus subagents from pinned briefs
 (the E1/E2 briefs carry the lab's ceremony beats + exact numbers verbatim) · Codex co-reviews
