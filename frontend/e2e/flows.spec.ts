@@ -108,6 +108,66 @@ test("Fleet — cancelling the confirm dialog makes no request", async ({ page }
   expect(shutdownCalled).toBe(false);
 });
 
+// GACHA_PLAN §12.6 slice E4, pin ㉒ — SELECT-THEN-WAKE, in the real built app. The two-step survives for
+// exactly one case after the owner's third-walk narrowing (an ONLINE machine opens on tap one), and it is
+// the case where a mis-tap costs something: tap 1 SELECTS a sleeping machine, tap 2 runs the wake. Both
+// halves are asserted, and so is the NEGATIVE that makes the second tap the only guard there is —
+// `wake_host` is risk=LOW with `confirm: false`, so the registry raises no dialog (D8). If a future change
+// gated it, the shutdown tests above show what that looks like and this expectation would fail.
+test("Fleet — gacha's poster selects a sleeping machine, then wakes it on the second tap", async ({
+  page,
+  pageErrors,
+}) => {
+  const wakes: string[] = [];
+  await page.route("**/api/actions/wake_host", (route) => {
+    wakes.push(route.request().postData() ?? "");
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        needs_confirm: false,
+        result: { state: "ok", summary: "magic packet sent" },
+        event: { id: "e" },
+      }),
+    });
+  });
+  // The poster layout rides inside the same persisted blob as the skin triple (`themeSettings`).
+  await seedUI(page, {
+    theme: "gacha",
+    mode: "dark",
+    accent: "arcade",
+    tab: "fleet",
+    themeSettings: { gacha: { fleetLayout: "poster" } },
+    v: 1,
+  });
+  await page.goto("/");
+
+  // `corsair` is the fixture's OFFLINE machine; `vault` is host[0] and therefore the resolved boot pick,
+  // so corsair starts unselected. The names are the slices' own `aria-label`s (`fleet.ts#pickLabel`),
+  // which spell the machine's liveness and the number of steps its control has.
+  const corsair = page.getByRole("button", { name: /^corsair,/ });
+  await expect(corsair).toBeVisible();
+  await expect(corsair).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: /^vault,/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // TAP 1 — selection only. The registry block below the stack follows it; `aria-pressed` is the fact.
+  await corsair.click();
+  await expect(corsair).toHaveAttribute("aria-pressed", "true");
+  expect(wakes, "the FIRST tap must not dispatch a wake").toHaveLength(0);
+
+  // TAP 2 — the wake, through the same `wake_host` seam the dossier's own button calls.
+  await corsair.click();
+  await expect.poll(() => wakes.length).toBe(1);
+  expect(JSON.parse(wakes[0])).toMatchObject({ args: { host_id: "corsair" } });
+  // …and NO confirm dialog stood between the tap and the request.
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
 test("Agent — sending a message shows the user's bubble", async ({ page }) => {
   // Benign chat endpoint so the send path doesn't error; we assert the user-side echo.
   await page.route("**/api/agent/chat", (route) =>

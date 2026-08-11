@@ -158,6 +158,42 @@ for (const t of GACHA_TABS) {
   });
 }
 
+// ── gacha's ALT FLEET LAYOUTS (GACHA_PLAN §12.6 slice E4, pin ㉑) ──
+// The arm above measures gacha's DEFAULT Fleet (capsule). `fleetLayout` REPLACES that whole body with a
+// composition of its own — the poster's stack of sheared slices with its registry block, the cover's fixed
+// magazine frame with a masthead heading, a hero card and a cut-in column — each with its own controls,
+// headings and copy, and axe has never seen either. Two arms, Fleet only: the chrome around them is the
+// same kit shell the arms above already scan, and the layout is the only thing that changes.
+//
+// The seed rides INSIDE the same persisted `ctrlb.ui` blob every other arm uses (`themeSettings` is one of
+// its fields, `src/store/ui.ts`), so this needs no new mechanism. The settle marker is the LAYOUT's own
+// root rather than a hostname: a hostname renders under capsule too, so a seed that failed to apply would
+// scan the default body and pass — the marker is what proves the layout is really up.
+const GACHA_LAYOUTS = [
+  { layout: "poster", marker: ".po-body .po-slice" },
+  { layout: "cover", marker: ".cv-frame .cv-card.is-hero" },
+] as const;
+
+for (const arm of GACHA_LAYOUTS) {
+  test(`gacha Fleet — the ${arm.layout} layout has no WCAG A/AA axe violations`, async ({
+    page,
+  }) => {
+    await seedUI(page, {
+      theme: "gacha",
+      mode: "dark",
+      accent: "arcade",
+      tab: "fleet",
+      themeSettings: { gacha: { fleetLayout: arm.layout } },
+      v: 1,
+    });
+    await page.goto("/");
+    await expect(page.locator(".kit-appbar")).toBeVisible();
+    await expect(page.locator("#tab-fleet")).toHaveClass(/active/);
+    await expect(page.locator(arm.marker).first()).toBeVisible();
+    await scanTab(page, "fleet");
+  });
+}
+
 for (const t of FRONTIER_TABS) {
   test(`frontier ${t.label} tab — no WCAG A/AA axe violations`, async ({ page }) => {
     // Seed the persisted UI blob BEFORE any page script (the flows/contrast/kit-render addInitScript
