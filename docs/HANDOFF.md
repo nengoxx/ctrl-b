@@ -36,18 +36,17 @@
 > route callback's side effects. Branch still LOCAL-ONLY, zero pushed; prod untouched at
 > v1.5.1; dev units STARTED at close (owner poke).
 >
-> **⚠ IN-FLIGHT AT CLOSE — the INSTALLED-ICON white-box thread (owner ask, live this session):**
-> the PWA's installed app icon shows the blue cat ON A WHITE BOX. **Diagnosed at the pixel
-> level: ALL four icons — the `purpose:maskable` 512 included — ship a fully TRANSPARENT
-> background** (generator `frontend/scripts/gen-pwa-icons.mjs` safe-zone-fits but never fills);
-> Android adaptive icons composite transparency onto a white backdrop, so a truly transparent
-> installed icon is (pending the dossier's confirmation) NOT a thing — the fix direction is a
-> full-bleed dark (`#0a0a0d`-family) maskable background, keeping the `any`/bookmark icons
-> transparent. **An R28 dossier (`docs/research/R28-pwa-installed-icon-backdrop.md`) was
-> commissioned from an Opus research agent** (Chrome-WebAPK vs Fennec icon selection · safe-zone
-> geometry · monochrome/themed icons · iOS · reinstall/cache gotchas · the exact leanest change
-> + fill-color argument). If it landed, VERIFY + index it (research README) and propose to the
-> owner; if not, re-commission from this block. NOTHING built yet — owner rules on the proposal.
+> **⏸ the INSTALLED-ICON white-box thread — RESEARCHED, PROPOSED, then PARKED (owner ruling,
+> same session: "a later improvement" — a deferral, NOT a §P rejection).** The complete banked
+> state: a transparent installed icon is SPEC-IMPOSSIBLE (W3C MUST-composite; the white box =
+> Chrome's WebAPK shell hard-coding `#FFFFFF` behind our fully-transparent maskable — pixel-
+> diagnosed; Fennec fills `background_color` so the owner's install was provably Chrome).
+> **The R28 dossier (`docs/research/R28-pwa-installed-icon-backdrop.md`, indexed) §9 carries
+> the READY-TO-BUILD ruled shape:** a `bg` arg in `gen-pwa-icons.mjs` + the maskable 512
+> regenerated full-bleed `#0a0a0d` @ art 0.62 (`any`/bookmark icons stay transparent; optional
+> apple-touch pair; hair-lighter `#14141a` = the edge-separation alternative; reinstall =
+> uninstall→reload→reinstall, a minted WebAPK re-checks ≤1×/day + identity dialog). When the
+> owner picks it back up, that section IS the build brief — buy nothing twice.
 >
 > ## ✅✅ 2026-08-11 (Fable) — **v1.5.1 RELEASED + LIVE ON PROD: the D55/SYS-19 serving fix shipped ALONE, FIRST** (owner ruling with the Fable second opinion — the `sw.js` rollback-floor argument). **Prod = v1.5.1 @ `98e24c4`; rollback target = v1.5.0 ONLY, and NEVER below the v1.5.1 floor** (a pre-D55 tag re-serves `sw.js` as `text/html` and strands the now-registered worker per-device — runbook §Rollback carries the note).
 >
