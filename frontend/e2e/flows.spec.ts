@@ -172,7 +172,9 @@ test("Fleet — gacha's poster selects a sleeping machine, then wakes it on the 
   await corsair.click();
   const req = await wakeReq;
   expect(JSON.parse(req.postData() ?? "{}")).toMatchObject({ args: { host_id: "corsair" } });
-  expect(wakes, "exactly one wake in the whole flow").toHaveLength(1);
+  // Polled, not read synchronously: `waitForRequest` resolves on the request EVENT and does not
+  // guarantee the async route callback's `wakes.push` has run yet (the confirm round's one-liner).
+  await expect.poll(() => wakes.length, { message: "exactly one wake in the whole flow" }).toBe(1);
   // …and NO confirm dialog stood between the tap and the request.
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
 
