@@ -12,6 +12,43 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
+> ## ✅✅ 2026-08-11 EVENING (Fable) — **E4 CROSS-LAYOUT HARDENING SHIPPED + REVIEW-CLOSED (Codex confirm: five CLOSED + one one-liner → SHIP)** on `alt-fleet`; NEXT = **E5, the §14.11 DEVICE ROUND (Fennec + Chrome) = the REAL acceptance** — owner-driven, on glass, list in GACHA_PLAN §12.6
+>
+> **E4 closed in one session on the two-lane pattern** (docs = main seat · pins = Opus from the
+> pinned brief · one Codex round + fix wave + scoped confirm). 6 commits `8b98e58..3d9b0cd`:
+> the docs sweep (D31 FLEET-GRADUATED record · D52 ledger ADDENDUM 2 `showWhen` · §14.14
+> as-built graduation + the conditional-setting contract · §12.6 banner-default supersession +
+> the E3 fold · the FE-count chain corrected — TRUE chain E1 →1882 · E2 →1999 · E3 →2041 ·
+> E4 →2052) + the pins (⑭ engine-generic per-layout Fleet a11y, host-NAMED control + a
+> `normalizeIds` strip over the double-mount inequality · ⑮ reel gates per layout PLUS
+> real-GachaRoot mounts · ⑯ the real capsule→poster→cover no-remount walk · ⑲⑳ verified
+> already-landed · ㉑ poster AND cover axe arms · ㉒ select-then-wake with request-waiter
+> discipline + the no-confirm negative · ㉓ verified: NO contrast-matrix rows owed). **Codex
+> round 1 = SHIP WITH FIXES: 4 MED test-strength gaps + 1 doc LOW, ZERO runtime defects** →
+> fix wave `bac8c13`+`76088fe` (both ⑭ fixes falsified in both directions) → **confirm: all
+> five CLOSED + ONE new MED one-liner** (the final wake-total read could race the route
+> callback — `expect.poll`, applied + re-run green) → **SHIP, E4 CLOSED**. Full gate 6/6 ·
+> FE 2052 · local Playwright 64/64. **The complete disposition record = GACHA_PLAN §12.6's E4
+> bullet — read it before E5.** Durable (also §12.6): a per-layout a11y gate must name the HOST
+> or a labelled banner control satisfies it silently · React `useId` differs per ROOT — any
+> double-mount markup compare must normalize id tokens · a component-level test cannot pin what
+> the ROOT mounts · Playwright's `waitForRequest` resolves on the request EVENT, before the
+> route callback's side effects. Branch still LOCAL-ONLY, zero pushed; prod untouched at
+> v1.5.1; dev units STARTED at close (owner poke).
+>
+> **⚠ IN-FLIGHT AT CLOSE — the INSTALLED-ICON white-box thread (owner ask, live this session):**
+> the PWA's installed app icon shows the blue cat ON A WHITE BOX. **Diagnosed at the pixel
+> level: ALL four icons — the `purpose:maskable` 512 included — ship a fully TRANSPARENT
+> background** (generator `frontend/scripts/gen-pwa-icons.mjs` safe-zone-fits but never fills);
+> Android adaptive icons composite transparency onto a white backdrop, so a truly transparent
+> installed icon is (pending the dossier's confirmation) NOT a thing — the fix direction is a
+> full-bleed dark (`#0a0a0d`-family) maskable background, keeping the `any`/bookmark icons
+> transparent. **An R28 dossier (`docs/research/R28-pwa-installed-icon-backdrop.md`) was
+> commissioned from an Opus research agent** (Chrome-WebAPK vs Fennec icon selection · safe-zone
+> geometry · monochrome/themed icons · iOS · reinstall/cache gotchas · the exact leanest change
+> + fill-color argument). If it landed, VERIFY + index it (research README) and propose to the
+> owner; if not, re-commission from this block. NOTHING built yet — owner rules on the proposal.
+>
 > ## ✅✅ 2026-08-11 (Fable) — **v1.5.1 RELEASED + LIVE ON PROD: the D55/SYS-19 serving fix shipped ALONE, FIRST** (owner ruling with the Fable second opinion — the `sw.js` rollback-floor argument). **Prod = v1.5.1 @ `98e24c4`; rollback target = v1.5.0 ONLY, and NEVER below the v1.5.1 floor** (a pre-D55 tag re-serves `sw.js` as `text/html` and strands the now-registered worker per-device — runbook §Rollback carries the note).
 >
 > **The release record.** The Opus-built fix + records (4 commits) + the two runbook lines (content-type
@@ -113,7 +150,7 @@
 > the tool name and count) cannot be exposed as plain strings without silently dropping the values.
 > Settle a placeholder syntax first — goose uses Jinja2, open-webui ships `{{MESSAGES:END:N}}` selectors.
 >
-> ## ✅✅ 2026-08-09 (Fable) — **E3 THE BANNER TRI-STATE SHIPPED + REVIEW-CLOSED (Codex confirm SHIP) + OWNER-WALKED LIVE** on `alt-fleet`; NEXT SESSION = the E4 go-word (cross-layout hardening + docs, §12.6)
+> ## ✅✅ 2026-08-09 (Fable) — **E3 THE BANNER TRI-STATE SHIPPED + REVIEW-CLOSED (Codex confirm SHIP) + OWNER-WALKED LIVE** on `alt-fleet`; ~~NEXT SESSION = the E4 go-word (cross-layout hardening + docs, §12.6)~~ *(E4 SHIPPED — see the block above)*
 >
 > **E3 (banner tri-state) built by Opus from the pinned brief; 6 commits `06523ce..70cf9b2`
 > (= HEAD), full gate 6/6 at both waves, FE tests 2036, capsule fence byte-identical.** What

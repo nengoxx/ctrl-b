@@ -3542,7 +3542,41 @@ build → self-audit → Codex round → owner pause):**
   nothing.)*: `off` unmount + top-space null +
   scroll-reset · the re-authored `minimal` strip + token height · capsule rendered + tested under
   BOTH non-default states · timer/wallpaper/state-matrix tests (R25 ⑰–⑱).
-- **E4 — cross-layout hardening:** the remaining R25 Q7 pins (⑭ per-layout a11y invariant ·
+- **E4 — cross-layout hardening** *(✅ SHIPPED + REVIEW-CLOSED 2026-08-11; 5 commits
+  `8b98e58..3d9b0cd` on `alt-fleet` — the docs sweep (main seat) + the pins (Opus, pinned brief,
+  `9362c35`+`d3f2fab`) + the Codex fix wave (`bac8c13`+`76088fe`) + the confirm one-liner. FE
+  tests 2041→2052, full gate 6/6, local Playwright 64/64 incl. the four new arms. Dispositions:
+  ⑭ engine-generic — iterates every theme's DECLARED non-default `fleetLayout` options; the
+  named control must name the SEEDED host (gacha's banner dots are labelled buttons inside the
+  panel — the vacuity Codex caught), and the seeded-vs-default markup inequality is compared
+  through a `normalizeIds` strip of React `useId` tokens (per-root counters made the raw guard
+  vacuous; falsified both ways). ⑮ = component-level gates per layout PLUS a real-GachaRoot
+  mount per layout (the component reads only tab+motion, so only a Root mount pins the
+  unconditional `<GachaReel />`). ⑯ = the real capsule→poster→cover walk (node-identity on
+  tab/star-defs/live-region/sheet; the E0 dummy case stays as the contract's proof). ⑲⑳ =
+  verified already-landed (gachaBanner :532-559, settings :104-144, themeContract :615 —
+  no new code). ㉑ = poster AND cover axe arms (cover = a main-seat symmetric-gap ruling),
+  settle markers = the layouts' own roots, both scan clean. ㉒ = select-then-wake under poster
+  with request-waiter discipline (bounded 800 ms negative on tap 1; tap-2 payload read off ITS
+  awaited request; the final total POLLED — the confirm round's one NEW MED, the route callback
+  can lag the request event) + the no-alertdialog negative; corsair's `mac:null` needed no
+  override (the UI never gates wake on MAC). ㉓ = VERIFIED no matrix rows owed: the contrast
+  probe measures tokens on a probe div and never renders a fleet body; the alt layouts' tokens
+  are `:scope`-static and no `data-accent` block restates them — text-over-art is E5's §14.11
+  device class by design (one banked candidate PAIR, not row: `--gc-cv-slip-ink`/`--gc-cv-slip`,
+  a ruling if ever wanted). Codex round 1 = SHIP WITH FIXES (4 MED test-strength + 1 doc LOW,
+  zero runtime defects) → all five closed → scoped confirm: five CLOSED + the poll one-liner →
+  SHIP. Durable: a per-layout a11y gate must name the HOST or a labelled banner control
+  satisfies it silently · React `useId` differs per ROOT — any double-mount markup compare must
+  normalize id tokens first · a component-level test cannot pin what the ROOT mounts ·
+  `waitForRequest` resolves on the request EVENT, before the route callback's side effects.
+  The FE-count chain as now pinned: E1 →1882 · E2 →1999 (that record's "2027" corrected this
+  session) · E3 →2041 · E4 →2052 (the builder's "2039/+11" return was a mis-measure — 2041+9+2,
+  caught at audit). Docs
+  half: D31 FLEET-GRADUATED record · D52 ledger ADDENDUM 2 (`showWhen`) · §14.14 as-built
+  (graduation + the conditional-setting contract + the real `fleetSurface` sample) · §12.6
+  banner-default supersession folded · Q2d banner verified in place (R25:209).)*: the remaining
+  R25 Q7 pins (⑭ per-layout a11y invariant ·
   ⑮ reel gate · ⑯ stable refs · contract ⑲–⑳ · e2e ㉑–㉓ incl. select-then-wake with the
   no-confirm negative + the poster axe arm) · **the DOCS step (Codex):** D52's shared-extension
   ledger gains `showWhen` · the D31 Fleet-graduation record · THEME_ENGINE §14.14 updated
