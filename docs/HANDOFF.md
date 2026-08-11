@@ -76,37 +76,72 @@
 > **When it ships:** deploy → reload the page → **delete and recreate the bookmark** (Chrome caches the
 > old tile). A server fix alone does not repair what the phone already cached.
 >
-> ### ▶ NEXT FOR THIS OPUS STREAM (owner, 2026-08-11): **the DEFAULT PROMPTS deep audit** — started, then parked mid-sweep at the owner's word; resume here BEFORE going back to Fable
+> ### ✅ 2026-08-11 (Opus) — **THE DEFAULT-PROMPTS AUDIT IS DONE + RESEARCHED.** Two new docs, docs-only, nothing to build yet. **THE THREE OPEN QUESTIONS ARE PARKED FOR THE FABLE PLANNING SESSION at the owner's word — do NOT rule them in an Opus seat.**
 >
-> **The ask, in the owner's words:** *"audit deeply the default prompts, where they are, and how to
-> change them easily — I feel like the defaults might need some work and/or easy editing/modifying, but
-> I'm not sure every one of them is handled in some way or another."* So the deliverable is an
-> INVENTORY + an editability classification (config.yaml · Conf UI · on-disk file · hardcoded), and the
-> gaps it exposes. **No code yet — audit first, then propose.**
+> **Delivered:** [`docs/PROMPTS_AUDIT.md`](./PROMPTS_AUDIT.md) (findings **PR-1…PR-6**, classes A–E,
+> priority map, §5 shape proposal marked UNRULED) + the peer dossier
+> [`docs/research/R27-peer-prompt-configurability.md`](./research/R27-peer-prompt-configurability.md).
+> Indexed in the research README, the CLAUDE.md doc map and the AGENTS.md audits line. **No code.**
 >
-> **Banked from the partial sweep (verified by reading, not assumed):**
-> * **The MAIN agent prompt is well-handled — a clean 3-level chain.** `session.py:479 _system_prompt()`
->   = `AgentDef.prompt` → `inference.system_prompt` → the baked `DEFAULT_SYSTEM_PROMPT`
->   (`session.py:118`), so an empty agent inherits today's behaviour exactly. Plus a separate ADDITIVE
->   axis (`_appends()`, 7e-a): global `inference.system_prompt_append` + per-agent `prompt_append`, with
->   a per-agent `inherit_append=False` opt-out. The Conf editor is backed by `GET` in
->   `api/agent.py:1327`, which serves the baked default text so the UI can show/restore it. Persona
->   lives separately in `SOUL.md` (`api/agent.py:1579`, incl. `default` → root SOUL.md).
-> * **The owner's hunch looks RIGHT for everything else.** Secondary prompts appear to be inline Python
->   with no config or UI path — at minimum: compaction's `_SUMMARIZER_SYSTEM` + `_SUMMARIZER_SECTIONS`
->   (`compaction.py:57,64`, the fixed five-section summary contract) and the periodic-reflection nudge
->   (`session.py _reflection_nudge()` — assembled from config VALUES like `reflection_interval`, but its
->   TEXT is hardcoded). Long instruction-shaped literals also sit in `question.py` (6), `steering.py`
->   (4), `memory.py` (4), `planning.py` (3), `subagents.py` (3), `skills.py` (3), `proposals.py` (1);
->   `routing.py` and `selector.py` have none (keyword-driven, not prompt-driven).
-> * **Where the sweep stopped:** each of those modules' literals still needs reading to separate a real
->   PROMPT from an ordinary string, then classifying. Next step is exactly that, module by module.
-> * **Do not forget the frontend + the non-agent prompts** when resuming: tool descriptions
->   (`tool_overrides.{tool}.description`, already an owner-editable seam per Phase 8), automation
->   prompts (`services/automations/`), and anything the voice/STT path injects.
-> * **Design constraint to carry in:** the standing owner directive on shaping data to EXTEND, not
->   migrate — if several prompts become configurable, they belong in ONE per-item object with optional
->   fields, never parallel sibling maps keyed by name (the `tool_overrides` precedent).
+> **Method note worth keeping:** grep is the wrong tool here — searching the obvious phrasings
+> (`You are` / `You must` / `Your task`) returns **ONE hit in the whole backend**. The sweep was an AST
+> pass over `backend/app` for every string ≥80 chars **plus reconstructed f-strings** (`ast.JoinedStr`
+> — assembled prompts are invisible to a `Constant`-only sweep), minus docstrings, then read
+> module-by-module. 118 literals triaged.
+>
+> **The answer to the owner's hunch: RIGHT, and bigger than it looked.** Exactly ONE prompt is fully
+> handled (the main system prompt — 3-level chain + append axis + Conf editor + the `default-prompt`
+> endpoint). Against it: **~12 hardcoded model-facing prompts with no config, no UI, and no way to even
+> SEE them** — the summarizer contract, 8 mid-turn steering nudges, and 4 pieces of injected context
+> framing (memory intro, consolidation nudge, roster preamble, skills note). Verified prompt-FREE (so
+> nobody re-sweeps them): `routing.py`, `selector.py`, the entire voice/STT path, and automations (an
+> automation's `prompt` is owner-authored DATA, not a default).
+>
+> **The two findings that should drive the plan:**
+> * **PR-2 — the summarizer is the sharpest inconsistency we own.** `CompactionCfg.summarizer` is a full
+>   `ModelRef` (D11): the owner can point compaction at a *different, smaller, local* model — and cannot
+>   touch the five-section prompt it runs. `/compact <instructions>` appends per-invocation on the MANUAL
+>   path only; automatic compaction has no lever at all. **LibreChat ships exactly this
+>   (`summarization.prompt` + `updatePrompt`); goose ships `compaction.md`.** The one gap where the peer
+>   field is unambiguously ahead of us.
+> * **PR-1 — tool PARAMETER descriptions are unreachable, and they are the LARGER half.** `tool_overrides
+>   .{tool}.description` covers the blurb; `core/tool.py:271` ships `model_json_schema()` untouched by
+>   `apply_tool_overrides`. 5,420 ch across 48 `Field(description=…)` vs 4,834 ch of editable tool
+>   descriptions — and it is the load-bearing half (cron syntax, store semantics, the `question` ladder).
+>
+> **R27's four load-bearing peer findings** (full sourcing in the dossier): ① **nobody exposes one prompt
+> and stops** — goose overrides **10** templates by file-drop, open-webui exposes 7 task prompts; our
+> shape is the one both moved away from. ② **replacement FREEZES you** at the version you copied (goose
+> documents it) ⇒ keep an append axis beside any replace axis. ③ **"show me the default" is the field's
+> UNSOLVED problem** (open-webui #7024 + #14173 both unresolved; the workaround is "go read config.py") —
+> **and our `GET /api/agent/default-prompt` already does it**, so generalizing that one endpoint is the
+> cheapest high-value move. ④ **⚠ NEGATIVE, and it constrains PR-1: no in-class peer overrides parameter
+> descriptions.** The MCP-proxy tooling that claims to documents no addressing scheme. Building it means
+> INVENTING, not following — allowed, but it cannot be argued as "peers do this".
+> ⑤ **aider REFUSES prompt overrides across four issues** and points users at an append-only conventions
+> file — the coupling argument, which maps onto our guard-coupled steering nudges and is why PR-3 is
+> written as *visible first, editable only on a later ruling*.
+>
+> **▶ THE THREE QUESTIONS FOR THE FABLE PLANNING SESSION (owner parked them 2026-08-11 — unanswered by
+> design, PROMPTS_AUDIT §5 carries them verbatim):**
+> 1. **Mechanism — Option A or B?** A = a `prompts: {<id>: {override?, append?}}` config map (Opus
+>    recommends it: rides the existing `Settings` → `PUT /api/settings` → `reconfigure` chokepoint that
+>    already gives validation/atomic-write/cross-device-sync/live-reload, and satisfies
+>    extend-don't-migrate as ONE per-item object). B = a `$CTRLB_HOME/prompts/<id>.md` drop-in directory
+>    (goose's pattern; genuine in-repo precedent via SOUL.md + skills, but needs a NEW discovery+reload
+>    story SOUL.md only escapes by being re-read per turn).
+> 2. **Are the 8 steering nudges read-only, or editable?** They are coupled to `_LoopGuard` state, the
+>    confirm/resume machinery and the `question_policy` ladder — a bad edit degrades the GUARD, not the
+>    tone (R27 ⑤).
+> 3. **Is PR-1 worth inventing** given no peer does it — or is folding the load-bearing parameter text
+>    into the (already editable) tool description the cheaper answer? If built: an additive
+>    `params: {field: text}` on the EXISTING `ToolOverride` object, applied in `to_openai_tools` after
+>    `model_json_schema()` — never a sibling map.
+>
+> **PR-6 is a CONSTRAINT that gates any build, not a defect:** prompts that INTERPOLATE (the reflection
+> nudge bakes in `reflection_interval` + gates a clause on `state_enabled`; the per-tool-cap nudge takes
+> the tool name and count) cannot be exposed as plain strings without silently dropping the values.
+> Settle a placeholder syntax first — goose uses Jinja2, open-webui ships `{{MESSAGES:END:N}}` selectors.
 >
 > ## ✅✅ 2026-08-09 (Fable) — **E3 THE BANNER TRI-STATE SHIPPED + REVIEW-CLOSED (Codex confirm SHIP) + OWNER-WALKED LIVE** on `alt-fleet`; NEXT SESSION = the E4 go-word (cross-layout hardening + docs, §12.6)
 >
