@@ -32,13 +32,33 @@
 > against the real built dist (9 root artifacts byte-for-byte, manifest parsing its 4 icons).
 >
 > **⚠ THE DECISIONS WAITING (this is what needs the second opinion):**
-> 1. **THE BRANCH — the big one.** `alt-fleet` is **67 commits ahead of `main`**; 63 are the in-flight
->    gacha E0–E3. **Tagging from `alt-fleet` would ship all of it.** The 4 commits cherry-pick cleanly
->    onto `main`, whose own 5 unreleased commits are **docs-only, no config/schema ⇒ no migration**.
-> 2. **THE SERVICE WORKER IS A ONE-WAY DOOR.** Shipping registers a worker on the owner's phone for the
->    first time ever. Rolling back *past* that tag leaves it live — the older backend serves `sw.js` as
->    `text/html` again and a browser will not UPDATE a worker fetched with a non-JS MIME — so recovery
->    is device-side (clear site data). Argues for a lone `v1.5.1` patch tag, one hop back, not bundled.
+>
+> **THE BRANCH TOPOLOGY — nothing is pushed. Nothing is releasable until something is.**
+> ```
+> origin/main  ─────────────────────────────►  (GitHub — all CI and releases see)
+>                  ▲
+> local main   ────┴── 4 unpushed docs commits (docs-only, no config/schema ⇒ NO migration)
+>                  ▲
+> alt-fleet    ────┴── 68 more: gacha E0–E3  +  the 4 serving commits   ← workspace sits HERE
+> ```
+> `alt-fleet` exists ONLY on emma — never pushed, no remote. The serving fix landed there solely
+> because the owner asked that the Fable working tree not be disturbed; the two streams are otherwise
+> unrelated and the 4 commits cherry-pick cleanly onto `main`.
+>
+> 1. **BUNDLE WITH GACHA, OR SHIP `v1.5.1` ALONE FIRST?** The owner's instinct (2026-08-10) was to wait
+>    for the gacha work and release everything together — reasonable, and the bug has been live since
+>    May so there is no urgency argument against it. **But the service worker inverts it.** Shipping
+>    registers a worker on the owner's phone FOR THE FIRST TIME EVER. A browser will not UPDATE a worker
+>    fetched with a non-JS MIME, so any rollback to a version that still serves `sw.js` as `text/html`
+>    strands it, removable only device-side. Therefore: **bundling means a later gacha rollback lands on
+>    v1.5.0 and strands the worker; shipping the fix first as `v1.5.1` makes every later rollback target
+>    one that serves `sw.js` correctly, so the worker can always update itself out of trouble.** Shipping
+>    the small fix first does not just get the icon sooner — it is what makes the gacha release SAFE TO
+>    ROLL BACK. **Opus recommends `v1.5.1` alone, then gacha on its own tag. Owner + Fable to rule.**
+> 2. **D32 DEVIATION, worth a ruling because it shapes how the release is done.** `AGENTS.md`/D32 says
+>    the workspace never leaves `main` and feature work uses worktrees (`tools/add-dev-worktree.sh`);
+>    `alt-fleet` is checked out directly in the workspace instead. Harmless so far, not a criticism —
+>    but the release procedure assumes the documented shape.
 > 3. **Two runbook one-liners, offered but NOT written** (owner watching scope): a content-type check in
 >    `deploy/linux/README.md` §Release verify, and a §Rollback note about the worker.
 >
