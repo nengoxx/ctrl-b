@@ -12,69 +12,34 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ⏸ 2026-08-10 (Opus) — **PROD FRONTEND-SERVING BUG FIXED (D55/SYS-19), 4 commits on `alt-fleet`, NOT released. AWAITING THE OWNER'S DECISION + A FABLE SECOND OPINION — owner asked to park it for the 2026-08-11 afternoon session.** This does NOT displace the E4 go-word below; it is a parallel stream.
+> ## ✅✅ 2026-08-11 (Fable) — **v1.5.1 RELEASED + LIVE ON PROD: the D55/SYS-19 serving fix shipped ALONE, FIRST** (owner ruling with the Fable second opinion — the `sw.js` rollback-floor argument). **Prod = v1.5.1 @ `98e24c4`; rollback target = v1.5.0 ONLY, and NEVER below the v1.5.1 floor** (a pre-D55 tag re-serves `sw.js` as `text/html` and strands the now-registered worker per-device — runbook §Rollback carries the note).
 >
-> **The bug.** `create_app()` mounted only `/assets`, so every ROOT-level `dist` file — `favicon.ico`,
-> the PWA icons, `manifest.webmanifest`, `sw.js`, `workbox-*.js` — fell into the SPA catch-all and was
-> served as `index.html` with `text/html` 200. **Verified on the live prod server** (each returned 5232
-> bytes = `dist/index.html`). Present since the Phase 0 scaffold `510302d`; **prod has never served
-> these correctly.** Owner-visible symptom: Chrome-Android draws a letter tile for the bookmark instead
-> of the app icon. Invisible ones: the PWA manifest never parsed and **no service worker has ever
-> registered**, so `SwUpdatePrompt` + the D52/G5 font/media `runtimeCaching` rules have never run.
+> **The release record.** The Opus-built fix + records (4 commits) + the two runbook lines (content-type
+> verify · rollback floor) + a pre-tag Codex confirm ran as a 7-commit serving set, cherry-picked onto
+> `main` in a RELEASE WORKTREE — the walked `alt-fleet` tree never touched; picks verified
+> sequential-clean and byte-identical. **Codex on the cherry-picked base: SHIP WITH FIXES, zero code
+> defects** — two doc LOWs (ARCHITECTURE's route-order sentence omitted the media mounts; SYS-19's row
+> cited alt-fleet-local SHAs), both folded. Full gate **7/7 in the worktree incl. a local e2e run**
+> (the v1.4.5 lesson), CI + tag release gate green, `update.sh` plain form clean, verify = describe +
+> health + the NEW content-type probes on BOTH origins — HEAD and GET agree (`app.frontend()` answers
+> HEAD correctly; the runbook's `curl -sI` line stands). Owner phone follow-up: **delete + recreate the
+> bookmark** (Chrome caches the letter tile); the service worker registers for the FIRST TIME —
+> `SwUpdatePrompt` gets its first real exercise at the NEXT release.
 >
-> **The fix** (`0673c9b` · `89b6b86` · `40dac62` · `5fa859e`, LOCAL-ONLY, nothing pushed): FastAPI's
-> native `app.frontend()` (0.138+) replaces the hand-rolled mount + catch-all; SYS-5's `/api` JSON-404
-> moves into two real GET routes registered last. **It is a DELETION — 7 executable lines replacing 9,
-> 27 insertions against 119 deletions.** Council: Codex correctness + Opus architecture lens (both SHIP
-> WITH CHANGES, all folded) + post-build Codex (SHIP) + a cuts-only round after the owner challenged
-> the scope (CUT AS LISTED, taken except three recorded overrules). Full record = **D55**; the defect
-> itself = **SYS-19**. Gate 6/6; 13 tests, non-vacuous (6 fail against the true pre-fix code); pinned
-> against the real built dist (9 root artifacts byte-for-byte, manifest parsing its 4 icons).
+> **THE RELEASE ITSELF FOUND A NEW DEFECT CLASS — SYS-20.** The pre-push gate run from the worktree
+> failed 6 memory-backup tests and committed junk INTO the release repo: git exports `GIT_DIR` to
+> hooks, an environmental `GIT_DIR` OVERRIDES `git -C`, and from a linked worktree the exported path
+> is ABSOLUTE (from the workspace the relative `.git` re-resolves per-cwd harmlessly — why every prior
+> release pushed clean and why runbook step 0 was silently load-bearing). Gate half **FIXED**
+> (`_gate.sh` unsets `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` — worktree releases are now safe, the
+> D32-deviation question is moot for releases); product half (env sanitization at
+> `GitMemoryBackup._run`, `memory_backup.py:126-149`) = **SYS-20, deferred to its own slice**.
 >
-> **⚠ THE DECISIONS WAITING (this is what needs the second opinion):**
->
-> **THE BRANCH TOPOLOGY — nothing is pushed. Nothing is releasable until something is.**
-> ```
-> origin/main  ─────────────────────────────►  (GitHub — all CI and releases see)
->                  ▲
-> local main   ────┴── 4 unpushed docs commits (docs-only, no config/schema ⇒ NO migration)
->                  ▲
-> alt-fleet    ────┴── 68 more: gacha E0–E3  +  the 4 serving commits   ← workspace sits HERE
-> ```
-> `alt-fleet` exists ONLY on emma — never pushed, no remote. The serving fix landed there solely
-> because the owner asked that the Fable working tree not be disturbed; the two streams are otherwise
-> unrelated and the 4 commits cherry-pick cleanly onto `main`.
->
-> 1. **BUNDLE WITH GACHA, OR SHIP `v1.5.1` ALONE FIRST?** The owner's instinct (2026-08-10) was to wait
->    for the gacha work and release everything together — reasonable, and the bug has been live since
->    May so there is no urgency argument against it. **But the service worker inverts it.** Shipping
->    registers a worker on the owner's phone FOR THE FIRST TIME EVER. A browser will not UPDATE a worker
->    fetched with a non-JS MIME, so any rollback to a version that still serves `sw.js` as `text/html`
->    strands it, removable only device-side. Therefore: **bundling means a later gacha rollback lands on
->    v1.5.0 and strands the worker; shipping the fix first as `v1.5.1` makes every later rollback target
->    one that serves `sw.js` correctly, so the worker can always update itself out of trouble.** Shipping
->    the small fix first does not just get the icon sooner — it is what makes the gacha release SAFE TO
->    ROLL BACK. **Opus recommends `v1.5.1` alone, then gacha on its own tag. Owner + Fable to rule.**
-> 2. **D32 DEVIATION, worth a ruling because it shapes how the release is done.** `AGENTS.md`/D32 says
->    the workspace never leaves `main` and feature work uses worktrees (`tools/add-dev-worktree.sh`);
->    `alt-fleet` is checked out directly in the workspace instead. Harmless so far, not a criticism —
->    but the release procedure assumes the documented shape.
-> 3. **Two runbook one-liners, offered but NOT written** (owner watching scope): a content-type check in
->    `deploy/linux/README.md` §Release verify, and a §Rollback note about the worker.
->
-> **THE GAP THAT LET THIS LIVE FOR MONTHS — worth a ruling of its own.** Playwright runs against
-> `vite preview`, which serves `dist` correctly, so **the prod serving path is structurally invisible to
-> the release gate**. It survived the system audit, the QH audit AND the pre-deploy gate because every
-> check asserted a STATUS CODE and none asserted a CONTENT TYPE. Nothing 404'd, so prod read healthy
-> while being entirely broken client-side. The post-deploy check that would have caught it:
-> `curl -sI https://emma.lobster-vector.ts.net/icon-192.png` → must be `image/png`, never `text/html`.
->
-> **Scope swept, so the picture is not partial:** a live-prod content-type sweep found the **API surface
-> entirely clean** (every `/api` path proper JSON) and the **media mount correct** (`image/png`). The
-> corruption was confined to root-level catch-all files. No second instance found.
->
-> **When it ships:** deploy → reload the page → **delete and recreate the bookmark** (Chrome caches the
-> old tile). A server fix alone does not repair what the phone already cached.
+> **Topology after:** origin/main = local `main` = `98e24c4` (the 4 old docs commits rode up too);
+> `alt-fleet` = the SUPERSET — gacha E0–E3 + the 7 serving-stream commits (they DEDUPE at the gacha
+> rebase) + the prompts audit. Cutover note for future log-readers: one `ASGI callable returned
+> without completing response` ERROR from the OLD pid is EXPECTED at every cutover with an open SSE
+> client — not a defect of the new build.
 >
 > ### ✅ 2026-08-11 (Opus) — **THE DEFAULT-PROMPTS AUDIT IS DONE + RESEARCHED.** Two new docs, docs-only, nothing to build yet. **THE THREE OPEN QUESTIONS ARE PARKED FOR THE FABLE PLANNING SESSION at the owner's word — do NOT rule them in an Opus seat.**
 >
