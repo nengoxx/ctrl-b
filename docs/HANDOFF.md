@@ -22,9 +22,14 @@
 > cited alt-fleet-local SHAs), both folded. Full gate **7/7 in the worktree incl. a local e2e run**
 > (the v1.4.5 lesson), CI + tag release gate green, `update.sh` plain form clean, verify = describe +
 > health + the NEW content-type probes on BOTH origins — HEAD and GET agree (`app.frontend()` answers
-> HEAD correctly; the runbook's `curl -sI` line stands). Owner phone follow-up: **delete + recreate the
-> bookmark** (Chrome caches the letter tile); the service worker registers for the FIRST TIME —
-> `SwUpdatePrompt` gets its first real exercise at the NEXT release.
+> HEAD correctly; the runbook's `curl -sI` line stands). **Owner confirmed on the phone same evening:
+> the PWA now INSTALLS AS AN APP** — the manifest parsed for the first time in the app's life; the
+> service worker is registered, and `SwUpdatePrompt` gets its first real exercise at the NEXT release.
+> **⚠ NOTIFICATIONS LEAD (owner hunch, likely right):** the parked Web Push work (F1 ch.2, the
+> `web-push-researched-parked` memory) failed at `showNotification()` — which REQUIRES a service
+> worker registration, and SYS-19 means NO worker had ever registered when that test ran. **RETEST
+> notifications on the device BEFORE re-commissioning any research** — the parked premise may have
+> been this bug all along.
 >
 > **THE RELEASE ITSELF FOUND A NEW DEFECT CLASS — SYS-20.** The pre-push gate run from the worktree
 > failed 6 memory-backup tests and committed junk INTO the release repo: git exports `GIT_DIR` to
