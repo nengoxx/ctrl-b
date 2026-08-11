@@ -225,6 +225,9 @@ git -C ~/apps/ctrl-b describe --tags --exact-match    # must print vX.Y.Z
 curl -s -m5 localhost:5433/api/health                 # {"status":"ok",...} — its "version" is derived from
                                                       # the git tag at install time (hatch-vcs), so on prod it
                                                       # must equal X.Y.Z; the describe line cross-checks the tree
+curl -sI -m5 localhost:5433/icon-192.png | grep -i 'content-type: image/png'   # D55/SYS-19: a root dist file
+                                                      # answered as text/html means the SPA fallback ate it —
+                                                      # a failure no status-code check can see (it 200s)
 # then spot-check https://emma.<tailnet>.ts.net on a device. Anything wrong → Rollback (below).
 ```
 **Config-shape migration (UPDATE_PLAN).** From the release that carries `providers:`, the config is
@@ -314,6 +317,11 @@ systemctl --user is-active ctrl-b-dashboard             # active
 
 **First release (v1.0.0) has no previous tag** — rollback there is
 `systemctl --user disable --now ctrl-b-dashboard` (or fix forward with v1.0.1).
+
+**Rolling back PAST v1.5.1 (D55) strands the service worker.** Any tag before v1.5.1 serves `sw.js` as
+`text/html` again, and a browser will not update a registered worker from a non-JS MIME — the worker
+installed by v1.5.1+ stays live on every device until site data is cleared there by hand. Roll back TO
+v1.5.1 (or fix forward); go deeper only accepting that device-side cleanup.
 
 Schema compatibility across a rollback is guaranteed by the **expand/contract policy** (D32 amendment):
 destructive migrations land at the earliest one release after the code stopped using the old shape.
