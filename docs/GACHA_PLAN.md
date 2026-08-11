@@ -3582,19 +3582,32 @@ build → self-audit → Codex round → owner pause):**
   ledger gains `showWhen` · the D31 Fleet-graduation record · THEME_ENGINE §14.14 updated
   (conditional-setting contract + fleet's graduation) · R25's Q2d correction banner verified in
   place.
-- **E5 — the §14.11 DEVICE ROUND (Fennec + Chrome) = the REAL acceptance:** N-clip-path scroller
-  cost · rarity-hue collision on the real fleet (incl. three-star mode + the all-asleep grey
-  case) · minimal-banner height · name-on-art contrast under the SHIPPED default (keyline off —
-  **no rendered artifact of that state exists**; same for A+MIN and poster/cover under the
-  inherited track head/appbar — first render happens here) · the below-fold data block under
-  `banner:on` (the grow + live region are the only tap-1 feedback — judged on glass) · blade
-  legibility on the sleeping/light slices · §12.3② shear angle + slice height numbers
-  (un-retuned since the lab widened the stack) · the trailing-end air · the cover column
-  scroller on Fennec · the hero-shift constant.
+- **E5 — the §14.11 DEVICE ROUND (Fennec + Chrome) = the REAL acceptance** *(✅ PASSED
+  2026-08-11 evening — owner-driven on glass, both engines, against the dev units at the E4
+  close. **Verdict: "everything looks good as expected" — the list passed WHOLESALE**: the
+  N-clip-path scroller cost, rarity hues on the real fleet, the minimal banner, name-on-art
+  under the shipped keyline-off default (first render of that state), poster/cover under the
+  inherited track head/appbar, the below-fold data block under `banner:on`, blade legibility,
+  the §12.3② shear/height numbers (accepted as shipped — that open item CLOSES), the
+  trailing-end air, the cover column scroller on Fennec, and the hero-shift constant. **TWO
+  findings, both cover typography, fixed + owner-re-eyeballed same session ("good enough",
+  `5449c2b`):** ① the hero star row read too small and PLAIN over art → the local 11.5px
+  re-binds deleted so the row inherits the card row's 14px/4.2px, and it JOINS the card row's
+  R19 carve as a GROUPED selector — the §14.11 waiver stays at exactly ONE `filter: url(#`
+  reference (gachaChrome pins the grouping; the THEME_ENGINE waiver entry now names both rows);
+  ② the role/OS caption under the hero name sat bare on busy art → the poster's proven role
+  halo, minted per-surface as `--gc-cv-role-shadow` (0 1px 5px near-black). Suites 212/212;
+  scoped Codex confirm run on the committed diff. Side outcomes: the INSTALLED-ICON white box
+  confirmed on the owner's bookmark exactly as R28 predicted — the parked thread is unchanged;
+  the NOTIFICATIONS retest (the SYS-19 lead) deferred by the owner to a later session.)*:
+  N-clip-path scroller cost · rarity-hue collision · minimal-banner height · name-on-art
+  contrast under the shipped default · the below-fold data block · blade legibility · §12.3②
+  shear/height · trailing-end air · the cover scroller on Fennec · the hero-shift constant.
 
-**Open items:** §12.3⑤ picker labels/desc (copy.ts — **owner 2026-08-08: ruled AT E1**, settled in
-the E1 brief where the row first appears) · §12.3② shear/height numbers · the E5 list
-above. *(Everything else is ruled.)*
+**Open items:** ~~§12.3⑤ picker labels/desc~~ (ruled at E1) · ~~§12.3② shear/height numbers~~ ·
+~~the E5 list~~ (**all closed by the E5 pass, 2026-08-11**). *(E0–E5 are ALL SHIPPED + the round
+passed — the alt-fleet translation plan is COMPLETE; what remains is branch integration: rebase
+onto `main`, push, and the release ruling.)*
 
 **Process:** dev branch only, after the owner's E0 go-word · Opus subagents from pinned briefs
 (the E1/E2 briefs carry the lab's ceremony beats + exact numbers verbatim) · Codex co-reviews

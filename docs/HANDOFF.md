@@ -12,7 +12,20 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 >
-> ## ✅✅ 2026-08-11 EVENING (Fable) — **E4 CROSS-LAYOUT HARDENING SHIPPED + REVIEW-CLOSED (Codex confirm: five CLOSED + one one-liner → SHIP)** on `alt-fleet`; NEXT = **E5, the §14.11 DEVICE ROUND (Fennec + Chrome) = the REAL acceptance** — owner-driven, on glass, list in GACHA_PLAN §12.6
+> ## ✅✅✅ 2026-08-11 NIGHT (Fable) — **E5 THE DEVICE ROUND PASSED (owner, on glass, Fennec + Chrome) — THE ALT-FLEET TRANSLATION PLAN IS COMPLETE (E0–E5 all shipped + accepted).** NEXT = **branch integration: rebase `alt-fleet` onto `main`, push, and the release ruling** — all owner-gated
+>
+> **The round:** "everything looks good as expected" — the §12.6 E5 list passed WHOLESALE (scroller
+> cost, rarity hues, minimal banner, the never-rendered keyline-off name-on-art state, the §12.3②
+> shear/height numbers — that last open item CLOSES). **Two findings, both cover typography, fixed +
+> owner-re-eyeballed same session ("good enough", `5449c2b`):** hero stars → card-row metrics
+> (14px, up from 11.5) + JOIN the R19 carve as a grouped selector (the §14.11 waiver stays at ONE
+> `filter: url(#` reference — gachaChrome pins the grouping, the THEME_ENGINE entry names both rows) ·
+> the role/OS caption → the poster's proven halo as the cover's own `--gc-cv-role-shadow`. Suites
+> 212/212 · scoped Codex confirm on the diff. **The full E5 record = GACHA_PLAN §12.6's E5 bullet.**
+> Side outcomes: the bookmark's white-box icon confirmed EXACTLY as R28 predicted (the parked thread
+> unchanged) · the NOTIFICATIONS retest (SYS-19 lead) deferred by the owner to a later session.
+>
+> ## ✅✅ 2026-08-11 EVENING (Fable) — **E4 CROSS-LAYOUT HARDENING SHIPPED + REVIEW-CLOSED (Codex confirm: five CLOSED + one one-liner → SHIP)** on `alt-fleet`; ~~NEXT = **E5, the §14.11 DEVICE ROUND (Fennec + Chrome) = the REAL acceptance** — owner-driven, on glass, list in GACHA_PLAN §12.6~~ *(→ E5 PASSED, the block above)*
 >
 > **E4 closed in one session on the two-lane pattern** (docs = main seat · pins = Opus from the
 > pinned brief · one Codex round + fix wave + scoped confirm). 6 commits `8b98e58..3d9b0cd`:
