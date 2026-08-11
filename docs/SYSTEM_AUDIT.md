@@ -430,7 +430,7 @@ Unlike ACA, nothing here warrants a multi-slice program. Map:
 | ~~SYS-4 SECURITY_MODEL dev-exposure paragraph + `target_port` default decision~~ | S | **✅ DONE** — both halves closed by the QH pass: the §2.1 paragraph (QH-6, `4c30c70`) and the `target_port` flip 5173→5433 (QH-11). |
 | SYS-17 voice caps (tts text / stt upload) | XS | Opportunistic robustness posture. |
 | ~~SYS-5 `/api` 404 guard in SPA fallback~~ | XS | **✅ DONE.** Shipped as the string guard, then re-implemented as real routes at D55 when the catch-all was deleted — see the entry. |
-| ~~SYS-19 root-level `dist` files served as `text/html`~~ | S | **✅ DONE.** D55 (`0673c9b`→`40dac62`): native `app.frontend()` replaces the mount + catch-all. |
+| ~~SYS-19 root-level `dist` files served as `text/html`~~ | S | **✅ DONE.** D55 (`e5f6925`→`59cd32a` on main): native `app.frontend()` replaces the mount + catch-all. |
 | SYS-6 fence `save_settings` | XS | Opportunistic. |
 | SYS-9.2 editor `loadSkills()` verify · SYS-18a kit-class comments | XS | Opportunistic. |
 | SYS-3 overlay-at-read for tool overrides | M | **Still open, unscheduled.** The *race* was closed 2026-07-20 (`f0bbef4`: `PUT /api/settings` 409s on a `tool_overrides` patch while a turn is live). The structural inversion — resolve overrides at `to_openai_tools`/catalog time so specs are immutable and `tool_spec_orig` disappears — is now a standalone refactor; ACA is closed, so "decide inside Slice 2" no longer applies. |
