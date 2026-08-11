@@ -35,10 +35,11 @@
 //   · the DOSSIER's tab wants the clean mark — self-coloured stroke (so it fattens and rounds the
 //     silhouette into one solid, plumper star rather than outlining it) and nothing else. "The dossier
 //     looks good."
-//   · the CARD's row is CARVED: the R19 blurred inner shadow (`filter: url(#gc-star-carve)`, switched on
-//     by the card row in gacha.css). The owner walked the 2026-08-06/07 rounds through a contrasting dark
-//     contour ("reads as an outline"), an accent edge + arcade drop, then outline-only — and settled on
-//     the carve off `research-sheets/star-carved-candidates.html`, variant E ("I like it that much").
+//   · the ROWS THAT SIT ON ARTWORK are CARVED — the capsule CARD's row and, since the E5 device round
+//     (owner finding), the COVER HERO's row, one GROUPED rule in gacha.css: the R19 blurred inner shadow
+//     (`filter: url(#gc-star-carve)`). The owner walked the 2026-08-06/07 rounds through a contrasting
+//     dark contour ("reads as an outline"), an accent edge + arcade drop, then outline-only — and settled
+//     on the carve off `research-sheets/star-carved-candidates.html`, variant E ("I like it that much").
 //     The drop machinery those rounds left dormant is REMOVED with the pick; git holds it if a surface
 //     ever wants an offset copy again.
 //
@@ -56,8 +57,9 @@
 // The candidate sheet lives under `design/prototypes/gacha/research-sheets/`, which is GITIGNORED — so
 // every citation above points somewhere git cannot follow, and a waiver whose retreat exists on exactly
 // one machine is not a retreat. C is copied here from the sheet so backing out is a diff rather than an
-// excavation. Three moves: swap the card row's `filter: url(#gc-star-carve)` (gacha.css) for the layered
-// draw below, delete `GachaStarDefs` and its mount in GachaFleet, and strike the §14.11 waiver entry.
+// excavation. Three moves: swap the GROUPED fleet-star rule's `filter: url(#gc-star-carve)` (gacha.css —
+// it names the card row AND the cover hero's row) for the layered draw below, delete `GachaStarDefs`
+// and its mount in GachaFleet, and strike the §14.11 waiver entry.
 //
 // The construction is the SAME polygon painted twice: a darkened copy of the star's own colour underneath,
 // and the ordinary star on top pushed DOWN 9 user units, clipped back to the true stroked silhouette by a
@@ -104,9 +106,9 @@ export function GachaStar({ hi }: { hi?: boolean }) {
   );
 }
 
-/** The carve filter's ONE document-wide definition — mounted by GachaFleet, the only surface whose star
- *  row is carved (`.gc-card .rar .gc-star` in gacha.css consumes it; the dossier's plain mark needs no
- *  def). Mounted as a 0×0 absolutely-positioned svg, deliberately NOT `display: none`: a hidden-subtree
+/** The carve filter's ONE document-wide definition — mounted by GachaFleet, whose star rows on artwork
+ *  are the carved ones (the grouped card + cover-hero rule in gacha.css consumes it; the dossier's plain
+ *  mark needs no def). Mounted as a 0×0 absolutely-positioned svg, deliberately NOT `display: none`: a hidden-subtree
  *  def is the classic way engines drop filter references, and a broken `filter: url(#…)` does not degrade
  *  to "no filter" everywhere — Gecko has historically not painted the referencing element at all, which
  *  would vanish every card star. The def must live exactly as long as any card can. */

@@ -1217,8 +1217,8 @@ candidate sheet (`design/prototypes/gacha/research-sheets/star-carved-candidates
 cost labeled on the sheet**; STATIC (never animated — the hard ban stays on filters in loops), star-sized
 buffers (~14px, not surface-sized), and test-scoped: `gachaChrome.test.ts` counts the sheet's `url(#` filter
 references and fails on a second. The banked fallback if a device round finds fleet-scroll jank is the same
-sheet's variant C — the identical carve as pure layered geometry; revert = swap the card-row rule, delete the
-def, strike this entry.
+sheet's variant C — the identical carve as pure layered geometry; revert = swap the grouped fleet-star rule
+(it names both rows), delete the def, strike this entry.
 
 **Layout robustness (any browser).** Text must never overflow its container horizontally. Long unbreakable
 strings — backend errors, URLs, paths, JSON tokens, host/model/agent names — must wrap: put `overflow-wrap:

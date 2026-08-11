@@ -1197,6 +1197,9 @@ describe("the cover's stylesheet claims", () => {
     expect(blockFor(".cv-card.is-hero .cv-herocopy b")).toContain("color: var(--cv-hue)");
     // the hero keeps its hard drop — that is what holds a coloured name legible over art
     expect(blockFor(".cv-herocopy b")).toContain("text-shadow: var(--gc-cv-display-shadow)");
+    // …and the ROLE line keeps its halo (E5 device round: the bare caption was illegible on busy art —
+    // the poster's proven treatment, on the cover's own token)
+    expect(blockFor(".cv-herocopy i")).toContain("text-shadow: var(--gc-cv-role-shadow)");
     // …and the HERO half is a main-seat reading of a cut-in ruling, so it stays trivially revertible:
     // its own single-declaration rule, never folded into the block above
     expect(blockFor(".cv-card.is-hero .cv-herocopy b")!.split(":").length - 1).toBe(1);
@@ -1237,6 +1240,11 @@ describe("the cover's stylesheet claims", () => {
     const stars = blockFor(".cv-stars")!;
     expect(stars).toContain("var(--gc-star)");
     expect(stars).not.toContain("--cv-hue");
+    // The row wears the CARD row's own metrics (E5 device round: the shipped one-size-down 11.5px read
+    // too small on the hero art). No local re-DECLARATION may creep back — the trailing colon is what
+    // distinguishes a declaration from the `var(--gc-star-gap)` read the block legitimately keeps.
+    expect(stars).not.toContain("--gc-star-size:");
+    expect(stars).not.toContain("--gc-star-gap:");
     expect(blockFor(".cv-card.asleep .cv-stars")).toContain("var(--gc-star-dim)");
   });
 
@@ -1298,6 +1306,7 @@ describe("the cover's stylesheet claims", () => {
       "--gc-cv-hero-scrim",
       "--gc-cv-cut-scrim",
       "--gc-cv-display-shadow",
+      "--gc-cv-role-shadow",
       "--gc-cv-stamp-ink",
       "--gc-cv-flash",
     ])
