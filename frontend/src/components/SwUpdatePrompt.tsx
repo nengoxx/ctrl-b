@@ -2,18 +2,19 @@ import { useRegisterSW } from "virtual:pwa-register/react";
 
 import { pushToast } from "../store/toast";
 
-// F26 — service-worker autoUpdate prompt. vite-plugin-pwa is configured with
-// `registerType: "autoUpdate"` (vite.config.ts) so a new SW downloads in the background
-// after a deploy but waits for the next reload to take over. Without a prompt, the user
-// stays on the stale `index.html` indefinitely — and the moment they click the lazy Conf
-// tab they hit a stale-chunk-hash 404 that surfaces inside the Slice-6 ErrorBoundary.
+// F26 — the service-worker update prompt. vite-plugin-pwa runs `registerType: "prompt"`
+// (vite.config.ts — the plugin default, and the ONLY mode that fires `onNeedRefresh`; under
+// autoUpdate the register client skipWaits + force-reloads on its own and this component is
+// dead code, which is exactly how it shipped until the 2026-08-11 flip).
 //
-// This component listens for `onNeedRefresh` (fires when the new SW has finished installing
-// and is waiting) and pushes a sticky info toast with a "refresh" action. Tapping refresh
-// calls `updateServiceWorker(true)` — that tells the waiting SW to skip waiting, take over,
-// and reload the page so the new build is live. Tapping the toast body elsewhere dismisses
-// without updating (the user said "later") and the toast doesn't re-show until the next
-// reload-triggered SW activation cycle.
+// The flow: after a deploy, the next registration check finds the new worker, which installs
+// and WAITS — the old build keeps serving, self-consistent, from its own precache (no
+// stale-chunk 404s while it waits). `onNeedRefresh` fires on that waiting worker and pushes a
+// sticky info toast; tapping "refresh" calls `updateServiceWorker(true)`, which messages the
+// waiting worker to skipWaiting — its takeover fires the register client's `controlling`
+// listener, which reloads the page onto the new build. Dismissing the toast means "later":
+// the old build runs on, and the waiting worker also activates by itself once every client
+// closes (a fully-closed PWA updates on its next cold open, toast or no toast).
 //
 // Renders nothing — it's a hook host.
 

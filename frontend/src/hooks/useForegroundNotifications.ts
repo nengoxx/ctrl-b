@@ -132,7 +132,7 @@ export function useForegroundNotifications(): void {
  *     It has to exist because **Android throws `TypeError` on the constructor** (Chrome and Firefox
  *     both; the platform requires notifications to be owned by a service worker there) — and Android
  *     is the primary client for this app, so a constructor-only implementation would be dead exactly
- *     where it matters. This uses the registration the PWA ALREADY has (vite-plugin-pwa, autoUpdate);
+ *     where it matters. This uses the registration the PWA ALREADY has (vite-plugin-pwa);
  *     it adds no service-worker source, no config, no dependency.
  *
  *  The trade-off on path (2) is the click: a SW-shown notification's activation is delivered to the

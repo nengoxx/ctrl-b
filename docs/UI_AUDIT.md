@@ -530,6 +530,12 @@ Then sprinkle component-specific overrides where the global outline doesn't fit 
 
 ### F26 🟢 — Service worker `autoUpdate` has no in-app reload prompt
 
+> **STATUS UPDATE (2026-08-11, v1.6.0):** the mode is now the plugin-default **`prompt`**. The original
+> fix rode `registerType: "autoUpdate"`, whose register client skipWaits + force-reloads and **never
+> fires `onNeedRefresh`** — the toast was dead code (unexercised: SYS-19 meant no worker had ever
+> registered in prod). The analysis below is the historical record; `SwUpdatePrompt.tsx` carries the
+> as-shipped flow.
+
 **The issue.** `vite-plugin-pwa` is configured with `registerType: "autoUpdate"`. On a new deploy:
 1. The next visit downloads the new SW + manifest in the background.
 2. The SW takes over on the *next* reload.

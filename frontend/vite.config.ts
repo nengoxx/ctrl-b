@@ -25,7 +25,12 @@ export default defineConfig({
       open: false,
     }),
     VitePWA({
-      registerType: "autoUpdate",
+      // PROMPT — the plugin default, and the mode SwUpdatePrompt (F26) is written for: a new worker
+      // installs and WAITS for the toast's refresh tap instead of skipWaiting + force-reloading
+      // mid-session (the autoUpdate register client never fires `onNeedRefresh`, so the toast was
+      // dead code until this flip — unexercised in prod because SYS-19 meant no worker had ever
+      // registered). Explicit rather than omitted so the F26 coupling is visible from here.
+      registerType: "prompt",
       devOptions: { enabled: false },
       manifest: {
         name: "ctrl-b",
