@@ -346,19 +346,38 @@ describe.each(registeredThemes().map((d) => [d.id, d] as const))(
             const fleet = container.querySelector('[aria-labelledby="tabbtn-fleet"]');
             expect(fleet, `${id}/${layout ?? "default"}: no Fleet tabpanel`).not.toBeNull();
             if (layout !== null) {
-              const named = fleet!.querySelector("button[aria-label]");
+              // The named control must be a HOST control, not merely SOME labelled button inside the
+              // panel: gacha's pickup banner rides inside the Fleet tabpanel and its dots/nav/promo
+              // slides are all labelled buttons, so taking the first `button[aria-label]` would go on
+              // passing for a layout whose machines had lost their accessible names entirely. The
+              // engine-generic form of "a host": the accessible name names one of the SEEDED fixture
+              // hosts (`makeSeededClient` → STUB_HOST), which is every machine this render can draw.
+              const named = Array.from(fleet!.querySelectorAll("button[aria-label]")).find((b) =>
+                (b.getAttribute("aria-label") ?? "")
+                  .toLowerCase()
+                  .includes(STUB_HOST.name.toLowerCase()),
+              );
               expect(
                 named,
-                `${id}/${layout}: this fleet layout exposes no focusable, accessibly-named host — ` +
-                  `§14.14 invariant #5 holds for EVERY layout the theme offers, not just its default`,
-              ).not.toBeNull();
-              expect((named!.getAttribute("aria-label") ?? "").length).toBeGreaterThan(0);
+                `${id}/${layout}: this fleet layout exposes no focusable button whose accessible name ` +
+                  `names the seeded host "${STUB_HOST.name}" — §14.14 invariant #5 holds for EVERY ` +
+                  `layout the theme offers, not just its default (a labelled banner/nav control in the ` +
+                  `panel does not satisfy it)`,
+              ).toBeDefined();
             }
             return fleet!.innerHTML;
           } finally {
             unmount();
           }
         };
+
+        /** Strip React's `useId` tokens (`:r0:` on one root, `:r1:`/`«r1»` on the next — the counter is
+         *  per-ROOT and the delimiter form differs by React version). The comparison below double-mounts,
+         *  so without this two renders of the SAME layout differ in generated ids alone and the guard
+         *  passes vacuously — the very fallback it exists to catch. gacha mints one per fleet
+         *  (`GachaFleet.tsx:557`). */
+        const normalizeIds = (html: string): string =>
+          html.replace(/[:«]r[0-9a-z]*[:»]/gi, ":rID:");
 
         it.each(altLayouts)(
           "fleetLayout=%s still exposes a focusable, accessibly-named Fleet host",
@@ -370,10 +389,10 @@ describe.each(registeredThemes().map((d) => [d.id, d] as const))(
             // SETTINGS_MATRIX drift guard above exists for the same failure mode). Markup INEQUALITY is
             // the engine-generic form of it: two fleet layouts that draw the same DOM are one layout.
             expect(
-              seeded,
+              normalizeIds(seeded),
               `${id}: seeding fleetLayout="${layout}" changed nothing — the Fleet rendered its default ` +
                 `layout, so the assertion above measured the wrong body`,
-            ).not.toBe(await fleetPanelHtml(null));
+            ).not.toBe(normalizeIds(await fleetPanelHtml(null)));
           },
         );
       }

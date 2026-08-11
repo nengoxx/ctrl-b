@@ -154,14 +154,25 @@ test("Fleet — gacha's poster selects a sleeping machine, then wakes it on the 
   );
 
   // TAP 1 — selection only. The registry block below the stack follows it; `aria-pressed` is the fact.
+  // The zero-request negative is a BOUNDED WAIT armed before the click, not a read of `wakes` after it: a
+  // handler that both selected AND dispatched could commit `aria-pressed` before its request ever reached
+  // the route callback, so the sync read would pass and tap 2's poll would then count tap 1's late
+  // request as its own. The waiter cannot be outrun — it is listening when the tap lands.
+  const early = page.waitForRequest("**/api/actions/wake_host", { timeout: 800 }).then(
+    () => true,
+    () => false,
+  );
   await corsair.click();
   await expect(corsair).toHaveAttribute("aria-pressed", "true");
-  expect(wakes, "the FIRST tap must not dispatch a wake").toHaveLength(0);
+  expect(await early, "the FIRST tap must not dispatch a wake").toBe(false);
 
-  // TAP 2 — the wake, through the same `wake_host` seam the dossier's own button calls.
+  // TAP 2 — the wake, through the same `wake_host` seam the dossier's own button calls. The payload is
+  // read off THIS request object, so it is provably the one tap 2 caused.
+  const wakeReq = page.waitForRequest("**/api/actions/wake_host");
   await corsair.click();
-  await expect.poll(() => wakes.length).toBe(1);
-  expect(JSON.parse(wakes[0])).toMatchObject({ args: { host_id: "corsair" } });
+  const req = await wakeReq;
+  expect(JSON.parse(req.postData() ?? "{}")).toMatchObject({ args: { host_id: "corsair" } });
+  expect(wakes, "exactly one wake in the whole flow").toHaveLength(1);
   // …and NO confirm dialog stood between the tap and the request.
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
 

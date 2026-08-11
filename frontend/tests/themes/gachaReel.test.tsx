@@ -10,10 +10,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const media = vi.hoisted(() => ({ data: undefined as MediaIndex | undefined }));
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 
+// jsdom shims for the REAL-Root block at the end of the layout section: the kit shell measures with
+// ResizeObserver and resets the scroller on a section change (the `gachaPoster.test.tsx` precedent).
+vi.stubGlobal(
+  "ResizeObserver",
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+);
+Element.prototype.scrollTo = vi.fn();
+Element.prototype.scrollIntoView = vi.fn();
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
 import type { MediaIndex } from "../../src/hooks/useMedia";
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import { GachaReel } from "../../src/themes/gacha/GachaReel";
+import { GachaRoot } from "../../src/themes/gacha/GachaRoot";
 import { defaultRoster, reelFigureArt } from "../../src/themes/gacha/roster";
+import type { Host } from "../../src/types";
 
 // The gacha tab REEL mechanism (D52 / GACHA_PLAN §10.1 — G0 owns the overlay + slats; the figure is G4).
 //
@@ -151,6 +168,72 @@ describe.each(["poster", "cover"])("the reel under fleetLayout=%s", (layout) => 
     const { container } = render(<GachaReel />);
     act(() => setUI({ tab: "agent" }));
     expect(reel(container)).toBeNull();
+  });
+});
+
+// ── …AND THE ROOT STILL MOUNTS IT UNDER EVERY LAYOUT (Codex E4 MED) ─────────────────────────────────
+// The cases above render `GachaReel` DIRECTLY, and the component reads `tab` + `motion` and nothing else
+// — which is the point, but it also means they would all stay green if `GachaRoot` stopped rendering the
+// reel under one layout. That omission is the exact regression the pin owes (the tempting
+// layout-conditional gate lives one level up, at `GachaRoot.tsx`'s unconditional `<GachaReel />`), and
+// only a real-Root mount can see it. ONE case per alt layout: prove the seed reached the fleet body (its
+// own marker), then sweep. The motion/boot behaviours stay at component level, where they are cheaper.
+describe("the reel through the REAL Root", () => {
+  /** A stub machine so the poster draws a body at all (`.po-body` is behind `hosts.length > 0`). */
+  const STUB_HOST: Host = {
+    id: "vault",
+    name: "vault",
+    ip: "10.0.0.1",
+    mac: "aa:bb:cc:dd:ee:ff",
+    ssh_username: null,
+    ssh_port: 22,
+    os_type: "linux",
+    role: "server",
+    tags: [],
+    status: {
+      host_id: "vault",
+      online: true,
+      ping_ms: 3,
+      last_seen: null,
+      checked_at: "2026-01-01T00:00:00Z",
+      error: null,
+    },
+  };
+
+  /** The fleet queries the always-mounted subtree reads, pre-seeded — a deterministic, offline Root
+   *  render with no fetch and no `useFleet` mock (the `themeContract.test.ts` harness). */
+  const seededClient = (): QueryClient => {
+    const qc = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, refetchOnMount: false, staleTime: Number.POSITIVE_INFINITY },
+      },
+    });
+    qc.setQueryData(["hosts"], [STUB_HOST]);
+    qc.setQueryData(["services"], []);
+    return qc;
+  };
+
+  it.each([
+    ["poster", ".po-body"],
+    ["cover", ".cv-frame"],
+  ])("mounts the overlay under fleetLayout=%s, and it sweeps on a tab change", (layout, marker) => {
+    setThemeSetting("gacha", "fleetLayout", layout);
+    const { container } = render(
+      <QueryClientProvider client={seededClient()}>
+        <GachaRoot />
+      </QueryClientProvider>,
+    );
+    expect(
+      container.querySelector(marker),
+      `${layout}: the seed never reached the fleet body — the sweep below would be measured against ` +
+        `the capsule fallback`,
+    ).not.toBeNull();
+
+    act(() => setUI({ tab: "agent" }));
+    expect(
+      reel(container),
+      `${layout}: GachaRoot mounted no reel — the navigation flight is gone on this setting`,
+    ).not.toBeNull();
   });
 });
 
