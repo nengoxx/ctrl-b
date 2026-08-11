@@ -436,6 +436,10 @@
       /* ONE hard offset shadow under the display type (the poster's finding restated: at this size a
        * blurred shadow under big type turns to mud on busy art). 4px, because cover type is bigger. */
       --gc-cv-display-shadow: 4px 4px 0 #08070c;
+      /* The ROLE line's halo (E5 device round) — the poster's `--gc-po-role-shadow` value restated on
+       * the cover's own terms: a tight dark blur reads as an outline at small caps size, where the hard
+       * display offset above would just double the glyphs. Per-surface, like every print token here. */
+      --gc-cv-role-shadow: 0 1px 5px #000000e6;
       --gc-cv-stamp-ink: #ff5470; /* the develop ceremony's AWAKE stamp */
       --gc-cv-flash: #fff; /* the develop ceremony's one-frame white */
       /* ── The star's DRAWN metrics (G7 — the R16 redesign; see GachaStar.tsx) ─────────────────────────

@@ -779,6 +779,10 @@ describe("gacha G7 — the DRAWN rarity star (R16)", () => {
     // mounted by GachaFleet — its presence is pinned in gachaFleet.test.tsx, because a dangling
     // `url(#…)` does not degrade to "no filter" on every engine).
     expect(ruleBlock(rules, ".gc-card .rar .gc-star {")).toContain("filter: url(#gc-star-carve)");
+    // …and the COVER HERO's row rides the SAME grouped rule (E5 device round, owner finding): it sits
+    // on artwork exactly as the card row does. GROUPED, not a second rule — the reference count below
+    // is the waiver's scope, and it must stay at one.
+    expect(rules).toContain(".cv-stars .gc-star,");
     // The DOSSIER tab takes no override at all — owner: "the dossier looks good".
     expect(rules).not.toContain(".gc-dossier .art-rar .gc-star");
     // THE WAIVER SCOPE (§14.11): a per-star filter ships as an owner-granted waiver scoped to exactly

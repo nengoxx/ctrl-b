@@ -1209,8 +1209,10 @@ ResizeObserver). See `components/Waveform.tsx` for the reference implementation.
 
 **SVG-filter waivers — a closed, owner-granted list, currently ONE (2026-08-07, gacha R19).** A per-element
 SVG `filter` is an offscreen rasterization, the class this section budgets — so each use is a scoped waiver,
-run like the engine-branch consumer list above. ① **gacha's carved card stars**: `filter: url(#gc-star-carve)`
-on `.gc-card .rar .gc-star` (the def + full construction notes in `GachaStar.tsx`). Owner-picked off the R19
+run like the engine-branch consumer list above. ① **gacha's carved fleet stars**: `filter: url(#gc-star-carve)`
+on `.gc-card .rar .gc-star` **and the cover hero's `.cv-stars .gc-star`** (one GROUPED rule — still one
+reference; the cover row joined at the E5 device round, owner finding: same row-on-artwork case as the card).
+The def + full construction notes live in `GachaStar.tsx`. Owner-picked off the R19
 candidate sheet (`design/prototypes/gacha/research-sheets/star-carved-candidates.html`, variant E) **with the
 cost labeled on the sheet**; STATIC (never animated — the hard ban stays on filters in loops), star-sized
 buffers (~14px, not surface-sized), and test-scoped: `gachaChrome.test.ts` counts the sheet's `url(#` filter

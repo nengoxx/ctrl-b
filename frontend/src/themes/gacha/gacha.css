@@ -1411,7 +1411,14 @@
      * GachaFleet; construction + the §14.11 waiver documented there), size-blind via objectBoundingBox
      * primitives, its flood ink the `--gc-star-carve-ink` token. Silhouette and 14px ink are UNTOUCHED —
      * the carve paints inside the mark, so nothing got smaller when the outline went (the owner's own
-     * condition on the pick). */
+     * condition on the pick).
+     *
+     * THE COVER HERO'S ROW RIDES THE SAME RULE (E5 device round, owner finding): it sits on artwork
+     * exactly as the card row does, and it wears the same owner-picked treatment. One GROUPED selector,
+     * deliberately — the §14.11 waiver is test-scoped to ONE `filter: url(#` reference in this sheet,
+     * and a second rule would widen it silently (gachaChrome.test.ts counts them). The def is mounted
+     * by GachaFleet for every layout, so the reference can never dangle under cover. */
+    .cv-stars .gc-star,
     .gc-card .rar .gc-star {
       filter: url(#gc-star-carve);
     }
@@ -2479,6 +2486,9 @@
       font-size: 12px;
       letter-spacing: 0.1em;
       color: var(--text-2);
+      /* the role rides on art with no slip under it — the poster's `.po-role` halo, restated on the
+         cover's own token (E5 device round: the bare line "looks a little bit bad" over busy art) */
+      text-shadow: var(--gc-cv-role-shadow);
     }
     .cv-line {
       display: flex;
@@ -2489,9 +2499,10 @@
       display: flex;
       gap: var(--gc-star-gap);
       /* STARS ARE NEVER TINTED BY THE UNIT HUE (§12.6 ruling 8): gold / rose-gold is a different signal,
-         and two signals must not wear one colour. The row is the card's own, one size down. */
-      --gc-star-size: 11.5px;
-      --gc-star-gap: 3.5px;
+         and two signals must not wear one colour. The row is the CARD's own, full size — it shipped one
+         size down (11.5px) and the E5 device round read it as too small on the hero art, so the local
+         re-binds went and the row inherits the card row's 14px/4.2px (it wears the card's carve too,
+         one grouped rule up by the primitive). */
       color: var(--gc-star);
     }
     .cv-card.asleep .cv-stars {
