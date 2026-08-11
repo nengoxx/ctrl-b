@@ -161,3 +161,88 @@ describe("the fleet surface under gacha", () => {
     expect(container.querySelector(".gc-track")).not.toBeNull();
   });
 });
+
+// ── THE SAME SWAP, ON THE REAL VARIANTS (GACHA_PLAN §12.6 slice E4, pin ⑯). The case above proves the
+//    CONTRACT with a stand-in whose markup shares nothing with capsule's — which is why it stays: it is the
+//    only shape in which "the dossier survived" cannot be an artifact of the track having stayed put. What
+//    it cannot prove is that the three SHIPPED layouts satisfy it, and they are the ones the owner swaps
+//    between: each mounts its own ceremony hook, its own refs and (cover) its own layout effects, and any
+//    of those could have been given a key that re-keys the body around them.
+//
+//    So this walks the real catalog end to end — capsule -> poster -> cover, the picker's own order — with a
+//    dossier SETTLED before the first swap. What is asserted about the dossier is only what is real: it is
+//    `GachaFleet`'s own sheet, a SIBLING of the track body, so it is the SAME NODE across both swaps and
+//    still describes the machine it was opened on. The layouts' own selection is asserted beside it,
+//    because the two are genuinely independent here — the capsule card that opened the dossier does not
+//    route through the alt layouts' pick, so `atlas` holds the sheet while `pegasus` (host[0], the resolved
+//    default pick) is what the poster's slice and the cover's hero mark as selected.
+//
+//    NO cross-layout MORPH assertion: the morph is capsule/poster's (§12.6 ruling 5②, as amended), the
+//    cover opens plain, and a swap is not an open.
+describe("the fleet surface under gacha — the REAL registered variants", () => {
+  beforeEach(() => {
+    // The suite above lends gacha a capsule+dummy declaration; these cases need the SHIPPED row, whose
+    // options are the three real layouts. `priorSpec` is that row, snapshotted before the loan.
+    GACHA.settings!.fleetLayout = priorSpec!;
+  });
+
+  it("capsule -> poster -> cover swaps the TRACK BODY only — no remount, and the settled dossier stands", () => {
+    const { container } = render(<GachaFleet active />);
+    const tab = container.querySelector("#tab-fleet");
+    const starDefs = container.querySelector("#gc-star-carve");
+    const live = container.querySelector(".gc-live");
+    // …the markers themselves exist, so a later `toBe(marker)` cannot pass on two nulls.
+    for (const node of [tab, starDefs, live]) expect(node).not.toBeNull();
+
+    act(() => {
+      fireEvent.click(container.querySelectorAll<HTMLElement>(".gc-card")[1]);
+    });
+    const sheet = document.querySelector(".gc-dossier");
+    expect(sheet?.querySelector("h2")?.textContent).toBe("atlas");
+    expect(document.body.dataset.sheet).toBe("open");
+
+    /** Everything OUTSIDE the track body stood still — the same nodes a remount would have rebuilt, and
+     *  the same dossier, still open on the machine it was opened for. */
+    const expectFleetStood = (layout: string): void => {
+      expect(container.querySelector("#tab-fleet"), layout).toBe(tab);
+      expect(container.querySelector("#gc-star-carve"), layout).toBe(starDefs);
+      expect(container.querySelector(".gc-live"), layout).toBe(live);
+      expect(document.querySelector(".gc-dossier"), layout).toBe(sheet);
+      expect(sheet!.querySelector("h2")!.textContent, layout).toBe("atlas");
+      expect(document.body.dataset.sheet, layout).toBe("open");
+      expect(container.querySelectorAll(".gc-banner"), layout).toHaveLength(1);
+    };
+
+    act(() => {
+      setThemeSetting("gacha", "fleetLayout", "poster");
+    });
+    // THE POSTER is really up: one sheared slice per machine inside the `.po-body` column, and the capsule
+    // grid and its head are gone with the body they belonged to.
+    expect(container.querySelectorAll(".po-body .po-poster .po-slice")).toHaveLength(2);
+    expect(container.querySelector(".gc-track")).toBeNull();
+    // …its own selection is host[0], the RESOLVED pick — not the machine holding the dossier.
+    expect(
+      container.querySelectorAll<HTMLElement>(".po-slice")[0].getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      container.querySelectorAll<HTMLElement>(".po-slice")[1].getAttribute("aria-pressed"),
+    ).toBe("false");
+    expectFleetStood("poster");
+
+    act(() => {
+      setThemeSetting("gacha", "fleetLayout", "cover");
+    });
+    // THE COVER is really up: the fixed frame, its masthead heading, one hero card and the rest as cut-ins
+    // in the side stack — and the poster's column is gone.
+    expect(container.querySelector(".cv-frame h1.cv-mast")).not.toBeNull();
+    const heroCards = container.querySelectorAll<HTMLElement>(".cv-heroslot .cv-card.is-hero");
+    expect(heroCards).toHaveLength(1);
+    expect(heroCards[0].dataset.gcHost).toBe("pegasus"); // the same resolved pick the poster marked
+    expect(heroCards[0].getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelectorAll(".cv-stack .cv-card.is-cut")).toHaveLength(1);
+    expect(container.querySelector(".po-poster")).toBeNull();
+    // …and the banner rides into the cover's STRAPLINE seat, which is where this composition prints it.
+    expect(container.querySelector(".cv-strap .gc-banner")).not.toBeNull();
+    expectFleetStood("cover");
+  });
+});

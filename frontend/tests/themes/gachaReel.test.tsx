@@ -11,7 +11,7 @@ const media = vi.hoisted(() => ({ data: undefined as MediaIndex | undefined }));
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 
 import type { MediaIndex } from "../../src/hooks/useMedia";
-import { setUI } from "../../src/store/ui";
+import { setThemeSetting, setUI } from "../../src/store/ui";
 import { GachaReel } from "../../src/themes/gacha/GachaReel";
 import { defaultRoster, reelFigureArt } from "../../src/themes/gacha/roster";
 
@@ -49,7 +49,9 @@ function stubImage(): void {
 }
 
 beforeEach(() => {
-  setUI({ theme: "gacha", tab: "fleet", motion: "full", perf: "full" });
+  // `themeSettings: {}` because the per-layout block below seeds `fleetLayout` — the store is module
+  // state shared across this file, so each case starts from the theme's declared defaults.
+  setUI({ theme: "gacha", tab: "fleet", motion: "full", perf: "full", themeSettings: {} });
   warmed = [];
   media.data = undefined; // default: no owner files ⇒ the bundled figure, exactly as G4 shipped it
 });
@@ -114,6 +116,41 @@ describe("GachaReel", () => {
     // The very next real navigation still reels — the gate suppresses the ghost, not the feature.
     act(() => setUI({ tab: "conf" }));
     expect(reel(container)).not.toBeNull();
+  });
+});
+
+// ── THE REEL IS LAYOUT-BLIND (GACHA_PLAN §12.6 slice E4, pin ⑮). The overlay mounts at ROOT level
+//    (`GachaRoot.tsx`), one level ABOVE the fleet body, so a `fleetLayout` swap is nothing to it — it
+//    reads `tab` and `motion` and nothing else. That is a STRUCTURAL claim rather than an obvious one:
+//    the alt layouts each render a full-bleed composition (the cover is a fixed frame that fills the tab),
+//    and the tempting way to stop a sweep from painting over one is a layout-conditional gate here —
+//    which would make the navigation flight silently disappear on one of three settings.
+//
+//    Three assertions per layout, the load-bearing ones: no BOOT reel (a transition announcing nothing),
+//    a sweep on a real tab change (the feature), and nothing at all under reduced motion (the a11y gate).
+//    The behaviours themselves are proven above; what these add is that the SETTING cannot move them.
+describe.each(["poster", "cover"])("the reel under fleetLayout=%s", (layout) => {
+  beforeEach(() => {
+    setThemeSetting("gacha", "fleetLayout", layout);
+  });
+
+  it("still renders NOTHING on first mount", () => {
+    const { container } = render(<GachaReel />);
+    expect(reel(container)).toBeNull();
+  });
+
+  it("still sweeps on a tab change", () => {
+    const { container } = render(<GachaReel />);
+    act(() => setUI({ tab: "agent" }));
+    expect(reel(container)).not.toBeNull();
+    expect(reel(container)!.querySelectorAll("i")).toHaveLength(5);
+  });
+
+  it("still renders nothing under reduced motion", () => {
+    setUI({ motion: "reduced" });
+    const { container } = render(<GachaReel />);
+    act(() => setUI({ tab: "agent" }));
+    expect(reel(container)).toBeNull();
   });
 });
 

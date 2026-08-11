@@ -11,7 +11,7 @@ import { createElement } from "react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { CONTRAST_MATRIX, SETTINGS_MATRIX } from "../../e2e/contrast-matrix";
-import { setUI } from "../../src/store/ui";
+import { setThemeSetting, setUI } from "../../src/store/ui";
 import { LAYOUT_PRESETS, partitionSections, resolveLayout } from "../../src/theme-engine/layout";
 import { registeredThemes } from "../../src/theme-engine/registry";
 import { tabsFor } from "../../src/theme-engine/tabs";
@@ -302,6 +302,81 @@ describe.each(registeredThemes().map((d) => [d.id, d] as const))(
           unmount();
         }
       });
+
+      // ── …AND UNDER EVERY NON-DEFAULT FLEET LAYOUT (GACHA_PLAN §12.6 slice E4, pin ⑭). The test above
+      //    measures invariant #5 under the theme's DEFAULT settings only, so a theme that lets the owner
+      //    REPLACE its fleet body could ship a layout whose machines are unreachable and the gate would
+      //    still be green. Driven off the DECLARED `fleetLayout` seg rather than a hand-list of layout
+      //    ids: a fourth variant joins this gate the moment it is offered in Conf, with no new test code
+      //    (§14.13.1's auto-iterating-guard discipline, one axis in). Today only gacha declares one, so
+      //    every other theme contributes an empty option list and no cases at all.
+      const layoutField = def.settings?.fleetLayout;
+      const altLayouts =
+        layoutField?.type === "seg"
+          ? layoutField.options.map((o) => o.val).filter((v) => v !== layoutField.default)
+          : [];
+      if (altLayouts.length > 0) {
+        // The seeded override is this block's own, so it is cleared after every case — the store is
+        // module state shared with every later test in the file (the `setUI({themeSettings:{}})` hygiene
+        // the settings/surface suites keep).
+        afterEach(() => setUI({ themeSettings: {} }));
+
+        /** Mount the theme's real Root with the fleet seeded to `layout` (or to its declared default when
+         *  `layout` is null) and hand back its Fleet panel's markup + the assertion's verdict. */
+        const fleetPanelHtml = async (layout: string | null): Promise<string> => {
+          await def.loadRoot?.();
+          await def.loadStyles();
+          setUI({
+            theme: id,
+            mode: def.palettes.defaultMode ?? "dark",
+            accent: def.palettes.defaultAccent ?? "",
+            tab: "fleet",
+            appbarMode: "visible",
+            themeSettings: {},
+          });
+          if (layout !== null) setThemeSetting(id, "fleetLayout", layout);
+          const { container, unmount } = render(
+            createElement(
+              QueryClientProvider,
+              { client: makeSeededClient() },
+              createElement(def.Root),
+            ),
+          );
+          try {
+            const fleet = container.querySelector('[aria-labelledby="tabbtn-fleet"]');
+            expect(fleet, `${id}/${layout ?? "default"}: no Fleet tabpanel`).not.toBeNull();
+            if (layout !== null) {
+              const named = fleet!.querySelector("button[aria-label]");
+              expect(
+                named,
+                `${id}/${layout}: this fleet layout exposes no focusable, accessibly-named host — ` +
+                  `§14.14 invariant #5 holds for EVERY layout the theme offers, not just its default`,
+              ).not.toBeNull();
+              expect((named!.getAttribute("aria-label") ?? "").length).toBeGreaterThan(0);
+            }
+            return fleet!.innerHTML;
+          } finally {
+            unmount();
+          }
+        };
+
+        it.each(altLayouts)(
+          "fleetLayout=%s still exposes a focusable, accessibly-named Fleet host",
+          async (layout) => {
+            const seeded = await fleetPanelHtml(layout);
+            // …and the seed REACHED the render. Without this the case would pass vacuously on the
+            // resolver's own capsule fallback if the override never landed — which is exactly the shape
+            // that makes a settings-driven gate green while measuring the default a second time (the
+            // SETTINGS_MATRIX drift guard above exists for the same failure mode). Markup INEQUALITY is
+            // the engine-generic form of it: two fleet layouts that draw the same DOM are one layout.
+            expect(
+              seeded,
+              `${id}: seeding fleetLayout="${layout}" changed nothing — the Fleet rendered its default ` +
+                `layout, so the assertion above measured the wrong body`,
+            ).not.toBe(await fleetPanelHtml(null));
+          },
+        );
+      }
     });
   },
 );
