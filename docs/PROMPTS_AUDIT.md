@@ -122,7 +122,7 @@ model **independently selectable**, and `window` / `threshold_frac` / `reserve` 
 a completely different — likely smaller, local — model, **and cannot touch the prompt it runs.** A
 five-section contract that a 27B model honours and a 4B model ignores has no remedy.
 
-`/compact <instructions>` exists (`compaction.py:682`) but appends per-invocation on the *manual*
+`/compact <instructions>` exists (`compaction.py:671` signature, appended at `:684`) but only on the *manual*
 path only; it is a steer, not a durable override. Automatic compaction — the case that actually
 matters — cannot be influenced at all.
 
