@@ -203,6 +203,23 @@ asserted status codes and none asserted a **content type**. Fixed at D55 by repl
 mount + catch-all with FastAPI's native `app.frontend()`. *Lesson for future passes: for a static
 serving path, the content type is the assertion that carries the information, not the status.*
 
+### SYS-20 · Ambient `GIT_DIR` retargets `GitMemoryBackup` — and the hook gate exported one — **LOW (latent) · gate half ✅ DONE**
+
+`memory_backup.py:126-149` builds every invocation as `git -C <root> …` with the inherited
+environment — and an environmental `GIT_DIR` **overrides `-C`**, so with one set the D26 memory
+versioning silently operates on whatever repository that path names (its `init` flips that repo's
+`core.bare`, its commits land on that repo's checked-out branch) instead of the memory dir. The
+backend never sets `GIT_DIR` itself; the exposure is any launcher that does. Proven 2026-08-11, at
+the v1.5.1 release: git exports `GIT_DIR` to hooks, and the pre-push gate run from the release
+WORKTREE — where the exported path is ABSOLUTE — made the memory-backup tests commit junk onto the
+release branch and flip the worktrees' shared `core.bare`. From the normal workspace the exported
+path is the RELATIVE `.git`, which re-resolves against each subprocess cwd and lands harmlessly on
+the test's own repo — why every prior release pushed clean, and why runbook step 0's "always from
+the workspace" was silently load-bearing. **The gate half is fixed** (same day): `.githooks/_gate.sh`
+unsets `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` — the gate judges the tree, and `tools/check.py`
+runs no git. **The product half is deferred to its own slice**: sanitize the env at the `_run`
+chokepoint so backups are immune to any future launcher's leak, with its own tests.
+
 ### SYS-6 · `save_settings` is a comment-destroying writer kept alive as public API — **LOW (footgun)**
 
 `config.py:888‑904` dumps via `yaml.safe_dump` — which strips every comment, reorders nothing but
@@ -432,6 +449,7 @@ Unlike ACA, nothing here warrants a multi-slice program. Map:
 | ~~SYS-5 `/api` 404 guard in SPA fallback~~ | XS | **✅ DONE.** Shipped as the string guard, then re-implemented as real routes at D55 when the catch-all was deleted — see the entry. |
 | ~~SYS-19 root-level `dist` files served as `text/html`~~ | S | **✅ DONE.** D55 (`e5f6925`→`59cd32a` on main): native `app.frontend()` replaces the mount + catch-all. |
 | SYS-6 fence `save_settings` | XS | Opportunistic. |
+| SYS-20 sanitize `GIT_*` env at `GitMemoryBackup._run` | XS | Latent — needs a launcher-level env leak to bite; the gate's own leak fixed in `_gate.sh` (v1.5.1). |
 | SYS-9.2 editor `loadSkills()` verify · SYS-18a kit-class comments | XS | Opportunistic. |
 | SYS-3 overlay-at-read for tool overrides | M | **Still open, unscheduled.** The *race* was closed 2026-07-20 (`f0bbef4`: `PUT /api/settings` 409s on a `tool_overrides` patch while a turn is live). The structural inversion — resolve overrides at `to_openai_tools`/catalog time so specs are immutable and `tool_spec_orig` disappears — is now a standalone refactor; ACA is closed, so "decide inside Slice 2" no longer applies. |
 | SYS-2 Deps split / context-injected ActionService | M | **Still open, unscheduled** — its parking slice (ACA Slice 3) shipped 2026-07-18 without it and Phase 12 has closed. Design debt, nothing blocked; pick it up opportunistically with the next lifespan/`main.py` wiring change. |
