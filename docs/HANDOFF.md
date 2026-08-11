@@ -117,7 +117,9 @@
 >
 > **E3 (banner tri-state) built by Opus from the pinned brief; 6 commits `06523ce..70cf9b2`
 > (= HEAD), full gate 6/6 at both waves, FE tests 2036, capsule fence byte-identical.** What
-> shipped: the `banner` seg (on·minimal·off, default on, theme-wide, NO showWhen; desc rides 開催
+> shipped: the `banner` seg (on·minimal·off, default on *(superseded SAME SESSION — the owner
+> ruling further down flipped the shipping default to `minimal`; §12.6's table + the E4 docs fold
+> carry it)*, theme-wide, NO showWhen; desc rides 開催
 > so zero new glyphs) · read ONCE in GachaFleet, `off` = slot-null UNMOUNT · the SEVENTH body
 > stamp `data-gc-banner` · off top-space null via `.tab > .gc-track-head` (seat-scoped, beats
 > poster's head pad on specificity) · `minimal` = the re-authored strip (tag 7/display 16/pills/
@@ -166,7 +168,8 @@
 > READ IT before E3.** Also this session: pegasus/`3` framed at face height (per-entry roster
 > `focus`, `f400d1c`) + **ROADMAP H2** banks the owner's visual art manager (upload + visual
 > crop for every selectable image — "specify for later", owner). State: `alt-fleet` local-only
-> (~50 commits, ZERO pushed; prod untouched at v1.5.0) · FE 2027 / full gate 6/6 · dev units
+> (~50 commits, ZERO pushed; prod untouched at v1.5.0) · FE 2027 *(E4 correction: the true
+> post-E2 count was 1999 — GACHA_PLAN's E2 bullet carries the fix)* / full gate 6/6 · dev units
 > STOPPED at close · fresh-session Codex runs = setsid-detach + Monitor, never plain
 > background-Bash (it killed a full run again).
 >

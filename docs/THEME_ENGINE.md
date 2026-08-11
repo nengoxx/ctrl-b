@@ -1506,8 +1506,9 @@ the semantic contract, so they're portable across any contract-providing theme.
 
 1. **Root-pinned (prop injection)** — the theme's `Root` passes the variant component straight into the layout
    (`DefaultRoot Fleet={CosmosFleet}`). **No registry, no setting.** Use when a theme has exactly ONE variant for that
-   surface and the user shouldn't choose. Simplest; zero indirection. **This is Fleet today** (each theme pins its
-   signature view).
+   surface and the user shouldn't choose. Simplest; zero indirection. **This is Fleet for every theme except gacha**
+   (each pins its signature view; gacha graduated — see below). The two mechanisms coexist per theme: graduation is
+   per-offering-theme, never a forced migration of the pinned ones.
 2. **User-selectable (registry + per-theme `seg` setting + resolver)** — an open `Record<variantId, Component>` of
    **STABLE module-level references** (never a `lazy()`/fresh identity built in render — React would remount the
    subtree and **reset controller state**), object-lookup **+ a default fallback** (unknown/removed id degrades, never
@@ -1518,8 +1519,10 @@ the semantic contract, so they're portable across any contract-providing theme.
 
 **Graduation path:** a surface starts Root-pinned and **graduates** to user-selectable the moment ≥2 variants + a user
 choice are actually wanted (the second-instance trigger). Composer has **graduated in code (2026-07-11)** —
-the full catalog is live and user-picked; **Fleet stays Root-pinned** — and cosmos's orbital fleet is therefore
-*untouched* — until a theme genuinely offers a fleet *choice*. Don't pre-graduate a surface that only has one variant
+the full catalog is live and user-picked. **Fleet graduated 2026-08-08 (gacha alt-fleet E0, D31 record):** gacha
+offers a real fleet choice (`fleetLayout` seg — capsule/poster/cover, three theme-owned variants registered in its
+lazy chunk over the shared resolver). Cosmos's orbital fleet and every other theme's pinned Fleet are *untouched* —
+graduation adds the registry path for the offering theme only. Don't pre-graduate a surface that only has one variant
 per theme; the prop is correct and cheaper.
 
 > **✅ As-built status (2026-07-11 — supersedes the QH 2026-07-07 spec-only banner):** the machinery below
@@ -1532,17 +1535,36 @@ per theme; the prop is correct and cheaper.
 > DefaultRoot · pinned `PinnedPlanPanel`, mounted by AgentTab). The `DefaultRoot Composer={…}` prop is
 > REMOVED (D30's banner covers the history). Fleet remains the one Root-pinned multi-impl surface.
 
-**The factory is concrete-first.** There will be exactly ONE user-selectable surface at first (Composer), so its
-registry + resolver get built **concretely** in `kit/composer/` (`composerVariants` map + `composerLayoutSetting`
-spec + `ThemedComposer` resolver). The generic `createSurface(name, fallback)` factory below is the **extraction
-target for the SECOND user-selectable surface** (rule of three) — write it then, by factoring the two identical
-concretes, not speculatively for one:
+**The factory is concrete-first.** There was exactly ONE user-selectable surface at first (Composer), so its
+registry + resolver were built **concretely** in `kit/composer/` (`composerVariants` map + `composerLayoutSetting`
+spec + `ThemedComposer` resolver). The clause held: the generic factory was written only when the SECOND
+user-selectable surface arrived. **✅ EXTRACTED 2026-08-08 (gacha alt-fleet E0):** `createSurface` in
+`src/theme-engine/surface.ts`, produced by factoring the composer concrete — composer re-pointed zero-churn behind
+its existing tests, gacha's `fleetSurface` is the second consumer:
 ```ts
-// FUTURE (extract on the 2nd user-selectable surface, not before):
-const composer = createSurface<ComposerSlots>("composer", KitComposer); // name = the per-theme setting key
-composer.register("docked", SheetComposer);                            // stable module-level ref
-// <composer.Themed {...slots}/>  → resolves active theme → its "composer" setting → variant, fallback-safe
+// src/themes/gacha/fleetSurface.ts — the real second consumer
+export const fleetSurface = createSurface<GachaTrackProps>("fleetLayout", "capsule", GachaTrack);
+fleetSurface.register("poster", GachaPoster);  // stable module-level refs, registered at module scope
+fleetSurface.register("cover", GachaCover);
+// resolver hook → active theme → its "fleetLayout" setting → variant; unknown/stale ids degrade to "capsule"
 ```
+
+### Conditional setting visibility — the `showWhen` contract (E0, 2026-08-08 — D52 ledger addendum 2)
+
+A ThemeDef settings row may declare `showWhen?: { key: string; is: string | string[] }` — the row renders in
+Appearance only while a SIBLING seg setting resolves to one of the named values (gacha's `posterName` shows only
+under `fleetLayout: "poster"`). The contract, enforced by the themeContract checker for every registered theme:
+
+- **The controller must be a DECLARED sibling `seg`** of the same theme — never a switch (string `is` can't match a
+  boolean; an enable-toggle would be a different feature), never `showWhen`-conditional itself (**no chains**), never
+  a self-reference, and every `is` value must be one of the controller's declared options (`is` non-empty).
+- **Declaration order is render order:** a conditional row is declared IMMEDIATELY AFTER its controller, so the pair
+  reads as one unit in Conf.
+- **Visibility is a render concern ONLY — hidden ≠ cleared.** A hidden row's stored value is never pruned; it keeps
+  syncing in the appearance doc and reappears with its old pick when the controller returns.
+- **Fail-open belts** in `settingRowVisible` (pure, exported, unit-tested): an undeclared or self-referential
+  controller shows the row rather than silently losing it — the contract test makes both unreachable for a
+  registered theme; the belts cover unregistered/corrupt shapes.
 
 ### How to extend — the additive moves (no churn to existing code)
 

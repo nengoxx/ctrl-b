@@ -1615,7 +1615,20 @@ So the four cases fall out with no special-casing: base = `<DefaultRoot/>`; base
 
 **Deferred (seams ready).** `SheetComposer` styling (vapor-peek look, no drag — reuse `useComposer`); a live composer-style user-setting; the keyboard+plan-sheet scroll hardening (ISSUES.md — fix only if it recurs).
 
-## D31 — Swappable Surfaces: tokens vs component-variants vs bespoke (the element-extension routing rule) ✏️ LOCKED 2026-06-29
+## D31 — Swappable Surfaces: tokens vs component-variants vs bespoke (the element-extension routing rule) ✏️ LOCKED 2026-06-29 · ✅ FLEET GRADUATED 2026-08-08
+
+> ✅ **FLEET GRADUATION EXECUTED 2026-08-08 (gacha alt-fleet E0 — GACHA_PLAN §12.6 ruling 1; the
+> trigger this entry's own mechanism text predicted):** Fleet became the SECOND user-selectable
+> Surface the moment a theme genuinely offered a fleet choice — gacha's `fleetLayout` seg
+> (capsule/poster/cover). Per the rule-of-three clause below, `createSurface` was **extracted by
+> factoring the composer concrete** (composer re-pointed zero-churn behind its existing tests +
+> a behavior-parity fence), and gacha registers its three variants THEME-OWNED in its lazy chunk.
+> **Every other theme's Fleet stays Root-pinned** (cosmos untouched; frontier later = register +
+> skin) — the two selection mechanisms coexist per theme, exactly as designed. The council round
+> overruled R25 §Q2d's axis-not-Surface lean with this entry's own trigger text (≥2 real variants
+> + real user choice; Q2d carries the correction banner). The port's one engine change beyond the
+> extraction — `showWhen` conditional setting visibility — is ledgered in D52 and contracted in
+> THEME_ENGINE §14.14.
 
 **Context.** We are expanding BOTH the theme set AND the themeable elements within themes (composer variants, custom Fleet views like cosmos', future surfaces). We need ONE locked rule for how a new element/variant is added, so the system stays extensible without rotting into either failure mode: over-abstraction (every region a pluggable registry — the "wrong abstraction") or hardcoded structural divergence that should be a clean variant. This generalizes D30 (composer composition) into the system-wide contract. Web-researched + verified against the actual code before locking.
 
@@ -3915,7 +3928,14 @@ then).
   — beyond the original closed list): `ComposerSlots.placeholder?: string`** — a theme-fillable
   composer hint (last-defined-wins scalar on the existing theme→composer contract object; each
   variant's original string is the fallback, other themes byte-identical; gacha fills the
-  prototype's コマンド入力… from `GACHA_COPY`). Shipped `0bb0b51`.
+  prototype's コマンド入力… from `GACHA_COPY`). Shipped `0bb0b51`. **ADDENDUM 2 (the alt-fleet
+  port's ONLY engine change — GACHA_PLAN §12.6 ruling 2, shipped at E0 2026-08-08):
+  `showWhen?: { key, is }`** — conditional visibility on ThemeDef settings rows (gacha's
+  `posterName` renders only under `fleetLayout: "poster"`). Additive on the existing union,
+  every other theme byte-identical; the full contract (seg-controller-only, no chains,
+  declare-after-controller, hidden ≠ cleared, fail-open degradations) lives in THEME_ENGINE
+  §14.14 and is enforced by the themeContract checker. *(The E0 `createSurface` extraction +
+  Fleet graduation are D31's record, not a D52 ledger item.)*
 - **Config + data shape:** roster lives at **`themes: {gacha: {roster: […], slots: {…}}}`**
   — a FEATURE-named top-level map keyed by theme id (the D48 `providers` precedent; a
   `theme_gacha:` sibling key is the banned shape). One entry object per character

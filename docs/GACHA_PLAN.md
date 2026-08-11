@@ -3211,7 +3211,7 @@ ruling.
 |---|---|---|---|---|
 | `fleetLayout` | seg | `capsule` · `poster` · `cover` | `capsule` | Labels/desc = §12.3⑤, STILL OPEN — picker copy comes from `copy.ts` (non-ASCII fence) and the desc carries the truthful cover×no-appbar pairing sentence |
 | `posterName` | seg | `plate` · `blade` | **`blade`** (owner) | `showWhen: {key:"fleetLayout", is:"poster"}` |
-| `banner` | seg | `on` · `minimal` · `off` | `on` | Theme-wide, read ONCE in GachaFleet — the `starMode` shape. Cover's strapline seat IS the strip (owner-confirmed): under cover, `on`≡`minimal`. `minimal`/`off` also restyle the CAPSULE track's banner — accepted by design, E3 renders + tests capsule under both |
+| `banner` | seg | `on` · `minimal` · `off` | ~~`on`~~ **`minimal`** (owner, E3 walk 2026-08-09 — supersedes this table's signed `on`: "looks better than the full banner"; `on` stays the BASE form the stylesheet declares, `minimal` is the shipping default) | Theme-wide, read ONCE in GachaFleet — the `starMode` shape. Cover's strapline seat IS the strip (owner-confirmed): under cover, `on`≡`minimal`. `minimal`/`off` also restyle the CAPSULE track's banner — accepted by design, E3 renders + tests capsule under both |
 
 **The ONE engine change:** `showWhen?: {key; is}` on the settings-field base (the `swatch`
 additive-slot precedent), honored at exactly one ConfTab point **through `themeRowValue`** (never
@@ -3438,7 +3438,8 @@ build → self-audit → Codex round → owner pause):**
 - **E2 — COVER, complete with its value** *(✅ SHIPPED + REVIEW-CLOSED **SHIP** 2026-08-08 late
   night, same day as the E1 close; `9077a76..ad28c19` on `alt-fleet` — 9 commits: build 4 · the
   render-audit + owner-wave fix `270bb37` · the Codex-round pair `68490e2`/`fc5d8d9` · the
-  confirm-round pair `9afca9c`/`ad28c19`. Opus build from the pinned brief; FE tests 1901→2027,
+  confirm-round pair `9afca9c`/`ad28c19`. Opus build from the pinned brief; FE tests 1901→1999
+  *(E4 correction: this record originally said 2027 — the true pre-E3 baseline was 1999)*,
   full gate 6/6 at every wave; local-only, nothing pushed. **Same-session pre-slice item:**
   pegasus/`3` framed at face height via the per-entry roster `focus` seam (`f400d1c`, owner ask —
   one value re-aims every surface, the entry-4 precedent; capsule fence snapshot updated with
@@ -3511,7 +3512,34 @@ build → self-audit → Codex round → owner pause):**
   `--cv-stamp-top` · `COVER_HERO_SHIFT` 20) = E5's device round.)*: ruling-9 anatomy · promote +
   develop ceremonies + focus restoration · `fleetLayout` gains `cover` · the R25 ⑬ pins +
   N=1/N=0 renders.
-- **E3 — banner tri-state, complete with its setting:** `off` unmount + top-space null +
+- **E3 — banner tri-state, complete with its setting** *(✅ SHIPPED + REVIEW-CLOSED **SHIP** +
+  OWNER-WALKED LIVE 2026-08-09; 10 commits `06523ce..6f24293` on `alt-fleet` — Opus build from
+  the pinned brief · the Codex fix pair `80fa8da`+`f6ba4ed` · the scoped confirm + doc-LOW close.
+  FE tests 1999→2041, full gate 6/6 at every wave. What shipped: the `banner` seg
+  (on·minimal·off, theme-wide, NO showWhen; desc rides 開催, zero new glyphs) · read ONCE in
+  GachaFleet, `off` = slot-null UNMOUNT · the SEVENTH body stamp `data-gc-banner` · off
+  top-space null via `.tab > .gc-track-head` (seat-scoped, beats poster's head pad on
+  specificity) · `minimal` = the re-authored strip (tag 7/display 16/pills/14×5 pips, caption
+  dropped; dot hit-box −9/−5 for an 18px target), height token `--gc-bn-h-min: 88px` → E5's
+  seeded-numbers list · the scroll-reset effect BUILT WHOLE (the brief's "extend the layout
+  half" was wrong — none existed): one layout+banner geomKey, LATCHES until the fleet tab is
+  showing, fires in `queueMicrotask` to beat DefaultRoot's child-first restore. **Main-seat
+  ruling (`70cf9b2`): the cover RE-FLOWS under `off`** — the lab's walked 126/116 ported as
+  `--cv-side-floor: strap+24` / `--cv-herocopy: strap+14` (the pair INVERTS vs on-state 100/110,
+  pinned both ways); the eyeball-① enumeration consciously amended via the exact two-way
+  `COVER_REFLOW` exception list. **OWNER RULING (live walk): default = `minimal`** — the table
+  above carries the supersession; `on` stays the BASE form. **Codex round 1 = SHIP WITH FIXES:**
+  MED — the scroll ordering had NO real-shell pin (the new tests mounted a synthetic scroller so
+  DefaultRoot's restore never ran; fixed mirroring `sectionScroll.test.tsx` with the REAL
+  DefaultRoot under StrictMode — the microtask→direct-call mutation now FAILS on the shell's
+  stale restore) · LOW, a real defect — the latch fired on net-zero hidden round trips
+  (`shownGeomRef` now compares against the geometry LAST SHOWN, faithful to ruling 6) → both
+  mutation-proven → scoped confirm SHIP + 1 doc-only LOW folded (`on` = base form / `minimal` =
+  shipping default). Eyeball-banked → E5: the minimal wallpaper shadow SKIRT (88px strip wearing
+  the 232px band's shadow; a test pins wallpaper rules blind to the banner axis) · the lab strip
+  scrim non-port · the pre-existing `.gc-banner-nav` overlap. Durable: a scroll-restore race is
+  only pinned by the REAL restoring shell — a synthetic scroller tests the effect against
+  nothing.)*: `off` unmount + top-space null +
   scroll-reset · the re-authored `minimal` strip + token height · capsule rendered + tested under
   BOTH non-default states · timer/wallpaper/state-matrix tests (R25 ⑰–⑱).
 - **E4 — cross-layout hardening:** the remaining R25 Q7 pins (⑭ per-layout a11y invariant ·
