@@ -223,7 +223,7 @@ pattern — R29 field research, which also probe-verified two hazards a `GIT_DIR
 miss: ambient `GIT_AUTHOR_*` overrides `-c user.*`, and `GIT_CONFIG_PARAMETERS` injects arbitrary
 config including `core.hooksPath`). Pinned by a poisoned-env test verified to fail without the fix.
 
-### SYS-6 · `save_settings` is a comment-destroying writer kept alive as public API — **LOW (footgun)**
+### SYS-6 · `save_settings` is a comment-destroying writer kept alive as public API — **✅ DONE** (`86c363f`, 2026-07-28: renamed `save_settings_comment_stripping_for_tests`, out of `__all__`)
 
 `config.py:888‑904` dumps via `yaml.safe_dump` — which strips every comment, reorders nothing but
 expands defaults, and would wreck the operator's curated `config.yaml`. Grep-verified it is
@@ -254,11 +254,10 @@ caching Settings projections (that would break the live-read contract).
 
 1. ~~`fillComposer` reaches for `#cmd-input` by DOM id…~~ **Superseded by SYS-13** — the v1.1 deep
    pass found this is not a fragile contract but an actual bug on today's composers.
-2. `loadSkills`/`loadAgents` populate module-level sets **once at import** (`lib/composer.ts:47,66`
-   — the comment says "refreshed each time the composer module is used," which import semantics
-   don't deliver). A skill/agent added mid-session may route as "unknown command" until reload
-   unless the editors re-call the loaders — verify the Conf editors do (and if so, note it there;
-   if not, one `loadSkills()` call after a successful save fixes it).
+2. ~~`loadSkills`/`loadAgents` populate module-level sets **once at import**~~ **✅ CLOSED** —
+   shipped 2026-07-28 (`4dd7f7c`) and re-verified 2026-08-12: skill CRUD (`useSkills.ts`), agent
+   CRUD (`useAgents.ts`) and settings saves (`useSettings.ts`) all re-fire the loaders, each call
+   site commented; per-loader generation counters keep the newest-started response authoritative.
 3. `store/chat.ts` uses raw `fetch` while the rest of the app uses `api/client.ts` — justified for
    SSE (streaming body) but `initChat`/`reloadChat`/`compactThread` are plain JSON calls that
    bypass the client's error-detail surfacing. Consistency nit, not a bug.
@@ -426,7 +425,8 @@ single-user-benign; they matter as *robustness posture* for production.
 (`.kit-appbar`/`.kit-composer`, `DefaultRoot.tsx:76,94`) — same implicit-contract class as the old
 SYS-9.1, but *internal* to the kit (both producer and consumer live in `theme-engine/kit/`), so
 convention is acceptable; a one-line comment on each class in `kit.css` naming the dependents
-would make it survive refactors. (b) DefaultRoot hardwires the four tab bodies — already a
+would make it survive refactors — **✅ DONE 2026-08-12**: both `kit.css` section headers now name
+the measuring effect and the custom property it publishes. (b) DefaultRoot hardwires the four tab bodies — already a
 *documented deliberate* deferral (`tabs.ts` header: the id→body registry is a named future seam,
 D31 no-speculative-registry). Not a finding; recorded so nobody "fixes" it early. (c) The e2e
 suite is smoke-scale (42-line a11y, 159-line flows, 31-line render vs a 3-theme × modes × 2-browser
@@ -448,12 +448,12 @@ Unlike ACA, nothing here warrants a multi-slice program. Map:
 | ~~SYS-16 pull the ruff `ASYNC`+`B` ratchet (+ fix wave)~~ | S–M | **✅ DONE.** Ratchet pulled 2026-07-16 (`f5c8e05`); the deferred blind-spot list closed 2026-07-20 by the deep pass + the two-invariant AST guard (`1b47e50`+`f550a2d`) — see the SYS-16 addendum. Pyright `strict` = still its own post-emma slice. |
 | SYS-15 coverage reporting (measure-only) + fleet/svc characterization tests | M | **PARTLY DONE** — the Compactor/adapter/subagent halves rode ACA Slices 6/1/3 (all shipped). What remains is coverage measurement (it adds deps) + the fleet/svc characterization tests. |
 | ~~SYS-4 SECURITY_MODEL dev-exposure paragraph + `target_port` default decision~~ | S | **✅ DONE** — both halves closed by the QH pass: the §2.1 paragraph (QH-6, `4c30c70`) and the `target_port` flip 5173→5433 (QH-11). |
-| SYS-17 voice caps (tts text / stt upload) | XS | Opportunistic robustness posture. |
+| ~~SYS-17 voice caps (tts text / stt upload)~~ | XS | **✅ DONE 2026-07-28** (`b0d78c4`, the v1.3.1 sweep) — `stt.max_upload_bytes` (cap+1 read) + `tts.max_text_chars`, both config tunables. Table caught up 2026-08-12. |
 | ~~SYS-5 `/api` 404 guard in SPA fallback~~ | XS | **✅ DONE.** Shipped as the string guard, then re-implemented as real routes at D55 when the catch-all was deleted — see the entry. |
 | ~~SYS-19 root-level `dist` files served as `text/html`~~ | S | **✅ DONE.** D55 (`e5f6925`→`59cd32a` on main): native `app.frontend()` replaces the mount + catch-all. |
-| SYS-6 fence `save_settings` | XS | Opportunistic. |
+| ~~SYS-6 fence `save_settings`~~ | XS | **✅ DONE 2026-07-28** (`86c363f`) — renamed `save_settings_comment_stripping_for_tests`, kept out of `__all__`. Table caught up 2026-08-12. |
 | ~~SYS-20 sanitize `GIT_*` env at `GitMemoryBackup._run`~~ | XS | **✅ DONE 2026-08-12** — prefix-deny + `GIT_EXEC_PATH` allowlist per R29 field research; poisoned-env regression test. See the entry. |
-| SYS-9.2 editor `loadSkills()` verify · SYS-18a kit-class comments | XS | Opportunistic. |
+| ~~SYS-9.2 editor `loadSkills()` verify · SYS-18a kit-class comments~~ | XS | **✅ DONE** — SYS-9.2 shipped 2026-07-28 (`4dd7f7c`: skill/agent CRUD + settings saves re-fire all three loaders); SYS-18a contract comments added 2026-08-12. |
 | SYS-3 overlay-at-read for tool overrides | M | **Still open, unscheduled.** The *race* was closed 2026-07-20 (`f0bbef4`: `PUT /api/settings` 409s on a `tool_overrides` patch while a turn is live). The structural inversion — resolve overrides at `to_openai_tools`/catalog time so specs are immutable and `tool_spec_orig` disappears — is now a standalone refactor; ACA is closed, so "decide inside Slice 2" no longer applies. |
 | SYS-2 Deps split / context-injected ActionService | M | **Still open, unscheduled** — its parking slice (ACA Slice 3) shipped 2026-07-18 without it and Phase 12 has closed. Design debt, nothing blocked; pick it up opportunistically with the next lifespan/`main.py` wiring change. |
 | SYS-7 polling tunables → `ServerCfg` | S | Fold into the ROADMAP D3 (`vpn_host`) slice. |

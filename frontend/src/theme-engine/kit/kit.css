@@ -185,7 +185,9 @@ body[data-motion="reduced"] .kit .tab.active {
   animation: none; /* §14.11: motion-gated like every other .kit animation */
 }
 
-/* ── app bar (opaque sticky; brand + conn badge + auto-tts toggle) ── */
+/* ── app bar (opaque sticky; brand + conn badge + auto-tts toggle) ──
+ * The class name is a CONTRACT (SYS-18a): DefaultRoot's measurement effect querySelects `.kit-appbar`
+ * to publish `--appbar-h` — rename the class and the plan tab pins under a stale height. */
 .kit-appbar {
   position: sticky;
   top: 0;
@@ -496,7 +498,9 @@ body[data-motion="reduced"] .kit-tab-ind {
   text-transform: uppercase;
 }
 
-/* ── composer (in-flow flex child; rounded surface; textarea + mic + send) ── */
+/* ── composer (in-flow flex child; rounded surface; textarea + mic + send) ──
+ * The class name is a CONTRACT (SYS-18a): DefaultRoot's measurement effect querySelects `.kit-composer`
+ * to publish `--composer-h` — rename the class and the scroller's bottom padding goes stale. */
 .kit-composer {
   /* floats OVER the scrolling content, anchored above the nav bar, inset from the screen edges so the
    * content shows in the gaps around it; frosted so the typed text stays readable over the busy content
