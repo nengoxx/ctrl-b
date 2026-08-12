@@ -129,10 +129,10 @@ per-OS shell · `memory._fsync_dir` no-op · `tools/check.py`), pinned by `test_
 
 ## 5. Frontend architecture
 
-Mobile-first **React + TS + Vite** PWA porting the **Vapor** design
-([`design/prototypes/variations/vapor.html`](./design/prototypes/variations/vapor.html) = the D7 visual
-spec). TanStack Query for fleet polling + action mutations; lucide-react icons; a token-driven
-**theme-engine** (Swappable Surfaces, DECISIONS D31). Layers: `store/` (dep-free createStore) · `hooks/` ·
+Mobile-first **React + TS + Vite** PWA. TanStack Query for fleet polling + action mutations;
+lucide-react icons; a token-driven **theme-engine** (Swappable Surfaces, DECISIONS D31 —
+`docs/THEME_ENGINE.md`; cosmos default, per-theme fidelity D7, theme build records in their plan
+docs). Layers: `store/` (dep-free createStore) · `hooks/` ·
 `components/`/`tabs/` · `lib/`. Bottom-tab nav (Fleet/Agent/Utils/Conf), per-host service rows, a shared
 composer with push-to-talk + auto-TTS. Net-new UI follows `docs/VAPOR_PATTERNS.md`.
 
@@ -187,8 +187,8 @@ When adding an execution path, prefer a new **typed action** over widening a raw
 - This is a **single-user homelab tool**, not production SaaS. Favor simple, direct solutions over
   enterprise scaffolding. But **never weaken the security boundary** in §6.
 - When asked to "make the dashboard better," default to **this repo** and the doc map
-  (`docs/HANDOFF.md` → `ROADMAP` → `DECISIONS` → `DESIGN`/`ARCHITECTURE` → `TODO`), porting the
-  **Vapor** design; don't re-theme anything in `archive/`.
+  (`docs/HANDOFF.md` → `ROADMAP` → `DECISIONS` → `DESIGN`/`ARCHITECTURE` → `TODO`); net-new UI
+  follows `docs/VAPOR_PATTERNS.md`; don't re-theme anything in `archive/`.
 - **Don't duplicate existing patterns — in either direction.** Before introducing new code or a new
   dependency for X, find how X is already done here and extend it. Two failure modes to avoid: writing
   *different code for similar things* (a parallel implementation that bypasses an existing pattern — e.g. an

@@ -16,8 +16,8 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
 - This is a **single-user homelab control panel** for waking/monitoring/managing PCs over LAN +
   Tailscale, with a tool-using LLM agent + voice. No internet exposure; Tailscale-only.
 - **The app IS this repo (ctrl-b v1.0)** — a mobile-first React/TS/Vite **PWA** backed by a
-  **FastAPI + Uvicorn** service (`backend/app/main.py`, port 5433), porting the **Vapor** design
-  (`design/prototypes/variations/vapor.html`). **START AT [`docs/HANDOFF.md`](./docs/HANDOFF.md)** —
+  **FastAPI + Uvicorn** service (`backend/app/main.py`, port 5433), themed by the token-driven
+  theme engine (`docs/THEME_ENGINE.md`; cosmos default). **START AT [`docs/HANDOFF.md`](./docs/HANDOFF.md)** —
   the single source for current status + next steps. *(Dev docs say "v2"/"dashboard_v2" — the
   development name for what ships as v1.0.)* The old Flask app is in `archive/v0.1-flask/`.
 
@@ -25,8 +25,8 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | File | Use it for |
   |---|---|
   | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | Current status + the locked next slice. **Always read first.** |
-  | [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Locked architectural choices (D1–D34) — don't relitigate. |
-  | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | **Deployment profiles + `$CTRLB_HOME` + the OS-branch allowlist + the Vapor-fidelity mandate** (re-scoped 2026-07-07 — layers/data/API live in DESIGN/SPEC; its §1–§4 are pointer stubs). |
+  | [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Locked architectural choices (D-entries) — don't relitigate. |
+  | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | **Deployment profiles + `$CTRLB_HOME` + the OS-branch allowlist** (re-scoped — layers/data/API live in DESIGN/SPEC; its §1–§5 are pointer stubs). |
   | [`docs/DESIGN.md`](./docs/DESIGN.md) | Concrete code design: data structures, registry, agent loop, SSE wire protocol, extension cookbook. |
   | [`docs/SPEC.md`](./docs/SPEC.md) | Visual one-stop system spec (C4 diagrams, flows, inventories) — complements ARCHITECTURE/DESIGN; on conflict DECISIONS wins. |
   | [`docs/TODO.md`](./docs/TODO.md) | Phased checkbox plan — find the right phase, follow the slice. |
@@ -35,11 +35,11 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/VAPOR_PATTERNS.md`](./docs/VAPOR_PATTERNS.md) | Vapor design tokens/components — read **before** styling any net-new UI. |
   | [`docs/RESEARCH.md`](./docs/RESEARCH.md) | Library/version pins + sourced rationale (incl. the mic secure-context analysis). |
   | [`docs/research/`](./docs/research/) | **Field-research dossiers** — how OTHER projects solve a problem (peer class: opencode/Claude Code/Codex/open-webui/LibreChat/…). **Buy a finding once**: read here before re-commissioning a pass. Index + conventions in its README. |
-  | [`docs/UPDATE_PLAN.md`](./docs/UPDATE_PLAN.md) | The update/migration architecture (config-shape migration + `update.sh`) — **DESIGN v3, ready to build**. Read before touching `app/config_migration`, `install.sh` or the release path. |
-  | [`docs/AUTOMATIONS_PLAN.md`](./docs/AUTOMATIONS_PLAN.md) | The A3 scheduled-automations design (D49, **LOCKED 2026-07-30, ready to build** — TODO Phase 14). Read before touching the scheduler, headless runs, or attribution. |
-  | [`docs/VAPOR_ASSIMILATION_PLAN.md`](./docs/VAPOR_ASSIMILATION_PLAN.md) | Phase 16: vapor's COMPLETE migration onto the kit + cosmos default (**✅ COMPLETE 2026-08-02**, D51 — historical record + per-slice as-built appendix). |
-  | [`docs/GACHA_PLAN.md`](./docs/GACHA_PLAN.md) | Phase 17: the gacha theme ("Capsule Arcade") port plan (**✅ LOCKED 2026-08-02, D52** — §8 all ruled + §11 council reconciliation; building G0–G6). Read with the FINAL prototype `design/prototypes/gacha/uploads/prot/capsule-arcade/`. |
-  | [`docs/MEDIA_PLAN.md`](./docs/MEDIA_PLAN.md) | Media namespaces v2: frontier art + kit service icons (**✅ COUNCIL-SETTLED 2026-08-05, D53** — ships in v1.5.0, slices M1a–M3 before G6). Read before touching `core/media.py`, the gallery, or any theme's art consumers. |
+  | [`docs/UPDATE_PLAN.md`](./docs/UPDATE_PLAN.md) | The update/migration architecture (config-shape migration + `update.sh`; **✅ built, proven over 4 releases**). Read before touching `app/config_migration`, `install.sh` or the release path. |
+  | [`docs/AUTOMATIONS_PLAN.md`](./docs/AUTOMATIONS_PLAN.md) | The A3 scheduled-automations design + build record (D49, **✅ shipped v1.4.4**). Read before touching the scheduler, headless runs, or attribution. |
+  | [`docs/VAPOR_ASSIMILATION_PLAN.md`](./docs/VAPOR_ASSIMILATION_PLAN.md) | Phase 16 record (**✅** D51): vapor's migration onto the kit + cosmos default; per-slice as-built appendix. |
+  | [`docs/GACHA_PLAN.md`](./docs/GACHA_PLAN.md) | Phase 17 record (**✅** D52, shipped v1.5.0–v1.6.0): the gacha theme + the alt-fleet layouts. Read before touching gacha/alt-fleet surfaces; §7 = the slice ladder + per-slice as-built records. |
+  | [`docs/MEDIA_PLAN.md`](./docs/MEDIA_PLAN.md) | Media namespaces v2 (D53, **✅ shipped v1.5.0**). Read before touching `core/media.py`, the gallery, or any theme's art consumers. |
   | [`docs/UI_AUDIT.md`](./docs/UI_AUDIT.md) | Two-pass frontend audit (perf F1–F13 + a11y/resilience F14–F29). |
   | [`docs/PROMPTS_AUDIT.md`](./docs/PROMPTS_AUDIT.md) | **Every model-facing prompt ctrl-b ships**, classified by editability (PR-# findings) + the §5 shape proposal (unruled). Read before touching any prompt text or adding a new one. |
   | [`docs/SYSTEM_AUDIT.md`](./docs/SYSTEM_AUDIT.md) | Code-verified architecture audit (SYS-# findings; excludes the chat loop). |
@@ -49,11 +49,12 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/DEPLOY_EMMA.md`](./docs/DEPLOY_EMMA.md) | The emma (Linux) deploy runbook + topology (D32). |
   | [`docs/QUALITY.md`](./docs/QUALITY.md) | The code-quality harness (lint/format/typecheck/test + `check-all` + conventions). Read before touching tooling. |
   | [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) | The trust boundary, privilege gate, confirm-tokens, secret handling + safe-defaults checklist. Read before touching anything that executes or handles secrets. |
-  | [`docs/COMPOSER_SURFACE_PLAN.md`](./docs/COMPOSER_SURFACE_PLAN.md) | The Composer Surface build record — **✅ COMPLETE 2026-07-11** (catalog later deduped to `[stacked, sheet, line]` + the `composerSkin` axis, D37). Historical except Phase D's vapor bullet (→ the §14.15.3 ladder). |
-  | [`docs/FRONTIER_PLAN.md`](./docs/FRONTIER_PLAN.md) | The frontier theme (T5) executable plan — design LOCKED 2026-07-07; incl. the SECTION LAYOUT SYSTEM v1 (T5 step 0). |
+  | [`docs/COMPOSER_SURFACE_PLAN.md`](./docs/COMPOSER_SURFACE_PLAN.md) | The Composer Surface build record (**✅**; catalog deduped to `[stacked, sheet, line]` + the `composerSkin` axis, D37). |
+  | [`docs/FRONTIER_PLAN.md`](./docs/FRONTIER_PLAN.md) | The frontier theme (T5) plan + build record (**✅**); incl. the SECTION LAYOUT SYSTEM v1. |
 
-  *Historical records (provenance, not live guidance): `COSMOS_HANDOFF.md` (cosmos build record —
-  live learnings lifted into THEME_ENGINE §14.11/§14.13; still the frontier precedent),
+  *Historical records (provenance, not live guidance): `HANDOFF_ARCHIVE.md` (**frozen session
+  history 2026-05 → 2026-08** — "the HANDOFF block of ⟨date⟩" resolves there), `COSMOS_HANDOFF.md`
+  (cosmos build record — live learnings lifted into THEME_ENGINE §14.11/§14.13),
   `AUDIT_settings.md`, `REORG_PLAN.md`, `external_audit/` (frozen pre-reorg audits).*
 
   When designing a new feature, the canonical flow is: **HANDOFF (where we are) → ROADMAP (is this listed? what seams already exist?) → DECISIONS (any locked choice that constrains it?) → DESIGN/ARCHITECTURE (how does it slot in?) → TODO (which phase owns it? add the slice).** If a feature isn't in any of these, propose where it goes *before* coding.
@@ -130,7 +131,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
 
 Default to this repo and follow the doc map above — `HANDOFF` → `ROADMAP` → `DECISIONS` →
 `DESIGN`/`ARCHITECTURE` → `TODO`. The shape: mobile-first React + TS + Vite **PWA** (TanStack Query,
-lucide-react), porting the **Vapor** design (`VAPOR_PATTERNS.md` governs net-new UI); **FastAPI +
+lucide-react), themed via the theme engine (`VAPOR_PATTERNS.md` governs net-new UI); **FastAPI +
 Uvicorn** backend; **typed-action registry** as the primary execution path plus a guarded `!`
 local-shell escape hatch (Phase 5, **built**; user `!` on by default, the agent's `run_shell`
 off-by-default — `shell.*_exec` toggles; open-terminal provides *remote* shell);

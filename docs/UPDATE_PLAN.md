@@ -14,6 +14,10 @@
 > **Reviews:** Fable ×3 (architecture · integration · A11 code) + Codex `gpt-5.6-sol` ×2. v1 was
 > judged *"not safe to build as written"*; v2 closed the fundamentals; v3 closes the rest. Council
 > record: §9. Owner rulings: §8.
+> **✅ TERMINAL STATUS (noted 2026-08-12): all slices BUILT + RELEASED — first shipped in v1.3.0
+> (2026-07-28); the plain-form `update.sh` since proven with 4 clean runs (v1.4.0 · v1.4.1 ·
+> v1.5.1 · v1.6.0). Living runbook: `deploy/linux/README.md` §Release; per-release records:
+> [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md).**
 
 ---
 

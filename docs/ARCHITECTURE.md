@@ -1,12 +1,12 @@
 # Architecture — ctrl-b
 
-How the pieces fit. Reflects the locked decisions in `DECISIONS.md`. The Vapor prototype
-(`design/prototypes/variations/vapor.html`) is the visual source of truth; the app maps its UI onto
-a real, typed backend. *(Dev docs say "v2"/"dashboard_v2" — the development name for ctrl-b v1.0.)*
+How the pieces fit. Reflects the locked decisions in `DECISIONS.md`. A themed React PWA
+(`THEME_ENGINE.md`; cosmos default) mapped onto a real, typed backend. *(Dev docs say
+"v2"/"dashboard_v2" — the development name for ctrl-b v1.0.)*
 
 > **📌 Role of this doc (re-scoped 2026-07-07, doc-consistency pass).** This began as the pre-build
 > system sketch; the system has since shipped and is specified **as-built** elsewhere. What this doc
-> still **owns**: **§5's pixel-fidelity mandate**, **§6 deployment profiles + the `$CTRLB_HOME` data
+> still **owns**: **§6 deployment profiles + the `$CTRLB_HOME` data
 > root + the OS-branch allowlist** (test-pinned). Everything else is a pointer stub below — the
 > authoritative detail lives in [`DESIGN.md`](./DESIGN.md) (code-level contracts),
 > [`SPEC.md`](./SPEC.md) (verified as-built inventories + C4 diagrams), and
@@ -63,31 +63,15 @@ system prompt, self-curated via the `memory` tool, git-backed per **D26**, store
 
 ## 5. Frontend (React PWA)
 
-> ### ⭐ HARD REQUIREMENT — pixel-exact Vapor fidelity
-> The UI must **match `design/prototypes/variations/vapor.html` exactly** — same look, feel, and
-> motion. This is not "inspired by"; it is a faithful port. Concretely:
-> - **Lift the CSS verbatim** from `vapor.html` (the `:root` + `[data-theme]` variable system) —
->   don't re-derive colors/spacing/radii. Keep all three palettes (**vapor / aqua / ember**).
-> - **Fonts:** JetBrains Mono (UI/body) + Major Mono Display (display) — same weights/sizes.
-> - **All animations preserved:** hero sun bob + retrowave stripes, twinkling stars, moving neon
->   grid, `city`/`mountains` skyline SVGs, status LED heartbeat, mini-equalizer bars, the live
->   waveform canvas, the sliding tab-bar indicator, shimmer/glow effects.
-> - **Exact components:** appbar w/ logo lozenge + auto-TTS toggle; hero "now monitoring" panel +
->   dots; device rows w/ expandable dropdown (services + kv details + wake/stop mask-icon buttons);
->   fleet summary; chat bubbles incl. command bubble; `.util` tool cards; Conf rows/segments/
->   switches; the fixed composer (textarea + mic + send) above the bottom tab bar.
-> - **Same toggles** the prototype exposes (theme, app-mark logo/ring, skyline city/mountains, hero
->   on/off, live waveform) live in Conf → Appearance and behave identically.
-> - Verify side-by-side against the prototype at phone width before a tab is "done." Componentize
->   into React, but the rendered result should be visually indistinguishable from `vapor.html`.
->
-> *(This mandate now applies **per theme** — every theme is a faithful execution of its own
-> prototype; see `THEME_ENGINE.md`. Vapor stays byte-frozen per the assimilation ladder §14.15.3.)*
+Superseded sketch — the frontend shipped Phases 2–8; as-built structure: **`SPEC.md` §7** (render
+discipline) · **`DESIGN.md` §13** (TS state) · **`THEME_ENGINE.md` §14** (the theme layer: tokens ·
+Kit · Surfaces) · **`VAPOR_PATTERNS.md`** (tokens/recipes for net-new UI).
 
-The frontend itself (tabs, composer prefix routing, markdown replies, stores, PWA) **shipped
-Phases 2–8** — as-built structure: **`SPEC.md` §7** (render discipline) · **`DESIGN.md` §13** (TS
-state) · **`THEME_ENGINE.md` §14** (the theme layer: tokens · Kit · Surfaces) ·
-**`VAPOR_PATTERNS.md`** (tokens/recipes for net-new UI).
+Visual fidelity (**D7**) applies **per theme** — every theme is a faithful execution of its own
+prototype; the living bar + build checklist are in **`THEME_ENGINE.md`** (§13 + the §14.13
+slot-in contract; vapor byte-frozen per the §14.15.3 ladder / D51). The original vapor-port checklist that stood here:
+`HANDOFF_ARCHIVE.md` (the standing-mandate block) + git history. Theme build records:
+`VAPOR_ASSIMILATION_PLAN.md` · `COSMOS_HANDOFF.md` · `FRONTIER_PLAN.md` · `GACHA_PLAN.md`.
 
 ## 6. Deployment profiles
 

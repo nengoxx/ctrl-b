@@ -1,6 +1,8 @@
 # AUTOMATIONS_PLAN — A3 scheduled agent automations (design v2, LOCKED)
 
-> **Status: design LOCKED 2026-07-30 (owner-signed same day) — ready to build. Spec authority:**
+> **Status: design LOCKED 2026-07-30 (owner-signed same day); ✅ BUILT + SHIPPED same day as
+> v1.4.4 (TODO Phase 14; record: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) 2026-07-30 blocks).
+> Spec authority:**
 > this file + [`DECISIONS.md` D49](./DECISIONS.md). Build against this, not the ROADMAP sketch.
 > **Provenance:** owner design conversation (rulings below) → three research dossiers
 > ([R7](./research/R7-scheduled-agent-runs.md) scheduler ·
