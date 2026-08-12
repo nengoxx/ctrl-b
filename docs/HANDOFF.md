@@ -38,10 +38,33 @@
 > 5. **Hygiene: the HANDOFF archive sweep** (~665 KB — this file no longer fits a single Read; R21
 >    deferral ④; standalone session).
 > 6. **The R28 installed-icon improvement** — ⏸ owner-gated pickup; R28 §9 is the ready-to-build brief.
+> 7. **Fleet-liveness decoupling from Tailscale** *(NEW 2026-08-12, owner-gated — see the corsair
+>    block below)*: host `online` today = "its Tailscale is up" (bare-name `ip:` resolves via
+>    MagicDNS). Option: DHCP-reserved LAN IP in `ip:` + tailnet name in `vpn_host:` (the D47 seam,
+>    zero code) — or a dual-probe design if the owner wants both vantages. Only if the cold-boot
+>    wake blindness recurs; the owner is watching it first.
 >
-> **Owner-side standing items:** on the phone — fully close + reopen the PWA once to land v1.6.0
-> (the old autoUpdate worker holds it waiting, no toast this one time), eyeball the alt layouts +
-> pickers on prod; the update toast's first real exercise arrives at the NEXT release.
+> **Owner-side standing items:** the update toast's first real exercise arrives at the NEXT release
+> (v1.6.0 landed on the phone — the owner drove the alt layouts on it 2026-08-12). Still owed
+> whenever convenient: eyeball the pickers on prod; watch the next corsair COLD-BOOT wake (shutdown →
+> WOL) — if the tailnet join fails again, path 7 above (or Tailscale unattended mode) is the fix.
+>
+> ## ✅ 2026-08-12 MORNING (Fable) — **the "alt-fleet doesn't un-grey corsair" report INVESTIGATED + CLOSED: NOT a UI bug — fleet liveness rides Tailscale.** Zero code changed; live wake test measured the healthy pipeline end to end.
+>
+> **The report:** owner woke corsair from the new fleet layouts; the card stayed grey (SLEEPING) for
+> minutes while the PC was on. **The verdict:** poster + cover (and capsule) are poll-truthful —
+> `asleep` is pure render off `host.status?.online` (verified with a throwaway offline→online flip
+> test through the real Surface, both layouts passed, test deleted). The grey was TRUE: corsair's
+> `ip:` is the bare name `corsair`, which emma resolves through **Tailscale MagicDNS** to the tailnet
+> IP — so the ping sweep probes the TAILNET, and corsair never joined it during the incident
+> (coordination server: no connection 2026-08-11 21:36Z → 06:08Z next morning, spanning the owner's
+> 04:23Z wake — 3 WOL events logged, zero `host_up`). **The live test (06:07Z, wake from sleep):**
+> WOL → LAN up t+30s → tailnet t+43s → **app online t+43s, the SAME 5s poll tick** → D2-A `host_up`
+> t+90s (2-reply rule). Our polling adds ≤5s; healthy wake→color ≈ 45s. **Owner context:** the failed
+> wake was a COLD BOOT (shutdown the night before; Tailscale not unattended, "runs on boot" per
+> owner); the successful one resumed a logged-in session. Residual open question = why a ~1-min
+> morning login still didn't join the tailnet; owner watches the next cold-boot wake before anything
+> is built. Full detail + option ladder: the `corsair-liveness-rides-tailscale` memory + path 7 above.
 >
 > ## ✅✅✅✅ 2026-08-11 MIDNIGHT (Fable) — **v1.6.0 RELEASED + LIVE ON PROD: the ALT-FLEET feature release** (owner-ordered same session as the E5 pass; the updater's 4th clean plain-form run). **Prod = v1.6.0 @ `fcc42ad`; rollback = `update.sh v1.5.1` exactly (the sw.js floor STANDS — v1.5.1 is both the floor and the target).**
 >
