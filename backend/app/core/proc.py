@@ -22,13 +22,17 @@ class Capture:
     timed_out: bool
 
 
-async def run_capture(argv: list[str], *, timeout_s: float, cwd: str | None = None) -> Capture:
+async def run_capture(
+    argv: list[str], *, timeout_s: float, cwd: str | None = None, env: dict[str, str] | None = None
+) -> Capture:
     """Exec `argv` (no shell), capturing combined stdout+stderr; kill + reap on timeout. Raises
     `OSError`/`ValueError` only if the process can't *start* (binary missing / bad cwd) — the caller
-    decides how to surface that. A non-zero exit is a normal `Capture`, not an exception."""
+    decides how to surface that. A non-zero exit is a normal `Capture`, not an exception. `env`
+    replaces the child's environment; `None` inherits the parent's (the default)."""
     proc = await asyncio.create_subprocess_exec(
         *argv,
         cwd=cwd,
+        env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )

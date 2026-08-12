@@ -12,6 +12,7 @@ What's exercised:
   6. disabled     — git_backup.enabled off → writes work, no repo.
   7. reconcile    — a manual/external edit to a file is captured by reconcile() as its own commit.
   8. .gitignore   — written at init and lists the secret/db patterns.
+  9. env sanitization (SYS-20) — poisoned ambient `GIT_*` vars can't retarget the repo or the identity.
 
 Skipped cleanly when `git` is not installed.
 """
@@ -121,6 +122,40 @@ def test_commit_identity_is_configured_not_global() -> None:
         root = tmp / "memories"
         assert _git(root, "log", "-1", "--format=%an") == "ctrl-b memory"
         assert _git(root, "log", "-1", "--format=%ae") == "memory@ctrl-b.local"
+
+
+def test_poisoned_git_env_cannot_retarget_repo_or_identity() -> None:
+    """SYS-20 — ambient `GIT_DIR` overrides `git -C` and `GIT_AUTHOR_*`/`GIT_CONFIG_PARAMETERS`
+    override `-c`, so a launcher's leaked env (git exports these to hooks) must be stripped."""
+    with _workspace() as tmp:
+        decoy = tmp / "decoy"
+        subprocess.run(["git", "init", "-q", str(decoy)], check=True)
+        poison = {
+            "GIT_DIR": str(decoy / ".git"),  # absolute, like git's export from a linked worktree
+            "GIT_WORK_TREE": str(decoy),
+            "GIT_INDEX_FILE": str(decoy / ".git" / "index"),
+            "GIT_AUTHOR_NAME": "Poisoned",
+            "GIT_CONFIG_PARAMETERS": "'user.email'='poisoned@env'",
+        }
+        saved = {k: os.environ.get(k) for k in poison}
+        os.environ.update(poison)
+        try:
+
+            async def go():
+                _s, prov, _b, agent = _build()
+                await prov.write(agent, "memory", "add", "immune to ambient git env")
+
+            asyncio.run(go())
+        finally:  # restore (not just pop) so a pre-existing ambient value survives this test
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        root = tmp / "memories"
+        assert "immune to ambient git env" in _git(root, "show", "HEAD:MEMORY.md")  # landed here…
+        assert _git(decoy, "rev-list", "--all") == ""  # …not in the decoy
+        assert _git(root, "log", "-1", "--format=%an <%ae>") == "ctrl-b memory <memory@ctrl-b.local>"
 
 
 def test_secrets_guard_disables_backup_but_write_still_lands() -> None:

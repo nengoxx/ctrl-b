@@ -42,16 +42,13 @@ In rough order of standing priority:
    2026-08-12, owner-confirmed**): SYS-19 meant `showNotification()` had never had a registered
    worker when it "failed"; it may just work on v1.6.0. Outcome decides whether the parked Web
    Push plan (the `web-push-researched-parked` memory, R10/R11) is re-premised or unblocked.
-3. **SYS-20 product half** — env sanitization at `GitMemoryBackup._run` (`memory_backup.py`):
-   hook-exported `GIT_DIR` overrides `git -C` in subprocesses. Small bounded slice; the gate half
-   already shipped in `_gate.sh`.
-4. **Gacha banked follow-ups** (owner-eyeball-heavy): the color-theory unit-palette research
+3. **Gacha banked follow-ups** (owner-eyeball-heavy): the color-theory unit-palette research
    session (owner-flagged) · root-cross-fade flicker refinement · the R20/R21 addenda LOWs (four
    each — GACHA_PLAN §7 as-builts, lines ~2317/2339) · kit-wide minimal plan/player overlap
    (VAPOR_ASSIMILATION_PLAN §7.1) · the rest of the standing ledger below.
-5. **The R28 installed-icon improvement** — ⏸ owner-gated pickup; R28 §9 is the ready-to-build
+4. **The R28 installed-icon improvement** — ⏸ owner-gated pickup; R28 §9 is the ready-to-build
    brief.
-6. **Fleet-liveness decoupling from Tailscale** *(owner-gated)*: host `online` today = "its
+5. **Fleet-liveness decoupling from Tailscale** *(owner-gated)*: host `online` today = "its
    Tailscale is up" (bare-name `ip:` resolves via MagicDNS — the 2026-08-12 corsair
    investigation, `corsair-liveness-rides-tailscale` memory). Option: DHCP-reserved LAN IP in
    `ip:` + tailnet name in `vpn_host:` (the D47 seam, zero code) — or a dual-probe design if the

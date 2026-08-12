@@ -6,8 +6,8 @@ to the files are captured by a startup reconcile + a periodic sweep (`reconcile(
 per-file, mtime-dated commits — possible *because* app writes leave the tree clean, so a dirty tree is
 by definition an external edit (no self-write disambiguation, no watcher needed).
 
-System `git` via `core.proc.run_capture` (argv, no shell); identity via `-c` (global config never
-touched); local-only (no network → no auth prompt); push is out of scope. Best-effort throughout: a
+System `git` via `core.proc.run_capture` (argv, no shell, `GIT_*` env stripped — SYS-20); identity
+via `-c` (global config never touched); local-only (no network → no auth prompt); push is out of scope. Best-effort throughout: a
 git failure is swallowed so it can never break a memory write. A `NoopBackup` (lock only, no git) is
 the fallback when the backup is disabled or absent.
 """
@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
+import os
 import shutil
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -49,6 +50,19 @@ Thumbs.db
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 """
+
+# Environment sanitization (SYS-20) — the pre-commit pattern: deny every `GIT_*` var, allowlist the
+# one a local-only caller needs (`GIT_EXEC_PATH`: how git finds its own sub-programs). Ambient repo
+# vars override our argv — `GIT_DIR` beats `-C` (retargeting commits at a foreign repo; git exports
+# it to hooks, absolute from a linked worktree), `GIT_AUTHOR_*`/`GIT_COMMITTER_*` beat `-c user.*`,
+# and `GIT_CONFIG_PARAMETERS`/`GIT_CONFIG_COUNT` inject arbitrary config (incl. `core.hooksPath` =
+# code execution). The prefix rule drops all three families at once — don't narrow it to a name list.
+_GIT_ENV_KEEP = frozenset({"GIT_EXEC_PATH"})
+
+
+def _git_env() -> dict[str, str]:
+    """A copy of the current environment with every repo-targeting `GIT_*` variable stripped."""
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_") or k in _GIT_ENV_KEEP}
 
 
 class GitMemoryBackup:
@@ -125,8 +139,8 @@ class GitMemoryBackup:
 
     async def _run(self, root: Path, args: list[str]):  # noqa: ANN202 — Capture | None
         """One `git` invocation under the repo, with per-commit identity via `-c` (global config
-        untouched) + the configured timeout. Returns the `Capture`, or `None` if git couldn't start /
-        timed out. Never raises — best-effort."""
+        untouched), a sanitized environment (SYS-20) + the configured timeout. Returns the `Capture`,
+        or `None` if git couldn't start / timed out. Never raises — best-effort."""
         if self._git_bin is None:
             return None
         cfg = self._cfg
@@ -148,7 +162,7 @@ class GitMemoryBackup:
             *args,
         ]
         try:
-            cap = await run_capture(argv, timeout_s=cfg.commit_timeout_s)
+            cap = await run_capture(argv, timeout_s=cfg.commit_timeout_s, env=_git_env())
         except OSError, ValueError:
             return None
         if cap.timed_out:
