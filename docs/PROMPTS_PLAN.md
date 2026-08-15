@@ -2,8 +2,8 @@
 
 > **Status: D56 LOCKED 2026-08-15** (owner-ruled in conversation; council §6 closed ALL RESOLVED;
 > lean round §7 folded). **§6 (C-1..C-25) + §7 (L-1..L-11) are the NORMATIVE layer — they amend §1–§5
-> where they differ.** Build state: **Slice 0 ✅ `30e7417`** (as-built §8.1) · **Slice 1 ✅ `a33fb34`**
-> (as-built §8.2) · Slices 2–3 pending.
+> where they differ.** Build state: **Slice 0 ✅ `30e7417`** (§8.1) · **Slice 1 ✅ `a33fb34`** (§8.2) ·
+> **Slice 2 ✅ `91cc464`** (§8.3) · Slice 3 (Conf UI) pending.
 > Evidence: [`PROMPTS_AUDIT.md`](./PROMPTS_AUDIT.md) (the PR-# inventory) and the dossiers
 > [R27](./research/R27-peer-prompt-configurability.md) ·
 > [R30](./research/R30-peer-prompt-system-internals.md) ·
@@ -625,3 +625,62 @@ registry iteration order is the UI order (test-pinned); unknown config ids load 
 (test-pinned) — the preserve+warn half of C-18 is Slice 2's; C-15 holds by construction
 (`_summarize` prices the resolved system message — regression-pinned); C-17 needed zero wiring
 (no cache exists; live-pickup test-pinned).
+
+### 8.3 Slice 2 — API + stamping ✅ `91cc464` (2026-08-15)
+
+Built by an Opus 5 subagent from the §4 row-2 contract (C-8/C-9/C-17/C-18/C-23 as amended by L-2/
+L-4/L-5/L-7); review = Codex **SHIP WITH FIXES** (3 MED / 3 LOW) → ruled wave → confirm (1
+residual + 2 LOWs) → mini-wave → final confirm **RESOLVED, no new defects**. Gate: all 6 checks,
+**1379 → 1423 tests** (`test_prompt_stamping_p18.py` 17 · `test_prompts_api_p18.py` 18 · adapter
+wire tests in the cache/telemetry suite).
+
+**Shipped shape:** `Message.prompt_stamps` `{id: template_hash}` + `Message.usage`
+`CallUsage{model, input_tokens, output_tokens}|null` on every assistant message (one persist door,
+`_persist_assistant`) and the compaction summary (its own `{summarizer: hash}` only; truncation
+folds stamp nothing) · `template_hash()`/`effective_template()`/`label()` beside the registry (one
+hashing rule, one composition rule) · `stream_options: {include_usage: true}` default-on for
+streams as the modeled kwarg · the L-4/L-5 PUT hook (`_resolve_prompt_entries`, pre-validation
+under the write lock) with YAML replacement semantics (an emptied `prompts:` key is dropped) ·
+`GET /api/prompts` (`api/prompts.py`, read-only, registry order + unknown-id warnings).
+
+**Main-seat rulings recorded (deltas vs the letter of the plan):**
+- **Migration 6** (`ALTER TABLE messages ADD COLUMN meta TEXT`) AMENDS §7 L-2's "no migration"
+  wording: its GOAL (no eval tables — `model_calls`/`prompt_texts` stay deferred) stands; its
+  mechanism premise (metadata rides an existing JSON blob) was false at Message level — only
+  `parts` is JSON and `parts` is content. ONE nullable JSON-object column, extend-don't-migrate:
+  future message metadata = new keys, never new columns; precedent = migration 2's `agent` column.
+  A builder-proposed `_meta` pseudo-part envelope inside `parts` was OVERRULED (strip-on-read
+  forever + a "temporary" encoding the pre-harness dataset would keep alive). `add` is the ONLY
+  meta writer; `update` never touches it (unknown future keys survive updates — test-pinned).
+- **The stamp semantic is TURN-SCOPED cumulative** (Codex's per-call frozen/pending machinery
+  overruled): `prompt_stamps` = every registry prompt rendered during the turn up to that message,
+  latest hash per id — honest because C2 texts persist as tool results in later calls' context;
+  run-level aggregates are unions, identical either way; C-17's mixed-version representation
+  holds. Two recorded edges (in code comments): the ephemeral reflection nudge over-reports after
+  its one call; a stamp resolved before a suspend is absent post-resume (fresh session). The
+  cumulative semantic is falsification-pinned (the contract test fails under clear-after-persist
+  sabotage; verified by planting it).
+- **`stream_options` honesty:** ours rides as the SDK-modeled kwarg (D45 TRANSPORT rule), added
+  only when the owner didn't set it; an OWNER-set `stream_options` rejection RAISES (their config
+  surfacing) instead of a wasted identical retry. The stream_options drop and the D46 reasoning
+  demotion compose in one bounded two-flag loop (max 3 opens/hop); the drop is deliberately NOT
+  remembered across calls (the D46 cache is the named seam if it ever bites).
+- `PUT {"prompts": <non-map>}` 422s in the hook (was a silent 200 no-op — the review's MED-3);
+  top-level `prompts: null` is also 422 (deleting everything is expressed per-id, ruled).
+- Hand-edited YAML `id: null` stays a load-time validation failure (the null sentinel is
+  PUT-transport vocabulary only — tool_overrides parity, ruled).
+- `m3_batch_rejected` is NOT stamped (plain `resolve()` — plumbing the accumulator through
+  `InvocationContext` for one denial text is disproportionate; its rendered text persists verbatim
+  in the ToolResultPart). Recorded asymmetry with `m1_tool_blocked`, which stamps.
+- **Declined + recorded:** preserving unknown future `PromptOverride` fields through a whole-entry
+  replace (the review's LOW-1) — conflicts with the ruled L-4 semantics and guards a
+  rollback+future-field compound; revisit when the `enabled: false` seam lands.
+- Copy honesty: stamps give exact prompt-VERSION identity (template hash); exact-TEXT recovery for
+  an override edited since arrives with the harness phase's content-addressed `prompt_texts` store.
+
+**Slice 3 seams (confirmed in code):** save = `PUT /api/settings {"prompts": {id: {override?,
+append?}}}`, restore = `{"prompts": {id: null}}`; blanks normalize server-side (the UI may send raw
+textarea values); no 409 gate; `current` is unrendered; `label()` is the display name; unknown-id
+warnings arrive as display-ready strings. **Harness seams:** `template_hash()` +
+`effective_template()` are the shared rules; query shape =
+`json_extract(messages.meta, '$.prompt_stamps')`.

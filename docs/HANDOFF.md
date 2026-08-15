@@ -16,10 +16,14 @@
 
 - **Prod = v1.6.0 @ `fcc42ad`**, live + healthy (https://emma.lobster-vector.ts.net) — UNCHANGED
   by this session; all Phase 18 work is on local `main` only.
-- **Local `main` is 5+ commits AHEAD of origin, NOT pushed** (owner has not authorized a push):
-  `c020464` (Phase 18 planning docs + D56) · `30e7417` (Slice 0 hardening) · `3cb10dd` (as-built) ·
-  `dfe5b98` (session close) · `a33fb34` (**Slice 1** — registry + migration + config READ) + its
-  docs commit.
+- **Local `main` is 8 commits AHEAD of origin, NOT pushed** (owner has not authorized a push):
+  `c020464` (Phase 18 planning docs + D56) · `30e7417` (Slice 0) · `3cb10dd` (as-built) ·
+  `dfe5b98` (session close) · `a33fb34` (**Slice 1**) · `d752b53` (docs) · `91cc464` (**Slice 2**
+  — stamping + usage + PUT hook + GET /api/prompts, incl. **DB migration 6**: `messages.meta`) +
+  its docs commit.
+- **DB schema is now 6** (one nullable `meta` column on `messages`) — the dev DB migrates on unit
+  start; prod migrates whenever the next release deploys. Rollback note: pre-6 code tolerates the
+  extra column (writes name their columns), so v1.6.0 remains a safe rollback against a migrated DB.
 - **The DEV UNITS ARE RUNNING on purpose** (:5434 + Vite :5173) — the owner asked to keep them up
   for the Slice 0 eyeball. Do NOT stop them until the owner says they're done looking.
 - **Rollback = `update.sh v1.5.1` EXACTLY** — the sw.js floor: any pre-v1.5.1 tag re-serves
@@ -37,23 +41,28 @@
 In rough order of standing priority:
 
 1. **Phase 18 — the prompt system — D56 LOCKED 2026-08-15; Slice 0 ✅ `30e7417` · Slice 1 ✅
-   `a33fb34`.** Spec = [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 (C-1..C-25) + §7 (lean round
-   L-1..L-11) are the normative layer; **§8.1 = the Slice 0 as-built** (M1 allowlist-at-execution ·
-   M2 skill snapshot with terminal-record pin merge · M3 batch cap; its two denial constants are now
-   REGISTRY ids). Dev units are RUNNING for the owner's eyeball (see Current state — leave them up).
-   **Slice 1 ✅ `a33fb34` (2026-08-15) — §8.2 = its as-built:** the whole registry chokepoint
-   shipped — `services/agent/prompts.py` (15 C-1 ids, the `{{var}}` renderer, infallible
-   `resolve()`/`resolve_with_template()`), `Settings.prompts` READ path, byte-faithful migration
-   (the Slice-0 denial constants re-homed; goldens pin it), the AST backstop
-   (`test_arch_invariants_prompts.py`). Codex SHIP-WITH-FIXES → 6-item wave → confirm RESOLVED;
-   gate 1379 tests. **⏸ OWNER PAUSE before Slice 2.** Owner-court from §8.2: five standing
-   model-facing texts recorded-not-registered (memory/skill "not saved yet" notices ·
-   parallel-misdeclare belt · INTERRUPTED_NOTE · ORPHAN_NOTE) — rule whether a later slice
-   registers them. NEXT = the owner's look + go, then **Slice 2** (API + stamping per §4:
-   message-metadata stamps off `resolve_with_template()`'s template · usage capture under
-   `extra_body` · the L-4/L-5 entry replace/delete/normalize hook · `GET /api/prompts` in
-   `api/prompts.py`). Also owed at next release: the push of the local commits
-   (owner-authorized) and the runbook flow.
+   `a33fb34` · Slice 2 ✅ `91cc464`.** Spec = [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 + §7 are
+   the normative layer; **§8.1–§8.3 = the as-builts** (Slice 0: M1/M2/M3 hardening; its two denial
+   constants are now REGISTRY ids). Dev units are RUNNING for the owner's eyeball (see Current
+   state — leave them up).
+   **Slice 1 ✅ `a33fb34` (§8.2):** the registry chokepoint — `services/agent/prompts.py` (15 C-1
+   ids, the `{{var}}` renderer, infallible `resolve()`/`resolve_with_template()`),
+   `Settings.prompts` READ path, byte-faithful migration (goldens pin it), the AST backstop.
+   Codex SHIP-WITH-FIXES → 6-item wave → RESOLVED; 1379 tests.
+   **Slice 2 ✅ `91cc464` (2026-08-15, same session) — §8.3 = its as-built:** stamping
+   (`Message.prompt_stamps` `{id: template hash}` + `usage` on every assistant message + the
+   compaction summary; **DB migration 6** — one `meta` JSON column, extend-don't-migrate) · usage
+   capture (`include_usage` default-on for streams; owner-set `stream_options` wins and its
+   rejection raises; bounded 2-flag retry composes with the D46 demotion) · the L-4/L-5 PUT hook
+   (whole-entry replace, `id: null` deletes, blanks normalize, non-map 422s) · `GET /api/prompts`
+   (registry-order rows + unknown-id warnings). Codex SHIP-WITH-FIXES (3 MED/3 LOW) → ruled wave →
+   mini-wave → **final confirm RESOLVED**; gate **1423 tests**. **⏸ OWNER PAUSE before Slice 3
+   (the Conf UI — the §4 row-3 contract; the Slice-3 seams are listed at §8.3's tail).**
+   **Owner-court:** ① the §8.2 five recorded-not-registered model-facing texts (memory/skill "not
+   saved yet" notices · parallel-misdeclare belt · INTERRUPTED_NOTE · ORPHAN_NOTE) — rule whether
+   a later slice registers them; ② eyeball the two slices on dev :5434 (a `prompts:` override in
+   the dev config + `GET /api/prompts` are poke-able now). Also owed at next release: the push of
+   the local commits (owner-authorized) and the runbook flow.
 2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (**still untested as of
    2026-08-12, owner-confirmed**): SYS-19 meant `showNotification()` had never had a registered
    worker when it "failed"; it may just work on v1.6.0. Outcome decides whether the parked Web
