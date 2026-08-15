@@ -5658,6 +5658,14 @@ body[data-motion="reduced"] .kit .kit-composer {
 .kit:has(.navmenu:not(.docked)) .kit-scroll {
   padding-top: calc(34px + env(safe-area-inset-top));
 }
+/* NO-chrome content inset (owner eyeball 2026-08-15, the Phase 18 round): `appbarMode: off` renders
+ * neither a bar nor the floating launcher, so NEITHER the in-flow bar height nor the inset above
+ * applies and the first section title sat at y≈18 — under the phone's status bar (no safe-area
+ * consumer left). A slimmer inset than minimal's (nothing to clear, just breathing room + safe area);
+ * keyed the same structural way: no rendered bar AND no floating menu = off. */
+.kit:not(:has(.kit-appbar)):not(:has(.navmenu:not(.docked))) .kit-scroll {
+  padding-top: calc(10px + env(safe-area-inset-top));
+}
 .kit .navmenu:not(.docked) .navmenu-launch {
   /* just the orbit icon — no circle/background (owner directive), a transparent tap target. Sized to the
    * menu items (44px) and inset by the popover's 6px padding, so the launcher icon centers exactly over the
