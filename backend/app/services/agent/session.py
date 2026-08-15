@@ -59,6 +59,7 @@ from app.core.tool import UnknownTool
 from app.domain.agent import AgentDef, ModelRef
 from app.domain.automation import QuestionPolicy
 from app.domain.conversation import (
+    CallUsage,
     ErrorPart,
     Message,
     Part,
@@ -472,6 +473,23 @@ class AgentSession:
         #: Reset each turn for free (the session is per-turn). Computed lazily, DEBUG-guarded.
         self._head_tokens: int | None = None
         self._tools_tokens: int | None = None
+        #: The turn's PROMPT STAMPS (Phase 18 / C-8): `{registry id: template hash}`, accumulated by
+        #: every `resolve(..., stamps=self._stamps)` this session or its collaborators (the memory
+        #: block, the skills note) performs. CUMULATIVE and TURN-SCOPED by design — never cleared
+        #: between iterations — because that IS the payload: a C2 steering text resolved at iteration
+        #: N persists as a tool result and stays in every later call's context. Each assistant message
+        #: snapshots it at persist time (`_persist_assistant`), so an owner edit mid-turn shows as the
+        #: new hash on the message it fed and the old hash on the earlier one (C-17). Per-turn like the
+        #: caches above (the session is per-turn); a subagent has its own session and its own set.
+        #:
+        #: Two known edges, both accepted rather than engineered around (the run-level aggregate an
+        #: eval reads is a UNION over the thread's messages, which is unchanged by either):
+        #:   * OVER-REPORT: the reflection nudge is an EPHEMERAL tail layer — emitted into exactly one
+        #:     call — but its stamp stays in the set for the rest of the turn.
+        #:   * UNDER-REPORT: a stamp recorded before a suspend is absent from the messages of the
+        #:     resumed half, because a resume builds a FRESH session (ACA-15e). The steering text
+        #:     itself is in the transcript as a persisted tool result either way.
+        self._stamps: dict[str, str] = {}
 
     def _system_prompt(self) -> str:
         """The agent's own prompt wins; then the global `inference.system_prompt` override; then the
@@ -505,7 +523,7 @@ class AgentSession:
         so it never interacts with the rolling compaction summary (same as the appends/roster)."""
         if self._memory is None:
             return None
-        return self._memory.load_context(self._agent) or None
+        return self._memory.load_context(self._agent, self._stamps) or None
 
     def _reflection_nudge(self) -> str:
         """The one-shot periodic-reflection prompt (D27-C). Saving runs the normal `memory` tool path
@@ -523,6 +541,7 @@ class AgentSession:
             "reflection_nudge",
             self._settings,
             {"reflection_interval": str(cfg.reflection_interval), "state_clause": state_clause},
+            stamps=self._stamps,
         )
 
     def _roster(self) -> str | None:
@@ -535,7 +554,7 @@ class AgentSession:
             return None
         # The heading is the `fleet_roster` registry prompt; the rows below are this feature's data,
         # concatenated after it (L-8) — an override reframes the map, it cannot drop hosts.
-        lines = [resolve("fleet_roster", self._settings)]
+        lines = [resolve("fleet_roster", self._settings, stamps=self._stamps)]
         if hosts:
             lines.append("Hosts:")
             lines += [
@@ -586,7 +605,7 @@ class AgentSession:
             active = [by_name[n] for n in (invoked or []) if n in by_name]
         if not active:
             return
-        self._skills_note = skills_prompt(active, self._settings)
+        self._skills_note = skills_prompt(active, self._settings, self._stamps)
         self._tool_allow = narrow_tools(active, self._agent.tools)
         self._active_skills = [s.name for s in active]  # M2/C-12 — captured right after selection
 
@@ -724,6 +743,20 @@ class AgentSession:
         if self._tools_tokens is None:
             self._tools_tokens = estimate_payload_tokens(self._tools())
         return self._head_tokens + self._tools_tokens
+
+    async def _persist_assistant(self, thread: Thread, assistant: Message, report: StreamReport) -> None:
+        """Persist one assistant message + touch its thread — the single door every model call's
+        message goes through, so the Phase 18 eval seam can never be forgotten at one of them.
+
+        Two nullable fields ride along (L-2 — metadata on the message, no new table): the SNAPSHOT of
+        this turn's prompt stamps as of now — TURN-SCOPED, i.e. every registry prompt rendered so far
+        this turn with its latest hash (C-8/C-17; the accumulator's field note carries the semantic and
+        its two accepted edges) — and what the provider reported this call cost (C-9). A report that
+        carries nothing yields `usage: None`; nothing here invents a number."""
+        assistant.prompt_stamps = dict(self._stamps) or None
+        assistant.usage = CallUsage.of(report.model, report.prompt_tokens, report.completion_tokens)
+        await self._messages.add(assistant)
+        await self._threads.touch(thread.id, assistant.ts)
 
     async def _estimate_context(self, thread: Thread, served_key: str | None) -> ContextEstimate:
         """The session-side anchored context estimate driving the D42 trigger (Wave 2). Reads the
@@ -890,7 +923,7 @@ class AgentSession:
         elif isinstance(choices, list) and choices and isinstance(choices[0], str) and choices[0].strip():
             answer, source = choices[0].strip(), "the first offered choice (no default was declared)"
         else:
-            answer = resolve("unattended_answer", self._settings)
+            answer = resolve("unattended_answer", self._settings, stamps=self._stamps)
             source = "no default and no choices were offered"
         return ToolResult(
             state=RunState.OK,
@@ -1383,8 +1416,7 @@ class AgentSession:
                             watermark = await self._watermark_id(thread)
                             continue  # re-issue the SAME call into the SAME assistant slot
                     assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
-                    await self._messages.add(assistant)
-                    await self._threads.touch(thread.id, assistant.ts)
+                    await self._persist_assistant(thread, assistant, report)
                     yield AgentEvent("error", {"message": str(exc), "retryable": True})
                     # D43/A4 Site 1: a chain-level InferenceError ENDS the turn. On a WORKER-routed turn
                     # it's a hard failure ONLY for a single-endpoint chain failure (`endpoints_tried ==
@@ -1434,8 +1466,7 @@ class AgentSession:
 
             if not reqs:
                 assistant.parts = parts
-                await self._messages.add(assistant)
-                await self._threads.touch(thread.id, assistant.ts)
+                await self._persist_assistant(thread, assistant, report)
                 yield AgentEvent("message.end", {"messageId": assistant.id})
                 # D43/A4: a clean text-only completion — the turn's conclusive end. On a worker turn
                 # (`had_failure` still False) this resets the consecutive-failure counter; on a lead turn
@@ -1465,8 +1496,7 @@ class AgentSession:
                 )
             parts.extend(call_parts)
             assistant.parts = parts
-            await self._messages.add(assistant)
-            await self._threads.touch(thread.id, assistant.ts)
+            await self._persist_assistant(thread, assistant, report)
             for cp in call_parts:
                 yield AgentEvent(
                     "part.added", {"messageId": assistant.id, "part": cp.model_dump(mode="json")}
@@ -1775,7 +1805,10 @@ class AgentSession:
         # protection (`clear_keep_steps`) keeps the just-run outputs the wrap-up summarizes honestly;
         # only OLD bulky outputs past that window are trimmed, and their `[state] summary` lines survive.
         clearing = await self._plan_clearing(thread)
-        _WRAP_NUDGE = {"role": "system", "content": resolve("wrapup_nudge", self._settings)}
+        _WRAP_NUDGE = {
+            "role": "system",
+            "content": resolve("wrapup_nudge", self._settings, stamps=self._stamps),
+        }
 
         async def _assemble_wrap() -> list[dict]:
             msgs = await self._assemble(thread, clearing=clearing)
@@ -1864,8 +1897,7 @@ class AgentSession:
                         advance = True  # nothing streamed → safe to re-issue as a plain tool-less wrap-up
                         break
                     assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
-                    await self._messages.add(assistant)
-                    await self._threads.touch(thread.id, assistant.ts)
+                    await self._persist_assistant(thread, assistant, report)
                     yield AgentEvent("error", {"message": str(exc), "retryable": True})
                     yield AgentEvent("done", {"threadId": thread.id, "state": "capped"})
                     return
@@ -1880,8 +1912,7 @@ class AgentSession:
         text = "".join(text_buf) or "(Stopped after reaching the step limit for this request.)"
         parts.append(TextPart(text=text))
         assistant.parts = parts
-        await self._messages.add(assistant)
-        await self._threads.touch(thread.id, assistant.ts)
+        await self._persist_assistant(thread, assistant, report)
         yield AgentEvent("message.end", {"messageId": assistant.id})
         yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})
 
@@ -2089,7 +2120,7 @@ class AgentSession:
         result = ToolResult(
             state=RunState.DENIED,
             summary=f"{cp.tool} is not available to this agent — not run",
-            output=resolve("m1_tool_blocked", self._settings, {"tool": cp.tool}),
+            output=resolve("m1_tool_blocked", self._settings, {"tool": cp.tool}, stamps=self._stamps),
         )
         guard.denied_sigs.add(_LoopGuard.sig(cp.tool, cp.args))
         await self._actions.record_policy_denial(
@@ -2349,13 +2380,13 @@ class AgentSession:
                         result: ToolResult = ToolResult(
                             state=RunState.DENIED,
                             summary="question declined by the owner",
-                            output=resolve("question_declined", self._settings),
+                            output=resolve("question_declined", self._settings, stamps=self._stamps),
                         )
                     else:
                         result = ToolResult(
                             state=RunState.DENIED,
                             summary=f"{cp.tool} rejected by the owner — not run",
-                            output=resolve("rejection_notice", self._settings),
+                            output=resolve("rejection_notice", self._settings, stamps=self._stamps),
                         )
                     outcome.made_progress = True
                 else:
@@ -2376,14 +2407,14 @@ class AgentSession:
                             suppressed = ToolResult(
                                 state=RunState.DENIED,
                                 summary=f"(already rejected) {cp.tool} — the owner rejected this call this turn",
-                                output=resolve("denial_echo", self._settings),
+                                output=resolve("denial_echo", self._settings, stamps=self._stamps),
                             )
                         elif guard.counts.get(sig, 0) >= guard.max_repeat and sig in guard.last_results:
                             prior = guard.last_results[sig]
                             suppressed = ToolResult(
                                 state=prior.state,
                                 summary=f"(repeat suppressed) {prior.summary}",
-                                output=resolve("repeat_suppressed", self._settings),
+                                output=resolve("repeat_suppressed", self._settings, stamps=self._stamps),
                             )
                         elif guard.tool_counts.get(cp.tool, 0) >= guard.max_per_tool:
                             suppressed = ToolResult(
@@ -2396,6 +2427,7 @@ class AgentSession:
                                         "tool": cp.tool,
                                         "count": str(guard.tool_counts.get(cp.tool, 0)),
                                     },
+                                    stamps=self._stamps,
                                 ),
                             )
                     if suppressed is not None:

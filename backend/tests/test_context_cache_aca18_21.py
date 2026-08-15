@@ -23,7 +23,7 @@ from types import SimpleNamespace
 from _async import run_async
 from _reg import registry, target
 
-from app.adapters.inference import ChatDelta, InferenceClient, StreamReport
+from app.adapters.inference import ChatDelta, InferenceClient, InferenceError, StreamReport
 from app.domain.agent import ModelRef
 
 
@@ -37,10 +37,11 @@ class _Delta:
 
 
 class _Chunk:
-    def __init__(self, delta=None, usage=None, model_extra=None):
+    def __init__(self, delta=None, usage=None, model_extra=None, model=None):
         self.choices = [type("Ch", (), {"delta": delta})()] if delta is not None else []
         self.usage = usage
         self.model_extra = model_extra
+        self.model = model  # the SERVED model id the endpoint echoes (Phase 18 / C-9)
 
 
 class _Stream:
@@ -184,9 +185,9 @@ def test_tool_choice_ignored_without_tools():
 
 
 # ── ACA-18 telemetry capture into StreamReport ──
-def _usage(prompt, cached=None):
+def _usage(prompt, cached=None, completion=None):
     details = SimpleNamespace(cached_tokens=cached) if cached is not None else None
-    return SimpleNamespace(prompt_tokens=prompt, prompt_tokens_details=details)
+    return SimpleNamespace(prompt_tokens=prompt, completion_tokens=completion, prompt_tokens_details=details)
 
 
 def test_telemetry_from_openai_usage():
@@ -234,6 +235,158 @@ def test_fmt_cache_zero_cached_renders_zero_not_not_reported():
     assert "not reported" not in rendered
     # both absent → the one "not reported" case
     assert _fmt_cache(StreamReport()) == "not reported"
+
+
+# ── Phase 18 / C-9: per-call usage — `include_usage` on by default, the owner still wins ──
+def test_include_usage_is_requested_on_streams_by_default():
+    """The one thing R31 verified cannot be reconstructed later, so it is asked for on every stream —
+    as the modeled kwarg (this file's TRANSPORT rule: the SDK declares `stream_options`)."""
+    client, fakes = _build(_cfg(), {"http://local/v1": _streams(_Chunk(_Delta("hi")))})
+    _collect(client)
+    call = fakes["http://local/v1"].chat.completions.calls[0]
+    assert call["stream_options"] == {"include_usage": True}
+    assert "extra_body" not in call  # …and it does not conjure an extra_body the endpoint never set
+
+
+def test_the_owners_stream_options_wins_and_is_not_duplicated():
+    """`extra_body` is the owner's home for it (C-9): an endpoint that hand-set `stream_options`
+    keeps its value verbatim, and ours is not added beside it — one spelling on the wire."""
+    cfg = _cfg(local_extra={"stream_options": {"include_usage": False}})
+    client, fakes = _build(cfg, {"http://local/v1": _streams(_Chunk(_Delta("hi")))})
+    _collect(client)
+    call = fakes["http://local/v1"].chat.completions.calls[0]
+    assert call["extra_body"] == {"stream_options": {"include_usage": False}}
+    assert "stream_options" not in call
+
+
+def test_complete_never_asks_for_stream_options():
+    """A non-streamed request carrying `stream_options` is a hard 400 — the summarizer reads usage
+    off its buffered response instead."""
+    client, fakes = _build(_cfg(), {"http://local/v1": _completion("summary")})
+    _complete(client)
+    assert "stream_options" not in fakes["http://local/v1"].chat.completions.calls[0]
+
+
+def test_a_stream_options_rejection_retries_once_without_it(caplog):
+    class _Rejected(Exception):
+        status_code = 400
+
+    def behavior(kwargs):
+        seen.append(kwargs)
+        if "stream_options" in kwargs:
+            raise _Rejected("Unrecognized request argument supplied: stream_options")
+        return _Stream([_Chunk(_Delta("hi"))])
+
+    seen: list[dict] = []
+    client, _ = _build(_cfg(), {"http://local/v1": behavior})
+    with caplog.at_level(logging.WARNING, logger="app.adapters.inference"):
+        deltas = _collect(client)
+    assert [d.text for d in deltas] == ["hi"]  # the turn survived; telemetry is what was dropped
+    assert len(seen) == 2 and "stream_options" not in seen[1]  # ONE retry, without it
+    assert "stream_options" in caplog.text  # one warning naming what was dropped
+
+
+def _both_rejecting(order):
+    """A backend that 400s on `stream_options` AND on the reasoning controls, rejecting them in
+    `order` — the compound case a classify-once ladder could not survive (it only ever disabled one
+    cause, so the second rejection killed the hop). Returns (behavior, seen-kwargs list)."""
+
+    class _Rejected(Exception):
+        status_code = 400
+
+    seen: list[dict] = []
+
+    def behavior(kwargs):
+        seen.append(kwargs)
+        for cause in order:
+            if cause == "usage" and "stream_options" in kwargs:
+                raise _Rejected("Unrecognized request argument supplied: stream_options")
+            if cause == "reasoning" and "reasoning_effort" in kwargs:
+                raise _Rejected("Unsupported parameter: 'reasoning_effort' is not supported with this model")
+        return _Stream([_Chunk(_Delta("hi"))])
+
+    return behavior, seen
+
+
+def test_an_endpoint_rejecting_both_capabilities_still_serves_the_turn():
+    """Both orders, because the classifier order and the rejection order are independent: each retry
+    disables the cause it just classified, so the hop converges in at most three `create()`s."""
+    for order in (("usage", "reasoning"), ("reasoning", "usage")):
+        behavior, seen = _both_rejecting(order)
+        client, _ = _build(_cfg(), {"http://local/v1": behavior})
+        deltas = _collect(client, reasoning_effort="high")
+        assert [d.text for d in deltas] == ["hi"], order
+        assert len(seen) == 3, order  # the bound: one open per disabled cause, then the clean one
+        assert "stream_options" not in seen[-1] and "reasoning_effort" not in seen[-1], order
+
+
+def test_an_owner_set_stream_options_rejection_raises_instead_of_retrying(caplog):
+    """The owner's own `extra_body` key is the one on the wire — we added nothing — so its rejection is
+    their config surfacing and must propagate. Retrying would re-send the identical payload and log a
+    warning about dropping a key we never set."""
+
+    class _Rejected(Exception):
+        status_code = 400
+
+    seen: list[dict] = []
+
+    def behavior(kwargs):
+        seen.append(kwargs)
+        raise _Rejected("Unrecognized request argument supplied: stream_options")
+
+    cfg = _cfg(local_extra={"stream_options": {"include_usage": True}})
+    client, _ = _build(cfg, {"http://local/v1": behavior})
+    with caplog.at_level(logging.WARNING, logger="app.adapters.inference"):
+        try:
+            _collect(client)
+        except InferenceError:
+            pass
+        else:
+            raise AssertionError("the owner's rejected stream_options must not be swallowed")
+    assert len(seen) == 1  # ONE open — no pointless identical re-attempt
+    assert "usage capture" not in caplog.text
+
+
+def test_a_rejection_that_neither_cause_explains_still_raises():
+    """The loop must not spin on an error it cannot fix: an unrelated 400 raises on the first pass."""
+
+    class _Rejected(Exception):
+        status_code = 400
+
+    seen: list[dict] = []
+
+    def behavior(kwargs):
+        seen.append(kwargs)
+        raise _Rejected("Unsupported parameter: 'tool_choice' is not supported with this model")
+
+    client, _ = _build(_cfg(), {"http://local/v1": behavior})
+    try:
+        _collect(client)
+    except InferenceError:
+        pass
+    else:
+        raise AssertionError("an unrelated 400 must not be swallowed")
+    assert len(seen) == 1  # ONE attempt on this hop — no retry, straight to the next endpoint
+
+
+def test_completion_tokens_and_the_served_model_are_captured():
+    final = _Chunk(delta=None, usage=_usage(1200, cached=1024, completion=42), model="served-7b")
+    client, _ = _build(_cfg(), {"http://local/v1": _streams(_Chunk(_Delta("hi")), final)})
+    report = StreamReport()
+    _collect(client, report=report)
+    assert (report.prompt_tokens, report.completion_tokens, report.model) == (1200, 42, "served-7b")
+
+
+def test_complete_captures_usage_off_the_buffered_response():
+    resp = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="summary"))],
+        usage=_usage(900, completion=40),
+        model="summarizer-7b",
+    )
+    client, _ = _build(_cfg(), {"http://local/v1": lambda _kw: resp})
+    report = StreamReport()
+    assert _complete(client, report=report) == "summary"
+    assert (report.prompt_tokens, report.completion_tokens, report.model) == (900, 40, "summarizer-7b")
 
 
 # ── A8 measurement: the context-cost debug line ──
@@ -302,6 +455,7 @@ def test_finalize_retains_toolset_with_tool_choice_none():
 
     s = AgentSession.__new__(AgentSession)
     s._settings = Settings()  # the wrap-up nudge resolves off the live Settings (D56)
+    s._stamps = {}  # …and records its template identity into the turn's accumulator (Slice 2)
     s._static_head = [{"role": "system", "content": "sys"}]
     s._tools_cache = [{"type": "function", "function": {"name": "ping", "parameters": {}}}]
     s._head_tokens = None

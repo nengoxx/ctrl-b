@@ -71,6 +71,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
     "diagnostics — log lines and operator-facing HTTP/exception detail": (
         ("app/adapters/inference.py", "InferenceClient._maybe_notice_anchoring_inactive"),
         ("app/adapters/inference.py", "InferenceClient._note_reasoning_demotion"),
+        ("app/adapters/inference.py", "InferenceClient.stream_chat.attempt"),
         ("app/api/agent.py", "_AUTOMATION_THREAD_DETAIL"),
         ("app/api/agent.py", "_agent_folder"),
         ("app/api/agent.py", "_resume_skills"),

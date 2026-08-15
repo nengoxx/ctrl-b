@@ -37,6 +37,7 @@ from app.config import (
     Settings,
     deep_merge,
     deep_set,
+    delete_path,
     edit_config_yaml,
     prune_unchanged,
     sync_mapping,
@@ -460,7 +461,11 @@ async def apply_settings_patch(
     current_raw = current.model_dump(mode="json")  # real (unmasked) secrets
     stored_providers = current_raw.get("providers") or {}
     patch_providers = patch.get("providers") if isinstance(patch.get("providers"), dict) else None
-    rest_patch = {k: v for k, v in patch.items() if k != "providers"}
+    # Phase 18 / L-4: `prompts` is REPLACED like `providers` and for the same reason — the UI submits
+    # the complete map and a deep-merge can only add, so a deletion (restore-by-delete) would never
+    # land. The API layer already resolved the patch's transport sentinels into that complete map.
+    patch_prompts = patch.get("prompts") if isinstance(patch.get("prompts"), dict) else None
+    rest_patch = {k: v for k, v in patch.items() if k not in ("providers", "prompts")}
 
     # (1) Rekey the STORED providers view so an unmask restores each renamed provider's secret by its OLD
     # structural identity: the new name inherits the old entry's stored secret (masks are not injective —
@@ -487,6 +492,8 @@ async def apply_settings_patch(
     merged = deep_merge(current_raw, rest_patch)
     if patch_providers is not None:
         merged["providers"] = patch_providers
+    if patch_prompts is not None:
+        merged["prompts"] = patch_prompts
     merged = unmask_secrets(merged, stored_for_unmask)
 
     # (3) Cascade every config-held ref STILL equal to an old name in the FINAL MERGED doc (authoritative
@@ -528,15 +535,27 @@ async def apply_settings_patch(
             else:
                 to_write.pop(sect, None)
     providers_write = merged.get("providers") if patch_providers is not None else None
+    prompts_write = merged.get("prompts") if patch_prompts is not None else None
+
+    def _replace_map(doc: Any, key: str, target: dict[str, Any]) -> None:
+        """Replacement semantics on the YAML side for a map the UI submits whole: add/replace + DELETE
+        the keys the submission dropped."""
+        node = doc.get(key)
+        if not hasattr(node, "get"):
+            doc[key] = {}
+            node = doc[key]
+        sync_mapping(node, target)
 
     def _mutate(doc: Any) -> None:
         deep_set(doc, to_write)
-        if providers_write is not None:  # replacement semantics on the YAML side (add/replace + delete)
-            node = doc.get("providers")
-            if not hasattr(node, "get"):
-                doc["providers"] = {}
-                node = doc["providers"]
-            sync_mapping(node, providers_write)
+        if providers_write is not None:
+            _replace_map(doc, "providers", providers_write)
+        if prompts_write:
+            _replace_map(doc, "prompts", prompts_write)
+        elif prompts_write is not None:
+            # Restoring the LAST customized prompt empties the map: drop the key instead of leaving
+            # `prompts: {}` behind. The owner reads and hand-edits this file (§2.2) — litter is noise.
+            delete_path(doc, ["prompts"])
 
     edit_config_yaml(_mutate)
     await reconfigure(app, new)

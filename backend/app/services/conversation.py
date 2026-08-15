@@ -19,7 +19,7 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from app.db import Database
-from app.domain.conversation import Message, Part, Thread
+from app.domain.conversation import CallUsage, Message, Part, Thread
 from app.domain.enums import Actor, RunState
 
 _PARTS = TypeAdapter(list[Part])
@@ -117,10 +117,25 @@ class MessageRepo:
         threading a separate db handle. Read-only accessor; writes still go through the repo methods."""
         return self._db
 
+    @staticmethod
+    def _dump_meta(msg: Message) -> str | None:
+        """The `meta` column (migration 6): the message's model-call metadata as one JSON object, or
+        `None` when it has none — the common case (user turns, legacy rows). Keys are added here, not
+        columns: a future dimension is one more key in this object."""
+        if msg.prompt_stamps is None and msg.usage is None:
+            return None
+        return json.dumps(
+            {
+                "prompt_stamps": msg.prompt_stamps,
+                "usage": msg.usage.model_dump(mode="json") if msg.usage else None,
+            },
+            separators=(",", ":"),
+        )
+
     async def add(self, msg: Message) -> Message:
         await self._db.execute(
-            "INSERT INTO messages (id, thread_id, role, parts, actor, ts, tokens, compacted, agent) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages (id, thread_id, role, parts, actor, ts, tokens, compacted, agent, meta) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 msg.id,
                 msg.thread_id,
@@ -131,13 +146,19 @@ class MessageRepo:
                 msg.tokens,
                 int(msg.compacted),
                 msg.agent,
+                self._dump_meta(msg),
             ),
         )
         return msg
 
     async def update(self, msg: Message) -> Message:
         """Rewrite a message's parts in place (4b: a ToolCallPart flips PENDING →
-        AWAITING_CONFIRM → resolved as the confirm dance completes)."""
+        AWAITING_CONFIRM → resolved as the confirm dance completes).
+
+        `meta` is deliberately NOT rewritten: model-call metadata is final before the row is written,
+        so `add` is its only writer. Updates touch what genuinely changes after the fact (parts,
+        tokens, the compaction flag), which also means a key this code doesn't know — a future
+        dimension, or one written by a newer version after a rollback — survives every update."""
         await self._db.execute(
             "UPDATE messages SET parts = ?, tokens = ?, compacted = ? WHERE id = ?",
             (
@@ -227,6 +248,8 @@ class MessageRepo:
 
     @staticmethod
     def _row(r) -> Message:
+        meta = json.loads(r["meta"]) if r["meta"] else {}
+        usage = meta.get("usage")
         return Message(
             id=r["id"],
             thread_id=r["thread_id"],
@@ -237,4 +260,6 @@ class MessageRepo:
             tokens=r["tokens"],
             compacted=bool(r["compacted"]),
             agent=r["agent"],
+            prompt_stamps=meta.get("prompt_stamps"),
+            usage=CallUsage.model_validate(usage) if usage else None,
         )

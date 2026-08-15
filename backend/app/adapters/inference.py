@@ -362,6 +362,26 @@ def is_reasoning_param_rejection(err: BaseException) -> bool:
     return False
 
 
+def is_stream_options_rejection(err: BaseException) -> bool:
+    """ "Did the provider 400 because of the `stream_options` we ask for by default?" (Phase 18 /
+    C-9). The key is standard OpenAI since 2024 and llama-server parses it, but an older Azure API
+    version / a partial clone can reject it — and a turn must never die over telemetry, so the
+    streaming path retries once without it.
+
+    Same 400 gate as its D46 sibling. When the provider NAMES the offending parameter, the verdict is
+    that token alone (never the whole text — OpenRouter echoes the request body in `metadata.raw`, so
+    our own key appears in unrelated rejections); otherwise any 400 mentioning it counts, which can
+    cost ONE wasted re-attempt on an unrelated 400 from a body-echoing provider. Bounded by
+    construction: the retry is one per hop, and the failed retry raises exactly as before."""
+    text = str(err).lower()
+    if not _is_400(err, text) or "stream_options" not in text:
+        return False
+    for marker in _PARAM_REJECT_NAMING_MARKERS:
+        if marker in text:
+            return _named_reject_param(text, marker) == "stream_options"
+    return True
+
+
 def _reasoning_keys_in(call_cfg: dict[str, Any]) -> list[str]:
     """The reasoning keys a built `_call_config` payload actually carries (dotted paths, for the log).
     Empty ⇒ this request had no reasoning controls, so a param-rejection cannot be ours to fix."""
@@ -576,13 +596,21 @@ class StreamReport:
     `served_target` (D42/A11) is the `ResolvedTarget` that actually answered (`chain[served_index]`) —
     distinct from `served` (its provider name): the session prices iteration 2+'s window-aware compaction
     trigger against the target that served (its `context_window`/probe + the `prompt_tokens` anchor come
-    from the same serve). `None` until a call completes."""
+    from the same serve). `None` until a call completes.
+
+    `completion_tokens` + `model` (Phase 18 / C-9) complete the per-call usage the agent loop persists
+    onto the message each call produced: `{model, input_tokens, output_tokens}` with `prompt_tokens`
+    as the input side. `model` is what the endpoint says it SERVED (which can differ from the model
+    requested — a failover hop, a router-mode llama-server). Both stay `None` when the endpoint
+    reports nothing, and the persisted usage is `None` with them."""
 
     served: str = ""
     degraded: bool = False
     failures: list[str] = field(default_factory=list)
     prompt_tokens: int | None = None
     cached_tokens: int | None = None
+    completion_tokens: int | None = None
+    model: str | None = None
     served_target: ResolvedTarget | None = None
 
 
@@ -909,6 +937,7 @@ class InferenceClient:
         reasoning_effort: str | None,
         reasoning_tokens: int | None = None,
         strip_reasoning: bool = False,
+        request_usage: bool = False,
     ) -> dict[str, Any]:
         """The per-ENDPOINT modeled call params + the per-call `extra_body` merge (D42/A10; per-mode
         reasoning D45/D46).
@@ -945,7 +974,14 @@ class InferenceClient:
         `strip_reasoning=True` (D46) builds the SAME payload with every reasoning control removed — ours
         AND any the endpoint hand-set in `extra_body` — and nothing else touched. It is the degraded
         re-attempt after a provider 400s on the reasoning controls (`is_reasoning_param_rejection`),
-        because those limits are per-MODEL and no static table here can predict them."""
+        because those limits are per-MODEL and no static table here can predict them.
+
+        `request_usage=True` (Phase 18 / C-9) asks for `stream_options: {include_usage: true}` so the
+        stream's final chunk carries the token counts the agent loop persists per call. STREAMING ONLY
+        (`stream_chat` sets it; `complete()` never does — the key is a hard 400 on a non-streamed
+        request), and it DEFERS to the owner: an endpoint that hand-set `stream_options` in its own
+        `extra_body` keeps its value verbatim and we add nothing, so there is exactly one spelling on
+        the wire. Ours rides as the modeled kwarg the SDK declares, per this file's TRANSPORT rule."""
         out: dict[str, Any] = {}
         if max_tokens is not None:
             out[ep.resolved_max_tokens_field] = max_tokens
@@ -1081,6 +1117,8 @@ class InferenceClient:
                 folded = call_effort if call_effort is not None else ep_effort
                 if folded is not None:
                     extra["reasoning"] = {**merged_reasoning, "effort": folded}
+        if request_usage and "stream_options" not in extra:
+            out["stream_options"] = {"include_usage": True}
         if extra:
             out["extra_body"] = extra
         return out
@@ -1121,10 +1159,15 @@ class InferenceClient:
         return out
 
     @staticmethod
-    def _capture_cache_telemetry(chunk: Any, report: StreamReport | None) -> None:
-        """Read prompt-cache telemetry off one stream chunk into `report` (ACA-18), wherever the
-        endpoint reports it — cheap attribute reads, only the final chunk carries anything. Never
-        raises + never issues an extra request; a field the backend didn't send just stays `None`.
+    def _capture_telemetry(chunk: Any, report: StreamReport | None) -> None:
+        """Read prompt-cache telemetry (ACA-18) + per-call usage (Phase 18 / C-9) off one stream chunk
+        — or off a whole buffered response, which carries the same `usage`/`model` attributes — into
+        `report`, wherever the endpoint reports it. Cheap attribute reads, only the final chunk carries
+        anything. Never raises + never issues an extra request; a field the backend didn't send just
+        stays `None`.
+
+        `usage.completion_tokens` + the served `model` ride the SAME read as the cache fields rather
+        than a second pass: they arrive on the same object, from the same `include_usage` request.
 
         - OpenAI-style (cloud): the final chunk carries `usage` when `stream_options.include_usage`
           was sent — `usage.prompt_tokens` + `usage.prompt_tokens_details.cached_tokens`. (Note:
@@ -1135,11 +1178,17 @@ class InferenceClient:
           `model_extra`."""
         if report is None:
             return
+        served_model = getattr(chunk, "model", None)
+        if isinstance(served_model, str) and served_model:
+            report.model = served_model
         usage = getattr(chunk, "usage", None)
         if usage is not None:
             pt = getattr(usage, "prompt_tokens", None)
             if isinstance(pt, int):
                 report.prompt_tokens = pt
+            ot = getattr(usage, "completion_tokens", None)
+            if isinstance(ot, int):
+                report.completion_tokens = ot
             details = getattr(usage, "prompt_tokens_details", None)
             ct = getattr(details, "cached_tokens", None)
             if isinstance(ct, int):
@@ -1247,6 +1296,10 @@ class InferenceClient:
                     )
                     if not resp.choices:
                         raise InferenceError("inference returned no choices")
+                    # Phase 18 / C-9: a buffered response reports `usage`/`model` on the response
+                    # object itself — no `stream_options` involved — so the summarizer call's usage
+                    # lands on the summary message the same way a streamed call's does.
+                    self._capture_telemetry(resp, report)
                     return resp.choices[0].message.content or ""
 
                 try:
@@ -1376,7 +1429,7 @@ class InferenceClient:
                 if sem is not None:
                     await sem.acquire()
 
-                async def _open(strip: bool) -> tuple[Any, Any]:
+                async def _open(strip: bool, usage: bool = True) -> tuple[Any, Any]:
                     # `_call_config` merges this endpoint's modeled params (max_tokens field name,
                     # reasoning_effort) + its `extra_body` PER-ENDPOINT, never into the shared `kwargs` — an
                     # OpenAI backend 400s on unknown args, so the local endpoint's `cache_prompt`/`return_progress`
@@ -1389,6 +1442,7 @@ class InferenceClient:
                             reasoning_effort=reasoning_effort,
                             reasoning_tokens=reasoning_tokens,
                             strip_reasoning=strip,
+                            request_usage=usage,
                         ),
                     }
                     stream = await self._client(ep).chat.completions.create(model=use_model, **call_kwargs)
@@ -1413,26 +1467,56 @@ class InferenceClient:
                     # for a busy backend. The permit is untouched: it was acquired above and is released by the
                     # single handler below (failure) or handed to the consumer (success) — a stripped
                     # re-attempt is just a second `create()` under the SAME permit, exactly like the first.
-                    # Bounded to ONE PER HOP by construction: the second call passes `strip=True` and can
-                    # never re-enter (`_note_reasoning_demotion` is skipped when `stripped`). Per-hop, not
-                    # per-request, is the honest description (audit LOW-1): a chain whose endpoints ALL
-                    # reject reasoning pays one extra call per endpoint on the FIRST request, then zero —
-                    # each hop must learn its own `(endpoint, model)` capability, and a demotion learned on
-                    # the local endpoint says nothing about the cloud one.
+                    # Per-hop, not per-request, is the honest description (audit LOW-1): a chain whose
+                    # endpoints ALL reject reasoning pays one extra call per endpoint on the FIRST
+                    # request, then zero — each hop must learn its own `(endpoint, model)` capability,
+                    # and a demotion learned on the local endpoint says nothing about the cloud one.
+                    #
+                    # TWO capabilities can be rejected here — the reasoning controls (D46) and the
+                    # `stream_options` we add for per-call usage (Phase 18 / C-9) — and an endpoint may
+                    # reject BOTH. One loop over both, rather than a classify-once ladder: a nested
+                    # shape only ever disabled one cause, so the second rejection killed the hop.
+                    # BOUNDED at 3 `create()`s by construction: every retry DISABLES the cause it just
+                    # classified (each flag flips at most once, and a rejection whose cause is already
+                    # disabled falls to `raise`), and there are exactly two causes.
                     stripped = self._reasoning_is_demoted(ep, use_model)
-                    try:
-                        first, stream = await _open(stripped)
-                    except BaseException as exc:
-                        if stripped or not self._note_reasoning_demotion(
-                            exc,
-                            name=name,
-                            ep=ep,
-                            model=use_model,
-                            reasoning_effort=reasoning_effort,
-                            reasoning_tokens=reasoning_tokens,
-                        ):
-                            raise
-                        first, stream = await _open(True)
+                    usage_on = True
+                    #: Did the OWNER hand-set `stream_options` on this endpoint? Then the key on the
+                    #: wire is theirs, not ours (`_call_config` defers to it and adds nothing), so a
+                    #: rejection of it is their config surfacing — raise it like any other 400 instead
+                    #: of "retrying without" a key we never added (an identical re-open + a warning
+                    #: that lies about what changed). Read off the same `ep.extra_body` view.
+                    owner_stream_options = bool(ep.extra_body) and "stream_options" in ep.extra_body
+                    while True:
+                        try:
+                            first, stream = await _open(stripped, usage_on)
+                            break
+                        except BaseException as exc:
+                            # `stream_options` first: it is the precisely-named rejection, and telemetry
+                            # must never cost a turn. Not remembered across calls (unlike a reasoning
+                            # demotion): the key is standard, so a rejecting endpoint is the rare case,
+                            # and one extra `create()` is cheaper than a second capability cache to
+                            # invalidate. `_note_reasoning_demotion` both classifies AND records, so it
+                            # is consulted only while reasoning is still on.
+                            if usage_on and not owner_stream_options and is_stream_options_rejection(exc):
+                                log.warning(
+                                    "endpoint '%s' rejected stream_options — retrying without per-call "
+                                    "usage capture (this call's token counts will be unavailable): %s",
+                                    name,
+                                    exc,
+                                )
+                                usage_on = False
+                            elif not stripped and self._note_reasoning_demotion(
+                                exc,
+                                name=name,
+                                ep=ep,
+                                model=use_model,
+                                reasoning_effort=reasoning_effort,
+                                reasoning_tokens=reasoning_tokens,
+                            ):
+                                stripped = True
+                            else:
+                                raise
                 except BaseException as exc:
                     if sem is not None:
                         sem.release()  # permit not handed off → release before the next endpoint / raise
@@ -1486,11 +1570,11 @@ class InferenceClient:
             first, stream, sem = result.value
             pending: dict[int, dict[str, str]] = {}
             try:
-                self._capture_cache_telemetry(first, report)
+                self._capture_telemetry(first, report)
                 for delta in self._chunk_deltas(first, pending):
                     yield delta
                 async for chunk in stream:
-                    self._capture_cache_telemetry(chunk, report)
+                    self._capture_telemetry(chunk, report)
                     for delta in self._chunk_deltas(chunk, pending):
                         yield delta
                 if pending:

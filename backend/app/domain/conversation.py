@@ -83,6 +83,30 @@ Part = Annotated[
 ]
 
 
+class CallUsage(BaseModel):
+    """What one model call cost, as the provider reported it (Phase 18 / C-9, L-11a) — persisted on
+    the message that call produced. `model` is the SERVED model id (which may differ from the one
+    requested, e.g. after a failover hop); the token counts are the provider's own.
+
+    Every field is nullable and so is the whole object: a backend that reports nothing yields
+    `usage: null` rather than a row of zeros (L-2 accepts the gap — the alternative is inventing
+    numbers). Cost is deliberately NOT computed here: it is a later join against a price table
+    (§2.7), never a capture requirement."""
+
+    model: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+    @classmethod
+    def of(cls, model: str | None, input_tokens: int | None, output_tokens: int | None) -> CallUsage | None:
+        """The usage to persist, or `None` when the provider reported nothing at all. One
+        construction rule for both call sites (the agent loop's streams + the summarizer's buffered
+        call), so "nothing reported" can never be persisted as an all-null object at one of them."""
+        if model is None and input_tokens is None and output_tokens is None:
+            return None
+        return cls(model=model, input_tokens=input_tokens, output_tokens=output_tokens)
+
+
 class Message(BaseModel):
     id: str = Field(default_factory=_uid)
     thread_id: str
@@ -96,6 +120,21 @@ class Message(BaseModel):
     #: assistant messages; None on user/system turns and legacy rows. `Thread.agent` stays the
     #: thread's primary/default; this is the source of truth for "who said this" per turn.
     agent: str | None = None
+    #: WHICH PROMPT VERSIONS fed this message's turn (Phase 18 / C-8): `{registry id: sha256 of the
+    #: effective template before substitution}`, following the OTel GenAI attribute pair
+    #: `gen_ai.prompt.name`/`gen_ai.prompt.version` (the names, not OTLP spans). `None` on user turns,
+    #: legacy rows, and any message no model call produced. The eval seam: a stored transcript is
+    #: attributable to the exact prompt VERSION that produced it without a new table (L-2).
+    #:
+    #: **TURN-SCOPED, not per-call**: every registry prompt rendered during this turn up to the moment
+    #: this message was written, latest hash per id. That is the honest description of the payload —
+    #: a C2 steering text resolved at iteration N persists as a tool result and really is in every
+    #: later call's context — and it is what makes a mid-turn edit visible (the earlier message keeps
+    #: the old hash, the later one carries the new). Run-level eval aggregates are unions over a
+    #: thread's messages, which are identical under per-call and turn-scoped stamping.
+    prompt_stamps: dict[str, str] | None = None
+    #: What that call cost, as reported (C-9). `None` when the provider reported nothing.
+    usage: CallUsage | None = None
 
     def text(self) -> str:
         """The concatenated `text` parts (the durable answer, excluding reasoning)."""

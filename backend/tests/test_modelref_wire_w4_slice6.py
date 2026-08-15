@@ -770,7 +770,15 @@ class _FakeInfer:
         return self._window
 
     async def complete(
-        self, payload, *, mode=None, model=None, max_tokens=None, reasoning_effort=None, reasoning_tokens=None
+        self,
+        payload,
+        *,
+        mode=None,
+        model=None,
+        max_tokens=None,
+        reasoning_effort=None,
+        reasoning_tokens=None,
+        report=None,
     ) -> str:
         self.kwargs.append(
             {

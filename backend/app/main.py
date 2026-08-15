@@ -48,6 +48,9 @@ from app.api import (
     media as media_api,
 )
 from app.api import (
+    prompts as prompts_api,
+)
+from app.api import (
     settings as settings_api,
 )
 from app.api import (
@@ -519,6 +522,7 @@ def create_app() -> FastAPI:
     app.include_router(tools_api.router, prefix="/api")
     app.include_router(events.router, prefix="/api")
     app.include_router(agent.router, prefix="/api")
+    app.include_router(prompts_api.router, prefix="/api")
     app.include_router(settings_api.router, prefix="/api")
     app.include_router(integrations.router, prefix="/api")
     app.include_router(voice_api.router, prefix="/api")

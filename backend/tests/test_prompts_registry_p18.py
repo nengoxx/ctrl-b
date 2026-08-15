@@ -210,6 +210,7 @@ def test_fleet_roster_assembly_is_byte_identical() -> None:
     # `test_context_cache_aca18_21` uses for `_log_context_cost`, no DB/registry/model needed.
     session = AgentSession.__new__(AgentSession)
     session._settings = settings
+    session._stamps = {}  # the per-turn stamp accumulator `resolve()` records into (Slice 2)
     assert session._roster() == (
         _GOLDEN["fleet_roster"][1]
         + "\nHosts:\n- Corsair (windows, desktop) -> host_id: corsair"

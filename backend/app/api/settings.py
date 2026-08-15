@@ -103,6 +103,54 @@ def _pop_provider_metadata(patch: dict[str, Any]) -> tuple[dict[str, str], str |
     return renames, providers_base
 
 
+def _resolve_prompt_entries(patch: dict[str, Any], current: Settings) -> None:
+    """Rewrite the `prompts` portion of a PUT patch into the COMPLETE map that should end up on disk
+    (Phase 18 / §7 L-4/L-5), BEFORE the merge that can only add and replace.
+
+    ONE-DEPTH semantics, deliberately unlike the generic deep-merge every other section gets:
+      * `{"<id>": null}` DELETES the entry — restoring a prompt is deleting its customization, never
+        storing a copy of the default (goose's semantics), and `deep_merge` has no way to express a
+        removal. The null sentinel is PUT-transport vocabulary only: a hand-edited `id: null` in
+        config.yaml stays a validation failure, exactly as it is for `tool_overrides`.
+      * a non-null entry REPLACES the whole entry. The editor always sends the complete
+        `{override?, append?}` pair, so a field-level merge would make "I cleared the append" mean
+        "keep the old append" — the one shape that cannot be undone from the UI.
+      * a blank (or whitespace-only) field is normalized to ABSENT, and an entry left with no fields
+        is dropped: blank IS unset everywhere (L-5), so it must never persist as a stored empty.
+
+    Unknown ids are passed through untouched — the registry may gain a row (or the owner may be
+    mid-rename) and silently dropping their text would be data loss. `GET /api/prompts` names them.
+    Anything not shaped like an entry is left alone for pydantic to 422 on.
+
+    A PRESENT `prompts` that is not a map is a 422 HERE rather than downstream: this hook consumes the
+    key before the merge, so a scalar/list/`null` would otherwise be dropped on the floor and answered
+    200 as a silent no-op. `null` is included deliberately — deleting every customization is expressed
+    by nulling the IDS, never by nulling the section."""
+    if "prompts" not in patch:
+        return
+    entries = patch["prompts"]
+    if not isinstance(entries, dict):
+        raise HTTPException(
+            status_code=422, detail="prompts must be an object of {prompt_id: {override?, append?} | null}"
+        )
+    out = {name: entry.model_dump(mode="json", exclude_none=True) for name, entry in current.prompts.items()}
+    for name, entry in entries.items():
+        if entry is None:
+            out.pop(name, None)
+            continue
+        if not isinstance(entry, dict):
+            out[name] = entry  # not an entry shape — hand it to validation as-is (→ 422)
+            continue
+        cleaned = {
+            k: v for k, v in entry.items() if v is not None and not (isinstance(v, str) and not v.strip())
+        }
+        if cleaned:
+            out[name] = cleaned
+        else:
+            out.pop(name, None)
+    patch["prompts"] = out
+
+
 @router.put("/settings")
 async def put_settings(patch: dict[str, Any], request: Request) -> dict[str, Any]:
     """Apply a partial settings patch. Deep-merges onto the current config, preserves unchanged
@@ -149,6 +197,11 @@ async def put_settings(patch: dict[str, Any], request: Request) -> dict[str, Any
         }
 
     async with settings_write_lock:
+        # Phase 18 / L-4: resolve the `prompts` map under the write lock (it reads the CURRENT map as
+        # its baseline, so it must not race another save) and before validation (a `null` sentinel is
+        # transport, not config — pydantic would 422 on it). `apply_settings_patch` then REPLACES the
+        # map wholesale, which is what makes a deletion land on disk.
+        _resolve_prompt_entries(patch, request.app.state.settings)
         # Snapshot the OLD settings before applying: `apply_settings_patch`→`reconfigure` mutates
         # `app.state.settings` IN PLACE (rebinds its top-level fields), so a live reference would read
         # as already-updated. A shallow copy keeps the pre-update nested objects for the diff.

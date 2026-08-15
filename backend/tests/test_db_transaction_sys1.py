@@ -168,7 +168,7 @@ def test_compaction_crash_persists_neither_summary_nor_flags(monkeypatch) -> Non
         cfg = CompactionCfg(enabled=True, keep_last_messages=1, keep_recent_tokens=1)
         comp = Compactor(cast("InferenceClient", None), messages, cfg, Settings())
 
-        async def _stub_summarize(_head, *, instructions=None):  # avoid touching a real inference backend
+        async def _stub_summarize(_head, *, instructions=None, call=None):  # no real inference backend
             return "[Earlier conversation summary]\nstub", False
 
         # Fail on the FIRST flag flip — i.e. AFTER the summary insert has run inside the txn.

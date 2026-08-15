@@ -198,16 +198,19 @@ def resolve_skills(
     return active
 
 
-def skills_prompt(active: list[Skill], settings: Settings) -> str | None:
+def skills_prompt(
+    active: list[Skill], settings: Settings, stamps: dict[str, str] | None = None
+) -> str | None:
     """Render the active skills' instructions as a system-prompt addition, or `None` if empty. The
     heading is the `skills_note` registry prompt; the skill bodies are this feature's data and are
-    concatenated after it (L-8), so an override reframes the note without dropping instructions."""
+    concatenated after it (L-8), so an override reframes the note without dropping instructions.
+    `stamps` is the caller's prompt-stamp accumulator (Phase 18 / C-8) — the session passes its own."""
     if not active:
         return None
     blocks = [f"## Skill: {s.name}\n{s.instructions}" for s in active if s.instructions]
     if not blocks:
         return None
-    return resolve("skills_note", settings) + "\n\n" + "\n\n".join(blocks)
+    return resolve("skills_note", settings, stamps=stamps) + "\n\n" + "\n\n".join(blocks)
 
 
 def narrow_tools(active: list[Skill], agent_allow: list[str] | str) -> list[str] | str:

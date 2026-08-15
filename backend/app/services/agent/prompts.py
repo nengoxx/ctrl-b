@@ -26,6 +26,7 @@ warning — a use site always receives a usable `str`.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import string
@@ -80,6 +81,25 @@ def placeholders(text: str) -> list[str]:
     """The `{{name}}` tokens a prompt text declares, in order of first appearance — derived, never
     declared (§2.3). Used by the default-shape tests and, from Slice 2, by `GET /api/prompts`."""
     return _Placeholders(text).get_identifiers()
+
+
+def template_hash(template: str) -> str:
+    """A prompt's `gen_ai.prompt.version` (C-8): sha256, lowercase hex, of the EFFECTIVE TEMPLATE —
+    the text BEFORE substitution, as `resolve_with_template` returns it. A/B identity is the template,
+    so two runs share a hash iff the same words produced them; the rendered values (roster rows, skill
+    bodies) are runtime data and belong to the transcript, not to prompt attribution.
+
+    Lives beside the registry because the harness phase hashes the same way to join a run against the
+    prompt VERSION that produced it — one hashing rule, never a second one written at the consumer.
+    A hash is an identity, not the text: recovering the exact words of an override the owner has since
+    edited needs the content-addressed `prompt_texts` store, which arrives with that phase (L-2)."""
+    return hashlib.sha256(template.encode("utf-8")).hexdigest()
+
+
+def label(prompt_id: str) -> str:
+    """The Conf editor's display name for a prompt, DERIVED from its id (L-8: `PromptDef` stores no
+    label). `per_tool_cap` → "Per Tool Cap", `m1_tool_blocked` → "M1 Tool Blocked"."""
+    return prompt_id.replace("_", " ").title()
 
 
 #: Every prompt, in the PROMPTS_PLAN §6 C-1 table order (which is also the Conf editor's list order).
@@ -277,6 +297,21 @@ REGISTRY: dict[str, PromptDef] = {
 }
 
 
+def effective_template(prompt_id: str, settings: Settings) -> str:
+    """The template `resolve()` would render for `prompt_id`, BEFORE substitution: the owner's
+    `override` (else the baked default), plus a blank line and the `append` when one is set.
+
+    The one composition rule, shared by `resolve_with_template` (which renders it and returns it as
+    the stamped identity) and `GET /api/prompts` (which serves it as `current`) — so the editor can
+    never show a different template than the one the model gets."""
+    definition = REGISTRY[prompt_id]
+    entry = settings.prompts.get(prompt_id)
+    if entry is None or not (entry.override or entry.append):
+        return definition.default
+    base = entry.override or definition.default
+    return (base + "\n\n" + entry.append) if entry.append else base
+
+
 def resolve_with_template(
     prompt_id: str, settings: Settings, ctx: dict[str, str] | None = None
 ) -> tuple[str, str]:
@@ -305,8 +340,7 @@ def resolve_with_template(
     entry = settings.prompts.get(prompt_id)
     if entry is not None and (entry.override or entry.append):
         try:
-            base = entry.override or definition.default
-            template = (base + "\n\n" + entry.append) if entry.append else base
+            template = effective_template(prompt_id, settings)
             return _Placeholders(template).safe_substitute(values), template
         except Exception:
             log.warning(
@@ -325,7 +359,27 @@ def resolve_with_template(
         return definition.default, definition.default
 
 
-def resolve(prompt_id: str, settings: Settings, ctx: dict[str, str] | None = None) -> str:
-    """The rendered text for `prompt_id` — every use site's entry point. See
-    `resolve_with_template` for the semantics; this drops the template identity it returns."""
-    return resolve_with_template(prompt_id, settings, ctx)[0]
+def resolve(
+    prompt_id: str,
+    settings: Settings,
+    ctx: dict[str, str] | None = None,
+    *,
+    stamps: dict[str, str] | None = None,
+) -> str:
+    """The rendered text for `prompt_id` — every use site's entry point. See `resolve_with_template`
+    for the resolution semantics; this drops the template identity it returns, or RECORDS it.
+
+    `stamps` (Phase 18 Slice 2 / C-8) is the caller's per-turn stamp accumulator: given one, this
+    records `stamps[prompt_id] = template_hash(effective_template)` — the identity of the text THIS
+    resolution produced, captured here rather than reconstructed later, because a mid-turn owner edit
+    is live by design (C-17) and a re-read would attribute the call to the wrong template. Every
+    persisted message that a model call produced snapshots the accumulator, so a mixed-version turn is
+    represented, not hidden.
+
+    Pass it wherever the resolved text reaches a MODEL CALL; omit it where the text only ever reaches
+    the owner or a log. It is a plain dict, not a resolver object (L-9): recording identity is the
+    caller's business, resolution stays this one function's."""
+    rendered, template = resolve_with_template(prompt_id, settings, ctx)
+    if stamps is not None:
+        stamps[prompt_id] = template_hash(template)
+    return rendered

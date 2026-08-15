@@ -127,11 +127,15 @@ class FileMemoryProvider:
             sub = root / "agents" / agent.name
         return sub
 
-    def load_context(self, agent: AgentDef) -> str:
+    def load_context(self, agent: AgentDef, stamps: dict[str, str] | None = None) -> str:
         """The memory block injected each turn (after the prompt appends, D15 #4), or "" when the
         subsystem is off or every injected store is empty. Iterates the store registry PERSONA-first
         then FACTS (D27); each section carries a Hermes-style usage header (`## Agent memory (67% —
-        1,474/2,200)`) so the model sees cap pressure."""
+        1,474/2,200)`) so the model sees cap pressure.
+
+        `stamps` is the caller's prompt-stamp accumulator (Phase 18 / C-8), forwarded to the two
+        prompts framing this block — the session passes its own, so the block's identity rides the
+        message the block fed."""
         cfg = self._settings.memory
         if not cfg.enabled:
             return ""
@@ -151,11 +155,16 @@ class FileMemoryProvider:
             return ""
         # The registry owns the framing; the sections are this feature's data, concatenated after it
         # (L-8) — so an override can reword the intro but never drop what it introduces.
-        block = resolve("memory_intro", self._settings) + "\n\n" + "\n\n".join(sections)
+        block = resolve("memory_intro", self._settings, stamps=stamps) + "\n\n" + "\n\n".join(sections)
         # Proactive consolidation nudge (Slice 1b, opt-in). Neutral wording so it reads right at 85% and
         # at 150% alike (a manual over-cap overwrite — F10). The hard over-cap error is independent.
         if cfg.consolidation_nudge and pressured:
-            nudge = resolve("consolidation_nudge", self._settings, {"pressured": ", ".join(pressured)})
+            nudge = resolve(
+                "consolidation_nudge",
+                self._settings,
+                {"pressured": ", ".join(pressured)},
+                stamps=stamps,
+            )
             block += "\n\n" + nudge
         return block
 

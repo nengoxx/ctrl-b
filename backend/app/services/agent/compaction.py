@@ -29,9 +29,10 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 
-from app.adapters.inference import InferenceClient, InferenceError
+from app.adapters.inference import InferenceClient, InferenceError, StreamReport
 from app.config import CompactionCfg, Settings
 from app.domain.conversation import (
+    CallUsage,
     Message,
     TextPart,
     Thread,
@@ -107,6 +108,18 @@ class CompactionResult:
     #: shrinks is a SUCCESS). `force` (manual `/compact`) bypasses threshold/backoff/breaker but NEVER
     #: this reject. Surfaced in the `/compact` endpoint JSON.
     rejected: bool = False
+
+
+@dataclass
+class _SummaryCall:
+    """Out-param for `_summarize` (the `StreamReport`/`_BatchOutcome` holder pattern — a helper that
+    already returns its text can't also return this). Carries what the summary MESSAGE stamps
+    (Phase 18): the `{summarizer: template hash}` identity of the prompt that produced it (C-8) and
+    the token usage the summarizer endpoint reported (C-9). Both stay `None` when no model call
+    happened — a truncation-fold notice has no prompt and no cost to attribute."""
+
+    prompt_stamps: dict[str, str] | None = None
+    usage: CallUsage | None = None
 
 
 #: The one ~4-chars/token heuristic shared by both estimators below (message-shaped + payload-shaped).
@@ -493,12 +506,17 @@ class Compactor:
         if not head:
             return None  # everything is within the floor / no clean boundary — nothing to fold
 
-        summary, truncated = await self._summarize(head, instructions=instructions)
+        call = _SummaryCall()
+        summary, truncated = await self._summarize(head, instructions=instructions, call=call)
         boundary = Message(
             thread_id=thread.id,
             role="system",
             actor=Actor.AGENT,
             parts=[TextPart(text=summary)],
+            # The compaction call is its OWN model call, so the summary message carries its OWN
+            # stamp + usage (Phase 18 / L-2) — just the `summarizer` prompt, never the turn's set.
+            prompt_stamps=call.prompt_stamps,
+            usage=call.usage,
             # Timestamp just before the kept tail so the summary sorts ahead of it (and after the
             # folded head) on the `ORDER BY ts ASC` reload.
             ts=tail[0].ts - timedelta(microseconds=1),
@@ -671,7 +689,13 @@ class Compactor:
             return [], history
         return history[:cut], history[cut:]
 
-    async def _summarize(self, head: list[Message], *, instructions: str | None = None) -> tuple[str, bool]:
+    async def _summarize(
+        self,
+        head: list[Message],
+        *,
+        instructions: str | None = None,
+        call: _SummaryCall | None = None,
+    ) -> tuple[str, bool]:
         """Summarize the head via the selected summarizer model against the fixed five-section
         template (D42). `instructions` (the `/compact <instructions>` steer, manual path only) rides as
         an extra emphasis block. Returns (text, truncated). Two paths fall back to the truncation
@@ -681,6 +705,7 @@ class Compactor:
         `_SUMMARIZER_MARGIN_FRAC` reserve, the call is doomed, so skip it for the truncation-fold
         (still a shrinking SUCCESS for the thrash machine — the failure signal is the inflation-reject,
         not this)."""
+        stamps: dict[str, str] = {}
         transcript = _render_transcript(head)
         s = self._cfg.summarizer
         # No conditionals in templates (§2.3): the emphasis block is precomputed here — empty on an
@@ -692,6 +717,7 @@ class Compactor:
             "summarizer",
             self._settings,
             {"sections": _SUMMARIZER_SECTION_BLOCK, "focus": focus},
+            stamps=stamps,
         )
         payload = [
             {"role": "system", "content": system},
@@ -710,6 +736,7 @@ class Compactor:
             reserve = max(s.max_tokens or 0, int(window * _SUMMARIZER_MARGIN_FRAC))
             if estimate_payload_tokens(payload) > window - reserve:
                 return TRUNCATION_NOTICE, True
+        report = StreamReport()
         try:
             body = await self._inference.complete(
                 payload,
@@ -718,12 +745,18 @@ class Compactor:
                 max_tokens=s.max_tokens,
                 reasoning_effort=s.reasoning_effort,
                 reasoning_tokens=s.reasoning_tokens,
+                report=report,
             )
             body = body.strip()
         except InferenceError:
             return TRUNCATION_NOTICE, True
         if not body:
             return TRUNCATION_NOTICE, True
+        if call is not None:
+            # Only on the path where the model actually wrote the summary: the truncation fallbacks
+            # above produce a notice no model call stands behind, so they stamp nothing (Phase 18).
+            call.prompt_stamps = stamps
+            call.usage = CallUsage.of(report.model, report.prompt_tokens, report.completion_tokens)
         return SUMMARY_PREFIX + body, False
 
 

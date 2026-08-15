@@ -226,6 +226,29 @@ MIGRATIONS: list[tuple[int, str]] = [
         CREATE INDEX idx_automation_runs_automation ON automation_runs(automation_id, started_at DESC);
         """,
     ),
+    (
+        6,
+        # Per-model-call message metadata (Phase 18 / D56, PROMPTS_PLAN §2.7 + §7 L-2). ONE nullable
+        # JSON-OBJECT column holding everything we know about the model call a message came out of.
+        # Today's keys: `prompt_stamps` ({registry id: sha256 of the effective prompt template — the
+        # eval seam that makes a stored transcript attributable to the exact prompt VERSION that
+        # produced it; recovering the TEXT of an override edited since needs the harness phase's
+        # content-addressed `prompt_texts` store) and `usage` ({model, input_tokens, output_tokens}
+        # as the provider reported it, or null).
+        #
+        # **Extend-don't-migrate: any future message-level metadata is a NEW KEY IN THIS COLUMN, never
+        # a new column.** That is the whole reason it is a JSON object rather than the three scalar
+        # columns the fields would suggest — the shape is known to grow (latency, the harness's run
+        # ids), and a sibling column per dimension is exactly the migration debt D56 §L-2 wanted to
+        # avoid. What L-2 actually ruled out is EVAL TABLES this phase (`model_calls`/`prompt_texts`,
+        # deferred to the harness phase); its "no migration" wording assumed message-level metadata
+        # could ride an existing JSON blob, which is false — only `parts` is JSON, and `parts` is
+        # CONTENT. The precedent for an additive message field is this same mechanism: migration 2's
+        # `agent` column (main-seat ruling 2026-08-15).
+        #
+        # NULL = every legacy row, every user/system turn, and any message no model call produced.
+        "ALTER TABLE messages ADD COLUMN meta TEXT;",
+    ),
 ]
 
 

@@ -125,7 +125,9 @@ def test_migration_v5_creates_both_tables_on_a_v4_database() -> None:
         finally:
             dbmod.MIGRATIONS = real
 
-    assert version == 5
+    # the legacy db migrated all the way to the CURRENT head (v5's tables are asserted below, so this
+    # only has to prove nothing stalled — pinning the literal 5 re-churned on every later migration)
+    assert version == real[-1][0]
     for col in (
         "id",
         "name",
