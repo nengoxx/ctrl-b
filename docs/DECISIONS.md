@@ -4298,3 +4298,35 @@ Rolling back *past* this tag leaves that worker live — the older backend serve
 again, and a browser will not update a worker fetched with a non-JS MIME — so recovery is device-side
 (clear site data). Ship it as its own tag, and expect the icon to need a delete-and-recreate of the
 bookmark, since Chrome caches the old tile.
+
+## D56 — The prompt system (Phase 18): whole-class registry + overrides + eval seams ✏️ LOCKED 2026-08-15 (owner rulings in conversation, same day, incl. the "specify everything beforehand" charge; spec of record = PROMPTS_PLAN.md incl. its §6 council reconciliation C-1..C-25 + §7 lean round L-1..L-11; council = Codex spec-completeness round [10 BLOCKER/8 SHOULD] + adversarial Opus implementer's-test lens, confirm rounds ALL RESOLVED + a final Codex cuts-only round [BUILD WITH THE LISTED CUTS, folded])
+
+**What.** Every model-facing prompt in the sibling class (~13: the C1 context framers, the C2
+steering nudges, the C3 summarizer — inventory PROMPTS_AUDIT §1, ids pinned in PROMPTS_PLAN §6 C-1)
+moves onto ONE registry module (`PromptDef{default, description?}`, plain infallible
+`resolve(id, settings, ctx)`), overridable via `prompts: {<id>: {override?, append?}}` on the
+Settings chokepoint, rendered by a zero-dep `{{name}}` `string.Template` subclass (lenient
+`safe_substitute` only; unknown tokens stay literal), served by `GET /api/prompts`, edited in a Conf
+Prompts section, restored by deleting the entry (one-depth `null`), and stamped per model call as
+nullable message metadata (`gen_ai.prompt.name`/`.version` = id + template hash, + nullable usage
+via `include_usage` merged under `extra_body`). A symbol-keyed AST pytest is the structural backstop
+against future invisible prompts. The main system prompt + SOUL.md personas keep their existing
+Class-A chain untouched.
+
+**Why this shape.** Field evidence R27/R30/R31/R32: goose independently built the same
+registry+API+UI (R30 corrects R27); zero-dep substitution is the shipping norm (Langfuse); vendor
+prompt formats fail the adoption test; no in-class peer ships prompt evals — the seams (per-call
+stamping + usage, non-retrofittable per R31 ⑲) ship now, the promptfoo-shaped harness is its own
+later phase. Whole-class editability incl. the guard-coupled nudges = the owner's explicit
+no-half-hardcoded directive; the coupling risk is contained by infallible resolve + per-prompt
+warnings + one-click restore.
+
+**Explicit non-builds (ledger: PROMPTS_PLAN §6 C-20 + §7):** PR-1 param descriptions (fold into the
+editable tool description; `params:{field:text}` seam recorded) · staleness badge (L-3) · the
+`""`-silence lever + per-class empty semantics (L-5; future `enabled:false` seam recorded) ·
+`model_calls`/`prompt_texts` tables (L-2; harness phase) · omitted-placeholder warnings (L-7) ·
+strict runtime render mode (L-6) · `rendered_hash` (C-8) · prompt-edit audit events (C-20).
+
+**Slice 0 precondition (the vault-audit hardening, `~/Documents/Maia/60 Audits/2026-08-14-…`):**
+M1 allowlist-at-execution guard, M3 subagent batch cap, M2 live/linger skill snapshot — contracts
+C-11/C-12/C-14 — ship BEFORE the registry build; L1/L2 measurement-gated.

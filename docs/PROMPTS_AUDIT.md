@@ -8,9 +8,13 @@
 > how to change them easily — I feel like the defaults might need some work and/or easy
 > editing/modifying, but I'm not sure every one of them is handled in some way or another."*
 >
-> **Status:** v1.0 — inventory complete, **no code written**. §5 carries a shape proposal, **not yet
-> ruled**. Peer evidence for the proposal lives in
-> [`research/R27-peer-prompt-configurability.md`](./research/R27-peer-prompt-configurability.md).
+> **Status:** v1.1 — inventory complete; **§5 RULED by the owner 2026-08-15**. The design of record
+> is [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md) (Phase 18): Mechanism A, whole-class coverage (Tier 2
+> read-only superseded — the C2 nudges are editable), `{{name}}` substitution-only placeholders
+> (leave-literal on unknowns), PR-1 not built (description-fold remedy + recorded seam). Peer
+> evidence: [R27](./research/R27-peer-prompt-configurability.md) ·
+> [R30](./research/R30-peer-prompt-system-internals.md) ·
+> [R31](./research/R31-prompt-eval-harnesses.md) · [R32](./research/R32-prompt-file-formats.md).
 >
 > **Method:** AST sweep over all of `backend/app` — every `ast.Constant` string ≥80 chars **plus
 > reconstructed `ast.JoinedStr` (f-strings)**, minus docstrings — then module-by-module reading to

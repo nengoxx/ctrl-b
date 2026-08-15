@@ -1351,6 +1351,20 @@ v1.5.0 is RESERVED for this theme's release.
 - [x] G6 palette variants per `GACHA_PLAN.md` §4.4 as amended 2026-08-06 (TWO pickers: seven accent variants incl. the re-derived eridu · the dossier picker slip+4 darks, neon-purple default, ✅ dark trial SIGNED OFF as a picker · wordmark → コントロール・ビー · NEW-ribbon demo on one random card · vapor-style dossier service dots) — ✅ CLOSED (as-built §7.7; owner-device-walked; boxes caught up 2026-08-12)
 - [x] Release as v1.5.0 (runbook §Release) — ✅ SHIPPED: v1.5.0 → v1.5.1 → v1.6.0 all released; prod = v1.6.0 since 2026-08-11 (box caught up 2026-08-12)
 
+## Phase 18 — The prompt system — **✅ DESIGN LOCKED 2026-08-15 ([`D56`](./DECISIONS.md)) · spec = [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md) (§6 council C-1..C-25 + §7 lean round L-1..L-11 are NORMATIVE)**
+
+Every model-facing prompt (the C-1 table's ids) → one registry module + plain infallible
+`resolve()`, `prompts:{id:{override?,append?}}` on Settings, `{{name}}` zero-dep lenient
+placeholders, `GET /api/prompts`, Conf Prompts editor, message-metadata prompt-hash + usage
+stamping (the eval seam), + the symbol-keyed AST backstop. Build against the plan, not this list.
+
+- [x] Council: spec-completeness round (Codex 10 BLOCKER/8 SHOULD + Opus implementer's test) → §6 reconciliation → confirm rounds ALL RESOLVED → cuts-only lean round → §7 → **D56 LOCKED** (2026-08-15)
+- [ ] Slice 0 — hardening pre-slice per §6 C-11/C-12/C-14: M1 execution guard · M3 batch cap · M2 skill-snapshot fix, each with its pinned tests → Codex review → owner pause
+- [ ] Slice 1 — registry + config READ + migrate all entries (L-8 data-concatenation rule) + no-unresolved-tokens tests + the AST backstop
+- [ ] Slice 2 — API + stamping (NO migration): message-metadata stamps + usage, entry replace/delete hook, `api/prompts.py`
+- [ ] Slice 3 — Conf UI Prompts section (two-field PromptModal, restore-by-delete, side-by-side view, placeholder list, coupling warnings)
+- [ ] ROADMAP entry for the eval harness phase (promptfoo-shaped; scenarios from real transcripts; metrics per the R31 addendum; the deferred L-2 tables land there) — harness itself is NOT this phase
+
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.

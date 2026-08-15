@@ -40,6 +40,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/VAPOR_ASSIMILATION_PLAN.md`](./docs/VAPOR_ASSIMILATION_PLAN.md) | Phase 16 record (**✅** D51): vapor's migration onto the kit + cosmos default; per-slice as-built appendix. |
   | [`docs/GACHA_PLAN.md`](./docs/GACHA_PLAN.md) | Phase 17 record (**✅** D52, shipped v1.5.0–v1.6.0): the gacha theme + the alt-fleet layouts. Read before touching gacha/alt-fleet surfaces; §7 = the slice ladder + per-slice as-built records. |
   | [`docs/MEDIA_PLAN.md`](./docs/MEDIA_PLAN.md) | Media namespaces v2 (D53, **✅ shipped v1.5.0**). Read before touching `core/media.py`, the gallery, or any theme's art consumers. |
+  | [`docs/PROMPTS_PLAN.md`](./docs/PROMPTS_PLAN.md) | The Phase 18 prompt system (registry · `prompts:` overrides · placeholders · eval seams; design ruled 2026-08-15, council pending). Read before touching any prompt text or the registry. |
   | [`docs/UI_AUDIT.md`](./docs/UI_AUDIT.md) | Two-pass frontend audit (perf F1–F13 + a11y/resilience F14–F29). |
   | [`docs/PROMPTS_AUDIT.md`](./docs/PROMPTS_AUDIT.md) | **Every model-facing prompt ctrl-b ships**, classified by editability (PR-# findings) + the §5 shape proposal (unruled). Read before touching any prompt text or adding a new one. |
   | [`docs/SYSTEM_AUDIT.md`](./docs/SYSTEM_AUDIT.md) | Code-verified architecture audit (SYS-# findings; excludes the chat loop). |

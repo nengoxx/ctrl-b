@@ -27,17 +27,19 @@
   [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) (frozen, reference only — "the HANDOFF block of
   ⟨date⟩" resolves there).
 
-## ▶▶ NEXT SESSION — PICK A PATH (v1.6.0 close; everything is clean, nothing half-open)
+## ▶▶ NEXT SESSION — PICK A PATH
 
 In rough order of standing priority:
 
-1. **The PROMPTS planning session** — the owner parked THREE design questions explicitly for a
-   Fable planning seat (PROMPTS_AUDIT §5 carries them verbatim): ① mechanism A (a `prompts:`
-   config map on the Settings chokepoint — the Opus recommendation) vs B (`$CTRLB_HOME/prompts/`
-   file drop-in) · ② are the 8 guard-coupled steering nudges read-only or editable · ③ is PR-1
-   (parameter descriptions) worth inventing with no peer precedent, or fold into the editable
-   tool description. PR-6 (interpolating prompts need a placeholder syntax first) GATES any
-   build. Read PROMPTS_AUDIT.md + R27 first; this is a design conversation, then a slice.
+1. **Phase 18 — the prompt system — D56 LOCKED 2026-08-15, BUILD IN PROGRESS.** Spec =
+   [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); **§6 (council C-1..C-25) + §7 (lean round L-1..L-11) are
+   the normative layer** — the council closed ALL RESOLVED, then a cuts-only round trimmed the
+   design to five concepts + one seam (no new tables, no new deps; append KEPT, usage capture KEPT,
+   staleness/silence-lever/eval-tables CUT or deferred — overrules recorded in §7). Slice ladder =
+   plan §4: Slice 0 (vault-audit hardening M1/M2/M3 per C-11/C-12/C-14) → 1 (registry) → 2
+   (API+stamping) → 3 (Conf UI); owner pause after each slice. The external harness audit lives at
+   `~/Documents/Maia/60 Audits/2026-08-14-ctrl-b-runtime-agent-harness-audit.md` (pinned `e1b10c3`);
+   L1/L2 measurement-gated.
 2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (**still untested as of
    2026-08-12, owner-confirmed**): SYS-19 meant `showNotification()` had never had a registered
    worker when it "failed"; it may just work on v1.6.0. Outcome decides whether the parked Web
