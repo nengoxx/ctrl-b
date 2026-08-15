@@ -12,11 +12,14 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-12)
+## Current state (2026-08-15)
 
-- **Prod = v1.6.0 @ `fcc42ad`**, live + healthy (https://emma.lobster-vector.ts.net). The
-  gacha/alt-fleet arc (Phase 17: G0–G6 + M-series + E0–E5) is DONE end to end; no fix waves
-  pending, no reviews open.
+- **Prod = v1.6.0 @ `fcc42ad`**, live + healthy (https://emma.lobster-vector.ts.net) — UNCHANGED
+  by this session; all Phase 18 work is on local `main` only.
+- **Local `main` is 3 commits AHEAD of origin, NOT pushed** (owner has not authorized a push):
+  `c020464` (Phase 18 planning docs + D56) · `30e7417` (Slice 0 hardening) · `3cb10dd` (as-built).
+- **The DEV UNITS ARE RUNNING on purpose** (:5434 + Vite :5173) — the owner asked to keep them up
+  for the Slice 0 eyeball. Do NOT stop them until the owner says they're done looking.
 - **Rollback = `update.sh v1.5.1` EXACTLY** — the sw.js floor: any pre-v1.5.1 tag re-serves
   `sw.js` as `text/html` and strands the registered worker per-device (runbook §Rollback carries
   the note). Release flow = `deploy/linux/README.md` §Release; the updater has 4 clean plain-form
@@ -36,8 +39,11 @@ In rough order of standing priority:
    L-1..L-11) are the normative layer; **§8.1 = the Slice 0 as-built** (M1 allowlist-at-execution ·
    M2 skill snapshot with terminal-record pin merge · M3 batch cap; Codex SHIP-WITH-FIXES → wave →
    RESOLVED; gate 1338 tests green; the two denial constants MUST be swept into the registry by
-   Slice 1). Dev units were started for the owner's eyeball — STOP them when done. Next: Slice 1
-   (registry + config READ + migration) per the §4 ladder, owner go first.
+   Slice 1). Dev units are RUNNING for the owner's eyeball (see Current state — leave them up).
+   NEXT = the owner's Slice 0 look + go, then Slice 1 (registry + config READ + migration:
+   ALL prompt texts move into `prompts.py` incl. `M1_TOOL_BLOCKED`/`M3_BATCH_REJECTED`, the
+   `{{var}}` renderer, `PromptOverride` read path, the AST backstop) per the §4 ladder. Also owed
+   at next release: the push of the 3 local commits (owner-authorized) and the runbook flow.
 2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (**still untested as of
    2026-08-12, owner-confirmed**): SYS-19 meant `showNotification()` had never had a registered
    worker when it "failed"; it may just work on v1.6.0. Outcome decides whether the parked Web
