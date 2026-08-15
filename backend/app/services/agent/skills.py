@@ -28,6 +28,7 @@ import yaml
 from app.core.fsutil import write_text_eol
 from app.core.skills import Skill, SkillProvider, SkillSelector
 from app.core.textmatch import rank_by_overlap
+from app.services.agent.prompts import resolve
 
 if TYPE_CHECKING:
     from app.config import Settings
@@ -197,14 +198,16 @@ def resolve_skills(
     return active
 
 
-def skills_prompt(active: list[Skill]) -> str | None:
-    """Render the active skills' instructions as a system-prompt addition, or `None` if empty."""
+def skills_prompt(active: list[Skill], settings: Settings) -> str | None:
+    """Render the active skills' instructions as a system-prompt addition, or `None` if empty. The
+    heading is the `skills_note` registry prompt; the skill bodies are this feature's data and are
+    concatenated after it (L-8), so an override reframes the note without dropping instructions."""
     if not active:
         return None
     blocks = [f"## Skill: {s.name}\n{s.instructions}" for s in active if s.instructions]
     if not blocks:
         return None
-    return "The following skill instructions apply to this task — follow them:\n\n" + "\n\n".join(blocks)
+    return resolve("skills_note", settings) + "\n\n" + "\n\n".join(blocks)
 
 
 def narrow_tools(active: list[Skill], agent_allow: list[str] | str) -> list[str] | str:

@@ -297,9 +297,11 @@ class _RecInference:
 
 
 def test_finalize_retains_toolset_with_tool_choice_none():
+    from app.config import Settings
     from app.services.agent.session import AgentSession
 
     s = AgentSession.__new__(AgentSession)
+    s._settings = Settings()  # the wrap-up nudge resolves off the live Settings (D56)
     s._static_head = [{"role": "system", "content": "sys"}]
     s._tools_cache = [{"type": "function", "function": {"name": "ping", "parameters": {}}}]
     s._head_tokens = None

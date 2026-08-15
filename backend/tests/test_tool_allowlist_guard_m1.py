@@ -157,7 +157,8 @@ def _write_skill(root: Path, name: str, allowed_tools: list[str]) -> None:
 # ── the negative regression: an excluded emitted name never executes its body ────────────────────
 def test_excluded_tool_never_executes_its_body() -> None:
     from app.domain.enums import Risk, RunState
-    from app.services.agent.session import M1_TOOL_BLOCKED, _LoopGuard
+    from app.services.agent.prompts import resolve
+    from app.services.agent.session import _LoopGuard
 
     with _workspace(), _client() as c:
         fired: dict = {}
@@ -169,7 +170,7 @@ def test_excluded_tool_never_executes_its_body() -> None:
         assert fired == {}  # the body NEVER ran (fails on the pinned baseline, where it did)
         result = _results(events)[cid]
         assert result["state"] == RunState.DENIED.value
-        assert result["output"] == M1_TOOL_BLOCKED.format(tool="_probe_m1")
+        assert result["output"] == resolve("m1_tool_blocked", c.app.state.settings, {"tool": "_probe_m1"})
         # …and the refusal feeds the loop guard's denied-signature path, so a loop of blocked calls
         # trips the guard instead of spinning.
         assert _LoopGuard.sig("_probe_m1", {}) in guard.denied_sigs
@@ -263,7 +264,8 @@ def test_excluded_tool_with_malformed_args_is_denied_not_repaired() -> None:
     """The capability boundary outranks argument validity: an excluded tool whose args were malformed
     gets the DENIED refusal (audited, denial-signature recorded), not JSON-repair steering."""
     from app.domain.enums import Risk, RunState
-    from app.services.agent.session import M1_TOOL_BLOCKED, _LoopGuard
+    from app.services.agent.prompts import resolve
+    from app.services.agent.session import _LoopGuard
 
     with _workspace(), _client() as c:
         fired: dict = {}
@@ -276,7 +278,7 @@ def test_excluded_tool_with_malformed_args_is_denied_not_repaired() -> None:
         assert fired == {}
         result = _results(events)[cid]
         assert result["state"] == RunState.DENIED.value
-        assert result["output"] == M1_TOOL_BLOCKED.format(tool="_probe_m1_bad")
+        assert result["output"] == resolve("m1_tool_blocked", c.app.state.settings, {"tool": "_probe_m1_bad"})
         assert _LoopGuard.sig("_probe_m1_bad", {}) in guard.denied_sigs
 
 

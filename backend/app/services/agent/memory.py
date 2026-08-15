@@ -34,6 +34,7 @@ from app.core.memory import (
 )
 from app.domain.agent import AgentDef
 from app.services.agent.memory_backup import NoopBackup
+from app.services.agent.prompts import resolve
 
 #: Injection order rank — PERSONA-first (emotional state), then FACTS (`load_context` sorts stably by
 #: this, so stores at the same position keep registration order: memory before user).
@@ -148,19 +149,14 @@ class FileMemoryProvider:
                 pressured.append(f"{spec.label} ({_pct(len(body), cap)}%)")
         if not sections:
             return ""
-        intro = (
-            "Context you carry across sessions — treat it as known and current. "
-            "The percentages show how full each store is against its character cap."
-        )
-        block = intro + "\n\n" + "\n\n".join(sections)
+        # The registry owns the framing; the sections are this feature's data, concatenated after it
+        # (L-8) — so an override can reword the intro but never drop what it introduces.
+        block = resolve("memory_intro", self._settings) + "\n\n" + "\n\n".join(sections)
         # Proactive consolidation nudge (Slice 1b, opt-in). Neutral wording so it reads right at 85% and
         # at 150% alike (a manual over-cap overwrite — F10). The hard over-cap error is independent.
         if cfg.consolidation_nudge and pressured:
-            block += (
-                "\n\nConsolidate before adding more — " + ", ".join(pressured) + ". Merge overlapping "
-                "entries with `replace`, drop stale ones with `remove`, and reconcile anything that "
-                "contradicts what you just learned."
-            )
+            nudge = resolve("consolidation_nudge", self._settings, {"pressured": ", ".join(pressured)})
+            block += "\n\n" + nudge
         return block
 
     def _spec_for(self, key: str) -> StoreSpec:

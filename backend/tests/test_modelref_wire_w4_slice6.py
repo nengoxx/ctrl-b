@@ -784,7 +784,7 @@ class _FakeInfer:
 
 def _summarize_with(summarizer: ModelRef, fake: _FakeInfer):
     cfg = CompactionCfg(summarizer=summarizer)
-    comp = Compactor(cast("InferenceClient", fake), cast("MessageRepo", None), cfg)
+    comp = Compactor(cast("InferenceClient", fake), cast("MessageRepo", None), cfg, Settings())
     head = [
         Message(thread_id="t", role="user", actor=Actor.USER, parts=[TextPart(text="please wake corsair")]),
         Message(thread_id="t", role="assistant", actor=Actor.AGENT, parts=[TextPart(text="corsair is up")]),
@@ -888,7 +888,7 @@ def _backstop_session(state, thread, *, summary: str | None = "tiny summary"):
     session = _build_session(state, thread)
     cfg = CompactionCfg(keep_last_messages=2, keep_recent_tokens=5, threshold_tokens=10_000_000)
     session._compaction_cfg = cfg
-    session._compactor = Compactor(session._inference, state.messages, cfg)
+    session._compactor = Compactor(session._inference, state.messages, cfg, session._settings)
 
     async def big_window(ep):
         return 10_000_000  # pre-stream trigger never fires; the backstop's force-fold ignores it anyway
@@ -1084,7 +1084,7 @@ def test_backstop_shares_single_slot_endpoint_without_deadlock() -> None:
             session._inference = client  # the REAL single-slot client
             fold_cfg = CompactionCfg(keep_last_messages=2, keep_recent_tokens=5)
             session._compaction_cfg = fold_cfg
-            session._compactor = Compactor(client, state.messages, fold_cfg)
+            session._compactor = Compactor(client, state.messages, fold_cfg, session._settings)
 
             async def collect():
                 return [ev async for ev in session._drive(thread)]

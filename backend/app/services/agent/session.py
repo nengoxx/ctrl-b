@@ -85,6 +85,7 @@ from app.services.agent.compaction import (
     plan_clearing,
 )
 from app.services.agent.exec import run_user_exec
+from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
 from app.services.conversation import MessageRepo, ThreadRepo
@@ -105,25 +106,6 @@ _SUSPEND_CALL_STATES = (RunState.AWAITING_CONFIRM, RunState.AWAITING_ANSWER)
 #: too small (no clean turn boundary, or a head so small a summary wouldn't shrink it). A benign no-op,
 #: phrased so the composer reads it as "nothing to do" rather than a failure (A5-x, v1.3.1).
 COMPACT_TOO_SMALL = "thread too small to compact — nothing to do"
-
-#: The third rung of the unattended `question` ladder (§D-3, council ruling R-1): what the model is told
-#: when an automation running under `question_policy: use_default` asks something that offered neither a
-#: default nor choices. It must keep the run MOVING — the alternative (deny) collapses `use_default` into
-#: `skip` for every default-less question — while making the model own and surface the assumption.
-UNATTENDED_JUDGEMENT_ANSWER = (
-    "No owner is available to answer this — proceed on your best judgement and state the assumption you "
-    "made in your final answer."
-)
-
-#: What the model is told when it emits the name of a tool outside its effective allowlist (M1,
-#: PROMPTS_PLAN §6 C-11). Named for the prompt id `m1_tool_blocked` it becomes in the Phase-18 prompt
-#: registry (Slice 1 re-homes this text there and swaps `{tool}` for the `{{tool}}` renderer).
-M1_TOOL_BLOCKED = (
-    "The tool `{tool}` is not available to you in this conversation — it was NOT run and nothing "
-    "happened. This is a capability boundary, not a transient failure: do not call it again and do "
-    "not try to reach it another way. Use one of the tools you were given, or give the owner your "
-    "final answer."
-)
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are ctrl-b, a concise assistant embedded in a single-user homelab control panel. "
@@ -439,7 +421,7 @@ class AgentSession:
         # Context-window settings are per-agent (4.5): the AgentDef's `compaction` wins, else the
         # global default. A subagent inherits the parent's effective value (resolved at spawn).
         self._compaction_cfg = self._agent.compaction or settings.agent.compaction
-        self._compactor = Compactor(inference, messages, self._compaction_cfg)
+        self._compactor = Compactor(inference, messages, self._compaction_cfg, settings)
         #: The injected per-thread thrash-machine view (D42 Wave 3), like `steer_source` — `None` for
         #: subagent sessions + non-thread call sites (their auto-compaction never latches a breaker).
         #: The Compactor stays STATELESS; the session reads/writes this off `compact()`'s outcome.
@@ -530,16 +512,17 @@ class AgentSession:
         (auto_write on → saved; off → proposed for the owner's approval), so the nudge only steers —
         it never writes. The `state` clause appears only when that store is enabled."""
         cfg = self._settings.memory
+        # No conditionals in templates (§2.3): the gated sentence is precomputed here and passed as an
+        # ordinary value, empty when the store is off.
         state_clause = (
             " Also update your `state` (action `set`) if how you feel has shifted."
             if cfg.state_enabled
             else ""
         )
-        return (
-            f"It's been {cfg.reflection_interval} turns — pause and review the recent conversation. "
-            "If anything is durably worth remembering (a lasting fact, preference, or decision), save "
-            f"it with the `memory` tool.{state_clause} If there's nothing worth keeping, just continue "
-            "— don't invent things to store."
+        return resolve(
+            "reflection_nudge",
+            self._settings,
+            {"reflection_interval": str(cfg.reflection_interval), "state_clause": state_clause},
         )
 
     def _roster(self) -> str | None:
@@ -550,7 +533,9 @@ class AgentSession:
         services = self._settings.services()
         if not hosts and not services:
             return None
-        lines = ["Fleet roster - use the `id` as the tool argument (host_id / service_id):"]
+        # The heading is the `fleet_roster` registry prompt; the rows below are this feature's data,
+        # concatenated after it (L-8) — an override reframes the map, it cannot drop hosts.
+        lines = [resolve("fleet_roster", self._settings)]
         if hosts:
             lines.append("Hosts:")
             lines += [
@@ -601,7 +586,7 @@ class AgentSession:
             active = [by_name[n] for n in (invoked or []) if n in by_name]
         if not active:
             return
-        self._skills_note = skills_prompt(active)
+        self._skills_note = skills_prompt(active, self._settings)
         self._tool_allow = narrow_tools(active, self._agent.tools)
         self._active_skills = [s.name for s in active]  # M2/C-12 — captured right after selection
 
@@ -905,7 +890,8 @@ class AgentSession:
         elif isinstance(choices, list) and choices and isinstance(choices[0], str) and choices[0].strip():
             answer, source = choices[0].strip(), "the first offered choice (no default was declared)"
         else:
-            answer, source = UNATTENDED_JUDGEMENT_ANSWER, "no default and no choices were offered"
+            answer = resolve("unattended_answer", self._settings)
+            source = "no default and no choices were offered"
         return ToolResult(
             state=RunState.OK,
             summary=f"no owner to ask ({self._headless_label()}) — answered from {source}",
@@ -1789,16 +1775,7 @@ class AgentSession:
         # protection (`clear_keep_steps`) keeps the just-run outputs the wrap-up summarizes honestly;
         # only OLD bulky outputs past that window are trimmed, and their `[state] summary` lines survive.
         clearing = await self._plan_clearing(thread)
-        _WRAP_NUDGE = {
-            "role": "system",
-            "content": (
-                "You have done enough tool work for this request. Do NOT call any more tools. "
-                "Give the owner your final answer now. Be honest: summarize only what you "
-                "actually accomplished via the tool results above, and clearly state what you "
-                "could NOT do. Do not claim a step or plan succeeded if its tool was never run "
-                "or returned an error."
-            ),
-        }
+        _WRAP_NUDGE = {"role": "system", "content": resolve("wrapup_nudge", self._settings)}
 
         async def _assemble_wrap() -> list[dict]:
             msgs = await self._assemble(thread, clearing=clearing)
@@ -2112,7 +2089,7 @@ class AgentSession:
         result = ToolResult(
             state=RunState.DENIED,
             summary=f"{cp.tool} is not available to this agent — not run",
-            output=M1_TOOL_BLOCKED.format(tool=cp.tool),
+            output=resolve("m1_tool_blocked", self._settings, {"tool": cp.tool}),
         )
         guard.denied_sigs.add(_LoopGuard.sig(cp.tool, cp.args))
         await self._actions.record_policy_denial(
@@ -2372,23 +2349,13 @@ class AgentSession:
                         result: ToolResult = ToolResult(
                             state=RunState.DENIED,
                             summary="question declined by the owner",
-                            output=(
-                                "The owner chose not to answer this question. Do not re-ask it or "
-                                "rephrase it. Proceed using your best judgment, or give the owner your "
-                                "final answer."
-                            ),
+                            output=resolve("question_declined", self._settings),
                         )
                     else:
                         result = ToolResult(
                             state=RunState.DENIED,
                             summary=f"{cp.tool} rejected by the owner — not run",
-                            output=(
-                                "The owner reviewed this tool call and REJECTED it. It was NOT run — "
-                                "nothing happened. This is the owner's deliberate decision, not an "
-                                "error: do not retry this call, and do not attempt the same action any "
-                                "other way. If the rest of your task doesn't depend on it, continue "
-                                "without it; otherwise stop and give the owner your final answer."
-                            ),
+                            output=resolve("rejection_notice", self._settings),
                         )
                     outcome.made_progress = True
                 else:
@@ -2409,30 +2376,26 @@ class AgentSession:
                             suppressed = ToolResult(
                                 state=RunState.DENIED,
                                 summary=f"(already rejected) {cp.tool} — the owner rejected this call this turn",
-                                output=(
-                                    "The owner already rejected this exact call this turn. It was NOT "
-                                    "run. Do not ask again — continue without it or give the owner your "
-                                    "final answer."
-                                ),
+                                output=resolve("denial_echo", self._settings),
                             )
                         elif guard.counts.get(sig, 0) >= guard.max_repeat and sig in guard.last_results:
                             prior = guard.last_results[sig]
                             suppressed = ToolResult(
                                 state=prior.state,
                                 summary=f"(repeat suppressed) {prior.summary}",
-                                output=(
-                                    "You already ran this exact call. Do not repeat it — use the "
-                                    "previous result, try a different approach, or give your final answer."
-                                ),
+                                output=resolve("repeat_suppressed", self._settings),
                             )
                         elif guard.tool_counts.get(cp.tool, 0) >= guard.max_per_tool:
                             suppressed = ToolResult(
                                 state=RunState.DENIED,
                                 summary=f"(call limit) {cp.tool} used too many times this turn",
-                                output=(
-                                    f"You have already called {cp.tool} {guard.tool_counts.get(cp.tool, 0)} "
-                                    "times this turn. Stop calling it — use what you have, switch to a "
-                                    "different tool, or give the owner your final answer now."
+                                output=resolve(
+                                    "per_tool_cap",
+                                    self._settings,
+                                    {
+                                        "tool": cp.tool,
+                                        "count": str(guard.tool_counts.get(cp.tool, 0)),
+                                    },
                                 ),
                             )
                     if suppressed is not None:

@@ -805,6 +805,24 @@ class ToolOverride(BaseModel):
     approvals: list[ApprovalRule] | None = None
 
 
+class PromptOverride(BaseModel):
+    """The owner's customization of ONE registered prompt (Phase 18, D56) — keyed by the registry id
+    in `Settings.prompts`, the same one-unified-object-per-item shape as `ToolOverride`.
+
+    - `override`: full replacement of the baked default. Blank/None → the default.
+    - `append`: emitted after whichever base won, separated by a blank line. Rides the LIVE default,
+      so an append-only customization never goes stale when the default is edited upstream.
+
+    Both blank = unset, everywhere (L-5): restoring a prompt is deleting its entry, not storing a
+    copy of the default. `resolve()` (services/agent/prompts.py) is the only reader.
+    """
+
+    model_config = {"extra": "allow"}  # forward-compat: an unknown future field round-trips
+
+    override: str | None = None
+    append: str | None = None
+
+
 class AppearanceCfg(BaseModel):
     """Active appearance selection (Phase 11 / D28 §9.11, extended M3 §14.3) — the cross-device-synced
     theme picker state.
@@ -1112,6 +1130,12 @@ class Settings(BaseModel):
     #: left None means "use the tool's compile-time default". Legacy `tool_descriptions` is folded in
     #: by `_fold_legacy_tool_descriptions` below (zero-touch migration).
     tool_overrides: dict[str, ToolOverride] = Field(default_factory=dict)
+    #: Per-prompt overrides (Phase 18, D56), keyed by the registry id in `services/agent/prompts.py`
+    #: → a unified `PromptOverride` (`override` + `append`, both optional). Read live per model call
+    #: by `resolve()` — there is no cache, so an edit applies from the next resolve. An id with no
+    #: entry (or an entry whose fields are blank) runs on the baked default; an id the registry does
+    #: not know is preserved on disk and simply never read.
+    prompts: dict[str, PromptOverride] = Field(default_factory=dict)
     #: Keyed by host name, preserving the live `wol_server_win.py` `computers{}` shape so the
     #: owner can copy their existing config.yaml unchanged (HANDOFF — migration reference).
     computers: dict[str, ComputerCfg] = Field(default_factory=dict)

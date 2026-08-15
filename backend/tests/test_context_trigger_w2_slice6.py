@@ -26,6 +26,7 @@ from _reg import registry, target
 
 import app.services.agent.compaction as compaction_mod
 from app.adapters.inference import InferenceClient, StreamReport
+from app.config import Settings
 from app.domain.agent import CompactionCfg
 from app.domain.conversation import Message, TextPart
 from app.domain.enums import Actor
@@ -43,7 +44,7 @@ from app.services.conversation import MessageRepo
 def _compactor(cfg: CompactionCfg) -> Compactor:
     """A Compactor with no inference/messages deps — `_over_threshold` is sync and, when handed
     `estimated_tokens`, never reads history, so the deps are unused."""
-    return Compactor(cast("InferenceClient", None), cast("MessageRepo", None), cfg)
+    return Compactor(cast("InferenceClient", None), cast("MessageRepo", None), cfg, Settings())
 
 
 def test_window_trigger_fires_at_frac_of_window() -> None:

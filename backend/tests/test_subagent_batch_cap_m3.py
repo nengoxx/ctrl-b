@@ -105,7 +105,7 @@ def test_batch_at_the_cap_is_accepted() -> None:
 
 def test_batch_over_the_cap_is_rejected_before_anything_is_created() -> None:
     from app.domain.enums import RunState
-    from app.services.agent.subagents import M3_BATCH_REJECTED
+    from app.services.agent.prompts import resolve
 
     with _workspace(), _client() as c:
         deps = c.app.state.deps
@@ -115,7 +115,9 @@ def test_batch_over_the_cap_is_rejected_before_anything_is_created() -> None:
         with _no_children(seen):
             res = _spawn(deps, parent, cap + 1)
         assert res.state == RunState.DENIED
-        assert res.output == M3_BATCH_REJECTED.format(count=cap + 1, max=cap)
+        assert res.output == resolve(
+            "m3_batch_rejected", deps.settings, {"count": str(cap + 1), "max": str(cap)}
+        )
         assert str(cap + 1) in res.summary and str(cap) in res.summary
         assert seen == {}  # zero children resolved, zero orchestrators, zero threads
 

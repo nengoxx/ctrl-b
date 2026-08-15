@@ -137,7 +137,9 @@ def _routing_session(state, thread, *, ft=2, fbt=2, max_iters=16, max_repeat=2, 
     session._agent = agent
     session._routing_cfg = agent.routing
     session._compaction_cfg = CompactionCfg(enabled=False)
-    session._compactor = Compactor(session._inference, state.messages, session._compaction_cfg)
+    session._compactor = Compactor(
+        session._inference, state.messages, session._compaction_cfg, session._settings
+    )
 
     async def no_window(ep):
         return None
@@ -546,7 +548,9 @@ def test_subagent_session_builds_none_and_never_routes() -> None:
             )
             assert session._routing_state is None
             session._compaction_cfg = CompactionCfg(enabled=False)
-            session._compactor = Compactor(session._inference, state.messages, session._compaction_cfg)
+            session._compactor = Compactor(
+                session._inference, state.messages, session._compaction_cfg, session._settings
+            )
 
             async def no_window(ep):
                 return None

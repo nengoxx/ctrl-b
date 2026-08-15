@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from app.adapters.inference import InferenceClient, InferenceError
-from app.config import CompactionCfg
+from app.config import CompactionCfg, Settings
 from app.domain.conversation import (
     Message,
     TextPart,
@@ -39,6 +39,7 @@ from app.domain.conversation import (
     ToolResultPart,
 )
 from app.domain.enums import Actor
+from app.services.agent.prompts import resolve
 from app.services.agent.turns import _SUSPEND_CALL_STATES
 from app.services.conversation import MessageRepo
 
@@ -61,18 +62,9 @@ _SUMMARIZER_SECTIONS = (
     "Rules & Constraints",
     "Next Steps",
 )
-_SUMMARIZER_SYSTEM = (
-    "You compress the earlier part of a conversation between a user and an assistant that controls "
-    "a single-user homelab (waking/monitoring/managing PCs and services). Rewrite the earlier "
-    "messages as a STRUCTURED summary that later turns can rely on. Output EXACTLY these five "
-    "sections, each a markdown heading followed by terse bullet points; if a section has nothing, "
-    "write 'none' under it:\n"
-    + "".join(f"## {s}\n" for s in _SUMMARIZER_SECTIONS)
-    + "Fill EVERY section. 'Next Steps' and anything you mark still pending refer ONLY to the earlier "
-    "messages shown to you here (the folded-away head) — do NOT speculate about messages you cannot "
-    "see. Preserve every load-bearing detail (ids, names, decisions, errors) and omit pleasantries. "
-    "This summary REPLACES the earlier messages in the assistant's working context."
-)
+#: The section list as the `summarizer` prompt's `{{sections}}` value. The names are this module's
+#: data (the registry owns the words around them, L-8), so the rendering lives here, once.
+_SUMMARIZER_SECTION_BLOCK = "".join(f"## {s}\n" for s in _SUMMARIZER_SECTIONS)
 #: Fraction of the summarizer endpoint's own window reserved (system prompt + generated summary) by
 #: the overflow guard (D42): a transcript estimated ABOVE `window × (1 − this)` would push a doomed
 #: call, so the summarizer is skipped for the truncation-fold instead. 0.2 = a generous margin
@@ -437,12 +429,23 @@ def _warn_degenerate_trigger(
 
 class Compactor:
     """Folds the oldest turns of a thread into a summary when the context grows too large. One
-    instance per session is fine — it's stateless (all state is the thread in the DB)."""
+    instance per session is fine — it's stateless (all state is the thread in the DB).
 
-    def __init__(self, inference: InferenceClient, messages: MessageRepo, cfg: CompactionCfg) -> None:
+    `settings` is the SHARED live `Settings` object (the same one `ActionService._deps` holds), not a
+    copy: `resolve()` reads the summarizer prompt off it per call, so an owner edit applies without a
+    restart or any invalidation (C-17)."""
+
+    def __init__(
+        self,
+        inference: InferenceClient,
+        messages: MessageRepo,
+        cfg: CompactionCfg,
+        settings: Settings,
+    ) -> None:
         self._inference = inference
         self._messages = messages
         self._cfg = cfg
+        self._settings = settings
 
     async def compact(
         self,
@@ -680,9 +683,16 @@ class Compactor:
         not this)."""
         transcript = _render_transcript(head)
         s = self._cfg.summarizer
-        system = _SUMMARIZER_SYSTEM
+        # No conditionals in templates (§2.3): the emphasis block is precomputed here — empty on an
+        # automatic compaction — and passed as an ordinary `{{focus}}` value.
+        focus = ""
         if instructions and instructions.strip():
-            system += "\n\nThe user asked to focus this summary on: " + instructions.strip()
+            focus = "\n\nThe user asked to focus this summary on: " + instructions.strip()
+        system = resolve(
+            "summarizer",
+            self._settings,
+            {"sections": _SUMMARIZER_SECTION_BLOCK, "focus": focus},
+        )
         payload = [
             {"role": "system", "content": system},
             {"role": "user", "content": transcript},

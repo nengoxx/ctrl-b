@@ -29,6 +29,7 @@ from typing import cast
 from _async import run_async
 
 from app.adapters.inference import InferenceClient
+from app.config import Settings
 from app.db import BUSY_TIMEOUT_MS, Database
 from app.domain.agent import CompactionCfg
 from app.domain.conversation import Message, TextPart, Thread
@@ -165,7 +166,7 @@ def test_compaction_crash_persists_neither_summary_nor_flags(monkeypatch) -> Non
         assert base is not None
 
         cfg = CompactionCfg(enabled=True, keep_last_messages=1, keep_recent_tokens=1)
-        comp = Compactor(cast("InferenceClient", None), messages, cfg)
+        comp = Compactor(cast("InferenceClient", None), messages, cfg, Settings())
 
         async def _stub_summarize(_head, *, instructions=None):  # avoid touching a real inference backend
             return "[Earlier conversation summary]\nstub", False

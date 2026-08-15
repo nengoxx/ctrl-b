@@ -1449,14 +1449,14 @@ def test_the_unattended_question_ladder_resolves_and_keeps_the_run_moving() -> N
     """Owner ruling 1 + council R-1. All four arms, each proving the turn is NOT suspended and the call
     is NOT left AWAITING_ANSWER — an unattended run must never park on a bubble nobody will see."""
     from app.domain.event import Origin
-    from app.services.agent.session import UNATTENDED_JUDGEMENT_ANSWER
+    from app.services.agent.prompts import resolve
 
     origin = Origin(kind="automation", id="a", run_id="r")
     with _workspace(), _client() as c:
         cases = [
             ({"prompt": "Which host?", "default": "emma", "choices": ["corsair", "emma"]}, "emma"),
             ({"prompt": "Which host?", "choices": ["corsair", "emma"]}, "corsair"),
-            ({"prompt": "Proceed?"}, UNATTENDED_JUDGEMENT_ANSWER),
+            ({"prompt": "Proceed?"}, resolve("unattended_answer", c.app.state.settings)),
         ]
         for args, expected in cases:
             session = _headless_session(c, question_policy="use_default", origin=origin)

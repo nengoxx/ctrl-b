@@ -33,6 +33,7 @@ from app.domain.conversation import Thread
 from app.domain.enums import Privilege, Risk, RunState
 from app.domain.event import Origin
 from app.domain.result import ToolResult
+from app.services.agent.prompts import resolve
 
 if TYPE_CHECKING:
     from app.services.deps import Deps
@@ -47,16 +48,6 @@ _PRIV_ORDER = {
     Privilege.AUTO_LOW: 2,
     Privilege.FULL: 3,
 }
-
-
-#: What the model is told when its batch is larger than the spawning agent's fan-out cap (M3,
-#: PROMPTS_PLAN §6 C-14). Named for the prompt id `m3_batch_rejected` it becomes in the Phase-18
-#: prompt registry (Slice 1 re-homes this text there, `{count}`/`{max}` → the `{{var}}` renderer).
-M3_BATCH_REJECTED = (
-    "You asked for {count} subagents at once, but this agent may fan out to at most {max}. Nothing "
-    "was spawned. Send a batch of {max} or fewer — split the work into rounds and delegate the next "
-    "round after this one returns, or do the extra tasks yourself."
-)
 
 
 def _clamp(child: Privilege, parent: Privilege) -> Privilege:
@@ -316,7 +307,11 @@ async def spawn_subagents(inp: SpawnInput, ctx: InvocationContext) -> ToolResult
                 f"{len(inp.tasks)} subagents requested — over this agent's cap of "
                 f"{parent.max_concurrent_subagents}; nothing spawned"
             ),
-            output=M3_BATCH_REJECTED.format(count=len(inp.tasks), max=parent.max_concurrent_subagents),
+            output=resolve(
+                "m3_batch_rejected",
+                deps.settings,
+                {"count": str(len(inp.tasks)), "max": str(parent.max_concurrent_subagents)},
+            ),
         )
 
     clamp = deps.settings.agent.subagent_clamp_privilege

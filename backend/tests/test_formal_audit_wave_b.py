@@ -397,6 +397,7 @@ def test_b5_openapi_tool_carries_timeout_and_times_out() -> None:
 
 def test_b7_split_keeps_suspended_call_in_tail() -> None:
     from app.adapters.inference import InferenceClient
+    from app.config import Settings
     from app.domain.agent import CompactionCfg
     from app.domain.conversation import Message, TextPart, ToolCallPart
     from app.domain.enums import Actor, RunState
@@ -404,7 +405,7 @@ def test_b7_split_keeps_suspended_call_in_tail() -> None:
     from app.services.conversation import MessageRepo
 
     cfg = CompactionCfg(enabled=True, keep_last_messages=2)
-    comp = Compactor(cast("InferenceClient", None), cast("MessageRepo", None), cfg)
+    comp = Compactor(cast("InferenceClient", None), cast("MessageRepo", None), cfg, Settings())
 
     def user(t):
         return Message(thread_id="t", role="user", actor=Actor.USER, parts=[TextPart(text=t)])

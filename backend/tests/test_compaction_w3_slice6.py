@@ -27,6 +27,7 @@ from typing import cast
 from _async import run_async
 
 from app.adapters.inference import ChatDelta, InferenceClient, ToolCallRequest
+from app.config import Settings
 from app.db import Database
 from app.domain.agent import CompactionCfg, ModelRef
 from app.domain.conversation import Message, TextPart, ToolCallPart, ToolResultPart
@@ -184,7 +185,7 @@ def test_clearing_gain_pushes_trigger_net_of_clearing() -> None:
     history = [_user(), *_round(0, output=_BIG), *_round(1, output=_BIG)]  # c0 clearable
     plan = plan_clearing(history, cfg)
     assert plan.gain > 0
-    comp = Compactor(cast("InferenceClient", None), cast("MessageRepo", None), cfg)
+    comp = Compactor(cast("InferenceClient", None), cast("MessageRepo", None), cfg, Settings())
     # window 10000 → line 8500. An 8600 estimate is over, but net of the clearing gain it drops under.
     assert comp._over_threshold(history, window=10000, estimated_tokens=8600) is True
     assert comp._over_threshold(history, window=10000, estimated_tokens=8600, clearing=plan) is (
@@ -226,7 +227,7 @@ def test_plan_clearing_does_not_mutate_history_rows() -> None:
 
 
 def _split_compactor(cfg: CompactionCfg) -> Compactor:
-    return Compactor(cast("InferenceClient", None), cast("MessageRepo", None), cfg)
+    return Compactor(cast("InferenceClient", None), cast("MessageRepo", None), cfg, Settings())
 
 
 def test_split_token_floor_beats_message_floor_when_fat() -> None:
@@ -308,8 +309,12 @@ class _FakeInfer:
         return self._reply
 
 
-def _summarize(fake: _FakeInfer, *, instructions: str | None = None) -> tuple[str, bool]:
-    comp = Compactor(cast("InferenceClient", fake), cast("MessageRepo", None), CompactionCfg())
+def _summarize(
+    fake: _FakeInfer, *, instructions: str | None = None, settings: Settings | None = None
+) -> tuple[str, bool]:
+    comp = Compactor(
+        cast("InferenceClient", fake), cast("MessageRepo", None), CompactionCfg(), settings or Settings()
+    )
     head = [_user("please wake corsair"), _asst("done, corsair is up")]
     return _run(comp._summarize(head, instructions=instructions))
 
@@ -335,6 +340,22 @@ def test_summarizer_instructions_threaded_on_manual_only() -> None:
     without = _FakeInfer()
     _summarize(without, instructions=None)
     assert "The user asked to focus this summary on" not in without.payloads[0][0]["content"]
+
+
+def test_a_large_summarizer_override_is_priced_by_the_overflow_guard() -> None:
+    """C-15: the guard prices the RESOLVED system message, so an owner override big enough to blow
+    the summarizer's window falls to the truncation-fold instead of pushing a doomed call. The same
+    window with the baked default runs normally — the override is what tips it."""
+    from app.config import PromptOverride
+
+    baseline = _FakeInfer(window=2000)
+    assert _summarize(baseline)[1] is False and baseline.payloads  # the default fits: the call ran
+
+    bloated = _FakeInfer(window=2000)
+    settings = Settings(prompts={"summarizer": PromptOverride(override="verbose guidance. " * 1200)})
+    body, truncated = _summarize(bloated, settings=settings)
+    assert truncated and body == TRUNCATION_NOTICE
+    assert bloated.payloads == []  # the doomed call was never made
 
 
 def test_summarizer_overflow_guard_trips_to_truncation_fold() -> None:
@@ -385,7 +406,7 @@ def test_inflation_reject_leaves_db_untouched() -> None:
             m.thread_id = thread.id
             await messages.add(m)
         cfg = CompactionCfg(keep_last_messages=1, keep_recent_tokens=1)
-        comp = Compactor(cast("InferenceClient", _InflateInfer()), messages, cfg)
+        comp = Compactor(cast("InferenceClient", _InflateInfer()), messages, cfg, Settings())
 
         res = await comp.compact(thread, force=True)  # force does NOT bypass the reject
         assert res is not None and res.rejected is True and res.removed == 0
@@ -436,7 +457,7 @@ def test_inflation_reject_prices_head_net_of_clearing() -> None:
         thread = await threads.create(Thread())
         for m in _history(thread.id):
             await messages.add(m)
-        comp = Compactor(cast("InferenceClient", _FixedInfer(summary_body)), messages, cfg)
+        comp = Compactor(cast("InferenceClient", _FixedInfer(summary_body)), messages, cfg, Settings())
         res = await comp.compact(thread, force=True, clearing=plan)
         assert res is not None and res.rejected is True and res.removed == 0
 
@@ -445,7 +466,7 @@ def test_inflation_reject_prices_head_net_of_clearing() -> None:
         thread2 = await threads2.create(Thread())
         for m in _history(thread2.id):
             await messages2.add(m)
-        comp2 = Compactor(cast("InferenceClient", _FixedInfer(summary_body)), messages2, cfg)
+        comp2 = Compactor(cast("InferenceClient", _FixedInfer(summary_body)), messages2, cfg, Settings())
         res2 = await comp2.compact(thread2, force=True)
         assert res2 is not None and res2.rejected is False and res2.removed > 0
 
@@ -550,7 +571,7 @@ def _thrash_session(state, thread, *, max_failures: int = 3):
         keep_last_messages=2, keep_recent_tokens=5, threshold_frac=0.85, max_consecutive_failures=max_failures
     )
     session._compaction_cfg = cfg
-    session._compactor = Compactor(session._inference, state.messages, cfg)
+    session._compactor = Compactor(session._inference, state.messages, cfg, session._settings)
 
     async def over_window(ep):  # a tiny window keeps the estimate over threshold every iteration
         return 50
@@ -961,7 +982,10 @@ def test_backstop_fold_priced_net_of_clearing_rejects() -> None:
                 session = _build_session(state, thread)
                 session._compaction_cfg = cfg
                 session._compactor = Compactor(
-                    cast("InferenceClient", _FixedInfer(summary_body)), state.messages, cfg
+                    cast("InferenceClient", _FixedInfer(summary_body)),
+                    state.messages,
+                    cfg,
+                    session._settings,
                 )
                 return session
 
