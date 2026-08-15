@@ -43,18 +43,20 @@ def _client():
     return TestClient(create_app())
 
 
-def _ctx(deps, parent):
+def _ctx(deps, parent, stamps: dict | None = None):
     from app.core.tool import InvocationContext
     from app.domain.enums import Actor, Privilege
 
-    return InvocationContext(actor=Actor.AGENT, privilege=Privilege.FULL, deps=deps, depth=0, agent=parent)
+    return InvocationContext(
+        actor=Actor.AGENT, privilege=Privilege.FULL, deps=deps, depth=0, agent=parent, stamps=stamps
+    )
 
 
-def _spawn(deps, parent, n: int, agent: str | None = None):
+def _spawn(deps, parent, n: int, agent: str | None = None, stamps: dict | None = None):
     from app.services.agent.subagents import SpawnInput, SubTask, spawn_subagents
 
     tasks = [SubTask(task=f"t{i}", agent=agent) for i in range(n)]
-    return run_async(spawn_subagents(SpawnInput(tasks=tasks), _ctx(deps, parent)))
+    return run_async(spawn_subagents(SpawnInput(tasks=tasks), _ctx(deps, parent, stamps)))
 
 
 def _write_agent(home: Path, name: str, cap: int) -> None:
@@ -112,9 +114,13 @@ def test_batch_over_the_cap_is_rejected_before_anything_is_created() -> None:
         parent = deps.settings.default_agent_def()
         cap = parent.max_concurrent_subagents
         seen: dict = {}
+        acc: dict = {}
         with _no_children(seen):
-            res = _spawn(deps, parent, cap + 1)
+            res = _spawn(deps, parent, cap + 1, stamps=acc)
         assert res.state == RunState.DENIED
+        # The denial re-enters the next model call as the tool result, so it stamps via ctx.stamps —
+        # the §8.3 recorded asymmetry is CLOSED (Codex MED wave, 2026-08-15).
+        assert "m3_batch_rejected" in acc
         assert res.output == resolve(
             "m3_batch_rejected", deps.settings, {"count": str(cap + 1), "max": str(cap)}
         )

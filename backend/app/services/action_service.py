@@ -130,6 +130,7 @@ class ActionService:
         depth: int = 0,
         agent: "AgentDef | None" = None,
         summary_note: str | None = None,
+        stamps: dict[str, str] | None = None,
     ) -> InvokeOutcome:
         """Run an action. Raises `UnknownTool` (→404) / `ValidationError` (→422) for the API to
         map; every other outcome is data on a ToolResult.
@@ -143,7 +144,11 @@ class ActionService:
         is recorded (post-audit LOW-3), so a note the caller can only know at call time — today the D44
         grant-failure note from `execute_always` — lands in the AUDIT LOG, not just the SSE stream.
         Appended on every recorded outcome (DENY included); a suspend records nothing, so it carries
-        no note and the caller re-supplies it on the resumed call."""
+        no note and the caller re-supplies it on the resumed call.
+
+        `stamps` (Phase 18 / C-8) is the calling turn's prompt-stamp accumulator, threaded onto the
+        `InvocationContext` so a tool that resolves a registry text into its RESULT records the id —
+        the session passes its own accumulator; user-invoked runs pass nothing."""
         tool = self._registry.get(name)  # UnknownTool → API 404
         inp = tool.spec.input_model.model_validate(raw_args)  # ValidationError → API 422
         args_json = inp.model_dump_json()
@@ -200,6 +205,7 @@ class ActionService:
             depth=depth,
             agent=agent,
             origin=origin,
+            stamps=stamps,
         )
         if rule is not None:  # D44 §6: mandatory audit marker on the approval-fired run's Event summary
             result.summary = f"{result.summary}{_APPROVAL_MARKER.format(detail=_approval_detail(rule))}"
@@ -219,6 +225,7 @@ class ActionService:
         depth: int = 0,
         agent: "AgentDef | None" = None,
         origin: Origin,  # required, like at `invoke` — the context must never default its attribution
+        stamps: dict[str, str] | None = None,
     ) -> ToolResult:
         # The context carries the real caller (actor/privilege/depth/agent/origin) so meta-tools like
         # spawn_subagents can enforce limits + clamp child privilege (DESIGN §5.5) and propagate
@@ -232,6 +239,7 @@ class ActionService:
             depth=depth,
             agent=agent,
             origin=origin,
+            stamps=stamps,
         )
         started = time.monotonic()
         # Per-tool deadline (DESIGN/E0a). `timeout_s=None` (the default) ⇒ NO bound — a tool we

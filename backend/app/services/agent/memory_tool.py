@@ -26,6 +26,7 @@ from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk, RunState
 from app.domain.result import ToolResult
 from app.services.agent.memory import MemoryCapError, MemoryWriteError
+from app.services.agent.prompts import resolve
 
 if TYPE_CHECKING:
     from app.domain.agent import AgentDef
@@ -105,7 +106,7 @@ async def memory(inp: MemoryInput, ctx: InvocationContext) -> ToolResult:
         return ToolResult(
             state=RunState.OK,
             summary=f"proposed {inp.action} to {inp.target} memory — awaiting the owner's approval (NOT saved yet)",
-            output="Not saved yet — the owner must approve this proposal. Say you've proposed it for approval; don't claim it's saved.",
+            output=resolve("memory_proposal_pending", deps.settings, stamps=ctx.stamps),
             data={"proposed": inp.model_dump()},
         )
     return await apply_memory(deps, agent, inp)

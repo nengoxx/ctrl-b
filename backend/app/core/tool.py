@@ -155,6 +155,12 @@ class InvocationContext:
     #: `create_automation` recursion guard keys off. Defaults to the interactive chat like the other
     #: optional fields here, so a hand-built context (a tool unit test) needs no attribution.
     origin: Origin = ORIGIN_USER_CHAT
+    #: The calling turn's prompt-stamp accumulator (Phase 18 / C-8), or None outside an agent turn
+    #: (user-invoked runs, tests). A tool whose RESULT text comes from the prompt registry passes this
+    #: to `resolve(..., stamps=ctx.stamps)` so the id lands in the turn's attribution — tool results
+    #: re-enter the next model call, and a registry text the model consumed must not vanish from the
+    #: stamps just because a tool (not the session) resolved it.
+    stamps: dict[str, str] | None = None
 
     def require_deps(self) -> "Deps":
         """The world-handle a deps-using tool needs, narrowed to non-`None`. `deps` is optional on

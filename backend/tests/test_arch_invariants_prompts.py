@@ -85,6 +85,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/db.py", "Database.transaction"),
         ("app/services/agent/compaction.py", "_warn_degenerate_trigger"),
         ("app/services/agent/session.py", "AgentSession._log_context_cost"),
+        ("app/services/agent/session.py", "AgentSession._run_calls._complete"),
         ("app/services/automations/schedule.py", "validate_cron"),
         ("app/services/automations/service.py", "AutomationAgentMissing.__init__"),
         ("app/services/automations/service.py", "AutomationService._update"),
@@ -105,11 +106,10 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/automations/runner.py", "AutomationRunner._drive"),
         ("app/services/automations/runner.py", "AutomationRunner._terminal"),
     ),
-    "standing model-facing text the C-1 table does NOT cover — recorded, not registered: each is a "
-    "branch of one feature rather than a prompt the owner would tune (revisit if a case appears)": (
-        ("app/services/agent/memory_tool.py", "memory"),
-        ("app/services/agent/session.py", "AgentSession._run_calls._complete"),
-        ("app/services/agent/skill_tool.py", "skill_manage"),
+    "run-outcome text no model ever reads — the automation run row's `error` and the audit Event "
+    "summary built from it, both owner-facing only: `run.error` is served by the REST history and the "
+    "event feed, and the one agent-visible automation read (`list_automations`) prints `run.status` "
+    "alone. Same class as `AutomationRunner._drive`/`_terminal` above, but hoisted to module constants": (
         ("app/services/automations/runner.py", "INTERRUPTED_NOTE"),
         ("app/services/automations/service.py", "ORPHAN_NOTE"),
     ),

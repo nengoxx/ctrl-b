@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk, RunState
 from app.domain.result import ToolResult
+from app.services.agent.prompts import resolve
 from app.services.agent.skills import (
     agent_skills_root,
     remove_skill_md,
@@ -90,7 +91,7 @@ async def skill_manage(inp: SkillManageInput, ctx: InvocationContext) -> ToolRes
         return ToolResult(
             state=RunState.OK,
             summary=f"proposed {inp.action} of skill '{inp.name}' — awaiting the owner's approval (NOT saved yet)",
-            output="Not saved yet — the owner must approve this proposal. Say you've proposed it for approval; don't claim the skill is saved.",
+            output=resolve("skill_proposal_pending", deps.settings, stamps=ctx.stamps),
             data={"proposed": inp.model_dump()},
         )
     return await apply_skill(deps, agent, inp)

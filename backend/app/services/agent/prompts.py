@@ -102,7 +102,8 @@ def label(prompt_id: str) -> str:
     return prompt_id.replace("_", " ").title()
 
 
-#: Every prompt, in the PROMPTS_PLAN §6 C-1 table order (which is also the Conf editor's list order).
+#: Every prompt, in the PROMPTS_PLAN §6 C-1 table order followed by the later additions in the order
+#: they were registered — which is also the Conf editor's list order.
 #: Adding a prompt = one row here + one `resolve()` call; the AST backstop
 #: (`test_arch_invariants_prompts.py`) fails the gate on a model-facing literal that skips this table.
 REGISTRY: dict[str, PromptDef] = {
@@ -292,6 +293,48 @@ REGISTRY: dict[str, PromptDef] = {
             "`max_concurrent_subagents`. `{{count}}` is what was asked for, `{{max}}` the cap. "
             "Coupling: nothing was spawned, so the text has to tell the model how to retry smaller — "
             "otherwise it re-sends the same oversized batch."
+        ),
+    ),
+    # ── Slice 3.5 (owner ruling 2026-08-15): the standing model-facing texts §8.2 recorded in the AST
+    # allowlist but left unregistered. Appended in this order — registry order is the Conf list order,
+    # and the C-1 fifteen keep the table order above.
+    "memory_proposal_pending": PromptDef(
+        default=(
+            "Not saved yet — the owner must approve this proposal. Say you've proposed it for "
+            "approval; don't claim it's saved."
+        ),
+        description=(
+            "The `memory` tool's result when `memory.auto_write` is off: the write was turned into a "
+            "proposal the owner approves later from the chat bubble (SET stores such as `state` "
+            "auto-apply and never see this). Coupling: it is the only thing stopping the model "
+            "reporting an unapproved save as done — text that reads as success makes the agent claim "
+            "a memory it does not have next turn."
+        ),
+    ),
+    "skill_proposal_pending": PromptDef(
+        default=(
+            "Not saved yet — the owner must approve this proposal. Say you've proposed it for "
+            "approval; don't claim the skill is saved."
+        ),
+        description=(
+            "The `skill_manage` result when `agent.skills_auto_write` is off — the same propose-not-"
+            "write gate the memory tool has, covering saves AND removals. Coupling: as above, it is "
+            "what stops the model treating the unapproved change as applied — announcing a skill that "
+            "does not exist yet, or one still present as removed."
+        ),
+    ),
+    "parallel_misdeclared": PromptDef(
+        default=(
+            "This tool tried to suspend (confirm/question) while running in the parallel read-only "
+            "prefix, which is not allowed. It was excluded and nothing happened — re-issue it on its "
+            "own if needed."
+        ),
+        description=(
+            "The D40 belt result for a parallel-prefix call that tried to suspend (confirm/question) "
+            "or came back in an unresolved state: whatever the tool produced is REPLACED by this "
+            "refusal. Coupling: it must send the model to re-issue the call serially — and the belt "
+            "deliberately counts as no progress, so wording that does not redirect just spends the "
+            "turn's iterations."
         ),
     ),
 }

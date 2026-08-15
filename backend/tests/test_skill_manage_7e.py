@@ -15,6 +15,7 @@ What's exercised:
   6. empty save  — save with blank content → ERROR.
   7. missing rm  — remove a non-existent skill → ERROR.
   8. specialist  — a specialist writes agents/<slug>/skills/, the global dir untouched.
+  9. override    — the propose notice comes from the prompt registry, so `prompts:` reaches it.
 
 Each test runs in an isolated `$CTRLB_HOME` temp workspace; the real config/skills are never touched.
 """
@@ -62,7 +63,7 @@ def _agent(c, name: str | None = None):
     return c.app.state.settings.resolve_agent(name)
 
 
-def _invoke(c, args: dict, *, agent_name: str | None = None):
+def _invoke(c, args: dict, *, agent_name: str | None = None, stamps: dict | None = None):
     from app.domain.enums import Actor, Privilege
 
     return _run(
@@ -73,6 +74,7 @@ def _invoke(c, args: dict, *, agent_name: str | None = None):
             actor=Actor.AGENT,
             privilege=Privilege.CONFIRM,
             agent=_agent(c, agent_name),
+            stamps=stamps,
         )
     )
 
@@ -114,6 +116,24 @@ def test_auto_write_off_proposes_without_writing() -> None:
             assert "proposed" in out.result.summary
             assert out.result.data["proposed"]["name"] == "triage"
             assert not (tmp / "skills" / "triage").exists()  # nothing written
+
+
+def test_proposal_notice_honours_a_prompts_override() -> None:
+    """Phase 18 Slice 3.5: the notice the model reads is `skill_proposal_pending` in the registry, so
+    an owner `prompts:` entry reaches the tool result — the `summary` beside it stays code."""
+    from app.config import PromptOverride
+
+    with _workspace():
+        with _client() as c:
+            c.app.state.settings.agent.skills_auto_write = False
+            c.app.state.settings.prompts["skill_proposal_pending"] = PromptOverride(
+                append="Ask the owner to approve it."
+            )
+            acc: dict = {}
+            out = _invoke(c, {"action": "save", "name": "triage", "content": _BODY}, stamps=acc)
+            assert out.result.output.endswith("\n\nAsk the owner to approve it.")
+            # Same attribution pin as the memory twin: the tool-resolved registry text must stamp.
+            assert "skill_proposal_pending" in acc
 
 
 def test_master_switch_off_denies() -> None:

@@ -2251,6 +2251,7 @@ class AgentSession:
                                 confirm_token=None,
                                 depth=self._depth,
                                 agent=self._agent,
+                                stamps=self._stamps,
                             )
                         except asyncio.CancelledError:
                             raise
@@ -2285,11 +2286,7 @@ class AgentSession:
                             result = ToolResult(
                                 state=RunState.ERROR,
                                 summary=f"{cp.tool} misdeclared for parallel execution — excluded",
-                                output=(
-                                    "This tool tried to suspend (confirm/question) while running in "
-                                    "the parallel read-only prefix, which is not allowed. It was "
-                                    "excluded and nothing happened — re-issue it on its own if needed."
-                                ),
+                                output=resolve("parallel_misdeclared", self._settings, stamps=self._stamps),
                             )
                         else:
                             result = inv.result or ToolResult(
@@ -2488,6 +2485,7 @@ class AgentSession:
                                 depth=self._depth,
                                 agent=self._agent,
                                 summary_note=note,
+                                stamps=self._stamps,
                             )
                         except UnknownTool:
                             result = ToolResult(state=RunState.DENIED, summary=f"unknown tool '{cp.tool}'")

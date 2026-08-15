@@ -13,7 +13,8 @@ it resolves (persist-before-emit, model-order layout), then the verbatim serial 
   • the semaphore bound (4 slow reads at max_parallel_tools=2 → observed max concurrency == 2);
   • [read, read, question] → both reads parallel, exactly ONE suspension on the question in the tail;
   • the D40 §4 belts (a read-only-declared tool whose invoke returns needs_confirm / AWAITING_ANSWER)
-    → a loud error result, no suspension, the turn continues;
+    → a loud error result, no suspension, the turn continues — and its model-facing `output` is the
+    registry's `parallel_misdeclared` (Phase 18 Slice 3.5), so a `prompts:` entry reaches it;
   • cancel mid-prefix → the completed call persists + harvests, pending tasks are cancelled AND awaited
     (their cleanup runs — no orphans), unresolved calls stay PENDING for the reconciler;
   • made_progress semantics — a belt result never flips it; a normal new result does.
@@ -325,6 +326,57 @@ def test_belts_misdeclared_suspension_degrades_loudly() -> None:
                 assert by_id[cid_ping].state == RunState.OK  # the normal read still completed
             finally:
                 reg.remove("_belt_probe_d40")
+
+
+def test_belt_text_honours_a_prompts_override() -> None:
+    """Phase 18 Slice 3.5: the belt's `output` — the part the MODEL reads — is the registry's
+    `parallel_misdeclared`, so an owner `prompts:` entry reaches it. The `summary` beside it is
+    per-call outcome text and deliberately stays code (it names the tool)."""
+    from app.config import PromptOverride
+    from app.core.tool import FunctionTool, ToolSpec
+    from app.domain.enums import Risk, RunState
+    from app.domain.result import ToolResult
+    from app.services.action_service import InvokeOutcome
+
+    class _NoArgs(__import__("pydantic").BaseModel):
+        pass
+
+    async def _noop(inp, ctx):
+        return ToolResult(state=RunState.OK, summary="ok")
+
+    with _workspace(), _client() as c:
+        reg = c.app.state.actions.registry
+        spec = ToolSpec(
+            name="_belt_probe_p18",
+            title="belt probe",
+            category="builtin",
+            read_only=True,
+            risk=Risk.LOW,
+            input_model=_NoArgs,
+        )
+        reg.register(FunctionTool(spec=spec, fn=_noop))
+        try:
+            specs = [{"tool": "_belt_probe_p18"}, {"tool": "ping_host", "args": {"host_id": "a"}}]
+            session, thread, assistant, cids = _session(c, specs, max_parallel=4)
+            cid_belt, _cid_ping = cids
+            c.app.state.settings.prompts["parallel_misdeclared"] = PromptOverride(
+                override="Excluded — send it on its own."
+            )
+
+            async def fake_invoke(tool, args, **kw):
+                if tool == "_belt_probe_p18":
+                    return InvokeOutcome(needs_confirm=True, confirm_token="t", confirm_prompt="?")
+                return _ok(tool, args)
+
+            session._actions.invoke = fake_invoke
+            _drive(session, thread, assistant, _guard())
+
+            rows = _tool_rows(c, thread)
+            by_id = {r.call_id: r.result for r in rows[0].tool_results()}
+            assert by_id[cid_belt].output == "Excluded — send it on its own."
+            assert "misdeclared" in by_id[cid_belt].summary  # the code-owned half is untouched
+        finally:
+            reg.remove("_belt_probe_p18")
 
 
 # ── cancel mid-prefix: completed call harvested+persisted, pending cancelled AND awaited ───────────

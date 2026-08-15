@@ -311,6 +311,9 @@ async def spawn_subagents(inp: SpawnInput, ctx: InvocationContext) -> ToolResult
                 "m3_batch_rejected",
                 deps.settings,
                 {"count": str(len(inp.tasks)), "max": str(parent.max_concurrent_subagents)},
+                # `ctx.stamps` closed the §8.3 recorded asymmetry: the accumulator now rides the
+                # InvocationContext, so this denial stamps like every other registry text (C-8).
+                stamps=ctx.stamps,
             ),
         )
 

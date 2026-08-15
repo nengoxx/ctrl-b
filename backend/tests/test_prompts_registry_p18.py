@@ -1,13 +1,15 @@
-"""Phase 18 Slice 1 — the prompt registry (`services/agent/prompts.py`) and `resolve()`.
+"""Phase 18 Slice 1 (+ Slice 3.5) — the prompt registry (`services/agent/prompts.py`) and `resolve()`.
 
 Two halves, both gates from PROMPTS_PLAN:
 
-1. **The migration goldens (§6 C-16).** Every one of the 15 registered prompts must render, under a
-   pinned context, to EXACTLY the text the pre-migration code produced. The expected strings below
-   were lifted from the pre-migration sources by AST (not retyped), so this file is an independent
-   copy of what the model used to see: if a default is ever edited by accident, this fails. For the
-   three frame+data prompts (`memory_intro`, `fleet_roster`, `skills_note`) the frame golden is
-   joined by an assembly golden, because those migrations also moved a separator into code.
+1. **The migration goldens (§6 C-16).** Every registered prompt — the C-1 fifteen, then the three
+   Slice-3.5 additions — must render, under a pinned context, to EXACTLY the text the pre-migration
+   code produced. The expected strings below were lifted from the pre-migration sources by AST (not
+   retyped), so this file is an independent copy of what the model used to see: if a default is ever
+   edited by accident, this fails. For the three frame+data prompts (`memory_intro`, `fleet_roster`,
+   `skills_note`) the frame golden is joined by an assembly golden, because those migrations also
+   moved a separator into code. (The three Slice-3.5 texts' CALL SITES are covered where each site's
+   own harness lives — `test_memory_tool_7e` · `test_skill_manage_7e` · `test_parallel_executor_d40`.)
 2. **The resolution contract (§6 C-3 as amended by §7 L-5/L-6).** override replaces, append
    concatenates and renders in the same pass, blank is unset, an unknown `{{token}}` stays literal,
    a render failure falls back to the baked default with ONE warning, an unknown id is a `KeyError`.
@@ -127,6 +129,24 @@ _GOLDEN: dict[str, tuple[dict[str, str], str]] = {
         "spawned. Send a batch of 3 or fewer — split the work into rounds and delegate the next round "
         "after this one returns, or do the extra tasks yourself.",
     ),
+    # Slice 3.5 — the five §8.2 recorded texts, minus the two automation notes (no model-facing path;
+    # see `test_arch_invariants_prompts._ALLOWED`). Same byte-identity rule as the fifteen above.
+    "memory_proposal_pending": (
+        {},
+        "Not saved yet — the owner must approve this proposal. Say you've proposed it for approval; "
+        "don't claim it's saved.",
+    ),
+    "skill_proposal_pending": (
+        {},
+        "Not saved yet — the owner must approve this proposal. Say you've proposed it for approval; "
+        "don't claim the skill is saved.",
+    ),
+    "parallel_misdeclared": (
+        {},
+        "This tool tried to suspend (confirm/question) while running in the parallel read-only "
+        "prefix, which is not allowed. It was excluded and nothing happened — re-issue it on its own "
+        "if needed.",
+    ),
 }
 
 
@@ -134,7 +154,8 @@ _GOLDEN: dict[str, tuple[dict[str, str], str]] = {
 
 
 def test_registry_holds_exactly_the_c1_ids_in_table_order() -> None:
-    """The C-1 table is normative for ids AND order (the Conf list renders in registry order)."""
+    """The C-1 table is normative for ids AND order, and a later addition is APPENDED (the Conf list
+    renders in registry order, so a row must not jump the queue)."""
     assert list(REGISTRY) == list(_GOLDEN)
 
 
@@ -157,8 +178,9 @@ def test_every_default_renders_with_no_token_left_over() -> None:
 
 
 def test_steering_prompts_carry_a_coupling_warning() -> None:
-    """The C2 nudges + the two guard denials are editable, so their descriptions must say what they
-    are coupled to (§2.4 — one of the three containments for the aider-style coupling risk)."""
+    """The C2 nudges, the two guard denials and the three Slice-3.5 texts are editable, so their
+    descriptions must say what they are coupled to (§2.4 — one of the three containments for the
+    aider-style coupling risk)."""
     coupled = (
         "wrapup_nudge",
         "question_declined",
@@ -170,6 +192,9 @@ def test_steering_prompts_carry_a_coupling_warning() -> None:
         "reflection_nudge",
         "m1_tool_blocked",
         "m3_batch_rejected",
+        "memory_proposal_pending",
+        "skill_proposal_pending",
+        "parallel_misdeclared",
     )
     for prompt_id in coupled:
         description = REGISTRY[prompt_id].description or ""
