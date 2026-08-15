@@ -282,6 +282,37 @@ const ROUTES: Record<string, unknown> = {
     server_tz: "UTC",
     default_timeout_s: 300,
   },
+  // Phase 18 / D56 — the prompt registry. Two representative rows: one CUSTOMIZED (badge + restore +
+  // an `override` that makes `current` differ from the default) and one carrying derived placeholders
+  // and the registry's literal "Coupling: " marker, which the pair editor splits into a warning line.
+  "/api/prompts": {
+    prompts: [
+      {
+        id: "memory_intro",
+        label: "Memory Intro",
+        description: "Frames the durable-memory block injected each turn.",
+        default_text: "Context you carry across sessions.",
+        override: "My own framing of memory.",
+        append: null,
+        current: "My own framing of memory.",
+        is_customized: true,
+        placeholders: [],
+      },
+      {
+        id: "per_tool_cap",
+        label: "Per Tool Cap",
+        description:
+          "Told to the model when one tool hits its cap. Coupling: the loop guard counts it.",
+        default_text: "{{tool}} already ran {{count}} times — vary the call or move on.",
+        override: null,
+        append: null,
+        current: "{{tool}} already ran {{count}} times — vary the call or move on.",
+        is_customized: false,
+        placeholders: ["tool", "count"],
+      },
+    ],
+    warnings: [],
+  },
   "/api/agents": { agents: [], default: "" },
   "/api/skills": [],
   "/api/integrations/status": { mcp: [], openapi: [], dirty: false },

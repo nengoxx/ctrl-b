@@ -8,6 +8,7 @@ import { MachineEditor } from "../components/MachineEditor";
 import { MediaGallery } from "../components/MediaGallery";
 import { MemoryEditor } from "../components/MemoryEditor";
 import { NumField } from "../components/NumField";
+import { PromptsEditor } from "../components/PromptsEditor";
 import { type PickerCatalog, type PickerValue } from "../components/ProviderModelPicker";
 import { SectionRefEditor } from "../components/SectionRefEditor";
 import { Seg } from "../components/Seg";
@@ -16,6 +17,7 @@ import { SettingRow } from "../components/SettingRow";
 import { SkillsEditor } from "../components/SkillsEditor";
 import { Swatches } from "../components/Swatches";
 import { Switch } from "../components/Switch";
+import { WarnRow } from "../components/WarnRow";
 import { useAccessStatus, useSetServe } from "../hooks/useAccess";
 import { useAppChrome } from "../hooks/useAppChrome";
 import { AUTOMATIONS_GROUP_ID, automationsSummary, useAutomations } from "../hooks/useAutomations";
@@ -32,6 +34,7 @@ import {
 } from "../hooks/useForegroundNotifications";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { type MemoryCfg } from "../hooks/useMemory";
+import { promptsSummary, usePrompts } from "../hooks/usePrompts";
 import {
   useProviders,
   useSaveSettings,
@@ -224,21 +227,6 @@ function emptyProvider(): ProviderDoc {
 // A stable per-instance id source for model rows (survives clean-name renames so a JSON block or the
 // local edit state never jumps rows). Module-level counter — ids are only compared, never persisted.
 let MODEL_ROW_SEQ = 0;
-
-/** A small inline warnings/notice list (D48 B5 / R22). Visual precedent: `.redisc-hint`. Rendered in
- *  the owning ConfGroup; fed by PUT-response warnings (after save) + GET /api/providers boot warnings. */
-function WarnRow({ warnings }: { warnings: string[] }) {
-  if (!warnings.length) return null;
-  return (
-    <div className="conf-warnrow">
-      {warnings.map((w, i) => (
-        <div className="conf-warn" key={i}>
-          ⚠ {w}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /** One provider card (D48 B1) on the vapor `.mwrap` disclosure recipe: connection fields + a model
  *  catalog sub-list. Rename is an explicit control (feeds `provider_renames`), never a bare key edit.
@@ -992,6 +980,10 @@ export function ConfTab({ active }: Props) {
   // is a pure function of the envelope (`automationsSummary`), tested without rendering this tab.
   const { data: automations } = useAutomations();
   const automationsRight = automationsSummary(automations);
+  // Same posture for the Prompts group header (Phase 18): the shared `["prompts"]` query, summarized
+  // by a pure function so the count can't disagree with the editor's rows underneath.
+  const { data: promptsDoc } = usePrompts();
+  const promptsRight = promptsSummary(promptsDoc);
   const agentSection = settings?.agent as Partial<AgentSectionCfg> | undefined;
   // v1.3.1 — the projection is shared with the AgentsEditor (`pickAgentSection`), which re-uses it to
   // project its own save echo into the exact shape this prop takes.
@@ -1809,7 +1801,14 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="server" num="03" title="Server" right="tailnet-only">
+      {/* Phase 18 / D56 — the prompt registry. Sits right after Inference (the model-facing texts
+          belong beside the model), and owns its own draft + Save bar: `prompts:` is written by the
+          editor's batched map, not by this tab's settings draft. */}
+      <ConfGroup id="prompts" num="03" title="Prompts" right={promptsRight} defaultCollapsed>
+        <PromptsEditor />
+      </ConfGroup>
+
+      <ConfGroup id="server" num="04" title="Server" right="tailnet-only">
         <div className="conf-card">
           <Field
             label="Bind host"
@@ -1922,7 +1921,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="searxng" num="04" title="SearXNG" right="web_search">
+      <ConfGroup id="searxng" num="05" title="SearXNG" right="web_search">
         <div className="conf-card">
           <Field
             label="Endpoint"
@@ -1949,7 +1948,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="embeddings" num="05" title="Embeddings" right="vector memory">
+      <ConfGroup id="embeddings" num="06" title="Embeddings" right="vector memory">
         <div className="conf-card">
           {/* A11/D48 Slice 2 — the embeddings backend is a registry ref (provider + model, scoped to the
               chosen provider's catalog) with its own ordered fallback chain. The vector `dim` is now a
@@ -1984,7 +1983,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="openterminal" num="06" title="Open-terminal" right="remote shell tools">
+      <ConfGroup id="openterminal" num="07" title="Open-terminal" right="remote shell tools">
         <div className="conf-card">
           <Field
             label="Endpoint"
@@ -2035,7 +2034,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="shell" num="07" title="Shell" right="! escape hatch">
+      <ConfGroup id="shell" num="08" title="Shell" right="! escape hatch">
         <div className="conf-card">
           <SettingRow label="User exec" desc="the !<cmd> composer escape hatch">
             <Switch
@@ -2084,7 +2083,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="voice-stt" num="08" title="Voice · STT" right="speech-to-text">
+      <ConfGroup id="voice-stt" num="09" title="Voice · STT" right="speech-to-text">
         <div className="conf-card">
           <SettingRow label="Enabled" desc="master switch — disables STT and TTS">
             <Switch
@@ -2158,7 +2157,7 @@ export function ConfTab({ active }: Props) {
         {saveBar}
       </ConfGroup>
 
-      <ConfGroup id="voice-tts" num="09" title="Voice · TTS" right="text-to-speech">
+      <ConfGroup id="voice-tts" num="10" title="Voice · TTS" right="text-to-speech">
         <div className="conf-card">
           {/* Auto read-aloud — a device-local UX toggle (the appbar's mirror, via the SAME useAppChrome
               controller; flips local `ui.ttsAuto`, independent of this group's draft/Save). Shown only when
@@ -2218,7 +2217,7 @@ export function ConfTab({ active }: Props) {
       {/* F1 — placed right after the Voice groups: both are "how the app reaches out to you on this
           device", both depend on a secure context (Tailscale Serve HTTPS), and both mix a saved
           config preference with an immediate browser-capability gesture. */}
-      <ConfGroup id="notifications" num="10" title="Notifications" right="while the app is open">
+      <ConfGroup id="notifications" num="11" title="Notifications" right="while the app is open">
         <div className="conf-card">
           <SettingRow
             label="Enabled"
@@ -2280,7 +2279,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="mcp"
-        num="11"
+        num="12"
         title="MCP servers"
         right={`${settings?.mcp_servers?.length ?? 0} server${(settings?.mcp_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -2293,7 +2292,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="openapi"
-        num="12"
+        num="13"
         title="OpenAPI tool servers"
         right={`${settings?.openapi_servers?.length ?? 0} server${(settings?.openapi_servers?.length ?? 0) === 1 ? "" : "s"}`}
       >
@@ -2318,7 +2317,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="agents"
-        num="13"
+        num="14"
         title="Agents"
         right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
         defaultCollapsed
@@ -2337,7 +2336,7 @@ export function ConfTab({ active }: Props) {
           save bar: every row edit is its own request. */}
       <ConfGroup
         id={AUTOMATIONS_GROUP_ID}
-        num="14"
+        num="15"
         title="Automations"
         right={automationsRight}
         defaultCollapsed
@@ -2347,7 +2346,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="skills"
-        num="15"
+        num="16"
         title="Skills"
         right={`${skillNames.length} discovered`}
         defaultCollapsed
@@ -2357,7 +2356,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="memory"
-        num="16"
+        num="17"
         title="Memory"
         right={memoryCfg.enabled ? "on" : "off"}
         defaultCollapsed
@@ -2367,7 +2366,7 @@ export function ConfTab({ active }: Props) {
 
       <ConfGroup
         id="computers"
-        num="17"
+        num="18"
         title="Computers"
         right={`${hosts.length} machine${hosts.length === 1 ? "" : "s"}`}
       >
@@ -2380,12 +2379,12 @@ export function ConfTab({ active }: Props) {
           shifts to 18 while hosted); the standalone UtilsTab is unmounted in this layout, so its
           "agent-tools" child group has no duplicate DOM id. */}
       {hostsUtils && (
-        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="18" title="Tools" right="utility tools">
+        <ConfGroup id={HOSTED_UTILS_GROUP_ID} num="19" title="Tools" right="utility tools">
           <UtilsContent />
         </ConfGroup>
       )}
 
-      <ConfGroup id="appearance" num={hostsUtils ? "19" : "18"} title="Appearance">
+      <ConfGroup id="appearance" num={hostsUtils ? "20" : "19"} title="Appearance">
         {/* Every row uses the shared `SettingRow` (label + desc + trailing control) so the group has one
             consistent shape; the Palette axis uses the `Swatches` color-chip radiogroup. */}
         <div className="conf-card">
@@ -2556,7 +2555,7 @@ export function ConfTab({ active }: Props) {
           <ConfGroup
             key={ns}
             id={`media-${ns}`}
-            num={String((hostsUtils ? 20 : 19) + i).padStart(2, "0")}
+            num={String((hostsUtils ? 21 : 20) + i).padStart(2, "0")}
             title={def.title}
             right={`media/${ns}/`}
             defaultCollapsed

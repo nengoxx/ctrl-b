@@ -139,6 +139,38 @@ export interface ToolOverride {
   approvals?: ApprovalRule[] | null;
 }
 
+/** The owner's customization of one registered prompt (Phase 18 / D56, §7 L-4) — the pair the Conf
+ *  editor stages and PUTs WHOLE under `prompts: {<id>: …}`. The fields carry the raw textarea text:
+ *  the server normalizes a blank one to absent and drops an entry left with none, which is how a
+ *  restore is expressed (there is no client-side null sentinel). */
+export interface PromptPair {
+  override: string;
+  append: string;
+}
+
+/** One row of `GET /api/prompts` — a registered model-facing prompt. `current` is the EFFECTIVE
+ *  template, UNRENDERED, so the editor shows the same `{{placeholders}}` the owner may edit;
+ *  `placeholders` is derived from the default and listed beside the editor (§7 L-7: an omission is an
+ *  owner-authored choice, not a warning). */
+export interface PromptInfo {
+  id: string;
+  label: string;
+  description: string | null;
+  default_text: string;
+  override: string | null;
+  append: string | null;
+  current: string;
+  is_customized: boolean;
+  placeholders: string[];
+}
+
+/** `GET /api/prompts` — rows in registry order, plus display-ready notices about ids `config.yaml`
+ *  carries that the registry doesn't know (kept on disk, never read). */
+export interface PromptsDoc {
+  prompts: PromptInfo[];
+  warnings: string[];
+}
+
 export interface ActionSpec {
   name: string;
   title: string;

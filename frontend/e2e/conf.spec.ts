@@ -33,6 +33,35 @@ test("Conf · Inference — timeout + prompt controls + primary/fallback pickers
   await expect(inf.getByRole("button", { name: "Save changes" })).toBeEnabled();
 });
 
+// Phase 18 / D56 — the prompt registry section. The 390px project viewport IS the narrow-viewport gate
+// for the pair editor: both fields, the shipped default and the placeholder chips have to fit the
+// phone. The group ships collapsed (it's a long list), so the spec opens it first.
+test("Conf · Prompts — the registry list + the two-field editor", async ({ page }) => {
+  const group = page.locator("#prompts");
+  await expect(group.getByText("1 customized")).toBeVisible(); // the header summary, group still shut
+  await group.locator(".conftitle").click();
+
+  await expect(group.getByText("Memory Intro")).toBeVisible();
+  await expect(group.getByText("Per Tool Cap")).toBeVisible();
+  await expect(group.getByText("customized", { exact: true })).toBeVisible();
+  await expect(group.getByRole("button", { name: "restore" })).toBeVisible();
+
+  // the preview opens the shared modal in PAIR mode
+  await group.locator(".prow").nth(1).locator(".prow-preview").click();
+  const modal = page.getByRole("dialog", { name: "Per Tool Cap" });
+  await expect(modal.getByLabel("Override")).toBeVisible();
+  await expect(modal.getByLabel("Append")).toBeVisible();
+  await expect(modal.getByText("{{tool}}", { exact: true })).toBeVisible();
+  await expect(modal.getByText(/Coupling: the loop guard counts it/)).toBeVisible();
+  // the shipped default is one disclosure away (stacked at 390px)
+  await modal.getByText("Default text").click();
+  await expect(modal.getByText(/vary the call or move on/).first()).toBeVisible();
+
+  await modal.getByLabel("Override").fill("say it my way");
+  await modal.getByRole("button", { name: "Set" }).click();
+  await expect(group.getByRole("button", { name: "Save 1 change" })).toBeEnabled();
+});
+
 test("Conf · Voice STT — every knob + primary/fallback pickers (no failover switch)", async ({
   page,
 }) => {

@@ -32,6 +32,13 @@ vi.mock("../../src/hooks/useAutomations", async (importActual) => ({
   ...(await importActual<typeof import("../../src/hooks/useAutomations")>()),
   useAutomations: () => ({ data: undefined }),
 }));
+// Phase 18 — same shape for the Prompts group: the panel is stubbed out, and ConfTab's own header
+// read is stubbed while the REAL `promptsSummary` (a pure function of the envelope) still runs.
+vi.mock("../../src/components/PromptsEditor", () => ({ PromptsEditor: () => null }));
+vi.mock("../../src/hooks/usePrompts", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/usePrompts")>()),
+  usePrompts: () => ({ data: undefined }),
+}));
 vi.mock("../../src/tabs/UtilsTab", () => ({ UtilsContent: () => null, UtilsTab: () => null }));
 vi.mock("../../src/hooks/useSettings", () => ({
   useSettings: () => ({ data: undefined }),

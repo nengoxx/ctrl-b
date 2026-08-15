@@ -101,6 +101,13 @@ vi.mock("../../src/hooks/useAutomations", async (importActual) => ({
   ...(await importActual<typeof import("../../src/hooks/useAutomations")>()),
   useAutomations: () => ({ data: undefined }),
 }));
+// Phase 18 — same shape for the Prompts group: the panel is stubbed out, and ConfTab's own header
+// read is stubbed while the REAL `promptsSummary` (a pure function of the envelope) still runs.
+vi.mock("../../src/components/PromptsEditor", () => ({ PromptsEditor: () => null }));
+vi.mock("../../src/hooks/usePrompts", async (importActual) => ({
+  ...(await importActual<typeof import("../../src/hooks/usePrompts")>()),
+  usePrompts: () => ({ data: undefined }),
+}));
 // Both exports are stubbed: `UtilsContent` is what ConfTab hosts, and `UtilsTab` is read at MODULE-EVAL
 // time by the kit DefaultRoot's `DEFAULT_BODIES` map — which this tree now reaches, because vapor's eager
 // Root hosts DefaultRoot since D51 V4 (a mock missing the name throws on the binding access, not on render).

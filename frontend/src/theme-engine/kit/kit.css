@@ -2303,6 +2303,115 @@ body[data-mode="light"] .kit .pm {
   opacity: 0.85;
 }
 
+/* ── PromptModal · PAIR mode (Phase 18 / D56, §6 C-18) — one registry prompt's override + append, with
+ *    its shipped default readable alongside. Phone-first: a single scrolling column at 390px, the
+ *    default folded into a `<details>` so the editor is what opens; at desk width the panel is wide
+ *    enough for two columns, and the default pane moves BESIDE the editor (the "side-by-side default/
+ *    current view" of §2.5 as softened by L-3 — no diff, just both texts in view). ── */
+.kit .pm-pair {
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* both children keep their NATURAL height inside the scrolling column — a shrinking flex item here
+ * (min-height: 0) would compress below its own textareas and the expanded default would overlap them
+ * instead of pushing the body to scroll */
+.kit .pm-pair-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+.kit .pm-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+/* the coupling note reuses the shared WarnRow shape; drop its Conf-row padding inside the modal body */
+.kit .pm-pair .conf-warnrow {
+  padding: 0;
+}
+.kit .pm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+/* the prompt's DERIVED placeholders (L-7): display only — dropping one is an authored choice, not an
+ * error, so these are a reference list and never a validation surface */
+.kit .pm-chip {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  /* a long {{identifier}} wraps inside its chip instead of forcing the 390px modal wide */
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.kit .pm-flabel {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-3);
+}
+/* the two fields share the body's height, the append taking the smaller share; both keep a usable
+ * floor so a long override can't squeeze the append shut (the body scrolls instead) */
+.kit .pm-pair .pm-text {
+  flex: 2 1 auto;
+  min-height: 150px;
+}
+.kit .pm-pair .pm-text-min {
+  flex: 1 1 auto;
+  min-height: 90px;
+}
+.kit .pm-def {
+  min-width: 0;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.kit .pm-def > summary {
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 2px 0;
+}
+.kit .pm-defbody {
+  margin-top: 6px;
+  padding: 10px 12px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 700px) {
+  /* the panel is at its 640px max here — two columns fit, so the default reads beside the editor */
+  .kit .pm-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .kit .pm-defbody {
+    max-height: none;
+  }
+}
+
 /* ── overlay: Toasts — transient activity stack, top-center below the appbar (rides --appbar-h, which
  *    DefaultRoot sets to 0 when the bar is hidden). Solid surface (no blur to gate). ── */
 .kit .toasts {
@@ -5324,6 +5433,76 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
 .kit .tcat-appr-add:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ── Conf · Prompts (.prow-*, Phase 18 / D56) — the prompt-registry list. Same row anatomy as the tool
+ *    catalog above (name + badges, a faint description, a monospace preview that opens the editor), so
+ *    the two catalogs read as one family; the badge/preview affordances are literally the `.tcat-*`
+ *    classes, only the row frame and the restore button are net-new. ── */
+.kit .prow {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.kit .prow-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap; /* narrow (390px): a long label + badge + restore wrap instead of overflowing */
+}
+.kit .prow-name {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.kit .prow-restore {
+  all: unset;
+  cursor: pointer;
+  margin-left: auto;
+  flex: none;
+  color: var(--text-3);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 2px 4px;
+}
+.kit .prow-restore:hover,
+.kit .prow-restore:active {
+  color: var(--text);
+}
+/* P3 — `all: unset` ties the global `.kit :focus-visible` ring on specificity and, being later in
+ * source, resets `outline` to none. Restore the keyboard ring explicitly (the `.tcat-appr-*` case). */
+.kit .prow-restore:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .prow-desc {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+/* a real <button> for keyboard access — explicit strip-down, NOT `all: unset` (the P3 note above:
+ * unset ties the global focus-visible ring on specificity and this trigger must keep its ring) */
+.kit .prow-preview {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+  cursor: pointer;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  overflow-wrap: anywhere;
+}
+.kit .prow-preview:hover {
+  color: var(--text);
 }
 
 /* ── overlay: BottomSheet (.bs-*) — the dependency-free draggable bottom-sheet primitive (Cosmos C3a;
