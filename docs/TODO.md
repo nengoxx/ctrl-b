@@ -1359,7 +1359,7 @@ placeholders, `GET /api/prompts`, Conf Prompts editor, message-metadata prompt-h
 stamping (the eval seam), + the symbol-keyed AST backstop. Build against the plan, not this list.
 
 - [x] Council: spec-completeness round (Codex 10 BLOCKER/8 SHOULD + Opus implementer's test) → §6 reconciliation → confirm rounds ALL RESOLVED → cuts-only lean round → §7 → **D56 LOCKED** (2026-08-15)
-- [ ] Slice 0 — hardening pre-slice per §6 C-11/C-12/C-14: M1 execution guard · M3 batch cap · M2 skill-snapshot fix, each with its pinned tests → Codex review → owner pause
+- [x] Slice 0 — hardening pre-slice ✅ `30e7417` (2026-08-15): M1 execution guard (incl. resume + invalid_raw ordering) · M3 batch cap · M2 skill snapshot (terminal-record pin MERGE) · 15 regressions · Codex SHIP-WITH-FIXES → wave → RESOLVED (as-built = PROMPTS_PLAN §8.1) → ⏸ OWNER PAUSE
 - [ ] Slice 1 — registry + config READ + migrate all entries (L-8 data-concatenation rule) + no-unresolved-tokens tests + the AST backstop
 - [ ] Slice 2 — API + stamping (NO migration): message-metadata stamps + usage, entry replace/delete hook, `api/prompts.py`
 - [ ] Slice 3 — Conf UI Prompts section (two-field PromptModal, restore-by-delete, side-by-side view, placeholder list, coupling warnings)

@@ -31,15 +31,13 @@
 
 In rough order of standing priority:
 
-1. **Phase 18 — the prompt system — D56 LOCKED 2026-08-15, BUILD IN PROGRESS.** Spec =
-   [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); **§6 (council C-1..C-25) + §7 (lean round L-1..L-11) are
-   the normative layer** — the council closed ALL RESOLVED, then a cuts-only round trimmed the
-   design to five concepts + one seam (no new tables, no new deps; append KEPT, usage capture KEPT,
-   staleness/silence-lever/eval-tables CUT or deferred — overrules recorded in §7). Slice ladder =
-   plan §4: Slice 0 (vault-audit hardening M1/M2/M3 per C-11/C-12/C-14) → 1 (registry) → 2
-   (API+stamping) → 3 (Conf UI); owner pause after each slice. The external harness audit lives at
-   `~/Documents/Maia/60 Audits/2026-08-14-ctrl-b-runtime-agent-harness-audit.md` (pinned `e1b10c3`);
-   L1/L2 measurement-gated.
+1. **Phase 18 — the prompt system — D56 LOCKED 2026-08-15; Slice 0 ✅ `30e7417`, ⏸ OWNER PAUSE
+   before Slice 1.** Spec = [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 (C-1..C-25) + §7 (lean round
+   L-1..L-11) are the normative layer; **§8.1 = the Slice 0 as-built** (M1 allowlist-at-execution ·
+   M2 skill snapshot with terminal-record pin merge · M3 batch cap; Codex SHIP-WITH-FIXES → wave →
+   RESOLVED; gate 1338 tests green; the two denial constants MUST be swept into the registry by
+   Slice 1). Dev units were started for the owner's eyeball — STOP them when done. Next: Slice 1
+   (registry + config READ + migration) per the §4 ladder, owner go first.
 2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (**still untested as of
    2026-08-12, owner-confirmed**): SYS-19 meant `showNotification()` had never had a registered
    worker when it "failed"; it may just work on v1.6.0. Outcome decides whether the parked Web

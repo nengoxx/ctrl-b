@@ -1,8 +1,9 @@
 # The Prompt System (Phase 18) — plan of record
 
-> **Status: design RULED by the owner 2026-08-15 (in conversation) — council round pending, then the
-> D56 lock.** No code yet. This document is the spec the build follows; the evidence behind every
-> choice lives in [`PROMPTS_AUDIT.md`](./PROMPTS_AUDIT.md) (the PR-# inventory) and the dossiers
+> **Status: D56 LOCKED 2026-08-15** (owner-ruled in conversation; council §6 closed ALL RESOLVED;
+> lean round §7 folded). **§6 (C-1..C-25) + §7 (L-1..L-11) are the NORMATIVE layer — they amend §1–§5
+> where they differ.** Build state: **Slice 0 ✅ `30e7417`** (as-built §8.1) · Slices 1–3 pending.
+> Evidence: [`PROMPTS_AUDIT.md`](./PROMPTS_AUDIT.md) (the PR-# inventory) and the dossiers
 > [R27](./research/R27-peer-prompt-configurability.md) ·
 > [R30](./research/R30-peer-prompt-system-internals.md) ·
 > [R31](./research/R31-prompt-eval-harnesses.md) ·
@@ -114,13 +115,13 @@ interpolating nudges (reflection, per-tool-cap) ship with their placeholders per
 ### 2.6 The API + Conf UI
 
 `GET /api/prompts` → `[{id, label, description, default_text, override, append, current,
-is_customized, placeholders, default_changed}]` — the generalization of
-`GET /api/agent/default-prompt` (the one everyone asks peers for; only goose ships it, R30 §5).
-Writes go through the existing `PUT /api/settings` (plus one prompt-aware server hook — §6 C-4/C-5).
+is_customized, placeholders}]` *(`default_changed` CUT with staleness, §7 L-3)* — the generalization
+of `GET /api/agent/default-prompt` (the one everyone asks peers for; only goose ships it, R30 §5).
+Writes go through the existing `PUT /api/settings` (plus the entry replace/delete hook — §7 L-4).
 Conf gains a **Prompts** section: list → fullscreen editor (reusing `PromptRow` + the global
 `PromptModal`, extended with a second textarea for `append` — §6 council correction: `promptPreview`
 is a one-line summarizer, not the editor), *Load default* / *Restore default* (restore = **delete the
-key**, never a stored copy — goose's semantics), staleness badge. UI contract details: §6 C-18.
+key**, never a stored copy — goose's semantics). UI contract details: §6 C-18 as amended by §7.
 
 ### 2.7 The eval seams (built now) vs the harness (later phase)
 
@@ -543,3 +544,32 @@ C-21..C-25 above are the confirm-round additions)*: no main-prompt row in `/api/
 timestamp every change observably; a settings-edit event type is not invented (Opus integration-4,
 ruled) · diff view deferred (C-18) · <80-char sweep limitation recorded (C-10) · `""`-override
 divergence from the tool_overrides precedent recorded (C-3, ⚑ owner-flagged).
+
+---
+
+## 8. As-built records
+
+### 8.1 Slice 0 — hardening pre-slice ✅ `30e7417` (2026-08-15)
+
+Built by an Opus 5 subagent from the §6 C-11/C-12/C-14 contracts; review = Codex SHIP WITH FIXES →
+a 5-finding wave → confirm **RESOLVED**. Gate: all 6 checks, 1338 tests (15 new regressions across
+`test_tool_allowlist_guard_m1.py` · `test_resume_skills_snapshot_m2.py` ·
+`test_subagent_batch_cap_m3.py`; negative baselines verified by stubbing the guards out).
+
+**As-built deltas vs the contracts (all main-seat-ruled):**
+- The M1 guard also fronts the **resume** path (before the D44 `execute_always` grant and the
+  confirm-token re-mint) — a miss re-drives the call with a `None` token so the loop's single guard
+  emits the one DENIED text + audit row + denied signature (the review's MED). It also outranks the
+  `invalid_raw` branch (capability boundary before argument validity — the review's LOW).
+- **Unknown names take the guard's DENIED path** (no `UnknownTool` from the agent loop); the
+  pre-existing `test_resume_execute_unknown_tool_yields_clean_error` contract was amended to
+  `…_yields_a_clean_denial` accordingly (the one pre-existing contract this slice changed).
+- `record_terminal` **merges** skill pins across turn replacements (prior pins minus
+  `resolved_call_ids()`, new pins win) — closes the review's HIGH: a later turn completing on the
+  same thread no longer erases a parked suspend's pin inside the linger window.
+- **No-pin resume falls back to the client's ids** with one `log.warning` (skills only narrow —
+  no escalation; a cold reload sends `[]` = the documented base-toolset outcome).
+- Four legacy test files drove `_run_calls` with unregistered fake names — exactly the M1 hole —
+  and now register them via `backend/tests/_tools.py::temp_tools` (no production softening).
+- The two denial texts ship as module constants `M1_TOOL_BLOCKED` / `M3_BATCH_REJECTED`, named for
+  their C-1 registry ids; **Slice 1 re-homes them** (the migration sweep MUST pick them up).
