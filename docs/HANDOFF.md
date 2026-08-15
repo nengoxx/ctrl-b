@@ -16,11 +16,12 @@
 
 - **Prod = v1.6.0 @ `fcc42ad`**, live + healthy (https://emma.lobster-vector.ts.net) — UNCHANGED
   by this session; all Phase 18 work is on local `main` only.
-- **Local `main` is 8 commits AHEAD of origin, NOT pushed** (owner has not authorized a push):
-  `c020464` (Phase 18 planning docs + D56) · `30e7417` (Slice 0) · `3cb10dd` (as-built) ·
-  `dfe5b98` (session close) · `a33fb34` (**Slice 1**) · `d752b53` (docs) · `91cc464` (**Slice 2**
-  — stamping + usage + PUT hook + GET /api/prompts, incl. **DB migration 6**: `messages.meta`) +
-  its docs commit.
+- **Local `main` is 12 commits AHEAD of origin, NOT pushed** (owner has not authorized a push):
+  the 8 through Slice 2 (`c020464` planning+D56 · `30e7417` Slice 0 · `a33fb34` Slice 1 ·
+  `91cc464` Slice 2 with **DB migration 6** `messages.meta` · their 4 docs commits) then this
+  session's four: `4d9dcf0` (**Slice 3.5** — three texts registered + `InvocationContext.stamps`)
+  · `b1cebd0` (**Slice 3** — the prompts Conf UI) · `3458452` (kit fix: the `appbarMode: off` top
+  inset) + the docs commit.
 - **DB schema is now 6** (one nullable `meta` column on `messages`) — the dev DB migrates on unit
   start; prod migrates whenever the next release deploys. Rollback note: pre-6 code tolerates the
   extra column (writes name their columns), so v1.6.0 remains a safe rollback against a migrated DB.
@@ -40,29 +41,24 @@
 
 In rough order of standing priority:
 
-1. **Phase 18 — the prompt system — D56 LOCKED 2026-08-15; Slice 0 ✅ `30e7417` · Slice 1 ✅
-   `a33fb34` · Slice 2 ✅ `91cc464`.** Spec = [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 + §7 are
-   the normative layer; **§8.1–§8.3 = the as-builts** (Slice 0: M1/M2/M3 hardening; its two denial
-   constants are now REGISTRY ids). Dev units are RUNNING for the owner's eyeball (see Current
-   state — leave them up).
-   **Slice 1 ✅ `a33fb34` (§8.2):** the registry chokepoint — `services/agent/prompts.py` (15 C-1
-   ids, the `{{var}}` renderer, infallible `resolve()`/`resolve_with_template()`),
-   `Settings.prompts` READ path, byte-faithful migration (goldens pin it), the AST backstop.
-   Codex SHIP-WITH-FIXES → 6-item wave → RESOLVED; 1379 tests.
-   **Slice 2 ✅ `91cc464` (2026-08-15, same session) — §8.3 = its as-built:** stamping
-   (`Message.prompt_stamps` `{id: template hash}` + `usage` on every assistant message + the
-   compaction summary; **DB migration 6** — one `meta` JSON column, extend-don't-migrate) · usage
-   capture (`include_usage` default-on for streams; owner-set `stream_options` wins and its
-   rejection raises; bounded 2-flag retry composes with the D46 demotion) · the L-4/L-5 PUT hook
-   (whole-entry replace, `id: null` deletes, blanks normalize, non-map 422s) · `GET /api/prompts`
-   (registry-order rows + unknown-id warnings). Codex SHIP-WITH-FIXES (3 MED/3 LOW) → ruled wave →
-   mini-wave → **final confirm RESOLVED**; gate **1423 tests**. **⏸ OWNER PAUSE before Slice 3
-   (the Conf UI — the §4 row-3 contract; the Slice-3 seams are listed at §8.3's tail).**
-   **Owner-court:** ① the §8.2 five recorded-not-registered model-facing texts (memory/skill "not
-   saved yet" notices · parallel-misdeclare belt · INTERRUPTED_NOTE · ORPHAN_NOTE) — rule whether
-   a later slice registers them; ② eyeball the two slices on dev :5434 (a `prompts:` override in
-   the dev config + `GET /api/prompts` are poke-able now). Also owed at next release: the push of
-   the local commits (owner-authorized) and the runbook flow.
+1. **Phase 18 — the prompt system — BUILD COMPLETE 2026-08-15** (D56; Slices 0–3 + 3.5 all ✅:
+   `30e7417` · `a33fb34` · `91cc464` · `b1cebd0` · `4d9dcf0`). Spec =
+   [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 + §7 normative; **§8.1–§8.5 = the as-builts**.
+   The whole feature is live on the dev units: **Conf → Prompts** (group 03) lists all **18
+   registry ids** with the pair editor (override + append, side-by-side default, placeholder
+   chips, coupling warnings); saves ride `PUT /api/settings`; every registry text on the model
+   path **stamps** (the §8.3 asymmetry is CLOSED — `InvocationContext.stamps`, §8.5). The
+   owner-court five were RULED 2026-08-15: three registered (`memory_proposal_pending` ·
+   `skill_proposal_pending` · `parallel_misdeclared`); `INTERRUPTED_NOTE`/`ORPHAN_NOTE` traced to
+   NO model-facing path and deliberately left as (reclassified) UI text — if the owner wants those
+   editable it is a different mechanism, recorded in §8.5. Review: one combined Codex round, SHIP
+   WITH FIXES ×2 → wave → confirm → 1 residual (staleness) closed with `staleTime: 0`. Gate:
+   backend **1432** · FE vitest **2065** · e2e green at 390px. **Remaining in this phase: NOTHING
+   to build** — Slice 4 (the promptfoo harness) is its own later phase (ROADMAP).
+   **Owner-court now:** ① eyeball the finished feature on dev :5173/:5434 (screenshots are in the
+   2026-08-15 session thread); ② the owner-visual pass rode `appbarMode` too — the `off`-mode
+   top-inset fix (`3458452`) is in, worth one phone look; ③ owed at next release: the push of the
+   12 local commits (owner-authorized) + the runbook flow (prod picks up DB migration 6 then).
 2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (**still untested as of
    2026-08-12, owner-confirmed**): SYS-19 meant `showNotification()` had never had a registered
    worker when it "failed"; it may just work on v1.6.0. Outcome decides whether the parked Web

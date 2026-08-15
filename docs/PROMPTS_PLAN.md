@@ -671,7 +671,8 @@ under the write lock) with YAML replacement semantics (an emptied `prompts:` key
   PUT-transport vocabulary only — tool_overrides parity, ruled).
 - `m3_batch_rejected` is NOT stamped (plain `resolve()` — plumbing the accumulator through
   `InvocationContext` for one denial text is disproportionate; its rendered text persists verbatim
-  in the ToolResultPart). Recorded asymmetry with `m1_tool_blocked`, which stamps.
+  in the ToolResultPart). Recorded asymmetry with `m1_tool_blocked`, which stamps. *(CLOSED in
+  §8.5: the accumulator now rides `InvocationContext.stamps` and every registry text stamps.)*
 - **Declined + recorded:** preserving unknown future `PromptOverride` fields through a whole-entry
   replace (the review's LOW-1) — conflicts with the ruled L-4 semantics and guards a
   rollback+future-field compound; revisit when the `enabled: false` seam lands.
@@ -684,3 +685,87 @@ textarea values); no 409 gate; `current` is unrendered; `label()` is the display
 warnings arrive as display-ready strings. **Harness seams:** `template_hash()` +
 `effective_template()` are the shared rules; query shape =
 `json_extract(messages.meta, '$.prompt_stamps')`.
+
+### 8.4 Slice 3 — the Conf UI ✅ (2026-08-15, the no-pause session)
+
+Built by an Opus 5 subagent from the §4 row-3 contract (C-18/C-23 as amended by §7 L-3/L-4/L-5/
+L-7); review = the combined Codex round below (§8.5) — **SHIP WITH FIXES**, wave applied, confirm =
+1 residual (staleness, closed with Codex's own leanest fix, §8.5 item 3), everything else RESOLVED.
+Gate: all 6 checks; FE vitest **2052 → 2065**, e2e conf/a11y/contrast green at the 390px
+mobile project. Owner-visual round: 390px + 900px screenshots off the dev units, plus a live poke
+surface (dev :5173/:5434).
+
+**Shipped shape:** `Conf → Prompts` = `ConfGroup id="prompts" num="03"` directly after Inference
+(the following groups renumbered +1, incl. the dynamic media arithmetic — test-pinned),
+`defaultCollapsed`, header chip = `promptsSummary()` ("N customized"). `PromptsEditor.tsx` renders
+the GET rows in registry order — label + `customized` badge + description + a truncated `current`
+preview (a real `<button>`, keyboard-reachable) opening the editor; per-row *Restore* stages a
+both-blank pair. Draft/changed/batched-save = the ToolCatalog pattern verbatim; changed-detection
+compares through `norm()` (blank→unset, NOT `.trim()` — stored trailing whitespace must not
+self-flag). Save = `useSavePromptOverrides` PUTting RAW `{override, append}` pairs for changed ids
+only (server normalizes; both-blank deletes = restore; one save shape, no client sentinel).
+`usePrompts` = `useScopedQuery("conf", …)` (the `useAutomations` posture — paused off-tab,
+refreshed on re-entry; the LWW-staleness mitigation, no 409 by design). **Pair mode** on the ONE
+shared PromptModal via `requestPromptPair` (the store's `Active` became a discriminated union;
+`resolvePrompt(null)` cancels either kind; every text-mode caller untouched): override + append
+textareas, the shipped default read-only (a `<details>` — folded at 390px, OPEN + side-by-side in
+the ≥700px second column), derived placeholder chips (L-7, display-only), the description's
+`"Coupling: "` tail rendered via the shared `WarnRow` (extracted from ConfTab). GET `warnings`
+render at the section top.
+
+**Main-seat rulings recorded:** placement after Inference (the model-text cluster; Inference owns
+the system-prompt rows) · the row preview composes a client-side mirror of `effective_template`
+for STAGED drafts only (display-only; the server rule stays the truth) · pair-mode footer carries
+only *Load default* (restore = the row affordance / clearing both) · `useRegisterDirty("prompts")`
+added (the Conf group convention) · the modal counter sums both fields. Two visual fixes landed in
+the audit pass: `.pm-pair-edit`/`.pm-def` `flex-shrink: 0` (the expanded default OVERLAPPED the
+textareas at 390px — a `min-height: 0` shrink bug; probe-verified geometry) and the guarded
+`matchMedia` default-open ≥700px. Companion kit fix from the same owner round (own commit): the
+`appbarMode: off` scroller inset — no bar AND no floating launcher meant NO top inset and no
+safe-area consumer; a 10px + `env(safe-area-inset-top)` sibling of the v1.3.1 minimal-mode rule,
+keyed `:not(:has(.kit-appbar)):not(:has(.navmenu:not(.docked)))`.
+
+### 8.5 Slice 3.5 — the five recorded texts ruled + the combined review wave ✅ (2026-08-15)
+
+Owner ruling (in conversation): *register the five §8.2 ⚑ texts.* Built by a parallel Opus 5
+subagent (backend-only, zero file overlap with Slice 3); the trace verdict came back **3-of-5**:
+
+- **Registered** (appended after the C-1 fifteen, byte-identical defaults, no new placeholders;
+  the per-call `summary` lines stay code): `memory_proposal_pending` · `skill_proposal_pending` ·
+  `parallel_misdeclared`.
+- **NOT registered:** `INTERRUPTED_NOTE` / `ORPHAN_NOTE` — the full trace found NO model-facing
+  path (both terminate in `run.error` + the audit Event feed; `list_automations` prints
+  `run.status` only; no thread message carries them). Registering owner-facing UI text would
+  misfile the registry's contract; their allowlist rows moved to an honestly-reasoned group naming
+  the sinks. Reported to the owner as a 3-of-5 outcome; standing offer: if they should be editable
+  as UI wording, that is a different (future) mechanism.
+
+**The combined Codex round** (one review, two scopes; verdict SHIP WITH FIXES ×2, 0 HIGH / 3 MED /
+2 LOW; confirm round RESOLVED): byte-identity verified by AST+SHA-256; the union/changed-detection/
+renumbering/payload all confirmed sound. The wave, all accepted + applied:
+
+1. **Stamps through the tool layer** (MED): `InvocationContext.stamps` (optional, default None) →
+   `ActionService.invoke`/`_execute` → ctx; the session passes `self._stamps` at BOTH invoke sites;
+   `memory`/`skill_manage` resolve with `stamps=ctx.stamps` — and `m3_batch_rejected` now stamps
+   too, CLOSING the §8.3 recorded asymmetry (the ruling reversed on new evidence: the plumb is one
+   field + one construction site, and three ids sharing the gap flipped the proportionality).
+   Every registry text on the model path now stamps uniformly; accumulator-assert tests pin all
+   three sites.
+2. `.prow-preview` → a real `<button>` (MED; keyboard access + close-focus restore; explicit CSS
+   strip-down, not `all: unset`, so the focus ring survives).
+3. `usePrompts` → `useScopedQuery` (MED; the builder's plain 5-min-stale query was a real
+   multi-device staleness under LWW). The confirm round caught the fix incomplete — ConfTab is
+   KEEP-mounted, so `refetchOnMount: "always"` never re-fires and the enabled-edge refetch is
+   stale-gated; the sibling 10s staleTime left a tab-hop window. Closed with `staleTime: 0` for
+   THIS query (every Conf re-entry reconciles; cached rows paint instantly). Recorded nuance: the
+   other `useScopedQuery("conf")` consumers share the mechanism but not the risk (no LWW
+   whole-pair save rides them), so their 10s staleTimes stand.
+4. Three description qualifications (LOW; `state`-store carve-out · saves AND removals · the belt
+   REPLACES a result rather than "never ran"). Defaults untouched.
+5. `.pm-chip` wraps long identifiers (LOW).
+
+Backend pytest **1429 → 1432** across the wave (registry goldens + coupling rows picked the three
+ids up parametrically; call-site override tests beside each site's own harness). Recorded judgement
+call the main seat DECLINED to widen: ToolCatalog's `.tcat-desc` click-only div shares the
+keyboard-access defect class — pre-existing, belongs to its own slice, recorded here rather than
+fixed in this one.
