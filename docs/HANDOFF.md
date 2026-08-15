@@ -16,8 +16,10 @@
 
 - **Prod = v1.6.0 @ `fcc42ad`**, live + healthy (https://emma.lobster-vector.ts.net) — UNCHANGED
   by this session; all Phase 18 work is on local `main` only.
-- **Local `main` is 3 commits AHEAD of origin, NOT pushed** (owner has not authorized a push):
-  `c020464` (Phase 18 planning docs + D56) · `30e7417` (Slice 0 hardening) · `3cb10dd` (as-built).
+- **Local `main` is 5+ commits AHEAD of origin, NOT pushed** (owner has not authorized a push):
+  `c020464` (Phase 18 planning docs + D56) · `30e7417` (Slice 0 hardening) · `3cb10dd` (as-built) ·
+  `dfe5b98` (session close) · `a33fb34` (**Slice 1** — registry + migration + config READ) + its
+  docs commit.
 - **The DEV UNITS ARE RUNNING on purpose** (:5434 + Vite :5173) — the owner asked to keep them up
   for the Slice 0 eyeball. Do NOT stop them until the owner says they're done looking.
 - **Rollback = `update.sh v1.5.1` EXACTLY** — the sw.js floor: any pre-v1.5.1 tag re-serves
@@ -34,16 +36,24 @@
 
 In rough order of standing priority:
 
-1. **Phase 18 — the prompt system — D56 LOCKED 2026-08-15; Slice 0 ✅ `30e7417`, ⏸ OWNER PAUSE
-   before Slice 1.** Spec = [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 (C-1..C-25) + §7 (lean round
+1. **Phase 18 — the prompt system — D56 LOCKED 2026-08-15; Slice 0 ✅ `30e7417` · Slice 1 ✅
+   `a33fb34`.** Spec = [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 (C-1..C-25) + §7 (lean round
    L-1..L-11) are the normative layer; **§8.1 = the Slice 0 as-built** (M1 allowlist-at-execution ·
-   M2 skill snapshot with terminal-record pin merge · M3 batch cap; Codex SHIP-WITH-FIXES → wave →
-   RESOLVED; gate 1338 tests green; the two denial constants MUST be swept into the registry by
-   Slice 1). Dev units are RUNNING for the owner's eyeball (see Current state — leave them up).
-   NEXT = the owner's Slice 0 look + go, then Slice 1 (registry + config READ + migration:
-   ALL prompt texts move into `prompts.py` incl. `M1_TOOL_BLOCKED`/`M3_BATCH_REJECTED`, the
-   `{{var}}` renderer, `PromptOverride` read path, the AST backstop) per the §4 ladder. Also owed
-   at next release: the push of the 3 local commits (owner-authorized) and the runbook flow.
+   M2 skill snapshot with terminal-record pin merge · M3 batch cap; its two denial constants are now
+   REGISTRY ids). Dev units are RUNNING for the owner's eyeball (see Current state — leave them up).
+   **Slice 1 ✅ `a33fb34` (2026-08-15) — §8.2 = its as-built:** the whole registry chokepoint
+   shipped — `services/agent/prompts.py` (15 C-1 ids, the `{{var}}` renderer, infallible
+   `resolve()`/`resolve_with_template()`), `Settings.prompts` READ path, byte-faithful migration
+   (the Slice-0 denial constants re-homed; goldens pin it), the AST backstop
+   (`test_arch_invariants_prompts.py`). Codex SHIP-WITH-FIXES → 6-item wave → confirm RESOLVED;
+   gate 1379 tests. **⏸ OWNER PAUSE before Slice 2.** Owner-court from §8.2: five standing
+   model-facing texts recorded-not-registered (memory/skill "not saved yet" notices ·
+   parallel-misdeclare belt · INTERRUPTED_NOTE · ORPHAN_NOTE) — rule whether a later slice
+   registers them. NEXT = the owner's look + go, then **Slice 2** (API + stamping per §4:
+   message-metadata stamps off `resolve_with_template()`'s template · usage capture under
+   `extra_body` · the L-4/L-5 entry replace/delete/normalize hook · `GET /api/prompts` in
+   `api/prompts.py`). Also owed at next release: the push of the local commits
+   (owner-authorized) and the runbook flow.
 2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (**still untested as of
    2026-08-12, owner-confirmed**): SYS-19 meant `showNotification()` had never had a registered
    worker when it "failed"; it may just work on v1.6.0. Outcome decides whether the parked Web

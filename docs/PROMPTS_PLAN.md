@@ -2,7 +2,8 @@
 
 > **Status: D56 LOCKED 2026-08-15** (owner-ruled in conversation; council §6 closed ALL RESOLVED;
 > lean round §7 folded). **§6 (C-1..C-25) + §7 (L-1..L-11) are the NORMATIVE layer — they amend §1–§5
-> where they differ.** Build state: **Slice 0 ✅ `30e7417`** (as-built §8.1) · Slices 1–3 pending.
+> where they differ.** Build state: **Slice 0 ✅ `30e7417`** (as-built §8.1) · **Slice 1 ✅ `a33fb34`**
+> (as-built §8.2) · Slices 2–3 pending.
 > Evidence: [`PROMPTS_AUDIT.md`](./PROMPTS_AUDIT.md) (the PR-# inventory) and the dossiers
 > [R27](./research/R27-peer-prompt-configurability.md) ·
 > [R30](./research/R30-peer-prompt-system-internals.md) ·
@@ -573,3 +574,54 @@ a 5-finding wave → confirm **RESOLVED**. Gate: all 6 checks, 1338 tests (15 ne
   and now register them via `backend/tests/_tools.py::temp_tools` (no production softening).
 - The two denial texts ship as module constants `M1_TOOL_BLOCKED` / `M3_BATCH_REJECTED`, named for
   their C-1 registry ids; **Slice 1 re-homes them** (the migration sweep MUST pick them up).
+
+### 8.2 Slice 1 — registry + migration + config READ ✅ `a33fb34` (2026-08-15)
+
+Built by an Opus 5 subagent from the §4 row-1 contract (§6 C-1/C-2/C-3/C-16/C-17 as amended by §7
+L-2..L-11); review = Codex **SHIP WITH FIXES** (2 MED / 3 LOW) → a 6-item ruled wave → confirm
+**RESOLVED, no new defects**. Gate: all 6 checks, **1337 → 1379 tests** (+42:
+`test_prompts_registry_p18.py` 31→38 · `test_arch_invariants_prompts.py` 3→6 · the C-15 overflow
+regression in the compaction suite; 10 existing files adapted — two constant asserts → `resolve()`,
+14 `Compactor(...)` constructions gained the `settings` parameter).
+
+**Shipped shape:** `services/agent/prompts.py` = `PromptDef{default, description?}` + the 15-id C-1
+REGISTRY in table order + `_Placeholders(string.Template)` (`{{name}}`, `safe_substitute`-only,
+derived placeholders, `flags = re.NOFLAG`) + `resolve()` / `resolve_with_template()`.
+`PromptOverride{override?, append?}` (`extra="allow"`) + `Settings.prompts` beside `tool_overrides`,
+READ path only. `Compactor.__init__` + `skills_prompt()` take the shared `Settings` (L-9). Migration
+byte-faithful under the L-8 rules; the Slice-0 constants deleted and re-homed as
+`m1_tool_blocked`/`m3_batch_rejected`.
+
+**As-built deltas vs the contracts (all main-seat-ruled):**
+- `resolve(prompt_id, …)` not `id` (builtin shadow); every call site is positional.
+- **`per_tool_cap` has NO `{{max}}`** — the pre-migration text never named the cap; byte-identity
+  wins over the C-1 indicative column. Adding it later = a deliberate copy edit.
+- **`resolve_with_template()` returns `(rendered, effective_template)` atomically** (Codex MED):
+  Slice 2's C-8 stamp hashes exactly that second element, captured at resolution time — a later
+  `Settings` read can be a different template under a live mid-turn edit. Nothing hashes yet.
+- Infallibility is total: custom render failure → rendered baked default; default render failure →
+  RAW default text; one warning each (Codex LOW — the default render was originally outside the try).
+- The AST backstop descends f-string interpolations (Codex MED: `f"{'…'}"` originally evaded via
+  the skip-all-descendants dedup); structural exclusions cover `@tool(description=)` alongside
+  `@action`/`Field`; the L-10 allowlist is grouped — 7 stated reasons over 69 `(file, symbol)` rows.
+- **⚑ Owner-court:** five standing model-facing texts are RECORDED in the allowlist, not registered
+  (outside the normative 15): the `memory`/`skill_manage` "not saved yet — owner must approve"
+  notices, `_run_calls._complete`'s parallel-misdeclare belt, `runner.INTERRUPTED_NOTE`,
+  `service.ORPHAN_NOTE`. Revisit = later additive registry rows, owner's call.
+- The `/compact` framing sentence ("The user asked to focus this summary on: ") stays code as the
+  precomputed `{{focus}}` value (§2.3); sub-80-char, so it needs its own id if it should ever be
+  owner-editable.
+
+**Known-and-accepted (recorded, no action):** pre-Slice-2 `PUT /api/settings` behavior on `prompts:`
+is the plain deep-merge — field-level patches merge, entry `null` 422s, `""` persists but resolves
+as unset (the L-4/L-5 hook lands in Slice 2). A pre-existing extra config key literally named
+`prompts` with an incompatible shape would now fail validation (none exists). The renderer's
+IGNORECASE fold-char nit is closed by `re.NOFLAG`. Pre-existing flake noted in passing:
+`test_parallel_executor_d40.py::test_wall_clock_is_max_not_sum` (`elapsed < 0.35`) can trip under
+full-gate contention; passes standalone — not this slice's.
+
+**Slice 2 seams confirmed in code:** `placeholders()` is public (the API's derived list);
+registry iteration order is the UI order (test-pinned); unknown config ids load + are ignored
+(test-pinned) — the preserve+warn half of C-18 is Slice 2's; C-15 holds by construction
+(`_summarize` prices the resolved system message — regression-pinned); C-17 needed zero wiring
+(no cache exists; live-pickup test-pinned).
