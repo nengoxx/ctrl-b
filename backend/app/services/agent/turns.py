@@ -213,6 +213,25 @@ class TurnAccumulator:
             # the message so the last write wins with the real terminal state.
             self.terminal = dict(data)
 
+    def suspended_skills(self) -> dict[str, list[str]]:
+        """The active skill ids the turn suspended under, keyed by suspended call id (M2/C-12). Read
+        straight off the `permission`/`question` payloads the fold already holds (a resolved call drops
+        its payload, so only genuinely-pending suspends are reported) — the snapshot therefore carries
+        them for free, and the terminal cache copies this so a resume that lands after the turn ended
+        still gets the SERVER's set instead of whatever the client still remembers."""
+        out: dict[str, list[str]] = {}
+        for cid, call in self.calls.items():
+            payload = call.get("permission") or call.get("question")
+            if isinstance(payload, dict) and isinstance(payload.get("skills"), list):
+                out[cid] = list(payload["skills"])
+        return out
+
+    def resolved_call_ids(self) -> set[str]:
+        """Call ids this turn carried to a result (M2/C-12) — the fold writes `result` exactly then.
+        The terminal cache uses it to expire a PRIOR turn's pins for the calls this turn resolved,
+        while keeping the ones still awaiting the owner."""
+        return {cid for cid, call in self.calls.items() if "result" in call}
+
     def snapshot(self, *, mode: str | None, seq: int) -> dict[str, Any]:
         """One coherent picture of the turn for a `turn.sync` re-attach event (D39/S3-A). Joins the
         delta lists (the only place the O(n) concat happens), includes the pending tool calls with
@@ -582,6 +601,10 @@ class TerminalRecord:
 
     turn_id: str
     terminal_status: str
+    #: M2/C-12: the skill ids active when the turn suspended, keyed by suspended call id. A confirm/
+    #: question outlives its turn (the owner resolves it later), so this is what makes the server —
+    #: not the client's module state — authoritative about which skills the resumed half runs under.
+    skills_by_call: dict[str, list[str]] = field(default_factory=dict)
     ended_at: datetime = field(default_factory=_now)
 
 
@@ -607,8 +630,21 @@ def record_terminal(
     `terminal_status` is never None at this point (the drain `finally` guarantees it); the `or
     "error"` is a last-ditch guard so a malformed handle can never poison the record."""
     _sweep_terminals(cache, linger_s)
+    # M2/C-12: the record is per-THREAD but a suspended call outlives the turn that raised it — the
+    # owner may resolve turn A's bubble after turn B has come and gone on the same thread. So the new
+    # turn's pins do not REPLACE the map: the prior record's pins are carried forward except for the
+    # calls this turn actually resolved (a dismissed/executed bubble needs no pin), and the new turn's
+    # own pins win on a shared id. Expiry stays with the record: the sweep above already dropped a
+    # lingered-out one, so nothing outlives its window.
+    prior = cache.get(handle.thread_id)
+    pins = handle.accumulator.suspended_skills()
+    if prior is not None:
+        resolved = handle.accumulator.resolved_call_ids()
+        pins = {c: s for c, s in prior.skills_by_call.items() if c not in resolved} | pins
     cache[handle.thread_id] = TerminalRecord(
-        turn_id=handle.turn_id, terminal_status=handle.terminal_status or "error"
+        turn_id=handle.turn_id,
+        terminal_status=handle.terminal_status or "error",
+        skills_by_call=pins,
     )
     cache.move_to_end(handle.thread_id)  # freshest last (evict-oldest is popitem(last=False))
     while len(cache) > cap:

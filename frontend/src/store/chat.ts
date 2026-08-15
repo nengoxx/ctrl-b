@@ -66,8 +66,10 @@ const modeByCall: Record<string, ChatMode | null> = {};
 // exactly: `turnSkills` alone is overwritten by the NEXT send, so resuming an older confirm after an
 // interleaved message would re-activate the wrong turn's skills (or none) — the per-call pin survives
 // it. Sent on resume/answer so the resumed half runs under the SAME narrowed toolset the owner
-// confirmed against. (Not recoverable after a cold reload — skills aren't persisted/snapshotted;
-// falls back to `turnSkills`, same known limit as a pre-pin persisted bubble's mode.)
+// confirmed against. Since M2/C-12 the SERVER is the source: the suspend event carries its active set
+// (selector picks included), the turn snapshot pins it per call id so a re-attach/reload re-seeds this
+// map, and `/agent/resume` prefers its own pin over whatever we send — this is now the fallback for
+// the one case the server can't answer (its terminal record lingered out or the process restarted).
 const skillsByCall: Record<string, string[]> = {};
 // Whether a suspended confirm call is eligible for a bubble 'always allow' grant (D44 W3), keyed like
 // `confirmTokens`. Ephemeral — set from `tool.permission`'s `alwaysEligible` (the backend already
@@ -751,6 +753,11 @@ const isRunState = (v: unknown): v is RunState =>
 // below need no cast and an array can't masquerade as a `data`/`args` record.
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
+// The skill ids a suspend payload pins for its call (M2/C-12). `undefined` when the field is absent
+// or malformed — the caller must distinguish "the server pinned nothing" from "no pin at all", since
+// an empty pin is itself authoritative (that turn ran with no skill active).
+const skillIds = (v: unknown): string[] | undefined =>
+  Array.isArray(v) && v.every((s) => typeof s === "string") ? v : undefined;
 
 /** Coerce a wire object into a renderer-safe `ToolResult` (requires a valid `state`; defaults the
  *  rest so downstream reads like `result.data.plan` never hit `undefined`). `null` if unusable. */
@@ -936,7 +943,10 @@ function makeTurnReducer(ctx: TurnCtx) {
         if (token) confirmTokens[callId] = token;
         alwaysEligibleByCall[callId] = data.alwaysEligible === true; // D44 W3: gate the affordance
         modeByCall[callId] = turnMode; // pin THIS turn's mode for the eventual resume (ACA-16)
-        skillsByCall[callId] = turnSkills; // …and its active skills (C5-M1)
+        // …and its active skills (C5-M1). The SERVER's list (M2/C-12) when it sent one: it includes
+        // the selector's own picks, which `turnSkills` (the /skill-name invocations we asked for) never
+        // had. `turnSkills` stays the fallback for a backend that predates the field.
+        skillsByCall[callId] = skillIds(data.skills) ?? turnSkills;
         setCallState(callId, "awaiting_confirm");
         // F1 — announce the block through the shared builder (the same one the buffered reply and the
         // `turn.sync` reconstruction use, so all three collapse onto one key in the engine).
@@ -949,7 +959,7 @@ function makeTurnReducer(ctx: TurnCtx) {
         const callId = nonEmpty(data.callId);
         if (!callId) return dropWarn(event, "missing callId");
         modeByCall[callId] = turnMode; // pin THIS turn's mode for the eventual answer (ACA-16)
-        skillsByCall[callId] = turnSkills; // …and its active skills (C5-M1)
+        skillsByCall[callId] = skillIds(data.skills) ?? turnSkills; // …and its skills (C5-M1, M2/C-12)
         setCallState(callId, "awaiting_answer");
         // F1 — same class as the confirm bubble: the turn is parked on the owner's reply.
         notifyAwaitingAnswer(state.threadId, callId, str(data.question));
@@ -1165,21 +1175,23 @@ async function streamTurn(
             alwaysEligible?: boolean;
             prompt?: string;
             tool?: string;
+            skills?: unknown;
           }
         | undefined;
       if (perm?.callId && perm.token) {
         confirmTokens[perm.callId] = perm.token;
         alwaysEligibleByCall[perm.callId] = perm.alwaysEligible === true; // D44 W3, mirrors the SSE branch
         modeByCall[perm.callId] = turnMode; // buffered confirm: pin the turn's mode too (ACA-16)
-        skillsByCall[perm.callId] = turnSkills; // …and its skills (C5-M1)
+        skillsByCall[perm.callId] = skillIds(perm.skills) ?? turnSkills; // …and its skills (C5-M1, M2/C-12)
       }
       // C3-M4: a buffered turn can also suspend on a `tool.question` (no token) — seed its per-call
       // mode + skills too, else a newer send overwriting `turnMode`/`turnSkills` strands the answer
       // with the wrong turn's context. Mirrors the live `tool.question` reducer branch.
-      const q = payload.question as { callId?: string; question?: string } | undefined;
+      const q = payload.question as
+        { callId?: string; question?: string; skills?: unknown } | undefined;
       if (q?.callId) {
         modeByCall[q.callId] = turnMode;
-        skillsByCall[q.callId] = turnSkills;
+        skillsByCall[q.callId] = skillIds(q.skills) ?? turnSkills;
       }
       // The thread THIS turn belongs to, captured BEFORE the reload await (verify-5, fix 3). The
       // notify calls below used to read `state.threadId` after it, so a `/clear` interleaving during
@@ -1340,6 +1352,7 @@ function overlaySyncCall(
   const args = isObj(call.args) ? call.args : {};
   const runState: RunState = isRunState(call.state) ? call.state : "running";
   const perm = isObj(call.permission) ? call.permission : null;
+  const question = isObj(call.question) ? call.question : null;
   const result = asToolResult(call.result);
   if (perm) {
     const token = str(perm.token);
@@ -1349,9 +1362,15 @@ function overlaySyncCall(
   if (result) {
     delete confirmTokens[callId];
     delete modeByCall[callId];
+    delete skillsByCall[callId];
     delete alwaysEligibleByCall[callId];
   } else {
     modeByCall[callId] = mode; // pending call → pin its turn's mode for the eventual resume (ACA-16)
+    // …and its skills (M2/C-12): the suspend payload carries the set the server had active, so a
+    // re-attach that lost `skillsByCall` (a reload) recovers it instead of falling back to the
+    // module-level `turnSkills`, which may be empty or belong to a LATER turn.
+    const pinned = skillIds((perm ?? question)?.skills);
+    if (pinned) skillsByCall[callId] = pinned;
   }
   const hasCall = messages.some((m) =>
     m.parts.some((p) => p.type === "tool_call" && p.call_id === callId),

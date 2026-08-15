@@ -49,6 +49,16 @@ _PRIV_ORDER = {
 }
 
 
+#: What the model is told when its batch is larger than the spawning agent's fan-out cap (M3,
+#: PROMPTS_PLAN §6 C-14). Named for the prompt id `m3_batch_rejected` it becomes in the Phase-18
+#: prompt registry (Slice 1 re-homes this text there, `{count}`/`{max}` → the `{{var}}` renderer).
+M3_BATCH_REJECTED = (
+    "You asked for {count} subagents at once, but this agent may fan out to at most {max}. Nothing "
+    "was spawned. Send a batch of {max} or fewer — split the work into rounds and delegate the next "
+    "round after this one returns, or do the extra tasks yourself."
+)
+
+
 def _clamp(child: Privilege, parent: Privilege) -> Privilege:
     return child if _PRIV_ORDER[child] <= _PRIV_ORDER[parent] else parent
 
@@ -293,6 +303,20 @@ async def spawn_subagents(inp: SpawnInput, ctx: InvocationContext) -> ToolResult
         return ToolResult(
             state=RunState.DENIED,
             summary=f"max subagent depth ({parent.max_subagent_depth}) reached — not spawning",
+        )
+
+    # M3/C-14: the fan-out cap bounds CONCURRENCY (the orchestrator's semaphore), never batch size —
+    # every requested child still got a task + an archived thread and waited its turn. Reuse the same
+    # cap as the batch ceiling (no second knob) and reject BEFORE any child is resolved, so an oversized
+    # batch spends nothing. The cap is the SPAWNING agent's, whatever the per-task `agent` names.
+    if len(inp.tasks) > parent.max_concurrent_subagents:
+        return ToolResult(
+            state=RunState.DENIED,
+            summary=(
+                f"{len(inp.tasks)} subagents requested — over this agent's cap of "
+                f"{parent.max_concurrent_subagents}; nothing spawned"
+            ),
+            output=M3_BATCH_REJECTED.format(count=len(inp.tasks), max=parent.max_concurrent_subagents),
         )
 
     clamp = deps.settings.agent.subagent_clamp_privilege

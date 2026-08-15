@@ -26,6 +26,7 @@ import uuid
 from datetime import timedelta
 
 from _async import run_async
+from _tools import temp_tools
 from fastapi.responses import JSONResponse
 
 # Reuse the wave-2 harness (workspace/client/event/handle builders) — one source of truth.
@@ -437,6 +438,7 @@ def test_shutdown_drain_persists_live_turn_and_logs_no_leak(caplog) -> None:
     _workspace()
     caplog.set_level(logging.WARNING)
     out: dict = {}
+    stack = contextlib.ExitStack()
 
     async def scenario():
         app = create_app()
@@ -473,6 +475,9 @@ def test_shutdown_drain_persists_live_turn_and_logs_no_leak(caplog) -> None:
                 raise AssertionError("unreachable")
 
             session._actions.invoke = fake_invoke
+            # M1 (C-11): the loop refuses a name outside the effective allowlist before invoke — this
+            # scenario builds its own app (no `_client`), so it registers the fakes itself.
+            stack.enter_context(temp_tools(s.actions.registry, "call_one", "call_two"))
             handle = reserve(s.turns, thread.id, "chat", ring_size=cfg.ring_size)
             events = session._drive(thread, resume_assistant=assistant)
             task = asyncio.create_task(drain_turn(handle, events, s.messages))
@@ -492,7 +497,10 @@ def test_shutdown_drain_persists_live_turn_and_logs_no_leak(caplog) -> None:
         finally:
             await db2.close()
 
-    run_async(scenario())
+    try:
+        run_async(scenario())
+    finally:
+        stack.close()  # drop the synthetic tools from the process-global registry
 
     assert out["task_done"] is True
     by_id = {cp.call_id: cp for m in out["msgs"] if m.role == "assistant" for cp in m.tool_calls()}

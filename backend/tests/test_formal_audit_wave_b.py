@@ -35,16 +35,23 @@ from types import SimpleNamespace
 from typing import cast
 
 from _async import run_async
+from _tools import temp_tools
 
 from app.domain.event import ORIGIN_USER_CHAT
 
 
+@contextlib.contextmanager
 def _client():
+    """The app plus this file's synthetic `call_one`: since M1 (PROMPTS_PLAN §6 C-11) the loop
+    refuses any name outside the effective allowlist BEFORE `invoke`, so a fake name driven over a
+    stubbed invoke must be a registered tool (removed on exit)."""
     from fastapi.testclient import TestClient
 
     from app.main import create_app
 
-    return TestClient(create_app())
+    app = create_app()
+    with TestClient(app) as client, temp_tools(app.state.actions.registry, "call_one"):
+        yield client
 
 
 @contextlib.contextmanager

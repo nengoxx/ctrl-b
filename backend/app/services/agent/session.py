@@ -115,6 +115,16 @@ UNATTENDED_JUDGEMENT_ANSWER = (
     "made in your final answer."
 )
 
+#: What the model is told when it emits the name of a tool outside its effective allowlist (M1,
+#: PROMPTS_PLAN §6 C-11). Named for the prompt id `m1_tool_blocked` it becomes in the Phase-18 prompt
+#: registry (Slice 1 re-homes this text there and swaps `{tool}` for the `{{tool}}` renderer).
+M1_TOOL_BLOCKED = (
+    "The tool `{tool}` is not available to you in this conversation — it was NOT run and nothing "
+    "happened. This is a capability boundary, not a transient failure: do not call it again and do "
+    "not try to reach it another way. Use one of the tools you were given, or give the owner your "
+    "final answer."
+)
+
 DEFAULT_SYSTEM_PROMPT = (
     "You are ctrl-b, a concise assistant embedded in a single-user homelab control panel. "
     "You help the owner wake, monitor, and manage a small fleet of PCs over their tailnet/LAN. "
@@ -454,6 +464,11 @@ class AgentSession:
         #: effective tool allowlist defaults to the agent's; active skills may narrow it.
         self._skills_note: str | None = None
         self._tool_allow: list[str] | str = self._agent.tools
+        #: The ids of the skills active this turn (M2/C-12) — the selector's picks included, not just
+        #: the `/skill-name` invocations the client asked for. Rides every suspend event, so the
+        #: server-owned turn snapshot (and the terminal-linger record behind it) can hand the exact set
+        #: back on resume instead of trusting whatever the client still remembers.
+        self._active_skills: list[str] = []
         #: Per-turn periodic-reflection flag (D27-C), armed by `_maybe_arm_reflection` at turn start
         #: when the thread's user-turn count hits the interval; `_assemble` injects a one-shot nudge
         #: while set. Default off (also the resume path, which doesn't re-arm — reflection is a
@@ -574,6 +589,7 @@ class AgentSession:
         re-selection could drift the active set). `run_turn` uses the default `select=True`."""
         self._skills_note = None
         self._tool_allow = self._agent.tools
+        self._active_skills = []
         if not (self._skills and self._selector and self._settings.agent.skills_enabled):
             return
         available = available_skills(self._skills, self._settings, self._agent)
@@ -587,6 +603,7 @@ class AgentSession:
             return
         self._skills_note = skills_prompt(active)
         self._tool_allow = narrow_tools(active, self._agent.tools)
+        self._active_skills = [s.name for s in active]  # M2/C-12 — captured right after selection
 
     def _static_prefix(self) -> list[dict]:
         """The INVARIANT system head for this turn — system prompt + appends + fleet roster +
@@ -967,6 +984,18 @@ class AgentSession:
             yield AgentEvent("done", {"threadId": thread.id, "state": "error"})
             return
         cp = next((c for c in assistant.tool_calls() if c.call_id == call_id), None)
+        if cp is not None and decision in ("execute", "execute_always") and not self._tool_allowed(cp.tool):
+            # M1/C-11: the tool left the effective allowlist while the bubble was parked (an agent or
+            # skill change, a dropped integration). Refuse BEFORE the D44 grant and the confirm-token
+            # re-mint — neither may be spent on a call that cannot run, and a vanished tool would raise
+            # `UnknownTool` into a generic ERROR instead of the ruled DENIED. Handing the call to `_drive`
+            # with a `None` token makes it a FRESH call to the loop, whose own guard produces the single
+            # denial text + audit row + denied signature (one implementation, not a second one here).
+            async for ev in self._drive(
+                thread, mode=mode, resume_assistant=assistant, resume_tokens={call_id: None}
+            ):
+                yield ev
+            return
         grant_note: str | None = None
         if decision == "execute_always":
             # D44 W2: persist an args-EXACT 'always allow' rule for this call BEFORE running it, then run
@@ -2062,6 +2091,35 @@ class AgentSession:
             )
         return ToolResult(state=RunState.ERROR, summary=f"{tool} failed", error=str(exc)[:300])
 
+    def _tool_allowed(self, name: str) -> bool:
+        """Is `name` inside THIS turn's effective toolset (M1/C-11)? Computed at call time from
+        `for_agent(self._tool_allow)` — never from `_tools_cache`, which is only the OpenAI rendering
+        of that set — because a skill narrows `_tool_allow` per turn, and the core builtins that
+        survive any allowlist are `for_agent`'s semantics rather than a name list restated here."""
+        return any(t.spec.name == name for t in self._actions.registry.for_agent(self._tool_allow))
+
+    async def _blocked_call(self, cp: ToolCallPart, guard: _LoopGuard) -> ToolResult:
+        """Refuse one model-emitted call that is outside the effective allowlist (M1/C-11) — the
+        session-local guard on BOTH `ActionService.invoke` sites. The allowlist filtered the SCHEMAS
+        the model saw, but the execution path resolved the emitted name from the FULL registry, so a
+        hidden / excluded / skill-narrowed tool still ran on a hallucinated or stale-context name.
+
+        Nothing reaches `ActionService` here, so this owns the two things `invoke` would have done:
+        the audit Event (through the public caller-resolved-denial door — a guard that bypasses the
+        gate must not also bypass the audit trail) and the denied-signature record, so a *loop* of
+        blocked calls trips the loop guard's echo instead of spinning. Applies uniformly to a resumed
+        call: with M2's restored skill set, a legitimately-approved call still passes."""
+        result = ToolResult(
+            state=RunState.DENIED,
+            summary=f"{cp.tool} is not available to this agent — not run",
+            output=M1_TOOL_BLOCKED.format(tool=cp.tool),
+        )
+        guard.denied_sigs.add(_LoopGuard.sig(cp.tool, cp.args))
+        await self._actions.record_policy_denial(
+            cp.tool, cp.args, result, actor=AGENT_ACTOR, origin=self._origin
+        )
+        return result
+
     async def _run_calls(
         self,
         thread: Thread,
@@ -2172,6 +2230,8 @@ class AgentSession:
                     invoke construction mirrors the serial loop's exactly (a prefix call is always
                     fresh → `confirm_token=None`). Actor audit rows are written inside `invoke`."""
                     async with sem:
+                        if not self._tool_allowed(cp.tool):
+                            return cp, await self._blocked_call(cp, guard)  # M1/C-11
                         try:
                             return cp, await self._actions.invoke(
                                 cp.tool,
@@ -2387,7 +2447,13 @@ class AgentSession:
                     if token is None:
                         guard.counts[sig] = guard.counts.get(sig, 0) + 1
                         guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
-                    if cp.invalid_raw is not None:
+                    if not self._tool_allowed(cp.tool):
+                        # M1/C-11 — outside the effective allowlist. Checked FIRST: the capability
+                        # boundary outranks argument validity (steering a repair for a tool that cannot
+                        # run is noise), and it lands before the confirmed-resume RUNNING flip below, so
+                        # a blocked call never persists as in-flight work.
+                        result = await self._blocked_call(cp, guard)
+                    elif cp.invalid_raw is not None:
                         # ACA-13: the model's raw arguments weren't valid JSON. Don't invoke the tool with
                         # an erased `{}` (which steers it with a misleading "field required"). Hand it the
                         # raw blob back so it can repair the JSON. This counts toward the loop-guard caps
@@ -2485,6 +2551,9 @@ class AgentSession:
                                         # these exact args (value-based) — the FE hides the affordance when
                                         # false (a non-scalar field, e.g. spawn_subagents.tasks).
                                         "alwaysEligible": self._actions.approval_eligible(cp.tool, cp.args),
+                                        # M2/C-12: the turn's active skills ride the suspend event, so
+                                        # the snapshot pins them under THIS call id for the resume.
+                                        "skills": list(self._active_skills),
                                     },
                                 )
                                 break
@@ -2516,6 +2585,7 @@ class AgentSession:
                                     "tool": cp.tool,
                                     "question": result.summary,
                                     "args": cp.args,
+                                    "skills": list(self._active_skills),  # M2/C-12, as on the confirm
                                 },
                             )
                             break

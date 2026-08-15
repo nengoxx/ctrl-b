@@ -37,6 +37,7 @@ from collections import deque
 from pathlib import Path
 
 from _async import run_async
+from _tools import temp_tools
 
 # ── shared workspace + client (mirrors the Slice-2 harnesses) ──────────────────────────────────
 
@@ -56,13 +57,20 @@ def _clear_env() -> None:
         os.environ.pop(k, None)
 
 
+@contextlib.contextmanager
 def _client(config_text: str = "server:\n  port: 5433\n"):
+    """The app under a temp workspace, plus this file's synthetic `call_one`/`call_two` in the
+    registry: since M1 (PROMPTS_PLAN §6 C-11) the loop refuses any name outside the effective
+    allowlist BEFORE `invoke`, so the fake names these scenarios drive over a stubbed invoke must be
+    registered tools (removed on exit — the registry is a process-global singleton)."""
     from fastapi.testclient import TestClient
 
     from app.main import create_app
 
     _workspace(config_text)
-    return TestClient(create_app())
+    app = create_app()
+    with TestClient(app) as client, temp_tools(app.state.actions.registry, "call_one", "call_two"):
+        yield client
 
 
 def _ev(event: str, **data):

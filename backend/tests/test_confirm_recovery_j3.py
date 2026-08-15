@@ -315,16 +315,30 @@ def test_execute_releases_inflight_reservation() -> None:
         assert cid not in c.app.state.actions._inflight
 
 
-def test_resume_execute_unknown_tool_yields_clean_error() -> None:
-    # The tool is gone by resume time (e.g. an MCP server dropped between turns): the server-side
-    # re-mint raises UnknownTool, which must become a clean error+done, NOT escape the SSE generator
-    # (a 500 / permanently-stuck bubble). The in-flight reservation is still released.
+def test_resume_execute_unknown_tool_yields_a_clean_denial() -> None:
+    # The tool is gone by resume time (e.g. an MCP server dropped between turns). AMENDED by M1
+    # (PROMPTS_PLAN §6 C-11): a name that is no longer in the effective toolset is caught by the
+    # allowlist guard BEFORE the token re-mint, so the bubble resolves as the guard's DENIED result —
+    # the same refusal a fresh emit of that name gets — instead of the old `cannot execute` error.
+    # What this test has always pinned still holds: nothing escapes the SSE generator (no 500, no
+    # permanently-stuck bubble) and no in-flight reservation is left behind. The re-mint's own
+    # error arm survives for the OTHER case it guards: an allowed tool whose persisted args no
+    # longer validate (ValidationError).
+    from app.domain.enums import RunState
+
     with _workspace(), _client() as c:
         session, thread, _, cid = _session_with_awaiting_call(c, tool="ghost_tool")
         events = _run(_collect(session.resume(thread, cid, "execute")))
-        assert any(e.event == "error" and "cannot execute" in str(e.data.get("message", "")) for e in events)
-        assert any(e.event == "done" and e.data.get("state") == "error" for e in events)
-        assert cid not in c.app.state.actions._inflight  # released via finally
+        denied = [
+            e
+            for e in events
+            if e.event == "tool.result"
+            and e.data.get("callId") == cid
+            and e.data["result"]["state"] == RunState.DENIED.value
+        ]
+        assert len(denied) == 1
+        assert "not available" in denied[0].data["result"]["summary"]
+        assert cid not in c.app.state.actions._inflight  # never reserved → nothing to release
 
 
 if __name__ == "__main__":

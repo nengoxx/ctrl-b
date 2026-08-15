@@ -32,14 +32,21 @@ from pathlib import Path
 
 import anyio
 from _async import drain_run_calls, run_async
+from _tools import temp_tools
 
 
+@contextlib.contextmanager
 def _client():
+    """The app plus this file's synthetic `call_one`/`call_two`: since M1 (PROMPTS_PLAN §6 C-11) the
+    loop refuses any name outside the effective allowlist BEFORE `invoke`, so the fake names these
+    scenarios drive over a stubbed invoke must be registered tools (removed on exit)."""
     from fastapi.testclient import TestClient
 
     from app.main import create_app
 
-    return TestClient(create_app())
+    app = create_app()
+    with TestClient(app) as client, temp_tools(app.state.actions.registry, "call_one", "call_two"):
+        yield client
 
 
 @contextlib.contextmanager

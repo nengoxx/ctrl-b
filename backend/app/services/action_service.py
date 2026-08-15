@@ -274,9 +274,10 @@ class ActionService:
         actor: Actor,
         origin: Origin,
     ) -> Event:
-        """Audit a denial the GATE returned `needs_confirm` for but the CALLER resolved as a refusal —
-        today exactly one case: a confirm-gated call in a headless session (`decide` deliberately leaves
-        the headless mapping to the caller, see its signature).
+        """Audit a denial the CALLER resolved rather than the gate — two cases: a confirm-gated call in
+        a headless session (`decide` deliberately leaves the headless mapping to the caller, see its
+        signature), and the agent session's M1 allowlist guard, which refuses an out-of-allowlist name
+        before `invoke` is ever reached (PROMPTS_PLAN §6 C-11).
 
         A suspend records nothing, by design — the call has not happened yet and may still be allowed.
         But when the caller converts that suspend into a DENIED result there is no owner who could ever

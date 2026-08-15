@@ -176,7 +176,8 @@ class ResumeRequest(BaseModel):
     #: The turn's active skills (C5-M1), carried across the confirm round-trip so the resumed half
     #: runs under the SAME narrowed toolset + injected instructions the owner confirmed against (same
     #: shape as `ChatRequest.skills`; the PWA re-sends the turn's pinned skills). Re-activated verbatim
-    #: on resume — no re-selection.
+    #: on resume — no re-selection. FALLBACK only since M2/C-12: the server's own pin for this call
+    #: wins whenever it still has one (`_resume_skills`).
     skills: list[str] = Field(default_factory=list)
     stream: bool = False  # dual-mode delivery (D17); the PWA re-sends true so the continuation matches
 
@@ -196,6 +197,29 @@ class ResumeRequest(BaseModel):
         """Trim surrounding whitespace before the `Literal` check (A1) so a padded valid value
         ("dismiss ") still resolves; a truly unknown token still 422s."""
         return v.strip() if isinstance(v, str) else v
+
+
+def _resume_skills(state, thread_id: str, call_id: str, requested: list[str]) -> list[str]:
+    """The skill ids the resumed half runs under (M2/C-12). The SERVER's pin WINS: the suspending turn
+    recorded the exact set active at suspension — the selector's own picks included, which the client
+    never knew — under this call id, and the terminal cache carries it past the turn's end. The
+    client's list is module state a later turn can overwrite, so it is only the fallback.
+
+    No pin (the terminal record lingered out, or the server restarted) is where the deliberately
+    UNBUILT persisted-suspend class would have answered (§3): the resume proceeds on whatever the
+    client still remembers — nothing at all after a cold reload, i.e. the agent's base toolset — and
+    says so once in the log rather than silently."""
+    rec = get_terminal(state.turn_terminals, thread_id, linger_s=state.settings.agent.turns.linger_s)
+    pinned = rec.skills_by_call.get(call_id) if rec is not None else None
+    if pinned is not None:
+        return pinned
+    log.warning(
+        "resume %s: no server-pinned skills for call %s — falling back to the client's %d id(s)",
+        thread_id,
+        call_id,
+        len(requested),
+    )
+    return requested
 
 
 def resolve_session_agent(settings, name: str | None, privilege: Privilege | None) -> AgentDef:
@@ -1815,7 +1839,8 @@ async def resume(body: ResumeRequest, request: Request) -> Response:
             body.confirm_token,
             body.answer,
             mode=body.mode,
-            skills=body.skills,
+            # M2/C-12 — the server's own pin for this suspended call, not the client's payload.
+            skills=_resume_skills(request.app.state, thread.id, body.call_id, body.skills),
             app=request.app,  # D44 W2: the `execute_always` grant reuses the settings write machinery
         )
         return await _turn_response(request, thread, events, stream=stream, handle=handle)
