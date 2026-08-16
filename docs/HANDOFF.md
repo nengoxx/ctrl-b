@@ -39,6 +39,12 @@
 
 In rough order of standing priority:
 
+0. **Phase 19 — the hardening pass — 📋 SPEC WRITTEN 2026-08-16, execution owner-gated.**
+   [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is the complete, council-reviewed methodology
+   (TARA-per-subsystem · 4 packets · fix-first · measure-before-judge; R33 = the evidence
+   dossier; the plan embeds the measured inventory + the known-open register). **Owner rulings
+   needed before anything executes = its §10** (journeys · pre-authorized fix class · packet
+   ranking · two-phase charter · D57 lock). Owner directive: spec only for now, execution later.
 1. **Phase 18 — the prompt system — 🏁 RELEASED + LIVE v1.7.1 2026-08-16** (D56; Slices 0–3 + 3.5
    all ✅: `30e7417` · `a33fb34` · `91cc464` · `b1cebd0` · `4d9dcf0`; owner eyeball ✅). Spec =
    [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 + §7 normative; **§8.1–§8.5 = the as-builts**.
