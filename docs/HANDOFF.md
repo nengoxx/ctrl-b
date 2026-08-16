@@ -12,27 +12,25 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-15)
+## Current state (2026-08-16)
 
-- **Prod = v1.6.0 @ `fcc42ad`**, live + healthy (https://emma.lobster-vector.ts.net) — UNCHANGED
-  by this session; all Phase 18 work is on local `main` only.
-- **Local `main` is 12 commits AHEAD of origin, NOT pushed** (owner has not authorized a push):
-  the 8 through Slice 2 (`c020464` planning+D56 · `30e7417` Slice 0 · `a33fb34` Slice 1 ·
-  `91cc464` Slice 2 with **DB migration 6** `messages.meta` · their 4 docs commits) then this
-  session's four: `4d9dcf0` (**Slice 3.5** — three texts registered + `InvocationContext.stamps`)
-  · `b1cebd0` (**Slice 3** — the prompts Conf UI) · `3458452` (kit fix: the `appbarMode: off` top
-  inset) + the docs commit.
-- **DB schema is now 6** (one nullable `meta` column on `messages`) — the dev DB migrates on unit
-  start; prod migrates whenever the next release deploys. Rollback note: pre-6 code tolerates the
-  extra column (writes name their columns), so v1.6.0 remains a safe rollback against a migrated DB.
-- **The DEV UNITS ARE RUNNING on purpose** (:5434 + Vite :5173) — the owner asked to keep them up
-  for the Slice 0 eyeball. Do NOT stop them until the owner says they're done looking.
-- **Rollback = `update.sh v1.5.1` EXACTLY** — the sw.js floor: any pre-v1.5.1 tag re-serves
-  `sw.js` as `text/html` and strands the registered worker per-device (runbook §Rollback carries
-  the note). Release flow = `deploy/linux/README.md` §Release; the updater has 4 clean plain-form
-  runs (v1.4.0 · v1.4.1 · v1.5.1 · v1.6.0).
-- Tree clean on `main`. Dev units are on-demand: `systemctl --user start
-  ctrl-b-dashboard-dev{,-web}` (:5434 + Vite :5173), stop when done.
+- **Prod = v1.7.1 @ `ad581f6`**, live + healthy (https://emma.lobster-vector.ts.net) — **Phase 18
+  RELEASED 2026-08-16** (v1.6.0 → v1.7.1, the updater's 5th clean plain-form run). Owner eyeball
+  on dev ✅ 2026-08-16, the 12 banked commits + 2 more pushed, `main` in sync with origin.
+- **⚠ v1.7.0 is tagged but was NEVER DEPLOYED — NOT a rollback target.** Its release gate failed:
+  the new `conf.spec.ts` clicked the "Default text" disclosure unconditionally, but PromptModal
+  mounts it OPEN at ≥700px, so the [desktop] e2e project toggled it *shut* (fix = `ad581f6`, click
+  only when hidden). **Durable lesson: the local pre-push gate runs NO e2e — only the CI release
+  gate does; "green at 390px locally" says nothing about the [desktop] project.**
+- **Prod DB is on schema 6** (the nullable `messages.meta` column) — confirmed in health
+  (`schema_version: 6`). Pre-6 code tolerates the extra column (writes name their columns), so
+  **rollback = `update.sh v1.6.0`** is safe against the migrated DB; the deeper floor stays
+  **v1.5.1 EXACTLY** (any pre-v1.5.1 tag re-serves `sw.js` as `text/html` and strands the
+  registered worker per-device — runbook §Rollback carries the note).
+- The promptfoo harness (Phase 18's deferred Slice 4) is now **ROADMAP A12** (`9a85c34`) — the
+  entry PROMPTS_PLAN §2.7 promised but never had.
+- Tree clean on `main`, in sync with origin. Dev units stopped (on-demand: `systemctl --user
+  start ctrl-b-dashboard-dev{,-web}`, :5434 + Vite :5173; stop when done).
 - **Session history is archived:** every session block 2026-05-28 → 2026-08-12 moved verbatim to
   [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) (frozen, reference only — "the HANDOFF block of
   ⟨date⟩" resolves there).
@@ -41,24 +39,20 @@
 
 In rough order of standing priority:
 
-1. **Phase 18 — the prompt system — BUILD COMPLETE 2026-08-15** (D56; Slices 0–3 + 3.5 all ✅:
-   `30e7417` · `a33fb34` · `91cc464` · `b1cebd0` · `4d9dcf0`). Spec =
+1. **Phase 18 — the prompt system — 🏁 RELEASED + LIVE v1.7.1 2026-08-16** (D56; Slices 0–3 + 3.5
+   all ✅: `30e7417` · `a33fb34` · `91cc464` · `b1cebd0` · `4d9dcf0`; owner eyeball ✅). Spec =
    [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 + §7 normative; **§8.1–§8.5 = the as-builts**.
-   The whole feature is live on the dev units: **Conf → Prompts** (group 03) lists all **18
-   registry ids** with the pair editor (override + append, side-by-side default, placeholder
-   chips, coupling warnings); saves ride `PUT /api/settings`; every registry text on the model
-   path **stamps** (the §8.3 asymmetry is CLOSED — `InvocationContext.stamps`, §8.5). The
-   owner-court five were RULED 2026-08-15: three registered (`memory_proposal_pending` ·
-   `skill_proposal_pending` · `parallel_misdeclared`); `INTERRUPTED_NOTE`/`ORPHAN_NOTE` traced to
-   NO model-facing path and deliberately left as (reclassified) UI text — if the owner wants those
-   editable it is a different mechanism, recorded in §8.5. Review: one combined Codex round, SHIP
-   WITH FIXES ×2 → wave → confirm → 1 residual (staleness) closed with `staleTime: 0`. Gate:
-   backend **1432** · FE vitest **2065** · e2e green at 390px. **Remaining in this phase: NOTHING
-   to build** — Slice 4 (the promptfoo harness) is its own later phase (ROADMAP).
-   **Owner-court now:** ① eyeball the finished feature on dev :5173/:5434 (screenshots are in the
-   2026-08-15 session thread); ② the owner-visual pass rode `appbarMode` too — the `off`-mode
-   top-inset fix (`3458452`) is in, worth one phone look; ③ owed at next release: the push of the
-   12 local commits (owner-authorized) + the runbook flow (prod picks up DB migration 6 then).
+   On prod: **Conf → Prompts** (group 03) lists all **18 registry ids** with the pair editor
+   (override + append, side-by-side default, placeholder chips, coupling warnings); saves ride
+   `PUT /api/settings`; every registry text on the model path **stamps**
+   (`InvocationContext.stamps`, §8.5); DB migrated to schema 6. Gate: backend **1432** · FE vitest
+   **2065** · e2e green on BOTH projects (the v1.7.0 gate caught the [desktop] disclosure-toggle
+   spec bug — see Current state). **Remaining in this phase: NOTHING to build** — Slice 4 (the
+   promptfoo harness) = **ROADMAP A12**, its own later phase.
+   **Owner-court now:** ① the **update toast's first real exercise** — v1.7.1 is the first release
+   since it shipped; watch the phone pick it up; ② one phone look at the `appbarMode: off`
+   top-inset fix (`3458452`, now on prod); ③ with schema 6 + the prompts UI live on prod, actually
+   *edit a prompt or two* in real use — the feature's first owner-driving.
 2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (**still untested as of
    2026-08-12, owner-confirmed**): SYS-19 meant `showNotification()` had never had a registered
    worker when it "failed"; it may just work on v1.6.0. Outcome decides whether the parked Web
@@ -76,8 +70,8 @@ In rough order of standing priority:
    owner wants both vantages. Only if the cold-boot wake blindness recurs; the owner is watching
    it first.
 
-**Owner-side standing items:** the update toast's first real exercise arrives at the NEXT release
-(v1.6.0 landed on the phone 2026-08-12). Still owed whenever convenient: eyeball the pickers on
+**Owner-side standing items:** the update toast's first real exercise is NOW — v1.7.1 is live and
+the phone still holds v1.6.0. Still owed whenever convenient: eyeball the pickers on
 prod · watch the next corsair COLD-BOOT wake (shutdown → WOL) — if the tailnet join fails again,
 path 6 (or Tailscale unattended mode) is the fix.
 
