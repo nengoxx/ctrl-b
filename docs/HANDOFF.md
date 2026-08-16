@@ -29,8 +29,11 @@
   registered worker per-device — runbook §Rollback carries the note).
 - The promptfoo harness (Phase 18's deferred Slice 4) is now **ROADMAP A12** (`9a85c34`) — the
   entry PROMPTS_PLAN §2.7 promised but never had.
-- Tree clean on `main`, in sync with origin. Dev units stopped (on-demand: `systemctl --user
-  start ctrl-b-dashboard-dev{,-web}`, :5434 + Vite :5173; stop when done).
+- Tree clean on `main`, **6 commits AHEAD of origin, not pushed** (the 5 Phase-19 hardening-spec
+  commits `1ce6313`…`532631c` + the Core Memory draft `69847f9`) — push needs owner confirmation.
+  Dev units stopped (on-demand: `systemctl --user start ctrl-b-dashboard-dev{,-web}`, :5434 +
+  Vite :5173; stop when done).
+- **Core Memory (tier-2 long-term memory) SPECCED + PARKED 2026-08-16** — see path 2 below.
 - **Session history is archived:** every session block 2026-05-28 → 2026-08-12 moved verbatim to
   [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) (frozen, reference only — "the HANDOFF block of
   ⟨date⟩" resolves there).
@@ -64,17 +67,32 @@ In rough order of standing priority:
    since it shipped; watch the phone pick it up; ② one phone look at the `appbarMode: off`
    top-inset fix (`3458452`, now on prod); ③ with schema 6 + the prompts UI live on prod, actually
    *edit a prompt or two* in real use — the feature's first owner-driving.
-2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (**still untested as of
+2. **Core Memory — the tier-2 long-term memory lane — 📋 DRAFT SPECCED 2026-08-16, PARKED.**
+   Spec = [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (`69847f9`), built from the owner's vault
+   design + three verification passes ([R37](./research/R37-claude-code-memory-source-verification.md)
+   source-verify · [R38](./research/R38-selective-memory-recall-field.md) field · the ctrl-b seam
+   audit, folded into its §6–§7). **Mechanism ruled (owner, in conversation): index-in-head +
+   `core_memory` tool (read/search/CAS-write over a shared Claude-native corpus in
+   `memories/core/`), NO LLM selector in v1; Claude-corpus migration = copy-in; tier model
+   supersedes ROADMAP §B1's vector sketch (vector/hindsight/honcho = future backends of the same
+   slot).** Next session = **S0, no code**: ① owner rules §2b (O1 headless · O2 "remember this"
+   routing · O3 read-action divergence · O4 write posture · O5 phase ordering — each has a
+   recommended default in the table); ② council round on OUR adaptation (Codex correctness + Opus
+   adversarial implementer lens — the vault spec was Codex-reviewed, this plan is not); ③ D57 in
+   DECISIONS.md; ④ ROADMAP §B1 rewrite to the tier model (lift the "progressive memory index"
+   bullet at `ROADMAP.md:360` into the plan); ⑤ TODO Phase 20 stanza. Then S1–S5 per the plan's
+   §11 ladder, paused per slice.
+3. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (**still untested as of
    2026-08-12, owner-confirmed**): SYS-19 meant `showNotification()` had never had a registered
    worker when it "failed"; it may just work on v1.6.0. Outcome decides whether the parked Web
    Push plan (the `web-push-researched-parked` memory, R10/R11) is re-premised or unblocked.
-3. **Gacha banked follow-ups** (owner-eyeball-heavy): the color-theory unit-palette research
+4. **Gacha banked follow-ups** (owner-eyeball-heavy): the color-theory unit-palette research
    session (owner-flagged) · root-cross-fade flicker refinement · the R20/R21 addenda LOWs (four
    each — GACHA_PLAN §7 as-builts, lines ~2317/2339) · kit-wide minimal plan/player overlap
    (VAPOR_ASSIMILATION_PLAN §7.1) · the rest of the standing ledger below.
-4. **The R28 installed-icon improvement** — ⏸ owner-gated pickup; R28 §9 is the ready-to-build
+5. **The R28 installed-icon improvement** — ⏸ owner-gated pickup; R28 §9 is the ready-to-build
    brief.
-5. **Fleet-liveness decoupling from Tailscale** *(owner-gated)*: host `online` today = "its
+6. **Fleet-liveness decoupling from Tailscale** *(owner-gated)*: host `online` today = "its
    Tailscale is up" (bare-name `ip:` resolves via MagicDNS — the 2026-08-12 corsair
    investigation, `corsair-liveness-rides-tailscale` memory). Option: DHCP-reserved LAN IP in
    `ip:` + tailnet name in `vpn_host:` (the D47 seam, zero code) — or a dual-probe design if the
@@ -89,7 +107,7 @@ path 6 (or Tailscale unattended mode) is the fix.
 ## Standing ledger (carried 2026-08-12 from the 2026-08-06 ledger; verify in the home before acting)
 
 **Owner-court items (ask, don't assume):**
-- Notifications retest = path 2 above (**still untested**, owner-confirmed 2026-08-12) · web-push
+- Notifications retest = path 3 above (**still untested**, owner-confirmed 2026-08-12) · web-push
   PARKED pending the two Fennec/Firefox checks (its memory: which build + the "Site
   notifications" channel).
 - The ~80 MB untracked `design/prototypes/gacha/` originals — standing "leave untracked for now";
