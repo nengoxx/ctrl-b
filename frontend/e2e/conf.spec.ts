@@ -53,9 +53,10 @@ test("Conf · Prompts — the registry list + the two-field editor", async ({ pa
   await expect(modal.getByLabel("Append")).toBeVisible();
   await expect(modal.getByText("{{tool}}", { exact: true })).toBeVisible();
   await expect(modal.getByText(/Coupling: the loop guard counts it/)).toBeVisible();
-  // the shipped default is one disclosure away (stacked at 390px)
-  await modal.getByText("Default text").click();
-  await expect(modal.getByText(/vary the call or move on/).first()).toBeVisible();
+  // the shipped default: folded behind the disclosure at 390px, already open at desk width
+  const defBody = modal.getByText(/vary the call or move on/).first();
+  if (!(await defBody.isVisible())) await modal.getByText("Default text").click();
+  await expect(defBody).toBeVisible();
 
   await modal.getByLabel("Override").fill("say it my way");
   await modal.getByRole("button", { name: "Set" }).click();
