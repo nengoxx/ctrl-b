@@ -313,6 +313,22 @@ back to the analysis.
   slots deleted), so one shape and one failover walker serve chat + voice + embeddings. `/local`
   `/cloud` generalize to `/<provider>` verbs.
 
+### A12. Prompt-eval harness (promptfoo) — deferred from Phase 18 (2026-08-15)
+
+- **What:** a regression harness for prompt edits — now that all 18 registry prompts are
+  owner-editable (Conf → Prompts, D56), there is no way to tell whether an edit helps or degrades
+  the agent except vibes. This is Phase 18's "Slice 4", deliberately deferred to its own phase.
+- **Design (sketched, [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md) §2.7 + the §7 slice table):**
+  promptfoo's `http` provider against ctrl-b's real chat API; a scenario corpus of 20–50 tasks
+  promoted from real transcripts; **scripted-tool mode** so eval runs never touch real hosts;
+  grading on **outcomes, not tool sequences** (Anthropic guidance, R31 ⑪); a local judge via
+  `llm-rubric`/`select-best` with `apiBaseUrl` (llama.cpp-compatible); per-run report = the
+  aider-row shape (terminal-state counts · `invalid_raw` · per-call token usage, all persisted
+  since Slice 2).
+- **Open questions:** corpus curation/promotion flow; judge quality with a local model; where
+  scripted-tool mode hooks in (the registry seam vs a fake `ActionService`); whether the deferred
+  `cause` taxonomy (PROMPTS_PLAN §2.7 recorded non-build) becomes needed once runs are graded.
+
 ## B. Memory (configurable, pluggable)
 
 ### B1. Selectable memory backends
