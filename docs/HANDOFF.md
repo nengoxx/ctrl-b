@@ -40,11 +40,16 @@
 In rough order of standing priority:
 
 0. **Phase 19 — the hardening pass — 📋 SPEC WRITTEN 2026-08-16, execution owner-gated.**
-   [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is the complete, council-reviewed methodology
-   (TARA-per-subsystem · 4 packets · fix-first · measure-before-judge; R33 = the evidence
-   dossier; the plan embeds the measured inventory + the known-open register). **Owner rulings
-   needed before anything executes = its §10** (journeys · pre-authorized fix class · packet
-   ranking · two-phase charter · D57 lock). Owner directive: spec only for now, execution later.
+   [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is the complete methodology, two tracks:
+   **Track P** (perf/reliability: TARA-per-subsystem · 4 packets · fix-first ·
+   measure-before-judge; council-reviewed, confirm rounds closed) and **Track D** (the
+   design & architecture comparative pass, owner's second directive: DP-A theme-engine/motion/
+   UI-UX vs field practice · DP-B agent harness with emphasis on turn design vs Claude Code/
+   Codex/Hermes Agent/OpenClaw; §3b — delta council check owed). Evidence: R33 + the embedded
+   inventory/known-open register; **R34/R35/R36 commissioned 2026-08-16** (UI-theming design ·
+   peer turn architecture · agent capability patterns). **Owner rulings needed before anything
+   executes = its §10** (journeys · pre-authorized fix class · packet ranking · two-phase
+   charter · D57 · Track-D ordering). Owner directive: spec only for now, execution later.
 1. **Phase 18 — the prompt system — 🏁 RELEASED + LIVE v1.7.1 2026-08-16** (D56; Slices 0–3 + 3.5
    all ✅: `30e7417` · `a33fb34` · `91cc464` · `b1cebd0` · `4d9dcf0`; owner eyeball ✅). Spec =
    [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 + §7 normative; **§8.1–§8.5 = the as-builts**.

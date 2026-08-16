@@ -16,14 +16,32 @@ or architecture. Question every design choice against common practices and bette
 capability choices, so we can be sure every piece fits both together and is going to be able to
 be maintained. Several points of view: main seat, Opus subagents, Codex."
 
+**Second directive (owner, 2026-08-16, same day — widens the scope with a separate pass):** a
+**design & architecture comparative pass** on two fronts. ① *"The theme engine, animations, and
+basically the UI/UX, assessed and compared to standard practices and other similar projects'
+design — to make sure we haven't overlooked a design flaw, an inconsistency, or simply an
+inefficiency."* ② *"The same for the agent harness system, but with extra emphasis on the design
+of the underlying turns, and the way we let the agent work and perform — in comparison with
+projects like Claude Code, Codex, Hermes Agent, OpenClaw, and other efficient agent systems."*
+Research bought and saved per the standing dossier convention. This is **Track D** (§3b);
+the perf/reliability packets are **Track P**.
+
 ## 1. Scope and non-goals
 
-**Phase 19 = backend + ops hardening.** Frontend/theme hardening is a **separately chartered
-Phase 20**, opened only if Phase 19's outcome and the F9/F13 trigger justify it. Rationale
-(council, accepted): the FE headline items are *already owner-ruled* defer-until-measured with a
-named trigger (UI_AUDIT F9/F13, set 2026-07-20), so a FE audit now would either re-report them
-or force a re-ruling; and FE work is device-round-shaped — it needs owner screen time and cannot
-close on autonomous mornings, unlike backend audit work.
+**Phase 19 runs two tracks.** **Track P = backend + ops perf/reliability hardening** (packets
+①–④, §3). **Track D = the design & architecture comparative pass** (packets DP-A and DP-B,
+§3b) — a *design-lens* review, not a perf pass, judged against field practice via bought
+dossiers.
+
+Frontend/theme **performance** hardening remains a **separately chartered Phase 20**, opened
+only if Phase 19's outcome and the F9/F13 trigger justify it. Rationale (council, accepted):
+the FE perf headline items are *already owner-ruled* defer-until-measured with a named trigger
+(UI_AUDIT F9/F13, set 2026-07-20), so a FE perf audit now would either re-report them or force
+a re-ruling; and FE perf work is device-round-shaped — it needs owner screen time and cannot
+close on autonomous mornings. **DP-A does not collide with this**: it reviews the *design* of
+the theme engine/UI (contracts, token architecture, consistency, design-level inefficiency)
+from docs + code + dossiers — measurement-light, morning-runnable; anything it finds that is
+perf-measurement-shaped exits to Phase 20's charter, not into DP-A's fix wave.
 
 **One deliberate cross-stack exception:** the SSE **wire contract** is audited end-to-end
 including its client (`frontend/src/store/chat.ts` as the contract's consumer, plus the e2e
@@ -300,8 +318,73 @@ numbers in hand.
 | Tools/actions/permissions · memory/skills/subagents · fleet/monitor/wake · automations · external adapters + voice backend | Packet ③ |
 | Media resolver · PWA/service worker | Packet ④ |
 | Deploy/update path · quality harness | Hf (H2 carries the preflight) |
-| FE shell/lib · FE query layer · FE stores (non-wire) · chat/composer UI · ConfTab/editors · theme engine/kit · themes · voice FE | **Phase 20** (explicitly out; F9/F13 triggers stand) |
+| FE shell/lib · FE query layer · FE stores (non-wire) · chat/composer UI · ConfTab/editors · theme engine/kit · themes · voice FE | **Perf lens: Phase 20** (F9/F13 triggers stand) · **Design lens: DP-A** (theme engine/motion/UX; §3b) |
+| Agent harness design-vs-field (turns + capability layer) | **DP-B** (§3b — Packet ② keeps the perf/reliability lens on the same code) |
 | E2E suite | Consumed by H2 preflight + fix waves; SYS-18c widening exits to ROADMAP with a trigger |
+
+## 3b. Track D — the design & architecture comparative pass
+
+Same machinery as Track P — the three-view loop (§2.3), H-# finding cards with impact +
+evidence (§2.2), the close rule, the time-box, the pre-authorized fix class — but a different
+packet form, because the question is different: not "is it fast/reliable" but **"is this
+design right, consistent, and efficient compared to how the field solves the same problem?"**
+
+### The design-packet form
+
+a. **The design-choice register**: enumerate the area's load-bearing design choices (from
+   D-entries + the owning docs + the code), and classify each against the dossier evidence:
+   **ALIGNED** (matches field practice) · **JUSTIFIED DIVERGENCE** (differs, and the reason is
+   recorded — our constraints genuinely differ: single user, tailnet, Fennec, solo maintainer)
+   · **UNJUSTIFIED DIVERGENCE** (differs with no recorded reason that survives the evidence —
+   a finding). A divergence is never a finding *by itself*; the field can be wrong for our
+   constraints — the register forces the reason to be written either way.
+b. **Internal-consistency sweep**: the CLAUDE.md two-failure-mode rule applied as an audit —
+   *different code for similar things* (parallel implementations bypassing a pattern) and
+   *similar code for the same thing* (near-duplicates that should be one source of truth).
+c. **Design-efficiency critique**: Ousterhout vocabulary + the deletion test — shallow
+   modules, needless indirection, interfaces wider than their use, leverage points.
+d. **Sensitivity/tradeoff points** (same as Track P) + finding cards (H-#, same index).
+
+**Comparison discipline**: every "the field does X" claim cites a dossier line (R34–R36 or an
+existing dossier) — never folklore; where the dossiers are silent, the packet may commission a
+bounded follow-up buy (§5) or record the question as evidence-gap, not guess.
+
+### DP-A — Theme engine · motion · UI/UX
+
+Scope: `theme-engine/` + Kit architecture (token contract, Swappable Surfaces D31, kit-vs-
+bespoke §14.4, the layer/scope isolation model), the motion system (`--motion-*`/`--ease-*`
+state, per-theme animation conventions, reduced-motion handling), and the UX surface
+(navigation/app-bar/sheet patterns, Conf information architecture, consistency of interaction
+grammar across themes). Evidence: **R34** + the existing THEME_ENGINE/VAPOR_PATTERNS records +
+R15/R24/R26 (perf mechanics stay bought, not re-argued). Explicit hunt list from the charge:
+overlooked design flaws · inconsistencies (internal and vs-field) · design-level inefficiencies
+(e.g. token-layer structure vs the field's primitive→semantic→component layering; kit.css
+monolith vs per-surface files; per-theme duplication the token contract should absorb).
+Locked constraints honored: vapor byte-frozen (D51) · cosmos feature-closed · **no new themes**
+· D7 per-theme fidelity. Perf-measurement-shaped findings exit to Phase 20's charter.
+
+### DP-B — The agent harness: turns + how the agent works
+
+Scope, with the owner's stated emphasis: **the turn design** — lifecycle/state machine, the
+SSE wire + reconnect/durability contract, steering/drain semantics, compaction triggers,
+per-call snapshots, retry layering (wire vs loop vs adapter) — and **the capability layer** —
+tool surface size/granularity vs the field, parallel dispatch (D40) vs peers' defaults, output
+caps/truncation norms, planning/task-tracking, subagent orchestration, autonomy/approval
+patterns, caching-aware prompt ordering. Evidence: **R35 (turn machinery) + R36 (capability
+layer)** + the ACA 8-agent comparative baseline + R30/R31. Peer set (owner-named): Claude
+Code, Codex CLI, **Hermes Agent, OpenClaw** (both D14 references), + opencode/goose/aider as
+the dossiers cover them. Overlap rule vs Track P's Packet ②: **Packet ② owns
+perf/reliability-of-the-implementation; DP-B owns design-vs-field.** If both run, DP-B runs
+FIRST or together with Packet ②'s audit pass (one subsystem read can serve both lenses — the
+briefs say which lens each reviewer carries); DP-B design verdicts inform Packet ②'s fix wave
+so we never harden a design the review is about to overturn (the fix-in-owning-phase rule).
+
+### Ordering (owner-reorderable at charter)
+
+DP packets are morning-runnable (docs + dossiers + code reads; no device rounds). Default:
+**DP-B before or with Track P Packet ②** (shared read, see above) · **DP-A anytime**,
+naturally after the H2 hygiene slice; its fix wave lands before Phase 20 is chartered so the
+Phase-20 decision sees the post-design-review landscape.
 
 ## 4. Where results land (doc plumbing)
 
@@ -322,7 +405,10 @@ numbers in hand.
 
 | Shelf gap (2026-08-16 index) | When |
 |---|---|
-| SSE/streaming reliability in the peer class (reconnect, heartbeats, mid-stream cutoffs, resume) | Before Packet ② |
+| **R34 — UI/theming/motion design practice** (W3C tokens, Radix/shadcn/Material 3, HA frontend, peer theming contracts) | **BOUGHT 2026-08-16** (commissioned with the Track D directive) — feeds DP-A |
+| **R35 — peer turn architecture** (Codex CLI, Claude Code, Hermes Agent, OpenClaw, opencode/goose/aider: turn lifecycle, wire, steering, compaction, resume) | **BOUGHT 2026-08-16** — feeds DP-B |
+| **R36 — agent capability patterns** (tool surface/granularity, parallel dispatch, planning, subagents, autonomy/approvals, caching-aware design) | **BOUGHT 2026-08-16** — feeds DP-B |
+| SSE/streaming reliability in the peer class (reconnect, heartbeats, mid-stream cutoffs, resume) | Before Packet ② — **check R35 first**; buy only the delta |
 | LLM provider failure-mode handling (timeouts, retries/idempotency, streaming aborts, partial tool calls) | Before Packet ② (same agent if scope allows) |
 | Observability/logging posture in peers (SYS-11's seam: what to log, health surfaces, crash recovery) | Before Packet ① or ③ (wherever SYS-11 lands) |
 | SQLite practice at our shape beyond R33 (single writer, aiosqlite, schema evolution) | Only if Packet ①'s questions exceed R33 |
@@ -486,6 +572,12 @@ cuts-only Codex round for M+ fix waves.
   immediate baseline top-up before packets open (H1/H0 sections). With that fold, no open
   council findings remain.
 
+**Scope note:** §3b (Track D) was added **after** this council round, on the owner's second
+2026-08-16 directive. It reuses the council-reviewed machinery unchanged (three-view loop, H-#
+index, close rule, fix classes); the new material is the design-packet form and the DP-A/DP-B
+scoping. **A delta council check on §3b is owed before the execution go** — one Codex round +
+one Opus round over §3b only, not a re-review of the whole plan.
+
 ## 10. OWNER COURT — the rulings needed before execution (nothing here is decided)
 
 ① **The critical user journeys** — proposed five: *wake a host → see it online* · *ask the
@@ -501,3 +593,7 @@ in-packet-scope, non-behavioral, non-D-entry, non-security fixes ship without pe
 Phase 19's numbers + the F9 trigger.
 ⑤ **D57 lock** — on go, DECISIONS.md gains D57 (this methodology), TODO gains Phase 19, HANDOFF
 points here.
+⑥ **Track D ordering** — proposed: DP-B runs before/with Track P Packet ② (shared subsystem
+read, design verdicts inform the hardening fixes); DP-A runs after H2, before the Phase-20
+charter decision. Confirm or reorder. (The §3b delta council check runs before the go
+regardless.)
