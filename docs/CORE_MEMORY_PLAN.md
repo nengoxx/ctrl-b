@@ -291,8 +291,10 @@ Eligibility policy lives in the tool description + P1 (the vault §1 list, uncha
 derivable facts, no task state, no procedures — skills own those; pointers not copies). **Secret
 gate (council Opus-H3 — the draft's "existing predicates" don't exist as shape checks, and D27 #3
 deliberately never redacts memory content):** a write whose text **contains a value from
-`Settings.secret_values()`** is rejected deterministically; shape detection is an explicit
-non-goal. This is a containment check on known secrets, not a scanner — and it is a **recorded
+`Settings.secret_values()`** is rejected deterministically — evaluated over the **complete
+resulting file content**, never just the delta (R40 §7.4: Claude's edit tool scans only the
+replacement string, so a secret assembled across successive edits slips its local check); shape
+detection is an explicit non-goal. This is a containment check on known secrets, not a scanner — and it is a **recorded
 D27 divergence for D57** (tier 1 trusts curated memory; a shared long-term corpus gets the rail
 the vault spec required). Every invocation audits through `ActionService._record` as today.
 
