@@ -1013,6 +1013,17 @@ export function ConfTab({ active }: Props) {
     state_char_limit: memorySection?.state_char_limit ?? 600,
     reflection_enabled: memorySection?.reflection_enabled ?? false,
     reflection_interval: memorySection?.reflection_interval ?? 10,
+    // D57 — the tier-2 slot. Off by default (`backend: null`); the caps mirror CORE_MEMORY_PLAN §6.1.
+    longterm: {
+      backend: memorySection?.longterm?.backend ?? null,
+      core: {
+        root: memorySection?.longterm?.core?.root ?? "core",
+        index_char_limit: memorySection?.longterm?.core?.index_char_limit ?? 8192,
+        topic_char_limit: memorySection?.longterm?.core?.topic_char_limit ?? 4096,
+        recall_char_limit: memorySection?.longterm?.core?.recall_char_limit ?? 20480,
+        consolidation_nudge_pct: memorySection?.longterm?.core?.consolidation_nudge_pct ?? 80,
+      },
+    },
   };
   const skillsEnabled =
     (agentSection as { skills_enabled?: boolean } | undefined)?.skills_enabled ?? true;

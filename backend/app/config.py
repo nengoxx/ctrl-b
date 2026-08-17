@@ -466,6 +466,16 @@ class MemoryCfg(BaseModel):
     #: adding a top-level key, so tier 1 and tier 2 stay one `memory:` section.
     longterm: LongTermCfg = Field(default_factory=LongTermCfg)
 
+    def core_memory_on(self) -> bool:
+        """Whether tier 2 is Core Memory right now: `backend` is the only tier-2 switch, and the
+        memory master switch still gates it (the whole slot lives inside `memory:`).
+
+        THE definition, on the config object both tiers already read, so the corpus
+        (`CoreMemoryCorpus.enabled`) and the tier-1 surfaces that reword themselves when tier 2 is on
+        (the `memory` tool's `describe=`, §4b-5) ask the same question in one place — neither tier's
+        module has to import the other's (§8-4)."""
+        return bool(self.enabled) and self.longterm.backend == "core"
+
 
 class EmbeddingsCfg(BaseModel):
     """OpenAI-compatible embeddings backend (Phase 4f, D9; A11/D48 Slice 2). Points at the top-level

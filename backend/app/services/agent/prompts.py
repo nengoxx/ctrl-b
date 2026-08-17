@@ -122,12 +122,17 @@ REGISTRY: dict[str, PromptDef] = {
         default=(
             "Consolidate before adding more — {{pressured}}. Merge overlapping "
             "entries with `replace`, drop stale ones with `remove`, and reconcile anything that "
-            "contradicts what you just learned."
+            "contradicts what you just learned.{{longterm}}"
         ),
         description=(
             "Appended to the memory block when a store is at or over `memory.consolidation_nudge_pct`. "
-            "`{{pressured}}` is the joined list of pressured stores with their fill percentage. "
-            "Coupling: the wording has to read right both at 85% and at a manual over-cap 150%."
+            "`{{pressured}}` is the joined list of pressured stores with their fill percentage; "
+            "`{{longterm}}` is the `Consolidation Promote` clause, which code supplies only while Core "
+            "Memory is on and its tool is actually reachable (empty otherwise — tier-1 wording is then "
+            "byte-identical to a deployment without tier 2). Coupling: the wording has to read right "
+            "both at 85% and at a manual over-cap 150%, and the nudge fires ONCE per pressure episode "
+            "(the provider latches it until fill drops back under the threshold), so text that assumes "
+            "it will be repeated every turn is wrong."
         ),
     ),
     "fleet_roster": PromptDef(
@@ -235,14 +240,17 @@ REGISTRY: dict[str, PromptDef] = {
         default=(
             "It's been {{reflection_interval}} turns — pause and review the recent conversation. "
             "If anything is durably worth remembering (a lasting fact, preference, or decision), save "
-            "it with the `memory` tool.{{state_clause}} If there's nothing worth keeping, just continue "
-            "— don't invent things to store."
+            "it with the `memory` tool.{{state_clause}}{{longterm}} If there's nothing worth keeping, "
+            "just continue — don't invent things to store."
         ),
         description=(
             "The periodic-reflection prompt (D27-C), emitted once per armed turn as an ephemeral tail "
             "message. `{{reflection_interval}}` is the configured turn count; `{{state_clause}}` is the "
             "sentence about the `state` store, which code supplies only when that store is enabled "
-            "(empty otherwise). Coupling: it only steers — saving runs the normal `memory` tool path."
+            "(empty otherwise); `{{longterm}}` is the tier-2 routing sentence, supplied only while Core "
+            "Memory is on and its tool is reachable this turn (D57 §4b-5 — empty otherwise, so the "
+            "rendered text is byte-identical to a deployment without tier 2). Coupling: it only steers "
+            "— saving runs the normal `memory` tool path."
         ),
     ),
     "summarizer": PromptDef(
@@ -371,6 +379,52 @@ REGISTRY: dict[str, PromptDef] = {
             "thing marking corpus text — written by past turns and possibly copied in from another "
             "tool — as fallible data rather than an instruction the model should obey, and the whole "
             "framed result is what the per-turn recall budget counts."
+        ),
+    ),
+    "consolidation": PromptDef(
+        default=(
+            "Consolidate my long-term memory. Work through the `core_memory` index topic by topic and "
+            "leave the corpus smaller and truer than you found it: merge topics that cover the same "
+            'ground into one instead of writing a second copy; rewrite relative dates ("last week", '
+            '"yesterday") as absolute ones; delete entries that are contradicted, superseded or no '
+            "longer true; and keep the index bounded and its hooks honest, so every line still says "
+            "what its topic actually answers. Read a topic before you change it, change one thing at a "
+            "time, and tell me what you merged, rewrote and deleted when you are done."
+        ),
+        description=(
+            "The owner-invoked consolidation procedure (D57 §5) — stable wording for the curation pass "
+            "run as an ordinary agent task, so it is one paste rather than a re-improvised prompt each "
+            "time (and the task text a future scheduled 'dream' automation would use, §10). Nothing "
+            "resolves this automatically: it is text for the owner to send. Coupling: the four "
+            "behaviours it names (merge-don't-duplicate · absolutize dates · delete contradicted · keep "
+            "the index bounded) are what makes the pass a cleanup rather than a rewrite."
+        ),
+    ),
+    "consolidation_promote": PromptDef(
+        default=(
+            "Before dropping anything, promote the durable, generally useful entries to `core_memory` "
+            "— the shared long-term tier — and drop task state rather than promoting it."
+        ),
+        description=(
+            "The tier-2 promotion clause (D57 §4b-2/§4b-4): the sentence that turns tier-1 cap pressure "
+            "into an eviction with somewhere to rescue what matters. Code renders it into the "
+            "`{{longterm}}` slot of `Consolidation Nudge` and `Memory Cap Error`, and ONLY while Core "
+            "Memory is on and its tool is actually reachable. Coupling: the priority direction is "
+            "load-bearing — a model told only to make space cuts whatever is longest, so the clause has "
+            "to say what to promote AND what to let go."
+        ),
+    ),
+    "memory_cap_error": PromptDef(
+        default="{{details}}{{longterm}}",
+        description=(
+            "What the `memory` tool returns when a write would grow a store past its cap. "
+            "`{{details}}` is the store, the resulting size, the cap and the remediation the store's "
+            "own semantics imply (an APPEND store consolidates, a SET store shortens); `{{longterm}}` "
+            "is the `Consolidation Promote` clause, added only for a store whose content can be "
+            "promoted (never `state`) and only while Core Memory's tool is reachable. Coupling: this "
+            "fires exactly at the boundary, once per attempt — it is the one steering text the model "
+            "gets at the moment the write actually failed, so anything you add here is read at the "
+            "point of decision."
         ),
     ),
 }

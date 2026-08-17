@@ -214,7 +214,14 @@ def apply_tool_overrides(app: "FastAPI", settings: Settings | None = None) -> No
     `app.state.tool_spec_orig`, so clearing an override (a `None` field) restores the tool's
     compile-time default rather than leaving the last value stuck. Run by lifespan (after the registry
     is built), by `reconfigure` (when `tool_overrides` changed), and at the end of
-    `rediscover_integrations` (so freshly re-discovered MCP/OpenAPI tools pick overrides up too)."""
+    `rediscover_integrations` (so freshly re-discovered MCP/OpenAPI tools pick overrides up too).
+
+    A spec carrying `describe` (D57 §4b-5) has its BASE description computed from the settings this
+    call was handed, replacing the captured literal — so a tool whose capability boundary moves with a
+    feature switch is reworded by the same pass, for both the model schema and `GET /api/actions`, the
+    moment the switch flips. The captured original stays the compile-time literal (it is `spec_dto`'s
+    default-mode source, and a `describe` that ever disappears must restore what the code declares);
+    the owner's `tool_overrides` description still wins over both."""
     settings = settings or app.state.settings
     overrides: dict = getattr(settings, "tool_overrides", None) or {}
     registry = app.state.actions.registry
@@ -228,6 +235,8 @@ def apply_tool_overrides(app: "FastAPI", settings: Settings | None = None) -> No
         if name not in orig:
             orig[name] = (spec.description, spec.agent_exposed, spec.core)
         base_desc, base_exposed, base_core = orig[name]
+        if spec.describe is not None:
+            base_desc = spec.describe(settings)
         ov = overrides.get(name)
         desc = getattr(ov, "description", None)
         spec.description = desc.strip() if isinstance(desc, str) and desc.strip() else base_desc
@@ -355,7 +364,14 @@ async def reconfigure(app: "FastAPI", new: Settings) -> None:
         await set_searxng(app, new)
     if open_terminal_changed:
         await set_open_terminal(app, new)
-    if tool_overrides_changed and getattr(app.state, "actions", None) is not None:
+    actions = getattr(app.state, "actions", None)
+    # The overlay is a pure function of (`tool_overrides`, live settings): a spec carrying `describe`
+    # (D57 §4b-5) reads the settings half, so ANY saved section can move its base description. Re-run
+    # for that case rather than enumerating which sections a `describe` may read — the pass is one loop
+    # over the registry writing attributes, and it is idempotent.
+    if actions is not None and (
+        tool_overrides_changed or any(t.spec.describe is not None for t in actions.registry.all())
+    ):
         apply_tool_overrides(app, new)
     if caches_stale:
         invalidate_status_caches(app)

@@ -28,6 +28,10 @@ from typing import (
 
 from pydantic import BaseModel
 
+# `Settings` is a real (non-TYPE_CHECKING) import because pydantic must resolve `ToolSpec.describe`'s
+# annotation at class-creation time. Safe in both directions: `config.py` imports no `app.core.tool`
+# (only `core.media`), so this is the one-way core→config edge `provider_registry` already documents.
+from app.config import Settings
 from app.domain.enums import Actor, Privilege, Risk
 from app.domain.event import ORIGIN_USER_CHAT, Origin
 from app.domain.result import ToolResult
@@ -45,6 +49,13 @@ class ToolSpec(BaseModel):
     name: str  # unique; namespaced for MCP ("mcp:server:tool")
     title: str
     description: str = ""
+    #: A tool whose model-facing description depends on live config computes it here (D57 §4b-5).
+    #: `apply_tool_overrides` calls it for the BASE description on every (re)configure, so the wording
+    #: follows a flipped feature switch with no restart — and the owner's `tool_overrides` entry still
+    #: wins over it, exactly as it wins over a static `description`. Set it only where a *capability
+    #: boundary* moves (the `memory` tool reworded once Core Memory owns durable facts); per-call
+    #: variation belongs in the result text, not in the schema every turn re-renders.
+    describe: Callable[[Settings], str] | None = None
     icon: str | None = None
     category: ToolCategory = "action"
     input_model: type[BaseModel]  # → JSON Schema for the agent + request validation
@@ -326,6 +337,7 @@ def action(
     *,
     title: str | None = None,
     description: str | None = None,
+    describe: Callable[[Settings], str] | None = None,
     icon: str | None = None,
     category: ToolCategory = "action",
     risk: Risk = Risk.LOW,
@@ -343,6 +355,8 @@ def action(
     it stays unit-testable directly; the registry holds the wrapped `Tool`. `category` defaults to
     `action` (fleet/service ops); agent-only builtins like `task_plan` pass `category="builtin"`.
     `read_only`/`idempotent` (MCP-aligned) drive retry-safety (see `ToolSpec.retry_safe`).
+    `description` is the static text; `describe` (see `ToolSpec.describe`) supplies it from live
+    settings instead, for a tool whose capability boundary moves with a feature switch.
 
     Generic in `TInput` so the decorated function's precise input-model type is preserved (see the
     `ToolFn` note); the single narrow→base erasure is the `cast` at registration below."""
@@ -352,6 +366,7 @@ def action(
             name=name,
             title=title or name.replace("_", " ").title(),
             description=description or _docsummary(fn),
+            describe=describe,
             icon=icon,
             category=category,
             input_model=_infer_input_model(fn),

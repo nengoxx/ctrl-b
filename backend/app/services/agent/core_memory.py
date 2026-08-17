@@ -254,10 +254,10 @@ class CoreMemoryCorpus:
         return self._cfg.recall_char_limit
 
     def enabled(self) -> bool:
-        """Whether tier 2 is Core Memory right now. `backend` is the only tier-2 switch; the memory
-        master switch still gates it, since the whole slot lives inside the `memory:` section."""
-        mem = self._settings.memory
-        return bool(mem.enabled) and mem.longterm.backend == "core"
+        """Whether tier 2 is Core Memory right now — `MemoryCfg.core_memory_on()`, read live. The
+        predicate lives on the config object because the tier-1 surfaces that reword themselves when
+        tier 2 is on ask it too, and §8-4 forbids them importing this module (S4)."""
+        return self._settings.memory.core_memory_on()
 
     # ── root resolution ───────────────────────────────────────────────────────────────────────────
 
@@ -434,12 +434,16 @@ class CoreMemoryCorpus:
         if not scan.entries:
             return ""
         cap = self._cfg.index_char_limit
-        key = (self._scan_cache[0] if self._scan_cache else None, cap)
+        pct = self._cfg.consolidation_nudge_pct
+        # Every live setting the render READS is in the key (the no-restart contract) — a pct edit
+        # must add/remove the pressure clause without waiting for a corpus or cap change (S4 review).
+        key = (self._scan_cache[0] if self._scan_cache else None, cap, pct)
         if self._index_cache is not None and self._index_cache[0] == key:
             return self._index_cache[1]
         block = _fit(
             [_entry_line(title, path, hook) for title, path, hook in scan.entries],
             cap,
+            pct,
         )
         self._index_cache = (key, block)
         return block
@@ -1195,11 +1199,20 @@ def _pct(length: int, cap: int) -> int:
     return round(100 * length / cap) if cap > 0 else 0
 
 
-def _header(listed: int, chars: int, cap: int) -> str:
+def _header(listed: int, chars: int, cap: int, nudge_pct: int) -> str:
     """The Hermes-style usage header the tier-1 blocks carry, so the model sees index cap pressure
-    the same way it sees memory cap pressure."""
+    the same way it sees memory cap pressure.
+
+    At `consolidation_nudge_pct` of the cap the header also NAMES the pressure and steers to the §5
+    consolidation procedure (§4 — no topic-count threshold, one honest bound). The clause rides the
+    header rather than a separate line so it stays *inside* the cap, exactly like the truncation
+    note, and so it is the always-rendered header that carries the correction when a promote-then-
+    trim leaves fill unchanged (§4b's deliberate property: the latch stays down, the header does
+    not)."""
     plural = "" if listed == 1 else "s"
-    return f"## Core memory index ({listed} topic{plural} — {_pct(chars, cap)}% — {chars:,}/{cap:,})"
+    pct = _pct(chars, cap)
+    pressure = " — near the cap: consolidate topics before adding more" if pct >= nudge_pct else ""
+    return f"## Core memory index ({listed} topic{plural} — {pct}% — {chars:,}/{cap:,}{pressure})"
 
 
 def _truncation_note(omitted: int) -> str:
@@ -1207,11 +1220,11 @@ def _truncation_note(omitted: int) -> str:
     return f"> {omitted} more topic{plural} not listed — the index is at its cap."
 
 
-def _fit(lines: list[str], cap: int) -> str:
+def _fit(lines: list[str], cap: int, nudge_pct: int) -> str:
     """Assemble header + entries (+ the truncation note) within `cap`. Truncation is soft and drops
     whole entries from the end — never an error, and the note is reserved *inside* the cap rather
     than appended past it. The header's own length feeds back into the numbers it prints, so it is
-    settled by a short fixpoint (only the digit count can move)."""
+    settled by a short fixpoint (only the digit count and the pressure clause can move)."""
     kept = len(lines)
     running = 0
     for i, line in enumerate(lines):  # greedy pre-trim so the exact loop below starts close
@@ -1220,7 +1233,7 @@ def _fit(lines: list[str], cap: int) -> str:
             kept = i
             break
     while True:
-        block = _assemble(lines[:kept], len(lines) - kept, cap)
+        block = _assemble(lines[:kept], len(lines) - kept, cap, nudge_pct)
         if len(block) <= cap:
             return block
         if kept == 0:  # a cap too small for even header + note: the hard cap still wins (§3)
@@ -1228,15 +1241,16 @@ def _fit(lines: list[str], cap: int) -> str:
         kept -= 1
 
 
-def _assemble(kept: list[str], omitted: int, cap: int) -> str:
+def _assemble(kept: list[str], omitted: int, cap: int, nudge_pct: int) -> str:
     parts = [*kept, *([_truncation_note(omitted)] if omitted else [])]
     size = sum(len(p) + 1 for p in parts)
     block = ""
     # The header prints the block's own length, which includes the header — a fixpoint. Iterate to
     # stability; at a digit/percent boundary it can oscillate by one, in which case the printed
-    # number is off by one char (the cap itself is still enforced above).
+    # number is off by one char (the cap itself is still enforced above). The pressure clause only
+    # ever GROWS the block, so it settles in the same pass rather than adding a second fixpoint.
     for _ in range(6):
-        block = "\n".join([_header(len(kept), size, cap), *parts])
+        block = "\n".join([_header(len(kept), size, cap, nudge_pct), *parts])
         if len(block) == size:
             break
         size = len(block)

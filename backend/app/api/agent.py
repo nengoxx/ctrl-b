@@ -20,6 +20,7 @@ import shutil
 import time
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
@@ -1666,6 +1667,27 @@ async def put_user_memory(body: MemoryContent, request: Request) -> dict[str, st
     """Overwrite the global `USER.md`. Blank content clears it. (`agent` arg is ignored for `user`.)"""
     default = request.app.state.settings.default_agent_def()
     return {"content": await _memory_provider(request).overwrite(default, "user", body.content)}
+
+
+@router.get("/memory/core/status")
+async def get_core_memory_status(request: Request) -> dict[str, Any]:
+    """The tier-2 corpus's derived status for the Conf disclosure (D57 §6, council M8): is the slot
+    on, where the corpus resolved to, and what the last scan saw (topics parsed / skipped / the
+    anomaly list / how much of the index cap the rendered block fills).
+
+    Its own read-only route because the settings GET carries CONFIG, never derived data — this is a
+    projection of settings over the files on disk, and only the server can compute it. Read-only: the
+    scan is cached on the corpus singleton behind its signature, so the cost here is a stat sweep and
+    nothing is created, repaired or written. Reports even while the slot is off, so the owner can
+    validate a freshly copied-in corpus before switching it on (§3b).
+
+    Called synchronously, deliberately: the corpus's caches are only ever touched from the event-loop
+    thread, which is what makes the shared singleton re-entrancy-safe (S2) — a `to_thread` hop here
+    would race the same caches against a turn's index render for a stat sweep."""
+    corpus = getattr(request.app.state, "core_memory", None)
+    if corpus is None:
+        raise HTTPException(status_code=503, detail="core memory is not available")
+    return asdict(corpus.status())
 
 
 # Store-keyed routes (D27) — the generic per-agent editor for any AGENT-scoped store (`memory`, the

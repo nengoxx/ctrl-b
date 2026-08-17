@@ -17,7 +17,7 @@ from app.adapters.searxng import SearxngClient
 from app.config import Settings
 from app.core.memory import MemoryProvider
 from app.core.skills import SkillProvider, SkillSelector
-from app.services.agent.core_memory import CoreMemoryCorpus
+from app.services.agent.core_memory import CORE_MEMORY_TOOL, CoreMemoryCorpus
 from app.services.automations import AutomationService
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.events import EventService
@@ -25,6 +25,7 @@ from app.services.fleet import FleetService
 from app.services.svc import ServiceService
 
 if TYPE_CHECKING:  # avoid the deps→action_service→deps import cycle; set at runtime in lifespan
+    from app.domain.agent import AgentDef
     from app.services.action_service import ActionService
 
 
@@ -59,3 +60,21 @@ class Deps:
     #: type instead of a string one. Back-filled in the lifespan like the other agent-runtime handles:
     #: `Deps` is constructed before the chat stack, and the service needs the DB + the turn registry.
     automations: AutomationService | None = None
+
+    def longterm_available(self, agent: "AgentDef") -> bool:
+        """Is the tier-2 `core_memory` tool effectively reachable for `agent` right now? (D57 §4b-4.)
+
+        Two halves, matching the two-layer exposure gate: the corpus is wired and its slot is on, AND
+        the tool survives the agent's own `tools` allowlist (it is `core=False`, so an allowlist may
+        legitimately exclude it). Lives HERE because it needs the corpus *and* the action registry,
+        and because §8-4 forbids the tier-1 modules that ask it from importing the corpus module —
+        `Deps` is the composition root that already holds both, so neither tier reaches into the other.
+
+        Allowlist-level, not turn-level: a per-turn skill narrowing is invisible from here (the
+        session, which owns that state, answers the same question with `_tool_allowed`). A caller that
+        only needs to decide whether to MENTION the tool accepts that approximation."""
+        if self.core_memory is None or not self.core_memory.enabled() or self.actions is None:
+            return False
+        return any(
+            tool.spec.name == CORE_MEMORY_TOOL for tool in self.actions.registry.for_agent(agent.tools)
+        )

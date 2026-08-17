@@ -545,7 +545,18 @@ class AgentSession:
         so it never interacts with the rolling compaction summary (same as the appends/roster)."""
         if self._memory is None:
             return None
-        return self._memory.load_context(self._agent, self._stamps) or None
+        return self._memory.load_context(self._agent, self._stamps, self._longterm_available()) or None
+
+    def _longterm_available(self) -> bool:
+        """Whether tier 2's `core_memory` tool is in THIS turn's effective schema (D57 §4b-2/§4b-5).
+
+        The turn-level answer, which only the session has: `_tool_allowed` computes it from
+        `for_agent(self._tool_allow, self._hidden_tools)`, so the disabled-feature hidden set (which
+        already folds in `enabled()`) and a skill's per-turn narrowing are both accounted for — and
+        the answer therefore matches exactly what the model was offered. Every tier-1 surface that
+        rewords itself around tier 2 asks THIS, so none of them can advertise a tool this turn does
+        not carry."""
+        return self._core_memory is not None and self._tool_allowed(CORE_MEMORY_TOOL)
 
     def _core_index_block(self) -> str | None:
         """The tier-2 index block (D57, CORE_MEMORY_PLAN §4), injected as its own `system` message
@@ -571,16 +582,27 @@ class AgentSession:
         it never writes. The `state` clause appears only when that store is enabled."""
         cfg = self._settings.memory
         # No conditionals in templates (§2.3): the gated sentence is precomputed here and passed as an
-        # ordinary value, empty when the store is off.
+        # ordinary value, empty when the store is off. Same shape for the tier-2 routing sentence
+        # (D57 §4b-5) — with a durable shared tier available, a nudge that sends every lasting fact to
+        # tier 1 sends it to the store that gets trimmed first.
         state_clause = (
             " Also update your `state` (action `set`) if how you feel has shifted."
             if cfg.state_enabled
             else ""
         )
+        longterm = (
+            " Durable, shared knowledge belongs in `core_memory` instead."
+            if self._longterm_available()
+            else ""
+        )
         return resolve(
             "reflection_nudge",
             self._settings,
-            {"reflection_interval": str(cfg.reflection_interval), "state_clause": state_clause},
+            {
+                "reflection_interval": str(cfg.reflection_interval),
+                "state_clause": state_clause,
+                "longterm": longterm,
+            },
             stamps=self._stamps,
         )
 

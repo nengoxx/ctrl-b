@@ -127,7 +127,9 @@ class MemoryProvider(Protocol):
     """Durable memory for the agent loop. `load_context` returns the block injected into the system
     prompt each turn — the agent's own memory plus the global user profile, with cap-usage headers —
     or "" when there's nothing to inject (subsystem off, or both stores empty); its optional `stamps`
-    is the caller's prompt-stamp accumulator, which the two framing prompts record into (Phase 18).
+    is the caller's prompt-stamp accumulator, which the two framing prompts record into (Phase 18),
+    and its optional `longterm_available` tells it whether the turn can reach the tier-2 corpus, which
+    is what makes the cap-pressure nudge point at promotion instead of only at deletion (D57 §4b-2).
     `write` applies one edit (the `memory` tool's write path, 7e-d-2) and returns a one-line summary;
     it raises on a failed/over-cap edit so the tool can steer the model. `read_raw`/`overwrite` are the Conf panel's
     read/clear (7e-d-3).
@@ -135,7 +137,12 @@ class MemoryProvider(Protocol):
     `write`/`overwrite` are **async** (D26): each couples its file write to a git commit under a
     process-wide lock; `load_context`/`read_raw` are read-only and stay sync."""
 
-    def load_context(self, agent: AgentDef, stamps: dict[str, str] | None = ...) -> str: ...
+    def load_context(
+        self,
+        agent: AgentDef,
+        stamps: dict[str, str] | None = ...,
+        longterm_available: bool = ...,
+    ) -> str: ...
 
     async def write(
         self, agent: AgentDef, target: str, action: str, content: str, old_text: str | None = ...

@@ -150,6 +150,44 @@ NOT the vault's "always write the newest canonical shape"):
 the scan and tolerant read do the rest. (A validation affordance — "N topics parsed, M skipped" —
 comes free as the Conf status line, §8.)
 
+### 3b. Copy-in procedure (owner-facing, S4)
+
+Adopting an existing Claude-shaped corpus is five steps and no code path of its own:
+
+0. **On a deployment whose memory repo predates this feature: fix the `.gitignore` FIRST** (the
+   one-time step below) — the D26 reconcile sweep runs every couple of minutes, so a copy that
+   lands before the ignore lines would version `logs/`/`.consolidate-lock` in the interval.
+1. **Copy the folder** to `<memories_dir>/core/` — `MEMORY.md` plus the topic tree, exactly as it
+   sits. Foreign artifacts (`.consolidate-lock`, `logs/`, a nested `MEMORY.md`) may come along; the
+   scan excludes them and the `.gitignore` keeps the first two out of the D26 repo.
+2. **Switch tier 2 on**: Conf → Memory → *Core Memory (long-term)* → Enabled (this writes
+   `memory.longterm.backend: core`). Nothing else needs setting — `root` defaults to `core`.
+3. **Read the status line** in that same disclosure: *N topics · M skipped · K anomalies*, the
+   resolved root, and the index's fill against its cap. That IS the validation affordance — no
+   import report exists because there is no import. `skipped` counts files with neither parseable
+   frontmatter nor an index link; `anomalies` names dangling/duplicate index links and unindexed
+   topics (hover for the list). None of them is an error: the corpus is read as it is, and repairs
+   happen only through explicit writes or the §5 consolidation procedure.
+4. **No restart is needed.** Every path reads live `Settings` and the scan is keyed on the file
+   signature, so the switch, an edited cap and a hand-edited topic all apply from the next turn.
+   (The rendered head is frozen *within* a turn — §4 — so an edit made mid-turn lands on the next
+   one.)
+
+**The one-time step (step 0) on any deployment whose memory repo predates this feature** (the S1
+learning): `MemoryBackup._write_gitignore` early-returns on an existing `.gitignore`, so an
+already-initialized `memories/` repo never picks up the two new ignore lines by itself — and a
+copied-in corpus's `logs/` would get versioned. Append each missing line independently (a repo that
+already has one but not the other must still gain the other — S4 review), idempotent:
+
+```bash
+for p in 'logs/' '.consolidate-lock'; do
+  grep -qxF "$p" "$CTRLB_HOME/memories/.gitignore" || printf '%s\n' "$p" >> "$CTRLB_HOME/memories/.gitignore"
+done
+```
+
+(`$CTRLB_HOME` is the prod instance's data root — `~/apps/ctrl-b` on emma. A fresh install writes
+both lines itself and needs nothing.)
+
 ## 4. Injection design
 
 - **The index block** joins the static head **after the tier-1 memory block, before the skills
@@ -320,7 +358,7 @@ arm is banked (§10).
 | Tool | `@action` registry (`core/tool.py:310`); `memory_tool.py` template; `apply_tool_overrides` untouched | `core_memory_tool.py` + an optional `hidden:` frozenset param on `for_agent()` for disabled-feature suppression — applied **after** the core-tools allowlist bypass and at **both** consumers: the `_tools()` schema set (`session.py:569`) and the M1 availability guard (`session.py:2107`), else schema and guard disagree (council M5). No registry-spec mutation, so no fight with `tool_overrides`; no override may resurrect a hidden tool. |
 | Prompts | Phase 18 registry (`prompts.py`), stamping, Conf editor auto-surface | **5 ids**: `core_memory_policy`, `core_memory_recall`, `consolidation`, `consolidation_promote` (the `{{longterm}}` clause, §4b-2), `memory_cap_error` (§4b-4) — names final at S0. Registry tests: `_GOLDEN` + per-id placeholder ctx updated; `consolidation_nudge` ctx always carries `longterm` (`""` when off). Tool-level descriptions = `tool_overrides` territory, NOT registry (arch-invariant test); Field descriptions stay mechanical (not owner-editable — ruled won't-build). Any new ≥80-char model-facing literal must live in `prompts.py`. |
 | Headless | origin/depth predicate precedent (`session.py:859`) | none under O1's recommended default; the predicate is the seam if O1 rules stricter. |
-| Conf UI | `MemoryEditor.tsx` + `ConfTab` memory group; the Compaction group's `ModelRef` picker pattern (future selector arm) | a Core Memory disclosure: enable switch (writes `backend`), resolved-root + "N topics parsed / M skipped / anomalies" status via a **new read-only status endpoint** (settings GET carries no derived data — council M8; exact route named in S4), caps. No per-topic editor in v1 (files are owner-editable on disk/Obsidian; the D26 sweep commits hand edits). |
+| Conf UI | `MemoryEditor.tsx` + `ConfTab` memory group; the Compaction group's `ModelRef` picker pattern (future selector arm) | a Core Memory disclosure: enable switch (writes `backend`), resolved-root + "N topics parsed / M skipped / anomalies" status via a **new read-only status endpoint** — **`GET /api/memory/core/status`** (S4), beside the other `/memory/*` panel routes, serving `CoreMemoryCorpus.status()` (settings GET carries no derived data — council M8) — plus the five §6.1 caps. No per-topic editor in v1 (files are owner-editable on disk/Obsidian; the D26 sweep commits hand edits). |
 | Docs | — | D57 · ROADMAP §B1 rewritten to the tier model (the "progressive memory index" deferred bullet at `ROADMAP.md:360` is lifted INTO this plan — it is literally this feature) · TODO Phase 20 stanza · DESIGN §6 + SPEC inventories at ship time. |
 
 ### 6.1 The config shape, concretely (normative for S1)

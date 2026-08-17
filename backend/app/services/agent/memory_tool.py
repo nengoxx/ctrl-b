@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
+from app.config import Settings
 from app.core.memory import StoreSemantics, store_by_key
 from app.core.tool import InvocationContext, action
 from app.domain.enums import Risk, RunState
@@ -31,6 +32,41 @@ from app.services.agent.prompts import resolve
 if TYPE_CHECKING:
     from app.domain.agent import AgentDef
     from app.services.deps import Deps
+
+#: The tool description while Core Memory is OFF — the only tier there is, so it keeps every word it
+#: had before tier 2 existed (§4b-5: exact current text when off). Hoisted out of the `@action` call
+#: only because `describe` below picks between two variants; it is ordinary tool-level description
+#: text, `tool_overrides`-editable like any other.
+_DESCRIPTION_SOLO = (
+    "Save something to your durable memory so you remember it in future sessions. Use it when "
+    "you learn a lasting fact, preference, or decision worth keeping — not for transient chat. "
+    "`add` a new note, or `replace`/`remove` an existing one by a unique `old_text` substring. You do not "
+    "need to read first: your current memory is shown to you each turn. Set `target` to `user` to "
+    "record a durable fact about the person you're helping, or `target=state` with `action=set` to "
+    "rewrite your own current mood/state when it shifts."
+)
+
+#: …and while Core Memory is ON (§4b-5, council Codex-10/Opus-M1): this store is the SHORT-HORIZON
+#: tier, so the description stops pointing durable facts at it and routes them one clause later.
+_DESCRIPTION_TIERED = (
+    "Save something to your short-horizon working memory so you carry it across this and the next "
+    "few sessions — what you are working on, decisions made in passing, context that will matter "
+    "soon. It is capped and may be trimmed, so durable, shared knowledge belongs in `core_memory` "
+    "instead. `add` a new note, or `replace`/`remove` an existing one by a unique `old_text` "
+    "substring. You do not need to read first: your current memory is shown to you each turn. Set "
+    "`target` to `user` for current context about the person you're helping (their lasting "
+    "preferences belong in `core_memory` too), or `target=state` with `action=set` to rewrite your "
+    "own current mood/state when it shifts."
+)
+
+
+def _describe_memory(settings: Settings) -> str:
+    """The tool's model-facing description for the CURRENT config (`ToolSpec.describe`, §4b-5). With
+    tier 2 on, the tier-1 surfaces must stop advertising themselves as the home of lasting facts —
+    otherwise the two descriptions compete for the same content and the model routes by whichever it
+    read last. Resolved by `apply_tool_overrides`, which runs on lifespan AND on every reconfigure, so
+    flipping `memory.longterm.backend` reshapes the schema with no restart."""
+    return _DESCRIPTION_TIERED if settings.memory.core_memory_on() else _DESCRIPTION_SOLO
 
 
 class MemoryInput(BaseModel):
@@ -71,14 +107,8 @@ class MemoryInput(BaseModel):
 @action(
     "memory",
     title="Memory",
-    description=(
-        "Save something to your durable memory so you remember it in future sessions. Use it when "
-        "you learn a lasting fact, preference, or decision worth keeping — not for transient chat. "
-        "`add` a new note, or `replace`/`remove` an existing one by a unique `old_text` substring. You do not "
-        "need to read first: your current memory is shown to you each turn. Set `target` to `user` to "
-        "record a durable fact about the person you're helping, or `target=state` with `action=set` to "
-        "rewrite your own current mood/state when it shifts."
-    ),
+    description=_DESCRIPTION_SOLO,
+    describe=_describe_memory,
     icon="brain",
     category="builtin",
     risk=Risk.LOW,
@@ -109,7 +139,7 @@ async def memory(inp: MemoryInput, ctx: InvocationContext) -> ToolResult:
             output=resolve("memory_proposal_pending", deps.settings, stamps=ctx.stamps),
             data={"proposed": inp.model_dump()},
         )
-    return await apply_memory(deps, agent, inp)
+    return await apply_memory(deps, agent, inp, stamps=ctx.stamps)
 
 
 def gate_memory(deps: "Deps | None", inp: MemoryInput) -> ToolResult | None:
@@ -160,17 +190,57 @@ def gate_memory(deps: "Deps | None", inp: MemoryInput) -> ToolResult | None:
     return None
 
 
-async def apply_memory(deps: "Deps", agent: "AgentDef", inp: MemoryInput) -> ToolResult:
+async def apply_memory(
+    deps: "Deps", agent: "AgentDef", inp: MemoryInput, *, stamps: dict[str, str] | None = None
+) -> ToolResult:
     """Perform the memory write (assumes `gate_memory` passed). Called by the tool when `auto_write`
     is on, and by the Approve-to-apply endpoint on owner approval. A cap/write failure comes back as
-    an ERROR result (the caller keeps a pending proposal so the owner can retry/dismiss)."""
+    an ERROR result (the caller keeps a pending proposal so the owner can retry/dismiss).
+
+    `stamps` is the turn's prompt-stamp accumulator, forwarded by the tool (the approve path has no
+    turn to stamp and passes none) — the cap error's remediation is a registry prompt, so it is
+    resolved HERE, at the boundary where the accumulator exists, exactly like
+    `memory_proposal_pending` above."""
     mem = deps.memory
     if mem is None:  # gate_memory already guards this on both call paths; re-narrow at this boundary
         return ToolResult(state=RunState.DENIED, summary="memory is not available")
     try:
         summary = await mem.write(agent, inp.target, inp.action, inp.content, inp.old_text)
     except MemoryCapError as exc:
-        return ToolResult(state=RunState.ERROR, summary="memory over its cap", error=str(exc))
+        # §4b-4 (council Codex-12/Opus-M6): the exception stays data-only and the remediation is
+        # composed here — the hard cap is the deterministic moment to name the promotion path, so a
+        # durable entry gets rescued into tier 2 instead of being dropped to make room.
+        return ToolResult(
+            state=RunState.ERROR,
+            summary="memory over its cap",
+            error=resolve(
+                "memory_cap_error",
+                deps.settings,
+                {"details": str(exc), "longterm": _promotion_clause(deps, agent, inp, stamps)},
+                stamps=stamps,
+            ),
+        )
     except MemoryWriteError as exc:
         return ToolResult(state=RunState.ERROR, summary="memory write failed", error=str(exc))
     return ToolResult(state=RunState.OK, summary=summary)
+
+
+def _promotion_clause(
+    deps: "Deps", agent: "AgentDef", inp: MemoryInput, stamps: dict[str, str] | None
+) -> str:
+    """The `{{longterm}}` value for the cap error: the `consolidation_promote` clause, or "" (§4b-4).
+
+    Two conditions, both required. The store must be PROMOTABLE — `state` is this agent's own mood,
+    which belongs in no shared corpus, so it never gets the clause. And the `core_memory` tool must be
+    effectively available, or the error would name a tool the model cannot call.
+
+    RECORDED APPROXIMATION: availability is judged at the agent's ALLOWLIST level (`Deps` owns that
+    check — §8-4 keeps this module out of the corpus's). Per-turn skill narrowing is not visible at
+    this boundary: a skill that temporarily hides `core_memory` would still get the clause. The
+    residual is a cosmetic mention of a tool this turn happens not to carry, weighed against the
+    alternative of threading turn state into the shared apply path the approve endpoint also calls."""
+    if inp.target == "state" or not deps.longterm_available(agent):
+        return ""
+    # Leading space: the clause is concatenated onto the details sentence, the `state_clause`
+    # precedent — so the off-rendering is byte-identical to the error text before tier 2 existed.
+    return " " + resolve("consolidation_promote", deps.settings, stamps=stamps)

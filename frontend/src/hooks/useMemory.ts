@@ -9,6 +9,36 @@ import { pushToast } from "../store/toast";
 // editor (mirrors the skills file API; blank content clears the file). The agent's own structured
 // edits go through the `memory` tool (7e-d-2) — these are the owner's manual edits, uncapped.
 
+/** The tier-2 long-term slot's own caps (config.yaml `memory.longterm.core.*`, D57 §6.1). The Conf
+ *  disclosure edits exactly these five fields and nothing else. */
+export interface CoreMemoryCfg {
+  root: string; // relative → under the memory dir; absolute honored (and then unversioned)
+  index_char_limit: number;
+  topic_char_limit: number;
+  recall_char_limit: number;
+  consolidation_nudge_pct: number;
+}
+
+/** The tier-2 slot (D57). `backend` is the ONLY switch — null = off — so the enable switch writes it
+ *  and there is no sibling bool to keep in sync. A future backend is a new value + a nested cfg. */
+export interface LongTermCfg {
+  backend: "core" | null;
+  core: CoreMemoryCfg;
+}
+
+/** What the corpus actually found on disk (`GET /api/memory/core/status`) — derived, never config,
+ *  which is why it has its own read-only route instead of riding the settings doc. */
+export interface CoreMemoryStatus {
+  enabled: boolean;
+  root: string | null; // null → the configured root was refused (see the server log)
+  topics: number;
+  skipped: number;
+  anomalies: string[];
+  index_chars: number;
+  index_char_limit: number;
+  index_pct: number;
+}
+
 /** The config.yaml `memory.*` block (caps + toggles), edited via PUT /api/settings. */
 export interface MemoryCfg {
   enabled: boolean;
@@ -22,6 +52,7 @@ export interface MemoryCfg {
   state_char_limit: number;
   reflection_enabled: boolean; // D27-C — periodic "save anything worth remembering" nudge (opt-in)
   reflection_interval: number;
+  longterm: LongTermCfg; // D57 — the tier-2 slot, nested inside `memory:` (never a top-level key)
 }
 
 /** One editable memory file: the global user profile or a single agent's memory. `key` is the React
@@ -73,6 +104,18 @@ export function useMemoryContent(slot: MemorySlot | null) {
     queryKey: ["memory-file", slot?.key],
     queryFn: () => getJSON<{ content: string }>(slot!.url),
     enabled: !!slot,
+    staleTime: 0,
+  });
+}
+
+/** The tier-2 corpus's scan status — fetched only while the Core Memory disclosure is open, and
+ *  refetched on mount so a hand-edited or freshly copied-in corpus shows its real state (the scan is
+ *  cached server-side behind the file signature, so an unchanged corpus costs a stat sweep). */
+export function useCoreMemoryStatus(open: boolean) {
+  return useQuery({
+    queryKey: ["core-memory-status"],
+    queryFn: () => getJSON<CoreMemoryStatus>("/api/memory/core/status"),
+    enabled: open,
     staleTime: 0,
   });
 }

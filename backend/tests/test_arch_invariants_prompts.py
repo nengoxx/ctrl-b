@@ -127,6 +127,14 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/automations/runner.py", "INTERRUPTED_NOTE"),
         ("app/services/automations/service.py", "ORPHAN_NOTE"),
     ),
+    "Class B — tool-level `description=` text, hoisted to a constant only because the tool picks "
+    "between two variants at runtime (`ToolSpec.describe`, D57 §4b-5). Same corpus and same editing "
+    "path as every inline `@action(description=…)` the sweep excludes structurally: `tool_overrides` "
+    "still overrides it, and §4b-5 rules routing/eligibility wording to live here rather than in the "
+    "registry": (
+        ("app/services/agent/memory_tool.py", "_DESCRIPTION_SOLO"),
+        ("app/services/agent/memory_tool.py", "_DESCRIPTION_TIERED"),
+    ),
     "data and file templates, not instructions": (
         ("app/api/agent.py", "_SKILL_TEMPLATE"),
         ("app/core/textmatch.py", "_STOP"),

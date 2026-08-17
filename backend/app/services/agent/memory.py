@@ -74,6 +74,15 @@ class FileMemoryProvider:
         #: The git backup (D26). It owns the process-wide lock that couples each file write to its
         #: commit; `NoopBackup` (lock only, no git) when none is injected so serialization still holds.
         self._backup: MemoryBackup = backup or NoopBackup()
+        #: The consolidation-nudge latch (D57 §4b-3, council Opus-H4): `(agent name, store key) → True`
+        #: for a store whose nudge has already fired this pressure episode. Keyed per (agent, store)
+        #: because the stores are per-agent — a bare store key would let one agent's pressure suppress
+        #: another's warning. Cleared only when that store's fill falls back under
+        #: `consolidation_nudge_pct` (ruled: NOT on write — a non-shrinking write would un-latch
+        #: mid-episode, while a shrinking one clears it through the fill check anyway). This provider is
+        #: a lifespan singleton, so the latch spans turns; a restart re-arms it, which costs at most one
+        #: extra warning per store and is documented as harmless.
+        self._nudged: dict[tuple[str, str], bool] = {}
 
     def _stores(self) -> list[StoreSpec]:
         """The store registry (D27) — all structural specs, regardless of enablement. A store is
@@ -137,7 +146,12 @@ class FileMemoryProvider:
                 return root / "agents" / agent.name
         return sub
 
-    def load_context(self, agent: AgentDef, stamps: dict[str, str] | None = None) -> str:
+    def load_context(
+        self,
+        agent: AgentDef,
+        stamps: dict[str, str] | None = None,
+        longterm_available: bool = False,
+    ) -> str:
         """The memory block injected each turn (after the prompt appends, D15 #4), or "" when the
         subsystem is off or every injected store is empty. Iterates the store registry PERSONA-first
         then FACTS (D27); each section carries a Hermes-style usage header (`## Agent memory (67% —
@@ -145,22 +159,35 @@ class FileMemoryProvider:
 
         `stamps` is the caller's prompt-stamp accumulator (Phase 18 / C-8), forwarded to the two
         prompts framing this block — the session passes its own, so the block's identity rides the
-        message the block fed."""
+        message the block fed.
+
+        `longterm_available` (D57 §4b-2) says whether the tier-2 `core_memory` tool is in THIS turn's
+        effective schema — only the session knows that, so it is passed in rather than looked up here.
+        True adds the promotion clause to the nudge: with a durable tier available, cap pressure is an
+        eviction with somewhere to rescue what matters, not just "make space". Default False keeps
+        every other caller's output byte-identical."""
         cfg = self._settings.memory
         if not cfg.enabled:
             return ""
         sections: list[str] = []
-        pressured: list[str] = []  # store labels at/over the nudge threshold (Slice 1b)
+        #: (spec, fill%) for each store at/over the nudge threshold whose latch is down (Slice 1b).
+        pressured: list[tuple[StoreSpec, int]] = []
         for spec in sorted(self._stores(), key=lambda s: _POSITION_RANK[s.position]):
             if not spec.injected or not self._store_enabled(spec):
                 continue
             body = _read(self._store_file(agent, spec))
+            cap = self._cap_for(spec)
+            pct = _pct(len(body), cap)
+            # The latch CLEAR runs for every enabled store, empty ones included — hence before the
+            # empty-body `continue` below (council confirm round): a store the owner blanked would
+            # otherwise stay latched forever and never warn again.
+            if pct < cfg.consolidation_nudge_pct:
+                self._nudged.pop((agent.name, spec.key), None)
             if not body:
                 continue
-            cap = self._cap_for(spec)
             sections.append(_section(spec.label, body, cap))
-            if _pct(len(body), cap) >= cfg.consolidation_nudge_pct:
-                pressured.append(f"{spec.label} ({_pct(len(body), cap)}%)")
+            if pct >= cfg.consolidation_nudge_pct and not self._nudged.get((agent.name, spec.key)):
+                pressured.append((spec, pct))
         if not sections:
             return ""
         # The registry owns the framing; the sections are this feature's data, concatenated after it
@@ -172,11 +199,30 @@ class FileMemoryProvider:
             nudge = resolve(
                 "consolidation_nudge",
                 self._settings,
-                {"pressured": ", ".join(pressured)},
+                {
+                    "pressured": ", ".join(f"{spec.label} ({pct}%)" for spec, pct in pressured),
+                    "longterm": self._promotion_clause(longterm_available, stamps),
+                },
                 stamps=stamps,
             )
             block += "\n\n" + nudge
+            # Latched only now, once the line has actually rendered (§4b-3): fire once per pressure
+            # episode, so an ignored suggestion doesn't become a permanent standing order in a head
+            # that re-renders every turn. The usage headers above still show the pressure — that is
+            # where the correction rides while fill stays high.
+            for spec, _fill in pressured:
+                self._nudged[(agent.name, spec.key)] = True
         return block
+
+    def _promotion_clause(self, available: bool, stamps: dict[str, str] | None) -> str:
+        """The nudge's `{{longterm}}` value: the `consolidation_promote` clause, or "" (§4b-2).
+
+        Its own registry id rather than an inline literal — the clause is a model-facing text ≥80
+        chars, which the Phase-18 arch sweep requires to live in the registry (council Opus-H1) — and
+        the key is ALWAYS present in the nudge's context, empty when tier 2 is off, so the tier-1
+        wording is byte-identical to a deployment without tier 2. The leading space is the
+        `state_clause` precedent: the clause is concatenated onto the sentence before it."""
+        return " " + resolve("consolidation_promote", self._settings, stamps=stamps) if available else ""
 
     def _spec_for(self, key: str) -> StoreSpec:
         """Look up a store spec by its `key`. An unknown/legacy key falls back to the agent memory
