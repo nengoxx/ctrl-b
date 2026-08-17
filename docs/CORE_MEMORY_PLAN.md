@@ -1,11 +1,13 @@
 # CORE_MEMORY_PLAN — the tier-2 long-term memory lane (spec of record, D57)
 
-> **Status: LOCKED as D57 2026-08-17 (owner) — S0 COMPLETE.** All rulings settled (§2a
-> 2026-08-16 + §2b 2026-08-17); the O4 promotion design grounded in
+> **Status: LOCKED as D57 2026-08-17 (owner) — ✅ S0–S5 COMPLETE, BUILT END TO END 2026-08-17**
+> (S1 `6b16545` · S2 `bd6b9fd` · S3 `ced9056` · S4 `30f00b4`; per-slice review records in §11,
+> the as-built appendix in §14; **shipped OFF by default — enabling is the §3b procedure**).
+> All rulings settled (§2a 2026-08-16 + §2b 2026-08-17); the O4 promotion design grounded in
 > [R39](./research/R39-cap-triggered-tier-promotion.md) (§4b); council round CLOSED (§13 — Codex
 > + adversarial Opus, both BUILD WITH CHANGES, every finding folded in place; confirm round
 > clean) and corroborated by [R40](./research/R40-claude-code-memory-source-specification.md)'s
-> source crosswalk. **Build S1–S5 per §11, pausing per slice.**
+> source crosswalk.
 > **Provenance:** the owner's external "Hermes Core Memory" design
 > (`~/Documents/Maia/40 Projects/2026-08-11-project-scoped-profile-memory-architecture/` —
 > SPEC/DECISIONS/LOG; Codex-authored + twice-adversarially-audited there; **read-only, never
@@ -506,8 +508,9 @@ compaction bounds accumulation; Claude's 60 KiB session cap belongs to the selec
   id; the arch sweep's 80-char floor is the codified owner-editability boundary);
   `MemoryCfg.core_memory_on()` is THE tier-2 predicate. *(Re-scoped at the council round — this
   slice carried most of the buildability gaps.)*
-- **S5 — Close-out.** DESIGN/SPEC/QUALITY updates; measured numbers (index tokens, cache_n across
-  a write — **manual measurement, no pytest seam**) into this file's as-built appendix; HANDOFF.
+- **S5 — Close-out. ✅ 2026-08-17.** DESIGN/SPEC/QUALITY updates; measured numbers into §14;
+  HANDOFF. The llama.cpp `cache_n`-across-a-write measure needs the live model host and is
+  **deferred to the owner's live round** (recorded in §14, not silently dropped).
 
 ## 12. Research provenance
 
@@ -571,3 +574,30 @@ Two independent reviews of this plan post-§4b, distinct lenses, run in parallel
   product-choice wording · chars-not-code-units on the read cap · the per-session recall cap as
   a §9 deliberate non-risk · the hand-edit reload boundary in §8-1); the rest were already
   council-covered or already the plan's posture.
+
+## 14. As-built appendix (S5, 2026-08-17)
+
+**The whole ladder shipped in ONE session, 2026-08-17** (owner amendment mid-run: continue
+autonomously between slices while context/budget allow; every slice still individually
+Codex-reviewed + full-gated): S1 `6b16545` · S2 `bd6b9fd` · S3 `ced9056` · S4 `30f00b4` (+ the
+per-slice docs commits). Review verdicts: S1 SHIP WITH FIXES (4 MED/5 LOW + 1 confirm residual) ·
+S2 SHIP WITH FIXES (3 LOW) · S3 **DO NOT SHIP** (2 HIGH/8 MED/2 LOW + 3 confirm residuals — the
+unreadable-index clobber and the read/hash race were real data-integrity bugs caught by review) ·
+S4 SHIP WITH FIXES (2 MED/3 LOW). Every finding folded or explicitly overruled in place; overrule
+reasoning lives in code comments at the flagged sites.
+
+**Measured (synthetic 56-topic corpus, hooks ~90 chars, emma, 2026-08-17):**
+- Rendered index: **5,688 chars (~1.4K tokens)**; with the `core_memory_policy` frame:
+  **6,301 chars (~1.6K tokens)** — 69% of the 8,192-char cap at the owner's real corpus scale.
+- Scan cache: 100 consecutive renders = **1 parse** (stat sweep only); one `create` = exactly
+  **1 re-parse**. The per-turn cost of the head block on an unchanged corpus is a stat sweep.
+- **Deferred:** the llama.cpp `cache_n` re-prefill measure across a corpus write (needs the live
+  local model + a dev instance; the design expectation from D15 #4/§4 is re-prefill from the
+  memory block onward only — verify at the owner's live round).
+
+**Feature state at close:** OFF by default everywhere (`memory.longterm.backend: null`);
+byte-identical prompt assembly while off (family 5 holds at every slice's gate). Enabling =
+one Conf switch; the §3b copy-in procedure is the migration path. Owner-court next steps: enable
+on prod when wanted · the live `cache_n` measure · first real consolidation run (the
+`consolidation` prompt id) · push the commit stack.
+

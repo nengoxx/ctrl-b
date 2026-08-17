@@ -31,7 +31,7 @@ design (D7) with a multi-theme engine on top (D28/D29/D31).
 |---|--------|-------------|--------|
 | P1 | **Fleet control** | Wake-on-LAN, ICMP liveness + latency, SSH shutdown/reboot, per-host service start/stop/restart, TCP service probes, open-service-URL, host/service CRUD from the UI | ✅ |
 | P2 | **Agent chat** | Streaming tool-loop chat (SSE), the full action registry as OpenAI tools, confirm-gated risky calls with suspend/resume, task plans (TodoWrite-style + clickable panel), clarifying questions, context compaction w/ selectable summarizer, per-message local/cloud switch, markdown replies | ✅ |
-| P3 | **Agent platform** | File-discovered **skills** (SKILL.md; user- & selector-invoked, toolset narrowing), folder-discovered **agents** (agent.yaml + SOUL.md persona; `/agent` switch + optional auto-routing), headless **subagents** (bounded parallel, privilege-clamped), **memory** (MEMORY/USER/STATE stores, cap headers, propose-or-auto-write, git-versioned), **session search** (FTS5), loop-discipline guards, self-managed skills (`skill_manage`) | ✅ |
+| P3 | **Agent platform** | File-discovered **skills** (SKILL.md; user- & selector-invoked, toolset narrowing), folder-discovered **agents** (agent.yaml + SOUL.md persona; `/agent` switch + optional auto-routing), headless **subagents** (bounded parallel, privilege-clamped), **memory** — tier 1 (MEMORY/USER/STATE stores, cap headers, propose-or-auto-write, git-versioned) + the opt-in tier-2 **Core Memory** corpus (shared markdown index + on-demand topic reads via `core_memory`, D57), **session search** (FTS5), loop-discipline guards, self-managed skills (`skill_manage`) | ✅ |
 | P4 | **Integrations** | MCP client (streamable-HTTP + stdio), generic OpenAPI tool servers, open-terminal remote shell/files, SearXNG `web_search`, embeddings client (seam), per-tool overrides (description + tri-state agent access), between-turn rediscovery | ✅ |
 | P5 | **Voice** | Push-to-talk dictation (STT proxy, 5-state mic), read-aloud TTS (per-bubble + auto-TTS, docked mini-player, blob cache), primary→fallback failover per service, capability-probed UI | ✅ |
 | P6 | **Config & ops** | Whole config editable in-app (masked secrets, comment-preserving writes, hot-apply), Tailscale Serve HTTPS toggle, live events feed + audit trail, guarded `!` shell escape hatch (opt-in), PWA install/update | ✅ |
@@ -188,6 +188,7 @@ confirms; policy-DENY always wins — precedence ladder specified in ACA).
 |---|---|---|---|
 | Built-in actions (`@action`) | wake/ping/shutdown/reboot/start/stop/restart/check_service/open_service_url/run_shell/tailscale_* | plain | decorator |
 | Cognitive builtins (`core=True`, always reachable) | `task_plan` · `question` · `memory` · `session_search` · `skill_manage` · `spawn_subagents` | plain | decorator |
+| Core Memory (D57, `core=False` — an allowlist may exclude it) | `core_memory` (`read`/`search`/`create`/`update`/`remove`/`delete` over the tier-2 corpus; hidden from the schema while `memory.longterm.backend` is null) | plain | decorator |
 | Utilities (`@tool`) | `web_search`, misc UI cards | plain | decorator |
 | open-terminal | `terminal_exec/read/write/list/grep/glob` | plain | **config per-op** (reads LOW, exec/write HIGH) |
 | MCP servers | discovered per server | `mcp__<server>__<tool>` | annotations (readOnly→LOW, destructive→HIGH) else server config |
@@ -195,7 +196,10 @@ confirms; policy-DENY always wins — precedence ladder specified in ACA).
 
 Per-tool **overrides** (`tool_overrides{name: {description, agent_mode}}`, D22) overlay the live
 specs; agent allowlists (`AgentDef.tools`, glob) + skill narrowing intersect it; `core` builtins
-survive both. Registry rebuilds only **between** turns (▹ ACA-17 closes the auto-path race).
+survive both. A **disabled feature's** tools are dropped *after* that union (`for_agent(hidden=…)`,
+D57 — applied identically at the schema set and the availability guard), and `ToolSpec.describe`
+lets a spec render its description from live settings (the tier-aware `memory` wording). Registry
+rebuilds only **between** turns (▹ ACA-17 closes the auto-path race).
 
 ### 4.4 Design-pattern catalog (named, verified in code)
 
@@ -401,8 +405,9 @@ $CTRLB_HOME/
 ├── skills/<name>/SKILL.md # global skills (frontmatter + instructions)
 ├── agents/<slug>/         # specialists: agent.yaml (overrides) + SOUL.md + skills/
 └── memories/              # ← local git repo (D26, auto-commit + external-edit sweep)
-    ├── MEMORY.md USER.md STATE.md      # default agent + global stores (capped, § entries)
-    └── agents/<slug>/MEMORY.md STATE.md
+    ├── MEMORY.md USER.md STATE.md      # tier 1: default agent + global stores (capped, § entries)
+    ├── agents/<slug>/MEMORY.md STATE.md
+    └── core/                           # tier 2 (D57, opt-in): MEMORY.md routing index + topic files
 ```
 
 ### 6.3 Config surface (`config.yaml` sections)
@@ -414,7 +419,8 @@ $CTRLB_HOME/
 | `inference` | the chat chain: `provider` primary + ordered `fallbacks[]` (each a `{provider, model?}` ref, D48), prompts, failover, transient chat-stream retry budget (`retry_attempts` global + per-provider override, D43) | rebuild-on-change (retries hot at next turn) |
 | `providers{}` | the endpoint catalog every section refs by name (D48/A11): `base_url`/`api_key`/`api_mode`/`models{}`, the per-**server** request gate (`max_concurrent_requests`, D40 as amended by D48 §C4 — keyed by canonical base_url, shared by chat+voice+embeddings), per-model `context_window` + `max_tokens_field` (D42) | rebuild-on-change (window auto-probed from llama.cpp `/props`) |
 | `agent` | defaults (AgentDef base incl. `max_parallel_tools`, D40, + failure-fallback `routing` — `lead`/`failure_threshold`/`fallback_turns`, the global `agent.defaults.routing`, D43), compaction v2 (`threshold_frac`/`keep_recent_tokens`/`clear_output_min_tokens`/`clear_keep_steps`/`max_consecutive_failures`/`reserve_output` + `threshold_tokens` no-window fallback, D42), ModelRef call config (`max_tokens`/`reasoning_effort`/`reasoning_tokens`, D42/A10), skills, subagent caps, streaming mode, auto-route, durable-turn + steer-queue knobs (`turns.*` incl. `steer_queue_max`, D41) | live (compaction/window/routing edits apply at the next turn — D42 Inv-11) |
-| `memory` | stores, caps, auto-write, nudges, reflection, git backup | live |
+| `memory` | tier-1 stores, caps, auto-write, nudges, reflection, git backup **+ the tier-2 slot `longterm{backend, core{root, index_char_limit, topic_char_limit, recall_char_limit, consolidation_nudge_pct}}`** (D57 — `backend` is the only switch, null = off) | live |
+| `prompts{}` | per-prompt overrides keyed by the registry id (Phase 18/D56; **23 ids** — D57 adds `core_memory_policy`, `core_memory_recall`, `consolidation`, `consolidation_promote`, `memory_cap_error`) | live |
 | `voice` / `searxng` / `embeddings` / `open_terminal` | endpoints + per-op risk | rebuild-on-change |
 | `shell` / `tailscale` | the two guarded escape hatches | live |
 | `mcp_servers[]` / `openapi_servers[]` | remote toolsets | between-turn rediscovery |
@@ -488,8 +494,9 @@ activity, EventBus, 15 s keepalive) with client auto-reconnect + reconcile.
 |---|---|
 | hosts / services | list + status + CRUD (comment-preserving YAML edits) + wake/shutdown/reboot/start/stop/restart via actions |
 | actions / tools | catalog (specs + schemas + retry_safe) · `POST /actions/invoke` (UI two-step confirm) |
-| agent | threads CRUD · `chat` · `resume` · `compact` (D42: `instructions?` in → `{removed, summaryId?, truncated?, rejected?}` out) · `plan` · `apply` · `exec` (!) · skills CRUD · agents CRUD (+SOUL, memory stores) · default-prompt (`chat`/`exec` → **202 steer-enqueue** when the thread runs a chat/resume turn, D41) |
+| agent | threads CRUD · `chat` · `resume` · `compact` (D42: `instructions?` in → `{removed, summaryId?, truncated?, rejected?}` out) · `plan` · `apply` · `exec` (!) · skills CRUD · agents CRUD (+SOUL, memory stores) · `GET /memory/core/status` (tier-2 corpus status — derived, read-only, D57) · default-prompt (`chat`/`exec` → **202 steer-enqueue** when the thread runs a chat/resume turn, D41) |
 | settings | `GET/PUT /settings` (masked/hot-apply) · `GET /appearance` |
+| prompts | `GET /prompts` (Phase 18: every registry id + label + effective template + placeholders — read-only; edits ride `PUT /settings` `prompts:`) |
 | integrations | MCP/OpenAPI CRUD · `rediscover` (409 while turn active) · status |
 | voice | `status` · `stt` · `tts` |
 | events / access / health | audit list + SSE · Tailscale Serve control · health |
@@ -501,7 +508,7 @@ activity, EventBus, 15 s keepalive) with client auto-reconnect + reconcile.
 ctrl-b/
 ├── backend/
 │   ├── app/ {api, services(/actions, /agent), core, adapters, domain, config.py, db.py, main.py, runtime.py}
-│   ├── tests/               # 37 files + conftest, decision-pinned (test_*_d26 …) + drift guards
+│   ├── tests/               # 108 files + conftest, decision-pinned (test_*_d26 …) + drift guards
 │   └── pyproject.toml       # exact pins · ruff (py314) · pyright[nodejs]
 ├── frontend/
 │   ├── src/ {api, components, hooks, lib, store, tabs, theme(-engine)/{kit,…}, themes/{vapor,minimal,cosmos}}

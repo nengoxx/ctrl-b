@@ -18,44 +18,43 @@
   released 2026-08-16; owner eyeball ✅. **⚠ v1.7.0 is tagged but NEVER DEPLOYED — NOT a rollback
   target; rollback = v1.6.0** (schema-6 DB is back-compatible; the deeper floor stays **v1.5.1
   EXACTLY** — sw.js). Prod DB schema 6.
-- **Phase 20 Core Memory: DESIGN LOCKED as D57; S0 + S1 COMPLETE 2026-08-17.** Spec of record =
-  [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (all rulings §2a/§2b · the §4b promotion design ·
-  §13 council record — Codex + adversarial Opus, both BUILD WITH CHANGES, folded, confirm clean).
-  Evidence: R37/R38 + **R39** (cap-triggered promotion field pass) + **R40** (the owner's personal
-  agent's complete Claude Code memory source spec + crosswalk — corroborates the mechanism).
-  D57 in DECISIONS.md; ROADMAP §B1 rewritten to the tier model; TODO Phase 20 stanza added;
-  **the parked hardening charter renumbered to D58.**
-- Tree: `main` **~11 commits ahead of origin, not pushed** (the 5 Phase-19 spec commits + the
-  Core Memory stack `69847f9` · `0a904ac` · `4c5de73` · `ccf5c82` · `3d16310` + the S0 lock
-  commit) — push needs owner confirmation. **`docs/research/R40-…md` has uncommitted working-tree
-  edits from the owner's personal agent — leave them; that agent commits its own work.** Dev units
-  stopped (on-demand: `systemctl --user start ctrl-b-dashboard-dev{,-web}`, :5434 + Vite :5173).
+- **Phase 20 Core Memory: ✅ BUILT END TO END 2026-08-17 (D57, S0–S5 all complete in one
+  session).** Spec of record + per-slice review records + the as-built appendix =
+  [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (§11 ladder ✅ · §14 appendix with the measured
+  numbers). Ships **OFF by default** (`memory.longterm.backend: null`; byte-identical prompt
+  assembly while off, gate-proven); enabling = one Conf switch; adopting a Claude corpus = the
+  §3b copy-in procedure (incl. the one-time prod `.gitignore` reconcile). Every slice was
+  Opus-implemented from a pinned brief, Codex-reviewed (S3's review found 2 real HIGHs —
+  DO NOT SHIP → fixed + confirm round), and full-gated. D57 in DECISIONS.md; ROADMAP §B1 =
+  the tier model; **the parked hardening charter renumbered to D58.**
+- Tree: `main` **~24 commits ahead of origin, not pushed** (the 5 Phase-19 spec commits + the
+  whole Core Memory stack: S0 lock docs + S1–S5 code/docs pairs) — push needs owner confirmation.
+  Dev units stopped (on-demand: `systemctl --user start ctrl-b-dashboard-dev{,-web}`, :5434 +
+  Vite :5173).
 - Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) (frozen, 2026-05 → 2026-08).
 
-## ▶▶ NEXT SESSION — Phase 20 S2 (⏸ owner go-ahead pending)
+## ▶▶ NEXT — Phase 20 is DONE; the owner court is up
 
-**S1 ✅ BUILT + REVIEWED + COMMITTED 2026-08-17 (`6b16545`)** — corpus module read-only, 26 tests,
-full gate green; Codex round (SHIP WITH FIXES, 4 MED/5 LOW) + confirm round both folded; per-slice
-as-built note in the plan's §11 S1 entry. **⏸ Owner pause — S2 (head injection: the lifespan
-singleton, `core_memory=` kwarg at both construction sites, the static-head block,
-`core_memory_policy`, byte-identical-when-off) starts on go-ahead**, per the §11 ladder. The usual
-workflow: Opus subagents implement from pinned briefs; Codex reviews the slice; main seat
-reconciles.
+**The whole D57 ladder is built, reviewed and committed** (see the Current-state bullet). What
+remains is owner-court, in the owner's order:
 
-**After S1 (standing order):**
-
-1. **S2–S5** per the ladder, paused per slice.
-2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (still untested,
+1. **Push the commit stack** (~24 ahead) — needs the owner's word, as always.
+2. **Drive Core Memory for real**: enable it on dev/prod (one Conf switch), copy the real vault
+   in per §3b (the pre-copy `.gitignore` step first on prod!), eyeball the Conf status line +
+   the injected index, try a `read`/`create`/promotion, run the `consolidation` procedure once.
+   The **live `cache_n`-across-a-write measure** (plan §14's one deferred number) rides this
+   round — needs the local model host up.
+3. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (still untested,
    owner-confirmed 2026-08-12): SYS-19 meant `showNotification()` never had a registered worker;
    it may just work on ≥v1.6.0. Outcome decides the parked Web Push plan (R10/R11).
-3. **Phase 19 — the hardening pass — PARKED, owner-gated, deliberately BEHIND Phase 20** (owner,
-   2026-08-17). [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is spec-complete; at wake: its §10
-   owner court + the §3b delta council check; locks as **D58**.
-4. **Gacha banked follow-ups** (owner-eyeball-heavy): the color-theory unit-palette research
+4. **Phase 19 — the hardening pass — now NEXT IN LINE (Phase 20 done), still owner-gated**
+   (owner, 2026-08-17). [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is spec-complete; at wake: its
+   §10 owner court + the §3b delta council check; locks as **D58**.
+5. **Gacha banked follow-ups** (owner-eyeball-heavy): the color-theory unit-palette research
    session · root-cross-fade flicker refinement · the R20/R21 addenda LOWs · kit minimal
    plan/player overlap (VAPOR_ASSIMILATION_PLAN §7.1) · the standing ledger below.
-5. **The R28 installed-icon improvement** — ⏸ owner-gated; R28 §9 is the ready-to-build brief.
-6. **Fleet-liveness decoupling from Tailscale** (owner-gated; the D47 seam) — only if the
+6. **The R28 installed-icon improvement** — ⏸ owner-gated; R28 §9 is the ready-to-build brief.
+7. **Fleet-liveness decoupling from Tailscale** (owner-gated; the D47 seam) — only if the
    cold-boot wake blindness recurs.
 
 **Owner-side standing items:** actually *edit a prompt or two* on prod (the Phase 18 feature's

@@ -164,6 +164,7 @@ class ToolSpec(BaseModel):
     agent_exposed: bool = True
     ui_exposed: bool = False           # shows as a Utils card / host button
     timeout_s: float | None = None
+    describe: Callable[[Settings], str] | None = None   # live description from Settings (D57)
 
 class Tool(Protocol):
     spec: ToolSpec
@@ -177,6 +178,7 @@ class InvocationContext:               # passed to every tool — the "world han
     confirm_token: str | None          # present once the user approved
     settings: "Settings"
     deps: "Deps"                       # adapters: ssh, wol, db, clients, event_bus...
+    recall: "RecallBudget | None"      # the turn's Core Memory recall budget (D57 §4) — None outside a turn
     cancel: anyio.CancelScope
 ```
 
@@ -211,6 +213,13 @@ class McpTool:                          # adapter: remote MCP tool → Tool
 **Why unified:** the agent never special-cases "is this an action or a tool or MCP" — it sees one
 list. UI buttons render `ui_tools()`. Permission logic is identical for all. Adding any capability
 is one registration.
+
+**Live descriptions & feature hiding (D57).** `ToolSpec.describe(settings)` renders a spec's
+description from **live `Settings`** when a feature flips (the `memory` tool's tier-aware wording);
+`tool_overrides` still wins over both. `ToolRegistry.for_agent(..., hidden=…)` drops the tools of a
+**disabled feature** *after* the core/allowlist union — so a `core` builtin can be hidden too — and
+the session passes the same set at both consumers (the schema set and the availability guard), so
+what the model is offered and what it may run can never disagree.
 
 ### Permission policy (pure)
 
@@ -713,16 +722,66 @@ class MemoryProvider(Protocol):
 - **Files (under `$CTRLB_HOME`):** per-agent `agents/<name>/memories/MEMORY.md` (default agent →
   root `memories/MEMORY.md`) + a **global** `memories/USER.md`. `memories/` is gitignored.
 - **Injection:** `load_context()` output is emitted in `_assemble` **right after the appends**
-  (order: SOUL.md → appends → **memory** → roster → skills → history), frozen per turn. Rendered
-  **Hermes-style** — per-section usage header (`## Agent memory (67% — 1,474/2,200)`) + `§` between
-  entries (D15 #4).
+  (as-built order: SOUL.md → appends → roster → **memory** → core index (D57) → skills → history),
+  frozen per turn. Rendered **Hermes-style** — per-section usage header
+  (`## Agent memory (67% — 1,474/2,200)`) + `§` between entries (D15 #4).
 - **`memory` tool** (builtin, sibling of `skill_manage`): `add`/`replace`/`remove`, `target:
   memory|user`, substring `old_text`, **no read** (memory is in the prompt). **Autonomous auto-write**
   (`memory.auto_write` default ON; OFF → non-blocking *propose*, never gates the turn). Caps
   `memory.memory_char_limit` (2200) / `memory.user_char_limit` (1375) — over-cap raises so the agent
   consolidates (no silent drop). Audited as Events.
 - **Recall tier:** `session_search` (FTS5 over `messages`, redacted, global; D15 #7) — *not* a memory
-  file. **Vector** ("both" mode) = the SQLite `memory` table + the embeddings client, a later drop-in.
+  file. **Vector** = a *future tier-2 backend* behind the D57 slot below (the earlier "both" mode is
+  superseded by the tier model), on the SQLite `memory` table + the embeddings client.
+
+### 6.1 Tier 2 — Core Memory (D57; spec of record: [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md))
+
+> The memory above is **tier 1** (always on, capped, fully injected). **Tier 2** is *one selectable
+> long-term backend at a time*; Core Memory is the first: one **shared, Claude-Code-shaped markdown
+> corpus** (a `MEMORY.md` routing index + semantic topic files) that is **read on demand**, never
+> injected whole. `memory.longterm.backend` (`null` = off, `"core"` = on) is the **only** switch;
+> its settings live in `memory.longterm.core` (`root` = `core` under `memories/` → versioned by the
+> D26 repo · `index_char_limit` 8192 · `topic_char_limit` 4096 · `recall_char_limit` 20480 ·
+> `consolidation_nudge_pct` 80 — all **characters**, all read live, no restart). Off ⇒ prompt
+> assembly is byte-identical to tier-1-only.
+
+- **Not a `MemoryProvider`** (no query param, no store keys — the D27 "adding a store" checklist does
+  not apply). `CoreMemoryCorpus` (`services/agent/core_memory.py`) is a **sibling subsystem**: one
+  lifespan singleton handed to `AgentSession` as a **`core_memory=` kwarg** (both construction sites),
+  sharing tier 1's `MemoryBackup.guard()` lock + D26 commits. It owns the recursive scan (tolerant
+  frontmatter — top-level wins over nested `metadata.*`), the signature-cached index render/clamp,
+  per-operation path confinement, and the CAS writes.
+- **Injection:** `_core_index_block()` = the `core_memory_policy` prompt + `render_index()` (the
+  clamped, normalized entries under a tier-1-style usage header that names cap pressure at
+  `consolidation_nudge_pct`), appended in `_static_prefix` **between the memory block and the skills
+  note** — same cache class as memory (memory-adjacent, so a write re-prefills from there on) and
+  frozen per turn, so a mid-turn corpus write reaches the model through its *tool result* and the
+  head on the next turn.
+- **`core_memory` tool** (`services/agent/core_memory_tool.py`, `Risk.LOW`, `core=False`,
+  `timeout_s=30`) — six actions: `read(path)` (capped, returns the content hash) · `search(query)`
+  (literal case-insensitive grep over bodies + frontmatter) · `create(name, description, type,
+  content)` (structured fields; the service renders the frontmatter) · `update(path, old_text,
+  new_text)` / `remove(path, old_text)` (exact unique-substring CAS) · `delete(path, content_hash)`.
+  Topic content enters as ordinary **tool results** framed by `core_memory_recall` (visible,
+  persisted, replay-stable). Mutations honor `memory.auto_write` (off ⇒ steering error) and a
+  `Settings.secret_values()` containment gate evaluated over the **complete resulting file**;
+  topic+index writes are ordered for idempotent retry, deliberately **not** transactional.
+- **Recall budget:** one `RecallBudget` per **logical turn**, owned by the session and threaded onto
+  `InvocationContext.recall` through `ActionService.invoke` (exactly like the prompt stamps); every
+  read/search adds the length of its *complete framed* output, and a resume re-seeds `used` from that
+  turn's persisted core-memory results, so a confirm round-trip is not a fresh allowance.
+- **Exposure = two layers:** deny-at-invoke when disabled, plus `for_agent(hidden=…)` applied at both
+  the schema set and the availability guard (§3).
+- **Promotion (tier-1 cap pressure → tier 2):** the standing routing clause in `core_memory_policy` ·
+  the `{{longterm}}` clause (`consolidation_promote`) rendered into tier 1's `consolidation_nudge`,
+  latched once per pressure episode per `(agent, store)` on the `FileMemoryProvider` singleton and
+  cleared only on a fill drop · `memory_cap_error` resolved at the `memory` tool boundary · and tier
+  1's `memory` description / `reflection_nudge` switching to short-horizon wording — each rendered
+  only while the tool is effectively available. Curation is an **owner-invoked chat procedure** (the
+  `consolidation` prompt id), not a background pass.
+- **Conf:** an enable switch (it writes `backend`) + the five `core.*` fields, plus a derived status
+  line from `GET /api/memory/core/status` (topics parsed / skipped / anomalies / index fill) — the
+  settings GET carries config, never derived data.
 
 ---
 
@@ -1053,6 +1112,7 @@ privilege → gated calls hit notify-park/fallback → results to a thread + Eve
 | **Skill** | drop `skills/<name>/SKILL.md` (+ resources). Discovered automatically. |
 | **Agent** | create a folder `$CTRLB_HOME/agents/<name>/` (`agent.yaml` + `SOUL.md`) — discovered automatically, **folder-only, no config list** (D14/D15); selectable per chat/automation; usable as a subagent. |
 | **Memory backend** | implement `MemoryProvider`, register under a key; select in settings. |
+| **Long-term (tier-2) memory backend** | one new `memory.longterm.backend` value + its nested cfg object beside `core` (D57 §6); the slot's interface is what the loop consumes — a static-head block + a tool surface — formalized only when backend #2 is real. |
 | **Notification channel** | implement `NotificationChannel`, register; toggle in settings. |
 | **Inference/STT/TTS/embeddings backend** | it's just another OpenAI-compatible `base_url` in settings — no code. |
 | **Strategy swap** (skill-select / orchestration) | implement the `Protocol`, register, select in settings. |
