@@ -319,6 +319,27 @@ arm is banked (§10).
 | Conf UI | `MemoryEditor.tsx` + `ConfTab` memory group; the Compaction group's `ModelRef` picker pattern (future selector arm) | a Core Memory disclosure: enable switch (writes `backend`), resolved-root + "N topics parsed / M skipped / anomalies" status via a **new read-only status endpoint** (settings GET carries no derived data — council M8; exact route named in S4), caps. No per-topic editor in v1 (files are owner-editable on disk/Obsidian; the D26 sweep commits hand edits). |
 | Docs | — | D57 · ROADMAP §B1 rewritten to the tier model (the "progressive memory index" deferred bullet at `ROADMAP.md:360` is lifted INTO this plan — it is literally this feature) · TODO Phase 20 stanza · DESIGN §6 + SPEC inventories at ship time. |
 
+### 6.1 The config shape, concretely (normative for S1)
+
+Everything lives **inside the existing `memory:` section** — no new top-level key, no sibling
+switch. Off by default; enabling = setting `backend`:
+
+```yaml
+memory:
+  # ... existing tier-1 fields, untouched ...
+  longterm:                    # the tier-2 slot (D57)
+    backend: null              # null = OFF (default) | "core"; future backends = new values
+    core:
+      root: core               # relative → under memories_dir; absolute honored (unversioned)
+      index_char_limit: 8192
+      topic_char_limit: 4096
+      recall_char_limit: 20480
+      consolidation_nudge_pct: 80
+```
+
+All tunables in config (no constants); pure-additive so no migration step; `config.example.yaml`
+carries the commented block; the Conf disclosure edits exactly these fields and nothing else.
+
 ## 7. Conflicts found and resolved (from the fit audit; renumbered post-mechanism-change)
 
 Resolved by the mechanism/rulings: selector latency + aux-call gating (no selector), P3 user-vs-
