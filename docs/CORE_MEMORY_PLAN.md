@@ -443,8 +443,16 @@ compaction bounds accumulation; Claude's 60 KiB session cap belongs to the selec
   As-built notes: the policy default carries the §4b-1 routing clause (written final at S2, so S4
   never edits it); exactly two `AgentSession(` sites exist and both wire the kwarg; the shared
   singleton is re-entrancy-safe (no await inside `render_index`/`scan`, one event loop).
-- **S3 — Tool.** All six actions + CAS + grep + index maintenance + secret gate + two-layer
-  exposure gating + `core_memory_recall` framing. Families 2 (reads), 3, 4.
+- **S3 — Tool. ✅ 2026-08-17** (`ced9056`). All six actions + CAS + grep + index maintenance +
+  secret gate + two-layer exposure gating + `core_memory_recall` framing. Families 2 (reads), 3,
+  4. Review: Codex adversarial security pass DO NOT SHIP (2 HIGH — unreadable-index clobber,
+  read/hash race — + 8 MED + 2 LOW) → all reconciled + fixed; confirm round's 3 residuals folded.
+  As-built notes for later slices: **steer rows now carry `Message.steer`** (the meta one-more-key
+  path) so the recall seed finds the true turn boundary; the recall budget threads
+  `invoke(recall=)` like stamps; mutations run in a shielded guarded task (deadline-cancel-proof);
+  metadata edits refresh their index line (custom hooks preserved; the crash residual is recorded
+  in §5); 3 overrules recorded in code (no secret gate on writes that don't happen / removal-only
+  index writes; no filesystem-identity path check — lexical closure only).
 - **S4 — Curation + Conf.** The §4b promotion backstops (`consolidation_promote` resolved into
   `consolidation_nudge`'s `{{longterm}}` · the provider latch · `memory_cap_error` at the tool
   boundary · the conditional tier-1 tool-description/`reflection_nudge` wording); index
