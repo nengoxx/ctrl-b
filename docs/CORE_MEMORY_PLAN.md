@@ -491,12 +491,20 @@ compaction bounds accumulation; Claude's 60 KiB session cap belongs to the selec
   metadata edits refresh their index line (custom hooks preserved; the crash residual is recorded
   in §5); 3 overrules recorded in code (no secret gate on writes that don't happen / removal-only
   index writes; no filesystem-identity path check — lexical closure only).
-- **S4 — Curation + Conf.** The §4b promotion backstops (`consolidation_promote` resolved into
-  `consolidation_nudge`'s `{{longterm}}` · the provider latch · `memory_cap_error` at the tool
-  boundary · the conditional tier-1 tool-description/`reflection_nudge` wording); index
-  cap-pressure nudge; `consolidation` prompt id + documented owner procedure; Conf disclosure +
-  the read-only status endpoint (route named here); copy-in migration doc. Family 1 (copy-in
-  fixture) + family 4 (latch + code-path invariant). *(Re-scoped at the council round — this
+- **S4 — Curation + Conf. ✅ 2026-08-17** (`30f00b4`). The §4b promotion backstops
+  (`consolidation_promote` resolved into `consolidation_nudge`'s `{{longterm}}` · the provider
+  latch · `memory_cap_error` at the tool boundary · the conditional tier-1
+  tool-description/`reflection_nudge` wording); index cap-pressure nudge; `consolidation` prompt
+  id + the §3b owner procedure; Conf disclosure + `GET /memory/core/status`; copy-in migration
+  doc. Family 1 (copy-in fixture at the 56-topic scale) + family 4 (latch). Review: Codex SHIP
+  WITH FIXES (2 MED, 3 LOW — all folded). As-built notes: availability = the session's
+  `_longterm_available()` (rides `_tool_allowed`, so skill narrowing is exact there; the
+  `memory`-tool cap-error boundary uses `Deps.longterm_available()`, allowlist-level — the one
+  recorded approximation); `ToolSpec.describe` is the generic live-description seam
+  (`apply_tool_overrides` re-runs on every save while any spec carries it); the reflection
+  routing clause is a sub-80-char precomputed literal (the `state_clause` precedent — NOT a 6th
+  id; the arch sweep's 80-char floor is the codified owner-editability boundary);
+  `MemoryCfg.core_memory_on()` is THE tier-2 predicate. *(Re-scoped at the council round — this
   slice carried most of the buildability gaps.)*
 - **S5 — Close-out.** DESIGN/SPEC/QUALITY updates; measured numbers (index tokens, cache_n across
   a write — **manual measurement, no pytest seam**) into this file's as-built appendix; HANDOFF.
