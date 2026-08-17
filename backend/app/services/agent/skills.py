@@ -47,7 +47,10 @@ def valid_skill_slug(name: str) -> bool:
     return bool(SKILL_SLUG.match(name))
 
 
-_FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
+#: `---`-fenced YAML frontmatter then the markdown body. Public (D57): the Core Memory corpus reads
+#: the same shape out of its topic files, and one regex is one source of truth for "what a frontmatter
+#: block is" across the two subsystems.
+FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
 
 
 def _parse_skill_md(path: Path, fallback_name: str) -> Skill | None:
@@ -60,7 +63,7 @@ def _parse_skill_md(path: Path, fallback_name: str) -> Skill | None:
         return None
     meta: dict = {}
     body = raw
-    m = _FRONTMATTER.match(raw)
+    m = FRONTMATTER_RE.match(raw)
     if m:
         try:
             parsed = yaml.safe_load(m.group(1)) or {}

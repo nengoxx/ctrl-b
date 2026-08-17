@@ -33,6 +33,7 @@ from app.core.memory import (
     store_by_key,
 )
 from app.domain.agent import AgentDef
+from app.services.agent import core_memory
 from app.services.agent.memory_backup import NoopBackup
 from app.services.agent.prompts import resolve
 
@@ -116,15 +117,25 @@ class FileMemoryProvider:
     def _agent_memory_dir(self, agent: AgentDef) -> Path:
         """A specialist's memory directory, resolved **relative to** the memory-dir root. An absolute or
         `..`-escaping `AgentDef.memory_dir` is rejected → the safe default `agents/<slug>`, so every
-        memory file stays inside the one repo (D26 #2)."""
+        memory file stays inside the one repo (D26 #2). Same fallback when it overlaps an active Core
+        Memory corpus root (D57): `memory_dir` makes the reserved tier-1 set dynamic, so the corpus's
+        static root validation can't see it — this side yields instead, else one agent's `MEMORY.md`
+        could double as the tier-2 index."""
         root = self._settings.memories_dir_path()
         rel = getattr(agent, "memory_dir", None) or f"agents/{agent.name}"
         sub = root / rel
         try:
-            if not sub.resolve().is_relative_to(root.resolve()):
-                sub = root / "agents" / agent.name
+            resolved = sub.resolve()
+            if not resolved.is_relative_to(root.resolve()):
+                return root / "agents" / agent.name
         except OSError:
-            sub = root / "agents" / agent.name
+            return root / "agents" / agent.name
+        if self._settings.memory.longterm.backend == "core":
+            core_root, _why = core_memory.validated_root(self._settings)
+            if core_root is not None and (
+                resolved.is_relative_to(core_root) or core_root.is_relative_to(resolved)
+            ):
+                return root / "agents" / agent.name
         return sub
 
     def load_context(self, agent: AgentDef, stamps: dict[str, str] | None = None) -> str:

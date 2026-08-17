@@ -395,6 +395,33 @@ class MemoryGitCfg(BaseModel):
     reconcile_interval_s: int = Field(default=120, ge=0)  # external-edit sweep cadence; 0 = off
 
 
+class CoreMemoryCfg(BaseModel):
+    """Core Memory (D57) — the first tier-2 backend: one shared, Claude-Code-native markdown corpus
+    (a `MEMORY.md` routing index + semantic topic files) read on demand instead of injected whole.
+    `root` relative → resolved against `memories_dir_path()` (so the D26 repo versions it); absolute
+    honored but unversioned. All caps are **characters**, all read live (no restart)."""
+
+    model_config = {"extra": "allow"}
+
+    root: str = "core"  # corpus root; relative → under the memory dir, absolute honored
+    index_char_limit: int = Field(default=8192, ge=1)  # rendered index block cap (Kilo's bound)
+    topic_char_limit: int = Field(default=4096, ge=1)  # per-`read` topic cap (S3)
+    recall_char_limit: int = Field(default=20480, ge=1)  # per-turn total recall cap (S3)
+    consolidation_nudge_pct: int = Field(default=80, ge=1, le=100)  # index cap pressure → nudge (S4)
+
+
+class LongTermCfg(BaseModel):
+    """The tier-2 long-term memory slot (D57). Tier 1 (the file memory above) is always on; tier 2 is
+    **one selectable backend at a time** — `backend` is the ONLY switch (null = off, the Conf enable
+    switch writes it; no sibling bool). A future backend is one new Literal value + one nested cfg
+    object beside `core`, never a parallel flat key."""
+
+    model_config = {"extra": "allow"}
+
+    backend: Literal["core"] | None = None  # null = tier 2 off (default)
+    core: CoreMemoryCfg = Field(default_factory=CoreMemoryCfg)
+
+
 class MemoryCfg(BaseModel):
     """File-based agent memory (7e-d, D14/D15 #4). Per-agent `MEMORY.md` (isolated) + a global
     `USER.md` (the owner profile, shared across agents), injected into each turn's system context
@@ -435,6 +462,9 @@ class MemoryCfg(BaseModel):
     # nudge + state). Gated by the master `enabled` switch too.
     reflection_enabled: bool = False
     reflection_interval: int = Field(default=10, ge=1)  # user turns between reflection nudges
+    #: The tier-2 long-term slot (D57) — off by default; everything about it nests here rather than
+    #: adding a top-level key, so tier 1 and tier 2 stay one `memory:` section.
+    longterm: LongTermCfg = Field(default_factory=LongTermCfg)
 
 
 class EmbeddingsCfg(BaseModel):

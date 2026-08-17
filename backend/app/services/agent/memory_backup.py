@@ -42,6 +42,9 @@ clients/
 *_prompt.*
 # atomic-write temp files (orphaned only if the process dies mid-write)
 .tmp-*
+# foreign artifacts of a copied-in Core Memory corpus (D57 §3) — never ours to version
+logs/
+.consolidate-lock
 # OS / editor cruft
 .DS_Store
 Thumbs.db
