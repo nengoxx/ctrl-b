@@ -17,6 +17,7 @@ from app.adapters.searxng import SearxngClient
 from app.config import Settings
 from app.core.memory import MemoryProvider
 from app.core.skills import SkillProvider, SkillSelector
+from app.services.agent.core_memory import CoreMemoryCorpus
 from app.services.automations import AutomationService
 from app.services.conversation import MessageRepo, ThreadRepo
 from app.services.events import EventService
@@ -47,6 +48,10 @@ class Deps:
     skills: SkillProvider | None = None
     selector: SkillSelector | None = None
     memory: MemoryProvider | None = None  # file-based agent memory (Phase 7e-d); read each turn
+    #: The tier-2 long-term corpus (D57/Phase 20), a SIBLING of `memory` rather than a store inside
+    #: it. Here only so the subagent path can hand it to the child session — the session takes it as
+    #: a `core_memory=` kwarg, never off `Deps` (CORE_MEMORY_PLAN §6, council M5).
+    core_memory: CoreMemoryCorpus | None = None
     subagent_sem: asyncio.Semaphore | None = None
     #: The ONE automations writer/reader (A3 14d), for the `create_automation`/`list_automations`
     #: builtins. Imported directly (unlike `actions` above) because nothing under

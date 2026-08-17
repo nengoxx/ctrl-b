@@ -221,6 +221,7 @@ async def run_subagent(
         skills=deps.skills,
         selector=deps.selector,
         memory=deps.memory,
+        core_memory=deps.core_memory,  # live everywhere, subagents included (D57 ruling O1)
         interactive=False,
         depth=depth,
         origin=origin,

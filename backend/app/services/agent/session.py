@@ -85,6 +85,7 @@ from app.services.agent.compaction import (
     estimate_payload_tokens,
     plan_clearing,
 )
+from app.services.agent.core_memory import CoreMemoryCorpus
 from app.services.agent.exec import run_user_exec
 from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
@@ -371,6 +372,7 @@ class AgentSession:
         skills: SkillProvider | None = None,
         selector: SkillSelector | None = None,
         memory: MemoryProvider | None = None,
+        core_memory: CoreMemoryCorpus | None = None,
         interactive: bool = True,
         depth: int = 0,
         steer_source: SteerSource | None = None,
@@ -398,6 +400,11 @@ class AgentSession:
         #: File-based agent memory (7e-d). `None` (unprovided) → no memory block, so older call
         #: sites + the subsystem-off case behave exactly as before.
         self._memory = memory
+        #: The tier-2 long-term corpus (D57, CORE_MEMORY_PLAN §4) — a SIBLING of `memory`, passed
+        #: directly like it rather than reached for through `Deps` (§6, council M5). `None`
+        #: (unprovided) → no index block, so older call sites + the off-by-default case behave
+        #: exactly as before; the corpus itself is inert until `memory.longterm.backend` is set.
+        self._core_memory = core_memory
         #: Headless subagents (4.5) run with `interactive=False`: a confirm-gated call resolves
         #: DENIED in place rather than suspending the turn (a child has no UI to confirm against —
         #: DESIGN §5.3). `depth` is this session's subagent nesting level, forwarded to each tool
@@ -525,6 +532,24 @@ class AgentSession:
             return None
         return self._memory.load_context(self._agent, self._stamps) or None
 
+    def _core_index_block(self) -> str | None:
+        """The tier-2 index block (D57, CORE_MEMORY_PLAN §4), injected as its own `system` message
+        right after the tier-1 memory block. `None` when no corpus is wired, when the slot is off, or
+        when there is nothing to route — off means NO prompt text at all (acceptance family 5), which
+        is why the policy framing is resolved only once an index exists.
+
+        Only the bounded INDEX rides the head; topic bodies arrive as ordinary tool results (S3). The
+        corpus gates on `enabled()` and caches the render behind its scan signature itself, so this is
+        a stat sweep on an unchanged corpus — nothing here re-implements any of that."""
+        if self._core_memory is None:
+            return None
+        index = self._core_memory.render_index()
+        if not index:
+            return None
+        # The registry frame + the rendered index concatenated (L-8): an override reframes the block,
+        # it can never drop the routing data underneath.
+        return resolve("core_memory_policy", self._settings, stamps=self._stamps) + "\n\n" + index
+
     def _reflection_nudge(self) -> str:
         """The one-shot periodic-reflection prompt (D27-C). Saving runs the normal `memory` tool path
         (auto_write on → saved; off → proposed for the owner's approval), so the nudge only steers —
@@ -611,25 +636,30 @@ class AgentSession:
 
     def _static_prefix(self) -> list[dict]:
         """The INVARIANT system head for this turn — system prompt + appends + fleet roster +
-        durable-memory block + active-skill note, in that fixed order (7e-a/7e-d/D15 #4, AMENDED
-        2026-07-20: memory moved AFTER the roster). Every prefix cache — llama.cpp KV, cloud prefix —
-        invalidates from the first changed byte ONWARD, and memory is the only block here that ever
-        changes across a session's turns (a `memory`-tool write); the roster is config-projected and
-        ~static. Memory-last-among-stable-blocks means a write re-prefills only memory + the skills
-        note (which changes per turn anyway) instead of also evicting the roster (A9; the Hermes
-        volatile-block-after-breakpoint precedent). Built ONCE per turn and reused byte-identically
-        every loop iteration so the cache prefix stays stable (see the `_static_head` field note). The
-        reflection nudge is deliberately NOT here — it's an ephemeral tail layer appended in
-        `_assemble`, so it never perturbs this cached head.
+        durable-memory block + core-memory index + active-skill note, in that fixed order
+        (7e-a/7e-d/D15 #4, AMENDED 2026-07-20: memory moved AFTER the roster; D57: the tier-2 index
+        joins it). Every prefix cache — llama.cpp KV, cloud prefix — invalidates from the first
+        changed byte ONWARD, and the two memory blocks are the only ones here that routinely change
+        across a session's turns (a `memory`-tool write; an index-affecting corpus write or edit); the
+        roster is config-projected and ~static. Keeping both last-among-stable-blocks, and adjacent,
+        means either write re-prefills only from there on — plus the skills note, which changes per
+        turn anyway — instead of also evicting the roster (A9; the Hermes volatile-block-after-
+        breakpoint precedent, extended in CORE_MEMORY_PLAN §4). Built ONCE per turn and reused
+        byte-identically every loop iteration so the cache prefix stays stable (see the `_static_head`
+        field note). The reflection nudge is deliberately NOT here — it's an ephemeral tail layer
+        appended in `_assemble`, so it never perturbs this cached head.
 
         Turn-invariant WITHIN ONE UNINTERRUPTED TURN: the system prompt / appends / roster project
         from per-turn-stable config + AgentDef, `_skills_note` is fixed at turn start by
-        `_activate_skills`, and the memory block is read ONCE here — so a mid-turn `memory`-tool write
-        does NOT land on the next loop iteration, which is what keeps the prefix byte-stable across
-        iterations. It is NOT frozen across a suspend/resume, though (ACA-15e): a confirm/question
-        resume builds a **new** `AgentSession`, whose `_static_prefix` re-reads the memory files — so a
-        write made before the suspend surfaces in the resumed half's head, and the prefix re-prefills
-        from the memory block onward. Behaviourally harmless; a full per-session freeze is A9."""
+        `_activate_skills`, and both memory blocks are read ONCE here — so a mid-turn `memory`- or
+        `core_memory`-tool write does NOT land on the next loop iteration, which is what keeps the
+        prefix byte-stable across iterations (the model sees that write in its own tool result). It is
+        NOT frozen across a suspend/resume, though (ACA-15e): a confirm/question resume builds a
+        **new** `AgentSession`, whose `_static_prefix` re-reads the memory files and re-renders the
+        index — so an index-affecting write made before the suspend surfaces in the resumed half's
+        head (a body-only topic edit leaves the rendered index, and so the head, unchanged), and the
+        prefix re-prefills from the memory block onward. Behaviourally harmless; a full per-session
+        freeze is A9."""
         if self._static_head is None:
             head: list[dict] = [{"role": "system", "content": self._system_prompt()}]
             for extra in self._appends():  # additive guidance, base-first (7e-a)
@@ -640,6 +670,9 @@ class AgentSession:
             memory = self._memory_block()  # durable memory, after the roster (7e-d, D15 #4 AMENDED)
             if memory:
                 head.append({"role": "system", "content": memory})
+            core_index = self._core_index_block()  # tier-2 routing index, memory-adjacent (D57 §4)
+            if core_index:
+                head.append({"role": "system", "content": core_index})
             if self._skills_note:  # active skills' instructions (4.5)
                 head.append({"role": "system", "content": self._skills_note})
             self._static_head = head

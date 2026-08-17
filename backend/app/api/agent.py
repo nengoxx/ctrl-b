@@ -275,6 +275,7 @@ def _build_session(
         skills=getattr(state, "skills", None),
         selector=getattr(state, "skill_selector", None),
         memory=getattr(state, "memory", None),
+        core_memory=getattr(state, "core_memory", None),
         interactive=automation is None,
         steer_source=(
             steer_source_for(state, thread.id) if thread is not None and automation is None else None

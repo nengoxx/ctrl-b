@@ -90,6 +90,7 @@ from app.services.action_service import ActionService
 from app.services.actions import build_registry
 from app.services.actions.terminal import register_openterminal
 from app.services.agent.compaction import CompactionState
+from app.services.agent.core_memory import CoreMemoryCorpus
 from app.services.agent.memory import FileMemoryProvider, migrate_legacy_specialist_memory
 from app.services.agent.memory_backup import GitMemoryBackup
 from app.services.agent.routing import RoutingState
@@ -266,6 +267,11 @@ async def lifespan(app: FastAPI):
     migrate_legacy_specialist_memory(app.state.settings)  # one-time relocate (≈no-op); before any commit
     app.state.memory_backup = GitMemoryBackup(app.state.settings)
     app.state.memory = FileMemoryProvider(app.state.settings, backup=app.state.memory_backup)
+    # Core Memory (Phase 20 / D57): the tier-2 long-term corpus, a SIBLING subsystem of the provider
+    # above — not a store inside it (CORE_MEMORY_PLAN §6). Built unconditionally and OFF by default:
+    # `memory.longterm.backend` is read from live Settings per call, so switching the slot on (or
+    # editing the corpus by hand) needs no restart. The instance is held for its scan cache alone.
+    app.state.core_memory = CoreMemoryCorpus(app.state.settings)
 
     # Subagents (Phase 4.5): back-fill the agent-runtime handles onto the shared Deps so the
     # spawn_subagents tool can build + run child sessions (the ActionService reference is set here
@@ -276,6 +282,7 @@ async def lifespan(app: FastAPI):
     deps.skills = app.state.skills
     deps.selector = app.state.skill_selector
     deps.memory = app.state.memory
+    deps.core_memory = app.state.core_memory
     deps.subagent_sem = asyncio.Semaphore(max(1, app.state.settings.agent.global_subagent_limit))
 
     # D26: capture edits made while the app was down (also lazily inits the repo + imports existing

@@ -1,7 +1,10 @@
-"""Phase 20 / S1 — the Core Memory corpus module, read-only (D57, CORE_MEMORY_PLAN §3/§8-1).
+"""Phase 20 / S1–S2 — the Core Memory corpus module + its head injection (D57, CORE_MEMORY_PLAN
+§3/§4, acceptance §8-1/§8-2/§8-5).
 
-Acceptance family 1's READ half: a ctrl-b-born corpus and a copied Claude-shaped one go through one
-path, and reading changes nothing on disk. What's exercised:
+S1 is acceptance family 1's READ half: a ctrl-b-born corpus and a copied Claude-shaped one go
+through one path, and reading changes nothing on disk. S2 (§10 below) is families 2-index + 5: the
+rendered index reaches the static head in one place, and the whole feature is invisible when off.
+What's exercised:
 
   0. Gitignore   — a copied corpus's `logs/` + `.consolidate-lock` never enter the D26 repo.
   1. Config      — the §6.1 shape + defaults, and `config.example.yaml` staying in sync with it.
@@ -17,6 +20,9 @@ path, and reading changes nothing on disk. What's exercised:
   9. Fix wave    — the S1 Codex-review round: degenerate YAML, symlinks, unreadable subtrees, index
                    case races, hostile targets/hooks, path-preserving clamps, header accuracy,
                    stamp-preserving replacement, and the dynamic `AgentDef.memory_dir` overlap.
+ 10. Head (S2)  — the block's position between the memory block and the skills note, its policy
+                   framing + stamp, "off ⇒ byte-identical head and zero IO" (stub-guarded), the
+                   frozen-per-session head + resume reload boundary, and the lifespan wiring.
 
 Every test runs against a synthesized corpus in its own `$CTRLB_HOME` (conftest) — never the owner's
 real config, memory dir or vault.
@@ -66,6 +72,17 @@ def _topic(root: Path, rel: str, text: str) -> Path:
 
 def _index(root: Path, *lines: str) -> None:
     (root / "MEMORY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _session(corpus: CoreMemoryCorpus | None, settings, *, memory=None, skills_note: str | None = None):
+    """A bare `AgentSession` — `_static_prefix` reads only settings + the two memory collaborators, so
+    the repos/inference/actions it never touches are left unwired (the `test_prompts_registry_p18`
+    bare-probe pattern). `skills_note` stands in for `_activate_skills` having run."""
+    from app.services.agent.session import AgentSession
+
+    session = AgentSession(None, None, None, settings, None, memory=memory, core_memory=corpus)
+    session._skills_note = skills_note
+    return session
 
 
 def _digest(root: Path) -> dict[str, str]:
@@ -517,3 +534,127 @@ def test_status_reports_what_the_conf_line_will_show(tmp_path):
     assert status.root == str(root.resolve())
     assert status.index_chars == len(corpus.render_index()) > 0
     assert status.index_char_limit == 8192 and 0 <= status.index_pct <= 100
+
+
+# ── 10. head injection (S2) ───────────────────────────────────────────────────────────────────────
+
+
+def _tier1(settings):
+    """A tier-1 provider over the same workspace, so the head under test carries a real memory block
+    for the core index to sit after."""
+    from app.services.agent.memory import FileMemoryProvider
+
+    (_memories() / "MEMORY.md").write_text("Owner prefers dark mode.", encoding="utf-8")
+    return FileMemoryProvider(settings)
+
+
+def _seeded(tmp_path: Path, backend: str | None = "core") -> CoreMemoryCorpus:
+    root = _root()
+    _topic(root, "a.md", "---\nname: Wake ritual\ndescription: how the owner wakes hosts\n---\nbody\n")
+    _index(root, "- [Wake ritual](a.md) — how the owner wakes hosts")
+    return _corpus(tmp_path, backend)
+
+
+def test_the_head_is_byte_identical_when_the_slot_is_off(tmp_path):
+    """§4's strongest regression (family 5): a wired corpus with `backend: null` assembles exactly
+    the head an unwired session does — and does it without touching the corpus at all, even though
+    the files are sitting right there."""
+    corpus = _seeded(tmp_path, backend=None)
+    settings = corpus._settings
+    wired = _session(corpus, settings, memory=_tier1(settings))
+    unwired = _session(None, settings, memory=_tier1(settings))
+
+    assert wired._static_prefix() == unwired._static_prefix()
+    assert wired._stamps == unwired._stamps  # no `core_memory_policy` resolution either
+    assert corpus.parses == 0  # off ⇒ no scan, no parse, no IO
+
+
+def test_a_disabled_slot_never_resolves_or_scans(tmp_path, monkeypatch):
+    """The no-IO contract itself, not just its current side effects: a disabled corpus must return
+    before root resolution or scanning — stubbed to fail loudly if the head path ever reaches them."""
+    corpus = _seeded(tmp_path, backend=None)
+
+    def _boom(*_a, **_k):
+        raise AssertionError("disabled slot touched the corpus")
+
+    monkeypatch.setattr(corpus, "root", _boom)
+    monkeypatch.setattr(corpus, "scan", _boom)
+    _session(corpus, corpus._settings)._static_prefix()
+
+
+def test_the_head_is_frozen_per_session_and_a_resume_sees_the_edit(tmp_path):
+    """ACA-15e as a regression (the council's frozen-head correction): a corpus edit after the first
+    build never reaches this session's cached head; a fresh resume-style session renders the new
+    index — the reload boundary is the new `AgentSession`, not a mid-turn re-read."""
+    corpus = _seeded(tmp_path)
+    settings = corpus._settings
+    session = _session(corpus, settings)
+    first = session._static_prefix()
+    assert any("Wake ritual" in m["content"] for m in first)
+
+    _index(_memories() / "core", "- [Wake ritual](a.md) — RENAMED hook after the head was built")
+    assert session._static_prefix() is first  # frozen: the cached head, not a rebuild
+    resumed = _session(corpus, settings)
+    assert any("RENAMED hook" in m["content"] for m in resumed._static_prefix())
+
+
+def test_an_off_slot_never_creates_the_corpus_root(tmp_path):
+    """The other half of "no IO": a fresh install with the slot off must not grow a `core/` dir."""
+    corpus = _corpus(tmp_path, backend=None, root="never-made")
+    _session(corpus, corpus._settings)._static_prefix()
+    assert not (_memories() / "never-made").exists()
+
+
+def test_the_index_block_sits_between_memory_and_the_skills_note(tmp_path):
+    """§4: system → appends → roster → tier-1 memory → **core index** → skills note. Asserted as the
+    whole rendered sequence, since a minimal fixture has no roster and each block is optional."""
+    from app.services.agent.prompts import resolve
+    from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
+
+    corpus = _seeded(tmp_path)
+    settings = corpus._settings
+    provider = _tier1(settings)
+    session = _session(corpus, settings, memory=provider, skills_note="Skill instructions.")
+
+    index = corpus.render_index()
+    expected = resolve("core_memory_policy", settings) + "\n\n" + index
+    assert [m["content"] for m in session._static_prefix()] == [
+        DEFAULT_SYSTEM_PROMPT,
+        provider.load_context(settings.resolve_agent(None)),
+        expected,
+        "Skill instructions.",
+    ]
+    assert all(m["role"] == "system" for m in session._static_prefix())
+    assert "Wake ritual" in index and len(index) <= settings.memory.longterm.core.index_char_limit
+    assert "core_memory_policy" in session._stamps  # stamped like every other model-facing text
+
+
+def test_an_enabled_but_empty_corpus_injects_nothing(tmp_path):
+    """Nothing to route ⇒ no block AND no policy text — the framing is never injected on its own."""
+    corpus = _corpus(tmp_path)
+    _root()  # the dir exists; it just has no index and no topics
+    settings = corpus._settings
+    session = _session(corpus, settings, memory=_tier1(settings))
+
+    assert session._static_prefix() == _session(None, settings, memory=_tier1(settings))._static_prefix()
+    assert "core_memory_policy" not in session._stamps
+
+
+def test_the_lifespan_wires_one_corpus_into_the_state_and_the_deps(tmp_path, monkeypatch):
+    """The other end of the wiring: `main.py` builds ONE singleton beside the memory provider (one
+    scan cache, shared by every session), back-fills it onto `Deps` for the subagent path, and the
+    shared session builder hands it to both the interactive and the automation session."""
+    from fastapi.testclient import TestClient
+
+    from app.api.agent import _build_session
+    from app.main import create_app
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("server:\n  port: 5433\n", encoding="utf-8")
+    monkeypatch.setenv("CTRLB_CONFIG", str(cfg))
+    monkeypatch.setenv("CTRLB_DB", str(tmp_path / "t.db"))
+    with TestClient(create_app()) as c:
+        state = c.app.state
+        assert isinstance(state.core_memory, CoreMemoryCorpus)
+        assert state.deps.core_memory is state.core_memory
+        assert _build_session(state)._core_memory is state.core_memory
