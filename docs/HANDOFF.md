@@ -12,97 +12,56 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-16)
+## Current state (2026-08-17)
 
-- **Prod = v1.7.1 @ `ad581f6`**, live + healthy (https://emma.lobster-vector.ts.net) — **Phase 18
-  RELEASED 2026-08-16** (v1.6.0 → v1.7.1, the updater's 5th clean plain-form run). Owner eyeball
-  on dev ✅ 2026-08-16, the 12 banked commits + 2 more pushed, `main` in sync with origin.
-- **⚠ v1.7.0 is tagged but was NEVER DEPLOYED — NOT a rollback target.** Its release gate failed:
-  the new `conf.spec.ts` clicked the "Default text" disclosure unconditionally, but PromptModal
-  mounts it OPEN at ≥700px, so the [desktop] e2e project toggled it *shut* (fix = `ad581f6`, click
-  only when hidden). **Durable lesson: the local pre-push gate runs NO e2e — only the CI release
-  gate does; "green at 390px locally" says nothing about the [desktop] project.**
-- **Prod DB is on schema 6** (the nullable `messages.meta` column) — confirmed in health
-  (`schema_version: 6`). Pre-6 code tolerates the extra column (writes name their columns), so
-  **rollback = `update.sh v1.6.0`** is safe against the migrated DB; the deeper floor stays
-  **v1.5.1 EXACTLY** (any pre-v1.5.1 tag re-serves `sw.js` as `text/html` and strands the
-  registered worker per-device — runbook §Rollback carries the note).
-- The promptfoo harness (Phase 18's deferred Slice 4) is now **ROADMAP A12** (`9a85c34`) — the
-  entry PROMPTS_PLAN §2.7 promised but never had.
-- Tree clean on `main`, **6 commits AHEAD of origin, not pushed** (the 5 Phase-19 hardening-spec
-  commits `1ce6313`…`532631c` + the Core Memory draft `69847f9`) — push needs owner confirmation.
-  Dev units stopped (on-demand: `systemctl --user start ctrl-b-dashboard-dev{,-web}`, :5434 +
-  Vite :5173; stop when done).
-- **Core Memory (tier-2 long-term memory) SPECCED + PARKED 2026-08-16** — see path 2 below.
-- **Session history is archived:** every session block 2026-05-28 → 2026-08-12 moved verbatim to
-  [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) (frozen, reference only — "the HANDOFF block of
-  ⟨date⟩" resolves there).
+- **Prod = v1.7.1 @ `ad581f6`**, live + healthy (https://emma.lobster-vector.ts.net) — Phase 18
+  released 2026-08-16; owner eyeball ✅. **⚠ v1.7.0 is tagged but NEVER DEPLOYED — NOT a rollback
+  target; rollback = v1.6.0** (schema-6 DB is back-compatible; the deeper floor stays **v1.5.1
+  EXACTLY** — sw.js). Prod DB schema 6.
+- **Phase 20 Core Memory: DESIGN LOCKED as D57, S0 COMPLETE 2026-08-17.** Spec of record =
+  [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (all rulings §2a/§2b · the §4b promotion design ·
+  §13 council record — Codex + adversarial Opus, both BUILD WITH CHANGES, folded, confirm clean).
+  Evidence: R37/R38 + **R39** (cap-triggered promotion field pass) + **R40** (the owner's personal
+  agent's complete Claude Code memory source spec + crosswalk — corroborates the mechanism).
+  D57 in DECISIONS.md; ROADMAP §B1 rewritten to the tier model; TODO Phase 20 stanza added;
+  **the parked hardening charter renumbered to D58.**
+- Tree: `main` **~11 commits ahead of origin, not pushed** (the 5 Phase-19 spec commits + the
+  Core Memory stack `69847f9` · `0a904ac` · `4c5de73` · `ccf5c82` · `3d16310` + the S0 lock
+  commit) — push needs owner confirmation. **`docs/research/R40-…md` has uncommitted working-tree
+  edits from the owner's personal agent — leave them; that agent commits its own work.** Dev units
+  stopped (on-demand: `systemctl --user start ctrl-b-dashboard-dev{,-web}`, :5434 + Vite :5173).
+- Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) (frozen, 2026-05 → 2026-08).
 
-## ▶▶ NEXT SESSION — PICK A PATH
+## ▶▶ NEXT SESSION — Phase 20 S1 (the locked next slice)
 
-In rough order of standing priority:
+**Build S1 of [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) §11 — corpus module, read-only.**
+Read the PLAN FIRST (it is the spec of record; this list is only the pointer): `LongTermCfg` /
+`CoreMemoryCfg` · root resolution/validation incl. the tier-overlap refusal (§3) · scanner +
+tolerant frontmatter (top-level-wins precedence, basename-`MEMORY.md` + dotted/`logs` exclusions) ·
+index render/clamp/cache (8,192-char cap, paths+mtimes cache key). Acceptance family 1 (read
+half). Full gate (`python tools/check.py`), then ⏸ **owner pause** — per-slice go-ahead is the
+standing rule. S2–S5 follow the §11 ladder. The usual workflow: Opus subagents implement from
+pinned briefs; Codex reviews the slice; main seat reconciles.
 
-0. **Phase 19 — the hardening pass — 📋 SPEC WRITTEN 2026-08-16, execution owner-gated.**
-   [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is the complete methodology, two tracks:
-   **Track P** (perf/reliability: TARA-per-subsystem · 4 packets · fix-first ·
-   measure-before-judge; council-reviewed, confirm rounds closed) and **Track D** (the
-   design & architecture comparative pass, owner's second directive: DP-A theme-engine/motion/
-   UI-UX vs field practice · DP-B agent harness with emphasis on turn design vs Claude Code/
-   Codex/Hermes Agent/OpenClaw; §3b — delta council check owed). Evidence: R33 + the embedded
-   inventory/known-open register; **R34/R35/R36 commissioned 2026-08-16** (UI-theming design ·
-   peer turn architecture · agent capability patterns). **Owner rulings needed before anything
-   executes = its §10** (journeys · pre-authorized fix class · packet ranking · two-phase
-   charter · D57 · Track-D ordering). Owner directive: spec only for now, execution later.
-1. **Phase 18 — the prompt system — 🏁 RELEASED + LIVE v1.7.1 2026-08-16** (D56; Slices 0–3 + 3.5
-   all ✅: `30e7417` · `a33fb34` · `91cc464` · `b1cebd0` · `4d9dcf0`; owner eyeball ✅). Spec =
-   [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md); §6 + §7 normative; **§8.1–§8.5 = the as-builts**.
-   On prod: **Conf → Prompts** (group 03) lists all **18 registry ids** with the pair editor
-   (override + append, side-by-side default, placeholder chips, coupling warnings); saves ride
-   `PUT /api/settings`; every registry text on the model path **stamps**
-   (`InvocationContext.stamps`, §8.5); DB migrated to schema 6. Gate: backend **1432** · FE vitest
-   **2065** · e2e green on BOTH projects (the v1.7.0 gate caught the [desktop] disclosure-toggle
-   spec bug — see Current state). **Remaining in this phase: NOTHING to build** — Slice 4 (the
-   promptfoo harness) = **ROADMAP A12**, its own later phase.
-   **Owner-court now:** ① the **update toast's first real exercise** — v1.7.1 is the first release
-   since it shipped; watch the phone pick it up; ② one phone look at the `appbarMode: off`
-   top-inset fix (`3458452`, now on prod); ③ with schema 6 + the prompts UI live on prod, actually
-   *edit a prompt or two* in real use — the feature's first owner-driving.
-2. **Core Memory — the tier-2 long-term memory lane — 📋 DRAFT SPECCED 2026-08-16, PARKED.**
-   Spec = [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (`69847f9`), built from the owner's vault
-   design + three verification passes ([R37](./research/R37-claude-code-memory-source-verification.md)
-   source-verify · [R38](./research/R38-selective-memory-recall-field.md) field · the ctrl-b seam
-   audit, folded into its §6–§7). **Mechanism ruled (owner, in conversation): index-in-head +
-   `core_memory` tool (read/search/CAS-write over a shared Claude-native corpus in
-   `memories/core/`), NO LLM selector in v1; Claude-corpus migration = copy-in; tier model
-   supersedes ROADMAP §B1's vector sketch (vector/hindsight/honcho = future backends of the same
-   slot).** Next session = **S0, no code**: ① owner rules §2b (O1 headless · O2 "remember this"
-   routing · O3 read-action divergence · O4 write posture · O5 phase ordering — each has a
-   recommended default in the table); ② council round on OUR adaptation (Codex correctness + Opus
-   adversarial implementer lens — the vault spec was Codex-reviewed, this plan is not); ③ D57 in
-   DECISIONS.md; ④ ROADMAP §B1 rewrite to the tier model (lift the "progressive memory index"
-   bullet at `ROADMAP.md:360` into the plan); ⑤ TODO Phase 20 stanza. Then S1–S5 per the plan's
-   §11 ladder, paused per slice.
-3. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (**still untested as of
-   2026-08-12, owner-confirmed**): SYS-19 meant `showNotification()` had never had a registered
-   worker when it "failed"; it may just work on v1.6.0. Outcome decides whether the parked Web
-   Push plan (the `web-push-researched-parked` memory, R10/R11) is re-premised or unblocked.
+**After S1 (standing order):**
+
+1. **S2–S5** per the ladder, paused per slice.
+2. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (still untested,
+   owner-confirmed 2026-08-12): SYS-19 meant `showNotification()` never had a registered worker;
+   it may just work on ≥v1.6.0. Outcome decides the parked Web Push plan (R10/R11).
+3. **Phase 19 — the hardening pass — PARKED, owner-gated, deliberately BEHIND Phase 20** (owner,
+   2026-08-17). [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is spec-complete; at wake: its §10
+   owner court + the §3b delta council check; locks as **D58**.
 4. **Gacha banked follow-ups** (owner-eyeball-heavy): the color-theory unit-palette research
-   session (owner-flagged) · root-cross-fade flicker refinement · the R20/R21 addenda LOWs (four
-   each — GACHA_PLAN §7 as-builts, lines ~2317/2339) · kit-wide minimal plan/player overlap
-   (VAPOR_ASSIMILATION_PLAN §7.1) · the rest of the standing ledger below.
-5. **The R28 installed-icon improvement** — ⏸ owner-gated pickup; R28 §9 is the ready-to-build
-   brief.
-6. **Fleet-liveness decoupling from Tailscale** *(owner-gated)*: host `online` today = "its
-   Tailscale is up" (bare-name `ip:` resolves via MagicDNS — the 2026-08-12 corsair
-   investigation, `corsair-liveness-rides-tailscale` memory). Option: DHCP-reserved LAN IP in
-   `ip:` + tailnet name in `vpn_host:` (the D47 seam, zero code) — or a dual-probe design if the
-   owner wants both vantages. Only if the cold-boot wake blindness recurs; the owner is watching
-   it first.
+   session · root-cross-fade flicker refinement · the R20/R21 addenda LOWs · kit minimal
+   plan/player overlap (VAPOR_ASSIMILATION_PLAN §7.1) · the standing ledger below.
+5. **The R28 installed-icon improvement** — ⏸ owner-gated; R28 §9 is the ready-to-build brief.
+6. **Fleet-liveness decoupling from Tailscale** (owner-gated; the D47 seam) — only if the
+   cold-boot wake blindness recurs.
 
-**Owner-side standing items:** the update toast's first real exercise is NOW — v1.7.1 is live and
-the phone still holds v1.6.0. Still owed whenever convenient: eyeball the pickers on
-prod · watch the next corsair COLD-BOOT wake (shutdown → WOL) — if the tailnet join fails again,
-path 6 (or Tailscale unattended mode) is the fix.
+**Owner-side standing items:** actually *edit a prompt or two* on prod (the Phase 18 feature's
+first real owner-driving) · eyeball the pickers · watch the next corsair COLD-BOOT wake · the
+update toast exercised ✅ 2026-08-16.
 
 ## Standing ledger (carried 2026-08-12 from the 2026-08-06 ledger; verify in the home before acting)
 

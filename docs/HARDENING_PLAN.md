@@ -218,7 +218,7 @@ blocks. Instruments:
 Output: a **measured-baseline table appended to this plan** (§ as-built), sha-stamped. It is the
 before-picture every later before/after claim compares against.
 
-### H0 — Charter (owner-ruled, small; becomes D57)
+### H0 — Charter (owner-ruled, small; becomes D58)
 
 ① Per journey of the §10.① list: an acceptable worst case AND a **detection clause** — how a
 violation would be *noticed* (the clause that is always missing) — set with H1's numbers in
@@ -388,7 +388,7 @@ Phase-20 decision sees the post-design-review landscape.
 
 ## 4. Where results land (doc plumbing)
 
-- This file is the plan of record once §10 is ruled; **D57** (reserved) locks the methodology +
+- This file is the plan of record once §10 is ruled; **D58** (reserved — D57 went to Core Memory, owner 2026-08-17) locks the methodology +
   the pre-authorized fix class in DECISIONS.md. TODO.md gains Phase 19 (the H-ladder as
   checkboxes) at charter time. HANDOFF points here.
 - Per-packet **as-builts append to this plan** (the GACHA_PLAN §7 ladder pattern): one page +
@@ -397,7 +397,7 @@ Phase-20 decision sees the post-design-review landscape.
   never a second authoritative body.
 - **Colocated code notes**: only for rename/refactor-fragile sensitivity points, and they state
   **the assumption + what breaks if it changes** inline (the SYS-18a `kit.css` header pattern) —
-  never a bare "see D57" pointer (the SYS-13 stale-pointer failure mode). R33's locality finding
+  never a bare "see D58" pointer (the SYS-13 stale-pointer failure mode). R33's locality finding
   (peers keep per-package arch docs, 0/9 keep ADRs) is answered by the 4 spec homes in H2, not
   by comment sprinkles.
 
@@ -591,7 +591,7 @@ in-packet-scope, non-behavioral, non-D-entry, non-security fixes ship without pe
 → ④ media/PWA. Reorderable at H0.
 ④ **The two-phase charter** — Phase 19 backend+ops now; Phase 20 FE/theme later, chartered on
 Phase 19's numbers + the F9 trigger.
-⑤ **D57 lock** — on go, DECISIONS.md gains D57 (this methodology), TODO gains Phase 19, HANDOFF
+⑤ **D58 lock** — on go, DECISIONS.md gains D58 (this methodology; D57 = Core Memory, owner 2026-08-17), TODO gains Phase 19, HANDOFF
 points here.
 ⑥ **Track D ordering** — proposed: DP-B runs before/with Track P Packet ② (shared subsystem
 read, design verdicts inform the hardening fixes); DP-A runs after H2, before the Phase-20

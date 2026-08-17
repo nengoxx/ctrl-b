@@ -1,10 +1,11 @@
-# CORE_MEMORY_PLAN — the tier-2 long-term memory lane (design draft)
+# CORE_MEMORY_PLAN — the tier-2 long-term memory lane (spec of record, D57)
 
-> **Status: COUNCIL-REVIEWED DRAFT 2026-08-17 — ALL rulings settled (§2a 2026-08-16 + §2b
-> 2026-08-17); the O4 promotion design folded in from
+> **Status: LOCKED as D57 2026-08-17 (owner) — S0 COMPLETE.** All rulings settled (§2a
+> 2026-08-16 + §2b 2026-08-17); the O4 promotion design grounded in
 > [R39](./research/R39-cap-triggered-tier-promotion.md) (§4b); council round CLOSED (§13 — Codex
-> BUILD WITH CHANGES + adversarial Opus BUILD WITH CHANGES, all accepted findings folded in
-> place); remaining S0: owner lock → D57 + ROADMAP §B1 rewrite + TODO Phase 20 stanza.**
+> + adversarial Opus, both BUILD WITH CHANGES, every finding folded in place; confirm round
+> clean) and corroborated by [R40](./research/R40-claude-code-memory-source-specification.md)'s
+> source crosswalk. **Build S1–S5 per §11, pausing per slice.**
 > **Provenance:** the owner's external "Hermes Core Memory" design
 > (`~/Documents/Maia/40 Projects/2026-08-11-project-scoped-profile-memory-architecture/` —
 > SPEC/DECISIONS/LOG; Codex-authored + twice-adversarially-audited there; **read-only, never
@@ -88,7 +89,7 @@ that would justify it.
 | # | Question | Ruling |
 |---|---|---|
 | O1 | **Headless policy** — tier-1 memory is fully live for automations/subagents; only the reflection nudge is origin-gated (`session.py:859`). Same for Core Memory? | **Live everywhere** (index + tool in all sessions). Symmetric, zero special cases; revisit only if a headless run ever pollutes the corpus. Recorded as a **ctrl-b product choice, not Claude parity** — Claude's automatic memory actors are mode/depth/remote gated (R40 §18.1). |
-| O2 | **Unqualified "remember this"** — the vault spec *asks* which lane every time. | **Never ask.** The tool descriptions + the P1 policy encode the split (basic = working/short-horizon + owner profile; core = durable shared long-term — workflows, conventions, stable facts); the model routes by durability/scope, explicit wording always wins. **Owner rider:** every model-facing text this feature adds must be owner-editable — the three registry ids surface in Conf → Prompts (Phase 18); routing guidance in tool descriptions is `tool_overrides`-editable. |
+| O2 | **Unqualified "remember this"** — the vault spec *asks* which lane every time. | **Never ask.** The tool descriptions + the P1 policy encode the split (basic = working/short-horizon + owner profile; core = durable shared long-term — workflows, conventions, stable facts); the model routes by durability/scope, explicit wording always wins. **Owner rider:** every model-facing text this feature adds must be owner-editable — the five registry ids (§6) surface in Conf → Prompts (Phase 18); routing guidance in tool descriptions is `tool_overrides`-editable. |
 | O3 | **Read actions** — D14/D15 deliberately gave the `memory` tool *no read* ("memory is in the prompt"). Core Memory's whole mechanism is tool reads. | **Accept the divergence, record it in D57.** The owner's bar is "as close as possible to what Claude Code ships", and R37 confirms the shipping shape IS index-in-head + on-demand topic reads; the no-read rule was a property of a fully-injected store. |
 | O4 | **Write posture + cleanup** — R38: "proactive capture with no cleanup pass is the one combination the field does not run." | **Proactive writes stay; cleanup v1 is prompt-steered, main-model, in-session — no separate consolidator** (owner, 2026-08-17). Concretely: the standing routing rule in `core_memory_policy` + the tier-aware cap-pressure nudge + `MemoryCapError` clause (§4b) + the owner-invoked consolidation procedure (§5). An autoDream-style scheduled pass is **banked** (§10) as a future optional arm riding the A3 automations scheduler. Field basis: R39 (the trigger is the field's modern default; the main-model actor is the correct small-scale form — Letta alerts on reflections >10 min/>100 steps, which is the bloat being refused). |
 | O5 | **Phase ordering** | **Core Memory = Phase 20 and executes FIRST**; Phase 19 (hardening) stays parked, owner-gated (owner, 2026-08-17). Consequence: **Core Memory takes D57**; the hardening charter renumbers to D58 when it wakes. |
@@ -173,9 +174,9 @@ comes free as the Conf status line, §8.)
   framed tool output** and is carried across suspend/resume within one logical turn (persisted
   pre-suspend results included), not reset by a confirmation-resume session rebuild (council
   Codex-11).
-- **Cap pressure** reuses the tier-1 pattern: at `consolidation_nudge_pct` of the index cap or a
-  topic-count threshold, the index header names the pressure; the nudge steers the model (and owner)
-  toward §5 consolidation. No scheduled anything.
+- **Cap pressure** reuses the tier-1 pattern: at `consolidation_nudge_pct` of the index cap, the
+  index header names the pressure; the nudge steers the model (and owner) toward §5 consolidation
+  (no topic-count threshold — §3). No scheduled anything in v1 (§10 banks the arm).
 - **Disabled ⇒ byte-identical prompt assembly to today** — the strongest regression assertion, kept
   from the vault spec's acceptance.
 
@@ -400,13 +401,13 @@ compaction bounds accumulation; Claude's 60 KiB session cap belongs to the selec
 
 ## 11. Slice ladder (Phase 20; pause for owner go-ahead between slices; each passes `tools/check.py`)
 
-- **S0 — Lock.** Owner rules §2b; council round on THIS plan (Codex correctness + Opus adversarial
-  implementer lens — the vault spec was Codex-reviewed, our *adaptation* was not); D57; ROADMAP §B1
-  rewrite; TODO stanza. No code.
+- **S0 — Lock. ✅ 2026-08-17.** Owner ruled §2b; R39/R40 bought; council round run + folded (§13);
+  D57 locked; ROADMAP §B1 rewritten; TODO stanza added. No code.
 - **S1 — Corpus module, read-only.** `LongTermCfg`/`CoreMemoryCfg`; root resolution/validation;
   scanner + tolerant frontmatter; index render/clamp. Acceptance family 1 (read half).
-- **S2 — Head injection.** `Deps.core_memory`, lifespan wiring, the static-head block,
-  `core_memory_policy`; byte-identical-when-off test. Families 2 (index) + 5.
+- **S2 — Head injection.** The lifespan singleton + `core_memory=` kwarg wiring (both
+  construction sites, §6), the static-head block, `core_memory_policy`; byte-identical-when-off
+  test. Families 2 (index) + 5.
 - **S3 — Tool.** All six actions + CAS + grep + index maintenance + secret gate + two-layer
   exposure gating + `core_memory_recall` framing. Families 2 (reads), 3, 4.
 - **S4 — Curation + Conf.** The §4b promotion backstops (`consolidation_promote` resolved into
@@ -475,7 +476,7 @@ Two independent reviews of this plan post-§4b, distinct lenses, run in parallel
   clear — `memory.py:147–150`) — folded into §4b-3.
 - **Post-council corroboration —
   [R40](./research/R40-claude-code-memory-source-specification.md)** (commissioned independently
-  from the Opus seat, same day): a full source specification of Claude Code's five memory systems
+  by the owner from their personal agent, same day): a full source specification of Claude Code's five memory systems
   at R37's pin + a 50-row crosswalk of this plan. Verdict: *"the source pass does not overturn
   the plan's core mechanism — it supports it"*; its §19 clarifications folded where new (O1 as
   product-choice wording · chars-not-code-units on the read cap · the per-session recall cap as

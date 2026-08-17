@@ -331,22 +331,22 @@ back to the analysis.
 
 ## B. Memory (configurable, pluggable)
 
-### B1. Selectable memory backends
+### B1. Selectable memory backends — ✏️ RESHAPED to the TIER MODEL (D57, 2026-08-17)
 
-- **What:** options in settings to choose how the agent remembers — and to manage it there:
-  - **None** — stateless beyond the current thread.
-  - **File-based** — a human-editable markdown file (`MEMORY.md` / `CLAUDE.md`-style; pinned facts,
-    durable prefs). Git-diffable, transparent, exactly like Claude Code's memory.
-  - **Vector** — embeddings store for semantic recall over past conversations/events.
-  - **Both** — file for durable curated facts + vector for fuzzy recall.
-  - (Orthogonal) **rolling summary** — compress old turns to stay in context; can pair with any of
-    the above.
-- **Design implication:** define a **`MemoryProvider` interface** in v1 (`load_context()`,
-  `remember(item)`, `forget(id)`, `list()`) with a `none`/`file` impl first; `vector` is a drop-in
-  later (needs an embeddings endpoint — could be another OpenAI-compatible `/v1/embeddings` base
-  URL, fitting the existing pattern). Don't hardcode a single memory mechanism.
-- **Open:** which embeddings backend; chunking strategy; whether memory is global vs per-thread vs
-  per-project; retention/pruning UI.
+- **The ruling (owner, 2026-08-16/17; spec = [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md), locked
+  D57):** ctrl-b memory = **tier 1** (the built-in per-agent file stores, always on, short-horizon —
+  exactly today's D14/D15/D27 lane, untouched) + **tier 2** (ONE selectable *long-term* backend at a
+  time, `memory.longterm.backend`). **Core Memory** — a shared Claude-Code-native corpus (bounded
+  `MEMORY.md` index + topic files, index-in-head + `core_memory` tool recall, NO LLM selector) — is
+  the first tier-2 backend, built as **Phase 20**. This section's earlier "None / File / Vector /
+  Both" sketch is **superseded**: "file" is tier 1 + Core Memory; "vector" survives as a *future
+  tier-2 backend value* of the same slot (with Hindsight/Honcho etc.), never a parallel mode; the
+  slot interface is derived from what the loop consumes (head block + tool surface) and gets
+  formalized only when backend #2 is real.
+  - *(The "Claude-Code-style progressive memory index" bullet that lived here was lifted INTO
+    `CORE_MEMORY_PLAN.md` — it is literally this feature.)*
+- **Open (unchanged):** which embeddings backend if vector ever premises; retention/pruning UI
+  beyond the owner-invoked consolidation procedure.
 - **Deferred memory items inherited from the ACA (re-homed 2026-07-20)** — from
   [`AGENT_CHAT_AUDIT.md`](./AGENT_CHAT_AUDIT.md)'s closing backlog, which was that document's only home:
   - **A9 — per-session memory-snapshot freeze knob** (Hermes): read memory once per *session* instead
@@ -358,11 +358,8 @@ back to the analysis.
     memory + the skills note. **Open rider: measure** turn-boundary cache hits via the already-parsed
     `cache_n`/`prompt_n` (`inference.py`); if measurement ever shows real pressure, the escalation is
     **read-through with write-invalidation** (reuse the snapshot unless THIS thread's agent wrote),
-    never the blind freeze.
-  - **Claude-Code-style progressive memory index** — load only a small index (Claude Code caps it at
-    ~200 lines / 25 KB) and read topic files on demand, instead of loading memory whole. *Deferred
-    because:* our memory file is nowhere near the caps; this is the natural next step for **this
-    section's file backend** when it grows. ACA §3 (Claude Code pack) + §5 Backlog.
+    never the blind freeze. *(The "no memory read tool" premise now holds for tier 1 only — D57
+    records the tier-2 divergence.)*
 
 ---
 

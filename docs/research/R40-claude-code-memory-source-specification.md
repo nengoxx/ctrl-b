@@ -26,8 +26,9 @@ systems:
    as an alternative compaction summary. It never promotes into auto memory.
 4. **Persistent agent memory** — optional per-agent `MEMORY.md`, scoped user/project/local, injected
    wholesale into that agent's prompt. It reuses the memdir prompt format but not auto-memory recall.
-5. **Team memory** — a second shared corpus nested below auto memory, with server sync, secret scanning,
-   optimistic concurrency, and server-wins pull semantics.
+5. **Team memory** — a second shared corpus nested below auto memory, with optional server sync,
+   outbound secret scanning, optimistic concurrency, and server-wins pull semantics when the watcher gates
+   pass.
 
 Two write-side variants sit beside those:
 
@@ -55,7 +56,7 @@ expected-state writes, deterministic secret rejection, and byte-preserving edit 
 | Component | Durable artifact | Scope | Reader | Writer | Trigger |
 |---|---|---|---|---|---|
 | Auto memory | `<autoMemPath>/MEMORY.md` + topic `*.md` | canonical git root/project | initial-context loader or selective prefetch; ordinary file tools | main model; optional extraction fork; optional dream fork | session/turn activity |
-| Team memory | `<autoMemPath>/team/MEMORY.md` + topics | repository + authenticated organization | same context/recall machinery | main/extractor/dream plus remote sync | local edits, watcher, startup/periodic sync |
+| Team memory | `<autoMemPath>/team/MEMORY.md` + topics | local gated corpus; optionally repository/organization-synced | same context/recall machinery | main/extractor/dream; watcher pushes when sync prerequisites hold | local edits; one watcher-start pull; debounced pushes |
 | KAIROS logs | `<autoMemPath>/logs/YYYY/MM/YYYY-MM-DD.md` | project | ordinary tools; later dream process | main model append-only | assistant-mode activity |
 | SessionMemory | session-private markdown file | one session | compaction path | restricted forked agent | context growth + activity |
 | Agent memory | one `MEMORY.md` under user/project/local agent dir | agent type + configured scope | spawned agent prompt | that agent via ordinary tools | agent activity |
@@ -63,8 +64,8 @@ expected-state writes, deterministic secret rejection, and byte-preserving edit 
 
 The source shares helpers and tools but **not one store abstraction**. `memdir` has corpus-specific
 policy, scanning, and gates; SessionMemory has independent state and compaction integration; agent
-memory is prompt-only; team memory adds network state. There is no generic memory-provider interface
-at this pin.
+memory is ordinarily prompt-injected with an optional snapshot lane; team memory adds network state.
+There is no generic memory-provider interface at this pin.
 
 ### 1.1 What is explicitly *not* connected
 
@@ -72,9 +73,10 @@ at this pin.
   SessionMemory file or context-pressure state. They are parallel lanes, not tiers with promotion.
 - Agent memory has its own directory and prompt. It does not participate in auto-memory index loading,
   selector recall, extraction, dream, or team sync.
-- Team memory requires auto memory and is nested under it, but KAIROS takes precedence because the
-  append-only log paradigm is declared incompatible with team sync
-  (`src/memdir/memdir.ts:318–369, 409–438`).
+- Team memory requires auto memory and is nested under it. KAIROS takes precedence only in **prompt
+  construction**: it suppresses the combined TeamMem write-routing prompt, but does not disable team-index
+  loading or the sync watcher (`src/memdir/memdir.ts:318–369, 409–473`;
+  `src/utils/claudemd.ts:994–1007`).
 - The selective-recall cohort removes both AutoMem and TeamMem indexes from startup context; the source
   does not run index plus selector together (`src/utils/claudemd.ts:1136–1150`).
 
@@ -95,6 +97,10 @@ agent depth. "Claude Code memory" without a gate matrix is not a specification.
 - background extraction and autoDream return without work;
 - team memory is also unavailable because it depends on auto memory.
 
+It defaults on, but is disabled by `CLAUDE_CODE_DISABLE_AUTO_MEMORY`, bare/simple mode, remote mode
+without persistent memory storage, or `autoMemoryEnabled: false`
+(`src/memdir/paths.ts:21–55`).
+
 ### 2.2 Ordinary versus selective-recall cohort
 
 | `tengu_moth_copse` | Startup `MEMORY.md` index | Query-time selector/topics |
@@ -111,7 +117,8 @@ The selector additionally skips:
 
 - no real user message;
 - empty or single-word prompts (implemented as "contains no whitespace");
-- a session already at 60 KiB of surfaced topic content;
+- a session already at the 60-KiB-named threshold of surfaced topic content (actually counted as JS
+  string code units);
 - aborted turns;
 - already surfaced files and files already touched through ordinary file tools.
 
@@ -149,29 +156,35 @@ gate does not (`src/services/autoDream/autoDream.ts:54–99, 122–189`).
 
 ### 2.5 SessionMemory
 
-SessionMemory:
+Automatic SessionMemory note extraction:
 
+- is excluded from bare mode at registration;
 - is main-REPL-thread only;
 - is disabled in remote mode;
-- respects auto-compact settings;
-- is controlled by an experiment/remote gate;
+- requires auto-compact plus `tengu_session_memory`;
 - starts only after estimated context reaches 10,000 tokens by default;
 - updates after another 5,000 tokens **and** either three tool calls or a tool-free assistant turn.
 
 The token threshold is always required (`src/services/SessionMemory/sessionMemoryUtils.ts:31–53,
-169–195`; `src/services/SessionMemory/sessionMemory.ts:134–180, 267–325`).
+169–195`; `src/services/SessionMemory/sessionMemory.ts:134–180, 267–325, 357–374`;
+`src/setup.ts:293–295`). Using those notes for compaction is a separate gate:
+`tengu_session_memory && tengu_sm_compact`, with explicit environment overrides
+(`src/services/compact/sessionMemoryCompact.ts:403–431`).
 
 ### 2.6 Team memory
 
-Team memory is build-gated by `TEAMMEM`, requires auto memory, repository identity, first-party OAuth
-with inference/profile scopes, and its own feature gate. Sync is unavailable without an identified GitHub
-repository (`src/services/teamMemorySync/index.ts:1–25, 146–180, 889–913`).
+Local team memory is build-gated by `TEAMMEM` and requires only auto memory plus
+`tengu_herring_clock`; when active, its prompt and index load without repository identity or OAuth
+(`src/memdir/teamMemPaths.ts:67–78`; `src/memdir/memdir.ts:448–471`;
+`src/utils/claudemd.ts:994–1007`). The **sync watcher** adds the first-party OAuth scopes and identified
+GitHub repository requirements (`src/services/teamMemorySync/watcher.ts:231–296`).
 
 ### 2.7 KAIROS precedence
 
 When compiled and active, KAIROS replaces ordinary new-memory instructions with append-only daily-log
-instructions. It takes precedence over TEAMMEM. The index may still be loaded as a distilled read
-artifact unless the selective-recall flag suppresses it (`src/memdir/memdir.ts:318–369, 419–438`).
+instructions. It takes precedence over the TEAMMEM **prompt branch**, not the team index/watcher. Auto and
+team indexes may still load as distilled read artifacts unless selective recall suppresses them
+(`src/memdir/memdir.ts:318–369, 419–473`; `src/utils/claudemd.ts:994–1007`).
 
 ---
 
@@ -196,6 +209,10 @@ Project settings are deliberately excluded so a repository cannot redirect silen
 sensitive directory. Validation rejects relative, root/near-root, drive-root, UNC, null-byte, and bare
 home/ancestor paths; output is NFC-normalized with one trailing separator
 (`src/memdir/paths.ts:100–186, 198–235`).
+
+The prompt's "private to the current user" claim is not backed by an authenticated user identifier. The
+actual boundary is the OS/config home (or caller-selected override) plus project key. Reusing one custom
+directory can intentionally collapse project separation (`src/memdir/paths.ts:208–235`).
 
 ### 3.2 Read/write permission asymmetry
 
@@ -302,6 +319,11 @@ rules override explicit requests. Plans/tasks are named as separate persistence 
 `AutoMem`, and optionally team `MEMORY.md` as `TeamMem`. Each is deduplicated by normalized path
 (`src/utils/claudemd.ts:979–1007`).
 
+Auto/Team entrypoints use a direct safe read rather than the ordinary `processMemoryFile` path, so
+`@include` directives inside those two indexes are **not** recursively expanded. Missing files/directories
+are silent; permission failures omit content and emit telemetry (`src/utils/claudemd.ts:402–435,
+979–1007`).
+
 The rendered block labels auto memory as persistent across conversations. Team content receives a
 `<team-memory-content source="shared">` wrapper; private auto memory does not. Both join the same
 CLAUDE.md-derived user-context block (`src/utils/claudemd.ts:1153–1194`).
@@ -322,6 +344,12 @@ words:
 
 - **policy**: cached system-prompt section;
 - **index content**: hidden user-side startup context.
+
+A caller-supplied custom SDK system prompt gets the memory-mechanics section automatically only when a
+valid Cowork memory-path override explicitly opts in (`src/QueryEngine.ts:310–325`). Separately,
+`CLAUDE_CODE_DISABLE_CLAUDE_MDS` (or bare mode without explicit additional directories) suppresses the
+whole `claudeMd` user-context block, including ordinary AutoMem/TeamMem indexes, even if the mechanics
+section exists (`src/context.ts:162–172`).
 
 ### 5.3 Topic recall
 
@@ -346,7 +374,9 @@ There is no deterministic guarantee that the model reads before answering.
 
 At the beginning of a user turn, `query.ts` starts one `MemoryPrefetch` from the full message state. It
 runs concurrently with main-model streaming and tools. A disposable handle couples it to the turn abort
-and terminal telemetry (`src/query.ts:297–304`; `src/utils/attachments.ts:2334–2409`).
+and terminal telemetry (`src/query.ts:297–304`; `src/utils/attachments.ts:2334–2409`). It starts once per
+outer query loop, not once per internal model iteration. There is no query-source/main-thread restriction,
+so eligible subagent loops may also prefetch.
 
 ### 6.2 Candidate selection
 
@@ -360,6 +390,12 @@ and terminal telemetry (`src/query.ts:297–304`; `src/utils/attachments.ts:2334
 6. Post-filter returned strings against the exact offered filename set.
 7. Remove files already in `readFileState`; flatten and cap to five.
 
+The scanner reads every candidate header before sorting/capping to 200. Prior surfaced-path filtering
+happens **after** that cap, so an older file beyond the newest 200 remains unreachable even when most of
+the newer 200 were already surfaced. The recursive auto-root scan also sees `team/*.md` regardless of the
+TEAMMEM gate; stale team topic files can therefore surface in selector mode when local team memory is
+disabled (`src/memdir/memoryScan.ts:35–76`; `src/memdir/findRelevantMemories.ts:39–50`).
+
 The selector is precision-biased, may return empty, and gets recently used tool names with a rule that
 suppresses usage/API-reference memories for those tools but retains warnings/gotchas. Query text is
 placed before the manifest, so the large stable manifest is not a cacheable prefix at this pin
@@ -367,6 +403,9 @@ placed before the manifest, so the large stable manifest is not a cacheable pref
 `src/utils/attachments.ts:2196–2241`).
 
 Any directory, scan, selector, parse, validation, or topic-read failure degrades to an empty result.
+Deduplication is path-only, not `(path, mtime)`: a changed topic remains suppressed while its old path is
+in transcript attachments or the 100-entry/25-MB `readFileState` LRU
+(`src/utils/fileStateCache.ts:17–60`).
 
 ### 6.3 Payload limits and framing
 
@@ -378,13 +417,19 @@ Each selected topic is read with:
 - freshness prose derived from `mtimeMs`;
 - absolute source path.
 
-The turn cap is five selected files (approximately 20 KiB). The session cap is 60 KiB, reconstructed by
-walking prior `relevant_memories` attachments. Because the state comes from transcript messages,
-compaction naturally permits old memories to be surfaced again
-(`src/utils/attachments.ts:2231–2332, 2383–2386`).
+The turn cap is five selected files (at most approximately 20 KiB after per-file byte truncation). The
+session threshold is named 60 KiB but accumulated with `content.length`, so it is JavaScript string code
+units, not encoded bytes. It is reconstructed by walking prior `relevant_memories` attachments. Ordinary
+compaction can drop old attachments and permit resurfacing, but fullscreen/raw-message paths may retain
+pre-boundary attachments in this counter; this is not a strict reset guarantee
+(`src/utils/attachments.ts:2231–2332, 2383–2386`; `src/screens/REPL.tsx:2584–2603`).
 
 Rendered selected topics become hidden user-side `<system-reminder>` attachments. The header is stored
-with the attachment so replay bytes stay stable rather than recomputing a changing age string.
+with the attachment so bytes stay stable while the attachment survives. Persistence differs by user
+type: default/external transcript logging drops these attachments, while `USER_TYPE=ant` retains them.
+Thus ordinary external resume does not replay selected-memory attachments or reconstruct their
+`readFileState`; it rereads the current ordinary index instead (`src/utils/sessionStorage.ts:4349–4367`;
+`src/QueryEngine.ts:828–835`; `src/commands/clear/caches.ts:35–84`).
 
 ### 6.4 Timing — the material limitation
 
@@ -448,13 +493,18 @@ private-memory live-reload mechanism.
 
 ### 7.4 Secret policy
 
-FileWriteTool and FileEditTool deterministically scan **team-memory** writes and reject detected secrets
-because the data will sync to collaborators (`src/tools/FileWriteTool/FileWriteTool.ts:153–160`;
+FileWriteTool deterministically scans the complete proposed **team-memory** file content. FileEditTool
+scans only the replacement `new_string`, so a secret assembled across existing text or multiple edits can
+remain locally. Upload re-scans each complete file before network transfer, preserving the outbound
+boundary even when the local edit check misses (`src/tools/FileWriteTool/FileWriteTool.ts:153–160`;
 `src/tools/FileEditTool/FileEditTool.ts:137–147`;
-`src/services/teamMemorySync/teamMemSecretGuard.ts:3–44`).
+`src/services/teamMemorySync/teamMemSecretGuard.ts:3–44`;
+`src/services/teamMemorySync/index.ts:567–620`).
 
 The private auto-memory lane has no equivalent deterministic secret gate at this pin; it relies on prompt
-policy and ordinary permissions.
+policy and ordinary permissions. Remote-pulled team content is also not secret-scanned before disk write
+or prompt injection; the scanner protects local outbound sharing, not inbound trust
+(`src/services/teamMemorySync/index.ts:689–755`).
 
 ---
 
@@ -462,15 +512,26 @@ policy and ordinary permissions.
 
 ### 8.1 Purpose and source window
 
-At completed-turn stop hooks, a forked agent reviews only messages since an in-memory cursor. It is told
-to derive memory exclusively from that recent window and not investigate or verify externally. The
-existing topic manifest is pre-injected so the fork does not spend a turn listing files.
+At completed-turn stop hooks, an in-memory cursor determines whether enough new visible messages exist
+to trigger extraction. The fork still receives the parent's **complete** `context.messages`; only the
+extraction prompt tells it to derive memory from the recent `~N` messages and not investigate or verify
+externally. The recent window is therefore prompt-steered, not structurally isolated
+(`src/utils/forkedAgent.ts:131–140`; `src/tools/AgentTool/runAgent.ts:368–374`;
+`src/services/extractMemories/prompts.ts:29–42`). The existing topic manifest is pre-injected so the fork
+does not spend a turn listing files.
 
 ### 8.2 Mutual exclusion with main-model writes
 
 Before extraction, `hasMemoryWritesSince` scans the new range. If the main conversation already wrote
 memory, the fork is skipped and the cursor advances past that range. This makes direct and extracted
-capture mutually exclusive per processed range (`src/services/extractMemories/extractMemories.ts:329–371`).
+capture mutually exclusive in the ordinary cursor-present case. It is **not guaranteed after
+compaction**: message counting falls back to the surviving transcript when the cursor UUID disappeared,
+but `hasMemoryWritesSince` does not, so a post-compaction direct write can fail to suppress extraction
+(`src/services/extractMemories/extractMemories.ts:82–148, 329–371`).
+
+Detection examines assistant Write/Edit **tool-use requests**, not successful results, and does not detect
+Bash-mediated writes. A denied or failed requested write can suppress extraction; a Bash write can fail
+to suppress it (`src/services/extractMemories/extractMemories.ts:112–148`).
 
 ### 8.3 Fork contract
 
@@ -486,13 +547,14 @@ The prompt directs parallel reads first and parallel writes second, avoiding alt
 
 ### 8.4 Cursor, failure, and overlap
 
-- Cursor advances only after a successful fork.
+- Cursor advances after a successful fork **or** a direct-memory-write skip.
 - Failure logs/telemetry but does not notify the user; the range is reconsidered next time.
 - Success filters mechanical `MEMORY.md` writes out of the human memory count and emits a "Saved N
   memories" system message.
 - Concurrent triggers do not queue unbounded runs. One latest context is stashed and executed as a
   trailing run; intermediate contexts are subsumed because the latest contains the full newer history.
-- A drain API waits up to 60 seconds during graceful shutdown.
+- A drain API waits up to 60 seconds during headless graceful shutdown; interactive exit has no matching
+  explicit drain in this checkout.
 
 Evidence: `src/services/extractMemories/extractMemories.ts:280–320, 395–503, 506–586`.
 
@@ -500,7 +562,7 @@ Evidence: `src/services/extractMemories/extractMemories.ts:280–320, 395–503,
 
 ## 9. Consolidation (`autoDream`)
 
-### 9.1 Schedule and lock
+### 9.1 Schedule and optimistic lock
 
 The default gate is 24 hours **and** five other sessions since the previous consolidation. Transcript
 scan attempts are throttled to once per ten minutes. A `.consolidate-lock` file lives **inside the corpus**:
@@ -512,6 +574,11 @@ scan attempts are throttled to once per ten minutes. A `.consolidate-lock` file 
 - failure rewinds the previous mtime or removes a newly created lock;
 - crash recovery reclaims a dead PID.
 
+Acquisition is a read, ordinary truncating `writeFile`, then PID reread—not exclusive creation or atomic
+compare-and-swap. Two contenders can both believe they acquired it if one completes its write/reread
+before the other writes. The lock is therefore best-effort coordination, not guaranteed single-owner
+mutual exclusion (`src/services/autoDream/consolidationLock.ts:46–83`).
+
 Evidence: `src/services/autoDream/autoDream.ts:54–99, 122–189`;
 `src/services/autoDream/consolidationLock.ts:1–108`.
 
@@ -521,6 +588,10 @@ AutoDream is another cache-reusing forked agent with the same auto-memory write 
 It receives transcript/session hints, read-only Bash, and ordinary Write/Edit inside memory. It runs as a
 background task with progress, kill, completion, failure, and user-visible "Improved" reporting
 (`src/services/autoDream/autoDream.ts:192–270`).
+
+The lock coordinates dream processes only. Extraction and autoDream are both launched fire-and-forget
+from the same stop hook, and extraction does not acquire `.consolidate-lock`; the two actors can overlap
+on the same files (`src/query/stopHooks.ts:141–156`).
 
 ### 9.3 Prompt behavior
 
@@ -551,9 +622,12 @@ distillation to a nightly process. The prompt uses a date pattern rather than to
 cached bytes survive midnight; the model receives date-change context separately
 (`src/memdir/memdir.ts:318–369`).
 
-KAIROS and team sync are mutually incompatible by explicit precedence. The general recursive scanner does
-not exclude `logs/`, so enabling selective recall against a corpus containing daily logs can treat them as
-untyped topic candidates. That is an emergent edge, not an intended topic contract.
+KAIROS suppresses the TeamMem **routing prompt** but does not stop team-index loading or its watcher.
+AutoDream is disabled, while extraction has no explicit KAIROS check; if the main model did not write,
+the ordinary topic/index extractor can still run in a KAIROS session. The recursive scanner also does not
+exclude `logs/`, so selective recall can treat daily logs as untyped topic candidates. The gated nightly
+`/dream` module referenced by the source is absent from this checkout, so that alternate distillation flow
+cannot be traced here (`src/skills/bundled/index.ts:24–40`).
 
 ---
 
@@ -565,6 +639,20 @@ Team memory is a second corpus under auto memory with its own `MEMORY.md`. The p
 private and team routing by memory type: user facts remain private; project/reference material leans team;
 feedback depends on whether it is individual or project-wide. Team content gets explicit shared-source
 framing in injected context.
+
+Local use and network sync have different gates. The local corpus needs no authenticated repository;
+OAuth and repository identity only govern the watcher. The watcher performs one pull during startup and
+then watches/debounces local changes into pushes. Source-wide callsite inspection found no periodic pull:
+the exported `syncTeamMemory()` has no caller in this checkout. Teammates' later remote writes therefore
+do not arrive during a session unless some unobserved external caller invokes sync
+(`src/services/teamMemorySync/watcher.ts:231–296`).
+
+Startup is fire-and-forget. Pull clears the inner `getMemoryFiles` cache but not memoized
+`getUserContext`; if the first prompt caches user context before a slow pull finishes, the newly pulled
+index is not guaranteed to appear until a later lifecycle reload. If initial pull fails, the watcher still
+starts; a later push can proceed from empty checksum/ETag state as an unconditional local upsert
+(`src/setup.ts:330–369`; `src/services/teamMemorySync/index.ts:851–855`;
+`src/context.ts:152–189`).
 
 ### 11.2 Sync state
 
@@ -617,6 +705,10 @@ Network/auth/repo/limit errors are returned and logged; local memory remains usa
 limits are learned from structured errors rather than duplicated as a stale client constant. Partial
 multi-batch pushes are possible: successful earlier batches remain committed if a later batch fails.
 
+`no_oauth`, `no_repo`, and most 4xx failures are treated as permanent for that watcher run and suppress
+retries until file deletion or restart; 409/429 remain retryable. Shutdown flush is best-effort
+(`src/services/teamMemorySync/watcher.ts:45–145, 321–352`).
+
 ---
 
 ## 12. SessionMemory: bounded working notes and compaction
@@ -664,6 +756,9 @@ When enabled and non-empty, SessionMemory can replace traditional compaction:
 If the remembered boundary is missing or the file is absent/template-only, it falls back to legacy
 compaction (`src/services/compact/sessionMemoryCompact.ts:434–598`).
 
+This path is independently gated by `tengu_session_memory && tengu_sm_compact` (with environment
+overrides); enabling note extraction alone does not guarantee that compaction consumes the notes.
+
 ### 12.5 No promotion
 
 No code promotes SessionMemory facts into auto memory. Under pressure it condenses **in place**, and a
@@ -680,7 +775,11 @@ An agent definition may choose one memory scope:
 - `project`: `<cwd>/.claude/agent-memory/<agentType>/`;
 - `local`: project-local non-VCS directory, or a remote-memory mount namespace.
 
-The agent type is path-sanitized. The spawned agent receives the complete memdir-style policy plus its
+Agent memory exists only while auto memory is enabled and the definition declares a scope.
+
+The agent type is only **colon-normalized** (`:` becomes `-`), not generally path-sanitized; `a:b` and
+`a-b` therefore collide, and the helper does not reject separators, `..`, absolute components, or null
+bytes. The spawned agent receives the complete memdir-style policy plus its
 `MEMORY.md` content and a scope-specific note. Directory creation is fire-and-forget, with FileWriteTool
 parent creation as fallback (`src/tools/AgentTool/agentMemory.ts:12–65, 106–176`).
 
@@ -688,7 +787,16 @@ Agent memory has no selective topic scan of its own in normal operation. It is o
 file. An explicitly mentioned memory-enabled agent can, however, redirect the experimental selector's
 search root to that agent directory (`src/utils/attachments.ts:2204–2213`).
 
-### 13.1 Operator surface
+### 13.1 Optional snapshot initialization/update lane
+
+Behind `AGENT_MEMORY_SNAPSHOT`, user-scoped custom-agent memory can initialize from
+`.claude/agent-memory-snapshots/<agentType>/` or report that a newer snapshot is available. Copy,
+replacement, and synchronization metadata are handled separately from the normal prompt-injection path
+(`src/tools/AgentTool/loadAgentsDir.ts:257–294, 344–354`;
+`src/tools/AgentTool/agentMemorySnapshot.ts:27–197`). This is an optional build-gated lane, not ordinary
+agent-memory recall.
+
+### 13.2 Operator surface
 
 The `/memory` command clears/primes the memory-file cache, then opens a selector/editor. It can open
 ordinary instruction files, the auto-memory folder, the team-memory folder, and configured agent-memory
@@ -697,6 +805,13 @@ folders. It exposes toggles for auto memory and autoDream plus dream status/last
 `src/components/memory/MemoryFileSelector.tsx:112–238`). It is an editor/setting surface, not a corpus
 validator: there is no parsed/skipped topic count, per-topic schema report, cap-usage dashboard, backend
 picker, or typed topic editor in this source.
+
+`/remember` is an internal-user-only review/proposal flow and forbids mutation before approval. `/dream`
+is feature-registered through a dynamic module absent from this checkout, so its manual behavior cannot
+be traced here. ConfigTool exposes `autoMemoryEnabled` and `autoDreamEnabled`; the broader settings schema
+contains `autoMemoryDirectory`, but ConfigTool does not expose it
+(`src/skills/bundled/remember.ts:4–82`; `src/skills/bundled/index.ts:24–40`;
+`src/tools/ConfigTool/supportedSettings.ts:54–68`; `src/utils/settings/types.ts:938–955`).
 
 ---
 
@@ -712,14 +827,16 @@ picker, or typed topic editor in this source.
 | surfaced-memory set/bytes | reconstructed from transcript | compaction drops old attachments and naturally resets |
 | `readFileState` | session/tool context | Read/Write/Edit updates; prevents stale edits and duplicate recall |
 | extractor cursor | process closure | advances on success or direct-memory-write skip |
-| dream schedule | corpus lock mtime | success keeps new mtime; failure rolls back |
+| dream schedule | best-effort corpus lock mtime | success keeps new mtime; failure rolls back |
 | team sync state | session watcher/service | pull/push responses update hashes/ETag |
 | SessionMemory counters | process session | reset at session/test lifecycle |
 
 ### 14.2 Prompt-cache consequences
 
-- Ordinary index bytes are stable startup context until memory changes.
-- A memory write invalidates the context suffix from its injection point on subsequent calls.
+- Ordinary injected index bytes remain stable until a lifecycle reload.
+- Direct memory Write/Edit does not invalidate `getMemoryFiles` or memoized user context; the current
+  conversation knows its write, while later calls keep the old injected index until clear/resume,
+  compaction, or a new session.
 - Selective topic attachments are append-only user-side messages; stored headers preserve replay bytes.
 - Query-time selector prompts place the changing query first, forfeiting prefix reuse for the manifest.
 - KAIROS uses a date-path pattern specifically to keep the system section stable across midnight.
@@ -735,8 +852,8 @@ Guaranteed by code:
 - selector filename post-filter;
 - fork tool confinement;
 - team remote-key path validation;
-- team secret filtering and ETag conflict loops;
-- one dream lock per corpus.
+- full-file team Write/upload secret filtering, fragment-only Edit filtering, and ETag conflict loops;
+- one best-effort dream lock file per corpus (not guaranteed single-owner acquisition).
 
 Not guaranteed by code:
 
@@ -762,7 +879,7 @@ Not guaranteed by code:
 | selector output budget | 256 tokens | `memdir/findRelevantMemories.ts:97–122` |
 | selected topics per turn | 5 | `utils/attachments.ts:2231–2234` |
 | selected topic read | 200 lines / 4,096 bytes | `utils/attachments.ts:2268–2307` |
-| selective session payload | 60 KiB | `utils/attachments.ts:2383–2386` + config definition |
+| selective session payload | 60 KiB-named threshold, actually JS code units | `utils/attachments.ts:2251–2265, 2383–2386` |
 | extraction fork | 5 turns | `extractMemories.ts:415–426` |
 | extraction cadence | every eligible turn by default | `extractMemories.ts:374–386` |
 | dream schedule | 24 h + 5 sessions | `autoDream.ts:58–66` |
@@ -806,10 +923,12 @@ Not guaranteed by code:
 
 ## 17. Source-derived concerns and defects worth preserving as evidence
 
-### C1. "Bytes" are not bytes
+### C1. Some "bytes" are code units
 
 The index `byteCount` is `trimmed.length`, i.e. UTF-16 code units. Multi-byte Unicode can exceed the
-nominal byte limit materially (`memdir/memdir.ts:57–66`).
+nominal byte limit materially (`memdir/memdir.ts:57–66`). The 60-KiB selective-session counter likewise
+adds `mem.content.length`; per-file selected-topic truncation is the separate path that actually measures
+encoded bytes (`utils/attachments.ts:2251–2307, 2383–2386`).
 
 ### C2. Index and selector are alternatives
 
@@ -834,8 +953,9 @@ this source shape would reduce interoperability (R37 §13).
 
 ### C6. Private and team safety differ
 
-Team writes and uploads have deterministic secret checks. Private auto memory does not. This is an
-intentional sharing-boundary defense, not a general memory-security layer.
+Team writes and uploads have deterministic secret checks, but local FileEdit scans only `new_string`;
+the complete-file upload scan is the stronger outbound guarantee. Private auto memory has no equivalent
+gate. This is an intentional sharing-boundary defense, not a general memory-security layer.
 
 ### C7. Strong team symlink helper is not wired into local tools
 
@@ -881,21 +1001,23 @@ Legend:
 | Main model recalls with read/search tools | Main model uses ordinary Read/Grep/Glob; optional policy teaches literal Grep | **SEMANTIC MATCH**; dedicated `core_memory` tool is ctrl-b API choice |
 | One shared corpus across all ctrl-b agents | Auto memory is project-shared; persistent agent memory is separately partitioned | **PARTIAL**; source offers both patterns, does not settle ctrl-b's choice |
 | Core root inside ctrl-b `memories/core/` | Claude root is project identity under memory base; no ctrl-b D26 repo | **DELIBERATE DIVERGENCE** |
+| Root validation + per-action containment | Claude rejects dangerous roots but private local writes use prefix containment without symlink resolution; stronger team helper is unwired | **RECOMMENDED HARDENING**: resolve existing ancestors/realpaths on every action, reject symlink escape and non-regular targets, and disable only Core Memory on invalid root |
 | Copy-in migration | Claude supports path override/live root; source has no copy-in procedure | **NOT SOURCE-DERIVED**; compatibility is corpus-format work |
 | Read top-level or nested `metadata.*` | Pin reads only top-level; current live corpus uses nested metadata | **HARDENING/CURRENCY FIX**, required by R37 evidence |
 | Skip dotfiles, `logs/`, no-frontmatter non-index artifacts | Source excludes only basename `MEMORY.md` | **HARDENING**, closes C4 |
 | Match-neighbours writes | Pin writes top-level shape; current writer is absent from source | **DELIBERATE INTEROP RULE**, justified by source staleness |
 | Clamp each rendered index entry ~150 chars | Source only prompts ~150 and does not clamp each line deterministically | **HARDENING** |
-| Index hard char cap ~8 KiB | Source reads 200 lines/25,000 code units | **DELIBERATE DIVERGENCE**; ctrl-b chooses Kilo-like smaller budget |
+| Index hard `index_char_limit` ~8 KiB | Source reads 200 lines/25,000 code units; R39/Kilo precedent is 8,192 encoded bytes | **RECOMMENDED RESOLUTION**: keep 8,192 **characters** for model-context budgeting, stop calling it KiB, and test Unicode |
 | Soft truncation + warning | Source does exactly this for the entrypoint | **MATCH** |
 | Policy + index in static system head | Source policy is system-side, index is hidden user context | **DELIBERATE DIVERGENCE**; cache behavior similar, authority placement different |
 | Place core index after tier-1 memory and before skills | Source has no ctrl-b-style tier-1 block/skills-note ordering; AutoMem rides the CLAUDE.md user-context path | **NOT SOURCE-DERIVED**; ctrl-b placement is a local prefix-cache decision |
 | Recalled content = fallible data, not instructions | Source freshness warns about staleness, but startup index inherits contradictory instruction authority | **HARDENING**, do not "restore parity" |
 | Dedicated `read(path)` with 4,096-char cap | Selector attachment uses 4,096 bytes; manual Read is ordinary tool behavior | **SEMANTIC MATCH** with unit/API divergence |
-| Per-turn recall cap ~20 KiB | Selector cohort: 5 × 4 KiB | **MATCH** to experiment, not ordinary cohort |
-| No 60 KiB session cap in plan | Selector cohort stops at 60 KiB and resets through compaction | **DELIBERATE DIVERGENCE**; decide whether tool-result persistence already bounds ctrl-b |
+| Per-turn recall cap ~20 KiB | Selector cohort: five byte-truncated files; ctrl-b tool uses character caps and a different retrieval path | **SEMANTIC ANALOGY, UNIT/API DIVERGENCE**; test Unicode |
+| No 60 KiB session cap in plan | Selector cohort stops at a 60-KiB-named **code-unit** counter; compaction often, but not universally, drops old accounting attachments | **DELIBERATE V1 OMISSION**: keep only the per-turn cap until transcript growth is measured |
 | `search` = literal body/frontmatter grep | Optional source policy tells main model to Grep full markdown | **SEMANTIC MATCH**, no BM25/vector needed |
-| `create` writes topic + index | Source prompt requires the same two steps through generic tools | **SEMANTIC MATCH**; ctrl-b tool can enforce more |
+| `create` writes topic + index | Source prompt requires the same two steps through generic tools | **SEMANTIC MATCH**; both designs can fail between the two writes |
+| Corpus-level topic/index transaction | Source has none; ctrl-b plan specifies a lock plus per-file atomic replacement, not pair rollback/repair | **ACCEPTED LEAN RISK**: do not add a transaction; report partial failure, leave files recoverable, and test failure between writes |
 | CAS unique-substring update/remove | FileEditTool requires a unique match unless replace-all; stale mtime/read checks | **MATCH/HARDENING** when made corpus-specific |
 | Whole-topic delete with expected description | Source uses ordinary deletion/file editing; no equivalent expected-description token | **HARDENING** |
 | Deterministic secret rejection for all core writes | Source deterministically scans team memory only | **HARDENING** |
@@ -906,10 +1028,15 @@ Legend:
 | `Risk.LOW`, non-core, allowlist-excludable tool | Source relies on ordinary filesystem tool permissions and the AutoMem write carve-out | **DELIBERATE CTRL-B SECURITY/OPERABILITY SHAPE** |
 | Core memory live in all headless/subagent sessions (O1) | Source varies: selector can run broadly, extraction/main only, dream/main only, SessionMemory REPL-only, bare/remote exclusions | **DELIBERATE CTRL-B POLICY**, not "match Claude" |
 | Never ask which tier for unqualified remember (O2) | Claude says save immediately into its one active auto-memory lane, subject to exclusions | **PARTIAL MATCH**; two-tier routing remains ctrl-b policy |
+| Explicit wording always wins | Claude exclusions override explicit remember requests; ctrl-b plan also excludes secrets/task state/procedures | **RECOMMENDED RESOLUTION**: explicit wording wins destination routing, not eligibility; exclusions still win |
 | Dedicated read actions despite tier-1 no-read rule (O3) | Claude ordinary recall already depends on file reads/search | **MATCH IN PURPOSE** |
 | Proactive writes, prompt-steered cleanup, no separate consolidator v1 (O4) | Claude combines proactive main writes, optional extraction fork, and optional autoDream consolidator | **DELIBERATE LEAN SUBSET**; not full Claude parity |
 | Cap-pressure promotion from tier 1 | SessionMemory condenses in place and never promotes | **NOT SOURCE-DERIVED**; R39 supplies external precedent and caveat |
-| Owner-invoked consolidation via same tool | Claude ships manual `/dream` plus optional autoDream fork | **SEMANTIC MATCH** for manual path; actor/tool differ |
+| Standing routing rule + pressure priority | No Claude path routes SessionMemory into AutoMem | **R39/CTRL-B POLICY**, not Claude parity |
+| One-shot latched pressure nudge | No corresponding source mechanism | **R39/CTRL-B POLICY**; latch is required to avoid repeated cached-prefix nudges |
+| `MemoryCapError` guidance; no tier-2 hard ceiling | Claude AutoMem has soft read truncation, not this ctrl-b capacity contract | **R39/CTRL-B POLICY**, not source-derived |
+| Promotion is non-transactional main-model work | Claude has no cross-tier promotion transaction | **R39/CTRL-B POLICY**; preserve the explicit partial-failure posture |
+| Owner-invoked consolidation via same tool | Pin references feature-registered `/dream`, but its dynamic module is absent; autoDream fork is traceable | **PARTIAL/UNVERIFIABLE MANUAL PATH**; ctrl-b manual consolidation remains its own contract |
 | Byte-identical assembly when off | Auto-memory gate makes memory-specific context absent, but source does not state ctrl-b's exact byte assertion | **GOOD ACCEPTANCE INVARIANT**, stronger than source comments |
 | Recall visible as tool calls | Ordinary source recall uses visible Read/Grep; selector attachments are hidden/meta | **MATCH ordinary cohort**, divergence from selector cohort |
 | Fresh first answer can recall after a voluntary tool read | Ordinary main loop can read before final answer; selector cannot help tool-free first response | **MATCH**, provided model policy reliably calls the tool |
@@ -929,12 +1056,19 @@ Legend:
 
 **O1 — headless policy.** Claude source does not establish a single "live everywhere" rule. Read access
 and ordinary file tools are broad; automatic writers and SessionMemory are carefully restricted by mode,
-agent depth, remote/bare state, and feature gates. Ctrl-b may choose symmetric all-session availability,
-but should label it a product simplification, not source parity.
+agent depth, remote/bare state, and feature gates. Ctrl-b's "match tier 1" rationale means internal
+symmetry with ctrl-b tier 1 and is valid; it should simply not be presented as Claude parity.
 
 **O2 — unqualified remember.** Claude's instruction is immediate save without asking, after eligibility
 filters. This supports no-dialog capture. It does not answer how a two-tier product should route; ctrl-b's
-durability/scope policy remains its own decision.
+durability/scope policy remains its own decision. The plan still needs one precise ruling: does "explicit
+wording always wins" override only **destination routing**, or also eligibility? Claude makes exclusions
+override explicit requests, while ctrl-b also excludes secrets/task state/procedures. The latter should
+remain exclusions unless Ari explicitly chooses otherwise. The plan's separate requirement that every new
+model-facing string remain editable through the three prompt-registry IDs or `tool_overrides` is a
+ctrl-b integration invariant, not Claude behavior. It should be attached to O2 wherever new routing text
+is introduced. The plan also needs to separate durable workflow **preferences/conventions** from reusable
+procedures, which its own skill policy reserves for skills.
 
 **O3 — read actions.** Source decisively supports read/search capability for long-term topic memory. It
 uses ordinary tools rather than a memory-specific tool. The important behavior is on-demand detail, not
@@ -943,7 +1077,10 @@ the tool name.
 **O4 — proactive writes and cleanup.** Claude combines three postures: main-model proactive writes,
 background extraction, and optional periodic dream consolidation. A v1 with proactive writes but only
 prompt/manual cleanup is a deliberate reduction. The source's repeated two-step and duplicate warnings
-show why cleanup pressure exists; they do not require ctrl-b to copy the background machinery.
+show why cleanup pressure exists; they do not require ctrl-b to copy the background machinery. R39's
+standing routing rule, pressure priority, one-shot latched nudge, `MemoryCapError` guidance, absence of a
+tier-2 hard ceiling, and non-transactional main-model promotion are all **ctrl-b/R39 policy**, not Claude
+parity; they should remain explicit rather than being summarized as generic "promotion."
 
 **O5 — phase ordering.** No answer exists in Claude source. This is exclusively ctrl-b planning.
 
@@ -954,26 +1091,38 @@ show why cleanup pressure exists; they do not require ctrl-b to copy the backgro
 The source pass does **not** overturn the plan's core mechanism. It supports it. The useful changes are
 narrow clarifications, not a redesign:
 
-1. **Stop calling O1 "match tier 1" or implying Claude parity.** Say Core Memory is enabled in all
-   ctrl-b session origins by product choice; Claude's automatic memory actors are mode/depth gated.
+1. **Keep O1's internal "match tier 1" rationale, but do not imply Claude parity.** Core Memory is enabled
+   in all ctrl-b session origins for symmetry with ctrl-b tier 1; Claude's automatic actors are gated.
 2. **Distinguish API parity from behavior parity.** Claude uses standard Read/Grep/Write/Edit. Ctrl-b's
    dedicated `core_memory` tool preserves the behavior while enforcing corpus invariants.
-3. **State that the 4,096 cap changes unit.** Claude's selective surfacer uses bytes; the plan says
-   characters. Pick one deliberately and test Unicode.
-4. **Decide whether ctrl-b needs a cumulative per-session recall cap.** Claude uses 60 KiB only in the
-   selector cohort. A visible tool-result design can still accumulate payload across a long transcript.
+3. **Resolve all cap units explicitly.** Keep ctrl-b's existing character-based mechanism—8,192-character
+   index, 4,096-character reads, 20,480-character turn budget—because it bounds model-facing text without
+   encoding-dependent surprises. Stop calling those values KiB; document the divergence and test Unicode.
+4. **Keep cumulative session recall uncapped in v1.** Claude's 60-KiB-named counter belongs only to the
+   hidden selector cohort and is itself leaky across some compaction paths. Ctrl-b's visible per-turn cap
+   is enough until measured transcript growth proves otherwise.
 5. **Preserve the scanner exclusions.** They are confirmed improvements over source, not speculative
    complexity: the source really will consider `logs/**/*.md`.
 6. **Keep data-not-instructions framing.** Claude's startup authority wrapper is internally
    contradictory; parity would be a regression.
-7. **Record the stronger write guarantees as ctrl-b hardening.** CAS, secret rejection, backup lock,
-   byte preservation, and topic/index integrity are not source behavior.
+7. **Describe write guarantees precisely.** CAS, secret rejection, backup lock, and per-file atomic
+   replacement are ctrl-b hardening. Do not add a pair transaction for `create`: report a failure between
+   topic/index writes, leave the Markdown recoverable, and add one partial-failure acceptance.
 8. **Add one cache invalidation acceptance for hand edits/reload.** Source's private lane is memoized
    without a watcher; ctrl-b promises copy-in/reload and D26 hand-edit reconciliation, so the exact
    reload boundary should be testable.
 9. **Do not add SessionMemory promotion machinery to imitate Claude.** Claude has no such path.
 10. **Do not add extractor/dream machinery for "completeness."** They are independent optional actors,
     and the plan already banks the background consolidator.
+11. **Resolve explicit-request eligibility.** "Explicit wording wins destination routing, not the
+    secret/task/procedure exclusions." This preserves the owner's no-dialog intent without opening a
+    trust-boundary hole.
+12. **Make containment an acceptance contract.** Resolve existing ancestors/realpaths on every action,
+    reject symlink escape and non-regular targets, and disable only Core Memory on an invalid root;
+    Claude's private lexical prefix check is not sufficient.
+13. **Keep the full R39 promotion contract visible.** Standing routing, pressure priority, latched nudge,
+    `MemoryCapError`, no tier-2 hard ceiling, and non-transactional promotion are ctrl-b policy—not a
+    behavior inferred from Claude.
 
 Everything else in the current plan — no selector, bounded index, literal search, one corpus, one tool,
 no embeddings, no new backup subsystem, no speculative provider interface — remains consistent with the
@@ -1000,7 +1149,7 @@ A read-only Python check asserted the following symbols/contracts in the pinned 
 - 5-file / 4,096-byte / 60-KiB selective caps;
 - same `tengu_moth_copse` gate on selector and inverse index filtering;
 - prefetch start plus zero-wait consume in `query.ts`;
-- extraction five-turn cap, direct-write exclusion, coalesced trailing context;
+- extraction five-turn cap, ordinary cursor-present direct-write skip, coalesced trailing context;
 - dream 24-hour / five-session / scan-throttle gates;
 - team deletion non-propagation;
 - SessionMemory deterministic truncation and compact-message construction.
@@ -1008,6 +1157,15 @@ A read-only Python check asserted the following symbols/contracts in the pinned 
 Result: **10/10 checks passed**. The first draft of the check used three wrong symbol names and failed;
 those names were corrected against the actual source before the passing run. No source behavior was
 changed to make the check pass.
+
+Three independent source mappers then ran 13/13 additional static invariants, a separate adversarial
+review ran 9/9 focused assertions, and the parent replayed the corrected seams in a final 10/10 check. The
+review found no high-severity issue in the central architecture and did find the seams now recorded here:
+local-vs-sync TeamMem gates, no periodic pull, prompt-only extraction windowing, post-compaction
+direct-write exclusion gap, optimistic dream lock, separate SessionMemory gates,
+agent snapshot/name-path behavior, replay differences, KAIROS/TeamMem overlap, and cap units. A separate
+plan crosswalk review also found no high-severity issue and prompted the explicit O2/O4, pair-atomicity,
+containment, and Unicode-cap rulings above.
 
 ### 20.3 Test limitation
 

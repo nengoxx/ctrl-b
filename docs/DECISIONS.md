@@ -4330,3 +4330,49 @@ strict runtime render mode (L-6) · `rendered_hash` (C-8) · prompt-edit audit e
 **Slice 0 precondition (the vault-audit hardening, `~/Documents/Maia/60 Audits/2026-08-14-…`):**
 M1 allowlist-at-execution guard, M3 subagent batch cap, M2 live/linger skill snapshot — contracts
 C-11/C-12/C-14 — ship BEFORE the registry build; L1/L2 measurement-gated.
+
+## D57 — Core Memory: the tier-2 long-term memory lane (Phase 20) ✏️ LOCKED 2026-08-17 (owner rulings in conversation 2026-08-16 + 2026-08-17; spec of record = CORE_MEMORY_PLAN.md incl. its §13 council record; council = Codex correctness round [BUILD WITH CHANGES, 14 findings] + adversarial Opus implementer lens [BUILD WITH CHANGES], all folded in place, confirm round clean, zero overrules; corroborated by the owner-commissioned R40 source crosswalk)
+
+**What.** A second, optional memory tier beside the existing file memory: one shared,
+Claude-Code-native markdown corpus (`memories/core/` — a bounded `MEMORY.md` routing index +
+frontmatter topic files) holding durable, long-term, cross-agent knowledge. Recall = a capped
+index block in the static head (after the tier-1 memory block) + a `core_memory` tool
+(read/search/create/update/remove/delete; CAS writes; literal grep; path-confined; secret-value
+containment gate; `memory.auto_write` honored) — **no LLM selector** (mutually exclusive
+experimental cohort in Claude Code itself, R37; nobody in the peer class runs one, R38). The
+**tier model**: tier 1 = the existing per-agent capped stores, untouched, short-horizon; tier 2 =
+ONE selectable long-term backend (`memory.longterm.backend`, Core Memory first; vector/Hindsight/
+Honcho = future values of the same slot — supersedes ROADMAP §B1's "vector/both" sketch). One
+shared corpus across all agents (agent identity = provenance, never partition); live in every
+session origin (a ctrl-b product choice, not Claude parity — R40 §18.1); Claude-corpus interop =
+copy-in migration with tolerant read + match-neighbours write (R37 claim-13 correction). The **O4
+cleanup posture**: proactive writes + in-session prompt-steered promotion (plan §4b — the standing
+routing rule in `core_memory_policy`; the latched, tier-aware `consolidation_nudge` via the
+`consolidation_promote` id; `memory_cap_error` at the tool boundary; the owner-invoked
+`consolidation` procedure) — **no background/scheduled consolidator in v1**; an autoDream-style
+pass is banked as a future owner-created A3 automation. Five registry ids, all Conf-editable
+(the owner's whole-class editability rider).
+
+**Recorded divergences (deliberate, argued in the plan):**
+- **D14/D15 (memory tool has no read):** kept for tier 1; tier 2's whole mechanism is on-demand
+  tool reads — the no-read rule was a property of a fully-injected store, and index+read IS what
+  Claude Code ships (R37/R40).
+- **D26 (one memory repo):** an absolute core root *outside* `memories/` is allowed but
+  unversioned; copied-in foreign artifacts (`logs/`, `.consolidate-lock`) are `_GITIGNORE`d, not
+  committed.
+- **D27 #3 (memory content never redacted):** tier 2 rejects writes containing a known secret
+  value (`Settings.secret_values()`, whole-resulting-file), a containment rail the vault spec
+  required; shape detection stays a non-goal.
+- **The vault spec's lane-independence clause:** holds at the *code-path* level only — no code
+  path writes both tiers, but one turn may legitimately write both via two tool calls (§4b
+  promotion; the per-write phrasing would forbid the feature).
+
+**Explicit non-builds (ledger: plan §9/§10):** the LLM selector (banked, measured trigger) ·
+scheduled/background consolidation (banked as an A3 automation) · embeddings/vector/SQLite/graph ·
+scoring/decay · approval queues · per-entry IDs · live shared-root attach · a per-session recall
+cap · a tier-2 hard ceiling (Letta removed theirs, `d3f3a38f`) · a cross-tier write transaction ·
+per-topic Conf editing · a second backup subsystem.
+
+**Phase ordering (owner):** Core Memory = Phase 20 and **executes before** the parked Phase 19
+hardening pass; the hardening charter takes **D58** when it wakes (its docs' "D57" references
+renumbered).

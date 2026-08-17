@@ -1360,10 +1360,39 @@ stamping (the eval seam), + the symbol-keyed AST backstop. Build against the pla
 
 - [x] Council: spec-completeness round (Codex 10 BLOCKER/8 SHOULD + Opus implementer's test) → §6 reconciliation → confirm rounds ALL RESOLVED → cuts-only lean round → §7 → **D56 LOCKED** (2026-08-15)
 - [x] Slice 0 — hardening pre-slice ✅ `30e7417` (2026-08-15): M1 execution guard (incl. resume + invalid_raw ordering) · M3 batch cap · M2 skill snapshot (terminal-record pin MERGE) · 15 regressions · Codex SHIP-WITH-FIXES → wave → RESOLVED (as-built = PROMPTS_PLAN §8.1) → ⏸ OWNER PAUSE
-- [ ] Slice 1 — registry + config READ + migrate all entries (L-8 data-concatenation rule) + no-unresolved-tokens tests + the AST backstop
-- [ ] Slice 2 — API + stamping (NO migration): message-metadata stamps + usage, entry replace/delete hook, `api/prompts.py`
-- [ ] Slice 3 — Conf UI Prompts section (two-field PromptModal, restore-by-delete, side-by-side view, placeholder list, coupling warnings)
-- [ ] ROADMAP entry for the eval harness phase (promptfoo-shaped; scenarios from real transcripts; metrics per the R31 addendum; the deferred L-2 tables land there) — harness itself is NOT this phase
+- [x] Slice 1 — registry + config READ + migrate all entries (L-8 data-concatenation rule) + no-unresolved-tokens tests + the AST backstop
+- [x] Slice 2 — API + stamping (NO migration): message-metadata stamps + usage, entry replace/delete hook, `api/prompts.py`
+- [x] Slice 3 — Conf UI Prompts section (two-field PromptModal, restore-by-delete, side-by-side view, placeholder list, coupling warnings)
+- [x] ROADMAP entry for the eval harness phase (= A12, `9a85c34`) (promptfoo-shaped; scenarios from real transcripts; metrics per the R31 addendum; the deferred L-2 tables land there) — harness itself is NOT this phase
+
+## Phase 19 — The hardening pass — **📋 SPEC WRITTEN, PARKED owner-gated · spec = [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) (its §10 owner court + §3b delta council run at wake; locks as D58)**
+
+Deliberately ordered BEHIND Phase 20 (owner, 2026-08-17). No boxes until its charter is ruled.
+
+## Phase 20 — Core Memory: the tier-2 long-term memory lane — **✅ DESIGN LOCKED 2026-08-17 ([`D57`](./DECISIONS.md)) · spec = [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (§13 council record; build against the plan, NOT this list)**
+
+One shared Claude-Code-native corpus (`memories/core/`: bounded index + topic files) beside the
+untouched tier-1 stores; index-in-head + `core_memory` tool recall (no selector); proactive writes
+with in-session prompt-steered promotion (§4b); five Conf-editable registry ids. Pause for owner
+go-ahead between slices; each passes `tools/check.py`.
+
+- [x] S0 — Lock: §2b rulings O1–O5 · R39 + R40 bought · council (Codex + adversarial Opus, both
+      BUILD WITH CHANGES, folded; confirm round clean) · D57 · ROADMAP §B1 rewrite · this stanza
+      (2026-08-17)
+- [ ] S1 — Corpus module, read-only: `LongTermCfg`/`CoreMemoryCfg` · root resolution/validation
+      (tier-overlap refusal) · scanner + tolerant frontmatter · index render/clamp/cache —
+      acceptance family 1 (read half)
+- [ ] S2 — Head injection: lifespan singleton + `core_memory=` kwarg (both construction sites) ·
+      static-head block · `core_memory_policy` · byte-identical-when-off — families 2 (index) + 5
+- [ ] S3 — Tool: six actions · CAS (+ hash delete) · grep · crash-tolerant orderings · path
+      confinement · secret gate · `auto_write` gate · two-layer exposure · `core_memory_recall` —
+      families 2 (reads), 3, 4
+- [ ] S4 — Curation + Conf: §4b promotion backstops (`consolidation_promote` · latch ·
+      `memory_cap_error` · conditional tier-1 wording) · index cap-pressure nudge ·
+      `consolidation` id + owner procedure · Conf disclosure + status endpoint · copy-in doc —
+      families 1 (fixture) + 4
+- [ ] S5 — Close-out: DESIGN §6 + SPEC inventories · measured numbers into the as-built appendix ·
+      HANDOFF
 
 ## Cross-cutting / don't-forget
 
@@ -1382,7 +1411,8 @@ stamping (the eval seam), + the symbol-keyed AST backstop. Build against the pla
       (native-only — see Phase 4c + DECISIONS "Still open").
 - [x] SearXNG → done as the built-in **`web_search`** tool (4f) **and** available via emma's
       `mcp__web-tools__*` MCP server; both live.
-- [ ] Memory strategy final shape (Phase 7) — embeddings client built (4f), vector `MemoryProvider`
-      + recall still TODO.
+- [x] Memory strategy final shape → the **tier model, D57** (2026-08-17): tier 1 = the existing
+      file stores; tier 2 = one selectable long-term backend, Core Memory first (Phase 20); vector =
+      a future tier-2 backend value (ROADMAP §B1).
 - [x] Frontend routing → **tab state** (`store/ui.ts`), not react-router (decided Phase 1).
 - [x] `dashboard_v2/` is tracked on the public `main` (decided Phase 0; committing throughout).
