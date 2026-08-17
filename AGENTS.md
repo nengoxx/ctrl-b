@@ -45,7 +45,10 @@ backend/                FastAPI + Uvicorn service (port 5433). Layered:
   app/services/         ActionService (gate+audit), the agent loop (services/agent/), fleet, svc, …
   app/api/              FastAPI routers (JSON + SSE)
   app/config.py         config.yaml/.env loading; _PROJECT_ROOT = repo root; CTRLB_HOME relocates data
-  app/main.py           lifespan (db) + StaticFiles serving frontend/dist + SPA fallback
+  app/config_migration/ config-shape migrations (UPDATE_PLAN.md) — load-boundary fold + write-back
+  app/runtime.py        the process-wide chokepoint: settings writes / reconfigure() / grant_approval
+  app/db.py             SQLite schema + migrations + connection handling (chat · memory · events)
+  app/main.py           lifespan (db) + app.frontend() SPA serving of frontend/dist (D55; StaticFiles = media mounts only)
   tests/                pytest (count: QUALITY.md) — conftest auto-isolates CTRLB_HOME; temp configs via CTRLB_CONFIG/CTRLB_DB
   pyproject.toml        editable install (pip install -e .)
 frontend/               React 19 + TS + Vite 7 PWA. store/ hooks/ components/ tabs/ lib/ theme-engine/ themes/
@@ -85,13 +88,14 @@ cd backend && python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # Windows (the frozen corsair clone; do NOT pass --reload — see §8 gotcha). [dev] = ruff/pyright/pytest
 cd backend; py -3 -m venv .venv; .venv\Scripts\python.exe -m pip install -e ".[dev]"
 .venv\Scripts\python.exe -m uvicorn app.main:app --port 5433        # http://127.0.0.1:5433
+.venv\Scripts\python.exe -m pytest -q                               # tests, the Windows spelling
 cd ..\frontend; npm install; npm run dev                            # http://localhost:5173 (proxies /api → 5433)
 ```
 
 - **One-command runners:** `deploy/linux/run.sh [prod|dev]` (manual) · `python deploy/bootstrap.py`
   (Linux server, systemd + HTTPS — **executed 2026-07-10: v1.0.0 live on emma**) ·
   `deploy/windows/start.cmd` (Windows). See [`deploy/README.md`](./deploy/README.md).
-- **Tests:** from `backend/`, `.venv/Scripts/python.exe -m pytest -q`. Frontend: `npm test`
+- **Tests:** from `backend/`, `.venv/bin/python -m pytest -q`. Frontend: `npm test`
   (vitest) · `npm run test:e2e` (playwright) · `npm run build`.
 - **Quality harness:** one command answers "is the repo green?" — **`python tools/check.py`** (runs
   everything in parallel: BE `ruff` lint+format · `pyright` (type check) · `pytest`; FE `npm run
@@ -147,13 +151,16 @@ The app's safety rests **entirely** on Tailscale + no open ports + single truste
 boundary it is permissive, but several things are genuinely dangerous and any agent must **preserve or
 improve — never weaken** them:
 
-- **No public bind, no auth removal, no Tailscale assumption removed.** The backend binds **127.0.0.1**;
-  the tailnet (via **Tailscale Serve** HTTPS) is the sole ingress. Egress (SSH/ping/WOL to the fleet) is
-  unaffected by the bind.
+- **No public bind, no auth removal, no Tailscale assumption removed.** The backend binds **127.0.0.1**
+  by code default; deployed prod binds `0.0.0.0:5433` under the 2026-07-10 owner waiver (LAN+tailnet
+  only — see `SECURITY_MODEL.md` §2.1), with **Tailscale Serve** HTTPS as the sole secure-context
+  (mic) ingress. Never widen beyond that. Egress (SSH/ping/WOL to the fleet) is unaffected by the bind.
 - **Typed actions are the primary execution path.** Agent + UI request named, allowlisted actions
   (`wake_host`, `shutdown_host`, `restart_service`, …) that pass the **risk/privilege gate**; med/high-risk
-  calls **suspend on a confirm bubble**. A raw `$` shell escape hatch is **deferred + agent-excluded by
-  default** (Phase 5) — don't expose arbitrary shell beyond the tailnet, don't bypass the gate.
+  calls **suspend on a confirm bubble**. The guarded `!` local-shell escape hatch **shipped** (Phase 5 —
+  the user types `!<cmd>` → `POST /api/exec`; the agent's own tool is `run_shell`), and **both gates
+  default OFF**: `shell.user_exec_enabled` and `shell.agent_exec_enabled` are `False`
+  (`app/config.py` `ShellCfg`) — don't expose arbitrary shell beyond the tailnet, don't bypass the gate.
 - **SSH credentials + API keys live in `config.yaml`** (gitignored, masked on API read). Never commit or
   echo them. `paramiko` uses `AutoAddPolicy` — acceptable only inside the trusted tailnet.
 - **`debug` is off by default** (it's an RCE surface). Keep it off for anything reachable.

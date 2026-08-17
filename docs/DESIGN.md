@@ -9,14 +9,24 @@ sketch is a summary. Python 3.14+, Pydantic v2, FastAPI. Read alongside `ARCHITE
 > and memory** areas, **D14/D15 supersede the sketches here**: agents are **folder-only**
 > (`$CTRLB_HOME/agents/<name>/` = `agent.yaml` + `SOUL.md` + `memories/` + `skills/`; **no `agents:[]`
 > list**, no `AgentDef.memory` field); memory is the **Hermes file model** (§6 updated below);
-> `messages` gains an **`agent`** column (D15 #5). The §1 package layout is **aspirational** — the
-> shipped tree is leaner (inference is an *adapter*, the loop lives in `session.py` not a `runner.py`,
-> no `tools/`/`voice.py`/`automations.py`/`notify/`/`memory/` yet). Conceptual designs (capability
-> model, loop state machine) remain accurate — but parts of **§10** (per-thread queueing, `/cancel`)
-> and **§12** (event `id:` / `Last-Event-ID` replay) are **target design, not yet built** — each is
-> marked **▹** inline (ACA Slice 0); see `AGENT_CHAT_AUDIT.md` ACA-1/ACA-2 (fix plan: ACA Slices
-> 2/3/5). The §12 *event inventory* is the shipped contract (reconciled against `session.py`
-> 2026-07-07).
+> `messages` gains an **`agent`** column (D15 #5). The §1 package layout is a **sketch** — most of it
+> shipped, but not always at the drawn path: `services/tools/` and `services/actions/` are real; the loop
+> lives in `session.py`, there is no `runner.py`; inference/voice/embeddings are **adapters**
+> (`adapters/inference.py`, `adapters/voice.py`) with `api/voice.py` as the router — no `services/voice.py`;
+> automations are a **package**, `services/automations/` (repo · runner · schedule · service — see
+> [`AUTOMATIONS_PLAN.md`](./AUTOMATIONS_PLAN.md)), not an `automations.py`; memory is
+> `services/agent/memory.py` + `memory_tool.py` + `memory_backup.py` (a **file** provider, no
+> `adapters/memory/`); persistence is `app/db.py` + free-standing repos, not `adapters/db/`; media is
+> `core/media.py` (namespaces v2 — [`MEDIA_PLAN.md`](./MEDIA_PLAN.md)); settings/hot-reload live in
+> `runtime.py` + `api/settings.py`, not a `settings_service.py`. Genuinely **unbuilt**: `notify/` +
+> `core/notify.py` (F1, §7), `core/errors.py` (§11), `core/inference.py` (there is no `InferenceClient`
+> Protocol — `adapters/inference.InferenceClient` is the one concrete client, and `ModelRef` resolution
+> lives in `core/provider_registry.py`, §9.1). Conceptual designs (capability
+> model, loop state machine) remain accurate. **§10** (per-thread turn markers, steering,
+> `POST /api/agent/turns/{id}/cancel`) and **§12** (event `id:` / `Last-Event-ID` replay ring)
+> both **shipped** via ACA Slices 2/3/5 (D38–D41) — their as-built paragraphs are the record;
+> any inline ▹ surviving there is historical. The §12 *event inventory* is the shipped contract
+> (reconciled against `session.py` 2026-07-07).
 
 ---
 
@@ -87,14 +97,17 @@ Frontend layout per `ARCHITECTURE.md` §README; TS types in §14 below.
 
 ```python
 # domain/enums.py
-class OSType(StrEnum): WINDOWS="windows"; LINUX="linux"
+class OSType(StrEnum): WINDOWS="windows"; LINUX="linux"; MACOS="macos"   # `.coerce()` → LINUX default
 class Risk(StrEnum): LOW="low"; MED="med"; HIGH="high"
 class Privilege(StrEnum):           # the ladder (A1)
     READONLY="readonly"; CONFIRM="confirm"; AUTO_LOW="auto_low"; FULL="full"
 class Actor(StrEnum): USER="user"; AGENT="agent"; SYSTEM="system"; AUTOMATION="automation"
 class RunState(StrEnum):            # an action/tool invocation lifecycle
-    PENDING="pending"; AWAITING_CONFIRM="awaiting_confirm"; RUNNING="running"
+    PENDING="pending"; AWAITING_CONFIRM="awaiting_confirm"
+    AWAITING_ANSWER="awaiting_answer"          # a `question` builtin, suspended for the reply (A2)
+    RUNNING="running"
     OK="ok"; ERROR="error"; DENIED="denied"; SKIPPED="skipped"; TIMEOUT="timeout"
+    CANCELLED="cancelled"                      # interrupted by a turn cancel / restart (D39) — never re-run
 ```
 
 ```python
@@ -107,13 +120,17 @@ class Host(BaseModel):
     ssh_username: str | None = None
     ssh_password: SecretStr | None = None
     ssh_port: int = 22
-    os_type: OSType
+    os_type: OSType = OSType.LINUX   # the common homelab default
     role: str | None = None
     vpn_host: str | None = None      # D47: VPN/overlay address (MagicDNS name preferred); generic, no vendor string
     ssh_prefer_vpn: bool = False     # D47: per-host VPN-first SSH failover toggle (order lives in host_addresses)
+    wake_on_connect: bool = False    # D2-B: wake this host when a client connects
+    wake_on_presence: bool = False   # D2-A/D50: wake it when a presence device appears
+    wake_presence_cooldown_s: int | None = None   # per-host override of `wake.presence_cooldown_s`
     tags: list[str] = []
-    idle_action: Literal["none","sleep","shutdown"] = "none"   # D1 (opt-in)
-    idle_minutes: int | None = None
+    # **TARGET DESIGN (not built)** — the D1 idle-shutdown seam; `Host` ships no idle fields today:
+    #   idle_action: Literal["none","sleep","shutdown"] = "none"   # D1 (opt-in)
+    #   idle_minutes: int | None = None
 
 class HostStatus(BaseModel):         # derived, never persisted in YAML
     host_id: str
@@ -159,11 +176,22 @@ class ToolSpec(BaseModel):
     title: str; description: str; icon: str | None = None
     category: Literal["action","utility","builtin","mcp"]
     input_model: type[BaseModel]       # → JSON Schema for the agent + validation
+    raw_schema: dict | None = None     # externally-defined params (MCP): handed to the model verbatim;
+                                       # `input_model` is then a permissive passthrough (remote validates)
     risk: Risk = Risk.LOW
     confirm: bool = False              # force confirmation regardless of privilege
+    read_only: bool = False            # modifies nothing (MCP `readOnlyHint` shape). Builtin-authored →
+                                       # load-bearing: the sole gate for D40 parallel dispatch. DERIVED
+                                       # from an external annotation → advisory, prefix-INELIGIBLE.
+    idempotent: bool = False           # re-running with the same args adds no effect. `retry_safe`
+                                       # (= read_only or idempotent) is a retry-UX hint, never a control.
+    suspending: bool = False           # its own `run` can return AWAITING_* (today only `question`) →
+                                       # excluded from the parallel prefix (D40; test_suspending_pin_d40)
     agent_exposed: bool = True
     ui_exposed: bool = False           # shows as a Utils card / host button
-    timeout_s: float | None = None
+    core: bool = False                 # always reachable: `for_agent` unions core builtins in *over* the
+                                       # agent allowlist and any skill narrowing (the cognitive set)
+    timeout_s: float | None = None     # the ActionService._execute wall-clock deadline (see below)
     describe: Callable[[Settings], str] | None = None   # live description from Settings (D57)
 
 class Tool(Protocol):
@@ -174,23 +202,42 @@ class Tool(Protocol):
 class InvocationContext:               # passed to every tool — the "world handle"
     actor: Actor
     privilege: Privilege
-    interactive: bool                  # False for headless automations (A3)
-    confirm_token: str | None          # present once the user approved
-    settings: "Settings"
-    deps: "Deps"                       # adapters: ssh, wol, db, clients, event_bus...
-    recall: "RecallBudget | None"      # the turn's Core Memory recall budget (D57 §4) — None outside a turn
-    cancel: anyio.CancelScope
+    interactive: bool = True           # False for headless automations (A3)
+    confirm_token: str | None = None   # present once the user approved
+    deps: "Deps | None" = None         # adapters/services: fleet, events, db, clients… and `settings`
+    depth: int = 0                     # subagent nesting: 0 = top-level turn, +1 per spawn level (§5.5)
+    agent: "AgentDef | None" = None    # whose turn this is — spawn_subagents reads depth+agent
+    origin: Origin = ORIGIN_USER_CHAT  # who set this in motion (D49) — the automation-recursion guard's key
+    stamps: dict[str, str] | None = None   # the turn's prompt-stamp accumulator (Phase 18); None outside a turn
+    recall: "RecallBudget | None" = None   # the turn's Core Memory recall budget (D57 §4) — None outside a turn
 ```
+
+There is **no `settings` field and no `cancel` scope** on the context: `Settings` is reached through
+`ctx.require_deps().settings` (`deps` is optional by construction so a deps-free tool — `question` —
+runs with a deps-less context), and the per-tool deadline is enforced *outside* the tool by
+`ActionService._execute` (`asyncio.wait_for` on `ToolSpec.timeout_s`, below).
 
 ```python
 # the registry — the single source feeding UI buttons AND the agent toolset
 class ToolRegistry:
     def register(self, tool: Tool) -> None: ...
     def get(self, name: str) -> Tool: ...                 # raises UnknownTool
-    def for_agent(self, agent: "AgentDef") -> list[Tool]: # filtered by allowlist+exposed+enabled
+    def agent_tools(self) -> list[Tool]: ...              # every agent_exposed tool
+    def for_agent(self, allow: list[str] | str = "*",     # the AgentDef's `tools` allowlist (glob-matched)
+                  hidden: frozenset[str] = frozenset()    # a DISABLED feature's tools (D57 §6)
+                  ) -> list[Tool]: ...                    # = agent_tools ∩ allow ∪ core, then − hidden
     def ui_tools(self) -> list[Tool]: ...                 # ui_exposed subset
-    def to_openai_tools(self, tools: list[Tool]) -> list[dict]: ...   # JSON-Schema fn defs
+    def to_openai_tools(self, tools: list[Tool] | None = None) -> list[dict]: ...  # JSON-Schema fn defs
 ```
+
+**Deadline policy is fail-closed (ACA-7).** `ActionService._execute` enforces `ToolSpec.timeout_s` with
+`asyncio.wait_for`. Every registered tool must either declare its bound there **or** be documented in
+`core/tool.ADAPTER_BOUNDED` (tool name → the covering adapter / subprocess / local-DB bound, so the "why
+is this unbounded?" answer lives in one place) — or belong to a by-construction-covered dynamic class
+(`category == "mcp"`, i.e. MCP + OpenAPI tools; and the `terminal_*` open-terminal tools).
+`test_deadline_policy_aca67` walks the live registry, so **a new tool with `timeout_s=None` that isn't
+triaged into that map fails the gate**. Note the bound gives up *waiting* — it does not kill a thread
+already blocked inside `asyncio.to_thread`.
 
 Decorator sugar registers built-ins:
 
@@ -347,21 +394,24 @@ bubble from the pair; a `confirm`-gated call sits in `AWAITING_CONFIRM` until th
 class AgentDef(BaseModel):
     name: str
     prompt: str                         # system prompt
-    model: ModelRef                     # {mode: local|cloud, model: str}
+    model: ModelRef                     # {provider, model} + call config
     tools: list[str] | Literal["*"] = "*"   # allowlist of tool names/globs
     skills: list[str] | Literal["*"] = "*"
     privilege: Privilege = Privilege.CONFIRM
-    memory: MemoryConfig
+    memory_dir: str | None = None       # per-agent memory folder override (§6); no `memory:` object
     max_iterations: int = 16
     max_subagent_depth: int = 2
     max_concurrent_subagents: int = 3      # per-agent fan-out cap (global cap lives in settings)
 
-class ModelRef(BaseModel):              # "pointer + call config" (D42/A10)
-    mode: str | None = None             # local|cloud|None → inference.default_mode
-    model: str | None = None            # None → the endpoint's configured model
+class ModelRef(BaseModel):              # "pointer + call config" (D42/A10; A11/D48) — extra="forbid"
+    provider: str | None = None         # a top-level `providers` map name; None → the consumer
+                                        # section's default chain (`inference.provider` + fallbacks)
+    model: str | None = None            # None → the provider's sole catalog model
     max_tokens: int | None = None       # output budget → per-endpoint max_tokens_field kwarg
     reasoning_effort: Literal["off","minimal","low","medium","high","xhigh","max"] | None = None
-    reasoning_tokens: int | None = None # numeric budget; declared, v1-untranslated (advisory)
+    reasoning_tokens: int | None = None # numeric budget; TRANSLATED per api_mode (D45): overrides the
+                                        # effort-derived budget on llamacpp/openrouter; OpenAI has no
+                                        # reasoning-budget field, so it is DROPPED there
 ```
 
 `AgentSession` (shipped name; the sketch says `AgentRunner`) is constructed per turn from an
@@ -376,7 +426,11 @@ class ModelRef(BaseModel):              # "pointer + call config" (D42/A10)
 > model, §6); real fields include `prompt_append`/`inherit_append` (7e-a), `compaction`, `routing` (D43 —
 > failure-fallback lead model; global default via `agent.defaults.routing`, no `Settings.agent.routing`),
 > the loop guards (`max_repeat_calls`/`max_calls_per_tool`/`max_stall_iterations`), and `max_iterations=16`.
-> `ModelRef.mode`/`model` are **both optional** (None → inherit `inference.default_mode`/the endpoint).
+> `ModelRef.provider`/`model` are **both optional** (None → inherit the consumer section's default chain
+> / the provider's sole catalog model). There is **no `ModelRef.mode`** since A11/D48 — the pointer names
+> a `providers` map entry, and the model declares `extra="forbid"`, so a stale `mode:` reaching normal
+> validation is a HARD error (only the quarantined config/`agent.yaml` migration folds strip it —
+> `inference.default_mode` survives *only* as that strip-fold; `InferenceCfg` is provider/model/fallbacks).
 
 ### 5.2 The loop as an explicit state machine
 
@@ -467,7 +521,8 @@ Loop responsibilities, in order, per iteration:
 >   read the routed ref**, and `_finalize` takes `routed` too (so a lead turn's `max_tokens`/`reasoning`/the
 >   compaction output-reserve all price the lead). A **resume READS `current_route`** instead of re-deciding
 >   (the ACA-16 mode-carry parallel — no mid-logical-turn flip, no double-decrement; a restart loses it →
->   re-resolves to the worker, a recorded residual). The `/local`//`/cloud` prefix **wins and bypasses** the
+>   re-resolves to the worker, a recorded residual). A composer **`/<provider>` verb** (the `providers`
+>   map key — A11/D48; served to the composer by `GET /api/providers` as `verbs`) **wins and bypasses** the
 >   router (selects the ENDPOINT, runs the WORKER ref on it). Subagents copy the field but are runtime-inert
 >   (no `RoutingState`).
 > - **Structural failure counting** (session-side, in `_drive` — `_conclude_routing` settles it at the
@@ -503,8 +558,9 @@ A turn can **suspend** (awaiting confirm or an answer). The session state persis
   its remaining steps still run + persist; persisted state also re-reads via
   `GET /api/threads/{id}/messages`.
 - The user can navigate away / close the PWA; the pending state lives in the thread.
-- Resumption is a normal API call (`POST /threads/{id}/resume` with the confirm-token or the
-  answer) that re-enters `run_turn` from the suspended point.
+- Resumption is a normal API call — **`POST /api/agent/resume`** `{thread_id, call_id, decision,
+  confirm_token?, stream?}` (the answer rides `decision`) — that re-enters the loop from the suspended
+  point, continuing as the last assistant turn's agent (D15 #5).
 - **Headless** automations never suspend interactively: a gated call triggers notify-and-park
   (write a pending record + fire F1) or the automation's fallback policy.
 
@@ -614,11 +670,17 @@ class Compactor:                          # services/agent/compaction.py — sta
 >   — the backstop can't fire, so the deploy note recommends disabling it (see the deploy runbook).
 > - **ModelRef is now "pointer + call config"** (A10 lands here). `InferenceClient._call_config` is
 >   the one wire builder: `max_tokens` rides under the *serving* endpoint's `max_tokens_field`
->   (`max_tokens` | `max_completion_tokens`); `reasoning_effort` is sent to every backend (llama.cpp
->   drops it silently — verified harmless; cloud honours it) and its `"off"` value additionally
->   merges `chat_template_kwargs: {enable_thinking: false}` *over* the endpoint's `extra_body` for
->   that call only (agent keys win, the config object is never mutated). Modeled params are
->   first-class kwargs on `stream_chat`/`complete`; `extra_body` stays unmodeled-passthrough only.
+>   (`max_tokens` | `max_completion_tokens`); reasoning is **TRANSLATED per `api_mode` (D45), not
+>   forwarded blind** (`inference.py:985–1025`): **openai** → `reasoning_effort` verbatim with
+>   `"off"` mapped to its `"none"` enum, and `reasoning_tokens` **dropped** (OpenAI exposes no
+>   reasoning-budget field); **llamacpp** → `reasoning_effort` is *never sent* (llama-server doesn't
+>   read it) — the effort ladder resolves to an integer budget (an explicit `reasoning_tokens`
+>   overrides it) sent as `reasoning_budget_tokens` + the older `thinking_budget_tokens` alias, and
+>   `"off"` additionally merges `chat_template_kwargs: {enable_thinking: false}` for that call only
+>   (agent keys win, the config object is never mutated); **openrouter** → `reasoning.effort` and
+>   `reasoning.max_tokens` are mutually exclusive: `"off"` is absolute (→ `"none"`), else an explicit
+>   budget wins, else the effort ladder. Modeled params are first-class kwargs on
+>   `stream_chat`/`complete`; `extra_body` stays unmodeled-passthrough only.
 >   `reasoning_tokens` is declared but v1 ships it **untranslated** (no OpenRouter-shape detection
 >   exists — advisory no-op, recorded residual). Both consumers benefit: the agent's own calls *and*
 >   the compaction summarizer (capped for free). Rule: never gate behaviour on a param taking effect.
@@ -627,29 +689,38 @@ class Compactor:                          # services/agent/compaction.py — sta
 
 Subagents run **concurrently** — the parent can fan out several at once and gather results — under
 **structured concurrency** so the whole subtree is awaited and cancelled as a unit. One tool spawns
-a *batch*; a single subagent is just a batch of one.
+a *batch* of **two or more INDEPENDENT tasks** — the shipped tool description explicitly steers the
+model away from batch-of-one and from dependent sequential steps ("do those yourself"), and
+`agent.global_subagent_limit` (default 6) caps concurrency tree-wide. `len==1` remains mechanically
+valid (the schema allows it) but is prompt-discouraged, not the design intent.
 
 ```python
 class SpawnInput(BaseModel):
     tasks: list[SubTask]               # batch → run in parallel; len==1 is the single case
     agent: str | None = None           # which AgentDef per task (default: a "worker" agent)
 
-@builtin_tool("spawn_subagents", risk=Risk.MED)        # gated by privilege + depth
-async def spawn_subagents(inp: SpawnInput, ctx) -> ToolResult:
-    if ctx.depth >= ctx.agent.max_subagent_depth:
+# the same `@action` decorator every capability uses — there is no separate `@builtin_tool`
+@action("spawn_subagents", title="Spawn subagents", description=…,
+        category="builtin", risk=Risk.MED, ui_exposed=False, agent_exposed=True)
+async def spawn_subagents(inp: SpawnInput, ctx: InvocationContext) -> ToolResult:
+    parent = ctx.agent or ctx.deps.settings.default_agent_def()
+    if ctx.depth >= parent.max_subagent_depth:
         return ToolResult(state=DENIED, summary="max subagent depth reached")
-    children = [AgentRunner(resolve_agent(t.agent or inp.agent), deps=ctx.deps,
-                            depth=ctx.depth + 1,
-                            privilege=min_priv(ctx.privilege))   # never escalate above parent
-                for t in inp.tasks]
-    results = await orchestrator.run_many(children, inp.tasks, ctx)   # strategy is swappable
-    return aggregate(results)          # partial success preserved; per-child errors isolated
+    clamp = deps.settings.agent.subagent_clamp_privilege     # never escalate above the parent
+    children = [(resolve_child(deps.settings, parent, t.agent or inp.agent, clamp=clamp), t.task)
+                for t in inp.tasks]                          # (AgentDef, task) pairs
+    orchestrator = ParallelOrchestrator(per_agent=parent.max_concurrent_subagents,
+                                        global_sem=deps.subagent_sem,
+                                        child_timeout_s=settings.agent.subagent_child_timeout_s)
+    results = await orchestrator.run_many(deps, children,            # strategy is swappable
+                                          depth=ctx.depth + 1, parent_origin=ctx.origin)
+    return _aggregate(results)         # partial success preserved; per-child errors isolated
 ```
 
 ```python
-class Orchestrator(Protocol):
-    async def run_many(self, children: list[AgentRunner], tasks: list[SubTask],
-                       ctx: InvocationContext) -> list[SubResult]: ...
+class Orchestrator(Protocol):          # `deps` + (AgentDef, task) pairs — no per-child runner object
+    async def run_many(self, deps: Deps, children: list[tuple[AgentDef, str]], *,
+                       depth: int, parent_origin: Origin) -> list[SubResult]: ...
 ```
 
 **Default `ParallelOrchestrator` semantics (the nuances):**
@@ -699,6 +770,32 @@ If a backend can't do native tool-calling reliably (configurable / probed once),
 to **prompted JSON**: the model emits a fenced action block, parsed into the same `ToolCallPart`
 path → identical downstream handling. Worst case it degrades to draft-into-bubble (the old UX).
 
+### 5.8 The prompt registry (Phase 18 / D56 — spec of record: [`PROMPTS_PLAN.md`](./PROMPTS_PLAN.md))
+
+`services/agent/prompts.py` is the **chokepoint every model-facing prompt text goes through** — one
+module owns every default text (**23 `PromptDef` ids**), one function resolves it, so a prompt can never
+be edited in one place and read from another. Not in it: the main system prompt + the SOUL.md personas
+(Class A — their own three-level chain in `session.py`), and the *data* a composed prompt frames (roster
+rows, skill bodies, memory sections) — the registry owns the WORDS, features concatenate their data after
+the rendered frame (L-8).
+
+- **Overrides:** `Settings.prompts: dict[str, PromptOverride]` (`config.yaml`'s `prompts:` map) — an
+  `{override, append}` pair per id, the same extend-don't-migrate shape as `tool_overrides` (§9). An id
+  with no entry runs on the baked default; an unknown id is preserved on disk and never read.
+- **Resolution** is `resolve(prompt_id, settings, ctx=None, *, stamps=None)` — **live per model call**
+  (no cache, so an owner edit applies from the next resolve) and **infallible**: any failure to render
+  the custom text discards both fields, warns once, and returns the rendered baked default.
+  Placeholders are `{{name}}` rendered by an ~8-line `string.Template` subclass (no engine dep); the
+  placeholder set is **derived** from the text, never declared, and templates carry no conditionals
+  (code precomputes a sentence and passes it as an ordinary variable).
+- **Stamps** are the eval seam: given the turn's accumulator, `resolve` records
+  `stamps[prompt_id] = template_hash(effective_template)`. The accumulator rides
+  `InvocationContext.stamps` (§3) so a tool whose *result text* comes from the registry stamps like the
+  session does, and every message a model call produced snapshots it into `messages.meta`
+  (migration 6, a JSON object — future message metadata is a new KEY, never a new column).
+- **Surfaces:** `GET /api/prompts` serves the catalog + each id's effective text for the Conf editor
+  (`['prompts']`, §13); the write is the ordinary settings PUT.
+
 ---
 
 ## 6. Memory (D14/D15 — Hermes file model)
@@ -709,24 +806,45 @@ path → identical downstream handling. Worst case it degrades to draft-into-bub
 > we mirror, not the originator (ACA §0 attribution correction).
 
 ```python
+# core/memory.py — every method takes the `AgentDef` whose turn it is (the store scope resolves from it)
 class MemoryProvider(Protocol):
-    def load_context(self) -> str: ...                          # the injected agent+user block
-    async def write(self, target: Literal["memory","user"],
-                    action: Literal["add","replace","remove"],
-                    content: str, old_text: str | None = None) -> ToolResult: ...  # cap-enforced
-    def read_raw(self, target) -> str: ...                      # for the Conf Memory panel
-    async def clear(self, target) -> None: ...
-# v1 impl: FileMemoryProvider, on Deps.memory.
+    def load_context(self, agent: AgentDef,                     # the injected persona+facts block, or ""
+                     stamps: dict[str, str] | None = ...,       # the turn's prompt-stamp accumulator (Ph.18)
+                     longterm_available: bool = ...) -> str: ...# can this turn reach tier 2? (D57 §4b-2)
+    async def write(self, agent: AgentDef, target: str, action: str,
+                    content: str, old_text: str | None = ...) -> str: ...  # one edit; raises over-cap
+    def read_raw(self, agent: AgentDef, target: str) -> str: ...           # the Conf Memory panel
+    async def overwrite(self, agent: AgentDef, target: str, content: str) -> str: ...  # the panel's clear/set
+# `write`/`overwrite` are async (D26): each couples its file write to a git commit under a process-wide
+# lock; the reads stay sync. v1 impl: FileMemoryProvider (services/agent/memory.py), on Deps.memory.
 ```
 
-- **Files (under `$CTRLB_HOME`):** per-agent `agents/<name>/memories/MEMORY.md` (default agent →
-  root `memories/MEMORY.md`) + a **global** `memories/USER.md`. `memories/` is gitignored.
+**Stores are a registry, not branches (D27).** `core/memory.py` declares one frozen `StoreSpec` per store
+(`key` · `label` · `scope` AGENT|GLOBAL · `filename` · `semantics` APPEND|SET · `position` PERSONA|FACTS ·
+`injected`/`writable`/`backed_up`) and `STORES: tuple[StoreSpec, ...]` = `(MEMORY_STORE, USER_STORE,
+STATE_STORE)` — the third being **`STATE.md`**, the agent's emotional/affective state: `SET` semantics (the
+model rewrites the whole value with `action=set`), injected PERSONA-first, opt-in via
+`MemoryCfg.state_enabled`. The *structural* facts are code constants; the *tunables* (`enabled`, `cap`,
+`backed_up`) resolve live from `MemoryCfg`, so a Conf toggle hot-applies. `FileMemoryProvider` builds its
+behaviour by iterating `STORES` instead of hardcoding each store at ~6 sites, and `store_by_key` is the one
+lookup (each consumer owns its unknown-key policy: the provider falls back to agent memory, the API 404s,
+the tool's `Literal` keeps the model on known keys).
+
+> **ADDING A STORE** — the in-code checklist on `STORES` is the authority (drift-guarded by
+> `test_memory_registry_d27`, which asserts every store is explicitly mapped): **1.** a `MemoryCfg` cap
+> (+ enable flag if opt-in) · **2.** `FileMemoryProvider._cap_for` + `_store_enabled` · **3.** the `memory`
+> tool's `target` `Literal` + `gate_memory` · **4.** a frontend `MemoryCfg` field + a slot in the Conf
+> Memory editor. The tunables are still flat per D27; a `stores:{key:{cap,enabled}}` map is the named seam
+> once stores grow past a few.
+
+- **Files (under `$CTRLB_HOME`):** per-agent `agents/<name>/memories/MEMORY.md` + `STATE.md` (default agent
+  → root `memories/`) + a **global** `memories/USER.md`. `memories/` is gitignored.
 - **Injection:** `load_context()` output is emitted in `_assemble` **right after the appends**
   (as-built order: SOUL.md → appends → roster → **memory** → core index (D57) → skills → history),
   frozen per turn. Rendered **Hermes-style** — per-section usage header
   (`## Agent memory (67% — 1,474/2,200)`) + `§` between entries (D15 #4).
-- **`memory` tool** (builtin, sibling of `skill_manage`): `add`/`replace`/`remove`, `target:
-  memory|user`, substring `old_text`, **no read** (memory is in the prompt). **Autonomous auto-write**
+- **`memory` tool** (builtin, sibling of `skill_manage`): `action: add|replace|remove|set`, `target:
+  memory|user|state`, substring `old_text`, **no read** (memory is in the prompt). **Autonomous auto-write**
   (`memory.auto_write` default ON; OFF → non-blocking *propose*, never gates the turn). Caps
   `memory.memory_char_limit` (2200) / `memory.user_char_limit` (1375) — over-cap raises so the agent
   consolidates (no silent drop). Audited as Events.
@@ -809,11 +927,21 @@ class McpClient:                       # manages many servers, both transports
     def tools(self) -> list[McpTool]: ...   # namespaced; per-server failures isolated
     # health-checked; a down server marks its tools unavailable (not an agent crash)
 
+# TARGET DESIGN (not built) — the multi-channel server-side sender (ROADMAP F1):
 class NotificationChannel(Protocol):
     async def send(self, n: Notification) -> None: ...
 # impls: ForegroundSSE, WebPush(VAPID), Ntfy, Bot.  NotificationService dispatches to ENABLED
 # channels filtered by per-event-type config (F1). De-dupes; failures per-channel are swallowed+logged.
 ```
+
+> **TARGET DESIGN (not built)** — the shipped shape is the **foreground channel only**, and it has no
+> backend sender at all: `NotificationsCfg` (`config.py` — `enabled` off by default + the
+> `NotificationEventsCfg` per-class toggles) is pure *preference*, served by the thin
+> `GET /api/notifications`, and the **client** owns delivery: `useForegroundNotifications()` fires the
+> PWA's own Notifications API off the SSE feeds it is already subscribed to (`useNotificationPrefs` +
+> the Conf switches). There is no `core/notify.py`, no `NotificationChannel`, no adapter impls. When a
+> future channel lands it joins `NotificationsCfg` as its own optional field (`web_push: WebPushCfg`),
+> never a parallel top-level section. Web Push is researched-and-parked (`research/R10`/`R11`).
 
 ---
 
@@ -824,8 +952,9 @@ Tables: `threads`, `messages` (parts as JSON column; **+ a nullable `agent` colu
 attribution quartet since migration v4: `origin` [immediate initiator, NOT NULL default
 `user_chat`] · `origin_id` · `run_id` [the transitive automation-ancestry key] · `decision` [why
 the gate allowed/denied]; reads coerce unknown values — `EventOriginKind`'s `unknown` sentinel is
-read-side only**), `automations`,
-`push_subscriptions`, `pending_actions` (for suspended confirms / notify-park), `schema_version`.
+read-side only**), the A3/D49 pair `automations` + `automation_runs` (migration 5 — the definitions +
+their run ledger), `schema_version`. `push_subscriptions` and `pending_actions` (for suspended confirms /
+notify-park) are **not built** — they "arrive with the phases that need them" (`db.py` module docstring).
 Migration application is **atomic per migration** (script + version stamp in one explicit
 transaction composed inside the script text; migrations author DDL/DML only — the runner owns
 transaction control, pinned by a statement-aware invariant test).
@@ -833,42 +962,54 @@ A **`messages_fts` FTS5 virtual table** (+ sync triggers) backs `session_search`
 **redacted** message text, covering live **and** compacted rows (D15 #7).
 
 ```python
-class UnitOfWork:                      # one place that owns the connection + write serialization
+class Database:                        # app/db.py — owns the connection + write serialization
     # WAL mode; ONE shared aiosqlite connection (its worker thread serializes all ops, so WAL's
-    # read concurrency is currently unused — SYS-1 rider); ALL writes also take a single asyncio.Lock
-    # to avoid SQLITE_BUSY under async fan-out. Repositories hang off the UoW.
-    threads: ThreadRepo; messages: MessageRepo; events: EventRepo
-    memory: MemoryRepo; automations: AutomationRepo
+    # read concurrency is currently unused — SYS-1 rider); ALL writes also take a single asyncio.Lock.
+    # `transaction()` makes a multi-statement write sequence atomic (otherwise `execute()` commits per
+    # statement); `PRAGMA busy_timeout` future-proofs the named reader-pool seam.
 ```
 
-Migrations: numbered `schema.sql` blocks applied in order, tracked in `schema_version`. No ORM —
-hand-written SQL is enough at this scale and keeps the dep surface small (D2).
+Repositories are **free-standing classes taking the `Database`**, not attributes of a unit-of-work:
+`ThreadRepo`/`MessageRepo` (`services/conversation.py`), `EventService` (`services/events.py`),
+`AutomationRepo` (`services/automations/repo.py` — one class for both automation tables).
+
+Migrations are **inline in `db.py`**, not a `schema.sql` file: `MIGRATIONS: list[tuple[int, str]]`
+(versions **1–6** today — 1 the base tables, 2 `messages.agent`, 3 `messages_fts`, 4 the event
+attribution quartet, 5 the automations pair, 6 the per-model-call message metadata) applied in order and
+tracked in `schema_version`. No ORM — hand-written SQL is enough at this scale and keeps the dep surface
+small (D2).
 
 ---
 
 ## 9. Config & secrets
 
 ```python
-# config.py — pydantic-settings, source = config.yaml (+ env overrides)
-class Settings(BaseSettings):
-    inference: InferenceCfg; embeddings: EmbeddingsCfg
-    stt: SttCfg; tts: TtsCfg; searxng: SearxngCfg
-    mcp_servers: list[McpServerCfg] = []
-    agent: AgentCfg; agents: list[AgentDef] = []
-    hosts: list[Host] = []; services: list[Service] = []
+# config.py — a plain pydantic `BaseModel` view over config.yaml (+ declared CTRLB_* env overrides).
+# NOT `BaseSettings`: the YAML is loaded/validated explicitly, and `extra="allow"` so config written by
+# a later phase round-trips losslessly instead of being dropped on save. 22 sections, in code order:
+class Settings(BaseModel):
+    model_config = {"extra": "allow"}
     server: ServerCfg; appearance: AppearanceCfg
-    notifications: NotificationsCfg
+    providers: dict[str, ProviderCfg]                  # the A11/D48 connection map (see below)
+    inference: InferenceCfg; agent: AgentCfg; memory: MemoryCfg
+    searxng: SearxngCfg; embeddings: EmbeddingsCfg; voice: VoiceCfg
+    open_terminal: OpenTerminalCfg; shell: ShellCfg; tailscale: TailscaleCfg
+    notifications: NotificationsCfg                    # foreground preferences only (F1) — §7
+    wake: WakeCfg; monitor: MonitorCfg                 # D2-B connect + D2-A presence; the monitor loop
+    automations: AutomationsCfg                        # runner tunables; the definitions live in SQLite
+    media: dict[str, MediaNsCfg]                       # owner media state keyed by NAMESPACE (D53)
+    openapi_servers: list[OpenApiServerCfg]; mcp_servers: list[McpServerCfg]
+    tool_overrides: dict[str, ToolOverride]            # per-tool, one unified object (D22 + D44)
+    prompts: dict[str, PromptOverride]                 # per-prompt-id overrides (D56, §5.8)
+    computers: dict[str, ComputerCfg]                  # hosts + services, projected (see below)
 ```
 > **Reconciliation (D14/D15 + shipped):** **no `agents: list[AgentDef]`** — agents are folders
-> (D15 #3); `AgentCfg` gains **`defaults`** (the AgentDef-shaped inheritance base, D15 #1). Add
-> **`memory`** (`enabled`/`user_profile_enabled`/`auto_write`/`memory_char_limit`/`user_char_limit`)
-> and **`skills`** (`enabled`/`auto_write`). `hosts`/`services` aren't flat lists — they're **nested
-> under `computers{}`** in YAML and projected by `Settings.hosts()`/`services()`. **`stt`/`tts`
-> shipped nested inside `voice:`** (`VoiceCfg`, Phase 6); **`notifications` doesn't exist yet** (F1).
-> Shipped sections the sketch above omits (the real `Settings` has 15): `memory`, `voice`,
-> `open_terminal`, `shell`, `tailscale`, `openapi_servers`, `tool_overrides` (D22), `computers`.
-> Path resolution is rooted at **`$CTRLB_HOME`** (D15 #2). The hybrid secrets model below is
-> accurate and shipped (7a).
+> (D15 #3); `AgentCfg` gains **`defaults`** (the AgentDef-shaped inheritance base, D15 #1). There is
+> no `skills` section — the skills tunables are `agent.skills_*` (`skills_enabled`/`skills_auto_write`/
+> `skills_dir`). `hosts`/`services` aren't flat lists — they're **nested under `computers{}`** in YAML
+> and projected by `Settings.hosts()`/`services()`. **`stt`/`tts` ship nested inside `voice:`**
+> (`VoiceCfg`, Phase 6). Path resolution is rooted at **`$CTRLB_HOME`** (D15 #2). The hybrid secrets
+> model below is accurate and shipped (7a).
 > **New tunables (Slices 4/5):** `AgentDef.max_parallel_tools` (default 4; `1` = off — the D40
 > parallel read-only tool prefix) · `ProviderCfg.max_concurrent_requests` (`None` = unlimited — the
 > per-server request gate for a non-queuing llama.cpp, D40 rider as re-homed by D48 §C4) ·
@@ -895,6 +1036,30 @@ class Settings(BaseSettings):
 - **Atomic writes**: write `config.yaml.tmp` then `os.replace`. Validate before persisting; reject
   with field-level errors. A successful `PUT` triggers a **hot reload** (rebuild affected
   singletons: clients, MCP connections, registries) without a restart where feasible.
+
+### 9.1 The provider registry (A11/D48) — the one backend-selection seam
+
+`Settings.providers` is a top-level name-keyed **connection** map (`ProviderCfg`: `base_url` + api key +
+server behaviour + a `ModelCfg` catalog). Every subsystem that selects a backend+model — chat
+(`InferenceCfg`), voice, embeddings, the compaction summarizer, each `AgentDef.model`/`RoutingCfg.lead` —
+does so through the SAME `{provider, model}` pointer (`SectionRef` / `ModelRef`) against that ONE map.
+The boundary, precisely: **the resolver consumes live `Settings`; provider adapters never see it** —
+they receive only the resolved snapshots (`Registry` / `ResolvedTarget` / `SectionPolicy`) it publishes.
+
+`core/provider_registry.py` is the resolver, with two explicit policies (D48 C2): `resolve_strict(settings)`
+for a PUT (any problem is a `RegistryError` → 422) and `resolve_lenient(settings)` for boot (warn +
+drop/promote, always returns a `Registry` + warnings). It turns a section's flat `provider` + ordered
+`fallbacks` into the `tuple[ResolvedTarget, …]` chain the adapters consume (`ResolvedTarget`/`SectionPolicy`
+live in `domain/provider.py`; `SectionRef` is the config-side pointer), and it owns the effective-value
+ladders (`max_tokens_field` C6 · min-wins concurrency C4 · provider-over-global retry) plus the
+`(gate_identity, limit)` `EndpointGates` semaphore registry (§10).
+
+The map key is also the **composer `/<provider>` verb**: `GET /api/providers` serves the non-secret
+directory (names + catalogs + the effective chain + `verbs`) that the composer and Conf read. Renaming a
+provider is therefore a first-class PUT transaction rather than a config edit — `provider_renames`
+`{old: new}` (validated simple-bijective by `runtime.provider_rename_error`) drives
+`runtime._cascade_provider_renames`, which rewrites every referencing pointer in the merged config, so a
+rename can never orphan a section, an agent's `model`, or a fallback entry.
 
 ---
 
@@ -957,13 +1122,18 @@ class Settings(BaseSettings):
 
 - **Expected, user-facing outcomes** → a `ToolResult` with `state ∈ {ERROR, DENIED, TIMEOUT}` and a
   clear `summary`. These are *data*, not exceptions (the agent reads them and can react).
-- **Exceptions** (`core/errors.py`): `UnknownTool`, `ValidationFailed`, `BackendUnavailable`,
-  `McpServerError`, `ConfigError` — caught at the service boundary, converted to a `ToolResult` or
-  an HTTP error + an `ErrorPart`/SSE `error` event. Nothing leaks a stack trace to the client.
+- **Exceptions** live beside the seam that raises them (there is **no `core/errors.py`**):
+  `UnknownTool` (`core/tool.py`, from `ToolRegistry.get` → 404), pydantic `ValidationError` for a bad
+  arg shape (→ 422 via `validation_detail`, or an error `ToolResult` fed back to the model),
+  `InferenceError` (`adapters/inference.py` — any backend failure, carrying the pre-flattening
+  `status`/`code`/`retry_after`/`endpoints_tried`), plus `FailoverError`/`GateWaitTimeout` and
+  `ProviderResolveError`/`RegistryError` (`core/failover.py`, `core/provider_registry.py`). Each is
+  caught at the service boundary and converted to a `ToolResult` or an HTTP error + an `ErrorPart`/SSE
+  `error` event. Nothing leaks a stack trace to the client.
 - **Backend 5xx / network**: the `InferenceClient` failover chain walks endpoints on any error; a
   genuinely-**transient** chat-stream init failure (`categorize` = 429/503/`Retry-After`/llama.cpp busy)
   gets a bounded, wire-visible same-endpoint retry first (`inference.retry_attempts`, fixed backoff curve —
-  D43), then hops. On chain exhaustion → an `InferenceError`/`BackendUnavailable` → friendly chat error,
+  D43), then hops. On chain exhaustion → a `FailoverError` flattened to an `InferenceError` → friendly chat error,
   turn ends recoverably. `complete()`/voice keep straight next-hop (no retry tier).
 - **Redaction** (`core/redact.py`) runs on every `output`, `summary`, log line, and SSE payload.
 
@@ -971,8 +1141,8 @@ class Settings(BaseSettings):
 
 ## 12. SSE wire protocol (chat + events)
 
-`POST /api/agent/chat` (or `/threads/{id}/stream`) emits ordered, id'd events the client reduces into
-the message list:
+`POST /api/agent/chat` (and `POST /api/agent/resume`, or a re-attach via
+`GET /api/agent/turns/{id}/stream`) emits ordered, id'd events the client reduces into the message list:
 
 ```
 event: message.start      data: {messageId, role, agent}       # agent = resolved AgentDef name (7e-c)
@@ -1010,23 +1180,34 @@ position, depth}` (both `POST /api/agent/chat` and `POST /api/exec`), not the ol
 
 ## 13. Frontend data & state (TS)
 
-> **Visual fidelity is fixed (D7):** this section governs *data/state only*. The rendered UI must
-> be a **pixel-exact port of `design/prototypes/variations/vapor.html`** — CSS lifted verbatim, same
-> fonts/colors/animations/components/themes, verified side-by-side at phone width. State plumbing
-> never justifies deviating from the prototype's look. See `ARCHITECTURE.md` §5 + `DECISIONS.md` D7.
+> **Visual fidelity is fixed (D7):** this section governs *data/state only* — state plumbing never
+> justifies deviating from a theme's prototype. Fidelity applies **per theme**: every theme is a
+> faithful execution of its own prototype, and the living bar + build checklist are in
+> `THEME_ENGINE.md` (§13 + the §14.13 slot-in contract). Since **D51** vapor is no longer the
+> reference port that stood here — it is a **kit theme** (its bespoke CSS folded to ~690 lines,
+> byte-frozen per the §14.15.3 ladder) and `DEFAULT_THEME = "cosmos"` (`theme-engine/resolve.ts`,
+> pinned to backend `AppearanceCfg` by `test_arch_invariants_sys10.py`). See `ARCHITECTURE.md` §5 +
+> `DECISIONS.md` D7/D51.
 
 ```ts
 // types mirror the domain; generated from OpenAPI where practical
 type Part = TextPart | ToolCallPart | ToolResultPart | QuestionPart | PlanPart | ErrorPart;
 interface Message { id:string; role:Role; parts:Part[]; ts:string; }
 ```
-- **Server state** via TanStack Query. Query keys: `['hosts']`, `['hosts',id,'status']`,
-  `['services']`, `['tools']`, `['threads']`, `['thread',id,'messages']`, `['settings']`,
-  `['events']`. Status polls at `poll_seconds`; mutations (`useWakeHost`, `useRunTool`) invalidate.
-- **Chat streaming** is *not* Query — a dedicated SSE reducer appends/patches parts by id into the
-  active thread cache; confirm/question parts render interactive controls that POST back.
-- **UI-only state** (zustand): `activeTab`, `theme`, `skyline`, `ttsAuto`, `activeThread`,
-  composer draft — persisted to `localStorage`, mirrored to `settings.appearance`.
+- **Server state** via TanStack Query, one key per resource (a flat name, or `[name, id]` for a
+  per-item read) — live examples: `['hosts']`, `['services']`, `['actions']`, `['tools']`,
+  `['settings']`, `['providers']`, `['prompts']`, `['automations']`, `['automation-runs', id]`,
+  `['agents']`, `['agent', name]`, `['skills']`, `['media']`, `['integrations']`, `['events']`.
+  Status polls at `poll_seconds`; mutations (`useWakeHost`, `useRunTool`) invalidate.
+- **Chat is *not* Query** — the thread list and each thread's messages live in `store/chat.ts`
+  (fetched directly from `/api/threads[/{id}/messages]`), and a dedicated SSE reducer appends/patches
+  parts by id into it; confirm/question parts render interactive controls that POST back.
+- **UI-only state** in module-singleton stores under `src/store/` (`ui.ts`, `chat.ts`, `composer.ts`, …):
+  `activeTab`, `theme`, `skyline`, `ttsAuto`, `activeThread`, composer draft — persisted to
+  `localStorage` (`store/persist.ts`), mirrored to `settings.appearance`. **No zustand dep** — each store
+  is bound to React through the dep-free `store/createStore.ts` factory (**D23**: one shared
+  listener-set + `emit` + `useSyncExternalStore` wiring, replacing 10 hand-rolled external stores).
+  Snapshot contract: `getSnapshot` must return a primitive or a stable reference.
 - **Optimistic** wake/stop with rollback on error; **confirm dialog** before high-risk mutations.
 
 ---
@@ -1036,9 +1217,12 @@ interface Message { id:string; role:Role; parts:Part[]; ts:string; }
 **Fleet status:** client polls `GET /api/hosts` → `FleetService.status()` fan-out (gather+sem+timeout)
 → `HostStatus[]` (cached) → rows re-render; the hero "now monitoring" picks the featured host.
 
-**UI action (shutdown):** button → confirm dialog → `POST /api/tools/shutdown_host` `{host_id}` →
-`decide()` = CONFIRM → server returns `{needs_confirm, token}` → client confirms → re-POST w/ token →
-execute → `ToolResult` + `Event` (→ activity SSE) → row updates.
+**UI action (shutdown):** button → confirm dialog → `POST /api/actions/shutdown_host`
+`{args:{host_id}, confirm_token?}` → `decide()` = CONFIRM → server returns
+`{needs_confirm:true, confirm_token, prompt}` → client confirms → re-POST with the token →
+execute → `{needs_confirm:false, result, event}` (→ activity SSE) → row updates.
+(`POST /api/tools/{name}` is a *different* surface: it invokes only `ui_exposed` **utility** tools —
+the Tools-tab cards, no confirm dance — and 404s anything else.)
 
 **Agent chat turn:** `POST /api/agent/chat {threadId, text}` → `AgentSession.run_turn` streams SSE
 (§12). If the model calls `shutdown_host`: `tool.permission` event → bubble → user confirms via
@@ -1109,16 +1293,18 @@ privilege → gated calls hit notify-park/fallback → results to a thread + Eve
 
 | Add a… | Do this |
 |---|---|
-| **Action** | new fn in `services/actions/` with `@action(name, risk, confirm, ui_exposed)` + an input `BaseModel`. Auto: endpoint, UI button, agent tool, events. |
-| **Utility tool** | `@tool(name, title, icon)` in `services/tools/` + input model. Auto: `/api/tools/{name}`, Utils card, agent tool. |
-| **Built-in agent tool** | register a `Tool` (e.g. `task_plan`); appears in the toolset, gated by privilege. |
+| **Action** | new fn in `services/actions/` with `@action(name, risk, confirm, ui_exposed)` + an input `BaseModel`. Auto: `POST /api/actions/{name}`, UI button, agent tool, events. **Declare `timeout_s`** (or triage into `ADAPTER_BOUNDED`) or the deadline gate fails (§3). |
+| **Utility tool** | `@tool(name, title, icon)` in `services/tools/` + input model. Auto: `POST /api/tools/{name}`, Utils card, agent tool. Same `timeout_s` rule (§3). |
+| **Built-in agent tool** | register a `Tool` via `@action(…, category="builtin")` (e.g. `task_plan`); appears in the toolset, gated by privilege. Same `timeout_s` rule (§3); set `core=True` only for the cognitive set. |
 | **MCP server** | add an entry to `settings.mcp_servers`; `McpClient` connects + wraps its tools. Zero code. |
 | **Skill** | drop `skills/<name>/SKILL.md` (+ resources). Discovered automatically. |
 | **Agent** | create a folder `$CTRLB_HOME/agents/<name>/` (`agent.yaml` + `SOUL.md`) — discovered automatically, **folder-only, no config list** (D14/D15); selectable per chat/automation; usable as a subagent. |
-| **Memory backend** | implement `MemoryProvider`, register under a key; select in settings. |
+| **Memory store** (a new file beside MEMORY/USER/STATE) | one `StoreSpec` entry in `core/memory.STORES` + the 4-step **ADDING A STORE** checklist that lives on it (§6) — cap/enable in `MemoryCfg`, `_cap_for`/`_store_enabled`, the `memory` tool's `target` `Literal` + `gate_memory`, a Conf slot. `test_memory_registry_d27` fails if a store isn't mapped. |
+| **Memory backend** (tier 1) | implement the `MemoryProvider` Protocol (`core/memory.py`, §6) and hand it to `Deps.memory`; the shipped impl is `FileMemoryProvider`. |
 | **Long-term (tier-2) memory backend** | one new `memory.longterm.backend` value + its nested cfg object beside `core` (D57 §6); the slot's interface is what the loop consumes — a static-head block + a tool surface — formalized only when backend #2 is real. |
-| **Notification channel** | implement `NotificationChannel`, register; toggle in settings. |
-| **Inference/STT/TTS/embeddings backend** | it's just another OpenAI-compatible `base_url` in settings — no code. |
+| **Notification class** (a new thing to be told about) | add a flag to `NotificationEventsCfg`, a Conf switch, and a case in the client's `useForegroundNotifications()` — v1 has **no server-side channel registry** (§7). A *new channel* (Web Push / ntfy / bot) is ROADMAP F1: it joins `NotificationsCfg` as its own optional field, never a parallel section. |
+| **Prompt text** | never a bare literal: a model-facing string becomes a `PromptDef` **id** in `services/agent/prompts.py`, resolved via `resolve(id, settings, …, stamps=…)` (§5.8). Auto: the owner's `prompts:` override + append, a Conf editor row, and a stamp in `messages.meta`. Backstopped structurally — `test_arch_invariants_prompts.py` sweeps every string constant **≥80 chars** in `backend/app` and fails an untriaged model-facing one. |
+| **Inference/STT/TTS/embeddings backend** | a new entry in the top-level `providers` map (base_url + key + model catalog), then point the consuming section's `provider`/`fallbacks` at it (§9.1) — no code. |
 | **Strategy swap** (skill-select / orchestration) | implement the `Protocol`, register, select in settings. |
 
 Each row touches **one file + config** — the property the owner asked for, enforced by the

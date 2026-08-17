@@ -40,8 +40,9 @@ extension cookbook ("add an action/tool/skill/agent/MCP server = one file/row").
 
 ## 2. API surface
 
-Superseded sketch — the **real router inventory** is `backend/app/api/` (11 routers: access ·
-actions · agent · events · health · hosts · integrations · services · settings · tools · voice)
+Superseded sketch — the **real router inventory** is `backend/app/api/` (14 routers: access ·
+actions · agent · automations · events · health · hosts · integrations · media · prompts ·
+services · settings · tools · voice)
 and the verified table in **`SPEC.md` §8.2**. The SSE wire contract is **`DESIGN.md` §12**
 (lockstep-guarded against `session.py` by `test_sse_event_lockstep_qh7.py`).
 
@@ -77,8 +78,8 @@ slot-in contract; vapor byte-frozen per the §14.15.3 ladder / D51). The origina
 
 | Profile | Launch | Notes |
 |---|---|---|
-| **Windows 11** | `uvicorn app.main:app` via `.bat` / Task Scheduler — **no `--reload`** | primary today; see gotcha below |
-| **Ubuntu 26 LTS** *(emma — target host)* | `systemd` unit (model on `wol_server/wol_server.service`); `--reload` ok for dev | headless server |
+| **Ubuntu 26 LTS** *(emma — dev + deploy host)* | `systemd` **user** units from `deploy/linux/systemd/` (`ctrl-b-dashboard.service` prod :5433, `ctrl-b-dashboard-dev{,-web}.service` on-demand); `--reload` ok for dev | **primary today**; the live topology (D32) |
+| **Windows 11** | `uvicorn app.main:app` via `.bat` / Task Scheduler — **no `--reload`** | frozen reference (corsair is a managed fleet host now); see gotcha below |
 | **macOS** | `uvicorn app.main:app` (`--reload` ok for dev) | sibling POSIX path |
 | **Android / Termux** *(exp.)* | `uvicorn` in Termux + `termux-wake-lock` + foreground service, charger | phone = host; WOL only on its LAN; high port (no root) |
 

@@ -41,7 +41,7 @@ Phone-first (~390 px), widens gracefully to desktop.
 | **Fleet** | Live host cards (ping/online state, per-host **services** with TCP-probed liveness), wake-on-LAN, shutdown/reboot, service start/stop/restart, expandable detail rows. Risky actions confirm before firing. |
 | **Agent** | A tool-calling LLM chat wired to the same action registry the UI uses. Confirm bubbles for gated calls, a live **plan panel** (TodoWrite-style checklist), markdown replies with copy / send-to-composer, per-message local/cloud switching, context **compaction** for long threads. |
 | **Utils** | One-shot utility tools (DNS trace, IP info, YouTube captions, …) — the same registry, UI-exposed. |
-| **Conf** | The whole `config.yaml` managed from the UI: hosts & services CRUD, inference/voice endpoints, integrations (MCP / OpenAPI / SearXNG / embeddings / open-terminal), skills & agents, per-tool overrides, prompts, memory panel, theme & access (Tailscale HTTPS + QR). |
+| **Conf** | The whole `config.yaml` managed from the UI: hosts & services CRUD, inference/voice endpoints, integrations (MCP / OpenAPI / SearXNG / embeddings / open-terminal), skills & agents, per-tool overrides, prompts, memory panel, **scheduled automations** (cron-driven agent runs with run history, D49), notifications, theme & access (Tailscale HTTPS + QR). |
 
 **The agent** speaks to any OpenAI-compatible backend — local `llama.cpp` or a cloud router — and
 sees the action registry as OpenAI `tools`. It also gets: file-discovered **skills** (auto-narrowing
@@ -51,8 +51,8 @@ tool servers**, durable **memory** (git-backed markdown, D26), and **voice** via
 STT/TTS. Multiple **agent definitions** (model + prompt + tools + privilege) are configurable; one
 is default.
 
-**Themes**: a pluggable presentation layer (vapor · minimal kit · cosmos, more to come) — swap the
-whole look from Conf, synced across devices.
+**Themes**: a pluggable presentation layer — five themes (**cosmos** the default · vapor · minimal ·
+frontier · gacha) — swap the whole look from Conf, synced across devices.
 
 ## Architecture
 
@@ -62,7 +62,7 @@ flowchart LR
         UI["React + TS + Vite<br/>4 tabs · SSE streams · theme engine"]
     end
     TS["Tailscale Serve<br/>HTTPS :443 (tailnet-only)"]
-    subgraph server["Backend host — uvicorn 127.0.0.1:5433"]
+    subgraph server["Backend host — uvicorn :5433 · loopback by default, prod binds 0.0.0.0 per owner waiver"]
         API["api/ — FastAPI routers<br/>hosts · services · actions · agent · voice · settings · …"]
         SVC["services/ — orchestration<br/>ActionService · AgentSession loop · fleet/svc pollers"]
         CORE["core/ — foundations<br/>tool registry · permissions.decide() · redact · protocol seams"]
@@ -86,7 +86,7 @@ flowchart LR
 | Layer | Contents | Role |
 |---|---|---|
 | `api/` | one router per resource | HTTP/SSE surface; thin — no business logic |
-| `services/` | `action_service.py`, `agent/` (session loop, subagents, memory, compaction), `fleet.py`, `svc.py`, `actions/`, `tools/` | orchestration: the permission gate, the agent turn loop, concurrent fleet polling with TTL caches |
+| `services/` | `action_service.py`, `agent/` (session loop, subagents, memory, compaction), `automations/` (cron scheduler + headless runs, D49), `monitor.py`, `fleet.py`, `svc.py`, `actions/`, `tools/` | orchestration: the permission gate, the agent turn loop, concurrent fleet polling with TTL caches, scheduled runs |
 | `core/` | `tool.py` (registry), `permissions.py`, `redact.py`, `skills.py`, `memory.py`, `agents.py`, `events.py` | dependency floor: the registry, the pure `decide()` gate, secret redaction, pluggable Protocol seams |
 | `adapters/` | `ssh.py`, `wol.py`, `inference.py`, `voice.py`, `mcp_client.py`, `openapi_tools.py`, `searxng.py`, `embeddings.py`, `openterminal.py` | every external system behind one construction site each (rewireable live via `runtime.reconfigure`) |
 | `domain/` | enums (`Risk`, `Privilege`, `OSType`), host/service/conversation/plan models | shared typed vocabulary |
@@ -119,15 +119,18 @@ cross-device through the backend (last-write-wins).
 | **Config = human-owned YAML** | `config.yaml` is the source of truth, UI-edited via masked read / unmask-on-write round-trips that never clobber a stored secret or a hand-written comment. `.env` overrides any scalar (`CTRLB_<SECTION>__<KEY>`). |
 | **Extend, don't migrate** | Growing dimensions live in one per-item object extended with optional fields (e.g. `tool_overrides: {tool: {description, agent_mode}}`) — never parallel name-keyed sibling maps. |
 | **Pluggable via Protocols** | Skills provider/selector, memory provider/backup, agent selector, subagent orchestrator — one consistent seam shape; defaults are file-based and stateless (live-editable). |
-| **Decisions are written down** | Locked architectural choices live in [`docs/DECISIONS.md`](./docs/DECISIONS.md) (D1–D34) and load-bearing invariants are pinned by **drift-guard tests** named for them (`test_memory_registry_d27.py`, `test_arch_invariants_qh9.py`, …) so docs can't silently rot. |
+| **Decisions are written down** | Locked architectural choices live in [`docs/DECISIONS.md`](./docs/DECISIONS.md) (D1–D57) and load-bearing invariants are pinned by **drift-guard tests** named for them (`test_memory_registry_d27.py`, `test_arch_invariants_qh9.py`, …) so docs can't silently rot. |
 | **OS-agnostic by construction** | All target-OS branching keys off `host.os_type` (the managed host), never the server's OS — a Linux server managing a Windows box is the same code path as the reverse. |
 
 ## Security model
 
 Full model: [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md). The short version:
 
-- **The tailnet is the auth.** Single user, no login. The backend binds `127.0.0.1:5433`; the only
-  remote ingress is **Tailscale Serve** HTTPS (never Funnel — nothing public, by construction).
+- **The tailnet is the auth.** Single user, no login. The code default is a loopback bind
+  (`127.0.0.1:5433`); the **deployed prod service binds `0.0.0.0:5433`** under a documented owner
+  waiver (2026-07-10 — trusted home LAN + tailnet, never a public interface;
+  [`SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) §2.1). Either way the remote ingress is
+  **Tailscale Serve** HTTPS (never Funnel — nothing public, by construction).
 - **Confirm gates, not auth.** Medium/high-risk actions suspend into an explicit confirm step
   (single-use, TTL'd tokens bound to the exact call) — a UX safety, deliberately not a security
   boundary.
@@ -194,12 +197,13 @@ snapshots the prod DB before cutover, and renders the systemd user units. Full r
 (`-Tailscale` re-applies HTTPS at logon too).
 
 **On-box Claude Code agents (tmux):** `install.sh dev` also boots two always-on agent services in the
-workspace — `ctrl-b-agent@opus` (latest Opus — **the main model**) and `ctrl-b-agent@fable` (Fable 5,
-kept for on-request second opinions), each in its own tmux session. Connect to them:
+workspace — `ctrl-b-agent@fable` (Fable 5 — **the main model**: designs, supervises, rules, audits)
+and `ctrl-b-agent@opus` (latest Opus, the subagent workforce that carries the heavy token work),
+each in its own tmux session. Connect to them:
 
 ```bash
-ssh emma -t 'tmux attach -t ctrl-b-opus'    # the Opus agent — the default   (Ctrl-b d to detach)
-ssh emma -t 'tmux attach -t ctrl-b-fable'   # the Fable 5 agent
+ssh emma -t 'tmux attach -t ctrl-b-fable'   # the Fable 5 agent — the default (Ctrl-b d to detach)
+ssh emma -t 'tmux attach -t ctrl-b-opus'    # the Opus agent
 tmux ls                                     # on the box: list sessions
 systemctl --user restart ctrl-b-agent@fable # recreate a session from scratch
 ```
@@ -330,12 +334,13 @@ operations always auto-run; mutating verbs use the server's `risk` (default `med
 
 ## Quality harness
 
-One command answers "is the repo green?" ([`docs/QUALITY.md`](./docs/QUALITY.md), D33):
+One command answers "is the repo green?" ([`docs/QUALITY.md`](./docs/QUALITY.md), D33 — which also
+owns the current test counts, so they can't rot here):
 
 ```bash
-python tools/check.py            # full gate: ruff + pyright + pytest (254) | FE tsc + eslint + stylelint + prettier + vitest (267)
+python tools/check.py            # full gate: ruff + pyright + pytest | FE tsc + eslint + stylelint + prettier + vitest
 python tools/check.py --fast     # the pre-commit subset (~2 s)
-python tools/check.py --e2e      # + Playwright e2e/a11y (64 tests, 5 specs) — the pre-deploy gate
+python tools/check.py --e2e      # + Playwright e2e/a11y — the pre-deploy gate
 ```
 
 Enforced three ways: native git hooks (`core.hooksPath=.githooks/` — fast pre-commit, full
@@ -347,8 +352,8 @@ Invariants are held by drift-guard tests, not discipline — see the audits in
 ## Repository layout
 
 ```
-backend/     FastAPI + Uvicorn service — app/{api,services,core,adapters,domain}, tests/ (254)
-frontend/    React + TS + Vite PWA — src/{tabs,store,hooks,theme-engine,themes}, tests/ (267), e2e/ (64)
+backend/     FastAPI + Uvicorn service — app/{api,services,core,adapters,domain}, tests/
+frontend/    React + TS + Vite PWA — src/{tabs,store,hooks,theme-engine,themes}, tests/, e2e/
 docs/        architecture · decisions · design · audits · runbooks — START at docs/HANDOFF.md
 deploy/      bootstrap.py + linux/ (systemd kit) + windows/ (double-click scripts)
 tools/       check.py (the quality gate) + dev launchers
@@ -363,7 +368,7 @@ archive/     v0.1 Flask app, dead inference helpers, early UI prototypes
 |---|---|
 | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | Living status + next steps — **start here** |
 | [`docs/DESIGN.md`](./docs/DESIGN.md) · [`docs/SPEC.md`](./docs/SPEC.md) · [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Concrete code design (data structures, agent loop, SSE wire protocol, extension cookbook) · verified as-built spec (C4 diagrams, inventories) · deployment profiles + OS invariants |
-| [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Every locked architectural decision (D1–D34) with rationale |
+| [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Every locked architectural decision (D1–D57) with rationale |
 | [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) | The trust boundary, gates, secret handling, safe-defaults checklist |
 | [`docs/THEME_ENGINE.md`](./docs/THEME_ENGINE.md) | The pluggable theme layer (tokens · Kit · Surfaces) |
 | [`docs/QUALITY.md`](./docs/QUALITY.md) · [`docs/QH_AUDIT.md`](./docs/QH_AUDIT.md) | The quality harness + its audit |

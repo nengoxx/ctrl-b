@@ -8,10 +8,10 @@
 > [`THEME_ENGINE.md`](./THEME_ENGINE.md), and the audits ([`AGENT_CHAT_AUDIT.md`](./AGENT_CHAT_AUDIT.md) ·
 > [`SYSTEM_AUDIT.md`](./SYSTEM_AUDIT.md) · [`UI_AUDIT.md`](./UI_AUDIT.md)). On conflict, DECISIONS wins.
 >
-> **Status legend** — ✅ built & verified (v1.0, audited 2026-07) · ▹ planned target state (ACA
-> plan **approved 2026-07-07** = `TODO.md` Phase 12; its D-entries are drafted per slice — not yet
-> built) · ◇ named seam (designed extension point, build-on-demand). Pillar ids are **P#** — **F#**
-> is reserved for `UI_AUDIT.md` finding ids.
+> **Status legend** — ✅ built & verified · ▹ planned target state · ◇ named seam (designed
+> extension point, build-on-demand). *(The ACA plan = `TODO.md` Phase 12, approved 2026-07-07:
+> **Slices 0–8 are all shipped** — D38–D44 cover slices 2–8, so the ▹ marks they carried are now
+> ✅.)* Pillar ids are **P#** — **F#** is reserved for `UI_AUDIT.md` finding ids.
 >
 > *Source of truth for this document: direct code audit of the full stack (see the two audit docs'
 > method sections). Drawn 2026-07-07.*
@@ -35,10 +35,11 @@ design (D7) with a multi-theme engine on top (D28/D29/D31).
 | P4 | **Integrations** | MCP client (streamable-HTTP + stdio), generic OpenAPI tool servers, open-terminal remote shell/files, SearXNG `web_search`, embeddings client (seam), per-tool overrides (description + tri-state agent access), between-turn rediscovery | ✅ |
 | P5 | **Voice** | Push-to-talk dictation (STT proxy, 5-state mic), read-aloud TTS (per-bubble + auto-TTS, docked mini-player, blob cache), primary→fallback failover per service, capability-probed UI | ✅ |
 | P6 | **Config & ops** | Whole config editable in-app (masked secrets, comment-preserving writes, hot-apply), Tailscale Serve HTTPS toggle, live events feed + audit trail, guarded `!` shell escape hatch (opt-in), PWA install/update | ✅ |
-| P7 | **Theming** | Registry-driven multi-theme engine (vapor frozen-bespoke · minimal · cosmos), token-driven Kit scaffold, View-Transition switching, per-theme settings, cross-device appearance sync (LWW) | ✅ |
+| P7 | **Theming** | Registry-driven multi-theme engine — **five built themes** (cosmos = `DEFAULT_THEME` · vapor · minimal · frontier · gacha), token-driven Kit scaffold, View-Transition switching, per-theme settings, cross-device appearance sync (LWW) | ✅ |
 | P8 | **Durable turns** | Server-owned turn lifecycle: disconnect-proof generation, reconnect replay/snapshot, explicit cancel + Stop button, mid-turn steering queue | ✅ ACA Slices 3/5 (D39/D41) |
-| P9 | **Perf & routing** | Parallel read-only tool execution + per-call result streaming (Slice 4 ✅, D40); compaction v2 — window-aware trigger, tool-result clearing, template, thrash breaker, ModelRef call config/A10 (Slice 6 ✅, D42); failure-fallback model routing + retry classifier + typed retry/failover events (Slice 7 ✅, D43); persisted approvals ▹ | Slice 4/6/7 ✅ · ▹ ACA 8 |
-| P10 | **Future** | Automations/schedules, notifications, wake word, idle shutdown, vector memory, privilege ladder UI | ◇ ROADMAP seams |
+| P9 | **Perf & routing** | Parallel read-only tool execution + per-call result streaming (Slice 4 ✅, D40); compaction v2 — window-aware trigger, tool-result clearing, template, thrash breaker, ModelRef call config/A10 (Slice 6 ✅, D42); failure-fallback model routing + retry classifier + typed retry/failover events (Slice 7 ✅, D43); persisted approvals — per-tool "always allow" rules that downgrade a risk-derived confirm (Slice 8 ✅, D44) | Slices 4/6/7/8 ✅ |
+| P10 | **Unattended & awareness** | Scheduled **automations** (cron defs in SQLite, runner + attributed headless runs, `create_automation`/`list_automations`, Conf → Automations, D49), foreground **notifications** (prefs in config, one client-side gate), **fleet monitor** loop (confirmed up/down transitions → Events, D2-A/D50), **wake-on-connect** (the SPA opening the event stream wakes flagged hosts, D2-B) | ✅ |
+| P11 | **Future** | Wake word, idle shutdown, vector memory, privilege ladder UI, Web Push | ◇ ROADMAP seams |
 
 ---
 
@@ -74,22 +75,23 @@ flowchart LR
 **Boundary rules (SECURITY_MODEL):** the backend never binds publicly; Serve is the only HTTPS
 ingress; no auth *inside* the tailnet (single-user trust model); secrets live only in gitignored
 `config.yaml`/`.env`, masked on read, redacted from free text; the raw-shell paths are **off by
-default** and double-gated. ▹ Rider (SYS-4): the *dev* Vite proxy widens this on the LAN — to be
-documented as an explicit decision.
+default** and double-gated. Rider (SYS-4): the *dev* Vite proxy widens this on the LAN — the ruled
+half is the Serve default, flipped `5173` → **`5433`** (`DECISIONS.md` D20 §3, QH-11 amendment
+2026-07-07); the dev-proxy exposure itself is still only documented there, not fenced.
 
 ## 3. Containers & deploy topology (C4 L2, D32)
 
 ```mermaid
 flowchart TB
     subgraph client["PWA (browser / installed)"]
-        react["React 19 + TS + Vite\nTanStack Query + dep-free stores\nTheme engine (vapor · minimal · cosmos)"]
+        react["React 19 + TS + Vite\nTanStack Query + dep-free stores\nTheme engine (cosmos default · vapor · minimal · frontier · gacha)"]
         sw["Service worker\n(precache app shell; /api never cached)"]
     end
 
-    subgraph server["Backend host (corsair dev → emma prod)"]
-        api["FastAPI + uvicorn :5433\nserves /api + built SPA"]
+    subgraph server["Backend host — emma (prod :5433 + on-demand dev :5434)"]
+        api["FastAPI + uvicorn :5433\nserves /api + built SPA + /api/media mounts"]
         db[("SQLite (WAL)\nctrlb.db")]
-        ws["Workspace $CTRLB_HOME\nconfig.yaml · SOUL.md · skills/ · agents/ · memories/ (git repo)"]
+        ws["Workspace $CTRLB_HOME\nconfig.yaml · SOUL.md · skills/ · agents/ · memories/ (git repo) · media/"]
     end
 
     react -->|"REST + SSE (single origin)"| api
@@ -101,13 +103,16 @@ flowchart TB
 |---|---|---|---|
 | PWA | React 19, TS strict, Vite, vite-plugin-pwa | All presentation; offline shell; voice capture/playback | `/api` REST + 2 SSE feeds |
 | API server | FastAPI, uvicorn, sse-starlette | Everything else: registry, gate, agent loop, proxies, config | fleet, LLMs, voice, MCP/OpenAPI, SearXNG |
-| SQLite | aiosqlite, WAL, numbered migrations | threads/messages (parts-JSON), events audit, FTS5 index | — |
-| Workspace | plain files + a local git repo | config, personas, skills, agents, memory (auto-committed) | — |
+| SQLite | aiosqlite, WAL, numbered migrations | threads/messages (parts-JSON), attributed events audit, FTS5 index, automation defs + run history | — |
+| Workspace | plain files + a local git repo | config, personas, skills, agents, memory (auto-committed), owner media | — |
 
-**Deploy (D32):** prod = emma, systemd, `:5433`, `CTRLB_HOME=~/.ctrl-b`, Serve → HTTPS
-`emma.….ts.net`; isolated dev instance `:5434` + `~/.ctrl-b-dev`; corsair remains the Windows dev
-checkout (no `--reload` on Windows — subprocess event-loop gotcha). Bootstrap via
-`deploy/bootstrap.py`; runbook `DEPLOY_EMMA.md`.
+**Deploy (D32, AMENDED-2):** emma hosts **both** instances as systemd *user* units — prod `:5433` @
+`~/apps/ctrl-b`, `CTRLB_HOME=~/.ctrl-b`, boot-started, Serve → HTTPS `emma.….ts.net`; and an
+isolated **on-demand** dev instance `:5434` + Vite `:5173` + `~/.ctrl-b-dev`, started/stopped around
+iteration in the workspace checkout. emma is also where sessions run; the **corsair checkout is a
+frozen plain clone** (reference only — corsair stays a *managed fleet host*), which is why the
+Windows `--reload` subprocess event-loop gotcha is a documented constraint rather than a daily one.
+Bootstrap via `deploy/bootstrap.py`; runbook `DEPLOY_EMMA.md`.
 
 ## 4. Backend architecture (C4 L3)
 
@@ -117,14 +122,16 @@ checkout (no `--reload` on Windows — subprocess event-loop gotcha). Bootstrap 
 flowchart TB
     subgraph api["api/ — thin routers (validate · delegate · map errors)"]
         r1["hosts · services · actions · tools"]
-        r2["agent (threads/chat/resume/plan/apply/skills/agents/memory)"]
-        r3["settings · integrations · voice · events · access · health"]
+        r2["agent (threads/chat/resume/plan/apply/skills/agents/memory) · prompts"]
+        r3["settings · integrations · voice · events · access · health · automations · media"]
     end
     subgraph services["services/ — orchestration"]
         acts["ActionService\n(THE execution chokepoint)"]
         flt["FleetService / ServiceService\n(TTL-cached probe sweeps)"]
         agent["agent/* — session loop · compaction ·\nmemory · skills · subagents · selectors"]
         repos["ThreadRepo / MessageRepo / EventService"]
+        auto["automations/* — repo · schedule ·\nAutomationService · AutomationRunner loop (D49)"]
+        watch["MonitorService (D2-A/D50) ·\nwake_on_connect (D2-B)"]
     end
     subgraph core["core/ — pure logic & Protocols (no service imports)"]
         reg["ToolRegistry + ToolSpec"]
@@ -153,10 +160,11 @@ construction site shared by startup and hot-reload).
 ```mermaid
 flowchart LR
     src1["Agent loop\n(model tool call)"] --> inv
-    src2["UI button\n(POST /actions/invoke)"] --> inv
+    src2["UI button\n(POST /api/actions/{name} ·\nTools card: POST /api/tools/{name})"] --> inv
     src3["'!' exec · Approve-apply"] --> inv
+    src4["Automation run (D49) ·\nMonitorService / wake-on-connect (D2)"] --> inv
     subgraph chokepoint["ActionService.invoke — no parallel paths exist"]
-        inv["validate args\n(input_model)"] --> dec{"decide(spec, privilege)"}
+        inv["validate args\n(input_model)"] --> apr["approval_match(overrides.approvals, args)\n→ approved? (D44)"] --> dec{"decide(spec, privilege, approved)"}
         dec -->|ALLOW| exec["execute\n(opt. timeout_s)"]
         dec -->|CONFIRM| tok{"valid single-use\ntoken?"}
         tok -->|no| mint["mint token · return needs_confirm\n(→ confirm bubble / 2-step UI)"]
@@ -173,28 +181,37 @@ flowchart LR
 
 | Privilege ↓ / Tool → | LOW risk | MED risk | HIGH risk or `confirm=True` | `run_shell`* |
 |---|---|---|---|---|
-| `readonly` | ALLOW (non-action cat.) / DENY actions | DENY | DENY | DENY |
+| `readonly` | ALLOW (**incl. LOW-risk actions** — `ping_host`, `wake_host`) | DENY actions† / CONFIRM non-action | DENY actions† / CONFIRM non-action | DENY |
 | `confirm` (default) | ALLOW | CONFIRM | CONFIRM | DENY* |
 | `auto_low` | ALLOW | ALLOW | CONFIRM | DENY* |
 | `full` | ALLOW | ALLOW | ALLOW | ALLOW |
 
 \* unless `shell.agent_exec_enabled` opts the agent in (both shell gates default **off**).
-▹ Slice 8 adds persisted "always allow" between DENY and CONFIRM (can only downgrade risk-derived
-confirms; policy-DENY always wins — precedence ladder specified in ACA).
+† the readonly clamp is narrow by construction: `category == "action" AND risk != LOW` → DENY. It is
+*not* a blanket "no actions" — a LOW-risk action stays ALLOW at `readonly`.
+✅ **Persisted approvals (Slice 8, D44):** `tool_overrides{<tool>: {approvals: [ApprovalRule]}}` are
+consulted before `decide`; a matched rule (OR across rules, AND within one, `fnmatchcase` on
+canonicalised scalar args; `args: null` = whole-action, `args: {}` = the empty AND) passes
+`approved=True`, which downgrades a **risk-derived** CONFIRM (MED or HIGH) to ALLOW. Precedence is
+unchanged above it: the `run_shell` and `readonly` DENYs win outright, and a designer-forced
+`spec.confirm=True` is un-downgradable below `full` (the approval is ignored) — so approvals are
+consulted only when the tool's confirm is risk-derived.
 
 ### 4.3 The tool registry — one capability model
 
 | Provider | Registers | Naming | Risk source |
 |---|---|---|---|
 | Built-in actions (`@action`) | wake/ping/shutdown/reboot/start/stop/restart/check_service/open_service_url/run_shell/tailscale_* | plain | decorator |
-| Cognitive builtins (`core=True`, always reachable) | `task_plan` · `question` · `memory` · `session_search` · `skill_manage` · `spawn_subagents` | plain | decorator |
+| Cognitive builtins (`core=True`, always reachable) | `task_plan` · `question` · `memory` · `session_search` | plain | decorator |
+| Agent builtins (`category="builtin"`, `core` **default False** — an allowlist may exclude them) | `skill_manage` (LOW) · `spawn_subagents` (MED) · `create_automation` (MED, `confirm=True`, refused in any non-interactive context) · `list_automations` (LOW, `read_only`) | plain | decorator |
 | Core Memory (D57, `core=False` — an allowlist may exclude it) | `core_memory` (`read`/`search`/`create`/`update`/`remove`/`delete` over the tier-2 corpus; hidden from the schema while `memory.longterm.backend` is null) | plain | decorator |
-| Utilities (`@tool`) | `web_search`, misc UI cards | plain | decorator |
-| open-terminal | `terminal_exec/read/write/list/grep/glob` | plain | **config per-op** (reads LOW, exec/write HIGH) |
+| Utilities (`@tool`, Tools-tab cards) | `dns_trace` · `ip_info` · `yt_captions` (`services/tools/`) | plain | decorator |
+| `web_search` | an `@action` with `category="utility"`, `read_only=True`, `ui_exposed=False` — agent-only, not a Tools card | plain | decorator |
+| open-terminal | `terminal_exec` · `terminal_read_file` · `terminal_write_file` · `terminal_list` · `terminal_grep` · `terminal_glob` | plain | **config per-op** (reads LOW, exec/write HIGH) |
 | MCP servers | discovered per server | `mcp__<server>__<tool>` | annotations (readOnly→LOW, destructive→HIGH) else server config |
 | OpenAPI servers | one per operation | `api__<server>__<opId>` | GET/HEAD→LOW; mutating→server config |
 
-Per-tool **overrides** (`tool_overrides{name: {description, agent_mode}}`, D22) overlay the live
+Per-tool **overrides** (`tool_overrides{name: {description, agent_mode, approvals}}`, D22 + D44) overlay the live
 specs; agent allowlists (`AgentDef.tools`, glob) + skill narrowing intersect it; `core` builtins
 survive both. A **disabled feature's** tools are dropped *after* that union (`for_agent(hidden=…)`,
 D57 — applied identically at the schema set and the availability guard), and `ToolSpec.describe`
@@ -217,7 +234,7 @@ rebuilds only **between** turns (▹ ACA-17 closes the auto-path race).
 | Unified per-item config object | `ToolOverride`, host `services{}`, `appearance` blob | owner directive: shape to extend, not migrate |
 | Prompt-cache stability layering | agent session static head + tools cache | Codex/Claude-Code doctrine, independently converged |
 | Progressive disclosure | skills (instructions only when active), memory caps | context economy for the weak local model |
-| External-store binding (dep-free) | `createStore` (D23) ×10 stores | documented snapshot contract |
+| External-store binding (dep-free) | `createStore` (D23) — **19 modules** (17 in `src/store/` + `lib/audioController.ts` + `lib/composer.ts`) | documented snapshot contract |
 | Thin host + headless controllers | `App` → ActiveRoot; `useComposer`/`useAgentChat` (D29) | logic themes share, markup themes own |
 | Command palette / prefix routing | composer `!` · `/verb` · text | one grammar, all themes |
 
@@ -357,6 +374,9 @@ loaded, so the transition snapshot never captures a Suspense fallback.
 erDiagram
     THREADS ||--o{ MESSAGES : contains
     MESSAGES ||--o| MESSAGES_FTS : "indexed by triggers (user/assistant text)"
+    AUTOMATIONS ||--o{ AUTOMATION_RUNS : "history (FK ON DELETE CASCADE)"
+    AUTOMATION_RUNS }o..o| THREADS : "runs in (fresh | rolling)"
+    AUTOMATION_RUNS |o..o{ EVENTS : "attributed by run_id (zero-or-one per event; no FK — survives pruning)"
     THREADS {
         text id PK
         text title
@@ -370,30 +390,74 @@ erDiagram
         text thread_id FK
         text role "user|assistant|system|tool"
         json parts "typed union: text|reasoning|tool_call|tool_result|error"
-        text actor "user|agent|system"
+        text actor "user|agent|system|automation"
         text ts
         int tokens
         int compacted "context overlay flag - rows never deleted"
         text agent "per-turn attribution"
+        json meta "migration 6 (D56): per-model-call prompt stamps + usage (nullable)"
     }
     EVENTS {
         text id PK
         text ts
-        text actor
+        text actor "user|agent|system|automation"
         text action
         text target
         text status
         text summary
         text output "redacted before write"
+        text origin "migration 4 (D49): user_chat|automation|subagent|system"
+        text origin_id "the automation id / subagent agent name"
+        text run_id "the automation run (no FK - dangling after pruning is correct)"
+        text decision "auto|confirmed|approval, or policy when denied"
+    }
+    AUTOMATIONS {
+        text id PK
+        text name
+        int enabled
+        text schedule "5-field cron, validated on write"
+        text tz "IANA key - the cron fields evaluate in it"
+        text prompt
+        text agent "NULL = the default agent, resolved per run"
+        text privilege "NULL = the resolved agent's own"
+        text question_policy "skip|use_default"
+        text thread_mode "fresh|rolling"
+        text thread_id "rolling mode's own thread"
+        int timeout_s "NULL = automations.default_timeout_s"
+        int next_run_at "UTC epoch; NULL = never (disabled)"
+        int rev "bumped on every definition change"
+        int created_at
+        int updated_at
+    }
+    AUTOMATION_RUNS {
+        text id PK
+        text automation_id FK
+        text trigger "scheduled|manual"
+        int scheduled_for "the slot; NULL for a manual run"
+        int started_at
+        int finished_at
+        text status "running|ok|error|timed_out|interrupted|missed"
+        text error
+        text thread_id
+        int read_at "NULL = unread"
     }
     MEMORY {
-        text id PK "reserved for vector store (unused v1)"
+        text id PK
+        text kind "'fact' | 'summary'"
+        text text
+        text created_at
+        int pinned
     }
 ```
 
 Doctrine: **message-has-parts** (schema grows via the JSON union, not migrations); **compaction is
 an overlay** (`compacted` flag + summary system-message; full history immutable); events =
-domain-level audit trail. ▹ SYS-1 adds `Database.transaction()` for multi-statement sequences.
+domain-level audit trail — since migration 4 (D49) every row is **attributed** (`origin`/`origin_id`/
+`run_id`/`decision`), which is what makes an unattended automation run auditable. The `memory` table
+is created by migration 1 but **has no reader/writer**: tier-1 and tier-2 memory are markdown in the
+workspace git repo (§6.2), so it stays the reserved slot for a future vector store.
+✅ SYS-1 closed: `Database.transaction()` (`db.py`) wraps multi-statement sequences in one
+`BEGIN IMMEDIATE` under the write lock — inner `execute()` calls join it via a contextvar.
 
 ### 6.2 The workspace (`$CTRLB_HOME`, relocatable — D14/D15)
 
@@ -404,6 +468,8 @@ $CTRLB_HOME/
 ├── SOUL.md                # default agent persona (slot #1 of the prompt)
 ├── skills/<name>/SKILL.md # global skills (frontmatter + instructions)
 ├── agents/<slug>/         # specialists: agent.yaml (overrides) + SOUL.md + skills/
+├── media/<ns>/<role>/     # owner art per NAMESPACE + role (D53; `core/media.py` validates the shape,
+│                          #   served read-only at /api/media/<ns>/files — a stray folder stays invisible)
 └── memories/              # ← local git repo (D26, auto-commit + external-edit sweep)
     ├── MEMORY.md USER.md STATE.md      # tier 1: default agent + global stores (capped, § entries)
     ├── agents/<slug>/MEMORY.md STATE.md
@@ -424,7 +490,12 @@ $CTRLB_HOME/
 | `voice` / `searxng` / `embeddings` / `open_terminal` | endpoints + per-op risk | rebuild-on-change |
 | `shell` / `tailscale` | the two guarded escape hatches | live |
 | `mcp_servers[]` / `openapi_servers[]` | remote toolsets | between-turn rediscovery |
-| `tool_overrides{}` | per-tool description + agent access (D22) | live overlay |
+| `tool_overrides{}` | per-tool description + agent access (D22) **+ `approvals[]` — the persisted "always allow" rules (D44), served back on `GET /api/actions` so the catalog renders + revokes them** | live overlay |
+| `notifications` | foreground-notification prefs: `{enabled, events{agent_input, turn_done, action_failed, automation_done}}` (F1) — read by the client through the thin `GET /api/notifications`; the backend never sends a notification itself | live |
+| `wake` | fleet wake automation: the D2-B connect cooldown + the D2-A presence tunables (`presence_device_ips`, per-host `wake_on_presence`) | live |
+| `monitor` | the `MonitorService` tick interval + the asymmetric up/down damping thresholds (D2-A/D50) | live (re-read per tick — the master switch is live) |
+| `automations` | the `AutomationRunner` tunables only (`default_timeout_s`, …) — the **definitions live in SQLite**, not in YAML (D49) | live (re-read per tick) |
+| `media{}` | owner media state keyed by **namespace** (mirrors `MEDIA_NAMESPACES`, incl. `kit`, which no theme owns — D52/G5 + D53); absent key = every consumer stays on its bundled art | live |
 | `appearance` | theme/mode/accent/motion/perf + per-theme settings (server-stamped LWW) | live |
 
 Secrets: two-rule model (declared leaf keys + hinted credential-map subkeys) → masked on GET,
@@ -435,14 +506,14 @@ carried-over on PUT, redacted from search snippets, drift-guard-tested.
 ```mermaid
 flowchart TB
     main["main.tsx (QueryClientProvider · SW)"] --> App
-    App["App — THIN HOST\n(event stream · viewport · unload guard)"] --> engines["AppEngines (null render)\nuseFleetCycle · useAppearanceSync · useChatInit · useAutoTts"]
-    App --> Root["ActiveRoot = registry[theme].Root"]
-    Root -->|vapor (frozen bespoke)| VR["VaporRoot: hero canvas · own chrome"]
-    Root -->|reskins| DR["Kit DefaultRoot: AppBar · sections · floating Composer · NavBar\n(slots: Fleet override · composer variant/slots)"]
+    App["App — THIN HOST\n(event stream · viewport · unload guard)"] --> engines["AppEngines (null render)\nuseFleetCycle · useAppearanceSync · useChatInit · useAutoTts ·\nuseForegroundNotifications (F1) · usePlanOpenAutoClose (A4)"]
+    App --> Root["ActiveRoot = registry[theme].Root\n(cosmos DEFAULT · vapor · minimal · frontier · gacha)"]
+    Root -->|"every theme = a thin Root over the Kit"| DR["Kit DefaultRoot: AppBar · sections · floating Composer · NavBar\n(slots: body overrides · brandMark · composer variant/slots)"]
+    DR -->|"Root-pinned bespoke bodies"| VR["VaporRoot → vapor FleetTab (hero · skyline · waveform)\nCosmosRoot → CosmosFleet · …"]
 
     subgraph state["State"]
         q["TanStack Query: hosts/services/events/settings/…\n(poll-driven server state)"]
-        st["createStore singletons ×10:\nchat (streaming reducer) · ui · composer draft ·\nconnection · toast · confirm · dirty · playback · …"]
+        st["createStore singletons ×19 (17 store/ + lib/audioController + lib/composer):\nchat (streaming reducer) · ui · composer draft ·\nconnection · toast · confirm · dirty · playback · per-theme selection · …"]
     end
     DR & VR --> q & st
 
@@ -458,8 +529,12 @@ flowchart TB
 memo + sliced subscriptions + ref-stable lookups); engines isolated from the theme tree; plan
 snapshot content-signature-stable. **Theme contract:** a theme = one `ThemeDef` registry row
 (Root, palettes, lazy loadStyles/Fonts/Root, optional per-theme settings auto-rendered in Conf);
-reskins = tokens.css over the Kit; vapor = frozen bespoke escape hatch (assimilation ladder
-governs graduation, D34). **Wire safety:** every SSE frame validated → drop-not-crash; unknown
+a theme = tokens.css over the Kit, plus whatever bodies it pins. **vapor is no longer a frozen
+bespoke shell** — D51 V4 pivoted `VaporRoot` onto `DefaultRoot` (which now owns the dvh column,
+scroller, section bodies, measurements and overlays); what stays vapor is the Root-pinned Fleet body
+(hero · skyline · waveform), the `brandMark` slot, `body[data-skyline]`, and its declared kit axes.
+Bespoke *bodies* are bespoke-by-right (D31 §1.1); vapor is also the one **eager**-CSS theme.
+**Wire safety:** every SSE frame validated → drop-not-crash; unknown
 events ignored (forward-compatible).
 
 ## 8. Wire protocols
@@ -482,6 +557,7 @@ events ignored (forward-compatible).
 | `inference.failover` | from, to, category | chain dropped to next endpoint, live (D43/A6; supersedes the D18 degraded notice) |
 | `error` | message, retryable | normalized; feeds risk-aware retry (I4) |
 | `done` | state: completed·suspended·capped·error | terminal (+`cancelled` on Stop, D39) |
+| `turn.sync` | the accumulator snapshot + `steer_queue` (+ `retry_status`) | **re-attach only** (D39): when a tail-replay can't cover the gap, `GET …/stream` opens with ONE snapshot frame instead of replayed events; the client applies it through `applyTurnSync` (force-overlay), then live frames dedupe strictly beyond its `seq` |
 | `id:` field | `<turnId>:<seq>` | replay cursor (D39, shipped) |
 
 Dual-mode delivery (D17): same generator collected into one JSON payload when
@@ -490,16 +566,21 @@ activity, EventBus, 15 s keepalive) with client auto-reconnect + reconcile.
 
 ### 8.2 REST surface (by router)
 
+Every router is mounted under **`/api`** (`main.py::include_router`); the paths below are
+router-relative.
+
 | Router | Endpoints (abridged) |
 |---|---|
-| hosts / services | list + status + CRUD (comment-preserving YAML edits) + wake/shutdown/reboot/start/stop/restart via actions |
-| actions / tools | catalog (specs + schemas + retry_safe) · `POST /actions/invoke` (UI two-step confirm) |
-| agent | threads CRUD · `chat` · `resume` · `compact` (D42: `instructions?` in → `{removed, summaryId?, truncated?, rejected?}` out) · `plan` · `apply` · `exec` (!) · skills CRUD · agents CRUD (+SOUL, memory stores) · `GET /memory/core/status` (tier-2 corpus status — derived, read-only, D57) · default-prompt (`chat`/`exec` → **202 steer-enqueue** when the thread runs a chat/resume turn, D41) |
-| settings | `GET/PUT /settings` (masked/hot-apply) · `GET /appearance` |
+| hosts / services | list + status + CRUD (comment-preserving YAML edits) + wake/shutdown/reboot/start/stop/restart via actions · `GET /hosts/vpn-discovery` (D3: propose a `vpn_host` per host from `tailscale status --json` — read-only, never writes config; 403 when Tailscale control is off) |
+| actions / tools | catalog (specs + schemas + retry_safe + each tool's `approvals`) · `POST /actions/{name}` (the name is in the **path**; UI two-step confirm — re-POST with `confirm_token`) · Tools-tab twin `POST /tools/{name}` (utility cards only, 404 otherwise; no confirm dance) |
+| agent | threads CRUD · `chat` · `resume` · `compact` (D42: `instructions?` in → `{removed, summaryId?, truncated?, rejected?}` out) · `plan` · `apply` · `exec` (!) · skills CRUD · agents CRUD (+SOUL, memory stores) · `GET /memory/core/status` (tier-2 corpus status — derived, read-only, D57) · default-prompt (`chat`/`exec` → **202 steer-enqueue** when the thread runs a chat/resume turn, D41) · `GET /providers` (A11/D48: the composer + Conf provider directory — a NAKED non-secret read; names + catalogs + the effective chain + `verbs`) |
+| settings | `GET/PUT /settings` (masked/hot-apply) · `GET /appearance` · `GET /notifications` (the F1 prefs projection — an always-on read for the app-global engine; writes still ride `PUT /settings`) |
 | prompts | `GET /prompts` (Phase 18: every registry id + label + effective template + placeholders — read-only; edits ride `PUT /settings` `prompts:`) |
 | integrations | MCP/OpenAPI CRUD · `rediscover` (409 while turn active) · status |
 | voice | `status` · `stt` · `tts` |
 | events / access / health | audit list + SSE · Tailscale Serve control · health |
+| automations (D49) | `GET /automations` · `POST /automations` (201) · `POST /automations/schedule-preview` (validate a cron + show the next fires) · `PUT /automations/{id}` · `POST /automations/{id}/enabled` · `DELETE /automations/{id}` (204) · `POST /automations/{id}/run-now` (202) · `GET /automations/{id}/runs` · `POST /automations/runs/{run_id}/read` |
+| media (D53) | `GET /media/{ns}` (the namespace index — roles + what the owner has installed) + a per-namespace **static mount** at `/media/{ns}/files` (`MediaFiles`, restricted to the roles the index advertises, so a folder parked beside them is invisible rather than quietly public) |
 | agent turns (D39/D41) | `GET /agent/turns/{t}` (status + `steer_queue`) · `GET …/stream` (re-attach) · `POST …/cancel` (idempotent Stop; harvests `steer_queue`) · `DELETE …/steer/{entry_id}` (unsend a queued steer) |
 
 ## 9. Repository structure
@@ -507,11 +588,11 @@ activity, EventBus, 15 s keepalive) with client auto-reconnect + reconcile.
 ```
 ctrl-b/
 ├── backend/
-│   ├── app/ {api, services(/actions, /agent), core, adapters, domain, config.py, db.py, main.py, runtime.py}
-│   ├── tests/               # 108 files + conftest, decision-pinned (test_*_d26 …) + drift guards
+│   ├── app/ {api, services(/actions, /agent, /tools, /automations, monitor.py, wake_on_connect.py), core, adapters, domain, config.py, db.py, main.py, runtime.py}
+│   ├── tests/               # 111 files + conftest, decision-pinned (test_*_d26 …) + drift guards
 │   └── pyproject.toml       # exact pins · ruff (py314) · pyright[nodejs]
 ├── frontend/
-│   ├── src/ {api, components, hooks, lib, store, tabs, theme(-engine)/{kit,…}, themes/{vapor,minimal,cosmos}}
+│   ├── src/ {api, components, hooks, lib, store, tabs, theme(-engine)/{kit,…}, themes/{cosmos,vapor,minimal,frontier,gacha}}
 │   ├── tests/ (vitest+jsdom)  e2e/ (Playwright: flows·a11y·render·contrast·kit-render)
 │   └── vite.config.ts       # PWA · dev proxy · bundle analyzer
 ├── docs/                    # the doc system (HANDOFF → DECISIONS → ARCHITECTURE/DESIGN → TODO → …)
@@ -527,7 +608,7 @@ ctrl-b/
 | One-command gate | `python tools/check.py` — parallel, grouped, run-all-and-summarise (ruff · pyright · pytest · tsc · eslint · stylelint · prettier · vitest — counts live in QUALITY.md) | — |
 | Hooks | pre-commit `--fast` (instant) · pre-push full (native `core.hooksPath`) | — |
 | E2E | `--e2e`: Playwright flows + axe a11y as the **pre-deploy gate** | per-theme render matrix ◇ |
-| CI | none | ▹ SYS-14: GitHub Actions `check.py` on ubuntu (first Linux runs pre-emma) |
+| CI ✅ (SYS-14 closed) | GitHub Actions (`.github/workflows/ci.yml`): the `check.py` gate on **ubuntu-latest** for every branch push + PR (trunk-based, so a hotfix branch gets Linux verification too); a **`v*` tag additionally runs the Playwright e2e/a11y suite** — that tag run is the machine-checked **release gate** | — |
 | Lint/type ratchets | ruff E/F/I · pyright basic · 27 deferred eslint warns | ▹ SYS-16: +ASYNC/B → later strict |
 | Coverage | not measured | ▹ SYS-15: measure-only first; Compactor/adapters/parsers pinned |
 | Observability | module logs · Events audit trail · failover breadcrumbs | ▹ SYS-11: `server.log_level` knob |
@@ -539,11 +620,12 @@ ctrl-b/
 
 | Wave | Changes to this spec | Ref |
 |---|---|---|
-| **Chat hardening** (pre/post-emma) | doc-truth fixes · MCP deadlines · per-thread turn marker (409) · shielded step persistence · SYS-1 transactions · SYS-13 composer fix · CI | ACA 0–2 · SYS |
+| **Chat hardening** (pre/post-emma) ✅ | doc-truth fixes · MCP deadlines · per-thread turn marker (409) · shielded step persistence · SYS-1 transactions ✅ · SYS-13 composer fix · CI ✅ (SYS-14) | ACA 0–2 · SYS |
 | **Durable turns** | §5.1 target diagram becomes real: TurnRegistry, replay/snapshot, cancel + Stop, `id:` cursors | ACA 3 (D35) |
 | **Interaction speed & steering** | parallel safe calls, per-call results, steering queue (§8.1 additions) | ACA 4–5 |
-| **Compaction v2 ✅ · routing ✅ · approvals** | window-aware anchored trigger (+`context_window` config/`/props` probe), assembly-time tool-result clearing, 5-section template + `/compact <instructions>`, thrash breaker, reactive overflow backstop, ModelRef call config/A10 (Slice 6 ✅, D42); failure-fallback model routing + retry classifier + typed retry/failover events (Slice 7 ✅, D43); persisted approvals still ▹ | ACA 6–7 ✅ · 8 ▹ |
-| **Platform futures** | automations/notifications/wake-word/vector memory slot into existing seams (EventBus, MemoryProvider, registry) | ROADMAP |
+| **Compaction v2 ✅ · routing ✅ · approvals ✅** | window-aware anchored trigger (+`context_window` config/`/props` probe), assembly-time tool-result clearing, 5-section template + `/compact <instructions>`, thrash breaker, reactive overflow backstop, ModelRef call config/A10 (Slice 6 ✅, D42); failure-fallback model routing + retry classifier + typed retry/failover events (Slice 7 ✅, D43); persisted approvals — `tool_overrides.approvals[]` consulted before `decide`, downgrading risk-derived confirms only (Slice 8 ✅, D44) | ACA 6–8 ✅ |
+| **Unattended platform** ✅ | **shipped into the existing seams, exactly as designed**: automations = SQLite defs + a runner loop + `origin`/`run_id` event attribution + two agent tools (D49); notifications = a config block + one client-side gate (F1); the monitor loop + wake-on-connect ride the EventBus and the same ActionService gate (D2-A/D50 · D2-B) | ROADMAP · D49/D50 |
+| **Platform futures** | wake-word · idle shutdown · vector memory (the unused `memory` table + `MemoryProvider`) · privilege-ladder UI · Web Push | ◇ ROADMAP |
 
 *End of specification. Maintain by editing the affected section when a D-entry lands; the ✅/▹/◇
 markers are the drift guard — a ▹ that ships flips to ✅ in the same PR.*

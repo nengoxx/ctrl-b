@@ -40,7 +40,8 @@
 >    PLUS the Playwright smoke/a11y suite. Do NOT deploy on red. *(Prereqs: browsers installed once via
 >    `npx playwright install` from `frontend/`; nothing stale on :4173 — `reuseExistingServer` would reuse an
 >    old build. See QUALITY.md "e2e gate".)* Also run the SECURITY_MODEL.md safe-defaults checklist (bind
->    127.0.0.1 · debug off · Serve HTTPS only · shell toggles intended · no secrets tracked). Then PREP 1 + 2.
+>    per SECURITY_MODEL §2.1 — code default loopback, deployed prod `0.0.0.0` by owner waiver · debug off ·
+>    Serve HTTPS only · shell toggles intended · no secrets tracked). Then PREP 1 + 2.
 > 1. **Tag the release FIRST:** `git tag -a v1.0.0 <sha> -m "ctrl-b v1.0"` on the gated sha, `git push origin
 >    v1.0.0` → the CI **release gate** runs (full gate + e2e on Linux; must be green). Tag-first means the
 >    fresh prod clone pins straight to `v1.0.0` — no transitional "prod on main" state.
@@ -48,15 +49,18 @@
 > 3. `backend/.venv/Scripts/python.exe deploy/bootstrap.py --with-dev --claude-env` *(dangerouslyDisableSandbox)*
 >    → prereqs → SFTP secret → clone sparse prod at `~/apps/ctrl-b` (pins to `v1.0.0`) → `install.sh prod`
 >    (native-3.14 venv + aside-built dist + DB snapshot + service) → `serve-https` → fresh workspace clone +
->    `install.sh dev` (dev instance **+ the always-on `ctrl-b-agent` service** — tmux Claude agent, boots with
->    the box) → **claude-env** (memory → `~/.claude/projects/-home-emma-github-ctrl-b/memory` + settings merge).
-> 4. **Verify:** `ssh emma -t 'systemctl --user status ctrl-b-dashboard ctrl-b-agent; curl -s
->    localhost:5433/api/health'`; open **`https://emma.lobster-vector.ts.net`** on the phone (mic-ready);
->    attach the agent (`tmux attach -t ctrl-b`) and confirm it recalls the migrated memory.
+>    `install.sh dev` (dev instance **+ the always-on Claude agent instances** — see the decision line below) →
+>    **claude-env** (memory → `~/.claude/projects/-home-emma-github-ctrl-b/memory` + settings merge).
+> 4. **Verify:** `ssh emma -t 'systemctl --user status ctrl-b-dashboard ctrl-b-agent@fable ctrl-b-agent@opus;
+>    curl -s localhost:5433/api/health'`; open **`https://emma.lobster-vector.ts.net`** on the phone (mic-ready);
+>    attach an agent (`tmux attach -t ctrl-b-opus`) and confirm it recalls the migrated memory.
 >
 > **Decisions — ALL RULED (owner 2026-07-09):** `--with-dev` YES (development moves to emma) ·
-> the agent = an always-on boot service (`ctrl-b-agent.service`, model default fable-5 high; switch via
-> `~/.config/ctrl-b/agent.env` → `MODEL=opus`) · `--claude-env` YES (migrate the framework) · tag = `v1.0.0`.
+> the agents = always-on boot services: the **template** unit `ctrl-b-agent@.service`, enabled as the two
+> instances **`@fable`** and **`@opus`** (amended 2026-07-10) — the model comes from the *instance name*, and
+> `~/.config/ctrl-b/agent.env` carries only `EFFORT`/`PERM`; tmux sessions `ctrl-b-fable` / `ctrl-b-opus`.
+> **Canonical detail: `deploy/linux/README.md` §"The Claude agent services"** (not restated here) ·
+> `--claude-env` YES (migrate the framework) · tag = `v1.0.0`.
 >
 > **Afterward — the standing procedures (runbook `deploy/linux/README.md`):** release = tag a soaked sha +
 > push + re-pin prod · hotfix = worktree at the tag (`tools/add-dev-worktree.sh`), fix land-back on main is
@@ -101,8 +105,10 @@
 installs set `CTRLB_HOME=~/.ctrl-b`"* → config at `/home/emma/.ctrl-b/config.yaml`; the systemd service sets that env.
 
 **Artifacts (`deploy/linux/`) — D32 two-tree:** `install.sh [prod|dev]` (idempotent per-instance setup) ·
+`update.sh <tag>` (the standing release/update runner) · the unit templates in `deploy/linux/systemd/`:
 `ctrl-b-dashboard.service` (PROD backend :5433) · `ctrl-b-dashboard-dev.service` (DEV backend :5434, `--reload`) ·
-`ctrl-b-dashboard-dev-web.service` (DEV Vite :5173 → :5434) · `serve-https.sh` (Tailscale Serve 443→5433) ·
+`ctrl-b-dashboard-dev-web.service` (DEV Vite :5173 → :5434) · **`ctrl-b-agent@.service`** (the agent TEMPLATE,
+enabled as `@fable` + `@opus`) · `serve-https.sh` (Tailscale Serve 443→5433) ·
 `tools/start-claude.sh` (tmux agent, **workspace** — in repo-root `tools/`, not `deploy/`) ·
 `bootstrap.py` (local checkout→emma: SFTP secret → ensure prod tree → install → serve; `--with-dev`/`--claude-env`) ·
 `README.md` (the runbook). *(`migrate-layout.sh` existed here pre-amendment; deleted 2026-07-09 — nothing moves.)*
@@ -141,8 +147,9 @@ on emma is moved.)
   scp `config.yaml`), since that agent has no Windows access.
 
 **After deploy:** dashboard at `https://emma.<tailnet>.ts.net` (mic-ready); optional always-on dev with
-`systemctl --user enable --now ctrl-b-dashboard-dev.service` (→ `http://emma:5173`); attach the agent with
-`ssh emma -t 'tmux attach -t ctrl-b'`. Backend is **native Python 3.14** (229/229 suite green on emma's 3.14).
+`systemctl --user enable --now ctrl-b-dashboard-dev.service` (→ `http://emma:5173`); attach an agent with
+`ssh emma -t 'tmux attach -t ctrl-b-opus'` (or `ctrl-b-fable` — a bare `-t ctrl-b` is an ambiguous prefix of
+both). Backend is **native Python 3.14** (229/229 suite green on emma's 3.14).
 
 ## ✅ Decisions (owner, 2026-06-29)
 

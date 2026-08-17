@@ -3,7 +3,8 @@
 > **Status: D56 LOCKED 2026-08-15** (owner-ruled in conversation; council §6 closed ALL RESOLVED;
 > lean round §7 folded). **§6 (C-1..C-25) + §7 (L-1..L-11) are the NORMATIVE layer — they amend §1–§5
 > where they differ.** Build state: **Slice 0 ✅ `30e7417`** (§8.1) · **Slice 1 ✅ `a33fb34`** (§8.2) ·
-> **Slice 2 ✅ `91cc464`** (§8.3) · Slice 3 (Conf UI) pending.
+> **Slice 2 ✅ `91cc464`** (§8.3) · **Slice 3 ✅** (§8.4) · **Slice 3.5 ✅** (§8.5) —
+> **Slices 0–3 + 3.5 ✅, RELEASED v1.7.1 2026-08-16 (schema 6).**
 > Evidence: [`PROMPTS_AUDIT.md`](./PROMPTS_AUDIT.md) (the PR-# inventory) and the dossiers
 > [R27](./research/R27-peer-prompt-configurability.md) ·
 > [R30](./research/R30-peer-prompt-system-internals.md) ·
@@ -507,7 +508,8 @@ referencing `model_calls` row.
   keying. Structural exclusions + readable `(file, symbol)` exceptions; a copy edit no longer churns
   an opaque hash list.
 - **L-2 — the eval tables DEFERRED; stamping rides messages** (Codex #2, adapted): supersedes
-  C-7/C-25. NO `model_calls`, NO `prompt_texts`, NO migration in this phase. The seam =
+  C-7/C-25. NO `model_calls`, NO `prompt_texts`, NO migration in this phase *(amended in §8.3 —
+  migration 6 `messages.meta` shipped)*. The seam =
   **nullable metadata on persisted messages** (the additive-JSON pattern `invalid_raw` already
   uses): each persisted assistant message — and the compaction summary message the summarizer
   writes — carries `{prompt_stamps: {id: template_hash}, usage: {model, input_tokens,
@@ -535,7 +537,8 @@ referencing `model_calls` row.
 
 **Net shape after the lean round — the whole feature is five concepts + one seam:** the registry
 module · `resolve()` · the `prompts:` config map · `GET /api/prompts` · the Conf editor · message
-metadata stamping (+usage). Zero new dependencies, zero DB migrations, no new tables, no classes
+metadata stamping (+usage). Zero new dependencies, zero DB migrations *(amended in §8.3 — migration 6
+`messages.meta` shipped)*, no new tables, no classes
 beyond `PromptDef`. Adding a future prompt = one registry row + one resolve call.
 
 ### C-20 — Recorded non-builds + overrules, for the ledger *(kept last as the closing ledger;
@@ -769,3 +772,12 @@ ids up parametrically; call-site override tests beside each site's own harness).
 call the main seat DECLINED to widen: ToolCatalog's `.tcat-desc` click-only div shares the
 keyboard-access defect class — pre-existing, belongs to its own slice, recorded here rather than
 fixed in this one.
+
+### 8.6 Downstream registry growth — Phase 20 (D57)
+
+Recorded so the registry inventory here doesn't read as final: Core Memory added **five ids**
+(`core_memory_policy` · `core_memory_recall` · `consolidation` · `consolidation_promote` ·
+`memory_cap_error`) and gave `consolidation_nudge` a new `{{longterm}}` placeholder — the registry
+is now **23 ids**. Those texts and their coupling are owned by
+[`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md), not this phase; the mechanism (one registry row +
+one `resolve()` call) is unchanged, which was the point.

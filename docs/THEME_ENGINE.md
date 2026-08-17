@@ -1,6 +1,8 @@
 # Theme Engine — design record + the live authoring contract (D28–D34)
 
-**Status: BUILT + SHIPPED through cosmos (2026-06-28) — vapor · minimal · cosmos live; the
+**Status: BUILT + SHIPPED — the FIVE registered themes are `vapor · minimal · cosmos · frontier ·
+gacha` (`theme-engine/registry.ts` = truth; phosphor/observatory are declared in the `ThemeId` union
+but were never built, §14.10); the
 engine (§14: controllers + Root + Kit + Surfaces) is the as-built architecture.** **Hardening slice v2 ✅ SHIPPED 2026-07-10 (§14.15.1-A)**; the **Composer Surface ✅ SHIPPED
 2026-07-11** (§14.15, D34) and **frontier (T5) ✅ CLOSED 2026-07-15** on the owner's Gate D sign-off —
 the theme population is CLOSED (owner): no new themes; existing themes formalize onto the kit. *(Header updated 2026-07-07, doc-consistency pass — the old "DESIGN OPEN" status
@@ -25,8 +27,9 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 
 | Requirement | Owner |
 |---|---|
-| One `ThemeDef` registry row (`id/label/Root`(or `loadRoot`)`/palettes/loadStyles/loadFonts?/present?/assets?/settings?`) | §14.3 · `theme-engine/types.ts` (code = truth) |
+| One `ThemeDef` registry row (`id/label/Root`(or `loadRoot`)`/palettes/loadStyles/loadFonts?/present?/assets?/settings?/defaultLayout?/layouts?/media?`) | §14.3 · `theme-engine/types.ts` (code = truth) |
 | Lazy `Root` owns the whole presentation (controllers stay above it) | §14.1 · §14.3 · §14.5 |
+| Section composition — per-theme body overrides (`bodies`) + the `defaultLayout`/`layouts` capability declaration | **§14.17** (SECTION LAYOUT SYSTEM v1, D35) |
 | Pick the cheapest CSS band per region: tokens-only reskin under `.kit` → Surface → bespoke | §14.4.1 (recipe) · §14.14 (3-band + 3-gate) |
 | Reskinning the agent CHAT: style the pinned hook classes + tokens only — never fork the shared tree | **§15** (chat hooks + token contract, D36) |
 | Cross-theme look levers (`outlines` · `composerSkin`): declare the per-theme default; strips live in the `axes` layer (never fills), composer chrome belongs to skins — not theme CSS | **§14.16** (presentation axes, D37) |
@@ -47,7 +50,7 @@ mapping), while §9.7–§9.12 + §13.1 remain live contract · **§14** = the *
 **⚠ SPEC-not-built — do not assume these exist in code:** *(none currently. The tab **body** registry
 formerly listed here SHIPPED 2026-07-12 as frontier F0 / D35 — the SECTION LAYOUT SYSTEM v1: kit
 `DEFAULT_BODIES` + the `bodies` DefaultRoot prop + curated 4/3/2-tab presets + the device-local `ui.layout`
-lever; see §14.15.4's as-built entry + `FRONTIER_PLAN.md`'s banner.)* *(The user-selectable Surface machinery formerly listed here SHIPPED
+lever; the live contract is **§14.17**, with §14.15.4's as-built entry + `FRONTIER_PLAN.md`'s banner as the record.)* *(The user-selectable Surface machinery formerly listed here SHIPPED
 2026-07-11 — the composer Surface is COMPLETE per `COMPOSER_SURFACE_PLAN.md`: `composerVariants`
 catalog `[stacked, borderless, ghost, sheet, line]` + `ThemedComposer` resolver + the `planPlacement`
 inline/pinned axis; F5 slice B [2026-07-15, D37] deduped the catalog to `[stacked, sheet, line]` —
@@ -89,6 +92,12 @@ namespace**.
 
 Recurring motif across minimal/cosmos/frontier: a **"now monitoring" featured host** (big stats + a live
 `<canvas>` ping waveform, often auto-cycling every 5s). Worth treating as a shared concept.
+
+> **Outcome of this table (status line, 2026-08-17).** Built + registered: **vapor · minimal · cosmos ·
+> frontier**, plus **gacha** (Phase 17 / D52 — born after this table, so it isn't in it). **phosphor (T2)
+> and observatory (T3) were never built** and never will be — the theme population is **CLOSED** (owner
+> 2026-07-15); they remain declared in the `ThemeId` union only. **Five registered themes** —
+> `theme-engine/registry.ts` is the truth.
 
 > **Scope (owner, 2026-06-26):** in scope = **minimal, phosphor, cosmos, frontier** (+ **vapor**, shipped,
 > **FROZEN — do not touch**). **observatory = in scope but LOW priority** — its prototype isn't fully built
@@ -538,8 +547,13 @@ maintenance mode + RSC-hostile). vanilla-extract noted as a later graduation pat
 
 ### 9.7 Token contract (semantic) — **NEW code for non-vapor themes only**
 
-The base + non-vapor themes consume a **fixed semantic contract**; each theme's `tokens.css` maps it. **vapor
-does NOT adopt this** (frozen — it keeps `--magenta`/`--violet`/`--accent-grad`). Contract (superset distilled
+Every theme consumes a **fixed semantic contract**; each theme's `tokens.css` maps it. ~~**vapor
+does NOT adopt this** (frozen — it keeps `--magenta`/`--violet`/`--accent-grad`).~~ **AMENDED at D51 V3
+(2026-08-02): the vapor exemption is GONE.** `themes/vapor/tokens.css` maps vapor's private vocabulary
+(`--magenta`/`--ink*`/…, which still exist as its *raw* tier) onto the full contract, and the
+`semantic-tokens` waiver was retired — so **all five registered themes map this contract with no waiver**
+(conformance: `themeContract.test.ts`'s token-list group, `TOKENS_RAW` = minimal/cosmos/frontier/vapor/gacha).
+Contract (superset distilled
 from the prototypes):
 
 ```
@@ -639,8 +653,11 @@ type Present = (host: Host, index: number, override?: Record<string, unknown>) =
   downloads a webfont only when a rendered node uses it — an inactive theme costs nothing). On activation,
   `ThemeDef.loadFonts()` uses the **FontFace API** (`new FontFace(...).load()` → `document.fonts.add`) and
   awaits `loaded` before the theme paints, avoiding a swap flash; `font-display: swap` + a metric-adjusted
-  fallback otherwise. **Self-host via Fontsource** (npm, version-pinned, offline-capable — matters for the
-  PWA) rather than the Google CDN `<link>`; vapor keeps its current `index.html` `<link>` (frozen).
+  fallback otherwise. **Self-host via Fontsource** (npm, version-pinned) rather than the Google CDN
+  `<link>`. ~~vapor keeps its current `index.html` `<link>` (frozen).~~ **As-built: vapor is self-hosted
+  too** — `themes/vapor/vapor-fonts.css` (`@fontsource` `@import`s, latin + latin-ext only), statically
+  imported from `main.tsx` because vapor's CSS is EAGER; `index.html` carries no font `<link>` at all
+  (only a comment recording that). The lazy themes keep the dynamic-import `fonts.ts` shape.
 - **Assets:** per-theme images via lazy **`import.meta.glob`** (each match → own hashed chunk); index a glob
   of `./<theme>/assets/*` by name at runtime. The frontier art (`rig1..6.png`, `hero.png`, etc. — currently
   in `prototypes/project/assets/`) is **copied** into the theme module on port (not imported from prototypes).
@@ -949,13 +966,20 @@ interface ThemeDef {
   loadFonts?: () => Promise<void>;      // §9.10 (kept)
   present?: Present;                    // §9.9 (kept) — per-host encoding (cosmos/frontier)
   settings?: ThemeSettingsSpec;         // NEW — theme-namespaced options (see below)
-  loadRoot?: () => Promise<{ default: React.ComponentType }>;  // as-built: lazy bespoke Root (code)
+  loadRoot?: () => Promise<unknown>;    // as-built: the Root PRELOAD hook (themes assign the lazy
+                                        // chunk's preload fn, which resolves void — `lazyRoot.ts`)
   assets?: Record<string, string>;      // as-built: import.meta.glob art map (frontier — §9.9)
+  defaultLayout?: LayoutId;             // as-built (D35): the preset `ui.layout: "auto"` adopts (omit → 4-tab) — §14.17
+  layouts?: LayoutId[];                 // as-built (D35): supported presets a pick is coerced into (omit → ALL) — §14.17
+  media?: ThemeMedia;                   // as-built (D52 G5 / D53): the `/api/media/{ns}` namespace this theme's surfaces read
 }
 ```
 
-**Per-theme settings (the "minimal hides the appbar" mechanism).** A theme declares `settings` = a small schema +
-defaults (e.g. `{ hideAppbar: { type:"switch", label:"Hide app bar", default:false } }`). The Appearance picker
+**Per-theme settings (the mechanism for a theme's OWN options).** A theme declares `settings` = a small schema +
+defaults (e.g. minimal's `{ density: { type:"seg", label:"Density", options:[…], default:"comfortable" } }`).
+*(The original example here was a per-theme `hideAppbar` switch — **it no longer exists**: hiding the bar
+became the GLOBAL, device-local `ui.appbarMode` lever, and `stripLegacyAppbar` prunes the old key off every
+load. §14.13 #11 owns that lever.)* The Appearance picker
 auto-renders the active theme's settings; values live in an **open `ui.themeSettings[themeId]` map**, persisted +
 **synced** via the appearance channel (extend `AppearanceCfg`, additive); read with `useThemeSetting(id, key)`. The
 theme's `Root` reads them and reflows. **No app/core change to add a theme's bespoke option.**
@@ -963,11 +987,36 @@ theme's `Root` reads them and reflows. **No app/core change to add a theme's bes
 ## 14.4 The Kit (optional reuse) + token contract
 
 `theme-engine/kit/` — token-driven presenters consuming the **semantic contract** (§9.7, three-tier: global → semantic →
-component): `DefaultRoot` (the standard appbar+nav+sections+composer scaffold, parameterized by the theme's section
-views + `hideAppbar`-style settings), `AppBar`, `NavBar` (count-driven indicator §13.8), `Composer`, `ConfShell`, device
-rows, `NowMonitoring` (+ waveform reading `--accent` via `globalAlpha`, §13.7 alt), `ChatBubble`, and primitives
-(`Seg`/`Switch`/`Field`/`Card`). **Reskin themes** (minimal/phosphor) = `Root` is `<DefaultRoot sections={…}/>` + a
-`tokens.css` + fonts + a Fleet view. **Bespoke themes** (cosmos/frontier) write their own `Root`. **The deep Conf
+component). **As-built inventory (the folder is the truth):** `DefaultRoot` (the standard appbar+nav+sections+composer
+scaffold) · `AppBar` (`KitAppBar` + `KitTtsFlash`) · `NavBar` (`KitNavBar`, count-driven indicator §13.8) ·
+`Fleet` (`KitFleet` — the default device list) · `KitBackground` + `ownerArt.ts` (the Kit Art System, below) ·
+`ServiceIcon` · `composer/` (the variant catalog + `ThemedComposer` + the plan/tools/suggest families) ·
+`axes.ts`/`axes.css` (§14.16) · `tokens.css`/`kit.css`.
+*(The T0 wish-list this paragraph used to name — `ConfShell`, `NowMonitoring`, `ChatBubble`, `Field`/`Card` — was
+never built: "build the Kit lazily-by-need" [§14.4.1 last bullet] held. And the shared primitives/surfaces that DO
+exist are in **`components/`, not `kit/`** — `Seg` · `Switch` · `SettingRow` · `ConfGroup` · `ChatThread` ·
+`NavMenu` · `BottomSheet` · `PlanSteps` · the Conf editors — app-wide components the Kit CSS styles under `.kit`.)*
+
+**`DefaultRoot`'s props ARE the theme-facing seam — the complete list** (`kit/DefaultRoot.tsx` = truth):
+`appbarMode` (structural; the global lever — §14.13 #11) · `bodies` (per-theme section-body overrides — §14.17) ·
+`composerSlots` (the D30 addon axis) · **`brandMark` / `brandText` / `brandMeta`** (the three appbar brand SLOTS,
+threaded to `KitAppBar` — the theme's leading mark [vapor's lozenge], its wordmark [gacha's katakana], its subtitle
+[frontier's rig count, shown only while the synced `ui.appbarSubtitleVisible` switch is on]; omit any one and the
+Kit's own default renders) · `kitBackground` (opt out of the shared art layer). There is **no `sections=` prop and
+no `hideAppbar` prop** — cosmetic settings never reach here (they are token/`body[data-*]`-driven, e.g. minimal's
+`density`).
+
+**The Kit Art System behind `kitBackground`** (`kit/KitBackground.tsx` + `kit/ownerArt.ts`): the owner's shared art
+out of the `kit` media namespace (D53) — one faded whole-app background image from `media/kit/background/`, plus the
+namespace's other roles (service icons through `ServiceIcon`, service banners, machine pictures, the appbar brand
+mark). The background layer is **mounted by the THEME, never by the registry or by CSS**: `DefaultRoot` renders it
+by default, it is gated on the synced `ui.kitBackgroundVisible` field, and it emits no node at all when the folder is
+empty (dormancy by absence). Opt-out rule: §14.13 #8.
+
+**Reskin themes** (minimal) = `Root` is a thin wrapper rendering `<DefaultRoot/>` + a
+`tokens.css` + fonts + optionally a Fleet body. **Bespoke themes** write their own `Root` — though since D51 V4
+even `VaporRoot` is a wrapper (`<DefaultRoot appbarMode bodies={{ fleet: FleetTab }} brandMark/>`), so "bespoke"
+now means bespoke *bodies* + CSS, not a hand-rolled shell. **The deep Conf
 editors** (AgentsEditor/MachineEditor/Skills/Memory/Integrations/ToolCatalog) are **reused as-is and skinned by the
 Kit/theme CSS** (their classes styled token-driven) — not re-authored per theme. Global overlays (toasts/confirm/prompt/
 mini-player) become Kit/token-driven so they restyle per skin.
@@ -1016,7 +1065,7 @@ never leaks into vapor — **follow it for every future theme:**
 
 **Recipe — add a future reskin theme (zero app/core/backend change):**
 1. `themes/<id>/tokens.css` — `@layer theme { @scope ([data-skin="<id>"]) { :scope { …semantic tokens… } body[data-mode=…] / body[data-accent=…] { …overrides… } } }`. (⚠️ tokens on `:scope`/`body`, mode/accent on `body[data-*]` — the §14.6 scope-root gotcha; **derived formula tokens must live on `body`, not `:scope`** — see the gotcha box above.)
-2. `themes/<id>/index.tsx` — a `ThemeDef`: `Root` = a thin wrapper that reads its settings and renders `<DefaultRoot hideAppbar=… />` (STRUCTURAL settings → `DefaultRoot` props; COSMETIC settings → a `body[data-*]` attr its `tokens.css` scopes, e.g. minimal's `data-density`); `palettes`; `loadStyles: () => import("./tokens.css")`; optional `loadFonts` (Fontsource, awaited via `document.fonts.load`); optional `settings`; optional `present` (spatial themes only).
+2. `themes/<id>/index.tsx` — a `ThemeDef`: `Root` = a thin wrapper that reads the global chrome lever and renders `<DefaultRoot appbarMode={…} />`, adding only the props it actually needs from the complete list `appbarMode · bodies · composerSlots · brandMark · brandText · brandMeta · kitBackground` (§14.4 — STRUCTURAL choices are props; COSMETIC settings are a `body[data-*]` attr its `tokens.css` scopes, e.g. minimal's `data-density`). *(There is no `hideAppbar` prop — that per-theme switch became the global `ui.appbarMode`, §14.13 #11.)* Plus `palettes`; `loadStyles: () => import("./tokens.css")`; optional `loadFonts` (Fontsource, awaited via `document.fonts.load`); optional `settings`; optional `present` (spatial themes only); optional `defaultLayout`/`layouts` (§14.17) and `media` (§14.4's art system).
 3. Register it in `theme-engine/registry.ts`. The Conf Appearance picker auto-renders its modes/accents/settings; `ThemeProvider` loads its lazy CSS/fonts on activation (and on cold-load if it's the persisted theme). Its Fleet view is the one surface it composes itself (from Kit `device-row`/`NowMonitoring` pieces); everything else is the shared Kit chrome + editors, skinned entirely by its tokens.
 
 > **⚠️ The two-CSS-trees invariant — ✅ CLOSED at D51 V6 (2026-08-02). What is left is the LAW OF
@@ -1149,8 +1198,10 @@ default.
 ## 14.10 Build order (re-sliced)
 
 M0 → M1 → M2 → M3 (vapor migrated, default) → **Kit + minimal** (token contract + `DefaultRoot` + per-theme settings +
-minimal `tokens.css`/fonts/OKLCH matrix/Fleet, real data) → **T2 phosphor** (tokens+fonts+CRT, reuses Kit) → **T3
-observatory** (low-pri; FleetView + `present()`) → **T4 cosmos** (own Fleet Root/orbital + slide-panel HostDetail +
+minimal `tokens.css`/fonts/OKLCH matrix/Fleet, real data) → ~~**T2 phosphor** (tokens+fonts+CRT, reuses Kit)~~ → ~~**T3
+observatory** (low-pri; FleetView + `present()`)~~ *(**T2 + T3 were never built and are CLOSED, not pending** —
+the theme population closed on the owner's 2026-07-15 ruling; both stay declared in the `ThemeId` union only.
+Anything below that cites phosphor/observatory as "the next theme" is historical.)* → **T4 cosmos** (own Fleet Root/orbital + slide-panel HostDetail +
 `present()`) → **T5 frontier** (step 0 = the **tab-body registry** engine slice, ratified 2026-07-07 — §14.15.4; then own
 Fleet + **bespoke Agent** anims + bottom-sheet + assets + `present()`). D7 per theme;
 390px eyeball + pause after each. *(T-numbers are recipe labels, NOT gates — T4 shipped before
@@ -1202,10 +1253,28 @@ code paths to preserve nothing. Every engine-scoped rule carries its revert path
 Playwright `firefox` project can assert these rules. Before adding a consumer, ask whether a universal
 design change (frontier's opaque sheet — "a free Firefox win") does the job instead.
 
-**Canvas / `requestAnimationFrame` loops** (waveforms, frontier anims): cap the frame rate (~30fps is smooth
-for ambient), **pause when off-screen** (IntersectionObserver — the tab stays mounted but `display:none`), and
+**Canvas / `requestAnimationFrame` loops** (waveforms, starfields, gacha's banner/agent motion): **drive EVERY
+loop through the engine-owned `theme-engine/safeRafLoop.ts`** — this is a requirement, not a suggestion. An
+unguarded `requestAnimationFrame(tick)` inside a theme is the anti-pattern the helper's own header names: a
+React error boundary cannot catch a throw in a rAF callback (the tick fires outside render/commit), so a
+faulting frame either kills the loop silently or errors once per frame forever. `safeRafLoop` wraps the tick in
+try/catch, stops permanently on a throw (a LATCH — a later `start()` is a no-op, so an event-driven caller
+can't resurrect a dead loop), leaves the last painted frame on screen, and routes the fault to `reportError()`
+**once**. Six consumers today: cosmos (`camera.ts`, `CosmosStarfield`), vapor (`Waveform`), gacha
+(`GachaBanner`, `GachaAgent`) + `App.tsx`. **`enforced by:` eslint** — `no-restricted-syntax` on
+`CallExpression[callee.name="requestAnimationFrame"]` across `src/themes/**` (keyed to the CALL so a `typeof`
+availability guard doesn't trip).
+Then: cap the frame rate (~30fps is smooth
+for ambient), **pause when not visible**, and
 **never call `getComputedStyle`/`getBoundingClientRect` per frame** — cache them (refresh on a low cadence /
-ResizeObserver). See `components/Waveform.tsx` for the reference implementation.
+ResizeObserver). See `themes/vapor/Waveform.tsx` for the reference implementation (the per-host waveform:
+IntersectionObserver gate + a cached rect + `safeRafLoop`).
+*Pause mechanism — pick by the layer's nature:* an element that can genuinely scroll/tab out of view uses
+**IntersectionObserver** (the tab stays mounted but `display:none`); a **persistent full-bleed** layer that is
+either the whole page or nothing may instead gate on **`document.hidden` + `visibilitychange`** — deliberate in
+`themes/cosmos/CosmosStarfield.tsx` (an IO on a viewport-sized fixed layer only ever reports "intersecting",
+so it costs an observer to learn nothing; the real idle win is the backgrounded tab). Either way the loop must
+stop when nothing can see it.
 
 **SVG-filter waivers — a closed, owner-granted list, currently ONE (2026-08-07, gacha R19).** A per-element
 SVG `filter` is an offscreen rasterization, the class this section budgets — so each use is a scoped waiver,
@@ -1298,27 +1367,35 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
    on a `body{}` rule so it recomputes against the resolved inputs; raw inputs stay on `:scope`. Declared on
    `:scope` it computes once on `<html>` and only inherits — the body-level overrides never re-derive it (the
    accent silently froze). A theme with flat literal-per-accent colors is immune.
-4. **`@keyframes` names are GLOBAL — prefix every one with your theme id (`phosphor-…`).** `@scope` isolates
+4. **`@keyframes` names are GLOBAL — prefix every one with your theme id (`gacha-…`).** `@scope` isolates
    *selectors*, NOT animation names; the last-parsed `@keyframes <name>` wins document-wide, and theme bundles
-   coexist during a View-Transition switch. vapor's keyframes are **unprefixed** (`spin`, `shimmer`, `eq`,
-   `twinkle`, `float`, `brew`, `heartbeat`, `gridmove`, `micrec`, `ttsGlow`, `sun-stripes-static`),
-   and the Kit's are `kit-*`. **A new theme that names a keyframe `spin`/`glow`/`shimmer`/etc. silently
-   collides with vapor and breaks it while both are loaded.** Rule: **prefix ALL your `@keyframes` with
-   `<theme-id>-`** and you can never collide (this is exactly why the Kit uses `kit-*`). Especially relevant
-   for phosphor's CRT (scanline/flicker/glow loops). *(`inside` is NOT a vapor keyframe — an earlier prose list
+   coexist during a View-Transition switch. **Every theme in the tree now complies:** vapor's were renamed at
+   D51 V1 (`vapor-spin`, `vapor-shimmer`, `vapor-eq`, `vapor-twinkle`, `vapor-float`, `vapor-heartbeat`,
+   `vapor-gridmove`, `vapor-tts-glow`, `vapor-sun-stripes-static`), the Kit's are `kit-*`, and
+   minimal/cosmos/frontier/gacha each carry their own id. ~~A new theme that names a keyframe
+   `spin`/`glow`/`shimmer`/etc. silently collides with vapor and breaks it while both are loaded.~~ *(That
+   specific hazard is DEAD — no unprefixed keyframe is left. The RULE stands unchanged, because the collision
+   is now simply between any two themes whose bundles coexist mid-switch.)* Rule: **prefix ALL your
+   `@keyframes` with `<theme-id>-`** and you can never collide (this is exactly why the Kit uses `kit-*`).
+   *(`inside` is NOT a vapor keyframe — an earlier prose list
    here included it, but it's a regex false-positive: `vapor.css:3` has the words "keeps @keyframes inside @scope"
    in a comment. Caught by external_audit #3 — exactly why the keyframe inventory should be **executable**, not
    hand-maintained.)* **`enforced by:` stylelint `keyframes-name-pattern` per-dir `overrides` — which are HAND-LISTED per
-   existing theme dir (`kit/**`→`kit-`, `themes/minimal/**`→`minimal-`, `themes/cosmos/**`→`cosmos-`; the
-   legacy vapor dir allowlisted), NOT a growing glob. A NEW theme's override is forced by the **P2
+   existing theme dir (`kit/**`→`^kit-`, `themes/minimal/**`→`^minimal-`, `themes/cosmos/**`→`^cosmos-`,
+   `themes/frontier/**`→`^frontier-`, `themes/vapor/**`→`^vapor-`, `themes/gacha/**`→`^gacha-` — no
+   allowlist left), NOT a growing glob. gacha's runs at ERROR severity (a brand-new theme has no inventory to
+   burn down); the five older ones are grandfathered warn-first. A NEW theme's override is forced by the **P2
    meta-guard** in `themeContract.test.ts` (red, with instructions, until the entry exists — added
    2026-07-10). See §14.13.1.**
 5. **New effects must pass the §14.11 cross-browser budget.** CRT scanlines, glow, flicker, any ambient
    animation → **transform/opacity only** (no animated `background-position`/`box-shadow`/`filter`/size),
    **`will-change`/`contain`** the animated element, gate continuous anims behind `body[data-motion]` and any
    `backdrop-filter`/heavy effect behind `body[data-perf]` (both are part of the theme contract). Canvas/rAF
-   loops: cap ~30fps, pause off-screen, cache layout reads. **A theme isn't done until it's smooth on
-   Firefox/Fennec AND Chrome at 390px with effects ON.** (phosphor's glow → animate the `opacity` of a glow
+   loops: **drive them through `theme-engine/safeRafLoop.ts`** (mandatory — `enforced by:` the eslint
+   `no-restricted-syntax` ban on a bare `requestAnimationFrame` under `src/themes/**`), then cap ~30fps, pause
+   when not visible (IntersectionObserver; `document.hidden` for a persistent full-bleed layer), cache layout
+   reads. **A theme isn't done until it's smooth on
+   Firefox/Fennec AND Chrome at 390px with effects ON.** (A glow pulse → animate the `opacity` of a glow
    layer, not `box-shadow`; `--accent-glow` already exists in the contract for static glows.)
 6. **Reuse the Kit; don't fork shared components.** A reskin theme = `Root` → `<DefaultRoot/>` + `tokens.css`
    (+ fonts + a Fleet view + settings). The shared overlays/editors/chat/primitives are already token-driven
@@ -1340,6 +1417,10 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
    reads as a flat **black box that crops the system** (the exact C2b bug). Bonus: an absolute layer is out
    of scroll flow, so it can never add scroll height (no stray scrollbar) — more robust than clip+height.
    The glass recipe itself lives ONCE in the Kit composer/appbar; the theme only has to bleed under it.
+   **A theme with its own full-bleed signature layer must ALSO opt out of the shared Kit background
+   (`<DefaultRoot kitBackground={false}/>`, §14.4) — full-app scenery is exclusive by default: the shared
+   layer XOR the theme's own, never both competing. cosmos (starfield), frontier (map) and gacha (wallpaper)
+   all pass it.**
 9. **Reusable `BottomSheet` primitive (`components/BottomSheet.tsx`) — use it, don't re-roll a sheet
    (added cosmos C3, 2026-06-28).** A dependency-free, kit-level draggable bottom sheet. Controlled
    (`<BottomSheet open onClose>`); **multi-snap** closed/peek/full — the CONTENT marks its peek line with
@@ -1374,16 +1455,25 @@ what new tokens/effects/fonts they bring. Verify each before writing a theme:
     any net-new **content text a user should be able to copy** (a new info value, a new message region) must
     be added to the `content` sub-layer's selector list — or just give it `class="selectable"`.
 11. **Minimal chrome (`ui.appbarMode`) — DefaultRoot themes inherit it; a bespoke Root MUST handle it (added
-    minimal-nav, 2026-06-28).** `ui.appbarMode` is a GLOBAL tri-state lever — **`"visible" | "off" | "minimal"`**
+    minimal-nav, 2026-06-28).** `ui.appbarMode` is a GLOBAL **four**-state lever —
+    **`"visible" | "transparent" | "off" | "minimal"`**
     — and it's **per-device / LOCAL (not synced)** unlike the rest of appearance. `visible` = appbar + bottom
-    tab bar; `off` = no appbar, tab bar only; `minimal` = **no appbar AND no tab bar** — navigation moves to a
-    floating **orbit `NavMenu`** (top-right launcher → icon dropdown of the theme's sections). **DefaultRoot
-    themes get all three for free** (DefaultRoot reads the prop: `visible`→`<KitAppBar/>`; `minimal`→`<NavMenu/>`
-    replaces `<KitNavBar/>`). The `NavMenu` is a pure `useSections()` consumer — it renders the theme's sections
-    as a menu, no nav-state fork. **A bespoke Root (its own `Root`, no DefaultRoot — e.g. vapor) MUST read
-    `appbarMode` and either implement minimal or explicitly map `minimal`→`off`.** *Status:* cosmos uses
-    DefaultRoot → has minimal. **vapor is the one bespoke Root not yet wired** — `VaporRoot` maps `minimal`→`off`
-    for now; to wire it, mount the Kit `NavMenu` under a `.kit` marker (or a vapor-native equivalent). §14.11
+    tab bar; `transparent` = the SAME appbar + tab bar, but the bar paints **nothing** (no fill/border/shadow/
+    backdrop-filter — it floats over the page, squared icon buttons); `off` = no appbar, tab bar only;
+    `minimal` = **no appbar AND no tab bar** — navigation moves to a
+    floating **orbit `NavMenu`** (top-right launcher → icon dropdown of the theme's sections). **Never test the
+    mode with a `=== "visible"` comparison** — call **`appbarShown(mode)`** (`store/ui.ts`), the single source
+    for "is a bar PRESENT (rendered + measured into `--appbar-h`)": true for `visible`+`transparent`, false for
+    `off`+`minimal`. A hand-rolled triple would miss `transparent`. **DefaultRoot
+    themes get all four for free** (DefaultRoot reads the prop: bar present→`<KitAppBar/>`; `minimal`→`<NavMenu/>`
+    replaces `<KitNavBar/>`). `NavMenu` (in **`components/`**, not `kit/`) is a pure `useSections()` consumer — it
+    renders the theme's sections
+    as a menu, no nav-state fork. **A bespoke Root (its own `Root`, no DefaultRoot) MUST read
+    `appbarMode` and either implement minimal or explicitly map `minimal`→`off`.** *Status:* **every registered
+    theme honors all four modes — the last carve-out is GONE.** ~~vapor is the one bespoke Root not yet wired —
+    `VaporRoot` maps `minimal`→`off` for now.~~ **RETIRED at D51 V4:** `VaporRoot` renders `DefaultRoot`, so
+    vapor gets the floating `NavMenu` (and `transparent`) for free. This clause now governs only a FUTURE Root
+    that hand-rolls its own chrome. §14.11
     budget applies to any nav transition (the `kit-fade` tab entrance is motion-gated).
 12. **Composer = a base VARIANT + slot ADDONS, theme-selected (D30, added 2026-06-28).** The composer is
     composable, not configurable. The two axes are the **VARIANT/style** (`ComposerVariant =
@@ -1427,9 +1517,10 @@ the loop below):
 
 | Rule | Enforces |
 |---|---|
-| `keyframes-name-pattern` (built-in, per-dir `overrides`) | §14.13 #4 — `kit-*` in `kit/**`, `<t>-*` in `themes/<t>/**`; allowlist legacy `theme/vapor.css`+`theme/extras.css` |
+| `keyframes-name-pattern` (built-in, per-dir `overrides`) | §14.13 #4 — `^kit-` in `kit/**` and `^<t>-` in `themes/<t>/**` for all five themes (minimal · cosmos · frontier · vapor · gacha); no legacy allowlist remains. gacha's is an ERROR, the rest warn-first |
 | `stylelint-high-performance-animation` | §14.11 — animate only `transform`/`opacity` (the rule that would have caught vapor's Firefox jank) |
-| `stylelint-declaration-strict-value` | §14.13 #1 — colors come from `var()` tokens, no hardcoded theme colors in Kit |
+| `ctrlb/accent-fill-contexts` + `ctrlb/accent-is-color` (the local plugin, **ERRORS**) | §9.7's two-channel accent — `--accent-fill` only via `background`/`background-image`, `--accent` must parse as a plain `<color>` |
+| `color-no-hex` + `color-named` + `function-disallowed-list` + `function-url-scheme-disallowed-list`, scoped to `themes/gacha/**` (**ERRORS**; `themes/gacha/tokens.css` re-exempted) | §14.13 #1 — gacha authors colors ONLY in its `tokens.css`, so all eight palette variants re-tint by token edit; plus no inline `data:` URLs (art goes through `art.ts`'s manifest or the media mount). *(`stylelint-declaration-strict-value` was listed here as the must-use-token rule — it was never installed; these per-theme bans are what actually shipped, and they stay scoped to the theme that opted in.)* |
 | `custom-property-pattern` (built-in) | token naming |
 
 **The "grow the ruleset" governance loop** (so guards never lag the contracts):
@@ -1771,7 +1862,9 @@ the industry-standard pattern, named and sourced in the session record.
   non-idempotent migration over mixed-stage unversioned data (zustand treats unversioned as current;
   redux-persist as run-all; presence-inference is confined to this ONE step). Delete the
   `rawHasAppbarMode()` *helper* (no other caller), keep its raw-presence logic inside the step.
-- **NEW rider (c) — owner-approved 2026-07-10:** an engine-owned **`safeRafLoop`** helper (~20 lines):
+- **NEW rider (c) — owner-approved 2026-07-10; ✅ BUILT (`theme-engine/safeRafLoop.ts`; six consumers —
+  cosmos camera + starfield, vapor's waveform, gacha's banner + agent, `App.tsx`; adoption enforced by the
+  eslint rAF ban; the contract is now live guidance in §14.11 / §14.13 #5):** an engine-owned **`safeRafLoop`** helper (~20 lines):
   try/catch around the tick body; on throw cancel the loop, `reportError()`, degrade gracefully (stop
   animating, never error-per-frame). Adopt in cosmos's camera + starfield loops now. This is the pattern
   every future canvas theme copies instead of an unguarded loop — shape the seam before the second consumer
@@ -1884,7 +1977,10 @@ boundary exceptions) · shared-markup changes obey the two-trees rule.
 
 ## 14.15.4 Backlog (post-hardening, in no order) + reviewed-and-rejected
 
-**Backlog:** `kit.css` off the eager path (~100KB raw/10KB gz inert under vapor) — **precondition:** wrap
+**Backlog:** `kit.css` off the eager path (~100KB raw/10KB gz) — ~~inert under vapor~~ **that premise died at
+D51 V4: vapor renders `.kit`, so kit.css applies to EVERY theme and none of it is inert (`theme/index.css`
+says so at its `@import`). The item survives on its remaining merit — it is eager weight a theme's lazy Root
+chunk could carry — and its preconditions below are unchanged.** **Precondition:** wrap
 kit.css's body in `@layer base { … }` internally FIRST (a bare JS `import "./kit.css"` can't carry
 `layer(base)`; unlayered it outranks every layer and inverts the cascade), then drop the index.css @import and
 static-import it from DefaultRoot (rides the lazy Root chunks; verify a cold boot into minimal still paints
@@ -1944,7 +2040,10 @@ semantic-contract tokens (§15). (4) Promote a theme-private strip into an axis 
 consumer wants it (§14.14 graduation philosophy).
 
 **Built axes:** `outlines` (chat-scoped — the D36 §15 hook families; minimal/cosmos default ON, frontier
-OFF = its F4 look) · `composerSkin` (✅ BUILT 2026-07-15, F5 slice B — `outline`|`glass`|`bezel`|`sleek`;
+OFF = its F4 look) · `composerSkin` (✅ BUILT 2026-07-15, F5 slice B — `outline`|`glass`|`bezel`|`sleek`,
+**+ `arcade`** (added D52 G3: a flat, opaque CABINET PANEL — no frost, no elevation, a hairline edge, tight
+corners, squared-off controls; born of gacha's prototype but LOOK-named and authored on semantic tokens, so
+it is a real catalog member any theme can wear — never a theme-scoped bypass of D37);
 frontier defaults `bezel`, minimal/cosmos `outline`; declared right after the `composer` layout seg so the
 two rows render adjacent). Its skins are first-class kit chrome in kit.css keyed on
 `body[data-composer-skin]` (a dedicated "composer skins" section), NOT axes-layer strips; the composer
@@ -1957,6 +2056,58 @@ light edge, sleek = flat + tight, outline = the un-keyed base. `.priv-menu` shar
 axis: it is chat-header chrome, not composer chrome. One sanctioned TS seam: KitComposer picks its default send
 glyph by resolved skin (glass → arrowhead). Full as-built rationale: **DECISIONS D37 (amended
 2026-07-15)**.
+
+## 14.17 SECTION LAYOUT SYSTEM v1 — the section-composition contract (D35; ✅ BUILT 2026-07-12 as frontier F0)
+
+**What this owns.** *Where* the app's standard sections live, and how a theme composes them. The RATIONALE
+record (why curated presets, why hosting, the review that widened the tab-body registry into this) stays in
+`FRONTIER_PLAN.md` §1/§6-F0; **this section is the live authoring surface.** Principle: *functionality =
+modules; layout = modes that recompose WHERE modules live.* A preset never adds or removes a section.
+
+**The lever.** `ui.layout: "auto" | LayoutId` (`store/ui.ts`) — **GLOBAL and cross-theme, but per-DEVICE:
+persisted locally, NOT synced** (a layout choice legitimately differs per screen), exactly like `appbarMode`.
+`"auto"` = the active theme's declared default. A concrete pick is resolved by
+**`theme-engine/layout.ts#resolveLayout(themeId, lever)`**, which is a *coercion*, not a validation:
+`ThemeDef.layouts` (omit → **all** presets, the ratified ideal — no registered theme restricts the set today)
+is the supported set and `ThemeDef.defaultLayout` (omit → `4-tab`) the theme default. Recovery has two
+distinct branches (`layout.ts:74–91`): a value this build doesn't know at all (rolled-back or hand-edited
+localStorage) falls back to the **theme default, silently**; a *known* preset the theme doesn't support is
+coerced to the **nearest supported preset** by tab-count distance (tie → the larger) with a
+once-per-`(theme, lever)` dev warn. Either way the lever can never crash a render.
+
+**The presets** (`LAYOUT_PRESETS`, curated — do not add one casually): `4-tab` = `[fleet, agent, utils, conf]`
+· `3-tab` = `[fleet, agent, conf]` + utils **hosted** in conf · `2-tab` = `[fleet, agent]` + the same hosting.
+Two axes fall out: **(A)** a section that is off-bar *and* unhosted gets the floating `NavMenu` affordance;
+**(B)** a **hosted** section renders INSIDE its host's body instead of standalone (utils→conf is the ONE
+curated pair — concrete-first; generalize only if a second appears). `partitionSections` is pure and skips any
+id a given theme doesn't declare, so a preset naming a section a theme lacks is harmless. `appbarMode:
+"minimal"` folds in here too: it is treated as an empty bar, so every section lands in the menu.
+
+**The consumer chokepoint.** `hooks/useSections.ts` is the ONE headless controller — it returns
+`sections` (the theme's full list) · `bar` / `menu` / `hosted` (the partitions) · the resolved `layout` ·
+`active` · `hasComposer` (the ACTIVE section's flag, so per-preset composer visibility is automatic) ·
+`navigate`. **Never re-derive a partition or re-read the lever in a component** — the tab bar, the `NavMenu`,
+and `DefaultRoot` all consume this, and the hosted-section coercion (navigate → host + arm the scroll-to-group
+handoff at `HOSTED_UTILS_GROUP_ID`) lives there once. `layout.ts` and `tabs.ts` are held to the same purity
+rule: **no component imports**, and the `registry` is read at CALL time only, never at module init.
+
+**What a theme authors.**
+- **Bodies:** the id→component defaults live in kit space (`DefaultRoot`'s `DEFAULT_BODIES`); a theme overrides
+  per section through the **`bodies` prop** (`<DefaultRoot bodies={{ fleet: CosmosFleet }}/>`) — a merge over
+  the defaults, not a replacement. This is D35's *"eager DATA, lazy COMPONENTS"* ruling: `TabDef` stays pure
+  data (that's why `tabs.ts` has no component field), and a theme's bodies co-load with its lazy Root chunk, so
+  they need no extra code-split.
+- **`TabDef` fields** (`theme-engine/types.ts`): `subLabel?` = an optional second label line under `lbl` on the
+  tab bar (gacha's Japanese nav labels; the floating `NavMenu` is icon-only and ignores it) · `lazy?` = the
+  generic lazy-mount flag (mounted only once its section first becomes active, then **kept mounted** so draft
+  state survives; `DefaultRoot` wraps it in `ErrorBoundary`+`Suspense`). Conf is the only `lazy` section today.
+- **Capability declaration:** `defaultLayout?` / `layouts?` on the `ThemeDef` (§14.3) — a seam for a theme whose
+  presentation genuinely can't express a preset. vapor's ladder-owned `["4-tab"]` waiver retired at D51 V6.
+
+**Invariant (inherited, non-negotiable).** Non-hosted section bodies are **keep-mounted and `active`-gated —
+never conditional-rendered on layout grounds**; only a hosted body is skipped by the mount loop (its host
+renders it). Anything that measures or latches (`--composer-h`, the scroll reset, the lazy latch) stays
+generic — no `tab === "…"` branch comes back.
 
 # §15 — The CHAT HOOKS + TOKEN CONTRACT (→DECISIONS D36; specified at the frontier F4 pre-flight, 2026-07-12)
 
@@ -1993,7 +2144,12 @@ this table is the pin.
 
 **Component tokens.** The buckets consume ONLY the semantic contract (§9.7): `--text/-2/-3` ·
 `--accent`/`--accent-soft` (never `--accent-fill` — it may be a gradient `<image>`, §14.15.1 ⑨) ·
-`--line/-2` · `--surface/-2` · `--bg` · `--radius-*` · `--font-body/-display/-mono`. A theme needing a
+`--line/-2` · `--surface/-2` · `--bg` · `--radius-*` · `--font-body`. *(Font caveat: only **`--font-body`** is
+a kit-contract token — `kit/tokens.css` declares it and `themeContract.test.ts` requires it. **`--font-display`
+and `--font-mono` are THEME-PRIVATE**, not contract: `--font-display` is declared by vapor/cosmos/frontier and
+read OPTIONALLY by the kit exactly once, defensively — `kit.css`'s nav glyphs use `var(--font-display, inherit)`
+— while `--font-mono` exists only inside gacha. A theme that declares neither is fully conformant; never author
+a shared surface against an unfallbacked read of either.)* A theme needing a
 chat-only value adds a THEME-PRIVATE token in its own tokens.css (frontier: a mode-flipped near-black
 bubble fill), never a new contract token; promotion needs a second consumer.
 

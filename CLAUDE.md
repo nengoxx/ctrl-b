@@ -40,15 +40,19 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   | [`docs/VAPOR_ASSIMILATION_PLAN.md`](./docs/VAPOR_ASSIMILATION_PLAN.md) | Phase 16 record (**✅** D51): vapor's migration onto the kit + cosmos default; per-slice as-built appendix. |
   | [`docs/GACHA_PLAN.md`](./docs/GACHA_PLAN.md) | Phase 17 record (**✅** D52, shipped v1.5.0–v1.6.0): the gacha theme + the alt-fleet layouts. Read before touching gacha/alt-fleet surfaces; §7 = the slice ladder + per-slice as-built records. |
   | [`docs/MEDIA_PLAN.md`](./docs/MEDIA_PLAN.md) | Media namespaces v2 (D53, **✅ shipped v1.5.0**). Read before touching `core/media.py`, the gallery, or any theme's art consumers. |
-  | [`docs/PROMPTS_PLAN.md`](./docs/PROMPTS_PLAN.md) | The Phase 18 prompt system (registry · `prompts:` overrides · placeholders · eval seams; design ruled 2026-08-15, council pending). Read before touching any prompt text or the registry. |
+  | [`docs/PROMPTS_PLAN.md`](./docs/PROMPTS_PLAN.md) | Phase 18 record (**✅ shipped v1.7.1**, 2026-08-16; registry · `prompts:` overrides · Conf editor · stamping). Read before touching any prompt text or the registry. |
+  | [`docs/CORE_MEMORY_PLAN.md`](./docs/CORE_MEMORY_PLAN.md) | Phase 20 Core Memory (D57, **✅ built 2026-08-17**, ships OFF by default; §14b = the live-drive record). Read before touching `services/agent/core_memory*.py` or the memory head. |
   | [`docs/HARDENING_PLAN.md`](./docs/HARDENING_PLAN.md) | The Phase 19 hardening pass (perf · reliability · design fitness): the full council-reviewed methodology (TARA-per-subsystem, 4 packets, fix-first), the measured inventory + known-open register, and the §10 owner-court gate. **Spec only as of 2026-08-16 — execution owner-gated.** Read before any perf/reliability audit work. |
   | [`docs/UI_AUDIT.md`](./docs/UI_AUDIT.md) | Two-pass frontend audit (perf F1–F13 + a11y/resilience F14–F29). |
+  | [`docs/ISSUES.md`](./docs/ISSUES.md) | Live owner UX backlog (ISS-#). |
   | [`docs/PROMPTS_AUDIT.md`](./docs/PROMPTS_AUDIT.md) | **Every model-facing prompt ctrl-b ships**, classified by editability (PR-# findings) + the §5 shape proposal (unruled). Read before touching any prompt text or adding a new one. |
   | [`docs/SYSTEM_AUDIT.md`](./docs/SYSTEM_AUDIT.md) | Code-verified architecture audit (SYS-# findings; excludes the chat loop). |
   | [`docs/AGENT_CHAT_AUDIT.md`](./docs/AGENT_CHAT_AUDIT.md) | Agent-chat audit + 8-agent comparative analysis + the ACA improvement plan (Slices 0–8). |
   | [`docs/PRE_DEPLOY.md`](./docs/PRE_DEPLOY.md) | The pre-deploy hardening gate record (steps 1–5) + the deploy-readiness checklist. |
   | [`docs/QH_AUDIT.md`](./docs/QH_AUDIT.md) | The quality-harness audit (QH-#): brief + report — is the harness itself trustworthy for commit/merge/deploy? |
   | [`docs/DEPLOY_EMMA.md`](./docs/DEPLOY_EMMA.md) | The emma (Linux) deploy runbook + topology (D32). |
+  | [`docs/HTTPS_TAILSCALE.md`](./docs/HTTPS_TAILSCALE.md) | The live mic/HTTPS runbook — Tailscale Serve secure-context setup + troubleshooting. |
+  | [`docs/agent_coordination/`](./docs/agent_coordination/) | The live multi-agent protocol (channels + trail conventions) when several agents work the same tree. |
   | [`docs/QUALITY.md`](./docs/QUALITY.md) | The code-quality harness (lint/format/typecheck/test + `check-all` + conventions). Read before touching tooling. |
   | [`docs/SECURITY_MODEL.md`](./docs/SECURITY_MODEL.md) | The trust boundary, privilege gate, confirm-tokens, secret handling + safe-defaults checklist. Read before touching anything that executes or handles secrets. |
   | [`docs/COMPOSER_SURFACE_PLAN.md`](./docs/COMPOSER_SURFACE_PLAN.md) | The Composer Surface build record (**✅**; catalog deduped to `[stacked, sheet, line]` + the `composerSkin` axis, D37). |
@@ -57,6 +61,8 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   *Historical records (provenance, not live guidance): `HANDOFF_ARCHIVE.md` (**frozen session
   history 2026-05 → 2026-08** — "the HANDOFF block of ⟨date⟩" resolves there), `COSMOS_HANDOFF.md`
   (cosmos build record — live learnings lifted into THEME_ENGINE §14.11/§14.13),
+  `SLICE6/7/8_PLAN.md` (frozen D42/D43/D44 design drafts — the locked records are the D-entries),
+  `VAPOR_BANNER_LEDGER.md` (closed, the Phase 16 deletion inventory),
   `AUDIT_settings.md`, `REORG_PLAN.md`, `external_audit/` (frozen pre-reorg audits).*
 
   When designing a new feature, the canonical flow is: **HANDOFF (where we are) → ROADMAP (is this listed? what seams already exist?) → DECISIONS (any locked choice that constrains it?) → DESIGN/ARCHITECTURE (how does it slot in?) → TODO (which phase owns it? add the slice).** If a feature isn't in any of these, propose where it goes *before* coding.
@@ -135,8 +141,9 @@ Default to this repo and follow the doc map above — `HANDOFF` → `ROADMAP` �
 `DESIGN`/`ARCHITECTURE` → `TODO`. The shape: mobile-first React + TS + Vite **PWA** (TanStack Query,
 lucide-react), themed via the theme engine (`VAPOR_PATTERNS.md` governs net-new UI); **FastAPI +
 Uvicorn** backend; **typed-action registry** as the primary execution path plus a guarded `!`
-local-shell escape hatch (Phase 5, **built**; user `!` on by default, the agent's `run_shell`
-off-by-default — `shell.*_exec` toggles; open-terminal provides *remote* shell);
+local-shell escape hatch (Phase 5, **built**; both `shell.*_exec_enabled` toggles default **OFF** —
+the user `!` path and the agent's `run_shell` alike, enable via Conf; open-terminal provides *remote*
+shell);
 **SQLite** for chat/memory/events + **YAML** for config; voice via OpenAI-compatible **STT/TTS** and
 chat via OpenAI-compatible **llama.cpp**/cloud. The owner connects from Android — keep changes
 testable at narrow viewport widths (mic needs HTTPS via Tailscale Serve).

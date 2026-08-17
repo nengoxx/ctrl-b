@@ -114,6 +114,9 @@ thread — re-expressed off the session's origin) · no steer source · explicit
   result resolves before the call's terminal Event is recorded (no AWAITING_* audit rows).
   The minimal interactive rendering of `choices` (chips in the existing question bubble) ships in
   the SAME slice as the fields — they reach the model's tool schema the moment they exist.
+  **As-built (Phase 18):** that third rung is no longer a code literal — it is the owner-editable
+  registry id **`unattended_answer`** (`services/agent/prompts.py`, resolved in `session.py`'s
+  headless question path), so the wording is Conf-editable like every other model-facing text.
 - Confirm gates: always the privilege/approvals ladder — stated out loud: a D44 approval rule
   auto-allows headless exactly as interactively, and `privilege: full` auto-runs confirms. THAT
   is the sanctioned mechanism for privileged automations; consent happens at authoring time
@@ -161,7 +164,9 @@ origin-kind ancestry (the D-5 guard keys on interactivity).
 ## D-6. REST + Conf UI
 
 - `/api/automations` router: GET list (+ next-fire echo, last run) · POST · PUT/{id} ·
-  DELETE/{id} (409 while running) · POST/{id}/run-now (409 while busy) · GET/{id}/runs ·
+  DELETE/{id} (409 while running) · POST/{id}/run-now (409 while busy) ·
+  **POST/{id}/enabled** (the list switch — a separate cheap endpoint from PUT because enabling is
+  also where `next_run_at` is recomputed strictly-future, §D-1) · GET/{id}/runs ·
   mark-read · schedule-preview (server-side cronsim: validity + next N fires + human echo;
   advisory — write-path validation lives in the shared service).
 - Conf: a numbered "Automations" ConfGroup = the LIST (name, enable switch, last-status chip,
@@ -278,6 +283,7 @@ keep_runs: 50}` — all tunables, no magic numbers. Records in SQLite (rationale
 
 `pinned` thread mode (+ its pre-bought failure semantics: deleted destination → fail loudly,
 never retarget; busy → queue; append at current leaf) · notify-and-wait question policy (F1
-carries the ping; needs park/resume design) · rolling-thread takeover/detach · the D2-A
-tailscale monitor loop (shares only the lifecycle convention) · Web Push deep-links into run
+carries the ping; needs park/resume design) · rolling-thread takeover/detach · ~~the D2-A
+tailscale monitor loop (shares only the lifecycle convention)~~ **✅ SHIPPED v1.4.6
+(`services/monitor.py`)** · Web Push deep-links into run
 threads · pause-after-N-failures (nobody in the field has it).

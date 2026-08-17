@@ -57,7 +57,7 @@ authentication layer first.
   surface. Keep it off for anything reachable.
 - **Dev-mode exposure (deliberate, documented — SYS-4).** The **dev** frontend is wider than prod: Vite binds
   `0.0.0.0:5173` with `allowedHosts: true` and proxies `/api` → the loopback backend
-  (`frontend/vite.config.ts:58-67`). So while the dev server runs, anyone on the **local LAN** (not just the
+  (the `server:` key in `frontend/vite.config.ts`). So while the dev server runs, anyone on the **local LAN** (not just the
   tailnet) can drive the full API through the proxy — the backend's careful `127.0.0.1` bind is bypassed by
   design so the owner can reach dev by machine name / phone. This is **accepted on the trusted home LAN** and
   consistent with the trust model (§1), but it is a *decision*, not an accident: don't run the dev server on an
@@ -84,6 +84,13 @@ pure decision function, **`core/permissions.py` `decide(spec, privilege)`** → 
 - **Privilege levels** (`domain/enums.py Privilege`): `READONLY` · `CONFIRM` · `AUTO_LOW` · `FULL`. The UI
   runs at **`CONFIRM`**; the agent runs at the privilege its `AgentDef` declares (subagents are clamped to
   the parent). So for the normal caller, every HIGH/confirm action **suspends** rather than firing.
+  **One deliberate exception:** `POST /api/access/serve` invokes `tailscale_serve_enable`/`_disable` at
+  `Actor.USER, Privilege.FULL` (`api/access.py:50-52`), so the two `Risk.MED` Serve actions
+  (`services/actions/tailscale.py:213,229`) run without a confirm bubble — enabling/disabling the owner's
+  own HTTPS front door *is* the explicit user act, and re-confirming a toggle the owner just flipped in
+  Conf → Access buys nothing. The path is itself gated: the endpoint 403s unless `tailscale.enabled`
+  (D20), the actions are `ui_exposed=False`/`agent_exposed=False` (unreachable from the generic action
+  API and from the agent), and both are `idempotent`.
 - **Risk levels** (`Risk`): `LOW` · `MED` · `HIGH`. Risk + the `confirm` flag are declared per action on its
   `ToolSpec` — the gate is data, not scattered `if`s.
 - A suspended call becomes `RunState.AWAITING_CONFIRM` and renders as the confirm bubble.
@@ -216,6 +223,37 @@ decision**.
   (two devices editing settings concurrently); the bubble grant path does **not** — it is server-side and
   atomic under the one settings write lock.
 
+### 2.6 Core Memory — an agent-writable durable corpus (D57)
+
+Tier-2 long-term memory (`services/agent/core_memory.py`, off by default — `memory.longterm.backend:
+null`) is the first place **the agent writes files the owner did not author**: a markdown corpus
+(`memories/core/` by default) whose routing index is injected into the system context every turn while
+the slot is on. Two rails hold it, plus one framing:
+
+- **Root confinement.** `validated_root()` (`core_memory.py:838-868`) resolves
+  `memory.longterm.core.root` and **refuses** rather than clamps: a relative root must be a strict
+  descendant of the memory dir (`..`/`.` escapes refused), and any root is refused if it *contains*
+  `$CTRLB_HOME`, `config.yaml` or the db (the D26 `_safe_root` spirit), or if it overlaps a tier-1
+  store — a `MEMORY.md`/`USER.md` file or the per-agent `agents/` tree, in **either** direction. A
+  refusal turns the whole feature off (no root → no reads, no writes); tier 1 holds the same invariant
+  from its side, because `AgentDef.memory_dir` makes the reserved tier-1 set dynamic.
+- **The write-side secret gate.** Every create/edit gates the **complete resulting file content**
+  (never the delta) through `_guard_secrets()` on `Settings.secret_values()` (§2.4) and refuses the
+  write without echoing the value. It is a containment check on **known** configured values — shape
+  detection is an explicit non-goal — and it is **BEST-EFFORT by construction, not a boundary:**
+  values shorter than `_SECRET_MIN_CHARS = 8` are skipped (a 1-char placeholder key is a substring of
+  every file and would brick the write path), so a real ≤7-char credential is *outside* the rail. Full
+  reasoning: [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) §14b. Two **documented no-gate carve-outs**:
+  `delete` (its index write only *removes* lines — a strict subset of content that already passed, and
+  gating it would make the one operation that cleans up a leak refusable by that leak) and the
+  byte-identical **crash-retry** (gating a repair of content this call did not write would turn a
+  self-heal into a refusal over the owner's own on-disk file).
+- **Framed as fallible data, not instructions.** The injected index and every recall result are wrapped
+  in the `core_memory_policy` / `core_memory_recall` prompts (`services/agent/prompts.py`), whose
+  data-not-instructions clause is the only thing marking corpus text — written by **past turns**, and
+  possibly copied in from another tool — as untrusted. Treat that clause as load-bearing when editing
+  those prompts (Phase 18 overrides can rewrite them).
+
 ---
 
 ## 3. Residual & accepted risks + known gaps
@@ -261,6 +299,16 @@ code. Upheld by:
   cutting the search space. `providers_rev` takes the first option (it hashes the masked providers
   subtree); an HMAC under a server-held key would also satisfy the rule and would additionally stay
   sensitive to a same-mask rotation, at the cost of key lifecycle we do not need here.
+- **The second gitignore surface: `GitMemoryBackup`** (`services/agent/memory_backup.py`, D26) — it
+  version-controls the memory directory, so it is both a secret-adjacent chokepoint and a `.gitignore`
+  author. Three properties keep it safe: it is **local-only** (no remote is ever configured, nothing is
+  pushed, so no credential is needed and no auth prompt can block it); the **`.gitignore` it generates**
+  excludes config / `clients/` / prompt / db files in case the memory dir is ever pointed somewhere
+  broader; and every `git` child runs under a **sanitized environment** (`_git_env()`) that drops every
+  ambient `GIT_*` except `GIT_EXEC_PATH` — ambient repo vars override our argv (`GIT_DIR` beats `-C`,
+  which is exactly how SYS-20 bit), and `GIT_CONFIG_PARAMETERS`/`GIT_CONFIG_COUNT` inject arbitrary
+  config (incl. `core.hooksPath`) and are therefore a **code-execution** vector, not just a
+  misdirection one.
 
 *(Enforced by `backend/tests/test_secret_hygiene.py` — PRE_DEPLOY step 3 ✓.)*
 
@@ -296,6 +344,10 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
 - [ ] **`tool_overrides.<tool>.approvals` reviewed** (§2.5) — every standing "always allow" rule is one you
       meant to grant; no unintended widening (a rule that omits fields, or globs a destructive arg); remember
       each one also silences that call for the agent and headless subagents.
+- [ ] **`memory.longterm.backend` is what you intend** (§2.6; `null` = tier 2 off, the default) and, if
+      on, **`memory.longterm.core.root`** points at a directory you are content for the agent to write
+      files into — the confinement rails refuse a bad root, but they can't tell a *valid* wrong one from
+      a right one. Remember the write-side secret gate is best-effort, not a boundary.
 - [ ] `config.yaml` present and owner-only readable on the host (`chmod 600`).
 
 ---

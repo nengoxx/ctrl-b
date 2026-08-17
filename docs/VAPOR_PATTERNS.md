@@ -78,7 +78,9 @@ Sanctioned constants: **`#1a0428`** (dark ink for text *on* the magenta→violet
 
 ## 2. Typography
 
-Two fonts, loaded in `index.html`:
+Two fonts, loaded in `index.html` *(as of D51: **self-hosted @fontsource** instead — the `@font-face` blocks
+live in `themes/vapor/vapor-fonts.css` (latin + latin-ext), statically imported from `main.tsx`; `index.html`
+has no font `<link>`, only a comment saying so. The two FACES below are unchanged)*:
 
 - **`"Major Mono Display"`** — the *display* face. Use **only** for: the brand mark, large device/host
   names (`.dev .name`, `.now .name`), big stat numbers (`.now .stat .v`, `.summary .v`), util card
@@ -145,9 +147,14 @@ Subtle tint backgrounds (card headers, chat bubbles, hero panels) use low-alpha 
 - Flex/grid gaps: `6–12px`. Footers (`.dropfoot`, `.mfoot`) use `gap: 6–8px`, `flex: 1` buttons.
 - Section headers (`.sec`, `.conftitle`): tiny uppercase label + a `num` (magenta) + a trailing
   `linear-gradient(90deg, var(--line-2), transparent)` rule.
-- Page bottom padding leaves room for the fixed tab bar + composer (`body` `116px`, `.no-composer`
+- ~~Page bottom padding leaves room for the fixed tab bar + composer (`body` `116px`, `.no-composer`
   `80px`). Layer order (z-index): tabbar `12`, composer `11`, appbar `20`, toast `30`. Net-new
-  overlays go above: toasts `40`, the confirm backdrop `50`.
+  overlays go above: toasts `40`, the confirm backdrop `50`.~~ *(as of D51 V4: **both facts are DELETED
+  from the code.** The `116px` + `body.no-composer { 80px }` pair went with the fixed-bar model — the kit
+  shell is an in-flow flex column, so an absent composer just reflows it and there is no padding
+  bookkeeping (`kit/DefaultRoot.tsx`); `.no-composer` no longer exists anywhere. The chrome z-index ladder
+  is the KIT's now — vapor.css keeps only two local `z-index`es inside its own Fleet surface. The card/row
+  spacing above still describes the kept bespoke Fleet.)*
 
 ---
 
@@ -197,7 +204,12 @@ name), `ttsGlow`, `micrec`, eq-bar grow. Scrollbar is a `4px` magenta thumb; sel
 
 ## 10. Theming (3 palettes) & the danger-color philosophy
 
-`<body data-theme>` switches the palette by overriding the `:root` tokens. The three themes
+`<body data-theme>` switches the palette by overriding the `:root` tokens. *(as of D51 V2: the vapor-private
+**`body[data-theme]` axis is RETIRED** — vapor's palettes ride the SHARED `body[data-accent]` like every other
+theme, and `applyBodyAttrs` (`store/ui.ts`) actively `delete`s `data-theme` on every load to clear pre-V2
+residue. Read every `[data-theme="x"]` below as **`[data-accent="x"]`**, with the same three values:
+`dark` → Vapor, `aqua`, `ember`. Nothing about the palettes or the philosophy below changed — only the
+attribute.)* The three themes
 (chat4): **Vapor** (magenta/violet/pink — the default, `data-theme="dark"`), **Aqua** (cyan/indigo,
 cool ocean), **Ember** (amber/gold/coral, Miami sunset). *Everything* is themed via vars — not just
 text/buttons but the skyline SVG gradient stops + window colors, the sun aura + stripes
@@ -270,7 +282,7 @@ landed after iterating, and re-litigating them silently is the wrong move.
   Skyline is a **City | Mountains** toggle (Conf → Appearance → "Horizon"), each a **multi-layer
   SVG** with atmospheric perspective (layers get darker toward the foreground) and neon ridge/edge
   outlines; all stops + window colors are theme vars. The equalizer is **8 bars**. The whole scene
-  is lifted verbatim into `theme/heroScene.ts` — don't re-derive it; restyle via the tokens.
+  is lifted verbatim into `themes/vapor/heroScene.ts` — don't re-derive it; restyle via the tokens.
 - **Fleet device row** (chat1/chat3) — tap to expand: services list (`.svc-row`, Phase 3) + a
   details strip (ip / mac / `ssh user@host:port` / os) + a dropfoot of footer buttons
   (`$ ping`, `› ssh`, and an `↗ http://<ip>` link that replaced the old inline shutdown — wake/stop
@@ -288,5 +300,6 @@ landed after iterating, and re-litigating them silently is the wrong move.
 - [ ] Buttons match one §7 recipe exactly (gradient direction, glow alpha, inset highlight, text color).
 - [ ] Radii from §5, spacing/gaps from §6, fonts per §2 (no Major Mono on prose/punctuation).
 - [ ] Focus/press states present (input focus glow; `:active` scale).
-- [ ] Verified in **vapor + aqua + ember**; anything that must be red uses `var(--red)` (§10).
+- [ ] Verified in **vapor + aqua + ember** (as of D51 V2 those are `body[data-accent]` values, not
+      `data-theme` — §10); anything that must be red uses `var(--red)` (§10).
 - [ ] Lives in `extras.css` if net-new; `vapor.css` untouched.

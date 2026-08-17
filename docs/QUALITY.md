@@ -39,11 +39,11 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | **FE type safety** | `tsc` **strict** (already on) | type errors, unused locals/params | ✅ |
 | **FE lint** | **ESLint** flat + **typescript-eslint `recommended-type-checked`** + `eslint-plugin-react-hooks` + `-react-refresh` | floating promises, misused async/await, unsafe `any`, hook-deps, rules-of-hooks, React-Compiler diags | ✅ (1b) |
 | **FE format** | **Prettier** + `eslint-config-prettier` | style drift (deterministic) | ✅ (1b) |
-| **FE unit tests** | **Vitest** (D21) | logic regressions | ✅ |
+| **FE unit tests** | **Vitest** (D21 — 2,065 across 136 files) | logic regressions | ✅ |
 | **FE e2e / a11y** | **Playwright** + `@axe-core/playwright` (D24) | broken user paths, a11y | ✅ (Phase 9 wires the suite) |
-| **BE lint + format** | **ruff** (`E`/`F`/`I`, formatter) | style, imports, dead code | ✅ |
+| **BE lint + format** | **ruff** (`E,F,I,ASYNC,B` — `backend/pyproject.toml:87`; formatter) | style, imports, dead code, async footguns, bugbear | ✅ |
 | **BE type check** | **`pyright[nodejs]`** (pinned `==1.1.409`; `basic` → ratchet `strict`) | type errors across the FastAPI service | ✅ (1c) |
-| **BE tests** | **pytest** (1665, temp-config safe — `conftest.py`: a module-level env guard that runs before any test module imports, plus the per-test autouse fixture; QH-10 + UPDATE_PLAN §3.7) | backend logic | ✅ |
+| **BE tests** | **pytest** (1,666 collected 2026-08-17, temp-config safe — `conftest.py`: a module-level env guard that runs before any test module imports, plus the per-test autouse fixture; QH-10 + UPDATE_PLAN §3.7) | backend logic | ✅ |
 | **CSS contracts** | **stylelint** (keyframe-prefix · anim budget · the two accent correctness rules) | theme CSS invariants | ✅ shipped 2026-07-10 (warn-first; `lint:css` in `check-all`) |
 | **Runner** | one **`tools/check.py`** (stdlib chokepoint) + `npm run check-all` (FE) | "is the repo green?" in one command | ✅ (1a) |
 | **Enforcement** | native **`core.hooksPath=.githooks/`** → `check.py` (fast pre-commit · full pre-push) | stops a bad commit/push at the source | ✅ (1d) |
@@ -59,7 +59,8 @@ surface. `stylelint` is the adopted CSS-contract layer (Hardening v2 ⑨, 2026-0
   `no-misused-promises`, unsafe `any` flows*. `eslint-plugin-react-hooks` (React-team) is the **only** source of
   React-Compiler diagnostics (future-proofs `UI_AUDIT.md` **F13**); `-react-refresh` guards Vite HMR boundaries.
   **Caveats + mitigations:** (a) *perf* — type-checked linting runs a `tsc` build first; negligible for our
-  128-file FE and it runs pre-push/CI, not per-keystroke; keep `tsconfig` includes narrow (already `src`).
+  216-file FE (`.ts`/`.tsx` under `frontend/src`, 2026-08-17) and it runs pre-push/CI, not per-keystroke; keep
+  `tsconfig` includes narrow (already `src`).
   (b) *false positives* — `no-unnecessary-condition` can fire "always false"; tune to `warn`. (c) *config* —
   non-project files (`vite.config.ts`, `eslint.config.js`, `frontend/scripts/*.mjs`) need a `disableTypeChecked`
   override or `projectService` errors on them. (d) *react-hooks flat-config* — the legacy `recommended` preset is
@@ -97,6 +98,16 @@ surface. `stylelint` is the adopted CSS-contract layer (Hardening v2 ⑨, 2026-0
   (`git config core.hooksPath .githooks` + ensure the exec bit), run by `install.sh` / a documented one-liner.
   *(Alternative kept documented: **lefthook** — richer managed runner with parallel groups, if we outgrow native
   hooks; the Python **`pre-commit`** framework — battle-tested but clashes with `core.hooksPath`.)*
+- **Both hooks are two lines — the shared launcher is `.githooks/_gate.sh`.** `pre-commit` and `pre-push` each
+  `exec` it (with/without `--fast`), so the hook mechanics live in **one** file (rule 5). It does two things
+  neither hook should repeat: it **resolves the interpreter** — backend venv first (`Scripts/python.exe` /
+  `bin/python`), PATH `python3`/`python` only as a fallback, which also sidesteps the Windows "python from
+  Microsoft Store" PATH stub that hijacks a bare `python` — and it **`unset GIT_DIR GIT_WORK_TREE
+  GIT_INDEX_FILE`**. That unset is the **SYS-20 fix**: git exports `GIT_DIR` into hooks, *absolute* from a
+  linked worktree, and an ambient `GIT_DIR` beats a `git -C <elsewhere>` in anything the gate runs — proven
+  2026-08-11, when the v1.5.1 pre-push gate run from a release worktree committed test junk onto the release
+  branch. The gate judges the **tree** and `check.py` itself runs no git, so dropping the hook's git context
+  entirely is both safe and the fix.
 
 ## The runner contract
 
@@ -121,16 +132,21 @@ a hard step-0 item in `DEPLOY_EMMA.md` + a `.claude/settings.json` deploy-checkl
 npm package (already in `node_modules`) is just the runner; the browsers live **per-user** in
 `~/.cache/ms-playwright` (Linux) / `%LOCALAPPDATA%\ms-playwright` (Windows) — NOT in the venv or the repo, so
 one install serves the workspace and every worktree. On a fresh machine run, from `frontend/`:
-`npx playwright install --with-deps chromium` (chromium suffices — the config's devices are Pixel 5 + Desktop
-Chrome; `--with-deps` apt-installs the system libraries and needs sudo — without sudo run
-`npx playwright install chromium` and it prints the `install-deps` command to run separately). Re-run it after
-any `@playwright/test` version bump (browsers are version-paired). **emma status: NOT installed as of
-2026-07-10** — only needed for LOCAL `--e2e` runs; the tag-push CI release gate runs the same suite regardless,
-so a release never depends on it. Skipping it just means the suite fails with "Executable doesn't exist". One trap
+`npx playwright install --with-deps chromium firefox` (**two** engines are needed: the config's projects are
+Pixel 5 + Desktop Chrome, plus a **`firefox`** project — `playwright.config.ts:40` — scoped by `testMatch` to
+the `kit-render` smoke so a second engine covers the per-theme boot sweep while total runtime stays bounded
+(FRONTIER_PLAN F5 Gate C; the axe scans + the deep frontier locks stay Chromium-only). `--with-deps`
+apt-installs the system libraries and needs sudo — without sudo run `npx playwright install chromium firefox`
+and it prints the `install-deps` command to run separately). Re-run it after
+any `@playwright/test` version bump (browsers are version-paired). **emma status: installed** (both engines in
+`~/.cache/ms-playwright`, verified 2026-08-17) — a local install is only needed for LOCAL `--e2e` runs; the
+tag-push CI release gate runs the same suite regardless, so a release never depends on it. A missing install
+just means the suite fails with "Executable doesn't exist". One trap
 (QH audit 2026-07-07): `reuseExistingServer: !CI` means a stale preview server already on **:4173** gets reused
 (you'd test an old build — kill it first). **CI (updated 2026-07-09, D32 amendment):** branch pushes + PRs run
 the gate WITHOUT `--e2e` (push gate, kept fast); **release-tag pushes (`v*`) DO run `--e2e` in CI** — the
-machine-checked release gate (ci.yml installs Chromium via `npx playwright install --with-deps chromium`).
+machine-checked release gate (ci.yml installs both engines via `npx playwright install --with-deps chromium
+firefox`).
 
 `tools/check.py` resolves the backend interpreter as `backend/.venv/{Scripts,bin}/python` — a single
 `os.name` branch (`Scripts`/`python.exe` on Windows, `bin`/`python` elsewhere), so it runs the same from
@@ -162,14 +178,14 @@ Two **react-hooks v7** rules are set to **`warn` (not `error`, not `off`)** in `
 dodge** (an earlier read wrongly called them false positives; the React docs confirm they flag *real*
 Rules-of-React patterns).
 
-**The full 29-warning accounting (QH deep pass 2026-07-07; re-counted 2026-07-16):** the gate's
-`29 warnings / 0 errors` actually spans **four** warn-level rules, not just the two above —
-`set-state-in-effect` **12** + `refs` **8** (the deferred pair) + `react-hooks/exhaustive-deps` **2** (preset
-default) + `react-refresh/only-export-components` **7** (preset default). All four are part of the same F13
-checklist; `rules-of-hooks` and `static-components` stay `error`. (The count was **27** at the 2026-07-07 QH
-deep pass — `11`/`8`/`2`/`6`; the **+2** delta — one `set-state-in-effect`, one `only-export-components` —
-arrived with the frontier T5 / Gate-B work 2026-07-12..15 and was reconciled 2026-07-16. Deferral status
-unchanged: all 29 stay in the F13 backlog.)
+**The full warning accounting (re-measured 2026-08-17):** the gate's `43 warnings / 0 errors` spans **four**
+warn-level rules, not just the two above — `react-hooks/refs` **22** + `set-state-in-effect` **13** (the
+deferred pair) + `react-refresh/only-export-components` **7** (preset default) +
+`react-hooks/exhaustive-deps` **1** (preset default). All four are part of the same F13 checklist;
+`rules-of-hooks` and `static-components` stay `error`. **The backlog has grown** — 27 at the 2026-07-07 QH
+deep pass (`11`/`8`/`2`/`6`), 29 at the 2026-07-16 re-count (`12`/`8`/`2`/`7`), **43** now: the latest-ref
+idiom spread with the phases since (`refs` 8 → 22), so the deferral is a *growing* debt, not a frozen one.
+Deferral status unchanged: all 43 stay in the F13 backlog.
 
 **Why deferred (assessed thoroughly 2026-07-02, all ~19 sites reviewed):**
 - Every current hit is an **intentional, correct, concurrent-safe** pattern: "sync an editable draft from

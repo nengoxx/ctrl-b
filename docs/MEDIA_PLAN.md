@@ -296,7 +296,8 @@ the app-bar mark (see §12.1); the "Shared background" switch lives in Conf → 
 Two amendments from the **2026-08-06 owner device round** (the G6.3 fidelity wave). Both are
 additive: no config shape moves, no existing file changes meaning.
 
-**① The new kit role — `brand` (the app-bar mark).** A SIXTH pin and a FIFTH role folder, and the
+**① The new kit role — `brand` (the app-bar mark).** A SECOND kit pin (bringing the registry to
+**7** across the three namespaces — gacha 4 + frontier 1 + kit 2) and a FIFTH kit role folder, and the
 `background` shape exactly: a POOL with a first-wins pick and one `slots` pin (`KIT_ROLES` +
 `KIT_SLOTS` in `core/media.py`; the registry-driven ensure-dir / mounts / index pick it up with no
 other backend change). What is new is only how it is PAINTED: `KitAppBar` renders the file as a CSS

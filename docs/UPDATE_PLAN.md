@@ -1,12 +1,14 @@
 # UPDATE_PLAN v3 — the update/migration architecture
 
-> **Status: DESIGN v3 — owner-ratified rulings folded in. ▶ SLICES 1 + 2 + 3 BUILT 2026-07-26** — the
-> runner (**[§11](#11-slice-1--as-built-2026-07-26)**), the fold's move out of the config load path
-> (**[§12](#12-slice-2--as-built-2026-07-26)**), and env overrides
+> **Status: BUILT + RELEASED — every slice shipped; this doc is now the design record behind live code.**
+> Slice 1 = the runner (**[§11](#11-slice-1--as-built-2026-07-26)**), slice 2 = the fold's move out of the
+> config load path (**[§12](#12-slice-2--as-built-2026-07-26)**), slice 3 = env overrides
 > (**[§13](#13-slice-3--as-built-2026-07-26-the-env-override-capability-retracted-the-retired-path-guarded)**
-> — **§7 was overturned**: the provider-form overlay was ruled against and the capability RETRACTED).
-> Gate 6/6, both live configs rehearsed on copies. **Slice 4 ✅ BUILT (§14) — the boot refusal is live
-> and measured under systemd.** Next: slice 5 (`install.sh`).
+> — **§7 was overturned**: the provider-form overlay was ruled against and the capability RETRACTED),
+> slice 4 = the boot refusal (**§14**, live + measured under systemd), slice 5 = `install.sh`,
+> slice 6 = Windows parity, slice 7 = `update.sh` + the release runbook.
+> Gate 6/6, both live configs rehearsed on copies; the chain has since been **proven over 4+ releases**
+> (see the terminal-status note below).
 > **Owner requirements:** after an update prod holds **zero** legacy keys · a **human with no coding
 > agent** updates prod · a failed update is recoverable · **no leftover code, config or artifacts** ·
 > **lean — no machinery we must maintain long-term.**
@@ -54,10 +56,15 @@ as covering both.
 
 ```
 app/config_migration/
-  __init__.py   runner · detect() · STEPS · CLI          (~90 lines)
+  __init__.py   runner · detect() · STEPS · CLI          (~90 lines est. → 1128 as-built)
   VERSION       a one-line literal: 1                     (see §3.6)
-  steps.py      the A11 fold, lifted from config.py       (~215 lines)
+  steps.py      the A11 fold, lifted from config.py       (~215 lines est. → 522 as-built)
 ```
+
+*(The `~lines` figures were **design-time estimates**; the as-built sizes beside them are the shipped
+files — the growth is the machinery the design **specified** but did not size: the refusal preflights,
+backups, the §3.3 postcondition assertion, the retired-env guard, and their docstrings, plus a
+`__main__.py` shim. The layout itself is as designed.)*
 
 Three small types, deliberately **not** a framework:
 

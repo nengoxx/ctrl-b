@@ -40,7 +40,17 @@
   HARDENING_PLAN §8.2. Dev units RUNNING for the owner round (dev has tier 2 ON with a copy of
   the Claude Code session corpus at `~/.ctrl-b-dev/memories/core/` — note its index sits at 99%
   of cap, so the consolidation nudge is live there).
-- Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) (frozen, 2026-05 → 2026-08).
+- **2026-08-17 (evening): the DOC-TRUTH PASS** (owner: "documentation completely consistent with
+  the actual design and architecture"). Five auditors verified every live doc against code (~90
+  findings, all file:line-evidenced), five editors applied them, Codex adversarially reviewed the
+  full diff (COMMIT WITH FIXES → 8 more, 7 applied + 1 overruled: the launcher/deploy docs carried
+  the pre-2026-07-28 seat arrangement — fixed at the source). Re-baselined: DESIGN (provider-terms
+  `ModelRef`, real `Settings`/§9.1 provider registry, `Database`, memory stores, §5.8 prompt
+  registry, real error taxonomy), SPEC inventories (automations/media/monitor/notifications ✅,
+  D44 flips, 5 themes, readonly truth-table row, ER to schema 6), SECURITY_MODEL §2.6 (Core
+  Memory) + the serve-FULL exception + `GitMemoryBackup`, THEME_ENGINE add-a-theme entry points +
+  §14.17 section layouts + Kit Art System/safeRafLoop, QUALITY (43-warn lint recount, firefox e2e,
+  `_gate.sh`), README/CLAUDE/AGENTS/deploy runbooks. Everything code-anchored; nothing relitigated.
 
 ## ▶▶ NEXT — Phase 20 is DONE; the owner court is up
 

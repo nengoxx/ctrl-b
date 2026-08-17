@@ -30,8 +30,10 @@ MODEL="${3:-${MODEL:-opus}}"                        # positional > env > default
 EFFORT="${EFFORT:-high}"
 PERM="${PERM:-bypassPermissions}"
 
-# Friendly aliases. Opus (the DEFAULT + main model, owner 2026-07-24) tracks Claude Code's latest Opus
-# alias; Fable remains pinned and available as an on-request second opinion. Full ids pass through.
+# Friendly aliases. NOTE (owner 2026-07-28): the MAIN seat is now FABLE 5 — Opus is the subagent
+# workforce; the systemd boot instances pass their model explicitly (@fable/@opus). This script's
+# bare default stays `opus` for back-compat of manual launches; pass `fable` for the main seat.
+# The `opus` alias tracks Claude Code's latest Opus; full ids pass through.
 case "$MODEL" in
   fable) MODEL="claude-fable-5" ;;
   opus)  MODEL="opus" ;;

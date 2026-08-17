@@ -33,6 +33,7 @@ deploy/
 │   ├── README.md             # this runbook
 │   ├── install.sh            # [prod|dev] — build + enable ONE instance from the tree it's in
 │   │                         #   prod also: DB snapshot pre-cutover + aside-built dist swap
+│   ├── update.sh             # <tag> — the standing release/update runner (preflight → re-pin → install.sh)
 │   ├── serve-https.sh        # Tailscale Serve HTTPS :443 → :5433 (prod)
 │   ├── run.sh                # manual foreground runner (no systemd)
 │   └── systemd/              # the user units (rendered to ~/.config/systemd/user/ by install.sh)
@@ -164,9 +165,9 @@ required for a working install, but each fixes a real degradation on this box:
 ## The Claude agent services (development continues ON the box)
 The agents are first-class always-on services (owner decisions 2026-07-09 + 2026-07-10): the TEMPLATE
 unit **`ctrl-b-agent@.service`** is enabled by `install.sh dev` as **two boot instances** —
-`ctrl-b-agent@opus` (tmux **`ctrl-b-opus`**, the `opus` alias = latest Opus, effort high — **the main
-model since 2026-07-24**) and `ctrl-b-agent@fable` (tmux **`ctrl-b-fable`**, `claude-fable-5`, effort
-high — kept available for on-request second opinions). Each ensures its tmux session exists, running
+`ctrl-b-agent@fable` (tmux **`ctrl-b-fable`**, `claude-fable-5`, effort high — **the MAIN seat since
+2026-07-28**: designs, supervises, rules, audits) and `ctrl-b-agent@opus` (tmux **`ctrl-b-opus`**, the
+`opus` alias = latest Opus, effort high — the subagent workforce + an interactive session when wanted). Each ensures its tmux session exists, running
 `claude --remote-control` in the **workspace** — attach over SSH or drive from claude.ai/code. On boot
 the launcher **waits (≤60s) for network connectivity before starting claude** — the remote-control
 channel registers at claude startup and does NOT retry, so an early start would come up invisible to
@@ -333,7 +334,8 @@ destructive migrations land at the earliest one release after the code stopped u
 
 ## Fresh machine vs. emma (the installer handles both)
 The scripts are **portable** — every path resolves against the target user's `$HOME` and the systemd units are
-**templates** (`__REPO__`/`__CTRLB_HOME__`/`__NPM__`) that `install.sh` renders to real paths, so this works for
+**templates** (`__REPO__`/`__CTRLB_HOME__`/`__NPM__`/`__NODEBIN__`/`__HOME__`/`__TMUX__` — all six rendered at
+`install.sh:227-228`) that `install.sh` renders to real paths, so this works for
 any user/host, not just `emma`.
 - **emma (workspace already exists):** just run `bootstrap.py` — the existing `~/github/ctrl-b` stays put
   (fetched + fast-forwarded when clean); prod is cloned fresh at `~/apps/ctrl-b`.
@@ -366,8 +368,10 @@ off (`sudo loginctl enable-linger $USER`), or `tailscale serve` needing the oper
 - Don't modify emma's system/MCP config beyond the prereqs. The DEV backend binds **127.0.0.1**; PROD
   binds **0.0.0.0** (owner waiver 2026-07-10 — direct `http://emma:5433`; SECURITY_MODEL §2.1).
 - **Known waiver:** the DEV Vite server listens on **0.0.0.0:5173** (plain HTTP) so the phone can reach it
-  over the tailnet — that also makes it LAN-visible. Deliberate for a trusted home LAN; the backends stay
-  loopback-only and prod's sole ingress remains Tailscale Serve.
+  over the tailnet — that also makes it LAN-visible. Deliberate for a trusted home LAN; the **DEV backend**
+  stays loopback-only, and prod's sole **HTTPS / secure-context (mic)** ingress is Tailscale Serve — but note
+  **PROD itself is LAN + tailnet reachable** on plain `http://emma:5433` by the same waiver (unit line
+  `--host 0.0.0.0`), so Serve is not prod's only ingress.
 - `~/github/ctrl-b` is the **workspace** — where the agent(s) develop; it stays on `main` (the invariant).
   **PROD (`~/apps/ctrl-b`) is never developed on** — no agent, no commits; it only ever checks out released
   tags. One canonical GitHub `main`.
