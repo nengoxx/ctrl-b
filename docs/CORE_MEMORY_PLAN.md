@@ -601,3 +601,38 @@ one Conf switch; the §3b copy-in procedure is the migration path. Owner-court n
 on prod when wanted · the live `cache_n` measure · first real consolidation run (the
 `consolidation` prompt id) · push the commit stack.
 
+### 14b. First live drive + the secret-gate fix wave (2026-08-17, dev)
+
+**The §3b procedure was exercised end-to-end on the dev instance** (step 0 gitignore reconcile ·
+a 57-topic real Claude corpus copied in · switch flipped · no restart): status read *57 topics ·
+0 skipped · 1 anomaly* — a genuinely unindexed file, correctly named. A live turn (gemma4 on the
+local host) resolved the right topic from the injected index on the first read; `prompt_stamps`
+carried `core_memory_policy`; the recall arrived in the P3 frame with its content hash.
+
+**Two defects found by the first `create`, fixed the same session (post-S5 fix wave):**
+1. **The secret gate false-positived on short configured secrets** — the real config carries two
+   1-char placeholder API keys and a 4-char SSH password; substring containment on those matches
+   ordinary prose, so **every index write refused** (create/edit bricked on any realistic corpus —
+   prod would have hit the same wall on day one). Fix: `_SECRET_MIN_CHARS = 8` floor (raw length,
+   matching the raw value it contains-checks — measuring the stripped length would open an
+   edge-whitespace bypass, Codex MED). The gate is now *documented* best-effort: a real ≤7-char
+   credential is knowingly outside the rail — routed to Phase 19 Packet ③'s SECURITY_MODEL §5
+   re-walk (HARDENING_PLAN); a per-short-secret config warning was considered and declined (the
+   4-char SSH password is real and unchangeable — it would be a permanent nag).
+2. **A refused `create` half-wrote** — the old order wrote the topic file, then gated the merged
+   index, so an index-side refusal left an orphan topic behind a "create refused". Fix: both gates
+   hoisted above both writes (pure content checks; the topic-first WRITE ordering and both S3
+   OVERRULEs unchanged). A pre-existing index leak now refuses with `MEMORY.md` named as the
+   carrier instead of blaming the proposed content.
+
+Review: Codex high **SHIP WITH FIXES** (2 MED/2 LOW, no HIGH; the hoist judged sound) → wave-2 →
+confirm round **all four CONFIRMED, nothing new**. +2 tests (boundary pin 7-raw-passes/8-refuses/
+8-with-edge-whitespace-refuses · zero-write + byte-identical index + carrier message). The re-run
+of the same live `create` on dev: `[ok] created dev-live-test.md and listed it in the index`.
+
+**Live observation for the owner round:** this realistic 57-topic corpus renders at **8,121/8,192
+chars — 99% of the default `index_char_limit`** (the §14 69% figure was measured with ~90-char
+hooks; real hooks run longer). At that fill the §4b consolidation nudge (80%) is permanently on —
+expect it immediately on prod, or raise the cap / consolidate early. Still deferred: the
+`cache_n` re-prefill measure (needs a measured turn pair on the local host).
+

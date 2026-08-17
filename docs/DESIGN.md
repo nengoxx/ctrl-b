@@ -764,8 +764,12 @@ class MemoryProvider(Protocol):
   new_text)` / `remove(path, old_text)` (exact unique-substring CAS) · `delete(path, content_hash)`.
   Topic content enters as ordinary **tool results** framed by `core_memory_recall` (visible,
   persisted, replay-stable). Mutations honor `memory.auto_write` (off ⇒ steering error) and a
-  `Settings.secret_values()` containment gate evaluated over the **complete resulting file**;
-  topic+index writes are ordered for idempotent retry, deliberately **not** transactional.
+  `Settings.secret_values()` containment gate evaluated over the **complete resulting file** —
+  **best-effort by construction**: values under `_SECRET_MIN_CHARS` (8, raw length) are skipped,
+  since 1–4-char placeholder keys/passwords are substrings of ordinary prose and refusing on them
+  bricks the write path (the 2026-08-17 live-drive fix; CORE_MEMORY_PLAN §14b). All gate
+  evaluations run **before the first write** (a refusal is zero-write); the topic→index write
+  ordering is for idempotent retry, deliberately **not** transactional.
 - **Recall budget:** one `RecallBudget` per **logical turn**, owned by the session and threaded onto
   `InvocationContext.recall` through `ActionService.invoke` (exactly like the prompt stamps); every
   read/search adds the length of its *complete framed* output, and a resume re-seeds `used` from that

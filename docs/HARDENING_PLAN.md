@@ -280,9 +280,12 @@ during SSE.
 ### H5 — Packet ③ Subprocess & integrations family
 
 Tool registry/permissions/actions (`ActionService.invoke` — the security-critical chokepoint,
-SYS-3's home) + agent memory/skills/subagents + fleet/monitor/wake + automations/scheduler +
-external adapters (mcp/ssh/wol/voice-backend/searxng — several have no direct tests). Includes
-the **SECURITY_MODEL §5 safe-defaults re-walk** and the scheduler/manual-action matrix item.
+SYS-3's home) + agent memory/skills/subagents **incl. D57 Core Memory** (`core_memory.py` +
+tool + head injection + the §3b copy-in surface; landed after the §7 inventory — see the §7
+delta note; its live-drive residuals ride CORE_MEMORY_PLAN §14) + fleet/monitor/wake +
+automations/scheduler + external adapters (mcp/ssh/wol/voice-backend/searxng — several have no
+direct tests). Includes the **SECURITY_MODEL §5 safe-defaults re-walk** (the core-memory secret
+gate + write rails join that walk) and the scheduler/manual-action matrix item.
 Perf question recorded: the fleet sweep spawns one subprocess ping per host per sweep, driven by
 both the FE poll and the monitor loop (R12's measured precedent: the tailnet adapter already
 replaced a 5 ms subprocess with a 0.16 ms socket read — is the same available here?). The 4
@@ -315,7 +318,7 @@ numbers in hand.
 |---|---|
 | Bootstrap/runtime · config+settings API · config migration · DB+domain | Packet ① |
 | Agent loop · chat API/SSE/events · inference/providers/failover · prompt registry (spot-check) · `store/chat.ts` as wire consumer | Packet ② |
-| Tools/actions/permissions · memory/skills/subagents · fleet/monitor/wake · automations · external adapters + voice backend | Packet ③ |
+| Tools/actions/permissions · memory/skills/subagents **(incl. D57 core memory — the §7 delta)** · fleet/monitor/wake · automations · external adapters + voice backend | Packet ③ |
 | Media resolver · PWA/service worker | Packet ④ |
 | Deploy/update path · quality harness | Hf (H2 carries the preflight) |
 | FE shell/lib · FE query layer · FE stores (non-wire) · chat/composer UI · ConfTab/editors · theme engine/kit · themes · voice FE | **Perf lens: Phase 20** (F9/F13 triggers stand) · **Design lens: DP-A** (theme engine/motion/UX; §3b) |
@@ -370,7 +373,9 @@ SSE wire + reconnect/durability contract, steering/drain semantics, compaction t
 per-call snapshots, retry layering (wire vs loop vs adapter) — and **the capability layer** —
 tool surface size/granularity vs the field, parallel dispatch (D40) vs peers' defaults, output
 caps/truncation norms, planning/task-tracking, subagent orchestration, autonomy/approval
-patterns, caching-aware prompt ordering. Evidence: **R35 (turn machinery) + R36 (capability
+patterns, caching-aware prompt ordering — **and the D57 memory tiering** (owner, 2026-08-17:
+the two-tier model, head-injection/cap/promotion design and the copy-in interop judged vs the
+field; evidence already bought: R37/R38/R39). Evidence: **R35 (turn machinery) + R36 (capability
 layer)** + the ACA 8-agent comparative baseline + R30/R31. Peer set (owner-named): Claude
 Code, Codex CLI, **Hermes Agent, OpenClaw** (both D14 references), + opencode/goose/aider as
 the dossiers cover them. Overlap rule vs Track P's Packet ②: **Packet ② owns
@@ -455,6 +460,13 @@ tests **37,971** LOC / **1,333** `def test_` · FE vitest **34,211** / **1,822**
 **4,311** / 69 · `dist` 9.4 MB. 25 review units, 16 chokepoints. Full per-unit table (files ·
 LOC · tests · spec § · perf notes) is reproduced from the inventory pass:
 
+> **Post-inventory delta (2026-08-17):** Phase 20 Core Memory (D57) landed AFTER this measure —
+> `core_memory.py` 1,271 + `core_memory_tool.py` 253 LOC, 2,766 test LOC across 3 files, touch
+> points in 13 modules (session head injection, tool registry, config, Conf API). **H1 re-measures
+> it in**; it reviews as part of the memory unit (Packet ③) + DP-B (owner, 2026-08-17 — the
+> thorough pass covers it on BOTH lenses, perf/reliability and design/architecture; §3b's delta
+> council check confirms the assignment).
+
 | Unit | LOC | Tests | Chokepoint | Load-bearing numbers / notes |
 |---|---|---|---|---|
 | Bootstrap & runtime (`main/runtime/deps`) | 1,277 | 30 | YES | Every adapter built here (boot + reconfigure); `_memory_sweep` loop in lifespan |
@@ -508,7 +520,13 @@ smoke-scale vs theme matrix — ROADMAP exit) · SYS-9.3 (`store/chat.ts` raw fe
 (subagent-safety + skills-zero-context contracts partially unpinned — Packet ③) · SYS-17c (TTS
 blob accumulation, conditional LRU) · C3 chunked TTS (buildable, big TTFA win — voice, Packet ③
 records, likely ROADMAP exit) · 6b list (Switch div→button · store HMR · F29 draft persistence
-[design LOCKED 2026-06-16] · knob `left`→`translateX` · motion tokens — all Phase 20).
+[design LOCKED 2026-06-16] · knob `left`→`translateX` · motion tokens — all Phase 20) ·
+**CM-1 (added 2026-08-17):** the core-memory secret gate is best-effort by construction —
+`_SECRET_MIN_CHARS = 8` floor means a real ≤7-char credential is outside the rail
+(CORE_MEMORY_PLAN §14b; joins Packet ③'s SECURITY_MODEL §5 re-walk) · **CM-2 (added
+2026-08-17):** the default `index_char_limit` 8192 sits at 99% fill on a realistic 57-topic
+corpus — the 80% consolidation nudge is permanently on at that scale (cap sizing vs nudge
+threshold; Packet ③ CONFIRMS/EXTENDS, owner may resize at the live round first).
 
 **8.3 OWNER-GATED / PARKED (ask, don't assume; §P never re-propose):** notifications retest
 (path 2) · web-push parked (2 Fennec checks) · D2-A daily-use round · media-gallery round ·

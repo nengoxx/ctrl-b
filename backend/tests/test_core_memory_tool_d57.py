@@ -898,6 +898,52 @@ def test_a_blank_secret_field_does_not_match_everything(tmp_path):
     assert (_root() / "ordinary.md").is_file()
 
 
+def test_a_short_secret_value_does_not_brick_the_write_path(tmp_path):
+    """The first live drive (2026-08-17): 1-char placeholder API keys and a 4-char password are
+    substrings of ordinary prose, so containment on them refused EVERY write against a realistic
+    corpus. Values under `_SECRET_MIN_CHARS` are skipped — unidentifiable as a leak by containment."""
+    corpus = _with_secret(tmp_path, "emma")
+    _root()
+    run_async(corpus.create("Deploy note", "where prod lives", None, "emma runs the prod unit."))
+    assert (_root() / "deploy-note.md").is_file()
+
+
+def test_the_secret_floor_boundary_is_exactly_min_chars(tmp_path):
+    """Pins `_SECRET_MIN_CHARS` semantics (Codex fix-wave LOW): 7 raw chars passes, 8 refuses, and
+    an 8-char value with edge whitespace refuses — the RAW length is measured, because the raw value
+    is what containment matches (stripping one side would open a threshold bypass)."""
+    assert cm._SECRET_MIN_CHARS == 8
+    seven = _with_secret(tmp_path, "abcdefg")
+    _root()
+    run_async(seven.create("Seven", "d", None, "the value abcdefg sits in prose"))
+    assert (_root() / "seven.md").is_file()
+
+    for name, secret in (("Eight", "abcdefgh"), ("Padded", " pass123")):  # 8 raw / 7 stripped
+        corpus = _with_secret(tmp_path, secret)
+        with pytest.raises(CoreMemoryError):
+            run_async(corpus.create(name, "d", None, f"leak:{secret}:end"))
+        assert not (_root() / f"{name.lower()}.md").exists()
+
+
+def test_a_refused_create_writes_nothing(tmp_path):
+    """The live-drive fix (2026-08-17): the old order wrote the topic FILE, then gated the merged
+    index — a corpus whose existing index carries a configured secret turned every create into a
+    refusal that left an orphan topic behind it. Both gates now run before either write, the index
+    stays byte-identical, and the refusal names `MEMORY.md` as the carrier (Codex fix-wave LOW) —
+    without it, a clean create reads as "your content is bad"."""
+    secret = "hunter2-correct-horse"
+    corpus = _with_secret(tmp_path, secret)
+    root = _root()
+    _index(root, f"- [Leak](leak.md) — {secret}")
+    before = (root / "MEMORY.md").read_bytes()
+
+    with pytest.raises(CoreMemoryError) as exc:
+        run_async(corpus.create("Clean", "nothing secret", None, "an innocent body"))
+    assert not (root / "clean.md").exists()
+    assert (root / "MEMORY.md").read_bytes() == before
+    assert "MEMORY.md" in str(exc.value) and secret not in str(exc.value)
+
+
 # ── 8. the autonomy gate (§5, council Codex-6) ────────────────────────────────────────────────────
 
 

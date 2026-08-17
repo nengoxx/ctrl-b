@@ -74,6 +74,13 @@ _EXCLUDED_DIR = "logs"
 #: free. A core root that would put its index or scan tree on top of one of these is refused.
 _TIER1_FILENAMES = frozenset(spec.filename for spec in STORES)
 
+#: Containment floor for the secret gate (§5): a configured value shorter than this is not
+#: identifiable by substring containment — 1-char placeholder API keys and short passwords are
+#: substrings of ordinary prose, so gating on them refuses every write against a realistic corpus
+#: (the first live drive, 2026-08-17). The same failure mode as the blank-skip, one step up; 8 is
+#: NIST SP 800-63B's password floor — anything shorter is unidentifiable as a leak by containment.
+_SECRET_MIN_CHARS = 8
+
 #: One index line: `- [Title](file.md) — hook` (the hook separator is optional and free-form).
 _INDEX_LINK = re.compile(r"^\s*[-*+]\s+\[([^\]]*)\]\(\s*([^)\s]*)\s*\)\s*(.*)$")
 
@@ -689,24 +696,30 @@ class CoreMemoryCorpus:
                 f"{rel} already exists with different content — read it and `update` it instead of "
                 "creating a second topic for the same thing."
             )
-        written: list[Path] = []
-        if not occupied:
-            # Gate the STRUCTURED fields raw before the rendered text (R40 §7.4's spirit):
-            # `yaml.safe_dump` folds a long or multi-line scalar, so a secret pasted into
-            # `description` could be unrecognizable in the rendered file alone. Both gates sit
-            # INSIDE the actually-writing branch (confirm round): gating before byte-identity is
-            # known would turn a crash-repair into a refusal over content this call did not write.
-            self._guard_secrets("\n".join((name, description, text)))
-            atomic_write_text(path, text)
-            written.append(path)
-        # OVERRULE (S3 review): the byte-identical retry path is deliberately NOT secret-gated. It
-        # writes nothing — the file on disk is the owner's, already there, and re-gating it would
-        # turn a crash-repair into a refusal over content this call did not introduce.
-        index = root / _INDEX_NAME
         raw = _index_raw(root)
+        merged: str | None = None
         if not any(target == rel for _title, target, _hook in _parse_index(raw)):
             merged = _append_entry(raw, _entry_line(name, rel, description))
-            self._guard_secrets(merged)
+        # BOTH gates run before EITHER write (live-drive fix, 2026-08-17): the old order wrote the
+        # topic, then refused on the merged index, leaving an orphan file behind a "create refused".
+        # The gates are pure content checks, so hoisting them keeps the topic-first WRITE ordering
+        # (crash tolerance, §5) while making refusal atomic. The topic gate covers the STRUCTURED
+        # fields raw before the rendered text (R40 §7.4's spirit): `yaml.safe_dump` folds a long or
+        # multi-line scalar, so a secret pasted into `description` could be unrecognizable in the
+        # rendered file alone. It stays conditional on actually writing (confirm round): gating the
+        # byte-identical crash-retry would turn a repair into a refusal over content this call did
+        # not write — the OVERRULE (S3 review): that retry path is deliberately NOT secret-gated;
+        # the file on disk is the owner's, already there.
+        if not occupied:
+            self._guard_secrets("\n".join((name, description, text)))
+        if merged is not None:
+            self._guard_secrets(merged, index_of=_INDEX_NAME)
+        written: list[Path] = []
+        if not occupied:
+            atomic_write_text(path, text)
+            written.append(path)
+        if merged is not None:
+            index = root / _INDEX_NAME
             atomic_write_text(index, merged)
             written.append(index)
         return _WriteOutcome(written, len(text))
@@ -724,7 +737,7 @@ class CoreMemoryCorpus:
         before, after = _identity(raw, rel), _identity(merged, rel)
         index_text = _relabel(_index_raw(root), rel, before, after) if before != after else None
         if index_text is not None:
-            self._guard_secrets(index_text)
+            self._guard_secrets(index_text, index_of=_INDEX_NAME)
         atomic_write_text(path, merged)
         written = [path]
         # Topic first, index second — the `create` ordering, for the same reason. RECORDED DELIBERATE
@@ -772,20 +785,29 @@ class CoreMemoryCorpus:
 
     # ── write-side rails ──────────────────────────────────────────────────────────────────────────
 
-    def _guard_secrets(self, text: str) -> None:
+    def _guard_secrets(self, text: str, index_of: str | None = None) -> None:
         """§5 / council Opus-H3: refuse a write whose COMPLETE resulting file content contains a value
         the owner configured as a secret. Evaluated post-merge, never on the delta — Claude's own edit
         tool scans only the replacement string, so a secret assembled across two edits slips a local
         check (R40 §7.4). A containment check on KNOWN values, not a scanner (shape detection is an
         explicit non-goal), and a recorded D27 divergence: tier 1 trusts curated memory, a shared
-        long-term corpus gets the rail. Blank/whitespace-only config fields are skipped — they would
-        otherwise match every file. The refusal never echoes the value."""
+        long-term corpus gets the rail — a BEST-EFFORT rail, not a boundary: values shorter than
+        `_SECRET_MIN_CHARS` (blank included) are skipped, because a 1-char placeholder key is a
+        substring of every file and refusing on it bricks the write path (the first live drive). The
+        raw value is both measured and matched — stripping one side but not the other would let an
+        8-char credential with edge whitespace skip the gate as "7 chars" (Codex fix-wave MED). The
+        refusal never echoes the value; `index_of` names the file carrying the leak when it is NOT
+        the content this call proposed (a pre-existing index leak reads as "your write is bad"
+        otherwise — Codex fix-wave LOW)."""
         for value in self._settings.secret_values():
-            if value.strip() and value in text:
+            if value.strip() and len(value) >= _SECRET_MIN_CHARS and value in text:
                 raise CoreMemoryError(
-                    "that write contains a value configured as a secret (an API key, password or "
-                    "token). Core memory never stores credentials — write a pointer to where the "
-                    "secret lives instead."
+                    f"the resulting {index_of} still contains a value configured as a secret — "
+                    "remove it there first, then retry this write."
+                    if index_of
+                    else "that write contains a value configured as a secret (an API key, password "
+                    "or token). Core memory never stores credentials — write a pointer to where "
+                    "the secret lives instead."
                 )
 
     def _new_shape(self, rel: str) -> bool:

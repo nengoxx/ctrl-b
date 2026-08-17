@@ -27,10 +27,19 @@
   Opus-implemented from a pinned brief, Codex-reviewed (S3's review found 2 real HIGHs —
   DO NOT SHIP → fixed + confirm round), and full-gated. D57 in DECISIONS.md; ROADMAP §B1 =
   the tier model; **the parked hardening charter renumbered to D58.**
-- Tree: `main` **~24 commits ahead of origin, not pushed** (the 5 Phase-19 spec commits + the
-  whole Core Memory stack: S0 lock docs + S1–S5 code/docs pairs) — push needs owner confirmation.
-  Dev units stopped (on-demand: `systemctl --user start ctrl-b-dashboard-dev{,-web}`, :5434 +
-  Vite :5173).
+- **2026-08-17 (later): the stack is PUSHED** (owner's word; full pre-push gate green) — origin
+  at `247e968`. **The first live drive ran on dev the same day** (§3b exercised end-to-end on a
+  57-topic real Claude corpus; injection/read/status all good) **and caught two real defects in
+  the `create` path** — the secret gate false-positived on short configured secrets (1-char
+  placeholder keys + the 4-char SSH password bricked every index write) and a refused create
+  half-wrote an orphan topic. **Both fixed same-day** (the post-S5 fix wave: `_SECRET_MIN_CHARS`
+  floor + gates hoisted above writes; Codex SHIP WITH FIXES → confirm round all-CONFIRMED; +2
+  tests). Full record: CORE_MEMORY_PLAN **§14b**. Core Memory is also now **pinned into the
+  Phase 19 scope on both lenses** (owner, 2026-08-17): Packet ③ + the SECURITY_MODEL re-walk +
+  DP-B memory-tiering design review + the §7 inventory delta note; residuals = CM-1/CM-2 in
+  HARDENING_PLAN §8.2. Dev units RUNNING for the owner round (dev has tier 2 ON with a copy of
+  the Claude Code session corpus at `~/.ctrl-b-dev/memories/core/` — note its index sits at 99%
+  of cap, so the consolidation nudge is live there).
 - Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) (frozen, 2026-05 → 2026-08).
 
 ## ▶▶ NEXT — Phase 20 is DONE; the owner court is up
@@ -38,12 +47,15 @@
 **The whole D57 ladder is built, reviewed and committed** (see the Current-state bullet). What
 remains is owner-court, in the owner's order:
 
-1. **Push the commit stack** (~24 ahead) — needs the owner's word, as always.
-2. **Drive Core Memory for real**: enable it on dev/prod (one Conf switch), copy the real vault
-   in per §3b (the pre-copy `.gitignore` step first on prod!), eyeball the Conf status line +
-   the injected index, try a `read`/`create`/promotion, run the `consolidation` procedure once.
-   The **live `cache_n`-across-a-write measure** (plan §14's one deferred number) rides this
-   round — needs the local model host up.
+1. ~~Push the commit stack~~ ✅ 2026-08-17 (the fix-wave commit may sit ahead — push it too on
+   the owner's word).
+2. **Drive Core Memory for real — the dev half ran 2026-08-17 (§14b); what remains is the PROD
+   half + the deep items**: enable on prod (one Conf switch), copy the real vault in per §3b
+   (the pre-copy `.gitignore` step first on prod!), eyeball the Conf status line + the injected
+   index on a phone, try a promotion, run the `consolidation` procedure once (dev's 99%-full
+   index is a ready-made consolidation testbed). The **live `cache_n`-across-a-write measure**
+   (plan §14's one deferred number) rides this round — the local model host was UP at the dev
+   drive, so it's measurable now.
 3. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (still untested,
    owner-confirmed 2026-08-12): SYS-19 meant `showNotification()` never had a registered worker;
    it may just work on ≥v1.6.0. Outcome decides the parked Web Push plan (R10/R11).
