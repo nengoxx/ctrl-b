@@ -6,6 +6,7 @@ Phase 2: fleet actions (wake/shutdown/ping). Phase 3: service actions (start/sto
 Phase 4d: the agent-only `task_plan` builtin (lives under agent/, registered here on import).
 Phase 4f: the `web_search` utility tool (SearXNG-backed, agent-only).
 A3 14d: the `create_automation`/`list_automations` builtins (same one-file-under-agent/ shape).
+Phase 20/D57: the `core_memory` builtin (the tier-2 long-term corpus).
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from app.services.actions import (  # noqa: E402,F401
 )
 from app.services.agent import (
     automation_tools,  # noqa: E402,F401  # create_automation/list_automations builtins (A3 14d)
+    core_memory_tool,  # noqa: E402,F401  # core_memory builtin — the tier-2 corpus (D57/S3)
     memory_tool,  # noqa: E402,F401  # memory write tool (7e-d-2)
     planning,  # noqa: E402,F401  # task_plan builtin (agent-only)
     session_search,  # noqa: E402,F401  # session_search builtin (7e-e)

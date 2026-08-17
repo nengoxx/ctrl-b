@@ -34,6 +34,7 @@ from app.domain.result import ToolResult
 
 if TYPE_CHECKING:  # avoid a core→services import cycle; Deps is structural here
     from app.domain.agent import AgentDef
+    from app.services.agent.core_memory import RecallBudget
     from app.services.deps import Deps
 
 
@@ -161,6 +162,12 @@ class InvocationContext:
     #: re-enter the next model call, and a registry text the model consumed must not vanish from the
     #: stamps just because a tool (not the session) resolved it.
     stamps: dict[str, str] | None = None
+    #: The calling turn's Core Memory recall budget (D57 §4, council Codex-11), or None outside an
+    #: agent turn. Threaded exactly like `stamps`: the session owns ONE per logical turn (seeded from
+    #: the persisted results of the same turn when a suspend/resume rebuilds the session), so the
+    #: per-turn cap on recalled characters is a property of the TURN rather than of the session
+    #: object. Only `core_memory` reads it.
+    recall: "RecallBudget | None" = None
 
     def require_deps(self) -> "Deps":
         """The world-handle a deps-using tool needs, narrowed to non-`None`. `deps` is optional on
@@ -251,18 +258,25 @@ class ToolRegistry:
         narrows this to a specific `AgentDef`'s allowlist (4.5)."""
         return [t for t in self._tools.values() if t.spec.agent_exposed]
 
-    def for_agent(self, allow: list[str] | str = "*") -> list[Tool]:
+    def for_agent(self, allow: list[str] | str = "*", hidden: frozenset[str] = frozenset()) -> list[Tool]:
         """The tools a specific agent may call (DESIGN §5.1): `agent_tools()` intersected with the
         agent's `tools` allowlist, **plus** the always-on `core` builtins. `"*"` (the default) is
         every agent tool; a list is matched by glob (`fnmatch`) so a pattern like `mcp__web-tools__*`
         or `*_service` selects a family. A skill may narrow the allowlist further at selection time —
         never widen it — but the `core` set survives both the allowlist and skill narrowing, since
-        the narrowed allowlist is fed back through here. Order is stable (registration order)."""
+        the narrowed allowlist is fed back through here. Order is stable (registration order).
+
+        `hidden` (D57 §6, council M5) drops names belonging to a DISABLED FEATURE, and is applied
+        **after** the core/allowlist union — so a hidden tool is gone even if it is `core`, which is
+        the point: the set is computed from feature state, not from agent policy. The session passes
+        the same set at both consumers (the schema set and the availability guard), so what the model
+        is offered and what it is allowed to run can never disagree. Registry specs are untouched, so
+        this never fights `tool_overrides` — and no override can resurrect a hidden tool."""
         tools = self.agent_tools()
-        if allow == "*":
-            return tools
-        patterns = list(allow)
-        return [t for t in tools if t.spec.core or any(fnmatch(t.spec.name, p) for p in patterns)]
+        if allow != "*":
+            patterns = list(allow)
+            tools = [t for t in tools if t.spec.core or any(fnmatch(t.spec.name, p) for p in patterns)]
+        return [t for t in tools if t.spec.name not in hidden] if hidden else tools
 
     def to_openai_tools(self, tools: list[Tool] | None = None) -> list[dict[str, Any]]:
         """Render tools as OpenAI `tools` function defs (the input model → JSON Schema). Defaults

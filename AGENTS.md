@@ -122,7 +122,7 @@ Streaming is **SSE**. `uvicorn` serves the API and the built `frontend/dist` (SP
 
 **OS-agnostic invariant.** Branch on the managed **host's** `os_type` (ping/SSH command shape), never on the
 *server's* OS. Server-OS branches are a **closed allowlist** (`fleet._ping_cmd` ping syntax · `run_shell`'s
-per-OS shell · `memory._fsync_dir` no-op · `tools/check.py`), pinned by `test_arch_invariants_qh9.py`. See
+per-OS shell · `core/fsutil._fsync_dir` no-op · `tools/check.py`), pinned by `test_arch_invariants_qh9.py`. See
 `docs/ARCHITECTURE.md §6` (the owner of this list).
 
 ---

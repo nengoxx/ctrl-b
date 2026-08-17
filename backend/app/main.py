@@ -271,7 +271,9 @@ async def lifespan(app: FastAPI):
     # above — not a store inside it (CORE_MEMORY_PLAN §6). Built unconditionally and OFF by default:
     # `memory.longterm.backend` is read from live Settings per call, so switching the slot on (or
     # editing the corpus by hand) needs no restart. The instance is held for its scan cache alone.
-    app.state.core_memory = CoreMemoryCorpus(app.state.settings)
+    # It takes the SAME backup instance as the provider above (D57 §3): one lock serializes both
+    # tiers' writes, and the corpus's commits ride the same D26 repo + reconcile sweep.
+    app.state.core_memory = CoreMemoryCorpus(app.state.settings, backup=app.state.memory_backup)
 
     # Subagents (Phase 4.5): back-fill the agent-runtime handles onto the shared Deps so the
     # spawn_subagents tool can build + run child sessions (the ActionService reference is set here

@@ -85,7 +85,7 @@ from app.services.agent.compaction import (
     estimate_payload_tokens,
     plan_clearing,
 )
-from app.services.agent.core_memory import CoreMemoryCorpus
+from app.services.agent.core_memory import CORE_MEMORY_TOOL, CoreMemoryCorpus, RecallBudget
 from app.services.agent.exec import run_user_exec
 from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
@@ -405,6 +405,21 @@ class AgentSession:
         #: (unprovided) → no index block, so older call sites + the off-by-default case behave
         #: exactly as before; the corpus itself is inert until `memory.longterm.backend` is set.
         self._core_memory = core_memory
+        #: Tool names suppressed for this whole turn because the FEATURE behind them is off (D57 §6,
+        #: council M5 — the schema half of the two-layer gate). Computed ONCE here, at turn setup, and
+        #: passed at BOTH `for_agent` consumers (`_tools` and `_tool_allowed`), so the schemas the
+        #: model is offered and the names the loop will run can never disagree. Registry specs are
+        #: untouched, so nothing here fights `tool_overrides`.
+        self._hidden_tools: frozenset[str] = (
+            frozenset()
+            if (core_memory is not None and core_memory.enabled())
+            else frozenset({CORE_MEMORY_TOOL})
+        )
+        #: This LOGICAL turn's Core Memory recall budget (D57 §4, council Codex-11), threaded to every
+        #: tool invocation like `_stamps`. Fresh per session — and a session built to resume a
+        #: suspended turn re-SEEDS it from that turn's persisted recall results (`_seed_recall`), so a
+        #: confirm round-trip cannot hand the model a second full allowance.
+        self._recall = RecallBudget()
         #: Headless subagents (4.5) run with `interactive=False`: a confirm-gated call resolves
         #: DENIED in place rather than suspending the turn (a child has no UI to confirm against —
         #: DESIGN §5.3). `depth` is this session's subagent nesting level, forwarded to each tool
@@ -602,7 +617,7 @@ class AgentSession:
         expensive possible prefix churn. Reusing the same object guarantees a stable head."""
         if self._tools_cache is None:
             self._tools_cache = self._actions.registry.to_openai_tools(
-                self._actions.registry.for_agent(self._tool_allow)
+                self._actions.registry.for_agent(self._tool_allow, self._hidden_tools)
             )
         return self._tools_cache
 
@@ -1030,6 +1045,9 @@ class AgentSession:
         # Re-activate the carried skills BEFORE `_drive` reads `_tool_allow`/`_skills_note` (via
         # `_tools`/`_static_prefix`) — mirrors `run_turn`'s `_activate_skills`, minus the selector.
         self._activate_skills("", skills, select=False)
+        # …and re-seed the recall budget for the same reason: the resumed half belongs to the LOGICAL
+        # turn that suspended, so it must inherit what that turn already spent (D57 §4).
+        await self._seed_recall(thread)
         assistant = await self._find_pending(thread, call_id)
         if assistant is None:
             yield AgentEvent("error", {"message": "no pending action for this call", "retryable": False})
@@ -1123,6 +1141,32 @@ class AgentSession:
                 yield ev
         finally:
             self._actions.end_execute(call_id)
+
+    async def _seed_recall(self, thread: Thread) -> None:
+        """Carry the Core Memory recall budget across a suspend/resume (§4, council Codex-11).
+
+        A resume builds a FRESH `AgentSession` (ACA-15e), so its budget starts at zero — which would
+        hand the model a full second allowance for the same logical turn every time it parked on a
+        confirm bubble. So seed `used` from what this turn already recalled.
+
+        **"The current logical turn" here is the transcript tail after the last NON-STEER `user`
+        message**: the suspended turn began with that message and the resumed half continues it, so
+        everything after it (the assistant calls, their tool results, any steer) belongs to the same
+        turn. A mid-turn steer persists as an ordinary `role="user"` row (Drain A), so it carries the
+        `steer` marker precisely so the walk does not stop at it and hand the model a second full
+        allowance. Each `core_memory` call's result is counted by the length of its COMPLETE framed
+        `output` — the exact quantity the tool charged live, so a refusal (no output) costs nothing."""
+        turn: list[Message] = []
+        for m in reversed(await self._messages.list(thread.id)):
+            if m.role == "user" and not m.steer:
+                break
+            turn.append(m)
+        recalled = {cp.call_id for m in turn for cp in m.tool_calls() if cp.tool == CORE_MEMORY_TOOL}
+        if not recalled:
+            return
+        self._recall.used = sum(
+            len(rp.result.output or "") for m in turn for rp in m.tool_results() if rp.call_id in recalled
+        )
 
     async def _find_pending(self, thread: Thread, call_id: str) -> Message | None:
         for m in await self._messages.list(thread.id):
@@ -1724,6 +1768,11 @@ class AgentSession:
                         role="user",
                         actor=Actor.USER,
                         parts=[TextPart(text=e.text)],
+                        # Marks the row as a MID-TURN steer rather than a turn opener (D57). The
+                        # model's context is unaffected — it is a `meta` key, not a part — but
+                        # anything walking back to the start of the logical turn (`_seed_recall`)
+                        # must not mistake a steer for the boundary.
+                        steer=True,
                     )
                     for e in run
                 ]
@@ -2137,7 +2186,10 @@ class AgentSession:
         `for_agent(self._tool_allow)` — never from `_tools_cache`, which is only the OpenAI rendering
         of that set — because a skill narrows `_tool_allow` per turn, and the core builtins that
         survive any allowlist are `for_agent`'s semantics rather than a name list restated here."""
-        return any(t.spec.name == name for t in self._actions.registry.for_agent(self._tool_allow))
+        return any(
+            t.spec.name == name
+            for t in self._actions.registry.for_agent(self._tool_allow, self._hidden_tools)
+        )
 
     async def _blocked_call(self, cp: ToolCallPart, guard: _LoopGuard) -> ToolResult:
         """Refuse one model-emitted call that is outside the effective allowlist (M1/C-11) — the
@@ -2285,6 +2337,7 @@ class AgentSession:
                                 depth=self._depth,
                                 agent=self._agent,
                                 stamps=self._stamps,
+                                recall=self._recall,
                             )
                         except asyncio.CancelledError:
                             raise
@@ -2519,6 +2572,7 @@ class AgentSession:
                                 agent=self._agent,
                                 summary_note=note,
                                 stamps=self._stamps,
+                                recall=self._recall,
                             )
                         except UnknownTool:
                             result = ToolResult(state=RunState.DENIED, summary=f"unknown tool '{cp.tool}'")

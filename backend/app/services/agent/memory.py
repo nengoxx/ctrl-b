@@ -16,12 +16,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import os
 import re
-import tempfile
 from pathlib import Path
 
 from app.config import Settings
+from app.core.fsutil import atomic_write_text
 from app.core.memory import (
     MEMORY_STORE,
     STORES,
@@ -247,7 +246,7 @@ class FileMemoryProvider:
         # `overwrite`) can never trap the very edits that resolve it.
         if len(new) > cap and len(new) > len(body):
             raise MemoryCapError(label, len(new), cap, action)
-        _atomic_write(path, new + "\n" if new else "")
+        atomic_write_text(path, new + "\n" if new else "")
         return new
 
     @staticmethod
@@ -345,7 +344,7 @@ def _overwrite_file(path: Path, content: str) -> str:
     thread instead of widening the is_file/unlink window across several. Returns the stored text
     (== what `read_raw` returns next); the git commit that follows doesn't touch content."""
     if content.strip():
-        _atomic_write(path, content.rstrip("\n") + "\n")
+        atomic_write_text(path, content.rstrip("\n") + "\n")
     elif path.is_file():
         path.unlink()
     return _read(path)
@@ -355,43 +354,6 @@ def _commit_msg(agent: AgentDef, filename: str, action: str) -> str:
     """A content-free commit subject (D26 #6) — identifies the agent + which store file, never the
     text, so nothing leaks via `git log`."""
     return f"memory({agent.name}): {action} {filename}"
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    """Write `content` to `path` atomically (D26): temp file in the **same dir** → flush → `os.fsync`
-    → `os.replace`, then best-effort parent-dir fsync (POSIX). Same-dir temp keeps `os.replace`/
-    `MoveFileEx` atomic on one volume (the silent Windows non-atomic fallback only happens cross-volume).
-    Forces LF newlines so memory files stay git-clean across platforms."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-", suffix=".md")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
-        raise
-    _fsync_dir(path.parent)
-
-
-def _fsync_dir(d: Path) -> None:
-    """Best-effort fsync of a directory so a fresh file's name is durable (POSIX). No-op on Windows,
-    which doesn't support directory fsync — and the git commit is the durable record regardless."""
-    if os.name == "nt":
-        return
-    try:
-        fd = os.open(str(d), os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(fd)
-    except OSError:
-        pass
-    finally:
-        os.close(fd)
 
 
 def _tidy(text: str) -> str:

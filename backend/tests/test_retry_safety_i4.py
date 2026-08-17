@@ -41,6 +41,9 @@ RETRY_UNSAFE = {
     "run_shell",
     "spawn_subagents",
     "memory",
+    # D57: mutating and NOT retry-safe as a whole — the read actions are, but `retry_safe` is a
+    # per-TOOL flag and an auto-resend would re-drive whichever action the failed turn carried.
+    "core_memory",
     "skill_manage",
     "create_automation",  # a re-run creates a SECOND automation (and eats another cap slot)
 }

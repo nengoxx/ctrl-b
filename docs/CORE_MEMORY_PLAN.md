@@ -279,9 +279,13 @@ allowlists can exclude it; declares `timeout_s` — the fail-closed deadline tes
 **Crash-tolerant two-file mutations — ordering + idempotent retry, explicitly NOT a transaction**
 (council Codex-4): create writes topic first, index second — a retry that finds the exact topic
 with a missing index line completes it; delete removes the index line first, topic second — a
-retry completes either remainder; an index-affecting update carries the same path-local repair
-check. Each step is individually atomic; the D26 commit is best-effort after the writes. Family 3
-fault-injects between every step.
+retry completes either remainder; a metadata-changing update carries the same topic-first/index-
+second *ordering* (rewriting its own index line — title from the new name, a custom hook
+preserved) but deliberately NOT a repair-on-retry: a crash between its two writes leaves a
+diverged hook that the custom-hook rule then preserves until a hand edit (recorded S3 residual —
+cosmetic routing text, one line, and the self-healing alternative needs render-history state the
+plan refuses). Each step is individually atomic; the D26 commit is best-effort after the writes.
+Family 3 fault-injects between every step.
 
 **Autonomy gate:** all four mutations honor the existing `memory.auto_write` switch (council
 Codex-6): when off, core mutations are **denied with a steering error** naming the switch

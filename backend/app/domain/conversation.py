@@ -135,6 +135,13 @@ class Message(BaseModel):
     prompt_stamps: dict[str, str] | None = None
     #: What that call cost, as reported (C-9). `None` when the provider reported nothing.
     usage: CallUsage | None = None
+    #: This `role="user"` row is a MID-TURN STEER (D41 Drain A), not the message that opened a turn.
+    #: A steer persists in exactly the shape a composer message does, which is right for the model's
+    #: context but wrong for anything walking back to "where did this logical turn begin" — D57's
+    #: `_seed_recall` walked to the last user row and a steer would have cut the turn in half, handing
+    #: the resumed session a fresh recall allowance. Rides the `meta` column as one more key (the
+    #: documented extension path), emitted only when true; historical rows load as False.
+    steer: bool = False
 
     def text(self) -> str:
         """The concatenated `text` parts (the durable answer, excluding reasoning)."""

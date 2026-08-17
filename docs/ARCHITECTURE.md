@@ -102,7 +102,7 @@ as a Windows server on corsair running a Linux host. The server-OS branches are 
 allowlist** (pinned by the drift-guard `backend/tests/test_arch_invariants_qh9.py`):
 `fleet._ping_cmd` (local ping syntax — Windows `-n`/`-w`, Linux `-c`/`-W`, BSD/macOS `-c`/`-t`,
 decided at call time so a Termux profile stays alive) · `run_shell`'s per-OS shell
-(`services/actions/shell.py`) · `memory._fsync_dir` (directory-fsync durability no-op on Windows —
+(`services/actions/shell.py`) · `core/fsutil._fsync_dir` (directory-fsync durability no-op on Windows —
 git is the durable record regardless) · `tools/check.py` (venv/npm resolution, the runner's one OS
 chokepoint, outside the app). Any new server-OS branch must be consciously added to both the guard
 and this list. Paths use `pathlib`; the YAML writer preserves the existing file's CRLF/LF so a

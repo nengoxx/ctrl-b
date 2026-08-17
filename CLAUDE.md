@@ -71,7 +71,7 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
   session ever does run on Windows: default shell is PowerShell (`$null`, `$env:VAR`, backtick
   continuation) with a Bash tool available. **Keep all code OS-agnostic** — branch on `host.os_type`
   (managed host), never on the server's OS. Server-OS branches are a **closed allowlist**
-  (`fleet._ping_cmd` ping syntax · `run_shell` shell · `memory._fsync_dir` no-op · `check.py`),
+  (`fleet._ping_cmd` ping syntax · `run_shell` shell · `core/fsutil._fsync_dir` no-op · `check.py`),
   pinned by `test_arch_invariants_qh9.py`; see `docs/ARCHITECTURE.md` §6.
 - Python **3.14+** (the codebase uses 3.14 syntax — e.g. PEP 758 unparenthesized `except`; ruff
   `target-version = py314`; emma runs native 3.14). Backend venv at `backend/.venv`. Run:

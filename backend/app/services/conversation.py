@@ -121,16 +121,19 @@ class MessageRepo:
     def _dump_meta(msg: Message) -> str | None:
         """The `meta` column (migration 6): the message's model-call metadata as one JSON object, or
         `None` when it has none — the common case (user turns, legacy rows). Keys are added here, not
-        columns: a future dimension is one more key in this object."""
-        if msg.prompt_stamps is None and msg.usage is None:
+        columns: a future dimension is one more key in this object.
+
+        `steer` (D57) is the first such dimension, and it is emitted ONLY when set: an ordinary user
+        row must keep writing `meta = NULL`, so the common case stays exactly as cheap as it was."""
+        if msg.prompt_stamps is None and msg.usage is None and not msg.steer:
             return None
-        return json.dumps(
-            {
-                "prompt_stamps": msg.prompt_stamps,
-                "usage": msg.usage.model_dump(mode="json") if msg.usage else None,
-            },
-            separators=(",", ":"),
-        )
+        meta: dict[str, Any] = {
+            "prompt_stamps": msg.prompt_stamps,
+            "usage": msg.usage.model_dump(mode="json") if msg.usage else None,
+        }
+        if msg.steer:
+            meta["steer"] = True
+        return json.dumps(meta, separators=(",", ":"))
 
     async def add(self, msg: Message) -> Message:
         await self._db.execute(
@@ -262,4 +265,5 @@ class MessageRepo:
             agent=r["agent"],
             prompt_stamps=meta.get("prompt_stamps"),
             usage=CallUsage.model_validate(usage) if usage else None,
+            steer=bool(meta.get("steer")),  # absent (every historical row) → False
         )

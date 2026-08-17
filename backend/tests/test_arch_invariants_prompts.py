@@ -99,6 +99,20 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/actions/shutdown.py", "shutdown_host"),
         ("app/services/actions/terminal.py", "_unconfigured"),
         ("app/services/agent/automation_tools.py", "create_automation"),
+        # D57 tier 2: the corpus's refusals (stale/ambiguous CAS, a path outside the corpus, a
+        # duplicate topic, a write carrying a known secret) and the tool's gates (slot off,
+        # auto_write off, recall budget spent) — all "what happened on THIS call", exactly the class
+        # `memory_tool.gate_memory` below already sits in. The corpus's model-facing FRAMING lives in
+        # the registry (`core_memory_policy`/`core_memory_recall`) and its routing/eligibility wording
+        # in the `@action` description, which is `tool_overrides` territory.
+        ("app/services/agent/core_memory.py", "CoreMemoryCorpus._confine"),
+        ("app/services/agent/core_memory.py", "CoreMemoryCorpus._create_blocking"),
+        ("app/services/agent/core_memory.py", "CoreMemoryCorpus._delete_blocking"),
+        ("app/services/agent/core_memory.py", "CoreMemoryCorpus._guard_secrets"),
+        ("app/services/agent/core_memory.py", "_cas"),
+        ("app/services/agent/core_memory.py", "_index_raw"),
+        ("app/services/agent/core_memory_tool.py", "_recalled"),
+        ("app/services/agent/core_memory_tool.py", "gate_core_memory"),
         ("app/services/agent/memory.py", "FileMemoryProvider._merge"),
         ("app/services/agent/memory.py", "MemoryCapError.__init__"),
         ("app/services/agent/memory_tool.py", "gate_memory"),
