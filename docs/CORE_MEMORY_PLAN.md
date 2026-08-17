@@ -432,9 +432,13 @@ compaction bounds accumulation; Claude's 60 KiB session cap belongs to the selec
   by static refusal; and **`_write_gitignore` early-returns on an existing repo**, so prod's memory
   repo won't pick up the new `logs/`/`.consolidate-lock` lines → S4's copy-in doc owes the one-time
   reconcile step.
-- **S2 — Head injection.** The lifespan singleton + `core_memory=` kwarg wiring (both
-  construction sites, §6), the static-head block, `core_memory_policy`; byte-identical-when-off
-  test. Families 2 (index) + 5.
+- **S2 — Head injection. ✅ 2026-08-17** (`bd6b9fd`). The lifespan singleton + `core_memory=`
+  kwarg wiring (both construction sites, §6), the static-head block, `core_memory_policy`;
+  byte-identical-when-off test. Families 2 (index) + 5. Review: Codex SHIP WITH FIXES (3 LOW,
+  folded — no-IO contract stubs · frozen-head/resume regression test · docstring precision).
+  As-built notes: the policy default carries the §4b-1 routing clause (written final at S2, so S4
+  never edits it); exactly two `AgentSession(` sites exist and both wire the kwarg; the shared
+  singleton is re-entrancy-safe (no await inside `render_index`/`scan`, one event loop).
 - **S3 — Tool.** All six actions + CAS + grep + index maintenance + secret gate + two-layer
   exposure gating + `core_memory_recall` framing. Families 2 (reads), 3, 4.
 - **S4 — Curation + Conf.** The §4b promotion backstops (`consolidation_promote` resolved into
