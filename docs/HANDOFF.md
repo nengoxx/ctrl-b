@@ -49,13 +49,13 @@ remains is owner-court, in the owner's order:
 
 1. ~~Push the commit stack~~ ✅ 2026-08-17 (the fix-wave commit may sit ahead — push it too on
    the owner's word).
-2. **Drive Core Memory for real — the dev half ran 2026-08-17 (§14b); what remains is the PROD
-   half + the deep items**: enable on prod (one Conf switch), copy the real vault in per §3b
-   (the pre-copy `.gitignore` step first on prod!), eyeball the Conf status line + the injected
-   index on a phone, try a promotion, run the `consolidation` procedure once (dev's 99%-full
-   index is a ready-made consolidation testbed). The **live `cache_n`-across-a-write measure**
-   (plan §14's one deferred number) rides this round — the local model host was UP at the dev
-   drive, so it's measurable now.
+2. **Core Memory prod adoption — ⏸ OWNER-DEFERRED (owner, 2026-08-17): "not right now; I just
+   want the system working and ready for whenever I want to delve into it."** Don't re-propose
+   the drive; readiness is now a VERIFIED property owned by Phase 19 Packet ③'s core-memory
+   readiness rider (a scripted end-to-end dev exercise, §14b as template). When the owner does
+   delve in: enable on prod per §3b (the pre-copy `.gitignore` step first!), real vault, a
+   promotion, a `consolidation` run (dev's 99%-full index = ready testbed). The **live
+   `cache_n` measure** does NOT need the owner — runnable any time the local model host is up.
 3. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (still untested,
    owner-confirmed 2026-08-12): SYS-19 meant `showNotification()` never had a registered worker;
    it may just work on ≥v1.6.0. Outcome decides the parked Web Push plan (R10/R11).

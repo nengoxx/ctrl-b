@@ -286,6 +286,12 @@ delta note; its live-drive residuals ride CORE_MEMORY_PLAN §14) + fleet/monitor
 automations/scheduler + external adapters (mcp/ssh/wol/voice-backend/searxng — several have no
 direct tests). Includes the **SECURITY_MODEL §5 safe-defaults re-walk** (the core-memory secret
 gate + write rails join that walk) and the scheduler/manual-action matrix item.
+**Core-memory READINESS rider (owner, 2026-08-17):** the owner deliberately defers driving the
+feature personally — "I just want the system working and ready for whenever I want to delve into
+it." So this packet must VERIFY readiness, not assume it: a scripted end-to-end live exercise on
+dev (template = CORE_MEMORY_PLAN §14b's drive: copy-in → status → read → create/update/delete →
+promotion → consolidation), not just a code-lens review — the feature will sit unused between
+now and its first real use, and "it worked at S5" is not evidence it still works then.
 Perf question recorded: the fleet sweep spawns one subprocess ping per host per sweep, driven by
 both the FE poll and the monitor loop (R12's measured precedent: the tailnet adapter already
 replaced a 5 ms subprocess with a 0.16 ms socket read — is the same available here?). The 4
