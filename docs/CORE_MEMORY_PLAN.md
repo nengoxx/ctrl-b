@@ -424,8 +424,14 @@ compaction bounds accumulation; Claude's 60 KiB session cap belongs to the selec
 
 - **S0 — Lock. ✅ 2026-08-17.** Owner ruled §2b; R39/R40 bought; council round run + folded (§13);
   D57 locked; ROADMAP §B1 rewritten; TODO stanza added. No code.
-- **S1 — Corpus module, read-only.** `LongTermCfg`/`CoreMemoryCfg`; root resolution/validation;
-  scanner + tolerant frontmatter; index render/clamp. Acceptance family 1 (read half).
+- **S1 — Corpus module, read-only. ✅ 2026-08-17** (`6b16545`). `LongTermCfg`/`CoreMemoryCfg`; root
+  resolution/validation; scanner + tolerant frontmatter; index render/clamp. Acceptance family 1
+  (read half), 26 tests. Review: Codex SHIP WITH FIXES (4 MED, 5 LOW), all folded lean + confirm
+  round. Two S1 learnings for the record: **`AgentDef.memory_dir` makes the reserved tier-1 set
+  dynamic** — closed on the tier-1 side (`_agent_memory_dir` yields to an active corpus root), not
+  by static refusal; and **`_write_gitignore` early-returns on an existing repo**, so prod's memory
+  repo won't pick up the new `logs/`/`.consolidate-lock` lines → S4's copy-in doc owes the one-time
+  reconcile step.
 - **S2 — Head injection.** The lifespan singleton + `core_memory=` kwarg wiring (both
   construction sites, §6), the static-head block, `core_memory_policy`; byte-identical-when-off
   test. Families 2 (index) + 5.

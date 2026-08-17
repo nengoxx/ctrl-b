@@ -18,7 +18,7 @@
   released 2026-08-16; owner eyeball ✅. **⚠ v1.7.0 is tagged but NEVER DEPLOYED — NOT a rollback
   target; rollback = v1.6.0** (schema-6 DB is back-compatible; the deeper floor stays **v1.5.1
   EXACTLY** — sw.js). Prod DB schema 6.
-- **Phase 20 Core Memory: DESIGN LOCKED as D57, S0 COMPLETE 2026-08-17.** Spec of record =
+- **Phase 20 Core Memory: DESIGN LOCKED as D57; S0 + S1 COMPLETE 2026-08-17.** Spec of record =
   [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (all rulings §2a/§2b · the §4b promotion design ·
   §13 council record — Codex + adversarial Opus, both BUILD WITH CHANGES, folded, confirm clean).
   Evidence: R37/R38 + **R39** (cap-triggered promotion field pass) + **R40** (the owner's personal
@@ -32,16 +32,15 @@
   stopped (on-demand: `systemctl --user start ctrl-b-dashboard-dev{,-web}`, :5434 + Vite :5173).
 - Session history: [`HANDOFF_ARCHIVE.md`](./HANDOFF_ARCHIVE.md) (frozen, 2026-05 → 2026-08).
 
-## ▶▶ NEXT SESSION — Phase 20 S1 (the locked next slice)
+## ▶▶ NEXT SESSION — Phase 20 S2 (⏸ owner go-ahead pending)
 
-**Build S1 of [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) §11 — corpus module, read-only.**
-Read the PLAN FIRST (it is the spec of record; this list is only the pointer): `LongTermCfg` /
-`CoreMemoryCfg` · root resolution/validation incl. the tier-overlap refusal (§3) · scanner +
-tolerant frontmatter (top-level-wins precedence, basename-`MEMORY.md` + dotted/`logs` exclusions) ·
-index render/clamp/cache (8,192-char cap, paths+mtimes cache key). Acceptance family 1 (read
-half). Full gate (`python tools/check.py`), then ⏸ **owner pause** — per-slice go-ahead is the
-standing rule. S2–S5 follow the §11 ladder. The usual workflow: Opus subagents implement from
-pinned briefs; Codex reviews the slice; main seat reconciles.
+**S1 ✅ BUILT + REVIEWED + COMMITTED 2026-08-17 (`6b16545`)** — corpus module read-only, 26 tests,
+full gate green; Codex round (SHIP WITH FIXES, 4 MED/5 LOW) + confirm round both folded; per-slice
+as-built note in the plan's §11 S1 entry. **⏸ Owner pause — S2 (head injection: the lifespan
+singleton, `core_memory=` kwarg at both construction sites, the static-head block,
+`core_memory_policy`, byte-identical-when-off) starts on go-ahead**, per the §11 ladder. The usual
+workflow: Opus subagents implement from pinned briefs; Codex reviews the slice; main seat
+reconciles.
 
 **After S1 (standing order):**
 
