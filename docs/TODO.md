@@ -1379,20 +1379,24 @@ go-ahead between slices; each passes `tools/check.py`.
 - [x] S0 — Lock: §2b rulings O1–O5 · R39 + R40 bought · council (Codex + adversarial Opus, both
       BUILD WITH CHANGES, folded; confirm round clean) · D57 · ROADMAP §B1 rewrite · this stanza
       (2026-08-17)
-- [ ] S1 — Corpus module, read-only: `LongTermCfg`/`CoreMemoryCfg` · root resolution/validation
+- [x] S1 — Corpus module, read-only: `LongTermCfg`/`CoreMemoryCfg` · root resolution/validation
       (tier-overlap refusal) · scanner + tolerant frontmatter · index render/clamp/cache —
-      acceptance family 1 (read half)
-- [ ] S2 — Head injection: lifespan singleton + `core_memory=` kwarg (both construction sites) ·
+      acceptance family 1 (read half) *(`6b16545`, 2026-08-17)*
+- [x] S2 — Head injection: lifespan singleton + `core_memory=` kwarg (both construction sites) ·
       static-head block · `core_memory_policy` · byte-identical-when-off — families 2 (index) + 5
-- [ ] S3 — Tool: six actions · CAS (+ hash delete) · grep · crash-tolerant orderings · path
+      *(`bd6b9fd`, 2026-08-17)*
+- [x] S3 — Tool: six actions · CAS (+ hash delete) · grep · crash-tolerant orderings · path
       confinement · secret gate · `auto_write` gate · two-layer exposure · `core_memory_recall` —
-      families 2 (reads), 3, 4
-- [ ] S4 — Curation + Conf: §4b promotion backstops (`consolidation_promote` · latch ·
+      families 2 (reads), 3, 4 *(`ced9056`, 2026-08-17)*
+- [x] S4 — Curation + Conf: §4b promotion backstops (`consolidation_promote` · latch ·
       `memory_cap_error` · conditional tier-1 wording) · index cap-pressure nudge ·
       `consolidation` id + owner procedure · Conf disclosure + status endpoint · copy-in doc —
-      families 1 (fixture) + 4
-- [ ] S5 — Close-out: DESIGN §6 + SPEC inventories · measured numbers into the as-built appendix ·
-      HANDOFF
+      families 1 (fixture) + 4 *(`30f00b4`, 2026-08-17)*
+- [x] S5 — Close-out: DESIGN §6 + SPEC inventories · measured numbers into the as-built appendix ·
+      HANDOFF *(`247e968`, 2026-08-17)*
+- [x] **Post-S5 live-drive fix wave** — §3b exercised on dev; secret-gate `_SECRET_MIN_CHARS`
+      floor + zero-write refusal (plan **§14b**; `8637855`, 2026-08-17). **🏁 PHASE 20 BUILT +
+      LIVE-DRIVEN on dev; remaining = the prod owner round (HANDOFF ▶▶ 2).**
 
 ## Cross-cutting / don't-forget
 
