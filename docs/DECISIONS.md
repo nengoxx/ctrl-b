@@ -3886,7 +3886,9 @@ slices V0–V6, reconciliation R1–R24); this entry pins the rulings that survi
   corrected. Precedent class: the brand mark.
 - **Known deferral (kit-wide, pre-existing):** the `minimal`-chrome plan/mini-player overlap
   (~−17..−26px on all three kit themes) needs a kit-geometry slice of its own — recorded in
-  VAPOR_BANNER_LEDGER §7.1; NOT a vapor issue.
+  VAPOR_BANNER_LEDGER §7.1; NOT a vapor issue. ✅ **RESOLVED 2026-08-18** by that slice (W1): the
+  clearance is derived from the plan-band tokens + the measured header, 8px in every cell, and
+  vapor's flush tab now rides `--kit-plan-gap` instead of a `top:` override.
 - Commits: V0 `381250b` · V1 `9c9d718` · V2 `5f70a16`+`930a5e7`+`239449f` · V3 `7668a1d` ·
   V4 `873f85c`+`9b7fcfd`+`16d4412` · V5 `3456c03` · V6 = the close-out commit. Method note for
   successors: 100% of the review rounds (council, per-slice Codex, confirm passes, owner-requested

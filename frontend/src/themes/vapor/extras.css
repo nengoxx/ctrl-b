@@ -89,8 +89,12 @@ body[data-motion="reduced"] .dev.on .eq i {
    This is therefore theme CSS on the SHARED kit hooks — the §15-sanctioned reskin route (same class
    of thing as the brand mark), NOT a bespoke duplicate — and it SURVIVES the V5 deletion of the rest
    of this banner. Three declarations, no new markup, no new class:
-     · `top` — drop the kit's +8px so the tab's flat top edge meets the bar's bottom edge (the whole
-       point of a "hanging" tab; its `border-top: 0` + `0 0 13px 13px` radius already say so).
+     · `--kit-plan-gap: 0px` — drop the kit's +8px so the tab's flat top edge meets the bar's bottom
+       edge (the whole point of a "hanging" tab; its `border-top: 0` + `0 0 13px 13px` radius already
+       say so). Set on `.kit` (W1), NOT as a `top:` on the panel: `.kit` is the common ancestor of the
+       panel AND the FIXED mini-player, so both consumers of the plan band move together. A `top:` on
+       the panel alone moved one of them — precisely the drift W1 removes (it left vapor's player 16px
+       below where it belonged). The kit never DECLARES the token, only reads it, so this wins cleanly.
      · `display:flex; justify-content:center` — centers the head. The `.plan-pin-drop` is ABSOLUTE, so
        it is not a flex item and its `left:0; right:0` panel-wide anchoring is untouched (deliberate:
        the drop stays the kit's full-width sheet under the tab, which is what V5/V6 keeps — vapor's old
@@ -100,8 +104,10 @@ body[data-motion="reduced"] .dev.on .eq i {
    section, where NavHome always mounts — symmetric, so the head stays centered. In visible/transparent
    the menu is DOCKED in the appbar and NavHome never mounts, so neither fires.
    The paint itself is the existing `.plan-pin-head` block below, adjusted IN PLACE. */
+.kit {
+  --kit-plan-gap: 0px;
+}
 .plan-pin-panel {
-  top: var(--appbar-h, 0px);
   display: flex;
   justify-content: center;
   /* Click-through sides (the old .plan-pin-wrap behavior, restored per the V4 close-out sweep M1):
@@ -114,7 +120,8 @@ body[data-motion="reduced"] .dev.on .eq i {
   pointer-events: auto;
 }
 /* KEPT FIDELITY (see the block above): the hanging-tab paint — flat top, bottom-rounded, no top
-   border — is what makes the centered+flush geometry read as a tab hanging off the app bar. This
+   border — is what makes the centered+flush geometry read as a tab hanging off the app bar (flush is
+   `--kit-plan-gap: 0px` above since W1; the theme never positions the panel itself). This
    rule and its `.chev`/`.plan-title`/`.plan-count` companions SURVIVED the V5 deletion (executed
    2026-08-01); the dead `.plan-pin`/`.plan-drop` selectors, `@keyframes vapor-plan-drop-in` and the
    plan-note/steps styling went with the banner, and the kit's own rules paint those now. */

@@ -1404,6 +1404,133 @@ test("gacha · the PINNED plan panel keeps the kit's sticky pin and its rung", a
   expect(pageErrors).toEqual([]);
 });
 
+test("the pinned plan header and the mini-player never overlap — in every chrome mode", async ({
+  page,
+  pageErrors,
+}) => {
+  // W1. The player's yield used to hard-code the header's box as a literal (`--appbar-h + 46px`), so it
+  // was wrong everywhere the header did NOT sit exactly 46px under the bar: it overlapped the header by
+  // 18–27px in `minimal` (whose bar-less scroller inset the literal never knew about), by 1–3px in `off`,
+  // and floated 16px low in vapor (whose flush hanging tab starts higher). The fix derives the band from
+  // three published inputs — the measured bar, the scroller inset, the theme's own gap — plus the MEASURED
+  // header height, so this arm measures the ONE invariant that replaced the literal: an 8px gap, in every
+  // theme × chrome-mode cell, at any scroll offset.
+  //
+  // The player is activated by starting a clip whose synth never resolves: `audioController.toggle` sets
+  // `{id, status:"loading"}` BEFORE awaiting the fetch, so the pill mounts and STAYS (no audio to play in
+  // a headless browser). The voice status flip is what renders the per-bubble `.tts-play` at all.
+  await page.route("**/api/voice/status", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ stt: true, tts: true }),
+    }),
+  );
+  await page.route("**/api/voice/tts", () => {}); // never fulfils → the clip stays "loading"
+  await seedThread(page, [
+    ...planThread([{ text: "wake pegasus", status: "active" }]),
+    // a scrollable tail, so the scroll-offset arm below moves a real scroller (ids kept distinct from the
+    // plan thread's m0/m1)
+    ...chatLines(20).map((m, i) => ({ ...m, id: `x${i}` })),
+  ]);
+
+  // The bar-less content insets the two `:has()` token rules declare (safe-area is 0 on these devices):
+  // visible = a real bar in flow → no inset; minimal = the floating launcher's clearance; off = breathing
+  // room. Nothing else in the suite pins them, and the band is now built from them.
+  const INSET = { visible: 0, minimal: 34, off: 10 } as const;
+  const ACCENT = { cosmos: "violet", vapor: "dark" } as const;
+
+  for (const theme of ["cosmos", "vapor"] as const) {
+    for (const chrome of ["visible", "off", "minimal"] as const) {
+      await seedUI(page, {
+        theme,
+        mode: "dark",
+        accent: ACCENT[theme],
+        tab: "agent",
+        appbarMode: chrome,
+        themeSettings: { [theme]: { planPlacement: "pinned" } },
+        v: 1,
+      });
+      await page.goto("/");
+      await expect(page.locator(".plan-pin-panel")).toBeVisible();
+      await page.locator("#tab-agent .tts-play").first().click();
+      await expect(page.locator(".mini-player")).toBeVisible();
+
+      const read = async () =>
+        await page.evaluate(() => {
+          const head = document
+            .querySelector<HTMLElement>(".plan-pin-head")!
+            .getBoundingClientRect();
+          const player = document
+            .querySelector<HTMLElement>(".mini-player")!
+            .getBoundingClientRect();
+          const panel = document
+            .querySelector<HTMLElement>(".plan-pin-panel")!
+            .getBoundingClientRect();
+          const bar = document.querySelector<HTMLElement>(".kit-appbar")?.getBoundingClientRect();
+          const hit = document.elementFromPoint(
+            head.left + head.width / 2,
+            head.top + head.height / 2,
+          );
+          return {
+            gap: player.top - head.bottom,
+            headOwnsItsCentre: !!hit?.closest(".plan-pin-panel"),
+            scrollPadTop: getComputedStyle(document.getElementById("app-scroll")!).paddingTop,
+            headVar: getComputedStyle(document.documentElement).getPropertyValue("--plan-head-h"),
+            panelTop: Math.round(panel.top),
+            barBottom: bar ? Math.round(bar.bottom) : null,
+          };
+        });
+
+      const at = await read();
+      const cell = `${theme}/${chrome}`;
+      expect(at.gap, cell).toBeGreaterThanOrEqual(6); // never an overlap…
+      expect(at.gap, cell).toBeLessThanOrEqual(14); // …and never a floating gap either
+      expect(at.headOwnsItsCentre, cell).toBe(true); // nothing is painted over the header
+      expect(at.scrollPadTop, cell).toBe(`${INSET[chrome]}px`); // the `:has()` token rules fired
+      expect(parseFloat(at.headVar), cell).toBeGreaterThan(20); // the head height really is published
+      expect(parseFloat(at.headVar), cell).toBeLessThan(60);
+
+      // The yield rule really CONSUMES the published variable (Codex W1 MED): the 31px fallback sits so
+      // close to every real head (28.5–30.5) that a misspelled `var()` would still land inside [6,14].
+      // Inject a sentinel far outside that band and demand the player moves by exactly the delta.
+      if (theme === "cosmos" && chrome === "minimal") {
+        const before = await page.evaluate(() => {
+          const v = getComputedStyle(document.documentElement).getPropertyValue("--plan-head-h");
+          const top = document.querySelector(".mini-player")!.getBoundingClientRect().top;
+          document.documentElement.style.setProperty("--plan-head-h", "47px");
+          return { headH: parseFloat(v), top };
+        });
+        const after = await page.evaluate(
+          () => document.querySelector(".mini-player")!.getBoundingClientRect().top,
+        );
+        expect(after - before.top, `${cell} sentinel`).toBeCloseTo(47 - before.headH, 0);
+        await page.evaluate(() => {
+          // restore the measured value for the arms below (the inline removal above re-exposes nothing —
+          // the effect wrote an inline property too, so re-publish by nudging a resize read)
+          const el = document.querySelector<HTMLElement>(".plan-pin-head")!;
+          document.documentElement.style.setProperty("--plan-head-h", `${el.offsetHeight}px`);
+        });
+      }
+
+      // The panel is first-in-flow + sticky, so it RESTS at one spot: scrolling must not change the gap.
+      const scrolledTo = await page.evaluate(() => {
+        const s = document.getElementById("app-scroll")!;
+        s.scrollTop = 800;
+        return s.scrollTop;
+      });
+      expect(scrolledTo, cell).toBeGreaterThan(0); // the scroller really overflows — else this arm is vacuous
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+      const scrolled = await read();
+      expect(scrolled.gap, cell).toBeCloseTo(at.gap, 1);
+
+      // vapor's hanging tab survived the move from a `top:` on the panel to `--kit-plan-gap: 0px`.
+      if (theme === "vapor" && chrome === "visible") expect(at.panelTop).toBe(at.barBottom);
+    }
+  }
+  expect(pageErrors).toEqual([]);
+});
+
 test("gacha · the ARCADE skin holds its shape under every composer LAYOUT", async ({
   page,
   pageErrors,

@@ -54,6 +54,19 @@
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  /* ── the PINNED-PLAN BAND (W1) — the one place the plan's top edge is computed ────────────────
+   * Three inputs, one derivation: `--appbar-h` (the MEASURED bar, 0 when there is none),
+   * `--kit-inset-top` (the bar-less scroller inset the two `:has()` rules below declare — minimal's
+   * 34px launcher clearance / off's 10px breathing room, 0 when a real bar is in flow), and
+   * `--kit-plan-gap` (the THEME's own offset below the bar; vapor sets 0 for its flush hanging tab).
+   * `--kit-plan-gap` is USED-ONLY here — the kit never declares it, because a `.kit`-level
+   * declaration would shadow a theme's override (themes set it at or above `.kit`).
+   * `--kit-plan-top` is the panel's sticky `top`; `--kit-plan-band-top` is where the panel's box
+   * actually RESTS on screen — verified in both engines at every scroll offset: a first-in-flow
+   * sticky element rests at `scrollerPaddingTop + top` and never travels. Any fixed overlay that
+   * must clear the pinned plan reads the band + `--plan-head-h` (published by PinnedPlanPanel). */
+  --kit-plan-top: calc(var(--appbar-h, 0px) + var(--kit-plan-gap, 8px));
+  --kit-plan-band-top: calc(var(--kit-inset-top, 0px) + var(--kit-plan-top));
 }
 /* ── the SHARED owner background (the Kit Art System) ────────────────────────────────────────────
  * `KitBackground` mounts this as the shell's FIRST child — and only when the theme participates, the
@@ -149,6 +162,9 @@
   overflow-x: hidden; /* vertical-only scroller; a too-wide child must never add an x scrollbar (§14.11) */
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  /* the bar-less content inset (the two `:has()` rules at the NavMenu block declare it; 0 with a bar in
+   * flow). A LONGHAND, like the bottom below — a theme overrides one edge at a time (gacha.css). */
+  padding-top: var(--kit-inset-top, 0px);
   /* pad the bottom so the last content can scroll clear of the composer floating over it (measured) */
   padding-bottom: calc(var(--composer-h, 0px) + 24px);
   /* F5 Gate A6 · SC 2.4.11 Focus Not Obscured — scroll-padding (distinct from the layout padding above)
@@ -310,7 +326,7 @@ body[data-motion="reduced"] .kit .tab.active {
  *    surface (no blur to gate), the kit's uppercase micro-label voice (`.kit-tabbtn .lbl` metrics). */
 .kit-tts-toast {
   position: fixed;
-  top: calc(var(--appbar-h, 56px) + 8px);
+  top: calc(var(--kit-inset-top, 0px) + var(--appbar-h, 56px) + 8px);
   right: 16px;
   /* one above `.toasts` (40): a wide activity toast shares this top edge on narrow viewports and
    * would otherwise paint over the 1.1 s echo; the pill is pointer-events:none, so winning the
@@ -2416,7 +2432,7 @@ body[data-mode="light"] .kit .pm {
  *    DefaultRoot sets to 0 when the bar is hidden). Solid surface (no blur to gate). ── */
 .kit .toasts {
   position: fixed;
-  top: calc(var(--appbar-h, 56px) + 8px);
+  top: calc(var(--kit-inset-top, 0px) + var(--appbar-h, 56px) + 8px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;
@@ -2525,14 +2541,22 @@ body[data-mode="light"] .kit .toast {
   width: auto;
   transform: none;
 }
-/* TOP-BAND STACKING (owner eyeball 2026-07-12): the PINNED plan header (sticky at --appbar-h + 8, z 4) and
- * the player both claim the just-below-the-appbar slot — the plan is PERSISTENT chrome, the player a
- * TRANSIENT overlay, so the player yields: drop it below the plan header (~30px header + the 8px sticky
- * offset + breathing; the same fixed-clearance idiom as the 64px launcher gaps above). Keyed on the panel
- * inside the ACTIVE tab only — the keep-mounted agent tab keeps the panel in the DOM while hidden, and the
- * player must not shift on OTHER tabs. Composes with the corner clearances (this rule only moves `top`). */
+/* TOP-BAND STACKING (owner eyeball 2026-07-12 · re-derived W1): the PINNED plan header (sticky in the plan
+ * band, z 4) and the player both claim the just-below-the-appbar slot — the plan is PERSISTENT chrome, the
+ * player a TRANSIENT overlay, so the player yields: it lands 8px under the header's bottom edge. The old
+ * form hard-coded that clearance (`--appbar-h + 46px`, a guess at "~30px header + 8px offset"), which
+ * overlapped by up to 27px in minimal and left 16px of slack in vapor. It now reads the panel's PUBLISHED
+ * geometry instead: the band's rest position + the MEASURED head height. The 31px fallback is ≥ every
+ * shipped theme's head (28.5–30.5), so even a pre-measurement paint clears. Keyed on the panel inside the
+ * ACTIVE tab only — the keep-mounted agent tab keeps the panel in the DOM while hidden, and the player must
+ * not shift on OTHER tabs. Composes with the corner clearances (this rule only moves `top`).
+ * NOTE the player's BASE top (:2515) deliberately stays `--appbar-h + 10px`: a plan-less player SHARING the
+ * launcher band is the owner-approved design, not a defect. */
 .kit:has(.tab.active .plan-pin-panel) .mini-player {
-  top: calc(var(--appbar-h, 56px) + 46px);
+  /* `--skin-lift` is a cross-slice hook: a sibling slice gives the head a 4px hard drop shadow under the
+   * arcade composer skin that getBoundingClientRect doesn't report. The token doesn't exist yet — the 0px
+   * fallback makes the term a no-op until that slice lands. */
+  top: calc(var(--kit-plan-band-top) + var(--plan-head-h, 31px) + var(--skin-lift, 0px) + 8px);
 }
 body[data-mode="light"] .kit .mini-player {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
@@ -4110,7 +4134,7 @@ body[data-motion="reduced"] .kit .plan-sheet {
  * The drop's blur is perf-gated; its open/close is transform/opacity-only + motion-gated (§14.11). */
 .kit .plan-pin-panel {
   position: sticky;
-  top: calc(var(--appbar-h, 0px) + 8px);
+  top: var(--kit-plan-top); /* = --appbar-h + --kit-plan-gap (the 8px literal is now that token's fallback) */
   z-index: 4; /* below the kit appbar (z 5), above chat content */
   margin: 0 14px 10px;
 }
@@ -5654,17 +5678,20 @@ body[data-motion="reduced"] .kit .kit-composer {
  * (10px top + 44px icon ≈ a 54px zone). A slim scroller inset — NOT a bar-height reservation, the mode's
  * whole point is chrome-lessness — plus `.sec`'s own 22px padding puts the first title just below the icon.
  * Keyed on the SAME `:has` condition the mini-player/plan-pin yields use (the floating menu being rendered),
- * so it vanishes when the menu docks (visible mode) or isn't there (off mode). */
-.kit:has(.navmenu:not(.docked)) .kit-scroll {
-  padding-top: calc(34px + env(safe-area-inset-top));
+ * so it vanishes when the menu docks (visible mode) or isn't there (off mode). Declared as the shared
+ * `--kit-inset-top` token (W1): `.kit-scroll` pads with it AND the plan band adds it, so the two can't drift. */
+.kit:has(.navmenu:not(.docked)) {
+  --kit-inset-top: calc(34px + env(safe-area-inset-top));
 }
 /* NO-chrome content inset (owner eyeball 2026-08-15, the Phase 18 round): `appbarMode: off` renders
  * neither a bar nor the floating launcher, so NEITHER the in-flow bar height nor the inset above
  * applies and the first section title sat at y≈18 — under the phone's status bar (no safe-area
  * consumer left). A slimmer inset than minimal's (nothing to clear, just breathing room + safe area);
- * keyed the same structural way: no rendered bar AND no floating menu = off. */
-.kit:not(:has(.kit-appbar)):not(:has(.navmenu:not(.docked))) .kit-scroll {
-  padding-top: calc(10px + env(safe-area-inset-top));
+ * keyed the same structural way: no rendered bar AND no floating menu = off. Feeds the plan band through
+ * `--kit-inset-top` exactly as minimal's does (W1) — this mode's −1..−3px header/player overlap was the
+ * same missing term. */
+.kit:not(:has(.kit-appbar)):not(:has(.navmenu:not(.docked))) {
+  --kit-inset-top: calc(10px + env(safe-area-inset-top));
 }
 .kit .navmenu:not(.docked) .navmenu-launch {
   /* just the orbit icon — no circle/background (owner directive), a transparent tap target. Sized to the

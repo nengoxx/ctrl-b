@@ -308,6 +308,17 @@ position (~34px), so the panel rests lower than the rule assumes. It is kit geom
 (before, the player sat at +10px, i.e. fully over the tab). Fixing it means re-deriving the clearance from
 the panel's real box — an independent kit-chrome slice with its own eyeball, NOT a deletion-ladder change.
 
+> ✅ **CLOSED 2026-08-18 (slice W1)** — that independent kit slice landed. The clearance is derived, not
+> guessed: `.kit` publishes `--kit-plan-top`/`--kit-plan-band-top` from the measured bar, the bar-less
+> scroller inset (`--kit-inset-top`, now a token the two `:has()` rules declare instead of padding
+> `.kit-scroll` directly) and the theme's own `--kit-plan-gap`; `PinnedPlanPanel` publishes the MEASURED
+> head as `--plan-head-h`. The player's yield reads both. Gap = **8px in all 20 theme × chrome-mode
+> cells** (measured 8.5px, the `offsetHeight` rounding). The `appbarMode: off` case — a smaller −1..−3px
+> overlap nobody had measured — was the same missing inset term and is fixed by the same derivation.
+> Vapor's flush hanging tab moved from a `top:` on the panel to `--kit-plan-gap: 0px` on `.kit`, so the
+> panel and the fixed player finally move together. Pinned by `e2e/layout.spec.ts` ("the pinned plan
+> header and the mini-player never overlap — in every chrome mode").
+
 ## 8. Close-out (V6, 2026-08-02) — what the machinery actually bought
 
 **The arithmetic** (V3 baseline → V6, the PHASE total; V5's own slice delta is −2911, see the plan's V5
@@ -359,6 +370,9 @@ it is allowed to be wrong out loud, and three times it was:
 header and the mini-player overlap on EVERY kit theme (cosmos −26px · frontier −24px · vapor −17px). It is
 kit geometry — a fixed `--appbar-h + 46px` clearance calibrated for the panel's `--appbar-h + 8px` rest
 position — and needs its own kit-chrome slice with its own eyeball. Full record: §7.1.
+✅ **CLOSED 2026-08-18 by slice W1**: the clearance is derived from the band tokens
+(`--kit-plan-band-top`) + the measured `--plan-head-h`, giving an 8px gap in every theme × chrome-mode
+cell; the smaller `appbarMode: off` overlap (−1..−3px) fell to the same fix. See §7.1.
 
 **One dead rule swept at V6**: `vapor.css`'s `.dev .kvgrid .v.os-win::before` had matched nothing since the
 class went dynamic (`os-${host.os_type}`, and `OSType` is `windows|linux|macos`) — fixed to `.os-windows`,

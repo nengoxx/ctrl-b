@@ -1096,6 +1096,23 @@ never leaks into vapor — **follow it for every future theme:**
 >   `@layer theme` (extras.css's wide-control wrap vs vapor.css's `.confrow .k { min-width: 0 }`), so
 >   deleting the duplicate silently hands the property to the wrong declaration.
 
+> **📐 The PINNED-PLAN BAND contract (W1, 2026-08-18) — one derivation, two consumers.** The pinned plan
+> panel's top edge and every overlay that must clear it are computed from ONE place, `.kit`'s band tokens
+> (`kit.css`): `--kit-plan-top` = the measured bar (`--appbar-h`) + the theme's own offset
+> (`--kit-plan-gap`, fallback 8px), and `--kit-plan-band-top` = that plus `--kit-inset-top` (the bar-less
+> scroller inset the `minimal`/`off` `:has()` rules declare). The panel is first-in-flow + sticky, so its
+> rest position is exactly `scrollerPaddingTop + top` at every scroll offset — which is what makes the band
+> computable from tokens at all.
+> - **A theme adjusts the band ONLY through `--kit-plan-gap`** (declare it at or above `.kit`; vapor sets
+>   `0px` for its flush hanging tab). **Never with a `top:` on `.plan-pin-panel`** — that moves the panel
+>   while leaving the FIXED mini-player where the kit put it, which is exactly the drift W1 removed (a
+>   `top:` override cost vapor 16px of slack, and the missing inset term cost `minimal` up to 27px of
+>   overlap). `--kit-plan-gap` is USED-ONLY in the kit: the kit never declares it, so a theme's value can't
+>   be shadowed by a `.kit`-level default.
+> - **Any overlay that must clear the pinned plan reads `--kit-plan-band-top` + `--plan-head-h`** (the
+>   header height `PinnedPlanPanel` publishes on `documentElement`, the `--appbar-h`/`--composer-h` idiom).
+>   Never re-encode another element's box as a literal — that is the defect class this box exists to close.
+
 ## 14.5 The core invariant — state ownership (prevents future refactors)
 
 **All state that must (a) survive a theme switch or (b) be reachable by multiple parts of a presentation lives in a

@@ -103,9 +103,9 @@ update toast exercised ✅ 2026-08-16.
 - `getJSON` has NO global timeout (the 5s bounded media-invalidation await works around it —
   GACHA_PLAN §7.6) · kit sr-only sheet-close duplicates the ×'s accessible name (GACHA_PLAN :964)
   · the a11y e2e sweeps TABS only — no arm opens a bottom sheet/dossier (e2e/a11y.spec.ts) ·
-  `skipActiveViewTransition` is global, not per-layer (G2 standing note) · kit-wide `appbarMode:
-  minimal` pinned-plan header × mini-player OVERLAP (VAPOR_ASSIMILATION_PLAN §7.1, pre-existing)
-  · the 42 eslint warnings = the F13 React-Compiler-prep backlog (UI_AUDIT; deliberately
+  `skipActiveViewTransition` is global, not per-layer (G2 standing note) · ~~kit-wide `appbarMode:
+  minimal` pinned-plan header × mini-player OVERLAP~~ **fixed 2026-08-18 (slice W1** — derived
+  plan-band tokens + a measured header; VAPOR_BANNER_LEDGER §7.1**)** · the 42 eslint warnings = the F13 React-Compiler-prep backlog (UI_AUDIT; deliberately
   deferred) · SYS-16's ASYNC240 lexical blind-spot list (SYSTEM_AUDIT addendum).
 
 **Recorded LOWs / deliberate non-fixes (all in D54 or the as-builts):**

@@ -343,7 +343,9 @@ as accepted kit chrome. **One finding, investigated and deliberately not fixed h
 `appbarMode: minimal` the pinned-plan header and the mini-player overlap — pre-existing, KIT-WIDE
 (cosmos −26px, frontier −24px, vapor −17px), caused by the kit's fixed 46px clearance vs the panel's
 flow position when there is no app bar. V5 improved vapor's case; the real fix is kit chrome and needs
-its own slice. Full record: ledger §7.1.
+its own slice. Full record: ledger §7.1. ✅ **FIXED 2026-08-18 by that slice (W1)** — derived band tokens
+(`--kit-plan-top`/`--kit-plan-band-top`/`--kit-inset-top`) + the measured `--plan-head-h` give an 8px gap
+in every theme × chrome-mode cell, and vapor's flush tab became `--kit-plan-gap: 0px`; see ledger §7.1.
 
 ### V6 — the tail: residue, waivers, ledgers, lazy
 - `vapor.css` shrinks to the frozen vapor-keeps residue; dead `theme/` remnants die. The end

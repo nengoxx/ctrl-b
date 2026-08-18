@@ -25,6 +25,16 @@ vi.mock("../../src/store/chat", async (importOriginal) => ({
   useCurrentPlan: () => PLAN,
 }));
 
+// jsdom shim — PinnedPlanPanel watches its header with a ResizeObserver (the `--plan-head-h` publication).
+vi.stubGlobal(
+  "ResizeObserver",
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+);
+
 afterEach(() => {
   cleanup();
   setPlanSheetOpen(false); // module state — reset between cases
@@ -73,5 +83,19 @@ describe("PinnedPlanPanel — same contract on the drop", () => {
     expect(
       container.querySelector<HTMLButtonElement>(".plan-pin-head")!.getAttribute("aria-expanded"),
     ).toBe("true");
+  });
+});
+
+describe("PinnedPlanPanel — publishes the header height as `--plan-head-h` (W1)", () => {
+  // The mini-player's yield reads this variable instead of a hard-coded clearance, so the panel MUST
+  // publish it while mounted and drop it on unmount (a stale value would push the player off a band that
+  // no longer has a header in it). jsdom reports 0 for every offsetHeight, so the head's is stubbed —
+  // which also exercises the `h > 0` guard's input.
+  it("sets the var on mount and removes it on unmount", () => {
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(30);
+    const { unmount } = render(<PinnedPlanPanel />);
+    expect(document.documentElement.style.getPropertyValue("--plan-head-h")).toBe("30px");
+    unmount();
+    expect(document.documentElement.style.getPropertyValue("--plan-head-h")).toBe("");
   });
 });

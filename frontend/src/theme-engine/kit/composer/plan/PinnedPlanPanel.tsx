@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 import { PlanSteps } from "../../../../components/PlanSteps";
 import { advanceStep } from "../../../../lib/plan";
 import { editPlan, useCurrentPlan } from "../../../../store/chat";
@@ -20,6 +22,35 @@ import { setPlanSheetOpen, usePlanSheetOpen } from "../../../../store/planSheet"
 export function PinnedPlanPanel() {
   const plan = useCurrentPlan();
   const open = usePlanSheetOpen();
+  const headRef = useRef<HTMLButtonElement>(null);
+  const hasPlan = !!plan;
+
+  // Publish the head's height as `--plan-head-h` — the same idiom DefaultRoot uses for `--appbar-h`/
+  // `--composer-h`, and what lets the fixed mini-player yield to a MEASURED header instead of a guessed
+  // clearance (kit.css, the `.tab.active .plan-pin-panel` rule). Before the `!plan` early return so the
+  // hook order is stable. The `h > 0` guard ignores the zero reads a keep-mounted hidden tab produces
+  // (`.tab { display: none }`) — the last real height stands, and the yield rule only fires under
+  // `.tab.active` anyway.
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = headRef.current;
+    if (!el) {
+      root.style.removeProperty("--plan-head-h");
+      return;
+    }
+    const set = () => {
+      const h = el.offsetHeight;
+      if (h > 0) root.style.setProperty("--plan-head-h", `${h}px`);
+    };
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--plan-head-h");
+    };
+  }, [hasPlan]);
+
   if (!plan) return null;
   const total = plan.steps.length;
   const done = plan.steps.filter((s) => s.status === "done").length;
@@ -27,6 +58,7 @@ export function PinnedPlanPanel() {
   return (
     <div className="plan-pin-panel">
       <button
+        ref={headRef}
         type="button"
         className={"plan-pin-head" + (open ? " open" : "")}
         onClick={() => setPlanSheetOpen()}
