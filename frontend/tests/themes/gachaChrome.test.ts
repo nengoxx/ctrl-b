@@ -780,16 +780,19 @@ describe("gacha G7 — the DRAWN rarity star (R16)", () => {
     // `url(#…)` does not degrade to "no filter" on every engine).
     expect(ruleBlock(rules, ".gc-card .rar .gc-star {")).toContain("filter: url(#gc-star-carve)");
     // …and the COVER HERO's row rides the SAME grouped rule (E5 device round, owner finding): it sits
-    // on artwork exactly as the card row does. GROUPED, not a second rule — the reference count below
-    // is the waiver's scope, and it must stay at one. STRUCTURAL, not lexical (Codex E5-fix LOW-1):
+    // on artwork exactly as the card row does. GROUPED, not a second rule — the engine-wide sweep
+    // (svgFilterWaivers.test.ts) counts occurrences, so a second reference would fail there.
+    // STRUCTURAL, not lexical (Codex E5-fix LOW-1):
     // ruleBlock reads the declaration block the cover selector actually opens, so grouping it with
     // anything that lacks the filter fails here even while the count and the card assertion stay green.
     expect(ruleBlock(rules, ".cv-stars .gc-star,")).toContain("filter: url(#gc-star-carve)");
     // The DOSSIER tab takes no override at all — owner: "the dossier looks good".
     expect(rules).not.toContain(".gc-dossier .art-rar .gc-star");
-    // THE WAIVER SCOPE (§14.11): a per-star filter ships as an owner-granted waiver scoped to exactly
-    // ONE def — a second `url(#` filter reference in this sheet would widen that waiver silently.
-    expect(rules.match(/filter: url\(#/g)).toHaveLength(1);
+    // THE WAIVER SCOPE (§14.11) now lives ENGINE-WIDE: tests/theme-engine/svgFilterWaivers.test.ts
+    // sweeps every src/**/*.{css,ts,tsx} against SVG_FILTER_WAIVERS, so a `url(#` filter added in ANY
+    // sheet or component fails — not just a second one in this one, which is all a count here could see
+    // (and cosmos's carved moon had already walked through that gap unnoticed). The two structural
+    // assertions above stay: they are gacha's own claim, that BOTH waived rows ride the one grouped rule.
     // The carve's flood ink is a TOKEN (council M7), so the palette owns it, not the filter def.
     expect(tokens).toContain("--gc-star-carve-ink:");
     // USER units for the stroke (the viewBox is 96.5 wide), so it scales with the row.

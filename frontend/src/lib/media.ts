@@ -174,8 +174,8 @@ export function isStemRepresentable(key: string): boolean {
  *  written twice. Two arguments rather than an object: the two consumers name the field differently
  *  (`rev` on a roster entry, `revision` on the wire). */
 export function artIdentity(url: string, revision?: string): string {
-  // NUL-joined: the one character neither a percent-encoded URL nor an `mtime_ns:size` revision can
-  // contain, so two different pairs can never spell the same identity.
+  // NUL-joined: the one character neither a percent-encoded URL nor an `mtime_ns:size:ino:ctime_ns`
+  // revision can contain, so two different pairs can never spell the same identity.
   return `${url}\u0000${revision ?? ""}`;
 }
 

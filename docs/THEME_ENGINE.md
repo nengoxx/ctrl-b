@@ -1276,7 +1276,7 @@ either the whole page or nothing may instead gate on **`document.hidden` + `visi
 so it costs an observer to learn nothing; the real idle win is the backgrounded tab). Either way the loop must
 stop when nothing can see it.
 
-**SVG-filter waivers — a closed, owner-granted list, currently ONE (2026-08-07, gacha R19).** A per-element
+**SVG-filter waivers — a closed, owner-granted list, currently TWO (2026-08-07 gacha R19 · 2026-08-18 cosmos).** A per-element
 SVG `filter` is an offscreen rasterization, the class this section budgets — so each use is a scoped waiver,
 run like the engine-branch consumer list above. ① **gacha's carved fleet stars**: `filter: url(#gc-star-carve)`
 on `.gc-card .rar .gc-star` **and the cover hero's `.cv-stars .gc-star`** (one GROUPED rule — still one
@@ -1284,10 +1284,22 @@ reference; the cover row joined at the E5 device round, owner finding: same row-
 The def + full construction notes live in `GachaStar.tsx`. Owner-picked off the R19
 candidate sheet (`design/prototypes/gacha/research-sheets/star-carved-candidates.html`, variant E) **with the
 cost labeled on the sheet**; STATIC (never animated — the hard ban stays on filters in loops), star-sized
-buffers (~14px, not surface-sized), and test-scoped: `gachaChrome.test.ts` counts the sheet's `url(#` filter
-references and fails on a second. The banked fallback if a device round finds fleet-scroll jank is the same
+buffers (~14px, not surface-sized). The banked fallback if a device round finds fleet-scroll jank is the same
 sheet's variant C — the identical carve as pure layered geometry; revert = swap the grouped fleet-star rule
 (it names both rows), delete the def, strike this entry.
+② **cosmos's carved moon button**: `filter="url(#cosmosCarve)"` on the moon path in
+`themes/cosmos/CosmosMoon.tsx:72-88` — an inner-shadow deboss giving the Agent-chat button its recessed
+floor. STATIC and ONE element, on a surface that neither scrolls nor animates the filtered node. **Shipped
+since `735a852` and owner-RATIFIED 2026-08-18** (discovered retroactively by the engine-wide sweep below,
+which is exactly the gap that sweep closes). Revert = flip the component to its already-present cutout/coin
+branch (`:92-101`, pure gradient geometry) and strike this entry.
+
+**Enforced by `tests/theme-engine/svgFilterWaivers.test.ts`**: it sweeps every `src/**/*.{css,ts,tsx}` for a
+DIRECT LITERAL applied `url(#…)` filter (property or attribute spelling, bare or quoted fragment; a
+runtime-assembled filter string is outside a lexical fence — a convention line, not a parseable gap) — comments stripped, so this prose can't satisfy it — and asserts the found set
+EQUALS its `SVG_FILTER_WAIVERS` constant, occurrence for occurrence. `url(#…)` gradients and masks are
+ordinary paint and are deliberately out of scope. Granting order: **owner ruling → a numbered ¶ here (def,
+consumers, revert path) → the allowlist entry**. Widening the constant alone is not a grant.
 
 **Layout robustness (any browser).** Text must never overflow its container horizontally. Long unbreakable
 strings — backend errors, URLs, paths, JSON tokens, host/model/agent names — must wrap: put `overflow-wrap:

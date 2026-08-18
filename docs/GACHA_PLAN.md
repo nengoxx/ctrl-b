@@ -1124,7 +1124,7 @@ role-file collision). The record:
   `api/media.py` (`MediaFiles(StaticFiles)`: extension→type ALLOWLIST set-not-guessed, nosniff,
   no-cache, `follow_symlink=False`, role-shape gate `<role>/<file>`, the `is_served_file`
   lstat gate) + the `/api/media/{ns}` index (per-role lists in server order + format/size/WxH/
-  `revision` (`mtime_ns:size`) metadata + roster entries/slots) vs `/api/media/{ns}/files/`
+  `revision` (`mtime_ns:size:ino:ctime_ns`) metadata + roster entries/slots) vs `/api/media/{ns}/files/`
   mount split; `themes.gacha` Settings models. **Wire-shape AMENDMENT to §5.2:** the index
   ships `{roles, slots}` — the role re-rule's per-role lists ARE the entries; the draft's flat
   `{entries}` is superseded (no duplicate wire data).
@@ -2374,13 +2374,17 @@ two content-hashed woff2). Main-seat rulings and the fold, all commits local:
   re-anchored to `--gc-dossier-rar-bg` so it can never false-pass again); HANDOFF's unpushed-commit
   count became the `git rev-list --count` command after going stale twice in one day as a digit.
 
-**DEFERRED POST-1.5.0 (ruled, not built — the reviewers' prescriptions were heavier than the findings):**
-① media `revision` is `mtime_ns:size`, not content identity — a same-size, same-mtime replacement keeps
+**DEFERRED POST-1.5.0 (ruled, not built at the time — the reviewers' prescriptions were heavier than
+the findings; ① and ③ have since been built, see inline):**
+① media `revision` was `mtime_ns:size`, not content identity — a same-size, same-mtime replacement keeps
 stale art cached; trigger judged contrived (D53 chose the cheap form deliberately; lean close if it ever
-bites: fold `ctime_ns` in). ② picking an unwarmed name-face while gacha is live paints one fallback frame
+bites: fold `ctime_ns` in). **✅ BUILT 2026-08-18** (slice W3): the lean close, exactly as prescribed —
+`revision` is now `mtime_ns:size:ino:ctime_ns`, the same recipe as the memory scan's `_stamp`. ② picking an unwarmed name-face while gacha is live paints one fallback frame
 until the woff2 arrives (self-healing; the warm-the-resolved-union design is deliberate). ③ the §14.11
-waiver counter only scans `gacha.css` — a `url(#` in another sheet widens the waiver silently; widen the
-scan's source. ④ HANDOFF is 647 KB and every cold session reads it first — archive the superseded ▶/⚑
+waiver counter only scanned `gacha.css` — a `url(#` in another sheet widens the waiver silently; widen the
+scan's source. **✅ BUILT 2026-08-18** (slice W3): `tests/theme-engine/svgFilterWaivers.test.ts` sweeps all
+of `src/` against a declarative `SVG_FILTER_WAIVERS` allowlist. The gap was real — cosmos's carved moon
+button had already walked through it, and is now waiver ② (owner-ratified 2026-08-18). ④ HANDOFF is 647 KB and every cold session reads it first — archive the superseded ▶/⚑
 blocks. (①–② Codex LOWs, ③–④ the integrity lane's.)
 
 **Confirm rounds, both closed:** Codex re-reviewed the wave diff alone — both MED fixes CONFIRMED

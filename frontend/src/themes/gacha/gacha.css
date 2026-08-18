@@ -1391,8 +1391,9 @@
      * `--gc-star-size` mean ink.
      *
      * The glyph's 12px gold GLOW stays retired (R16 §2). The card row below carries the ONE filter this
-     * sheet is allowed — the R19 carve, an owner-granted §14.11 waiver scoped to that def (the star test
-     * counts the sheet's `url(#` filters); everything else about the mark stays plain geometry. */
+     * sheet is allowed — the R19 carve, an owner-granted §14.11 waiver scoped to that def (every applied
+     * `url(#` filter in `src/` is swept against the closed list in
+     * tests/theme-engine/svgFilterWaivers.test.ts); everything else about the mark stays plain geometry. */
     .gc-star {
       display: block;
       width: var(--gc-star-size);
@@ -1415,8 +1416,9 @@
      *
      * THE COVER HERO'S ROW RIDES THE SAME RULE (E5 device round, owner finding): it sits on artwork
      * exactly as the card row does, and it wears the same owner-picked treatment. One GROUPED selector,
-     * deliberately — the §14.11 waiver is test-scoped to ONE `filter: url(#` reference in this sheet,
-     * and a second rule would widen it silently (gachaChrome.test.ts counts them). The def is mounted
+     * deliberately — the §14.11 waiver is test-scoped to ONE `filter: url(#` reference, and a second rule
+     * would widen it silently (tests/theme-engine/svgFilterWaivers.test.ts sweeps ALL of `src/` against
+     * the closed waiver list, so it fails on a second reference anywhere). The def is mounted
      * by GachaFleet for every layout, so the reference can never dangle under cover. */
     .cv-stars .gc-star,
     .gc-card .rar .gc-star {

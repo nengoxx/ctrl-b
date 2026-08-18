@@ -682,6 +682,31 @@ def test_a_replaced_file_changes_its_revision_but_not_its_url(home: Path) -> Non
         assert second["revision"] != first["revision"]
 
 
+def test_a_same_size_same_mtime_replacement_still_changes_its_revision(home: Path) -> None:
+    """The R21 ① close (W3): `mtime_ns:size` alone could not see a sync tool that REPLACES a file while
+    faithfully restoring its mtime — same name, same size, same mtime, different bytes, stale art. The
+    inode leg catches this rename-over path; the other mechanism (a truncate-in-place rewrite, which
+    keeps the inode and moves only ctime) is deliberately not a second test — it would be asserting
+    kernel behaviour, and ctime rides along in the token either way."""
+    with make_client() as c:
+        art = role(home, "reel") / "cut.png"
+        art.write_bytes(png_bytes(10, 10) + b"\x00")
+        first = c.get("/api/media/gacha").json()["roles"]["reel"][0]
+        mtime = art.stat().st_mtime_ns
+
+        swap = art.with_suffix(".swap")  # a sibling, so `os.replace` is the atomic rename path
+        swap.write_bytes(png_bytes(10, 10) + b"\x01")  # same LENGTH, different bytes
+        os.replace(swap, art)
+        os.utime(art, ns=(mtime, mtime))  # the sync tool "preserving" the timestamp
+        second = c.get("/api/media/gacha").json()["roles"]["reel"][0]
+
+        # The pre-condition, asserted so the test cannot silently stop testing anything: the old
+        # recipe's two inputs are byte-for-byte identical across the swap.
+        assert second["size_bytes"] == first["size_bytes"]
+        assert art.stat().st_mtime_ns == mtime
+        assert second["revision"] != first["revision"]
+
+
 def test_urls_are_percent_encoded(home: Path) -> None:
     """Owner filenames really do carry spaces (their own drops live in `banner images/`)."""
     with make_client() as c:

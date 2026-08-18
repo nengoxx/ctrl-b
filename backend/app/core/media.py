@@ -148,7 +148,10 @@ class MediaFile(BaseModel):
     #: that are not in the allowlist at all (an `.png` that is really HTML).
     format: str | None = None
     size_bytes: int = 0
-    #: An opaque change token for THESE BYTES (`mtime_ns:size`), from the stat the size already needed.
+    #: An opaque change token for THESE BYTES (`mtime_ns:size:ino:ctime_ns`), from the stat the size
+    #: already needed. Inode + ctime are what catch a sync tool that replaces a file while faithfully
+    #: preserving mtime and size (same recipe as the memory scan's `_stamp`); ino stays meaningful on
+    #: Windows, where st_ctime is the creation time.
     #: The URL cannot carry it: owner files are mutable IN PLACE under a stable name, which is exactly
     #: what makes the name unusable as an identity — and the URL has to stay stable anyway, or the SW's
     #: media cache would miss on every poll. A consumer that remembers something about a file (the reel
@@ -540,7 +543,7 @@ def describe_file(path: Path, ns: str, role: str) -> MediaFile:
     probe = probe_image(path)
     try:
         st = path.stat()
-        size, revision = st.st_size, f"{st.st_mtime_ns}:{st.st_size}"
+        size, revision = st.st_size, f"{st.st_mtime_ns}:{st.st_size}:{st.st_ino}:{st.st_ctime_ns}"
     except OSError:
         size, revision = 0, ""
     reason: Literal["unreadable", "format-mismatch"] | None = None
