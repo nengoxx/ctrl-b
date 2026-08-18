@@ -197,7 +197,7 @@
        * and drop the margin pull. (Since 2026-08-05 the base bar shares the same 8/6 pads, but the mode's
        * contract stays spelled out here so it never depends on what a base-rule edit happens to leave.) */
       padding: calc(8px * var(--density-pad)) 16px calc(6px * var(--density-pad));
-      margin-bottom: -14px;
+      margin-bottom: calc(-1 * var(--gc-bar-pull));
       -webkit-backdrop-filter: blur(14px);
       backdrop-filter: blur(14px);
     }
@@ -209,6 +209,25 @@
     }
     .kit-appbar.transparent .gc-word {
       text-shadow: none;
+    }
+    /* ── The BANNER's seat under the clear bar (owner 2026-08-18) ──────────────────────────────────
+     * The -14px pull above was shaped for a padded first HEADING; on the fleet's full-bleed banner it
+     * left the strip half-slid under the floating bar — neither flush below it (the painted-bar seam)
+     * nor fully under it (the cover layout's art-under-glass). Fully-under was considered and REJECTED
+     * for both forms: the hero's rate/pity chips sit in its top-right corner and would land behind the
+     * bar's wordmark and sound toggle (the cover avoids that only because its masthead content clears
+     * `--appbar-h` by design). So both forms seat FLUSH at the bar's bottom edge, exactly as they sit
+     * under the painted bar.
+     *
+     * The mechanism is margin collapse, and it is exact: the bar and the tab are ADJOINING SIBLINGS in
+     * `#app-scroll`, `.tab` is a plain block (no padding/border), and capsule/poster seat the banner as
+     * the tab's direct child (the star-defs svg before it is absolutely positioned — out of flow, out of
+     * the seam) — so the bar's −pull and this +pull collapse to max(+) + min(−) = 0 and the banner tops
+     * out at the bar's measured bottom. The cover nests its banner in the strapline, structurally out of
+     * this selector's reach, and `banner: off` renders no `.gc-banner` at all — the heading keeps the
+     * mode's pull. */
+    .kit-appbar.transparent ~ .tab > .gc-banner {
+      margin-top: var(--gc-bar-pull);
     }
     body[data-perf="lite"] .kit-appbar,
     body[data-perf="lite"] .kit-tabbar {
@@ -3997,6 +4016,20 @@
     .gc-oracle-anchor {
       height: 0;
     }
+    /* BAR-LESS modes (`off`/`minimal`, owner 2026-08-18): the kit's `--kit-inset-top` scroller inset
+     * (W1) exists so a first TITLE clears the phone's status bar / floating launcher — but this tab's
+     * first block is full-bleed art, and the ruling is NO offset ever: the oracle snaps to the top edge
+     * exactly as it snaps to the appbar when one is in flow. Pulling by the inset itself — the token is
+     * only declared in the two bar-less modes, so the fallback 0px makes every bar mode a no-op without
+     * a mode list. The pulled margin collapses through the zero-height anchor, so the anchor travels
+     * with the oracle and M7's measured base stays honest; the sticky pin (`top: --appbar-h` = 0 here)
+     * then matches the flow position, so the fade neither jumps nor uncovers the strip on scroll.
+     * Guarded on the anchor being the tab's FIRST child: with a pinned plan panel above (planPlacement
+     * "pinned") the panel is the first block, its head is real text chrome, and it must keep the inset —
+     * that clearance is the very overlap W1 closed. */
+    .kit .tab > .gc-oracle-anchor:first-child + .gc-oracle {
+      margin-top: calc(-1 * var(--kit-inset-top, 0px));
+    }
     /* A FACE is the oracle's whole visible surface — art + scrim + name plate. There are two of them,
      * stacked, and the M7 crossfade runs BETWEEN them (owner ruling, G3: the prototype filters the entire
      * `.oracle` block, so the words must degrade with the picture or they read as detached). */
@@ -4077,10 +4110,18 @@
      * ResizeObserver on the rendered bar — the same variable the round-4 flush seam rides), so this is
      * correct at every appbar mode without a mode list: it is 0px under `minimal`, where there is no bar
      * to clear, and grows with the TTS toggle or the docked launcher on its own. The prototype pins at 0
-     * because its agent screen has no topbar at all — there was nothing to be under. */
+     * because its agent screen has no topbar at all — there was nothing to be under.
+     *
+     * MINUS `--kit-inset-top` (owner 2026-08-18, the flush-oracle ruling with the pull above): engines
+     * rest a sticky box against the scroller's CONTENT box, so `#app-scroll`'s bar-less inset PADDING
+     * (W1) would hold the stuck art that far below the top edge even though the margin pull seats its
+     * flow position at 0 — flush at rest, then a re-opened strip on the first scroll frame. Subtracting
+     * the same token cancels it exactly (0 whenever a bar is in flow, like the pull). If an engine ever
+     * pins from the padding edge instead, the subtraction merely crops that many px of ghosted art above
+     * the viewport — a band can't come back either way. */
     body[data-oracle="fade"] .gc-oracle {
       position: sticky;
-      top: var(--appbar-h, 0px);
+      top: calc(var(--appbar-h, 0px) - var(--kit-inset-top, 0px));
       z-index: 0;
       border-bottom-color: transparent;
       /* 1 → --gc-oracle-floor. Written as "1 minus the walked distance" so the floor token IS the endpoint

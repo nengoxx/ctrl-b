@@ -164,6 +164,10 @@
       --gc-bar-grad-wall: linear-gradient(#0a0b1999, #0a0b194d 70%, transparent);
       --gc-bar: #11142ee8; /* the NAV pill's flat fill */
       --gc-bar-line: #ffffff18;
+      /* The clear appbar's content pull (kit.css mints the -14px; gacha's mode re-declaration mirrors it).
+       * A token because TWO rules must agree on the magnitude: the bar's own negative bottom margin, and
+       * the fleet banner's clear-mode seat that cancels it (see the transparent-bar block in gacha.css). */
+      --gc-bar-pull: 14px;
       --gc-nav-shadow: 0 18px 45px #0009;
       /* The nav pill's REAL rendered height, which the floating geometry has to reserve. It is NOT the
        * declared `min-height: 66px`: under the kit's global `box-sizing: border-box` the 52px buttons plus
