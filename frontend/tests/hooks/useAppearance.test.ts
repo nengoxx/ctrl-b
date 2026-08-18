@@ -12,7 +12,8 @@ import type { ThemeSettingField } from "../../src/theme-engine/types";
 
 // Phase 11 / D28 §9.11 + M3 §14.3 — the cross-device reconcile decision (compare-then-set, server-wins,
 // but only when the server has a recorded preference). The synced unit is
-// {theme,mode,accent,motion,perf,themeSettings,kitBackgroundVisible,appbarSubtitleVisible}. Pure function
+// {theme,mode,accent,motion,perf,themeSettings,kitBackgroundVisible,appbarSubtitleVisible,pwaIconBackground}.
+// Pure function
 // → tested directly.
 
 const local: AppearanceLocal = {
@@ -24,6 +25,7 @@ const local: AppearanceLocal = {
   themeSettings: { vapor: { heroOn: true } },
   kitBackgroundVisible: true,
   appbarSubtitleVisible: false,
+  pwaIconBackground: null,
 };
 const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
   theme: "vapor",
@@ -34,6 +36,7 @@ const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
   theme_settings: { vapor: { heroOn: true } },
   kit_background_visible: true,
   appbar_subtitle_visible: false,
+  pwa_icon_background: null,
   updated_at: "2026-06-26T12:00:00Z",
   ...o,
 });
@@ -63,6 +66,7 @@ describe("reconcileAppearance", () => {
       themeSettings: { vapor: { heroOn: true } },
       kitBackgroundVisible: true,
       appbarSubtitleVisible: false,
+      pwaIconBackground: null,
     });
   });
 
@@ -109,6 +113,25 @@ describe("reconcileAppearance", () => {
         always,
       )?.appbarSubtitleVisible,
     ).toBe(true);
+  });
+
+  // The installed-icon backdrop (D59 / W5) joins on the same terms as the three levers above — it names
+  // the ONE app icon, so it is synced — but its unseeded value is `null` on BOTH sides (the store default
+  // is null too), which is what makes "nobody has ever picked one" a no-op rather than a write of "Clear".
+  it("server wins on a differing app-icon backdrop, and UNSEEDED keeps local", () => {
+    expect(
+      reconcileAppearance(server({ pwa_icon_background: "ink" }), local, always)?.pwaIconBackground,
+    ).toBe("ink");
+    // A pre-slice doc (null) coalesces to local — no apply at all when nothing else differs…
+    expect(reconcileAppearance(server({ pwa_icon_background: null }), local, always)).toBeNull();
+    // …and an unrelated change never drags an owner's existing local pick back to null.
+    expect(
+      reconcileAppearance(
+        server({ pwa_icon_background: null, accent: "ember" }),
+        { ...local, pwaIconBackground: "paper" },
+        always,
+      )?.pwaIconBackground,
+    ).toBe("paper");
   });
 
   it("server wins on a differing per-theme setting", () => {
@@ -183,6 +206,7 @@ describe("reconcileAppearance", () => {
       themeSettings: { vapor: { heroOn: true } },
       kitBackgroundVisible: true,
       appbarSubtitleVisible: false,
+      pwaIconBackground: null,
     });
   });
 
@@ -214,6 +238,7 @@ describe("reconcileAppearance", () => {
         themeSettings: { vapor: { heroOn: false } }, // namespaced settings still applied
         kitBackgroundVisible: true, // global lever, unchanged here — still carried whole
         appbarSubtitleVisible: false, // ditto — the subtitle switch rides the same whole-doc apply
+        pwaIconBackground: null, // ditto — the installed-icon backdrop rides it too
       });
     });
 

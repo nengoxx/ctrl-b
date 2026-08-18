@@ -51,6 +51,14 @@
   Memory) + the serve-FULL exception + `GitMemoryBackup`, THEME_ENGINE add-a-theme entry points +
   §14.17 section layouts + Kit Art System/safeRafLoop, QUALITY (43-warn lint recount, firefox e2e,
   `_gate.sh`), README/CLAUDE/AGENTS/deploy runbooks. Everything code-anchored; nothing relitigated.
+- **2026-08-18: slice W5 — the PWA installed-icon backdrop (D59) — BUILT, unreleased.** Conf →
+  Appearance → *App icon backdrop* (Clear · Ink · Night · Orchid · Paper) writes
+  `appearance.pwa_icon_background`; the backend now serves `/manifest.webmanifest` itself and
+  rewrites the maskable icon `src` from it (Chrome 144+ ignores new bytes at a known icon URL — only
+  a changed URL reaches an installed app). Staying on Clear is byte-identical to today, so it
+  triggers no icon update. **Owed: the owner's phone eyeball after the next release** — pick a
+  backdrop, then approve "Review app update" under the installed app's ⋮ menu (or uninstall +
+  re-add for the immediate path).
 
 ## ▶▶ NEXT — Phase 20 is DONE; the owner court is up
 

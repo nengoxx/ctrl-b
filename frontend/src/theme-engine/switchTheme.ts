@@ -101,6 +101,7 @@ export interface SwitchTarget {
   themeSettings?: ThemeSettingsMap;
   kitBackgroundVisible?: boolean;
   appbarSubtitleVisible?: boolean;
+  pwaIconBackground?: string | null;
 }
 
 /** The outcome of a switch attempt, so a caller can persist the choice ONLY when it actually applied.
@@ -171,6 +172,9 @@ async function runSwitch(
       ...(target.appbarSubtitleVisible !== undefined && {
         appbarSubtitleVisible: target.appbarSubtitleVisible,
       }),
+      ...(target.pwaIconBackground !== undefined && {
+        pwaIconBackground: target.pwaIconBackground,
+      }),
     }),
   );
   return "applied";
@@ -196,6 +200,7 @@ export function switchTheme(next: ThemeId, target: SwitchTarget): Promise<Switch
     themeSettings: target.themeSettings,
     kitBackgroundVisible: target.kitBackgroundVisible,
     appbarSubtitleVisible: target.appbarSubtitleVisible,
+    pwaIconBackground: target.pwaIconBackground,
   });
   if (inFlight && inFlight.key === key) return inFlight.done; // same target already running → join it
 

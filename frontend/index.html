@@ -10,8 +10,11 @@
          scripts/gen-pwa-icons.mjs. -->
     <link rel="icon" type="image/png" sizes="48x48" href="/icon-48.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
-    <!-- iOS adds-to-home-screen icon (Apple ignores the PWA manifest's icons for this). -->
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!-- iOS adds-to-home-screen icon (Apple ignores the PWA manifest's icons for this — so the D59
+         backdrop selector, which rewrites the manifest, cannot reach this path; it is one fixed file).
+         Its background is BAKED IN because iOS composites a transparent apple-touch-icon onto black
+         (R28 §8) — pointing this at a transparent icon gave an accidental black tile. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <!-- Browser UI chrome color. A D51 DOCUMENTED MIRROR of the DEFAULT theme's `--bg`
          (cosmos, `src/themes/cosmos/tokens.css`) — static, like the manifest pair in vite.config.ts it

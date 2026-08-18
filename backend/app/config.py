@@ -38,6 +38,7 @@ from ruamel.yaml.error import CommentMark
 from ruamel.yaml.tokens import CommentToken
 
 from app.core.media import MEDIA_NAMESPACES
+from app.core.pwa import PWA_ICON_VARIANTS
 from app.domain.agent import AgentDef, CompactionCfg, ModelRef
 from app.domain.enums import OSType, Risk
 from app.domain.host import Host
@@ -909,7 +910,23 @@ class AppearanceCfg(BaseModel):
     #: shows nothing in EITHER state: there is no default text, the kit's retired "dashboard" literal
     #: included. Same unseeded-until-written contract as the fields above.
     appbar_subtitle_visible: bool | None = None
+    #: The installed home-screen icon's baked-in backdrop (D59 / W5) — one id from `PWA_ICON_VARIANTS`,
+    #: which `/manifest.webmanifest` turns into that variant's maskable `src`. Synced like the switches
+    #: above rather than device-local: it is one answer to "what does my app icon look like", and the
+    #: manifest is served per-request from THIS value so a change needs no restart. Same
+    #: unseeded-until-written contract (None → `DEFAULT_PWA_ICON_BG`, today's transparent icon).
+    pwa_icon_background: str | None = None
     updated_at: datetime | None = None  # server-stamped on each write; None until first saved
+
+    @field_validator("pwa_icon_background")
+    @classmethod
+    def _known_pwa_icon_variant(cls, v: str | None) -> str | None:
+        """The value SELECTS A FILENAME from a closed allowlist — it is never a path. Validating at the
+        config boundary means a typo (or anything else) 422s on the PUT instead of reaching the manifest as
+        a `src` nothing can serve, which for an installed app is an icon that silently fails to update."""
+        if v is not None and v not in PWA_ICON_VARIANTS:
+            raise ValueError(f"unknown pwa icon background {v!r} (expected one of {list(PWA_ICON_VARIANTS)})")
+        return v
 
 
 class NotificationEventsCfg(BaseModel):

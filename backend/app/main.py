@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import json
 import logging
 import sys
 from collections import OrderedDict
@@ -62,6 +64,7 @@ from app.api import (
 from app.api.media import MediaFiles
 from app.config import (
     ConfigValidationError,
+    Settings,
     home_path,
     load_dotenv,
     load_settings,
@@ -75,6 +78,13 @@ from app.core.media import (
     MEDIA_URL_ROOT,
     ensure_media_dirs,
     ns_dir,
+)
+from app.core.pwa import (
+    PWA_MANIFEST_PATH,
+    available_variants,
+    if_none_match_matches,
+    load_base_manifest,
+    patch_manifest,
 )
 from app.db import Database
 from app.runtime import (
@@ -573,6 +583,55 @@ def create_app() -> FastAPI:
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
     if _FRONTEND_DIST.is_dir():
+        # The PWA manifest (D59 / W5) — served DYNAMICALLY so the owner's installed-icon backdrop can
+        # change without a rebuild. Chrome 144+ never re-downloads an icon URL it already has, so new
+        # bytes at the same name are invisible to an installed app; the VARIANT therefore lives in the
+        # URL and this route rewrites the maskable `src` from `appearance.pwa_icon_background`. Registered
+        # ahead of the SYS-5 guard purely for the route-table ORDER that guard's test pins (it must stay
+        # last; this path never collides with `/api/...`), and ahead of `app.frontend` so it wins over the
+        # static file of the same name.
+        #
+        # NOT exercisable on the Vite dev server (:5173): `devOptions.enabled` is false, so no manifest is
+        # emitted there, and `/manifest.webmanifest` is not proxied here — this is a prod-shaped serve only.
+        base_manifest = load_base_manifest(_FRONTEND_DIST)
+        if base_manifest is not None:
+            # Parsed ONCE (dist is immutable per deploy), and the per-variant `is_file` check is startup
+            # work for the same reason — a variant whose PNG never shipped degrades to the default rather
+            # than pointing an installed app at a 404 (the `ensure_media_dirs` degrade-never-brick rule).
+            app.state.pwa_manifest = base_manifest
+            app.state.pwa_icon_variants = available_variants(_FRONTEND_DIST)
+
+            @app.api_route(PWA_MANIFEST_PATH, methods=["GET", "HEAD"], include_in_schema=False)
+            async def pwa_manifest(request: Request) -> Response:
+                state = request.app.state
+                # `settings` is lifespan state, so it is read defensively: the manifest is the one file
+                # that decides whether an installed app can update itself, and it must serve the default
+                # (= the pre-W5 behaviour) rather than 500 if runtime state is not up.
+                settings: Settings | None = getattr(state, "settings", None)
+                variant = settings.appearance.pwa_icon_background if settings else None  # hot-applied
+                if variant not in state.pwa_icon_variants:
+                    variant = None  # unbuilt (or unseeded) → the default file
+                body = json.dumps(patch_manifest(state.pwa_manifest, variant)).encode("utf-8")
+                # STRONG etag over the SERVED body, so it moves with the variant the moment the owner
+                # picks another one — `no-cache` then makes every load revalidate and the 304 keeps that
+                # free. (`Cache-Control` matters here beyond bandwidth: a manifest cached by heuristic
+                # freshness is an install that keeps the old icon.)
+                etag = f'"{hashlib.sha256(body).hexdigest()[:32]}"'
+                headers = {
+                    "cache-control": "no-cache",
+                    "etag": etag,
+                    "x-content-type-options": "nosniff",
+                }
+                if if_none_match_matches(request.headers.get("if-none-match"), etag):
+                    # No body → no Content-Type (RFC 9110 §15.4.5), the same split `api/media.py` makes.
+                    return Response(status_code=304, headers=headers)
+                if request.method == "HEAD":
+                    # Starlette does not strip the body for HEAD, so serve it empty with the GET's own
+                    # headers — `content-length` explicitly, or `init_headers` would populate a 0.
+                    head_headers = {**headers, "content-length": str(len(body))}
+                    return Response(headers=head_headers, media_type="application/manifest+json")
+                return Response(content=body, media_type="application/manifest+json", headers=headers)
+
         # SYS-5: an unmatched `/api/...` is a mistyped/removed endpoint, not an SPA route — a JSON 404,
         # never the shell, which would mask the client bug behind an HTML body. A real route rather
         # than a check inside the fallback because the frontend route below is LOW-PRIORITY: an

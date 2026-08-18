@@ -496,7 +496,7 @@ $CTRLB_HOME/
 | `monitor` | the `MonitorService` tick interval + the asymmetric up/down damping thresholds (D2-A/D50) | live (re-read per tick — the master switch is live) |
 | `automations` | the `AutomationRunner` tunables only (`default_timeout_s`, …) — the **definitions live in SQLite**, not in YAML (D49) | live (re-read per tick) |
 | `media{}` | owner media state keyed by **namespace** (mirrors `MEDIA_NAMESPACES`, incl. `kit`, which no theme owns — D52/G5 + D53); absent key = every consumer stays on its bundled art | live |
-| `appearance` | theme/mode/accent/motion/perf + per-theme settings (server-stamped LWW) | live |
+| `appearance` | theme/mode/accent/motion/perf + per-theme settings + the two kit switches + `pwa_icon_background` (D59 — the installed-icon backdrop, a closed variant allowlist) (server-stamped LWW) | live |
 
 Secrets: two-rule model (declared leaf keys + hinted credential-map subkeys) → masked on GET,
 carried-over on PUT, redacted from search snippets, drift-guard-tested.
@@ -583,13 +583,21 @@ router-relative.
 | media (D53) | `GET /media/{ns}` (the namespace index — roles + what the owner has installed) + a per-namespace **static mount** at `/media/{ns}/files` (`MediaFiles`, restricted to the roles the index advertises, so a folder parked beside them is invisible rather than quietly public) |
 | agent turns (D39/D41) | `GET /agent/turns/{t}` (status + `steer_queue`) · `GET …/stream` (re-attach) · `POST …/cancel` (idempotent Stop; harvests `steer_queue`) · `DELETE …/steer/{entry_id}` (unsend a queued steer) |
 
+Two routes sit **outside** `/api`, in `main.py`'s prod-only branch (absent in dev, where Vite owns
+the SPA): the D55 SPA file route (`app.frontend("/")` — every `dist` file with its own content type,
+falling back to the shell) and **`GET /manifest.webmanifest`** (D59) — the PWA manifest, served from
+the parsed `dist` copy with the `purpose: maskable` icon's `src` rewritten per request from
+`appearance.pwa_icon_background`. `application/manifest+json` · `no-cache` · strong `ETag` (304 on
+`If-None-Match`) · `nosniff`. Dynamic because Chrome 144+ treats an icon URL as immutable, so only a
+*changed* `src` can ever reach an installed app.
+
 ## 9. Repository structure
 
 ```
 ctrl-b/
 ├── backend/
 │   ├── app/ {api, services(/actions, /agent, /tools, /automations, monitor.py, wake_on_connect.py), core, adapters, domain, config.py, db.py, main.py, runtime.py}
-│   ├── tests/               # 111 files + conftest, decision-pinned (test_*_d26 …) + drift guards
+│   ├── tests/               # 112 files + conftest, decision-pinned (test_*_d26 …) + drift guards
 │   └── pyproject.toml       # exact pins · ruff (py314) · pyright[nodejs]
 ├── frontend/
 │   ├── src/ {api, components, hooks, lib, store, tabs, theme(-engine)/{kit,…}, themes/{cosmos,vapor,minimal,frontier,gacha}}

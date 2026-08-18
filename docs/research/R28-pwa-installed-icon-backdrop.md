@@ -586,3 +586,57 @@ call should keep its transparent `background` — the fill belongs to the canvas
 - RealFaviconGenerator, *Apple touch icon turns black* — <https://realfavicongenerator.net/blog/apple-touch-icon-turns-black>
 - Apple Developer Forums thread 713895, *Website icon with transparent background becomes black*
 - Apple, archived *Safari Web Content Guide → Configuring Web Applications* (read; **silent** on transparency — recorded as a gap)
+
+---
+
+## 12. Addendum — 2026-08-18 (the W5/D59 build pass)
+
+Three corrections/additions found while building the selector. §9's *recommendation* stands; what
+changed is the **update mechanics** §9.5 described, and one claim in it was wrong.
+
+### 12.1 Chrome 144 (2026-01-21) supersedes §9.5.1–2 — **manifest icon URLs are now immutable**
+
+Chrome's web-app update path was reworked. The three changes that matter here:
+
+1. **A manifest icon URL is treated as immutable.** Chrome no longer re-fetches the bytes at a URL it
+   has already minted an app from — so *repainting a file in place is a no-op for every installed
+   app*, whatever the murmur2 hash of the new bytes would be. §9.5.3's "make sure the new bytes are
+   actually on the wire" is now beside the point: the bytes are never asked for again.
+2. **A CHANGED icon URL is the trigger**, and it is no longer throttled to
+   `UPDATE_INTERVAL = DAY_IN_MILLIS`.
+3. **The blocking App Identity Update dialog is gone**; a changed identity now surfaces as a
+   **"Review app update" suggestion in the installed app's ⋮ menu**, which the owner approves at
+   leisure. (Older Chrome keeps the daily-ish check and the dialog — hence the Conf row's copy
+   covering both.)
+
+Source: <https://developer.chrome.com/blog/improvements-to-web-app-updates> (REPORTED — the blog
+post; the Chromium-side constants were not re-read for this addendum).
+
+**Consequence, and the reason D59 exists:** an owner-selectable backdrop *cannot* be a repaint of
+`icon-maskable-512.png`. The variant must live in the **URL**, which means the manifest must vary per
+selection, which means it cannot be served as a static build artifact. `/manifest.webmanifest` is now
+a backend route (`backend/app/main.py` → `app/core/pwa.py`). It also makes the "stay on Clear" case
+free: same filename **and** same bytes ⇒ nothing for Chrome to review, ever.
+
+### 12.2 Correction — the icons **are** workbox-precached (§9.5.3 was wrong)
+
+§9.5.3 claimed the icons are outside the precache because `globPatterns` lists only
+`**/*.{js,css,html}` + the vapor logo. That reading missed `vite-plugin-pwa`'s
+**`includeManifestIcons`, which defaults to `true`**: every file named in the `manifest.icons` block
+is added to the precache manifest independently of `globPatterns`. The built `dist/sw.js` confirms
+it — the icon entries are in the precache list.
+
+Practical effect for W5: the four NEW variants are deliberately **not** in the manifest block (only
+the stable maskable file is), so they are not precached and cost no install anything; they are
+fetched from the network when the WebAPK minting server asks for the one the manifest currently
+names. `vite.config.ts` is therefore left untouched by D59 — the rewrite happens server-side.
+
+### 12.3 Confirmation — Chrome uploads the icon BYTES to the minting server
+
+`webapk.proto`'s `Image` message carries an `image_data` field (image bytes, possibly re-encoded by
+Chrome) alongside `src` and `hash`. So the minting server is handed the image by the browser rather
+than fetching the URL itself — which is why WebAPK minting works at all for a **tailnet-only** origin
+like ctrl-b, where Google's infrastructure could never reach `emma.lobster-vector.ts.net`. Recorded
+because §10's "closed-source minting server" gap invited the opposite assumption, and because it means
+the icon a phone mints comes from the image fetched and processed by THAT phone: the tailnet is the
+only fetcher.

@@ -7,13 +7,13 @@
 // (`useSaveAppearance`, used by the Conf picker).
 //
 // The synced unit is {theme, mode, accent, motion, perf, themeSettings, kitBackgroundVisible,
-// appbarSubtitleVisible} — one LWW stamp covers all of them (owner directive 2026-06-26: motion + perf are
+// appbarSubtitleVisible, pwaIconBackground} — one LWW stamp covers all of them (owner directive 2026-06-26: motion + perf are
 // device levers but kept consistent across devices; themeSettings carries each theme's namespaced options;
 // the kit background switch governs one SHARED image, so it is not a per-device choice either; the app-bar
 // brand-subtitle switch is one answer to "how much text do I want in my bar", not a per-screen layout
 // choice — unlike `ui.appbarMode`, which stays device-local). The WIRE uses snake_case `theme_settings` /
-// `kit_background_visible` / `appbar_subtitle_visible` (matching the existing `updated_at`); the store uses
-// camelCase — bridged here.
+// `kit_background_visible` / `appbar_subtitle_visible` / `pwa_icon_background` (matching the existing
+// `updated_at`); the store uses camelCase — bridged here.
 
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,6 +45,7 @@ export interface AppearanceDoc {
   theme_settings: ThemeSettingsMap | null; // snake on the wire (mirrors AppearanceCfg); → store `themeSettings`
   kit_background_visible: boolean | null; // the Kit Art System's shared-background switch; → store `kitBackgroundVisible`
   appbar_subtitle_visible: boolean | null; // the app bar's brand-subtitle switch; → store `appbarSubtitleVisible`
+  pwa_icon_background: string | null; // the installed-icon backdrop id (D59); → store `pwaIconBackground`
   updated_at: string | null; // server-stamped; carried for a future conflict check (none built — LWW)
 }
 
@@ -58,6 +59,7 @@ export interface AppearanceLocal {
   themeSettings: ThemeSettingsMap;
   kitBackgroundVisible: boolean;
   appbarSubtitleVisible: boolean;
+  pwaIconBackground: string | null;
 }
 
 /** The fields the reconcile applies (server-wins). Skin-change goes through `switchTheme`; the rest are
@@ -71,6 +73,7 @@ export interface AppearanceApply {
   themeSettings: ThemeSettingsMap;
   kitBackgroundVisible: boolean;
   appbarSubtitleVisible: boolean;
+  pwaIconBackground: string | null;
 }
 
 const KEY = ["appearance"] as const;
@@ -110,6 +113,7 @@ export function reconcileAppearance(
   const perf = server.perf ?? local.perf;
   const kitBackgroundVisible = server.kit_background_visible ?? local.kitBackgroundVisible;
   const appbarSubtitleVisible = server.appbar_subtitle_visible ?? local.appbarSubtitleVisible;
+  const pwaIconBackground = server.pwa_icon_background ?? local.pwaIconBackground;
   // Strip the dead per-theme `hideAppbar` (now the global appbarMode) so a stale SYNCED copy can't re-dirty
   // local each load (it's already stripped from local by the migration → compares clean, no spurious apply;
   // a later appearance save then propagates the clean value to the server).
@@ -129,6 +133,7 @@ export function reconcileAppearance(
     perf === local.perf &&
     kitBackgroundVisible === local.kitBackgroundVisible &&
     appbarSubtitleVisible === local.appbarSubtitleVisible &&
+    pwaIconBackground === local.pwaIconBackground &&
     stableStringify(themeSettings) === stableStringify(local.themeSettings)
   ) {
     return null; // already matches → no-op
@@ -142,6 +147,7 @@ export function reconcileAppearance(
     themeSettings,
     kitBackgroundVisible,
     appbarSubtitleVisible,
+    pwaIconBackground,
   };
 }
 
@@ -170,6 +176,7 @@ export function useAppearanceSync(): void {
       themeSettings: ui.themeSettings,
       kitBackgroundVisible: ui.kitBackgroundVisible,
       appbarSubtitleVisible: ui.appbarSubtitleVisible,
+      pwaIconBackground: ui.pwaIconBackground,
     };
     // Real registry predicate for the reconcile skin door (item ⑥). Importing `registry` here is fine —
     // this module already pulls it transitively via `switchTheme`.
@@ -201,6 +208,7 @@ export function useAppearanceSync(): void {
         themeSettings: next.themeSettings,
         kitBackgroundVisible: next.kitBackgroundVisible,
         appbarSubtitleVisible: next.appbarSubtitleVisible,
+        pwaIconBackground: next.pwaIconBackground,
       });
     } else {
       setUI({
@@ -211,6 +219,7 @@ export function useAppearanceSync(): void {
         themeSettings: next.themeSettings,
         kitBackgroundVisible: next.kitBackgroundVisible,
         appbarSubtitleVisible: next.appbarSubtitleVisible,
+        pwaIconBackground: next.pwaIconBackground,
       });
     }
   }, [data, anyDirty]);
@@ -225,6 +234,7 @@ export interface AppearancePatch {
   themeSettings: ThemeSettingsMap;
   kitBackgroundVisible: boolean;
   appbarSubtitleVisible: boolean;
+  pwaIconBackground: string | null;
 }
 
 /** Build the full appearance patch from the current `ui` store — every appearance write sends the whole
@@ -240,6 +250,7 @@ export function currentAppearancePatch(): AppearancePatch {
     themeSettings: ui.themeSettings,
     kitBackgroundVisible: ui.kitBackgroundVisible,
     appbarSubtitleVisible: ui.appbarSubtitleVisible,
+    pwaIconBackground: ui.pwaIconBackground,
   };
 }
 
@@ -262,6 +273,7 @@ export function useSaveAppearance() {
           theme_settings: patch.themeSettings, // camel store → snake wire
           kit_background_visible: patch.kitBackgroundVisible,
           appbar_subtitle_visible: patch.appbarSubtitleVisible,
+          pwa_icon_background: patch.pwaIconBackground,
         },
       }),
     onMutate: async (patch) => {
@@ -276,6 +288,7 @@ export function useSaveAppearance() {
         theme_settings: patch.themeSettings,
         kit_background_visible: patch.kitBackgroundVisible,
         appbar_subtitle_visible: patch.appbarSubtitleVisible,
+        pwa_icon_background: patch.pwaIconBackground,
         updated_at: old?.updated_at ?? null,
       }));
       return { prev };

@@ -1015,6 +1015,13 @@ class Settings(BaseModel):
 > per-server request gate for a non-queuing llama.cpp, D40 rider as re-homed by D48 §C4) ·
 > `TurnsCfg.steer_queue_max` (default 8 — per-thread steer-queue depth, D41) · `ToolSpec.suspending`
 > (marks a confirm/question tool prefix-**ineligible**, D40).
+- **`appearance.pwa_icon_background` (D59)** — the one config value that is read by something OUTSIDE
+  the app: `str | None`, an id from the closed `core/pwa.PWA_ICON_VARIANTS` allowlist (`transparent` ·
+  `ink` · `night` · `orchid` · `paper`), validated by an `AppearanceCfg` field_validator. `main.py`'s
+  prod-only `GET /manifest.webmanifest` route rewrites the built manifest's `purpose: maskable` icon
+  `src` from it per request (`core/pwa.patch_manifest`), so a pick applies with no restart and no
+  rebuild. It selects a FILENAME by lookup — never a path — and an unbuilt variant degrades to the
+  default. It carries no migration step: a new optional field with a default is additive.
 - **Secrets model = hybrid (decided Phase 0).** `config.yaml` is the **single UI-managed source
   of truth, including nested secrets** (per-host SSH creds, per-endpoint API keys, per-MCP-server
   env/headers) — because they're structured/repeating and the Conf tab edits + round-trips them,

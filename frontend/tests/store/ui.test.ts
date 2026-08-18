@@ -70,6 +70,16 @@ describe("ui store", () => {
     expect(JSON.parse(localStorage.getItem("ctrlb.ui")!).accent).toBe("aqua");
   });
 
+  // D59 / W5 — the installed-icon backdrop is an ADDITIVE field with a default, so it needs no version
+  // bump: the loader's field-fill merge (`{...DEFAULTS, ...parsed}`) supplies `null` to every blob written
+  // before it existed, and `null` is exactly "never picked" (the backend then serves its own default).
+  it("the app-icon backdrop persists, and a pre-W5 blob loads it as null (no migration needed)", () => {
+    setUI({ pwaIconBackground: "orchid" });
+    expect(JSON.parse(localStorage.getItem("ctrlb.ui")!).pwaIconBackground).toBe("orchid");
+    seed({ v: 1, theme: "vapor", accent: "aqua" }); // a blob from before the field existed
+    expect(loadUIState().pwaIconBackground).toBeNull();
+  });
+
   it("a slice selector ignores unrelated changes", () => {
     let renders = 0;
     const { result } = renderHook(() => {
@@ -95,6 +105,7 @@ describe("ui store", () => {
     themeSettings: {},
     kitBackgroundVisible: true,
     appbarSubtitleVisible: false,
+    pwaIconBackground: null,
     appbarMode: "visible",
     layout: "auto",
   };

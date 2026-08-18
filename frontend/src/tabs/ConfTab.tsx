@@ -779,6 +779,22 @@ const RISKS = [
   { val: "high", label: "High" },
 ];
 
+/** The installed home-screen icon's baked-in backdrop (D59 / W5) — the "App icon backdrop" row below.
+ *
+ * Each `val` is an id in the backend's `PWA_ICON_VARIANTS` (`backend/app/core/pwa.py`), which is what
+ * `/manifest.webmanifest` turns into the maskable icon's `src`; `backend/tests/test_arch_invariants_sys10.py`
+ * parses THIS list and fails if the two sides drift. The swatches are the colours the generator bakes into
+ * the PNGs (`frontend/scripts/gen-pwa-icons.mjs` MASKABLE_BACKDROPS) — a documented mirror, like the
+ * manifest/theme-color pair: they are picture content, not tokens, so they cannot be read from CSS. `Clear`
+ * carries no swatch because there is nothing to show — it is the absence of a backdrop. */
+const PWA_ICON_BACKDROPS: { val: string; label: string; swatch?: string }[] = [
+  { val: "transparent", label: "Clear" },
+  { val: "ink", label: "Ink", swatch: "#0a0a0d" },
+  { val: "night", label: "Night", swatch: "#0a0b19" },
+  { val: "orchid", label: "Orchid", swatch: "#2a1336" },
+  { val: "paper", label: "Paper", swatch: "#e5e3df" },
+];
+
 /** A Conf section whose header collapses its body (persisted per `id`). Same vapor `.conftitle` look
  * + a leading disclosure chevron; collapsing doesn't alter the design, just hides the body.
  *
@@ -799,6 +815,7 @@ export function ConfTab({ active }: Props) {
   const perf = useUISlice((s) => s.perf);
   const kitBackgroundVisible = useUISlice((s) => s.kitBackgroundVisible); // the shared kit background switch
   const appbarSubtitleVisible = useUISlice((s) => s.appbarSubtitleVisible); // the app bar's brand-subtitle switch
+  const pwaIconBackground = useUISlice((s) => s.pwaIconBackground); // the installed-icon backdrop (D59)
   const appbarMode = useUISlice((s) => s.appbarMode); // global, per-device (local) — every theme honors it
   const layout = useUISlice((s) => s.layout); // the RAW section-layout lever (auto/4/3/2) — device-local like App bar
   // The resolved partition (D35 §F0): `hostsUtils` = the active layout renders utils INSIDE Conf, so this
@@ -885,6 +902,7 @@ export function ConfTab({ active }: Props) {
     perf?: typeof perf;
     kitBackgroundVisible?: boolean;
     appbarSubtitleVisible?: boolean;
+    pwaIconBackground?: string | null;
   }) => {
     setUI(patch);
     saveAppearance.mutate(currentAppearancePatch());
@@ -2550,6 +2568,22 @@ export function ConfTab({ active }: Props) {
                 { val: "2-tab", label: "2" },
               ]}
               onPick={(v) => setUI({ layout: v })}
+            />
+          </SettingRow>
+          {/* The INSTALLED app icon's backdrop (D59 / W5) — SYNCED (setGlobal), because it describes the one
+              app icon rather than a per-screen preference. The pick lands in `appearance.pwa_icon_background`
+              and the backend serves `/manifest.webmanifest` from it; nothing in the running app changes, which
+              is why the desc has to spell out WHEN each platform picks it up (Chrome 144+ suggests the update
+              under the app's ⋮ menu; Firefox bakes its icon at install and never revisits it). */}
+          <SettingRow
+            label="App icon backdrop"
+            desc="The installed home-screen icon's baked-in background. Clear = no backdrop (Chrome fills it white). Takes effect when Chrome next refreshes the installed app — approve it under the app's ⋮ menu if asked (older Chrome checks about daily); uninstall + re-add applies it immediately. Firefox bakes the icon at install and never updates it."
+          >
+            <Seg<string>
+              label="App icon backdrop"
+              current={pwaIconBackground ?? "transparent"}
+              options={PWA_ICON_BACKDROPS}
+              onPick={(v) => setGlobal({ pwaIconBackground: v })}
             />
           </SettingRow>
         </div>

@@ -66,6 +66,13 @@ export interface UIState {
   // the resting state and this switch is how the subtitle comes back. A theme that fills no subtitle shows
   // nothing in either state: there is no default text (the kit's old "dashboard" literal is dead).
   appbarSubtitleVisible: boolean;
+  // The INSTALLED home-screen icon's baked-in backdrop (D59 / W5) — one id from the backend's
+  // `PWA_ICON_VARIANTS` (`app/core/pwa.py`), which is what `/manifest.webmanifest` turns into the maskable
+  // icon's `src`. Nothing in the running app reads it: the value's only consumer is the manifest the
+  // browser fetches, so this store slot exists to hold the Conf row's state and ride the appearance sync.
+  // SYNCED for that reason too — it describes the ONE app icon, not a per-screen preference. `null` = never
+  // picked → the backend serves its own default (today's transparent icon).
+  pwaIconBackground: string | null;
   // Theme-namespaced options (skyline/loz/hero/waveform for vapor; "density" for minimal, …). The
   // theme owns the schema (`ThemeDef.settings`); this is the override store. SYNCED via appearance.
   themeSettings: ThemeSettingsMap;
@@ -108,6 +115,7 @@ const DEFAULTS: UIState = {
   perf: "full", // default to the full glass look; the owner opts into "lite" on a slow device
   kitBackgroundVisible: true, // a dropped background shows without a second step (it is off until one exists)
   appbarSubtitleVisible: false, // G6.3's icon + title only stands as the default; the switch opts back in
+  pwaIconBackground: null, // unpicked → the backend's DEFAULT_PWA_ICON_BG (the unchanged transparent icon)
   themeSettings: {}, // per-theme overrides resolve against each ThemeDef.settings default
   appbarMode: "visible", // global per-device chrome lever; every theme's Root honors it
   layout: "auto", // global per-device section-layout lever (NOT synced); auto = the active theme's default

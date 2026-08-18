@@ -30,6 +30,7 @@ def test_appearance_defaults_config_layer() -> None:
     assert s.appearance.theme_settings is None  # M3: open per-theme options map, unseeded until written
     assert s.appearance.kit_background_visible is None  # unseeded — not "the owner turned it off"
     assert s.appearance.appbar_subtitle_visible is None  # same contract for the brand-subtitle switch
+    assert s.appearance.pwa_icon_background is None  # D59: unseeded → the manifest serves its own default
     assert s.appearance.updated_at is None  # stamped only on first write
 
 
@@ -96,6 +97,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
                 "theme_settings": None,
                 "kit_background_visible": None,  # unseeded too — a pre-slice config is not "turned off"
                 "appbar_subtitle_visible": None,  # ditto: unseeded ≠ "the owner hid the subtitle"
+                "pwa_icon_background": None,  # D59: unseeded → `/manifest.webmanifest` serves the default
                 "updated_at": None,
             }
 

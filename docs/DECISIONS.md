@@ -4378,3 +4378,47 @@ per-topic Conf editing · a second backup subsystem.
 **Phase ordering (owner):** Core Memory = Phase 20 and **executes before** the parked Phase 19
 hardening pass; the hardening charter takes **D58** when it wakes (its docs' "D57" references
 renumbered).
+
+## D59 — The installed PWA icon's backdrop: a DYNAMIC manifest, a closed variant allowlist ✏️ LOCKED + BUILT 2026-08-18 (owner-approved council design; mechanism web-verified against Chrome 144 semantics; research of record = R28 incl. its §12 addendum)
+
+**What.** `appearance.pwa_icon_background` — one id from a closed allowlist (`transparent` ·
+`ink` · `night` · `orchid` · `paper`, `backend/app/core/pwa.py`) picked in Conf → Appearance and
+synced like the rest of the appearance doc. The backend **serves `/manifest.webmanifest` itself**
+(`app/main.py`, prod branch only) and rewrites the `purpose: maskable` icon's `src` to that
+variant's file per request; the five PNGs are ordinary committed build artifacts emitted by
+`frontend/scripts/gen-pwa-icons.mjs`. The `purpose: any` icons stay transparent (R28 §9.1), and
+iOS — which ignores the manifest — gets one fixed `apple-touch-icon-180.png` instead of a variant.
+
+**Why a dynamic manifest and not just new bytes.** Chrome 144+ treats a manifest icon URL as
+**immutable**: it never re-downloads bytes at a URL it has already minted, so shipping a repainted
+`icon-maskable-512.png` would be invisible to every installed phone. A **changed icon URL** is what
+it notices, and it is guaranteed to surface a "Review app update" suggestion in the installed app's
+⋮ menu (pre-144: a daily-throttled check plus a blocking identity dialog). The variant therefore has
+to live in the URL — which means the manifest has to vary, which means it cannot be a static file.
+Serving it dynamically also makes the change hot: the route reads the live settings object
+`reconfigure` rebinds, so a pick needs no restart and no rebuild.
+
+**Closed allowlist, never a path.** The config value SELECTS a filename by dict lookup; there is no
+interpolation of owner input into a URL anywhere, and `AppearanceCfg` validates against the same map
+so a bad value is a 422 at the config boundary rather than a manifest `src` nothing can serve. A
+variant whose PNG is absent from `dist` (checked once at startup) degrades to the default — an
+installed app must never be pointed at a 404.
+
+**`transparent` keeps its filename AND its bytes.** It is the default and the pre-W5 behaviour, so an
+owner who never touches the setting gets **zero icon-update events**: same URL, same bytes, nothing
+for Chrome to review. Both halves are enforced. The FILENAME: `test_arch_invariants_sys10.py` pins
+the `purpose: "maskable"` entry in `vite.config.ts` to the default variant's file. The BYTES: the
+generator hashes its rendered candidate against a **pinned sha256** before writing anything and, on
+mismatch, writes nothing and exits non-zero (`gen-pwa-icons.mjs`) — so source-art or encoder drift is
+a decision someone makes (re-pin, and accept one "Review app update" prompt for every owner on Clear)
+rather than a silent regenerate. That half cannot be a test: CI never runs the generator, so a test
+could only compare the committed file to itself.
+
+**No backend image dependency.** The variants are pre-rendered at build time by the existing sharp
+generator, not composited per request — the backend keeps its "no decoder dependency" posture
+(D53/`core/media.py` §10.4) and the manifest route stays a dict rewrite plus a `json.dumps`.
+
+**Explicit non-builds:** no per-theme automatic backdrop (the icon is one app-wide identity, and a
+theme switch that silently queued a Chrome app-update review would be a hostile surprise) · no
+`monochrome`/themed-icon variant (R28 §7 — not worth shipping) · no runtime image compositing · no
+filename-busting scheme beyond the variant ids themselves.

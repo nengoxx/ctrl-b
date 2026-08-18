@@ -866,6 +866,19 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
   at face height). Interim policy stands: bundled-entry focus values are hand-tuned in `roster.ts`;
   owner drops rely on each surface's tuned default crop.
 
+### H3. Installed-app icon backdrop — **✅ SHIPPED 2026-08-18 (D59; research = [R28](./research/R28-pwa-installed-icon-backdrop.md))**
+
+- **What shipped:** Conf → Appearance → *App icon backdrop* — five baked-in backdrops for the
+  installed home-screen icon (Clear · Ink · Night · Orchid · Paper), synced like the rest of the
+  appearance doc. The backend serves `/manifest.webmanifest` and rewrites the maskable icon's `src`
+  from `appearance.pwa_icon_background`; the PNGs are build artifacts from `gen-pwa-icons.mjs`.
+  Answers the owner's "why is my app icon a white box" (R28 §0: the WebAPK shell composites white
+  under a transparent maskable icon).
+- **The non-obvious constraint, recorded for anything else that touches the manifest:** Chrome 144+
+  treats an icon URL as immutable, so repainting a file in place reaches no installed app — only a
+  CHANGED URL does (and it surfaces as a "Review app update" suggestion under the app's ⋮ menu).
+  That is why the manifest is served dynamically rather than rebuilt. See R28 §12.
+
 ## Settings tab — organized by functionality (informs v1 Conf layout)
 
 Even pre-implementation, lay out the Conf tab in **functional groups** so these land in obvious
