@@ -229,6 +229,18 @@
     .kit-appbar.transparent ~ .tab > .gc-banner {
       margin-top: var(--gc-bar-pull);
     }
+    /* …and under the FLOATING launcher (owner 2026-08-18, the same round): the bar-less inset was sized
+     * so a first TITLE clears the fixed corner icons — 34px of scroller padding + the head's own 22px pad
+     * = 56px, just past the 54px launcher zone (10px top + 44px target). The full-bleed banner carries no
+     * pad, so the icon clipped its art. Granting the banner the heads' same 22px seats its edge on the
+     * exact first-title line — one geometry for every first block. Keyed on the launcher being RENDERED
+     * (the kit's own `:has` idiom, same condition as the inset rule) rather than on a mode name; a bar in
+     * flow means the menu is DOCKED, so this and the clear-bar seat above are structurally exclusive. The
+     * agent's oracle deliberately does NOT get this: it is a backdrop the icons float over (owner ruling),
+     * where the banner is a content strip the icon was cutting into. */
+    .kit:has(.navmenu:not(.docked)) .tab > .gc-banner {
+      margin-top: 22px;
+    }
     body[data-perf="lite"] .kit-appbar,
     body[data-perf="lite"] .kit-tabbar {
       background: var(--bg);
