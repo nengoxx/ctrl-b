@@ -12,12 +12,17 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-17)
+## Current state (2026-08-18)
 
-- **Prod = v1.7.1 @ `ad581f6`**, live + healthy (https://emma.lobster-vector.ts.net) — Phase 18
-  released 2026-08-16; owner eyeball ✅. **⚠ v1.7.0 is tagged but NEVER DEPLOYED — NOT a rollback
-  target; rollback = v1.6.0** (schema-6 DB is back-compatible; the deeper floor stays **v1.5.1
-  EXACTLY** — sw.js). Prod DB schema 6.
+- **Prod = v1.7.2 @ `e50d39b`**, live + healthy (https://emma.lobster-vector.ts.net) — the
+  2026-08-18 polish wave released same-day (clean runbook run; CI release gate green incl. e2e;
+  no config/DB migration — schema stays 6, config VERSION stays 1). **Rollback = v1.7.1**
+  (`bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.1`, no config-restore step needed). **⚠ v1.7.0
+  is tagged but NEVER DEPLOYED — NOT a rollback target**; the deeper floor stays **v1.5.1
+  EXACTLY** — sw.js. Version stays in the 1.7 line by owner ruling (2026-08-18: "we're going to
+  run out of versions before 2.0") — features do NOT force a minor bump here.
+  **v1.7.2 also carries Phase 20 Core Memory to prod for the first time — still OFF by default,
+  untouched posture.**
 - **Phase 20 Core Memory: ✅ BUILT END TO END 2026-08-17 (D57, S0–S5 all complete in one
   session).** Spec of record + per-slice review records + the as-built appendix =
   [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (§11 ladder ✅ · §14 appendix with the measured
@@ -37,9 +42,10 @@
   tests). Full record: CORE_MEMORY_PLAN **§14b**. Core Memory is also now **pinned into the
   Phase 19 scope on both lenses** (owner, 2026-08-17): Packet ③ + the SECURITY_MODEL re-walk +
   DP-B memory-tiering design review + the §7 inventory delta note; residuals = CM-1/CM-2 in
-  HARDENING_PLAN §8.2. Dev units RUNNING for the owner round (dev has tier 2 ON with a copy of
-  the Claude Code session corpus at `~/.ctrl-b-dev/memories/core/` — note its index sits at 99%
-  of cap, so the consolidation nudge is live there).
+  HARDENING_PLAN §8.2. Dev units back to on-demand/stopped (2026-08-18); dev's tier-2 state is
+  on disk — tier 2 ON with a copy of the Claude Code session corpus at
+  `~/.ctrl-b-dev/memories/core/`, index at 99% of cap, so the consolidation nudge goes live
+  the moment the units start.
 - **2026-08-17 (evening): the DOC-TRUTH PASS** (owner: "documentation completely consistent with
   the actual design and architecture"). Five auditors verified every live doc against code (~90
   findings, all file:line-evidenced), five editors applied them, Codex adversarially reviewed the
@@ -51,31 +57,50 @@
   Memory) + the serve-FULL exception + `GitMemoryBackup`, THEME_ENGINE add-a-theme entry points +
   §14.17 section layouts + Kit Art System/safeRafLoop, QUALITY (43-warn lint recount, firefox e2e,
   `_gate.sh`), README/CLAUDE/AGENTS/deploy runbooks. Everything code-anchored; nothing relitigated.
-- **2026-08-18: slice W5 — the PWA installed-icon backdrop (D59) — BUILT, unreleased.** Conf →
-  Appearance → *App icon backdrop* (Clear · Ink · Night · Orchid · Paper) writes
-  `appearance.pwa_icon_background`; the backend now serves `/manifest.webmanifest` itself and
-  rewrites the maskable icon `src` from it (Chrome 144+ ignores new bytes at a known icon URL — only
-  a changed URL reaches an installed app). Staying on Clear is byte-identical to today, so it
-  triggers no icon update. **Owed: the owner's phone eyeball after the next release** — pick a
-  backdrop, then approve "Review app update" under the installed app's ⋮ menu (or uninstall +
-  re-add for the immediate path).
-- **2026-08-18: slice W2 — the `composerSkin` axis widens on a shared `--skin-*` vocabulary — BUILT,
-  unreleased, uncommitted.** Eleven kit-owned slots replace ~16 per-skin consumer rules (5 declaration
-  blocks + 2 light-mode deltas), which let two surfaces outside the composer join the axis: the **TTS
-  mini-player** and the **pinned plan head**. Record = the **D37 amendment** + THEME_ENGINE §14.16.
-  NO VISUAL CHANGE to glass/bezel/sleek/outline (verified pre/post on a 24-cell computed-chrome
-  matrix); the ONE ruled delta is **`arcade`'s drop: 3px/60%-mix → solid `var(--accent)` 4px**, which
-  closes GACHA_PLAN §7.7 **R20 #1** as ALIGN. `--arcade-lift` is gone (renamed `--skin-lift`, no
-  alias); frontier's graduated `.mini-player` border rule deleted (§14.14). **Owed: the owner's
-  eyeball on the two new adopters** — the player and the pinned head under a non-`outline` skin.
+- **2026-08-18: THE POLISH WAVE — 4 slices designed, built, Codex-reviewed, RELEASED as v1.7.2
+  same-day** (commits `f246096` W3 · `0b373f0` W1 · `19e9dfc` W5 · `e50d39b` W2; every slice
+  Opus-implemented from a pinned council brief, per-slice Codex round — zero HIGHs, every MED/LOW
+  folded same-day; full gate per slice):
+  - **W3** — media `revision` → `mtime:size:ino:ctime` (the `_stamp` recipe; closes R21 ①), and
+    the §14.11 SVG-filter waiver counter → an ENGINE-WIDE source sweep vs a declarative allowlist
+    (`svgFilterWaivers.test.ts`; closes R21 ③). The sweep's dry run found cosmos's carved moon
+    (`#cosmosCarve`) had shipped unrecorded since June — now **waiver ②, owner-ratified**.
+  - **W1** — the pinned-plan/mini-player overlap CLOSED in every chrome mode (was −18..−27px in
+    `minimal`, −1..−3px in `off`): derived band tokens (`--kit-inset-top` · `--kit-plan-top` ·
+    `--kit-plan-band-top`) + a ResizeObserver-published `--plan-head-h` replace the 46px literal;
+    gap = 8px in all 20 theme×mode cells, safe-area-invariant; vapor's flush tab now rides
+    `--kit-plan-gap: 0`. Rider: `.toasts`/`.kit-tts-toast` take the same inset. New e2e pins the
+    gap, the (previously untested) bar-less insets, token consumption via sentinel injection.
+    Contract: THEME_ENGINE §14.4.1 "PINNED-PLAN BAND".
+  - **W5 (D59)** — the *App icon backdrop* selector (Conf → Appearance: Clear · Ink · Night ·
+    Orchid · Paper). Chrome 144+ treats manifest icon URLs as immutable, so the backend serves
+    `/manifest.webmanifest` itself, patching the maskable `src` (GET+HEAD, no-cache, sha ETag);
+    `appearance.pwa_icon_background`, closed allowlist, no migration. Clear = byte-identical to
+    the pre-wave icon, ENFORCED by a sha-pinned generator refusal. iOS rider: apple-touch icon
+    baked at ink (was transparent → iOS painted it black). Supersedes the old "R28 §9" path.
+  - **W2 (D37 amendment)** — the `composerSkin` axis widened to the **TTS mini-player** and the
+    **pinned plan head** via the 11-slot kit-owned `--skin-*` vocabulary (~16 per-skin rules →
+    5+2 blocks; `skinVocabulary.test.ts` fences names/scope/authority/geometry). NO visual change
+    to glass/**bezel**/sleek/outline pre-existing chrome (24-cell matrix-verified — bezel is the
+    owner's daily); the ONE ruled delta: **arcade's drop → solid 4px `var(--accent)`** (R20 #1
+    ALIGN). `--arcade-lift` gone; frontier's private player border rule deleted (§14.14
+    graduation).
+  **Owed to the owner (phone/eyeball, all on prod now):** the player + pinned head under each
+  skin (esp. bezel) · arcade's solid drop under the accent-filled send · the minimal-mode gap on
+  the real notched phone (reasoned, not device-measured) · pick an icon backdrop, then approve
+  "Review app update" under the installed app's ⋮ menu (or uninstall + re-add).
+  **Parked by owner to its OWN session (owner at the screen):** the root cross-fade damp — the
+  detail-morph's whole-screen zoom/screenshot swap; "eyeball, don't remove blind"
+  (GACHA_PLAN §12.6 E1).
 
 ## ▶▶ NEXT — Phase 20 is DONE; the owner court is up
 
 **The whole D57 ladder is built, reviewed and committed** (see the Current-state bullet). What
 remains is owner-court, in the owner's order:
 
-1. ~~Push the commit stack~~ ✅ 2026-08-17 (the fix-wave commit may sit ahead — push it too on
-   the owner's word).
+1. ~~Push the commit stack~~ ✅ 2026-08-17; ~~the polish wave + v1.7.2 release~~ ✅ 2026-08-18.
+   **The owner's post-release rounds are up first** (the "Owed to the owner" list in the wave
+   bullet above) · then the **root cross-fade session** (parked, owner at the screen).
 2. **Core Memory prod adoption — ⏸ OWNER-DEFERRED (owner, 2026-08-17): "not right now; I just
    want the system working and ready for whenever I want to delve into it."** Don't re-propose
    the drive; readiness is now a VERIFIED property owned by Phase 19 Packet ③'s core-memory
@@ -90,9 +115,9 @@ remains is owner-court, in the owner's order:
    (owner, 2026-08-17). [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is spec-complete; at wake: its
    §10 owner court + the §3b delta council check; locks as **D58**.
 5. **Gacha banked follow-ups** (owner-eyeball-heavy): the color-theory unit-palette research
-   session · root-cross-fade flicker refinement · kit minimal plan/player overlap
-   (VAPOR_ASSIMILATION_PLAN §7.1) · the standing ledger below. **The R20/R21 addenda are nearly
-   drained:** R20 #1 (the composer's quieter drop) closed as ALIGN in W2 · R21 ① (content-identity
+   session (owner 2026-08-18: PARKED — "colors look good for now") · ~~root-cross-fade flicker~~
+   → its own owner-present session (see above) · ~~kit minimal plan/player overlap~~ ✅ W1 ·
+   the standing ledger below. **The R20/R21 addenda are nearly drained:** R20 #1 (the composer's quieter drop) closed as ALIGN in W2 · R21 ① (content-identity
    revision) + ③ (the engine-wide SVG-filter waiver sweep) built in W3 · R21 ④ (the HANDOFF archive)
    was done 2026-08-12. What is left needs no work: R20 **#2** (the 4-line-name/rarity-tab touch) and
    **#3** (the 7s scan-mask pulse) are *accepted as recorded* — a guard would be speculative padding;
@@ -100,7 +125,8 @@ remains is owner-court, in the owner's order:
    design). The one genuinely open item is R20 **#4 — the "white bar atop the appbar", reported once
    and undiagnosed**; its discriminator is a theme switch (if cosmos shows it too, it is Fennec's own
    chrome).
-6. **The R28 installed-icon improvement** — ⏸ owner-gated; R28 §9 is the ready-to-build brief.
+6. ~~The R28 installed-icon improvement~~ ✅ 2026-08-18 — superseded by the W5 selector (D59;
+   R28 §12 records the Chrome-144 supersession of §9). What's left is the owner's phone pick.
 7. **Fleet-liveness decoupling from Tailscale** (owner-gated; the D47 seam) — only if the
    cold-boot wake blindness recurs.
 
