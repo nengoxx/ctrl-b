@@ -27,7 +27,8 @@ vi.mock("../src/theme-engine/registry", () => ({
   // (D51 V0) and so drives the real `defaultSwitchTarget` in the Reset tests. frontier + cosmos carry the
   // `outlines` + `composerSkin` axis settings so AppEngines' D37 stamps resolve against their real defaults
   // (frontier outlines OFF / skin `bezel`, cosmos outlines ON / skin `outline`) without dragging the theme
-  // modules' canvas imports into jsdom.
+  // modules' canvas imports into jsdom. gacha joins them for its `arcade` default — the one skin whose
+  // vocabulary block is more than a re-spelling of what it replaced (W2).
   registry: {
     vapor: { palettes: {} },
     frontier: {
@@ -51,6 +52,24 @@ vi.mock("../src/theme-engine/registry", () => ({
           label: "Composer skin",
           options: [{ val: "outline" }, { val: "glass" }, { val: "bezel" }, { val: "sleek" }],
           default: "outline",
+        },
+      },
+    },
+    gacha: {
+      palettes: {},
+      settings: {
+        outlines: { type: "switch", label: "Outlines", default: false },
+        composerSkin: {
+          type: "seg",
+          label: "Composer skin",
+          options: [
+            { val: "outline" },
+            { val: "glass" },
+            { val: "bezel" },
+            { val: "sleek" },
+            { val: "arcade" },
+          ],
+          default: "arcade",
         },
       },
     },
@@ -223,6 +242,17 @@ describe("App presentation axes — AppEngines stamps body[data-outlines] + body
     render(<App />);
     expect(document.body.dataset.outlines).toBe("on");
     expect(document.body.dataset.composerSkin).toBe("sleek");
+  });
+
+  it("gacha defaults: skin `arcade` — the stamp the widened vocabulary keys on", () => {
+    // The one skin whose declaration block is not purely a re-spelling of what it replaced (its drop went
+    // solid 4px in W2), and the default of the theme that ships it. jsdom's CEILING is the reason this is a
+    // STAMP assertion and nothing more: it neither loads kit.css nor resolves `var()` chains, so what the
+    // skin PAINTS is pinned by e2e/layout.spec.ts + tests/theme-engine/skinVocabulary.test.ts instead.
+    setUI({ theme: "gacha" });
+    hoisted.root = () => null;
+    render(<App />);
+    expect(document.body.dataset.composerSkin).toBe("arcade");
   });
 
   it("cosmos defaults: outlines ON + skin `outline`", () => {

@@ -69,18 +69,18 @@
       /* ── THE ARCADE DROP (owner ask 2026-08-06) ──────────────────────────────────────────────────────
        * kit.css's composer-skin signature, lifted onto gacha's two ART surfaces (the capsule cards and the
        * dossier portrait) so the cabinet's one elevation language runs through the theme instead of
-       * stopping at the composer: `box-shadow: <lift> <lift> 0 <accent at 60%>`, `--arcade-lift: 3px`.
+       * stopping at the composer: `box-shadow: <lift> <lift> 0 <accent>`, `--skin-lift: 4px`.
        *
-       * gacha mints its OWN pair rather than reading `--arcade-lift`: that variable is declared ON
-       * `.kit-composer` by `body[data-composer-skin="arcade"]`, so it does not resolve anywhere else — and
+       * gacha mints its OWN pair rather than reading `--skin-lift`: that variable is declared on `.kit` by
+       * `body[data-composer-skin="arcade"]`, so it is a SKIN's value and not the theme's — and
        * the skin is a picker value, so a card must not lose its drop because the owner chose a different
        * composer. Same numbers, same formula, independent lifetime; the kit block is the reference, not
        * the source. The DISTANCE is a constant and lives here; the COLOUR is a var() formula over
        * `--accent` and lives on `body` (the §14.6 trap — see it there).
        *
-       * TWO distances, both re-weighted on the owner's device round (2026-08-06). The kit's 3px read thin
-       * on gacha's art surfaces — pictures carry a heavier offset than a control plate does — so the
-       * CAPSULE CARDS go to 4 ("slightly thicker, not too much, like the button") and the DOSSIER PORTRAIT
+       * TWO distances, both re-weighted on the owner's device round (2026-08-06). The kit's then-3px read
+       * thin on gacha's art surfaces — pictures carry a heavier offset than a control plate does — so the
+       * CAPSULE CARDS went to 4 ("slightly thicker, not too much, like the button") and the DOSSIER PORTRAIT
        * to 5, one step further again because a 104×138 picture on a wide sheet is the biggest single image
        * the theme shows. A second token rather than a literal on the rule, so the pair stays one family
        * and the card's own inset (gacha.css) follows its lift automatically. */

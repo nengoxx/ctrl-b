@@ -71,7 +71,9 @@ describe("composerSkinSetting factory", () => {
     expect(spec).toMatchObject({
       type: "seg",
       label: "Composer skin",
-      desc: "input bar chrome",
+      // W2 widened the axis past the composer (popovers, the mini-player, the pinned plan head) — the KEY
+      // stays `composerSkin`, only the description says what the choice now reaches.
+      desc: "chrome for the input bar and its panels",
       default: "outline",
       options: [
         { val: "outline", label: "Outline" },

@@ -2070,21 +2070,49 @@ consumer wants it (§14.14 graduation philosophy).
 
 **Built axes:** `outlines` (chat-scoped — the D36 §15 hook families; minimal/cosmos default ON, frontier
 OFF = its F4 look) · `composerSkin` (✅ BUILT 2026-07-15, F5 slice B — `outline`|`glass`|`bezel`|`sleek`,
-**+ `arcade`** (added D52 G3: a flat, opaque CABINET PANEL — no frost, no elevation, a hairline edge, tight
-corners, squared-off controls; born of gacha's prototype but LOOK-named and authored on semantic tokens, so
+**+ `arcade`** (added D52 G3: an opaque CABINET PANEL — no frost, no outline anywhere, one hard zero-blur
+**solid-accent 4px drop** in place of an ambient lift, tight corners, squared-off controls and a press that
+translates into the drop; born of gacha's prototype but LOOK-named and authored on semantic tokens, so
 it is a real catalog member any theme can wear — never a theme-scoped bypass of D37);
-frontier defaults `bezel`, minimal/cosmos `outline`; declared right after the `composer` layout seg so the
-two rows render adjacent). Its skins are first-class kit chrome in kit.css keyed on
+frontier defaults `bezel`, minimal/cosmos `outline`, gacha `arcade`; declared right after the `composer`
+layout seg so the two rows render adjacent). Its skins are first-class kit chrome in kit.css keyed on
 `body[data-composer-skin]` (a dedicated "composer skins" section), NOT axes-layer strips; the composer
 LAYOUT catalog deduped to the three real components `[stacked, sheet, line]` (borderless/ghost → the
 glass/sleek skins). No theme styles composer chrome directly (D37 authority rule: outlines axis owns the
-chat thread, skin axis owns the composer). **2026-07-30 — the axis grew to the composer's OVERLAY POPOVERS**
-(`.kit-suggest` · `.tools-sheet`): one shared shell recipe (§15) plus one per-skin block each — glass = the
-plan sheet's neutral frost + the bar's elevation (perf-lite → opaque), bezel = the bar's dusk drop + inset
-light edge, sleek = flat + tight, outline = the un-keyed base. `.priv-menu` shares the SHELL but not the
-axis: it is chat-header chrome, not composer chrome. One sanctioned TS seam: KitComposer picks its default send
-glyph by resolved skin (glass → arrowhead). Full as-built rationale: **DECISIONS D37 (amended
-2026-07-15)**.
+chat thread, skin axis owns the composer). One sanctioned TS seam: KitComposer picks its default send
+glyph by resolved skin (glass → arrowhead).
+
+**The `--skin-*` VOCABULARY (W2, 2026-08-18 — D37 amendment).** The axis reaches **four surface families**,
+not one: the input **BAR** (+ the docked variant), its **POPOVERS** (`.kit-suggest` · `.tools-sheet`), the
+TTS **PLAYER** (`.mini-player`) and the plan **CHIP** pair (`.plan-pill` · `.plan-pin-head`). They share
+ELEVEN kit-owned slots — `--skin-border` · `--skin-fill` · `--skin-frost` · `--skin-elev` ·
+`--skin-bar-fill` · `--skin-bar-frost` · `--skin-bar-elev` · `--skin-bar-elev-up` · `--skin-chip-edge` ·
+`--skin-chip-elev` · `--skin-lift`. (No `--skin-radius`: owner-ruled out, no declarer exists; re-addable.)
+
+It is an **OVERRIDE vocabulary**: a skin declares only the slots it changes, and a consumer reads a slot
+with **its own current literal as the fallback** — `var(--skin-X, <the outline look>)`. Elevation depth is
+per-surface (bar 6px · popover 8px · player 10px), so a skin with no opinion about a surface leaves that
+surface's depth alone. **`outline` still declares NOTHING** — it *is* the fallbacks, and its subsection is
+correctly zero rules. A new consumer joins by writing one `var()`, never by growing the section by a rule
+per skin (the W2 refactor: ~16 per-skin consumer rules → 5 declaration blocks + 2 light-mode deltas).
+
+**The `.kit`-not-`:root` trap (§14.6).** Slots are declared on **`body[data-composer-skin="X"] .kit`**
+(0,2,1), light deltas on the (0,3,1) compound — **never on `:root`/`html`**. A custom property substitutes
+its own `var()`s *where it is declared*, and arcade's elevation reads `var(--accent)`, which the THEME
+declares on `<body>`: one level higher and every theme's cabinet drop would bake in the kit's base accent.
+
+**Resting chrome only.** State, motion and geometry stay bespoke (the press, the recording ring, radii,
+padding, the player's `:has()` clearances). **Exclusions, ruled:** the plan PANELS (`.plan-sheet`,
+`.plan-pin-drop`) are co-owned by the composer LAYOUT and stay off the vocabulary — only the plan HEAD
+joins, through the chip slots; `.priv-menu` shares the popover SHELL but opts out with `--skin-*: initial`
+(chat-header chrome, not composer chrome); the tools trigger's open ring stays an *affirmative*
+`outline`-only gate (an empty override means "keep the base look", which for a state ring fails in the
+wrong direction); and a theme re-rendering its own accent TOKEN on controls inside a skinned surface is
+the theme's business, not the axis's. Deferred: the `.kit-cbtn` transparent-border quartet (a CONTROL
+edge — it needs a control-level slot). The vocabulary is **kit-owned**: a theme declaring a slot is a
+violation, fenced at source by `frontend/tests/theme-engine/skinVocabulary.test.ts`.
+
+Full as-built rationale: **DECISIONS D37 (amended 2026-07-15, amended 2026-08-18)**.
 
 ## 14.17 SECTION LAYOUT SYSTEM v1 — the section-composition contract (D35; ✅ BUILT 2026-07-12 as frontier F0)
 

@@ -1168,7 +1168,7 @@ test("gacha · the ARCADE composer skin: a flat cabinet panel here, and the same
   expect(gacha.borderColor).toBe("rgba(0, 0, 0, 0)");
   expect(gacha.radius).toBe("14px"); // gacha's --radius = the prototype's own 14px (kit default is 20)
   expect(gacha.padding).toBe("9px 9px"); // the prototype's even 9px gutter
-  expect(gacha.shadow).toMatch(/ 3px 3px 0px 0px$/); // offset by the lift, zero blur AND zero spread
+  expect(gacha.shadow).toMatch(/ 4px 4px 0px 0px$/); // offset by the lift, zero blur AND zero spread
   expect(gacha.ctrlRadius).toBe("10px"); // --radius-sm: the controls square off with the bar
 
   // ── cosmos wearing the same catalog value ──
@@ -1187,7 +1187,7 @@ test("gacha · the ARCADE composer skin: a flat cabinet panel here, and the same
   const cosmos = await chrome();
   expect(cosmos.stamp).toBe("arcade");
   expect(cosmos.backdrop).toBe("none");
-  expect(cosmos.shadow).toMatch(/ 3px 3px 0px 0px$/);
+  expect(cosmos.shadow).toMatch(/ 4px 4px 0px 0px$/);
   expect(cosmos.padding).toBe("9px 9px");
   // …its OWN surface, corner radius and accent — no gacha value leaked into the shared catalog. The drop is
   // mixed from `--accent`, so the same rule paints violet here and pink there: same shape, host's colour.
@@ -1581,13 +1581,76 @@ test("gacha · the ARCADE skin holds its shape under every composer LAYOUT", asy
     expect(seen.backdrop).toBe("none");
     expect(seen.borderWidth).toBe("1px"); // the edge is RESERVED but transparent (owner ruling 2026-08-03)
     expect(seen.borderColor).toBe("rgba(0, 0, 0, 0)");
-    expect(seen.shadow).toMatch(/ 3px 3px 0px 0px$/); // the one hard drop, identical in all three layouts
+    expect(seen.shadow).toMatch(/ 4px 4px 0px 0px$/); // the one hard drop, identical in all three layouts
     // …the STRUCTURE — each layout's own, untouched by the skin
     expect(seen.radius).toBe(geometry[layout].radius);
     expect(seen.bottomRadius).toBe(geometry[layout].bottomRadius);
     expect(seen.padTop).toBe(geometry[layout].padTop);
     expect(seen.overflowX).toBeLessThanOrEqual(0);
   }
+  expect(pageErrors).toEqual([]);
+});
+
+test("the PINNED PLAN HEAD wears the composer skin (the W2 vocabulary, out in the agent tab)", async ({
+  page,
+  pageErrors,
+}) => {
+  // W2 / the D37 amendment: `composerSkin` stopped being a rule per skin per surface and became ONE
+  // `--skin-*` override vocabulary, which let two surfaces OUTSIDE the composer join it — the TTS
+  // mini-player and this pinned plan header. The header is the interesting one to measure: it is the
+  // furthest thing from the input bar that the axis now reaches, it lives in a THEME-painted panel, and it
+  // is where the chip slots (`--skin-chip-edge` / `--skin-chip-elev`) are the only declarers.
+  //
+  // Cosmos, because it ships `outlines: true` — the no-outlines axis flattens `.plan-pin-head`'s border to
+  // `none` outright, which would make the edge arm read the same under every skin and pass vacuously.
+  //
+  // GAP, documented rather than papered over: the sibling mini-player arm is DEFERRED. Activating the
+  // player needs a per-bubble `.tts-play`, which needs a seeded assistant message AND the voice-status
+  // flip — the pinned-overlap test above pays that cost for the ONE thing only a browser can settle there
+  // (a geometric overlap). Re-seeding it here to re-read four custom properties would not buy a fourth
+  // check of the same vocabulary; the player's consumption is pinned at source in
+  // tests/theme-engine/skinVocabulary.test.ts. Do NOT add a production seam to make it cheaper.
+  await seedThread(page, planThread([{ text: "wake pegasus", status: "active" }]));
+  const head = async (composerSkin: string) => {
+    await seedUI(page, {
+      theme: "cosmos",
+      mode: "dark",
+      accent: "violet",
+      tab: "agent",
+      themeSettings: { cosmos: { planPlacement: "pinned", composerSkin } },
+      v: 1,
+    });
+    await page.goto("/");
+    await expect(page.locator(".plan-pin-head")).toBeVisible();
+    return await page.evaluate(() => {
+      const s = getComputedStyle(document.querySelector<HTMLElement>(".plan-pin-head")!);
+      return {
+        edge: s.borderTopColor,
+        width: s.borderTopWidth,
+        shadow: s.boxShadow,
+        overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    });
+  };
+
+  // `outline` declares NOTHING — the chip keeps the kit's own accent-mix edge and no drop at all.
+  const outline = await head("outline");
+  expect(outline.width).toBe("1px");
+  expect(outline.edge).not.toBe("rgba(0, 0, 0, 0)");
+  expect(outline.shadow).toBe("none");
+
+  // `glass` declares the edge away and no elevation: the chip's `--accent-soft` fill carries it alone.
+  const glass = await head("glass");
+  expect(glass.width).toBe("1px"); // the BOX is kept — only the colour goes, so nothing reflows
+  expect(glass.edge).toBe("rgba(0, 0, 0, 0)");
+  expect(glass.shadow).toBe("none");
+
+  // `arcade` declares both: no edge, and the cabinet's one hard zero-blur accent drop at the lift.
+  const arcade = await head("arcade");
+  expect(arcade.edge).toBe("rgba(0, 0, 0, 0)");
+  expect(arcade.shadow).toMatch(/ 4px 4px 0px 0px$/);
+  // …and a 4px offset on a chip inside a 14px-inset sticky panel must not widen the page (§14.11).
+  expect(arcade.overflowX).toBeLessThanOrEqual(0);
   expect(pageErrors).toEqual([]);
 });
 

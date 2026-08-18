@@ -520,22 +520,24 @@ body[data-motion="reduced"] .kit-tab-ind {
 .kit-composer {
   /* floats OVER the scrolling content, anchored above the nav bar, inset from the screen edges so the
    * content shows in the gaps around it; frosted so the typed text stays readable over the busy content
-   * behind (perf-gated below). A moderate shadow lifts it without the heavy halo that darkened content. */
+   * behind (perf-gated below). A moderate shadow lifts it without the heavy halo that darkened content.
+   * The four PAINT properties read the `--skin-*` override vocabulary (§14.16): the literal beside each
+   * `var()` is the `outline` look and the fallback every skin that does not override inherits. */
   position: absolute;
   left: 18px;
   right: 18px;
   bottom: 12px;
   z-index: 4;
-  background: color-mix(in oklch, var(--surface) 85%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  border: 1px solid var(--line-2);
+  background: var(--skin-bar-fill, color-mix(in oklch, var(--surface) 85%, transparent));
+  -webkit-backdrop-filter: var(--skin-bar-frost, blur(8px));
+  backdrop-filter: var(--skin-bar-frost, blur(8px));
+  border: 1px solid var(--skin-border, var(--line-2));
   border-radius: 20px;
   padding: calc(12px * var(--density-pad)) 15px calc(10px * var(--density-pad));
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--skin-bar-elev, 0 6px 18px rgba(0, 0, 0, 0.3));
 }
 body[data-mode="light"] .kit-composer {
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.07);
+  box-shadow: var(--skin-bar-elev, 0 6px 18px rgba(0, 0, 0, 0.07));
 }
 
 /* data-perf=lite drops the blur (Firefox-Android speed lever, §14.11) → opaque fallbacks. */
@@ -546,7 +548,9 @@ body[data-perf="lite"] .kit-tabbar {
   backdrop-filter: none;
 }
 body[data-perf="lite"] .kit-composer {
-  background: var(--surface);
+  /* the FILL still honours the skin (a transparent bar must stay transparent with the blur gone — sleek's
+   * readability backstop is its scrim, not a surface); the frost is what this gate exists to drop. */
+  background: var(--skin-bar-fill, var(--surface));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -671,16 +675,38 @@ body[data-motion="reduced"] .kit-cbtn.mic.sending svg {
  * (it used to be copy-pasted into the priv-menu block, which drifted); each occupant adds only its own
  * ANCHORING + row deltas (the composer pair right below, `.priv-menu` with its chip ~line 3571). Semantic
  * tokens only. The two COMPOSER-anchored occupants also join the `composerSkin` axis (§14.16 — see the
- * "composer skins" section); `.priv-menu` deliberately does NOT: it is header chrome, not composer chrome. */
+ * "composer skins" section) through the PANEL slots below; `.priv-menu` deliberately does NOT: it is header
+ * chrome, not composer chrome, and opts out right underneath. The radius is NOT on the vocabulary — no skin
+ * re-corners a panel, so it stays the shared literal. */
 .kit .kit-suggest,
 .kit .tools-sheet,
 .kit .priv-menu {
   margin: 0;
   padding: 4px;
-  background: var(--surface);
-  border: 1px solid var(--line-2);
+  background: var(--skin-fill, var(--surface));
+  -webkit-backdrop-filter: var(--skin-frost, none);
+  backdrop-filter: var(--skin-frost, none);
+  border: 1px solid var(--skin-border, var(--line-2));
   border-radius: var(--radius-sm);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--skin-elev, 0 8px 24px rgba(0, 0, 0, 0.3));
+}
+/* the privilege menu OPTS OUT of the composer skin: it is header chrome, and `initial` on a custom property
+ * is the guaranteed-invalid value, so every `var()` above falls back to the shell's own literals. Declared on
+ * the element itself, so it beats the skin's inherited declaration on `.kit` whatever the skin. */
+.kit .priv-menu {
+  --skin-fill: initial;
+  --skin-frost: initial;
+  --skin-border: initial;
+  --skin-elev: initial;
+}
+/* §14.11 — the panel frost is perf-gated for whichever skin supplies one (only `glass` does today). Generic
+ * rather than per-skin: a translucent panel with no blur is unreadable, so the opaque fallback is a property
+ * of the GATE, not of a skin. (0,2,1) beats the shell above; the composer bar has its own gate up top.) */
+body[data-perf="lite"] .kit .kit-suggest,
+body[data-perf="lite"] .kit .tools-sheet {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .kit .kit-suggest,
 .kit .priv-menu {
@@ -866,7 +892,10 @@ body[data-motion="reduced"] .kit .tools-sheet {
  * other skin keeps whatever edge language it already has and the accent GLYPH carries the open state (the
  * plan pill's precedent: it signals open by rotating its chevron, never by growing a border). The stamp is
  * set in a layout effect before first paint and `.open` needs a click, so the un-stamped pre-mount state this
- * section's skins deliberately avoid keying is unreachable here. */
+ * section's skins deliberately avoid keying is unreachable here.
+ * NOT a `--skin-*` slot, deliberately (§14.16 exclusions): the vocabulary is an OVERRIDE form whose empty
+ * value means "keep the base look", which for a STATE ring fails in the wrong direction — an unmintable skin
+ * would grow the ring rather than not grow it. The affirmative gate fails safe; do not fold it in. */
 body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
   border-color: color-mix(in oklch, var(--accent) 40%, transparent);
 }
@@ -907,14 +936,15 @@ body[data-composer-skin="outline"] .kit .kit-cbtn.tools.open {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.3);
+  /* the docked bar is the ONE consumer of `--skin-bar-elev-up` — same elevation, negated (§14.16). */
+  box-shadow: var(--skin-bar-elev-up, 0 -6px 18px rgba(0, 0, 0, 0.3));
   /* NOTE: the perf-lite blur gate is FREE — `body[data-perf="lite"] .kit-composer` (above) already matches
    * this element (same class), so the frost drops to opaque here with no duplicate rule. */
 }
 /* the base light-mode shadow rule (`body[data-mode=light] .kit-composer`, specificity 0,2,1) outspecifies
  * `.kit-composer.sheet` (0,2,0) and would restore a DOWNWARD shadow — re-assert the top-lift for light. */
 body[data-mode="light"] .kit-composer.sheet {
-  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.07);
+  box-shadow: var(--skin-bar-elev-up, 0 -6px 18px rgba(0, 0, 0, 0.07));
 }
 /* the `controlsStart` container (the plan pill) — EMBEDDED at the field's leading edge, inside the input
  * surface (shares the field's --surface-2 bg), mirroring the embedded mic at the trailing edge. */
@@ -1132,41 +1162,65 @@ body[data-motion="full"] .kit-composer.line .line-controls > * {
 /* ═══ composer SKINS — the `composerSkin` presentation axis (D37 / §14.16, F5 slice B) ════════════════════
  * ORTHOGONAL to the composer LAYOUT above (stacked/sheet/line): the layout picks the input bar's SHAPE, the
  * skin picks its CHROME. Stamped once as `body[data-composer-skin]` by <AppEngines/> (App.tsx), resolved from
- * the per-theme `composerSkin` setting (kit/axes.ts#useComposerSkin; undeclared theme → `outline`). Four
+ * the per-theme `composerSkin` setting (kit/axes.ts#useComposerSkin; undeclared theme → `outline`). Five
  * skins: `outline` (the Kit's native bordered bar = the BASE composer rules above, un-keyed — pre-mount /
  * no-stamp renders it, and this section adds NOTHING for it), `glass` (the old Borderless), `bezel`
- * (frontier's F4 sweep), `sleek` (the old Ghost). Skins are FIRST-CLASS kit chrome (@layer base) — NOT
- * axes.css strips, because a skin carries fills/shadows and the axes layer forbids fills.
+ * (frontier's F4 sweep), `sleek` (the old Ghost), `arcade` (the cabinet panel). Skins are FIRST-CLASS kit
+ * chrome (@layer base) — NOT axes.css strips, because a skin carries fills/shadows and the axes layer
+ * forbids fills.
+ *
+ * THE `--skin-*` VOCABULARY (W2 — the axis widened past the composer; D37 amendment). Resting chrome is no
+ * longer written skin-by-skin, consumer-by-consumer: each skin DECLARES the slots it changes, ONCE, in the
+ * block that opens its subsection, and every consumer READS them with its own current literal as the
+ * fallback — `var(--skin-X, <the outline look>)`. FOUR surface families consume it: the input BAR (the
+ * `bar-*` slots; the docked layout takes `--skin-bar-elev-up`), its POPOVERS, the mini PLAYER (both read the
+ * panel slots fill/frost/border/elev) and the plan CHIP pair — `.plan-pill` + `.plan-pin-head` (`chip-*`).
+ * `outline` declares NOTHING — it IS the fallbacks — so its subsection is, correctly, zero rules.
+ *
+ * WHERE the declarations live is load-bearing (§14.6): a custom property substitutes its own `var()`s where
+ * it is DECLARED, and is inherited already-substituted. `--accent` is declared on <body> by every theme, so a
+ * block whose value reads `var(--accent)` must be declared BELOW body — hence `body[data-composer-skin="X"]
+ * .kit` (0,2,1), and NEVER `:root`/`html`, where it would substitute the kit's own base accent instead of the
+ * theme's. Light-mode deltas re-declare at `body[data-mode="light"][data-composer-skin="X"] .kit` (0,3,1).
+ *
+ * ELEVATION DEPTH IS PER-SURFACE (bar 6px, popover 8px, player 10px) — which is exactly why this is an
+ * OVERRIDE vocabulary with per-consumer fallbacks rather than a value set every consumer must read: a skin
+ * with no opinion about a surface leaves that surface's own depth alone.
  *
  * SPECIFICITY MIGRATION (the F5 hazard): the glass/sleek rules used to be `.kit-composer.borderless/.ghost …`
  * LAYOUT selectors, and bezel used to live in frontier's @layer THEME (winning by LAYER regardless of
  * specificity). Re-homed onto the body stamp in @layer base, every rule must now out-specify the BASE composer
  * rule it overrides ON SPECIFICITY — each re-assert is annotated with the fight it wins. This section is
  * placed AFTER the layout-variant blocks so source-order ties (notably vs `body[data-mode=light]
- * .kit-composer`, (0,2,1)) resolve in the skin's favour. Two attrs on <body> compound: `[data-composer-skin]
- * [data-mode]` / `[data-perf]` selects the SAME <body> at +1 class each. Semantic tokens ONLY; §14.11-safe. */
+ * .kit-composer`, (0,2,1)) resolve in the skin's favour; for the TOKENIZED properties that ordering is now
+ * READABILITY-ONLY — a declaration block and its consumers sit on different elements, so there is no tie to
+ * break. Two attrs on <body> compound: `[data-composer-skin][data-mode]` / `[data-perf]` selects the SAME
+ * <body> at +1 class each. Semantic tokens ONLY; §14.11-safe.
+ *
+ * STILL BESPOKE, by design: STATE, MOTION and GEOMETRY (the press, the recording ring, radii, padding) — and
+ * the four skins' `.kit-composer .kit-cbtn { border-color: transparent }` quartet, which is a CONTROL edge,
+ * not a surface edge: folding it in needs a control-level slot the vocabulary deliberately does not mint yet
+ * (named as deferred in the D37 amendment). */
 
 /* ── skin · GLASS (body[data-composer-skin="glass"]) — the old Borderless look ─────────────────────────── */
-/* the BAR: transparent border + a deeper ambient+contact shadow so it "floats on top" without an outline;
- * frosted fill KEPT (the base `.kit-composer` still supplies it). Applies to the floating layouts (stacked +
- * line); the docked sheet is re-asserted upward below. (0,2,1) beats the base border (0,1,0) + base shadow. */
-body[data-composer-skin="glass"] .kit-composer {
-  border-color: transparent;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.35);
+/* No edges anywhere; a NEUTRAL frost in place of the panels' opaque surface; and ONE deeper ambient+contact
+ * elevation shared by the bar, its popovers and the player, so each floats on top instead of being outlined.
+ * The BAR keeps the base's own 85% frosted fill (no `--skin-bar-fill`/`--skin-bar-frost` declared here) — only
+ * its edge and its lift change. §14.11: the panel blur is perf-gated to opaque by the generic popover gate. */
+body[data-composer-skin="glass"] .kit {
+  --skin-border: transparent;
+  --skin-fill: color-mix(in oklch, var(--surface) 86%, transparent);
+  --skin-frost: blur(8px);
+  --skin-elev: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.35);
+  --skin-bar-elev: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.35);
+  --skin-bar-elev-up: 0 -8px 28px rgba(0, 0, 0, 0.45), 0 -2px 10px rgba(0, 0, 0, 0.35);
+  --skin-chip-edge: transparent;
 }
-/* the DOCKED sheet lifts UPWARD — the glass bar rule (0,2,1) would flip it downward; re-assert deepened
- * upward at (0,3,1) (matches the sheet's own base direction, just deeper). */
-body[data-composer-skin="glass"] .kit-composer.sheet {
-  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45), 0 -2px 10px rgba(0, 0, 0, 0.35);
-}
-/* light mode softens the elevation — the base `body[data-mode=light] .kit-composer` (0,2,1) would otherwise
- * restore the shallow default shadow (and ties the glass bar rule); `[data-composer-skin][data-mode]` wins at
- * (0,3,1) / (0,4,1) for the sheet. */
-body[data-composer-skin="glass"][data-mode="light"] .kit-composer {
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 2px 10px rgba(0, 0, 0, 0.08);
-}
-body[data-composer-skin="glass"][data-mode="light"] .kit-composer.sheet {
-  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.12), 0 -2px 10px rgba(0, 0, 0, 0.08);
+/* light mode softens the elevation — one block now, where it used to be a re-assert per consumer. */
+body[data-mode="light"][data-composer-skin="glass"] .kit {
+  --skin-elev: 0 8px 28px rgba(0, 0, 0, 0.12), 0 2px 10px rgba(0, 0, 0, 0.08);
+  --skin-bar-elev: 0 8px 28px rgba(0, 0, 0, 0.12), 0 2px 10px rgba(0, 0, 0, 0.08);
+  --skin-bar-elev-up: 0 -8px 28px rgba(0, 0, 0, 0.12), 0 -2px 10px rgba(0, 0, 0, 0.08);
 }
 /* inner controls go borderless on ALL layouts. `.kit-composer .kit-cbtn` (0,3,1) beats the base
  * `.kit-cbtn.mic.rec` danger RING (0,3,0) — so the recording ring is dropped here; the glass rec cue is the
@@ -1175,8 +1229,10 @@ body[data-composer-skin="glass"] .kit-composer .kit-cbtn {
   border-color: transparent;
 }
 /* the plan pill goes borderless too on every layout (keeps its --accent-soft fill; only the outline drops).
- * (0,3,1) beats the base `.kit .plan-pill` border (0,2,0). (The neutral plan-SHEET treatment lives with the
- * plan-sheet rules — search `[data-composer-skin="glass"] .kit .plan-sheet`.) */
+ * (0,3,1) beats the base `.kit .plan-pill` border (0,2,0) — which `--skin-chip-edge` already made transparent;
+ * this keeps the composer's copy explicit for the LINE/SHEET pills the chip slot and this rule agree on.
+ * (The neutral plan-SHEET treatment lives with the plan-sheet rules — search
+ * `[data-composer-skin="glass"] .kit .plan-sheet`.) */
 body[data-composer-skin="glass"] .kit-composer .plan-pill {
   border-color: transparent;
 }
@@ -1221,30 +1277,6 @@ body[data-composer-skin="glass"] .kit-composer.stacked .kit-send svg {
 body[data-composer-skin="glass"] .kit-composer.stacked .plan-pill {
   border-radius: 8px;
 }
-/* glass · the composer POPOVERS (`.kit-suggest` + `.tools-sheet`) follow the bar, exactly as the plan sheet
- * already does under this skin (search `[data-composer-skin="glass"] .kit .plan-sheet`): no outline, a
- * NEUTRAL frost instead of the opaque surface, and the bar's own deeper ambient+contact elevation — so a
- * popover reads as part of the glass composer, not a bordered card parked above it. (0,3,1) beats the
- * shared shell (0,2,0). §14.11: the blur is perf-gated to opaque right below. */
-body[data-composer-skin="glass"] .kit .kit-suggest,
-body[data-composer-skin="glass"] .kit .tools-sheet {
-  border-color: transparent;
-  background: color-mix(in oklch, var(--surface) 86%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 10px rgba(0, 0, 0, 0.35);
-}
-body[data-perf="lite"][data-composer-skin="glass"] .kit .kit-suggest,
-body[data-perf="lite"][data-composer-skin="glass"] .kit .tools-sheet {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  background: var(--surface); /* opaque fallback — a translucent panel with no blur is unreadable */
-}
-/* light mode softens the elevation, mirroring the glass BAR's own light-mode re-assert above. */
-body[data-composer-skin="glass"][data-mode="light"] .kit .kit-suggest,
-body[data-composer-skin="glass"][data-mode="light"] .kit .tools-sheet {
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 2px 10px rgba(0, 0, 0, 0.08);
-}
 
 /* ── skin · BEZEL (body[data-composer-skin="bezel"]) — frontier's F4 composer sweep, generalized ──────────
  * Graduated from frontier.css's @layer theme sweep (F5 slice B): transparent border on the bar + inner
@@ -1253,36 +1285,21 @@ body[data-composer-skin="glass"][data-mode="light"] .kit .tools-sheet {
  * mode-invariant dusk-ink family) + a 1px inset top highlight (the classic bezel light edge). Slice-B round 2
  * (owner eyeball: "docked with bezel doesn't have a bezel") generalized it from line-only to EVERY layout —
  * the docked sheet inverts the drop upward (its exposed edge is the top, so the inset highlight already reads
- * right). MODE-INVARIANT (no light variant — frontier's deliberate choice); frontier's EXACT rgba inks. The
- * bar rule (0,2,1) ties the base `body[data-mode=light] .kit-composer` — this section's LATER source order
- * wins; the sheet rule (0,3,1) beats the light sheet re-assert (0,3,1) the same way. */
-body[data-composer-skin="bezel"] .kit-composer {
-  border-color: transparent;
-  box-shadow:
-    0 4px 14px rgba(20, 8, 28, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
-}
-/* the DOCKED sheet lifts UPWARD — invert the ambient drop; the top highlight stays (top = the exposed edge). */
-body[data-composer-skin="bezel"] .kit-composer.sheet {
-  box-shadow:
-    0 -4px 14px rgba(20, 8, 28, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+ * right). MODE-INVARIANT (no light variant — frontier's deliberate choice); frontier's EXACT rgba inks.
+ * The PANEL family is one step deeper than the bar's 4px drop: a popover floats over live content where the
+ * bar sits on the page edge. NO fill/frost slot — a bezel is a lit EDGE, not a frost, so every surface keeps
+ * whatever fill it already had; and NO chip slot, so the plan pill/pinned head KEEP their accent edge
+ * (owner ruling — the chips are not bezelled slabs). */
+body[data-composer-skin="bezel"] .kit {
+  --skin-border: transparent;
+  --skin-elev: 0 6px 18px rgba(20, 8, 28, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --skin-bar-elev: 0 4px 14px rgba(20, 8, 28, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --skin-bar-elev-up: 0 -4px 14px rgba(20, 8, 28, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 /* controls borderless (all layouts). `.kit-composer .kit-cbtn` (0,3,1) beats the base rec RING (0,3,0), so
  * the ring is stripped — the red icon is the recording cue. */
 body[data-composer-skin="bezel"] .kit-composer .kit-cbtn {
   border-color: transparent;
-}
-/* bezel · the composer POPOVERS wear the bar's own language: no outline, the mode-invariant dusk-ink drop
- * plus the 1px inset top light edge, so the panel reads as another bezelled slab from the same bar. One
- * step deeper than the bar's 4px drop — it floats over live content, where the bar sits on the page edge.
- * Opaque `--surface` fill kept (the shared shell): a bezel is a lit EDGE, not a frost. (0,3,1) > (0,2,0). */
-body[data-composer-skin="bezel"] .kit .kit-suggest,
-body[data-composer-skin="bezel"] .kit .tools-sheet {
-  border-color: transparent;
-  box-shadow:
-    0 6px 18px rgba(20, 8, 28, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 /* ── skin · SLEEK (body[data-composer-skin="sleek"]) — the old Ghost look ──────────────────────────────────
@@ -1291,23 +1308,20 @@ body[data-composer-skin="bezel"] .kit .tools-sheet {
  * comes from the extended bottom scrim (below), not a surface. Borderless controls, but the recording RING is
  * re-asserted (state affordance beats sleekness). Generic transparency = all layouts; the respaced padding +
  * field underline are STACKED-only (line/docked keep their own geometry — the concentric-corner line math /
- * the docked field must not break). §14.11: only zeroes visuals + re-spaces; the scrim is a static gradient. */
-body[data-composer-skin="sleek"] .kit-composer {
-  background: transparent;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  border-color: transparent;
-  box-shadow: none;
-}
-/* the perf-lite base rule (`body[data-perf="lite"] .kit-composer`, (0,2,1)) re-adds an OPAQUE
- * `background: var(--surface)` — re-assert transparency ((0,3,1) wins; both attrs on <body>). */
-body[data-perf="lite"][data-composer-skin="sleek"] .kit-composer {
-  background: transparent;
-}
-/* the light-mode base rule (`body[data-mode="light"] .kit-composer`, (0,2,1)) re-adds a DOWNWARD shadow —
- * re-assert the shadowless sleek ((0,3,1) wins). */
-body[data-mode="light"][data-composer-skin="sleek"] .kit-composer {
-  box-shadow: none;
+ * the docked field must not break). §14.11: only zeroes visuals + re-spaces; the scrim is a static gradient.
+ * The FLOATING panels (popovers, player) do NOT go transparent with the bar: an opaque `--surface` and a
+ * shallow contact shadow instead of the shared ambient one. A list of rows over live chat needs its own
+ * surface — the bar's transparency has a readability backstop, a floating panel doesn't. */
+body[data-composer-skin="sleek"] .kit {
+  --skin-border: transparent;
+  --skin-fill: var(--surface);
+  --skin-frost: none;
+  --skin-elev: 0 2px 12px rgba(0, 0, 0, 0.22);
+  --skin-bar-fill: transparent;
+  --skin-bar-frost: none;
+  --skin-bar-elev: none;
+  --skin-bar-elev-up: none;
+  --skin-chip-edge: transparent;
 }
 /* the readability backstop: the default scrim (`.kit-main.has-composer::after`, height `--composer-h − 24`)
  * never reaches the transparent bar's textarea band — extend it past the composer top, dense through the whole
@@ -1332,7 +1346,7 @@ body[data-composer-skin="sleek"] .kit-composer .kit-cbtn.mic.rec {
   border-color: color-mix(in oklch, var(--danger) 40%, transparent);
 }
 /* the plan pill goes borderless too (keeps its --accent-soft fill; only the outline drops). (0,3,1) beats the
- * base `.kit .plan-pill` (0,2,0). */
+ * base `.kit .plan-pill` (0,2,0), which `--skin-chip-edge` already cleared. */
 body[data-composer-skin="sleek"] .kit-composer .plan-pill {
   border-color: transparent;
 }
@@ -1348,16 +1362,17 @@ body[data-composer-skin="sleek"] .kit-composer.stacked .field {
 body[data-composer-skin="sleek"] .kit-composer.stacked .field:focus-within {
   box-shadow: 0 1px 0 0 var(--accent);
 }
-/* sleek · the composer POPOVERS go FLATTER and TIGHTER, the skin's whole idea: the outline drops (sleek owns
- * no resting borders — its field is a hairline underline), the lift shrinks to a shallow contact shadow
- * instead of the shared 24px ambient, and the gutter tightens by a pixel. The opaque `--surface` fill STAYS
- * (unlike the bar, which the extended scrim backs): a list of rows over live chat needs its own surface —
- * the bar's transparency has a readability backstop, a floating panel doesn't. (0,3,1) > (0,2,0). */
+/* sleek · the composer POPOVERS also go TIGHTER — the gutter loses a pixel. Their flat chrome (no outline, a
+ * shallow contact shadow in place of the shared 24px ambient, the opaque fill kept) is the vocabulary's now;
+ * the padding is a spacing delta, which is not on it. (0,3,1) > the shared shell (0,2,0). */
 body[data-composer-skin="sleek"] .kit .kit-suggest,
 body[data-composer-skin="sleek"] .kit .tools-sheet {
   padding: 3px;
-  border-color: transparent;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
+}
+/* …and the PLAYER tightens with them (W2): the skin's whole idea is less chrome, and a flat opaque pill with
+ * the base's 8px/14px gutter reads padded next to its own popovers. (0,3,1) > the base (0,2,0). */
+body[data-composer-skin="sleek"] .kit .mini-player {
+  padding: 7px 12px;
 }
 
 /* ── skin · ARCADE (body[data-composer-skin="arcade"]) — the CABINET PANEL (D52 G3, re-ruled 2026-08-04) ──
@@ -1375,33 +1390,37 @@ body[data-composer-skin="sleek"] .kit .tools-sheet {
  *
  * The gates stay cheap: there is no blur to drop under perf-lite (the base `body[data-perf="lite"]
  * .kit-composer` re-asserts the very `--surface` fill this skin already uses), and the only motion is the
- * press — a transition-less `transform` on `:active`, so there is nothing for `data-motion` to gate. The
- * popovers DO take a rule now (they lost their outline and gained the drop with everything else). What
+ * press — a transition-less `transform` on `:active`, so there is nothing for `data-motion` to gate. What
  * needs care is the same specificity fight the other skins document: the GEOMETRY overrides stay
  * `.stacked`-scoped so the docked sheet's `padding: 0` / top-only radius and the line variant's 24px
  * stadium are never clobbered by a (0,2,1) skin rule — the one deliberate exception is the docked
  * layout's two small buttons, squared at the owner's call. */
-body[data-composer-skin="arcade"] .kit-composer {
-  /* opaque: the panel is a surface, not a window. (0,2,1) beats the base fill + border + shadow (0,1,0).
-   * The hairline is GONE and the elevation is the skin's own hard offset (owner ruling 2026-08-03 — one
-   * signature, no outlines anywhere in this skin): the bar is the largest thing wearing it, so it sets the
-   * language its controls and popovers repeat. `--arcade-lift` is declared right below on this same element,
-   * so it resolves here. */
-  --arcade-lift: 3px;
-  background: var(--surface);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  border-color: transparent;
-  box-shadow: var(--arcade-lift) var(--arcade-lift) 0 color-mix(in oklch, var(--accent) 60%, transparent);
-}
-/* the base light-mode rule (`body[data-mode="light"] .kit-composer`, (0,2,1)) re-adds a soft drop shadow and
- * ties this section on specificity — win it at (0,3,1) rather than by source order alone. The docked sheet's
- * own upward lift ((0,2,0)) and its light re-assert ((0,3,1)) need the same treatment, or the skin would wear
- * its offset in one layout and a soft ambient in another. */
-body[data-mode="light"][data-composer-skin="arcade"] .kit-composer,
-body[data-composer-skin="arcade"] .kit-composer.sheet,
-body[data-mode="light"][data-composer-skin="arcade"] .kit-composer.sheet {
-  box-shadow: var(--arcade-lift) var(--arcade-lift) 0 color-mix(in oklch, var(--accent) 60%, transparent);
+body[data-composer-skin="arcade"] .kit {
+  /* ONE signature — a zero-blur accent drop — repeated by every surface the skin reaches: the bar, its
+   * controls, its popovers, the plan chips, and (W2) the mini player and the pinned plan head. `--skin-lift`
+   * is the single DISTANCE, so the drop and the press displacement below can never drift apart.
+   * 4px SOLID `--accent` (owner ruling 2026-08-18, ALIGNing the skin with gacha's own art-surface drop —
+   * it shipped for a fortnight as 3px of a 60% mix, which reads as a washed accent rather than the accent).
+   * Not gacha's 5px: the line layout allows only 5/6px of padding around its 36px controls, which 4 clears.
+   * `--accent`, NEVER `--accent-fill`: that token may be a gradient <image> and would devolve in a colour
+   * slot. Declared on `.kit` and never on `:root` — §14.6: a custom property substitutes its `var()`s where
+   * it is DECLARED, and the theme declares `--accent` on <body>. */
+  --skin-lift: 4px;
+  --skin-border: transparent;
+  --skin-fill: var(--surface);
+  --skin-frost: none;
+  /* the PANELS keep the shared ambient drop underneath the offset: they float over live chat, where a 4px
+   * offset alone gives no separation from the text behind them (sleek keeps a contact shadow for the same
+   * reason). The BAR doesn't — it sits on the page edge. */
+  --skin-elev: var(--skin-lift) var(--skin-lift) 0 var(--accent), 0 8px 24px rgba(0, 0, 0, 0.3);
+  --skin-bar-fill: var(--surface);
+  --skin-bar-frost: none;
+  --skin-bar-elev: var(--skin-lift) var(--skin-lift) 0 var(--accent);
+  /* the docked bar does NOT invert its drop (owner ruling): the offset is one fixed light direction for the
+   * whole cabinet, not a per-surface lift — an upward hard offset would read as a different machine. */
+  --skin-bar-elev-up: var(--skin-lift) var(--skin-lift) 0 var(--accent);
+  --skin-chip-edge: transparent;
+  --skin-chip-elev: var(--skin-lift) var(--skin-lift) 0 var(--accent);
 }
 /* STACKED-only geometry: the theme's own corner radius instead of the kit's lozenge, and a tighter, even
  * gutter. The sheet (`padding: 0`, top-only radius) and the line stadium (24px, concentric with its 36px
@@ -1431,21 +1450,15 @@ body[data-composer-skin="arcade"] .kit-composer.stacked .plan-pill {
  *
  * Control geometry otherwise stays exactly where the skin and the layouts already put it: line keeps its
  * circles, the stacked block above re-corners its own, and the ONE geometry rule here is the docked layout's
- * two small buttons (owner ruling — a pass that squared every layout's controls was rejected).
- *
- * Semantic tokens only (D37 — this is a catalog value every theme's picker offers, so it wears the host
- * theme's accent: pink under gacha, coral under frontier, violet under cosmos). `--accent`, NEVER
- * `--accent-fill`: that token may be a gradient <image> and would devolve in a color slot. The offset is one
- * local custom property so the lift and the press displacement can never drift apart — and it is 3px, not the
- * 5px gacha uses on its own bubbles/indicator, because the line layout allows only 5/6px of padding around
- * its 36px controls (`--arcade-lift` is declared with the bar's own chrome above). */
-/* NO OUTLINES, anywhere in this skin (owner ruling 2026-08-03) — the bar dropped its hairline above, and the
- * controls drop theirs here. The neutral ones then take the plan pill's own fill, `--accent-soft`, so they
- * read as the pill does: a soft accent plate with a hard drop, no edge. Without a fill they would be a bare
- * glyph with a shadow floating beside it — an outer box-shadow is never painted under its own border box, so
- * a see-through control shows the drop as a detached band. `:not(.line-btn)` spares the line layout's mic,
- * which that variant already fills with `--accent-fill` (this rule is (0,4,1) and would otherwise outrank its
- * (0,4,0) fill); the send has its own fill and never had a border.
+ * two small buttons (owner ruling — a pass that squared every layout's controls was rejected). */
+/* NO OUTLINES, anywhere in this skin (owner ruling 2026-08-03) — the bar dropped its hairline through
+ * `--skin-border`, and the controls drop theirs here. The neutral ones then take the plan pill's own fill,
+ * `--accent-soft`, so they read as the pill does: a soft accent plate with a hard drop, no edge. Without a
+ * fill they would be a bare glyph with a shadow floating beside it — an outer box-shadow is never painted
+ * under its own border box, so a see-through control shows the drop as a detached band.
+ * `:not(.line-btn)` spares the line layout's mic, which that variant already fills with `--accent-fill`
+ * (this rule is (0,4,1) and would otherwise outrank its (0,4,0) fill); the send has its own fill and never
+ * had a border.
  * Note this also strips the mic's RECORDING ring (base `.kit-cbtn.mic.rec`, (0,3,0), outranked at (0,3,1)) —
  * the same trade glass and bezel already make: the red GLYPH is the recording cue under a borderless skin. */
 body[data-composer-skin="arcade"] .kit-composer .kit-cbtn,
@@ -1459,12 +1472,13 @@ body[data-composer-skin="arcade"] .kit-composer .kit-cbtn:not(.line-btn) {
  * darkened variant was tried for the accent-FILLED controls (send, and the line layout's `--accent-fill` mic),
  * on the theory that an accent drop under an accent fill has too little contrast to read; the owner ruled for
  * the single colour anyway (2026-08-03), because one shadow across the bar matters more than each drop's
- * separation from its own button. (0,3,1) beats the base `.kit-cbtn` (0,1,0), `.kit-send` (0,1,0) and
- * `.kit .plan-pill` (0,2,0); none of them declares a box-shadow, so nothing is overridden — only added. */
+ * separation from its own button. The formula is spelled from `--skin-lift` rather than read from a slot:
+ * these are CONTROLS, and the vocabulary's elevation slots address surfaces. (0,3,1) beats the base
+ * `.kit-cbtn` (0,1,0), `.kit-send` (0,1,0) and `.kit .plan-pill` (0,2,0). */
 body[data-composer-skin="arcade"] .kit-composer .kit-cbtn,
 body[data-composer-skin="arcade"] .kit-composer .plan-pill,
 body[data-composer-skin="arcade"] .kit-composer .kit-send {
-  box-shadow: var(--arcade-lift) var(--arcade-lift) 0 color-mix(in oklch, var(--accent) 60%, transparent);
+  box-shadow: var(--skin-lift) var(--skin-lift) 0 var(--accent);
 }
 /* the DOCKED layout's two small buttons SQUARE OFF (owner ruling 2026-08-03) — the menu trigger and the
  * embedded mic take the same `--radius-sm` corners the stacked layout's controls already wear under this
@@ -1477,10 +1491,10 @@ body[data-composer-skin="arcade"] .kit-composer.sheet .kit-cbtn {
   border-radius: var(--radius-sm);
 }
 /* …and that layout's embedded mic gets its own breathing room. It sits at the field's trailing edge on a
- * `margin-right: 2px`, which is less than the 3px lift — so the send block, painting after it, covered the
- * right half of its drop. Widened to clear the offset with a pixel to spare, the shadow lands entirely on the
- * field. `--arcade-lift` is not usable in the calc: the gap must exceed it, and hard-coding the relationship
- * would let a future lift change silently re-clip. (0,6,1) beats the layout's own (0,5,0) margin. */
+ * `margin-right: 2px`, which is less than the lift — so the send block, painting after it, covered the right
+ * half of its drop. Widened to clear the offset with a pixel to spare (6 > the 4px lift), the shadow lands
+ * entirely on the field. `--skin-lift` is not usable in the calc: the gap must exceed it, and hard-coding the
+ * relationship would let a future lift change silently re-clip. (0,6,1) beats the layout's own (0,5,0). */
 body[data-composer-skin="arcade"] .kit-composer.sheet .field .kit-cbtn.mic {
   margin-right: 6px;
 }
@@ -1490,31 +1504,20 @@ body[data-composer-skin="arcade"] .kit-composer.sheet .field .kit-cbtn.mic {
  * chose that deliberately (useComposerChrome.ts: "Fennec leaves :active wedged after a tap"), and the mic is
  * the one control held down for a gesture rather than tapped. Our (0,4,1) outspecifies the base
  * `.kit-cbtn.mic.press` (0,3,0) scale, so under THIS skin the mic's feedback is the sticker press too — one
- * press language across the bar rather than two. */
+ * press language across the bar rather than two. W2 adds the PINNED PLAN HEAD, which now wears the chip
+ * drop out in the agent tab: a chip that lifts must press, or it reads as a decal. */
 body[data-composer-skin="arcade"] .kit-composer .kit-cbtn:active,
 body[data-composer-skin="arcade"] .kit-composer .kit-cbtn.mic.press,
 body[data-composer-skin="arcade"] .kit-composer .kit-send:active,
-body[data-composer-skin="arcade"] .kit-composer .plan-pill:active {
-  transform: translate(var(--arcade-lift), var(--arcade-lift));
+body[data-composer-skin="arcade"] .kit-composer .plan-pill:active,
+body[data-composer-skin="arcade"] .kit .plan-pin-head:active {
+  transform: translate(var(--skin-lift), var(--skin-lift));
   box-shadow: none;
 }
-/* the composer's POPOVERS finish the sweep — the typing suggestions and the tools/skills menu. Same two moves
- * as everything else in this skin: the shell's outline goes, and the elevation becomes the hard offset. The
- * shared shell's ambient drop is KEPT underneath it: these float over live chat, where a 3px offset alone
- * gives no separation from the text behind them (sleek keeps a contact shadow for the same reason). The
- * lift's own custom property is scoped to `.kit-composer`, and these are its SIBLINGS, so the value is
- * restated rather than inherited. (0,3,1) beats the shared shell (0,2,0).
- * The plan SHEET is deliberately untouched: it is a bottom-anchored panel that tucks BEHIND the composer with
- * `border-bottom: 0` and lifts upward — a down-right offset would read as a mistake on it. */
-body[data-composer-skin="arcade"] .kit .kit-suggest,
-body[data-composer-skin="arcade"] .kit .tools-sheet {
-  border-color: transparent;
-  box-shadow: 3px 3px 0 color-mix(in oklch, var(--accent) 60%, transparent), 0 8px 24px rgba(0, 0, 0, 0.3);
-}
 /* and the placeholder picks up a 1px echo of the same offset (owner ask 2026-08-03: the theme's signature
- * should reach the hint text too). ONE pixel, not the 3px lift: the hint is 15px `--text-3` grey, and at the
+ * should reach the hint text too). ONE pixel, not the full lift: the hint is 15px `--text-3` grey, and at the
  * full offset the copy doubles rather than gains an edge. Muted to match — the hint stays quiet, it just
- * stops being colourless. */
+ * stops being colourless. Deliberately NOT re-tuned with the drop: a text echo is not a surface elevation. */
 body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   text-shadow: 1px 1px 0 color-mix(in oklch, var(--accent) 45%, transparent);
 }
@@ -2509,7 +2512,12 @@ body[data-mode="light"] .kit .toast {
 }
 
 /* ── overlay: MiniPlayer — the floating TTS pill below the appbar; frosted (perf-gated). The play/pause
- *    + close glyphs are masked SVGs (lifted from extras.css); the equalizer shimmer is motion-gated. ── */
+ *    + close glyphs are masked SVGs (lifted from extras.css); the equalizer shimmer is motion-gated.
+ *    W2: the player JOINS the `composerSkin` axis (§14.16) — it is a floating panel of the same family as
+ *    the composer's popovers, so it reads the same four PANEL slots with its OWN literals as fallbacks (its
+ *    fill is 90%, not the popovers' 86%, and its lift is 10px, not 8px — per-surface depth is the reason the
+ *    vocabulary is an override set). Its GEOMETRY (radius, anchoring, the `:has()` clearances) is not on the
+ *    vocabulary and stays the kit's. ── */
 .kit .mini-player {
   position: fixed;
   top: calc(var(--appbar-h, 56px) + 10px);
@@ -2522,11 +2530,11 @@ body[data-mode="light"] .kit .toast {
   gap: 12px;
   padding: 8px 14px;
   border-radius: var(--radius-sm);
-  background: color-mix(in oklch, var(--surface) 90%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  border: 1px solid var(--line-2);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  background: var(--skin-fill, color-mix(in oklch, var(--surface) 90%, transparent));
+  -webkit-backdrop-filter: var(--skin-frost, blur(8px));
+  backdrop-filter: var(--skin-frost, blur(8px));
+  border: 1px solid var(--skin-border, var(--line-2));
+  box-shadow: var(--skin-elev, 0 10px 30px rgba(0, 0, 0, 0.35));
 }
 /* minimal/off chrome: the FLOATING NavMenu owns the top-right corner (z 30, over the player's z 16), so a
  * full-width centered player buries its own ✕ under the launcher (ISSUES #1). When the floating launcher is
@@ -2553,14 +2561,16 @@ body[data-mode="light"] .kit .toast {
  * NOTE the player's BASE top (:2515) deliberately stays `--appbar-h + 10px`: a plan-less player SHARING the
  * launcher band is the owner-approved design, not a defect. */
 .kit:has(.tab.active .plan-pin-panel) .mini-player {
-  /* `--skin-lift` is a cross-slice hook: a sibling slice gives the head a 4px hard drop shadow under the
-   * arcade composer skin that getBoundingClientRect doesn't report. The token doesn't exist yet — the 0px
-   * fallback makes the term a no-op until that slice lands. */
+  /* `--skin-lift` is the arcade skin's hard-drop DISTANCE (§14.16): under that skin the pinned head wears a
+   * 4px offset shadow, which `getBoundingClientRect` does not report — so the player would land in it. Every
+   * other skin declares no lift, and the 0px fallback makes the term a no-op there. */
   top: calc(var(--kit-plan-band-top) + var(--plan-head-h, 31px) + var(--skin-lift, 0px) + 8px);
 }
 body[data-mode="light"] .kit .mini-player {
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--skin-elev, 0 10px 30px rgba(0, 0, 0, 0.12));
 }
+/* §14.11 — perf-lite drops the frost. Sets the fill DIRECTLY rather than through `--skin-fill`, and that is
+ * correct: the gate beats any skin's translucent fill, and no skin frosts a panel under lite anyway. */
 body[data-perf="lite"] .kit .mini-player {
   background: var(--surface);
   -webkit-backdrop-filter: none;
@@ -3934,7 +3944,10 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
  * (active = `--accent` pulse, done = `--ok` ✓). The sheet's blur is perf-gated, the pulse + slide are
  * motion-gated (§14.11). `.plan-title`/`.plan-count`/`.plan-steps`/`.plan-step` are shared by pill + sheet. */
 /* `.plan-pin-head` (the A4 pinned-panel header) shares the pill's whole accent-chip look — grouped here so
- * a future accent/chevron tweak can't drift the two apart; its own block keeps only padding/radius deltas. */
+ * a future accent/chevron tweak can't drift the two apart; its own block keeps only padding/radius deltas.
+ * W2: the pair is the CHIP family of the `composerSkin` vocabulary (§14.16) — the two `--skin-chip-*` slots
+ * carry the edge and an optional drop; the accent FILL is never on the vocabulary (it is what makes a chip a
+ * chip). `bezel` declares neither slot, so under it the chips keep their accent edge (owner ruling). */
 .kit .plan-pill,
 .kit .plan-pin-head {
   all: unset;
@@ -3945,7 +3958,8 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   padding: 5px 11px;
   border-radius: 999px; /* a lozenge inline in the controls row (vs the old top-hanging tab) */
   background: var(--accent-soft);
-  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+  border: 1px solid var(--skin-chip-edge, color-mix(in oklch, var(--accent) 40%, transparent));
+  box-shadow: var(--skin-chip-elev, none);
 }
 .kit .plan-pill:active,
 .kit .plan-pin-head:active {
@@ -3991,7 +4005,11 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
  * (rendered by the composer variant's `overlay` slot), anchored to the composer's top via `--composer-h`.
  * Its bottom TUCKS ~18px behind the composer (z 3 < composer z 4) so the composer's rounded top overlaps it
  * and it reads as emerging from the composer; `padding-bottom` keeps the checklist clear of that tuck.
- * Toggled open/closed by the pill — slide + fade (transform/opacity only, §14.11). */
+ * Toggled open/closed by the pill — slide + fade (transform/opacity only, §14.11).
+ * NOT on the `--skin-*` vocabulary — the §14.16 plan-panel exclusion: this panel is CO-OWNED by the composer
+ * LAYOUT (it tucks behind the bar with `border-bottom: 0`, and the line variant restyles it regardless of
+ * skin), so a slot here would fight the layout rather than override a resting surface. The one skin that
+ * does touch it, glass, keeps its own explicit rule below — grouped with the layout probe it shares. */
 .kit .plan-sheet {
   position: absolute;
   left: 18px;
@@ -4159,7 +4177,9 @@ body[data-motion="reduced"] .kit .plan-sheet {
 /* the drop — an absolute overlay hanging under the header (the panel is its positioning context), so the
  * collapsed panel is only header-tall and the open checklist floats OVER the chat below without reflow.
  * Frosted like `.plan-sheet` but LIGHTER (a subtler accent wash + more opaque) since it sits over live
- * content, not tucked behind the composer; blur perf-gated → opaque fallback under data-perf=lite. */
+ * content, not tucked behind the composer; blur perf-gated → opaque fallback under data-perf=lite.
+ * NOT on the `--skin-*` vocabulary either (the §14.16 plan-panel exclusion — it is the pinned twin of the
+ * plan sheet): only its HEAD joins, through the chip slots. */
 .kit .plan-pin-drop {
   position: absolute;
   top: calc(100% + 6px);

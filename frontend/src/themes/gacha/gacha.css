@@ -234,7 +234,10 @@
      * These are KIT hooks reskinned by the theme (the §15 pattern), and `background-size` is a longhand the
      * kit's `background:` shorthand resets to `auto` — this wins on LAYER (theme over base), not specificity,
      * the same way every other rule in this file does. The mini-player's play button is a masked shape whose
-     * background IS its colour, so it takes the window exactly like the solid ones. */
+     * background IS its colour, so it takes the window exactly like the solid ones.
+     * NOT a `composerSkin` boundary crossing (§14.16 / the D37 amendment): the AXIS owns a surface's resting
+     * chrome — fill, edge, frost, elevation — while a THEME owns how its own accent TOKEN renders on the
+     * controls inside that surface. This rule only re-windows `--accent-fill`. */
     .kit-composer .kit-send,
     .kit-composer .kit-cbtn.mic.line-btn,
     .kit .seg button.active,
@@ -1238,7 +1241,7 @@
 
     /* ── THE SLOT, and the ARCADE DROP it exists for (owner ask 2026-08-06) ────────────────────────────
      * The capsule card wears the same hard offset accent shadow as the arcade composer skin — kit.css's
-     * `--arcade-lift` signature, borrowed here through gacha's own `--gc-lift` pair (tokens.css).
+     * `--skin-lift` signature, borrowed here through gacha's own `--gc-lift` pair (tokens.css).
      *
      * WHY A WRAPPER, when every other surface in this file just takes a `box-shadow`: the card is
      * `mask`ed to the capsule silhouette (the 315° notch) AND `overflow: hidden`, and BOTH erase an

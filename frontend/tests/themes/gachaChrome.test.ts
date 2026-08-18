@@ -863,9 +863,9 @@ describe("gacha G7 — the DRAWN rarity star (R16)", () => {
 
 describe("gacha — the ARCADE DROP on the two art surfaces (owner ask 2026-08-06)", () => {
   it("borrows kit.css's signature through gacha's OWN token pair", () => {
-    // `--arcade-lift` is declared ON `.kit-composer` by the arcade composer skin, so it resolves nowhere
-    // else — and the skin is a picker value, so a card must not lose its drop when the owner picks a
-    // different composer. Same 3px, same 60% accent mix, independent lifetime.
+    // `--skin-lift` is declared on `.kit` by the arcade composer SKIN (§14.16's vocabulary), so it is the
+    // skin's value and not the theme's — and the skin is a picker value, so a card must not lose its drop
+    // when the owner picks a different composer. Same 4px, same solid accent, independent lifetimes.
     // the DISTANCES are owner-tuned per surface and move; what is pinned is that gacha owns a PAIR and
     // that the portrait's is the heavier one (its device round: 3px read "a little too slim" there).
     expect(tokens).toMatch(/--gc-lift:\s*(\d+)px/);
@@ -884,12 +884,11 @@ describe("gacha — the ARCADE DROP on the two art surfaces (owner ask 2026-08-0
     expect(tokens, "the drop must not be a washed mix again").not.toMatch(
       /--gc-lift-color:\s*color-mix/,
     );
-    expect(kit, "the kit block this mirrors must still be the 3px/60% signature").toContain(
-      "--arcade-lift: 3px",
-    );
-    expect(kit).toContain(
-      "var(--arcade-lift) var(--arcade-lift) 0 color-mix(in oklch, var(--accent) 60%, transparent)",
-    );
+    expect(
+      kit,
+      "the kit block this mirrors must still be the 4px/solid-accent signature",
+    ).toContain("--skin-lift: 4px");
+    expect(kit).toContain("var(--skin-lift) var(--skin-lift) 0 var(--accent)");
   });
 
   it("declares the COLOUR on `body`, never `:scope` (the §14.6 substitution trap)", () => {

@@ -38,9 +38,12 @@ export function useOutlines(themeId: ThemeId): boolean {
   return useThemeSetting<boolean>(themeId, "outlines") ?? true;
 }
 
-// ── axis: `composerSkin` (Slice B, D37) ────────────────────────────────────────────────────────────────
+// ── axis: `composerSkin` (Slice B, D37 — widened past the composer in W2) ──────────────────────────────
 // The COMPOSER's chrome as a cross-theme choice, ORTHOGONAL to the composer LAYOUT (the `composer` variant
-// seg): where `outlines` owns the chat thread, this axis owns the input bar. UNLIKE `outlines`, the four skins
+// seg): where `outlines` owns the chat thread, this axis owns the input bar AND the floating panels that
+// belong to it — its popovers, the TTS mini-player, the pinned plan head (kit.css's `--skin-*` vocabulary,
+// §14.16). The KEY stays `composerSkin`: the bar is still what the choice is named and picked for.
+// UNLIKE `outlines`, the five skins
 // are NOT axes.css strips — they are FIRST-CLASS kit.css chrome (`@layer base`) keyed on `body[data-composer-
 // skin]`, because a skin carries fills/shadows and the axes layer forbids fills (it outranks theme CSS). Same
 // resolver machinery: a validated override, else the theme's declared default; an undeclared theme → the
@@ -50,8 +53,9 @@ export function useOutlines(themeId: ThemeId): boolean {
 /** The composer chrome skins (D37 catalog): `outline` = the Kit's native bordered bar (the base kit.css
  *  chrome — no stamp keying, so pre-mount/no-stamp renders it); `glass` = the old Borderless look (frost +
  *  deep elevation + icon-forward stacked controls); `bezel` = frontier's F4 composer sweep; `sleek` = the old
- *  Ghost (fully transparent bar + extended readability scrim); `arcade` = a flat, opaque CABINET PANEL —
- *  no frost, no elevation, a hairline edge, tight corners and squared-off controls (D52 G3, born of gacha's
+ *  Ghost (fully transparent bar + extended readability scrim); `arcade` = an opaque CABINET PANEL — no
+ *  frost, no outline anywhere, one hard zero-blur accent drop, tight corners and squared-off controls
+ *  (D52 G3, born of gacha's
  *  prototype, but LOOK-NAMED and authored on semantic tokens so it is a real catalog member every theme can
  *  wear — never a theme-scoped bypass of D37). */
 export type ComposerSkin = "outline" | "glass" | "bezel" | "sleek" | "arcade";
@@ -63,7 +67,7 @@ export function composerSkinSetting(def: ComposerSkin = "outline"): ThemeSetting
   return {
     type: "seg",
     label: "Composer skin",
-    desc: "input bar chrome",
+    desc: "chrome for the input bar and its panels",
     options: [
       { val: "outline", label: "Outline" },
       { val: "glass", label: "Glass" },

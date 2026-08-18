@@ -1950,7 +1950,7 @@ dusk-glow shows through a see-through frontier shell [cosmos precedent] + protot
 `61f2267`→`696842f`; the contract table is `THEME_ENGINE.md` §15; frontier consumes it as the first
 non-token chat reskin — six owner eyeball rounds folded in, full record in `FRONTIER_PLAN.md`'s banner).
 
-## D37 — Presentation axes: the `axes` cascade layer + `body[data-*]` stamps (outlines ✅ BUILT · composerSkin ✅ BUILT, AMENDED to 4 skins + layout dedup) ✏️ LOCKED 2026-07-13 · AMENDED 2026-07-15 (frontier F5 slice B as-built)
+## D37 — Presentation axes: the `axes` cascade layer + `body[data-*]` stamps (outlines ✅ BUILT · composerSkin ✅ BUILT, AMENDED to 4 skins + layout dedup; 5 since D52's arcade) ✏️ LOCKED 2026-07-13 · AMENDED 2026-07-15 (frontier F5 slice B as-built) · AMENDED 2026-08-18 (W2 — the `--skin-*` vocabulary; the axis widens to the mini-player + pinned plan head)
 
 **Context.** Frontier F4 shipped an owner-ratified theme-wide no-outlines look as a frontier-private
 `@layer theme` sweep. The owner activated the parked promotion (F5 re-scope, 2026-07-13): make the chat's
@@ -2018,6 +2018,63 @@ split (the Radix/shadcn orthogonal-props pattern).
 a live Playwright computed-chrome matrix incl. the Appearance row adjacency; FE gate 427). F5's remaining
 gates (perf pass · a11y floor · e2e render case · §0 contract row-by-row) follow. The F5 items "per-host
 art override UI" + "asset format/size pass" stay PARKED (owner 2026-07-13 — revisit post-F5).
+
+### AMENDMENT 2026-08-18 (W2) — the axis widens past the composer, on a shared `--skin-*` vocabulary
+
+**What changed.** The skin no longer stops at the input bar. Two floating surfaces that were visibly
+*of* the composer but wore the kit's default chrome regardless of the owner's pick — the **TTS
+mini-player** and the **pinned plan head** — now join the axis. The KEY stays `composerSkin` (the bar
+is what the choice is named and picked for); only its Appearance description widens to *"chrome for the
+input bar and its panels"*.
+
+**The mechanism: an OVERRIDE vocabulary, not more per-skin rules.** Eleven kit-owned custom properties —
+`--skin-border` · `--skin-fill` · `--skin-frost` · `--skin-elev` · `--skin-bar-fill` · `--skin-bar-frost`
+· `--skin-bar-elev` · `--skin-bar-elev-up` · `--skin-chip-edge` · `--skin-chip-elev` · `--skin-lift`.
+Each skin DECLARES only the slots it changes, once, in the block that opens its subsection; each consumer
+READS a slot with **its own current literal as the fallback** (`var(--skin-X, <the outline look>)`).
+Elevation depth is per-surface (bar 6px · popover 8px · player 10px), which is precisely why this is an
+override set rather than a value set every consumer must read: a skin with no opinion about a surface
+leaves that surface's own depth alone. Structural dividend: **~16 per-skin consumer rules → 5 declaration
+blocks + 2 light-mode deltas**, and a NEW consumer joins by writing one `var()`, not by growing the
+section by a rule per skin.
+
+**Three invariants.** (1) Slots are declared on **`body[data-composer-skin="X"] .kit`** (0,2,1) — its
+light-mode compound at (0,3,1) — and **never on `:root`/`html`**: §14.6, a custom property substitutes
+its own `var()`s where it is DECLARED, and arcade's elevation reads `var(--accent)`, which the theme
+declares on `<body>`. (2) The vocabulary is **kit-owned**: a theme declaring a slot is a violation (the
+theme layer beats base, so it would pin chrome for skins the theme does not own). (3) It carries
+**resting chrome only** — state, motion and geometry stay bespoke.
+
+**Exclusions, ruled.** The **plan panels** (`.plan-sheet`, `.plan-pin-drop`) are co-owned by the composer
+LAYOUT and stay off the vocabulary (only the plan HEAD joins, through the chip slots). **`.priv-menu`**
+shares the popover shell but opts out with `--skin-*: initial` — chat-header chrome, not composer chrome.
+The **tools trigger's open ring** stays an *affirmative* `outline`-only gate: an override slot's empty
+value means "keep the base look", which for a state ring fails in the wrong direction. And a **theme's
+rendering of its own accent TOKEN** on controls inside a skinned surface (gacha's `--accent-fill`
+re-windowing) is not a boundary crossing — the axis owns the surface's chrome, the theme owns its token.
+DEFERRED: the four skins' `.kit-composer .kit-cbtn { border-color: transparent }` quartet — a CONTROL
+edge, which needs a control-level slot the vocabulary does not mint yet.
+
+**NO `--skin-radius`** (owner ruling): no skin re-corners a panel today, so the slot would have had no
+declarer. Re-addable additively if one is ever minted.
+
+**Two visible consequences, both ruled.** ① **`arcade`'s drop ALIGNs**: 3px at a 60%-transparent accent
+mix → **solid `var(--accent)` at 4px**, skin-wide (bar, controls, chips, popovers, and the two new
+adopters). This closes GACHA_PLAN §7.7 **R20 #1** — the theme's own art surfaces took exactly that
+correction at G6 (`--gc-lift-color: var(--accent)`), and the skin was the half left behind; the press
+displacement follows the lift automatically. `--arcade-lift` is renamed into `--skin-lift` with no alias
+and no shim. ② **frontier's `.mini-player { border-color: transparent }` is DELETED** — the §14.14
+graduation rule firing as written: with the player on the axis, frontier's default `bezel` already
+declares the transparent edge, while the theme-layer rule would have out-ranked the axis and pinned the
+player borderless even when the owner picks `outline` under frontier.
+
+Every other skin's **pre-existing consumers are byte-identical** (the two NEW adopters — player and
+pinned head — change per skin by definition; that is the feature): the refactor form
+`literal → var(--skin-X, <the same literal>)`
+guarantees it, and it was verified by running a 24-cell computed-chrome matrix (4 skins × 3 layouts,
+plus light and perf-lite arms) before and after — arcade's drop is the only delta. Source-level fence:
+`frontend/tests/theme-engine/skinVocabulary.test.ts` (closed name list · declaration scope · the arcade
+signature · the consumers · the opt-out · D37 authority · the geometry boundary).
 
 ## D38 — Turn integrity: per-thread turn-marker registry + `Database.transaction()` (ACA Slice 2) ✏️ LOCKED 2026-07-17 (Slice 2 design review)
 

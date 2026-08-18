@@ -59,6 +59,15 @@
   triggers no icon update. **Owed: the owner's phone eyeball after the next release** — pick a
   backdrop, then approve "Review app update" under the installed app's ⋮ menu (or uninstall +
   re-add for the immediate path).
+- **2026-08-18: slice W2 — the `composerSkin` axis widens on a shared `--skin-*` vocabulary — BUILT,
+  unreleased, uncommitted.** Eleven kit-owned slots replace ~16 per-skin consumer rules (5 declaration
+  blocks + 2 light-mode deltas), which let two surfaces outside the composer join the axis: the **TTS
+  mini-player** and the **pinned plan head**. Record = the **D37 amendment** + THEME_ENGINE §14.16.
+  NO VISUAL CHANGE to glass/bezel/sleek/outline (verified pre/post on a 24-cell computed-chrome
+  matrix); the ONE ruled delta is **`arcade`'s drop: 3px/60%-mix → solid `var(--accent)` 4px**, which
+  closes GACHA_PLAN §7.7 **R20 #1** as ALIGN. `--arcade-lift` is gone (renamed `--skin-lift`, no
+  alias); frontier's graduated `.mini-player` border rule deleted (§14.14). **Owed: the owner's
+  eyeball on the two new adopters** — the player and the pinned head under a non-`outline` skin.
 
 ## ▶▶ NEXT — Phase 20 is DONE; the owner court is up
 
@@ -81,8 +90,16 @@ remains is owner-court, in the owner's order:
    (owner, 2026-08-17). [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is spec-complete; at wake: its
    §10 owner court + the §3b delta council check; locks as **D58**.
 5. **Gacha banked follow-ups** (owner-eyeball-heavy): the color-theory unit-palette research
-   session · root-cross-fade flicker refinement · the R20/R21 addenda LOWs · kit minimal
-   plan/player overlap (VAPOR_ASSIMILATION_PLAN §7.1) · the standing ledger below.
+   session · root-cross-fade flicker refinement · kit minimal plan/player overlap
+   (VAPOR_ASSIMILATION_PLAN §7.1) · the standing ledger below. **The R20/R21 addenda are nearly
+   drained:** R20 #1 (the composer's quieter drop) closed as ALIGN in W2 · R21 ① (content-identity
+   revision) + ③ (the engine-wide SVG-filter waiver sweep) built in W3 · R21 ④ (the HANDOFF archive)
+   was done 2026-08-12. What is left needs no work: R20 **#2** (the 4-line-name/rarity-tab touch) and
+   **#3** (the 7s scan-mask pulse) are *accepted as recorded* — a guard would be speculative padding;
+   R21 **②** (one fallback frame on an unwarmed name-face) is *deliberate* (the warm-the-resolved-union
+   design). The one genuinely open item is R20 **#4 — the "white bar atop the appbar", reported once
+   and undiagnosed**; its discriminator is a theme switch (if cosmos shows it too, it is Fennec's own
+   chrome).
 6. **The R28 installed-icon improvement** — ⏸ owner-gated; R28 §9 is the ready-to-build brief.
 7. **Fleet-liveness decoupling from Tailscale** (owner-gated; the D47 seam) — only if the
    cold-boot wake blindness recurs.

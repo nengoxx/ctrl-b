@@ -2319,12 +2319,17 @@ push word.** The stars-over-white re-check closed on device ("the stars look goo
 remaining items the owner ruled **noted for post-1.5.0 refinement** — none blocks the release; details
 pinned here so they survive HANDOFF supersession:
 
-- **The composer's quieter drop (coherence call, deferred).** The gacha signature drop is a hard SOLID
-  accent offset (cards 4px · dossier portrait 5px), but the chat composer wears the shared kit `arcade`
-  skin (ruled 2026-08-03), which paints its drop at **3px / 60% α** — thinner and washier than every
-  drop beside it. The binary when picked up: ACCEPT (a deliberately quieter input-box shadow on a
-  kit-wide component) or ALIGN (make the arcade skin itself take the solid 4px — one edit in the shared
-  skin; gacha is the only theme defaulting to it).
+- **The composer's quieter drop (coherence call, deferred).** ✅ **ALIGN — closed 2026-08-18 (W2).** The
+  gacha signature drop is a hard SOLID accent offset (cards 4px · dossier portrait 5px), but the chat
+  composer wore the shared kit `arcade` skin (ruled 2026-08-03), which painted its drop at **3px / 60% α**
+  — thinner and washier than every drop beside it. The binary when picked up was: ACCEPT (a deliberately
+  quieter input-box shadow on a kit-wide component) or ALIGN (make the arcade skin itself take the solid
+  4px — one edit in the shared skin; gacha is the only theme defaulting to it). The owner ruled **ALIGN**:
+  the skin's whole elevation family is now `var(--skin-lift) var(--skin-lift) 0 var(--accent)` at
+  `--skin-lift: 4px` — bar, controls, chips, popovers, and (new) the mini-player and pinned plan head
+  alike, in every theme that picks `arcade`. It rode the W2 slice that turned the axis into a shared
+  `--skin-*` vocabulary; the record is the **D37 amendment (2026-08-18)** + THEME_ENGINE §14.16, and the
+  distances stay independent by design (gacha's `--gc-lift` pair is the theme's, `--skin-lift` the skin's).
 - **The 4-line-name / rarity-tab touch (measured; recommendation = accept as recorded).** A ~30-char
   host name wraps to FOUR lines at phone width in the dossier and the fourth line's edge overlaps the
   rarity-star tab top by ~5.5px — a touch, nothing clips. Names ≤ ~21 chars (three lines) clear
