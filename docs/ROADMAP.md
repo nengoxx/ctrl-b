@@ -329,6 +329,28 @@ back to the analysis.
   scripted-tool mode hooks in (the registry seam vs a fake `ActionService`); whether the deferred
   `cause` taxonomy (PROMPTS_PLAN §2.7 recorded non-build) becomes needed once runs are graded.
 
+### A13. OpenAI-Codex OAuth provider (device-code flow) — owner ask 2026-08-19
+
+- **What:** let ctrl-b's chat ride the owner's ChatGPT/Codex subscription as a provider — the
+  same `openai-codex` OAuth the owner's Hermes agent uses (device-code sign-in: a short code +
+  https://auth.openai.com/codex/device on the phone, no localhost redirect, no API key). Chosen
+  as a future feature the day the Hermes credential was re-authorized exactly this way.
+- **Seams already in place:** the D48 provider registry models everything but the credential
+  refresh — a provider entry is `base_url + api_mode + models{}`; the wire-normalization layer
+  (DESIGN §7, R41/R42) already makes strict templates safe; failover chains take any provider.
+  **The one genuinely new piece is a credential TYPE:** today `api_key` is a static string —
+  this needs an oauth record (access/refresh tokens + expiry) with a refresh-before-use hook at
+  the adapter's client construction, plus a `hermes auth add`-style device-code CLI/Conf flow to
+  mint it. Secret handling follows the existing config-secrets model (SECURITY_MODEL; masked,
+  never echoed/committed).
+- **Reference implementations, both on this machine:** Hermes `hermes_cli/auth.py`
+  `_codex_device_code_login()` (device-code request → poll → token store; the client_id +
+  endpoints are public constants) and the Codex CLI's auth manager. Field caveat learned
+  2026-08-19: refresh tokens for the account die together across consumers when the account's
+  sessions are revoked — surface a clear re-auth error, not a silent failover.
+- **Not started; needs a D-entry before build** (credential-type shape in `ProviderCfg` — extend
+  the object per the shape-to-extend directive, no parallel `oauth_providers{}` map).
+
 ## B. Memory (configurable, pluggable)
 
 ### B1. Selectable memory backends — ✏️ RESHAPED to the TIER MODEL (D57, 2026-08-17)

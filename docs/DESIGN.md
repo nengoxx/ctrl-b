@@ -915,6 +915,25 @@ class InferenceClient(Protocol):
     async def chat(self, ref, messages, tools=None, stream=True) -> ...: ...
     async def embed(self, ref, texts) -> list[list[float]]: ...
 # one OpenAI-compatible client; base_url/key/model per purpose (chat / summarizer / embeddings).
+#
+# WIRE NORMALIZATION (2026-08-19, R41/R42; `normalize_system_messages` in adapters/inference.py).
+# BEFORE: the wire carried the assembly's message list verbatim — a leading RUN of several
+# consecutive `system` messages (system prompt → appends → roster → memory → core index → skills
+# note; after a compaction also the fold summary) plus occasional EPHEMERAL `system` nudges later
+# in the list (reflection, wrap-up). AFTER: at the top of both entry points (complete/stream_chat,
+# before the kwargs snapshot) the leading run coalesces into ONE system message ("\n\n"-joined,
+# order preserved; a sole contributor is reused by reference) and any later `system` re-roles to a
+# `<system-update>`-wrapped `user` message in place. Unconditional, all providers — 7/7 peer
+# clients do exactly this (R42); strict templates (Qwen3.6 et al.) hard-reject anything else and
+# llama.cpp maps the template's raise to HTTP 400 (R41; no server-side fix exists).
+# CACHE TRUTH (the "separate messages for cache" intuition is retired): llama.cpp and OpenAI both
+# cache on the RENDERED TOKEN PREFIX — message boundaries are not a cache unit, and the join is
+# deterministic + order-preserving, so per-turn prefix stability is IDENTICAL to before (one
+# one-time re-prefill at deploy on non-strict templates whose render changes). Nobody in the field
+# keeps separate system MESSAGES for caching; the one dialect with per-BLOCK caching (Anthropic
+# `cache_control`) wants one system slot with multiple content BLOCKS — if such a backend is ever
+# wired in, that is an ADDITIVE output form of this same normalize step keyed by the provider's
+# existing `api_mode`, NOT a user knob (recorded deviation: 0/7 peers expose a setting; R42).
 # As-built: the client delegates endpoint failover to `core/failover.failover()` — an async generator
 # (D43) that yields live retry/failover control items then the winning `FailoverResult` last. `stream_chat`
 # re-yields them as typed RetryNotice/FailoverNotice before the first ChatDelta; buffered callers
