@@ -95,6 +95,31 @@ def test_never_mutates_input():
     assert src == snapshot
 
 
+def test_text_part_array_content_flattens_not_crashes():
+    # co-review MED: dialect-valid content-part arrays must degrade to text, never TypeError
+    parts = [{"type": "text", "text": "from "}, {"type": "text", "text": "parts"}]
+    out = normalize_system_messages([{"role": "system", "content": parts}, _s("b"), _u("q")])
+    assert out[0] == _s("from parts\n\nb")
+    out2 = normalize_system_messages([_s("h"), _u("q"), {"role": "system", "content": parts}])
+    assert out2[-1]["content"] == "<system-update>\nfrom parts\n</system-update>"
+
+
+def test_metadata_survives_reuse_and_downgrade_but_not_merge():
+    # co-review LOW: a single-message leading run is reused BY REFERENCE (everything survives);
+    # a downgrade spread-copies (name/extensions survive); only a genuine merge drops extras.
+    named = {"role": "system", "content": "solo", "name": "policy"}
+    out = normalize_system_messages([named, _u("q")])
+    assert out[0] is named
+    out2 = normalize_system_messages([_s("h"), _u("q"), {**named, "content": "late"}])
+    assert out2[-1]["role"] == "user" and out2[-1]["name"] == "policy"
+    out3 = normalize_system_messages([named, _s("b"), _u("q")])
+    assert "name" not in out3[0] and out3[0]["content"] == "solo\n\nb"
+    # confirm-round edge: an EMPTY sibling in the run is not a merge — the sole contributor is
+    # still reused by reference, metadata intact.
+    out4 = normalize_system_messages([named, _s(""), _u("q")])
+    assert out4[0] is named
+
+
 def test_idempotent():
     # F6: the D46 stripped re-attempt and the stream re-open replay the same kwargs; a second pass
     # must be a no-op — including that an already-wrapped update is not re-wrapped (it is `user` now).

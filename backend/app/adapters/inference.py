@@ -577,24 +577,35 @@ def normalize_system_messages(messages: list[dict]) -> list[dict]:
     it cannot close its own wrapper; an EMPTY later system message drops (an empty nudge is a no-op).
     Coalesce-then-downgrade, never the reverse (the LiteLLM trap: downgrading first strands head
     blocks in user turns). Idempotent; never mutates the input list or its dicts — the caller's list
-    holds the per-turn cached head dicts reused byte-identically across loop iterations."""
+    holds the per-turn cached head dicts reused byte-identically across loop iterations.
+
+    Shapes beyond ctrl-b's own (the co-review round): a system `content` may be a text-part ARRAY in
+    the OpenAI dialect — flattened to its text (never a crash before failover); a single-message
+    leading run is reused BY REFERENCE and a downgrade spread-copies its dict, so standard metadata
+    (`name`, extensions) survives both; only a genuine MERGE drops extras, where no lossless
+    representation exists."""
     out: list[dict] = []
     i = 0
     lead: list[str] = []
+    lead_src: dict | None = None  # the sole CONTRIBUTOR when len(lead) == 1 — empty siblings don't count
     while i < len(messages) and messages[i].get("role") == "system":
-        content = messages[i].get("content")
-        if content:
-            lead.append(content)
+        text = _content_text(messages[i].get("content"))
+        if text:
+            lead.append(text)
+            lead_src = messages[i]
         i += 1
-    if lead:
+    if lead_src is not None and len(lead) == 1:
+        out.append(lead_src)
+    elif lead:
         out.append({"role": "system", "content": "\n\n".join(lead)})
     for msg in messages[i:]:
         if msg.get("role") == "system":
-            content = msg.get("content")
-            if content:
-                escaped = html.escape(content, quote=False)
+            text = _content_text(msg.get("content"))
+            if text:
+                escaped = html.escape(text, quote=False)
                 out.append(
                     {
+                        **msg,
                         "role": "user",
                         "content": f"{_SYS_UPDATE_OPEN}\n{escaped}\n{_SYS_UPDATE_CLOSE}",
                     }
@@ -602,6 +613,23 @@ def normalize_system_messages(messages: list[dict]) -> list[dict]:
             continue
         out.append(msg)
     return out
+
+
+def _content_text(content: object) -> str:
+    """A message `content` as plain text: the OpenAI dialect allows a string OR a list of content
+    parts (`{"type": "text", "text": …}`). ctrl-b's own assembly only ever emits strings — the array
+    arm exists so a foreign-shaped but dialect-valid message degrades to its text instead of raising
+    TypeError ahead of the failover chain (co-review MED). Non-text parts contribute nothing; any
+    other type stringifies (defensive — the old pass-through never crashed here, so this must not)."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            p.get("text") or "" for p in content if isinstance(p, dict) and p.get("type") == "text"
+        )
+    return str(content)
 
 
 @dataclass(frozen=True)
