@@ -1098,3 +1098,89 @@ qwen/corsair (the primary flip is pure config). **Findings, acted on same day:**
   QUALITY.md counts · HANDOFF's stale "unpushed" status.
 - **Recorded LOW, non-build:** `MemoryEditor.tsx` has no FE test pinning the D60 Conf fields
   (consistent with the repo's existing FE coverage shape; noted, not padded).
+
+## 16. The consolidation-UX slice (D61 — council-amended 2026-08-19, pre-build)
+
+> Evidence base: the §15d/§14f records + the 2026-08-19 limitations crosswalk (Claude Code vs
+> ours) + the owner's UX rulings in conversation: consolidation stays OFF-by-default and
+> human-triggered; pressure alerts the OWNER (not the model); a command triggers the procedure;
+> "literally just asking" must work. Five parts, one slice; frontend-heavy; no migration.
+> Council: the Hermes `emma` lane (gpt-5.6-sol high, blind `--ignore-rules` read-only round) —
+> **BUILD WITH CHANGES, 9 findings, ALL folded below (§16b)**.
+
+**① The `/consolidate [dry]` composer verb.** One new row in `BUILTIN_VERBS`
+(frontend/src/lib/composer.ts — the same table as `/compact`), args `[dry]`, help line, shown in
+`/help` + first-token completion (the `[dry]` argument is a help hint only — no argument
+completion machinery). `run`: validate the argument (blank or `dry`, anything else → note);
+fetch the prompt registry (the existing `/api/prompts` shape), take `consolidation` (bare) or
+`consolidation_dryrun` (`dry`) `current` text — the command and a hand-sent prompt end at the
+SAME owner-editable text — clear any armed composer scope (matching explicit skill/provider
+sends), and send via `sendMessage(current, { raw: "/consolidate…" })` (store/chat.ts:1922); the
+thread shows the real prompt as the user message. Fetch failure → `pushSystemNote`, nothing
+sent. **The §16b-1 guard: the command checks `memory.auto_write` first** — `dry` with writes ON
+is refused with an actionable note (the dry run is dry STRUCTURALLY, §5 step 1, not by asking
+the model), and bare `/consolidate` with writes OFF gets a note suggesting the dry form (every
+write would be refused mid-run). One settings fetch, both directions.
+
+**② The pressure hint = a system note in chat, owner-facing.** Hook = the ONE cross-transport
+terminal helper (`notifyTurnTerminal`, store/chat.ts:289 — §16b-3: NOT the `compaction` handler,
+and not `done` alone, which misses buffered turns and reattach/`active:false` completions): on a
+real non-suspended terminal state, run ONE in-flight-deduped check — fetch
+`GET /api/memory/core/status` (silent best-effort on failure) and, when `enabled` and
+`index_pct ≥ consolidation_nudge_pct`, push ONCE per pressure episode:
+`// memory index at NN% — run /consolidate when convenient`. Latch: module-level, re-arms when
+fill drops below the threshold; **accepted semantic: once per PAGE LIFETIME per episode** (a
+reload also removed the prior client-only note — no persistence). Backend delta: `CoreStatus`
+gains `consolidation_nudge_pct` so config stays the single threshold source. Recorded limit:
+backend-only automation turns produce no note unless this client observes/reattaches.
+
+**③ The model-facing pressure clause is REMOVED (§16b-5 — the council took the owner's ruling
+further than the draft).** Any pressure imperative in the injected header — including the
+draft's "suggest a run to the owner" — is still mid-task steering and a second channel beside ②.
+The header keeps the fill percentage as plain DATA; the clause goes entirely, and `nudge_pct`
+leaves `_header`/`_fit` and the render-cache key (no remaining render role). The config field
+stays — ② and the backend latch consume it.
+
+**④ Shipped default `index_char_limit` 8192 → 10240** (config.py; the owner's ~10K sizing).
+Semantics stated: deployments that OMIT the key adopt 10240 on upgrade; an explicitly-pinned
+8192 stays (and stays pressured — ②'s note then fires, correctly). §16b-6 consistency sweep in
+the same commit: the ConfTab fallback literal (frontend/src/tabs/ConfTab.tsx:1039),
+`config.example.yaml`, and the DESIGN/SPEC default rows — one default, no stragglers.
+
+**⑤ The `search` omission counter** (crosswalk D3; §16b-7 shape). `search` returns a small
+structured result `{hits, omitted}`; every budget-skipped match is COUNTED, displayed hits are
+evicted until the tail note fits INSIDE `topic_char_limit` (the note reserves in-band, like the
+index truncation note), and an omitted-only result is NOT "no matches" — the tool renders the
+note either way, charged through the existing `_recalled` path. Wording (§16b-8, no path
+promises): `… N more matching topic(s) not shown — narrow the search to reveal them.`
+
+**Deliberate non-builds (recorded, next-slice candidates):** paged/offset reads (the 53K-topic
+residual, §14c #3 — still holds MERGE 2) · a `modified` freshness stamp on topics (crosswalk D4)
+· the automation arm (banked behind the writes-derived outcome signal, §14c #10).
+
+**Acceptance (§16b-9 set):** composer — bare/dry registry resolution · invalid args · missing/
+non-OK/malformed prompt responses · exact `sendMessage` body + raw line · armed-scope clearing ·
+`/help` + verb completion · the auto_write guard both directions; chat — streaming, buffered,
+snapshot and `active:false` terminals all trigger the one deduped check · disabled/below/above
+threshold · re-arm on drop · failed fetch silent · replay + concurrent dedupe; backend — the
+status field · NO pressure clause in the header at any fill · the 10240 default · omission
+count with some AND zero visible hits · the note inside the budget. Plus:
+`CoreMemoryStatus` in frontend/src/hooks/useMemory.ts gains the field. No new Conf control, no
+browser e2e (already exposed / store-level covered). Build = Opus from this section as the
+pinned brief; the `emma` lane diff round after; full gate per commit.
+
+### 16b. The D61 council round (Emma/gpt-5.6-sol, blind, 2026-08-19) — BUILD WITH CHANGES, all folded
+
+1 HIGH `/consolidate dry` wasn't structurally dry → the auto_write pre-check (①; + the
+main-seat symmetric hint for the bare form). 2 LOW mechanism confirmed (client-side registry
+fetch is right; no `prompt_id` on ChatRequest, no skill, no server expansion) + the exact send
+seam. 3 HIGH the draft's ② chokepoint was WRONG (chat.ts:982 is the `compaction` handler;
+`done` alone misses buffered/reattach terminals) → `notifyTurnTerminal` + in-flight dedup.
+4 LOW threshold-in-CoreStatus confirmed; latch = once per page lifetime, accepted explicitly;
+silent best-effort fetch. 5 HIGH the draft's softened clause still steered the model mid-task →
+clause removed entirely, pct stays as data. 6 MED default-change consistency (ConfTab fallback
+literal + example + doc rows in the same commit). 7 HIGH the tail note must reserve INSIDE the
+budget and an omitted-only search must not read as "no matches" → `{hits, omitted}` + evict-to-
+fit. 8 MED the draft note promised paths it couldn't show → the narrow-the-search wording.
+9 MED the acceptance list, adopted verbatim. Overrules: none.
+
