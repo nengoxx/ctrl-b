@@ -901,8 +901,11 @@ the tool's `Literal` keeps the model on known keys).
   ordering is for idempotent retry, deliberately **not** transactional.
 - **Recall budget:** one `RecallBudget` per **logical turn**, owned by the session and threaded onto
   `InvocationContext.recall` through `ActionService.invoke` (exactly like the prompt stamps); every
-  read/search adds the length of its *complete framed* output, and a resume re-seeds `used` from that
-  turn's persisted core-memory results, so a confirm round-trip is not a fresh allowance.
+  read-class call pays a `recall_min_charge_chars` floor up-front (D60 §15b-3 — the structural bound
+  on zero-char read loops, since read-class calls sit OUTSIDE `max_calls_per_tool` per D60 ②), a
+  successful read/search then costs exactly its *complete framed* output length, and a resume
+  re-seeds `used` from that turn's persisted core-memory results — floors included for no-output
+  read-class calls — so a confirm round-trip is not a fresh allowance.
 - **Exposure = two layers:** deny-at-invoke when disabled, plus `for_agent(hidden=…)` applied at both
   the schema set and the availability guard (§3).
 - **Promotion (tier-1 cap pressure → tier 2):** the standing routing clause in `core_memory_policy` ·

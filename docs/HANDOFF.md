@@ -117,8 +117,8 @@
 the 2026-08-18 gacha first-block pair (`c8dc09d`+`0e20de0`) + the 2026-08-19 stack (white-bar
 close · plan-pill-over-oracle fix `a90ad84` + its e2e arm · arcade 3px `630219d` + its mirror-pin
 fix · the cache_n + §14c records · the doc sweeps — pushed through `3e93774`) + **`5678c08`
-(unpushed): the wire-level system-message normalization that makes qwen3.6-max on corsair
-serveable — the owner's NEW PRIMARY chat model (see the `qwen-primary-on-corsair` memory; R41/R42
+(✅ pushed, 2026-08-19 — everything below is on origin): the wire-level system-message
+normalization that makes qwen3.6-max on corsair serveable — the owner's NEW PRIMARY chat model (see the `qwen-primary-on-corsair` memory; R41/R42
 = the evidence; council = the adversarial Opus design lens + ✅ the Codex DIFF round DONE 2026-08-19 via the
 Hermes `emma` lane (gpt-5.6-sol; SHIP WITH FIXES → the `8575ae2` wave → two confirm rounds →
 FINAL SHIP). The Codex CLI on emma is still logged out — desktop `ssh -L 1455` + `codex login`
@@ -126,7 +126,9 @@ when convenient; Hermes's own codex credential is FRESH (device-code, 2026-08-19
 live; **the PROD config flip (provider corsair + fallback chain) happens ONLY AFTER the release
 carrying `5678c08`** — the pinned prod tree lacks the normalization until then.** A release is a
 clean plain-form runbook run (§Release; rollback stays v1.7.2), then the prod config flip +
-restart + a no-failover journal check.
+restart + a no-failover journal check. **The flip must also set `context_window: 262144` on
+prod's `google/gemma-4-31b-it:free` openrouter entry** — without a window on EVERY chain entry
+the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
 
 **The pre-release menu — things that COULD close first (none gates the release; pick or skip):**
 - ~~The notifications retest result~~ **✅ PASSED (owner, 2026-08-19): notifications DELIVER**
@@ -160,7 +162,9 @@ restart + a no-failover journal check.
    (§14c gemma · §14d qwen3.6-max). **→ the redesign ran SAME-DAY as D60 (locked, BUILT,
    REVIEW-CLOSED 2026-08-19 — spec §15/§15b, as-built §15c): pressure-gated clearing ·
    current-turn immunity · split budgets · guarded soft deletes · dry-run-first prompts; full
-   council via the Hermes emma lane, final SHIP; commits `bdff95d`..`6063b40` UNPUSHED.
+   council via the Hermes emma lane, final SHIP; commits `bdff95d`..`6063b40` ✅ pushed
+   2026-08-19, and the §15d post-push verification audit re-confirmed both packages in code
+   (one real fix landed from it: the recall-floor reseed carry).
    ~~NEXT = RUN 3 on dev~~ → **RUN 3 DRY-RUN ✅ SUCCEEDED 2026-08-19 (CORE_MEMORY_PLAN §14e):
    first run ever to produce a complete reviewable plan — one turn, zero writes (sha-verified),
    graceful budget recovery, D60 ①/② visibly holding on qwen3.6-max. NEXT = owner eyeballs the

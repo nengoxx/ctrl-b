@@ -338,6 +338,63 @@ def test_the_read_loop_terminates_at_the_cap(tmp_path) -> None:
     assert budget.used == 1024
 
 
+def test_the_floor_survives_a_suspend_resume_reseed(tmp_path) -> None:
+    """§15b-3's other half: the floor is cumulative ACROSS a resume. A read-class call that produced
+    no output (a refused read, an empty search) paid the floor live — the `_seed_recall` walk must
+    re-charge it, or every confirm round-trip refunds the turn's failed reads. A no-output
+    WRITE-class result stays free, exactly as it was live."""
+    from app.db import Database
+    from app.domain.conversation import Message, Thread, ToolCallPart, ToolResultPart
+    from app.domain.enums import RunState
+    from app.domain.result import ToolResult
+    from app.services.agent.session import AgentSession
+    from app.services.conversation import MessageRepo, ThreadRepo
+
+    corpus, _root_ = _seeded(tmp_path, recall_min_charge_chars=256)
+
+    async def go():
+        db = Database(tmp_path / "t.db")
+        await db.connect()
+        messages, threads = MessageRepo(db), ThreadRepo(db)
+        thread = await threads.create(Thread())
+        await messages.add(Message(thread_id=thread.id, role="user"))
+        await messages.add(
+            Message(
+                thread_id=thread.id,
+                role="assistant",
+                parts=[
+                    ToolCallPart(
+                        call_id="hit", tool=CORE_MEMORY_TOOL, args={"action": "read", "path": "wake.md"}
+                    ),
+                    ToolCallPart(
+                        call_id="miss", tool=CORE_MEMORY_TOOL, args={"action": "read", "path": "no.md"}
+                    ),
+                    ToolCallPart(
+                        call_id="write", tool=CORE_MEMORY_TOOL, args={"action": "delete", "path": "x.md"}
+                    ),
+                ],
+            )
+        )
+        await messages.add(
+            Message(
+                thread_id=thread.id,
+                role="tool",
+                parts=[
+                    ToolResultPart(
+                        call_id="hit", result=ToolResult(state=RunState.OK, summary="r", output="Y" * 300)
+                    ),
+                    ToolResultPart(call_id="miss", result=ToolResult(state=RunState.ERROR, summary="r")),
+                    ToolResultPart(call_id="write", result=ToolResult(state=RunState.ERROR, summary="w")),
+                ],
+            )
+        )
+        resumed = AgentSession(threads, messages, None, corpus.settings, None, core_memory=corpus)
+        await resumed._seed_recall(thread)
+        assert resumed._recall.used == 300 + 256  # the hit's length + the miss's floor; the write free
+
+    run_async(go())
+
+
 # ── 4. the delete guard (③ / §15b-4/5/8/12/13) ────────────────────────────────────────────────────
 
 

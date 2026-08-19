@@ -832,8 +832,14 @@ Captures in the session scratchpad (`consolidation-run3/`); thread `93f6210b…`
 1 search succeeded; the other 8 were refused by the per-turn recall budget (20,480 ÷ 4,096-cap
 reads ≈ 5) — and the model **recovered gracefully every time**: narrated the refusal, adapted,
 and closed with the plan instead of run 1's repetition spiral. No write was ever attempted (the
-prompt's "writes are off" framing worked — the autonomy gate never had to fire). D60 ① and ② both
-visibly held: zero clearing across the survey, zero per-tool cap denials on reads.
+prompt's "writes are off" framing worked — the autonomy gate never had to fire). D60 ② visibly
+held: 13 calls in one turn, zero per-tool cap denials on reads. **D60 ①'s pressure gate was NOT
+exercised by this run** (2026-08-19 audit): at run time the dev chain's openrouter fallback had no
+`context_window`, so `min_chain_window` was `None` and clearing stayed on the pre-D60 always-on
+fallback — the zero clearing observed is fully explained by the current-turn immunity in a
+one-turn run. Fixed post-audit: dev's `google/gemma-4-31b-it:free` now carries
+`context_window: 262144` (the OpenRouter-published value), arming the gate; **the prod config
+flip must carry the same key** or the gate stays dormant there too.
 
 **The plan itself** (banked at `consolidation-run3/turn1-text.md`): family = themes/theme-engine
 (9 topics); MERGE 1 = the 2026-07-10 hardening/deploy cluster (4 → 1, each delete naming its
@@ -893,7 +899,8 @@ Config home: the same cfg model as `clear_output_min_tokens`/`clear_keep_steps`
 (domain/agent.py) → surfaced in the existing Conf agent-turns group beside them.
 
 **② The call-budget split (R2; R43 rec 5 + R44 Kilo precedent).**
-`core_memory` **read-class actions (read/search/status) stop counting** against
+`core_memory` **read-class actions (read/search — the tool has no `status` action; corpus fill
+lives on the HTTP status route) stop counting** against
 `max_calls_per_tool` — they are already bounded by `recall_char_limit` (the honest read budget);
 write-class actions keep the cap. Classification lives in the tool (one set of action names
 beside the dispatcher), not in the loop. Plus: `tool_overrides.<tool>.max_calls` — an ADDITIVE
@@ -905,7 +912,8 @@ today's 6; blanket default unchanged). The loop-guard/`max_repeat_calls` dedup i
 (`.archive/` excluded), **refused if absent** with steering text "create <topic> first, then
 retry", **self-reference refused** (Hermes #29912's exact guard) — or `reason: <text>` (free
 text; becomes part of the D26 commit subject, letta-code's shape). And **every delete is SOFT**:
-an atomic rename to `<root>/core/.archive/<name>` (+ its index-line removal, both gates ahead of
+an atomic rename to `<root>/.archive/<relative path>` (mirrored, not flattened; `root` already
+defaults to `core`) (+ its index-line removal, both gates ahead of
 both writes per the §14b ordering). The scan already ignores dotted path components — zero
 scan/render changes; recovery = a file move. `.archive/` pruning is manual/owner (recorded
 non-build). Known residual (R44, recorded): the target could itself be deleted later in the same
@@ -915,7 +923,7 @@ run — the delta report + dry-run are the mitigations; an end-of-pass re-verify
 The `consolidation` registry prompt is REWRITTEN (owner-editable as ever): ONE overlapping topic
 family per run, finish it, stop · the named mechanics (read every source fully → `create` the
 merged topic → `delete` each source WITH `superseded_by`) · tool-call batches of at most 3 ·
-the index may be truncated at high fill — verify coverage via `search`/`status`, don't trust the
+the index may be truncated at high fill — verify coverage via `search`, don't trust the
 count · absolutize dates · translate model-specific framing for whatever model drives ctrl-b ·
 close with a delta report (merged/rewrote/deleted, with paths). A sibling registry id
 **`consolidation_dryrun`** = the same pass with ALL writes forbidden, reporting the full plan
@@ -951,8 +959,10 @@ The spec in §15 is amended by the following, which the builder treats as part o
    attempts a write and asserts the suspension/refusal, never a cooperative model.
 3. **Reads get a structural bound (HIGH):** every read-class call charges a MINIMUM unit
    (`recall_min_charge_chars`, default 256) against the cumulative per-turn `recall_char_limit`
-   (confirmed cumulative + carried across resume), so zero-char `status`/empty-search loops
-   terminate (~80 calls/turn worst case). `max_repeat_calls` stays as an independent guard.
+   (confirmed cumulative + carried across resume — the resume half landed in the 2026-08-19
+   audit fix wave: `_seed_recall` re-charges the floor for no-output read-class calls), so
+   zero-char refused-read/empty-search loops terminate (~80 calls/turn worst case).
+   `max_repeat_calls` stays as an independent guard.
 4. **Archive atomicity (HIGH):** under the existing corpus lock: validate everything → rename to
    `.archive/` → atomic-replace the index; on index failure, rename back. Reuses `_atomic_write`
    + `MemoryBackup.guard()`. Fault-injection tests after each write step.
@@ -1014,3 +1024,29 @@ manual with archive-side no-clobber; the prompt names `search` for coverage chec
 backend tests 1724 → **1798** · FE 2086 → 2089 · full gate 6/6 at every commit. **NEXT: RUN 3 on
 dev — `consolidation_dryrun` with `memory.auto_write` OFF → owner eyeballs the plan → the live
 run (§5 procedure). Unreleased until the next release; prod behavior unchanged until then.**
+
+### 15d. The post-push verification audit (2026-08-19, owner-ordered "every nuance" pass)
+
+Independent Opus auditor over both packages (D60 + the `5678c08` qwen wire normalization),
+main-seat ruled. **Re-verified in code, all CONFIRMED:** the 14 §15b folds, both review-wave
+MEDs + the recorded LOW comment (the no-clobber scope note in `core_memory.py`), the five
+acceptance families' test pins, all four tunables config-and-Conf-exposed, zero leftover
+instrumentation. **The wire normalization audited fully closed:** single chokepoint
+(`complete`/`stream_chat` in `adapters/inference.py`) with no bypass path (summarizer,
+automations, subagents all route through it), both `8575ae2` review findings folded with
+wire-level test pins, no doc still describing the old multi-system shape, nothing hardcoding
+qwen/corsair (the primary flip is pure config). **Findings, acted on same day:**
+- **The ① pressure gate was INERT on both live configs** — no `context_window` on the
+  openrouter fallback ⇒ `min_chain_window` `None` ⇒ the documented always-on fallback. Dev
+  armed (`google/gemma-4-31b-it:free` → 262144, the OpenRouter-published value); the prod
+  config flip must carry the same key; §14e corrected (run 3 exercised ②, not ①).
+- **The recall floor was refunded across a suspend/resume** — `_seed_recall` counted only
+  framed output, so a confirm round-trip refunded every failed read's floor, contradicting
+  §15b-3's "carried across resume". Fixed (the reseed re-charges the floor for no-output
+  read-class calls via `is_recall_call`); pinned by
+  `test_the_floor_survives_a_suspend_resume_reseed`. Backend tests 1798 → 1799.
+- **Doc drift fixed in place:** §15 ②'s phantom `status` action · §15 ③'s archive path ·
+  DECISIONS' pre-amendment gate denominator · DESIGN §recall bullet (floor + cap exemption) ·
+  QUALITY.md counts · HANDOFF's stale "unpushed" status.
+- **Recorded LOW, non-build:** `MemoryEditor.tsx` has no FE test pinning the D60 Conf fields
+  (consistent with the repo's existing FE coverage shape; noted, not padded).

@@ -4486,8 +4486,10 @@ Two supervised consolidation drives failed complementarily (gemma: spiralled, ze
 disciplined, then a correctly-formed delete of a live topic whose cap-blocked replacement never
 existed), proving the shipped per-turn chat budgets structurally forbid the §5 curation pass and
 that form-validating rails don't stop semantically wrong writes. Locked, all config-with-defaults:
-**(①)** D42 Tier-1 clearing becomes PRESSURE-GATED (`clear_trigger_pct` × the model's registry
-`context_window`, default 0.5; unset window → today's always-on), the keep window protects the
+**(①)** D42 Tier-1 clearing becomes PRESSURE-GATED (`clear_trigger_pct` × the SMALLEST resolvable
+`context_window` across the turn's eligible failover chain — the §15b-1 council amendment, so a
+mid-turn failover to a smaller model is never planned above its window; default 0.5; ANY chain
+entry without a resolvable window → today's always-on), the keep window protects the
 WHOLE CURRENT TURN, the never-clear set becomes `clear_exclude_tools` config (default task_plan ·
 memory · core_memory), and a `clear_min_reclaim_tokens` floor (1024) stops trivial trims — ctrl-b
 was a 0/8 field outlier on the unconditional trigger (R43). **(②)** `core_memory` read-class

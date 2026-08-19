@@ -1223,17 +1223,25 @@ class AgentSession:
         turn. A mid-turn steer persists as an ordinary `role="user"` row (Drain A), so it carries the
         `steer` marker precisely so the walk does not stop at it and hand the model a second full
         allowance. Each `core_memory` call's result is counted by the length of its COMPLETE framed
-        `output` — the exact quantity the tool charged live, so a refusal (no output) costs nothing."""
+        `output` — the exact quantity the tool charged live — and a READ-class call that produced no
+        output (a refused read, an empty search) re-charges the `recall_min_charge_chars` floor it
+        paid live (§15b-3: the floor is cumulative ACROSS a resume too, so parking on a confirm
+        bubble never refunds a failed read's charge)."""
         turn: list[Message] = []
         for m in reversed(await self._messages.list(thread.id)):
             if m.role == "user" and not m.steer:
                 break
             turn.append(m)
-        recalled = {cp.call_id for m in turn for cp in m.tool_calls() if cp.tool == CORE_MEMORY_TOOL}
-        if not recalled:
+        calls = {cp.call_id: cp.args for m in turn for cp in m.tool_calls() if cp.tool == CORE_MEMORY_TOOL}
+        if not calls:
             return
+        floor = self._core_memory.recall_min_charge_chars() if self._core_memory is not None else 0
         self._recall.used = sum(
-            len(rp.result.output or "") for m in turn for rp in m.tool_results() if rp.call_id in recalled
+            len(rp.result.output or "")
+            or (floor if is_recall_call(CORE_MEMORY_TOOL, calls[rp.call_id]) else 0)
+            for m in turn
+            for rp in m.tool_results()
+            if rp.call_id in calls
         )
 
     async def _find_pending(self, thread: Thread, call_id: str) -> Message | None:
