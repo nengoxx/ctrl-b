@@ -902,12 +902,17 @@ The spec in §15 is amended by the following, which the builder treats as part o
 9. **`max_calls` override = REPLACE semantics (MED):** absent → the blanket cap; present → that
    tool's cap. Named `max_calls`; documented in the Conf hint.
 10. **Config boundaries (MED):** `clear_trigger_pct` finite 0<x≤1 · `clear_min_reclaim_tokens`
-    ≥0 · `clear_keep_steps` ≥1 (unchanged) · `max_calls` ≥1 · `clear_exclude_tools` deduped
-    nonblank strings (unknown names allowed) · same pydantic model validates boot and Conf PUT.
+    ≥0 · `clear_keep_steps` ≥1 (unchanged) · `max_calls` ≥1 · **`recall_min_charge_chars` int ≥1
+    (confirm-round close: 0/negative would disable the read-loop bound)** · `clear_exclude_tools`
+    deduped nonblank strings (unknown names allowed) · same pydantic model validates boot and
+    Conf PUT.
 11. **The authoritative estimate (MED):** the gate consumes the SAME assembled-prompt estimate
     compaction already prices (post-injection), never a partial figure.
-12. **Restore (MED):** documented as move-back + re-add the index line (the §3 write path);
-    acceptance asserts post-restore index discoverability. A `restore` action = recorded non-build.
+12. **Restore (MED):** documented as move-back + re-add the index line (the §3 write path),
+    **NO-CLOBBER: the move refuses if a live topic now exists at the destination (confirm-round
+    close — a recreated topic must never be overwritten by a restore)**; acceptance asserts
+    post-restore index discoverability AND the live-destination collision refusal. A `restore`
+    action = recorded non-build.
 13. **`reason` sanitation (LOW):** nonblank, collapsed to one line, control chars rejected,
     subject-length capped, passed as an argument (never shell).
 14. **Keep-window aging (LOW), mechanical:** current turn always retained; otherwise an output is
@@ -916,3 +921,7 @@ The spec in §15 is amended by the following, which the builder treats as part o
 The reviewer's missing-acceptance list (19 cases incl. failover-window straddles, suspend/resume
 turn identity, dry-run attempted-write, archive collision, fault injection, config extremes,
 old-config back-compat) is adopted VERBATIM into the slice's test plan.
+
+*(Confirm round, same day: 11/14 CLOSED on first read; #3/#10 closed by the `recall_min_charge_chars ≥1`
+boundary above, #12 by the restore no-clobber; deviation A ACCEPTED, deviation B accepted as amended.
+Reviewer's own words: "two small spec fixes make it BUILD" — both applied verbatim. FINAL: BUILD.)*
