@@ -953,3 +953,23 @@ old-config back-compat) is adopted VERBATIM into the slice's test plan.
 *(Confirm round, same day: 11/14 CLOSED on first read; #3/#10 closed by the `recall_min_charge_chars ≥1`
 boundary above, #12 by the restore no-clobber; deviation A ACCEPTED, deviation B accepted as amended.
 Reviewer's own words: "two small spec fixes make it BUILD" — both applied verbatim. FINAL: BUILD.)*
+
+### 15c. D60 as-built + review close (2026-08-19)
+
+**BUILT + REVIEW-CLOSED, all in one day.** Opus-built from the §15/§15b pinned brief in 4 commits
+(`bdff95d` clearing revision · `798ed4b` budgets + delete guard · `0f85b33` prompts + Conf ·
+`df95ade` a self-caught Conf fix) + the review wave `6063b40`. Council (the Hermes `emma` lane =
+gpt-5.6-sol, Codex CLI auth being down): design round 14 findings → §15b; diff round SHIP WITH
+FIXES (2 MED: the anchored-gate lift-by-gain — stateless, one shared pricing formula — and
+`superseded_by` subject sanitation via the canonical resolver; 1 LOW recorded as a code comment);
+test-audit round INSUFFICIENT → 7 additions + over-pinning fixes (one reviewer item overruled:
+`clear_keep_steps` keeps `ge=1`, zero pinned as REJECTED at boot + Conf PUT); final confirm:
+**all CLOSED, no new defects, SHIP**. Build-time verifies: `auto_write` CONFIRMED gating all four
+mutations (dry-run structural, zero new machinery); the §15b-7 verify FAILED and fixed a REAL
+pre-existing Tier-2 bug (the fold boundary could snap to a mid-turn steer row). Leanest-reading
+calls (all reviewer-ACCEPTED): current-turn identity = the logical-turn boundary (not the per-HTTP
+`TurnHandle.turn_id`); read-class = explicit `{read, search}` allowlist; restore stays documented
+manual with archive-side no-clobber; the prompt names `search` for coverage checks. Numbers:
+backend tests 1724 → **1798** · FE 2086 → 2089 · full gate 6/6 at every commit. **NEXT: RUN 3 on
+dev — `consolidation_dryrun` with `memory.auto_write` OFF → owner eyeballs the plan → the live
+run (§5 procedure). Unreleased until the next release; prod behavior unchanged until then.**

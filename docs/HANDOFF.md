@@ -149,12 +149,13 @@ restart + a no-failover journal check.
    readiness rider (a scripted end-to-end dev exercise, §14b as template). When the owner does
    delve in: enable on prod per §3b (the pre-copy `.gitignore` step first!), real vault, a
    promotion, a `consolidation` run — **⚠ TWO consolidation runs FAILED on dev 2026-08-19
-   (§14c gemma: zero writes, spiralled · §14d qwen3.6-max: better discipline, then a
-   correctly-formed DELETE of a live topic whose cap-blocked replacement never existed —
-   reverted). Do NOT re-run as shipped. The evidence base is COMPLETE; the redesign session
-   (owner-directed) now has three MANDATORY runtime items (§14d): exempt `core_memory` from D42
-   Tier-1 clearing · split read/write budgets · tool-enforced create-before-delete — plus the
-   §14c prompt items.** ~~The live `cache_n`
+   (§14c gemma · §14d qwen3.6-max). **→ the redesign ran SAME-DAY as D60 (locked, BUILT,
+   REVIEW-CLOSED 2026-08-19 — spec §15/§15b, as-built §15c): pressure-gated clearing ·
+   current-turn immunity · split budgets · guarded soft deletes · dry-run-first prompts; full
+   council via the Hermes emma lane, final SHIP; commits `bdff95d`..`6063b40` UNPUSHED.
+   NEXT = RUN 3 on dev (dry-run → owner eyeball → live, §5 procedure) — the first run expected
+   to actually complete; then the release ruling (the batch now carries D60 + the qwen
+   normalization).** ~~The live `cache_n`
    measure~~ ✅ run 2026-08-19 (CORE_MEMORY_PLAN §14 Measured bullet): ctrl-b's assembly holds
    D15 #4 (writes diverge only inside the index block, head byte-stable) but the local gemma
    host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention
