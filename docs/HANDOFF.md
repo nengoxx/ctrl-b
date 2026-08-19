@@ -106,8 +106,11 @@ remains is owner-court, in the owner's order:
    the drive; readiness is now a VERIFIED property owned by Phase 19 Packet ③'s core-memory
    readiness rider (a scripted end-to-end dev exercise, §14b as template). When the owner does
    delve in: enable on prod per §3b (the pre-copy `.gitignore` step first!), real vault, a
-   promotion, a `consolidation` run (dev's 99%-full index = ready testbed). The **live
-   `cache_n` measure** does NOT need the owner — runnable any time the local model host is up.
+   promotion, a `consolidation` run (dev's 99%-full index = ready testbed). ~~The live `cache_n`
+   measure~~ ✅ run 2026-08-19 (CORE_MEMORY_PLAN §14 Measured bullet): ctrl-b's assembly holds
+   D15 #4 (writes diverge only inside the index block, head byte-stable) but the local gemma
+   host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention
+   window — remedy = `--swa-full`/checkpoints on the llama.cpp box, routed to Phase 19 (D58).
 3. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (still untested,
    owner-confirmed 2026-08-12): SYS-19 meant `showNotification()` never had a registered worker;
    it may just work on ≥v1.6.0. Outcome decides the parked Web Push plan (R10/R11).

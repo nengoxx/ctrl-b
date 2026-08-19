@@ -591,15 +591,40 @@ reasoning lives in code comments at the flagged sites.
   **6,301 chars (~1.6K tokens)** — 69% of the 8,192-char cap at the owner's real corpus scale.
 - Scan cache: 100 consecutive renders = **1 parse** (stat sweep only); one `create` = exactly
   **1 re-parse**. The per-turn cost of the head block on an unchanged corpus is a stat sweep.
-- **Deferred:** the llama.cpp `cache_n` re-prefill measure across a corpus write (needs the live
-  local model + a dev instance; the design expectation from D15 #4/§4 is re-prefill from the
-  memory block onward only — verify at the owner's live round).
+- **Measured (the llama.cpp `cache_n` re-prefill across a corpus write — emma → the local
+  gemma-4-12B host, llama.cpp b10069, 2026-08-19; replay method: the real app lifespan against a
+  byte-copy of the dev `CTRLB_HOME`, `_static_prefix()`/`_tools()` dumped and replayed verbatim
+  with `cache_prompt:true`, token geometry from the server's own `/apply-template`+`/tokenize`):**
+  the **assembly** does what §4 designed — a corpus write's first differing byte is always inside
+  the core-index block; everything ahead (system prompt + the 34 tool declarations the gemma
+  template folds into the first system turn + roster, and the tier-1 block when present) is
+  byte-stable, and a `create`→`delete` round-trip restores the head **byte-identically**.
+  **The cache payoff does not survive the local server.** Real prompts (57-topic index at 99% cap;
+  head + one turn = 9,177 tok, 6,289 preceding the index block, 2,888 from the block onward): an
+  unchanged corpus reuses 99.6% (`prompt_n` 40 / `cache_n` 9,173; a repeat 1/9,212). An index
+  change at the block's **head** (`update`/`delete` of an early entry) yields **`cache_n` = 0 — a
+  full re-prefill** (9,194 tok ≈ 11 s; 4/4 samples, and again at 12,639 tok with history). A
+  change at the block's **tail** (a `create`, which appends) reuses only while it sits inside the
+  last ~2,048 tokens: 7,129/9,213 cached on a fresh thread, 7,164/12,640 once ~3.4K tokens of
+  history follow. A synthetic depth sweep pins the cause server-side: a one-token edit
+  200/1,000/1,800/2,000 tokens from the end reuses **exactly**, while 2,100/2,200/3,000/5,000
+  collapse to `cache_n` 0 — the model's 2,048-token sliding-attention window. Gemma is an SWA
+  model and this llama-server runs without `--swa-full`, so SWA layers keep only the last window
+  and a deeper rewind is served only from a context checkpoint, else the whole cache drops.
+  **Verdict: D15 #4's expectation holds in ctrl-b's assembly and fails in the local backend; the
+  remedy is host-side (`--swa-full` / more context checkpoints on the llama.cpp box), not
+  repo-side, and cloud prefix caching is unaffected.** Routed to Phase 19 (D58) as a known-open
+  perf item. Incidental findings, both real: ① `_core_index_block` prepends the
+  `core_memory_policy` frame inside the block, so head-case divergence lands ~172 tok into the
+  block (immaterial to the verdict); ② at 99% of `index_char_limit` a `create` is **not listed at
+  all** — only the `N more topics not listed` counter moves, so a new topic is invisible to the
+  model until consolidation runs.
 
 **Feature state at close:** OFF by default everywhere (`memory.longterm.backend: null`);
 byte-identical prompt assembly while off (family 5 holds at every slice's gate). Enabling =
 one Conf switch; the §3b copy-in procedure is the migration path. Owner-court next steps: enable
-on prod when wanted · the live `cache_n` measure · first real consolidation run (the
-`consolidation` prompt id) · push the commit stack.
+on prod when wanted · ~~the live `cache_n` measure~~ (✅ 2026-08-19, the Measured bullet above) ·
+first real consolidation run (the `consolidation` prompt id) · ~~push the commit stack~~ (✅).
 
 ### 14b. First live drive + the secret-gate fix wave (2026-08-17, dev)
 
@@ -633,6 +658,8 @@ of the same live `create` on dev: `[ok] created dev-live-test.md and listed it i
 **Live observation for the owner round:** this realistic 57-topic corpus renders at **8,121/8,192
 chars — 99% of the default `index_char_limit`** (the §14 69% figure was measured with ~90-char
 hooks; real hooks run longer). At that fill the §4b consolidation nudge (80%) is permanently on —
-expect it immediately on prod, or raise the cap / consolidate early. Still deferred: the
-`cache_n` re-prefill measure (needs a measured turn pair on the local host).
+expect it immediately on prod, or raise the cap / consolidate early. ~~Still deferred: the
+`cache_n` re-prefill measure~~ (✅ run 2026-08-19 — §14's Measured bullet holds the record; it
+also confirmed this fill gotcha live: at 99% the probe's `create` never appeared in the rendered
+index, only the `N more topics not listed` counter moved).
 
