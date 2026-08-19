@@ -734,3 +734,64 @@ the `consolidation` prompt rewrite (batch discipline, named mechanics, delta rep
 set of runtime seams (a paged/offset read, a task-scoped recall budget, a writes-derived outcome
 signal). Field patterns to consult: R39/R40 + Letta's sleep-time-agent pattern (dossiers already
 bought). Un-owned until the owner's design session rules; nothing here changes shipped behavior.
+
+### 14d. The second consolidation run (2026-08-19 afternoon, dev, qwen3.6-max) — failed DIFFERENTLY, and it answers §14c's open question
+
+**Setup.** Identical procedure to §14c (same registry prompt verbatim, two nudges), but the
+executor changed: dev's primary is now `qwen3.6-max` on corsair (248k ctx; the wire-level
+system-message normalization `5678c08`/`8575ae2` in place). Wire gate passed first: corsair
+provably served (persisted `usage.model`), zero failover lines, zero 400s — the comparison is
+valid. Two `spawn_subagents` confirms were operator-approved (logged); everything else untouched.
+
+**Result: one write landed, and it was DESTRUCTIVE — a correctly-formed `delete` of a LIVE topic
+(`core-memory-tier2-progress.md`) whose merged replacement was never created** (the `create` had
+been cap-denied one turn earlier; the model deleted anyway on the next nudge). Reverted by the
+main seat post-run (`git revert` — the corpus is git-backed, nothing permanently lost; the run
+commit stays in history). Index fill UNCHANGED at 99% — the freed line was backfilled by a
+previously-hidden topic. Also: the drafted merged topic contained **hallucinated status claims**
+("Phase 19 … Live", "Phase 20 … Live", an invented date) that would have replaced accurate hooks
+had the cap not blocked it.
+
+**§14c's open question — was run 1 partly model capability? ANSWERED: yes, and fixing it made
+things WORSE, not better.** Qwen showed every discipline gemma lacked (trace-backed): correct
+create+delete merge mechanics unprompted (no whole-file rewrites), real error recovery (fixed its
+path format, re-read for a mis-typed hash, re-batched a denied fan-out), novel workarounds
+(subagent fan-out; a cross-turn tracker in agent memory), no degeneracy (no spiral, no empty
+turns, no compaction), graceful budget stops, honest self-reports. And precisely BECAUSE it got
+further, it reached the destructive step. **A stronger model converts "fails safely" into
+"fails dangerously" — the protection must be structural.**
+
+**The decisive NEW mechanical finding (model-independent): unconditional Tier-1 output clearing
+makes any read→read→merge pass impossible at ANY context size.** `plan_clearing` (D42,
+compaction.py) replaces tool outputs >~500 tokens older than `clear_keep_steps = 2` rounds with
+`[output cleared]` on EVERY loop iteration — context pressure irrelevant. Every 4,096-char recall
+qualifies, so the recalls a merge depends on are erased two tool-steps after they arrive (the one
+surviving read was the one topic under the size floor — exactly what the model reported).
+`core_memory` is NOT in `_NEVER_CLEAR_TOOLS` (only `task_plan` + `memory` are — which is why the
+model's agent-memory tracker persisted). §14c mis-attributed this class to compaction.
+
+**Structural limits confirmed identical across both models:** 4–5 reads/turn (recall budget) ·
+**`max_calls_per_tool = 6` funds reads AND writes from one counter — the turn that reads cannot
+write** (this is what cap-denied the `create`) · 4,096-char reads with no paging (17/58 topics
+never fully visible) · the 99%-fill index hides 5 topics and the model believes its count · the
+subagent escape hatch inherits every per-agent limit + a 180s child timeout (0/3 completed) ·
+budgets reset only on owner round-trips. New qwen-specific hazard: PARALLEL tool batching burns
+the whole per-tool cap on one malformed batch before any feedback arrives.
+
+**Normalization under load: clean.** ~4,800 SSE events, 5 legs, nested subagent sessions, 6
+suspend/resume boundaries — zero 400s, zero failover, zero `<system-update>` leakage into any
+transcript, stamps correct throughout.
+
+**The redesign brief (supersedes §14c's list where sharper) — three runtime items are now
+MANDATORY, no prompt can substitute:**
+1. **Exempt `core_memory` reads from Tier-1 clearing** (add to `_NEVER_CLEAR_TOOLS`, or a
+   task-scoped exemption) — without this the pass is impossible by construction.
+2. **Split the read budget from the write budget** (or a task-scoped `max_calls_per_tool`) — a
+   merge must be able to read its sources and write its result in one turn.
+3. **Make destructive ordering tool-enforced, not model-disciplined:** a `delete` whose stated
+   reason is a merge must require the replacement to EXIST (create-before-delete), or deletes
+   become tombstones reversible without git surgery. CAS validates form; run 2 proves form is
+   not enough.
+Plus the §14c prompt items (bounded batches · named mechanics · delta report) and a fourth
+runtime candidate: paged reads. Raw captures: `~/.ctrl-b-dev/consolidation-run2-2026-08-19/`
+(TRACE/OPERATOR_LOG/SSE per leg); the run thread is inspectable on dev.
