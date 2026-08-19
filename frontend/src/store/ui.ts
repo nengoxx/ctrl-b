@@ -16,6 +16,10 @@ import { loadPersistedVersioned, savePersisted } from "./persist";
 
 export type { Mode, ThemeId } from "../theme-engine/types";
 export type Tab = "fleet" | "agent" | "utils" | "conf";
+/** The `Tab` union as a runtime allowlist — a DOCUMENTED MIRROR, kept on the line below the type it
+ *  mirrors so the two can't drift unseen (TS types are erased; there is nothing to iterate at runtime).
+ *  Its only consumer is `consumeTabParam`, which must never trust a URL. */
+const TABS: readonly string[] = ["fleet", "agent", "utils", "conf"];
 export type Motion = "full" | "reduced";
 export type Perf = "full" | "lite";
 /** Top-bar / navigation chrome mode (global, per-device). `visible` = appbar + bottom tab bar; `transparent`
@@ -231,6 +235,32 @@ export function loadUIState(): UIState {
   });
 }
 let state: UIState = loadUIState();
+
+/** Parse a `?tab=` query param, returning it ONLY when it names a real tab. Pure + exported for tests;
+ *  the boot application is below. The single producer is `public/notify-sw.js`'s `openWindow` fallback,
+ *  taken when a notification is tapped and no window client is alive to be messaged. */
+export function consumeTabParam(search: string): Tab | null {
+  const raw = new URLSearchParams(search).get("tab");
+  return raw !== null && TABS.includes(raw) ? (raw as Tab) : null;
+}
+
+// Apply it BEFORE the first `applyBodyAttrs` so the boot paint already carries the right `data-tab` —
+// and deliberately WITHOUT `setUI`: the URL is an instruction for THIS open, not a preference change.
+// The persisted last-used tab stays exactly as the owner left it, so the next ordinary launch is
+// unaffected. The param is then stripped (rest of the URL preserved) so a reload or a shared link
+// doesn't re-force the tab. Wrapped like `defaultMotion()` above: this runs at module scope, where a
+// jsdom/test environment may be missing `location`/`history` pieces, and nothing here is worth a crash.
+try {
+  const forced = consumeTabParam(window.location.search);
+  if (forced !== null) {
+    state = { ...state, tab: forced };
+    const url = new URL(window.location.href);
+    url.searchParams.delete("tab");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+} catch {
+  // no location/history (or a non-parseable href) — boot on the persisted tab
+}
 
 // Mirror the UI store onto <html>/<body> data-attrs. Theme-engine model:
 // - `html[data-skin]` = the SKIN id (the `@scope ([data-skin=…])` identity for theme CSS isolation, §14.6).

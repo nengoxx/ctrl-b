@@ -16,6 +16,11 @@ import { useNotificationPrefs, type NotificationPrefs } from "./useNotificationP
 // Web Push (service worker + VAPID) or an ntfy/bot relay; both are future channels and neither is
 // wired here. The Conf copy says so plainly rather than implying a guarantee we don't make.
 //
+// The TAP is owned jointly with `public/notify-sw.js` (R45): the worker half receives the activation
+// of a SW-shown notification (the only path Android has) and posts `ctrlb:notification-click` back
+// here; the constructor path keeps its `onclick`. Both call `applyNotificationFocus` — one router,
+// same reasoning as the single gate above.
+//
 // Secure context: `window.Notification` is undefined on a plain-HTTP origin, exactly like the mic's
 // `getUserMedia`. Reached over Tailscale Serve HTTPS everything works; reached over bare http the
 // feature-detect below short-circuits and the Conf row renders disabled with the reason. Nothing here
@@ -120,8 +125,39 @@ export function useForegroundNotifications(): void {
 
       show(signal);
     });
-    return unsub;
+
+    // The worker half's return channel (R45 §4.1). It lives in THIS effect rather than a hook of its
+    // own for the same reason the gate does: the `focus` vocabulary, the mount site and the router are
+    // already here, and a second listener elsewhere is a second gate on one concern.
+    const onSwMessage = (e: MessageEvent) => {
+      const d = e.data as { type?: string; focus?: unknown } | null;
+      if (d?.type === "ctrlb:notification-click") applyNotificationFocus(d.focus);
+    };
+    // Optional-chained because an insecure context has no `serviceWorker` at all (same shape as the
+    // Notifications feature-detect above) — nothing here may throw on a plain-HTTP origin.
+    navigator.serviceWorker?.addEventListener("message", onSwMessage);
+    // `addEventListener` (unlike assigning `onmessage`) leaves messages sent before DOMContentLoaded
+    // QUEUED until this call. React mounts after DCL so it cannot bite today; one line documents the
+    // constraint and insures the day something mounts earlier.
+    navigator.serviceWorker?.startMessages();
+
+    return () => {
+      unsub();
+      navigator.serviceWorker?.removeEventListener("message", onSwMessage);
+    };
   }, []);
+}
+
+/** The ONE router for a notification activation, called by BOTH paths — the constructor path's
+ *  `onclick` and the service worker's `postMessage`. `focus` is typed `unknown` because one caller is
+ *  a structured-cloned message from another realm: it is whatever crossed the wire, not a
+ *  `NotifySignal` field we can trust. Anything that isn't a known destination is a no-op, so a
+ *  fleet-side notification never yanks the owner off the tab they were on.
+ *
+ *  `setUI` is the same store call `lib/composer` uses to route a message to the Agent tab — not a
+ *  second router. Exported so both halves' routing is testable without a service worker. */
+export function applyNotificationFocus(focus: unknown): void {
+  if (focus === "agent") setUI({ tab: "agent" });
 }
 
 /** Raise the actual browser notification. Two paths, deliberately in this order:
@@ -135,25 +171,32 @@ export function useForegroundNotifications(): void {
  *     where it matters. This uses the registration the PWA ALREADY has (vite-plugin-pwa);
  *     it adds no service-worker source, no config, no dependency.
  *
- *  The trade-off on path (2) is the click: a SW-shown notification's activation is delivered to the
- *  worker's `notificationclick` handler, and the generated Workbox worker has none — so on Android the
- *  notification informs but doesn't navigate. Accepted for this slice (it beats nothing, and the app
- *  is one tab away); a real handler is part of the Web Push channel, where a custom worker is
- *  required anyway.
+ *  Path (2)'s click used to be dead: a SW-shown notification's activation is delivered to the worker's
+ *  `notificationclick` handler and the generated Workbox worker had none, so on Android the
+ *  notification informed but never navigated. R45 corrected the premise that owning that handler needs
+ *  a custom worker (and therefore the Web Push channel): `public/notify-sw.js` is pulled into the
+ *  GENERATED worker by `workbox.importScripts` (vite.config.ts), and it posts the activation back to
+ *  this page. So both paths now route, through the same `applyNotificationFocus` — which is why
+ *  `data` is on the options object below: it survives the tray and is what the worker reads.
  *
  *  Both paths are fully guarded: a notification that cannot be shown must never break the stream that
  *  produced the signal. */
 function show(signal: NotifySignal): void {
-  const options: NotificationOptions = { body: signal.body, tag: signal.key, icon: ICON };
+  const options: NotificationOptions = {
+    body: signal.body,
+    tag: signal.key,
+    icon: ICON,
+    // Structured-cloned onto the notification and read back by `public/notify-sw.js` on the tap. Also
+    // a valid member on the constructor path, which simply never looks at it (it has the closure).
+    data: { focus: signal.focus, key: signal.key },
+  };
   try {
     // `tag` = the de-dupe key: a same-tag notification REPLACES its predecessor in the tray rather
     // than stacking, which is the right behavior if the OS somehow re-delivers.
     const n = new window.Notification(signal.title, options);
     n.onclick = () => {
       window.focus();
-      // Agent-side signals land the user where the thing that needs them is. `setUI` is the same
-      // store call `lib/composer` uses to route a message to the Agent tab — not a second router.
-      if (signal.focus === "agent") setUI({ tab: "agent" });
+      applyNotificationFocus(signal.focus); // agent-side signals land the owner on the agent tab
       n.close();
     };
   } catch {

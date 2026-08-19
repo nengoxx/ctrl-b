@@ -113,6 +113,13 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node } },
   },
 
+  // The service-worker helper (`public/notify-sw.js`, imported into the generated Workbox worker)
+  // runs in the WORKER global scope — `self`, `clients`, `importScripts` — not the browser window's.
+  {
+    files: ["public/*.js"],
+    languageOptions: { globals: globals.serviceworker },
+  },
+
   // Shared rule tweaks (apply everywhere):
   // - honor the `_`-prefix "intentionally unused" convention (omit-destructures, drop args);
   // - allow ternary / short-circuit expressions used purely for side effects (the codebase's

@@ -144,9 +144,19 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
   approval/trigger in view. **→ RESEARCHED + RULED 2026-08-19: R45 (bought, verified) —
   `workbox.importScripts` under the current generateSW build, NO injectManifest migration
   (~150 lines, 0 deps, update path byte-identical; the "custom worker required" premise in
-  `useForegroundNotifications.ts`/R10 is FALSE — LibreChat ships this exact mode). Build
-  pends owner go-ahead; R45 §8 = the implementation sketch (content-hashed import URL ·
+  `useForegroundNotifications.ts`/R10 is FALSE — LibreChat ships this exact mode). ~~Build
+  pends owner go-ahead~~; R45 §8 = the implementation sketch (content-hashed import URL ·
   postMessage-first routing · `?tab=agent` fallback reader · unit-tested handler).**
+  **→ ✅ BUILT 2026-08-19 (uncommitted at time of writing):** `frontend/public/notify-sw.js` +
+  `workbox.importScripts` with the content-hashed URL (verified in a real `vite build`: the call
+  lands one line ahead of the SKIP_WAITING listener, exactly as R45 §1.2 predicted) ·
+  `data:{focus,key}` on the notification · one exported `applyNotificationFocus` router shared by
+  the constructor `onclick` and the SW `message` path · `store/ui#consumeTabParam` reads+strips
+  `?tab=` at boot without persisting. 15 new tests (worker handler incl. the focus()-rejects
+  Fennec case, the router, the SW message, the param parser, a vite-config `?v=` pin); ROADMAP §F1
+  carries the close-out. **OWED: the manual device round** — Chrome Android installed PWA + Fennec
+  (Fennec is *expected-partial*: Bugzilla 1880000, `focus()` won't foreground the PWA, so check
+  that the agent tab is where the app lands once reached).
 - **The icon fresh-install** — W5 is LIVE on prod v1.7.2 already; the owner (no installed app
   currently) installs fresh from Chrome and the chosen backdrop mints directly. Zero code.
 - **The arcade later-look** — the 3px drop is committed but the owner deferred the eyeball;
@@ -181,9 +191,10 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
    host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention
    window — remedy = `--swa-full`/checkpoints on the llama.cpp box, routed to Phase 19 (D58).
 3. **The NOTIFICATIONS thread** — ~~retest~~ ✅ PASSED 2026-08-19 (delivery works; see the
-   pre-release-menu bullet). What remains = the **notification-tap slice** (SW
-   `notificationclick` → focus + route to the agent tab; design conversation first:
-   injectManifest per R10 §3.2 vs generateSW `importScripts`). Web Push (R10/R11) stays parked.
+   pre-release-menu bullet). ~~What remains = the **notification-tap slice**~~ ✅ **BUILT
+   2026-08-19** per R45's ruling (generateSW `importScripts`, no injectManifest) — what remains is
+   the **manual device round** (Chrome Android installed PWA · Fennec, expected-partial). Web Push
+   (R10/R11) stays parked.
 4. **Phase 19 — the hardening pass — now NEXT IN LINE (Phase 20 done), still owner-gated**
    (owner, 2026-08-17). [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is spec-complete; at wake: its
    §10 owner court + the §3b delta council check; locks as **D58**.
@@ -211,8 +222,8 @@ update toast exercised ✅ 2026-08-16.
 
 **Owner-court items (ask, don't assume):**
 - Notifications retest ✅ PASSED 2026-08-19 (path 3 above) · web-push stays PARKED on its merits
-  (closed-app delivery only; the Fennec checks are moot) · OPEN: the notification-tap slice
-  (path 3).
+  (closed-app delivery only; the Fennec checks are moot) · the notification-tap slice ✅ BUILT
+  2026-08-19, OPEN = its device round (path 3).
 - The ~80 MB untracked `design/prototypes/gacha/` originals — standing "leave untracked for now";
   eventual call = leave / move out / delete.
 - D2-A monitor: the owner DAILY-USE round on prod (its memory; per-host switches OFF until then).

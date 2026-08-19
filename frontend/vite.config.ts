@@ -1,7 +1,17 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { visualizer } from "rollup-plugin-visualizer";
+
+// Content hash of the notification worker helper (R45 §2.3), used to bust its import URL below.
+// Resolved against THIS file rather than the cwd so the build never depends on where npm was invoked.
+const notifySwHash = createHash("sha256")
+  .update(readFileSync(new URL("./public/notify-sw.js", import.meta.url)))
+  .digest("hex")
+  .slice(0, 8);
 
 // Dev: proxy /api to the FastAPI backend (single origin → no CORS, no mixed content).
 // Backend runs on 5433 so v2 coexists with the live Flask app on 5432 until cutover.
@@ -59,6 +69,24 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // ── The notification-tap handler (F1 channel 1 close-out, R45). `importScripts` is workbox's
+        // own documented hook for adding a listener to the GENERATED worker, which is why this slice
+        // needs no `injectManifest` migration: under `registerType:"prompt"` the generated worker
+        // carries the `SKIP_WAITING` message listener that SwUpdatePrompt's refresh tap drives, and
+        // owning the worker would mean hand-reproducing that (plus the precache/routes below) for a
+        // ~35-line handler. R45 §5/§6.4 priced both and ruled this one.
+        //
+        // The `?v=` is NOT decoration. An imported script is fetched through the ORDINARY HTTP cache
+        // (`updateViaCache` defaults to "imports"), our server sends `last-modified`/`etag` and NO
+        // `Cache-Control` on dist files, and RFC 9111 §4.2.2 lets a cache heuristically freshen exactly
+        // that shape — so a month-old cached copy could be imported into a brand-new worker and, since
+        // the bytes are frozen into the script resource map at install, stay wrong for that worker's
+        // whole life. A content-hashed URL makes the stale hit impossible. Keep it.
+        //
+        // Deliberately NOT in `globIgnores`: leaving the helper in the precache manifest embeds its
+        // revision hash in `sw.js`, so a helper-only edit changes `sw.js`'s own bytes and a worker
+        // update is guaranteed without relying on the spec's import byte-comparison branch (R45 §1.4).
+        importScripts: [`/notify-sw.js?v=${notifySwHash}`],
         // A navigation request under /api is a mistyped endpoint, not an app route — never answer it
         // with the SPA shell. (Unrelated to caching: the ONE cached /api path is the media mount, see
         // `runtimeCaching` below.)

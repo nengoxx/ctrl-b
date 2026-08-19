@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  consumeTabParam,
   getUI,
   loadUIState,
   migrateAppbarMode,
@@ -322,6 +323,38 @@ describe("ui store", () => {
       act(() => coerceBootTheme());
       expect(getUI()).toBe(before); // same reference → no write
       expect(getUI().theme).toBe("minimal");
+    });
+  });
+
+  // The `?tab=` boot instruction (R45 §4.2). Its only producer is `public/notify-sw.js`'s `openWindow`
+  // fallback — the branch taken when a notification is tapped and no window client is alive to be
+  // messaged. The APPLICATION runs once at module scope (before the first `applyBodyAttrs`, and
+  // deliberately without `setUI`, so the persisted last-used tab is never overwritten by a one-shot
+  // URL); what is testable without a module re-import dance is the parser, which is the part that must
+  // never trust the URL.
+  describe("consumeTabParam", () => {
+    it("returns a valid tab", () => {
+      expect(consumeTabParam("?tab=agent")).toBe("agent");
+      expect(consumeTabParam("?tab=fleet")).toBe("fleet");
+      expect(consumeTabParam("?tab=utils")).toBe("utils");
+      expect(consumeTabParam("?tab=conf")).toBe("conf");
+    });
+
+    it("returns null when the param is absent", () => {
+      expect(consumeTabParam("")).toBeNull();
+      expect(consumeTabParam("?other=agent")).toBeNull();
+    });
+
+    it("returns null for anything that isn't a tab id — the URL is untrusted input", () => {
+      expect(consumeTabParam("?tab=")).toBeNull();
+      expect(consumeTabParam("?tab=Agent")).toBeNull(); // the allowlist is exact, not case-folded
+      expect(consumeTabParam("?tab=__proto__")).toBeNull();
+      expect(consumeTabParam("?tab=constructor")).toBeNull();
+      expect(consumeTabParam("?tab=agent&tab=conf")).toBe("agent"); // first wins, still a real tab
+    });
+
+    it("survives the param riding beside others", () => {
+      expect(consumeTabParam("?utm_source=x&tab=agent&y=1")).toBe("agent");
     });
   });
 

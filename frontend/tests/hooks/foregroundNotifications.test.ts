@@ -21,6 +21,7 @@ vi.mock("../../src/hooks/useNotificationPrefs", () => ({
 }));
 
 import {
+  applyNotificationFocus,
   notificationPermission,
   notificationsSupported,
   shouldNotify,
@@ -211,6 +212,14 @@ describe("useForegroundNotifications · end to end", () => {
     expect(getUI().tab).toBe("agent");
   });
 
+  it("carries `data` onto the notification — what the worker reads back on a tap", () => {
+    renderHook(() => useForegroundNotifications());
+    publishNotify(signal({ focus: "agent" }));
+    // `tag` is the tray's de-dupe key; `data` is the payload that SURVIVES the tray and reaches
+    // public/notify-sw.js, which is the only way the SW path knows where to send the owner.
+    expect(shown[0].options.data).toEqual({ focus: "agent", key: "perm:call-1" });
+  });
+
   it("the service-worker fallback keeps ONE permanent readiness observer — timeouts accumulate nothing", async () => {
     // Android throws `TypeError` on the constructor, so the SW path is the only one there. But
     // `serviceWorker.ready` is specified to never reject and to settle only once a worker CONTROLS the
@@ -243,13 +252,20 @@ describe("useForegroundNotifications · end to end", () => {
         return pending;
       },
     } as unknown as Promise<ServiceWorkerRegistration>;
-    Object.defineProperty(navigator, "serviceWorker", {
-      configurable: true,
-      get() {
+    // The counter sits on `ready` rather than on the container, because the container itself is now
+    // also touched by the mount effect's `message` listener — `ready` is what "ONE subscription" is
+    // about. The listener methods are real no-ops for the same reason: a `ServiceWorkerContainer` is
+    // an EventTarget, so a stand-in missing them would be a fake nothing can be, not a shape to pin.
+    const swStub = {
+      get ready() {
         accesses++;
-        return { ready: neverReady };
+        return neverReady;
       },
-    });
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      startMessages: () => undefined,
+    };
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: swStub });
 
     try {
       renderHook(() => useForegroundNotifications());
@@ -285,5 +301,91 @@ describe("useForegroundNotifications · end to end", () => {
     publishNotify(signal({ cls: "action_failed", key: "event:e1", focus: undefined }));
     shown[0].onclick?.();
     expect(getUI().tab).toBe("fleet");
+  });
+});
+
+// ── the tap router, and the worker's way in ────────────────────────────────────────────────────
+//
+// The constructor path (above) and `public/notify-sw.js` share ONE router. These pin the router
+// itself and the service-worker message that is the only path Android has; the worker half's own
+// mechanics live in tests/lib/notifySw.test.ts.
+
+describe("applyNotificationFocus · the one router", () => {
+  it("sends an agent-side activation to the Agent tab", async () => {
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "fleet" });
+    applyNotificationFocus("agent");
+    expect(getUI().tab).toBe("agent");
+  });
+
+  it("ignores anything that isn't a known destination", async () => {
+    // The SW path hands over a structured-cloned value from another realm, so the router must treat
+    // its input as untrusted rather than as a `NotifySignal` field.
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "utils" });
+    applyNotificationFocus(undefined);
+    applyNotificationFocus("conf"); // a real tab id, but not a focus destination
+    applyNotificationFocus({ focus: "agent" });
+    expect(getUI().tab).toBe("utils");
+  });
+});
+
+describe("the service-worker notification-click message", () => {
+  /** A stand-in for `navigator.serviceWorker` — jsdom implements none of it. A bare EventTarget is
+   *  enough: the hook only ever adds/removes a `message` listener and calls `startMessages`. */
+  function installSwContainer() {
+    const sw = Object.assign(new EventTarget(), { startMessages: vi.fn() });
+    Object.defineProperty(navigator, "serviceWorker", { value: sw, configurable: true });
+    return sw;
+  }
+  const removeSwContainer = () =>
+    delete (navigator as unknown as Record<string, unknown>).serviceWorker;
+
+  it("routes a tap relayed by the worker, and starts message delivery", async () => {
+    const sw = installSwContainer();
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "fleet" });
+    try {
+      renderHook(() => useForegroundNotifications());
+      // `addEventListener` (unlike `onmessage`) leaves pre-DOMContentLoaded messages queued forever
+      // without this call — cheap insurance, so pin that it is made.
+      expect(sw.startMessages).toHaveBeenCalled();
+      sw.dispatchEvent(
+        new MessageEvent("message", { data: { type: "ctrlb:notification-click", focus: "agent" } }),
+      );
+      expect(getUI().tab).toBe("agent");
+    } finally {
+      removeSwContainer();
+    }
+  });
+
+  it("ignores unrelated worker messages (SKIP_WAITING and friends share this channel)", async () => {
+    const sw = installSwContainer();
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "fleet" });
+    try {
+      renderHook(() => useForegroundNotifications());
+      sw.dispatchEvent(new MessageEvent("message", { data: { type: "SKIP_WAITING" } }));
+      sw.dispatchEvent(new MessageEvent("message", { data: null }));
+      expect(getUI().tab).toBe("fleet");
+    } finally {
+      removeSwContainer();
+    }
+  });
+
+  it("stops listening on unmount (a torn-down engine routes nothing)", async () => {
+    const sw = installSwContainer();
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "fleet" });
+    try {
+      const { unmount } = renderHook(() => useForegroundNotifications());
+      unmount();
+      sw.dispatchEvent(
+        new MessageEvent("message", { data: { type: "ctrlb:notification-click", focus: "agent" } }),
+      );
+      expect(getUI().tab).toBe("fleet");
+    } finally {
+      removeSwContainer();
+    }
   });
 });

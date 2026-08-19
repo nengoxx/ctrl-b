@@ -1,8 +1,10 @@
 {
   "//": "Type-checking + editor support for the vitest suite. Run via `tsc -p tests/tsconfig.json --noEmit` in `npm run typecheck` — vitest transpiles via esbuild but does NOT type-check, so this is the tests' only type gate. Kept as a standalone `tsc -p` (not a root `tsc -b` reference) to sidestep project-references/composite overlap with `../src`. NOTE: test files never ship regardless (they're unreachable from the app entry, so vite never bundles them) — type-checking them has zero production-bundle impact.",
   "extends": "../tsconfig.app.json",
+  "//allowJs": "notifySw.test.ts imports `public/notify-sw.js` — the service-worker helper, which is plain JS by construction (it is `importScripts`-ed into the generated Workbox worker, never bundled, so there is nothing to compile it). Without this the import is a TS7016 `implicitly has an any type`. `checkJs` stays off: the file is linted (eslint.config.js gives it the serviceworker globals) and covered by tests, not type-checked. TESTS-ONLY — the app + node projects are untouched.",
   "compilerOptions": {
     "types": ["vitest"],
+    "allowJs": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },

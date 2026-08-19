@@ -748,6 +748,28 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 > `showNotification` path, or Android page throttling. **Owner ruling: note-and-observe** — they'll
 > watch whether it fires in some cases during daily use; revisit with the Web Push channel (2), whose
 > custom worker replaces this path anyway.
+> **→ SUPERSEDED 2026-08-19 (owner retest): notifications DELIVER** — SYS-19 (no worker had ever
+> registered) was the whole mystery; the two Fennec checks are moot.
+>
+> **CHANNEL 1 CLOSE-OUT — the TAP now routes (built 2026-08-19, `R45`).** The one documented
+> trade-off left in the slice ("a SW-shown notification's activation goes to the worker, and the
+> generated Workbox worker has none — the tap informs but doesn't navigate", which on Android landed
+> the owner on the home screen) is closed. `frontend/public/notify-sw.js` holds a `notificationclick`
+> listener pulled into the GENERATED worker by `workbox.importScripts` — **no `injectManifest`
+> migration**, so the `registerType:"prompt"` update path is byte-identical (R45 §6.4 priced both;
+> the "a custom worker is required anyway" premise was FALSE). Shape: `data:{focus,key}` onto the
+> notification → tap → `postMessage` FIRST, then a best-effort `client.focus()` → the page's ONE
+> `applyNotificationFocus` router, the same one the desktop constructor path calls; no live client
+> falls back to `openWindow("/?tab=agent")`, read and stripped at boot by `store/ui#consumeTabParam`
+> (a bare `/` would restore the PERSISTED last-used tab). The import URL carries a build-time content
+> hash — `updateViaCache` defaults to `"imports"` and dist files ship no `Cache-Control`, so a
+> heuristically-fresh cached copy could otherwise be frozen into a new worker for its whole life
+> (R45 §2). **Owed: the manual device round** — Playwright cannot click an OS notification
+> (microsoft/playwright#23954), so coverage is unit-level plus two on-device checks: **Chrome Android,
+> installed PWA** (tap → app foregrounds, lands on the agent tab) and **Fennec**, where the result is
+> **expected-partial** — Bugzilla **1880000** is still `NEW`, `client.focus()` does not foreground an
+> installed PWA there, so the tab switch must be verified to have landed however the owner reaches
+> the app (that is exactly why the routing does not ride on `focus()` succeeding).
 >
 > **CHANNEL 2 (Web Push) — RESEARCHED, then PARKED 2026-07-31 (owner).** The design research is
 > bought and banked: **R10** (stack/standards) + **R11** (peer field pass) in `docs/research/`.
