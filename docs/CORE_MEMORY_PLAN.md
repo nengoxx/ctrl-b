@@ -663,3 +663,74 @@ expect it immediately on prod, or raise the cap / consolidate early. ~~Still def
 also confirmed this fill gotcha live: at 99% the probe's `create` never appeared in the rendered
 index, only the `N more topics not listed` counter moved).
 
+
+### 14c. The first consolidation run (2026-08-19, dev) — FAILED, informatively; the redesign brief
+
+**The exercise.** Owner-approved first real run of the §5 consolidation procedure: a fresh dev
+thread, the registry-default `consolidation` prompt verbatim (`is_customized: false`), the default
+agent on the local gemma-4-12B host, `memory.auto_write: true`, the 58-topic corpus at 99% index
+fill. One prompt + the two allowed "continue" nudges. Full SSE captures, tool traces and
+before/after snapshots are banked in the session scratchpad (`consolidation/`); the thread
+(`608814b0…`) remains on dev for inspection.
+
+**Result: zero writes, zero commits — the corpus is byte-identical** (58 topics, MEMORY.md
+15,334 chars, index 8,121/8,192 before and after; worktree clean, nothing to roll back).
+
+**The rails all held — one of them prevented real data loss.** Turn 1 read 4 topics cleanly, hit
+the per-turn recall budget on the 5th, and stopped to narrate. Turn 2 read 2 more, then twice
+issued a malformed `update`: **a whole-file rewrite reconstructed from a TRUNCATED 4,096-char read
+of a 5,146-char topic** — its tail ran off mid-sentence and leaked the next JSON key as prose.
+Had the tool accepted it, ~1,050 chars of `d2a-monitor-progress.md` (including its live closing
+hook) would have been silently destroyed. The mandatory-`path` + CAS-`old_text` design refused
+both calls — **keep both requirements; they are load-bearing against exactly this failure.**
+Turn 2 then degenerated into a 7,241-char answer ending in ~60 literal repetitions of
+`(Actually, I'll do 3).`; turn 3 compacted away the entire read working set and emitted an empty
+message. All three turns reported `state: completed`. No secret-gate events (no write ever
+reached it); `prompt_stamps` carried the right ids throughout.
+
+**§5 scorecard:** merge overlaps — identified the right family (the three `*-progress` topics),
+never attempted a write · absolutize dates — not attempted · delete superseded — not attempted ·
+index bounded — unchanged at 99%. Nothing hallucinated or lost, because nothing was written.
+
+**The finding that reshapes the redesign: the prompt is not the only problem — the task as worded
+is structurally impossible under the shipped per-turn budgets.** The eleven observations, grouped:
+
+*Runtime limits (wording cannot fix these):*
+1. `recall_char_limit` 20,480 ÷ `topic_char_limit` 4,096 ⇒ **4–5 reads/turn** against 58 topics —
+   ≥14 turns of reading before any write; the prompt says "work through the index topic by topic".
+2. `max_calls_per_tool = 6` caps a turn at ~2 read+write merge pairs (never reached — the model
+   gave up first).
+3. **17 of 58 topics exceed the 4,096-char read cap and there is no paging** — the largest
+   (53,277 chars) is visible 7.7% at a time, forever; and the model's instinct on a truncated
+   read is a whole-file rewrite from the fragment (the near-miss above).
+4. **At 99% fill the index hides 5 topics** (4 truncated + 1 unindexed); the header said
+   "53 topics" and the model believed it — a pass driven off the index can never reach exactly
+   the topics cap pressure most needs it to reach.
+5. Compaction evicts the read working set right when a multi-turn pass would start writing —
+   the nudge chain is self-defeating.
+
+*Prompt/steering gaps:*
+6. `DEFAULT_SYSTEM_PROMPT`'s "carry the task through this turn; do NOT stop to narrate" directly
+   contradicts a necessarily multi-turn task — the model quoted it back, then spiralled when the
+   budget forced the narration it was told not to do. Consolidation needs an explicit
+   bounded-batch carve-out ("one topic family per run, finish it, report").
+7. The prompt never names the merge mechanics; the model reached for whole-file `update` (which
+   CAS cannot express). It should state: read both → `create` the merged topic → `delete` the
+   originals; `update`/`remove` take an exact quoted passage + `path`, never a full-file body.
+8. The prompt never invokes `task_plan`, and the model never planned.
+9. The arg-gate error ("`path` is required") named the missing field but not the shape error, so
+   the model reissued the identical call; the steering text should restate the correct call shape.
+
+*Automation safety:*
+10. Degenerate outcomes (the repetition spiral; the empty turn) terminate as `completed` — an
+    unattended scheduled run would log clean successes having done nothing. Automation needs an
+    outcome signal derived from actual writes, not turn state.
+11. Long tool-call payload generation streams nothing (50s+ SSE gaps) — a watching owner sees a
+    frozen turn.
+
+**Disposition (owner direction 2026-08-19: the consolidation mechanism — especially the prompt —
+gets a real design pass before it is ever automated).** The redesign brief is therefore two-sided:
+the `consolidation` prompt rewrite (batch discipline, named mechanics, delta report) AND a small
+set of runtime seams (a paged/offset read, a task-scoped recall budget, a writes-derived outcome
+signal). Field patterns to consult: R39/R40 + Letta's sleep-time-agent pattern (dossiers already
+bought). Un-owned until the owner's design session rules; nothing here changes shipped behavior.
