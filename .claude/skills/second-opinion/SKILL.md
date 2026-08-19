@@ -92,13 +92,21 @@ architecture and coding patterns before implementation starts.** Practically:
 1. Main session writes the design.
 2. **Codex** reviews it for correctness/edge cases/failure modes; **Fable** reviews it for
    architecture/integration/maintainability. Run them in parallel — they're independent.
-3. Main session **reconciles**: accept, or overrule with stated reasoning. Findings are evidence, not
+3. **When the finding list is large or any finding is load-bearing, run the ground-or-withdraw
+   round first** (R46 B2 — the field's most consistently shipped structure; ~63% of candidates die
+   at the first adversarial gate): one `SendMessage` to the same agent, context intact — *"for each
+   finding: open the file and quote the lines that prove it real, or withdraw it."* Rule on the
+   survivors. Optional for short lists; never a fresh agent.
+4. Main session **reconciles**: accept, or overrule with stated reasoning. Findings are evidence, not
    verdicts ([[claude-is-final-judge]]) — but an unexplained overrule is a process failure.
-4. **Disagreements get resolved, not averaged.** Where two reviewers conflict, rule on it and record
+   **Agreement is not evidence** (R46 §7): a unanimous council does not upgrade a finding's truth
+   value — ten agents once unanimously confirmed a non-existent padding oracle that one test killed.
+   Ground rulings in quoted code and real runs, never in vote counts.
+5. **Disagreements get resolved, not averaged.** Where two reviewers conflict, rule on it and record
    why. Where a reviewer contradicts a locked decision, the decision wins unless the reviewer has
    found a fact that breaks it.
-5. Apply the changes, then **confirm with the reviewer that raised them** (§SendMessage above).
-6. Only then build — and report to the owner what each reviewer found and what was overruled.
+6. Apply the changes, then **confirm with the reviewer that raised them** (§SendMessage above).
+7. Only then build — and report to the owner what each reviewer found and what was overruled.
 
 This is not ceremony: on the A11 update plan, Fable found two HIGH design holes the main session had
 missed (a step contract broken by its own first step, and a rollback goal that failed across the exact
@@ -106,7 +114,34 @@ release motivating it), both of which would have been discovered mid-build.
 
 ---
 
+> **Brief-structure provenance:** the §Scoping rules marked R46 come from
+> `docs/research/R46-audit-prompt-methodology.md` (2026-08-19 — shipped peer review-prompts read
+> verbatim + the judge literature). Declined from that pass, recorded: a durable house-exclusions
+> file (B5 — a stale one would suppress real findings, the exact failure A3 exists to prevent);
+> the per-round known-findings list stays hand-written.
+
 ## Codex — the invocation
+
+### The Hermes `emma` lane — same backend, use when the Codex CLI is logged out
+
+Proven on the D60 + D61 council rounds (2026-08-19). Hermes profile `emma` carries its own fresh
+codex credential and the same `gpt-5.6-sol`; `--ignore-rules` makes it a BLIND reviewer (no memory
+injection, no skills, no SOUL/AGENTS — and her background memory system never engages, so she
+writes nothing). Restrict toolsets; the brief still forbids writes (there is no sandbox flag):
+
+```bash
+S=<scratchpad>
+~/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main \
+  -z "$(cat "$S/review-prompt.txt")" \
+  -m gpt-5.6-sol --reasoning high --ignore-rules -t file,terminal \
+  --in /home/emma/github/ctrl-b \
+  > "$S/review.md" 2> "$S/review.err" < /dev/null
+```
+
+Run backgrounded; `-z` prints ONLY the final text to stdout (no progress signal — rely on the
+completion notification, not log growth). Same brief discipline, same calibration paste (§Scoping
+item 9 applies — sol is sol). Follow-up/confirm rounds: `--resume latest --in <repo>` re-enters
+the same session; re-state `--ignore-rules`.
 
 ```bash
 S=<scratchpad>
@@ -166,13 +201,45 @@ Codex **can spawn its own subagents and read widely** — an unscoped prompt tur
 unfocused crawl. Every review prompt states:
 
 1. **The artifact** — exact paths to review, and the paths to read *for context* before judging.
+   The list is a **floor, not a ceiling** (R46 B3): add *"follow call sites and tests as far as
+   needed to CONFIRM a candidate finding is real — but do not survey unrelated subsystems."*
+   Confirmation reading is the expensive part worth paying for; surveying is the part to forbid.
 2. **The context it cannot infer** — deployment shape, constraints, what is already ruled, what the
-   owner has rejected. Codex has no memory of the conversation.
-3. **A numbered list of questions**, and *"judge specifically, and be adversarial"*.
+   owner has rejected. Codex has no memory of the conversation. **State locks as SCOPE, never as
+   ASSURANCE** (R46 A3): say *"X is out of scope / already ruled"* — never *"X is sound"* or
+   *"we're happy with X"*. A settled-sounding frame measurably suppresses findings in the framed
+   region (bug-free framing cut detection 16–93% in the one measured study; suspicion framing cost
+   only 0.8–13.6 pp of false positives).
+3. **A numbered list of questions**, and *"judge specifically, and be adversarial"* — framed as
+   **seeds, not a checklist** (R46 A1, Anthropic's own shipped wording): *"the numbered questions
+   are the priorities, not the boundary — report anything else in this artifact that meets the
+   finding bar."* Close the list with a **bounded open sweep as the LAST numbered question**
+   (R46 A2): *"name up to 3 problems none of the questions above asked about — same bar; if there
+   are none, write 'none', do not manufacture one."*
 4. **`Do NOT write or modify any files.`** Belt and braces with `--sandbox read-only`.
-5. **The output contract** — prioritised findings, each with severity (HIGH/MED/LOW), a concrete
-   failure scenario, and a specific fix.
-6. **An anti-padding clause** — *"If a section is sound, say so briefly rather than padding."*
+5. **The output contract** — prioritised findings, each with severity **defined, not just named**
+   (R46 A4 — HIGH = a concrete failure not depending on input/environment assumptions · MED = real
+   but conditional on a named scenario · LOW = defense-in-depth/maintainability), a concrete
+   failure scenario, a specific fix, and a **confidence 0–1 with the asymmetric floor** (R46 A5):
+   *"report nothing below 0.6 — unless the impact class is data loss / security / update-path
+   breakage, then report it and mark what remains uncertain."* Brevity is **per-finding** (≤1
+   paragraph of body, ≤3 lines of quoted code), never a total cap — no shipped review prompt caps
+   total output (R46 B1); keep a short cap on the summary/verdict section only.
+6. **An anti-padding clause** — *"If a section is sound, say so briefly rather than padding"* —
+   plus its whole-review half (R46 A6, Codex's shipped line): *"If nothing qualifies, say so — do
+   not invent a finding to fill the result. No findings is a valid answer."*
+7. **The posture, named** (R46 B4): *"RECALL-FIRST — I am the filter; a false positive costs me two
+   minutes, a miss ships"* for design/audit rounds; PRECISION-FIRST only for pre-release diff
+   rounds where noise is the enemy. Codex's default posture is the most precision-biased in the
+   field (~68% precision / 29% recall on one vendor benchmark) — left unstated, it under-reports.
+8. **For design audits, name the reviewer's own failure modes** (R46 A7, mirroring Anthropic's
+   shipped RATIONALIZATIONS block): *reading instead of checking* (asserting a mechanism works
+   without opening the file), *being seduced by the clean design* (the plan reads well so the seams
+   are assumed fine), and *reporting the absent instead of the wrong*.
+9. **Codex-lane calibration paste** (R46 §7 — our `codex exec` bypasses the calibration layer its
+   own `/review` mode ships, which is part of where "Codex over-engineers" comes from): include its
+   two rubric lines verbatim: *"Fixing the bug does not demand a level of rigor that is not present
+   in the rest of the codebase"* and *"flag only what the author would likely fix if they knew."*
 
 Keep the prompt in a file (`codex-prompt.txt`) so the exact brief is re-runnable and reviewable.
 
