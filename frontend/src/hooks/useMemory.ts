@@ -38,6 +38,7 @@ export interface CoreMemoryStatus {
   index_chars: number;
   index_char_limit: number;
   index_pct: number;
+  consolidation_nudge_pct: number; // D61 ② — the fill % the chat pressure hint fires at
 }
 
 /** The config.yaml `memory.*` block (caps + toggles), edited via PUT /api/settings. */

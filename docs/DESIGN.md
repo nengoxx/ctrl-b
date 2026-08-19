@@ -870,7 +870,7 @@ the tool's `Literal` keeps the model on known keys).
 > corpus** (a `MEMORY.md` routing index + semantic topic files) that is **read on demand**, never
 > injected whole. `memory.longterm.backend` (`null` = off, `"core"` = on) is the **only** switch;
 > its settings live in `memory.longterm.core` (`root` = `core` under `memories/` → versioned by the
-> D26 repo · `index_char_limit` 8192 · `topic_char_limit` 4096 · `recall_char_limit` 20480 ·
+> D26 repo · `index_char_limit` 10240 (D61 ④) · `topic_char_limit` 4096 · `recall_char_limit` 20480 ·
 > `consolidation_nudge_pct` 80 — all **characters**, all read live, no restart). Off ⇒ prompt
 > assembly is byte-identical to tier-1-only.
 
@@ -881,8 +881,9 @@ the tool's `Literal` keeps the model on known keys).
   frontmatter — top-level wins over nested `metadata.*`), the signature-cached index render/clamp,
   per-operation path confinement, and the CAS writes.
 - **Injection:** `_core_index_block()` = the `core_memory_policy` prompt + `render_index()` (the
-  clamped, normalized entries under a tier-1-style usage header that names cap pressure at
-  `consolidation_nudge_pct`), appended in `_static_prefix` **between the memory block and the skills
+  clamped, normalized entries under a tier-1-style usage header that reports fill as plain data —
+  **no pressure clause since D61 ③**: cap pressure is the owner's call and reaches them through the
+  chat hint, not the model), appended in `_static_prefix` **between the memory block and the skills
   note** — same cache class as memory (memory-adjacent, so a write re-prefills from there on) and
   frozen per turn, so a mid-turn corpus write reaches the model through its *tool result* and the
   head on the next turn.

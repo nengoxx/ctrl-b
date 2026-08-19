@@ -211,11 +211,11 @@ agent:
 #     backend: null              # null = OFF (default) | "core"; future backends = new values
 #     core:
 #       root: core               # relative → under memory_dir; absolute honored (unversioned)
-#       index_char_limit: 8192   # hard cap on the injected index block (chars)
+#       index_char_limit: 10240  # hard cap on the injected index block (chars)
 #       topic_char_limit: 4096   # per-read topic cap (chars)
 #       recall_char_limit: 20480 # per-turn total recall cap (chars)
 #       recall_min_charge_chars: 256  # D60: the minimum one read/search charges against that cap
-#       consolidation_nudge_pct: 80  # index fill % at which the header names the pressure
+#       consolidation_nudge_pct: 80  # index fill % at which the chat hints "run /consolidate"
 
 # Per-tool overrides (Phase 8b, D22) — ONE unified object per tool: `description` sharpens the
 # model-facing wording (the agent selects tools by description, so clearer wording steers a weak

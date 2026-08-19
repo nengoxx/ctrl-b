@@ -405,7 +405,10 @@ class CoreMemoryCfg(BaseModel):
     model_config = {"extra": "allow"}
 
     root: str = "core"  # corpus root; relative → under the memory dir, absolute honored
-    index_char_limit: int = Field(default=8192, ge=1)  # rendered index block cap (Kilo's bound)
+    #: Rendered index-block cap. 10240 since D61 ④ (the owner's ~10K sizing — Kilo's 8192 sat at 99%
+    #: fill on a realistic corpus): a deployment that OMITS the key adopts it on upgrade, one that
+    #: pinned 8192 keeps it (and keeps the pressure, which is what the client's hint is for).
+    index_char_limit: int = Field(default=10240, ge=1)
     topic_char_limit: int = Field(default=4096, ge=1)  # per-`read` topic cap (S3)
     recall_char_limit: int = Field(default=20480, ge=1)  # per-turn total recall cap (S3)
     #: The MINIMUM a single read-class call charges against `recall_char_limit` (D60 §15b-3). Reads no

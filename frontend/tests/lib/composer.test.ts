@@ -298,6 +298,166 @@ describe("runComposer × the one-shot menu scope (A6)", () => {
   });
 });
 
+// D61 ① — `/consolidate [dry]`. The verb owns no wording of its own: it resolves the registry's EFFECTIVE
+// prompt (`GET /api/prompts` `current`, the owner's edits included) and sends THAT as an ordinary message,
+// so the command and a hand-typed prompt end at the same text. The `memory.auto_write` pre-check comes
+// first, because the dry run is dry STRUCTURALLY (the switch refuses the writes) rather than by asking.
+describe("`/consolidate [dry]` (D61 ①)", () => {
+  const PROMPTS = {
+    prompts: [
+      { id: "core_memory_policy", current: "not this one" },
+      { id: "consolidation", current: "  MERGE ONE FAMILY.  " },
+      { id: "consolidation_dryrun", current: "DRY RUN — plan only." },
+    ],
+  };
+
+  /** `/api/settings` (the auto_write guard) + `/api/prompts` (the text). `prompts: null` ⇒ a non-OK
+   *  registry response; any other value is served as the body verbatim (malformed shapes included).
+   *  `autoWrite` is a boolean in the healthy case, or a whole settings BODY to serve instead. */
+  function mockApis(autoWrite: boolean | { body: unknown }, prompts: unknown = PROMPTS) {
+    const settings =
+      typeof autoWrite === "boolean" ? { memory: { auto_write: autoWrite } } : autoWrite.body;
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/api/settings"))
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(settings) } as Response);
+      if (u.includes("/api/prompts"))
+        return Promise.resolve(
+          prompts === null
+            ? ({ ok: false, status: 503, statusText: "Service Unavailable" } as Response)
+            : ({ ok: true, json: () => Promise.resolve(prompts) } as Response),
+        );
+      return Promise.resolve({ ok: false } as Response);
+    });
+  }
+
+  /** The verb's `run` is fire-and-forget over two awaited fetches — let them land. */
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const lastNote = () => vi.mocked(chat.pushSystemNote).mock.calls.at(-1)?.[0] ?? "";
+
+  beforeEach(() => clearComposerScope());
+
+  it("bare: sends the `consolidation` prompt as the message, with the raw line for a Stop-harvest", async () => {
+    mockApis(true);
+    runComposer("/consolidate");
+    await flush();
+    // trimmed, and the RAW `/consolidate` line rides along like every other sending verb (D41)
+    expect(chat.sendMessage).toHaveBeenCalledWith("MERGE ONE FAMILY.", { raw: "/consolidate" });
+  });
+
+  it("`dry`: sends the `consolidation_dryrun` prompt instead", async () => {
+    mockApis(false); // the dry form REQUIRES writes off — that is what makes it dry
+    runComposer("/consolidate dry");
+    await flush();
+    expect(chat.sendMessage).toHaveBeenCalledWith("DRY RUN — plan only.", {
+      raw: "/consolidate dry",
+    });
+  });
+
+  it("an EXPLICIT send wins over the armed menu scope, like /skill and /<provider>", async () => {
+    mockApis(true);
+    setScopeAgent("ops");
+    toggleScopeSkill("deploy");
+    runComposer("/consolidate");
+    // SYNCHRONOUS: spent before the two reads, not after them (a clear parked behind the awaits
+    // would eat an arming the owner makes while they are in flight).
+    expect(getComposerScope()).toEqual({ agent: undefined, skills: [] });
+    await flush();
+    expect(chat.sendMessage).toHaveBeenCalledWith("MERGE ONE FAMILY.", { raw: "/consolidate" });
+  });
+
+  it("an arming made DURING the reads is for the NEXT message, and survives this one", async () => {
+    mockApis(true);
+    runComposer("/consolidate");
+    setScopeAgent("research"); // the owner opens the menu while the two GETs are in flight
+    await flush();
+    expect(chat.sendMessage).toHaveBeenCalledWith("MERGE ONE FAMILY.", { raw: "/consolidate" });
+    expect(getComposerScope().agent).toBe("research"); // untouched by the send it did not arm
+  });
+
+  it("an unknown argument is a note, and nothing is sent (no fetch at all)", async () => {
+    mockApis(true);
+    runComposer("/consolidate now");
+    await flush();
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    expect(lastNote()).toContain("unknown argument: now");
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // the arg check is free — it precedes both reads
+  });
+
+  it("the auto_write guard, both directions", async () => {
+    // `dry` with writes ON would really write — refused, naming the switch that makes it dry.
+    mockApis(true);
+    setScopeAgent("ops");
+    runComposer("/consolidate dry");
+    await flush();
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    expect(lastNote()).toContain("auto-write OFF");
+    // …and the refusal has still SPENT the arming: the attempt is what supersedes the menu.
+    expect(getComposerScope().agent).toBe(undefined);
+
+    // …and the live form with writes OFF is refused too: every step-2/3 write would be denied, so
+    // the run is structurally broken rather than degraded — and the note is only actionable BEFORE
+    // the send. Both directions: nothing sent, one actionable note naming the way forward.
+    mockApis(false);
+    runComposer("/consolidate");
+    await flush();
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    expect(lastNote()).toContain("`/consolidate dry` for a plan-only pass");
+  });
+
+  it("a settings read that can't be judged refuses — unreachable OR a skewed 200", async () => {
+    // `/api/settings` serves the full model-dumped config, so a healthy answer ALWAYS carries a real
+    // boolean here. Anything else is version skew, and skew must not pick which form runs: only a
+    // genuine boolean passes the guard.
+    const unjudgeable: { body: unknown }[] = [
+      { body: { memory: { auto_write: "false" } } }, // the string a sloppy serializer would send
+      { body: { memory: {} } }, // the key is gone
+      { body: {} }, // the whole memory block is gone
+      { body: null }, // a 200 with no document at all
+    ];
+    for (const settings of unjudgeable) {
+      vi.mocked(chat.pushSystemNote).mockClear();
+      mockApis(settings);
+      runComposer("/consolidate");
+      await flush();
+      expect(chat.sendMessage, JSON.stringify(settings)).not.toHaveBeenCalled();
+      expect(lastNote(), JSON.stringify(settings)).toContain("memory settings");
+    }
+    // …and the same note covers an unreachable endpoint.
+    vi.mocked(chat.pushSystemNote).mockClear();
+    globalThis.fetch = vi.fn(() => Promise.reject(new Error("offline")));
+    runComposer("/consolidate");
+    await flush();
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    expect(lastNote()).toContain("memory settings");
+  });
+
+  it("a missing row, a non-OK registry and a malformed body all note and send NOTHING", async () => {
+    for (const body of [
+      { prompts: [{ id: "something_else", current: "x" }] }, // the id isn't registered
+      { prompts: [{ id: "consolidation", current: "   " }] }, // registered, but empty
+      null, // a non-OK response
+      { nope: true }, // a body that isn't the registry shape
+      "not json at all",
+    ]) {
+      vi.mocked(chat.pushSystemNote).mockClear();
+      mockApis(true, body);
+      runComposer("/consolidate");
+      await flush();
+      expect(chat.sendMessage, JSON.stringify(body)).not.toHaveBeenCalled();
+      expect(lastNote(), JSON.stringify(body)).toContain("consolidation prompt");
+    }
+  });
+
+  it("rides the ONE built-in table: `/help` lists it and the completions offer it", () => {
+    runComposer("/help");
+    expect(lastNote()).toContain("/consolidate [dry]");
+    expect(getCompletions("/conso").map((c) => c.value)).toEqual(["consolidate"]);
+    expect(getCompletions("/conso")[0].kind).toBe("builtin");
+    expect(getCompletions("/consolidate ")).toEqual([]); // `[dry]` is a help hint, not a completion
+  });
+});
+
 // A2 — the composer autocomplete GRAMMAR. `getCompletions` is pure over the draft + the three loaded verb
 // sets, and shares its precedence rules (and its built-in table) with `routeSlash`, so a suggestion can
 // never be something the router wouldn't run.
@@ -338,8 +498,8 @@ describe("getCompletions (A2)", () => {
   });
 
   it("first token: built-ins, then skills, then providers (the routing precedence, in that order)", () => {
-    expect(values("/c")).toEqual(["compact", "clear", "cloud-sync", "cloudy"]);
-    expect(kinds("/c")).toEqual(["builtin", "builtin", "skill", "provider"]);
+    expect(values("/c")).toEqual(["compact", "consolidate", "clear", "cloud-sync", "cloudy"]);
+    expect(kinds("/c")).toEqual(["builtin", "builtin", "builtin", "skill", "provider"]);
   });
 
   it("drops names a higher tier shadows — they could never route", () => {

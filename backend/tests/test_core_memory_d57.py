@@ -27,7 +27,8 @@ What's exercised:
  11. Curation   — §4b: the nudge latch (once per episode · per (agent, store) · clears on a fill
      (S4)        drop · an emptied store un-latches · a non-shrinking write does not), the
                    `{{longterm}}` promotion clause and the turn-level availability the session feeds
-                   it, the reflection nudge's routing sentence, and the index header's cap pressure.
+                   it, the reflection nudge's routing sentence, and the index header staying plain
+                   DATA at every fill (D61 ③ — no pressure clause on the model's channel).
  12. Live app   — the `memory` tool's description following the slot with no restart (and the owner
      (S4)        override still winning), the cap error naming the promotion path (never for
                    `state`, byte-identical when off), and the read-only Conf status route.
@@ -133,7 +134,7 @@ def test_the_tier2_slot_is_off_by_default_with_the_locked_shape():
     assert isinstance(longterm, LongTermCfg) and longterm.backend is None
     assert longterm.core == CoreMemoryCfg(
         root="core",
-        index_char_limit=8192,
+        index_char_limit=10240,  # D61 ④ — the owner's ~10K sizing replaces Kilo's 8192
         topic_char_limit=4096,
         recall_char_limit=20480,
         consolidation_nudge_pct=80,
@@ -161,7 +162,7 @@ def test_the_example_config_documents_the_same_tier2_block():
     assert set(parsed["memory"]["longterm"]) == {"backend", "core"}
     assert parsed["memory"]["longterm"]["core"] == {
         "root": "core",
-        "index_char_limit": 8192,
+        "index_char_limit": 10240,
         "topic_char_limit": 4096,
         "recall_char_limit": 20480,
         "recall_min_charge_chars": 256,  # D60 §15b-3
@@ -565,7 +566,9 @@ def test_status_reports_what_the_conf_line_will_show(tmp_path):
     assert status.anomalies == ("topic not in the index: b.md",)
     assert status.root == str(root.resolve())
     assert status.index_chars == len(corpus.render_index()) > 0
-    assert status.index_char_limit == 8192 and 0 <= status.index_pct <= 100
+    assert status.index_char_limit == 10240 and 0 <= status.index_pct <= 100
+    # D61 ② — the threshold rides the status so the client's pressure hint compares against config.
+    assert status.consolidation_nudge_pct == 80
 
 
 # ── 10. head injection (S2) ───────────────────────────────────────────────────────────────────────
@@ -848,37 +851,26 @@ def test_the_reflection_nudge_gains_the_routing_sentence_only_with_tier2(tmp_pat
     )
 
 
-def test_a_nudge_pct_edit_re_renders_the_pressure_clause_live(tmp_path):
-    """S4 review: the render cache keys on EVERY live setting the render reads — a pct edit alone,
-    same corpus instance, no file change, must add/remove the pressure clause immediately."""
-    root = _root()
-    _topic(root, "a.md", "---\nname: A\n---\nbody\n")
-    _index(root, "- [A](a.md) — hook")
-    corpus = _corpus(tmp_path)
-
-    calm = corpus.render_index()
-    assert "near the cap" not in calm.splitlines()[0]
-    corpus._settings.memory.longterm.core.consolidation_nudge_pct = 1  # a live Conf edit
-    assert "near the cap" in corpus.render_index().splitlines()[0]
-    corpus._settings.memory.longterm.core.consolidation_nudge_pct = 100
-    assert "near the cap" not in corpus.render_index().splitlines()[0]
-
-
-def test_the_index_header_names_cap_pressure(tmp_path):
-    """§4: at `consolidation_nudge_pct` of the index cap the header itself steers to consolidation —
-    one clause, inside the cap like the truncation note, no topic-count threshold."""
+def test_the_index_header_is_plain_data_at_every_fill(tmp_path):
+    """D61 ③: the header reports the fill and NOTHING else. The old clause ("near the cap:
+    consolidate topics before adding more") was mid-task steering on a second channel beside the
+    owner-facing hint — so it is gone at every fill, and at every `consolidation_nudge_pct`."""
     root = _root()
     for i in range(14):
         _topic(root, f"t{i}.md", f"---\nname: T{i}\ndescription: hook {i}\n---\nbody\n")
     _index(root, *[f"- [T{i}](t{i}.md) — hook {i}" for i in range(14)])
 
-    roomy = _corpus(tmp_path, index_char_limit=8192).render_index()
-    tight = _corpus(tmp_path, index_char_limit=480).render_index()
-    assert "consolidate topics before adding more" not in roomy
-    assert "— near the cap: consolidate topics before adding more)" in tight.splitlines()[0]
-    # Inside the cap like the truncation note, and cheap enough that nothing had to be dropped to
-    # make room for it — the pressure warning must not itself cost the model a topic.
-    assert len(tight) <= 480 and tight.count("\n") == roomy.count("\n")
+    roomy = _corpus(tmp_path, index_char_limit=8192)
+    tight = _corpus(tmp_path, index_char_limit=480)
+    for corpus in (roomy, tight):
+        for pct in (1, 80, 100):  # a live Conf edit no longer reaches the render at all
+            corpus._settings.memory.longterm.core.consolidation_nudge_pct = pct
+            head = corpus.render_index().splitlines()[0]
+            assert "consolidate" not in head and "near the cap" not in head
+            assert head.endswith(")") and "%" in head  # the counts + fill stay, as plain data
+    # …and the fill the tight corpus reports is genuinely over the default threshold — the removal
+    # is not an artefact of never being pressured.
+    assert tight.status().index_pct >= 80 > roomy.status().index_pct
 
 
 # ── 12. the tier-1 surfaces + the Conf status route (S4, live app) ────────────────────────────────
@@ -971,8 +963,9 @@ def test_the_status_route_serves_the_scan_for_the_conf_disclosure(tmp_path, monk
         body = res.json()
         assert (body["enabled"], body["topics"], body["skipped"]) == (False, 2, 0)
         assert body["anomalies"] == ["topic not in the index: b.md"]
-        assert body["root"] == str(root.resolve()) and body["index_char_limit"] == 8192
+        assert body["root"] == str(root.resolve()) and body["index_char_limit"] == 10240
         assert body["index_chars"] == 0 and body["index_pct"] == 0  # off ⇒ nothing would be injected
+        assert body["consolidation_nudge_pct"] == 80  # D61 ② — the client's hint threshold
 
         assert c.put("/api/settings", json={"memory": {"longterm": {"backend": "core"}}}).status_code == 200
         on = c.get("/api/memory/core/status").json()
@@ -1080,12 +1073,12 @@ def test_a_copied_claude_corpus_works_through_one_path(tmp_path):
     assert len(_HUGE) == 6403
     wake = next(t for t in corpus.scan().topics if t.path == "workflows/wake.md")
     assert wake.description == _HUGE.strip()  # `_pick` strips surrounding whitespace, nothing else
-    assert "workflows/wake.md" in [h.path for h in corpus.search("wake ritual detail")]
+    assert "workflows/wake.md" in [h.path for h in corpus.search("wake ritual detail").hits]
 
     # 2. enabling and reading changed NOTHING on disk (the preservation contract's read half): the
     #    CRLF file, the lock, the logs tree and the nested index are all still byte-for-byte there.
     index = corpus.render_index()
-    assert corpus.search("hyperbolic") and _digest(root) == before
+    assert corpus.search("hyperbolic").hits and _digest(root) == before
     assert (root / ".consolidate-lock").exists() and (root / "notes" / "MEMORY.md").exists()
 
     # 3. the index renders, every entry clamped despite the 6,403-char description, and the foreign
@@ -1097,7 +1090,7 @@ def test_a_copied_claude_corpus_works_through_one_path(tmp_path):
 
     # 4. `search` reaches a fact no index hook mentions (the description-only ceiling, §5).
     hit = corpus.search("hyperbolic")
-    assert [h.path for h in hit] == ["workflows/deploy.md"]
+    assert [h.path for h in hit.hits] == ["workflows/deploy.md"]
 
     # 5. a new topic matches the neighbours' shape rather than ctrl-b's own (§3's deterministic vote:
     #    this corpus's root directory is majority-nested, so the created file is too).
@@ -1112,6 +1105,6 @@ def test_a_copied_claude_corpus_works_through_one_path(tmp_path):
     #    own text, which is why editing the topic's description alone would NOT move the line — §3's
     #    "the index is the routing source").
     _topic(root, "preferences.md", "---\nmetadata:\n  name: Preferences\n---\nAdded by hand: mornings.\n")
-    assert [h.path for h in corpus.search("added by hand")] == ["preferences.md"]
+    assert [h.path for h in corpus.search("added by hand").hits] == ["preferences.md"]
     _index(root, "- [Preferences](preferences.md) — EDITED BY HAND")
     assert "EDITED BY HAND" in corpus.render_index()

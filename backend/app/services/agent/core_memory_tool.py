@@ -36,10 +36,10 @@ from app.domain.enums import Risk, RunState
 from app.domain.result import ToolResult
 from app.services.agent.core_memory import (
     CORE_MEMORY_TOOL,
-    CoreHit,
     CoreMemoryCorpus,
     CoreMemoryError,
     CoreRead,
+    CoreSearch,
     render_hits,
 )
 from app.services.agent.prompts import resolve
@@ -173,10 +173,13 @@ async def core_memory(inp: CoreMemoryInput, ctx: InvocationContext) -> ToolResul
             # The NORMALIZED path is what the frame names — never the raw argument the model sent.
             return _recalled(ctx, corpus, read.path, _read_result(read))
         if inp.action == "search":
-            hits = corpus.search(inp.query)
-            if not hits:
+            found = corpus.search(inp.query)
+            # Omitted-but-not-shown is NOT "no matches" (D61 ⑤): only an empty search says that.
+            matched = len(found.hits) + found.omitted
+            if not matched:
                 return ToolResult(state=RunState.OK, summary=f"no core-memory topic matches {inp.query!r}")
-            return _recalled(ctx, corpus, f"{len(hits)} topics matching {inp.query!r}", _hits_result(hits))
+            produced = _hits_result(found, corpus.topic_char_limit())
+            return _recalled(ctx, corpus, f"{matched} topics matching {inp.query!r}", produced)
         if inp.action == "create":
             summary = await corpus.create(inp.name, inp.description, inp.type, inp.content)
         elif inp.action == "update":
@@ -264,11 +267,14 @@ def _read_result(read: CoreRead) -> tuple[str, str]:
     return f"read {read.path} ({len(read.text):,} chars)", f"{head}\n\n{read.text}"
 
 
-def _hits_result(hits: tuple[CoreHit, ...]) -> tuple[str, str]:
-    """(summary, body) for a search: each topic's path followed by its matching lines. The rendering
-    itself lives on the corpus (`render_hits`) because `search` charges every hit against
-    `topic_char_limit` with exactly this arithmetic — a mirrored copy here would drift."""
-    return f"searched core memory — {len(hits)} topic(s) matched", render_hits(hits)
+def _hits_result(found: CoreSearch, cap: int) -> tuple[str, str]:
+    """(summary, body) for a search: each topic's path followed by its matching lines, then the
+    omission note when the cap cost the search a match. The rendering itself lives on the corpus
+    (`render_hits`, which also owns the final hard clamp to `cap`) because `search` charges every hit
+    against `topic_char_limit` with exactly this arithmetic — a mirrored copy here would drift."""
+    shown = f"searched core memory — {len(found.hits)} topic(s) shown"
+    tail = f", {found.omitted} not shown" if found.omitted else ""
+    return shown + tail, render_hits(found, cap)
 
 
 def _charge(ctx: InvocationContext, corpus: CoreMemoryCorpus, chars: int) -> ToolResult | None:

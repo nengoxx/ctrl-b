@@ -5,6 +5,7 @@
 // a summary step), tool calls render as command bubbles, and a confirm-gated call suspends the turn
 // until `resumeCall(execute|dismiss)` reopens the stream (DESIGN §5.3, §12).
 
+import type { CoreMemoryStatus } from "../hooks/useMemory";
 import { clearAudioCache } from "../lib/audioController";
 import { publishNotify } from "../lib/notifyBus";
 import { currentPlanOf } from "../lib/plan";
@@ -293,6 +294,10 @@ function notifyTurnTerminal(
   message?: string,
 ): void {
   if (!st || st === "suspended") return;
+  // D61 ② — a turn just ended, so the owner is back in the loop: the moment to tell them the
+  // core-memory index is filling up. It rides THIS helper, not the `done` frame, for exactly the
+  // reason the notifications do — it is the one point every transport's terminal passes through.
+  checkMemoryPressure();
   const scope = notifyScope(threadId);
   const failed = st === "error";
   publishNotify({
@@ -350,6 +355,60 @@ function notifyRestoredAwaiting(threadId: string): void {
       else if (p.state === "awaiting_answer")
         notifyAwaitingAnswer(threadId, p.call_id, str(p.args.prompt));
     }
+}
+
+// ── D61 ② the core-memory pressure hint ─────────────────────────────────────────────────────────
+// The OWNER's channel for index cap pressure (the model's header carries none — D61 ③): one system
+// note in the chat, at a turn boundary, telling them a `/consolidate` is due. Config owns the
+// threshold; the status route reports both it and the fill, so this reads one endpoint and compares.
+
+/** Down while a pressure episode has already been announced; re-armed the moment fill drops back
+ *  under the threshold. Module-level, so the accepted semantic is ONCE PER PAGE LIFETIME per
+ *  episode — a reload also drops the note it would repeat (client-only, never persisted). */
+let memoryPressureNoted = false;
+/** One check at a time: terminals can arrive back to back (a live `done` plus the re-attach answer
+ *  that observes the same turn), and two overlapping fetches could both clear the latch. */
+let memoryPressureChecking = false;
+/** A terminal was DISCARDED by the guard above, so the in-flight answer is already stale — the fill
+ *  it reports predates that turn. It matters in exactly the case that matters most: the
+ *  consolidation turn's own terminal (the one calm reading guaranteed to exist) landing while a
+ *  pressured check is still open would otherwise be dropped, the stale pressured answer would keep
+ *  the latch down, and the NEXT episode would never be announced. So the discarded terminals
+ *  coalesce into ONE follow-up check after the current one settles. */
+let memoryPressurePending = false;
+
+/** Best-effort look at `GET /api/memory/core/status` after a terminal; pushes the hint at most once
+ *  per episode. Silent on every failure — a convenience must never surface as an error in the log. */
+function checkMemoryPressure(): void {
+  if (memoryPressureChecking) {
+    memoryPressurePending = true;
+    return;
+  }
+  memoryPressureChecking = true;
+  void (async () => {
+    try {
+      const res = await fetch("/api/memory/core/status");
+      if (!res.ok) return;
+      const s = (await res.json()) as Partial<CoreMemoryStatus>;
+      if (!s.enabled || typeof s.index_pct !== "number") return;
+      if (typeof s.consolidation_nudge_pct !== "number") return;
+      if (s.index_pct < s.consolidation_nudge_pct) {
+        memoryPressureNoted = false; // the episode passed — the next one earns its own note
+        return;
+      }
+      if (memoryPressureNoted) return;
+      memoryPressureNoted = true;
+      pushSystemNote(`// memory index at ${s.index_pct}% — run /consolidate when convenient`);
+    } catch {
+      /* best-effort */
+    } finally {
+      memoryPressureChecking = false;
+      if (memoryPressurePending) {
+        memoryPressurePending = false;
+        checkMemoryPressure(); // one coalesced re-read, whatever the discarded terminals numbered
+      }
+    }
+  })();
 }
 
 // Sticky inference backend for this session, set by a bare `/<provider>` verb (A11/D48 C7). `null` →

@@ -1036,7 +1036,7 @@ export function ConfTab({ active }: Props) {
       backend: memorySection?.longterm?.backend ?? null,
       core: {
         root: memorySection?.longterm?.core?.root ?? "core",
-        index_char_limit: memorySection?.longterm?.core?.index_char_limit ?? 8192,
+        index_char_limit: memorySection?.longterm?.core?.index_char_limit ?? 10240,
         topic_char_limit: memorySection?.longterm?.core?.topic_char_limit ?? 4096,
         recall_char_limit: memorySection?.longterm?.core?.recall_char_limit ?? 20480,
         recall_min_charge_chars: memorySection?.longterm?.core?.recall_min_charge_chars ?? 256,

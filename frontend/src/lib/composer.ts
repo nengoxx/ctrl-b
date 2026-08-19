@@ -16,6 +16,7 @@
 // All paths jump to the Agent tab (the chat log lives there). The shell sigil is `!` by default and
 // will be configurable in Conf (Phase 7) — kept as a single constant so that wiring is one edit.
 
+import { getJSON } from "../api/client";
 import {
   compactThread,
   pushSystemNote,
@@ -30,6 +31,7 @@ import { setDraft } from "../store/composer";
 import { clearComposerScope, takeComposerScope } from "../store/composerScope";
 import { createStore } from "../store/createStore";
 import { setUI } from "../store/ui";
+import type { PromptsDoc } from "../types";
 import { PRIVILEGE_LEVELS, PRIVILEGE_VALUES, privilegeLabel, type Privilege } from "./privilege";
 
 /** The guarded-shell sigil. Configurable in Conf later (Phase 7); the only command prefix (no $/>). */
@@ -186,8 +188,9 @@ interface BuiltinVerb {
   /** The `/help` argument hint, e.g. `[name]`. */
   args?: string;
   help: string;
-  /** `rest` = everything after the verb, trimmed. */
-  run: (rest: string) => void;
+  /** `rest` = everything after the verb, trimmed; `raw` = the whole composer line WITH its `/prefix`,
+   *  for the verbs that SEND a message (a queued steer must restore the line the owner typed). */
+  run: (rest: string, raw: string) => void;
 }
 
 /** The built-in verbs — ONE table driving dispatch (`routeSlash`), the `/help` listing, and the composer's
@@ -246,6 +249,13 @@ const BUILTIN_VERBS: readonly BuiltinVerb[] = [
     // Everything after `/compact` is a free-text steer for the summarizer (D42); bare → null.
     run: (rest) => void compactThread(rest || null),
   },
+  {
+    verb: "consolidate",
+    args: "[dry]",
+    help: "run the long-term memory consolidation procedure (`dry` = plan it, change nothing)",
+    // The whole verb is "send the owner's own consolidation prompt as this message" — see below.
+    run: (rest, raw) => void runConsolidate(rest, raw),
+  },
   { verb: "clear", help: "start a new thread", run: () => startNewThread() },
   { verb: "help", help: "show this list", run: () => pushSystemNote(helpText()) },
 ];
@@ -276,6 +286,82 @@ function helpText(): string {
     "/<skill> [task] run a task with a skill active",
     "// anything else is sent to the agent",
   ].join("\n");
+}
+
+// ── `/consolidate [dry]` — the D61 ① long-term-memory verb ───────────────────────────────────────
+// The command and a hand-sent prompt must end at the SAME owner-editable text, so this resolves the
+// registry's EFFECTIVE prompt (`GET /api/prompts` `current` — the owner's override/append already
+// applied) and sends it as an ordinary message. The thread then shows the real instruction rather
+// than an opaque verb, and "literally just asking" keeps working.
+
+/** The registry ids the two forms resolve to: the live run and its write-free rehearsal. */
+const CONSOLIDATION_PROMPT = { bare: "consolidation", dry: "consolidation_dryrun" };
+
+async function runConsolidate(rest: string, raw: string): Promise<void> {
+  const arg = rest.toLowerCase();
+  if (arg && arg !== "dry") {
+    pushSystemNote(`// unknown argument: ${rest} — try /consolidate or /consolidate dry`);
+    return;
+  }
+  const dry = arg === "dry";
+  // A6: an EXPLICIT slash-routed send supersedes the menu arming, spent SYNCHRONOUSLY — before the
+  // reads below, so an arming the owner makes WHILE they are in flight is left for the next message.
+  // A refusal further down has therefore also spent it: deliberate, the attempt is what supersedes.
+  clearComposerScope();
+  // The dry run is dry STRUCTURALLY (§16b-1): `memory.auto_write` OFF is what refuses the writes —
+  // the prompt only tells the model why. So the switch decides which form is runnable at all, and
+  // BOTH mismatches refuse: a `dry` run with writes on would really write, and a live run with
+  // writes off is structurally broken (every step 2/3 write refused), not merely degraded.
+  const writes = await autoWriteOn();
+  if (writes === null) {
+    pushSystemNote("// couldn't read the memory settings — try again");
+    return;
+  }
+  if (dry && writes) {
+    pushSystemNote(
+      "// a dry run needs memory auto-write OFF (Conf → Memory) — the plan is dry because the " +
+        "writes are refused, not because the model was asked not to write",
+    );
+    return;
+  }
+  if (!dry && !writes) {
+    pushSystemNote(
+      "// memory writes are disabled (auto-write off) — run `/consolidate dry` for a plan-only " +
+        "pass, or enable writes in Conf → Memory first",
+    );
+    return;
+  }
+  const text = await promptText(dry ? CONSOLIDATION_PROMPT.dry : CONSOLIDATION_PROMPT.bare);
+  if (!text) {
+    pushSystemNote("// couldn't load the consolidation prompt — try again");
+    return;
+  }
+  void sendMessage(text, { raw });
+}
+
+/** `memory.auto_write`, or `null` when the guard can't be judged — an unreachable/non-OK read, OR a
+ *  200 whose shape isn't the settings document. `/api/settings` serves the full model-dumped config,
+ *  so a healthy answer ALWAYS carries a real boolean here; anything else is version skew, and a
+ *  skewed read must not be the thing that decides which form of the command runs. */
+async function autoWriteOn(): Promise<boolean | null> {
+  try {
+    const doc = await getJSON<{ memory?: { auto_write?: unknown } }>("/api/settings");
+    const value = doc.memory?.auto_write;
+    return typeof value === "boolean" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The EFFECTIVE template of one registry prompt, or "" when the registry can't answer for it. */
+async function promptText(id: string): Promise<string> {
+  try {
+    const doc = await getJSON<PromptsDoc>("/api/prompts");
+    const row = doc.prompts.find((p) => p.id === id);
+    return (row?.current ?? "").trim();
+  } catch {
+    return ""; // unreachable, non-OK, or a body without that row — one note covers all three
+  }
 }
 
 /** Drop a string into the shared composer for tweak-then-run (ports vapor's cmdInto/editCmd). The
@@ -351,7 +437,7 @@ function routeSlash(text: string): void {
   const bucket = knownSkills.get(verb);
   const skill = bucket && resolveSkill(bucket, typed);
   if (builtin) {
-    builtin.run(rest);
+    builtin.run(rest, raw);
   } else if (skill !== undefined) {
     // /skill-name <task> → run the task with that skill explicitly active (user-invoked, 4.5). The
     // CANONICAL name goes to the backend, not the lowercased verb — a skill's name is free-form and is

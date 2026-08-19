@@ -35,7 +35,7 @@ import hashlib
 import logging
 import os
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
@@ -170,6 +170,17 @@ class CoreHit:
     lines: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class CoreSearch:
+    """One `search` result (D61 ⑤): the hits that FIT inside `topic_char_limit`, plus how many
+    matching topics the budget left out. The count exists because silence was the bug — a clamped
+    search looked exactly like a thorough one, so the model concluded "that is all there is" from a
+    result the cap had trimmed. An omitted-only result is still a RESULT, never "no matches"."""
+
+    hits: tuple[CoreHit, ...] = ()
+    omitted: int = 0
+
+
 @dataclass
 class _WriteOutcome:
     """What one mutation's blocking half produced: the paths the D26 commit must cover, plus the
@@ -211,7 +222,11 @@ class CoreScan:
 @dataclass(frozen=True)
 class CoreStatus:
     """The read-only status line S4's Conf endpoint serves: is it on, where does it live, what did
-    the last scan see, and how much of the index cap the rendered block occupies."""
+    the last scan see, and how much of the index cap the rendered block occupies.
+
+    `consolidation_nudge_pct` rides along (D61 ②) so the client's pressure hint compares fill against
+    the SAME configured threshold the backend uses — config stays the one source, and the hint needs
+    no second read of the settings doc."""
 
     enabled: bool
     root: str | None
@@ -221,6 +236,7 @@ class CoreStatus:
     index_chars: int
     index_char_limit: int
     index_pct: int
+    consolidation_nudge_pct: int
 
 
 _EMPTY_SCAN = CoreScan()
@@ -269,6 +285,11 @@ class CoreMemoryCorpus:
     def recall_char_limit(self) -> int:
         """The per-turn recall cap the `RecallBudget` is measured against, read live (§4)."""
         return self._cfg.recall_char_limit
+
+    def topic_char_limit(self) -> int:
+        """The per-`read` topic cap, which `search` also spends its whole hit list against, read live
+        — the bound `render_hits` hard-clamps its body to (D61 ⑤)."""
+        return self._cfg.topic_char_limit
 
     def recall_min_charge_chars(self) -> int:
         """The minimum ONE read-class call charges against that cap (D60 §15b-3), read live — the
@@ -456,17 +477,12 @@ class CoreMemoryCorpus:
         if not scan.entries:
             return ""
         cap = self._cfg.index_char_limit
-        pct = self._cfg.consolidation_nudge_pct
-        # Every live setting the render READS is in the key (the no-restart contract) — a pct edit
-        # must add/remove the pressure clause without waiting for a corpus or cap change (S4 review).
-        key = (self._scan_cache[0] if self._scan_cache else None, cap, pct)
+        # Every live setting the render READS is in the key (the no-restart contract) — which since
+        # D61 ③ is the cap alone: `consolidation_nudge_pct` no longer reaches the rendered block.
+        key = (self._scan_cache[0] if self._scan_cache else None, cap)
         if self._index_cache is not None and self._index_cache[0] == key:
             return self._index_cache[1]
-        block = _fit(
-            [_entry_line(title, path, hook) for title, path, hook in scan.entries],
-            cap,
-            pct,
-        )
+        block = _fit([_entry_line(title, path, hook) for title, path, hook in scan.entries], cap)
         self._index_cache = (key, block)
         return block
 
@@ -489,6 +505,7 @@ class CoreMemoryCorpus:
             index_chars=len(block),
             index_char_limit=cap,
             index_pct=_pct(len(block), cap),
+            consolidation_nudge_pct=self._cfg.consolidation_nudge_pct,
         )
 
     # ── confinement (§5, council Codex-2) ─────────────────────────────────────────────────────────
@@ -552,13 +569,13 @@ class CoreMemoryCorpus:
             truncated=len(raw) > cap,
         )
 
-    def search(self, query: str) -> tuple[CoreHit, ...]:
+    def search(self, query: str) -> CoreSearch:
         """Literal, case-insensitive grep over topic bodies **and** frontmatter (§5): a line matches
         when it contains the whole query, or every whitespace-separated token of it. Deliberately not
         BM25 and not embeddings — this exists to find a fact the index hook never mentions, so it
         searches every parseable topic, indexed or not. Excerpts are clamped per line and per topic,
         and the whole hit list is clamped to `topic_char_limit` so one search can never outweigh a
-        read.
+        read. Every match the clamp costs is COUNTED (D61 ⑤) and reported as `omitted`.
 
         Synchronous, like the rest of the read side (the per-turn index render already reads files on
         the event loop) — and deliberately so: the scan cache is only ever touched from the loop
@@ -566,14 +583,15 @@ class CoreMemoryCorpus:
         thread hop, and they never read the cache from inside it."""
         needle = query.strip().lower()
         if not needle:
-            return ()
+            return CoreSearch()
         tokens = needle.split()
         scan = self.scan()
         root = scan.root
         if root is None:
-            return ()
+            return CoreSearch()
         room = self._cfg.topic_char_limit
         hits: list[CoreHit] = []
+        omitted = 0
         for topic in scan.topics:
             raw = _read_text(root / topic.path)
             if raw is None:
@@ -596,10 +614,19 @@ class CoreMemoryCorpus:
             # the walk must not hide every small match after it.
             cost = len(render_hit(hit)) + (len(_HIT_JOINER) if hits else 0)
             if cost > room:
+                omitted += 1
                 continue
             room -= cost
             hits.append(hit)
-        return tuple(hits)
+        # The tail note reserves INSIDE the cap, exactly like the index's truncation note: evict
+        # displayed hits from the end until it fits. Each eviction is one more omission, which can
+        # itself lengthen the note by a digit — hence the loop rather than one subtraction. With
+        # nothing left to evict the note stands alone, and a cap shorter than the note itself is
+        # `render_hits`'s hard clamp to deal with (the `_fit` degenerate branch, same treatment).
+        while omitted and hits and len(_omission_note(omitted)) + len(_HIT_JOINER) > room:
+            room += len(render_hit(hits.pop())) + (len(_HIT_JOINER) if hits else 0)
+            omitted += 1
+        return CoreSearch(hits=tuple(hits), omitted=omitted)
 
     # ── mutations (§5: create / update / remove / delete) ─────────────────────────────────────────
 
@@ -1236,9 +1263,24 @@ def render_hit(hit: CoreHit) -> str:
     return "\n".join([hit.path, *(f"  {line}" for line in hit.lines)])
 
 
-def render_hits(hits: Sequence[CoreHit]) -> str:
-    """The whole hit list as the tool's result body."""
-    return _HIT_JOINER.join(render_hit(hit) for hit in hits)
+def render_hits(found: CoreSearch, cap: int) -> str:
+    """The whole hit list as the tool's result body, with the omission note as its tail (D61 ⑤) —
+    rendered whenever the cap cost the search a match, INCLUDING when it cost every one of them.
+
+    Hard-clamped to `cap` as the last act, exactly like `_fit`'s degenerate branch: `search` reserves
+    the note in-band by evicting hits, but with no hits LEFT to evict the note alone can still be
+    longer than a degenerately small `topic_char_limit` — and the cap is a hard bound, not a target
+    (a one-character cap must not hand the model 72 characters)."""
+    parts = [render_hit(hit) for hit in found.hits]
+    if found.omitted:
+        parts.append(_omission_note(found.omitted))
+    return _HIT_JOINER.join(parts)[:cap]
+
+
+def _omission_note(omitted: int) -> str:
+    """The tail note a cap-clamped `search` ends with. Says the COUNT and the one next step that
+    works — narrowing the query — and promises no path the model hasn't been shown (§16b-8)."""
+    return f"… {omitted} more matching topic(s) not shown — narrow the search to reveal them."
 
 
 def _append_entry(raw: str, line: str) -> str:
@@ -1337,20 +1379,15 @@ def _pct(length: int, cap: int) -> int:
     return round(100 * length / cap) if cap > 0 else 0
 
 
-def _header(listed: int, chars: int, cap: int, nudge_pct: int) -> str:
-    """The Hermes-style usage header the tier-1 blocks carry, so the model sees index cap pressure
-    the same way it sees memory cap pressure.
+def _header(listed: int, chars: int, cap: int) -> str:
+    """The Hermes-style usage header the tier-1 blocks carry, so the model sees the index's size the
+    same way it sees memory's.
 
-    At `consolidation_nudge_pct` of the cap the header also NAMES the pressure and steers to the §5
-    consolidation procedure (§4 — no topic-count threshold, one honest bound). The clause rides the
-    header rather than a separate line so it stays *inside* the cap, exactly like the truncation
-    note, and so it is the always-rendered header that carries the correction when a promote-then-
-    trim leaves fill unchanged (§4b's deliberate property: the latch stays down, the header does
-    not)."""
+    Plain DATA and nothing else (D61 ③): the fill percentage is reported, but no clause steers the
+    model to consolidate. Cap pressure is the OWNER's call — it reaches them through the chat hint
+    the client raises off `/api/memory/core/status`, not as mid-task instruction to the model."""
     plural = "" if listed == 1 else "s"
-    pct = _pct(chars, cap)
-    pressure = " — near the cap: consolidate topics before adding more" if pct >= nudge_pct else ""
-    return f"## Core memory index ({listed} topic{plural} — {pct}% — {chars:,}/{cap:,}{pressure})"
+    return f"## Core memory index ({listed} topic{plural} — {_pct(chars, cap)}% — {chars:,}/{cap:,})"
 
 
 def _truncation_note(omitted: int) -> str:
@@ -1358,11 +1395,11 @@ def _truncation_note(omitted: int) -> str:
     return f"> {omitted} more topic{plural} not listed — the index is at its cap."
 
 
-def _fit(lines: list[str], cap: int, nudge_pct: int) -> str:
+def _fit(lines: list[str], cap: int) -> str:
     """Assemble header + entries (+ the truncation note) within `cap`. Truncation is soft and drops
     whole entries from the end — never an error, and the note is reserved *inside* the cap rather
     than appended past it. The header's own length feeds back into the numbers it prints, so it is
-    settled by a short fixpoint (only the digit count and the pressure clause can move)."""
+    settled by a short fixpoint (only the digit count can move)."""
     kept = len(lines)
     running = 0
     for i, line in enumerate(lines):  # greedy pre-trim so the exact loop below starts close
@@ -1371,7 +1408,7 @@ def _fit(lines: list[str], cap: int, nudge_pct: int) -> str:
             kept = i
             break
     while True:
-        block = _assemble(lines[:kept], len(lines) - kept, cap, nudge_pct)
+        block = _assemble(lines[:kept], len(lines) - kept, cap)
         if len(block) <= cap:
             return block
         if kept == 0:  # a cap too small for even header + note: the hard cap still wins (§3)
@@ -1379,16 +1416,15 @@ def _fit(lines: list[str], cap: int, nudge_pct: int) -> str:
         kept -= 1
 
 
-def _assemble(kept: list[str], omitted: int, cap: int, nudge_pct: int) -> str:
+def _assemble(kept: list[str], omitted: int, cap: int) -> str:
     parts = [*kept, *([_truncation_note(omitted)] if omitted else [])]
     size = sum(len(p) + 1 for p in parts)
     block = ""
     # The header prints the block's own length, which includes the header — a fixpoint. Iterate to
     # stability; at a digit/percent boundary it can oscillate by one, in which case the printed
-    # number is off by one char (the cap itself is still enforced above). The pressure clause only
-    # ever GROWS the block, so it settles in the same pass rather than adding a second fixpoint.
+    # number is off by one char (the cap itself is still enforced above).
     for _ in range(6):
-        block = "\n".join([_header(len(kept), size, cap, nudge_pct), *parts])
+        block = "\n".join([_header(len(kept), size, cap), *parts])
         if len(block) == size:
             break
         size = len(block)

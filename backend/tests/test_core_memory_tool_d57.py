@@ -64,6 +64,7 @@ from app.services.agent.core_memory import (
     CORE_MEMORY_TOOL,
     CoreMemoryCorpus,
     CoreMemoryError,
+    CoreSearch,
     RecallBudget,
 )
 
@@ -179,10 +180,10 @@ def test_search_finds_a_body_only_fact_the_index_hook_misses(tmp_path):
     _index(root, "- [Wake](wake.md) — how hosts wake")
     corpus = _corpus(tmp_path)
 
-    hits = corpus.search("wol")  # case-insensitive, and the hook says nothing about WOL
-    assert {hit.path for hit in hits} == {"wake.md", "loose.md"}
-    assert any("NUC" in line for hit in hits for line in hit.lines)
-    assert corpus.search("nothing here matches") == ()
+    found = corpus.search("wol")  # case-insensitive, and the hook says nothing about WOL
+    assert {hit.path for hit in found.hits} == {"wake.md", "loose.md"} and found.omitted == 0
+    assert any("NUC" in line for hit in found.hits for line in hit.lines)
+    assert corpus.search("nothing here matches") == CoreSearch()
 
 
 def test_read_hashes_the_bytes_it_returned(tmp_path):
@@ -210,7 +211,8 @@ def test_a_topic_that_is_not_utf8_is_a_steering_error_not_a_crash(tmp_path):
 
 def test_search_stays_inside_the_read_cap(tmp_path):
     """One search can never outweigh one read: the whole hit list is clamped to `topic_char_limit` —
-    measured on the body `_hits_result` actually renders, not on an estimate of it."""
+    measured on the body `_hits_result` actually renders (D61 ⑤: the omission note included), not on
+    an estimate of it. Every match the clamp cost is COUNTED, so nothing is dropped in silence."""
     from app.services.agent.core_memory_tool import _hits_result
 
     root = _root()
@@ -218,9 +220,13 @@ def test_search_stays_inside_the_read_cap(tmp_path):
         _topic(root, f"t{i}.md", f"---\nname: T{i}\ndescription: d\n---\n\n{'needle ' * 40}\n")
     corpus = _corpus(tmp_path, topic_char_limit=300)
 
-    hits = corpus.search("needle")
-    _summary, body = _hits_result(hits)
-    assert 0 < len(hits) < 12 and len(body) <= 300
+    found = corpus.search("needle")
+    _summary, body = _hits_result(found, 300)
+    assert 0 < len(found.hits) < 12 and len(body) <= 300
+    assert len(found.hits) + found.omitted == 12  # every match is either shown or counted
+    assert body.endswith(
+        f"… {found.omitted} more matching topic(s) not shown — narrow the search to reveal them."
+    )
 
 
 def test_search_skips_an_oversized_hit_and_keeps_scanning(tmp_path):
@@ -234,10 +240,68 @@ def test_search_skips_an_oversized_hit_and_keeps_scanning(tmp_path):
     _topic(root, "zzz-thin.md", "---\nname: Thin\ndescription: d\n---\n\nneedle\n")
     corpus = _corpus(tmp_path, topic_char_limit=250)
 
-    hits = corpus.search("needle")
-    assert [hit.path for hit in hits] == ["zzz-thin.md"]  # the fat topic sorts FIRST and is skipped
-    _summary, body = _hits_result(hits)
+    found = corpus.search("needle")
+    assert [h.path for h in found.hits] == ["zzz-thin.md"]  # the fat topic sorts FIRST and is skipped
+    assert found.omitted == 1
+    _summary, body = _hits_result(found, 250)
     assert len(body) <= 250
+
+
+def test_a_search_whose_every_hit_was_omitted_is_not_no_matches(tmp_path):
+    """D61 ⑤ / §16b-7: a cap that leaves room for nothing is the case the count exists for. The tool
+    still returns a RESULT — the note alone, inside the budget — because "no core-memory topic
+    matches" would tell the model the corpus is empty of something it demonstrably holds."""
+    from app.domain.enums import RunState
+
+    root = _root()
+    for i in range(3):
+        _topic(root, f"t{i}.md", f"---\nname: T{i}\ndescription: d\n---\n\n{'needle ' * 30}\n")
+    corpus = _corpus(tmp_path, topic_char_limit=120)
+
+    found = corpus.search("needle")
+    assert found.hits == () and found.omitted == 3
+    result = _tool(corpus, action="search", query="needle")
+    assert result.state is RunState.OK
+    assert "3 more matching topic(s) not shown" in result.output
+    assert "no core-memory topic matches" not in result.summary
+    # …and a genuinely empty search still says so, so the two stay distinguishable.
+    assert "no core-memory topic matches" in _tool(corpus, action="search", query="zzzz").summary
+
+
+def test_the_omission_note_reserves_inside_the_topic_cap(tmp_path):
+    """The note rides IN the budget like the index's truncation note: displayed hits are evicted
+    until it fits, so the rendered body never crosses `topic_char_limit` to carry its own warning."""
+    from app.services.agent.core_memory_tool import _hits_result
+
+    root = _root()
+    for i in range(6):
+        _topic(root, f"t{i}.md", f"---\nname: T{i}\ndescription: d\n---\n\n{'needle ' * 12}\n")
+    # A cap that fits one hit comfortably but NOT that hit plus the ~75-char note.
+    for cap in range(110, 190, 7):
+        corpus = _corpus(tmp_path, topic_char_limit=cap)
+        found = corpus.search("needle")
+        _summary, body = _hits_result(found, cap)
+        assert len(body) <= cap, cap
+        assert len(found.hits) + found.omitted == 6, cap
+
+
+def test_a_cap_too_small_for_even_the_note_is_still_hard_clamped(tmp_path):
+    """The eviction reserves the note in-band, but with NO hits left to evict the note alone can
+    still outrun a degenerate `topic_char_limit` — so `render_hits` clamps last, exactly like `_fit`
+    (`ge=1` is all the config demands, and the cap is a hard bound, not a target)."""
+    from app.services.agent.core_memory_tool import _hits_result
+
+    root = _root()
+    # One match whose excerpt outruns every cap below, so the hit is omitted, nothing is left to
+    # evict, and the ~72-char note is all there is to render.
+    _topic(root, "t.md", f"---\nname: T\ndescription: d\n---\n\n{'needle ' * 20}\n")
+    for cap in (1, 20, 71):
+        corpus = _corpus(tmp_path, topic_char_limit=cap)
+        found = corpus.search("needle")
+        _summary, body = _hits_result(found, cap)
+        assert found.omitted == 1, cap
+        assert 0 < len(body) <= cap, cap  # clamped, never emptied into a silent "nothing found"
+        assert cm._omission_note(1).startswith(body), cap  # a CUT note, not garbage
 
 
 # ── 2. the per-turn recall budget (§4, council Codex-11) ──────────────────────────────────────────
@@ -777,7 +841,7 @@ def test_no_action_can_be_steered_through_a_symlink(tmp_path, action):
     linked = "link/leak.md"
 
     if action == "search":
-        assert corpus.search("smuggled") == ()
+        assert corpus.search("smuggled") == CoreSearch()
         return
     if action == "create":
         run_async(corpus.create(linked, "hostile", None, "body"))

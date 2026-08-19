@@ -24,7 +24,7 @@ vi.mock("../../src/hooks/useNotificationPrefs", () => ({
 }));
 
 import { useForegroundNotifications } from "../../src/hooks/useForegroundNotifications";
-import { reattachTurn, sendMessage, startNewThread } from "../../src/store/chat";
+import { reattachTurn, sendMessage, startNewThread, useChat } from "../../src/store/chat";
 import { onNotify, type NotifySignal } from "../../src/lib/notifyBus";
 
 type Frame = { event: string; data: unknown; id?: string };
@@ -759,5 +759,210 @@ describe("a hidden device + a turn.sync snapshot → exactly one notification", 
       await sendMessage("two");
     });
     expect(shown).toHaveLength(1); // the second turn's identical key is swallowed
+  });
+});
+
+// ── D61 ② the core-memory pressure hint ─────────────────────────────────────────────────────────
+// A second thing rides `notifyTurnTerminal`, for the same reason the signals above do: it is the ONE
+// point every transport's terminal passes through (the draft's `done`-only hook would have missed
+// buffered turns and reattach completions entirely — §16b-3). This is the OWNER's channel for index
+// cap pressure; the model's own header carries none (D61 ③). Pinned here: all four transports run
+// the check, the enable flag AND the threshold come from the server, the latch fires once per
+// pressure episode and re-arms on a drop, a failed read is silent, and overlapping terminals collapse
+// to one status request.
+
+const PRESSED = { enabled: true, index_pct: 91, consolidation_nudge_pct: 80 };
+const CALM = { enabled: true, index_pct: 12, consolidation_nudge_pct: 80 };
+const PRESSURE_NOTE = "// memory index at 91% — run /consolidate when convenient";
+
+/** Wrap whatever transport mock is installed so `/api/memory/core/status` answers `body` — or
+ *  fails, when it is `null`. Everything else still goes to the transport underneath. */
+function withCoreStatus(body: unknown): void {
+  const inner = globalThis.fetch;
+  globalThis.fetch = vi.fn((url: RequestInfo | URL, init?: RequestInit) =>
+    String(url).includes("/memory/core/status")
+      ? body === null
+        ? Promise.reject(new Error("offline"))
+        : Promise.resolve({ ok: true, json: async () => body } as unknown as Response)
+      : inner(url, init),
+  );
+}
+
+/** The status check is fire-and-forget off the terminal, so let its microtasks land. */
+const flush = () => act(async () => await new Promise((r) => setTimeout(r, 0)));
+
+/** One completed STREAMING turn whose status read answers `body`. */
+async function pressuredTurn(body: unknown): Promise<void> {
+  mockStream([
+    { event: "thread", data: { threadId: "t1" } },
+    { event: "message.start", data: { messageId: "m1" } },
+    { event: "done", data: { state: "completed" } },
+  ]);
+  withCoreStatus(body);
+  await act(async () => {
+    await sendMessage("hello");
+  });
+  await flush();
+}
+
+describe("the core-memory pressure hint (D61 ②)", () => {
+  const notes = () =>
+    renderHook(() => useChat())
+      .result.current.messages.filter((m) => m.role === "system")
+      .flatMap((m) => m.parts.map((p) => (p.type === "text" ? p.text : "")))
+      .filter((t) => t.includes("memory index at"));
+
+  // Every test starts from a re-armed latch (it is module state, and a calm reading is exactly what
+  // re-arms it) — which is also the "a drop below the threshold re-arms" behaviour, exercised here
+  // on every single case rather than once.
+  beforeEach(async () => {
+    await pressuredTurn(CALM);
+  });
+  afterEach(cleanup);
+
+  it("pushes ONE note naming the fill when the index is at or over the threshold", async () => {
+    await pressuredTurn(PRESSED);
+    expect(notes()).toEqual([PRESSURE_NOTE]);
+  });
+
+  it("says nothing below the threshold, and nothing at all while the slot is off", async () => {
+    await pressuredTurn(CALM);
+    await pressuredTurn({ enabled: false, index_pct: 99, consolidation_nudge_pct: 80 });
+    expect(notes()).toEqual([]);
+  });
+
+  it("compares against the SERVER's threshold, not a client constant", async () => {
+    // 12% is calm at the shipped 80 and pressured at an owner-lowered 10 — config stays the one
+    // source of truth for when the hint fires.
+    await pressuredTurn({ ...CALM, consolidation_nudge_pct: 10 });
+    expect(notes()).toEqual(["// memory index at 12% — run /consolidate when convenient"]);
+  });
+
+  it("once per pressure episode — and a drop below the threshold arms the next one", async () => {
+    // Also the REPLAY case: a second observation of the same pressure (a re-attach onto a turn this
+    // client already saw end) reads the same status and must stay silent.
+    await pressuredTurn(PRESSED);
+    await pressuredTurn(PRESSED); // still the same episode: silent
+    expect(notes()).toEqual([PRESSURE_NOTE]);
+    await pressuredTurn(CALM); // the owner consolidated → re-armed
+    await pressuredTurn(PRESSED);
+    expect(notes()).toEqual([PRESSURE_NOTE, PRESSURE_NOTE]);
+  });
+
+  it("a failed status read is silent — the hint is a convenience, never an error", async () => {
+    await pressuredTurn(null);
+    expect(notes()).toEqual([]);
+  });
+
+  it("the BUFFERED transport's terminal runs the check too", async () => {
+    mockBuffered({ threadId: "t1", state: "completed" });
+    withCoreStatus(PRESSED);
+    await act(async () => {
+      await sendMessage("hello");
+    });
+    await flush();
+    expect(notes()).toEqual([PRESSURE_NOTE]);
+  });
+
+  it("a `turn.sync` snapshot carrying a terminal runs the check too", async () => {
+    mockReattach([
+      {
+        event: "turn.sync",
+        id: "turn-z:4",
+        data: { mode: null, seq: 4, terminal: { state: "completed" }, calls: [] },
+      },
+    ]);
+    withCoreStatus(PRESSED);
+    await act(async () => {
+      await reattachTurn("t1", "turn-z:1");
+    });
+    await flush();
+    expect(notes()).toEqual([PRESSURE_NOTE]);
+  });
+
+  it("an `{active:false}` reattach runs the check too", async () => {
+    // The transport a phone that slept through the turn lands on. The note is pushed AFTER that
+    // path's forced re-read of the durable floor — which would otherwise drop a client-only note.
+    mockTerminalReattach({ active: false, terminal_status: "completed", turn_id: "turn-y" });
+    withCoreStatus(PRESSED);
+    await act(async () => {
+      await reattachTurn("t1", "turn-y:2");
+    });
+    await flush();
+    expect(notes()).toEqual([PRESSURE_NOTE]);
+  });
+
+  it("a SUSPENDED terminal is not a terminal for this either", async () => {
+    mockStream([
+      { event: "thread", data: { threadId: "t1" } },
+      { event: "message.start", data: { messageId: "m1" } },
+      { event: "done", data: { state: "suspended" } },
+    ]);
+    withCoreStatus(PRESSED);
+    await act(async () => {
+      await sendMessage("shut it down");
+    });
+    await flush();
+    expect(notes()).toEqual([]); // the owner is being asked something — not the moment for a chore
+  });
+
+  it("EXACTLY at the threshold the note fires (the comparison is `<`, not `<=`)", async () => {
+    await pressuredTurn({ enabled: true, index_pct: 80, consolidation_nudge_pct: 80 });
+    expect(notes()).toEqual(["// memory index at 80% — run /consolidate when convenient"]);
+  });
+
+  /** A status route that answers the FIRST read from `held` and every later one with `later`. */
+  function heldThenLater(later: unknown): { land: (r: Response) => void; reads: () => number } {
+    let reads = 0;
+    let land!: (r: Response) => void;
+    const held = new Promise<Response>((resolve) => (land = resolve));
+    globalThis.fetch = vi.fn((url: RequestInfo | URL) => {
+      if (!String(url).includes("/memory/core/status"))
+        return Promise.resolve(
+          sseResponse([
+            { event: "thread", data: { threadId: "t1" } },
+            { event: "message.start", data: { messageId: "m1" } },
+            { event: "done", data: { state: "completed" } },
+          ]),
+        );
+      reads++;
+      return reads === 1
+        ? held // the first check stays open across the terminals that follow
+        : Promise.resolve({ ok: true, json: async () => later } as unknown as Response);
+    });
+    return { land, reads: () => reads };
+  }
+
+  it("terminals landing while a check is in flight collapse to ONE read plus ONE follow-up", async () => {
+    const { land, reads } = heldThenLater(CALM);
+    for (const text of ["one", "two", "three"])
+      await act(async () => {
+        await sendMessage(text);
+      });
+    expect(reads()).toBe(1); // three terminals, one request
+
+    land({ ok: true, json: async () => PRESSED } as unknown as Response);
+    await flush();
+    expect(reads()).toBe(2); // the discarded terminals coalesce into a SINGLE follow-up, not two
+    expect(notes()).toEqual([PRESSURE_NOTE]); // …and the first read still delivered its note
+  });
+
+  it("a calm terminal discarded during a pressured check still re-arms the latch", async () => {
+    // The race the follow-up exists for: the CONSOLIDATION turn's own terminal — the one calm
+    // reading guaranteed to exist — landing while a pressured check is open. Dropping it would let
+    // the stale pressured answer hold the latch down and silence the next episode forever.
+    await pressuredTurn(PRESSED);
+    expect(notes()).toEqual([PRESSURE_NOTE]);
+
+    const { land } = heldThenLater(CALM); // the corpus is calm by the time the follow-up reads it
+    for (const text of ["consolidate", "and on"])
+      await act(async () => {
+        await sendMessage(text);
+      });
+    land({ ok: true, json: async () => PRESSED } as unknown as Response); // the STALE answer
+    await flush();
+
+    await pressuredTurn(PRESSED); // the next episode
+    expect(notes()).toEqual([PRESSURE_NOTE, PRESSURE_NOTE]);
   });
 });
