@@ -85,28 +85,50 @@
     owner's daily); the ONE ruled delta: **arcade's drop → solid 4px `var(--accent)`** (R20 #1
     ALIGN). `--arcade-lift` gone; frontier's private player border rule deleted (§14.14
     graduation).
-  **Owed to the owner (phone/eyeball, all on prod now):** the player + pinned head under each
-  skin (esp. bezel) · arcade's solid drop under the accent-filled send · the minimal-mode gap on
-  the real notched phone (reasoned, not device-measured) · pick an icon backdrop, then approve
-  "Review app update" under the installed app's ⋮ menu (or uninstall + re-add).
+  ~~**Owed to the owner (phone/eyeball):**~~ **the 2026-08-19 owner round closed most of it:**
+  skin round ✓ "looks good" · minimal-mode gap ✓ on the notched phone · arcade's drop re-ruled
+  **slightly smaller → `--skin-lift` 3px** (`630219d`; owner note: arcade "wasn't very thought
+  of" — a real redesign is a someday-maybe, NOT backlogged) · the icon pick pends a FRESH
+  INSTALL (owner had no installed app to update — a fresh install mints the chosen backdrop
+  directly, no approval dance) · the notifications retest was IN PROGRESS at session close, no
+  result reported yet.
   **Parked by owner to its OWN session (owner at the screen):** the root cross-fade damp — the
   detail-morph's whole-screen zoom/screenshot swap; "eyeball, don't remove blind"
   (GACHA_PLAN §12.6 E1).
+- **2026-08-19: THE OWNER LIVE ROUND (this session, all owner-verified on dev same-day):**
+  ① R20 #4 white-bar CLOSED (owner diagnosis; R20/R21 fully drained) · ② **the pinned plan pill
+  floats OVER the oracle** (`a90ad84`, owner round 3): the panel's sticky flow box had reserved a
+  pill-height band over the full-bleed art — the art now pulls up by the measured `--plan-head-h`
+  too, pill overlays like the launcher icons; permanent e2e arm pins the 12-cell invariant
+  (probe gotcha recorded in the arm: the thread bottom-pins on load, so the static fade-off
+  oracle must be measured at scrollTop 0) · ③ arcade drop → 3px (`630219d`) · ④ **the `cache_n`
+  measure ran** (`8eea6c2`; §14 Measured bullet — assembly holds, the SWA host drops the cache) ·
+  ⑤ **the FIRST CONSOLIDATION RUN ran on dev and FAILED informatively** (`11fdcaf`,
+  CORE_MEMORY_PLAN **§14c** = the full record + the two-sided redesign brief: zero writes, rails
+  held — CAS blocked a real whole-file-rewrite-from-truncated-read near-miss; the shipped prompt
+  asks for a pass the per-turn budgets make structurally impossible; **owner direction: the
+  consolidation mechanism, especially the prompt, gets a REAL DESIGN PASS before it is ever
+  automated** — the session pends) · ⑥ **ISS-3 CLOSED** (vapor + minimal appbar worked all along
+  since D51 deleted the bespoke bar; owner-verified "looks good", menu icon included).
 
 ## ▶▶ NEXT — Phase 20 is DONE; the owner court is up
 
 **The whole D57 ladder is built, reviewed and committed** (see the Current-state bullet). What
 remains is owner-court, in the owner's order:
 
-1. ~~Push the commit stack~~ ✅ 2026-08-17; ~~the polish wave + v1.7.2 release~~ ✅ 2026-08-18.
-   **The owner's post-release rounds are up first** (the "Owed to the owner" list in the wave
-   bullet above) · then the **root cross-fade session** (parked, owner at the screen).
+1. ~~Push the commit stack~~ ✅ 2026-08-17; ~~the polish wave + v1.7.2 release~~ ✅ 2026-08-18;
+   ~~the post-release rounds~~ mostly ✅ 2026-08-19 (the owner-round bullet above). Still open
+   from the rounds: the **notifications result** (was mid-test) · the **icon fresh-install** ·
+   the **root cross-fade session** (parked, owner at the screen). The 2026-08-19 commit stack is
+   UNPUSHED and unreleased — release it with the next batch alongside the 2026-08-18 pair.
 2. **Core Memory prod adoption — ⏸ OWNER-DEFERRED (owner, 2026-08-17): "not right now; I just
    want the system working and ready for whenever I want to delve into it."** Don't re-propose
    the drive; readiness is now a VERIFIED property owned by Phase 19 Packet ③'s core-memory
    readiness rider (a scripted end-to-end dev exercise, §14b as template). When the owner does
    delve in: enable on prod per §3b (the pre-copy `.gitignore` step first!), real vault, a
-   promotion, a `consolidation` run (dev's 99%-full index = ready testbed). ~~The live `cache_n`
+   promotion, a `consolidation` run — **⚠ the first consolidation run FAILED on dev 2026-08-19
+   (§14c): do NOT re-run it as shipped; the redesign session (prompt + runtime seams) comes
+   first, owner-directed**. ~~The live `cache_n`
    measure~~ ✅ run 2026-08-19 (CORE_MEMORY_PLAN §14 Measured bullet): ctrl-b's assembly holds
    D15 #4 (writes diverge only inside the index block, head byte-stable) but the local gemma
    host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention
