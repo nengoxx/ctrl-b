@@ -15,8 +15,10 @@ Gating, in order: the two-layer exposure gate (the session hides the tool from t
 the slot is off — `AgentSession._hidden_tools` — and this file re-checks `enabled()` at invoke, so a
 hallucinated or stale-context call is denied rather than run, fit audit C2); then `memory.auto_write`
 for the four mutations (council Codex-6 — denied with a steering error naming the switch, never a
-silent write); then the per-turn recall budget for the two reads (§4, council Codex-11). Every
-invocation is audited by `ActionService._record` like any other tool.
+silent write); then the per-turn recall budget for the two reads (§4, council Codex-11), which
+D60 ② makes their ONLY bound — read-class calls no longer count against `max_calls_per_tool`, so
+every one of them charges at least `recall_min_charge_chars` whatever it returns. Every invocation
+is audited by `ActionService._record` like any other tool.
 
 LOW risk → auto-runs under the agent's CONFIRM privilege, like `memory`. `core=False` (§5) so an
 agent's `tools` allowlist can exclude it.
@@ -24,6 +26,7 @@ agent's `tools` allowlist can exclude it.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -43,6 +46,12 @@ from app.services.agent.prompts import resolve
 
 #: Actions that change the corpus — the set the `memory.auto_write` switch governs.
 _MUTATIONS = ("create", "update", "remove", "delete")
+
+#: The READ-CLASS actions (D60 ②). Named here, beside the dispatcher that runs them, because the
+#: agent loop asks this file (`is_recall_call`) rather than knowing the corpus's vocabulary itself.
+#: Spelled out rather than derived as "not a mutation" so a malformed/unknown action stays inside
+#: the blanket per-tool cap — only these two are exempt from it, bounded by the recall budget instead.
+_READS = ("read", "search")
 
 
 class CoreMemoryInput(BaseModel):
@@ -99,6 +108,20 @@ class CoreMemoryInput(BaseModel):
         default="",
         description="For `delete`: the `content_hash` the last `read` of this topic returned.",
     )
+    superseded_by: str = Field(
+        default="",
+        description=(
+            "For `delete`: the path of the topic that REPLACES this one. It must already exist — "
+            "`create` the merged topic first, then delete the originals. Give this OR `reason`."
+        ),
+    )
+    reason: str = Field(
+        default="",
+        description=(
+            "For `delete`: one line saying why this topic goes away, when nothing replaces it "
+            "(e.g. 'the host it documents was decommissioned'). Give this OR `superseded_by`."
+        ),
+    )
 
 
 @action(
@@ -114,7 +137,8 @@ class CoreMemoryInput(BaseModel):
         "real source lives somewhere else. `read` a topic the index says is relevant BEFORE you "
         "answer; `search` when the fact you need might sit in a body the hooks don't mention; "
         "`create` a new topic, `update`/`remove` a passage inside one, `delete` a whole topic that is "
-        "wrong or obsolete."
+        "wrong or obsolete — a `delete` must name the topic that supersedes it (create that one "
+        "FIRST) or give a reason, and it archives rather than destroys."
     ),
     icon="library",
     category="builtin",
@@ -135,6 +159,14 @@ async def core_memory(inp: CoreMemoryInput, ctx: InvocationContext) -> ToolResul
     if gated is not None:
         return gated
     assert corpus is not None, "the gate returns on a missing corpus, so it is wired past this point"
+    if inp.action in _READS:
+        # D60 §15b-3: EVERY read-class call charges the floor, before it runs — a refused `read` or an
+        # empty `search` returns no framed output at all, and with reads now outside the per-tool cap
+        # a zero-cost failure would loop forever. `_recalled` then charges only what a result costs
+        # ABOVE this floor, so a real read still costs exactly its own length.
+        spent = _charge(ctx, corpus, corpus.recall_min_charge_chars())
+        if spent is not None:
+            return spent
     try:
         if inp.action == "read":
             read = corpus.read_topic(inp.path)
@@ -152,12 +184,27 @@ async def core_memory(inp: CoreMemoryInput, ctx: InvocationContext) -> ToolResul
         elif inp.action == "remove":
             summary = await corpus.remove(inp.path, inp.old_text)
         else:
-            summary = await corpus.delete(inp.path, inp.content_hash)
+            summary = await corpus.delete(
+                inp.path,
+                inp.content_hash,
+                superseded_by=inp.superseded_by,
+                reason=inp.reason,
+            )
     except CoreMemoryError as exc:
         return ToolResult(state=RunState.ERROR, summary=f"core memory: {inp.action} refused", error=str(exc))
     except OSError as exc:  # a disk/permission failure is data for the model, not a crashed turn
         return ToolResult(state=RunState.ERROR, summary=f"core memory: {inp.action} failed", error=str(exc))
     return ToolResult(state=RunState.OK, summary=f"core memory: {summary}")
+
+
+def is_recall_call(tool: str, args: Mapping[str, object]) -> bool:
+    """Is this a `core_memory` READ-class call (D60 ②)? The agent loop's per-tool call cap
+    (`max_calls_per_tool`) skips these: they are already bounded by `recall_char_limit`, which is the
+    honest read budget, and one shared counter for reads AND writes is what made the turn that reads
+    unable to write (§14d). Classification lives HERE, next to the action set, so the loop never
+    grows a second copy of the corpus's vocabulary. Reads the raw arg map (what the loop has in hand
+    before validation), so a missing/odd `action` is simply not read-class — it stays capped."""
+    return tool == CORE_MEMORY_TOOL and str(args.get("action") or "") in _READS
 
 
 def gate_core_memory(corpus: CoreMemoryCorpus | None, inp: CoreMemoryInput) -> ToolResult | None:
@@ -224,30 +271,41 @@ def _hits_result(hits: tuple[CoreHit, ...]) -> tuple[str, str]:
     return f"searched core memory — {len(hits)} topic(s) matched", render_hits(hits)
 
 
+def _charge(ctx: InvocationContext, corpus: CoreMemoryCorpus, chars: int) -> ToolResult | None:
+    """Add `chars` to the turn's recall budget, or return the steering refusal when that would cross
+    `recall_char_limit` (§4, council Codex-11). The ONE place the budget moves — a result that would
+    cross the cap is refused rather than trimmed, so the model chooses what else to read instead of
+    silently losing half a topic. `None` budget (no session threading it) ⇒ nothing to charge."""
+    budget = ctx.recall
+    if budget is None or chars <= 0:
+        return None
+    cap = corpus.recall_char_limit()
+    if budget.used + chars > cap:
+        return ToolResult(
+            state=RunState.ERROR,
+            summary="core-memory recall budget spent for this turn",
+            error=f"this would put you past the {cap:,}-character recall limit for one turn "
+            f"({budget.used:,} already used). Answer with what you have, or read something "
+            "shorter — the limit resets next turn.",
+        )
+    budget.used += chars
+    return None
+
+
 def _recalled(
     ctx: InvocationContext, corpus: CoreMemoryCorpus, source: str, produced: tuple[str, str]
 ) -> ToolResult:
-    """Frame recalled content with the `core_memory_recall` prompt and charge it to the turn's budget
-    (§4, council Codex-11). The budget counts the COMPLETE framed output — the framing is context the
-    model pays for too — and a result that would cross `recall_char_limit` is refused with a steering
-    error rather than trimmed, so the model chooses what else to read instead of silently losing half
-    a topic.
+    """Frame recalled content with the `core_memory_recall` prompt and charge it to the turn's budget.
+    The budget counts the COMPLETE framed output — the framing is context the model pays for too —
+    minus the floor the call already paid up-front (D60 §15b-3), so the total charged for a real
+    result is exactly its own length.
 
     The frame is resolved before the check, so a refused read still records the prompt's stamp: the
     same benign over-report the ephemeral reflection nudge already has (`AgentSession._stamps`)."""
     summary, body = produced
     output = resolve("core_memory_recall", corpus.settings, {"source": source}, stamps=ctx.stamps)
     output = f"{output}\n\n{body}"
-    budget = ctx.recall
-    cap = corpus.recall_char_limit()
-    if budget is not None:
-        if budget.used + len(output) > cap:
-            return ToolResult(
-                state=RunState.ERROR,
-                summary="core-memory recall budget spent for this turn",
-                error=f"this would put you past the {cap:,}-character recall limit for one turn "
-                f"({budget.used:,} already used). Answer with what you have, or read something "
-                "shorter — the limit resets next turn.",
-            )
-        budget.used += len(output)
+    refused = _charge(ctx, corpus, len(output) - corpus.recall_min_charge_chars())
+    if refused is not None:
+        return refused
     return ToolResult(state=RunState.OK, summary=summary, output=output)

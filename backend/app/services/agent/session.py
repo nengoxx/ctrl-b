@@ -86,6 +86,7 @@ from app.services.agent.compaction import (
     plan_clearing,
 )
 from app.services.agent.core_memory import CORE_MEMORY_TOOL, CoreMemoryCorpus, RecallBudget
+from app.services.agent.core_memory_tool import is_recall_call
 from app.services.agent.exec import run_user_exec
 from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
@@ -207,6 +208,10 @@ class _LoopGuard:
 
     max_repeat: int
     max_per_tool: int
+    #: Per-tool REPLACEMENTS of `max_per_tool` (D60 ②, `tool_overrides.<tool>.max_calls`) — absent
+    #: means the blanket cap, present means that number for that tool. Snapshotted per turn from the
+    #: live settings at `_drive` entry, like every other per-turn limit.
+    per_tool_max: dict[str, int] = field(default_factory=dict)
     counts: dict[str, int] = field(default_factory=dict)
     tool_counts: dict[str, int] = field(default_factory=dict)
     last_results: dict[str, ToolResult] = field(default_factory=dict)
@@ -231,6 +236,19 @@ class _LoopGuard:
     @staticmethod
     def sig(tool: str, args: dict) -> str:
         return f"{tool}:{json.dumps(args, sort_keys=True, default=str)}"
+
+    def cap_for(self, tool: str) -> int:
+        """This tool's per-turn call cap: its `tool_overrides.<tool>.max_calls` REPLACEMENT when the
+        owner set one, else the agent's blanket `max_calls_per_tool` (D60 ②, §15b-9)."""
+        return self.per_tool_max.get(tool, self.max_per_tool)
+
+    @staticmethod
+    def uncapped(tool: str, args: dict) -> bool:
+        """Is this call exempt from the per-tool cap entirely (D60 ②)? Today: `core_memory`
+        READ-class calls, which the per-turn recall budget bounds instead — one counter funding reads
+        AND writes is what stopped a merge turn from writing what it had just read (§14d). The
+        classification itself lives on the tool (`is_recall_call`), never re-derived here."""
+        return is_recall_call(tool, args)
 
     @staticmethod
     def result_sig(sig: str, result: ToolResult) -> str:
@@ -1238,6 +1256,7 @@ class AgentSession:
         guard = _LoopGuard(
             max_repeat=self._agent.max_repeat_calls,
             max_per_tool=self._agent.max_calls_per_tool,
+            per_tool_max=self._per_tool_caps(),
         )
         # ── D43/A4 failure-fallback routing: resolve ONE routed `ModelRef` for this LOGICAL turn ─────
         # RESOLVED FIRST — above the resume batch — so a re-suspend during that batch can freeze the same
@@ -2066,7 +2085,8 @@ class AgentSession:
               (a resume batch's leading calls are `_RESOLVED` and the resumed call carries a token → a
               resume ALWAYS yields an empty prefix; resumes stay serial by construction).
           (b) **not suppressed vs the CURRENT guard** — `sig not in denied_sigs`; per-tool cap
-              `tool_counts[tool] < max_per_tool`; repeat-cap `counts[sig] < max_repeat`. Repeat-cap
+              `tool_counts[tool] < cap_for(tool)` (skipped entirely for an `uncapped` call — D60 ②,
+              which then does not spend the counter either); repeat-cap `counts[sig] < max_repeat`. Repeat-cap
               reads **counts ONLY** — NOT `last_results`/`seen_results`: those are *completion* state
               (populated when a call finishes), and the serial tail re-checks this call AFTER its
               prefix twins complete and populate `last_results`, reproducing today's `>= max_repeat AND
@@ -2120,7 +2140,10 @@ class AgentSession:
             # (b) suppression vs CURRENT guard + tentative in-batch admissions (counts only).
             if sig in guard.denied_sigs:
                 break
-            if guard.tool_counts.get(cp.tool, 0) + tool_overlay.get(cp.tool, 0) >= guard.max_per_tool:
+            capped = not guard.uncapped(cp.tool, cp.args)  # D60 ②: a core_memory read is uncapped
+            if capped and guard.tool_counts.get(cp.tool, 0) + tool_overlay.get(cp.tool, 0) >= guard.cap_for(
+                cp.tool
+            ):
                 break
             if guard.counts.get(sig, 0) + counts_overlay.get(sig, 0) >= guard.max_repeat:
                 break
@@ -2147,9 +2170,11 @@ class AgentSession:
             ):
                 break
             # Tentative admission: bump the overlay so the NEXT call in this batch sees it. NO guard
-            # mutation yet — committed below only for a real (≥2) prefix.
+            # mutation yet — committed below only for a real (≥2) prefix. An uncapped call is not
+            # COUNTED either (D60 ②) — a counter nobody reads would still be spent by later calls.
             counts_overlay[sig] = counts_overlay.get(sig, 0) + 1
-            tool_overlay[cp.tool] = tool_overlay.get(cp.tool, 0) + 1
+            if capped:
+                tool_overlay[cp.tool] = tool_overlay.get(cp.tool, 0) + 1
             tentative.append(cp)
 
         if len(tentative) >= 2:
@@ -2158,7 +2183,8 @@ class AgentSession:
             for cp in tentative:
                 sig = _LoopGuard.sig(cp.tool, cp.args)
                 guard.counts[sig] = guard.counts.get(sig, 0) + 1
-                guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
+                if not guard.uncapped(cp.tool, cp.args):
+                    guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
             return _BatchPlan(prefix=tentative, serial_from=len(tentative))
         # ≤1 eligible → pure serial path, zero guard mutation.
         return _BatchPlan(prefix=[], serial_from=0)
@@ -2229,6 +2255,18 @@ class AgentSession:
                 state=RunState.ERROR, summary=f"invalid arguments for {tool}", error=str(exc)[:300]
             )
         return ToolResult(state=RunState.ERROR, summary=f"{tool} failed", error=str(exc)[:300])
+
+    def _per_tool_caps(self) -> dict[str, int]:
+        """The `tool_overrides.<tool>.max_calls` replacements for this turn (D60 ②) — read off the
+        live settings at `_drive` entry, the same per-invocation source `ApprovalRule`s use (never an
+        `apply_tool_overrides` spec overlay: this is a loop limit, not a schema field)."""
+        overrides: dict = getattr(self._settings, "tool_overrides", None) or {}
+        caps: dict[str, int] = {}
+        for name, ov in overrides.items():
+            cap = getattr(ov, "max_calls", None)
+            if isinstance(cap, int) and cap >= 1:
+                caps[name] = cap
+        return caps
 
     def _tool_allowed(self, name: str) -> bool:
         """Is `name` inside THIS turn's effective toolset (M1/C-11)? Computed at call time from
@@ -2548,7 +2586,9 @@ class AgentSession:
                                 summary=f"(repeat suppressed) {prior.summary}",
                                 output=resolve("repeat_suppressed", self._settings, stamps=self._stamps),
                             )
-                        elif guard.tool_counts.get(cp.tool, 0) >= guard.max_per_tool:
+                        elif not guard.uncapped(cp.tool, cp.args) and guard.tool_counts.get(
+                            cp.tool, 0
+                        ) >= guard.cap_for(cp.tool):
                             suppressed = ToolResult(
                                 state=RunState.DENIED,
                                 summary=f"(call limit) {cp.tool} used too many times this turn",
@@ -2573,7 +2613,8 @@ class AgentSession:
                         continue
                     if token is None:
                         guard.counts[sig] = guard.counts.get(sig, 0) + 1
-                        guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
+                        if not guard.uncapped(cp.tool, cp.args):  # D60 ②: reads don't spend the cap
+                            guard.tool_counts[cp.tool] = guard.tool_counts.get(cp.tool, 0) + 1
                     if not self._tool_allowed(cp.tool):
                         # M1/C-11 — outside the effective allowlist. Checked FIRST: the capability
                         # boundary outranks argument validity (steering a repair for a tool that cannot

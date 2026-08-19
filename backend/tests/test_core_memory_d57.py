@@ -164,6 +164,7 @@ def test_the_example_config_documents_the_same_tier2_block():
         "index_char_limit": 8192,
         "topic_char_limit": 4096,
         "recall_char_limit": 20480,
+        "recall_min_charge_chars": 256,  # D60 §15b-3
         "consolidation_nudge_pct": 80,
     }
     assert MemoryCfg(**parsed["memory"]).longterm == MemoryCfg().longterm

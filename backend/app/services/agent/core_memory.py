@@ -70,6 +70,16 @@ _INDEX_NAME = "MEMORY.md"
 #: Directory basename a copied Claude corpus uses for its own logs — foreign, never a topic tree.
 _EXCLUDED_DIR = "logs"
 
+#: Where a SOFT-deleted topic goes (D60 ③): `<root>/.archive/<its relative path>`. A dotted component,
+#: so the scan skips the whole tree for free and `topic_path` can never address anything inside it —
+#: zero scan/render changes, and recovery is a file move. Pruning it is the owner's (recorded
+#: non-build). The relative path is MIRRORED rather than flattened so two same-named topics in
+#: different directories can't collide, and a restore is a move back to where the path already says.
+_ARCHIVE_DIR = ".archive"
+
+#: Cap for a `delete` `reason` as it reaches the D26 commit subject (§15b-13) — a subject, not a note.
+_REASON_MAX_CHARS = 120
+
 #: Tier-1 store filenames (D27 `STORES`), read from the registry so a new store extends this for
 #: free. A core root that would put its index or scan tree on top of one of these is refused.
 _TIER1_FILENAMES = frozenset(spec.filename for spec in STORES)
@@ -259,6 +269,11 @@ class CoreMemoryCorpus:
     def recall_char_limit(self) -> int:
         """The per-turn recall cap the `RecallBudget` is measured against, read live (§4)."""
         return self._cfg.recall_char_limit
+
+    def recall_min_charge_chars(self) -> int:
+        """The minimum ONE read-class call charges against that cap (D60 §15b-3), read live — the
+        structural bound on a zero-char read loop now that reads are outside `max_calls_per_tool`."""
+        return self._cfg.recall_min_charge_chars
 
     def enabled(self) -> bool:
         """Whether tier 2 is Core Memory right now — `MemoryCfg.core_memory_on()`, read live. The
@@ -627,18 +642,28 @@ class CoreMemoryCorpus:
         """Delete the unique occurrence of `old_text` from one topic."""
         return await self._edit(raw_path, old_text, "", "remove")
 
-    async def delete(self, raw_path: str, content_hash: str) -> str:
-        """A whole topic + its index line, gated on the `content_hash` `read` returned (council
-        Codex-3: a description token both fails CAS — a body can change under an unchanged description
-        — and is unusable on a copied corpus whose descriptions outrun the read cap).
+    async def delete(
+        self, raw_path: str, content_hash: str, *, superseded_by: str = "", reason: str = ""
+    ) -> str:
+        """SOFT-delete a whole topic (D60 ③): archive the file, drop its index line. Gated on the
+        `content_hash` `read` returned (council Codex-3: a description token both fails CAS — a body
+        can change under an unchanged description — and is unusable on a copied corpus whose
+        descriptions outrun the read cap) AND on an INTENT: exactly one of `superseded_by` (a topic
+        that must already exist — create-before-delete, enforced rather than model-disciplined) or a
+        free-text `reason`. Run 2 (§14d) issued a correctly-formed delete of a live topic whose merged
+        replacement had been cap-denied one turn earlier; CAS validates form, and form was not enough.
 
-        Ordering (§5): index line first, topic second — a retry completes either remainder."""
+        Ordering (§15b-4): validate everything → rename into `.archive/` → atomic-replace the index;
+        an index failure renames the topic BACK, so the pair never half-lands. A crash between the two
+        leaves a dangling index line, which the scan already drops on read and a retry cleans up."""
         root = self._root_or_raise()
         path, rel = self._confine(raw_path, root)
+        note = _delete_note(superseded_by, reason)
         await self._guarded(
-            lambda: self._delete_blocking(root, path, rel, content_hash), _commit_msg("delete", rel)
+            lambda: self._delete_blocking(root, path, rel, content_hash, superseded_by),
+            _commit_msg("delete", rel, note),
         )
-        return f"deleted {rel} and removed its index line"
+        return f"archived {rel} and removed its index line ({note})"
 
     async def _edit(self, raw_path: str, old_text: str, new_text: str, action: str) -> str:
         """The shared body of `update`/`remove`: one CAS'd substring edit of one topic file. The index
@@ -754,13 +779,20 @@ class CoreMemoryCorpus:
             written.append(index)
         return _WriteOutcome(written, len(merged))
 
-    def _delete_blocking(self, root: Path, path: Path, rel: str, content_hash: str) -> _WriteOutcome:
+    def _delete_blocking(
+        self, root: Path, path: Path, rel: str, content_hash: str, superseded_by: str
+    ) -> _WriteOutcome:
         raw = _index_raw(root)
         listed = any(target == rel for _title, target, _hook in _parse_index(raw))
         if not path.exists() and not listed:
             raise CoreMemoryError(
                 f"no topic at {rel} — nothing to delete (if you just deleted it, it is already gone)."
             )
+        # Every validation runs before ANY write (§15b-4), and the supersedes check runs HERE — inside
+        # the same guarded critical section as the mutation, so nothing can create/remove the
+        # replacement between the check and the rename (§15b-8, no TOCTOU).
+        if superseded_by:
+            self._require_supersedes(root, rel, superseded_by)
         if path.exists():
             # The expected-state gate, checked BEFORE either step so a stale token changes nothing.
             actual = _content_hash(path)
@@ -769,19 +801,50 @@ class CoreMemoryCorpus:
                     f"{rel} has changed since you read it — its content hash no longer matches the "
                     "one you sent. Read it again and re-check before deleting."
                 )
+        dest = root / _ARCHIVE_DIR / rel
+        if path.exists() and dest.exists():
+            # NO-CLOBBER (§15b-5): a previous archive of the same path is the owner's to keep. No
+            # versioned naming — one clear refusal the model can act on beats a silent second copy.
+            raise CoreMemoryError(
+                f"{_ARCHIVE_DIR}/{rel} already holds an earlier archived copy of this topic — restore "
+                "or rename that one before archiving another over it."
+            )
         written: list[Path] = []
-        if listed:  # index line first (§5): a retry then completes whichever half is left
+        if path.exists():  # topic first (§15b-4): the index replace can still be rolled back
+            _archive_move(path, dest)
+            written += [path, dest]
+        if listed:
             index = root / _INDEX_NAME
-            # OVERRULE (S3 review): no secret gate on this write. `_drop_entry` only REMOVES lines, so
-            # the result is a strict subset of an index that already passed the gate — a removal
-            # cannot introduce a secret, and gating it would make `delete` refusable by a leak that is
-            # already on disk (the one operation that would clean it up).
-            atomic_write_text(index, _drop_entry(raw, rel))
+            try:
+                # OVERRULE (S3 review): no secret gate on this write. `_drop_entry` only REMOVES lines,
+                # so the result is a strict subset of an index that already passed the gate — a removal
+                # cannot introduce a secret, and gating it would make `delete` refusable by a leak that
+                # is already on disk (the one operation that would clean it up).
+                atomic_write_text(index, _drop_entry(raw, rel))
+            except OSError:
+                if path in written:
+                    _archive_move(dest, path)  # roll the topic back — the pair never half-lands
+                raise
             written.append(index)
-        if path.exists():
-            _remove_file(path)
-            written.append(path)
         return _WriteOutcome(written)
+
+    def _require_supersedes(self, root: Path, rel: str, superseded_by: str) -> None:
+        """§15b-8: `superseded_by` must name a LIVE topic that already exists — the create-before-delete
+        rail. Resolved through the SAME canonical resolver `read`/`create` use (`_confine`, which
+        normalizes the `.md` path and refuses dotted components, so `.archive/` is excluded by
+        construction), refused on self-reference, and required to be a regular file. Index
+        discoverability is deliberately NOT required: a fresh `create` always indexes, and a
+        parseable-but-unindexed topic stays legal (§3)."""
+        other, other_rel = self._confine(superseded_by, root)
+        if other_rel == rel:
+            raise CoreMemoryError(
+                f"{rel} cannot supersede itself — name the topic that REPLACES it, or give a `reason`."
+            )
+        if not other.is_file():
+            raise CoreMemoryError(
+                f"no topic at {other_rel} — create {other_rel} first, then retry this delete "
+                "(the replacement must exist before the topic it replaces goes away)."
+            )
 
     # ── write-side rails ──────────────────────────────────────────────────────────────────────────
 
@@ -1177,15 +1240,39 @@ def _drop_entry(raw: str, rel: str) -> str:
     return f"{body}\n" if body else ""
 
 
-def _remove_file(path: Path) -> None:
-    """Delete a topic file. A named module function so the fault-injection tests can fail exactly
-    this step (the family-3 charter fault-injects between EVERY topic/index step)."""
-    path.unlink()
+def _archive_move(src: Path, dest: Path) -> None:
+    """Move a topic into (or back out of) `.archive/` — one atomic same-filesystem rename, the whole
+    of D60 ③'s soft delete (it replaces the old unlink: nothing here destroys a topic any more). A
+    named module function so the fault-injection tests can fail exactly this step (the family-3
+    charter fault-injects between EVERY topic/index step), used for the ROLLBACK direction too so
+    both halves are the one operation."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(src, dest)
 
 
-def _commit_msg(action: str, rel: str) -> str:
-    """A content-free D26 commit subject (the tier-1 rule): which action, which file, never the text."""
-    return f"core memory: {action} {rel}"
+def _delete_note(superseded_by: str, reason: str) -> str:
+    """The delete's stated INTENT, validated and rendered for the D26 subject (D60 ③ / §15b-13).
+    Exactly one of the two: a `superseded_by` topic (existence-checked later, under the lock) or a
+    free-text `reason` — collapsed to one line, control characters refused, length-capped, and
+    passed to git as an ARGUMENT (`commit -m <msg>`, never a shell string)."""
+    target, why = superseded_by.strip(), reason.strip()
+    if bool(target) == bool(why):
+        raise CoreMemoryError(
+            "a `delete` must say why: set `superseded_by` to the topic that replaces this one "
+            "(create it FIRST), or set `reason` when nothing replaces it — exactly one of the two."
+        )
+    if target:
+        return f"superseded by {target}"
+    if _CONTROL.search(why.replace("\n", " ").replace("\t", " ").replace("\r", " ")):
+        raise CoreMemoryError("`reason` carries control characters — send plain one-line text.")
+    return " ".join(why.split())[:_REASON_MAX_CHARS]
+
+
+def _commit_msg(action: str, rel: str, note: str = "") -> str:
+    """A content-free D26 commit subject (the tier-1 rule): which action, which file, never the text.
+    `note` is the delete's validated intent (letta-code's shape) — a topic name or a sanitized
+    reason, both of which are the model's own words ABOUT the change, not the content."""
+    return f"core memory: {action} {rel}" + (f" — {note}" if note else "")
 
 
 def _normalize(text: str) -> str:

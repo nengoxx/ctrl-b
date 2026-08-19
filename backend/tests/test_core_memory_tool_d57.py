@@ -16,8 +16,9 @@ exercised:
                   a stale-body `delete` under an unchanged description caught by the hash token.
   4. Orderings  — fault injection BOTH SIDES of every topic/index step of create/delete (crash
                   before the write, and crash after it landed) proves the §5 orderings repair on the
-                  retry (create: topic → index; delete: index → topic) — and an unreadable index
-                  refuses the whole mutation rather than being replaced.
+                  retry (create: topic → index; delete since D60 ③: topic → `.archive/` → index, with
+                  the index failure rolling the archive move BACK) — and an unreadable index refuses
+                  the whole mutation rather than being replaced.
   5. Confinement— traversal, absolute, `..`, `MEMORY.md`, dotted and `logs` components, the Windows
                   path aliases (trailing dot/space, reserved device stems) and a symlink component
                   rejected on every operation.
@@ -195,7 +196,7 @@ def test_read_hashes_the_bytes_it_returned(tmp_path):
     assert read.content_hash == hashlib.sha256(read.text.encode("utf-8")).hexdigest()  # by construction
     assert read.content_hash != hashlib.sha256((root / "wake.md").read_bytes()).hexdigest()
     with pytest.raises(CoreMemoryError) as exc:  # …so the token it handed out is correctly stale
-        run_async(corpus.delete("wake.md", read.content_hash))
+        run_async(corpus.delete("wake.md", read.content_hash, reason="stale"))
     assert "content hash" in str(exc.value)
 
 
@@ -454,11 +455,14 @@ def test_a_stale_body_under_an_unchanged_description_is_caught_by_the_hash(tmp_p
     run_async(corpus.update("wake.md", "Press the button.", "Press the big button."))
 
     with pytest.raises(CoreMemoryError) as exc:
-        run_async(corpus.delete("wake.md", stale))
+        run_async(corpus.delete("wake.md", stale, reason="stale"))
     assert "content hash" in str(exc.value)
     assert (root / "wake.md").is_file() and "- [Wake](wake.md)" in (root / "MEMORY.md").read_text()
-    run_async(corpus.delete("wake.md", corpus.read_topic("wake.md").content_hash))  # fresh token works
-    assert not (root / "wake.md").exists()
+    run_async(
+        corpus.delete("wake.md", corpus.read_topic("wake.md").content_hash, reason="obsolete")
+    )  # fresh token works
+    assert not (root / "wake.md").exists()  # …moved to `.archive/`, not destroyed (D60 ③)
+    assert (root / ".archive" / "wake.md").is_file()
 
 
 # ── 4. the crash-tolerant orderings (§5, council Codex-4) ─────────────────────────────────────────
@@ -490,21 +494,21 @@ def _fail_write_on(monkeypatch, nth: int, *, after: bool = False):
 
 
 @contextlib.contextmanager
-def _fail_remove(monkeypatch, *, after: bool = False):
-    """The same both-sides injection for the topic-unlink half of `delete` — the step that is not an
-    atomic write."""
-    real = cm._remove_file
+def _fail_archive(monkeypatch, *, after: bool = False):
+    """The same both-sides injection for `delete`'s archive-move half (D60 ③) — the step that is not
+    an atomic write. `after=True` performs the real rename and then raises."""
+    real = cm._archive_move
 
-    def boom(path):
+    def boom(src, dest):
         if after:
-            real(path)
+            real(src, dest)
         raise OSError("busy")
 
-    monkeypatch.setattr(cm, "_remove_file", boom)
+    monkeypatch.setattr(cm, "_archive_move", boom)
     try:
         yield
     finally:
-        monkeypatch.setattr(cm, "_remove_file", real)
+        monkeypatch.setattr(cm, "_archive_move", real)
 
 
 def test_create_writes_the_topic_first_and_a_retry_completes_the_index(tmp_path, monkeypatch):
@@ -531,16 +535,15 @@ def test_a_create_that_dies_on_its_first_step_leaves_nothing_behind(tmp_path, mo
 
 
 def test_a_delete_that_dies_on_its_first_step_changes_nothing(tmp_path, monkeypatch):
-    """And of the delete ordering: the index line is step ONE, so a failure there leaves the topic
-    fully listed — the retry starts from an unchanged corpus."""
+    """And of the delete ordering (D60 ③, inverted): the ARCHIVE MOVE is step ONE, so a failure there
+    leaves the topic in place and fully listed — the retry starts from an unchanged corpus."""
     corpus, root = _seeded(tmp_path)
     digest = corpus.read_topic("wake.md").content_hash
-    before = (root / "MEMORY.md").read_text(encoding="utf-8")
+    before = _tree(root)
 
-    with _fail_write_on(monkeypatch, 1), pytest.raises(OSError):
-        run_async(corpus.delete("wake.md", digest))
-    assert (root / "wake.md").is_file()
-    assert (root / "MEMORY.md").read_text(encoding="utf-8") == before
+    with _fail_archive(monkeypatch), pytest.raises(OSError):
+        run_async(corpus.delete("wake.md", digest, reason="obsolete"))
+    assert _tree(root) == before
 
 
 def test_create_refuses_a_different_topic_at_the_same_path(tmp_path):
@@ -552,21 +555,23 @@ def test_create_refuses_a_different_topic_at_the_same_path(tmp_path):
     assert "already exists" in str(exc.value)
 
 
-def test_delete_removes_the_index_line_first_and_a_retry_completes_the_topic(tmp_path, monkeypatch):
+def test_delete_archives_the_topic_first_and_rolls_it_back_if_the_index_fails(tmp_path, monkeypatch):
+    """D60 §15b-4: topic → `.archive/` first, index replace second, and a FAILING index write renames
+    the topic back — the pair never half-lands. The retry then runs against an unchanged corpus."""
     corpus, root = _seeded(tmp_path)
     _topic(root, "other.md", "---\nname: Other\ndescription: keep me\n---\n\nbody\n")
     _index(root, "- [Wake](wake.md) — how hosts wake", "- [Other](other.md) — keep me")
     digest = corpus.read_topic("wake.md").content_hash
+    before = _tree(root)
 
-    with _fail_remove(monkeypatch):
-        with pytest.raises(OSError):
-            run_async(corpus.delete("wake.md", digest))
-        index = (root / "MEMORY.md").read_text(encoding="utf-8")
-        assert "wake.md" not in index and "- [Other](other.md) — keep me" in index  # exactly its line
-        assert (root / "wake.md").is_file()  # the topic half is the remainder
+    with _fail_write_on(monkeypatch, 1), pytest.raises(OSError):  # the index write dies
+        run_async(corpus.delete("wake.md", digest, reason="obsolete"))
+    assert _tree(root) == before  # rolled back: the topic is live again, the index untouched
 
-    run_async(corpus.delete("wake.md", digest))  # the retry completes it
-    assert not (root / "wake.md").exists()
+    run_async(corpus.delete("wake.md", digest, reason="obsolete"))  # the retry completes it
+    index = (root / "MEMORY.md").read_text(encoding="utf-8")
+    assert "wake.md" not in index and "- [Other](other.md) — keep me" in index  # exactly its line
+    assert not (root / "wake.md").exists() and (root / ".archive" / "wake.md").is_file()
 
 
 def test_a_create_that_dies_just_after_the_topic_landed_still_repairs(tmp_path, monkeypatch):
@@ -596,29 +601,37 @@ def test_a_create_that_dies_after_both_steps_retries_as_a_no_op(tmp_path, monkey
     assert _tree(root) == before
 
 
-def test_a_delete_that_dies_just_after_the_index_line_went_still_repairs(tmp_path, monkeypatch):
+def test_a_delete_that_dies_just_after_the_archive_move_still_repairs(tmp_path, monkeypatch):
+    """The crash boundary of the new step one: the topic IS archived and the crash landed before the
+    index write (so the rollback never ran either). The line dangles — which the scan already drops
+    on read — and the retry completes the index half."""
     corpus, root = _seeded(tmp_path)
     digest = corpus.read_topic("wake.md").content_hash
-    with _fail_write_on(monkeypatch, 1, after=True), pytest.raises(OSError):
-        run_async(corpus.delete("wake.md", digest))
+    with _fail_archive(monkeypatch, after=True), pytest.raises(OSError):
+        run_async(corpus.delete("wake.md", digest, reason="obsolete"))
+    assert (root / ".archive" / "wake.md").is_file() and not (root / "wake.md").exists()
+    assert "wake.md" in (root / "MEMORY.md").read_text(encoding="utf-8")  # the index half remains
+    assert corpus.scan().entries == ()  # …and the reader already ignores the dangling link
+
+    run_async(corpus.delete("wake.md", digest, reason="obsolete"))
     assert "wake.md" not in (root / "MEMORY.md").read_text(encoding="utf-8")
-    assert (root / "wake.md").is_file()  # the topic half is the remainder
-
-    run_async(corpus.delete("wake.md", digest))
-    assert not (root / "wake.md").exists()
 
 
-def test_a_delete_that_dies_just_after_the_unlink_is_already_complete(tmp_path, monkeypatch):
-    """The last step of the last ordering: the file IS gone and the crash followed. The retry finds
+def test_a_delete_that_dies_after_both_steps_is_already_complete(tmp_path, monkeypatch):
+    """The last boundary: both halves landed (here via a write that succeeds and THEN raises — the
+    one shape where the rollback runs against an index that did change, leaving the legal
+    live-but-unindexed state §3 allows), and once the delete really completes, the retry finds
     nothing at either end and says so in the words a model can act on."""
     corpus, root = _seeded(tmp_path)
     digest = corpus.read_topic("wake.md").content_hash
-    with _fail_remove(monkeypatch, after=True), pytest.raises(OSError):
-        run_async(corpus.delete("wake.md", digest))
-    assert not (root / "wake.md").exists() and "wake.md" not in (root / "MEMORY.md").read_text()
+    with _fail_write_on(monkeypatch, 1, after=True), pytest.raises(OSError):
+        run_async(corpus.delete("wake.md", digest, reason="obsolete"))
+    assert (root / "wake.md").is_file()  # rolled back out of `.archive/` — never half-deleted
+    assert "wake.md" not in (root / "MEMORY.md").read_text()  # …unindexed, which is legal (§3)
 
+    run_async(corpus.delete("wake.md", digest, reason="obsolete"))
     with pytest.raises(CoreMemoryError) as exc:
-        run_async(corpus.delete("wake.md", digest))
+        run_async(corpus.delete("wake.md", digest, reason="obsolete"))
     assert "already gone" in str(exc.value)
 
 
@@ -637,7 +650,7 @@ def test_an_unreadable_index_refuses_the_write_instead_of_replacing_it(tmp_path)
     assert "unreadable" in str(exc.value) and index.read_bytes() == before
 
     with pytest.raises(CoreMemoryError) as exc:
-        run_async(corpus.delete("wake.md", digest))
+        run_async(corpus.delete("wake.md", digest, reason="obsolete"))
     assert "unreadable" in str(exc.value)
     assert index.read_bytes() == before and (root / "wake.md").is_file()
 
@@ -693,7 +706,7 @@ def test_every_path_taking_operation_confines(tmp_path, hostile, op):
         "read": lambda: corpus.read_topic(hostile),
         "update": lambda: run_async(corpus.update(hostile, "a", "b")),
         "remove": lambda: run_async(corpus.remove(hostile, "a")),
-        "delete": lambda: run_async(corpus.delete(hostile, "deadbeef")),
+        "delete": lambda: run_async(corpus.delete(hostile, "deadbeef", reason="x")),
     }
     with pytest.raises(CoreMemoryError):
         calls[op]()
@@ -745,7 +758,7 @@ def test_no_action_can_be_steered_through_a_symlink(tmp_path, action):
         "read": lambda: corpus.read_topic(linked),
         "update": lambda: run_async(corpus.update(linked, "a", "b")),
         "remove": lambda: run_async(corpus.remove(linked, "a")),
-        "delete": lambda: run_async(corpus.delete(linked, "deadbeef")),
+        "delete": lambda: run_async(corpus.delete(linked, "deadbeef", reason="x")),
     }
     with pytest.raises(CoreMemoryError) as exc:
         calls[action]()
@@ -964,6 +977,7 @@ def _valid_args(corpus: CoreMemoryCorpus, action: str) -> dict:
             "action": "delete",
             "path": "wake.md",
             "content_hash": corpus.read_topic("wake.md").content_hash,
+            "reason": "no longer true",  # D60 ③: a delete must state an intent
         },
     }[action]
 
