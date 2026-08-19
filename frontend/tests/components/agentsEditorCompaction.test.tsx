@@ -256,6 +256,25 @@ describe("AgentsEditor · draft reseed value-guard (Codex FIX B)", () => {
     expect(value("Compact at % of context")).toBe("70"); // edit survives the re-render
   });
 
+  it("a fresh-array parent re-render does NOT clobber the never-clear text being typed", () => {
+    const { rerender } = render(propsFor(baseCfg));
+    fireEvent.change(screen.getByLabelText("Tools never cleared"), {
+      target: { value: "memory, " },
+    });
+    // The list arrives as a NEW array with identical values on every ConfTab render — the reseed is
+    // keyed on the joined string, so the separator just typed survives.
+    rerender(
+      propsFor({
+        ...baseCfg,
+        compaction: {
+          ...baseCfg.compaction,
+          clear_exclude_tools: ["task_plan", "memory", "core_memory"],
+        },
+      }),
+    );
+    expect(value("Tools never cleared")).toBe("memory, ");
+  });
+
   it("a genuinely changed server value DOES reseed a CLEAN draft", () => {
     const { rerender } = render(propsFor(baseCfg));
     rerender(propsFor({ ...baseCfg, compaction: { ...baseCfg.compaction, threshold_frac: 0.6 } }));

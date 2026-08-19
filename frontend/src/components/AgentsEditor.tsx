@@ -571,10 +571,11 @@ export function AgentsEditor(props: {
   // `cfg` draft, so dirtiness and the savebar work exactly as for every other knob. Reseeded from the
   // doc whenever the saved list moves.
   const [excludeText, setExcludeText] = useState(cfg.compaction.clear_exclude_tools.join(", "));
-  useEffect(
-    () => setExcludeText(props.cfg.compaction.clear_exclude_tools.join(", ")),
-    [props.cfg.compaction.clear_exclude_tools],
-  );
+  // Keyed on the JOINED string, never the array: ConfTab rebuilds `agentCfg` fresh every render, so an
+  // array-reference dep would reseed on any unrelated parent re-render and eat the separator the owner
+  // just typed (the same class Codex FIX B closed for the draft as a whole).
+  const seededExclude = props.cfg.compaction.clear_exclude_tools.join(", ");
+  useEffect(() => setExcludeText(seededExclude), [seededExclude]);
   const commitExclude = (text: string) => {
     setExcludeText(text);
     setCompaction({ clear_exclude_tools: text.split(/[\s,]+/).filter(Boolean) });
