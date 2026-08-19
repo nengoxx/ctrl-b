@@ -866,3 +866,53 @@ gate; the family-5 byte-identity gate holds while tier 2 is off); ⑤ the dry-ru
 plan and zero corpus writes. Build = Opus from this section as the pinned brief; council = Emma
 (Codex-backed) design round before build + diff round after; then supervised RUN 3 on dev
 (dry-run first).
+
+### 15b. The D60 council round (Emma/gpt-5.6-sol, 2026-08-19) — BUILD WITH CHANGES, all 14 folded
+
+Verdict BUILD WITH CHANGES; every finding accepted, two with leaner fixes (main-seat rulings).
+The spec in §15 is amended by the following, which the builder treats as part of the pinned brief:
+
+1. **Failover gating (HIGH):** the pressure gate uses the SMALLEST `context_window` among the
+   turn's eligible chain entries; if ANY eligible model has it unset → today's always-on clearing.
+   One assembly, no per-hop re-plan.
+2. **Dry-run is structural (HIGH), via existing machinery:** the documented dry-run procedure runs
+   with `memory.auto_write` OFF so every write-class action suspends into the existing confirm
+   flow (owner inspects/denies) — no new capability flag. BUILD-TIME VERIFY: auto_write actually
+   gates core_memory write actions; if not, extending it to them is in-scope. The acceptance test
+   attempts a write and asserts the suspension/refusal, never a cooperative model.
+3. **Reads get a structural bound (HIGH):** every read-class call charges a MINIMUM unit
+   (`recall_min_charge_chars`, default 256) against the cumulative per-turn `recall_char_limit`
+   (confirmed cumulative + carried across resume), so zero-char `status`/empty-search loops
+   terminate (~80 calls/turn worst case). `max_repeat_calls` stays as an independent guard.
+4. **Archive atomicity (HIGH):** under the existing corpus lock: validate everything → rename to
+   `.archive/` → atomic-replace the index; on index failure, rename back. Reuses `_atomic_write`
+   + `MemoryBackup.guard()`. Fault-injection tests after each write step.
+5. **Archive no-clobber (HIGH):** refuse a delete whose exact archive destination exists
+   (steering: restore/rename it first). No versioned naming.
+6. **Current-turn identity (HIGH):** "the current turn" = the durable server-owned turn id
+   (D39), NOT loop-iteration offsets — pre-suspend outputs of a confirmation-resumed turn stay
+   immune (the recall budget already carries across the same boundary; same identity).
+7. **All lossy tiers honor the current-turn immunity (MED):** Tier-2/3 folds must not summarize
+   away current-turn tool outputs; verify the fold boundary already excludes them + pin by test.
+8. **`superseded_by` resolution (MED):** the canonical topic resolver shared with read/create;
+   normalize `.md` once; canonical-path self-reference refusal; must be a regular file in the
+   live root (`.archive/` excluded); validation + mutation under the same lock (no TOCTOU).
+   Index discoverability NOT required (a fresh `create` always indexes; parseable-but-unindexed
+   stays legal per §3).
+9. **`max_calls` override = REPLACE semantics (MED):** absent → the blanket cap; present → that
+   tool's cap. Named `max_calls`; documented in the Conf hint.
+10. **Config boundaries (MED):** `clear_trigger_pct` finite 0<x≤1 · `clear_min_reclaim_tokens`
+    ≥0 · `clear_keep_steps` ≥1 (unchanged) · `max_calls` ≥1 · `clear_exclude_tools` deduped
+    nonblank strings (unknown names allowed) · same pydantic model validates boot and Conf PUT.
+11. **The authoritative estimate (MED):** the gate consumes the SAME assembled-prompt estimate
+    compaction already prices (post-injection), never a partial figure.
+12. **Restore (MED):** documented as move-back + re-add the index line (the §3 write path);
+    acceptance asserts post-restore index discoverability. A `restore` action = recorded non-build.
+13. **`reason` sanitation (LOW):** nonblank, collapsed to one line, control chars rejected,
+    subject-length capped, passed as an argument (never shell).
+14. **Keep-window aging (LOW), mechanical:** current turn always retained; otherwise an output is
+    retained while its existing loop-round age ≤ `clear_keep_steps` (reuse the current age calc).
+
+The reviewer's missing-acceptance list (19 cases incl. failover-window straddles, suspend/resume
+turn identity, dry-run attempted-write, archive collision, fault injection, config extremes,
+old-config back-compat) is adopted VERBATIM into the slice's test plan.
