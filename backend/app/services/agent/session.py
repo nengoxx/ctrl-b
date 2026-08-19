@@ -837,12 +837,25 @@ class AgentSession:
         history = await self._messages.list(thread.id, include_compacted=False)
         return self._estimator.estimate(history, overhead=self._overhead_tokens(), served_key=served_key)
 
-    async def _plan_clearing(self, thread: Thread) -> ClearingPlan:
+    async def _plan_clearing(
+        self,
+        thread: Thread,
+        *,
+        window: int | None = None,
+        estimated_tokens: int | None = None,
+    ) -> ClearingPlan:
         """The iteration's Tier-1 clearing plan (D42) — the ONE selection shared by the trigger (its
         `gain` net-of-clearing) and `_assemble` (its `cleared_call_ids`). Reads the working history and
-        delegates to the pure `plan_clearing`, so both consumers price/render off the same object."""
+        delegates to the pure `plan_clearing`, so both consumers price/render off the same object.
+
+        D60: `window` is the turn's smallest chain window (`min_chain_window`) and `estimated_tokens`
+        the SAME assembled-prompt estimate the compaction trigger prices — together they are the
+        pressure gate. A caller that has no estimate in hand passes none and re-measures here through
+        `_estimate_context` (the one estimator), never a partial figure (§15b-11)."""
         history = await self._messages.list(thread.id, include_compacted=False)
-        return plan_clearing(history, self._compaction_cfg)
+        if estimated_tokens is None:
+            estimated_tokens = (await self._estimate_context(thread, None)).tokens
+        return plan_clearing(history, self._compaction_cfg, window=window, estimated_tokens=estimated_tokens)
 
     async def _over_threshold_now(self, thread: Thread) -> bool:
         """Is the thread OVER the compaction trigger right now (D42)? Resolves the window for the
@@ -859,7 +872,11 @@ class AgentSession:
         price_ep = self._inference.target_for(ref.provider, ref.model)
         window = await self._inference.effective_window(price_ep) if price_ep is not None else None
         est = await self._estimate_context(thread, price_ep.base_url if price_ep is not None else None)
-        clearing = await self._plan_clearing(thread)
+        clearing = await self._plan_clearing(
+            thread,
+            window=await self._inference.min_chain_window(ref.provider, ref.model),
+            estimated_tokens=est.tokens,
+        )
         history = await self._messages.list(thread.id, include_compacted=False)
         return self._compactor._over_threshold(
             history,
@@ -1334,6 +1351,11 @@ class AgentSession:
         #: window trigger (and the anchor's served-endpoint consistency) against it; `None` on iteration
         #: 1 ⇒ price against the selected endpoint.
         served: ResolvedTarget | None = None
+        #: The D60 Tier-1 pressure window: the SMALLEST context window across this turn's eligible
+        #: failover chain, resolved ONCE for the whole turn (§15b-1 — a failover mid-turn must not
+        #: re-plan clearing against a bigger window than the endpoint that ends up serving). `None`
+        #: (any entry unresolvable) ⇒ always-on clearing, the pre-D60 behaviour.
+        clear_window = await self._inference.min_chain_window(eff_mode, eff_model)
 
         stall = 0  # consecutive no-progress iterations (C1b) → forced wrap-up at the agent's cap
         #: D42 per-turn compaction backoff: set True after a failed (didn't-shrink) fold so AUTO-
@@ -1351,11 +1373,6 @@ class AgentSession:
             if self._steer_source is not None:
                 async for ev in self._drain_steers(thread):
                     yield ev
-            # D42 Tier 1 — the unconditional assembly-time tool-output clearing plan for THIS iteration
-            # (ONE shared selection): its `gain` prices the trigger net-of-clearing below, its
-            # `cleared_call_ids` drive `_assemble`'s output-trim rendering. Runs whenever compaction is
-            # enabled (the master switch), independent of being over threshold.
-            clearing = await self._plan_clearing(thread)
             # Compaction check before each model call (DESIGN §5.2 step 2): if the working context is
             # over the trigger, fold the oldest turns into a summary system message. D42 Wave 2 — the
             # trigger is window-aware: resolve the window (config > probe > None) for the endpoint being
@@ -1369,6 +1386,11 @@ class AgentSession:
             price_ep = served or self._inference.target_for(eff_mode, eff_model)
             window = await self._inference.effective_window(price_ep) if price_ep is not None else None
             est = await self._estimate_context(thread, price_ep.base_url if price_ep is not None else None)
+            # D42 Tier 1 (D60 ①) — the assembly-time tool-output clearing plan for THIS iteration (ONE
+            # shared selection): its `gain` prices the trigger net-of-clearing below, its
+            # `cleared_call_ids` drive `_assemble`'s output-trim rendering. Planned AFTER the estimate
+            # because it is now PRESSURE-GATED on it (against the turn's smallest chain window).
+            clearing = await self._plan_clearing(thread, window=clear_window, estimated_tokens=est.tokens)
             cs = self._compaction_state
             # D42 thrash machine: AUTO-compaction skips ENTIRELY while the breaker is latched OR after a
             # didn't-shrink attempt earlier THIS turn (per-turn backoff). Clearing (above) still applies.
@@ -1510,7 +1532,10 @@ class AgentSession:
                         ):
                             yield ev
                         if bo.folded:
-                            clearing = await self._plan_clearing(thread)
+                            # Re-plan against a FRESH estimate: the fold shrank the context and
+                            # invalidated the anchor, so the pressure gate must re-decide on what is
+                            # actually left (`_plan_clearing` re-measures when handed no estimate).
+                            clearing = await self._plan_clearing(thread, window=clear_window)
                             messages = await self._assemble(thread, clearing=clearing)
                             watermark = await self._watermark_id(thread)
                             continue  # re-issue the SAME call into the SAME assistant slot
@@ -1905,10 +1930,12 @@ class AgentSession:
         self._reflect_now = (
             False  # the wrap-up call is tool-less — don't carry the "use the memory tool" nudge
         )
-        # D42 Codex FIX 2: the forced wrap-up runs Tier-1 clearing like the main loop. The recent-step
-        # protection (`clear_keep_steps`) keeps the just-run outputs the wrap-up summarizes honestly;
-        # only OLD bulky outputs past that window are trimmed, and their `[state] summary` lines survive.
-        clearing = await self._plan_clearing(thread)
+        # D42 Codex FIX 2: the forced wrap-up runs Tier-1 clearing like the main loop. The current-turn
+        # immunity (D60 ①) keeps the just-run outputs the wrap-up summarizes honestly; only PRIOR-turn
+        # bulky outputs past the step window are trimmed, and their `[state] summary` lines survive.
+        # The pressure gate prices the same turn-scoped chain window the loop used.
+        clear_window = await self._inference.min_chain_window(eff_mode, eff_model)
+        clearing = await self._plan_clearing(thread, window=clear_window)
         _WRAP_NUDGE = {
             "role": "system",
             "content": resolve("wrapup_nudge", self._settings, stamps=self._stamps),
@@ -1991,7 +2018,7 @@ class AgentSession:
                         async for ev in self._overflow_fold(thread, clearing=clearing, outcome=bo):
                             yield ev
                         if bo.folded:
-                            clearing = await self._plan_clearing(thread)
+                            clearing = await self._plan_clearing(thread, window=clear_window)
                             messages = await _assemble_wrap()
                             continue  # re-issue the SAME attempt with the folded (smaller) prompt
                     if attempt == 0 and not text_buf and not reasoning_buf:

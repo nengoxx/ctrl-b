@@ -408,6 +408,12 @@ class CoreMemoryCfg(BaseModel):
     index_char_limit: int = Field(default=8192, ge=1)  # rendered index block cap (Kilo's bound)
     topic_char_limit: int = Field(default=4096, ge=1)  # per-`read` topic cap (S3)
     recall_char_limit: int = Field(default=20480, ge=1)  # per-turn total recall cap (S3)
+    #: The MINIMUM a single read-class call charges against `recall_char_limit` (D60 §15b-3). Reads no
+    #: longer count against `max_calls_per_tool`, so the recall budget is their only bound — and a
+    #: zero-char result (an empty `search`, a refused `read`) would otherwise cost nothing and loop
+    #: forever. At the defaults this caps a turn at ~80 read-class calls. `ge=1`: a 0 disables the
+    #: bound, which is the failure this field exists to prevent.
+    recall_min_charge_chars: int = Field(default=256, ge=1)
     consolidation_nudge_pct: int = Field(default=80, ge=1, le=100)  # index cap pressure → nudge (S4)
 
 
@@ -837,6 +843,9 @@ class ToolOverride(BaseModel):
     - `agent_mode`: the tri-state agent-access mode (`AgentMode`). None → the compile-time default.
     - `approvals`: standing 'always allow' grants (`ApprovalRule` list, D44). None/empty = no grants;
       NEVER touched by `apply_tool_overrides` — consulted live per-invocation by `ActionService`.
+    - `max_calls`: this tool's per-turn call cap (D60 ②) — REPLACE semantics: absent → the agent's
+      blanket `max_calls_per_tool`, present → that number for this tool. Read live by the agent
+      loop's `_LoopGuard`, never overlaid onto the spec.
     """
 
     model_config = {"extra": "allow"}  # forward-compat: an unknown future field round-trips
@@ -844,6 +853,7 @@ class ToolOverride(BaseModel):
     description: str | None = None
     agent_mode: AgentMode | None = None
     approvals: list[ApprovalRule] | None = None
+    max_calls: int | None = Field(default=None, ge=1)  # ge=1: a 0 cap refuses the tool's FIRST call
 
 
 class PromptOverride(BaseModel):

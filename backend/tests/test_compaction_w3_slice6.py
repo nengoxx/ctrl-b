@@ -85,6 +85,7 @@ def _tool_msg(call_id: str, *, output: str, state: RunState = RunState.OK, real:
 
 
 _BIG = "x" * 3000  # 3000 chars ≈ 750 tok > the 500-tok floor → clearable
+_HUGE = "x" * 6000  # ≈ 1,191 tok of priced gain — over the default D60 min-reclaim floor on its own
 _SMALL = "y" * 100  # ≈ 25 tok < floor → never cleared
 
 
@@ -94,16 +95,29 @@ def _round(i: int, tool: str = "ping", *, output: str, real: bool = True) -> lis
     return [_asst_call(cid, tool, state=RunState.OK), _tool_msg(cid, output=output, real=real)]
 
 
+def _past(*rounds: Message) -> list[Message]:
+    """A PRIOR turn's rounds, followed by the current turn's opening user message. D60 ① makes the
+    current turn immune, so every SELECTION test's rounds have to sit behind a turn boundary; the
+    current-turn immunity itself is tested in section A2."""
+    return [_user(), *rounds, _user("now")]
+
+
+#: Selection tests set the D60 min-reclaim floor to 0 — they are about WHICH outputs are chosen, and
+#: the fixture outputs are small enough that the 1024-token default would abandon the plan wholesale.
+#: The floor has its own test (`test_clearing_min_reclaim_floor_abandons_a_trivial_plan`).
+_NO_FLOOR = {"clear_min_reclaim_tokens": 0}
+
+
 # ── A. plan_clearing (pure) ───────────────────────────────────────────────────────────────────────
 
 
 def test_clearing_selects_old_large_outputs_only() -> None:
-    cfg = CompactionCfg(clear_keep_steps=2, clear_output_min_tokens=500)
+    cfg = CompactionCfg(clear_keep_steps=2, clear_output_min_tokens=500, **_NO_FLOOR)
     # 4 rounds of big outputs; clear_keep_steps=2 protects rounds 2 & 3, so only c0 + c1 clear.
-    history = [_user()]
+    rounds: list[Message] = []
     for i in range(4):
-        history += _round(i, output=_BIG)
-    plan = plan_clearing(history, cfg)
+        rounds += _round(i, output=_BIG)
+    plan = plan_clearing(_past(*rounds), cfg)
     assert plan.cleared_call_ids == frozenset({"c0", "c1"})
     # gain is priced at chars/CLEAR_CHARS_PER_TOKEN over the NET reclaimed chars (output minus the
     # placeholder that replaces it — Codex FIX 5), summed over the two cleared outputs.
@@ -114,11 +128,11 @@ def test_clearing_net_positive_only_at_floor_zero() -> None:
     """D42 Codex FIX 5: at `clear_output_min_tokens: 0`, an output NO LONGER than the placeholder is
     NOT selected (clearing it would GROW the prompt) — and a genuinely-larger output is still selected,
     with its gain priced NET of the placeholder."""
-    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=0)
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=0, **_NO_FLOOR)
     tiny = "z" * (len(OUTPUT_CLEARED_PLACEHOLDER) - 2)  # shorter than the placeholder → net-negative
     big = "z" * (len(OUTPUT_CLEARED_PLACEHOLDER) + 200)  # genuinely larger → net-positive
     # c0 tiny (old), c1 big (old), c2 protected recent step.
-    history = [_user(), *_round(0, output=tiny), *_round(1, output=big), *_round(2, output=_BIG)]
+    history = _past(*_round(0, output=tiny), *_round(1, output=big), *_round(2, output=_BIG))
     plan = plan_clearing(history, cfg)
     assert "c0" not in plan.cleared_call_ids  # net-negative tiny output is skipped even at floor 0
     assert "c1" in plan.cleared_call_ids
@@ -127,62 +141,71 @@ def test_clearing_net_positive_only_at_floor_zero() -> None:
 
 
 def test_clearing_floor_skips_small_outputs() -> None:
-    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500)
-    history = [_user(), *_round(0, output=_SMALL), *_round(1, output=_BIG)]
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    history = _past(*_round(0, output=_SMALL), *_round(1, output=_BIG))
     plan = plan_clearing(history, cfg)
     assert plan.empty  # c0 is small (below the floor), c1 is the protected most-recent step
 
 
 def test_clearing_recent_steps_protected() -> None:
-    cfg = CompactionCfg(clear_keep_steps=2, clear_output_min_tokens=500)
-    history = [_user(), *_round(0, output=_BIG), *_round(1, output=_BIG)]
+    cfg = CompactionCfg(clear_keep_steps=2, clear_output_min_tokens=500, **_NO_FLOOR)
+    history = _past(*_round(0, output=_BIG), *_round(1, output=_BIG))
     # Only 2 steps and clear_keep_steps=2 → both protected → nothing cleared.
     assert plan_clearing(history, cfg).empty
 
 
 def test_clearing_exempts_suspend_paired() -> None:
-    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500)
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
     susp = _asst_call("c0", "shutdown_host", state=RunState.AWAITING_CONFIRM)
-    history = [_user(), susp, _tool_msg("c0", output=_BIG), *_round(1, output=_BIG)]
+    history = _past(susp, _tool_msg("c0", output=_BIG), *_round(1, output=_BIG))
     plan = plan_clearing(history, cfg)
     assert "c0" not in plan.cleared_call_ids  # suspend-paired result is structurally exempt
 
 
-def test_clearing_exempts_task_plan_and_memory() -> None:
-    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500)
-    history = [
-        _user(),
+def test_clearing_exempts_the_configured_tools() -> None:
+    """D60 ①: the exclusion set is `clear_exclude_tools` config (default task_plan · memory ·
+    core_memory), not a hardcoded frozenset."""
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    history = _past(
         *_round(0, "task_plan", output=_BIG),
         *_round(1, "memory", output=_BIG),
-        *_round(2, "ping", output=_BIG),
-        *_round(3, "ping", output=_BIG),  # c3 is the protected most-recent step
-    ]
+        *_round(2, "core_memory", output=_BIG),
+        *_round(3, "ping", output=_BIG),
+        *_round(4, "ping", output=_BIG),  # c4 is the protected most-recent step
+    )
     plan = plan_clearing(history, cfg)
-    assert "c0" not in plan.cleared_call_ids and "c1" not in plan.cleared_call_ids
-    assert "c2" in plan.cleared_call_ids  # a plain old tool IS cleared
-    assert "c3" not in plan.cleared_call_ids  # protected recent step
+    assert not ({"c0", "c1", "c2"} & plan.cleared_call_ids)  # every default exclusion holds
+    assert "c3" in plan.cleared_call_ids  # a plain old tool IS cleared
+    assert "c4" not in plan.cleared_call_ids  # protected recent step
+    # …and the set is config: naming `ping` protects it, dropping `memory` exposes that one.
+    narrowed = CompactionCfg(
+        clear_keep_steps=1, clear_output_min_tokens=500, clear_exclude_tools=["ping"], **_NO_FLOOR
+    )
+    plan2 = plan_clearing(history, narrowed)
+    assert "c3" not in plan2.cleared_call_ids
+    assert {"c0", "c1", "c2"} <= plan2.cleared_call_ids
 
 
 def test_clearing_exempts_synthesized_results() -> None:
     """A synthesized result (no real execution → `duration_ms is None`) is never cleared, even with a
     large output — the structural marker, not a content string-match."""
-    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500)
-    history = [_user(), *_round(0, output=_BIG, real=False), *_round(1, output=_BIG)]
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    history = _past(*_round(0, output=_BIG, real=False), *_round(1, output=_BIG))
     plan = plan_clearing(history, cfg)
     assert "c0" not in plan.cleared_call_ids  # synthesized → exempt
 
 
 def test_clearing_disabled_is_empty() -> None:
     cfg = CompactionCfg(enabled=False)
-    history = [_user(), *_round(0, output=_BIG), *_round(1, output=_BIG), *_round(2, output=_BIG)]
+    history = _past(*_round(0, output=_BIG), *_round(1, output=_BIG), *_round(2, output=_BIG))
     assert plan_clearing(history, cfg).empty
 
 
 def test_clearing_gain_pushes_trigger_net_of_clearing() -> None:
     """The SAME plan feeds the trigger: subtracting `plan.gain` can pull an over-threshold estimate
     back under the line (the Wave-2 `clearing_gain` seam, now driven by a real plan)."""
-    cfg = CompactionCfg(threshold_frac=0.85, clear_keep_steps=1, clear_output_min_tokens=500)
-    history = [_user(), *_round(0, output=_BIG), *_round(1, output=_BIG)]  # c0 clearable
+    cfg = CompactionCfg(threshold_frac=0.85, clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    history = _past(*_round(0, output=_BIG), *_round(1, output=_BIG))  # c0 clearable
     plan = plan_clearing(history, cfg)
     assert plan.gain > 0
     comp = Compactor(cast("InferenceClient", None), cast("MessageRepo", None), cfg, Settings())
@@ -191,6 +214,90 @@ def test_clearing_gain_pushes_trigger_net_of_clearing() -> None:
     assert comp._over_threshold(history, window=10000, estimated_tokens=8600, clearing=plan) is (
         8600 - plan.gain > 8500
     )
+
+
+# ── A2. the D60 clearing revision (pressure gate · current-turn immunity · min reclaim) ───────────
+
+
+def _fat_prior_turn() -> list[Message]:
+    """A prior turn with two clearable rounds + the current turn's opening user message."""
+    return _past(*_round(0, output=_BIG), *_round(1, output=_BIG), *_round(2, output=_BIG))
+
+
+def test_clearing_pressure_gate_holds_below_the_line() -> None:
+    """D60 ①: below `clear_trigger_pct × window` nothing is cleared; above it, the same history
+    clears exactly as before."""
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    history = _fat_prior_turn()
+    # window 10_000 × 0.5 = 5_000. Exactly ON the line is NOT over (strict `>`).
+    assert plan_clearing(history, cfg, window=10_000, estimated_tokens=4_999).empty
+    assert plan_clearing(history, cfg, window=10_000, estimated_tokens=5_000).empty
+    assert not plan_clearing(history, cfg, window=10_000, estimated_tokens=5_001).empty
+
+
+def test_clearing_pressure_gate_honours_the_configured_pct() -> None:
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, clear_trigger_pct=0.9, **_NO_FLOOR)
+    history = _fat_prior_turn()
+    assert plan_clearing(history, cfg, window=10_000, estimated_tokens=8_000).empty
+    assert not plan_clearing(history, cfg, window=10_000, estimated_tokens=9_001).empty
+
+
+def test_clearing_with_no_window_stays_always_on() -> None:
+    """An unset window (any chain entry unresolvable — `min_chain_window` returns None) keeps the
+    pre-D60 unconditional behaviour, so an unconfigured model keeps its protection."""
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    history = _fat_prior_turn()
+    assert not plan_clearing(history, cfg, window=None, estimated_tokens=10).empty
+    assert not plan_clearing(history, cfg, window=10_000, estimated_tokens=None).empty
+
+
+def test_clearing_never_touches_the_current_turn() -> None:
+    """D60 ①/§14d: the whole CURRENT turn is immune whatever its step age — the read→read→merge pass
+    the consolidation procedure needs. Behind the turn boundary the step window applies as before."""
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    live = [_user(), *_round(0, output=_BIG), *_round(1, output=_BIG), *_round(2, output=_BIG)]
+    assert plan_clearing(live, cfg).empty  # every round belongs to the running turn
+    # The same rounds behind a turn boundary clear normally (c2 is the protected recent step).
+    assert plan_clearing([*live, _user("next")], cfg).cleared_call_ids == frozenset({"c0", "c1"})
+
+
+def test_current_turn_immunity_survives_a_steer_and_a_resume() -> None:
+    """§15b-6: the turn identity is the last NON-STEER user row — the same boundary the recall budget
+    uses — so a mid-turn steer (D41) and the confirm round-trip that follows it leave the turn's
+    earlier outputs immune. (A loop-iteration offset would not: the resumed session restarts at 0.)"""
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    steer = _user("actually, also check corsair")
+    steer.steer = True
+    history = [
+        _user(),
+        *_round(0, output=_BIG),
+        steer,
+        *_round(1, output=_BIG),
+        *_round(2, output=_BIG),
+    ]
+    assert plan_clearing(history, cfg).empty
+
+
+def test_clearing_min_reclaim_floor_abandons_a_trivial_plan() -> None:
+    """D60 ①: a plan whose whole gain is under `clear_min_reclaim_tokens` is dropped — the prompt
+    prefix is not rewritten for a trivial trim."""
+    history = _past(*_round(0, output=_BIG), *_round(1, output=_BIG))  # one clearable output
+    gain = (len(_BIG) - len(OUTPUT_CLEARED_PLACEHOLDER)) // CLEAR_CHARS_PER_TOKEN
+    base = {"clear_keep_steps": 1, "clear_output_min_tokens": 500}
+    assert plan_clearing(history, CompactionCfg(**base, clear_min_reclaim_tokens=gain + 1)).empty
+    assert plan_clearing(history, CompactionCfg(**base, clear_min_reclaim_tokens=gain)).gain == gain
+
+
+def test_split_never_folds_across_a_mid_turn_steer() -> None:
+    """§15b-7: the lossy Tier-2 fold honours the same current-turn immunity — the tail snaps back to
+    a NON-STEER user row, so a steer can never leave half of a live turn in the summary."""
+    cfg = CompactionCfg(keep_last_messages=1, keep_recent_tokens=1)
+    steer = _user("and also…")
+    steer.steer = True
+    history = [_user("start"), *_round(0, output=_BIG), steer, *_round(1, output=_BIG)]
+    head, tail = comp_split(cfg, history)
+    assert head == []  # nothing above the turn's own opening user row is foldable
+    assert tail == history
 
 
 # ── B. the clearing render + A12 verbatim ─────────────────────────────────────────────────────────
@@ -215,8 +322,8 @@ def test_tool_content_cleared_keeps_error_line() -> None:
 def test_plan_clearing_does_not_mutate_history_rows() -> None:
     """A12: clearing is assembly-time only — the plan selects ids but never touches the DB row's
     verbatim output (GET /threads/{id}/messages stays unchanged)."""
-    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500)
-    history = [_user(), *_round(0, output=_BIG), *_round(1, output=_BIG)]
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    history = _past(*_round(0, output=_BIG), *_round(1, output=_BIG))
     tool_row = history[2]  # c0's tool message
     plan = plan_clearing(history, cfg)
     assert "c0" in plan.cleared_call_ids
@@ -832,10 +939,13 @@ def _overflow_error():
 
 async def _seed_clearable(state, thread) -> None:
     """A history with ONE old bulky tool output (past `clear_keep_steps`) + two recent protected
-    rounds — so `plan_clearing` clears the old one and `_finalize`'s assembled payload trims it."""
+    rounds — so `plan_clearing` clears the old one and `_finalize`'s assembled payload trims it.
+    D60: the rounds sit in a PRIOR turn (the current turn is immune) and the bulky output is big
+    enough to clear the default `clear_min_reclaim_tokens` floor on its own."""
     msgs = [_user("start")]
-    for i, out in enumerate((_BIG, _SMALL, _SMALL)):  # round0 old+big → cleared; rounds 1,2 protected
+    for i, out in enumerate((_HUGE, _SMALL, _SMALL)):  # round0 old+big → cleared; rounds 1,2 protected
         msgs += _round(i, output=out)
+    msgs.append(_user("wrap it up"))  # the current turn opens here — everything above is fair game
     for m in msgs:
         m.thread_id = thread.id
         await state.messages.add(m)
@@ -866,7 +976,7 @@ def test_finalize_assembles_with_clearing_placeholder() -> None:
             assert any(e.event == "done" and e.data.get("state") == "completed" for e in events)
             payload = "\n".join(str(m.get("content") or "") for m in seen["messages"])
             assert OUTPUT_CLEARED_PLACEHOLDER in payload  # the old bulky output was trimmed
-            assert _BIG not in payload  # ...and the raw output is NOT in the wrap-up prompt
+            assert _HUGE not in payload  # ...and the raw output is NOT in the wrap-up prompt
 
         _run(go())
 

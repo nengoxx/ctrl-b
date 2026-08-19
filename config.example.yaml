@@ -134,7 +134,10 @@ agent:
     keep_last_messages: 8    # recent-message floor kept verbatim (snapped back to a turn boundary)
     keep_recent_tokens: 4096 # D42: recent-token floor (the larger of the two floors wins); 0 = off
     clear_output_min_tokens: 500  # D42: tool outputs bigger than this may be cleared at assembly
-    clear_keep_steps: 2      # D42: the most recent N tool-call rounds always keep full outputs (min 1)
+    clear_keep_steps: 2      # D42: the most recent N tool-call rounds of a PRIOR turn keep full outputs (min 1)
+    clear_trigger_pct: 0.5   # D60: clear only above this fraction of the chain's smallest context window
+    clear_min_reclaim_tokens: 1024  # D60: skip a trim that would reclaim less than this
+    clear_exclude_tools: [task_plan, memory, core_memory]  # D60: results these tools return are never cleared
     max_consecutive_failures: 3   # D42: failed (non-shrinking) folds before auto-compaction latches off
     reserve_output: true     # D42: subtract the agent's model.max_tokens from the trigger line
     summarizer:
@@ -211,6 +214,7 @@ agent:
 #       index_char_limit: 8192   # hard cap on the injected index block (chars)
 #       topic_char_limit: 4096   # per-read topic cap (chars)
 #       recall_char_limit: 20480 # per-turn total recall cap (chars)
+#       recall_min_charge_chars: 256  # D60: the minimum one read/search charges against that cap
 #       consolidation_nudge_pct: 80  # index fill % at which the header names the pressure
 
 # Per-tool overrides (Phase 8b, D22) — ONE unified object per tool: `description` sharpens the
@@ -245,6 +249,12 @@ agent:
 #   restart_service:
 #     # 3) a whole-action grant — this MED-risk action never asks again, whatever the args.
 #     approvals: [{}]
+#   core_memory:
+#     # `max_calls` (D60) is the fourth dimension on the same object: this tool's per-turn call cap,
+#     # REPLACING the agent's blanket `max_calls_per_tool` (absent = the blanket cap). Read-class
+#     # `core_memory` calls (read/search) are exempt from the cap entirely — the recall budget bounds
+#     # them — so this caps its WRITES.
+#     max_calls: 12
 
 # Voice subsystem (Phase 6; A11/D48 Slice 2) — push-to-talk STT + read-aloud TTS. Each service POINTS at
 # the `providers` map above: a flat `provider` primary (+ `model`, omittable iff the catalog has exactly

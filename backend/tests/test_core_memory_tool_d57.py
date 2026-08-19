@@ -1372,6 +1372,9 @@ class _Fake:
     async def effective_window(self, _ep):
         return None
 
+    async def min_chain_window(self, _mode=None, _model=None):  # D60 — the clearing pressure gate
+        return None  # no window → always-on clearing (the pre-D60 behaviour these tests assume)
+
     def target_for(self, _mode=None, _model=None):
         from app.domain.provider import ResolvedTarget
 

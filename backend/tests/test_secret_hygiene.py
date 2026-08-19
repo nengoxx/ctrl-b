@@ -148,6 +148,7 @@ def test_no_secret_looking_field_is_unclassified() -> None:
         "threshold_tokens",
         "keep_recent_tokens",
         "clear_output_min_tokens",
+        "clear_min_reclaim_tokens",  # D60 — a trim floor in tokens, not a credential
         "max_tokens",
         "max_tokens_field",
         "reasoning_tokens",

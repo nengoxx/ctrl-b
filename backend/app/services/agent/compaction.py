@@ -9,9 +9,10 @@ reload + the audit trail keep the full history), they just drop out of the *live
 Design points carried from DESIGN §5.4 + §6 (edge cases):
 - **Selectable summarizer** (D11): the summary is produced by `settings.agent.compaction.summarizer`
   (its own mode + model), independent of the chat model — `None` fields inherit the chat backend.
-- **Turn-boundary safe:** the kept tail always starts at a `user` message, so we never split an
-  assistant `tool_calls` message from its `tool` results (which would make the assembled OpenAI
-  context invalid). Complete turns go into the summary; complete turns stay verbatim.
+- **Turn-boundary safe:** the kept tail always starts at a NON-STEER `user` message, so we never split
+  an assistant `tool_calls` message from its `tool` results (which would make the assembled OpenAI
+  context invalid) and never fold half of a live turn (D60 §15b-7). Complete turns go into the
+  summary; complete turns stay verbatim.
 - **Floor:** never compact below `keep_last_messages` recent messages (snapped to that boundary).
 - **Never lose history:** on summarizer failure we fall back to a truncation *placeholder* (still
   flip the head `compacted` so the context shrinks and the next call can't blow the window) — DB
@@ -89,12 +90,6 @@ OUTPUT_CLEARED_PLACEHOLDER = "[output cleared — re-run the tool if needed]"
 #: trigger credits ONLY the outputs cleared SINCE that anchor (`gain_over(cleared_now − cleared_at_
 #: anchor)`) — subtracting the full gain there would double-count the anchor-time trim.
 CLEAR_CHARS_PER_TOKEN = 5
-
-#: Builtin tools whose results are STRUCTURALLY never cleared (D42): `task_plan` (the live plan
-#: round-trips through the model's context) + `memory` (durable-memory edits). Matched by the paired
-#: call's `tool` name — the same by-name convention session.py uses (`cp.tool == "question"`). These
-#: are the canonical builtin keys registered by `@action("task_plan"/"memory", …)`.
-_NEVER_CLEAR_TOOLS = frozenset({"task_plan", "memory"})
 
 
 @dataclass
@@ -188,21 +183,53 @@ class ClearingPlan:
         return sum(self.gains.get(cid, 0) for cid in call_ids)
 
 
-def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
-    """Select tool-result OUTPUTS to clear at assembly time + price the total gain (D42 Tier 1) — a
-    PURE function (no I/O), the ONE source of truth shared by `_assemble` and the trigger.
+def turn_start_index(history: list[Message]) -> int:
+    """The index in `history` where the CURRENT logical turn begins — the last `user` message that is
+    not a mid-turn steer (D41's `Message.steer` marks those), or 0 when the visible history holds
+    none (everything left is then treated as the current turn).
+
+    The SAME boundary the recall budget uses (`AgentSession._seed_recall`), which is what §15b-6 asks
+    for: the identity has to survive a confirm round-trip, and the live `TurnHandle.turn_id` does not
+    (a resume mints a fresh handle) while this does — a resumed turn walks back to the same user row.
+    Shared by the Tier-1 immunity below and pinned as one definition, never re-derived per consumer."""
+    for i in range(len(history) - 1, -1, -1):
+        m = history[i]
+        if m.role == "user" and not m.steer:
+            return i
+    return 0
+
+
+def plan_clearing(
+    history: list[Message],
+    cfg: CompactionCfg,
+    *,
+    window: int | None = None,
+    estimated_tokens: int | None = None,
+) -> ClearingPlan:
+    """Select tool-result OUTPUTS to clear at assembly time + price the total gain (D42 Tier 1, as
+    revised by D60 ①) — a PURE function (no I/O), the ONE source of truth shared by `_assemble` and
+    the trigger.
+
+    PRESSURE GATE (D60): clearing runs only when `estimated_tokens` exceeds `clear_trigger_pct ×
+    window`. `window` is the SMALLEST context window across the turn's eligible failover chain
+    (§15b-1 — one assembly, no per-hop re-plan) and `estimated_tokens` is the SAME assembled-prompt
+    estimate compaction prices (§15b-11). Either being `None` (no resolvable window / no estimate)
+    falls back to the pre-D60 ALWAYS-ON behaviour, so an unconfigured model keeps its protection.
 
     Selection: a tool result is cleared iff its OUTPUT is larger than `clear_output_min_tokens`
     (measured in tokens, chars/`CHARS_PER_TOKEN`) AND longer than `OUTPUT_CLEARED_PLACEHOLDER` itself
     (net-positive — clearing a tinier output to the placeholder would GROW the prompt; Codex FIX 5) AND
-    its paired call is OLDER than the most recent
+    it is not in the CURRENT TURN AND its paired call is OLDER than the most recent
     `clear_keep_steps` steps — where a **step** is one assistant message that carries tool calls (i.e.
     one assistant-tool-call round; each loop iteration mints exactly one). The last `clear_keep_steps`
     such rounds stay FULL (`clear_keep_steps ≥ 1` keeps at least the just-run tool's output).
 
     STRUCTURAL exemptions (never cleared, by shape not by string-matching content):
+      - anything produced within the CURRENT TURN (`turn_start_index`) — D60 ①/§15b-14: a turn must be
+        able to read two topics and merge them, which the step window alone made impossible (§14d);
       - a call in `_SUSPEND_CALL_STATES` (AWAITING_*-paired — its result round-trips on resume);
-      - a `task_plan` / `memory` result (`_NEVER_CLEAR_TOOLS`);
+      - a result from a tool named in `cfg.clear_exclude_tools` (default task_plan · memory ·
+        core_memory);
       - a SYNTHESIZED result — one that never came from a real tool execution (a skipped/denied/
         steering placeholder, an injected answer). The structural marker is `result.duration_ms is
         None`: `ActionService._execute` stamps `duration_ms` on every genuine run, so a result built
@@ -211,10 +238,17 @@ def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
     Gain is priced at chars/`CLEAR_CHARS_PER_TOKEN` (below the estimator's chars/`CHARS_PER_TOKEN`) over
     the NET reclaimed chars — the output length MINUS the `OUTPUT_CLEARED_PLACEHOLDER` that replaces it
     (Codex FIX 5) — so subtracting it under-credits the trim and the trigger never fires too late nor
-    over-credits a near-placeholder-sized clear. Gated on `cfg.enabled` (the master switch); the run is
-    otherwise UNCONDITIONAL (not gated on being over threshold)."""
+    over-credits a near-placeholder-sized clear. A whole plan reclaiming less than
+    `clear_min_reclaim_tokens` is ABANDONED (D60 ① — a trivial trim rewrites the cached prompt prefix
+    for nothing). Gated on `cfg.enabled` (the master switch)."""
     if not cfg.enabled:
         return ClearingPlan(frozenset(), {})
+    if (
+        window is not None
+        and estimated_tokens is not None
+        and estimated_tokens <= window * cfg.clear_trigger_pct
+    ):
+        return ClearingPlan(frozenset(), {})  # under pressure — nothing is worth trimming yet
     # Map each call to (its ToolCallPart, the ordinal of the step it belongs to). A "step" is an
     # assistant message bearing tool calls — the results paired to the last `clear_keep_steps` of
     # these stay full.
@@ -230,20 +264,24 @@ def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
             step_of[cp.call_id] = n_steps
         n_steps += 1
     keep_from = n_steps - cfg.clear_keep_steps  # steps with ordinal ≥ this are protected (recent)
+    turn_start = turn_start_index(history)  # messages at/after this index are the current turn
+    excluded = set(cfg.clear_exclude_tools)
 
     cleared: set[str] = set()
     gains: dict[str, int] = {}
-    for m in history:
+    for i, m in enumerate(history):
         if m.role != "tool":
             continue
+        if i >= turn_start:
+            continue  # the CURRENT turn is immune, whatever its step age (D60 ①)
         for rp in m.tool_results():
             cp = calls_by_id.get(rp.call_id)
             if cp is None:
                 continue  # orphan result (no paired call) — leave alone
             if step_of.get(rp.call_id, 0) >= keep_from:
                 continue  # within the most-recent `clear_keep_steps` rounds — kept full
-            if cp.state in _SUSPEND_CALL_STATES or cp.tool in _NEVER_CLEAR_TOOLS:
-                continue  # structural exemptions (suspend-paired / task_plan / memory)
+            if cp.state in _SUSPEND_CALL_STATES or cp.tool in excluded:
+                continue  # structural exemptions (suspend-paired / an excluded tool)
             res = rp.result
             if res.duration_ms is None:
                 continue  # synthesized/steering placeholder — never a real tool output
@@ -259,6 +297,8 @@ def plan_clearing(history: list[Message], cfg: CompactionCfg) -> ClearingPlan:
             cleared.add(rp.call_id)
             # priced once, here — the one home; NET of the placeholder (Codex FIX 5).
             gains[rp.call_id] = (len(out) - len(OUTPUT_CLEARED_PLACEHOLDER)) // CLEAR_CHARS_PER_TOKEN
+    if sum(gains.values()) < cfg.clear_min_reclaim_tokens:
+        return ClearingPlan(frozenset(), {})  # D60 ①: not worth the prefix rewrite
     return ClearingPlan(frozenset(cleared), gains)
 
 
@@ -652,8 +692,11 @@ class Compactor:
           2. the ACTIVE task_plan pair — the MOST-RECENT `task_plan` call + its result must stay in the
              tail (the live plan round-trips through the model's context via its call args); snap before
              it if the cut would fold it. SUPERSEDED older task_plan pairs may fold;
-          3. the user-boundary snap — the tail begins on a `user` message so a `tool` result is never
-             orphaned from its assistant `tool_calls`.
+          3. the turn-boundary snap — the tail begins on a NON-STEER `user` message, so a `tool`
+             result is never orphaned from its assistant `tool_calls` AND the lossy fold can never
+             summarize away part of the turn that is still running (D60 §15b-7: the current-turn
+             immunity has to hold for every lossy tier, not just Tier 1 — a mid-turn steer is a
+             `user` row too, and snapping to one used to cut a live turn in half).
         A previous summary in the head is re-folded by `_render_transcript` (one rolling summary)."""
         msg_cut = len(history) - self._cfg.keep_last_messages
         # Token floor: expand the tail (walk `tok_cut` left) until it holds ≥ keep_recent_tokens.
@@ -682,8 +725,8 @@ class Compactor:
         )
         if active_tp is not None and active_tp < cut:
             cut = active_tp
-        # (3) User-boundary snap: the kept tail must start at a `user` message.
-        while cut > 0 and history[cut].role != "user":
+        # (3) Turn-boundary snap: the kept tail must start at a NON-STEER `user` message (D60 §15b-7).
+        while cut > 0 and not (history[cut].role == "user" and not history[cut].steer):
             cut -= 1
         if cut <= 0:
             return [], history

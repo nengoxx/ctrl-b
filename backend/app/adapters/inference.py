@@ -934,6 +934,23 @@ class InferenceClient:
         chain = self._registry.chain_for(mode, model)
         return await self.effective_window(chain[0]) if chain else None
 
+    async def min_chain_window(self, mode: str | None = None, model: str | None = None) -> int | None:
+        """The SMALLEST effective window across the WHOLE failover chain a `{provider, model}` pointer
+        resolves to — what the D60 Tier-1 pressure gate prices against (§15b-1). A turn that fails over
+        mid-flight must already have been gated for the endpoint it lands on, and the plan is made ONCE
+        per turn (no per-hop re-plan), so the safe single number is the minimum.
+
+        `None` when the chain is empty OR **any** entry has no resolvable window (`effective_window`'s
+        config > probe > None ladder): an unknown window can be smaller than everything else, so the
+        gate degrades to today's always-on clearing rather than guessing."""
+        smallest: int | None = None
+        for ep in self._registry.chain_for(mode, model):
+            window = await self.effective_window(ep)
+            if window is None:
+                return None
+            smallest = window if smallest is None else min(smallest, window)
+        return smallest
+
     async def _probe_props(self, base_url: str, model: str | None = None) -> _ProbedWindow:
         """GET `{root}/props` (with `?model=` when given — the router-mode lever, see `_props_url`)
         once and extract the window. NEVER raises — any exception / non-200 / malformed body ⇒

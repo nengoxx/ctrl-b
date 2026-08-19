@@ -79,6 +79,9 @@ class _Fake:
     async def effective_window(self, _ep):  # D42 Wave 2 — the trigger resolves the window here; a
         return None  # scripted fake has no window → the `threshold_tokens` fallback (tiny histories)
 
+    async def min_chain_window(self, _mode=None, _model=None):  # D60 — the clearing pressure gate
+        return None  # no window → always-on clearing (the pre-D60 behaviour these tests assume)
+
     def target_for(self, _mode=None, _model=None):  # A11 — `_drive` prices the target off the client
         from app.domain.provider import ResolvedTarget
 

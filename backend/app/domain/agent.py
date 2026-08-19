@@ -12,9 +12,9 @@ summarizer, D11).
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.enums import Privilege
 
@@ -102,9 +102,28 @@ class CompactionCfg(BaseModel):
     #: clear EVERY eligible tool output (aggressive but valid — no output is below the floor); negative
     #: is meaningless → rejected at the boundary.
     clear_output_min_tokens: int = Field(default=500, ge=0)
-    #: How many most-recent steps the Tier-1 trim never touches (`ge=1` IS the most-recent-step
-    #: safety — a 0 would let the just-run tool's output be cleared out from under the model).
+    #: How many most-recent steps of a PRIOR turn the Tier-1 trim never touches (`ge=1` IS the
+    #: most-recent-step safety — a 0 would let the just-run tool's output be cleared out from under
+    #: the model). The CURRENT turn's outputs are immune regardless (D60 ①).
     clear_keep_steps: int = Field(default=2, ge=1)
+    #: Tier-1 PRESSURE GATE (D60 ①) — clearing runs only once the estimated prompt exceeds this
+    #: fraction of the serving chain's context window (the SMALLEST window across the turn's eligible
+    #: failover chain; any entry with no resolvable window ⇒ today's always-on behaviour, so an
+    #: unconfigured model keeps its protection). 0.5 splits the observed field range (goose 0.8,
+    #: OpenClaw 0.3 — R43); `gt=0` because a 0 gate would fire on an empty prompt, `le=1` because a
+    #: line past the window is never reachable. ctrl-b was the 0/8 field outlier on the unconditional
+    #: trigger — this closes it.
+    clear_trigger_pct: float = Field(default=0.5, gt=0, le=1)
+    #: Skip a trim that reclaims less than this many tokens (D60 ①): rewriting the prompt prefix for a
+    #: trivial gain costs prefix-cache re-prefill for nothing. Hermes ships 4096; we start lower
+    #: because our outputs are already 6k-capped. `ge=0` = no floor (every eligible trim runs).
+    clear_min_reclaim_tokens: int = Field(default=1024, ge=0)
+    #: Tools whose results are NEVER cleared (D60 ① — was the hardcoded `_NEVER_CLEAR_TOOLS`
+    #: frozenset). `task_plan` (the live plan round-trips through the model's context) · `memory`
+    #: (durable-memory edits) · `core_memory` (a tier-2 recall the same turn is merging — §14d: with
+    #: it clearable, a read→read→merge pass is impossible by construction). Matched by the paired
+    #: call's `tool` name; unknown names are allowed (a tool may arrive later).
+    clear_exclude_tools: list[str] = Field(default_factory=lambda: ["task_plan", "memory", "core_memory"])
     #: Thrash breaker (D42) — after this many consecutive didn't-shrink compactions the breaker
     #: latches (one notice, no more attempts this run). Consumed by the Wave 3 thrash machine.
     max_consecutive_failures: int = 3
@@ -115,6 +134,22 @@ class CompactionCfg(BaseModel):
     #: `threshold_frac` headroom is the margin). Consumed by the Wave 2 trigger.
     reserve_output: bool = True
     summarizer: ModelRef = Field(default_factory=ModelRef)
+
+    @field_validator("clear_exclude_tools", mode="before")
+    @classmethod
+    def _clean_exclude_tools(cls, v: Any) -> Any:
+        """Nonblank, stripped, order-preserving-deduped tool names (D60 §15b-10). A YAML list with a
+        stray blank entry or a duplicate is normalized here rather than at the read site, so
+        `plan_clearing` can consume it as a plain set. Non-list input passes through to fail
+        validation normally."""
+        if not isinstance(v, list):
+            return v
+        out: list[str] = []
+        for item in v:
+            name = item.strip() if isinstance(item, str) else item
+            if isinstance(name, str) and name and name not in out:
+                out.append(name)
+        return out
 
 
 class RoutingCfg(BaseModel):
