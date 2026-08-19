@@ -114,10 +114,17 @@
 ## ▶▶ NEXT — the RELEASE DECISION is up (owner handoff order, 2026-08-19)
 
 **Unreleased on `main`, all owner-verified, no schema/config migration (schema 6, VERSION 1):**
-the 2026-08-18 gacha first-block pair (`c8dc09d`+`0e20de0`, pushed) + the 2026-08-19 stack
-(white-bar close · plan-pill-over-oracle fix `a90ad84` + its e2e arm · arcade 3px `630219d` ·
-the cache_n + §14c records · the doc sweep; **UNPUSHED — push is the first step of whatever
-comes next**). A release is a clean plain-form runbook run (§Release; rollback stays v1.7.2).
+the 2026-08-18 gacha first-block pair (`c8dc09d`+`0e20de0`) + the 2026-08-19 stack (white-bar
+close · plan-pill-over-oracle fix `a90ad84` + its e2e arm · arcade 3px `630219d` + its mirror-pin
+fix · the cache_n + §14c records · the doc sweeps — pushed through `3e93774`) + **`5678c08`
+(unpushed): the wire-level system-message normalization that makes qwen3.6-max on corsair
+serveable — the owner's NEW PRIMARY chat model (see the `qwen-primary-on-corsair` memory; R41/R42
+= the evidence; council ran as an adversarial Opus lens, all findings folded; ⚠ the Codex DIFF
+round is OWED once the owner re-runs `codex login` — auth expired). DEV runs corsair-primary
+live; **the PROD config flip (provider corsair + fallback chain) happens ONLY AFTER the release
+carrying `5678c08`** — the pinned prod tree lacks the normalization until then.** A release is a
+clean plain-form runbook run (§Release; rollback stays v1.7.2), then the prod config flip +
+restart + a no-failover journal check.
 
 **The pre-release menu — things that COULD close first (none gates the release; pick or skip):**
 - **The notifications retest result** — the owner was MID-TEST on prod when the session closed;
