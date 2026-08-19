@@ -136,7 +136,8 @@ NOT the vault's "always write the newest canonical shape"):
   length on disk; entry text is **normalized before injection** (newlines/control chars → spaces,
   link syntax escaped, clamped at entry boundaries) since descriptions are model/foreign-written
   text entering a system message (council Codex-13); the index block has a hard char cap
-  (`index_char_limit`, default **8,192 chars** — Kilo's bound; the truncation warning line is
+  (`index_char_limit`, default **10,240 chars** — the owner's ~10K sizing, D61 ④; was 8,192,
+  Kilo's bound, until 2026-08-19; the truncation warning line is
   reserved *inside* the cap; Claude's own is 200 lines/25 KB) with soft truncation, never an
   error. No separate topic-count threshold (one honest bound — council Codex-14);
 - **the rendered index is cached** keyed by the scan signature (paths + mtimes): the per-turn cost
@@ -399,7 +400,7 @@ memory:
     backend: null              # null = OFF (default) | "core"; future backends = new values
     core:
       root: core               # relative → under memories_dir; absolute honored (unversioned)
-      index_char_limit: 8192
+      index_char_limit: 10240  # D61 ④ (was 8192)
       topic_char_limit: 4096
       recall_char_limit: 20480
       consolidation_nudge_pct: 80
@@ -1183,4 +1184,50 @@ literal + example + doc rows in the same commit). 7 HIGH the tail note must rese
 budget and an omitted-only search must not read as "no matches" → `{hits, omitted}` + evict-to-
 fit. 8 MED the draft note promised paths it couldn't show → the narrow-the-search wording.
 9 MED the acceptance list, adopted verbatim. Overrules: none.
+
+### 16c. As-built (D61, 2026-08-19 — commit `fb2a995`, review-closed)
+
+Built by an Opus 5 subagent from §16 as the pinned brief; one commit, amended twice (a
+supervisor ruling, then the review fix wave), full gate green at every step. 14 files,
++609/−109 net at first gate. **FINAL SHIP** from the Emma lane (gpt-5.6-sol high, blind) after
+a 4-MED SHIP-WITH-FIXES round + an all-RESOLVED confirm round.
+
+**Where each part landed:** ① `BUILTIN_VERBS` row + `runConsolidate`
+(frontend/src/lib/composer.ts — `BuiltinVerb.run` gained the raw line; existing rows ignore
+it) · ② `checkMemoryPressure` hooked inside `notifyTurnTerminal` (store/chat.ts);
+`CoreStatus.consolidation_nudge_pct` rides the existing `asdict` route; FE type in
+useMemory.ts · ③ `_header`/`_fit`/`_assemble` take no `nudge_pct`; the render-cache key is
+`(scan signature, cap)` · ④ config.py default 10240 + the §16b-6 sweep (ConfTab fallback ·
+config.example.yaml · DESIGN row · this file's §3/§6.1) · ⑤ `CoreSearch{hits, omitted}`,
+eviction inside `search`, `render_hits(found, cap)` + `_omission_note`; the tool's
+omitted-only branch. Tests: BE 1799→1801, FE 2108→2129.
+
+**Supervisor rulings on build deviations (recorded):** the bare-form guard REFUSES (the §16
+"note suggesting the dry form" is only actionable pre-send; a writes-OFF live run is
+structurally broken — every step-2/3 write refused) — both mismatched directions refuse,
+nothing sent · settings-fetch failure fails closed · the `_hits_result` summary reworded to
+"N shown[, M not shown]" (the old wording became false once hits could be omitted) · the
+per-turn status GET fires even with the feature off — accepted recorded cost, no gating
+mechanism (single-user) · replay-dedupe coverage is store-level only (reattach transports
+call `reloadChat`, which drops client-only notes — the latch is what is actually testable).
+
+**The review round (4 MED, all folded):** F1 a latch re-arm race — a calm terminal (typically
+the consolidation turn's own) discarded during an in-flight pressured check left the latch
+down for the next episode → `memoryPressurePending` + ONE coalesced follow-up in the
+`finally` (mutation-verified: removing the drain fails both tests) · F2 `clearComposerScope()`
+sat after two awaits and could spend an arm made DURING the reads → moved synchronous after
+arg validation; a later refusal deliberately also spends the arm (the explicit slash attempt
+supersedes the menu, one-shot like the other verbs) · F3 an omitted-only search body EXCEEDED
+`topic_char_limit` (reproduced at cap 1: 72-char note; the build's comment claimed `_fit`
+parity but `_fit` hard-clamps and search didn't) → `render_hits(found, cap)` clamps `[:cap]`
+as its last act, cap threaded via a `topic_char_limit()` accessor (the `recall_char_limit()`
+idiom) · F4 the auto_write guard trusted a malformed 200 → stricter than prescribed:
+`typeof value === "boolean" ? value : null` — `/api/settings` model-dumps the full config, so
+an absent key is shape skew, not a default, and skew must not choose which form runs. Plus
+the reviewer's acceptance-gap note: exact equality at the threshold now pinned.
+
+**Owed:** the live/device exercise — the verb has never sent a real prompt to a model and the
+pressure note has never been seen in a real thread (dev is at 100% fill, so the note fires on
+the first turn terminal once the dev units start). The `/help` column alignment for the
+18-char `/consolidate [dry]` hint is untested visually (same standing as `/privilege [lvl]`).
 
