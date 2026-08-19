@@ -383,21 +383,35 @@ REGISTRY: dict[str, PromptDef] = {
     ),
     "consolidation": PromptDef(
         default=(
-            "Consolidate my long-term memory. Work through the `core_memory` index topic by topic and "
-            "leave the corpus smaller and truer than you found it: merge topics that cover the same "
-            'ground into one instead of writing a second copy; rewrite relative dates ("last week", '
-            '"yesterday") as absolute ones; delete entries that are contradicted, superseded or no '
-            "longer true; and keep the index bounded and its hooks honest, so every line still says "
-            "what its topic actually answers. Read a topic before you change it, change one thing at a "
-            "time, and tell me what you merged, rewrote and deleted when you are done."
+            "Consolidate my long-term memory. Do ONE family of overlapping topics this run, finish it, "
+            "and stop — not the whole corpus.\n\n"
+            "Pick the strongest overlap in the `core_memory` index, or find one with `search`: at high "
+            "fill the index is truncated, so its count is a floor, not the whole corpus — never assume "
+            "you can see every topic. Then, for that family only:\n"
+            "1. `read` every source topic in full before you write anything.\n"
+            "2. `create` the merged topic: one topic carrying every fact worth keeping, dates written "
+            'absolutely ("2026-08-19", never "last week"), and a one-line hook saying what it '
+            "answers.\n"
+            "3. `delete` each source with `superseded_by` set to the merged topic's path — a delete "
+            "whose replacement does not exist is refused, so create first, always. Deletes archive "
+            "rather than destroy, so a mistake is recoverable but still a mistake.\n\n"
+            "Never rewrite a whole topic through `update`: `update` and `remove` take an exact quoted "
+            "passage plus its path, so a reconstructed whole-file body cannot be expressed and will be "
+            "refused. Keep tool calls to at most 3 per batch, so you read each result before deciding "
+            "the next. If a read comes back truncated, work from what it shows or narrow it with "
+            "`search` — never reconstruct a topic from a fragment.\n\n"
+            "Finish with a delta report: what you merged, what you rewrote, what you deleted, each "
+            "with its path — and say plainly if you stopped early or ran out of budget."
         ),
         description=(
-            "The owner-invoked consolidation procedure (D57 §5) — stable wording for the curation pass "
-            "run as an ordinary agent task, so it is one paste rather than a re-improvised prompt each "
-            "time (and the task text a future scheduled 'dream' automation would use, §10). Nothing "
-            "resolves this automatically: it is text for the owner to send. Coupling: the four "
-            "behaviours it names (merge-don't-duplicate · absolutize dates · delete contradicted · keep "
-            "the index bounded) are what makes the pass a cleanup rather than a rewrite."
+            "The owner-invoked consolidation procedure (D57 §5, rewritten by D60 ④ after two live runs) "
+            "— stable wording for the curation pass run as an ordinary agent task, so it is one paste "
+            "rather than a re-improvised prompt each time (and the task text a future scheduled 'dream' "
+            "automation would use, §10). Nothing resolves this automatically: it is text for the owner "
+            "to send, AFTER a `Consolidation Dryrun` pass. Coupling: the batch discipline (ONE family, "
+            "then stop) is what makes the task finishable inside one turn's budgets; the named "
+            "mechanics (read all → create merged → delete each with `superseded_by`) match the rails "
+            "the tool actually enforces, and the create-before-delete order is the one run 2 got wrong."
         ),
     ),
     "consolidation_promote": PromptDef(
@@ -425,6 +439,28 @@ REGISTRY: dict[str, PromptDef] = {
             "fires exactly at the boundary, once per attempt — it is the one steering text the model "
             "gets at the moment the write actually failed, so anything you add here is read at the "
             "point of decision."
+        ),
+    ),
+    "consolidation_dryrun": PromptDef(
+        default=(
+            "DRY RUN — plan a long-term memory consolidation and change nothing.\n\n"
+            "Survey the `core_memory` index and `search` for overlaps; at high fill the index is "
+            "truncated, so its count is a floor, not the whole corpus. `read` whatever you need. Do "
+            "NOT call `create`, `update`, `remove` or `delete` — writes are turned off for this pass, "
+            "so any you attempt will simply be refused.\n\n"
+            "Report the plan instead, for the ONE family you would do first: which topics overlap "
+            "(paths), what the merged topic would say and what its hook would be, which sources you "
+            "would delete and which path each would name as `superseded_by`, and anything you found "
+            "that you would NOT touch and why. Name what you could not see — a truncated read, a topic "
+            "the index hides — so I can judge the plan before you run it."
+        ),
+        description=(
+            "The dry-run half of the D60 ④ procedure: the SAME pass with every write forbidden, "
+            "reporting the plan for the owner to eyeball before the live `Consolidation` run. The "
+            "documented procedure runs it with `memory.auto_write` OFF, so the refusal is structural — "
+            "this text only tells the model why its writes are being refused and what to produce "
+            "instead. Coupling: 'plan, do not write' and the named plan contents are what make the "
+            "output reviewable; a version that says 'be careful' instead produces a run, not a plan."
         ),
     ),
 }

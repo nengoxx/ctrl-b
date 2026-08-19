@@ -31,14 +31,18 @@ export interface ModelRef {
   // the ladder is "off" (off is ABSOLUTE). null = the ladder decides
 }
 
-/** Global compaction knobs surfaced in the Conf UI (D42). The remaining CompactionCfg fields
- *  (clear_keep_steps, threshold_tokens, summarizer, reserve_output, …) stay YAML-only — a partial
- *  PUT deep-merges, so they round-trip untouched. Percent is stored as a fraction (0.5–0.95). */
+/** Global compaction knobs surfaced in the Conf UI (D42 + the D60 Tier-1 clearing gate). The
+ *  remaining CompactionCfg fields (clear_keep_steps, threshold_tokens, summarizer, reserve_output, …)
+ *  stay YAML-only — a partial PUT deep-merges, so they round-trip untouched. Percents are stored as
+ *  fractions (threshold_frac 0.5–0.95; clear_trigger_pct 0–1). */
 export interface CompactionCfg {
   enabled: boolean;
   threshold_frac: number; // fire when est. context > window × this (schema 0.5–0.95; shown ×100 as a %)
   keep_recent_tokens: number; // token floor kept unfolded
   clear_output_min_tokens: number; // tool-output trim floor
+  clear_trigger_pct: number; // D60: clear only above this fraction of the chain's smallest window
+  clear_min_reclaim_tokens: number; // D60: skip a trim reclaiming less than this
+  clear_exclude_tools: string[]; // D60: tools whose results are never cleared
 }
 
 export interface AgentDef {
@@ -88,13 +92,20 @@ export function pickAgentSection(section: Partial<AgentSectionCfg> | undefined):
     auto_rotate: section?.auto_rotate ?? false,
     auto_rotate_min_overlap: section?.auto_rotate_min_overlap ?? 2,
     streaming: section?.streaming ?? "auto",
-    // D42 — global compaction defaults (per-agent overrides stay YAML-only). Defaults mirror
-    // CompactionCfg's backend defaults; only these four knobs are surfaced.
+    // D42/D60 — global compaction defaults (per-agent overrides stay YAML-only). Defaults mirror
+    // CompactionCfg's backend defaults; only these knobs are surfaced.
     compaction: {
       enabled: section?.compaction?.enabled ?? true,
       threshold_frac: section?.compaction?.threshold_frac ?? 0.85,
       keep_recent_tokens: section?.compaction?.keep_recent_tokens ?? 4096,
       clear_output_min_tokens: section?.compaction?.clear_output_min_tokens ?? 500,
+      clear_trigger_pct: section?.compaction?.clear_trigger_pct ?? 0.5,
+      clear_min_reclaim_tokens: section?.compaction?.clear_min_reclaim_tokens ?? 1024,
+      clear_exclude_tools: section?.compaction?.clear_exclude_tools ?? [
+        "task_plan",
+        "memory",
+        "core_memory",
+      ],
     },
   };
 }

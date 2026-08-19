@@ -448,6 +448,9 @@ class _RecInference:
 
         return gen()
 
+    async def min_chain_window(self, _mode=None, _model=None):  # D60 — the clearing pressure gate
+        return None  # no window → always-on clearing (the pre-D60 behaviour this test assumes)
+
 
 def test_finalize_retains_toolset_with_tool_choice_none():
     from app.config import Settings
@@ -474,7 +477,7 @@ def test_finalize_retains_toolset_with_tool_choice_none():
 
     s._assemble = _assemble
 
-    async def _plan_clearing(_thread):  # D42 Codex FIX 2 — finalize computes a clearing plan
+    async def _plan_clearing(_thread, **_kw):  # D42 Codex FIX 2 — finalize computes a clearing plan
         from app.services.agent.compaction import ClearingPlan
 
         return ClearingPlan(frozenset(), {})

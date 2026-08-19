@@ -172,15 +172,28 @@ _GOLDEN: dict[str, tuple[dict[str, str], str]] = {
     # Phase 20 / S4 — the curation trio: the owner-invoked procedure, the promotion clause code
     # renders into two other prompts' `{{longterm}}` slot, and the cap error that hosts it at the
     # hard boundary. Born in the registry, so these pin the shipped defaults.
+    # Rewritten by D60 ④ after the two failed live runs (§14c/§14d): batch discipline, the named
+    # create-before-delete mechanics, the truncated-index warning and the closing delta report.
     "consolidation": (
         {},
-        "Consolidate my long-term memory. Work through the `core_memory` index topic by topic and "
-        "leave the corpus smaller and truer than you found it: merge topics that cover the same "
-        'ground into one instead of writing a second copy; rewrite relative dates ("last week", '
-        '"yesterday") as absolute ones; delete entries that are contradicted, superseded or no '
-        "longer true; and keep the index bounded and its hooks honest, so every line still says "
-        "what its topic actually answers. Read a topic before you change it, change one thing at a "
-        "time, and tell me what you merged, rewrote and deleted when you are done.",
+        "Consolidate my long-term memory. Do ONE family of overlapping topics this run, finish it, "
+        "and stop — not the whole corpus.\n\n"
+        "Pick the strongest overlap in the `core_memory` index, or find one with `search`: at high "
+        "fill the index is truncated, so its count is a floor, not the whole corpus — never assume "
+        "you can see every topic. Then, for that family only:\n"
+        "1. `read` every source topic in full before you write anything.\n"
+        "2. `create` the merged topic: one topic carrying every fact worth keeping, dates written "
+        'absolutely ("2026-08-19", never "last week"), and a one-line hook saying what it answers.\n'
+        "3. `delete` each source with `superseded_by` set to the merged topic's path — a delete "
+        "whose replacement does not exist is refused, so create first, always. Deletes archive "
+        "rather than destroy, so a mistake is recoverable but still a mistake.\n\n"
+        "Never rewrite a whole topic through `update`: `update` and `remove` take an exact quoted "
+        "passage plus its path, so a reconstructed whole-file body cannot be expressed and will be "
+        "refused. Keep tool calls to at most 3 per batch, so you read each result before deciding "
+        "the next. If a read comes back truncated, work from what it shows or narrow it with "
+        "`search` — never reconstruct a topic from a fragment.\n\n"
+        "Finish with a delta report: what you merged, what you rewrote, what you deleted, each "
+        "with its path — and say plainly if you stopped early or ran out of budget.",
     ),
     "consolidation_promote": (
         {},
@@ -200,6 +213,20 @@ _GOLDEN: dict[str, tuple[dict[str, str], str]] = {
         # `test_core_memory_d57.test_the_cap_error_names_the_promotion_path`).
         "this add would grow Agent memory to 2,240 chars, past its 2,200-char cap. Remove or "
         "shorten existing entries first, then retry — a remove/shrink is always allowed.",
+    ),
+    # D60 ④ — the dry-run sibling, APPENDED (a later addition never jumps the registry queue).
+    "consolidation_dryrun": (
+        {},
+        "DRY RUN — plan a long-term memory consolidation and change nothing.\n\n"
+        "Survey the `core_memory` index and `search` for overlaps; at high fill the index is "
+        "truncated, so its count is a floor, not the whole corpus. `read` whatever you need. Do "
+        "NOT call `create`, `update`, `remove` or `delete` — writes are turned off for this pass, "
+        "so any you attempt will simply be refused.\n\n"
+        "Report the plan instead, for the ONE family you would do first: which topics overlap "
+        "(paths), what the merged topic would say and what its hook would be, which sources you "
+        "would delete and which path each would name as `superseded_by`, and anything you found "
+        "that you would NOT touch and why. Name what you could not see — a truncated read, a topic "
+        "the index hides — so I can judge the plan before you run it.",
     ),
 }
 
@@ -254,6 +281,7 @@ def test_steering_prompts_carry_a_coupling_warning() -> None:
         "core_memory_policy",
         "core_memory_recall",
         "consolidation",
+        "consolidation_dryrun",
         "consolidation_promote",
         "memory_cap_error",
     )

@@ -565,6 +565,21 @@ export function AgentsEditor(props: {
   const setCompaction = (p: Partial<AgentSectionCfg["compaction"]>) =>
     setCfg((c) => ({ ...c, compaction: { ...c.compaction, ...p } }));
 
+  // D60 `clear_exclude_tools` — the ONE list field in this card. The draft carries the RAW text while
+  // the owner types (round-tripping through `join(", ")` on every keystroke would eat a separator the
+  // moment it's typed — ConfTab's watched-device precedent) while the parsed list rides the ordinary
+  // `cfg` draft, so dirtiness and the savebar work exactly as for every other knob. Reseeded from the
+  // doc whenever the saved list moves.
+  const [excludeText, setExcludeText] = useState(cfg.compaction.clear_exclude_tools.join(", "));
+  useEffect(
+    () => setExcludeText(props.cfg.compaction.clear_exclude_tools.join(", ")),
+    [props.cfg.compaction.clear_exclude_tools],
+  );
+  const commitExclude = (text: string) => {
+    setExcludeText(text);
+    setCompaction({ clear_exclude_tools: text.split(/[\s,]+/).filter(Boolean) });
+  };
+
   const toggle = (name: string) => setOpen((o) => (o === name ? null : name));
 
   const commitNew = () => {
@@ -606,6 +621,11 @@ export function AgentsEditor(props: {
             threshold_frac: Math.min(0.95, Math.max(0.5, cfg.compaction.threshold_frac)),
             keep_recent_tokens: cfg.compaction.keep_recent_tokens,
             clear_output_min_tokens: cfg.compaction.clear_output_min_tokens,
+            // D60 — the clearing gate. `clear_trigger_pct` is clamped to its schema range (0 < x ≤ 1)
+            // at commit, like threshold_frac; the field's gt/le guard is the backstop.
+            clear_trigger_pct: Math.min(1, Math.max(0.01, cfg.compaction.clear_trigger_pct)),
+            clear_min_reclaim_tokens: cfg.compaction.clear_min_reclaim_tokens,
+            clear_exclude_tools: cfg.compaction.clear_exclude_tools,
           },
         },
       },
@@ -871,6 +891,61 @@ export function AgentsEditor(props: {
             }
           />
         </div>
+      </div>
+
+      {/* D60 — the Tier-1 clearing gate: trimming old tool outputs only starts once the prompt
+          passes a fraction of the serving chain's SMALLEST context window, never reclaims less than
+          the floor, and never touches these tools' results (or anything the current turn produced). */}
+      <div className="confrow">
+        <div className="k">
+          <div className="label">Tool-output clearing</div>
+          <div className="desc">
+            clear above % of window · min tokens reclaimed · tools never cleared (the current turn
+            is never cleared) · a per-tool call cap lives in YAML as
+            tool_overrides.&lt;tool&gt;.max_calls
+          </div>
+        </div>
+      </div>
+      <div className="agent-lim agent-lim-inset">
+        <div className="agent-lim-cell">
+          <span>clear above %</span>
+          <input
+            aria-label="Clear tool outputs above % of context"
+            inputMode="numeric"
+            value={String(Math.round(cfg.compaction.clear_trigger_pct * 100))}
+            onChange={(e) =>
+              setCompaction({ clear_trigger_pct: (Number(e.target.value) || 0) / 100 })
+            }
+          />
+        </div>
+        <div className="agent-lim-cell">
+          <span>min reclaim</span>
+          <input
+            aria-label="Minimum tokens reclaimed by a trim"
+            inputMode="numeric"
+            value={String(cfg.compaction.clear_min_reclaim_tokens)}
+            onChange={(e) =>
+              setCompaction({
+                clear_min_reclaim_tokens: numOrKeep(
+                  e.target.value,
+                  cfg.compaction.clear_min_reclaim_tokens,
+                ),
+              })
+            }
+          />
+        </div>
+      </div>
+      <div className="confrow">
+        <div className="k">
+          <div className="label">Never clear</div>
+          <div className="desc">comma-separated tool names</div>
+        </div>
+        <input
+          aria-label="Tools never cleared"
+          autoComplete="off"
+          value={excludeText}
+          onChange={(e) => commitExclude(e.target.value)}
+        />
       </div>
 
       <div className="conf-savebar">

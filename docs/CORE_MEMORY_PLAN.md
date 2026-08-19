@@ -311,15 +311,21 @@ allowlists can exclude it; declares `timeout_s` — the fail-closed deadline tes
   unique-substring match (the tier-1 F6 rule *and* the vault's compare-and-swap requirement — same
   mechanism, already proven in `memory.py:_merge`); stale/ambiguous ⇒ steering ERROR, never a
   silent overwrite;
-- `delete(path, content_hash)` — whole topic + its index line; the token is the hash `read`
-  returned (council Codex-3 — a description token both fails CAS, since a body can change under
-  an unchanged description, and is unusable on the copied corpus, whose p100 description is 6,337
-  chars against a 4,096-char read cap).
+- `delete(path, content_hash, superseded_by | reason)` — whole topic + its index line; the token is
+  the hash `read` returned (council Codex-3 — a description token both fails CAS, since a body can
+  change under an unchanged description, and is unusable on the copied corpus, whose p100
+  description is 6,337 chars against a 4,096-char read cap). **D60 ③ adds the INTENT gate + the soft
+  delete**: exactly one of `superseded_by` (a topic that must already exist on disk — create-before-
+  delete, self-reference refused) or a sanitized one-line `reason`; the topic is then RENAMED into
+  `<root>/.archive/<its relative path>` rather than unlinked (the scan skips dotted components, so
+  nothing else changes), and the index replace rolls that rename back if it fails.
 
 **Crash-tolerant two-file mutations — ordering + idempotent retry, explicitly NOT a transaction**
 (council Codex-4): create writes topic first, index second — a retry that finds the exact topic
-with a missing index line completes it; delete removes the index line first, topic second — a
-retry completes either remainder; a metadata-changing update carries the same topic-first/index-
+with a missing index line completes it; delete (since D60 ③) archives the topic first and replaces
+the index second, ROLLING THE ARCHIVE BACK if the index write fails, and a crash between the two
+leaves a dangling index line the reader already ignores and a retry cleans up; a metadata-changing
+update carries the same topic-first/index-
 second *ordering* (rewriting its own index line — title from the new name, a custom hook
 preserved) but deliberately NOT a repair-on-retry: a crash between its two writes leaves a
 diverged hook that the custom-hook rule then preserves until a hand edit (recorded S3 residual —
@@ -349,6 +355,24 @@ delete actions above are sufficient for "consolidate my long-term memory" run as
 (porting autoDream's four behaviors — merge-don't-duplicate, absolutize dates, delete
 contradicted, bound the index — R37 §11). No scheduler, no background pass in v1; the scheduled
 arm is banked (§10).
+
+**The procedure, as amended by D60 ④ — dry-run → owner eyeball → live run:**
+1. **Dry run.** Turn `memory.auto_write` OFF (Conf → Memory), open a fresh thread and send the
+   `Consolidation Dryrun` prompt. Every write-class action is refused by the existing autonomy gate,
+   so the pass is read-only *structurally* — not by asking the model to behave — and it reports the
+   plan instead.
+2. **Eyeball.** Read the plan: the family, the sources by path, what the merged topic would say,
+   which deletes name which `superseded_by`, and what the model says it could not see.
+3. **Live run.** Turn `memory.auto_write` back on and send the `Consolidation` prompt in a fresh
+   thread. It does ONE family and stops; run it again for the next one.
+
+**Recovering an archived topic** (§15b-12; a `restore` action is a recorded non-build): move
+`<root>/.archive/<path>` back to `<root>/<path>` and re-add its index line in `MEMORY.md` — the two
+halves of the §3 write path, by hand. **Check the live destination first**: if a topic has since
+been recreated at that path, the restore would overwrite live work — resolve that by hand (keep one,
+rename the other) before moving. The corpus enforces the same rule from its side: a second delete of
+that path is refused while an earlier archived copy sits there, and `create` refuses to overwrite a
+differing topic. `.archive/` is never pruned automatically — it is the owner's to clear.
 
 ## 6. Seam map (fit audit, main-seat spot-verified; cite = reuse point)
 
@@ -797,6 +821,10 @@ runtime candidate: paged reads. Raw captures: `~/.ctrl-b-dev/consolidation-run2-
 (TRACE/OPERATOR_LOG/SSE per leg); the run thread is inspectable on dev.
 
 ## 15. The consolidation-hardening slice (D60) — spec of record (owner-confirmed 2026-08-19)
+
+> **✅ BUILT 2026-08-19** (Opus, from this section + §15b as the pinned brief; three commits, all
+> four parts + the Conf exposure + the §15/§15b test list). Not yet reviewed (the Codex diff round)
+> and not yet exercised — **run 3 on dev is owner-court, dry-run first, per the procedure in §5**.
 
 Evidence base: §14c + §14d (both live runs) · R43 (retention/budgets field) · R44 (destructive-op
 guards field). Owner rulings R1–R4 as amended by the research, confirmed in conversation

@@ -9,13 +9,14 @@ import { pushToast } from "../store/toast";
 // editor (mirrors the skills file API; blank content clears the file). The agent's own structured
 // edits go through the `memory` tool (7e-d-2) — these are the owner's manual edits, uncapped.
 
-/** The tier-2 long-term slot's own caps (config.yaml `memory.longterm.core.*`, D57 §6.1). The Conf
- *  disclosure edits exactly these five fields and nothing else. */
+/** The tier-2 long-term slot's own caps (config.yaml `memory.longterm.core.*`, D57 §6.1 + D60's
+ *  `recall_min_charge_chars`). The Conf disclosure edits exactly these six fields and nothing else. */
 export interface CoreMemoryCfg {
   root: string; // relative → under the memory dir; absolute honored (and then unversioned)
   index_char_limit: number;
   topic_char_limit: number;
   recall_char_limit: number;
+  recall_min_charge_chars: number; // D60: the minimum one read/search charges against the cap
   consolidation_nudge_pct: number;
 }
 

@@ -102,6 +102,9 @@ const baseCfg: AgentSectionCfg = {
     threshold_frac: 0.85,
     keep_recent_tokens: 4096,
     clear_output_min_tokens: 500,
+    clear_trigger_pct: 0.5,
+    clear_min_reclaim_tokens: 1024,
+    clear_exclude_tools: ["task_plan", "memory", "core_memory"],
   },
 };
 
@@ -125,6 +128,9 @@ type SavedAgent = {
       threshold_frac: number;
       keep_recent_tokens: number;
       clear_output_min_tokens: number;
+      clear_trigger_pct: number;
+      clear_min_reclaim_tokens: number;
+      clear_exclude_tools: string[];
     };
     defaults: {
       model: {
@@ -162,7 +168,44 @@ describe("AgentsEditor · global compaction block (D42)", () => {
       threshold_frac: 0.7,
       keep_recent_tokens: 2000,
       clear_output_min_tokens: 300,
+      clear_trigger_pct: 0.5,
+      clear_min_reclaim_tokens: 1024,
+      clear_exclude_tools: ["task_plan", "memory", "core_memory"],
     });
+  });
+
+  // D60 — the Tier-1 clearing gate rides the same globals draft/savebar.
+  it("round-trips the clearing gate: % ÷100, the reclaim floor, and the never-clear list", () => {
+    renderEditor();
+    expect(value("Clear tool outputs above % of context")).toBe("50");
+    expect(value("Minimum tokens reclaimed by a trim")).toBe("1024");
+    expect(value("Tools never cleared")).toBe("task_plan, memory, core_memory");
+
+    fireEvent.change(screen.getByLabelText("Clear tool outputs above % of context"), {
+      target: { value: "80" },
+    });
+    fireEvent.change(screen.getByLabelText("Minimum tokens reclaimed by a trim"), {
+      target: { value: "2048" },
+    });
+    fireEvent.change(screen.getByLabelText("Tools never cleared"), {
+      target: { value: "task_plan, core_memory" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
+
+    const c = lastAgentPayload().agent.compaction;
+    expect(c.clear_trigger_pct).toBe(0.8);
+    expect(c.clear_min_reclaim_tokens).toBe(2048);
+    expect(c.clear_exclude_tools).toEqual(["task_plan", "core_memory"]);
+  });
+
+  it("keeps a separator the owner just typed in the never-clear list", () => {
+    renderEditor();
+    fireEvent.change(screen.getByLabelText("Tools never cleared"), {
+      target: { value: "memory, " },
+    });
+    expect(value("Tools never cleared")).toBe("memory, "); // raw text while typing, list on save
+    fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
+    expect(lastAgentPayload().agent.compaction.clear_exclude_tools).toEqual(["memory"]);
   });
 
   it("clamps the % to the schema bounds (50–95) at save", () => {

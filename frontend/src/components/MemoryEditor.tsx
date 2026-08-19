@@ -109,7 +109,8 @@ function MemoryFileEditor({ slot }: { slot: MemorySlot }) {
   );
 }
 
-/** The tier-2 (Core Memory) disclosure body, D57 §6.1 — the enable switch, the five tunables it is
+/** The tier-2 (Core Memory) disclosure body, D57 §6.1 (+ D60's min recall charge) — the enable
+ *  switch, the six tunables it is
  *  allowed to edit, and the read-only scan status. Mounted only while the row is open, so the status
  *  endpoint is hit when the owner actually looks. */
 function CoreMemoryPanel({ cfg }: { cfg: LongTermCfg }) {
@@ -124,18 +125,21 @@ function CoreMemoryPanel({ cfg }: { cfg: LongTermCfg }) {
   const [indexCap, setIndexCap] = useState(String(core.index_char_limit));
   const [topicCap, setTopicCap] = useState(String(core.topic_char_limit));
   const [recallCap, setRecallCap] = useState(String(core.recall_char_limit));
+  const [minCharge, setMinCharge] = useState(String(core.recall_min_charge_chars));
   const [nudgePct, setNudgePct] = useState(String(core.consolidation_nudge_pct));
   useEffect(() => {
     setRoot(core.root);
     setIndexCap(String(core.index_char_limit));
     setTopicCap(String(core.topic_char_limit));
     setRecallCap(String(core.recall_char_limit));
+    setMinCharge(String(core.recall_min_charge_chars));
     setNudgePct(String(core.consolidation_nudge_pct));
   }, [
     core.root,
     core.index_char_limit,
     core.topic_char_limit,
     core.recall_char_limit,
+    core.recall_min_charge_chars,
     core.consolidation_nudge_pct,
   ]);
   const dirty =
@@ -143,6 +147,7 @@ function CoreMemoryPanel({ cfg }: { cfg: LongTermCfg }) {
     indexCap !== String(core.index_char_limit) ||
     topicCap !== String(core.topic_char_limit) ||
     recallCap !== String(core.recall_char_limit) ||
+    minCharge !== String(core.recall_min_charge_chars) ||
     nudgePct !== String(core.consolidation_nudge_pct);
   useRegisterDirty("memory:core", dirty);
 
@@ -218,6 +223,17 @@ function CoreMemoryPanel({ cfg }: { cfg: LongTermCfg }) {
           onChange={(e) => setRecallCap(e.target.value)}
         />
 
+        {/* D60 §15b-3 — reads no longer count against `max_calls_per_tool`, so the recall budget is
+            their only bound: every read/search charges at least this much, whatever it returns. */}
+        <label>Min recall charge</label>
+        <input
+          aria-label="Minimum recall charge"
+          type="text"
+          inputMode="numeric"
+          value={minCharge}
+          onChange={(e) => setMinCharge(e.target.value)}
+        />
+
         <label>Nudge threshold</label>
         <input
           aria-label="Core Memory nudge threshold"
@@ -239,6 +255,7 @@ function CoreMemoryPanel({ cfg }: { cfg: LongTermCfg }) {
                 index_char_limit: Number(indexCap),
                 topic_char_limit: Number(topicCap),
                 recall_char_limit: Number(recallCap),
+                recall_min_charge_chars: Number(minCharge),
                 consolidation_nudge_pct: Number(nudgePct),
               },
             })

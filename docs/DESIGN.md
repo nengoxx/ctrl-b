@@ -616,17 +616,27 @@ class Compactor:                          # services/agent/compaction.py — sta
 >   differently), **degraded/absent telemetry** (`record(total=None)`), or the watermark falling out
 >   of history. A backend that reports no total (no `return_progress`/`include_usage`) runs
 >   heuristic-only — the client logs an *anchoring-inactive* INFO once naming the exact remedy.
-> - **Tier 1 — assembly-time tool-output clearing** runs free before any paid summary: the pure,
->   shared `plan_clearing(history, cfg) → ClearingPlan` selects tool-result OUTPUTS to blank
+> - **Tier 1 — assembly-time tool-output clearing** runs free before any paid summary, and (since
+>   D60 ①) only under PRESSURE: `plan_clearing` no-ops until the assembled-prompt estimate passes
+>   `clear_trigger_pct × window`, where `window` is the SMALLEST context window across the turn's
+>   eligible failover chain (`InferenceClient.min_chain_window`; `None` anywhere ⇒ the pre-D60
+>   always-on behaviour), and a whole plan reclaiming less than `clear_min_reclaim_tokens` is
+>   abandoned. The pure, shared
+>   `plan_clearing(history, cfg, window=…, estimated_tokens=…) → ClearingPlan` selects tool-result
+>   OUTPUTS to blank
 >   (`OUTPUT_CLEARED_PLACEHOLDER`), keeping the `[state] summary` line + any error. One selection per
 >   iteration feeds **both** `_assemble` (renders the placeholder for each `call_id` — a
 >   rendering-time substitution only, the DB row stays verbatim, A12) and the trigger (priced
 >   net-of-clearing at a conservative **chars/5**, below the estimator's chars/4; the gain is the
 >   **net difference over the placeholder** and only net-positive outputs are eligible — clearing can
 >   never enlarge the prompt, even at `clear_output_min_tokens: 0`). Structural
->   never-clear: a call in a suspend state, a `task_plan`/`memory` result, a *synthesized* result
+>   never-clear: **anything produced within the CURRENT TURN** (D60 ① — the boundary is the last
+>   non-steer `user` row, `turn_start_index`, the same identity the recall budget uses, so it
+>   survives a confirm round-trip), a call in a suspend state, a result from a tool named in
+>   `clear_exclude_tools` (default `task_plan`/`memory`/`core_memory`), a *synthesized* result
 >   (`duration_ms is None` — never a real tool run), an output at/below `clear_output_min_tokens`, or
->   one within the most-recent `clear_keep_steps` steps (a **step** = one assistant-tool-call round).
+>   one within the most-recent `clear_keep_steps` steps of a PRIOR turn (a **step** = one
+>   assistant-tool-call round).
 >   The forced tool-less `_finalize` assembles under the same clearing plan (its recent-step
 >   protection keeps what an honest wrap-up needs).
 >   The credit is exact per estimator mode (R1): heuristic mode credits the full priced gain;
@@ -637,8 +647,9 @@ class Compactor:                          # services/agent/compaction.py — sta
 >   `keep_recent_tokens`); whichever keeps *more* recent context wins. Then three snaps that only
 >   ever *grow* the tail: the suspend-snap (an `AWAITING_*` call + its resume siblings/result stay
 >   verbatim), the **active-`task_plan` snap** (the most-recent `task_plan` pair round-trips in the
->   tail; superseded older pairs may fold), and the user-boundary snap (the tail starts at a `user`
->   message, so a `tool` result is never orphaned).
+>   tail; superseded older pairs may fold), and the turn-boundary snap (the tail starts at a
+>   NON-STEER `user` message, so a `tool` result is never orphaned AND the lossy fold can never
+>   summarize away part of a live turn — D60 §15b-7).
 > - **Tier 2 — the summarizer** fills a fixed **five-section template** (Goals & Requests · Key Facts
 >   & State · Actions Taken & Outcomes · Rules & Constraints · Next Steps), scoped to the folded
 >   head (a prior rolling summary re-folds). `/compact <instructions>` rides as an extra emphasis
@@ -1018,7 +1029,7 @@ class Settings(BaseModel):
     automations: AutomationsCfg                        # runner tunables; the definitions live in SQLite
     media: dict[str, MediaNsCfg]                       # owner media state keyed by NAMESPACE (D53)
     openapi_servers: list[OpenApiServerCfg]; mcp_servers: list[McpServerCfg]
-    tool_overrides: dict[str, ToolOverride]            # per-tool, one unified object (D22 + D44)
+    tool_overrides: dict[str, ToolOverride]            # per-tool, one unified object (D22 + D44 + D60 max_calls)
     prompts: dict[str, PromptOverride]                 # per-prompt-id overrides (D56, §5.8)
     computers: dict[str, ComputerCfg]                  # hosts + services, projected (see below)
 ```

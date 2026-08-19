@@ -777,7 +777,8 @@ fixed in this one.
 
 Recorded so the registry inventory here doesn't read as final: Core Memory added **five ids**
 (`core_memory_policy` · `core_memory_recall` · `consolidation` · `consolidation_promote` ·
-`memory_cap_error`) and gave `consolidation_nudge` a new `{{longterm}}` placeholder — the registry
-is now **23 ids**. Those texts and their coupling are owned by
+`memory_cap_error`) and gave `consolidation_nudge` a new `{{longterm}}` placeholder; D60 rewrote
+`consolidation` and appended `consolidation_dryrun` — the registry is now **24 ids**. Those texts
+and their coupling are owned by
 [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md), not this phase; the mechanism (one registry row +
 one `resolve()` call) is unchanged, which was the point.

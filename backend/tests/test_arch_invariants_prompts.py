@@ -105,13 +105,17 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         # `memory_tool.gate_memory` below already sits in. The corpus's model-facing FRAMING lives in
         # the registry (`core_memory_policy`/`core_memory_recall`) and its routing/eligibility wording
         # in the `@action` description, which is `tool_overrides` territory.
+        # D60 ②③ extends the same class: the delete-intent gate + its create-before-delete/
+        # self-reference refusals, and the recall budget's spent-for-this-turn refusal.
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._confine"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._create_blocking"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._delete_blocking"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._guard_secrets"),
+        ("app/services/agent/core_memory.py", "CoreMemoryCorpus._require_supersedes"),
         ("app/services/agent/core_memory.py", "_cas"),
+        ("app/services/agent/core_memory.py", "_delete_note"),
         ("app/services/agent/core_memory.py", "_index_raw"),
-        ("app/services/agent/core_memory_tool.py", "_recalled"),
+        ("app/services/agent/core_memory_tool.py", "_charge"),
         ("app/services/agent/core_memory_tool.py", "gate_core_memory"),
         ("app/services/agent/memory.py", "FileMemoryProvider._merge"),
         ("app/services/agent/memory.py", "MemoryCapError.__init__"),

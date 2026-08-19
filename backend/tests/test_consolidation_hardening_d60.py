@@ -645,6 +645,12 @@ def test_the_dry_run_shape_refuses_every_write_and_changes_nothing(tmp_path, mon
     assert write_res.state.value == "error" and "memory.auto_write" in (write_res.error or "")
     assert _tree(root) == before  # zero corpus writes
 
+    # …and the registry ships the text that tells the model what to produce instead (§15 ④).
+    from app.services.agent.prompts import REGISTRY
+
+    plan = REGISTRY["consolidation_dryrun"].default
+    assert "DRY RUN" in plan and "Do NOT call `create`" in plan
+
 
 def _clearable_history():
     """A prior turn with two big tool outputs + the current turn's opening user row."""
