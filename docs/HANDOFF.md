@@ -148,9 +148,13 @@ restart + a no-failover journal check.
    the drive; readiness is now a VERIFIED property owned by Phase 19 Packet ③'s core-memory
    readiness rider (a scripted end-to-end dev exercise, §14b as template). When the owner does
    delve in: enable on prod per §3b (the pre-copy `.gitignore` step first!), real vault, a
-   promotion, a `consolidation` run — **⚠ the first consolidation run FAILED on dev 2026-08-19
-   (§14c): do NOT re-run it as shipped; the redesign session (prompt + runtime seams) comes
-   first, owner-directed**. ~~The live `cache_n`
+   promotion, a `consolidation` run — **⚠ TWO consolidation runs FAILED on dev 2026-08-19
+   (§14c gemma: zero writes, spiralled · §14d qwen3.6-max: better discipline, then a
+   correctly-formed DELETE of a live topic whose cap-blocked replacement never existed —
+   reverted). Do NOT re-run as shipped. The evidence base is COMPLETE; the redesign session
+   (owner-directed) now has three MANDATORY runtime items (§14d): exempt `core_memory` from D42
+   Tier-1 clearing · split read/write budgets · tool-enforced create-before-delete — plus the
+   §14c prompt items.** ~~The live `cache_n`
    measure~~ ✅ run 2026-08-19 (CORE_MEMORY_PLAN §14 Measured bullet): ctrl-b's assembly holds
    D15 #4 (writes diverge only inside the index block, head byte-stable) but the local gemma
    host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention
