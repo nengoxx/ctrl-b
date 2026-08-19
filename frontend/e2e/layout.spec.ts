@@ -1531,6 +1531,63 @@ test("the pinned plan header and the mini-player never overlap — in every chro
   expect(pageErrors).toEqual([]);
 });
 
+test("gacha · a pinned plan reserves NO band over the oracle (pill floats over the art)", async ({
+  page,
+  pageErrors,
+}) => {
+  // Owner round 2026-08-19: the pinned panel's sticky flow box reserved a pill-height band of bare
+  // background above the full-bleed oracle — the second first-block-geometry gap of this family
+  // (c8dc09d closed the bar-less inset one). The ruling is the launcher-icon one: chrome floats OVER
+  // the art, the art never yields. Pinned invariant: the oracle's seat WITH a plan equals its seat
+  // WITHOUT one, in every appbar mode, fade off (static block) AND on (sticky backdrop) — and the
+  // pill's box genuinely intersects the art's.
+  const readOracle = () =>
+    page.evaluate(() => {
+      // The thread bottom-pins on load when messages exist — zero the scroll first, or the static
+      // (fade-off) oracle reads scrolled-up and the seat compare is confounded.
+      document.getElementById("app-scroll")!.scrollTop = 0;
+      const oracle = document.querySelector<HTMLElement>(".gc-oracle")!.getBoundingClientRect();
+      const head = document.querySelector<HTMLElement>(".plan-pin-head")?.getBoundingClientRect();
+      return {
+        top: oracle.top,
+        bottom: oracle.bottom,
+        head: head ? { top: head.top, bottom: head.bottom } : null,
+      };
+    });
+  for (const fade of [false, true]) {
+    for (const chrome of ["visible", "off", "minimal"] as const) {
+      const cell = `fade=${fade} chrome=${chrome}`;
+      await seedThread(page, []);
+      await seedUI(page, {
+        theme: "gacha",
+        mode: "dark",
+        tab: "agent",
+        appbarMode: chrome,
+        themeSettings: { gacha: { planPlacement: "pinned", oracle: fade } },
+        v: 1,
+      });
+      await page.goto("/");
+      await expect(page.locator(".gc-oracle")).toBeVisible();
+      const bare = await readOracle();
+
+      await seedThread(page, planThread([{ text: "wake pegasus", status: "active" }]));
+      await page.goto("/");
+      await expect(page.locator(".plan-pin-panel")).toBeVisible();
+      await expect(page.locator(".gc-oracle")).toBeVisible();
+      const withPlan = await readOracle();
+
+      expect(
+        Math.abs(withPlan.top - bare.top),
+        `oracle seat drifted (${cell})`,
+      ).toBeLessThanOrEqual(1);
+      expect(withPlan.head, `no pill rendered (${cell})`).not.toBeNull();
+      expect(withPlan.head!.bottom, `pill above the art (${cell})`).toBeGreaterThan(withPlan.top);
+      expect(withPlan.head!.top, `pill below the art (${cell})`).toBeLessThan(withPlan.bottom);
+    }
+  }
+  expect(pageErrors).toEqual([]);
+});
+
 test("gacha · the ARCADE skin holds its shape under every composer LAYOUT", async ({
   page,
   pageErrors,

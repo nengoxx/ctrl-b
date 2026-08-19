@@ -4035,12 +4035,26 @@
      * only declared in the two bar-less modes, so the fallback 0px makes every bar mode a no-op without
      * a mode list. The pulled margin collapses through the zero-height anchor, so the anchor travels
      * with the oracle and M7's measured base stays honest; the sticky pin (`top: --appbar-h` = 0 here)
-     * then matches the flow position, so the fade neither jumps nor uncovers the strip on scroll.
-     * Guarded on the anchor being the tab's FIRST child: with a pinned plan panel above (planPlacement
-     * "pinned") the panel is the first block, its head is real text chrome, and it must keep the inset —
-     * that clearance is the very overlap W1 closed. */
+     * then matches the flow position, so the fade neither jumps nor uncovers the strip on scroll. */
     .kit .tab > .gc-oracle-anchor:first-child + .gc-oracle {
       margin-top: calc(-1 * var(--kit-inset-top, 0px));
+    }
+    /* With a pinned plan panel above (planPlacement "pinned") the panel is the first block, and its
+     * sticky flow box reserved a pill-height band of bare background over the art (owner report
+     * 2026-08-19 — "the gap coincides exactly with the plan pill"). The ruling is the launcher-icon
+     * one: chrome floats OVER the oracle, the art never yields. The art pulls up by the panel's flow
+     * height too — `--plan-head-h` is the SAME measured token the kit's mini-player yield reads
+     * (kit.css publishes it from PinnedPlanPanel's ResizeObserver; 31px = that rule's own fallback),
+     * so the two consumers can never disagree. The panel's 10px flow margin-bottom is zeroed rather
+     * than folded into the pull: over full-bleed art it separates nothing, and zeroing it keeps this
+     * rule free of the kit's margin literal (no cross-file 10px to drift). The panel stays sticky at
+     * the W1 band (z 4, over the art at z 0), so its rest seat, the launcher clearances and the
+     * mini-player yield are all untouched — only the reserved band is gone. */
+    .kit .tab > .plan-pin-panel:has(+ .gc-oracle-anchor) {
+      margin-bottom: 0;
+    }
+    .kit .tab > .plan-pin-panel + .gc-oracle-anchor + .gc-oracle {
+      margin-top: calc(-1 * (var(--kit-inset-top, 0px) + var(--plan-head-h, 31px)));
     }
     /* A FACE is the oracle's whole visible surface — art + scrim + name plate. There are two of them,
      * stacked, and the M7 crossfade runs BETWEEN them (owner ruling, G3: the prototype filters the entire
