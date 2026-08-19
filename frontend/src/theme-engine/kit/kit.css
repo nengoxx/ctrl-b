@@ -1405,7 +1405,9 @@ body[data-composer-skin="arcade"] .kit {
    * `--accent`, NEVER `--accent-fill`: that token may be a gradient <image> and would devolve in a colour
    * slot. Declared on `.kit` and never on `:root` — §14.6: a custom property substitutes its `var()`s where
    * it is DECLARED, and the theme declares `--accent` on <body>. */
-  --skin-lift: 4px;
+  /* 4px → 3px, owner ruling 2026-08-19 ("slightly smaller"): the skin's drop softens one notch while
+   * gacha's own card/portrait signature (`--gc-lift`, 4/5px) stays the theme's — independent by design. */
+  --skin-lift: 3px;
   --skin-border: transparent;
   --skin-fill: var(--surface);
   --skin-frost: none;

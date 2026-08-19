@@ -121,12 +121,12 @@ describe("§14.6 — the slots are declared on `.kit`, never on `:root`/`html`",
   });
 });
 
-describe("the arcade signature (owner ruling 2026-08-18: SOLID `--accent`, 4px)", () => {
+describe("the arcade signature (owner rulings: SOLID `--accent` 2026-08-18; 3px 2026-08-19)", () => {
   const DROP = "var(--skin-lift) var(--skin-lift) 0 var(--accent)";
   const arcade = () => blocksFor(kit, 'body[data-composer-skin="arcade"] .kit');
 
   it("one distance, spelled once", () => {
-    expect(arcade()).toMatch(/--skin-lift:\s*4px/);
+    expect(arcade()).toMatch(/--skin-lift:\s*3px/);
   });
 
   it("every elevation slot is that distance in the FLAT accent — no mix", () => {
