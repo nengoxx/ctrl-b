@@ -795,3 +795,74 @@ MANDATORY, no prompt can substitute:**
 Plus the §14c prompt items (bounded batches · named mechanics · delta report) and a fourth
 runtime candidate: paged reads. Raw captures: `~/.ctrl-b-dev/consolidation-run2-2026-08-19/`
 (TRACE/OPERATOR_LOG/SSE per leg); the run thread is inspectable on dev.
+
+## 15. The consolidation-hardening slice (D60) — spec of record (owner-confirmed 2026-08-19)
+
+Evidence base: §14c + §14d (both live runs) · R43 (retention/budgets field) · R44 (destructive-op
+guards field). Owner rulings R1–R4 as amended by the research, confirmed in conversation
+2026-08-19. Four parts, one slice; every tunable is config with a safe default and Conf exposure.
+
+**① The D42 Tier-1 clearing revision (the chat-defaults tuning; R43 recs 1–4).**
+Current: `plan_clearing` (compaction.py:191) runs unconditionally every loop iteration; keep
+window = `clear_keep_steps` (2) loop rounds; exclusions = the hardcoded `_NEVER_CLEAR_TOOLS`
+frozenset (compaction.py:97). Changes:
+- **Pressure gate** — clearing runs only when the estimated prompt exceeds
+  `clear_trigger_pct` × the serving model's `context_window` (registry `ModelCfg.context_window`;
+  when unset, fall back to today's always-on behavior so an unconfigured model keeps its
+  protection). Default **0.5**. (Field: 5/5 clearers pressure-gate; goose 0.8×ctx, OpenClaw 0.3 —
+  0.5 splits the observed range; gemma-16k gates at ~8k so small-model safety is preserved.)
+- **The keep window's unit becomes THE CURRENT TURN** — outputs produced within the running turn
+  are never cleared (goose's "since kickoff" shape; closes §14d's read→merge impossibility);
+  `clear_keep_steps` keeps its name/meaning for PRIOR-turn rounds.
+- **`clear_exclude_tools`** — the frozenset becomes a config list, default
+  `[task_plan, memory, core_memory]` (R1 survives as the default value; Anthropic
+  `exclude_tools` / OpenClaw allow-deny precedent).
+- **`clear_min_reclaim_tokens`** — skip the trim when `ClearingPlan.gain` (already priced) is
+  below it. Default **1024** (Hermes ships 4096; Anthropic `clear_at_least` — we start lower
+  because our outputs are already 6k-capped).
+Config home: the same cfg model as `clear_output_min_tokens`/`clear_keep_steps`
+(domain/agent.py) → surfaced in the existing Conf agent-turns group beside them.
+
+**② The call-budget split (R2; R43 rec 5 + R44 Kilo precedent).**
+`core_memory` **read-class actions (read/search/status) stop counting** against
+`max_calls_per_tool` — they are already bounded by `recall_char_limit` (the honest read budget);
+write-class actions keep the cap. Classification lives in the tool (one set of action names
+beside the dispatcher), not in the loop. Plus: `tool_overrides.<tool>.max_calls` — an ADDITIVE
+optional per-tool override of the blanket cap (the Phase 8 unified-object shape; default absent =
+today's 6; blanket default unchanged). The loop-guard/`max_repeat_calls` dedup is untouched.
+
+**③ The delete guard (R3 as ruled + the R44 soft-delete amendment).**
+`core_memory delete` requires exactly one of: `superseded_by: <topic>` — resolved on disk
+(`.archive/` excluded), **refused if absent** with steering text "create <topic> first, then
+retry", **self-reference refused** (Hermes #29912's exact guard) — or `reason: <text>` (free
+text; becomes part of the D26 commit subject, letta-code's shape). And **every delete is SOFT**:
+an atomic rename to `<root>/core/.archive/<name>` (+ its index-line removal, both gates ahead of
+both writes per the §14b ordering). The scan already ignores dotted path components — zero
+scan/render changes; recovery = a file move. `.archive/` pruning is manual/owner (recorded
+non-build). Known residual (R44, recorded): the target could itself be deleted later in the same
+run — the delta report + dry-run are the mitigations; an end-of-pass re-verify is banked, not built.
+
+**④ The prompt rewrite + the dry-run procedure (R4).**
+The `consolidation` registry prompt is REWRITTEN (owner-editable as ever): ONE overlapping topic
+family per run, finish it, stop · the named mechanics (read every source fully → `create` the
+merged topic → `delete` each source WITH `superseded_by`) · tool-call batches of at most 3 ·
+the index may be truncated at high fill — verify coverage via `search`/`status`, don't trust the
+count · absolutize dates · translate model-specific framing for whatever model drives ctrl-b ·
+close with a delta report (merged/rewrote/deleted, with paths). A sibling registry id
+**`consolidation_dryrun`** = the same pass with ALL writes forbidden, reporting the full plan
+instead (Hermes's dry-run banner, the only-peer-shipping-one precedent). Documented procedure
+(§5 gains it): dry-run → owner eyeballs the plan → live run.
+
+**Deliberate non-builds (recorded):** the forked-actor curation regime (5/5 peers; → the D58
+hardening design pass, DP-B) · verified delta-report reconciliation + writes-derived outcome
+signal (→ the future automation slice) · paged reads (config `topic_char_limit` covers the need
+today) · `.archive/` auto-pruning · end-of-pass supersedes re-verify.
+
+**Acceptance:** ① a consolidation-shaped fresh thread performs read→read→create→delete in ONE
+turn with zero clearing and zero cap denials on reads; ② run 2's exact failure (delete whose
+`superseded_by` does not exist) is REFUSED; ③ a delete lands in `.archive/` and is restored by a
+file move; ④ chat behavior at small-model pressure is preserved (gemma-16k still clears above the
+gate; the family-5 byte-identity gate holds while tier 2 is off); ⑤ the dry-run prompt produces a
+plan and zero corpus writes. Build = Opus from this section as the pinned brief; council = Emma
+(Codex-backed) design round before build + diff round after; then supervised RUN 3 on dev
+(dry-run first).

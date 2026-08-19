@@ -4479,3 +4479,26 @@ generator, not composited per request — the backend keeps its "no decoder depe
 theme switch that silently queued a Chrome app-update review would be a hostile surprise) · no
 `monochrome`/themed-icon variant (R28 §7 — not worth shipping) · no runtime image compositing · no
 filename-busting scheme beyond the variant ids themselves.
+
+## D60 — Consolidation hardening: pressure-gated Tier-1 clearing, split memory budgets, guarded soft deletes, dry-run-first ✏️ LOCKED 2026-08-19 (owner rulings R1–R4 in conversation, amended by research and re-confirmed same day; spec of record = CORE_MEMORY_PLAN.md §15; evidence = the two live consolidation runs §14c/§14d + dossiers R43/R44)
+
+Two supervised consolidation drives failed complementarily (gemma: spiralled, zero writes · qwen:
+disciplined, then a correctly-formed delete of a live topic whose cap-blocked replacement never
+existed), proving the shipped per-turn chat budgets structurally forbid the §5 curation pass and
+that form-validating rails don't stop semantically wrong writes. Locked, all config-with-defaults:
+**(①)** D42 Tier-1 clearing becomes PRESSURE-GATED (`clear_trigger_pct` × the model's registry
+`context_window`, default 0.5; unset window → today's always-on), the keep window protects the
+WHOLE CURRENT TURN, the never-clear set becomes `clear_exclude_tools` config (default task_plan ·
+memory · core_memory), and a `clear_min_reclaim_tokens` floor (1024) stops trivial trims — ctrl-b
+was a 0/8 field outlier on the unconditional trigger (R43). **(②)** `core_memory` read-class
+actions stop counting against `max_calls_per_tool` (the recall budget is the honest read bound;
+no peer caps a local read), writes keep the cap, and `tool_overrides.<tool>.max_calls` joins the
+unified per-tool object as an additive override. **(③)** `core_memory delete` requires
+`superseded_by` (existence-verified, self-reference refused — Hermes adopted the identical guard
+after the identical incident) or a logged `reason`, and ALL deletes are SOFT (atomic rename to
+`core/.archive/`, invisible to the scan by the existing dotted-path rule). **(④)** the
+`consolidation` prompt is rewritten (one family per run · named create-before-delete mechanics ·
+bounded batches · truncated-index warning · delta report) plus a `consolidation_dryrun` sibling
+id; the documented procedure is dry-run → owner eyeball → live. Non-builds recorded in §15
+(forked curation actor → D58/DP-B; verified delta reconciliation → the automation slice; paged
+reads; archive pruning). Supersedes nothing; amends D42's trigger and D57's §5 procedure.
