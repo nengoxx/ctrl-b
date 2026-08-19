@@ -190,8 +190,16 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
    finding: at index cap, consolidation frees lines that previously-HIDDEN topics refill
    (99%→100%, CM-2 stands). MERGE 2 stays held (§14c #3 paged-read residual); remaining
    families = ordinary owner-paced curation; dev keeps `topic_char_limit: 8192` +
-   `auto_write: true`. NEXT = the release ruling (the batch carries D60 + the qwen
-   normalization + the §15d fix + the notification-tap slice).** ~~The live `cache_n`
+   `auto_write: true` + `index_char_limit: 10240` (owner sizing — closed CM-2 for this corpus).
+   → **D61 (the consolidation-UX slice) is PLANNED + COUNCIL-CLOSED (CORE_MEMORY_PLAN §16 +
+   §16b: Emma blind round BUILD WITH CHANGES, 9/9 folded, commit `83ff34e`): `/consolidate
+   [dry]` with the auto_write guard · the owner-facing pressure note at `notifyTurnTerminal` ·
+   the model-facing pressure clause REMOVED · default index cap 10240 · the search omission
+   counter. BUILD = the FIRST JOB OF A FRESH SESSION (owner, 2026-08-19 — this session's
+   context is too large): Opus from the §16 pinned brief, Emma-lane diff round after (the lane:
+   `hermes -z … -m gpt-5.6-sol --reasoning high --ignore-rules -t file,terminal`, read-only
+   brief, no skills/memory). THEN the release ruling — the batch carries D60 + the qwen
+   normalization + the §15d fix + the notification-tap slice (+ D61 once built).** ~~The live `cache_n`
    measure~~ ✅ run 2026-08-19 (CORE_MEMORY_PLAN §14 Measured bullet): ctrl-b's assembly holds
    D15 #4 (writes diverge only inside the index block, head byte-stable) but the local gemma
    host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention
