@@ -886,8 +886,8 @@ describe("gacha — the ARCADE DROP on the two art surfaces (owner ask 2026-08-0
     );
     expect(
       kit,
-      "the kit block this mirrors must still be the 4px/solid-accent signature",
-    ).toContain("--skin-lift: 4px");
+      "the kit block this mirrors must still be the solid-accent signature (3px, owner 2026-08-19)",
+    ).toContain("--skin-lift: 3px");
     expect(kit).toContain("var(--skin-lift) var(--skin-lift) 0 var(--accent)");
   });
 
