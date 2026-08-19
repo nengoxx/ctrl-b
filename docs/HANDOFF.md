@@ -122,9 +122,9 @@ remains is owner-court, in the owner's order:
    was done 2026-08-12. What is left needs no work: R20 **#2** (the 4-line-name/rarity-tab touch) and
    **#3** (the 7s scan-mask pulse) are *accepted as recorded* — a guard would be speculative padding;
    R21 **②** (one fallback frame on an unwarmed name-face) is *deliberate* (the warm-the-resolved-union
-   design). The one genuinely open item is R20 **#4 — the "white bar atop the appbar", reported once
-   and undiagnosed**; its discriminator is a theme switch (if cosmos shows it too, it is Fennec's own
-   chrome).
+   design); R20 **#4 — the "white bar atop the appbar" — ✅ CLOSED 2026-08-19 (owner diagnosis:
+   Chrome Android's page/URL-bar separator, browser chrome not the theme; absent in installed-app
+   mode where there is no URL bar)**. **The R20/R21 addenda are now fully drained — nothing open.**
 6. ~~The R28 installed-icon improvement~~ ✅ 2026-08-18 — superseded by the W5 selector (D59;
    R28 §12 records the Chrome-144 supersession of §9). What's left is the owner's phone pick.
 7. **Fleet-liveness decoupling from Tailscale** (owner-gated; the D47 seam) — only if the

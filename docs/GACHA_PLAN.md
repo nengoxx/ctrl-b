@@ -2337,9 +2337,11 @@ pinned here so they survive HANDOFF supersession:
   spacing guard is the option if it's ever wanted.
 - **The scan-mask 7s phase pulse.** The oracle's bottom dissolve shows one subtle visible pulse per
   7-second cycle; the fix, if it ever bothers, is one wrapper node.
-- **The "white bar atop the appbar" (reported once, undiagnosed).** Discriminator when picked up:
-  switch to cosmos/another theme — if the bar shows there too it is Fennec's own browser chrome, not
-  the theme.
+- **The "white bar atop the appbar".** ✅ **CLOSED 2026-08-19 (owner diagnosis): it is Chrome
+  Android's own separator between the page and the top URL bar — browser chrome, not the theme —
+  and it does not show at all in installed-app (standalone) mode, where there is no URL bar.** The
+  2026-08-07 discriminator hypothesis ("browser chrome; check another theme") was right in kind,
+  wrong in browser (it guessed Fennec). No code owed; R20 is fully drained.
 
 **R21 ADDENDUM — THE OWNER-ORDERED PRE-RELEASE AUDIT (2026-08-08, before the push word): two fresh
 lanes over the ENTIRE unpushed stack, a fix wave, and both confirm rounds closed.** The owner asked for
