@@ -901,7 +901,18 @@ create + four `superseded_by` deletes. The delta report matched the disk truth.
 **Disposition:** the D60 mechanism is judged WORKING end to end (dry-run → eyeball → live).
 Remaining families are ordinary owner-paced curation; MERGE 2 stays held on the §14c #3
 paged-read residual. Dev keeps `topic_char_limit: 8192` (17 topics exceed 4096; the higher cap
-is simply truer reads) and `auto_write: true` (the pre-run posture). Prompt-tuning candidates
+is simply truer reads) and `auto_write: true` (the pre-run posture). **CM-2 CLOSED for this
+corpus (owner sizing ruling, 2026-08-19): `index_char_limit: 10240`** — the owner's ~10K-chars
+number (Claude Code's own default is 200 lines / 25,000 chars, soft-clipped exactly like ours —
+R37 §1/R40 §4.2); at 10,240 this corpus renders UNCLIPPED at 8,127 chars = 79%, under the 80%
+nudge, all topics routable. The consolidation + the resize together are what cleared it.
+Consolidation stays OWNER-INVOKED, not automated — Claude Code ships autoDream default-OFF, the
+Hermes vault spec keeps consolidation out of v1, and §14c #10 (degenerate runs terminate
+`completed`) still gates any unattended arm on the banked writes-derived outcome signal.
+Proportional-to-context sizing (the "10% of ctx for memory+skills" idea) is recorded as a D58
+DP-B design question — field precedent is proportional CONTEXT budgets (MemGPT 70%/Letta
+75%/goose 0.8/our D60 gate), never proportional durable-index sizing, and a chain-anchored
+percentage either starves (smallest member) or bloats (primary). Prompt-tuning candidates
 banked from the blemishes: the no-frontmatter line + "reference only topics you verified exist".
 
 ## 15. The consolidation-hardening slice (D60) — spec of record (owner-confirmed 2026-08-19)
