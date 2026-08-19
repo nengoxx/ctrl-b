@@ -867,6 +867,43 @@ shape D60 ④ asked for.
 `topic_char_limit: 8192` and `memory.auto_write` back ON for that run. Dev units left running,
 `auto_write` still OFF, for the owner's inspection.
 
+### 14f. Run 3 LIVE (2026-08-19, dev, qwen3.6-max) — the first consolidation that WORKED
+
+**The exercise.** §5 step 3, owner-approved: `auto_write` ON, `topic_char_limit` raised to 8192
+(config; the caps are live-read), fresh thread, the registry `consolidation` prompt + a two-line
+scope pin to the §14e-eyeballed MERGE 1 family (the theme-timeline family explicitly held).
+Corpus snapshotted first; SSE + before-tree banked in the session scratchpad
+(`consolidation-run3/live-*`); thread `b136495f…`.
+
+**Result: SUCCESS — the §15 acceptance-① shape exactly, live.** ONE turn (283s), 9 calls:
+4 full reads → 1 `create` → 4 `delete`s, every one OK; zero cap denials, zero clearing, zero
+budget refusals (17,183 chars of reads inside the 20,480 budget at the 8192 cap). On disk:
+`predeploy-hardening-consolidated.md` created (12,288 chars from ~17,183 of sources), all four
+sources archived to `.archive/` (restorable), the index lost exactly the 4 lines and gained
+exactly 1 (every other line byte-untouched), and the memory repo carries 5 clean commits — the
+create + four `superseded_by` deletes. The delta report matched the disk truth.
+
+**The supervisor grade (main seat, content-diffed against the archived sources):**
+- **Fidelity: high.** Every load-bearing fact spot-checked survived — the two-rule secret
+  design, QH-1..16, the 9+2 hardening items, the durable gotchas (store↛registry cycle,
+  self-contained crash screens, waiver tracker), the invariants, commit SHAs, and the v1.1.0
+  release fact (verified against the source — not an error).
+- **Blemishes (2, hand-fixed post-run, curation-committed):** the model duplicated a
+  pseudo-frontmatter block at the top of the BODY (the service renders the real one from the
+  structured fields — the prompt could say "don't write frontmatter; the fields are the
+  frontmatter"), and it invented one see-also filename (`theme-engine-hardening-v1.md`, never
+  existed). Delta-report nit: it claimed ≈8.5 KB for a 12.3 KB merge.
+- **A finding, not a flaw: consolidation does NOT relieve index pressure at cap.** Rendered
+  index 8,121 → 8,181 chars (99% → 100%): freeing 4 lines let previously-HIDDEN topics flow
+  back into the rendered block (§14c #4's truncation working in reverse). Topics 58 → 55, but
+  CM-2 (the permanently-hot nudge at real scale) stands until the cap is resized.
+
+**Disposition:** the D60 mechanism is judged WORKING end to end (dry-run → eyeball → live).
+Remaining families are ordinary owner-paced curation; MERGE 2 stays held on the §14c #3
+paged-read residual. Dev keeps `topic_char_limit: 8192` (17 topics exceed 4096; the higher cap
+is simply truer reads) and `auto_write: true` (the pre-run posture). Prompt-tuning candidates
+banked from the blemishes: the no-frontmatter line + "reference only topics you verified exist".
+
 ## 15. The consolidation-hardening slice (D60) — spec of record (owner-confirmed 2026-08-19)
 
 > **✅ BUILT 2026-08-19** (Opus, from this section + §15b as the pinned brief; three commits, all

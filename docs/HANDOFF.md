@@ -182,10 +182,16 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
    (one real fix landed from it: the recall-floor reseed carry).
    ~~NEXT = RUN 3 on dev~~ → **RUN 3 DRY-RUN ✅ SUCCEEDED 2026-08-19 (CORE_MEMORY_PLAN §14e):
    first run ever to produce a complete reviewable plan — one turn, zero writes (sha-verified),
-   graceful budget recovery, D60 ①/② visibly holding on qwen3.6-max. NEXT = owner eyeballs the
-   §14e plan → live run scoped to MERGE 1 only (`topic_char_limit: 8192` for the run; MERGE 2
-   held — its 54K source can't be fully read, the §14c #3 residual); then the release ruling
-   (the batch carries D60 + the qwen normalization).** ~~The live `cache_n`
+   graceful budget recovery, D60 ② visibly holding on qwen3.6-max (① was inert — §15d). →
+   **RUN 3 LIVE ✅ SUCCEEDED same day (§14f): the first consolidation that WORKED** — the
+   acceptance-① shape exactly (4 reads → create → 4 `superseded_by` deletes, ONE 283s turn, all
+   OK), high-fidelity merge supervisor-graded against the archived sources (2 blemishes
+   hand-fixed + banked as prompt-tuning candidates: no-frontmatter-in-body · verify-see-alsos);
+   finding: at index cap, consolidation frees lines that previously-HIDDEN topics refill
+   (99%→100%, CM-2 stands). MERGE 2 stays held (§14c #3 paged-read residual); remaining
+   families = ordinary owner-paced curation; dev keeps `topic_char_limit: 8192` +
+   `auto_write: true`. NEXT = the release ruling (the batch carries D60 + the qwen
+   normalization + the §15d fix + the notification-tap slice).** ~~The live `cache_n`
    measure~~ ✅ run 2026-08-19 (CORE_MEMORY_PLAN §14 Measured bullet): ctrl-b's assembly holds
    D15 #4 (writes diverge only inside the index block, head byte-stable) but the local gemma
    host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention
