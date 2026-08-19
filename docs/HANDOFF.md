@@ -111,16 +111,29 @@
   automated** — the session pends) · ⑥ **ISS-3 CLOSED** (vapor + minimal appbar worked all along
   since D51 deleted the bespoke bar; owner-verified "looks good", menu icon included).
 
-## ▶▶ NEXT — Phase 20 is DONE; the owner court is up
+## ▶▶ NEXT — the RELEASE DECISION is up (owner handoff order, 2026-08-19)
 
-**The whole D57 ladder is built, reviewed and committed** (see the Current-state bullet). What
-remains is owner-court, in the owner's order:
+**Unreleased on `main`, all owner-verified, no schema/config migration (schema 6, VERSION 1):**
+the 2026-08-18 gacha first-block pair (`c8dc09d`+`0e20de0`, pushed) + the 2026-08-19 stack
+(white-bar close · plan-pill-over-oracle fix `a90ad84` + its e2e arm · arcade 3px `630219d` ·
+the cache_n + §14c records · the doc sweep; **UNPUSHED — push is the first step of whatever
+comes next**). A release is a clean plain-form runbook run (§Release; rollback stays v1.7.2).
+
+**The pre-release menu — things that COULD close first (none gates the release; pick or skip):**
+- **The notifications retest result** — the owner was MID-TEST on prod when the session closed;
+  the outcome decides the parked Web Push plan (works → thread closes free; fails → the two
+  Fennec checks). Zero code either way; a Web Push build would be its own post-release slice.
+- **The icon fresh-install** — W5 is LIVE on prod v1.7.2 already; the owner (no installed app
+  currently) installs fresh from Chrome and the chosen backdrop mints directly. Zero code.
+- **The arcade later-look** — the 3px drop is committed but the owner deferred the eyeball;
+  a further tweak would be one token. (Arcade redesign proper = someday-maybe, NOT backlogged.)
+- **The root cross-fade session** (owner at the screen; GACHA_PLAN §12.6 E1) — a ruled damp
+  could ride the same release if the session happens first.
+- **Owner standing minis:** pickers eyeball · edit one prompt for real (Phase 18's first
+  owner-driving) · the media-gallery test-and-refine session (parked 2026-08-12).
 
 1. ~~Push the commit stack~~ ✅ 2026-08-17; ~~the polish wave + v1.7.2 release~~ ✅ 2026-08-18;
-   ~~the post-release rounds~~ mostly ✅ 2026-08-19 (the owner-round bullet above). Still open
-   from the rounds: the **notifications result** (was mid-test) · the **icon fresh-install** ·
-   the **root cross-fade session** (parked, owner at the screen). The 2026-08-19 commit stack is
-   UNPUSHED and unreleased — release it with the next batch alongside the 2026-08-18 pair.
+   ~~the post-release rounds~~ mostly ✅ 2026-08-19 (the owner-round bullet above).
 2. **Core Memory prod adoption — ⏸ OWNER-DEFERRED (owner, 2026-08-17): "not right now; I just
    want the system working and ready for whenever I want to delve into it."** Don't re-propose
    the drive; readiness is now a VERIFIED property owned by Phase 19 Packet ③'s core-memory
