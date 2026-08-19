@@ -21,6 +21,7 @@ session boundary turns it into a clean SSE `error` event + an `ErrorPart`, never
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import re
 from dataclasses import dataclass, field
@@ -551,6 +552,56 @@ _OPENROUTER_EFFORT: dict[str, str] = {"off": "none"}
 #: hand-sets sibling keys we never touch (`chat_template_kwargs: {…}`, OpenRouter `reasoning: {exclude}`),
 #: so a flat `update()` would silently drop the operator's configuration (D45 adversarial audit, FIX 2).
 _EXTRA_BODY_DEEP_MERGE_KEYS = ("chat_template_kwargs", "reasoning")
+
+#: The wire framing for a system message that cannot stay `system` (see `normalize_system_messages`).
+#: Structural wire framing, not a registry prompt — the same class as role names, never owner-edited.
+_SYS_UPDATE_OPEN = "<system-update>"
+_SYS_UPDATE_CLOSE = "</system-update>"
+
+
+def normalize_system_messages(messages: list[dict]) -> list[dict]:
+    """Wire-dialect shaping (R41/R42, 2026-08-19): strict chat templates (Qwen3.6 et al.) accept exactly
+    ONE system message, in first position — llama.cpp renders the template on the request's real
+    messages and maps the template's raise to HTTP 400 (R41). The field convention is unconditional
+    (7/7 peers emit one leading system message; open-webui's `merge_system_messages` names Qwen as the
+    reason — R42), so this runs for every provider, no config axis.
+
+    (1) The LEADING RUN of system messages coalesces into one, contents joined by blank lines, order
+    preserved. The run is whatever assembly put there — today the static head (system prompt → appends
+    → roster → memory → core index → skills note) and, after a compaction, the persisted fold-summary
+    system message that sorts to the head's tail (compaction.py `role="system"`; it coalesces with the
+    run — model-generated summary text thereby shares the one privileged system block, an adjacency
+    R42's opencode security note accepts for summaries but is why later systems get MARKED instead).
+    (2) Any LATER system message is re-roled to `user`, wrapped in `<system-update>` tags IN PLACE
+    (temporal position preserved — the opencode pattern), content escaped exactly as opencode does so
+    it cannot close its own wrapper; an EMPTY later system message drops (an empty nudge is a no-op).
+    Coalesce-then-downgrade, never the reverse (the LiteLLM trap: downgrading first strands head
+    blocks in user turns). Idempotent; never mutates the input list or its dicts — the caller's list
+    holds the per-turn cached head dicts reused byte-identically across loop iterations."""
+    out: list[dict] = []
+    i = 0
+    lead: list[str] = []
+    while i < len(messages) and messages[i].get("role") == "system":
+        content = messages[i].get("content")
+        if content:
+            lead.append(content)
+        i += 1
+    if lead:
+        out.append({"role": "system", "content": "\n\n".join(lead)})
+    for msg in messages[i:]:
+        if msg.get("role") == "system":
+            content = msg.get("content")
+            if content:
+                escaped = html.escape(content, quote=False)
+                out.append(
+                    {
+                        "role": "user",
+                        "content": f"{_SYS_UPDATE_OPEN}\n{escaped}\n{_SYS_UPDATE_CLOSE}",
+                    }
+                )
+            continue
+        out.append(msg)
+    return out
 
 
 @dataclass(frozen=True)
@@ -1255,6 +1306,7 @@ class InferenceClient:
         (D42/A10) threaded as first-class kwargs via `_call_config` — so the summarizer finally runs
         output-capped when its `ModelRef.max_tokens` is set. Walks the failover chain (buffered: each
         attempt returns the text). Raises `InferenceError` if every endpoint fails / none configured."""
+        messages = normalize_system_messages(messages)
         self._inflight += 1
         try:
             chain = self._resolve_chain(mode, model)
@@ -1384,6 +1436,7 @@ class InferenceClient:
         failover generator; the D42 first-chunk/permit-release scoping below is unchanged. Raises
         `InferenceError` if every endpoint fails / none configured.
         """
+        messages = normalize_system_messages(messages)
         self._inflight += 1
         try:
             chain = self._resolve_chain(mode, model)
