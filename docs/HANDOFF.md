@@ -141,7 +141,12 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
   `notification.data` → the same `setUI({tab:"agent"})` router); R10 pins `injectManifest`
   (§3.2) but never evaluated the lighter generateSW `importScripts` path — an owner design
   conversation picks one, then it's a small slice. Owner intent: tap → agent tab with the
-  approval/trigger in view.
+  approval/trigger in view. **→ RESEARCHED + RULED 2026-08-19: R45 (bought, verified) —
+  `workbox.importScripts` under the current generateSW build, NO injectManifest migration
+  (~150 lines, 0 deps, update path byte-identical; the "custom worker required" premise in
+  `useForegroundNotifications.ts`/R10 is FALSE — LibreChat ships this exact mode). Build
+  pends owner go-ahead; R45 §8 = the implementation sketch (content-hashed import URL ·
+  postMessage-first routing · `?tab=agent` fallback reader · unit-tested handler).**
 - **The icon fresh-install** — W5 is LIVE on prod v1.7.2 already; the owner (no installed app
   currently) installs fresh from Chrome and the chosen backdrop mints directly. Zero code.
 - **The arcade later-look** — the 3px drop is committed but the owner deferred the eyeball;
