@@ -820,6 +820,47 @@ Plus the §14c prompt items (bounded batches · named mechanics · delta report)
 runtime candidate: paged reads. Raw captures: `~/.ctrl-b-dev/consolidation-run2-2026-08-19/`
 (TRACE/OPERATOR_LOG/SSE per leg); the run thread is inspectable on dev.
 
+### 14e. Run 3, the D60 dry-run (2026-08-19, dev, qwen3.6-max) — the first run that PRODUCED A PLAN
+
+**The exercise.** The §5 D60 procedure, step 1: `memory.auto_write` OFF (config edit, units
+restarted), fresh dev thread, the registry-default `consolidation_dryrun` prompt verbatim
+(`is_customized: false`), qwen3.6-max on corsair (the owner's primary). One prompt, NO nudges.
+Captures in the session scratchpad (`consolidation-run3/`); thread `93f6210b…` on dev.
+
+**Result: SUCCESS — a complete, reviewable consolidation plan in ONE turn (289s), zero writes
+(corpus byte-identical, sha-verified), state `completed`.** 13 `core_memory` calls: 4 full reads +
+1 search succeeded; the other 8 were refused by the per-turn recall budget (20,480 ÷ 4,096-cap
+reads ≈ 5) — and the model **recovered gracefully every time**: narrated the refusal, adapted,
+and closed with the plan instead of run 1's repetition spiral. No write was ever attempted (the
+prompt's "writes are off" framing worked — the autonomy gate never had to fire). D60 ① and ② both
+visibly held: zero clearing across the survey, zero per-tool cap denials on reads.
+
+**The plan itself** (banked at `consolidation-run3/turn1-text.md`): family = themes/theme-engine
+(9 topics); MERGE 1 = the 2026-07-10 hardening/deploy cluster (4 → 1, each delete naming its
+`superseded_by`); MERGE 2 = the theme-timeline cluster (4 → 1); KEEP `theme-engine-swappable-
+surfaces` as the living design contract; a 40-row don't-touch table with per-topic reasons; an
+honest "what I could not see" list naming every truncated/unread source. Exactly the §5 eyeball
+shape D60 ④ asked for.
+
+**The supervisor read (main seat), for the owner eyeball:**
+- **MERGE 1 is live-runnable as-is except one source**: `predeploy-hardening-progress.md` is
+  7,990 chars against the 4,096 `topic_char_limit` — a merge written from a truncated read loses
+  its tail. Remedy: raise `topic_char_limit` to 8,192 for the run (config, no code); the four
+  sources then total 17,183 chars, inside the 20,480 recall budget, and 1 create + 4 deletes fit
+  the write-class cap. Textbook acceptance-① shape.
+- **MERGE 2 is NOT soundly live-runnable**: `gacha-theme-progress.md` is 54,405 chars — no sane
+  cap makes it fully readable (§14c #3, the no-paging residual). The soft delete would keep the
+  original in `.archive/`, but the merged topic would be written from a ~7.7% view. Hold it
+  pending the banked paged-read arm or an explicit owner ruling.
+- Plan-quality nits (don't invalidate the pass): it slotted `qh-audit-next-session.md` into
+  MERGE 1 without having read it (the live prompt's read-before-delete mechanics + the CAS hash
+  would force the read anyway), and it misglossed `a11-provider-registry-design` as
+  "accessibility" (untouched, harmless).
+
+**NEXT: owner eyeball of the plan → the live run (§5 step 3) scoped to MERGE 1 only**, with
+`topic_char_limit: 8192` and `memory.auto_write` back ON for that run. Dev units left running,
+`auto_write` still OFF, for the owner's inspection.
+
 ## 15. The consolidation-hardening slice (D60) — spec of record (owner-confirmed 2026-08-19)
 
 > **✅ BUILT 2026-08-19** (Opus, from this section + §15b as the pinned brief; three commits, all

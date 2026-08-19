@@ -129,9 +129,17 @@ clean plain-form runbook run (§Release; rollback stays v1.7.2), then the prod c
 restart + a no-failover journal check.
 
 **The pre-release menu — things that COULD close first (none gates the release; pick or skip):**
-- **The notifications retest result** — the owner was MID-TEST on prod when the session closed;
-  the outcome decides the parked Web Push plan (works → thread closes free; fails → the two
-  Fennec checks). Zero code either way; a Web Push build would be its own post-release slice.
+- ~~The notifications retest result~~ **✅ PASSED (owner, 2026-08-19): notifications DELIVER**
+  (service reboot + machine reboot/shutdown all fired — SYS-19 was the whole mystery; the two
+  Fennec checks are moot; Web Push stays parked, its remaining value = closed-app delivery only).
+  **NEW open item: tapping a notification lands on the Android home screen, not the app** — the
+  F1 slice's *documented* trade-off (`useForegroundNotifications.ts` ~L138: Android's SW-shown
+  notifications click into the worker's `notificationclick` handler, and the Workbox worker has
+  none). The fix is designed in R10 (§4.2 focus-or-open + implication #5: `focus` in
+  `notification.data` → the same `setUI({tab:"agent"})` router); R10 pins `injectManifest`
+  (§3.2) but never evaluated the lighter generateSW `importScripts` path — an owner design
+  conversation picks one, then it's a small slice. Owner intent: tap → agent tab with the
+  approval/trigger in view.
 - **The icon fresh-install** — W5 is LIVE on prod v1.7.2 already; the owner (no installed app
   currently) installs fresh from Chrome and the chosen backdrop mints directly. Zero code.
 - **The arcade later-look** — the 3px drop is committed but the owner deferred the eyeball;
@@ -153,16 +161,20 @@ restart + a no-failover journal check.
    REVIEW-CLOSED 2026-08-19 — spec §15/§15b, as-built §15c): pressure-gated clearing ·
    current-turn immunity · split budgets · guarded soft deletes · dry-run-first prompts; full
    council via the Hermes emma lane, final SHIP; commits `bdff95d`..`6063b40` UNPUSHED.
-   NEXT = RUN 3 on dev (dry-run → owner eyeball → live, §5 procedure) — the first run expected
-   to actually complete; then the release ruling (the batch now carries D60 + the qwen
-   normalization).** ~~The live `cache_n`
+   ~~NEXT = RUN 3 on dev~~ → **RUN 3 DRY-RUN ✅ SUCCEEDED 2026-08-19 (CORE_MEMORY_PLAN §14e):
+   first run ever to produce a complete reviewable plan — one turn, zero writes (sha-verified),
+   graceful budget recovery, D60 ①/② visibly holding on qwen3.6-max. NEXT = owner eyeballs the
+   §14e plan → live run scoped to MERGE 1 only (`topic_char_limit: 8192` for the run; MERGE 2
+   held — its 54K source can't be fully read, the §14c #3 residual); then the release ruling
+   (the batch carries D60 + the qwen normalization).** ~~The live `cache_n`
    measure~~ ✅ run 2026-08-19 (CORE_MEMORY_PLAN §14 Measured bullet): ctrl-b's assembly holds
    D15 #4 (writes diverge only inside the index block, head byte-stable) but the local gemma
    host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention
    window — remedy = `--swa-full`/checkpoints on the llama.cpp box, routed to Phase 19 (D58).
-3. **The NOTIFICATIONS thread** — owner phone retest FIRST, zero code (still untested,
-   owner-confirmed 2026-08-12): SYS-19 meant `showNotification()` never had a registered worker;
-   it may just work on ≥v1.6.0. Outcome decides the parked Web Push plan (R10/R11).
+3. **The NOTIFICATIONS thread** — ~~retest~~ ✅ PASSED 2026-08-19 (delivery works; see the
+   pre-release-menu bullet). What remains = the **notification-tap slice** (SW
+   `notificationclick` → focus + route to the agent tab; design conversation first:
+   injectManifest per R10 §3.2 vs generateSW `importScripts`). Web Push (R10/R11) stays parked.
 4. **Phase 19 — the hardening pass — now NEXT IN LINE (Phase 20 done), still owner-gated**
    (owner, 2026-08-17). [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is spec-complete; at wake: its
    §10 owner court + the §3b delta council check; locks as **D58**.
@@ -189,9 +201,9 @@ update toast exercised ✅ 2026-08-16.
 ## Standing ledger (carried 2026-08-12 from the 2026-08-06 ledger; verify in the home before acting)
 
 **Owner-court items (ask, don't assume):**
-- Notifications retest = path 3 above (**still untested**, owner-confirmed 2026-08-12) · web-push
-  PARKED pending the two Fennec/Firefox checks (its memory: which build + the "Site
-  notifications" channel).
+- Notifications retest ✅ PASSED 2026-08-19 (path 3 above) · web-push stays PARKED on its merits
+  (closed-app delivery only; the Fennec checks are moot) · OPEN: the notification-tap slice
+  (path 3).
 - The ~80 MB untracked `design/prototypes/gacha/` originals — standing "leave untracked for now";
   eventual call = leave / move out / delete.
 - D2-A monitor: the owner DAILY-USE round on prod (its memory; per-host switches OFF until then).
