@@ -119,8 +119,10 @@ close · plan-pill-over-oracle fix `a90ad84` + its e2e arm · arcade 3px `630219
 fix · the cache_n + §14c records · the doc sweeps — pushed through `3e93774`) + **`5678c08`
 (unpushed): the wire-level system-message normalization that makes qwen3.6-max on corsair
 serveable — the owner's NEW PRIMARY chat model (see the `qwen-primary-on-corsair` memory; R41/R42
-= the evidence; council ran as an adversarial Opus lens, all findings folded; ⚠ the Codex DIFF
-round is OWED once the owner re-runs `codex login` — auth expired). DEV runs corsair-primary
+= the evidence; council = the adversarial Opus design lens + ✅ the Codex DIFF round DONE 2026-08-19 via the
+Hermes `emma` lane (gpt-5.6-sol; SHIP WITH FIXES → the `8575ae2` wave → two confirm rounds →
+FINAL SHIP). The Codex CLI on emma is still logged out — desktop `ssh -L 1455` + `codex login`
+when convenient; Hermes's own codex credential is FRESH (device-code, 2026-08-19)). DEV runs corsair-primary
 live; **the PROD config flip (provider corsair + fallback chain) happens ONLY AFTER the release
 carrying `5678c08`** — the pinned prod tree lacks the normalization until then.** A release is a
 clean plain-form runbook run (§Release; rollback stays v1.7.2), then the prod config flip +
