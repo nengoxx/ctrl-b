@@ -861,6 +861,7 @@ class AgentSession:
         *,
         window: int | None = None,
         estimated_tokens: int | None = None,
+        cleared_at_anchor: frozenset[str] | None = None,
     ) -> ClearingPlan:
         """The iteration's Tier-1 clearing plan (D42) — the ONE selection shared by the trigger (its
         `gain` net-of-clearing) and `_assemble` (its `cleared_call_ids`). Reads the working history and
@@ -868,12 +869,21 @@ class AgentSession:
 
         D60: `window` is the turn's smallest chain window (`min_chain_window`) and `estimated_tokens`
         the SAME assembled-prompt estimate the compaction trigger prices — together they are the
-        pressure gate. A caller that has no estimate in hand passes none and re-measures here through
-        `_estimate_context` (the one estimator), never a partial figure (§15b-11)."""
+        pressure gate. `cleared_at_anchor` rides along from the SAME `ContextEstimate` (Codex MED)
+        so an anchored estimate is gated against the UNTRIMMED prompt and cannot oscillate; a caller
+        that has no estimate in hand passes neither and re-measures here through `_estimate_context`
+        (the one estimator, heuristic without a served key), never a partial figure (§15b-11)."""
         history = await self._messages.list(thread.id, include_compacted=False)
         if estimated_tokens is None:
-            estimated_tokens = (await self._estimate_context(thread, None)).tokens
-        return plan_clearing(history, self._compaction_cfg, window=window, estimated_tokens=estimated_tokens)
+            est = await self._estimate_context(thread, None)
+            estimated_tokens, cleared_at_anchor = est.tokens, est.cleared_at_anchor
+        return plan_clearing(
+            history,
+            self._compaction_cfg,
+            window=window,
+            estimated_tokens=estimated_tokens,
+            cleared_at_anchor=cleared_at_anchor,
+        )
 
     async def _over_threshold_now(self, thread: Thread) -> bool:
         """Is the thread OVER the compaction trigger right now (D42)? Resolves the window for the
@@ -894,6 +904,7 @@ class AgentSession:
             thread,
             window=await self._inference.min_chain_window(ref.provider, ref.model),
             estimated_tokens=est.tokens,
+            cleared_at_anchor=est.cleared_at_anchor,
         )
         history = await self._messages.list(thread.id, include_compacted=False)
         return self._compactor._over_threshold(
@@ -1409,7 +1420,12 @@ class AgentSession:
             # shared selection): its `gain` prices the trigger net-of-clearing below, its
             # `cleared_call_ids` drive `_assemble`'s output-trim rendering. Planned AFTER the estimate
             # because it is now PRESSURE-GATED on it (against the turn's smallest chain window).
-            clearing = await self._plan_clearing(thread, window=clear_window, estimated_tokens=est.tokens)
+            clearing = await self._plan_clearing(
+                thread,
+                window=clear_window,
+                estimated_tokens=est.tokens,
+                cleared_at_anchor=est.cleared_at_anchor,
+            )
             cs = self._compaction_state
             # D42 thrash machine: AUTO-compaction skips ENTIRELY while the breaker is latched OR after a
             # didn't-shrink attempt earlier THIS turn (per-turn backoff). Clearing (above) still applies.

@@ -658,9 +658,22 @@ class CoreMemoryCorpus:
         leaves a dangling index line, which the scan already drops on read and a retry cleans up."""
         root = self._root_or_raise()
         path, rel = self._confine(raw_path, root)
-        note = _delete_note(superseded_by, reason)
+        # Canonicalize the named replacement ONCE, here, through the same resolver `_confine` uses
+        # (Codex MED): the canonical form is what the D26 subject renders AND what the existence check
+        # below resolves, so the subject can never carry the raw argument's shape. The lexical half
+        # runs here (pure); the on-disk half stays under the lock in `_require_supersedes`.
+        supersedes = superseded_by.strip()
+        if supersedes:
+            canonical = topic_path(supersedes)
+            if canonical is None:
+                raise CoreMemoryError(
+                    f"{superseded_by!r} is not a topic path — name the topic that replaces {rel} by "
+                    "its path exactly as the index lists it, or give a `reason` instead."
+                )
+            supersedes = canonical
+        note = _delete_note(supersedes, reason)
         await self._guarded(
-            lambda: self._delete_blocking(root, path, rel, content_hash, superseded_by),
+            lambda: self._delete_blocking(root, path, rel, content_hash, supersedes),
             _commit_msg("delete", rel, note),
         )
         return f"archived {rel} and removed its index line ({note})"
@@ -805,6 +818,12 @@ class CoreMemoryCorpus:
         if path.exists() and dest.exists():
             # NO-CLOBBER (§15b-5): a previous archive of the same path is the owner's to keep. No
             # versioned naming — one clear refusal the model can act on beats a silent second copy.
+            # RECORDED BOUNDARY (Codex LOW, accepted): this check is LOCK-scoped, not filesystem-
+            # atomic — every corpus mutation runs under the shared `MemoryBackup.guard()`, so the
+            # only writer that could land between the check and the rename is a hand edit outside the
+            # app. The single-writer guarded contract is what makes it sufficient; a `renameat2`-style
+            # atomic no-replace is deliberately not pursued (it is Linux-only, and the corpus is
+            # explicitly OS-agnostic).
             raise CoreMemoryError(
                 f"{_ARCHIVE_DIR}/{rel} already holds an earlier archived copy of this topic — restore "
                 "or rename that one before archiving another over it."
@@ -1252,9 +1271,11 @@ def _archive_move(src: Path, dest: Path) -> None:
 
 def _delete_note(superseded_by: str, reason: str) -> str:
     """The delete's stated INTENT, validated and rendered for the D26 subject (D60 ③ / §15b-13).
-    Exactly one of the two: a `superseded_by` topic (existence-checked later, under the lock) or a
-    free-text `reason` — collapsed to one line, control characters refused, length-capped, and
-    passed to git as an ARGUMENT (`commit -m <msg>`, never a shell string)."""
+    Exactly one of the two: a `superseded_by` topic (canonicalized by the caller, existence-checked
+    later under the lock) or a free-text `reason`. **BOTH forms get the same treatment** (Codex MED —
+    the supersedes form used to reach the subject untouched): collapsed to one line, control
+    characters refused, length-capped. Either way it is passed to git as an ARGUMENT
+    (`commit -m <msg>`), never a shell string."""
     target, why = superseded_by.strip(), reason.strip()
     if bool(target) == bool(why):
         raise CoreMemoryError(
@@ -1262,10 +1283,18 @@ def _delete_note(superseded_by: str, reason: str) -> str:
             "(create it FIRST), or set `reason` when nothing replaces it — exactly one of the two."
         )
     if target:
-        return f"superseded by {target}"
-    if _CONTROL.search(why.replace("\n", " ").replace("\t", " ").replace("\r", " ")):
-        raise CoreMemoryError("`reason` carries control characters — send plain one-line text.")
-    return " ".join(why.split())[:_REASON_MAX_CHARS]
+        return f"superseded by {_subject_text(target, '`superseded_by`')}"
+    return _subject_text(why, "`reason`")
+
+
+def _subject_text(raw: str, field: str) -> str:
+    """One line of model-written text, safe to sit in a D26 commit subject (§15b-13): newlines/tabs
+    fold to spaces, any other control character is REFUSED (naming `field` so the model knows which
+    argument to fix), whitespace runs collapse, and the result is capped at `_REASON_MAX_CHARS`."""
+    folded = raw.replace("\n", " ").replace("\t", " ").replace("\r", " ")
+    if _CONTROL.search(folded):
+        raise CoreMemoryError(f"{field} carries control characters — send plain one-line text.")
+    return " ".join(folded.split())[:_REASON_MAX_CHARS]
 
 
 def _commit_msg(action: str, rel: str, note: str = "") -> str:

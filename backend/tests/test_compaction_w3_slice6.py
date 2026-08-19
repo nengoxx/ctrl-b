@@ -242,6 +242,53 @@ def test_clearing_pressure_gate_honours_the_configured_pct() -> None:
     assert not plan_clearing(history, cfg, window=10_000, estimated_tokens=9_001).empty
 
 
+def test_the_gate_prices_the_untrimmed_prompt_and_cannot_oscillate() -> None:
+    """Codex MED: in ANCHORED mode the estimate is the prompt AS ALREADY TRIMMED, so a raw comparison
+    would drop back under the line the moment a trim lands, un-clear the same outputs next iteration,
+    and alternate forever inside a band one gain wide (a cached-prefix rewrite per hop). The estimate
+    is lifted by `gain_at_anchor` instead, so a run that starts clearing KEEPS clearing."""
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    history = _fat_prior_turn()
+    window, pct = 10_000, cfg.clear_trigger_pct
+    line = window * pct
+    plan = plan_clearing(history, cfg, window=window, estimated_tokens=int(line) + 1)
+    gain = plan.gain
+    assert gain > 0
+
+    # Iteration N: untrimmed, just over the line → clears. Iteration N+1: the anchor was measured on
+    # the TRIMMED prompt, so the raw estimate now sits UNDER the line — inside the band.
+    untrimmed = int(line) + max(1, gain // 2)  # line < untrimmed ≤ line + gain
+    anchored = untrimmed - gain
+    assert anchored <= line < untrimmed  # the band the defect lived in
+    assert not plan_clearing(history, cfg, window=window, estimated_tokens=untrimmed).empty
+    assert (
+        plan_clearing(
+            history,
+            cfg,
+            window=window,
+            estimated_tokens=anchored,
+            cleared_at_anchor=plan.cleared_call_ids,
+        ).cleared_call_ids
+        == plan.cleared_call_ids
+    )  # …the SAME selection, iteration after iteration — no alternation
+    # Without the lift (heuristic mode, where the history estimate already counts the full outputs)
+    # that same number would read as under-pressure — which is exactly why the lift is conditional.
+    assert plan_clearing(history, cfg, window=window, estimated_tokens=anchored).empty
+
+
+def test_the_anchor_lift_prices_only_what_was_trimmed() -> None:
+    """`gain_at_anchor` re-prices the anchor's OWN set with the plan's formula (one home), so a lift
+    can never over-credit: an empty/unknown anchor set lifts nothing."""
+    from app.services.agent.compaction import gain_at_anchor
+
+    history = _fat_prior_turn()
+    cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500, **_NO_FLOOR)
+    plan = plan_clearing(history, cfg)
+    assert gain_at_anchor(history, plan.cleared_call_ids) == plan.gain
+    assert gain_at_anchor(history, frozenset()) == 0
+    assert gain_at_anchor(history, frozenset({"not-a-call"})) == 0
+
+
 def test_clearing_with_no_window_stays_always_on() -> None:
     """An unset window (any chain entry unresolvable — `min_chain_window` returns None) keeps the
     pre-D60 unconditional behaviour, so an unconfigured model keeps its protection."""

@@ -112,6 +112,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._delete_blocking"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._guard_secrets"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._require_supersedes"),
+        ("app/services/agent/core_memory.py", "CoreMemoryCorpus.delete"),
         ("app/services/agent/core_memory.py", "_cas"),
         ("app/services/agent/core_memory.py", "_delete_note"),
         ("app/services/agent/core_memory.py", "_index_raw"),

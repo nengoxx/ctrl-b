@@ -495,20 +495,49 @@ def _fail_write_on(monkeypatch, nth: int, *, after: bool = False):
 
 @contextlib.contextmanager
 def _fail_archive(monkeypatch, *, after: bool = False):
-    """The same both-sides injection for `delete`'s archive-move half (D60 ③) — the step that is not
-    an atomic write. `after=True` performs the real rename and then raises."""
-    real = cm._archive_move
+    """The same both-sides injection for `delete`'s archive-move half (D60 ③), at the FILESYSTEM seam
+    — the `os.replace` rename itself, not a private helper's name — and filtered to renames INTO
+    `.archive/`, so every other atomic write (and the rollback rename back OUT) passes through
+    untouched. `after=True` performs the real rename and then raises."""
+    real = os.replace
 
-    def boom(src, dest):
-        if after:
-            real(src, dest)
-        raise OSError("busy")
+    def guarded(src, dest, *a, **kw):
+        if f"{os.sep}.archive{os.sep}" in str(dest):
+            if after:
+                real(src, dest, *a, **kw)
+            raise OSError("busy")
+        return real(src, dest, *a, **kw)
 
-    monkeypatch.setattr(cm, "_archive_move", boom)
+    monkeypatch.setattr(os, "replace", guarded)
     try:
         yield
     finally:
-        monkeypatch.setattr(cm, "_archive_move", real)
+        monkeypatch.setattr(os, "replace", real)
+
+
+@contextlib.contextmanager
+def _fail_index_write(monkeypatch, *, after: bool = False):
+    """Fault injection on the INDEX write specifically — the boundary the §5 orderings are STATED in
+    ("index second"), rather than the nth call to `atomic_write_text`. `after=True` performs the real
+    write and then raises."""
+    real = cm.atomic_write_text
+
+    def guarded(path, content):
+        if Path(path).name == _INDEX_BASENAME:
+            if after:
+                real(path, content)
+            raise OSError("disk full")
+        real(path, content)
+
+    monkeypatch.setattr(cm, "atomic_write_text", guarded)
+    try:
+        yield
+    finally:
+        monkeypatch.setattr(cm, "atomic_write_text", real)
+
+
+#: The corpus index filename, as the tests address it (the module owns the constant).
+_INDEX_BASENAME = "MEMORY.md"
 
 
 def test_create_writes_the_topic_first_and_a_retry_completes_the_index(tmp_path, monkeypatch):
@@ -564,7 +593,7 @@ def test_delete_archives_the_topic_first_and_rolls_it_back_if_the_index_fails(tm
     digest = corpus.read_topic("wake.md").content_hash
     before = _tree(root)
 
-    with _fail_write_on(monkeypatch, 1), pytest.raises(OSError):  # the index write dies
+    with _fail_index_write(monkeypatch), pytest.raises(OSError):  # the index write dies
         run_async(corpus.delete("wake.md", digest, reason="obsolete"))
     assert _tree(root) == before  # rolled back: the topic is live again, the index untouched
 
@@ -624,7 +653,7 @@ def test_a_delete_that_dies_after_both_steps_is_already_complete(tmp_path, monke
     nothing at either end and says so in the words a model can act on."""
     corpus, root = _seeded(tmp_path)
     digest = corpus.read_topic("wake.md").content_hash
-    with _fail_write_on(monkeypatch, 1, after=True), pytest.raises(OSError):
+    with _fail_index_write(monkeypatch, after=True), pytest.raises(OSError):
         run_async(corpus.delete("wake.md", digest, reason="obsolete"))
     assert (root / "wake.md").is_file()  # rolled back out of `.archive/` — never half-deleted
     assert "wake.md" not in (root / "MEMORY.md").read_text()  # …unindexed, which is legal (§3)

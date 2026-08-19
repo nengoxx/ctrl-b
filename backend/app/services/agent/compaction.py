@@ -199,12 +199,40 @@ def turn_start_index(history: list[Message]) -> int:
     return 0
 
 
+def _priced_gain(output: str) -> int:
+    """The tokens clearing ONE output reclaims — the NET chars (output minus the placeholder that
+    replaces it) at chars/`CLEAR_CHARS_PER_TOKEN`. The ONE pricing formula, shared by the selection
+    below and by `gain_at_anchor` (the gate's un-trim lift), so a re-priced set can never drift from
+    what the plan itself charged."""
+    return (len(output) - len(OUTPUT_CLEARED_PLACEHOLDER)) // CLEAR_CHARS_PER_TOKEN
+
+
+def gain_at_anchor(history: list[Message], call_ids: frozenset[str]) -> int:
+    """The tokens that were reclaimed from the ANCHORED prompt by the clearing applied when that
+    anchor was measured (Codex MED, D60): the same per-output price, summed over the outputs the
+    anchor's prompt was already trimmed of. Only net-positive contributions count (a plan never
+    selects a below-placeholder output, so this is a floor, not a filter).
+
+    Its one consumer is the pressure gate — see `plan_clearing`. Kept a free function so it stays
+    stateless: nothing about it survives a suspend/resume or a fold, it is re-derived from whatever
+    history and anchor set the caller holds right now."""
+    total = 0
+    for m in history:
+        if m.role != "tool":
+            continue
+        for rp in m.tool_results():
+            if rp.call_id in call_ids:
+                total += max(0, _priced_gain(rp.result.output or ""))
+    return total
+
+
 def plan_clearing(
     history: list[Message],
     cfg: CompactionCfg,
     *,
     window: int | None = None,
     estimated_tokens: int | None = None,
+    cleared_at_anchor: frozenset[str] | None = None,
 ) -> ClearingPlan:
     """Select tool-result OUTPUTS to clear at assembly time + price the total gain (D42 Tier 1, as
     revised by D60 ①) — a PURE function (no I/O), the ONE source of truth shared by `_assemble` and
@@ -215,6 +243,15 @@ def plan_clearing(
     (§15b-1 — one assembly, no per-hop re-plan) and `estimated_tokens` is the SAME assembled-prompt
     estimate compaction prices (§15b-11). Either being `None` (no resolvable window / no estimate)
     falls back to the pre-D60 ALWAYS-ON behaviour, so an unconfigured model keeps its protection.
+
+    The gate prices the UNTRIMMED prompt (Codex MED fix): in ANCHORED estimator mode the estimate is
+    the size of the prompt **as already trimmed** when the anchor was measured, so comparing it raw
+    would let a trim pull the estimate back under the line, un-clear the same outputs next iteration,
+    and alternate clear/no-clear forever inside a band one gain wide — rewriting the cached prefix on
+    every hop. `cleared_at_anchor` (the anchor's clearing set, `None` in heuristic mode where the
+    history estimate already counts every output in full) lifts the estimate back by exactly what
+    that trim reclaimed (`gain_at_anchor`). STATELESS — no latch, nothing to carry across a
+    suspend/resume or a fold; the lift is re-derived from the history in hand.
 
     Selection: a tool result is cleared iff its OUTPUT is larger than `clear_output_min_tokens`
     (measured in tokens, chars/`CHARS_PER_TOKEN`) AND longer than `OUTPUT_CLEARED_PLACEHOLDER` itself
@@ -243,12 +280,12 @@ def plan_clearing(
     for nothing). Gated on `cfg.enabled` (the master switch)."""
     if not cfg.enabled:
         return ClearingPlan(frozenset(), {})
-    if (
-        window is not None
-        and estimated_tokens is not None
-        and estimated_tokens <= window * cfg.clear_trigger_pct
-    ):
-        return ClearingPlan(frozenset(), {})  # under pressure — nothing is worth trimming yet
+    if window is not None and estimated_tokens is not None:
+        gate_estimate = estimated_tokens
+        if cleared_at_anchor:
+            gate_estimate += gain_at_anchor(history, cleared_at_anchor)  # price it UNTRIMMED
+        if gate_estimate <= window * cfg.clear_trigger_pct:
+            return ClearingPlan(frozenset(), {})  # under pressure — nothing is worth trimming yet
     # Map each call to (its ToolCallPart, the ordinal of the step it belongs to). A "step" is an
     # assistant message bearing tool calls — the results paired to the last `clear_keep_steps` of
     # these stay full.
@@ -295,8 +332,7 @@ def plan_clearing(
             if len(out) <= len(OUTPUT_CLEARED_PLACEHOLDER):
                 continue
             cleared.add(rp.call_id)
-            # priced once, here — the one home; NET of the placeholder (Codex FIX 5).
-            gains[rp.call_id] = (len(out) - len(OUTPUT_CLEARED_PLACEHOLDER)) // CLEAR_CHARS_PER_TOKEN
+            gains[rp.call_id] = _priced_gain(out)  # priced once, in one home (NET of the placeholder)
     if sum(gains.values()) < cfg.clear_min_reclaim_tokens:
         return ClearingPlan(frozenset(), {})  # D60 ①: not worth the prefix rewrite
     return ClearingPlan(frozenset(cleared), gains)

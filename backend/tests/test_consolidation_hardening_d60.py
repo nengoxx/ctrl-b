@@ -4,21 +4,27 @@ The Tier-1 clearing revision (①) lives with its neighbours in `test_compaction
 A2) — it is `plan_clearing`'s own contract. This file owns the rest of the slice and its acceptance
 list:
 
-  1. Config     — every new knob's boundaries (§15b-10), including NaN/inf and the `ge=1` closes the
-                  confirm round added, plus back-compat: a config written before D60 still loads.
+  1. Config     — every new knob's boundaries (§15b-10): the trigger pct's open range, the integer
+                  battery (negative + NaN/±inf), `clear_keep_steps`'s retained `ge=1` pinned as
+                  VALIDATION at boot AND on a Conf PUT, and back-compat (a pre-D60 config still loads).
   2. Failover   — `min_chain_window` takes the SMALLEST window across the whole chain and degrades to
                   `None` (always-on clearing) the moment ANY eligible entry has none (§15b-1).
-  3. Budgets    — `core_memory` READ-class calls stop counting against `max_calls_per_tool` (②),
-                  `tool_overrides.<tool>.max_calls` REPLACES the blanket cap for one tool (§15b-9),
-                  and every read-class call charges `recall_min_charge_chars` whatever it returns, so
-                  a zero-char loop terminates (§15b-3).
-  4. Deletes    — the intent gate (`superseded_by` XOR `reason`), create-before-delete resolved on
-                  disk, self-reference refused, reason sanitation, the SOFT delete into `.archive/`,
-                  the no-clobber refusal, and restore-by-file-move (§15 ③ / §15b-4/5/8/12/13).
-  5. Acceptance — §15's five: ① one turn does read→read→create→delete with no clearing and no cap
-                  denial; ② run 2's exact failure is refused; ③ archive + restore; ④ small-model
-                  pressure still clears; ⑤ the dry-run is structural — with `memory.auto_write` off
-                  every write-class action is REFUSED and the corpus is byte-identical.
+  3. Budgets    — `core_memory` READ-class calls stop counting against `max_calls_per_tool` (②) —
+                  proven through the real loop, past the blanket cap — `tool_overrides.<tool>.
+                  max_calls` REPLACES that cap for one tool end to end (§15b-9), and every read-class
+                  call charges `recall_min_charge_chars` whatever it returns, so a zero-char loop
+                  terminates (§15b-3).
+  4. Deletes    — the intent matrix at the PUBLIC boundary (blank/whitespace counts as absent),
+                  create-before-delete resolved on disk, self-reference refused, both intents
+                  sanitized into the D26 subject (asserted against the commit receipt, by contract
+                  rather than exact wording), the SOFT delete into `.archive/`, the no-clobber
+                  refusal, and restore-by-file-move (§15 ③ / §15b-4/5/8/12/13).
+  5. Acceptance — §15's five: ① one turn reads past the cap then creates and deletes, with no
+                  clearing and no cap denial — and a REAL suspend→resume keeps that turn's earlier
+                  outputs immune after the session rebuild (§15b-6); ② run 2's exact failure is
+                  refused; ③ archive + restore; ④ small-model pressure still clears; ⑤ the dry-run is
+                  structural — with `memory.auto_write` off ALL FOUR write-class actions are REFUSED
+                  and the corpus is byte-identical.
 
 Every test runs against a synthesized corpus in its own `$CTRLB_HOME` (conftest) — never the owner's
 real config, memory dir or vault.
@@ -27,9 +33,11 @@ real config, memory dir or vault.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -125,6 +133,69 @@ def test_min_reclaim_floor_takes_zero_but_not_negative() -> None:
     assert CompactionCfg(clear_min_reclaim_tokens=0).clear_min_reclaim_tokens == 0  # 0 = no floor
     with pytest.raises(ValueError):
         CompactionCfg(clear_min_reclaim_tokens=-1)
+
+
+#: The integer knobs D60 adds, each with the model that owns it — one battery, evened out with
+#: `clear_trigger_pct`'s: negative and non-finite are rejected at the boundary for all of them.
+_INT_KNOBS = [
+    (CompactionCfg, "clear_min_reclaim_tokens"),
+    (CoreMemoryCfg, "recall_min_charge_chars"),
+    (ToolOverride, "max_calls"),
+]
+
+
+@pytest.mark.parametrize("bad", [-1, math.nan, math.inf, -math.inf])
+@pytest.mark.parametrize("model,field", _INT_KNOBS, ids=[f for _m, f in _INT_KNOBS])
+def test_every_new_integer_knob_rejects_negative_and_non_finite(model, field, bad) -> None:
+    with pytest.raises(ValueError):
+        model(**{field: bad})
+
+
+def test_clear_keep_steps_zero_stays_rejected_at_the_boundary(tmp_path) -> None:
+    """§15b-10 keeps `clear_keep_steps ≥ 1` — D60 changed the keep window's UNIT (the current turn is
+    immune whatever the step age), never its floor. Pinned as VALIDATION, not behaviour: 0 must fail
+    on the same pydantic model at boot AND on a Conf PUT."""
+    with pytest.raises(ValueError):
+        CompactionCfg(clear_keep_steps=0)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(yaml.safe_dump({"agent": {"compaction": {"clear_keep_steps": 0}}}), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_settings(cfg)  # boot refuses it
+
+
+def test_the_conf_put_refuses_the_same_bad_values(tmp_path, monkeypatch) -> None:
+    """The same model validates the live edit — a Conf write of an out-of-range knob 422s rather than
+    landing (`ge=1` on the keep window, the open range on the trigger pct, `ge=1` on the min charge)."""
+    client, _root_ = _consolidation_thread(tmp_path, monkeypatch)
+    with client as c:
+        assert (
+            c.put("/api/settings", json={"agent": {"compaction": {"clear_keep_steps": 0}}}).status_code == 422
+        )
+        assert (
+            c.put("/api/settings", json={"agent": {"compaction": {"clear_trigger_pct": 0}}}).status_code
+            == 422
+        )
+        assert (
+            c.put("/api/settings", json={"agent": {"compaction": {"clear_trigger_pct": 1.5}}}).status_code
+            == 422
+        )
+        assert (
+            c.put(
+                "/api/settings",
+                json={"memory": {"longterm": {"core": {"recall_min_charge_chars": 0}}}},
+            ).status_code
+            == 422
+        )
+        assert (
+            c.put("/api/settings", json={"tool_overrides": {"ping_host": {"max_calls": 0}}}).status_code
+            == 422
+        )
+        # …and a legal edit of the same fields still lands (the control that keeps the 422s honest).
+        ok = c.put(
+            "/api/settings",
+            json={"agent": {"compaction": {"clear_trigger_pct": 0.6, "clear_min_reclaim_tokens": 0}}},
+        )
+        assert ok.status_code == 200, ok.text
 
 
 def test_exclude_tools_is_deduped_and_nonblank() -> None:
@@ -274,14 +345,54 @@ def _digest(corpus: CoreMemoryCorpus, rel: str) -> str:
     return corpus.read_topic(rel).content_hash
 
 
-def test_a_delete_needs_exactly_one_intent(tmp_path) -> None:
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {},  # neither
+        {"reason": "   "},  # whitespace-only reason == no intent
+        {"superseded_by": "  "},  # …and the same on the supersedes side
+        {"superseded_by": "  ", "reason": "\t\n "},  # both blank
+        {"superseded_by": "sleep.md", "reason": "obsolete"},  # both given
+        {"superseded_by": "sleep.md", "reason": "   "},  # one real, one blank → still exactly one
+        {"superseded_by": " ", "reason": "obsolete"},
+    ],
+    ids=[
+        "neither",
+        "blank-reason",
+        "blank-supersedes",
+        "both-blank",
+        "both",
+        "supersedes+blank",
+        "blank+reason",
+    ],
+)
+def test_the_delete_intent_matrix_at_the_public_boundary(tmp_path, kw) -> None:
+    """The XOR is enforced where every caller meets it — `CoreMemoryCorpus.delete` — with blanks
+    treated as absent, so a whitespace `reason` can never pass as an intent. The two rows that DO
+    carry exactly one intent are the control: they must NOT be refused for this reason."""
     corpus, root = _seeded(tmp_path)
     before = _tree(root)
-    for kw in ({}, {"superseded_by": "sleep.md", "reason": "obsolete"}):
-        with pytest.raises(CoreMemoryError) as exc:
-            run_async(corpus.delete("wake.md", _digest(corpus, "wake.md"), **kw))
-        assert "exactly one" in str(exc.value)
+    exactly_one = bool(kw.get("superseded_by", "").strip()) != bool(kw.get("reason", "").strip())
+    if exactly_one:
+        run_async(corpus.delete("wake.md", _digest(corpus, "wake.md"), **kw))
+        assert not (root / "wake.md").exists()
+        return
+    with pytest.raises(CoreMemoryError) as exc:
+        run_async(corpus.delete("wake.md", _digest(corpus, "wake.md"), **kw))
+    assert "exactly one" in str(exc.value)
     assert _tree(root) == before  # a refused delete writes nothing
+
+
+def test_the_intent_gate_reaches_the_model_through_the_tool(tmp_path) -> None:
+    """…and the same refusal arrives as a steering ERROR (never an exception) on the tool boundary the
+    model actually calls."""
+    from app.domain.enums import RunState
+
+    corpus, root = _seeded(tmp_path)
+    before = _tree(root)
+    result = _tool(corpus, action="delete", path="wake.md", content_hash=_digest(corpus, "wake.md"))
+    assert result.state is RunState.ERROR and "exactly one of the two" in (result.error or "")
+    assert _tree(root) == before
 
 
 def test_supersedes_must_already_exist_run_twos_exact_failure(tmp_path) -> None:
@@ -321,47 +432,105 @@ def test_an_archived_topic_can_never_be_the_replacement(tmp_path) -> None:
         run_async(corpus.delete("wake.md", _digest(corpus, "wake.md"), superseded_by=".archive/sleep.md"))
 
 
+class _RecordingBackup:
+    """A `MemoryBackup` stand-in that keeps the real lock and RECORDS the D26 subjects — the receipt
+    the sanitation tests below read, so they assert what git would actually be handed rather than a
+    private helper's return value."""
+
+    def __init__(self) -> None:
+        self.lock = asyncio.Lock()
+        self.commits: list[str] = []
+
+    def guard(self):
+        @contextlib.asynccontextmanager
+        async def _cm():
+            async with self.lock:
+                yield
+
+        return _cm()
+
+    async def commit(self, _paths, message):
+        self.commits.append(message)
+
+
+def _subject_of(corpus: CoreMemoryCorpus, **kw) -> str:
+    """Drive one public `delete` through a recording backup and return its commit subject."""
+    backup = _RecordingBackup()
+    corpus._backup = backup  # type: ignore[assignment]
+    run_async(corpus.delete("wake.md", _digest(corpus, "wake.md"), **kw))
+    return backup.commits[-1]
+
+
+def _assert_subject_contract(subject: str, *, names: str) -> None:
+    """The D26 subject CONTRACT (not its exact wording): one line, no control characters, bounded,
+    content-free (never the topic's text), and it names the delete's stated intent."""
+    assert "\n" not in subject and "\r" not in subject
+    assert not re.search(r"[\x00-\x1f\x7f]", subject)
+    assert len(subject) <= 200
+    assert "core memory: delete wake.md" in subject
+    assert names in subject
+    assert "Press the button." not in subject  # the topic's body never rides the subject
+
+
 def test_the_reason_is_sanitised_into_the_commit_subject(tmp_path) -> None:
-    """§15b-13: nonblank, collapsed to one line, control characters refused, length-capped — and it
-    reaches git as an argument, never a shell string."""
-    from app.services.agent.core_memory import _REASON_MAX_CHARS, _delete_note
-
-    assert _delete_note("", "  the host   was\n decommissioned ") == "the host was decommissioned"
-    assert _delete_note("merged.md", "") == "superseded by merged.md"
-    assert len(_delete_note("", "x" * 500)) == _REASON_MAX_CHARS
-    with pytest.raises(CoreMemoryError):
-        _delete_note("", "bad\x07reason")
-    with pytest.raises(CoreMemoryError):
-        _delete_note("", "   ")  # blank = no intent at all
-
-
-def test_the_delete_commit_subject_names_the_intent(tmp_path) -> None:
-    """The D26 subject stays content-free but says WHY (letta-code's shape) — a topic name or the
-    sanitized reason, both of which are words ABOUT the change."""
+    """§15b-13, through the public path: a multi-line, whitespace-ragged reason arrives as one
+    sanitized line in the subject git is handed."""
     corpus, root = _seeded(tmp_path)
-    commits: list[str] = []
-
-    class _Backup:
-        def __init__(self):
-            self.lock = asyncio.Lock()
-
-        def guard(self):
-            import contextlib
-
-            @contextlib.asynccontextmanager
-            async def _cm():
-                async with self.lock:
-                    yield
-
-            return _cm()
-
-        async def commit(self, _paths, message):
-            commits.append(message)
-
-    corpus._backup = _Backup()  # type: ignore[assignment]
-    run_async(corpus.delete("wake.md", _digest(corpus, "wake.md"), reason="the host is gone"))
-    assert commits == ["core memory: delete wake.md — the host is gone"]
+    subject = _subject_of(corpus, reason="  the host   was\n decommissioned ")
+    _assert_subject_contract(subject, names="the host was decommissioned")
     assert "Press the button." in (root / ".archive" / "wake.md").read_text(encoding="utf-8")
+
+
+def test_an_overlong_reason_is_capped_in_the_subject(tmp_path) -> None:
+    corpus, _root_ = _seeded(tmp_path)
+    subject = _subject_of(corpus, reason="x" * 500)
+    _assert_subject_contract(subject, names="xxx")
+    assert len(subject) < 500
+
+
+@pytest.mark.parametrize("bad", ["bad\x07reason", "bell\x00null", "\x1b[31mred"])
+def test_a_control_char_reason_is_refused(tmp_path, bad) -> None:
+    corpus, root = _seeded(tmp_path)
+    before = _tree(root)
+    with pytest.raises(CoreMemoryError) as exc:
+        run_async(corpus.delete("wake.md", _digest(corpus, "wake.md"), reason=bad))
+    assert "control characters" in str(exc.value)
+    assert _tree(root) == before
+
+
+def test_the_supersedes_intent_is_sanitised_too(tmp_path) -> None:
+    """Codex MED: the supersedes form used to reach the subject as the RAW argument. It is now
+    canonicalized through the shared resolver and put through the same one-line/cap treatment."""
+    corpus, root = _seeded(tmp_path)
+    subject = _subject_of(corpus, superseded_by="  sleep.md  ")  # ragged input, canonical output
+    _assert_subject_contract(subject, names="superseded by sleep.md")
+
+
+@pytest.mark.parametrize(
+    "hostile",
+    ["merged\n.md", "merged\x07.md", "mer\tged.md", "sub\r\ndir/merged.md"],
+    ids=["newline", "bell", "tab", "crlf"],
+)
+def test_a_hostile_supersedes_path_never_reaches_the_commit_subject(tmp_path, hostile) -> None:
+    """A control character in the named replacement is refused outright by the canonical resolver —
+    it can never be laundered into a malformed (multi-line) commit subject."""
+    corpus, root = _seeded(tmp_path)
+    before = _tree(root)
+    with pytest.raises(CoreMemoryError) as exc:
+        run_async(corpus.delete("wake.md", _digest(corpus, "wake.md"), superseded_by=hostile))
+    assert "not a topic path" in str(exc.value)
+    assert _tree(root) == before
+
+
+def test_an_overlong_supersedes_path_is_capped_in_the_subject(tmp_path) -> None:
+    """…and a legal-but-absurd path (200 chars, the filesystem's own limit) is length-capped like a
+    reason, so the subject stays a subject."""
+    corpus, root = _seeded(tmp_path)
+    long_rel = ("m" * 200) + ".md"
+    _topic(root, long_rel, "---\nname: Long\ndescription: long\n---\n\nbody\n")
+    subject = _subject_of(corpus, superseded_by=long_rel)
+    _assert_subject_contract(subject, names="superseded by mmm")
+    assert len(subject) < len(long_rel)
 
 
 def test_a_delete_archives_instead_of_destroying(tmp_path) -> None:
@@ -463,6 +632,11 @@ class _Fake:
         return ResolvedTarget(provider="fake", base_url="http://fake/v1", model="m")
 
 
+async def _aw(value):
+    """`await`-able constant — the one-liner the fake's coroutine hooks are patched with."""
+    return value
+
+
 def _call(name: str, args: dict, cid: str):
     from app.adapters.inference import ChatDelta, ToolCallRequest
 
@@ -475,10 +649,13 @@ def _text(s: str):
     return ChatDelta(text=s)
 
 
-def _consolidation_thread(tmp_path, monkeypatch, *, auto_write: bool = True, extra: int = 0):
+def _consolidation_thread(
+    tmp_path, monkeypatch, *, auto_write: bool = True, extra: int = 0, overrides: dict | None = None
+):
     """The real wiring (app lifespan → ActionService → the corpus singleton) with only the model
     scripted, over a two-topic corpus (+ `extra` filler topics) — the shape a consolidation run
-    drives."""
+    drives. `overrides` writes a real `tool_overrides` block, so a per-tool cap is exercised the way
+    the owner sets it."""
     from fastapi.testclient import TestClient
 
     from app.main import create_app
@@ -489,6 +666,7 @@ def _consolidation_thread(tmp_path, monkeypatch, *, auto_write: bool = True, ext
             {
                 "server": {"port": 5433},
                 "memory": {"auto_write": auto_write, "longterm": {"backend": "core"}},
+                **({"tool_overrides": overrides} if overrides else {}),
             }
         ),
         encoding="utf-8",
@@ -618,6 +796,152 @@ def test_write_class_calls_still_hit_the_per_tool_cap(tmp_path, monkeypatch) -> 
     assert len(list(root.glob("topic-*.md"))) == 6
 
 
+def test_a_resumed_turn_still_protects_its_pre_suspension_outputs(tmp_path, monkeypatch) -> None:
+    """§15b-6 for real: SUSPEND on a confirm-gated call, rebuild the session (a resume always does),
+    and drive `resume(execute)`. The rebuilt session must still treat the turn's PRE-SUSPENSION tool
+    output as current-turn — it is verbatim in the payload of the model call that follows — while a
+    PRIOR turn's output in the same thread is cleared. A loop-iteration-offset identity would fail
+    this: the resumed `_drive` starts counting from zero and mints a fresh `TurnHandle.turn_id`."""
+    from _async import drain_run_calls
+
+    from app.domain.conversation import Message, TextPart, Thread, ToolCallPart, ToolResultPart
+    from app.domain.enums import Actor, RunState
+    from app.domain.result import ToolResult
+    from app.services.agent.compaction import OUTPUT_CLEARED_PLACEHOLDER
+    from app.services.agent.session import AgentSession
+
+    client, _root_ = _consolidation_thread(tmp_path, monkeypatch)
+    old_out, live_out = "OLD-" + "x" * 6000, "LIVE-" + "y" * 6000
+
+    def _session(state, cfg):
+        agent = state.settings.resolve_agent(None).model_copy(update={"max_parallel_tools": 1})
+        s = AgentSession(
+            state.threads,
+            state.messages,
+            state.inference,
+            state.settings,
+            state.actions,
+            agent,
+            interactive=True,
+            core_memory=state.core_memory,
+        )
+        s._compaction_cfg = cfg  # keep_steps=1 → only the TURN boundary can protect the live output
+        return s
+
+    with client:
+        state = client.app.state
+        cfg = CompactionCfg(clear_keep_steps=1, clear_output_min_tokens=500)
+        thread = run_async(state.threads.create(Thread()))
+
+        async def _seed() -> str:
+            def user(text: str) -> Message:
+                return Message(
+                    thread_id=thread.id, role="user", actor=Actor.USER, parts=[TextPart(text=text)]
+                )
+
+            await state.messages.add(user("the previous turn"))
+            for cid, out in (("old", old_out), ("live", live_out)):
+                if cid == "live":
+                    await state.messages.add(user("consolidate for me"))  # THE turn starts here
+                await state.messages.add(
+                    Message(
+                        thread_id=thread.id,
+                        role="assistant",
+                        actor=Actor.AGENT,
+                        parts=[ToolCallPart(call_id=cid, tool="ping_host", args={}, state=RunState.OK)],
+                    )
+                )
+                res = ToolResult(state=RunState.OK, summary="pinged", output=out)
+                res.duration_ms = 5
+                await state.messages.add(
+                    Message(
+                        thread_id=thread.id,
+                        role="tool",
+                        actor=Actor.AGENT,
+                        parts=[ToolResultPart(call_id=cid, result=res)],
+                    )
+                )
+            # …and the confirm-gated call the turn suspends on.
+            call_id = "confirm-me"
+            await state.messages.add(
+                Message(
+                    thread_id=thread.id,
+                    role="assistant",
+                    actor=Actor.AGENT,
+                    agent="default",
+                    parts=[
+                        ToolCallPart(
+                            call_id=call_id,
+                            tool="reboot_host",
+                            args={"host_id": "nope"},
+                            state=RunState.PENDING,
+                        )
+                    ],
+                )
+            )
+            return call_id
+
+        call_id = run_async(_seed())
+        pending = run_async(state.messages.list(thread.id))[-1]
+
+        # SUSPEND: the gated call runs with no token → AWAITING_CONFIRM, persisted.
+        guard = _LoopGuard(max_repeat=5, max_per_tool=10)
+        _events, suspended, _ = drain_run_calls(_session(state, cfg), thread, pending, {}, guard)
+        assert suspended
+        states = [
+            cp.state
+            for m in run_async(state.messages.list(thread.id))
+            for cp in m.tool_calls()
+            if cp.call_id == call_id
+        ]
+        assert states == [RunState.AWAITING_CONFIRM]
+
+        # RESUME in a FRESH session (the rebuild), with a window small enough that the pressure gate
+        # is wide open — so the ONLY thing that can protect the live output is the turn boundary.
+        fake = _Fake([[_text("resumed and answered")]])
+        fake.min_chain_window = lambda *_a, **_kw: _aw(200)  # type: ignore[assignment]
+        resumed = _session(state, cfg)
+        resumed._inference = fake
+
+        async def _go():
+            return [ev async for ev in resumed.resume(thread, call_id, "execute")]
+
+        run_async(_go())
+
+    payload = "\n".join(str(m.get("content") or "") for m in fake.seen[0])
+    assert live_out in payload  # the turn's own pre-suspension output survived the rebuild
+    assert old_out not in payload and OUTPUT_CLEARED_PLACEHOLDER in payload  # the prior turn cleared
+
+
+def test_a_max_calls_override_moves_the_cap_through_the_real_loop(tmp_path, monkeypatch) -> None:
+    """§15b-9 end to end: `tool_overrides.core_memory.max_calls: 8` REPLACES the blanket cap of 6 for
+    this tool — calls 7 and 8 now run, and the 9th is refused. The blanket cap is untouched for
+    everything else."""
+    client, root = _consolidation_thread(
+        tmp_path, monkeypatch, overrides={CORE_MEMORY_TOOL: {"max_calls": 8}}
+    )
+    fake = _Fake(
+        [
+            [
+                _call(
+                    CORE_MEMORY_TOOL,
+                    {"action": "create", "name": f"Topic {i}", "description": "d", "content": "c"},
+                    f"w{i}",
+                )
+            ]
+            for i in range(9)
+        ]
+        + [[_text("done")]]
+    )
+    with client:
+        assert client.app.state.settings.tool_overrides[CORE_MEMORY_TOOL].max_calls == 8
+        _events, rows = _drive(client, fake)
+
+    summaries = [rp.result.summary for m in rows for rp in m.tool_results()]
+    assert sum("call limit" in s for s in summaries) == 1  # only the 9th
+    assert len(list(root.glob("topic-*.md"))) == 8  # 7 and 8 landed — past the blanket 6
+
+
 def test_the_dry_run_shape_refuses_every_write_and_changes_nothing(tmp_path, monkeypatch) -> None:
     """§15 acceptance ⑤ / §15b-2: the documented dry-run runs with `memory.auto_write` OFF, so the
     STRUCTURE refuses each write-class action — asserted by attempting one, never by trusting a
@@ -650,6 +974,48 @@ def test_the_dry_run_shape_refuses_every_write_and_changes_nothing(tmp_path, mon
 
     plan = REGISTRY["consolidation_dryrun"].default
     assert "DRY RUN" in plan and "Do NOT call `create`" in plan
+
+
+@pytest.mark.parametrize("action", ["create", "update", "remove", "delete"])
+def test_the_dry_run_refuses_every_write_class_action(tmp_path, action) -> None:
+    """…and it is ALL FOUR, not just `create`: each with arguments that would otherwise SUCCEED (a
+    real CAS substring, a fresh hash, a stated intent, a free filename), so the autonomy gate is the
+    only thing that can be the denier — and the corpus is byte-identical after each attempt."""
+    from app.domain.enums import RunState
+
+    corpus, root = _seeded(tmp_path, memory={"auto_write": False})
+    before = _tree(root)
+    args = {
+        "create": {"action": "create", "name": "Merged", "description": "d", "content": "c"},
+        "update": {
+            "action": "update",
+            "path": "wake.md",
+            "old_text": "Press the button.",
+            "new_text": "Press it.",
+        },
+        "remove": {"action": "remove", "path": "wake.md", "old_text": "Press the button."},
+        "delete": {
+            "action": "delete",
+            "path": "wake.md",
+            "content_hash": _digest(corpus, "wake.md"),
+            "superseded_by": "sleep.md",
+        },
+    }[action]
+
+    result = _tool(corpus, **args)
+    assert result.state is RunState.ERROR
+    assert "memory.auto_write" in (result.error or "")
+    assert _tree(root) == before  # zero corpus writes — including no `.archive/` entry
+
+
+def test_the_dry_run_leaves_reads_and_the_archive_alone(tmp_path) -> None:
+    """The control for the matrix above: under the same switch a read still works, so a dry run can
+    actually survey the corpus it is planning over."""
+    from app.domain.enums import RunState
+
+    corpus, root = _seeded(tmp_path, memory={"auto_write": False})
+    assert _tool(corpus, action="read", path="wake.md", recall=RecallBudget()).state is RunState.OK
+    assert not (root / ".archive").exists()
 
 
 def _clearable_history():
