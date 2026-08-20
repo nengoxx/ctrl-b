@@ -27,8 +27,17 @@
   **THE PROD CONFIG FLIP IS DONE (2026-08-20, product-path PUT, hot-applied, secrets
   digest-verified byte-identical): corsair/qwen3.6-max = prod's PRIMARY**, fallbacks
   llamacpp/gemma4 → openrouter gemma (whose entry now carries `context_window: 262144` — the D60
-  pressure gate is armed, §15d). The owner's first real turn is the live no-failover proof
-  (corsair must be awake). Core Memory remains OFF by default on prod, untouched posture.
+  pressure gate is armed, §15d). ~~The owner's first real turn is the live no-failover proof~~
+  **✅ PROVEN 2026-08-20 (the owner's prod round, later the same day): every assistant turn in
+  prod's DB since the flip carries `source.served: corsair`, `degraded: 0`, no `from`/
+  `failed_hops` — 4/4, DB-verified.** Core Memory remains OFF by default on prod, untouched
+  posture.
+- **2026-08-20 (afternoon): THE OWNER PROD ROUND** — the owner exercised v1.7.4 on production:
+  the cosmos banners toggle (ISS-2) ✓ · the agent ✓ (= the no-failover proof above) ·
+  notifications deliver on prod ✓ · **the notification-TAP device round ✓ (owner-confirmed:
+  tapping lands on the agent tab — the R45 slice works on device; ROADMAP §F1 close-out
+  complete)** · "pretty much all of the things that we did work — tried them all." **Still
+  pending: the icon-backdrop fresh install** (W5/D59 — owner will check later).
 - **Phase 20 Core Memory: ✅ BUILT END TO END 2026-08-17 (D57, S0–S5 all complete in one
   session).** Spec of record + per-slice review records + the as-built appendix =
   [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (§11 ladder ✅ · §14 appendix with the measured
