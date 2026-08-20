@@ -12,17 +12,23 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-18)
+## Current state (2026-08-20)
 
-- **Prod = v1.7.2 @ `e50d39b`**, live + healthy (https://emma.lobster-vector.ts.net) — the
-  2026-08-18 polish wave released same-day (clean runbook run; CI release gate green incl. e2e;
-  no config/DB migration — schema stays 6, config VERSION stays 1). **Rollback = v1.7.1**
-  (`bash ~/apps/ctrl-b/deploy/linux/update.sh v1.7.1`, no config-restore step needed). **⚠ v1.7.0
-  is tagged but NEVER DEPLOYED — NOT a rollback target**; the deeper floor stays **v1.5.1
-  EXACTLY** — sw.js. Version stays in the 1.7 line by owner ruling (2026-08-18: "we're going to
-  run out of versions before 2.0") — features do NOT force a minor bump here.
-  **v1.7.2 also carries Phase 20 Core Memory to prod for the first time — still OFF by default,
-  untouched posture.**
+- **Prod = v1.7.4 @ `92cb3a3`**, live + healthy (https://emma.lobster-vector.ts.net) — RELEASED
+  2026-08-20 (Opus-operated runbook run; CI release gate green incl. e2e; no config/DB migration —
+  schema stays 6, config VERSION stays 1). The batch: D60 + D61 `/consolidate` UX + **D62
+  per-message serve attribution** + the qwen normalization `5678c08` + the notification-tap SW
+  slice + the ISS-2/7/8 sweep. **Rollback = v1.7.2** (`bash ~/apps/ctrl-b/deploy/linux/update.sh
+  v1.7.2` + the pre-flip config at `~/.ctrl-b/backups/config.yaml.20260820T111619Z`). **⚠ v1.7.3
+  is tagged but NEVER DEPLOYED — its release gate went RED on four stale arcade-lift e2e pins
+  (4px→3px, `630219d`'s ruling; fixed `92cb3a3`) — NOT a rollback target**, joining v1.7.0; the
+  deeper floor stays **v1.5.1 EXACTLY** — sw.js. Version stays in the 1.7 line by owner ruling
+  (re-confirmed 2026-08-20: "keep 1.7.3" → burned → v1.7.4).
+  **THE PROD CONFIG FLIP IS DONE (2026-08-20, product-path PUT, hot-applied, secrets
+  digest-verified byte-identical): corsair/qwen3.6-max = prod's PRIMARY**, fallbacks
+  llamacpp/gemma4 → openrouter gemma (whose entry now carries `context_window: 262144` — the D60
+  pressure gate is armed, §15d). The owner's first real turn is the live no-failover proof
+  (corsair must be awake). Core Memory remains OFF by default on prod, untouched posture.
 - **Phase 20 Core Memory: ✅ BUILT END TO END 2026-08-17 (D57, S0–S5 all complete in one
   session).** Spec of record + per-slice review records + the as-built appendix =
   [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (§11 ladder ✅ · §14 appendix with the measured
@@ -112,7 +118,8 @@
   automated** — the session pends) · ⑥ **ISS-3 CLOSED** (vapor + minimal appbar worked all along
   since D51 deleted the bespoke bar; owner-verified "looks good", menu icon included).
 
-## ▶▶ NEXT — the RELEASE DECISION is up (owner handoff order, 2026-08-19)
+## ▶▶ NEXT — ~~the RELEASE DECISION~~ ✅ RELEASED v1.7.4 2026-08-20 (see Current state); what
+## remains = the owner minis below + **Phase 19 (D58), now truly next in line**
 
 **D61 is BUILT and its live exercise ran 2026-08-20 (see path 2 below). The 2026-08-20 CLOSE-OUT
 SWEEP then drained the closeable backlog (owner: "close all the issues and fixes we can"):**
