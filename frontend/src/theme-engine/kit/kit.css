@@ -3243,6 +3243,13 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   align-self: flex-end;
   max-width: 88%;
 }
+/* ISS-8 — who-lines sit on the bubble EDGES: the assistant's is dot-first at the left (the flow
+ * default above); the user's mirrors it at the RIGHT edge of its right-aligned bubble. `row-reverse`
+ * both packs the row to the right and puts the ::before dot outermost (rightmost) — the exact
+ * mirror of the bot's dot-first left edge. Vapor unaffected (no `.kit` marker, own chat CSS). */
+.kit .b.user .who {
+  flex-direction: row-reverse;
+}
 .kit .b.user .body {
   background: var(--accent-soft);
   padding: 9px 13px;
