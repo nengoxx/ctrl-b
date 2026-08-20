@@ -1160,15 +1160,18 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
 - [ ] **Idle sleep → OS-native (decided 2026-06-16, D1):** let each host's own OS power plan
       suspend on idle; ctrl-b builds nothing for now (no remote idle detection). **Compute-aware idle**
       (don't sleep during GPU jobs) is a deferred future maybe — the only variant the OS can't do.
-      **Wake-on-connection** (D2): mechanism decided 2026-06-16 — Tailscale-status poll (primary,
-      pairs with A3 scheduler) + PWA-connect trigger (near-free MVP); both reuse `wake_host`, no public surface.
+      **Wake-on-connection** (D2): ✅ BOTH SHIPPED — the PWA-connect trigger (B) 2026-07-29 and the
+      Tailscale-presence poll (A, D50/Phase 15) live in v1.4.6 2026-07-31. This box stays unchecked
+      only as the D1 decision record (OS-native idle; ctrl-b builds nothing); the sole live residue
+      = compute-aware idle, a deferred future-maybe (ROADMAP D1).
 - [ ] **Notifications** (F1): master toggle + per-event; default PWA-native (foreground
       Notifications API via SSE + **Web Push**/VAPID when closed, auto); optional **ntfy** /
       **Telegram-Discord** channels. **Discord/Telegram bots** as thin API clients (E1).
-      *Channel 1 (foreground) ✅ SHIPPED 2026-07-29 + the `automation_done` class in v1.4.4;
-      OPEN = Web Push (channel 2, custom SW + VAPID — also the fix for the SW-tap-doesn't-navigate
-      limit and the suspect for the Fennec delivery mystery) · ntfy · bots (E1) · host up/down
-      (needs the D2-A monitor loop).*
+      *Channel 1 ✅ FULLY CLOSED 2026-08-20 — foreground shipped 2026-07-29, delivery proven
+      2026-08-19 (SYS-19 was the mystery; the "custom SW required" premise was FALSE, R45), tap
+      routing shipped v1.7.4 + device-confirmed (lands on the agent tab). OPEN = **host up/down
+      toggle (GREENLIT 2026-08-20, tap → fleet tab — ROADMAP F1)** · Web Push (channel 2, parked
+      — closed-app delivery only) · ntfy · bots (E1).*
 - [ ] **Security hardening**: known_hosts pinning, per-action tokens, secret encryption-at-rest (G).
 
 ## Phase 14 — Scheduled agent automations (A3) — **design LOCKED 2026-07-30 (owner-signed) · spec = [`AUTOMATIONS_PLAN.md`](./AUTOMATIONS_PLAN.md) + [`DECISIONS.md` D49](./DECISIONS.md) (build against those, NOT this list)**

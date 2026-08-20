@@ -35,9 +35,26 @@
 - **2026-08-20 (afternoon): THE OWNER PROD ROUND** — the owner exercised v1.7.4 on production:
   the cosmos banners toggle (ISS-2) ✓ · the agent ✓ (= the no-failover proof above) ·
   notifications deliver on prod ✓ · **the notification-TAP device round ✓ (owner-confirmed:
-  tapping lands on the agent tab — the R45 slice works on device; ROADMAP §F1 close-out
-  complete)** · "pretty much all of the things that we did work — tried them all." **Still
-  pending: the icon-backdrop fresh install** (W5/D59 — owner will check later).
+  tapping lands on the agent tab — the R45 slice works on device; channel 1 fully closed)** ·
+  "pretty much all of the things that we did work — tried them all." **Still pending: the
+  icon-backdrop fresh install** (W5/D59 — owner will check later).
+- **2026-08-20 (afternoon, same session): THE ORGANIZATIONAL ROUND — owner rulings on the
+  open-item sweep + research commissioned + the drift sweep done:**
+  - **A9 (composer model indicator) ✗ DROPPED** — superseded by D62's who-line chip (ROADMAP
+    entry rewritten; don't re-propose).
+  - **F2 (hidden-appbar connection indicator) ⏸ DEMOTED** — not a standalone slice; if ever
+    built it's a designed element of a plainer theme's fleet tab (frontier-class, NOT gacha).
+  - **F1 host-up/down toggle GREENLIT** — small FE slice, classifier class + Conf toggle keyed
+    on ACTION name (D50 M5); **tap ruling: opens the FLEET tab** (one more `focus` value through
+    the shipped R45 router). No research needed — R45 + D50 already bought the design.
+  - **C3 (chunked TTS) + A13 (OpenAI-OAuth/Codex provider) GREENLIT pending research** — two
+    Opus research passes commissioned same-day → dossiers **R48** (chunked-TTS synthesis) +
+    **R49** (openai-oauth-provider) in `docs/research/`; design sessions follow the dossiers.
+  - **The drift sweep:** eslint recount **49** (QUALITY.md = the only count home; PRE_DEPLOY/
+    UI_AUDIT/HANDOFF de-numbered) · HARDENING §8.2 gains the SWA `--swa-full` item + CM-2 marked
+    closed · §8.4 ②③④⑤⑥ done (SYS-17c dispositioned in SYSTEM_AUDIT §4; F21 row; PRE_DEPLOY QR
+    line; TODO idle-sleep/D2 + F1 boxes) · ROADMAP truth-fixed (ensemble = shipped v1.6.0; D2-A =
+    shipped v1.4.6).
 - **Phase 20 Core Memory: ✅ BUILT END TO END 2026-08-17 (D57, S0–S5 all complete in one
   session).** Spec of record + per-slice review records + the as-built appendix =
   [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (§11 ladder ✅ · §14 appendix with the measured
@@ -184,9 +201,9 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
   the constructor `onclick` and the SW `message` path · `store/ui#consumeTabParam` reads+strips
   `?tab=` at boot without persisting. 15 new tests (worker handler incl. the focus()-rejects
   Fennec case, the router, the SW message, the param parser, a vite-config `?v=` pin); ROADMAP §F1
-  carries the close-out. **OWED: the manual device round** — Chrome Android installed PWA + Fennec
-  (Fennec is *expected-partial*: Bugzilla 1880000, `focus()` won't foreground the PWA, so check
-  that the agent tab is where the app lands once reached).
+  carries the close-out. ~~OWED: the manual device round~~ **✅ PASSED 2026-08-20 (owner, prod
+  v1.7.4): the tap lands on the agent tab.** (The Fennec expected-partial caveat — Bugzilla
+  1880000 — stays recorded in ROADMAP §F1 for reference.)
 - **The icon fresh-install** — W5 is LIVE on prod v1.7.2 already; the owner (no installed app
   currently) installs fresh from Chrome and the chosen backdrop mints directly. Zero code.
 - **The arcade later-look** — the 3px drop is committed but the owner deferred the eyeball;
@@ -245,11 +262,10 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
    D15 #4 (writes diverge only inside the index block, head byte-stable) but the local gemma
    host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention
    window — remedy = `--swa-full`/checkpoints on the llama.cpp box, routed to Phase 19 (D58).
-3. **The NOTIFICATIONS thread** — ~~retest~~ ✅ PASSED 2026-08-19 (delivery works; see the
-   pre-release-menu bullet). ~~What remains = the **notification-tap slice**~~ ✅ **BUILT
-   2026-08-19** per R45's ruling (generateSW `importScripts`, no injectManifest) — what remains is
-   the **manual device round** (Chrome Android installed PWA · Fennec, expected-partial). Web Push
-   (R10/R11) stays parked.
+3. **The NOTIFICATIONS thread — ✅ CHANNEL 1 FULLY CLOSED 2026-08-20**: delivery passed
+   2026-08-19, the tap slice shipped in v1.7.4, and the device round passed 2026-08-20 (tap lands
+   on the agent tab). What remains in F1 = the **greenlit host-up/down toggle slice** (tap →
+   fleet tab; see the organizational-round bullet). Web Push (R10/R11) stays parked.
 4. **Phase 19 — the hardening pass — now NEXT IN LINE (Phase 20 done), still owner-gated**
    (owner, 2026-08-17). [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) is spec-complete; at wake: its
    §10 owner court + the §3b delta council check; locks as **D58**.
@@ -276,9 +292,9 @@ update toast exercised ✅ 2026-08-16.
 ## Standing ledger (carried 2026-08-12 from the 2026-08-06 ledger; verify in the home before acting)
 
 **Owner-court items (ask, don't assume):**
-- Notifications retest ✅ PASSED 2026-08-19 (path 3 above) · web-push stays PARKED on its merits
-  (closed-app delivery only; the Fennec checks are moot) · the notification-tap slice ✅ BUILT
-  2026-08-19, OPEN = its device round (path 3).
+- Notifications: channel 1 ✅ FULLY CLOSED 2026-08-20 (delivery + tap routing, device-confirmed) ·
+  web-push stays PARKED on its merits (closed-app delivery only) · OPEN = the greenlit
+  host-up/down toggle slice (path 3).
 - The ~80 MB untracked `design/prototypes/gacha/` originals — standing "leave untracked for now";
   eventual call = leave / move out / delete.
 - D2-A monitor: the owner DAILY-USE round on prod (its memory; per-host switches OFF until then).
@@ -295,8 +311,9 @@ update toast exercised ✅ 2026-08-16.
   · the a11y e2e sweeps TABS only — no arm opens a bottom sheet/dossier (e2e/a11y.spec.ts) ·
   `skipActiveViewTransition` is global, not per-layer (G2 standing note) · ~~kit-wide `appbarMode:
   minimal` pinned-plan header × mini-player OVERLAP~~ **fixed 2026-08-18 (slice W1** — derived
-  plan-band tokens + a measured header; VAPOR_BANNER_LEDGER §7.1**)** · the 42 eslint warnings = the F13 React-Compiler-prep backlog (UI_AUDIT; deliberately
-  deferred) · SYS-16's ASYNC240 lexical blind-spot list (SYSTEM_AUDIT addendum).
+  plan-band tokens + a measured header; VAPOR_BANNER_LEDGER §7.1**)** · the eslint-warn backlog = the F13 React-Compiler-prep backlog (UI_AUDIT; deliberately
+  deferred; the count lives ONLY in QUALITY.md's warning accounting — 49 @ 2026-08-20) ·
+  SYS-16's ASYNC240 lexical blind-spot list (SYSTEM_AUDIT addendum).
 
 **Recorded LOWs / deliberate non-fixes (all in D54 or the as-builts):**
 - Conf gallery THUMBNAILS use bare URLs — stale after an in-place overwrite (surfaces use

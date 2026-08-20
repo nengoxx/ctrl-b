@@ -529,10 +529,17 @@ records, likely ROADMAP exit) · 6b list (Switch div→button · store HMR · F2
 [design LOCKED 2026-06-16] · knob `left`→`translateX` · motion tokens — all Phase 20) ·
 **CM-1 (added 2026-08-17):** the core-memory secret gate is best-effort by construction —
 `_SECRET_MIN_CHARS = 8` floor means a real ≤7-char credential is outside the rail
-(CORE_MEMORY_PLAN §14b; joins Packet ③'s SECURITY_MODEL §5 re-walk) · **CM-2 (added
-2026-08-17):** the default `index_char_limit` 8192 sits at 99% fill on a realistic 57-topic
-corpus — the 80% consolidation nudge is permanently on at that scale (cap sizing vs nudge
-threshold; Packet ③ CONFIRMS/EXTENDS, owner may resize at the live round first).
+(CORE_MEMORY_PLAN §14b; joins Packet ③'s SECURITY_MODEL §5 re-walk) · ~~CM-2 (added
+2026-08-17): the default `index_char_limit` 8192 sits at 99% fill on a realistic 57-topic
+corpus~~ **→ CM-2 CLOSED 2026-08-19** by the owner sizing ruling: default cap raised to
+**10240** (shipped in D61 ④; the 57-topic corpus renders unclipped at 79%) — no Packet ③ work
+remains · **SWA cache collapse (added 2026-08-20; found by the 2026-08-19 `cache_n` measure,
+CORE_MEMORY_PLAN §14 Measured):** ctrl-b's assembly holds D15 #4 (writes diverge only inside
+the index block) but the local gemma llama-server runs **without `--swa-full`**, so any write
+landing deeper than the 2,048-tok sliding-attention window collapses `cache_n` to 0 — a full
+re-prefill (~11 s at 9k tok, 4/4 samples). **Remedy is HOST-SIDE** (`--swa-full` or more
+context checkpoints on the llama.cpp box), zero repo change — an H2/Packet ① ops one-liner;
+cloud prefix caching unaffected.
 
 **8.3 OWNER-GATED / PARKED (ask, don't assume; §P never re-propose):** notifications retest
 (path 2) · web-push parked (2 Fennec checks) · D2-A daily-use round · media-gallery round ·
@@ -540,13 +547,16 @@ vault spec · gacha color-theory session · R28 icon pickup · fleet-liveness de
 first) · ~80 MB gacha originals call · **§P: QR-to-phone · picker disclosure**.
 
 **8.4 The 8 bookkeeping-drift items (H2 fixes):** ① SYS-7 homeless (its named home, the D3
-slice, completed without it) · ② eslint-warn count disagrees 27/38/42 across
-QUALITY/PRE_DEPLOY vs UI_AUDIT vs HANDOFF (count it, fix all three) · ③ PRE_DEPLOY §6 QR line
-stale vs ROADMAP §P · ④ TODO Phase-18 slice boxes unchecked though shipped (+ idle-sleep
-backlog box vs Phase 15 COMPLETE) · ⑤ SYS-17c never dispositioned in SYSTEM_AUDIT §4's table ·
-⑥ UI_AUDIT F21 status-table row stale (closed per closing line) · ⑦ ACA LIVE-VERIFY lists'
+slice, completed without it) · ② ~~eslint-warn count disagrees 27/38/42~~ **✓ fixed 2026-08-20**
+(recounted **49**; QUALITY.md's warning accounting = the ONLY count home, the other three docs
+de-numbered to pointers) · ③ ~~PRE_DEPLOY §6 QR line stale vs ROADMAP §P~~ **✓ fixed
+2026-08-20** · ④ TODO Phase-18 slice boxes ~~unchecked though shipped~~ **✓ checked** (+
+~~idle-sleep backlog box vs Phase 15 COMPLETE~~ **✓ annotated 2026-08-20**) · ⑤ ~~SYS-17c never
+dispositioned in SYSTEM_AUDIT §4's table~~ **✓ row added 2026-08-20** (OPEN, routed here) ·
+⑥ ~~UI_AUDIT F21 status-table row stale~~ **✓ fixed 2026-08-20** · ⑦ ACA LIVE-VERIFY lists'
 observation status unrecorded (ask owner once) · ⑧ SYS-15 halves unowned (this plan now owns
-them: H2 + Packet ③).
+them: H2 + Packet ③). *(②③④⑤⑥ closed in the 2026-08-20 organizational session — H2 inherits
+only ①⑦⑧.)*
 
 **8.5 DELIBERATE-NON-FIX register (recorded decisions — re-opening one requires new evidence,
 listed by home):** ACA §5/§7 residuals (S1-LOW-2/3, S1-INFO-5, S5-obs-1/2, S6-res-1/2/3, C1-L5,

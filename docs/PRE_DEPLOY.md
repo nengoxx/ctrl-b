@@ -144,7 +144,7 @@ reads below. (New clone / Windows dev: enable hooks once with `git config core.h
   - **1b-2a** ESLint type-aware on `src`: **209 → 0 errors**. Switch a11y fix + drop jsx-a11y (`b45499f`/`120d52a`);
     batch (a) promises `335837e`; batch (b) hooks `f100d59`; unbound-method `a3f812b`; batch (c+d) `a714e94` + gate `a832762`.
   - **1b-2b** tests/e2e now type-checked (separate `tsc -p`) + type-aware-linted — `ebdf17b`.
-  - **⚠ Left behind (intentional, documented in QUALITY.md):** **27 non-blocking eslint `warn`s** = the
+  - **⚠ Left behind (intentional, documented in QUALITY.md):** **the non-blocking eslint `warn` backlog** (count lives in QUALITY.md's warning accounting — 27 at this gate's time, grown since) = the
     React-Compiler-prep backlog (`set-state-in-effect` 11 / `refs` 8 at `warn`) + `exhaustive-deps` 2 + react-refresh 6.
     They are the checklist to clear **at React Compiler adoption** (UI_AUDIT F13). Do NOT "fix" piecemeal now.
 - [x] **1c — SHIPPED 2026-07-02.** `pyright[nodejs]==1.1.409` (basic) wired into `check.py`; 76 → 0, all
@@ -260,8 +260,9 @@ Three distinct fixes — each is its own pre-flight/scope/review. Do NOT bundle 
 - **Why:** no QR endpoint exists; small, good first-run UX over the mic-requires-HTTPS path.
 - **Pre-flight reads:** the Access/HTTPS settings panel (6c-2 core, already built), how the Serve URL is
   known server-side, existing SVG-render endpoints. Prefer a dep-free SVG QR if cheap; else assess a tiny dep.
-- [x] **DROPPED from this gate by the owner** — the FEATURE stays open (TODO 6c-2), still waiting on a
-  ruling about adding the `segno` dependency. Dropped here means "not a deploy blocker", not "declined".
+- [x] **DROPPED from this gate by the owner** — ~~the FEATURE stays open (TODO 6c-2)~~ **and later
+  ruled OUT entirely: QR-to-phone lives in ROADMAP §P (owner-ruled-out ideas, never re-propose)**.
+  This section is a historical gate record only.
 
 ### 7. Phase 8b tri-state access UI — eyeball @390px  ·  *TODO 8b (pending visual check)*
 - **Goal:** confirm the built tri-state tool-access + descriptions UI reads correctly at phone width (D7).

@@ -456,7 +456,8 @@ Unlike ACA, nothing here warrants a multi-slice program. Map:
 | ~~SYS-9.2 editor `loadSkills()` verify · SYS-18a kit-class comments~~ | XS | **✅ DONE** — SYS-9.2 shipped 2026-07-28 (`4dd7f7c`: skill/agent CRUD + settings saves re-fire all three loaders); SYS-18a contract comments added 2026-08-12. |
 | SYS-3 overlay-at-read for tool overrides | M | **Still open, unscheduled.** The *race* was closed 2026-07-20 (`f0bbef4`: `PUT /api/settings` 409s on a `tool_overrides` patch while a turn is live). The structural inversion — resolve overrides at `to_openai_tools`/catalog time so specs are immutable and `tool_spec_orig` disappears — is now a standalone refactor; ACA is closed, so "decide inside Slice 2" no longer applies. |
 | SYS-2 Deps split / context-injected ActionService | M | **Still open, unscheduled** — its parking slice (ACA Slice 3) shipped 2026-07-18 without it and Phase 12 has closed. Design debt, nothing blocked; pick it up opportunistically with the next lifespan/`main.py` wiring change. |
-| SYS-7 polling tunables → `ServerCfg` | S | Fold into the ROADMAP D3 (`vpn_host`) slice. |
+| SYS-7 polling tunables → `ServerCfg` | S | ~~Fold into the ROADMAP D3 (`vpn_host`) slice~~ — D3 completed without it (was homeless); **rehomed to Phase 19 H2** (HARDENING_PLAN §8.4 ①). |
+| SYS-17c TTS blob-cache object-URLs revoked only on `/clear` (one blob accumulates per spoken reply in long auto-TTS sessions) | XS–S | **OPEN — dispositioned 2026-08-20** (this row was the §8.4 ⑤ gap): conditional LRU cap; routed to Phase 19 (HARDENING_PLAN §8.2). |
 | SYS-8 / SYS-10 / SYS-11 / SYS-18c | S | Named seams; build on demand. |
 
 ## 5. Overall verdict

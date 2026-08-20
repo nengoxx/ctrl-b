@@ -282,18 +282,17 @@ back to the analysis.
 - **Open:** storage location + retention; image-only vs any-file first slice; whether attachments
   persist in thread history (DB) or are turn-scoped.
 
-### A9. Composer model indicator — **parked 2026-07-12 (frontier F1 pre-flight, FRONTIER_PLAN §3/§7)**
+### A9. Composer model indicator — **✗ DROPPED 2026-08-20 (owner ruling): superseded by D62**
 
-- **What:** a small live "which model is serving" label in the composer controls row (the frontier
-  prototype decorates its composer with `qwen2.5:7b · local`).
-- **Why parked (the pre-flight dig):** an honest label needs a **backend resolved-model signal** the
-  client doesn't have — `AgentDef.model.model` is blank-inherits-endpoint, `settings.inference` is
-  Conf-scoped (not always-on), and **D18 failover means the endpoint that actually serves a turn can
-  differ from the configured one** (the client can't know until the backend answers). A static label
-  would lie during failover, so F1 ships no label rather than a wrong one.
-- **Seam when built:** surface the resolved serving model per turn from the backend (e.g. metadata on
-  `message.start` — pairs naturally with the ACA Phase-12 wire work), then render it as shared
-  composer chrome in ALL variants (the A8 rule: functionality, not a theme slot-addon).
+- **What it was:** a small live "which model is serving" label in the composer controls row.
+- **Why parked originally (2026-07-12, frontier F1 pre-flight):** an honest label needs a backend
+  resolved-model signal the client doesn't have, and D18 failover means a static label would lie.
+- **Why dropped:** **D62 per-message serve attribution (v1.7.4) ships the honest version of this
+  fact where it is true** — `Message.source {served, degraded, from}` persisted per assistant turn,
+  rendered as the who-line endpoint chip with a degraded warn + tap disclosure. A composer-side
+  *predictive* label would still have to guess (failover resolves only when the backend answers),
+  so it stays the dishonest half; the owner ruled the D62 chip covers the need. Don't re-propose;
+  if a predictive label is ever wanted anyway, the D62 `SourceInfo` machinery is the seam.
 
 ---
 
@@ -508,14 +507,15 @@ one — only the browser binary can). That splits C2 into two features that must
 > `wake_on_connect` flag (unified host object, MachineEditor switch) + `wake: {cooldown_s: 300}` ·
 > the SSE stream connect fires `wake_host` through `ActionService.invoke(actor=SYSTEM)` — audited,
 > detached, guarded, per-host cooldown, cached-online skip. First connect after a backend restart
-> wakes all flagged hosts (owner-ruled: intended). **A** (the Tailscale-status poll) still lands with
-> the scheduler/monitor subsystem and joins the same `wake:` section + action path.
+> wakes all flagged hosts (owner-ruled: intended). **A** (the Tailscale-status poll) ✅ **SHIPPED as
+> D2-A / Phase 15 (D50), live in v1.4.6 2026-07-31** — same `wake:` section + action path.
 
 - **What:** (from the old README TODO) auto-wake chosen hosts when the phone/owner joins the
   LAN/tailnet — walk in the door, the boxes are already coming up.
 - **Mechanism (✅ decided 2026-06-16 — A primary, B as MVP; both reuse `wake_host`, no public surface):**
   - **A (the real feature) — tailnet-presence trigger. ✏️ design LOCKED 2026-07-31 as [`D50`](./DECISIONS.md)
-    (owner-signed; research = R12+R13 in `docs/research/`) — build = TODO Phase 15.** The backend's
+    (owner-signed; research = R12+R13 in `docs/research/`) — build ✅ SHIPPED Phase 15, live v1.4.6
+    2026-07-31.** The backend's
     first self-owned monitor loop (A3 `runner.loop()` shape) polls the **LocalAPI `whois`** over the
     tailscaled unix socket (httpx-over-UDS; 0.16 ms/1.2 KB — the CLI subprocess and the unstable
     `watch-ipn-bus` are both rejected in D50) for the owner device's **confirmed OFFLINE→ONLINE
@@ -532,9 +532,9 @@ one — only the browser binary can). That splits C2 into two features that must
     semantics ("wake when I *open the dashboard*," not "when I get home"). Not mutually exclusive with A.
   - **Rejected — C, LAN ARP/ping presence:** Android suppresses ping (battery), phone IPs churn,
     LAN-only. Strictly worse than A.
-- **Timing:** post-v1; ~~the **A** build pairs with the A3 scheduler / monitor subsystem (none exists
-  yet)~~ → the A3 loop convention shipped in Phase 14; **A is D50, next up as Phase 15.** **B**
-  shipped 2026-07-29. Detection (A) reuses the tailnet locally, never a public surface.
+- **Timing:** ~~post-v1; the **A** build pairs with the A3 scheduler / monitor subsystem~~ → **BOTH
+  SHIPPED: B 2026-07-29, A (D50/Phase 15) live in v1.4.6 2026-07-31** (per-host switches OFF pending
+  the owner's daily-use round). Detection (A) reuses the tailnet locally, never a public surface.
 
 ### D3. Multi-homed host addressing (LAN + VPN) — **designed 2026-06-30 (external_audit: Corsair shutdown)**
 
@@ -714,15 +714,17 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 
 ## F. Notifications
 
-### F2. Live-connection indicator when the app bar is hidden — **deferred, after the themes (owner 2026-06-27)**
+### F2. Live-connection indicator when the app bar is hidden — **⏸ DEMOTED 2026-08-20 (owner): not a standalone slice; a candidate THEME ELEMENT only**
 
 - **What:** the SSE "live feed dropped / reconnecting / offline" badge currently lives ONLY in the app bar
   (`components/AppBar.tsx`, `theme-engine/kit/AppBar.tsx`, driven by `store/connection` via `useEvents`).
-  The new global **Hide app bar** lever removes the bar — and with it, the only connectivity indicator.
-- **Refine (later, once the theme work is done):** surface the disconnected/reconnecting state somewhere the
-  hidden-app-bar layouts still show it — e.g. a brief auto-dismissing toast on transition (reuse the existing
-  toast store), a small fixed corner dot, or a one-line banner. Reuse `store/connection` (no new state). Low
-  priority for a single-user tailnet app; noted so it isn't forgotten.
+  The global **Hide app bar** lever removes the bar — and with it, the only connectivity indicator.
+- **Owner ruling (2026-08-20):** don't build it as chrome. Reasoning: backend-down mostly presents as
+  app-down anyway, so a dedicated indicator reads redundant. *(The technical nuance, recorded: the PWA
+  shell serves from SW cache, so the UI can render fine while the backend is unreachable — the badge is
+  not strictly redundant; the owner still judges it not worth standalone chrome.)* If it ever exists, it
+  arrives as a **designed element of a theme's fleet tab** — a plainer theme (frontier-class), NOT gacha,
+  which needs no more fleet clutter. Reuse `store/connection` (no new state) whenever a theme adopts it.
 
 ### F1. Push to phone on fleet events
 
@@ -740,7 +742,11 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 > directions** — a host going down is an observation, not a failed action). The residual is now purely
 > frontend: F1's pure Event classifier gains a `host_up_down` class + its Conf toggle, and it must key
 > on the ACTION name, never on `status` (D50 M5 / overrule ② — the backend deliberately owns no notify
-> policy). Channels 2/3 (Web Push · ntfy/bot) stay future.
+> policy). **→ GREENLIT 2026-08-20 (owner): build the `host_up_down` toggle slice. Tap ruling: a
+> host up/down notification's tap opens the FLEET tab (no per-host focus)** — one more `focus`
+> value (`"fleet"`) through the shipped R45 router (`data:{focus}` → `applyNotificationFocus` →
+> `?tab=fleet` fallback); no new research needed, R45 + D50 M5 already bought the whole design.
+> Channels 2/3 (Web Push · ntfy/bot) stay future.
 > **Device round 2026-07-30 (owner, Fennec/Android): NOT delivering.** A reboot-confirm (the flagship
 > `agent_input` case) produced no notification — including a retest that backgrounded the app only
 > seconds before the confirm, which rules out the long-background freeze theory. Cause unconfirmed
@@ -764,12 +770,12 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 > (a bare `/` would restore the PERSISTED last-used tab). The import URL carries a build-time content
 > hash — `updateViaCache` defaults to `"imports"` and dist files ship no `Cache-Control`, so a
 > heuristically-fresh cached copy could otherwise be frozen into a new worker for its whole life
-> (R45 §2). **Owed: the manual device round** — Playwright cannot click an OS notification
-> (microsoft/playwright#23954), so coverage is unit-level plus two on-device checks: **Chrome Android,
-> installed PWA** (tap → app foregrounds, lands on the agent tab) and **Fennec**, where the result is
-> **expected-partial** — Bugzilla **1880000** is still `NEW`, `client.focus()` does not foreground an
-> installed PWA there, so the tab switch must be verified to have landed however the owner reaches
-> the app (that is exactly why the routing does not ride on `focus()` succeeding).
+> (R45 §2). ~~Owed: the manual device round~~ **✅ DEVICE ROUND PASSED 2026-08-20 (owner, on prod
+> v1.7.4): tapping a notification lands on the agent tab.** (Playwright cannot click an OS
+> notification — microsoft/playwright#23954 — so unit coverage + this on-device confirm is the
+> full acceptance. The Fennec caveat stays recorded for reference: Bugzilla **1880000** is `NEW`,
+> `client.focus()` may not foreground an installed PWA there — the routing deliberately does not
+> ride on `focus()` succeeding.) **Channel 1 is fully closed — delivery AND tap routing.**
 >
 > **CHANNEL 2 (Web Push) — RESEARCHED, then PARKED 2026-07-31 (owner).** The design research is
 > bought and banked: **R10** (stack/standards) + **R11** (peer field pass) in `docs/research/`.
@@ -882,13 +888,11 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
   treatment (the cosmos planet precedent says a bespoke Fleet body is viable); art
   sourcing/licensing for any baked-in imagery. **v1.5.0 is RESERVED for this theme (owner ruling
   re-confirmed 2026-08-02).**
-- **Follow-on: the ENSEMBLE fleet layout (owner ask 2026-08-08 — researched + design drafted,
-  post-1.5.0, unscheduled).** An alternative gacha fleet presentation: the capsule grid becomes ONE
-  poster of interlocking sheared bands (ZZZ-roster / True-Damage grammar; references in
-  `design/prototypes/gacha/Alt fleets/`), switched by a `fleetLayout` theme-settings axis
-  (`capsule` default). Evidence = [R18](./research/R18-ensemble-collage-fleet.md) (clip-path
-  hit-area fall-through, `tan()`+cqw shear, union-hexagon lift — probed both engines); the drafted
-  design + slice sketch + open owner rulings = **GACHA_PLAN §12**.
+- **Follow-on: the ENSEMBLE fleet layout — ✅ SHIPPED (alt-fleet E0–E5, released in v1.6.0
+  2026-08-11).** The capsule grid becomes ONE poster of interlocking sheared bands (ZZZ-roster /
+  True-Damage grammar), switched by the `fleetLayout` theme-settings axis (`capsule` default).
+  Evidence = [R18](./research/R18-ensemble-collage-fleet.md) + R22–R26; the build record + per-slice
+  as-builts = **GACHA_PLAN §12** (Phase 17 DONE end to end).
 
 ### H2. Visual art manager — upload + crop/focal-point editing (**owner, 2026-08-08 — future, unscheduled**)
 
