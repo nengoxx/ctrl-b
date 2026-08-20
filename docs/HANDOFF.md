@@ -114,10 +114,18 @@
 
 ## ▶▶ NEXT — the RELEASE DECISION is up (owner handoff order, 2026-08-19)
 
-**D61 is BUILT and its live exercise ran 2026-08-20 (see path 2 below) — the batch is complete;
-what remains before the release runbook is only what the owner wants to close first (the menu
-below; the 2026-08-20 close-out sweep already took D61's exercise, the §14f prompt tuning
-`32ec0e0`, and the dev index-anomaly fix).**
+**D61 is BUILT and its live exercise ran 2026-08-20 (see path 2 below). The 2026-08-20 CLOSE-OUT
+SWEEP then drained the closeable backlog (owner: "close all the issues and fixes we can"):**
+D61's exercise end-to-end (incl. corsair woken via `wake_host`, qwen answering the verb) · the
+§14f prompt tuning `32ec0e0` · the dev index-anomaly fix · the F9/F13 trigger MEASURED (UI_AUDIT
+— 220-message thread, 1×+4× throttle, no input lag: the deferral now stands on data) · **ISS-2 ✓**
+(cosmos `banners` switch, default ON, `879f3d1`) · **ISS-8 ✓** (user who-line at the bubble's
+right edge, `1889d67`) · **ISS-7 ✓ hardened** (keyboard-aware plan-sheet clamp, `26e661d`) ·
+R47 bought+indexed (`bc384a1`) · **D62 ✓ — per-message serve attribution (ISS-5): LOCKED
+(`0868805`), Opus-built (`9caaf3d`), live-poked on dev, Emma-lane review SHIP WITH FIXES (3 MED)
+→ fix wave `5359132` → confirm all-RESOLVED, FINAL SHIP; gate BE 1818 · FE 2151.** What remains
+before the release runbook: the owner device eyeball (cosmos toggle · ISS-8 who-line · the D62
+chip/disclosure at 420px) and the ruling itself.
 
 **Unreleased on `main`, all owner-verified, no schema/config migration (schema 6, VERSION 1):**
 the 2026-08-18 gacha first-block pair (`c8dc09d`+`0e20de0`) + the 2026-08-19 stack (white-bar
@@ -215,7 +223,8 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
    nothing owed**). The §14f prompt-tuning pair also
    folded into the `consolidation` default (`32ec0e0`, 2026-08-20). THEN the release ruling —
    the batch carries D60 + the qwen normalization + the §15d fix + the notification-tap slice +
-   D61 + `32ec0e0`.** ~~The live `cache_n`
+   D61 + the full 2026-08-20 close-out sweep (`32ec0e0` prompt tuning · ISS-2/7/8 · R47 ·
+   **D62** `9caaf3d`+`5359132`, review-closed).** ~~The live `cache_n`
    measure~~ ✅ run 2026-08-19 (CORE_MEMORY_PLAN §14 Measured bullet): ctrl-b's assembly holds
    D15 #4 (writes diverge only inside the index block, head byte-stable) but the local gemma
    host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention
