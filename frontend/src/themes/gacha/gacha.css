@@ -424,6 +424,10 @@
     }
     .kit .plan-sheet {
       bottom: calc(var(--composer-h, 64px) + 12px - 18px + var(--gc-nav-zone));
+      /* The ISS-7 clamp, minus the nav lift this block just added — the theme that re-anchors the
+       * sheet owns its consequence (mini-round MED: without this, an at-clamp sheet clips its top by
+       * the zone height). Same restatement pattern as the `bottom` line above. */
+      max-height: min(52vh, calc(100% - var(--composer-h, 64px) - var(--gc-nav-zone) - 48px));
     }
     .kit-main:has(.kit-composer.sheet) .plan-sheet {
       bottom: calc(var(--composer-h, 64px) - 18px + var(--gc-nav-zone));

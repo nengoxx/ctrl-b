@@ -3279,7 +3279,8 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 /* ISS-8 — who-lines sit on the bubble EDGES: the assistant's is dot-first at the left (the flow
  * default above); the user's mirrors it at the RIGHT edge of its right-aligned bubble. `row-reverse`
  * both packs the row to the right and puts the ::before dot outermost (rightmost) — the exact
- * mirror of the bot's dot-first left edge. Vapor unaffected (no `.kit` marker, own chat CSS). */
+ * mirror of the bot's dot-first left edge. Applies to EVERY theme incl. vapor (which renders
+ * through DefaultRoot's `.kit` shell since D51 and ships no chat CSS of its own). */
 .kit .b.user .who {
   flex-direction: row-reverse;
 }
@@ -4060,10 +4061,13 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   z-index: 3;
   /* ISS-7 hardening — 52vh reads the LAYOUT viewport, which the Android keyboard does not shrink; a
    * long plan could then outgrow the keyboard-shrunk visible area and spill into a page scroll. Clamp
-   * to the keyboard-aware `--app-h` (visualViewport-tracked, App.tsx) minus the composer band + top
-   * clearance; in every no-keyboard case min() still resolves to the original 52vh. `overscroll-
-   * behavior` stops an at-limit sheet scroll from chaining into the page — belt to the clamp. */
-  max-height: min(52vh, calc(var(--app-h, 100dvh) - var(--composer-h, 64px) - 48px));
+   * to the CONTAINING BLOCK (`.kit-main`, the positioned ancestor — mini-round MED: `--app-h` spans
+   * the whole shell incl. appbar/tab bar, so an app-h clamp could still clip the sheet's top): 100%
+   * here is the visible main area and shrinks with the keyboard, since the shell's height IS
+   * `--app-h`. In every no-keyboard case min() still resolves to the original 52vh. A theme that
+   * re-anchors the sheet's `bottom` subtracts its own lift (gacha does). `overscroll-behavior` stops
+   * an at-limit sheet scroll from chaining into the page — belt to the clamp. */
+  max-height: min(52vh, calc(100% - var(--composer-h, 64px) - 48px));
   overscroll-behavior: contain;
   overflow-y: auto;
   padding-bottom: 20px;
