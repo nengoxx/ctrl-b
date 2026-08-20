@@ -391,7 +391,9 @@ REGISTRY: dict[str, PromptDef] = {
             "1. `read` every source topic in full before you write anything.\n"
             "2. `create` the merged topic: one topic carrying every fact worth keeping, dates written "
             'absolutely ("2026-08-19", never "last week"), and a one-line hook saying what it '
-            "answers.\n"
+            "answers. Do not write a frontmatter block into the body — the call's fields are the "
+            "frontmatter — and reference only topics you verified exist in this run's index or "
+            "reads, never ones remembered.\n"
             "3. `delete` each source with `superseded_by` set to the merged topic's path — a delete "
             "whose replacement does not exist is refused, so create first, always. Deletes archive "
             "rather than destroy, so a mistake is recoverable but still a mistake.\n\n"
@@ -411,7 +413,9 @@ REGISTRY: dict[str, PromptDef] = {
             "to send, AFTER a `Consolidation Dryrun` pass. Coupling: the batch discipline (ONE family, "
             "then stop) is what makes the task finishable inside one turn's budgets; the named "
             "mechanics (read all → create merged → delete each with `superseded_by`) match the rails "
-            "the tool actually enforces, and the create-before-delete order is the one run 2 got wrong."
+            "the tool actually enforces, and the create-before-delete order is the one run 2 got wrong. "
+            "The no-frontmatter and verified-references lines in step 2 fix run 3's two blemishes "
+            "(CORE_MEMORY_PLAN §14f)."
         ),
     ),
     "consolidation_promote": PromptDef(

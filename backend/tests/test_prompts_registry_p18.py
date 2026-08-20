@@ -183,7 +183,10 @@ _GOLDEN: dict[str, tuple[dict[str, str], str]] = {
         "you can see every topic. Then, for that family only:\n"
         "1. `read` every source topic in full before you write anything.\n"
         "2. `create` the merged topic: one topic carrying every fact worth keeping, dates written "
-        'absolutely ("2026-08-19", never "last week"), and a one-line hook saying what it answers.\n'
+        'absolutely ("2026-08-19", never "last week"), and a one-line hook saying what it answers. '
+        "Do not write a frontmatter block into the body — the call's fields are the frontmatter — "
+        "and reference only topics you verified exist in this run's index or reads, never ones "
+        "remembered.\n"
         "3. `delete` each source with `superseded_by` set to the merged topic's path — a delete "
         "whose replacement does not exist is refused, so create first, always. Deletes archive "
         "rather than destroy, so a mistake is recoverable but still a mistake.\n\n"
