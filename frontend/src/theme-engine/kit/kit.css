@@ -4025,7 +4025,13 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   right: 18px;
   bottom: calc(var(--composer-h, 64px) + 12px - 18px);
   z-index: 3;
-  max-height: 52vh;
+  /* ISS-7 hardening — 52vh reads the LAYOUT viewport, which the Android keyboard does not shrink; a
+   * long plan could then outgrow the keyboard-shrunk visible area and spill into a page scroll. Clamp
+   * to the keyboard-aware `--app-h` (visualViewport-tracked, App.tsx) minus the composer band + top
+   * clearance; in every no-keyboard case min() still resolves to the original 52vh. `overscroll-
+   * behavior` stops an at-limit sheet scroll from chaining into the page — belt to the clamp. */
+  max-height: min(52vh, calc(var(--app-h, 100dvh) - var(--composer-h, 64px) - 48px));
+  overscroll-behavior: contain;
   overflow-y: auto;
   padding-bottom: 20px;
   border-radius: 16px 16px 0 0;
