@@ -17,6 +17,7 @@ import {
 } from "../store/chat";
 import { openConfGroup } from "../store/groupScroll";
 import type { ChatMessage, Part, ToolCallPart, ToolResult, WebSearchHit } from "../types";
+import { BotWhoLine } from "./chatAttribution";
 
 // The agent-chat LOG (F4) — the reusable `.chat-log` transcript, split out of AgentTab so a bespoke theme
 // body can render the same thread without duplicating the bubble tree (D36: the chat class names are a
@@ -198,7 +199,10 @@ function ThinkBlock({ text, open }: { text: string; open?: boolean }) {
 /** Per-bubble read-aloud toggle (6b-2), in the assistant who-line. Just an icon: ▶ to play this
  *  reply, ⏸ while it's the one playing. Shares the single audio controller (one message at a time);
  *  the docked MiniPlayer hosts the scrubber. Subscribes only to *its own* status, so the ~4×/sec
- *  timeupdate that drives the player doesn't re-render every bubble. */
+ *  timeupdate that drives the player doesn't re-render every bubble.
+ *
+ *  D62/D25: the who-line around it is now tap-to-disclose, so this stops propagation — a nested
+ *  control must not fire the row's toggle too (the DeviceRow breakout rule). */
 function TtsButton({ id, text }: { id: string; text: string }) {
   const mine = usePlayback((p) => (p.id === id ? p.status : "idle"));
   const playing = mine === "playing";
@@ -209,7 +213,10 @@ function TtsButton({ id, text }: { id: string; text: string }) {
       className={"tts-play" + (playing ? " playing" : "") + (loading ? " loading" : "")}
       aria-label={playing ? "pause read-aloud" : "read aloud"}
       title={playing ? "pause" : "read aloud"}
-      onClick={() => void playMessage(id, text)}
+      onClick={(e) => {
+        e.stopPropagation();
+        void playMessage(id, text);
+      }}
     />
   );
 }
@@ -515,12 +522,18 @@ const Bubbles = memo(function Bubbles({
     <>
       {showBot && (
         <div className="b bot">
-          <div className="who">
-            {m.agent && m.agent !== resolvedDefault ? m.agent : "assistant"} · {hm(m.ts)}
+          {/* D62 — the who-line now carries the serve attribution (endpoint chip + the tap-to-reveal
+              metrics row) and owns its own disclosure state, so it lives in `chatAttribution`. The
+              trailing extras stay here (they're ChatThread's own furniture) and ride in as children. */}
+          <BotWhoLine
+            m={m}
+            label={m.agent && m.agent !== resolvedDefault ? m.agent : "assistant"}
+            time={hm(m.ts)}
+          >
             {working && <span className="status-tag">{reasoning ? "thinking" : "working"}</span>}
             {/* Read-aloud toggle (6b-2): only on a settled text reply, and only when TTS is configured. */}
             {ttsOn && !streaming && text && <TtsButton id={m.id} text={text} />}
-          </div>
+          </BotWhoLine>
           <div className="body">
             {reasoningInBot && <ThinkBlock text={reasoning} open={working} />}
             {err ? (

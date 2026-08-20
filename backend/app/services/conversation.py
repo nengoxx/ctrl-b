@@ -19,7 +19,7 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from app.db import Database
-from app.domain.conversation import CallUsage, Message, Part, Thread
+from app.domain.conversation import CallUsage, Message, Part, SourceInfo, Thread
 from app.domain.enums import Actor, RunState
 
 _PARTS = TypeAdapter(list[Part])
@@ -124,8 +124,9 @@ class MessageRepo:
         columns: a future dimension is one more key in this object.
 
         `steer` (D57) is the first such dimension, and it is emitted ONLY when set: an ordinary user
-        row must keep writing `meta = NULL`, so the common case stays exactly as cheap as it was."""
-        if msg.prompt_stamps is None and msg.usage is None and not msg.steer:
+        row must keep writing `meta = NULL`, so the common case stays exactly as cheap as it was.
+        `source` (D62, the routing record) is the second and follows the same rule."""
+        if msg.prompt_stamps is None and msg.usage is None and not msg.steer and msg.source is None:
             return None
         meta: dict[str, Any] = {
             "prompt_stamps": msg.prompt_stamps,
@@ -133,6 +134,8 @@ class MessageRepo:
         }
         if msg.steer:
             meta["steer"] = True
+        if msg.source is not None:
+            meta["source"] = msg.source.model_dump(mode="json")
         return json.dumps(meta, separators=(",", ":"))
 
     async def add(self, msg: Message) -> Message:
@@ -253,6 +256,7 @@ class MessageRepo:
     def _row(r) -> Message:
         meta = json.loads(r["meta"]) if r["meta"] else {}
         usage = meta.get("usage")
+        source = meta.get("source")
         return Message(
             id=r["id"],
             thread_id=r["thread_id"],
@@ -266,4 +270,5 @@ class MessageRepo:
             prompt_stamps=meta.get("prompt_stamps"),
             usage=CallUsage.model_validate(usage) if usage else None,
             steer=bool(meta.get("steer")),  # absent (every historical row) → False
+            source=SourceInfo.model_validate(source) if source else None,  # D62; absent → None
         )

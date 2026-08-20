@@ -395,7 +395,7 @@ erDiagram
         int tokens
         int compacted "context overlay flag - rows never deleted"
         text agent "per-turn attribution"
-        json meta "migration 6 (D56): per-model-call prompt stamps + usage (nullable)"
+        json meta "migration 6 (D56): per-model-call prompt stamps + usage + steer + source (D62) - keys, never columns"
     }
     EVENTS {
         text id PK
@@ -544,7 +544,7 @@ events ignored (forward-compatible).
 | Event | Payload | Note |
 |---|---|---|
 | `thread` | threadId, title | head of every turn |
-| `message.start` / `message.end` | messageId, agent | per assistant step |
+| `message.start` / `message.end` | messageId, agent · **end also: source?, usage?** | per assistant step; the D62 serve attribution rides `message.end` (`{served, degraded, from?, failed_hops?, context_window?}` + the call's usage) — unknown at `start`, omitted when the call produced neither |
 | `reasoning.delta` / `text.delta` | messageId, delta | per token |
 | `part.added` | tool_call part | renders command bubble |
 | `tool.permission` | callId, tool, args, risk, **token**, prompt | confirm bubble; suspends |

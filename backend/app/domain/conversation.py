@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from app.domain.enums import Actor, RunState
 from app.domain.result import ToolResult
@@ -91,20 +91,111 @@ class CallUsage(BaseModel):
     Every field is nullable and so is the whole object: a backend that reports nothing yields
     `usage: null` rather than a row of zeros (L-2 accepts the gap — the alternative is inventing
     numbers). Cost is deliberately NOT computed here: it is a later join against a price table
-    (§2.7), never a capture requirement."""
+    (§2.7), never a capture requirement.
+
+    D62 adds two per-call facts the D62 disclosure row reads: `cached_tokens` (how much of the
+    prefill the endpoint reused from its prompt-prefix cache — ACA-18 telemetry, provider-reported)
+    and `duration_ms` (the wall time of that one call, MEASURED by us in the inference adapter, not
+    reported)."""
 
     model: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    #: Prompt tokens the endpoint reused from its prefix cache (ACA-18). `None` = not reported, which
+    #: is NOT the same as a cache miss.
+    cached_tokens: int | None = None
+    #: Wall time of the one model call this message came from, in milliseconds (D62). Measured
+    #: monotonically around the call in `adapters/inference.py`, so it is the only field here we own
+    #: rather than quote — and the only one a backend that reports nothing can still produce.
+    duration_ms: int | None = None
 
     @classmethod
-    def of(cls, model: str | None, input_tokens: int | None, output_tokens: int | None) -> CallUsage | None:
-        """The usage to persist, or `None` when the provider reported nothing at all. One
-        construction rule for both call sites (the agent loop's streams + the summarizer's buffered
-        call), so "nothing reported" can never be persisted as an all-null object at one of them."""
+    def of(
+        cls,
+        model: str | None,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        *,
+        cached_tokens: int | None = None,
+        duration_ms: int | None = None,
+    ) -> CallUsage | None:
+        """The usage to persist, or `None` when the call yielded no fact at all. One construction rule
+        for both call sites (the agent loop's streams + the summarizer's buffered call), so "nothing
+        reported" can never be persisted as an all-null object at one of them.
+
+        **The D62 collapse rule**: the object collapses to `None` only when EVERY field is `None` —
+        i.e. a measured `duration_ms` alone is enough to persist. That keeps the original intent
+        intact (never persist a row of zeros / invented numbers) while admitting the one datum that
+        is genuinely ours: a duration is measured, not quoted, so recording it is not inventing a
+        number. Callers that measure nothing (the summarizer) pass neither keyword and keep exactly
+        the pre-D62 behaviour."""
         if model is None and input_tokens is None and output_tokens is None:
+            if cached_tokens is None and duration_ms is None:
+                return None
+        return cls(
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_tokens=cached_tokens,
+            duration_ms=duration_ms,
+        )
+
+
+class SourceInfo(BaseModel):
+    """WHO served one assistant turn — the per-message ROUTING record (D62), persisted beside `usage`
+    in `messages.meta`. `usage.model` stays the model-of-record; this object never duplicates it.
+
+    `served` is the provider key that answered (a D48 key — already the owner's friendly name).
+    `degraded` says a fallback saved the turn; `from_` (JSON `from`) is then the chain's PRIMARY, the
+    endpoint we tried first, and `failed_hops` how many hops died before the winner. `context_window`
+    is the served target's effective window (D42 ladder: explicit > probe), snapshotted at serve time
+    so the disclosure's "31% of 262k" is priced against what actually served, not today's config.
+
+    JSON shape: keys are emitted ONLY when set (`from`/`failed_hops` on a degraded serve, the window
+    when resolvable), so an ordinary serve persists `{"served": …, "degraded": false}` and nothing
+    else. `from` is a Python keyword, hence the alias pair + `serialize_by_alias` — so the OUTER
+    `Message.model_dump()` (the thread-reload path) emits `from` without having to remember a flag.
+    (Spelled as `validation_alias`/`serialization_alias` rather than one `alias`: the same JSON
+    contract, but the synthesized `__init__` still accepts the field name — which `alias` hides from
+    the type checker even under `populate_by_name`.)"""
+
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+    served: str
+    degraded: bool = False
+    from_: str | None = Field(default=None, validation_alias="from", serialization_alias="from")
+    failed_hops: int | None = None
+    context_window: int | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler) -> dict[str, Any]:  # noqa: ANN001 — pydantic's serializer handle
+        """Drop the unset keys, so the persisted/wire object carries facts only (see the class note).
+        `served`/`degraded` are never None, so the object is never empty."""
+        return {k: v for k, v in handler(self).items() if v is not None}
+
+    @classmethod
+    def of(
+        cls,
+        served: str,
+        degraded: bool,
+        primary: str,
+        *,
+        failed_hops: int | None = None,
+        context_window: int | None = None,
+    ) -> SourceInfo | None:
+        """The routing record to persist, or `None` when nothing served (a chain that died before any
+        endpoint answered leaves `served` empty — the honest gap, mirroring `CallUsage.of`). `primary`
+        + `failed_hops` are recorded ONLY on a degraded serve: on the happy path the primary IS the
+        server and "fallback from X" would be a lie."""
+        if not served:
             return None
-        return cls(model=model, input_tokens=input_tokens, output_tokens=output_tokens)
+        return cls(
+            served=served,
+            degraded=degraded,
+            from_=primary or None if degraded else None,
+            failed_hops=failed_hops if degraded else None,
+            context_window=context_window,
+        )
 
 
 class Message(BaseModel):
@@ -135,6 +226,10 @@ class Message(BaseModel):
     prompt_stamps: dict[str, str] | None = None
     #: What that call cost, as reported (C-9). `None` when the provider reported nothing.
     usage: CallUsage | None = None
+    #: WHO served this assistant turn (D62) — the routing record beside `usage`. Rides the `meta`
+    #: column as one more key (like `steer`), emitted only when set; user turns, legacy rows and any
+    #: message no model call produced load as `None` ⇒ the pre-D62 who-line, no chip, no disclosure.
+    source: SourceInfo | None = None
     #: This `role="user"` row is a MID-TURN STEER (D41 Drain A), not the message that opened a turn.
     #: A steer persists in exactly the shape a composer message does, which is right for the model's
     #: context but wrong for anything walking back to "where did this logical turn begin" — D57's

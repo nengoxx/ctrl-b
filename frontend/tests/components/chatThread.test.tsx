@@ -474,3 +474,109 @@ describe("A3 14d · the created-automation card", () => {
     setUI({ tab: "fleet" });
   });
 });
+
+// ── D62 — the who-line's serve attribution: the always-on endpoint chip (warn-coloured when a fallback
+// saved the turn) and the tap-anywhere metrics disclosure. The data half (the reducer fold, the
+// formatters, the segment rules) lives in tests/store/chatAttribution.test.ts; this is the render half.
+function botChat(over: Partial<ChatMessage> = {}): AgentChat {
+  const msg: ChatMessage = {
+    id: "m1",
+    thread_id: "t1",
+    role: "assistant",
+    actor: "agent",
+    ts: "2026-08-20T14:32:00.000Z",
+    tokens: null,
+    compacted: false,
+    parts: [{ type: "text", text: "pong" }],
+    ...over,
+  };
+  return { ...emptyChat(), messages: [msg] };
+}
+
+const FULL: Partial<ChatMessage> = {
+  source: { served: "corsair", degraded: false, context_window: 262144 },
+  usage: {
+    model: "qwen3.6-max",
+    input_tokens: 8100,
+    output_tokens: 512,
+    cached_tokens: 6900,
+    duration_ms: 12300,
+  },
+};
+
+describe("D62 · the endpoint chip", () => {
+  it("names the endpoint that served, in the who-line", () => {
+    const { container } = render(<ChatThread active chat={botChat(FULL)} />);
+    const chip = container.querySelector(".b.bot .who .who-ep");
+    expect(chip?.textContent).toContain("corsair"); // uppercased by the caption's text-transform
+  });
+
+  it("takes the warn class on a fallback serve — the segment, not the whole line", () => {
+    const degraded = { source: { served: "openrouter", degraded: true, from: "corsair" } };
+    const { container } = render(<ChatThread active chat={botChat(degraded)} />);
+    expect(container.querySelector(".b.bot .who .who-ep")?.className).toContain("degraded");
+    expect(container.querySelector(".b.bot .who")?.className).toBe("who"); // the line stays plain
+  });
+
+  it("renders the pre-D62 who-line for a message with no attribution, and no toggle", () => {
+    const { container } = render(<ChatThread active chat={botChat()} />);
+    const who = container.querySelector(".b.bot .who");
+    expect(who?.querySelector(".who-ep")).toBeNull();
+    expect(who?.querySelector("button")).toBeNull(); // not tappable
+    // one contiguous text run, exactly as before the slice (the local-clock hh:mm is the app's own)
+    expect(who?.textContent).toMatch(/^assistant · \d\d:\d\d$/);
+  });
+});
+
+describe("D62 · the metrics disclosure", () => {
+  it("is closed until the who-line is tapped, and toggles back", () => {
+    const { container } = render(<ChatThread active chat={botChat(FULL)} />);
+    const who = container.querySelector(".b.bot .who") as HTMLElement;
+    const toggle = who.querySelector("button") as HTMLButtonElement;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector(".who-meta")).toBeNull();
+
+    act(() => who.click()); // tap ANYWHERE on the line (the owner's ruling)
+    expect(container.querySelector(".who-meta")).toBeTruthy();
+    expect(who.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+
+    act(() => who.click());
+    expect(container.querySelector(".who-meta")).toBeNull();
+  });
+
+  it("reads the call, the cost and — only on a fallback — what was lost", () => {
+    const rows = (c: HTMLElement) =>
+      [...c.querySelectorAll(".who-meta-row")].map((r) => r.textContent);
+    const plain = render(<ChatThread active chat={botChat(FULL)} />);
+    act(() => (plain.container.querySelector(".b.bot .who") as HTMLElement).click());
+    const lines = rows(plain.container);
+    expect(lines[0]).toContain("qwen3.6-max");
+    expect(lines[0]).toContain("8.1k (6.9k cached)");
+    expect(lines[1]).toContain("12.3s");
+    expect(plain.container.querySelector(".who-meta-row.warn")).toBeNull(); // nothing was lost
+    cleanup();
+
+    const degraded = render(
+      <ChatThread
+        active
+        chat={botChat({
+          source: { served: "openrouter", degraded: true, from: "corsair", failed_hops: 2 },
+          usage: { duration_ms: 4200 },
+        })}
+      />,
+    );
+    act(() => (degraded.container.querySelector(".b.bot .who") as HTMLElement).click());
+    const warn = degraded.container.querySelector(".who-meta-row.warn");
+    expect(warn?.textContent).toContain("fallback from corsair");
+    expect(warn?.textContent).toContain("2 failed hops");
+  });
+
+  it("carries the arrows' words for a screen reader", () => {
+    const { container } = render(<ChatThread active chat={botChat(FULL)} />);
+    act(() => (container.querySelector(".b.bot .who") as HTMLElement).click());
+    const sr = [...container.querySelectorAll(".who-meta .who-sr")].map((s) =>
+      s.textContent?.trim(),
+    );
+    expect(sr).toEqual(["input tokens", "output tokens"]);
+  });
+});

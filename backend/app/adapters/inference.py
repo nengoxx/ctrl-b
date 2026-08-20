@@ -24,6 +24,7 @@ import asyncio
 import html
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -681,7 +682,16 @@ class StreamReport:
     onto the message each call produced: `{model, input_tokens, output_tokens}` with `prompt_tokens`
     as the input side. `model` is what the endpoint says it SERVED (which can differ from the model
     requested — a failover hop, a router-mode llama-server). Both stay `None` when the endpoint
-    reports nothing, and the persisted usage is `None` with them."""
+    reports nothing, and the persisted usage is `None` with them.
+
+    D62 completes the per-message SERVE ATTRIBUTION off this one object — the session persists it as
+    `Message.source`/`Message.usage` without asking the client anything else: `primary` is the chain's
+    FIRST endpoint (what "fallback from X" names), `context_window` the served target's effective
+    window resolved through the D42 ladder (`effective_window` — explicit > probe, the same helper the
+    D60 pressure gate prices against), and `duration_ms` the monotonic wall time of the call, measured
+    around the whole request (failover hops + retry backoff included: that IS how long the answer
+    took). `duration_ms` is stamped even on a call that fails — the only report field we own rather
+    than quote."""
 
     served: str = ""
     degraded: bool = False
@@ -691,6 +701,9 @@ class StreamReport:
     completion_tokens: int | None = None
     model: str | None = None
     served_target: ResolvedTarget | None = None
+    primary: str = ""
+    context_window: int | None = None
+    duration_ms: int | None = None
 
 
 @dataclass
@@ -1333,6 +1346,20 @@ class InferenceClient:
             report.served_target = served
             report.degraded = result.degraded
             report.failures = result.failures
+            # D62: the chain's PRIMARY — the endpoint this call tried FIRST, i.e. what a degraded serve
+            # fell back FROM. Read off the chain here rather than re-resolved by the session: the chain
+            # is what the call actually walked (a per-message `/provider` override moves it).
+            report.primary = chain[0].provider
+
+    async def _stamp_window(self, report: StreamReport | None) -> None:
+        """The D62 window snapshot: the SERVED target's effective context window, resolved through the
+        SAME `effective_window` ladder (explicit > probe) the D60 pressure gate prices against — never a
+        second resolution rule. Runs AFTER the response, not before the first chunk: the resolution can
+        cost one `/props` probe on an endpoint the turn's `min_chain_window` never priced (it
+        short-circuits at the first unresolvable entry), and nothing should sit between the model's
+        first token and the owner. The consumer reads this off the report when the call is over."""
+        if report is not None and report.served_target is not None:
+            report.context_window = await self.effective_window(report.served_target)
 
     async def complete(
         self,
@@ -1352,6 +1379,7 @@ class InferenceClient:
         output-capped when its `ModelRef.max_tokens` is set. Walks the failover chain (buffered: each
         attempt returns the text). Raises `InferenceError` if every endpoint fails / none configured."""
         messages = normalize_system_messages(messages)
+        started = time.monotonic()  # D62 — the call's wall clock (see `_stamp_duration`)
         self._inflight += 1
         try:
             chain = self._resolve_chain(mode, model)
@@ -1444,8 +1472,10 @@ class InferenceClient:
                     endpoints_tried=len(exc.failures),
                 ) from exc
             self._record(report, chain, result)
+            await self._stamp_window(report)
             return result.value
         finally:
+            _stamp_duration(report, started)
             await self._release_inflight()
 
     async def stream_chat(
@@ -1482,6 +1512,7 @@ class InferenceClient:
         `InferenceError` if every endpoint fails / none configured.
         """
         messages = normalize_system_messages(messages)
+        started = time.monotonic()  # D62 — the call's wall clock (see `_stamp_duration`)
         self._inflight += 1
         try:
             chain = self._resolve_chain(mode, model)
@@ -1683,8 +1714,10 @@ class InferenceClient:
                         ]
                     )
                 # The stream drained cleanly: telemetry capture has concluded, so this is the honest point
-                # to notice a backend that never reported a prompt-token total (R4 — anchoring inactive).
+                # to notice a backend that never reported a prompt-token total (R4 — anchoring inactive)
+                # and to snapshot the served endpoint's window for the message (D62 — off the hot path).
                 self._maybe_notice_anchoring_inactive(report)
+                await self._stamp_window(report)
             except InferenceError:
                 raise
             except Exception as exc:  # noqa: BLE001 — a mid-stream error: normalize, no failover
@@ -1712,7 +1745,19 @@ class InferenceClient:
                     if sem is not None:
                         sem.release()
         finally:
+            _stamp_duration(report, started)
             await self._release_inflight()
+
+
+def _stamp_duration(report: StreamReport | None, started: float) -> None:
+    """Stamp how long this model call took (D62), in ms off the monotonic clock. Called from the
+    request's own `finally`, so it lands on EVERY outcome — a clean stream (the generator returns as
+    the consumer drains it, before the caller reads the report), a mid-stream error, an abandoned
+    stream's `aclose()`, and a chain that never served at all (the error message persists a duration
+    with no counts). Deliberately whole-request: failover hops and retry backoff are part of how long
+    the owner waited."""
+    if report is not None:
+        report.duration_ms = round((time.monotonic() - started) * 1000)
 
 
 async def _safe_close(stream: Any) -> None:

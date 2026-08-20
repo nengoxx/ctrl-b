@@ -206,6 +206,56 @@ def test_failover_off_does_not_try_fallback():
     assert fakes["http://cloud/v1"].chat.completions.calls == []  # off → only the selected endpoint
 
 
+# ── D62: the serve-attribution facts the report carries for the message (see
+#    test_serve_attribution_d62.py for what the session then persists/streams off them) ──
+def test_report_carries_the_chain_primary_and_the_served_window():
+    """`primary` is the endpoint the call TRIED FIRST (what a degraded serve fell back FROM) and
+    `context_window` the SERVED target's effective window — the D42 ladder's explicit value here, not
+    the primary's, so `31% of …` is priced against what actually answered."""
+    reg = registry(
+        [
+            target("local", "http://local/v1", "minig", context_window=8192),
+            target("cloud", "http://cloud/v1", "gemma", context_window=262144),
+        ]
+    )
+    client, _ = _build(reg, {"http://local/v1": _down, "http://cloud/v1": _streams("ok")})
+    report = StreamReport()
+    _run(_collect(client, report=report))
+    assert (report.served, report.primary, report.degraded) == ("cloud", "local", True)
+    assert report.context_window == 262144  # the SERVER's window, not the primary's
+    assert len(report.failures) == 1
+
+
+def test_a_happy_serve_is_its_own_primary_with_no_failures():
+    client, _ = _build(_cfg(), {"http://local/v1": _streams("ok"), "http://cloud/v1": _down})
+    report = StreamReport()
+    _run(_collect(client, report=report))
+    assert (report.served, report.primary, report.degraded, report.failures) == ("local", "local", False, [])
+    assert report.context_window is None  # no explicit window, no llamacpp probe → the honest gap
+
+
+def test_the_call_duration_is_stamped_on_every_outcome():
+    """`duration_ms` is the one report field we MEASURE rather than quote, so it lands on a clean
+    stream, on a buffered call, and on a chain that never served at all (the error message keeps it)."""
+    client, _ = _build(_cfg(), {"http://local/v1": _streams("ok"), "http://cloud/v1": _down})
+    report = StreamReport()
+    _run(_collect(client, report=report))
+    assert report.duration_ms is not None and report.duration_ms >= 0
+
+    buffered = StreamReport()
+    client2, _ = _build(_cfg(), {"http://local/v1": lambda _kw: _Resp("b"), "http://cloud/v1": _down})
+    _run(client2.complete([{"role": "user", "content": "hi"}], report=buffered))
+    assert buffered.duration_ms is not None
+
+    dead = StreamReport()
+    client3, _ = _build(_cfg(), {"http://local/v1": _down, "http://cloud/v1": _down})
+    try:
+        _run(_collect(client3, report=dead))
+    except InferenceError:
+        pass
+    assert dead.duration_ms is not None and dead.served == ""  # timed, but nothing to attribute
+
+
 def test_provider_secret_survives_remove():
     # A11 (repointed from the deleted secret-bearing inference.fallbacks): secrets now live on the
     # `providers` MAP (path-aware, keyed). Removing one provider must NOT clobber the others' real

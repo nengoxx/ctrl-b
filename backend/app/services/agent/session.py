@@ -24,7 +24,7 @@ Event contract (DESIGN §12 subset emitted here):
     notice           {text}                    # breadcrumb (e.g. ACA-11 compaction)
     inference.retry  {endpoint, attempt, max, delaySeconds, category}  # a transient same-endpoint retry (D43)
     inference.failover {from, to, category}    # the chain dropped to the next endpoint (D43)
-    message.end      {messageId}
+    message.end      {messageId, source?, usage?}   # D62 serve attribution (who served + call cost)
     error            {message, retryable}
     done             {threadId, state}        # completed | suspended | capped | error
 """
@@ -64,6 +64,7 @@ from app.domain.conversation import (
     Message,
     Part,
     ReasoningPart,
+    SourceInfo,
     TextPart,
     Thread,
     ToolCallPart,
@@ -373,6 +374,22 @@ def _control_event(item: RetryNotice | FailoverNotice) -> AgentEvent:
         "inference.failover",
         {"from": item.from_endpoint, "to": item.to_endpoint, "category": item.category},
     )
+
+
+def _message_end(assistant: Message) -> AgentEvent:
+    """`message.end` + the D62 per-message serve attribution. ONE home for all three emit sites (the
+    text-only completion, the tool-call step, the wrap-up call) so the live payload can't drift
+    between them — and so it carries EXACTLY what the thread-reload path serves for the same message
+    (`Message.model_dump`), which is what lets the FE render a live bubble and a reloaded one
+    identically. `served`/`degraded` are unknown at `message.start`, so this is the only place they
+    can ride. Both keys are omitted when the call produced no such fact (a pre-D62 row reloads the
+    same way), so the payload of a turn with nothing to attribute is byte-identical to before."""
+    data: dict = {"messageId": assistant.id}
+    if assistant.source is not None:
+        data["source"] = assistant.source.model_dump(mode="json")
+    if assistant.usage is not None:
+        data["usage"] = assistant.usage.model_dump(mode="json")
+    return AgentEvent("message.end", data)
 
 
 class AgentSession:
@@ -836,13 +853,28 @@ class AgentSession:
         """Persist one assistant message + touch its thread — the single door every model call's
         message goes through, so the Phase 18 eval seam can never be forgotten at one of them.
 
-        Two nullable fields ride along (L-2 — metadata on the message, no new table): the SNAPSHOT of
+        Three nullable fields ride along (L-2 — metadata on the message, no new table): the SNAPSHOT of
         this turn's prompt stamps as of now — TURN-SCOPED, i.e. every registry prompt rendered so far
         this turn with its latest hash (C-8/C-17; the accumulator's field note carries the semantic and
-        its two accepted edges) — and what the provider reported this call cost (C-9). A report that
-        carries nothing yields `usage: None`; nothing here invents a number."""
+        its two accepted edges) — what the provider reported this call cost (C-9), and WHO served it
+        (D62). A report that carries nothing yields `usage: None`/`source: None`; nothing here invents
+        a number. Every fact is read off the ONE `StreamReport` the call was given, so the error paths
+        and the wrap-up call are attributed by construction — this door is the only writer."""
         assistant.prompt_stamps = dict(self._stamps) or None
-        assistant.usage = CallUsage.of(report.model, report.prompt_tokens, report.completion_tokens)
+        assistant.usage = CallUsage.of(
+            report.model,
+            report.prompt_tokens,
+            report.completion_tokens,
+            cached_tokens=report.cached_tokens,
+            duration_ms=report.duration_ms,
+        )
+        assistant.source = SourceInfo.of(
+            report.served,
+            report.degraded,
+            report.primary,
+            failed_hops=len(report.failures) or None,
+            context_window=report.context_window,
+        )
         await self._messages.add(assistant)
         await self._threads.touch(thread.id, assistant.ts)
 
@@ -1634,7 +1666,7 @@ class AgentSession:
             if not reqs:
                 assistant.parts = parts
                 await self._persist_assistant(thread, assistant, report)
-                yield AgentEvent("message.end", {"messageId": assistant.id})
+                yield _message_end(assistant)
                 # D43/A4: a clean text-only completion — the turn's conclusive end. On a worker turn
                 # (`had_failure` still False) this resets the consecutive-failure counter; on a lead turn
                 # it emits the close notice when the episode's last lead turn just finished.
@@ -1668,7 +1700,7 @@ class AgentSession:
                 yield AgentEvent(
                     "part.added", {"messageId": assistant.id, "part": cp.model_dump(mode="json")}
                 )
-            yield AgentEvent("message.end", {"messageId": assistant.id})
+            yield _message_end(assistant)
 
             outcome = _BatchOutcome()
             async for ev in self._run_calls(thread, assistant, {}, guard, outcome=outcome):
@@ -2087,7 +2119,7 @@ class AgentSession:
         parts.append(TextPart(text=text))
         assistant.parts = parts
         await self._persist_assistant(thread, assistant, report)
-        yield AgentEvent("message.end", {"messageId": assistant.id})
+        yield _message_end(assistant)
         yield AgentEvent("done", {"threadId": thread.id, "state": "completed"})
 
     def _classify_batch(

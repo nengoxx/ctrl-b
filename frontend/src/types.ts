@@ -273,6 +273,29 @@ export type Part =
   | ToolResultPart
   | { type: "error"; message: string; retryable: boolean };
 
+/** WHO served one assistant turn — the per-message ROUTING record (D62), persisted beside `usage`.
+ *  `served` is the provider key that answered (a D48 friendly name); on a fallback serve `degraded`
+ *  is true and `from`/`failed_hops` say what was lost. `context_window` is the served endpoint's
+ *  effective window as of that serve. Absent keys mean "no such fact" — every consumer omits its
+ *  segment rather than inventing one (a pre-D62 message has no `source` at all). */
+export interface MessageSource {
+  served: string;
+  degraded: boolean;
+  from?: string;
+  failed_hops?: number;
+  context_window?: number;
+}
+
+/** What one model call cost (C-9 + D62): the provider's own numbers, plus the duration we measured.
+ *  Every field is independently nullable — the endpoint reports what it reports. */
+export interface CallUsage {
+  model?: string | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cached_tokens?: number | null;
+  duration_ms?: number | null;
+}
+
 export interface ChatMessage {
   id: string;
   thread_id: string;
@@ -283,6 +306,11 @@ export interface ChatMessage {
   tokens: number | null;
   compacted: boolean;
   agent?: string | null; // which AgentDef produced this assistant turn (7e-c); null on user/default
+  // D62 — per-message serve attribution. Both arrive two ways that must agree: live on `message.end`,
+  // and on the durable thread-load (the same `Message` dump). Absent on user turns, on every pre-D62
+  // row, and on any message no model call produced → the plain who-line, no chip, no disclosure.
+  source?: MessageSource | null;
+  usage?: CallUsage | null;
   // D41/Slice 5 — a client-only marker for a QUEUED steer bubble (a mid-turn message/`!exec` accepted
   // with a 202 while a turn is live): the server-assigned `entry_id`. Present → render muted + a "queued"
   // chip; cleared (or the bubble dropped) when the entry drains (`steer.applied`), is harvested (Stop),

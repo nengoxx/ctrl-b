@@ -10,7 +10,17 @@ import { clearAudioCache } from "../lib/audioController";
 import { publishNotify } from "../lib/notifyBus";
 import { currentPlanOf } from "../lib/plan";
 import type { Privilege } from "../lib/privilege";
-import type { ChatMessage, Part, Plan, PlanStep, RunState, Thread, ToolResult } from "../types";
+import type {
+  CallUsage,
+  ChatMessage,
+  MessageSource,
+  Part,
+  Plan,
+  PlanStep,
+  RunState,
+  Thread,
+  ToolResult,
+} from "../types";
 import { appendDraft, setDraft } from "./composer";
 import { createStore } from "./createStore";
 import { setConnection } from "./connection";
@@ -726,6 +736,18 @@ function addPart(id: string, part: Part) {
   });
 }
 
+/** Attach the D62 serve attribution to the named message (`message.end`). Skipped entirely when the
+ *  frame carried neither fact, so the message identity is preserved and the memoized bubble doesn't
+ *  re-render for nothing — and so a pre-D62 backend leaves the bubble exactly as it is today. */
+function setAttribution(id: string, source: MessageSource | null, usage: CallUsage | null) {
+  if (!source && !usage) return;
+  set({
+    messages: state.messages.map((m) =>
+      m.id === id ? { ...m, ...(source ? { source } : {}), ...(usage ? { usage } : {}) } : m,
+    ),
+  });
+}
+
 /** Flip the lifecycle state of the tool_call with this callId (wherever it lives). */
 function setCallState(callId: string, runState: RunState) {
   set({
@@ -806,6 +828,10 @@ const RUN_STATES: readonly RunState[] = [
 
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 const nonEmpty = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
+// A finite non-negative wire integer (token counts, durations, windows — D62). `undefined` for
+// anything else, so an absent/garbage number omits its segment instead of rendering NaN.
+const int = (v: unknown): number | undefined =>
+  typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : undefined;
 const isRunState = (v: unknown): v is RunState =>
   typeof v === "string" && (RUN_STATES as readonly string[]).includes(v);
 // A plain object (NOT an array — `typeof [] === "object"`), narrowing the wire value so the fields
@@ -863,6 +889,40 @@ function asPart(v: unknown): Part | null {
     return { type: "error", message, retryable: o.retryable === true };
   }
   return null;
+}
+
+/** Validate the D62 `message.end` routing record. `served` is the one required fact (the chip's whole
+ *  content); the rest are optional and dropped individually when malformed, so a partial payload
+ *  degrades to fewer segments rather than to no attribution. `null` if unusable / absent. */
+function asSource(v: unknown): MessageSource | null {
+  if (!isObj(v)) return null;
+  const served = nonEmpty(v.served);
+  if (!served) return null;
+  const from = nonEmpty(v.from);
+  const hops = int(v.failed_hops);
+  const win = int(v.context_window);
+  return {
+    served,
+    degraded: v.degraded === true,
+    ...(from ? { from } : {}),
+    ...(hops !== undefined ? { failed_hops: hops } : {}),
+    ...(win !== undefined ? { context_window: win } : {}),
+  };
+}
+
+/** Validate the `message.end` usage object (C-9 + D62). Every field is independently optional — the
+ *  endpoint reports what it reports — so a garbage field drops itself, never the whole object.
+ *  `null` when nothing usable survived (the disclosure then has no metrics to show). */
+function asUsage(v: unknown): CallUsage | null {
+  if (!isObj(v)) return null;
+  const usage: CallUsage = {
+    model: nonEmpty(v.model) ?? null,
+    input_tokens: int(v.input_tokens) ?? null,
+    output_tokens: int(v.output_tokens) ?? null,
+    cached_tokens: int(v.cached_tokens) ?? null,
+    duration_ms: int(v.duration_ms) ?? null,
+  };
+  return Object.values(usage).some((x) => x !== null) ? usage : null;
 }
 
 /** A dropped/unknown frame is a bug or transport glitch, not a user-facing event — warn in dev only. */
@@ -1096,8 +1156,15 @@ function makeTurnReducer(ctx: TurnCtx) {
         });
         break;
       }
-      case "message.end":
+      case "message.end": {
+        // D62 — the serve attribution lands here and nowhere else: `served`/`degraded` are unknown at
+        // `message.start`. Same shape the durable reload serves, so a live bubble and a reloaded one
+        // render identically; a frame without either key leaves the message untouched.
+        const id = nonEmpty(data.messageId);
+        if (!id) return dropWarn(event, "missing messageId");
+        setAttribution(id, asSource(data.source), asUsage(data.usage));
         break;
+      }
       case "error":
         failStream(str(data.message) ?? "agent error");
         ctx.settled = true;

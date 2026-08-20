@@ -373,6 +373,15 @@ class Message(BaseModel):
     ts: datetime
     tokens: int | None = None          # for compaction budgeting
     compacted: bool = False            # excluded from working context once summarized
+    # ── the `messages.meta` JSON column (migration 6): message metadata is a new KEY, never a new
+    #    column. Every field below is nullable/absent on user turns and on rows written before it existed.
+    prompt_stamps: dict[str,str] | None = None   # C-8: {prompt id: template hash} that fed this turn
+    usage: CallUsage | None = None     # C-9 + D62: {model, input_tokens, output_tokens,
+                                       # cached_tokens, duration_ms} — reported, plus the duration we measure
+    source: SourceInfo | None = None   # D62: the ROUTING record — {served, degraded, from?,
+                                       # failed_hops?, context_window?}; `usage.model` stays the
+                                       # model-of-record, `source` never duplicates it
+    steer: bool = False                # D57/D41: this user row is a MID-TURN steer, not a turn opener
 ```
 
 ```python
@@ -1198,7 +1207,7 @@ event: notice             data: {text}                         # breadcrumbs: "/
 event: inference.retry    data: {endpoint, attempt, max, delaySeconds, category}  # a transient same-endpoint retry, live (D43/A6)
 event: inference.failover data: {from, to, category}           # the chain dropped to the next endpoint, live (D43/A6; supersedes the D18 degraded notice)
 event: compaction         data: {removed, summaryId, truncated}
-event: message.end        data: {messageId}
+event: message.end        data: {messageId, source?, usage?}  # D62 serve attribution: WHO served this turn + what the call cost (unknown at message.start; both keys omitted when the call produced neither)
 event: error              data: {message, retryable}
 event: done               data: {threadId, state}              # completed | suspended | capped | error
 ```

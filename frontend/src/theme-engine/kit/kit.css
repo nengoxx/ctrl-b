@@ -3238,6 +3238,39 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   color: var(--text);
   overflow-wrap: anywhere; /* §14.11 — long URLs/paths/tokens wrap inside the bubble */
 }
+/* D62 — serve attribution. The endpoint segment sits INSIDE the who-line's flex row (so it inherits the
+ * caption's uppercase/letter-spacing) with a hard ellipsis guard: a long provider name truncates instead
+ * of wrapping the 10px line onto a second row. `min-width: 0` because a flex item's default `min-width:
+ * auto` would refuse to shrink below its text. WARN token on a degraded serve — the SEGMENT only, so the
+ * line still reads as the same caption (D62 ②). */
+.kit .b .who .who-ep {
+  min-width: 0;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kit .b .who .who-ep.degraded {
+  color: var(--warn);
+}
+/* the tap-to-reveal metrics rows — the same caption register as the who-line, one step quieter (owner:
+ * "same color and background as the header itself, maybe a little more gray") and NOT uppercased: it
+ * carries a model id and numbers, which read worse in caps. */
+.kit .b .who-meta {
+  margin: -2px 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+  opacity: 0.8;
+  overflow-wrap: anywhere;
+}
+.kit .b .who-meta-row {
+  line-height: 1.6;
+}
+.kit .b .who-meta-row.warn {
+  color: var(--warn);
+  opacity: 1;
+}
 /* user — a filled accent-tint bubble, right-aligned, flat bottom-right corner */
 .kit .b.user {
   align-self: flex-end;
@@ -5676,11 +5709,14 @@ body[data-motion="reduced"] .kit .kit-composer {
   overflow-y: auto;
   overscroll-behavior: contain; /* scrolling the body never chains to the page behind the sheet */
 }
-/* sr-only — ONE recipe, two users: the sheet's close button (keyboard/AT parity without a visible ✕) and
+/* sr-only — ONE recipe, three users: the sheet's close button (keyboard/AT parity without a visible ✕),
  * the tools menu's native agent radios (A6 — real radios for real arrow-key group semantics, with the
- * `.tools-row` beside them as the visual; its focus ring is in the tools block). */
+ * `.tools-row` beside them as the visual; its focus ring is in the tools block), and the D62 who-line
+ * (its disclosure toggle — the owner ruled out a visible affordance — plus the words behind the ↑/↓/↯
+ * glyphs and the endpoint chip). */
 .kit .bs-close-sr,
-.kit .tools-sheet .tools-radio {
+.kit .tools-sheet .tools-radio,
+.kit .b .who-sr {
   position: absolute;
   width: 1px;
   height: 1px;
