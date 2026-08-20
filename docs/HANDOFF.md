@@ -209,9 +209,10 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
    exercise~~ **✅ EXERCISED 2026-08-20 on the live dev app** (§16c: pressure note fired in a
    real thread + config-driven threshold proven · both guard refusals at the UI · the real send
    proven mechanically through the whole failover chain · zero corpus writes sha-verified · the
-   `testing-parked-wing-it.md` index anomaly re-indexed, anomalies `[]`; thin residual = no
-   model ANSWERED — corsair offline + openrouter free-gemma 429 throughout — closes itself on
-   the first `/consolidate dry` with a serveable model). The §14f prompt-tuning pair also
+   `testing-parked-wing-it.md` index anomaly re-indexed, anomalies `[]`; the no-model-answered
+   residual closed the SAME DAY — corsair woken via the app's own `wake_host`, qwen3.6-max
+   answered the verb's dry run with a real 5,868-char plan — **D61 exercised end to end,
+   nothing owed**). The §14f prompt-tuning pair also
    folded into the `consolidation` default (`32ec0e0`, 2026-08-20). THEN the release ruling —
    the batch carries D60 + the qwen normalization + the §15d fix + the notification-tap slice +
    D61 + `32ec0e0`.** ~~The live `cache_n`

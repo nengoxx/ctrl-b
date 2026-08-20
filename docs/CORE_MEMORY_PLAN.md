@@ -1248,5 +1248,10 @@ were new, and they held). Rider closed the same day: the `testing-parked-wing-it
 anomaly (a topic file with no `MEMORY.md` line — likely the pre-fix §14b half-write orphan) was
 re-indexed by hand + committed in the dev memory repo; anomalies now `[]`, and the restored line
 puts dev at 81% — OVER the 80% threshold, so the owner-facing note now fires organically on dev
-(correct: the index really is that full).
+(correct: the index really is that full). **The thin residual then closed the SAME DAY (owner
+go-ahead):** corsair woken through the app's own `wake_host` action (up in ~60s), `/consolidate
+dry` re-sent through the verb with `auto_write` OFF → **qwen3.6-max answered with a real
+5,868-char dry-run plan** (picked the "completed-phase progress reports" family, handled an
+exhausted recall budget gracefully, produced the full §5-shape report); settings restored, zero
+writes. **D61 is exercised end to end — nothing owed.**
 
