@@ -9,6 +9,7 @@ import {
   useServiceBanners,
 } from "../../theme-engine/kit/ownerArt";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
+import { useThemeSetting } from "../../theme-engine/settings";
 import type { Host, Service } from "../../types";
 import { assignBanners } from "./serviceBanners";
 
@@ -99,6 +100,9 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
   // row, which is the dormancy rule extended (§A5's banner surface: owner file → the theme's own default
   // for that same surface → nothing).
   const ownerBanner = useServiceBanners();
+  // ISS-2 — the whole banner layer (dealt pool + owner override alike) behind one theme-setting;
+  // default ON keeps the pre-toggle look. Hooks above still run unconditionally (rules of hooks).
+  const bannersOn = useThemeSetting<boolean>("cosmos", "banners") ?? true;
   // The owner's picture for this MACHINE, painted faded behind the whole sheet. Cosmos is its first
   // adopter (an explicit theme choice, not an automatic kit behaviour); the tone lives in cosmos.css.
   const art = hostArtProps(ownerArtUrl(useHostArt()(host)));
@@ -192,7 +196,9 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
             const addr = `${host.name}:${s.port ?? "—"}`;
             // `?rev=` on the OWNER's file only — the bundled pool entry below it is a build asset with no
             // revision to state (and it cannot change under a running app).
-            const banner = serviceBannerProps(ownerArtUrl(ownerBanner(s)) ?? banners.get(s.id));
+            const banner = bannersOn
+              ? serviceBannerProps(ownerArtUrl(ownerBanner(s)) ?? banners.get(s.id))
+              : undefined;
             return svcOn && s.url ? (
               <a
                 key={s.id}

@@ -86,6 +86,14 @@ export const cosmos: ThemeDef = {
       ],
       default: "cutout",
     },
+    // ISS-2 — the host-detail sheet's decorative service banners (the dealt bundled pool + any
+    // owner-dropped override), toggleable. Default ON = the pre-toggle look, byte-identical.
+    banners: {
+      type: "switch",
+      label: "Service banners",
+      desc: "decorative art behind the sheet's service rows",
+      default: true,
+    },
     motionSpeed: {
       type: "seg",
       label: "Motion speed",
