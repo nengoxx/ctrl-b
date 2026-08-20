@@ -1168,7 +1168,7 @@ test("gacha · the ARCADE composer skin: a flat cabinet panel here, and the same
   expect(gacha.borderColor).toBe("rgba(0, 0, 0, 0)");
   expect(gacha.radius).toBe("14px"); // gacha's --radius = the prototype's own 14px (kit default is 20)
   expect(gacha.padding).toBe("9px 9px"); // the prototype's even 9px gutter
-  expect(gacha.shadow).toMatch(/ 4px 4px 0px 0px$/); // offset by the lift, zero blur AND zero spread
+  expect(gacha.shadow).toMatch(/ 3px 3px 0px 0px$/); // offset by the lift, zero blur AND zero spread
   expect(gacha.ctrlRadius).toBe("10px"); // --radius-sm: the controls square off with the bar
 
   // ── cosmos wearing the same catalog value ──
@@ -1187,7 +1187,7 @@ test("gacha · the ARCADE composer skin: a flat cabinet panel here, and the same
   const cosmos = await chrome();
   expect(cosmos.stamp).toBe("arcade");
   expect(cosmos.backdrop).toBe("none");
-  expect(cosmos.shadow).toMatch(/ 4px 4px 0px 0px$/);
+  expect(cosmos.shadow).toMatch(/ 3px 3px 0px 0px$/);
   expect(cosmos.padding).toBe("9px 9px");
   // …its OWN surface, corner radius and accent — no gacha value leaked into the shared catalog. The drop is
   // mixed from `--accent`, so the same rule paints violet here and pink there: same shape, host's colour.
@@ -1638,7 +1638,7 @@ test("gacha · the ARCADE skin holds its shape under every composer LAYOUT", asy
     expect(seen.backdrop).toBe("none");
     expect(seen.borderWidth).toBe("1px"); // the edge is RESERVED but transparent (owner ruling 2026-08-03)
     expect(seen.borderColor).toBe("rgba(0, 0, 0, 0)");
-    expect(seen.shadow).toMatch(/ 4px 4px 0px 0px$/); // the one hard drop, identical in all three layouts
+    expect(seen.shadow).toMatch(/ 3px 3px 0px 0px$/); // the one hard drop, identical in all three layouts
     // …the STRUCTURE — each layout's own, untouched by the skin
     expect(seen.radius).toBe(geometry[layout].radius);
     expect(seen.bottomRadius).toBe(geometry[layout].bottomRadius);
@@ -1705,8 +1705,8 @@ test("the PINNED PLAN HEAD wears the composer skin (the W2 vocabulary, out in th
   // `arcade` declares both: no edge, and the cabinet's one hard zero-blur accent drop at the lift.
   const arcade = await head("arcade");
   expect(arcade.edge).toBe("rgba(0, 0, 0, 0)");
-  expect(arcade.shadow).toMatch(/ 4px 4px 0px 0px$/);
-  // …and a 4px offset on a chip inside a 14px-inset sticky panel must not widen the page (§14.11).
+  expect(arcade.shadow).toMatch(/ 3px 3px 0px 0px$/);
+  // …and a 3px offset on a chip inside a 14px-inset sticky panel must not widen the page (§14.11).
   expect(arcade.overflowX).toBeLessThanOrEqual(0);
   expect(pageErrors).toEqual([]);
 });
