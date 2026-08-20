@@ -1717,6 +1717,12 @@ class InferenceClient:
                 # to notice a backend that never reported a prompt-token total (R4 — anchoring inactive)
                 # and to snapshot the served endpoint's window for the message (D62 — off the hot path).
                 self._maybe_notice_anchoring_inactive(report)
+                # Duration stamps BEFORE the window snapshot: `_stamp_window` may run a cold `/props`
+                # probe (up to ~3s) that is not model time — leaving the stamp to the outer `finally`
+                # would fold the probe into `duration_ms` and understate tok/s (D62 review F3). The
+                # `finally` stamp remains as the failure/cancellation fallback; `_stamp_duration` is
+                # idempotent so the double call is safe.
+                _stamp_duration(report, started)
                 await self._stamp_window(report)
             except InferenceError:
                 raise
@@ -1755,8 +1761,9 @@ def _stamp_duration(report: StreamReport | None, started: float) -> None:
     the consumer drains it, before the caller reads the report), a mid-stream error, an abandoned
     stream's `aclose()`, and a chain that never served at all (the error message persists a duration
     with no counts). Deliberately whole-request: failover hops and retry backoff are part of how long
-    the owner waited."""
-    if report is not None:
+    the owner waited. Idempotent — the clean path stamps BEFORE the `_stamp_window` probe (not model
+    time), and the `finally` re-call then finds the stamp already set (D62 review F3)."""
+    if report is not None and report.duration_ms is None:
         report.duration_ms = round((time.monotonic() - started) * 1000)
 
 

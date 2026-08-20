@@ -64,18 +64,27 @@ export function metricRows(
   source: MessageSource | null | undefined,
   usage: CallUsage | null | undefined,
 ): Row[] {
+  // llama.cpp-style endpoints report only the NEWLY-prefilled tokens as input, with cache hits in a
+  // separate counter — so `cached > input` (impossible under OpenAI's subset semantics, where the
+  // prompt total includes cached) marks the additive shape, and the honest "sent up" total — for the
+  // ↑ figure AND the window share — is their sum. Facts persist as-reported; only display normalizes.
+  const inTok = usage?.input_tokens;
+  const cachedTok = usage?.cached_tokens;
+  const totalIn =
+    inTok != null ? (cachedTok != null && cachedTok > inTok ? inTok + cachedTok : inTok) : null;
+
   const call: Seg[] = [];
   if (usage?.model) call.push({ text: usage.model });
-  if (usage?.input_tokens != null) {
-    const cached = usage.cached_tokens != null ? ` (${kTokens(usage.cached_tokens)} cached)` : "";
-    call.push({ glyph: "↑", sr: "input tokens", text: `${kTokens(usage.input_tokens)}${cached}` });
+  if (totalIn != null) {
+    const cached = cachedTok != null ? ` (${kTokens(cachedTok)} cached)` : "";
+    call.push({ glyph: "↑", sr: "input tokens", text: `${kTokens(totalIn)}${cached}` });
   }
   if (usage?.output_tokens != null) {
     call.push({ glyph: "↓", sr: "output tokens", text: kTokens(usage.output_tokens) });
   }
 
   const cost: Seg[] = [];
-  const share = windowShare(usage?.input_tokens, source?.context_window);
+  const share = windowShare(totalIn, source?.context_window);
   if (share) cost.push({ text: share });
   if (usage?.duration_ms != null) cost.push({ text: duration(usage.duration_ms) });
   const rate = tokensPerSecond(usage?.output_tokens, usage?.duration_ms);
@@ -163,7 +172,16 @@ export function BotWhoLine({
         {time}
         {children}
         {rows.length > 0 && (
-          <button className="who-sr" aria-expanded={open} onClick={toggle}>
+          <button
+            className="who-sr"
+            aria-expanded={open}
+            // stopPropagation, or the click bubbles to the row's own toggle and the pair cancels out
+            // (D62 review F2) — the same guard TtsButton already carries.
+            onClick={(e) => {
+              e.stopPropagation();
+              toggle();
+            }}
+          >
             message details
           </button>
         )}

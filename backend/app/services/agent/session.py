@@ -1616,6 +1616,10 @@ class AgentSession:
                             continue  # re-issue the SAME call into the SAME assistant slot
                     assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
                     await self._persist_assistant(thread, assistant, report)
+                    # D62 review F1 — the error terminal must carry the attribution it just persisted,
+                    # or the live view and a refresh disagree (the FE handler is attribution-only, so
+                    # this is safe on a message the client may not hold: it no-ops).
+                    yield _message_end(assistant)
                     yield AgentEvent("error", {"message": str(exc), "retryable": True})
                     # D43/A4 Site 1: a chain-level InferenceError ENDS the turn. On a WORKER-routed turn
                     # it's a hard failure ONLY for a single-endpoint chain failure (`endpoints_tried ==
@@ -2104,6 +2108,8 @@ class AgentSession:
                         break
                     assistant.parts = [ErrorPart(message=str(exc), retryable=True)]
                     await self._persist_assistant(thread, assistant, report)
+                    # D62 review F1 — same live/durable parity as the drive-loop error terminal above.
+                    yield _message_end(assistant)
                     yield AgentEvent("error", {"message": str(exc), "retryable": True})
                     yield AgentEvent("done", {"threadId": thread.id, "state": "capped"})
                     return

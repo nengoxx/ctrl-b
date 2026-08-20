@@ -580,3 +580,19 @@ describe("D62 · the metrics disclosure", () => {
     expect(sr).toEqual(["input tokens", "output tokens"]);
   });
 });
+
+describe("D62 · the review fix wave", () => {
+  it("the keyboard toggle opens on ONE activation — its click must not bubble into the row's (F2)", () => {
+    const { container } = render(<ChatThread active chat={botChat(FULL)} />);
+    const who = container.querySelector(".b.bot .who") as HTMLElement;
+    const button = who.querySelector("button") as HTMLButtonElement;
+
+    act(() => button.click()); // a keyboard/AT activation clicks the button, which lives INSIDE the row
+    expect(container.querySelector(".who-meta")).toBeTruthy(); // pre-fix: bubbled → double-toggle → closed
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+
+    act(() => button.click());
+    expect(container.querySelector(".who-meta")).toBeNull();
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+  });
+});

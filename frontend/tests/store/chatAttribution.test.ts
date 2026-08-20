@@ -198,3 +198,25 @@ describe("D62 · the disclosure rows", () => {
     expect(rows[0].segs.map((s) => s.text)).toEqual(["served by a fallback"]);
   });
 });
+
+describe("D62 · the review fix wave", () => {
+  it("normalizes an additive (llama.cpp-style) report where cached exceeds input (F4)", () => {
+    // llama.cpp counts only the newly-prefilled tokens as input, cache hits separately — the honest
+    // ↑ total and the window share are their sum. Subset-style reports (cached ≤ input) untouched.
+    const rows = metricRows(
+      { served: "corsair", degraded: false, context_window: 262144 },
+      { model: "qwen3.6-max", input_tokens: 2100, cached_tokens: 12000, output_tokens: 38 },
+    );
+    expect(rows[0].segs.map((s) => s.text)).toEqual(["qwen3.6-max", "14k (12k cached)", "38"]);
+    expect(rows[1].segs[0].text).toBe("5% of 262k"); // 14100 ÷ 262144, not 2100 ÷ 262144
+  });
+
+  it("leaves a subset-style report (cached ≤ input) exactly as reported", () => {
+    const rows = metricRows(
+      { served: "openrouter", degraded: false, context_window: 262144 },
+      { input_tokens: 8100, cached_tokens: 6900 },
+    );
+    expect(rows[0].segs.map((s) => s.text)).toEqual(["8.1k (6.9k cached)"]);
+    expect(rows[1].segs[0].text).toBe("3% of 262k");
+  });
+});

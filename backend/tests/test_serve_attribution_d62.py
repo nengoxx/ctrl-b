@@ -329,3 +329,61 @@ def test_a_turn_with_nothing_to_attribute_streams_the_pre_d62_payload() -> None:
         end = next(e for e in events if e.event == "message.end")
         assert set(end.data) == {"messageId"}
         assert _assistant(c, thread.id).source is None
+
+
+# ── 5. the review fix wave (D62 review F1/F3) ───────────────────────────────────────────────────
+
+
+class _FakeError(_Fake):
+    """Stamps the report like a real degraded chain, then dies — the all-hops-failed shape."""
+
+    def stream_chat(self, _messages, *, report=None, **_kw):
+        from app.adapters.inference import InferenceError
+
+        stamp = self.stamp
+
+        async def gen():
+            if stamp is not None and report is not None:
+                stamp(report)
+            raise InferenceError("all endpoints failed", endpoints_tried=2)
+            yield  # pragma: no cover — makes this an async generator
+
+        return gen()
+
+
+def test_an_error_terminal_emits_the_attribution_it_persisted() -> None:
+    """Review F1: the error path persists the report's facts but used to skip `message.end`, so the
+    live view and a refresh disagreed. The terminal must carry exactly the persisted dump."""
+
+    def _died(report):
+        report.failures = ["corsair: down", "llamacpp: down"]
+        report.duration_ms = 3100  # the finally stamps a duration even when nothing served
+
+    with _workspace(), _client() as c:
+        session, thread = _session(c, _FakeError([], stamp=_died))
+        events = _run(session, thread)
+
+        names = [e.event for e in events]
+        assert "message.end" in names and "error" in names
+        assert names.index("message.end") < names.index("error")  # attribution rides ahead of the error
+        end = next(e for e in events if e.event == "message.end")
+        a = _assistant(c, thread.id)
+        dumped = a.model_dump(mode="json")
+        assert end.data.get("source") == dumped["source"] if a.source else "source" not in end.data
+        assert end.data["usage"] == dumped["usage"]  # the duration-only usage still reaches the client
+
+
+def test_stamp_duration_is_idempotent_so_the_probe_cannot_inflate_it() -> None:
+    """Review F3: the clean path stamps duration BEFORE the `_stamp_window` probe; the `finally`
+    re-stamp must then be a no-op rather than folding probe time back in."""
+    import time as _time
+
+    from app.adapters.inference import StreamReport, _stamp_duration
+
+    report = StreamReport()
+    started = _time.monotonic() - 1.0  # the call "took" ~1s
+    _stamp_duration(report, started)
+    first = report.duration_ms
+    assert first is not None and first >= 1000
+    _stamp_duration(report, started - 5.0)  # a later re-call must not overwrite
+    assert report.duration_ms == first
