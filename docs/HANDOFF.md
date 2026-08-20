@@ -47,9 +47,14 @@
   - **F1 host-up/down toggle GREENLIT** — small FE slice, classifier class + Conf toggle keyed
     on ACTION name (D50 M5); **tap ruling: opens the FLEET tab** (one more `focus` value through
     the shipped R45 router). No research needed — R45 + D50 already bought the design.
-  - **C3 (chunked TTS) + A13 (OpenAI-OAuth/Codex provider) GREENLIT pending research** — two
-    Opus research passes commissioned same-day → dossiers **R48** (chunked-TTS synthesis) +
-    **R49** (openai-oauth-provider) in `docs/research/`; design sessions follow the dossiers.
+  - **C3 (chunked TTS) + A13 (OpenAI-OAuth/Codex provider) GREENLIT pending research → both
+    dossiers BOUGHT + VERIFIED + INDEXED same-day: R48 + R49** (`docs/research/`; load-bearing
+    claims spot-verified — Hermes source for R49, repo seams for R48). Headlines: R48 — field
+    mechanism = HTMLAudioElement src-swap queue (NOT Web Audio/MSE), mp3 breaks under chunking
+    (~46 ms dead air/chunk, measured — use opus/wav), 4 corrections to the §C3 sketch recorded
+    in ROADMAP; R49 — device-code flow cheap, but the token buys the **Responses-only** Codex
+    endpoint (the adapter bridge is the real cost) + Cloudflare-originator and ToS-silence risks.
+    **NEXT for each: a design session → D-entry** (both entries carry the pointers).
   - **The drift sweep:** eslint recount **49** (QUALITY.md = the only count home; PRE_DEPLOY/
     UI_AUDIT/HANDOFF de-numbered) · HARDENING §8.2 gains the SWA `--swa-full` item + CM-2 marked
     closed · §8.4 ②③④⑤⑥ done (SYS-17c dispositioned in SYSTEM_AUDIT §4; F21 row; PRE_DEPLOY QR

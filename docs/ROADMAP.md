@@ -347,8 +347,21 @@ back to the analysis.
   endpoints are public constants) and the Codex CLI's auth manager. Field caveat learned
   2026-08-19: refresh tokens for the account die together across consumers when the account's
   sessions are revoked — surface a clear re-auth error, not a silent failover.
-- **Not started; needs a D-entry before build** (credential-type shape in `ProviderCfg` — extend
-  the object per the shape-to-extend directive, no parallel `oauth_providers{}` map).
+- **Research ✅ BOUGHT 2026-08-20 = [R49](./research/R49-openai-oauth-provider.md)** (owner go
+  2026-08-20; codex-rs + Hermes local source + LiteLLM + opencode plugins, load-bearing Hermes
+  claims spot-verified). Headlines that reshape the entry above: the flow half is CHEAP (3
+  device-code calls, one public client_id, server-side PKCE; a ChatGPT security-settings beta
+  toggle is a prerequisite) but **the wire half is the real cost — the token buys the
+  Responses-only `chatgpt.com/backend-api/codex` endpoint** (codex-rs dropped `wire_api="chat"`),
+  so the adapter needs a Chat→Responses bridge or a second wire mode, NOT just a credential type.
+  Access JWT = 10 days; **refresh ROTATES with server-side reuse detection** — ctrl-b mints its
+  OWN login (never share the Hermes/Codex-CLI credential; the "dies together on account
+  revocation" caveat above stands) and single-flights the refresh; all peers refresh proactively
+  (60–300 s skew), never on-401. Standing risks (R49 §4/§6): a Cloudflare originator allow-list
+  (working = fingerprinting as the vendor CLI) and no on-record ToS permit/prohibition.
+- **Next step: the DESIGN SESSION → D-entry before build** (credential shape = one additive
+  `oauth:` object on `ProviderCfg` per the shape-to-extend directive; R49 §5 = the recommended
+  shape incl. refresh placement + a narrow token write-back that avoids a full `reconfigure()`).
 
 ## B. Memory (configurable, pluggable)
 
@@ -479,6 +492,23 @@ one — only the browser binary can). That splits C2 into two features that must
   scrubber represents the whole message (concatenated) vs per-chunk.
 - **Settings:** `TtsServiceCfg` gains a chunk mode (`off | paragraph | sentence`) + min/max chunk length;
   default `paragraph`. `off` = today's whole-message synth.
+- **Research ✅ BOUGHT 2026-08-20 = [R48](./research/R48-chunked-tts-synthesis.md)** (owner go
+  2026-08-20; 4 in-class peers source-read + Speaches/Kokoro source + MEASURED format probes on
+  emma). **Four corrections to the sketch above** (the entry stands otherwise; the design session
+  rules on these): ① `lib/markdown.tsx` has NO reusable element list — `blocks()` emits ReactNodes
+  directly, so the chunker is its own pure helper (extend `toSpeech`), not a renderer reuse ·
+  ② the one peer shipping the three-way mode defaults to **sentence**, not paragraph (merge floor
+  <4 words/<50 chars is where quality lives, per Kokoro's own prosody note) · ③ MSE is NOT "the
+  deeper per-chunk optimization" — it's the OTHER strategy's transport and Gecko-hostile as shipped
+  (audio/mpeg-only; Firefox gets zero benefit in LibreChat's build) · ④ chunking and streaming-TTS
+  are latency ALTERNATIVES, not complements — either alone kills the 24 s. **Field mechanism: 4/4
+  peers play via HTMLAudioElement src-swap-on-`ended` (zero Web Audio), synth-ahead depth 1 with a
+  waiting latch (AnythingLLM's shape). ⚠ Format: the shipped `mp3` default breaks under chunking —
+  Speaches' pipe-muxed mp3 carries ~46 ms dead air per chunk (measured); `opus`/`wav` are
+  sample-exact.** Riders the build must carry (R48 §7): `max_text_chars` semantics under chunking ·
+  per-chunk failover × the D62 `X-Voice-Served-By` chip · the blob cache going N-per-message
+  (SYS-17c gets worse). Pre-build gate: the 20-min device probe of the real src-swap gap on
+  Fennec + Chrome Android (only that result could justify Web Audio).
 
 ---
 
