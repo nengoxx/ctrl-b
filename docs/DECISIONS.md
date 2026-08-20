@@ -4504,3 +4504,40 @@ bounded batches · truncated-index warning · delta report) plus a `consolidatio
 id; the documented procedure is dry-run → owner eyeball → live. Non-builds recorded in §15
 (forked curation actor → D58/DP-B; verified delta reconciliation → the automation slice; paged
 reads; archive pruning). Supersedes nothing; amends D42's trigger and D57's §5 procedure.
+
+## D61 — Consolidation UX: owner-triggered `/consolidate`, owner-facing pressure, no model steering ✏️ LOCKED 2026-08-19 (owner UX rulings in conversation; spec of record = CORE_MEMORY_PLAN.md §16, council record §16b, as-built §16c; built `fb2a995`, exercised end-to-end 2026-08-20)
+
+*(Entry added 2026-08-20 — the lock and build predate it; the ledger row was missed in the D61
+session.)* Consolidation stays OFF-by-default and human-triggered. Five parts: the
+`/consolidate [dry]` composer verb resolving the registry's own `consolidation`/
+`consolidation_dryrun` text (command and hand-typed ask end at the same owner-editable prompt),
+with the `auto_write` guard refusing BOTH mismatched directions; the owner-facing pressure note at
+`notifyTurnTerminal` (once per episode, re-arms on drop; `CoreStatus.consolidation_nudge_pct`
+keeps config the single threshold source); the model-facing pressure clause REMOVED (the injected
+header is plain data — owner alerts, never mid-task model steering); shipped default
+`index_char_limit` 8192 → 10240; the `search` omission counter (`{hits, omitted}`, tail note
+inside `topic_char_limit`, omitted-only ≠ "no matches").
+
+## D62 — Per-message serve attribution: `source` routing record + endpoint chip + tap disclosure ✏️ LOCKED 2026-08-20 (owner rulings on the R47 menu in conversation; drives ISS-5; evidence = docs/research/R47-model-attribution-ux.md)
+
+**Persisted (additive keys only — no migration):** one `source` object in `messages.meta` beside
+`usage` (R47 §4a option B): `{served, degraded, from?, context_window?}` — `served` = the provider
+key that answered (D48 keys are already the owner's friendly names), `degraded` = a fallback saved
+the turn, `from` = the chain's primary (present only when degraded), `context_window` = the served
+target's effective window snapshotted at serve time (explicit > probe > absent). `usage` stays the
+model-of-record (`usage.model` — `source` never duplicates it) and gains `cached_tokens?` +
+`duration_ms?` (per-call, as-reported/measured). Threaded on `message.end` (served/degraded are
+unknown at `message.start`), through `StreamReport` — which already carries every fact.
+
+**UI (kit who-line; a future theme may pick a different R47 option under D7 — all three are
+recorded in ISS-5):** ① always-on endpoint segment — `⏺ ASSISTANT · CORSAIR · 14:32` — with an
+ellipsis guard so a long name can never break the 10px line; ② the segment takes the WARN token
+when `degraded` (the owner's "more visual color when it switches"); ③ tapping anywhere on the
+who-line (no affordance hint — owner ruling) toggles a disclosure row in the same caption style,
+slightly muted from the header, reading `qwen3.6-max · ↑ 8.1k (6.9k cached) · ↓ 512` /
+`31% of 262k · 12.3s · 41 tok/s` / degraded-only `↯ fallback from corsair · N failed hops` (warn).
+Arrow semantics ↑ = input (sent up), ↓ = output (streamed down) — network-direction convention,
+with sr-only/aria labels carrying the words. Every segment is omitted when its datum is absent;
+pre-D62 messages have no `source` → plain who-line, no chip, no disclosure (the honest
+degradation). Per-section context breakdown (skills/tools shares) is a recorded NON-BUILD —
+routed to the D58/DP-B harness pass; it would join later as one more additive key.
