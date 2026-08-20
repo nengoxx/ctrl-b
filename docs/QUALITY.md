@@ -178,14 +178,14 @@ Two **react-hooks v7** rules are set to **`warn` (not `error`, not `off`)** in `
 dodge** (an earlier read wrongly called them false positives; the React docs confirm they flag *real*
 Rules-of-React patterns).
 
-**The full warning accounting (re-measured 2026-08-17):** the gate's `43 warnings / 0 errors` spans **four**
-warn-level rules, not just the two above — `react-hooks/refs` **22** + `set-state-in-effect` **13** (the
+**The full warning accounting (re-measured 2026-08-20):** the gate's `44 warnings / 0 errors` spans **four**
+warn-level rules, not just the two above — `react-hooks/refs` **22** + `set-state-in-effect` **14** (the
 deferred pair) + `react-refresh/only-export-components` **7** (preset default) +
 `react-hooks/exhaustive-deps` **1** (preset default). All four are part of the same F13 checklist;
 `rules-of-hooks` and `static-components` stay `error`. **The backlog has grown** — 27 at the 2026-07-07 QH
-deep pass (`11`/`8`/`2`/`6`), 29 at the 2026-07-16 re-count (`12`/`8`/`2`/`7`), **43** now: the latest-ref
-idiom spread with the phases since (`refs` 8 → 22), so the deferral is a *growing* debt, not a frozen one.
-Deferral status unchanged: all 43 stay in the F13 backlog.
+deep pass (`11`/`8`/`2`/`6`), 29 at the 2026-07-16 re-count (`12`/`8`/`2`/`7`), 43 at the 2026-08-17
+re-count, **44** now: the latest-ref idiom spread with the phases since (`refs` 8 → 22), so the deferral is
+a *growing* debt, not a frozen one. Deferral status unchanged: all 44 stay in the F13 backlog.
 
 **Why deferred (assessed thoroughly 2026-07-02, all ~19 sites reviewed):**
 - Every current hit is an **intentional, correct, concurrent-safe** pattern: "sync an editable draft from

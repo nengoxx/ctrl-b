@@ -42,10 +42,11 @@
   tests). Full record: CORE_MEMORY_PLAN **§14b**. Core Memory is also now **pinned into the
   Phase 19 scope on both lenses** (owner, 2026-08-17): Packet ③ + the SECURITY_MODEL re-walk +
   DP-B memory-tiering design review + the §7 inventory delta note; residuals = CM-1/CM-2 in
-  HARDENING_PLAN §8.2. Dev units back to on-demand/stopped (2026-08-18); dev's tier-2 state is
+  HARDENING_PLAN §8.2. Dev units back to on-demand (2026-08-18); dev's tier-2 state is
   on disk — tier 2 ON with a copy of the Claude Code session corpus at
-  `~/.ctrl-b-dev/memories/core/`, index at 99% of cap, so the consolidation nudge goes live
-  the moment the units start.
+  `~/.ctrl-b-dev/memories/core/`, index at **81% of the 10240 cap** (2026-08-20, post-resize +
+  the anomaly re-index) — over the 80% threshold, so the owner-facing pressure note fires
+  organically on dev turn terminals.
 - **2026-08-17 (evening): the DOC-TRUTH PASS** (owner: "documentation completely consistent with
   the actual design and architecture"). Five auditors verified every live doc against code (~90
   findings, all file:line-evidenced), five editors applied them, Codex adversarially reviewed the
@@ -113,8 +114,10 @@
 
 ## ▶▶ NEXT — the RELEASE DECISION is up (owner handoff order, 2026-08-19)
 
-**D61 is BUILT (see path 2 below) — the batch is complete; what remains before the release
-runbook is only what the owner wants to close first (the menu below + D61's live exercise).**
+**D61 is BUILT and its live exercise ran 2026-08-20 (see path 2 below) — the batch is complete;
+what remains before the release runbook is only what the owner wants to close first (the menu
+below; the 2026-08-20 close-out sweep already took D61's exercise, the §14f prompt tuning
+`32ec0e0`, and the dev index-anomaly fix).**
 
 **Unreleased on `main`, all owner-verified, no schema/config migration (schema 6, VERSION 1):**
 the 2026-08-18 gacha first-block pair (`c8dc09d`+`0e20de0`) + the 2026-08-19 stack (white-bar
@@ -150,7 +153,7 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
   `useForegroundNotifications.ts`/R10 is FALSE — LibreChat ships this exact mode). ~~Build
   pends owner go-ahead~~; R45 §8 = the implementation sketch (content-hashed import URL ·
   postMessage-first routing · `?tab=agent` fallback reader · unit-tested handler).**
-  **→ ✅ BUILT 2026-08-19 (uncommitted at time of writing):** `frontend/public/notify-sw.js` +
+  **→ ✅ BUILT 2026-08-19 (committed `b1c3018`, pushed):** `frontend/public/notify-sw.js` +
   `workbox.importScripts` with the content-hashed URL (verified in a real `vite build`: the call
   lands one line ahead of the SKIP_WAITING listener, exactly as R45 §1.2 predicted) ·
   `data:{focus,key}` on the notification · one exported `applyNotificationFocus` router shared by
@@ -202,10 +205,16 @@ the D60 ① pressure gate stays inert (§15d finding; dev already carries it).
    counter with the in-cap tail note. Opus-built from the §16 pinned brief; Emma-lane diff
    round SHIP WITH FIXES (4 MED: latch re-arm race · async scope clear · omitted-only body
    over cap, reproduced · non-fail-closed guard) → all folded same-day → confirm round
-   all-RESOLVED, FINAL SHIP; full gate green (BE 1801 · FE 2129). OWED: the live/device
-   exercise (the verb has never hit a real model; dev at 100% fill will fire the note on the
-   first terminal once the dev units start). THEN the release ruling — the batch carries D60 +
-   the qwen normalization + the §15d fix + the notification-tap slice + D61.** ~~The live `cache_n`
+   all-RESOLVED, FINAL SHIP; full gate green (BE 1801 · FE 2129). ~~OWED: the live/device
+   exercise~~ **✅ EXERCISED 2026-08-20 on the live dev app** (§16c: pressure note fired in a
+   real thread + config-driven threshold proven · both guard refusals at the UI · the real send
+   proven mechanically through the whole failover chain · zero corpus writes sha-verified · the
+   `testing-parked-wing-it.md` index anomaly re-indexed, anomalies `[]`; thin residual = no
+   model ANSWERED — corsair offline + openrouter free-gemma 429 throughout — closes itself on
+   the first `/consolidate dry` with a serveable model). The §14f prompt-tuning pair also
+   folded into the `consolidation` default (`32ec0e0`, 2026-08-20). THEN the release ruling —
+   the batch carries D60 + the qwen normalization + the §15d fix + the notification-tap slice +
+   D61 + `32ec0e0`.** ~~The live `cache_n`
    measure~~ ✅ run 2026-08-19 (CORE_MEMORY_PLAN §14 Measured bullet): ctrl-b's assembly holds
    D15 #4 (writes diverge only inside the index block, head byte-stable) but the local gemma
    host drops the whole cache when a write lands deeper than its 2,048-tok sliding-attention

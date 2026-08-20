@@ -914,7 +914,9 @@ Proportional-to-context sizing (the "10% of ctx for memory+skills" idea) is reco
 DP-B design question — field precedent is proportional CONTEXT budgets (MemGPT 70%/Letta
 75%/goose 0.8/our D60 gate), never proportional durable-index sizing, and a chain-anchored
 percentage either starves (smallest member) or bloats (primary). Prompt-tuning candidates
-banked from the blemishes: the no-frontmatter line + "reference only topics you verified exist".
+banked from the blemishes: the no-frontmatter line + "reference only topics you verified exist"
+— **✅ APPLIED 2026-08-20** (`32ec0e0`: both folded into step 2 of the `consolidation` default,
+golden mirrored).
 
 ## 15. The consolidation-hardening slice (D60) — spec of record (owner-confirmed 2026-08-19)
 
@@ -1226,8 +1228,25 @@ idiom) · F4 the auto_write guard trusted a malformed 200 → stricter than pres
 an absent key is shape skew, not a default, and skew must not choose which form runs. Plus
 the reviewer's acceptance-gap note: exact equality at the threshold now pinned.
 
-**Owed:** the live/device exercise — the verb has never sent a real prompt to a model and the
-pressure note has never been seen in a real thread (dev is at 100% fill, so the note fires on
-the first turn terminal once the dev units start). The `/help` column alignment for the
-18-char `/consolidate [dry]` hint is untested visually (same standing as `/privilege [lvl]`).
+~~**Owed:** the live/device exercise~~ **→ ✅ EXERCISED 2026-08-20** (browser-driven on the live
+dev app, screenshots banked in the session scratchpad; zero corpus writes, sha-verified; settings
+restored): the **pressure note fired in a real thread** with the exact wording — notably on an
+*error* terminal (all endpoints failed), a real non-suspended terminal per design — with the
+threshold proven config-driven end-to-end (lowering `consolidation_nudge_pct` 80→75 via
+`PUT /api/settings` flipped the behavior live; dev sits at 79–81% of the 10240 cap, not the
+pre-resize "100%"). **Both guard refusals verified at the UI** (dry+writes-ON · bare+writes-OFF,
+each with its note; the raw `/consolidate` line renders as the user chip). **The real send is
+proven mechanically**: the verb resolved the registry `consolidation_dryrun` text, rendered it as
+the user message, and drove a real turn through the whole failover chain (corsair → llamacpp →
+openrouter, retries included). The below-threshold quiet side (79% < 80, no note) and `/help`
+(the `[dry]` row renders fine — gacha lays help out as flowing prose, so column alignment is
+moot there) also passed. **One thin residual:** no model *answered* — corsair was offline and
+openrouter's free gemma pool was upstream-rate-limited (429) throughout — so "a real plan reply
+through the verb" closes itself the first time `/consolidate dry` runs with a serveable model
+(§14e already proved this exact prompt yields a plan on a real model; only the send mechanics
+were new, and they held). Rider closed the same day: the `testing-parked-wing-it.md` status
+anomaly (a topic file with no `MEMORY.md` line — likely the pre-fix §14b half-write orphan) was
+re-indexed by hand + committed in the dev memory repo; anomalies now `[]`, and the restored line
+puts dev at 81% — OVER the 80% threshold, so the owner-facing note now fires organically on dev
+(correct: the index really is that full).
 
