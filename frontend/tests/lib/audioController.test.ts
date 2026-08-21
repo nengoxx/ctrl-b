@@ -17,12 +17,15 @@ import {
 
 // lib/audioController — the shared TTS playback singleton. We replace the DOM <audio> with a
 // controllable fake (so we can drive media events) and mock `fetch`, then assert the reactive playback
-// snapshot. Two halves, matching the controller's two paths:
+// snapshot. Three halves, matching the controller's paths:
 //   • `chunking: off` — the pre-D63 whole-blob path: play/switch/seek/dismiss + the reqSeq race fixes.
 //   • `chunking: sentence` — the D63 queue: advance-on-`ended`, the waiting latch, error-skip, cancel,
 //     the stale-completion revoke, single-message retention, the failover pin and its serve flash.
+//   • the D63-amendment VIRTUAL TIMELINE — the estimator, the whole-message position/duration, and the
+//     global seek's three landings (synthesized / pending / failed).
 
 let lastAudio: FakeAudio;
+let probes: FakeAudio[] = [];
 class FakeAudio {
   preload = "";
   src = "";
@@ -32,16 +35,29 @@ class FakeAudio {
   ended = false;
   private listeners: Record<string, (() => void)[]> = {};
   constructor() {
+    // The controller builds its ONE player element lazily and then keeps it forever, so the FIRST
+    // instance is the player and every later one is a throwaway duration PROBE (D63 amendment). Probes
+    // stay inert until a test answers them with `meta()`.
     // eslint-disable-next-line @typescript-eslint/no-this-alias -- test mock captures its own instance for assertions
-    lastAudio = this;
+    const made: FakeAudio = this;
+    if (lastAudio) probes.push(made);
+    else lastAudio = made;
   }
   addEventListener(type: string, cb: () => void) {
     (this.listeners[type] ||= []).push(cb);
+  }
+  removeEventListener(type: string, cb: () => void) {
+    this.listeners[type] = (this.listeners[type] || []).filter((l) => l !== cb);
   }
   removeAttribute() {
     this.src = "";
   }
   load() {}
+  /** Answer a duration probe: its blob's metadata reads. */
+  meta(d: number) {
+    this.duration = d;
+    this.emit("loadedmetadata");
+  }
   async play() {
     this.paused = false;
     this.ended = false;
@@ -128,10 +144,18 @@ const flush = () => act(async () => void (await new Promise((r) => setTimeout(r,
 let urlSeq = 0;
 let revoked: string[] = [];
 
+/** Answer the duration probe the controller fired for a given chunk blob. */
+function metaFor(url: string, seconds: number): void {
+  const p = probes.find((x) => x.src === url);
+  if (!p) throw new Error(`no duration probe for ${url}`);
+  p.meta(seconds);
+}
+
 beforeEach(() => {
   vi.stubGlobal("Audio", FakeAudio);
   urlSeq = 0;
   revoked = [];
+  probes = [];
   URL.createObjectURL = vi.fn(() => `blob:${++urlSeq}`);
   URL.revokeObjectURL = vi.fn((u: string) => void revoked.push(u));
   globalThis.fetch = vi.fn(async () => okRes());
@@ -583,5 +607,237 @@ describe("audioController — the chunk queue (D63)", () => {
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(result.current.id).toBeNull();
+  });
+});
+
+describe("audioController — the whole-message virtual timeline (D63 amendment)", () => {
+  const REPLY = "One. Two. Three."; // → "One." (4 chars) · "Two." (4) · "Three." (6) = 14 characters
+
+  beforeEach(() => setChunkPolicy(chunked()));
+
+  /** A message whose three chunks have ALL landed and been probed: 2 s / 4 s / 4.5 s, so the timeline is
+   *  exactly 0–2 · 2–6 · 6–10.5. `lookahead 3` puts every chunk on the wire once the pin settles. */
+  async function timeline3(): Promise<Call[]> {
+    setChunkPolicy(chunked({ lookahead: 3 }));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    await act(async () => {
+      calls[1].resolve(okRes());
+      calls[2].resolve(okRes());
+    });
+    await flush();
+    act(() => {
+      metaFor("blob:1", 2);
+      metaFor("blob:2", 4);
+      metaFor("blob:3", 4.5);
+    });
+    return calls;
+  }
+
+  // ── the estimator ──
+
+  it("spans the whole reply from the constant fallback rate before any audio exists", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    expect(result.current.duration).toBeCloseTo(14 / 15, 6); // 14 chars at the display-only fallback
+    expect(result.current.estimated).toBe(true);
+    expect(result.current.chunks?.map((c) => c.ok)).toEqual([false, false, false]);
+  });
+
+  it("learns chars/sec from the chunks that landed and refines the rest", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    expect(result.current.duration).toBeCloseTo(14 / 15, 6); // blob exists, metadata hasn't read yet
+
+    act(() => metaFor("blob:1", 2)); // 4 chars in 2 s → 2 chars/s
+    expect(result.current.duration).toBeCloseTo(7, 6); // 2 + 4/2 + 6/2
+    expect(result.current.chunks?.map((c) => c.ok)).toEqual([true, false, false]);
+
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:2", 4)); // 8 chars in 6 s → 4/3 chars/s
+    expect(result.current.duration).toBeCloseTo(10.5, 6); // 2 + 4 + 6/(4/3)
+    expect(result.current.estimated).toBe(true); // chunk 3 is still a guess
+  });
+
+  it("drops the estimate flag once every chunk has an exact duration", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await timeline3();
+    expect(result.current.duration).toBeCloseTo(10.5, 6);
+    expect(result.current.estimated).toBe(false);
+  });
+
+  // ── the global snapshot ──
+
+  it("position is whole-message: the playing chunk's slot plus the element's own time", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await timeline3();
+    act(() => {
+      lastAudio.currentTime = 1;
+      lastAudio.emit("timeupdate");
+    });
+    expect(result.current.current).toBeCloseTo(1, 6);
+
+    await act(async () => lastAudio.finish()); // → chunk 2, whose slot starts at 2 s
+    await flush();
+    expect(result.current.current).toBeCloseTo(2, 6);
+    act(() => {
+      lastAudio.currentTime = 1.5;
+      lastAudio.emit("timeupdate");
+    });
+    expect(result.current.current).toBeCloseTo(3.5, 6);
+  });
+
+  it("the chunk map is ONE reference across position ticks, a new one when the timeline moves", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p.chunks));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    const ref = result.current;
+    act(() => {
+      lastAudio.currentTime = 1;
+      lastAudio.emit("timeupdate");
+    });
+    expect(result.current).toBe(ref); // a `timeupdate` must never rebuild it
+    act(() => metaFor("blob:1", 2));
+    expect(result.current).not.toBe(ref); // an exact duration does
+  });
+
+  // ── the global seek ──
+
+  it("seeks across the whole message: a global fraction lands on (chunk, offset)", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await timeline3();
+    act(() => seekFraction(7 / 10.5)); // 7 s in → chunk 3 (slot 6–10.5), 1 s into it
+    expect(lastAudio.src).toBe("blob:3");
+    expect(lastAudio.currentTime).toBeCloseTo(1, 6);
+    expect(result.current.current).toBeCloseTo(7, 6);
+    expect(result.current.status).toBe("playing");
+
+    act(() => seekFraction(1 / 10.5)); // backward onto a RETAINED blob — instant
+    expect(lastAudio.src).toBe("blob:1");
+    expect(lastAudio.currentTime).toBeCloseTo(1, 6);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3); // nothing re-synthesized
+  });
+
+  it("clamps the seek to the timeline's ends and to the target chunk's own length", async () => {
+    await timeline3();
+    act(() => seekFraction(2)); // past the end
+    expect(lastAudio.src).toBe("blob:3");
+    expect(lastAudio.currentTime).toBeCloseTo(4.5, 6); // the last chunk's length, not the total
+    act(() => seekFraction(-1)); // before the start
+    expect(lastAudio.src).toBe("blob:1");
+    expect(lastAudio.currentTime).toBe(0);
+  });
+
+  it("a seek into a FAILED chunk hands off to the next playable one, from its start", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    setChunkPolicy(chunked({ lookahead: 3 }));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    await act(async () => {
+      calls[1].resolve(errRes(500)); // chunk 2 never makes a blob
+      calls[2].resolve(okRes());
+    });
+    await flush();
+    act(() => {
+      metaFor("blob:1", 2);
+      metaFor("blob:2", 3); // 10 real chars in 5 s → 2 chars/s
+    });
+    expect(result.current.duration).toBeCloseTo(7, 6); // the failed chunk keeps a 2 s hole: 0–2·2–4·4–7
+
+    act(() => seekFraction(3 / 7)); // straight into the hole
+    expect(lastAudio.src).toBe("blob:2"); // chunk 3's blob — chunk 2 never made one
+    expect(lastAudio.currentTime).toBe(0);
+    expect(result.current.current).toBeCloseTo(4, 6);
+  });
+
+  it("a forward seek past synthesis requests the target and plays it from the offset", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch(); // lookahead 1: chunk 3 is nowhere near the window
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2)); // 2 chars/s → 0–2 · 2–4 · 4–7
+    expect(calls).toHaveLength(2); // chunk 2 in flight, chunk 3 not requested
+
+    act(() => seekFraction(5 / 7)); // 1 s into chunk 3
+    expect(calls).toHaveLength(3);
+    expect(calls[2].body.text).toBe("Three."); // the synth window followed the cursor
+    expect(result.current.status).toBe("playing"); // latched, exactly like a mid-queue catch-up
+    expect(result.current.current).toBeCloseTo(5, 6);
+
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    expect(lastAudio.src).toBe("blob:2"); // chunk 3's blob is the SECOND one made
+    expect(lastAudio.currentTime).toBeCloseTo(1, 6);
+    expect(lastAudio.paused).toBe(false);
+
+    // ...and the offset is one-shot: the end-of-queue rewind starts its chunk at 0, not at 1.
+    await act(async () => lastAudio.finish());
+    await flush();
+    expect(lastAudio.src).toBe("blob:1");
+    expect(lastAudio.currentTime).toBe(0);
+  });
+
+  it("a forward seek taken while PAUSED loads the target at its offset and holds it", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2));
+    act(() => togglePlay()); // pause BEFORE seeking
+    expect(result.current.status).toBe("paused");
+
+    act(() => seekFraction(5 / 7));
+    expect(result.current.status).toBe("paused"); // a seek never resumes playback
+
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    expect(lastAudio.src).toBe("blob:2");
+    expect(lastAudio.currentTime).toBeCloseTo(1, 6);
+    expect(lastAudio.paused).toBe(true); // loaded and held, the latch's pause semantics
+    expect(result.current.status).toBe("paused");
+  });
+
+  it("`off` keeps the element-local scrubber and publishes no chunk map", async () => {
+    setChunkPolicy(OFF);
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await act(async () => {
+      await toggle("m1", "hello");
+    });
+    act(() => {
+      lastAudio.duration = 10;
+      lastAudio.emit("durationchange");
+    });
+    act(() => seekFraction(0.25));
+    expect(lastAudio.currentTime).toBe(2.5);
+    expect(result.current.current).toBe(2.5);
+    expect(result.current.chunks).toBeNull();
+    expect(result.current.estimated).toBe(false);
   });
 });

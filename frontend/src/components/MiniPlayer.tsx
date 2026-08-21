@@ -1,4 +1,4 @@
-import { type PointerEvent } from "react";
+import { useMemo, type PointerEvent } from "react";
 
 import { useNowPlaying } from "../hooks/useAppChrome";
 
@@ -11,6 +11,11 @@ import { useNowPlaying } from "../hooks/useAppChrome";
 // The scrubber is a ChatGPT-style WAVEFORM (a row of bars that fill with the accent as the clip plays,
 // no thumb) instead of a range bar+dot. The bar heights are a fixed decorative pattern — NOT the real
 // audio amplitude (owner: "just a visual"). Still a real slider: tap/drag or arrow-keys to seek.
+//
+// D63 amendment — the bar spans the WHOLE reply, so it grows a THIRD state (the buffered-range
+// convention YouTube/SoundCloud use): accent = played · `--line-2` fill = synthesized, unplayed ·
+// OUTLINE-ONLY = a chunk that has not been synthesized yet, which is also what makes the queue's
+// synth-ahead visibly crawl along the track. That last one reads off the controller's chunk map.
 
 const BAR_COUNT = 32;
 // Deterministic pseudo-random in [0,1) — keeps the pattern fixed (never reshuffles between renders).
@@ -41,6 +46,20 @@ export function MiniPlayer() {
   // flat-positioned copy died at D51 V5, which is what let the kit's :has() yields fire). Self-hides
   // when nothing's docked.
   const np = useNowPlaying();
+  // Per bar: does its CENTRE map into a chunk whose audio exists yet? Recomputed only when the timeline
+  // itself moves (a chunk lands, fails, or resolves to an exact duration) — `chunks` is reference-stable
+  // by the controller's contract, so this is not a per-`timeupdate` walk. Null = nothing to hollow
+  // (`chunking: off`, or no duration yet): every bar keeps the shipped two-state look.
+  const { chunks, duration } = np;
+  const synthesized = useMemo(() => {
+    if (!chunks || duration <= 0) return null;
+    return BARS.map((_, i) => {
+      const t = ((i + 0.5) / BAR_COUNT) * duration;
+      let k = chunks.length - 1;
+      while (k > 0 && chunks[k].start > t) k--;
+      return chunks[k].ok;
+    });
+  }, [chunks, duration]);
   if (!np.active) return null;
 
   // Seek to the x-position under the pointer (0..1 of the track width). seekFraction clamps internally.
@@ -89,12 +108,16 @@ export function MiniPlayer() {
         }}
       >
         {BARS.map((b, i) => (
-          // A bar is "played" (accent) once the clip's progress passes its center. Its own delay +
-          // duration (set inline) desync the scaleY shimmer (CSS, while playing) so the bars bounce
-          // independently rather than the whole silhouette stretching together.
+          // A bar is "played" (accent) once the clip's progress passes its center, else "estimated"
+          // (hollow) while the audio under it has not been synthesized — the three states are mutually
+          // exclusive, in that precedence. Its own delay + duration (set inline) desync the scaleY
+          // shimmer (CSS, while playing) so the bars bounce independently rather than the whole
+          // silhouette stretching together.
           <i
             key={i}
-            className={(i + 0.5) / BAR_COUNT <= np.fraction ? "on" : ""}
+            className={
+              (i + 0.5) / BAR_COUNT <= np.fraction ? "on" : synthesized?.[i] === false ? "est" : ""
+            }
             style={{
               height: `${Math.round(b.h * 100)}%`,
               animationDelay: `${b.delay.toFixed(2)}s`,
@@ -104,7 +127,9 @@ export function MiniPlayer() {
         ))}
       </div>
       <span className="mp-time" aria-hidden>
-        {np.loading ? "···" : `-${fmt(np.remaining)}`}
+        {/* `~` while any chunk's length is still a chars/sec estimate: the figure is real but it will
+            shift as the queue resolves (the "growing duration" every streaming player shows). */}
+        {np.loading ? "···" : `${np.estimated ? "~" : ""}-${fmt(np.remaining)}`}
       </span>
       <button type="button" className="mp-close" aria-label="close player" onClick={np.dismiss} />
     </div>

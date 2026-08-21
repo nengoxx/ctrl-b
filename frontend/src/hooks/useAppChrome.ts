@@ -6,7 +6,13 @@
 // The playback itself lives in lib/audioController (the shared <audio> singleton, D23 store) — these
 // hooks COMPOSE it (the per-bubble TtsButton still selects its own slice there directly, unchanged).
 
-import { dismiss, seekFraction, togglePlay, usePlayback } from "../lib/audioController";
+import {
+  dismiss,
+  seekFraction,
+  togglePlay,
+  usePlayback,
+  type ChunkSpan,
+} from "../lib/audioController";
 import { getUI, setUI, useUISlice } from "../store/ui";
 import { useVoiceStatus } from "./useVoiceStatus";
 
@@ -45,6 +51,13 @@ export interface NowPlaying {
   fraction: number;
   /** Seconds remaining — the time label. */
   remaining: number;
+  /** Seconds total — the denominator the waveform maps its bars through. */
+  duration: number;
+  /** Some of `duration` is still a chars/sec estimate — the time label wears a `~`. */
+  estimated: boolean;
+  /** The whole-message chunk map (D63 amendment) — null under `chunking: off`. Reference-stable, so a
+   *  consumer may `useMemo` a per-bar projection off it without recomputing on every position tick. */
+  chunks: ChunkSpan[] | null;
   /** The scrubber is inert while loading / before a duration is known. */
   seekDisabled: boolean;
   togglePlay: () => void;
@@ -59,12 +72,19 @@ export function useNowPlaying(): NowPlaying {
   const status = usePlayback((p) => p.status);
   const current = usePlayback((p) => p.current);
   const duration = usePlayback((p) => p.duration);
+  const estimated = usePlayback((p) => p.estimated);
+  // The chunk map is a stable reference by contract (the controller rebuilds it only when a duration or
+  // a chunk state moves), so selecting it here does NOT add a render per `timeupdate`.
+  const chunks = usePlayback((p) => p.chunks);
   return {
     active,
     loading: status === "loading",
     playing: status === "playing",
     fraction: duration > 0 ? Math.min(1, current / duration) : 0,
-    remaining: duration > 0 ? duration - current : 0,
+    remaining: duration > 0 ? Math.max(0, duration - current) : 0,
+    duration,
+    estimated,
+    chunks,
     seekDisabled: status === "loading" || duration <= 0,
     togglePlay,
     seek: seekFraction,

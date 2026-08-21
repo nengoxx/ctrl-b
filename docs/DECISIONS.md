@@ -4601,8 +4601,31 @@ boundary char `[.!?…\n]`, only while the session is active (auto-TTS on, not u
 never past the per-message cap; index-dedupe against last-enqueued; turn end flushes the tail.
 Turn-end ownership (council MED-3): ONE controller entry point — flush an owned read-along
 session, else start normal playback; `useAutoTts` calls only it (`toggle` keeps human-tap
-semantics). User stop kills the session for the turn. Scrubber v1 is per-chunk; whole-message
-seeking = recorded non-build (LobeChat's blob rebuild, R48 §2.5). Slices: S1 = chunker + queue +
+semantics). User stop kills the session for the turn. ~~Scrubber v1 is per-chunk; whole-message
+seeking = recorded non-build (LobeChat's blob rebuild, R48 §2.5).~~ Slices: S1 = chunker + queue +
 config + pin (play-button + turn-end auto-TTS) · S2 = read-along; each Opus-built from a pinned
 brief, blind diff round, full gate. Android seam audibility = the first device round (R50's
 desktop margins predict fine).
+
+**AMENDED 2026-08-21 (owner device round on S1): scrubber v2 = whole-message VIRTUAL timeline
+(slice S1.5, ahead of S2).** The per-chunk scrubber failed the owner round — seek only spanned
+the current chunk. The overrule buys LobeChat's *outcome* (one bar + seek over the whole reply,
+R48 §2.5) without its *mechanism*: no blob concatenation, no format change, no reload at seams —
+the shipped opus src-swap queue is untouched, and only the bookkeeping goes whole-message. The
+controller tracks per-chunk durations (EXACT once a chunk's blob exists — metadata probe on the
+object URL; ESTIMATED before that by chars/sec learned from the resolved chunks, so the
+estimator is calibrated from chunk 0's real duration before playback even starts; Kokoro's
+constant trailing pad folds into the learned rate). Global duration = the sum; global position =
+resolved prefix + the element's own `currentTime`. Seek maps a global fraction → (chunk, offset):
+backward = the retained blob, instant; forward past synthesis = on-demand synth of the target
+chunk (the pin is settled), latch to `loading`, play from the offset on arrival; failed chunks
+skip forward. Estimates re-resolve to exact as chunks land (the bar refines — the "growing
+duration" the field shows on streams; a tilde on the remaining-time figure while any estimate is
+live). **The waveform grows a THIRD bar state (owner idea, same round): outline-only bars =
+estimated/not-yet-synthesized · `--line-2` fill = synthesized, unplayed · accent = played** — the
+buffered-range convention (YouTube/SoundCloud), which also makes the lookahead's progress
+visible; fallback if 1px outlines read as noise at 4–5px bar width on device = a fainter fill,
+owner eyeballs. The prior non-builds STAND for their mechanisms: single-stream mode (Chromium
+unseekable) and the cumulative-blob rebuild (mp3-bound + per-seam reload) stay non-builds; this
+amendment replaces only "per-chunk is the v1 scrubber contract". Read-along (S2) composes: an
+appended chunk is one more estimated entry on a timeline that already grows.

@@ -14,6 +14,12 @@
 // exactly what it did before D63 (`mode: "off"`, one blob per message). Everything chunk-specific hangs
 // off `session`; the `off` path below is the pre-D63 code, unchanged, cache and all.
 //
+// D63 AMENDMENT — SCRUBBER v2. The player's bar and its seek span the WHOLE reply while the audio
+// mechanics stay exactly that per-chunk src-swap queue: only the BOOKKEEPING goes global. Each chunk
+// gets a slot on a virtual timeline (exact once its blob's metadata is probed, chars/sec-estimated
+// before that), position = the playing chunk's slot + the element's `currentTime`, and a seek maps a
+// global fraction back to (chunk, offset). No blob concatenation, no reload at the seams.
+//
 // The reactive snapshot (`pb`) mirrors the <audio> element's native events; components subscribe via
 // `usePlayback`. The listener/notify/React-binding plumbing is the shared `createStore` binding (D23) —
 // this singleton is one of its ten consumers; only the snapshot + the DOM logic below are local to it.
@@ -25,11 +31,25 @@ import { chunkPlan, type ChunkCfg } from "./ttsChunks";
 
 export type PlayStatus = "idle" | "loading" | "playing" | "paused";
 
+/** One chunk's slot on the whole-message timeline (D63 amendment, scrubber v2). `dur` is the chunk's
+ *  EXACT duration once its blob has been probed and a chars/sec estimate before that; `ok` is whether
+ *  the audio exists yet, which is what hollows the waveform's not-yet-synthesized bars. */
+export interface ChunkSpan {
+  start: number; // seconds from the start of the MESSAGE
+  dur: number;
+  ok: boolean;
+}
+
 export interface Playback {
   id: string | null; // message id currently loaded (null = nothing docked)
   status: PlayStatus;
-  current: number; // seconds elapsed — of the CURRENT CHUNK under chunking (scrubber v1 is per-chunk)
+  current: number; // seconds elapsed — of the whole MESSAGE under chunking, of the clip under `off`
   duration: number; // seconds total (0 until known)
+  /** At least one chunk's duration is still a chars/sec estimate — the player tildes the time label. */
+  estimated: boolean;
+  /** The chunk map behind the waveform's third bar state; null under `off` (no chunks to map).
+   *  REFERENCE-STABLE: rebuilt only when a duration or a chunk state changes, never per `timeupdate`. */
+  chunks: ChunkSpan[] | null;
 }
 
 /** The D63 chunk policy, in client spelling. `lookahead`/`format` are the queue's half of it; the rest
@@ -42,7 +62,15 @@ export interface ChunkPolicy extends ChunkCfg {
 }
 
 const { emit, useStore } = createStore();
-let pb: Playback = { id: null, status: "idle", current: 0, duration: 0 };
+const IDLE: Playback = {
+  id: null,
+  status: "idle",
+  current: 0,
+  duration: 0,
+  estimated: false,
+  chunks: null,
+};
+let pb: Playback = IDLE;
 const cache = new Map<string, string>(); // `off` path: messageId → object URL (synth once per message)
 let el: HTMLAudioElement | null = null;
 let reqSeq = 0; // guards against an out-of-order synth resolving after a newer toggle
@@ -77,9 +105,12 @@ interface Session {
   urls: (string | null)[];
   states: ChunkState[];
   requested: boolean[];
+  durations: (number | null)[]; // EXACT seconds once the chunk's blob has been probed; null before that
+  tl: Timeline; // the derived whole-message timeline — rebuilt only when durations/states move
   playIdx: number; // chunk currently loaded in the element (-1 = none yet)
   waiting: boolean; // playback caught up to synthesis and is holding for the next chunk
   wantPlay: boolean; // the user's play/pause INTENT — a pause taken under the latch must survive it
+  seek: { idx: number; offset: number } | null; // a forward seek waiting for its chunk (one-shot)
   pin: string | null; // `X-Voice-Target` of the serving endpoint, echoed as `prefer` on later chunks
   pinned: boolean; // chunk 1 answered: the pin is settled (or given up on) and the window may open
   errored: boolean; // a chunk failed and we already toasted (one toast per message)
@@ -96,14 +127,113 @@ function set(p: Partial<Playback>): void {
   emit();
 }
 
+// ── the whole-message timeline (D63 amendment: scrubber v2) ──────────────────────────────────────
+//
+// The queue still plays ONE chunk at a time on the one element — only the BOOKKEEPING is whole-message.
+// Every chunk gets a slot on a virtual timeline: its exact duration once its blob exists, a chars/sec
+// estimate before that. Global duration = the sum; global position = the playing chunk's slot start +
+// the element's own `currentTime`; a seek maps a global fraction back to (chunk, offset).
+
+interface Timeline {
+  spans: ChunkSpan[];
+  total: number;
+  estimated: boolean; // at least one span is still an estimate
+}
+
+/** The ONE instant before any chunk has a probed duration — the player is docked at `status: "loading"`,
+ *  so the bar is inert and the seek disabled, and the only thing this rate feeds is a placeholder width.
+ *  A constant is acceptable precisely because it cannot survive contact with real audio: chunk 0's blob
+ *  is probed milliseconds later and every estimate after that is learned from real durations. No config
+ *  key for the same reason — there is nothing here for an owner to tune. */
+const FALLBACK_CHARS_PER_SEC = 15;
+
+/** Rebuild `s.tl` from the durations known right now. Learned rate = (Σ known seconds) over (Σ those
+ *  chunks' characters), so a voice's real pace — Kokoro's constant trailing pad included — is folded in
+ *  without modelling it. A FAILED chunk keeps its estimated slot: the audio is missing, and showing the
+ *  hole (a hollow stretch the playhead jumps) beats silently shrinking the bar under the user's finger. */
+function buildTimeline(s: Session): void {
+  let chars = 0;
+  let secs = 0;
+  for (let i = 0; i < s.durations.length; i++) {
+    const d = s.durations[i];
+    if (d !== null) {
+      secs += d;
+      chars += s.texts[i].length;
+    }
+  }
+  const rate = secs > 0 && chars > 0 ? chars / secs : FALLBACK_CHARS_PER_SEC;
+  const spans: ChunkSpan[] = [];
+  let at = 0;
+  let estimated = false;
+  for (let i = 0; i < s.texts.length; i++) {
+    const exact = s.durations[i];
+    if (exact === null) estimated = true;
+    const dur = exact ?? s.texts[i].length / rate;
+    spans.push({ start: at, dur, ok: s.states[i] === "ok" });
+    at += dur;
+  }
+  s.tl = { spans, total: at, estimated };
+}
+
+/** Where the playhead is on the whole-message timeline. */
+function globalCurrent(s: Session): number {
+  const { spans } = s.tl;
+  // A forward seek waiting for its chunk owns the playhead: the element is paused on the OLD chunk and
+  // its `currentTime` would drag the bar backwards every time a lookahead chunk lands.
+  if (s.seek) return (spans[s.seek.idx]?.start ?? 0) + s.seek.offset;
+  if (s.playIdx < 0 || !el) return 0;
+  return (spans[s.playIdx]?.start ?? 0) + el.currentTime;
+}
+
+/** Republish the whole-message snapshot. Called ONLY when the timeline itself moved (a chunk landed,
+ *  failed, or resolved to an exact duration) — never per `timeupdate`, so `chunks` stays a stable
+ *  reference for the store's selector contract and the waveform's per-bar map is not rebuilt 4×/sec. */
+function publishTimeline(s: Session): void {
+  buildTimeline(s);
+  set({
+    duration: s.tl.total,
+    estimated: s.tl.estimated,
+    chunks: s.tl.spans,
+    current: globalCurrent(s),
+  });
+}
+
+/** Read a chunk's EXACT duration off its own blob URL — metadata only, local, effectively instant. Fire
+ *  and forget: a probe that resolves into a cancelled or superseded queue is discarded silently (its URL
+ *  may already be revoked), and unreadable metadata just leaves the chunk on its estimate. */
+function probeDuration(s: Session, i: number): void {
+  const url = s.urls[i];
+  if (!url) return;
+  const probe = new Audio();
+  probe.preload = "metadata";
+  const done = (): void => {
+    probe.removeEventListener("loadedmetadata", done);
+    probe.removeEventListener("error", done);
+    if (s.seq !== reqSeq || session !== s) return; // MED-7's rule, applied to the probe
+    const d = probe.duration;
+    if (!Number.isFinite(d) || d <= 0 || s.durations[i] === d) return;
+    s.durations[i] = d;
+    publishTimeline(s); // an estimate resolving to exact shifts the totals — the bar refines
+  };
+  probe.addEventListener("loadedmetadata", done);
+  probe.addEventListener("error", done);
+  probe.src = url;
+}
+
 function ensureEl(): HTMLAudioElement {
   if (el) return el;
   const a = new Audio();
   a.preload = "auto";
   const syncDuration = () => {
+    // Under chunking the published duration is the MESSAGE's, not this chunk's — the element's own
+    // duration is one span of the timeline and would clobber the sum.
+    if (liveSession()) return;
     if (Number.isFinite(a.duration)) set({ duration: a.duration });
   };
-  a.addEventListener("timeupdate", () => set({ current: a.currentTime }));
+  a.addEventListener("timeupdate", () => {
+    const s = liveSession();
+    set({ current: s ? globalCurrent(s) : a.currentTime });
+  });
   a.addEventListener("durationchange", syncDuration);
   a.addEventListener("loadedmetadata", syncDuration);
   a.addEventListener("play", () => set({ status: "playing" }));
@@ -111,7 +241,12 @@ function ensureEl(): HTMLAudioElement {
     // A clip reaching its end fires `pause` BEFORE `ended` (HTML spec). Mid-queue that is not a user
     // pause, it's the seam — reporting "paused" there would flicker the transport on every chunk
     // boundary (the `if (el.ended) return` guard AnythingLLM's player needs for the same reason).
-    if (a.ended && liveSession()) return;
+    // The same holds for the latch generally: a forward seek into a not-yet-synthesized chunk pauses
+    // the element deliberately, and in a real browser that `pause` event lands AFTER we have published
+    // the latched "playing" — `waiting` is what tells the two apart (today it only ever goes up with
+    // `ended` already true, so this widens the guard without changing any shipped path).
+    const held = liveSession();
+    if (held && (a.ended || held.waiting)) return;
     // Only a real playing→paused transition. Guard against the async pause event landing after we've
     // already moved to "loading" (switching messages) or "idle" (dismiss) and clobbering it.
     if (pb.status === "playing") set({ status: "paused" });
@@ -151,7 +286,7 @@ function reset(): void {
     el.removeAttribute("src");
     el.load();
   }
-  pb = { id: null, status: "idle", current: 0, duration: 0 };
+  pb = IDLE;
   emit();
 }
 
@@ -260,6 +395,11 @@ function startChunked(id: string, markdown: string, seq: number): void {
     s.playIdx = -1;
     s.waiting = false;
     s.wantPlay = true;
+    s.seek = null;
+    // Re-probe anything that has a blob but no exact duration — a probe launched by the previous play
+    // is discarded if it resolves after that generation ended, so a replay is where it gets picked up.
+    for (let i = 0; i < s.urls.length; i++)
+      if (s.urls[i] && s.durations[i] === null) probeDuration(s, i);
   } else {
     const plan = chunkPlan(toSpeech(markdown), policy);
     if (!plan.chunks.length) {
@@ -277,9 +417,12 @@ function startChunked(id: string, markdown: string, seq: number): void {
       urls: plan.chunks.map(() => null),
       states: plan.chunks.map((): ChunkState => "pending"),
       requested: plan.chunks.map(() => false),
+      durations: plan.chunks.map((): number | null => null),
+      tl: { spans: [], total: 0, estimated: false },
       playIdx: -1,
       waiting: false,
       wantPlay: true,
+      seek: null,
       pin: null,
       pinned: false,
       errored: false,
@@ -287,6 +430,7 @@ function startChunked(id: string, markdown: string, seq: number): void {
     };
     session = s;
   }
+  publishTimeline(s); // the bar spans the whole reply from the first frame (estimated until it isn't)
   playNext(s); // latches on chunk 0 and pumps the synth window
 }
 
@@ -333,6 +477,7 @@ async function synthChunk(s: Session, i: number): Promise<void> {
   if (!out.ok) {
     if (stale) return;
     s.states[i] = "failed";
+    publishTimeline(s);
     if (!s.errored) {
       s.errored = true;
       pushToast(out.message ?? "Read-aloud failed", "err");
@@ -349,6 +494,8 @@ async function synthChunk(s: Session, i: number): Promise<void> {
   }
   s.urls[i] = url;
   s.states[i] = "ok";
+  publishTimeline(s); // this span is synthesized now — the bar fills it and the seek can land on it
+  probeDuration(s, i); // ...and its exact duration replaces the estimate the moment metadata reads
   if (out.target && out.target !== s.pin) {
     const moved = s.pin !== null; // a real mid-reply failover, vs. the first chunk naming its target
     s.pin = out.target;
@@ -376,15 +523,25 @@ function playNext(s: Session): void {
   }
   s.waiting = false;
   s.playIdx = i;
+  // A forward seek that latched on a not-yet-synthesized chunk pays out HERE, exactly once: it belongs
+  // to the chunk it targeted, so it is consumed whether or not this is that chunk (a target that failed
+  // in the meantime hands off to the next playable one, from its start).
+  let offset = 0;
+  if (s.seek) {
+    if (s.seek.idx === i) offset = s.seek.offset;
+    s.seek = null;
+  }
   a.src = s.urls[i]!;
-  a.currentTime = 0;
+  a.currentTime = offset;
   pump(s); // window moved: start the next synth WHILE this chunk plays
+  const at = (s.tl.spans[i]?.start ?? 0) + offset;
   if (!s.wantPlay) {
     // Paused while the latch was holding: load this chunk and HOLD it. Playing here would undo a pause
     // the element itself never saw (it had already ended when the tap landed).
-    set({ current: 0, status: "paused" });
+    set({ current: at, status: "paused" });
     return;
   }
+  set({ current: at }); // publish the seam immediately — `timeupdate` only arrives ~4×/sec
   void a.play().catch(() => {
     if (s.seq === reqSeq) set({ status: "paused" });
   });
@@ -405,9 +562,13 @@ function finish(s: Session, a: HTMLAudioElement): void {
   }
   s.playIdx = first;
   s.waiting = false;
+  s.seek = null;
   a.src = s.urls[first]!;
   a.currentTime = 0;
-  set({ current: 0, status: "paused" });
+  // `first` is 0 for any message that played through, so this normally IS the top of the bar. After a
+  // forward seek left unsynthesized holes behind the playhead it can be mid-message (accepted residual,
+  // D63 amendment §8): the playhead reports where the rewind actually landed rather than lying about 0.
+  set({ current: s.tl.spans[first]?.start ?? 0, status: "paused" });
 }
 
 // ── the public surface ───────────────────────────────────────────────────────────────────────────
@@ -447,7 +608,7 @@ export async function toggle(id: string, markdown: string): Promise<void> {
   }
   a.pause(); // stop whatever's playing now so it doesn't keep going during the new clip's synth
   const seq = ++reqSeq;
-  set({ id, status: "loading", current: 0, duration: 0 });
+  set({ id, status: "loading", current: 0, duration: 0, estimated: false, chunks: null });
   // Single-message retention (D63): a different message starting is what reaps the previous queue.
   if (session && session.id !== id) {
     session.abort.abort();
@@ -466,14 +627,76 @@ export function togglePlay(): void {
   transport();
 }
 
-/** Seek to a 0..1 fraction of the clip (the scrubber's drag/click). Under chunking the clip is the
- *  CURRENT CHUNK — position and duration are the element's own facts either way (D63: scrubber v1 is
- *  per-chunk; whole-message seeking would mean rebuilding one blob and is a recorded non-build). */
+/** Seek to a 0..1 fraction (the scrubber's drag/click, and the ±5% keyboard steps for free). Under
+ *  `off` the fraction is of the one clip and the element owns the answer, as it always did. Under
+ *  chunking it is of the WHOLE MESSAGE (D63 amendment) — see `seekChunked`. */
 export function seekFraction(f: number): void {
+  const s = liveSession();
+  if (s) {
+    seekChunked(s, f);
+    return;
+  }
   if (!el || pb.duration <= 0) return;
   const t = Math.max(0, Math.min(1, f)) * pb.duration;
   el.currentTime = t;
   set({ current: t });
+}
+
+/** Whole-message seek: a global fraction → (chunk, offset), then one of three landings.
+ *   · synthesized → load that chunk at the offset (or just move `currentTime`, if it is already the one
+ *     on the element — re-assigning the same `src` would restart the decode for nothing).
+ *   · not yet synthesized → arrange for the queue to land THERE: park the cursor one before it, hold the
+ *     latch, and record the offset for `playNext` to apply on arrival. `pump` is playIdx-windowed, so
+ *     moving the cursor is also what puts the target chunk on the wire.
+ *   · failed → hand off forward to the next playable chunk, the same skip rule `playNext` uses.
+ *  Play/pause INTENT is preserved: whatever the transport reads right now is what the landing does.
+ *  Backward seeks hit retained blobs and are instant. Seeks before the first audio never get here — the
+ *  scrubber is inert while `status === "loading"` (`seekDisabled`), exactly as before. */
+function seekChunked(s: Session, f: number): void {
+  const { spans, total } = s.tl;
+  if (total <= 0) return;
+  const t = Math.max(0, Math.min(1, f)) * total;
+  let i = spans.length - 1;
+  while (i > 0 && spans[i].start > t) i--;
+  const target = i;
+  while (i < spans.length && s.states[i] === "failed") i++;
+  if (i >= spans.length) return; // nothing playable from here to the end — leave the playhead alone
+  const offset = i === target ? Math.max(0, Math.min(t - spans[i].start, spans[i].dur)) : 0;
+
+  const a = ensureEl();
+  const play = pb.status === "playing"; // the latch already encodes intent in the published status
+  s.wantPlay = play;
+
+  if (s.states[i] === "ok") {
+    s.seek = null;
+    if (s.playIdx === i && !s.waiting && a.src === s.urls[i]) {
+      a.currentTime = offset;
+      set({ current: spans[i].start + offset });
+      return;
+    }
+    s.waiting = false;
+    s.playIdx = i;
+    a.src = s.urls[i]!;
+    a.currentTime = offset;
+    pump(s); // the window moved with the cursor
+    const at = spans[i].start + offset;
+    if (!play) {
+      set({ current: at, status: "paused" });
+      return;
+    }
+    set({ current: at });
+    void a.play().catch(() => {
+      if (s.seq === reqSeq) set({ status: "paused" });
+    });
+    return;
+  }
+
+  s.waiting = true; // set BEFORE the pause, so the pause event reads as the latch and not as a user tap
+  s.seek = { idx: i, offset };
+  s.playIdx = i - 1;
+  a.pause();
+  pump(s);
+  set({ current: globalCurrent(s), status: play ? "playing" : "paused" });
 }
 
 /** Dismiss the player (the ✕): stop + unload, but keep the blob cache so a replay is instant. */
