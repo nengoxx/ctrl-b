@@ -79,7 +79,9 @@ interface Session {
   requested: boolean[];
   playIdx: number; // chunk currently loaded in the element (-1 = none yet)
   waiting: boolean; // playback caught up to synthesis and is holding for the next chunk
+  wantPlay: boolean; // the user's play/pause INTENT — a pause taken under the latch must survive it
   pin: string | null; // `X-Voice-Target` of the serving endpoint, echoed as `prefer` on later chunks
+  pinned: boolean; // chunk 1 answered: the pin is settled (or given up on) and the window may open
   errored: boolean; // a chunk failed and we already toasted (one toast per message)
   abort: AbortController;
 }
@@ -156,7 +158,7 @@ function reset(): void {
 // ── the wire ─────────────────────────────────────────────────────────────────────────────────────
 
 type TtsOutcome =
-  | { ok: true; blob: Blob; target: string }
+  | { ok: true; blob: Blob; target: string; degraded: boolean }
   | { ok: false; aborted: boolean; message: string | null };
 
 /** The single `POST /api/voice/tts` call site, shared by both paths. `format`/`prefer` are omitted
@@ -190,7 +192,13 @@ async function requestTts(
     };
   }
   try {
-    return { ok: true, blob: await res.blob(), target: res.headers.get("X-Voice-Target") ?? "" };
+    return {
+      ok: true,
+      blob: await res.blob(),
+      target: res.headers.get("X-Voice-Target") ?? "",
+      // Present ONLY when a hop failed before this one answered — the flash is exception-only.
+      degraded: res.headers.get("X-Voice-Degraded") === "1",
+    };
   } catch {
     return { ok: false, aborted: !!opts.signal?.aborted, message: "Read-aloud failed" };
   }
@@ -251,6 +259,7 @@ function startChunked(id: string, markdown: string, seq: number): void {
     s.abort = new AbortController();
     s.playIdx = -1;
     s.waiting = false;
+    s.wantPlay = true;
   } else {
     const plan = chunkPlan(toSpeech(markdown), policy);
     if (!plan.chunks.length) {
@@ -270,7 +279,9 @@ function startChunked(id: string, markdown: string, seq: number): void {
       requested: plan.chunks.map(() => false),
       playIdx: -1,
       waiting: false,
+      wantPlay: true,
       pin: null,
+      pinned: false,
       errored: false,
       abort: new AbortController(),
     };
@@ -285,7 +296,10 @@ function startChunked(id: string, markdown: string, seq: number): void {
  *  failure mid-queue starves the very chunk that replaces it. */
 function pump(s: Session): void {
   if (s.seq !== reqSeq || session !== s) return;
-  let budget = policy.lookahead;
+  // BOOTSTRAP: until chunk 1 has answered, the window is exactly one chunk wide. Opening it sooner puts
+  // chunk 2 on the wire with no `prefer` to carry — free to re-pay the dead primary the pin exists to
+  // avoid, to land on a different voice mid-reply, and to race chunk 1 for `s.pin`.
+  let budget = s.pinned ? policy.lookahead : 1;
   for (let i = s.playIdx + 1; i < s.texts.length && budget > 0; i++) {
     if (s.states[i] === "failed") continue;
     budget--;
@@ -303,17 +317,20 @@ async function synthChunk(s: Session, i: number): Promise<void> {
     prefer: i > 0 ? s.pin : null,
     signal: s.abort.signal,
   });
+  if (!out.ok && out.aborted) {
+    s.requested[i] = false; // cancelled, not failed — a resume re-requests it
+    pump(s);
+    return;
+  }
+  // Chunk 1's answer settles the pin either way — a hit sets it, a failure gives up on pinning — and
+  // that is what ends bootstrap and opens the full window (see `pump`).
+  if (i === 0) s.pinned = true;
   // MED-7 — re-check the generation AFTER the response exists and BEFORE anything is retained, so a
   // synth that lands in a cancelled/superseded queue revokes its URL on the spot rather than leaving a
   // second message's blobs resident.
   const stale = s.seq !== reqSeq || session !== s;
 
   if (!out.ok) {
-    if (out.aborted) {
-      s.requested[i] = false; // cancelled, not failed — a resume re-requests it
-      pump(s);
-      return;
-    }
     if (stale) return;
     s.states[i] = "failed";
     if (!s.errored) {
@@ -333,9 +350,11 @@ async function synthChunk(s: Session, i: number): Promise<void> {
   s.urls[i] = url;
   s.states[i] = "ok";
   if (out.target && out.target !== s.pin) {
-    // Once per message, then only when the chain actually moved to a different endpoint mid-reply.
+    const moved = s.pin !== null; // a real mid-reply failover, vs. the first chunk naming its target
     s.pin = out.target;
-    pushToast(`Read aloud by ${out.target}`, "info");
+    // EXCEPTION-ONLY (owner ruling): the happy path says nothing. The first target is announced only
+    // when the chain was degraded to reach it; a mid-reply move is by definition worth saying.
+    if (moved || out.degraded) pushToast(`Read aloud by ${out.target}`, "info");
   }
   if (s.waiting || s.playIdx < 0) playNext(s);
 }
@@ -360,6 +379,12 @@ function playNext(s: Session): void {
   a.src = s.urls[i]!;
   a.currentTime = 0;
   pump(s); // window moved: start the next synth WHILE this chunk plays
+  if (!s.wantPlay) {
+    // Paused while the latch was holding: load this chunk and HOLD it. Playing here would undo a pause
+    // the element itself never saw (it had already ended when the tap landed).
+    set({ current: 0, status: "paused" });
+    return;
+  }
   void a.play().catch(() => {
     if (s.seq === reqSeq) set({ status: "paused" });
   });
@@ -370,7 +395,12 @@ function playNext(s: Session): void {
 function finish(s: Session, a: HTMLAudioElement): void {
   const first = s.states.indexOf("ok");
   if (first < 0) {
-    reset(); // every chunk failed; the one error toast already went out
+    // EVERY chunk failed (reaching here at all means nothing playable is left). Drop the QUEUE, not just
+    // the player: a retained all-failed session would make the next tap replay it — finishing instantly,
+    // never re-requesting — long after the TTS server came back. The one error toast already went out.
+    reset(); // bumps the generation + aborts any straggler synth while `session` is still this one
+    revokeSession(s);
+    if (session === s) session = null;
     return;
   }
   s.playIdx = first;
@@ -382,6 +412,28 @@ function finish(s: Session, a: HTMLAudioElement): void {
 
 // ── the public surface ───────────────────────────────────────────────────────────────────────────
 
+/** The one play/pause action, behind both the per-bubble button and the docked player. Under chunking
+ *  it also carries the queue's play INTENT: at a chunk seam the element is already ended/paused while
+ *  the status deliberately still reads "playing" (the latch), so `a.pause()` alone is a no-op there and
+ *  the late chunk would play right over the user's tap. The intent flag is what `playNext` obeys. */
+function transport(): void {
+  const a = ensureEl();
+  const s = liveSession();
+  if (pb.status === "playing") {
+    if (s) s.wantPlay = false;
+    a.pause();
+    if (pb.status === "playing") set({ status: "paused" }); // latched: no `pause` event will do it
+    return;
+  }
+  if (pb.status !== "paused") return; // loading → ignore taps until it resolves
+  if (s) s.wantPlay = true;
+  if (s?.waiting) {
+    set({ status: "playing" }); // nothing loaded to resume — the chunk in flight starts on arrival
+    return;
+  }
+  void a.play();
+}
+
 /**
  * Per-bubble button + auto-TTS entry point. Tapping a message's speaker:
  *   - if it's the active message → pause/resume in place,
@@ -390,9 +442,8 @@ function finish(s: Session, a: HTMLAudioElement): void {
 export async function toggle(id: string, markdown: string): Promise<void> {
   const a = ensureEl();
   if (pb.id === id) {
-    if (pb.status === "playing") a.pause();
-    else if (pb.status === "paused") void a.play();
-    return; // loading → ignore re-taps until it resolves
+    transport(); // pause/resume in place (a re-tap while loading is ignored)
+    return;
   }
   a.pause(); // stop whatever's playing now so it doesn't keep going during the new clip's synth
   const seq = ++reqSeq;
@@ -412,9 +463,7 @@ export async function toggle(id: string, markdown: string): Promise<void> {
 
 /** The docked player's play/pause (acts on whatever's active). */
 export function togglePlay(): void {
-  const a = ensureEl();
-  if (pb.status === "playing") a.pause();
-  else if (pb.status === "paused") void a.play();
+  transport();
 }
 
 /** Seek to a 0..1 fraction of the clip (the scrubber's drag/click). Under chunking the clip is the

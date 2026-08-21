@@ -81,13 +81,19 @@ const chunked = (over: Partial<ChunkPolicy> = {}): ChunkPolicy => ({
   ...over,
 });
 
-/** A successful /voice/tts response carrying the D63 target header. */
-function okRes(target = "emma/kokoro"): Response {
+/** A successful /voice/tts response carrying the D63 target header (+ the degraded marker, which the
+ *  backend emits ONLY when a hop failed before this one answered). */
+function okRes(target = "emma/kokoro", opts: { degraded?: boolean } = {}): Response {
   return {
     ok: true,
     status: 200,
     blob: async () => new Blob(["a"]),
-    headers: { get: (k: string) => (k === "X-Voice-Target" ? target : null) },
+    headers: {
+      get: (k: string) => {
+        if (k === "X-Voice-Target") return target;
+        return k === "X-Voice-Degraded" && opts.degraded ? "1" : null;
+      },
+    },
   } as unknown as Response;
 }
 function errRes(status: number): Response {
@@ -342,6 +348,52 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(result.current.status).toBe("playing");
   });
 
+  it("a pause taken under the latch survives it: the late chunk loads but does not play", async () => {
+    const calls = deferredFetch();
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish()); // chunk 2 still in flight → latched, still "playing"
+    await flush();
+
+    act(() => togglePlay()); // the user pauses WHILE the latch holds — the element is already ended
+    expect(result.current.status).toBe("paused");
+
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    expect(lastAudio.src).toBe("blob:2"); // loaded and held...
+    expect(lastAudio.paused).toBe(true); // ...never played over the pause
+    expect(result.current.status).toBe("paused");
+
+    act(() => togglePlay()); // resume → the held chunk plays
+    expect(result.current.status).toBe("playing");
+    expect(lastAudio.paused).toBe(false);
+  });
+
+  it("resuming while the latch still holds re-arms it: the pending chunk plays on arrival", async () => {
+    const calls = deferredFetch();
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish());
+    await flush();
+    act(() => togglePlay()); // pause under the latch...
+    act(() => togglePlay()); // ...then change your mind before the chunk lands
+    expect(result.current.status).toBe("playing");
+
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    expect(lastAudio.src).toBe("blob:2");
+    expect(lastAudio.paused).toBe(false);
+    expect(result.current.status).toBe("playing");
+  });
+
   it("skips a failed chunk and keeps reading — one toast for the whole message", async () => {
     const calls = deferredFetch();
     await act(async () => {
@@ -360,6 +412,26 @@ describe("audioController — the chunk queue (D63)", () => {
     const errs = h.toast.mock.calls.filter(([, kind]) => kind === "err");
     expect(errs).toHaveLength(1);
     expect(errs[0][0]).toBe("Read-aloud failed (500)");
+  });
+
+  it("an all-failed message is not kept as a dead queue: the next tap re-synthesizes", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    globalThis.fetch = vi.fn(async () => errRes(502));
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    await flush();
+    expect(result.current.id).toBeNull(); // every chunk failed → the player is back to idle
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+
+    globalThis.fetch = vi.fn(async () => okRes()); // the TTS server came back
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    expect(globalThis.fetch).toHaveBeenCalled(); // fresh requests, not an instant replay of the corpse
+    expect(result.current.status).toBe("playing");
   });
 
   it("cancelling mid-flight aborts the queue: nothing plays, nothing is retained", async () => {
@@ -425,12 +497,61 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(calls[1].body).toEqual({ text: "Two.", format: "opus", prefer: "emma/kokoro" });
   });
 
-  it("flashes who served once per message, and again only when the pin actually moves", async () => {
+  it("bootstraps the pin: chunk 1 goes alone, then the window opens and the rest carry `prefer`", async () => {
+    setChunkPolicy(chunked({ lookahead: 3 }));
     const calls = deferredFetch();
     await act(async () => {
       await toggle("m1", REPLY);
     });
+    expect(calls).toHaveLength(1); // lookahead 3, but nobody past chunk 1 may go out unpinned yet
     await act(async () => calls[0].resolve(okRes("emma/kokoro")));
+    await flush();
+    expect(calls).toHaveLength(3); // pin known → the full window opens at once
+    expect(calls[1].body.prefer).toBe("emma/kokoro");
+    expect(calls[2].body.prefer).toBe("emma/kokoro");
+  });
+
+  it("a failed chunk 1 gives up on pinning rather than stalling the window", async () => {
+    setChunkPolicy(chunked({ lookahead: 3 }));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(errRes(500)));
+    await flush();
+    expect(calls).toHaveLength(3); // the window opened anyway — the message still gets read
+    expect(calls[1].body.prefer).toBeUndefined(); // nothing to echo: no chunk ever named a target
+  });
+
+  it("says nothing about who served on the happy path (the flash is exception-only)", async () => {
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    await act(async () => lastAudio.finish());
+    await flush();
+    expect(h.toast.mock.calls.filter(([t]) => String(t).startsWith("Read aloud by"))).toHaveLength(
+      0,
+    );
+  });
+
+  it("flashes the first target only when the chain was DEGRADED to reach it", async () => {
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes("vault/alltalk", { degraded: true })));
+    await flush();
+    const flashes = h.toast.mock.calls.filter(([text]) => String(text).startsWith("Read aloud by"));
+    expect(flashes.map(([t]) => t)).toEqual(["Read aloud by vault/alltalk"]);
+  });
+
+  it("flashes again when the pin actually moves mid-reply", async () => {
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes("emma/kokoro"))); // happy first serve → silent
     await flush();
     await act(async () => calls[1].resolve(okRes("emma/kokoro"))); // same endpoint → silent
     await flush();
@@ -440,10 +561,7 @@ describe("audioController — the chunk queue (D63)", () => {
     await flush();
 
     const flashes = h.toast.mock.calls.filter(([text]) => String(text).startsWith("Read aloud by"));
-    expect(flashes.map(([t]) => t)).toEqual([
-      "Read aloud by emma/kokoro",
-      "Read aloud by vault/alltalk",
-    ]);
+    expect(flashes.map(([t]) => t)).toEqual(["Read aloud by vault/alltalk"]);
   });
 
   it("drops the tail past the per-message budget and says so once", async () => {

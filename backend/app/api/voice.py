@@ -8,8 +8,10 @@ it to the configured OpenAI-compatible endpoint(s) with failover, and returns th
 HTTP contract: a success always returns 200 with `X-Voice-Served-By: <provider>` — the NAME of the
 registry provider that actually served (A11/D48; a fallback serve carries that fallback's provider name,
 a single-user diagnostic surface); TTS additionally carries `X-Voice-Target: <provider>/<model>`, the
-machine-readable identity a chunked reply pins with `prefer` (D63); every endpoint failing → 502 (the
-aggregated upstream error); voice/service unconfigured → 503; STT with no file → 422.
+machine-readable identity a chunked reply pins with `prefer` (D63), plus `X-Voice-Degraded: 1` ONLY
+when a hop failed before the serving one answered (the client's serve flash is exception-only, so the
+header exists exactly where it says something); every endpoint failing → 502 (the aggregated upstream
+error); voice/service unconfigured → 503; STT with no file → 422.
 """
 
 from __future__ import annotations
@@ -106,7 +108,8 @@ async def tts(body: TtsRequest, request: Request) -> Response:
     overrides the configured endpoint voice; optional `format` overrides the container; optional
     `prefer` pins which target the failover chain tries first. `X-Voice-Served-By` names the provider
     that served (display); `X-Voice-Target` is its full `provider/model` identity — the value the
-    client echoes back as `prefer` on the rest of a chunked reply."""
+    client echoes back as `prefer` on the rest of a chunked reply; `X-Voice-Degraded` appears only on
+    a degraded serve, which is the one case the client announces who read the reply."""
     voice = _client(request)
     if not voice.configured("tts"):
         raise HTTPException(status_code=503, detail="text-to-speech is not configured")
@@ -129,13 +132,12 @@ async def tts(body: TtsRequest, request: Request) -> Response:
         )
     except VoiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return Response(
-        content=audio,
-        media_type=media_type,
-        headers={
-            "X-Voice-Served-By": served.served,
-            "X-Voice-Target": served.target,
-            "Content-Length": str(len(audio)),
-            "Cache-Control": "no-store",
-        },
-    )
+    headers = {
+        "X-Voice-Served-By": served.served,
+        "X-Voice-Target": served.target,
+        "Content-Length": str(len(audio)),
+        "Cache-Control": "no-store",
+    }
+    if served.degraded:
+        headers["X-Voice-Degraded"] = "1"  # absent on the happy path — see the module docstring
+    return Response(content=audio, media_type=media_type, headers=headers)

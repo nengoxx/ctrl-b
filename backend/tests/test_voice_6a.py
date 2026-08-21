@@ -14,8 +14,8 @@ Covers:
   `providers.*.api_key` path — the legacy `voice.*.primary.api_key` leaf is gone).
 - API: `/voice/status` (composes `stt_auto_send` from live settings), `/voice/stt`, `/voice/tts`.
 - D63 chunked TTS: the `chunk_*` load-time bounds, the `tts_chunking` client policy on `/voice/status`,
-  the request-level `format` override + its closed allowlist, and the `prefer`/`X-Voice-Target` pin
-  (reorder, silent miss, still-fails-over).
+  the request-level `format` override + its closed allowlist, the `prefer`/`X-Voice-Target` pin
+  (reorder, silent miss, still-fails-over), and the degraded-only `X-Voice-Degraded` marker.
 """
 
 from __future__ import annotations
@@ -341,8 +341,8 @@ def test_timeout_floor_rejects_zero() -> None:
 class _StubVoice:
     """Mimics the VoiceClient surface the router uses, no SDK/network."""
 
-    def __init__(self, *, stt=True, tts=True, served="speaches") -> None:
-        self._stt, self._tts, self._served = stt, tts, served
+    def __init__(self, *, stt=True, tts=True, served="speaches", degraded=False) -> None:
+        self._stt, self._tts, self._served, self._degraded = stt, tts, served, degraded
         self.calls: list[dict] = []  # every synthesize() call, in order (D63 request-field assertions)
 
     def configured(self, service: str) -> bool:
@@ -359,7 +359,7 @@ class _StubVoice:
         return (
             b"AUDIOBYTES",
             "audio/mpeg",
-            SimpleNamespace(served=self._served, degraded=False, target=f"{self._served}/kokoro"),
+            SimpleNamespace(served=self._served, degraded=self._degraded, target=f"{self._served}/kokoro"),
         )
 
 
@@ -506,6 +506,17 @@ def test_api_tts_passes_format_and_prefer_and_returns_target() -> None:
     # omitted → no override at all (the adapter falls through to model > service)
     c.post("/api/voice/tts", json={"text": "hi"})
     assert stub.calls[-1]["format"] is None and stub.calls[-1]["prefer"] is None
+
+
+def test_api_tts_degraded_header_only_when_degraded() -> None:
+    """The serve flash is exception-only (D63 amendment): the wire says `degraded` ONLY when a hop
+    failed before the serving one answered, so the happy path carries no header at all."""
+    happy = _app(_StubVoice(served="emma")).post("/api/voice/tts", json={"text": "hi"})
+    assert happy.status_code == 200
+    assert "X-Voice-Degraded" not in happy.headers
+    fell_over = _app(_StubVoice(served="vault", degraded=True)).post("/api/voice/tts", json={"text": "hi"})
+    assert fell_over.headers["X-Voice-Degraded"] == "1"
+    assert fell_over.headers["X-Voice-Target"] == "vault/kokoro"  # the pin still rides along
 
 
 def test_synthesize_format_precedence_request_over_model_over_service() -> None:

@@ -523,8 +523,11 @@ one — only the browser binary can). That splits C2 into two features that must
 - **S1 ✅ BUILT 2026-08-21** — chunker (`lib/ttsChunks`) + the element queue + the `TtsServiceCfg`
   `chunk_*` block + client-policy delivery on `GET /voice/status` + the `X-Voice-Target`/`prefer`
   failover pin, serving the per-bubble ▶ and the existing turn-end auto-TTS (`useAutoTts` still calls
-  `toggle`, which under chunking simply starts the queue). **S2 — read-along-while-streaming and the
-  single turn-end ownership entry point — is still open.**
+  `toggle`, which under chunking simply starts the queue). Review wave folded same day: pin
+  bootstrap (chunk 1 alone until its target lands) · a play-intent flag so a pause taken under the
+  waiting latch survives it · an all-failed queue dropped instead of cached · the serve flash
+  demoted to exception-only behind `X-Voice-Degraded` (D63 amendment). **S2 —
+  read-along-while-streaming and the single turn-end ownership entry point — is still open.**
 
 ---
 

@@ -4579,7 +4579,13 @@ a model-level `format: mp3` must not silently defeat the chunk path).
 route tries that TARGET first then the normal chain (council MED-5: provider alone is ambiguous
 — one provider may carry two models). A vanished `prefer` is ignored (miss → normal chain). No
 re-paying a dead primary per chunk, no mid-reply voice change, still fails over if the pin dies.
-Serve flash shows once per message + on pin change only. `max_text_chars` re-expression: the
+Chunk 1 goes out ALONE until its target lands (S1 review MED: at `chunk_lookahead` ≥ 2 the window
+would otherwise open with unpinned chunks racing chunk 1 for the pin); its failure gives up on
+pinning and opens the window. ~~Serve flash shows once per message + on pin change only.~~
+**AMENDED 2026-08-21 (owner ruling, S1 review): the serve flash is EXCEPTION-ONLY** — the first
+chunk's target is announced only when that response was degraded (`X-Voice-Degraded: 1`, emitted
+only when true), plus the mid-reply pin-CHANGE flash; the happy path is silent.
+`max_text_chars` re-expression: the
 per-request 422 stays; the per-MESSAGE bound moves to the chunker (tail dropped + one toast) —
 council-judged no loss under the single-owner tailnet model.
 
