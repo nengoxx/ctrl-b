@@ -883,6 +883,26 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     expect(lastAudio.currentTime).toBe(parked);
   });
 
+  it("a NEWER same-chunk drag disarms the pending payout — the stale fraction can't snap back", async () => {
+    // The confirm-round catch: the generation/index guards can't see a second seek into the SAME chunk.
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2)); // 0–2 · 2–4 · 4–7, chunk 3 estimated at 3 s
+    act(() => seekFraction(1)); // pending seek A: fraction 1 of chunk 3, payout armed on arrival
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    expect(lastAudio.currentTime).toBe(0); // armed, metadata not read yet
+
+    act(() => seekFraction(5 / 7)); // B: the user drags AGAIN into the same chunk (fast path, ~1 s in)
+    expect(lastAudio.currentTime).toBeCloseTo(1, 6);
+    act(() => lastAudio.meta(6)); // A's metadata finally reads — its payout must be DISARMED
+    expect(lastAudio.currentTime).toBeCloseTo(1, 6); // B's landing survives (A would have snapped to 5.95)
+  });
+
   it("a play() interrupted by a newer seek never publishes 'paused' over the live one", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await timeline3();

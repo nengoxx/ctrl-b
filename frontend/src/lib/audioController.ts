@@ -121,6 +121,9 @@ interface Session {
   // shorter chunk (instant `ended` → an unwanted rewind) or far short of a longer one, and refinement
   // would never remap the stored intent. The fraction survives the estimate being wrong.
   seek: { idx: number; frac: number } | null;
+  // Cancels the armed metadata payout (if any). Every newer navigation — a fresh seek, the end-of-queue
+  // rewind, a replay re-arm — calls it, so a stale fraction can never override newer intent.
+  metaSeek: (() => void) | null;
   pin: string | null; // `X-Voice-Target` of the serving endpoint, echoed as `prefer` on later chunks
   pinned: boolean; // chunk 1 answered: the pin is settled (or given up on) and the window may open
   errored: boolean; // a chunk failed and we already toasted (one toast per message)
@@ -409,6 +412,7 @@ function startChunked(id: string, markdown: string, seq: number): void {
     s.waiting = false;
     s.wantPlay = true;
     s.seek = null;
+    s.metaSeek?.(); // a replay must not inherit a stale armed payout (chunk 0 could re-match it)
     // Re-probe anything that has a blob but no exact duration — a probe launched by the previous play
     // is discarded if it resolves after that generation ended, so a replay is where it gets picked up.
     for (let i = 0; i < s.urls.length; i++)
@@ -436,6 +440,7 @@ function startChunked(id: string, markdown: string, seq: number): void {
       waiting: false,
       wantPlay: true,
       seek: null,
+      metaSeek: null,
       pin: null,
       pinned: false,
       errored: false,
@@ -568,10 +573,15 @@ function playNext(s: Session): void {
 /** Convert a pending seek's within-chunk FRACTION into `currentTime` the moment the element reports the
  *  chunk's real length, then republish the refined position. One-shot and self-removing, and inert if
  *  the queue moved on while the metadata loaded (the duration probe's discipline). Unreadable metadata
- *  is not worth recovering from: the chunk simply plays from its start. */
+ *  is not worth recovering from: the chunk simply plays from its start.
+ *  The generation/index guards can't see a NEWER seek into the SAME chunk (same playIdx, same message
+ *  — the confirm round's catch): any later navigation must cancel the armed payout via `s.metaSeek`,
+ *  or the stale fraction would snap playback back over the user's newer drag. */
 function applySeekOnMetadata(s: Session, i: number, a: HTMLAudioElement, frac: number): void {
+  s.metaSeek?.(); // supersede: at most one armed payout per session
   const apply = (): void => {
     a.removeEventListener("loadedmetadata", apply);
+    if (s.metaSeek) s.metaSeek = null;
     if (s.seq !== reqSeq || session !== s || s.playIdx !== i) return;
     const d = a.duration;
     if (!Number.isFinite(d) || d <= 0) return;
@@ -579,6 +589,10 @@ function applySeekOnMetadata(s: Session, i: number, a: HTMLAudioElement, frac: n
     // immediately and cascade into the end-of-queue rewind instead of playing the tail the user asked for.
     a.currentTime = Math.min(frac * d, Math.max(0, d - 0.05));
     set({ current: (s.tl.spans[i]?.start ?? 0) + a.currentTime });
+  };
+  s.metaSeek = () => {
+    a.removeEventListener("loadedmetadata", apply);
+    s.metaSeek = null;
   };
   a.addEventListener("loadedmetadata", apply);
 }
@@ -599,6 +613,7 @@ function finish(s: Session, a: HTMLAudioElement): void {
   s.playIdx = first;
   s.waiting = false;
   s.seek = null;
+  s.metaSeek?.(); // the rewind is a navigation too — a stale payout must not snap it forward
   a.src = s.urls[first]!;
   a.currentTime = 0;
   // `first` is 0 for any message that played through, so this normally IS the top of the bar. After a
@@ -700,6 +715,10 @@ function seekChunked(s: Session, f: number): void {
   const offset = i === target ? Math.max(0, Math.min(t - spans[i].start, spans[i].dur)) : 0;
 
   const a = ensureEl();
+  // This seek IS the newest intent: disarm any metadata payout a prior pending seek left waiting — the
+  // same-chunk fast path below would otherwise let the stale fraction snap back over it (confirm-round
+  // catch). Only past the early returns: a no-op seek must not cancel anything.
+  s.metaSeek?.();
   const play = pb.status === "playing"; // the latch already encodes intent in the published status
   s.wantPlay = play;
 
