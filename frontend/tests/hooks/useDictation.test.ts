@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // hooks/useDictation — the tap-to-start/stop mic state machine. We replace MediaRecorder + getUserMedia
@@ -70,6 +70,11 @@ beforeEach(() => {
   clearDraft();
   mockStt(200, { text: "hello world" });
 });
+
+// `globals: false` means RTL's auto-cleanup never registers, so a hook would otherwise stay mounted
+// for the rest of the file — and a case that ends mid-recording would leave its visibility listener
+// on the shared `document`, stopping the NEXT case's recording. Unmount each hook with its case.
+afterEach(cleanup);
 
 /** Tap to start, wait until recording, tap to stop (which kicks off the async upload). */
 async function recordOnce(result: { current: { toggle: () => void; status: string } }) {
@@ -160,17 +165,25 @@ class FakeAnalyser {
 class FakeAudioContext {
   /** Emulates a context the browser refuses to run (autoplay policy) — the degrade-to-manual path. */
   static stuckSuspended = false;
+  /** When set, the NEXT context starts `suspended` and its resume() parks on this gate (consumed by
+   *  that one context) — how a test holds one recording's async arm open across the next recording. */
+  static resumeGate: Promise<void> | null = null;
   state: string;
+  gate: Promise<void> | null;
   analyser = new FakeAnalyser();
   source = { connect: vi.fn(), disconnect: vi.fn() };
   resume = vi.fn(async () => {
-    if (!FakeAudioContext.stuckSuspended) this.state = "running";
+    if (this.gate) await this.gate;
+    // A closed context stays closed — the real resume() rejects on one (the hook swallows it).
+    if (!FakeAudioContext.stuckSuspended && this.state !== "closed") this.state = "running";
   });
   close = vi.fn(async () => {
     this.state = "closed";
   });
   constructor() {
-    this.state = FakeAudioContext.stuckSuspended ? "suspended" : "running";
+    this.gate = FakeAudioContext.resumeGate;
+    FakeAudioContext.resumeGate = null;
+    this.state = FakeAudioContext.stuckSuspended || this.gate ? "suspended" : "running";
     contexts.push(this);
   }
   createAnalyser() {
@@ -211,6 +224,7 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
     micLevel = 0;
     contexts = [];
     FakeAudioContext.stuckSuspended = false;
+    FakeAudioContext.resumeGate = null;
     FakeMediaRecorder.last = null;
     vi.stubGlobal("AudioContext", FakeAudioContext);
     vi.mocked(pushToast).mockClear();
@@ -295,12 +309,51 @@ describe("useDictation · auto-stop (R51 Tier 0)", () => {
     await tick(30_000);
     expect(result.current.status).toBe("recording"); // no auto-stop…
     expect(contexts[0].close).toHaveBeenCalled(); // …and no context left open
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(0); // the AUDIO half alone was released
     expect(pushToast).not.toHaveBeenCalled(); // no error surface: it is just push-to-talk again
+  });
+
+  it("the hidden-page stop survives a dead context — MED-1 does not ride on Web Audio", async () => {
+    // The unattended-mic rule is not part of the degrade: a suspended context loses the energy
+    // detector, never the visibility listener, or a failed AudioContext would leave the mic live.
+    FakeAudioContext.stuckSuspended = true;
+    const { result } = renderHook(() => useDictation(stopOpts()));
+    await startRecording(result);
+    await tick(500);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
     await act(async () => {
-      document.dispatchEvent(new Event("visibilitychange")); // the listener is scoped WITH the feature
+      document.dispatchEvent(new Event("visibilitychange"));
     });
-    expect(result.current.status).toBe("recording");
+    expect(result.current.status).toBe("idle");
+    expect(getDraft()).toBe("hello world"); // the same stop path — the clip still lands
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  });
+
+  it("a stale arm never tears down the NEXT recording's detector", async () => {
+    // Recording A parks inside resume(); by the time that promise settles, A has been stopped and
+    // recording B owns the interval/listener/context. A's continuation must close only its own.
+    let openA!: () => void;
+    FakeAudioContext.resumeGate = new Promise<void>((resolve) => {
+      openA = resolve;
+    });
+    const { result } = renderHook(() => useDictation(stopOpts()));
+    await startRecording(result); // A — its arm is stuck mid-resume
+    await act(async () => {
+      result.current.toggle(); // stop A: its detector (such as it is) is torn down
+    });
+    await startRecording(result); // B — arms its own context, interval and listener
+    const unlisten = vi.spyOn(document, "removeEventListener");
+    const unpoll = vi.spyOn(globalThis, "clearInterval");
+    await act(async () => {
+      openA(); // …and only now does A's resume settle, one recording too late
+    });
+    expect(contexts).toHaveLength(2);
+    // A's continuation touches nothing global — B's listener, poll and context all stand…
+    expect(unlisten).not.toHaveBeenCalled();
+    expect(unpoll).not.toHaveBeenCalled();
+    expect(contexts[1].close).not.toHaveBeenCalled();
+    await tick(3000); // …and B's detector still works: its own silence run ends its own recording
+    expect(result.current.status).toBe("idle");
   });
 
   it("a recorder error runs the full cleanup (interval · nodes · context · listener)", async () => {

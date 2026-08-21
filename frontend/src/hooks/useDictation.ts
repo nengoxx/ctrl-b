@@ -209,17 +209,13 @@ export function useDictation({
     if (rec && rec.state !== "inactive") rec.stop(); // fires onstop → cleanup → upload
   }, []);
 
-  /** The auto-stop detector's ONE idempotent teardown (council MED-2): interval, visibility listener,
-   *  nodes, context. Called from EVERY terminal path — `onstop` (BEFORE the upload begins), `onerror`,
-   *  a failed arm, a failed start, unmount — so nothing ever watches a mic that is no longer recording. */
-  const teardownDetector = useCallback(() => {
+  /** Release ONLY the Web Audio half of the detector (interval · nodes · context). Split out because
+   *  the energy detector is allowed to degrade while the hidden-page stop is NOT (MED-1): a context
+   *  that won't run must not take the unattended-mic rule with it. */
+  const teardownAudio = useCallback(() => {
     if (pollRef.current !== null) {
       clearInterval(pollRef.current);
       pollRef.current = null;
-    }
-    if (hiddenRef.current) {
-      document.removeEventListener("visibilitychange", hiddenRef.current);
-      hiddenRef.current = null;
     }
     sourceRef.current?.disconnect();
     analyserRef.current?.disconnect();
@@ -230,12 +226,33 @@ export function useDictation({
     if (ctx && ctx.state !== "closed") void ctx.close().catch(() => {}); // a double-close rejects
   }, []);
 
+  /** The auto-stop detector's ONE idempotent teardown (council MED-2): the audio half PLUS the
+   *  visibility listener. Called from EVERY terminal path — `onstop` (BEFORE the upload begins),
+   *  `onerror`, a failed start, unmount — so nothing ever watches a mic that is no longer recording. */
+  const teardownDetector = useCallback(() => {
+    teardownAudio();
+    if (hiddenRef.current) {
+      document.removeEventListener("visibilitychange", hiddenRef.current);
+      hiddenRef.current = null;
+    }
+  }, [teardownAudio]);
+
   /** Arm the energy detector on the SAME stream the recorder holds (never a second getUserMedia). Silent
    *  by contract (MED-2): no Web Audio, a context that won't leave `suspended`, a throwing node graph —
    *  every one degrades to ordinary push-to-talk. A recording that needs one extra tap is a non-event;
-   *  an error toast on every recording would not be. */
+   *  an error toast on every recording would not be. The hidden-page stop is NOT part of that degrade
+   *  (MED-1) — it is armed first, synchronously, and outlives any Web Audio failure below. */
   const armDetector = useCallback(
     async (stream: MediaStream) => {
+      // Council MED-1 — dictation is a screen-on activity: a hidden page ends the recording outright
+      // rather than leaving the mic live behind a timer Android throttles to ~once a minute. Armed
+      // before any Web Audio work, so an unavailable/suspended context can never leave the mic
+      // recording untended; only the full teardown (every terminal path) removes it.
+      const onHidden = () => {
+        if (document.visibilityState === "hidden") stop();
+      };
+      document.addEventListener("visibilitychange", onHidden);
+      hiddenRef.current = onHidden;
       if (typeof AudioContext === "undefined") return;
       let ctx: AudioContext;
       try {
@@ -245,10 +262,18 @@ export function useDictation({
       }
       audioRef.current = ctx; // parked BEFORE the await, so a stop during it closes this context
       if (ctx.state === "suspended") await ctx.resume().catch(() => {});
-      // Either the recording already ended during the resume (teardown cleared the parked context) or
-      // the context never ran — in both cases anything built here would outlive its recording.
-      if (audioRef.current !== ctx || ctx.state !== "running") {
-        teardownDetector();
+      // The parked context IS this arm's ownership token: if it is no longer the current one, the
+      // recording ended (or a NEXT one already armed) while we awaited. A stale continuation closes
+      // only its own context, best-effort, and touches nothing global — the live detector, whoever
+      // owns it now, must survive it.
+      if (audioRef.current !== ctx) {
+        if (ctx.state !== "closed") void ctx.close().catch(() => {});
+        return;
+      }
+      // Still ours, but the context never ran → drop the AUDIO only; the hidden-page stop above stays
+      // armed for the rest of the recording, which is now plain push-to-talk.
+      if (ctx.state !== "running") {
+        teardownAudio();
         return;
       }
       let analyser: AnalyserNode;
@@ -259,7 +284,7 @@ export function useDictation({
         analyserRef.current = analyser;
         sourceRef.current = source;
       } catch {
-        teardownDetector();
+        teardownAudio();
         return;
       }
       const samples = new Float32Array(analyser.fftSize);
@@ -275,15 +300,8 @@ export function useDictation({
         silentMs += SILENCE_POLL_MS;
         if (silentMs >= silenceMs) stop(); // the SAME path as tapping stop → onstop → upload
       }, SILENCE_POLL_MS);
-      // Council MED-1 — dictation is a screen-on activity: a hidden page ends the recording outright
-      // rather than leaving the mic live behind a timer Android throttles to ~once a minute.
-      const onHidden = () => {
-        if (document.visibilityState === "hidden") stop();
-      };
-      document.addEventListener("visibilitychange", onHidden);
-      hiddenRef.current = onHidden;
     },
-    [silenceFloor, silenceMs, stop, teardownDetector],
+    [silenceFloor, silenceMs, stop, teardownAudio],
   );
 
   const start = useCallback(async () => {
