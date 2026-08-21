@@ -523,6 +523,29 @@ one — only the browser binary can). That splits C2 into two features that must
 
 ---
 
+### C4. Live voice mode (continuous conversation) — **noted 2026-08-21 (owner); FUTURE, not scheduled**
+
+- **What:** always-listening mic → VAD/endpointing → streaming or per-utterance STT → the existing
+  agent turn → C3 chunked TTS, with barge-in (speaking over the bot kills playback + cancels the
+  turn). The owner pointed at their RealtimeVoiceChat fork as the reference shape.
+- **Research ✅ BOUGHT 2026-08-21 = [R51](./research/R51-realtime-voice-chat.md)** (the fork +
+  upstream source-read; pipecat/LiveKit cross-checks; browser-half verified; Speaches live-probed).
+  The load-bearing findings: Speaches **already ships `/v1/realtime`** (Silero VAD,
+  `intent=transcription`) · silence-only endpointing is dead field-wide (Smart Turn v3 = 8.7 MB CPU
+  ONNX) · **Chromium's AEC does not reference same-page `<audio>`** — the echo probe is the #1
+  pre-design gate · LiveKit persists the interrupted turn truncated to what was PLAYED (pairs with
+  R35 divergence ④ — design once for text + voice).
+- **Ranked architecture (R51 §9.3):** ① Speaches-realtime as the ear + ctrl-b agent loop as the
+  brain + **C3 as the mouth** (zero new models/hosts; the agent loop untouched) · ② own the ear
+  (client Silero + server Smart Turn, backend-portable) · ③ porting RVC wholesale = ruled out.
+  **C3 (D63) is the hard prerequisite and needs NO changes for this** — its cancel path is the
+  kill verb barge-in needs (R51 §9.1).
+- **Tier 0 quick win, buildable anytime:** auto-stop dictation (~1 day — energy detector +
+  config silence timeout on the field's 3.0–3.2 s number + the existing `stt_auto_send`).
+- **Scope when built:** screen-on / app-foreground / Wake Lock ("docked on a stand") — screen-off
+  always-listening needs a Capacitor shell (R14 §5) and Firefox cannot do it at all. Needs a
+  D-entry + the AEC device probe before any build.
+
 ## D. Fleet automation
 
 ### D1. Idle sleep — **OS-native (✅ decided 2026-06-16); ctrl-b adds nothing for now**
