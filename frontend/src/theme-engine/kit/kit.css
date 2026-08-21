@@ -622,6 +622,16 @@ body[data-perf="lite"] .kit-composer {
 /* STT in flight (owner ask 2026-07-30): the glyph is the 8-bar SpinnerIcon and it ROLLS — steps(8)
  * advances exactly one bar per tick, the classic segmented activity spinner, as a transform-only
  * animation (§14.11). One rule covers all three variants (stacked/sheet `.mic`, line `.line-btn`). */
+/* ISS-9 (owner, 2026-08-21): the roll alone was too quiet — in stacked the glyph stayed muted
+ * --text-2, in sheet it stayed the resting accent, so the state barely registered. The sending
+ * button now takes an accent-tinted CHIP (the `.rec` treatment's shape, accent not danger):
+ * red = recording · accent chip + roll = transcribing. Line's filled accent circle (0,5,0)
+ * outspecifies this on background/color and keeps its own already-loud face. */
+.kit-cbtn.mic.sending {
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 15%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+}
 .kit-cbtn.mic.sending svg {
   animation: kit-spin 1s steps(8, end) infinite;
 }
