@@ -153,24 +153,55 @@
   (fastest) and AllTalk (best quality) — features must serve both; standing permission to probe
   emma↔vault services when needed.
 
-## ▶▶ NEXT (2026-08-21, third session — supersedes both lists below where struck)
+## ▶▶ NEXT (2026-08-21, third session, FINAL — the release-decision handoff; supersedes both
+## lists below where struck)
 
-0. **PUSH the 13 unpushed commits** (`52510fe`..`2368f50`) on the owner's word — everything
-   committed, gated, review-closed.
-1. **THE D64 LIVE ACCEPTANCE: a fresh owner consolidation run on dev** (the backend is restarted
-   on the new code; tier 2 ON with the repaired corpus). Watch for: paging in the read trail,
-   the delete rail's steering if anything goes partial, and NO hash anywhere in the transcript.
-2. **Owner device rounds still open:** the motion-token feel (①'s ease swap — does the composer
-   read snappier or wrong?) · C3 seam audibility + the S1.5 scrubber at the NEW bar width ·
-   F1 notifications (master ON, background, host transition, tap→fleet) · the icon-backdrop
-   fresh install.
-3. **C3 SLICE 2 — read-along-while-streaming** (unchanged; the growth contract is recorded).
-4. **The RELEASE ruling** — the batch is now 13 commits incl. D64 (still no schema/config
-   migration; the `recall_char_limit` default change is code-side with config-file values
-   overriding; rollback stays v1.7.2).
-5. **ISS-10 ② stays parked** (owner ruling); **ISS-11 closed**; the ISS-10 ledger entry could
-   take a ①-shipped note on the next docs pass.
-6. **A13 design talk** and **Phase 19 (D58) owner court** — unchanged, in that order.
+**✅ PUSHED: origin = `main` @ `136e29d`** (owner's word, full pre-push gate green). Everything
+below is committed, gated, review-closed. Dev units RUNNING on the new code (backend restarted
+post-D64). **⚠ SESSION-START REMINDER: match model to tmux session + check effort (high).**
+
+### 0 · THE RELEASE DECISION (the owner decides; everything they need is here)
+- **The batch since v1.7.4: 33 commits, 17 feat/fix.** Headline = chunked TTS (~0.7 s first
+  audio vs 13.6 s on prod today, both backends verified) + the whole-message scrubber + slim
+  bars · auto-stop dictation (default OFF) · F1 host-up/down notifications · ISS-9 spinner ·
+  the motion-token pass · ISS-11 scanlines · D64 memory hardening.
+- **Recommendation: release as v1.7.5** (version policy: stay 1.7.x). NO schema/config
+  migration (schema 6, config VERSION 1; the `recall_char_limit` 24,576 default is code-side,
+  explicit config values override). **Rollback = v1.7.4.** No prod config flip this time.
+  Runbook §Release, Opus-operated per the methodology.
+- **Everything EXPOSED on prod defaults is owner-verified** (the player/scrubber/bars rounds ✓ ·
+  dictation ✓ · ISS-9 ✓ · ISS-11 ✓; the motion feel-swap is reviewed + one-token revertible,
+  eyeball rides daily use). **Everything NOT yet exercised is LATENT on prod defaults:** F1's
+  device test (master notifications ships OFF) · D64's live consolidation acceptance (memory
+  ships OFF on prod) · the icon-backdrop fresh install (standing since v1.7.4). So releasing
+  NOW is sound, and the strict alternative is only half a day: F1's afternoon test + one
+  `/consolidate` on dev, then ship.
+- **Known-open register (nothing blocks):** ISS-10 ② glyph swaps (owner-parked by the
+  "nobody does it" ruling — revive on wish) · the eslint/F13 Compiler-prep backlog (deferred,
+  count in QUALITY.md) · D64 §17.4 accepted residuals (page-count floor · scan-dependent
+  owner-steer) · the HARDENING known-open register (Phase 19, owner-gated) · the standing
+  ledger below (unchanged).
+
+### 1 · Owed acceptances (close on dev or prod, before or after the release)
+① **D64 live acceptance:** a fresh owner `/consolidate` on dev — watch for paging in the read
+trail, the rail's steering on anything partial, NO hash anywhere in the transcript.
+② **F1 notifications device test:** master ON → background the app → host transition → tap
+lands on the FLEET tab. ③ **Motion feel:** does the composer read snappier or wrong (one
+token back if wrong). ④ **Icon-backdrop fresh install** (standing).
+
+### 2 · The work queue after that (in order)
+1. **C3 SLICE 2 — read-along-while-streaming** (D63-designed; S1 hook points + S1.5's growth
+   contract recorded in the build reports; own slice, own round).
+2. **The A13 design talk** (OpenAI-OAuth/Codex provider; R49 = the evidence; needs its
+   D-entry conversation — prose, per the owner's preference).
+3. **Phase 19 (D58) owner court** — the big standing gate (spec-complete; §10 rulings + the
+   §3b delta council check).
+4. **Parked/standing:** ISS-10 ② (owner wish) · the media-gallery test-and-refine session ·
+   the root cross-fade owner-present session · Web Push (parked on merits) · the vault/wiki
+   spec (owner designing elsewhere — and NOTE: the owner's Maia vault specs proved decisive
+   evidence for D64; check them before re-researching adjacent ground) · arcade redesign
+   (someday-maybe) · the color-theory unit-palette session (parked) · owner minis (edit a
+   prompt for real · pickers eyeball · watch a corsair cold-boot wake).
 
 ## Prior ▶▶ (2026-08-21, second session — superseded)
 
