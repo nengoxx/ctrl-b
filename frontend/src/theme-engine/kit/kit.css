@@ -2618,7 +2618,7 @@ body[data-perf="lite"] .kit .mini-player {
   height: 22px;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 2.5px;
   cursor: pointer;
   touch-action: none; /* a horizontal drag seeks, doesn't scroll */
   outline: none;
@@ -2631,20 +2631,17 @@ body[data-perf="lite"] .kit .mini-player {
   background: var(--line-2); /* unplayed */
 }
 /* THIRD BAR STATE (D63 amendment) — the bar spans the whole reply, so the stretch the queue has not
- * synthesized yet reads as OUTLINE-ONLY: the buffered-range convention, and the synth-ahead visibly
- * crawling. An INSET box-shadow rather than a border on purpose — it takes no layout box at all, so it
- * neither depends on `box-sizing` nor fights the `flex: 1` / `min-width: 0` sizing, and it scales with
- * the `scaleY` shimmer exactly like the fill does. 1px at the bars' real heights (6–22px: `min-height`
- * 2px is only a floor, the inline heights are 28–100% of a 22px track) reads clearly hollow.
- * Source order IS the precedence — `.on` follows, so a played bar wins even if both ever coincide
- * (they don't: the component emits the three states mutually exclusively). */
+ * synthesized yet reads as a FAINTER wash of the unplayed color: the buffered-range convention, and
+ * the synth-ahead visibly crawling. This is the amendment's recorded fallback rendering — the
+ * original 1px inset outline needed the chunkier 5-6px bars; at the slimmer width (owner round
+ * 2026-08-21: 48 bars) the ring closes over the whole bar and reads as a solid fill, signalling
+ * nothing. Source order IS the precedence — `.on` follows, so a played bar wins even if both ever
+ * coincide (they don't: the component emits the three states mutually exclusively). */
 .kit .mini-player .mp-wave i.est {
-  background: transparent; /* not synthesized yet — estimated */
-  box-shadow: inset 0 0 0 1px var(--line-2);
+  background: color-mix(in oklch, var(--line-2) 40%, transparent); /* not synthesized yet */
 }
 .kit .mini-player .mp-wave i.on {
   background: var(--accent); /* played */
-  box-shadow: none;
 }
 .kit .mini-player .mp-wave.playing i {
   animation: kit-mp-bar 1.1s ease-in-out infinite;

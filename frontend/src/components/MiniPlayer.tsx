@@ -14,10 +14,11 @@ import { useNowPlaying } from "../hooks/useAppChrome";
 //
 // D63 amendment — the bar spans the WHOLE reply, so it grows a THIRD state (the buffered-range
 // convention YouTube/SoundCloud use): accent = played · `--line-2` fill = synthesized, unplayed ·
-// OUTLINE-ONLY = a chunk that has not been synthesized yet, which is also what makes the queue's
+// FAINT fill = a chunk that has not been synthesized yet, which is also what makes the queue's
 // synth-ahead visibly crawl along the track. That last one reads off the controller's chunk map.
+// (The amendment's hollow-outline rendering was retired with the slimmer bars — kit.css has the why.)
 
-const BAR_COUNT = 32;
+const BAR_COUNT = 48;
 // Deterministic pseudo-random in [0,1) — keeps the pattern fixed (never reshuffles between renders).
 const rand = (n: number): number => {
   const x = Math.sin(n * 12.9898) * 43758.5453;
@@ -109,7 +110,7 @@ export function MiniPlayer() {
       >
         {BARS.map((b, i) => (
           // A bar is "played" (accent) once the clip's progress passes its center, else "estimated"
-          // (hollow) while the audio under it has not been synthesized — the three states are mutually
+          // (faint) while the audio under it has not been synthesized — the three states are mutually
           // exclusive, in that precedence. Its own delay + duration (set inline) desync the scaleY
           // shimmer (CSS, while playing) so the bars bounce independently rather than the whole
           // silhouette stretching together.
