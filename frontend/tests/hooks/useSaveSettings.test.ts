@@ -81,7 +81,7 @@ describe("useSaveSettings · 409 handling (FX15)", () => {
 describe("useSaveSettings · composer refresh on success (SYS-9.2)", () => {
   it("a successful save refreshes both the provider verbs and the `/agent` set", async () => {
     h.put.mockResolvedValue({
-      settings: {},
+      settings: { notifications: { enabled: false, events: {} } },
       restart_required: [],
       warnings: [],
       providers_rev: "r",
@@ -104,7 +104,7 @@ describe("useSaveSettings · notification prefs invalidation (F1)", () => {
       createElement(QueryClientProvider, { client }, children);
 
     h.put.mockResolvedValue({
-      settings: {},
+      settings: { notifications: { enabled: true, events: {} } },
       restart_required: [],
       warnings: [],
       providers_rev: "r",
@@ -125,6 +125,9 @@ describe("useSaveSettings · notification prefs invalidation (F1)", () => {
     const localWrapper = ({ children }: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client }, children);
 
+    // A deliberately PARTIAL events echo (an older backend's shape): the seed must field-merge the
+    // defaults — the third read boundary — so the explicit `false` survives while the keys the
+    // echo never mentioned come back default-ON.
     const echoed = {
       enabled: true,
       events: { agent_input: true, turn_done: false, action_failed: true },
@@ -139,6 +142,15 @@ describe("useSaveSettings · notification prefs invalidation (F1)", () => {
     result.current.mutate({ notifications: { enabled: true, events: { turn_done: false } } });
     await waitFor(() => expect(h.loadProviders).toHaveBeenCalled());
 
-    expect(client.getQueryData(["notification-prefs"])).toEqual(echoed);
+    expect(client.getQueryData(["notification-prefs"])).toEqual({
+      enabled: true,
+      events: {
+        agent_input: true,
+        turn_done: false, // the explicit false from the echo survives the merge
+        action_failed: true,
+        automation_done: true, // absent from the echo — filled default-ON
+        host_up_down: true, // absent from the echo — filled default-ON
+      },
+    });
   });
 });

@@ -159,14 +159,19 @@ export function notifyForEvent(raw: string): void {
     });
     return; // never also under `action_failed` — see RUN_TERMINALS
   }
-  const host = HOST_TRANSITIONS[str(ev.action)];
+  // `hasOwn`: the action is an unrestricted wire string, and a bare lookup would let an inherited
+  // key ("constructor", "toString") into the arm with a function for a title.
+  const hostAction = str(ev.action);
+  const host = Object.hasOwn(HOST_TRANSITIONS, hostAction)
+    ? HOST_TRANSITIONS[hostAction]
+    : undefined;
   if (host) {
     const where = str(ev.target);
     publishNotify({
       cls: "host_up_down",
       // The Event id again: two genuine transitions of one host (down, then up) must BOTH notify, so
       // the key names the occurrence, not the host — only a re-delivered frame is silenced.
-      key: `event:${str(ev.id) || `${str(ev.action)}:${where}`}`,
+      key: `event:${str(ev.id) || `${hostAction}:${where}`}`,
       title: host,
       // The frame carries no friendly name, and in this app the host id IS the human name (corsair,
       // emma…) — so the body stays pure, with no query-cache lookup.

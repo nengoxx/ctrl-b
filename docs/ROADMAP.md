@@ -807,8 +807,9 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 > `client.focus()` may not foreground an installed PWA there — the routing deliberately does not
 > ride on `focus()` succeeding.) **Channel 1 is fully closed — delivery AND tap routing.**
 >
-> **HOST UP/DOWN CLASS ✅ BUILT 2026-08-21** (council-closed, Hermes emma lane; 1 MED folded — both
-> frontend read boundaries field-merge the events dict against the class defaults, so a payload that
+> **HOST UP/DOWN CLASS ✅ BUILT 2026-08-21** (council-closed, Hermes emma lane; 1 MED folded — all
+> three frontend read boundaries (prefs query · Conf draft pick · PUT-echo cache seed) field-merge
+> the events dict against the class defaults, so a payload that
 > predates a class reads as ON, not silently OFF): `host_up_down` — ONE class for both directions,
 > matched on the Event ACTION name (never `status`), default ON, a Conf group-11 row, tap → the
 > FLEET tab through the R45 router (`focus:"fleet"` → `/?tab=fleet`). Backend = one additive
