@@ -5,6 +5,7 @@ import { loadAgents, loadProviders } from "../lib/composer";
 import { pushToast } from "../store/toast";
 import type { McpServer, OpenApiServer } from "./useIntegrations";
 import type { NotificationEvents } from "./useNotificationPrefs";
+import { withEventDefaults } from "./useNotificationPrefs";
 import { useScopedQuery } from "./useScopedQuery";
 
 // Phase 7a. The settings doc is the whole masked config; the Conf forms read/write the slices they
@@ -281,7 +282,7 @@ export function useSaveSettings() {
       //
       // Known residual (owner-declined: no polling, no SSE-driven invalidation): this fixes the device
       // that saved. ANOTHER open device keeps its cached prefs until its next refetch trigger.
-      qc.setQueryData(["notification-prefs"], res.settings.notifications);
+      qc.setQueryData(["notification-prefs"], withEventDefaults(res.settings.notifications));
       void qc.invalidateQueries({ queryKey: ["notification-prefs"] });
       void qc.invalidateQueries({ queryKey: ["providers"] }); // D48 — a save may add/rename/drop providers (fresh names/warnings)
       void loadProviders(); // refresh the composer's module-level `/<provider>` verb set (best-effort)
