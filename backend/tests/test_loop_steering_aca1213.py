@@ -11,6 +11,9 @@ Drives `_run_calls` / `_parse_args` / `MessageRepo.list` directly (no model) to 
            silent-`{}` path (a legitimate zero-arg call shape).
   ACA-20 — `MessageRepo.list` breaks a `ts` tie by `rowid` (insertion order), so a collision can't
            reorder a step's messages.
+  D64 §2.7b — the exact-repeat suppression carries the prior call's ERROR (never a prior success's
+           output) into the steering text. Shared-loop behaviour, so it is pinned HERE, for an
+           ordinary tool, by driving the real call path — not by re-rendering the prompt.
 
 Each test runs in an isolated `$CTRLB_HOME` temp workspace; the real config/db are never touched.
 """
@@ -132,6 +135,20 @@ def _stub_flapping(session):
 
     session._actions.invoke = _fake  # type: ignore[method-assign]
     return n
+
+
+def _stub_error(session, *, summary: str = "boom", error: str = "the host refused the connection"):
+    """`ActionService.invoke` returning the SAME failure every time — the shape a model retries."""
+    from app.domain.enums import RunState
+    from app.domain.result import ToolResult
+    from app.services.action_service import InvokeOutcome
+
+    async def _fake(name, args, **kw):
+        return InvokeOutcome(
+            needs_confirm=False, result=ToolResult(state=RunState.ERROR, summary=summary, error=error)
+        )
+
+    session._actions.invoke = _fake  # type: ignore[method-assign]
 
 
 def _result_event(events):
@@ -369,6 +386,63 @@ def test_list_breaks_ts_tie_by_insertion_order() -> None:
                 ids.append(m.id)
             got = [m.id for m in _run(s.messages.list(thread.id))]
             assert got == ids  # rowid tiebreak → insertion order, never an undefined shuffle
+
+
+# ── D64 §2.7b · the repeat suppression carries the prior ERROR ──────────────────────────────────
+
+
+def test_repeat_suppression_carries_the_prior_error() -> None:
+    """The incident's third `delete` attempt was answered by "you already ran this exact call" and
+    nothing else — the refusal it was reacting to had been deleted from the loop's own reply. The
+    suppression now renders the prior ERROR through the `repeat_suppressed` prompt's `{{details}}`
+    slot, so a model that repeats a FAILING call still reads why it failed.
+
+    Driven through the real call path, for an ordinary tool: this is shared-loop behaviour for every
+    tool, and a test that re-rendered the prompt itself would stay green if `session.py` quietly
+    stopped passing the error."""
+    with _workspace():
+        with _client() as c:
+            from app.services.agent.session import _LoopGuard
+
+            session = _session(c)
+            _stub_error(session)
+            guard = _LoopGuard(max_repeat=1, max_per_tool=10)  # the SECOND identical call is suppressed
+            args = {"host_id": "a"}
+
+            t1, a1, _ = _assistant_with_call(c, session, tool="ping_host", args=args)
+            first = _result_event(drain_run_calls(session, t1, a1, {}, guard)[0]).data["result"]
+            assert first["state"] == "error" and "refused the connection" in first["error"]
+
+            t2, a2, _ = _assistant_with_call(c, session, tool="ping_host", args=args)
+            events, _suspended, progress = drain_run_calls(session, t2, a2, {}, guard)
+            second = _result_event(events).data["result"]
+            assert second["summary"].startswith("(repeat suppressed)")
+            assert progress is False  # a suppression is still not progress
+            # The steering text the model reads carries the refusal it was reacting to.
+            assert "the host refused the connection" in second["output"]
+            assert "Do not repeat it" in second["output"]  # …beside the standing instruction
+
+
+def test_repeat_suppression_does_not_echo_a_prior_success_output() -> None:
+    """The other half of the rule: a repeated call that SUCCEEDED carries nothing extra. Its output
+    is already in the transcript, so re-sending it would pay context for a duplicate."""
+    with _workspace():
+        with _client() as c:
+            from app.services.agent.session import _LoopGuard
+
+            session = _session(c)
+            _stub_ok(session, summary="pong", output="host is up")
+            guard = _LoopGuard(max_repeat=1, max_per_tool=10)
+            args = {"host_id": "a"}
+
+            t1, a1, _ = _assistant_with_call(c, session, tool="ping_host", args=args)
+            drain_run_calls(session, t1, a1, {}, guard)
+            t2, a2, _ = _assistant_with_call(c, session, tool="ping_host", args=args)
+            second = _result_event(drain_run_calls(session, t2, a2, {}, guard)[0]).data["result"]
+
+            assert second["summary"] == "(repeat suppressed) pong"
+            assert "host is up" not in second["output"]  # the prior OUTPUT is never carried
+            assert second["output"].endswith("give your final answer.")  # the bare standing text
 
 
 if __name__ == "__main__":

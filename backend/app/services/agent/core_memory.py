@@ -146,20 +146,40 @@ class CoreTopic:
     description: str
     type: str | None  # one of `_TOPIC_TYPES`, or None (untyped, still valid)
     nested: bool = False  # the copied-Claude shape: `metadata: {name, description, type}`
+    #: The file's full decoded length (D64 §2.7e). Free — the scan already read every byte to parse
+    #: the frontmatter — and it is what turns "how big is this corpus" from a guess into a number:
+    #: `CoreStatus.oversized` derives from it, and the delete guard reads it to tell "keep reading"
+    #: apart from "no turn can ever read this".
+    chars: int = 0
 
 
 @dataclass(frozen=True)
 class CoreRead:
-    """One `read` result: the topic text clamped to `topic_char_limit` CHARACTERS (chars, not bytes —
-    R40 §19-3; plain `str` slicing never splits a codepoint), plus the content hash that is `delete`'s
-    expected-state token (council Codex-3) and the full on-disk length so the model can see what was
-    cut."""
+    """One PAGE of a topic (D64 §2.1): the lines from `first_line` to `last_line` of a file that has
+    `lines` lines and `chars` characters. A page ends at whichever trips first — the caller's `limit`
+    in lines or `topic_char_limit` in CHARACTERS (chars, not bytes — R40 §19-3) — with one overriding
+    rule: **pages break only at line boundaries, and a single line longer than the page budget is
+    emitted WHOLE**. That is the honesty rule: a partial line would advertise coverage of bytes the
+    model was never sent, and coverage is what authorizes a `delete`.
+
+    `content_hash` (sha256 of the file's raw bytes) is INTERNAL — the tool layer records it beside
+    the coverage it banks, and the freshness check at delete time compares against it. It never
+    reaches the model (D64 §2.4: the model carries no tokens), which is also why it is computed from
+    the SAME buffer the text was decoded from: hashing a re-opened file would let a write landing
+    between the two bank version B's identity for version A's text."""
 
     path: str
-    text: str
-    content_hash: str
+    text: str  # the page, an exact substring of the file
+    content_hash: str  # internal only — never model-facing (D64 §2.4)
     chars: int  # the full decoded length on disk
-    truncated: bool
+    lines: int  # the file's total line count
+    first_line: int  # 1-based; equals `offset`
+    last_line: int  # 1-based, inclusive; 0 for the empty-file page
+
+    @property
+    def complete(self) -> bool:
+        """Did this ONE page carry the whole topic? (An empty file's only page does.)"""
+        return self.first_line == 1 and self.last_line == self.lines
 
 
 @dataclass(frozen=True)
@@ -191,19 +211,77 @@ class _WriteOutcome:
     chars: int = 0
 
 
-@dataclass
-class RecallBudget:
-    """The per-LOGICAL-TURN recall budget (§4, council Codex-11). Mutable and threaded exactly like
-    the session's prompt stamps: the session owns one, `ActionService.invoke` carries it onto the
-    `InvocationContext`, and every `read`/`search` adds the length of its COMPLETE framed output.
-    The limit itself is not stored — it is read live from `CoreMemoryCfg.recall_char_limit` at check
-    time, so an owner edit applies mid-turn like every other cap.
+@dataclass(frozen=True)
+class ReadCoverage:
+    """How much of ONE topic this turn has actually been shown (D64 §2.2). `seen` is a MONOTONE
+    HIGH-WATER MARK — the last line of the longest contiguous prefix `[1..seen]` the model received
+    — under the `hash` those pages were read at. An int rather than a range set because it answers
+    the only question ever asked (is the whole file covered under one hash), serializes trivially,
+    and cannot accumulate garbage. Accepted trade: pages read out of order bank nothing, since the
+    read marker always steers sequentially and a model that jumps simply re-reads."""
 
-    It survives a suspend/resume because the resumed session SEEDS `used` from the persisted
+    hash: str
+    total_lines: int
+    seen: int
+
+    @property
+    def complete(self) -> bool:
+        return self.seen >= self.total_lines
+
+
+@dataclass
+class RecallState:
+    """What this LOGICAL TURN has recalled (§4, council Codex-11; D64 §2.2). Mutable and threaded
+    exactly like the session's prompt stamps: the session owns one, `ActionService.invoke` carries it
+    onto the `InvocationContext`, and every `read`/`search` adds the length of its COMPLETE framed
+    output to `used`. The limit itself is not stored — it is read live from
+    `CoreMemoryCfg.recall_char_limit` at check time, so an owner edit applies mid-turn like every
+    other cap.
+
+    `reads` is the second dimension of the same fact (D64: one object the house rule extends rather
+    than a sibling map — same owner, lifetime, threading and reseed walk): per topic path, the
+    coverage the turn has EARNED. It is what authorizes a `delete`, which is why the model never
+    carries a token of its own — the server's own record of what it sent is the authority.
+
+    Both survive a suspend/resume because the resumed session re-seeds them from the persisted
     core-memory results of the same logical turn (`AgentSession._seed_recall`) — a confirmation
-    round-trip must not hand the model a fresh allowance."""
+    round-trip must not hand the model a fresh allowance, nor a fresh right to destroy."""
 
     used: int = 0
+    reads: dict[str, ReadCoverage] = field(default_factory=dict)
+
+    def bank(
+        self, path: str, content_hash: str, total_lines: int, first_line: int, last_line: int
+    ) -> ReadCoverage:
+        """Record one ACCEPTED page (the caller charges the budget first — a page the model never
+        saw banks nothing, D64 §2.2). Coverage advances only when the page starts at `seen + 1` or
+        earlier; a page observed under a DIFFERENT hash resets that path first, because the file
+        changed and everything read before it describes a topic that no longer exists."""
+        prior = self.reads.get(path)
+        seen = prior.seen if prior is not None and prior.hash == content_hash else 0
+        if first_line <= seen + 1:
+            seen = max(seen, last_line)
+        coverage = ReadCoverage(hash=content_hash, total_lines=total_lines, seen=seen)
+        self.reads[path] = coverage
+        return coverage
+
+    def restore(self, receipt: object) -> None:
+        """Adopt one persisted read receipt (D64 §2.2) — the suspend/resume half of `bank`. The
+        receipt is opaque JSON replayed out of the DB, so EVERY field is checked before it can grant
+        anything: a row written by another build, or hand-edited, must not be able to mint coverage.
+        The latest receipt for a path wins, which is exactly right — `seen` is monotone per hash, so
+        the last one carries the final high-water mark (a hash change included)."""
+        if not isinstance(receipt, dict):
+            return
+        path, digest = receipt.get("path"), receipt.get("hash")
+        total, seen = receipt.get("total_lines"), receipt.get("seen")
+        if not isinstance(path, str) or not path or not isinstance(digest, str) or not digest:
+            return
+        if not isinstance(total, int) or isinstance(total, bool) or total < 0:
+            return
+        if not isinstance(seen, int) or isinstance(seen, bool) or not 0 <= seen <= total:
+            return
+        self.reads[path] = ReadCoverage(hash=digest, total_lines=total, seen=seen)
 
 
 @dataclass(frozen=True)
@@ -237,6 +315,11 @@ class CoreStatus:
     index_char_limit: int
     index_pct: int
     consolidation_nudge_pct: int
+    #: How many topics are longer than `topic_char_limit` — i.e. how many take more than one page to
+    #: read (D64 §2.7e). Derived from the scan on every call, so it is restart-correct and carries no
+    #: lifecycle: it answers the sizing question ("is my cap too small for this corpus?") directly,
+    #: which is what the rejected read-counter would only have hinted at.
+    oversized: int
 
 
 _EMPTY_SCAN = CoreScan()
@@ -450,6 +533,7 @@ class CoreMemoryCorpus:
             # `metadata.*`. Top-level wins on conflict when reading, so it wins as a vote too, and a
             # file carrying neither key votes top-level — which is also the tie default.
             nested=not _has_any(meta, ("name", "description")) and _has_any(nested, ("name", "description")),
+            chars=len(raw),
         )
 
     def _warn_file(self, rel: str, why: str) -> None:
@@ -506,7 +590,14 @@ class CoreMemoryCorpus:
             index_char_limit=cap,
             index_pct=_pct(len(block), cap),
             consolidation_nudge_pct=self._cfg.consolidation_nudge_pct,
+            oversized=sum(1 for topic in scan.topics if topic.chars > self._cfg.topic_char_limit),
         )
+
+    def topic_chars(self, rel: str) -> int:
+        """One topic's full length from the last scan, or 0 when it isn't there (D64 §2.3). The
+        delete guard compares it against `recall_char_limit` to tell a model that must keep reading
+        from one facing a topic NO turn can read — a distinction only the sizes can make."""
+        return next((topic.chars for topic in self.scan().topics if topic.path == rel), 0)
 
     # ── confinement (§5, council Codex-2) ─────────────────────────────────────────────────────────
 
@@ -542,14 +633,22 @@ class CoreMemoryCorpus:
 
     # ── recall (§5: read + search) ────────────────────────────────────────────────────────────────
 
-    def read_topic(self, raw_path: str) -> CoreRead:
-        """One topic, clamped to `topic_char_limit` characters. Read-only: nothing here writes, and
-        the returned `content_hash` (sha256 of the file's raw bytes) is what `delete` must echo back.
+    def read_topic(self, raw_path: str, offset: int = 1, limit: int | None = None) -> CoreRead:
+        """One PAGE of one topic, starting at the 1-based line `offset` (D64 §2.1). Read-only:
+        nothing here writes.
 
         ONE read of the bytes, hashed and decoded from that single buffer: reading the text and then
-        re-opening the file to hash it would let a write landing between the two hand the model
-        version A's text with version B's delete token — a stale delete that passes the CAS gate."""
+        re-opening the file to hash it would let a write landing between the two bank version B's
+        identity for version A's text — coverage that authorizes deleting something else.
+
+        Two refusals, each naming the fact the model needs to fix the call: an `offset` below 1, and
+        an `offset` past the last line, which states the REAL line count. An EMPTY file is the one
+        exception carved into the second: its `offset=1` page is complete and carries nothing (so a
+        blank topic can be covered, and deleted); any other offset takes the past-the-end refusal
+        with a truthful "0 line(s)"."""
         path, rel = self._confine(raw_path)
+        if offset < 1:
+            raise CoreMemoryError(f"`offset` is a 1-based line number — {offset} is not one.")
         try:
             data = path.read_bytes()
         except OSError:
@@ -560,14 +659,44 @@ class CoreMemoryCorpus:
             raise CoreMemoryError(
                 f"{rel} is not readable as UTF-8 text — fix the file by hand before reading it."
             ) from None
+        # Endings are KEPT, so the joined page is an exact substring of the file and the char
+        # accounting the marker prints is the accounting the model was actually charged for.
+        lines = raw.splitlines(keepends=True)
+        if offset > len(lines) and not (offset == 1 and not lines):
+            raise CoreMemoryError(
+                f"{rel} has {len(lines):,} line(s) — `offset` {offset:,} is past the end. "
+                "Read from `offset` 1, or continue at the line the last page's marker named."
+            )
         cap = self._cfg.topic_char_limit
+        page: list[str] = []
+        used = 0
+        for line in lines[offset - 1 :]:
+            if limit is not None and len(page) >= limit:
+                break
+            if page and used + len(line) > cap:  # the FIRST line of a page is always emitted whole
+                break
+            page.append(line)
+            used += len(line)
         return CoreRead(
             path=rel,
-            text=raw[:cap],  # characters, not bytes — `str` slicing never splits a codepoint
+            text="".join(page),
             content_hash=hashlib.sha256(data).hexdigest(),
             chars=len(raw),
-            truncated=len(raw) > cap,
+            lines=len(lines),
+            first_line=offset,
+            last_line=offset + len(page) - 1,
         )
+
+    def current_hash(self, raw_path: str) -> str | None:
+        """The LIVE content hash of one topic, or None when no live file is there (D64 §2.3) — the
+        freshness half of the tool layer's delete guard, exposing the same `_content_hash` the
+        corpus's own CAS gate re-checks under the lock. `None` is not a failure: it is the
+        crash-retry shape (the topic is already archived and only its index line remains), which the
+        guard hands straight to `delete` — the corpus owns that branch."""
+        path, _rel = self._confine(raw_path)
+        if not path.is_file():
+            return None
+        return _content_hash(path)
 
     def search(self, query: str) -> CoreSearch:
         """Literal, case-insensitive grep over topic bodies **and** frontmatter (§5): a line matches
@@ -672,13 +801,18 @@ class CoreMemoryCorpus:
     async def delete(
         self, raw_path: str, content_hash: str, *, superseded_by: str = "", reason: str = ""
     ) -> str:
-        """SOFT-delete a whole topic (D60 ③): archive the file, drop its index line. Gated on the
-        `content_hash` `read` returned (council Codex-3: a description token both fails CAS — a body
-        can change under an unchanged description — and is unusable on a copied corpus whose
-        descriptions outrun the read cap) AND on an INTENT: exactly one of `superseded_by` (a topic
-        that must already exist — create-before-delete, enforced rather than model-disciplined) or a
-        free-text `reason`. Run 2 (§14d) issued a correctly-formed delete of a live topic whose merged
+        """SOFT-delete a whole topic (D60 ③): archive the file, drop its index line. Gated on
+        `content_hash` — a STATELESS expected-state precondition, so any caller that obtained the
+        hash itself can satisfy it (council Codex-3: a description token both fails CAS — a body can
+        change under an unchanged description — and is unusable on a copied corpus whose descriptions
+        outrun the read cap) — AND on an INTENT: exactly one of `superseded_by` (a topic that must
+        already exist — create-before-delete, enforced rather than model-disciplined) or a free-text
+        `reason`. Run 2 (§14d) issued a correctly-formed delete of a live topic whose merged
         replacement had been cap-denied one turn earlier; CAS validates form, and form was not enough.
+
+        The MODEL never supplies the hash (D64 §2.3): `core_memory_tool._delete_gate` supplies it
+        from the turn's own read coverage. This signature is deliberately unchanged by that — the
+        precondition belongs to the corpus, the read-state rail belongs to the one model-facing door.
 
         Ordering (§15b-4): validate everything → rename into `.archive/` → atomic-replace the index;
         an index failure renames the topic BACK, so the pair never half-lands. A crash between the two
@@ -761,6 +895,16 @@ class CoreMemoryCorpus:
                 f"{rel} already exists with different content — read it and `update` it instead of "
                 "creating a second topic for the same thing."
             )
+        # The LEGACY TWIN (D64 §2.7a): before the `.md` strip, a name like "wake.md" slugged to
+        # `wake-md.md`. If that file is on disk, this create would open a SECOND topic for the same
+        # subject under a better name — the duplicate the check above exists to prevent, one rename
+        # away from being invisible. Refuse and point at the twin; renaming it is the owner's call.
+        twin = _slug(name, legacy=True)
+        if not occupied and twin is not None and twin != rel and (root / twin).is_file():
+            raise CoreMemoryError(
+                f"{twin} already covers this topic (it was created under the older filename rule) — "
+                f"read it and `update` it instead of creating {rel} beside it."
+            )
         raw = _index_raw(root)
         merged: str | None = None
         if not any(target == rel for _title, target, _hook in _parse_index(raw)):
@@ -836,6 +980,15 @@ class CoreMemoryCorpus:
         if path.exists():
             # The expected-state gate, checked BEFORE either step so a stale token changes nothing.
             actual = _content_hash(path)
+            if not actual:
+                # `_content_hash` yields "" when the file is there but cannot be READ. Refuse before
+                # the comparison (review round D10): an empty expected hash would otherwise MATCH an
+                # empty actual one and authorize archiving a live file nobody — not the model, not
+                # the owner — has been able to look at.
+                raise CoreMemoryError(
+                    f"{rel} exists but cannot be read, so what it holds cannot be confirmed — fix "
+                    "the file by hand before deleting it."
+                )
             if actual != content_hash.strip().lower():
                 raise CoreMemoryError(
                     f"{rel} has changed since you read it — its content hash no longer matches the "
@@ -1173,16 +1326,24 @@ def topic_path(raw: str) -> str | None:
     return rel
 
 
-def _slug(name: str) -> str | None:
+def _slug(name: str, *, legacy: bool = False) -> str | None:
     """`create`'s derived filename: the topic name lowercased to `[a-z0-9-]+.md`. The model supplies
     a NAME, never a path (§5's structured-create rule extended to the location), so nothing it can
     write is a traversal, a dotfile or a second `MEMORY.md` — the confinement check that follows is
     the belt, this is the braces.
 
+    ONE trailing `.md` is stripped from the name first (D64 §2.7a): a model naming its topic
+    "wake.md" means the topic, not a file called `wake-md`, and the old slug spelled that misreading
+    into the corpus. `legacy=True` reproduces the pre-D64 slug so `create` can refuse over the twin
+    it may have left behind, rather than silently starting a second topic beside it.
+
     Clamped so the result is ROUTABLE: `_parse` drops an index link whose target cannot fit an entry
     line (the 7 chars of `- [x](…)` around it), so an unclamped long name would create a topic the
     index can never list — findable only by `search`."""
-    stem = _SLUG_BAD.sub("-", name.strip().lower()).strip("-")
+    text = name.strip()
+    if not legacy and text.lower().endswith(".md"):
+        text = text[: -len(".md")]
+    stem = _SLUG_BAD.sub("-", text.lower()).strip("-")
     room = _ENTRY_CHAR_LIMIT - 7 - len(".md")
     if len(stem) > room:
         stem = stem[:room].rstrip("-")  # the cut can expose a trailing separator — never keep one
@@ -1291,14 +1452,21 @@ def _append_entry(raw: str, line: str) -> str:
 
 
 def _drop_entry(raw: str, rel: str) -> str:
-    """Remove exactly the index lines that link `rel` — every other line survives byte-for-byte."""
+    """Remove exactly the index lines that link `rel`; every surviving line is preserved as it was
+    read — its own ending included, trailing blank lines included, a missing final newline included
+    (D64 §2.7c, the `_relabel` treatment applied to the removal side: the old splitlines/join rebuild
+    silently ate an owner's trailing blanks).
+
+    "As it was READ" is the honest contract, not byte-exactness: `_index_raw` reads through
+    `_read_text`, whose universal-newline decoding has already folded CRLF to LF before anything here
+    sees it — a pre-existing normalization of the whole index write path (the atomic writer forces LF
+    too), which this function cannot undo without a byte path of its own."""
     kept = [
         line
-        for line in raw.splitlines()
-        if not ((m := _INDEX_LINK.match(line)) and _link_target(m.group(2)) == rel)
+        for line in raw.splitlines(keepends=True)
+        if not ((m := _INDEX_LINK.match(line.rstrip("\r\n"))) and _link_target(m.group(2)) == rel)
     ]
-    body = "\n".join(kept).rstrip("\n")
-    return f"{body}\n" if body else ""
+    return "".join(kept)
 
 
 def _archive_move(src: Path, dest: Path) -> None:

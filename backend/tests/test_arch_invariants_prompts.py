@@ -107,16 +107,22 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         # in the `@action` description, which is `tool_overrides` territory.
         # D60 ②③ extends the same class: the delete-intent gate + its create-before-delete/
         # self-reference refusals, and the recall budget's spent-for-this-turn refusal.
+        # D64 adds the paging refusals (`read_topic`: an offset past the end / below 1) and the
+        # delete guard (`_delete_gate`: no read state, no/partial coverage with the exact next
+        # offset, a topic no turn can read) — all facts about THIS call, computed from this turn's
+        # own read record, so none of them is a standing instruction the registry could carry.
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._confine"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._create_blocking"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._delete_blocking"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._guard_secrets"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._require_supersedes"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus.delete"),
+        ("app/services/agent/core_memory.py", "CoreMemoryCorpus.read_topic"),
         ("app/services/agent/core_memory.py", "_cas"),
         ("app/services/agent/core_memory.py", "_delete_note"),
         ("app/services/agent/core_memory.py", "_index_raw"),
         ("app/services/agent/core_memory_tool.py", "_charge"),
+        ("app/services/agent/core_memory_tool.py", "_delete_gate"),
         ("app/services/agent/core_memory_tool.py", "gate_core_memory"),
         ("app/services/agent/memory.py", "FileMemoryProvider._merge"),
         ("app/services/agent/memory.py", "MemoryCapError.__init__"),

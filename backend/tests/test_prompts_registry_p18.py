@@ -83,8 +83,10 @@ _GOLDEN: dict[str, tuple[dict[str, str], str]] = {
         "The owner already rejected this exact call this turn. It was NOT run. Do not ask again — "
         "continue without it or give the owner your final answer.",
     ),
+    # D64 §2.7b: `{{details}}` carries the prior call's error; empty here, so the golden still pins
+    # the exact pre-D64 text for the (commonest) suppression of a call that had succeeded.
     "repeat_suppressed": (
-        {},
+        {"details": ""},
         "You already ran this exact call. Do not repeat it — use the previous result, try a different "
         "approach, or give your final answer.",
     ),
@@ -193,8 +195,9 @@ _GOLDEN: dict[str, tuple[dict[str, str], str]] = {
         "Never rewrite a whole topic through `update`: `update` and `remove` take an exact quoted "
         "passage plus its path, so a reconstructed whole-file body cannot be expressed and will be "
         "refused. Keep tool calls to at most 3 per batch, so you read each result before deciding "
-        "the next. If a read comes back truncated, work from what it shows or narrow it with "
-        "`search` — never reconstruct a topic from a fragment.\n\n"
+        "the next. If a read comes back PARTIAL, continue at the offset its marker names; NEVER "
+        "create a merged topic from, or delete, a source you have not fully read — if this turn's "
+        "budget cannot cover the family, STOP and report which sources remain unread.\n\n"
         "Finish with a delta report: what you merged, what you rewrote, what you deleted, each "
         "with its path — and say plainly if you stopped early or ran out of budget.",
     ),
@@ -228,8 +231,10 @@ _GOLDEN: dict[str, tuple[dict[str, str], str]] = {
         "Report the plan instead, for the ONE family you would do first: which topics overlap "
         "(paths), what the merged topic would say and what its hook would be, which sources you "
         "would delete and which path each would name as `superseded_by`, and anything you found "
-        "that you would NOT touch and why. Name what you could not see — a truncated read, a topic "
-        "the index hides — so I can judge the plan before you run it.",
+        "that you would NOT touch and why. A read that comes back PARTIAL continues at the offset "
+        "its marker names; NEVER propose merged content for, or deletion of, a source you have not "
+        "fully read. Name what you could not see — a topic left unread when the budget ran out, a "
+        "topic the index hides — so I can judge the plan before you run it.",
     ),
 }
 

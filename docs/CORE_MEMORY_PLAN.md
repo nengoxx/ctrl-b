@@ -209,12 +209,13 @@ both lines itself and needs nothing.)
 - **Topic content** enters as ordinary **tool results** (visible, persisted, replay-stable —
   ACA-frozen like every tool result). Each `read`/`search` result is framed by the
   `core_memory_recall` registry prompt (the P3 wrapper: source path, staleness note, data-not-
-  instructions). Per-read caps: `topic_char_limit` (default 4,096 **characters** — deliberately
-  chars, not Claude's UTF-16 code-unit "bytes" [R40 §19-3]; Unicode boundary tested) and a
-  per-turn total (`recall_char_limit`, default 20,480 chars) — the budget counts the **complete
-  framed tool output** and is carried across suspend/resume within one logical turn (persisted
-  pre-suspend results included), not reset by a confirmation-resume session rebuild (council
-  Codex-11).
+  instructions). Per-PAGE caps (D64 §2.1 — `read` pages; `topic_char_limit` is the page budget):
+  `topic_char_limit` (default 4,096 **characters** — deliberately chars, not Claude's UTF-16
+  code-unit "bytes" [R40 §19-3]; Unicode boundary tested) and a per-turn total
+  (`recall_char_limit`, default **24,576** since D64 §2.5, was 20,480) — the budget counts the
+  **complete framed tool output**, once per page, and is carried across suspend/resume within one
+  logical turn (persisted pre-suspend results included), not reset by a confirmation-resume session
+  rebuild (council Codex-11).
 - **Cap pressure** reuses the tier-1 pattern: at `consolidation_nudge_pct` of the index cap, the
   index header names the pressure; the nudge steers the model (and owner) toward §5 consolidation
   (no topic-count threshold — §3). No scheduled anything in v1 (§10 banks the arm).
@@ -312,10 +313,13 @@ allowlists can exclude it; declares `timeout_s` — the fail-closed deadline tes
   unique-substring match (the tier-1 F6 rule *and* the vault's compare-and-swap requirement — same
   mechanism, already proven in `memory.py:_merge`); stale/ambiguous ⇒ steering ERROR, never a
   silent overwrite;
-- `delete(path, content_hash, superseded_by | reason)` — whole topic + its index line; the token is
-  the hash `read` returned (council Codex-3 — a description token both fails CAS, since a body can
-  change under an unchanged description, and is unusable on the copied corpus, whose p100
-  description is 6,337 chars against a 4,096-char read cap). **D60 ③ adds the INTENT gate + the soft
+- `delete(path, superseded_by | reason)` — whole topic + its index line. **The MODEL-facing shape
+  since D64 §2.3**: no token of any kind. The corpus method keeps its stateless
+  `delete(path, content_hash, …)` precondition (council Codex-3 — a description token both fails
+  CAS, since a body can change under an unchanged description, and is unusable on the copied corpus,
+  whose p100 description is 6,337 chars against a 4,096-char read cap), and the TOOL supplies that
+  hash from the turn's own read coverage: freshness first, then "the whole topic was read this
+  turn", then the corpus's lock-held re-check. No `RecallState` ⇒ fail closed. **D60 ③ adds the INTENT gate + the soft
   delete**: exactly one of `superseded_by` (a topic that must already exist on disk — create-before-
   delete, self-reference refused) or a sanitized one-line `reason`; the topic is then RENAMED into
   `<root>/.archive/<its relative path>` rather than unlinked (the scan skips dotted components, so
@@ -401,8 +405,8 @@ memory:
     core:
       root: core               # relative → under memories_dir; absolute honored (unversioned)
       index_char_limit: 10240  # D61 ④ (was 8192)
-      topic_char_limit: 4096
-      recall_char_limit: 20480
+      topic_char_limit: 4096   # also the per-PAGE budget (D64)
+      recall_char_limit: 24576 # D64 §2.5 (was 20480)
       consolidation_nudge_pct: 80
 ```
 
@@ -1255,3 +1259,182 @@ dry` re-sent through the verb with `auto_write` OFF → **qwen3.6-max answered w
 exhausted recall budget gracefully, produced the full §5-shape report); settings restored, zero
 writes. **D61 is exercised end to end — nothing owed.**
 
+
+## 17. D64 — honest reads + the server-side delete guard (spec of record + as-built, 2026-08-21)
+
+> **LOCKED as D64** (DECISIONS) after the 2026-08-21 incident, a full council round (Emma
+> correctness: 3 HIGH · 5 MED · 1 LOW; an adversarial Opus architecture round: F1–F9 + a confirm
+> pass) and the owner directive *"fix it forever, lean, no model overload"*. Every finding folded,
+> none overruled. Evidence: the incident forensics, R53, and the owner's Maia vault (Claude Code's
+> memory source specification + the Hermes Core Memory v1 contract). **Amends D60's guarded-delete
+> clause; everything else in D57/D60/D61 stands.**
+
+**The incident.** A model was handed a truncated topic, spliced the `content_hash` out of the read
+head, and deleted a topic it had seen a third of. Two defects, one principle: a read that stops
+without a way to continue is dishonest, and a destroy-token the MODEL carries is a token the model
+can carry incorrectly. All three field sources converge on the same answer — Claude Code's
+`readFileState`, Hermes v1's complete-read-minted write token, the Emma audit's coverage grant:
+**authority to destroy is minted from complete reads and enforced by the server's own records.**
+
+### 17.1 What was built
+
+**① Paged reads (§2.1).** `read` gains `offset` (1-based line, default 1) and `limit` (lines,
+optional). A page ends at whichever trips first — `limit` lines or `topic_char_limit` chars — with
+one overriding rule: **pages break only at line boundaries, and a single line longer than the page
+budget is emitted WHOLE**. That is the honesty rule (a partial line would advertise coverage of
+characters never sent). The empty file's `offset=1` page is complete; any other offset refuses;
+past-EOF refuses with the real line count. The marker carries FACTS ONLY —
+`path (PARTIAL: lines 1-24 of 45 — 632 of 1,832 chars) · continue: read offset=25` — and a complete
+read gets a plain head with no hash line. No per-page policy prose: the incident model read the old
+truncation note and merged anyway, so prose the budget pays for every page was replaced by a rail.
+
+**② `RecallBudget` → `RecallState` (§2.2).** The renamed object gains `reads: dict[str,
+ReadCoverage]` — the house shape-to-extend rule, one object rather than a sibling map (same owner,
+lifetime, threading and reseed walk). `ReadCoverage{hash, total_lines, seen}` is a MONOTONE
+HIGH-WATER MARK: `seen` advances only when an accepted page starts at `seen + 1` or earlier, and a
+page observed under a different hash resets that path. **The mint point is budget ACCEPTANCE** — a
+page the model never received banks nothing. Suspend/resume rides an opaque receipt in
+`ToolResult.data` (persisted verbatim with the parts; never model-facing), replayed in transcript
+order by `_seed_recall` and re-validated field by field — never parsed out of the human marker.
+Coverage is TURN-scoped, and the recorded reason is not staleness (freshness is re-checked at delete
+time regardless): past a turn boundary "has read" stops implying "can still see", because §15b-6/7
+guarantee only current-turn tool outputs survive the lossy context tiers.
+
+**③ The delete guard (§2.3).** The corpus keeps `delete(path, expected_hash, *, superseded_by |
+reason)` — a stateless precondition any caller can satisfy — and the D60 crash-retry index-only
+branch is untouched. The TOOL layer, the only model-facing door, checks in order: **freshness**
+(the live hash vs the coverage's, mismatch → "read it again (offset=1)" + that path's coverage
+dropped), then **coverage** (`seen == total_lines`, else the exact next offset), then calls the
+corpus. No `RecallState` ⇒ fail closed. A topic bigger than one turn's `recall_char_limit` steers to
+the OWNER's hands, never to raising the cap (that cap also protects small-context models). No live
+file ⇒ pass through to the corpus, which owns the crash-retry repair.
+
+**④ The model-facing protocol shrinks (§2.4).** `content_hash` leaves the tool schema and the read
+head. Delete = read (paging as steered) → `delete(path, superseded_by)`.
+
+**⑤ `recall_char_limit` 20,480 → 24,576 (§2.5).** Content-only arithmetic was one step short: the
+budget charges the FRAMED output and paging pays the `core_memory_recall` frame once per page.
+MEASURED (`test_core_memory_paging_d64.py`): the §14f family (17,183 chars of sources, 4 topics)
+costs **20,086 framed chars — 98% of the old 20,480 cap, 82% of the new one** (an 18% margin
+against the ≥10% the design demands). Iterations, same family at shipped caps: **7 pages + 1
+`create` + 4 `delete`s = 12 calls of `max_iterations` 16.** A default change, not a knob — an owner
+config with an explicit value keeps it.
+
+**⑥ The two consolidation clauses (§2.6, same commit).** Both shipped defaults contradicted the new
+rail ("if a read comes back truncated, work from what it shows"; the dry-run's "a truncated read" as
+the unseeable). Corrected to: continue at the offset the marker names; NEVER merge from or delete a
+source not fully read; if the budget cannot cover the family, stop and report which sources remain
+unread. Goldens mirrored. A factual correction to shipped text — the owner's consolidation design
+session still owns the procedure's SHAPE.
+
+**⑦ Riders (§2.7).** `_slug` strips ONE trailing case-insensitive `.md` (a model naming its topic
+"wake.md" meant the topic, not `wake-md`), and `create` refuses when the legacy `<x>-md.md` twin is
+on disk ("update it instead") · repeat-suppression carries the prior **ERROR** through a
+`{{details}}` slot on the `repeat_suppressed` registry text — a shared-loop change for EVERY tool,
+because a suppression that hides the refusal the model was reacting to redirects it nowhere ·
+`_drop_entry` preserves every surviving line as it was read, trailing blanks included, and its
+docstring now states the (pre-existing, whole-path) LF normalization instead of claiming
+byte-exactness · `CoreTopic.chars` (free — the scan already reads every byte) derives
+`CoreStatus.oversized`, which answers the sizing question directly and replaces the rejected counter
+· the partial-prefix `old_text` CAS behaviour is pinned by test.
+
+**Where it landed.** `core_memory.py` (`ReadCoverage`/`RecallState`, `CoreRead` page fields +
+`complete`, paged `read_topic`, `current_hash`, `topic_chars`, `CoreTopic.chars`,
+`CoreStatus.oversized`, `_slug(legacy=)` + the twin refusal in `_create_blocking`, `_drop_entry`) ·
+`core_memory_tool.py` (`offset`/`limit` in and `content_hash` out of the schema, `_read_result`'s
+heads, `_delete_gate`, the receipt in `_recalled`, `RECALL_RECEIPT`) · `session.py` (the rename, the
+receipt reseed in `_seed_recall`, the `{{details}}` suppression) · `core/tool.py` +
+`action_service.py` (the rename) · `prompts.py` + the goldens · `config.py` +
+`config.example.yaml` + `ConfTab.tsx` (the 24576 default and its two mirrors). Tests: BE 1827 →
+1873 (`test_core_memory_paging_d64.py`, 44 cases; +2 shared-loop cases in
+`test_loop_steering_aca1213.py`), FE unchanged.
+
+### 17.2 Recorded non-builds
+
+No range-union coverage (a high-water int answers the only question asked) · no third per-line char
+bound (the whole-line exception instead) · no cross-turn coverage (§2.2's rationale) · no marker policy
+prose · no `{{partial}}` registry slot · no `read_full`, acknowledgement params, or model-carried
+tokens of any kind · no cap raise beyond the measured one.
+
+### 17.3 Build deviations + findings (reported by the builder)
+
+1. **`CoreRead` KEEPS `content_hash`.** §2.4/§3 say the field leaves `CoreRead`; §2.3 requires the
+   tool layer to record the hash of the page it charged, and §2.1's one-buffer rule forbids
+   re-hashing the file separately (that is exactly how version B's identity would get banked for
+   version A's text). The field therefore stays on the internal dataclass and leaves the SCHEMA and
+   the READ HEAD — which is what "the model carries no tokens" actually requires. Pinned by a test
+   asserting the hash appears in no model-facing string.
+2. **`corpus.topic_chars(rel)` was added** beyond §3's enumerated touch points: §2.3's "steer to the
+   owner" branch needs the topic's size, and reading it off the scan (via the new `CoreTopic.chars`)
+   is two lines against a second file read.
+3. **The guard raises `CoreMemoryError`** rather than returning a `ToolResult`: the tool's existing
+   handler already frames that as the steering ERROR with the right summary, so no second framing
+   path was added.
+4. **The `{{details}}` value carries its own lead-in** (`"\n\nIt returned: …"`) because a clause
+   that must VANISH when there is no prior error cannot live in a single template — the
+   `memory_cap_error` precedent, whose entire `{{details}}` prose is likewise code-supplied.
+5. **`POST /api/actions/core_memory` can no longer delete** (no `RecallState` ⇒ fail closed). That
+   is the design's intent; the corpus method remains available to a future Conf/API path that
+   obtains a hash itself.
+6. **The iteration measurement is bounded honestly.** Paging adds calls in proportion to topic SIZE,
+   so 12/16 is the ceiling for the largest real family. It says nothing about a family of very many
+   small topics — those page once each exactly as before D64, and a family big enough to exhaust 16
+   iterations that way was already unbuildable in one turn (hence the prompt's ONE-family rule).
+7. **`ToolResult.data` verified end to end**: persisted as JSON with the parts
+   (`services/conversation._PARTS`, round-trip pinned by test) and rendered nowhere owner-facing —
+   `ChatThread.tsx` reads only `data.results`/`data.proposed`/`data.automation`, and `UtilCard.tsx`
+   (which does render every key) is reached only by `ui_exposed` tools, which `core_memory` is not.
+8. **`InvocationContext` construction sites, enumerated:** exactly ONE in `app/` —
+   `ActionService._execute` (AST-pinned). Every `ActionService.invoke` caller was audited:
+   `session.py` ×2 (the serial loop + the D40 parallel prefix) thread `self._recall`; the other
+   seven pass fixed tool names that are not `core_memory` (`api/tools.py` is additionally gated on
+   `ui_exposed`) except `POST /api/actions/{name}`, which is item 5's fail-closed path. Both
+   `AgentSession` construction sites (`api/agent.py`, `subagents.py`) get a `RecallState` by
+   construction — `__init__` builds it and no caller can pass one — so subagent and
+   automation/headless turns can delete. All three facts are test-pinned.
+
+### 17.4 The review fix wave (Emma-lane blind diff round — SHIP WITH FIXES, no HIGHs)
+
+Verdict SHIP WITH FIXES; the builder's deviations D1/D3–D9/D11 were all judged right calls. Four
+items, all accepted by the main seat and all built in the same slice:
+
+1. **MED, REPRODUCED — the owner-steer classifier priced the wrong thing.** It compared RAW
+   `topic_chars` against `recall_char_limit`, but the budget charges the FRAMED page: a ~23K topic
+   under the 24,576 cap stops part-way with the next page budget-refused, and `delete` kept
+   answering "continue: read offset=N" for an offset the turn could never afford. And a topic whose
+   FIRST page is one overlong line is refused before ANY coverage exists, so the ordering
+   (coverage-missing checked first) made the owner branch unreachable exactly there. Fixed by
+   `_framed_cost(corpus, rel, chars)` — `chars + ceil(chars / topic_char_limit) × per-page
+   overhead`, where the overhead is MEASURED from the live resolved `core_memory_recall` frame plus
+   a worst-case PARTIAL marker rendered by `_read_result` itself (no literal, and it cannot drift
+   from the real head; line numbers stand in at `chars`, an upper bound, and every rounding goes
+   toward the owner). `_delete_gate` re-ordered: freshness → complete-coverage early return →
+   **impossibility (a property of the TOPIC, so it needs no coverage)** → not-read → continue-offset.
+   Reproduction pinned by test at the shipped caps.
+   **Recorded residual (builder, for the main seat):** `ceil(chars / page)` is a page-count FLOOR —
+   pages break at line boundaries, so a topic of long paragraph lines needs more pages than that
+   (lines of ~2,049 chars fit ONE per 4,096-char page, i.e. ~2× the estimate). Near the cap
+   boundary that can still under-price a topic back into the continue-grind. Exactness would mean
+   walking the file's lines at delete time (a second read of a file the scan already read); the
+   prescribed lean formula was built as prescribed and the residual is reported rather than
+   silently engineered away.
+   **Second nuance:** `topic_chars` reads the SCAN, which skips a topic with no frontmatter that no
+   index line links (§3). Such a topic reports 0 chars and therefore never takes the owner branch —
+   correct, since nothing knows its size, but it means the branch is scan-dependent.
+2. **LOW — `consolidation_dryrun` could still PROPOSE from a fragment.** The §2.6 prohibition was
+   only in the live prompt; the dry run plans rather than writes, so no tool rail catches it and a
+   plan drafted from a half-read source is what the owner would approve. Added the mirrored clause
+   ("NEVER propose merged content for, or deletion of, a source you have not fully read") + golden.
+3. **LOW — the suppression regression tested the wrong thing.** It re-rendered `resolve()` and would
+   have stayed green if `session.py` stopped passing `prior.error`. Replaced by two REAL shared-loop
+   tests in `test_loop_steering_aca1213.py` (where the harness and the behaviour live), driving
+   `_run_calls` with an ordinary tool: a repeated FAILING call's suppression carries the error, a
+   repeated SUCCESS's does not carry its output. The D64 file keeps only the registry-shape claim it
+   can actually prove, and says so.
+4. **Corpus boundary (her D10).** `_content_hash` yields `""` for a file that exists but cannot be
+   READ, and an empty `expected_hash` compared EQUAL to it — authorizing the archiving of a live
+   topic nobody could look at. `_delete_blocking` now refuses an empty actual hash before the
+   comparison, with the truthful "exists but cannot be read" reason. (Unreachable through the tool,
+   which fails closed earlier — this is the stateless corpus contract any caller may use.)
+
+Tests after the wave: BE 1867 → 1873 (D64 file 40 → 44, loop-steering +2).

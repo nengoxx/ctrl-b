@@ -65,7 +65,7 @@ from app.services.agent.core_memory import (
     CoreMemoryCorpus,
     CoreMemoryError,
     CoreSearch,
-    RecallBudget,
+    RecallState,
 )
 
 # ── fixtures ──────────────────────────────────────────────────────────────────────────────────────
@@ -149,20 +149,48 @@ def _tool(corpus: CoreMemoryCorpus | None, **args):
     return run_async(core_memory(CoreMemoryInput(**args), ctx))
 
 
+def _covered(corpus: CoreMemoryCorpus, *rels: str) -> RecallState:
+    """A turn that has PAGED THROUGH each named topic in full — the read coverage a model-facing
+    `delete` is now minted from (D64 §2.3). Built by REAL tool calls, following the marker the way a
+    model would: a test that hand-wrote the coverage would stop proving the rail."""
+    from app.domain.enums import RunState
+
+    state = RecallState()
+    for rel in rels:
+        for _ in range(64):  # bounded: the marker always names the next line, so this converges
+            covered = state.reads.get(rel)
+            if covered is not None and covered.complete:
+                break
+            result = _tool(
+                corpus,
+                action="read",
+                path=rel,
+                offset=covered.seen + 1 if covered else 1,
+                recall=state,
+            )
+            assert result.state is RunState.OK, result.error
+        else:  # pragma: no cover - a paging walk that never finishes is a bug, not a slow test
+            raise AssertionError(f"{rel} never reached full coverage")
+    return state
+
+
 # ── 1. recall ─────────────────────────────────────────────────────────────────────────────────────
 
 
-def test_read_clamps_to_the_topic_cap_in_characters(tmp_path):
-    """§4/R40 §19-3: the cap is CHARACTERS, not Claude's UTF-16 code units — a multibyte topic is cut
-    at a codepoint boundary, never mid-character, and the clamp is reported."""
+def test_a_page_stays_inside_the_character_cap_and_breaks_between_lines(tmp_path):
+    """§4/R40 §19-3, under D64 paging: the page budget is CHARACTERS (not Claude's UTF-16 code
+    units), and a page never crosses it — but it breaks only BETWEEN lines, so what the model
+    receives is always whole lines made of whole codepoints, and an exact prefix of the file."""
     root = _root()
-    body = "é🜂" * 200  # two multibyte codepoints, one of them outside the BMP
+    body = "\n".join("é🜂" * 10 for _ in range(40))  # 20 multibyte chars per line, one outside the BMP
     _topic(root, "wide.md", f"---\nname: Wide\ndescription: multibyte\n---\n\n{body}\n")
     corpus = _corpus(tmp_path, topic_char_limit=100)
+    raw = (root / "wide.md").read_text(encoding="utf-8")
 
     read = corpus.read_topic("wide.md")
-    assert len(read.text) == 100 and read.truncated and read.chars > 100
-    assert read.text == read.text.encode("utf-8").decode("utf-8")  # no split codepoint
+    assert 0 < len(read.text) <= 100 and not read.complete and read.chars == len(raw)
+    assert read.text == raw[: len(read.text)] and read.text.endswith("\n")  # exact prefix, whole lines
+    assert read.first_line == 1 and read.last_line == read.text.count("\n")
 
 
 def test_read_returns_the_hash_delete_expects(tmp_path):
@@ -311,7 +339,7 @@ def test_the_framed_output_is_what_the_budget_counts(tmp_path):
     from app.services.agent.prompts import resolve
 
     corpus, _root_ = _seeded(tmp_path)
-    budget, stamps = RecallBudget(), {}
+    budget, stamps = RecallState(), {}
     result = _tool(corpus, action="read", path="wake.md", recall=budget, stamps=stamps)
 
     frame = resolve("core_memory_recall", corpus.settings, {"source": "wake.md"})
@@ -326,7 +354,7 @@ def test_a_read_past_the_turn_limit_is_refused_not_trimmed(tmp_path):
     from app.domain.enums import RunState
 
     corpus, _root_ = _seeded(tmp_path, recall_char_limit=600)
-    budget = RecallBudget()
+    budget = RecallState()
     first = _tool(corpus, action="read", path="wake.md", recall=budget)
     assert first.state is RunState.OK
     spent = budget.used
@@ -845,7 +873,9 @@ def test_no_action_can_be_steered_through_a_symlink(tmp_path, action):
         return
     if action == "create":
         run_async(corpus.create(linked, "hostile", None, "body"))
-        assert (root / "link-leak-md.md").is_file() and not (outside / "link-leak-md.md").exists()
+        # `link/leak.md` slugs to `link-leak.md` — ONE trailing `.md` stripped (D64 §2.7a), every
+        # other separator collapsed, so the derived path is a plain file inside the corpus.
+        assert (root / "link-leak.md").is_file() and not (outside / "link-leak.md").exists()
         return
     calls = {
         "read": lambda: corpus.read_topic(linked),
@@ -1069,7 +1099,7 @@ def _valid_args(corpus: CoreMemoryCorpus, action: str) -> dict:
         "delete": {
             "action": "delete",
             "path": "wake.md",
-            "content_hash": corpus.read_topic("wake.md").content_hash,
+            "recall": _covered(corpus, "wake.md"),  # D64 §2.3: read coverage, not a model-held hash
             "reason": "no longer true",  # D60 ③: a delete must state an intent
         },
     }[action]
@@ -1444,7 +1474,7 @@ def test_an_instruction_shaped_topic_arrives_only_inside_the_recall_frame(tmp_pa
         {"action": "read", "path": "evil.md"} if action == "read" else {"action": "search", "query": "SYSTEM"}
     )
     source = "evil.md" if action == "read" else "1 topics matching 'SYSTEM'"
-    result = _tool(corpus, recall=RecallBudget(), stamps={}, **args)
+    result = _tool(corpus, recall=RecallState(), stamps={}, **args)
 
     frame = resolve("core_memory_recall", corpus.settings, {"source": source})
     assert result.output is not None and result.output.startswith(frame)

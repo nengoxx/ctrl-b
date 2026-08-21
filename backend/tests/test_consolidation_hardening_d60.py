@@ -52,7 +52,7 @@ from app.services.agent.core_memory import (
     CORE_MEMORY_TOOL,
     CoreMemoryCorpus,
     CoreMemoryError,
-    RecallBudget,
+    RecallState,
 )
 from app.services.agent.core_memory_tool import is_recall_call
 from app.services.agent.session import _LoopGuard
@@ -113,6 +113,30 @@ def _tool(corpus: CoreMemoryCorpus | None, **args):
         recall=args.pop("recall", None),
     )
     return run_async(core_memory(CoreMemoryInput(**args), ctx))
+
+
+def _covered(corpus: CoreMemoryCorpus, *rels: str) -> RecallState:
+    """A turn that has paged through each topic in full — the coverage a model-facing `delete` is
+    minted from (D64 §2.3). The `test_core_memory_tool_d57` shape, imported by copy like the rest."""
+    from app.domain.enums import RunState
+
+    state = RecallState()
+    for rel in rels:
+        for _ in range(64):
+            covered = state.reads.get(rel)
+            if covered is not None and covered.complete:
+                break
+            result = _tool(
+                corpus,
+                action="read",
+                path=rel,
+                offset=covered.seen + 1 if covered else 1,
+                recall=state,
+            )
+            assert result.state is RunState.OK, result.error
+        else:  # pragma: no cover - a paging walk that never finishes is a bug, not a slow test
+            raise AssertionError(f"{rel} never reached full coverage")
+    return state
 
 
 # ── 1. config boundaries (§15b-10) ────────────────────────────────────────────────────────────────
@@ -305,7 +329,7 @@ def test_every_read_class_call_charges_the_floor(tmp_path) -> None:
     from app.domain.enums import RunState
 
     corpus, _root_ = _seeded(tmp_path, recall_min_charge_chars=256)
-    budget = RecallBudget()
+    budget = RecallState()
 
     miss = _tool(corpus, action="search", query="nothing-matches-this", recall=budget)
     assert miss.state is RunState.OK and budget.used == 256
@@ -317,7 +341,7 @@ def test_every_read_class_call_charges_the_floor(tmp_path) -> None:
 def test_a_real_read_costs_exactly_its_framed_length(tmp_path) -> None:
     """The floor is a MINIMUM, not a surcharge: a result longer than it charges its own length once."""
     corpus, _root_ = _seeded(tmp_path, recall_min_charge_chars=64)
-    budget = RecallBudget()
+    budget = RecallState()
     result = _tool(corpus, action="read", path="wake.md", recall=budget)
     assert result.output is not None and len(result.output) > 64
     assert budget.used == len(result.output)
@@ -329,7 +353,7 @@ def test_the_read_loop_terminates_at_the_cap(tmp_path) -> None:
     from app.domain.enums import RunState
 
     corpus, _root_ = _seeded(tmp_path, recall_char_limit=1024, recall_min_charge_chars=256)
-    budget = RecallBudget()
+    budget = RecallState()
     states = [
         _tool(corpus, action="search", query="nothing-matches-this", recall=budget).state for _ in range(6)
     ]
@@ -447,7 +471,7 @@ def test_the_intent_gate_reaches_the_model_through_the_tool(tmp_path) -> None:
 
     corpus, root = _seeded(tmp_path)
     before = _tree(root)
-    result = _tool(corpus, action="delete", path="wake.md", content_hash=_digest(corpus, "wake.md"))
+    result = _tool(corpus, action="delete", path="wake.md", recall=_covered(corpus, "wake.md"))
     assert result.state is RunState.ERROR and "exactly one of the two" in (result.error or "")
     assert _tree(root) == before
 
@@ -1071,7 +1095,7 @@ def test_the_dry_run_leaves_reads_and_the_archive_alone(tmp_path) -> None:
     from app.domain.enums import RunState
 
     corpus, root = _seeded(tmp_path, memory={"auto_write": False})
-    assert _tool(corpus, action="read", path="wake.md", recall=RecallBudget()).state is RunState.OK
+    assert _tool(corpus, action="read", path="wake.md", recall=RecallState()).state is RunState.OK
     assert not (root / ".archive").exists()
 
 

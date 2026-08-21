@@ -213,7 +213,7 @@ agent:
 #       root: core               # relative → under memory_dir; absolute honored (unversioned)
 #       index_char_limit: 10240  # hard cap on the injected index block (chars)
 #       topic_char_limit: 4096   # per-read topic cap (chars)
-#       recall_char_limit: 20480 # per-turn total recall cap (chars)
+#       recall_char_limit: 24576 # per-turn total recall cap (chars; D64: 6 pages)
 #       recall_min_charge_chars: 256  # D60: the minimum one read/search charges against that cap
 #       consolidation_nudge_pct: 80  # index fill % at which the chat hints "run /consolidate"
 

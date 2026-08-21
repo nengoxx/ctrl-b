@@ -879,7 +879,8 @@ the tool's `Literal` keeps the model on known keys).
 > corpus** (a `MEMORY.md` routing index + semantic topic files) that is **read on demand**, never
 > injected whole. `memory.longterm.backend` (`null` = off, `"core"` = on) is the **only** switch;
 > its settings live in `memory.longterm.core` (`root` = `core` under `memories/` → versioned by the
-> D26 repo · `index_char_limit` 10240 (D61 ④) · `topic_char_limit` 4096 · `recall_char_limit` 20480 ·
+> D26 repo · `index_char_limit` 10240 (D61 ④) · `topic_char_limit` 4096 — also the per-PAGE budget
+> (D64) · `recall_char_limit` 24576 (D64 §2.5, was 20480) ·
 > `consolidation_nudge_pct` 80 — all **characters**, all read live, no restart). Off ⇒ prompt
 > assembly is byte-identical to tier-1-only.
 

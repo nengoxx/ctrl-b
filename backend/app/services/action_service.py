@@ -25,7 +25,7 @@ from pydantic import BaseModel, ValidationError
 
 if TYPE_CHECKING:
     from app.domain.agent import AgentDef
-    from app.services.agent.core_memory import RecallBudget
+    from app.services.agent.core_memory import RecallState
 
 from app.core.permissions import NONE_CANON, Decision, approval_match, decide, exact_arg_pins
 from app.core.tool import InvocationContext, ToolRegistry, UnknownTool
@@ -132,7 +132,7 @@ class ActionService:
         agent: "AgentDef | None" = None,
         summary_note: str | None = None,
         stamps: dict[str, str] | None = None,
-        recall: "RecallBudget | None" = None,
+        recall: "RecallState | None" = None,
     ) -> InvokeOutcome:
         """Run an action. Raises `UnknownTool` (→404) / `ValidationError` (→422) for the API to
         map; every other outcome is data on a ToolResult.
@@ -152,9 +152,10 @@ class ActionService:
         `InvocationContext` so a tool that resolves a registry text into its RESULT records the id —
         the session passes its own accumulator; user-invoked runs pass nothing.
 
-        `recall` (D57 §4) rides the same way: the calling turn's Core Memory recall budget, so the
-        per-turn cap on recalled characters is enforced by the tool against a counter the TURN owns.
-        `None` (a user-invoked run, a test) simply means no budget is charged."""
+        `recall` (D57 §4, D64 §2.2) rides the same way: the calling turn's Core Memory read state, so
+        the per-turn cap on recalled characters — and the read coverage a `delete` is minted from —
+        are enforced by the tool against one object the TURN owns. `None` (a user-invoked run, a
+        test) means no budget is charged and `delete` refuses: nothing recorded what was read."""
         tool = self._registry.get(name)  # UnknownTool → API 404
         inp = tool.spec.input_model.model_validate(raw_args)  # ValidationError → API 422
         args_json = inp.model_dump_json()
@@ -233,7 +234,7 @@ class ActionService:
         agent: "AgentDef | None" = None,
         origin: Origin,  # required, like at `invoke` — the context must never default its attribution
         stamps: dict[str, str] | None = None,
-        recall: "RecallBudget | None" = None,
+        recall: "RecallState | None" = None,
     ) -> ToolResult:
         # The context carries the real caller (actor/privilege/depth/agent/origin) so meta-tools like
         # spawn_subagents can enforce limits + clamp child privilege (DESIGN §5.5) and propagate

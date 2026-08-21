@@ -205,12 +205,16 @@ REGISTRY: dict[str, PromptDef] = {
     "repeat_suppressed": PromptDef(
         default=(
             "You already ran this exact call. Do not repeat it — use the "
-            "previous result, try a different approach, or give your final answer."
+            "previous result, try a different approach, or give your final answer.{{details}}"
         ),
         description=(
             "Replaces the output of an identical (tool, args) call past `max_repeat`; the prior "
-            "result's summary rides beside it. Coupling: the loop guard counts a suppressed call as "
-            "no progress — text that does not redirect the model just burns the turn."
+            "result's summary rides beside it. `{{details}}` carries the prior call's ERROR when it "
+            "had one (never its output — that content is already in the transcript). Coupling: the "
+            "loop guard counts a suppressed call as no progress — text that does not redirect the "
+            "model just burns the turn, and a suppression that HIDES the refusal the model was "
+            "reacting to redirects it nowhere (D64 §2.7b: the incident model re-issued a delete "
+            "three times and the third suppression erased the reason)."
         ),
     ),
     "per_tool_cap": PromptDef(
@@ -400,8 +404,9 @@ REGISTRY: dict[str, PromptDef] = {
             "Never rewrite a whole topic through `update`: `update` and `remove` take an exact quoted "
             "passage plus its path, so a reconstructed whole-file body cannot be expressed and will be "
             "refused. Keep tool calls to at most 3 per batch, so you read each result before deciding "
-            "the next. If a read comes back truncated, work from what it shows or narrow it with "
-            "`search` — never reconstruct a topic from a fragment.\n\n"
+            "the next. If a read comes back PARTIAL, continue at the offset its marker names; NEVER "
+            "create a merged topic from, or delete, a source you have not fully read — if this "
+            "turn's budget cannot cover the family, STOP and report which sources remain unread.\n\n"
             "Finish with a delta report: what you merged, what you rewrote, what you deleted, each "
             "with its path — and say plainly if you stopped early or ran out of budget."
         ),
@@ -415,7 +420,9 @@ REGISTRY: dict[str, PromptDef] = {
             "mechanics (read all → create merged → delete each with `superseded_by`) match the rails "
             "the tool actually enforces, and the create-before-delete order is the one run 2 got wrong. "
             "The no-frontmatter and verified-references lines in step 2 fix run 3's two blemishes "
-            "(CORE_MEMORY_PLAN §14f)."
+            "(CORE_MEMORY_PLAN §14f). D64 corrected the truncation clause: reads PAGE now, so "
+            "'work from what it shows' had become factually false — and a source that is not fully "
+            "read can no longer be merged from or deleted, because the tool itself refuses."
         ),
     ),
     "consolidation_promote": PromptDef(
@@ -455,8 +462,10 @@ REGISTRY: dict[str, PromptDef] = {
             "Report the plan instead, for the ONE family you would do first: which topics overlap "
             "(paths), what the merged topic would say and what its hook would be, which sources you "
             "would delete and which path each would name as `superseded_by`, and anything you found "
-            "that you would NOT touch and why. Name what you could not see — a truncated read, a topic "
-            "the index hides — so I can judge the plan before you run it."
+            "that you would NOT touch and why. A read that comes back PARTIAL continues at the offset "
+            "its marker names; NEVER propose merged content for, or deletion of, a source you have "
+            "not fully read. Name what you could not see — a topic left unread when the budget ran "
+            "out, a topic the index hides — so I can judge the plan before you run it."
         ),
         description=(
             "The dry-run half of the D60 ④ procedure: the SAME pass with every write forbidden, "
@@ -464,7 +473,11 @@ REGISTRY: dict[str, PromptDef] = {
             "documented procedure runs it with `memory.auto_write` OFF, so the refusal is structural — "
             "this text only tells the model why its writes are being refused and what to produce "
             "instead. Coupling: 'plan, do not write' and the named plan contents are what make the "
-            "output reviewable; a version that says 'be careful' instead produces a run, not a plan."
+            "output reviewable; a version that says 'be careful' instead produces a run, not a plan. "
+            "D64 replaced 'a truncated read' with the paging reality — a partial read is continuable, "
+            "so the honest unseeable is a source the turn's budget never reached, and the "
+            "fully-read-before-you-propose rule holds here too: the live run's tool refuses a "
+            "half-read delete, but a PLAN drafted from a fragment is what the owner would approve."
         ),
     ),
 }

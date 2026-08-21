@@ -38,7 +38,7 @@ from app.domain.result import ToolResult
 
 if TYPE_CHECKING:  # avoid a core→services import cycle; Deps is structural here
     from app.domain.agent import AgentDef
-    from app.services.agent.core_memory import RecallBudget
+    from app.services.agent.core_memory import RecallState
     from app.services.deps import Deps
 
 
@@ -173,12 +173,13 @@ class InvocationContext:
     #: re-enter the next model call, and a registry text the model consumed must not vanish from the
     #: stamps just because a tool (not the session) resolved it.
     stamps: dict[str, str] | None = None
-    #: The calling turn's Core Memory recall budget (D57 §4, council Codex-11), or None outside an
-    #: agent turn. Threaded exactly like `stamps`: the session owns ONE per logical turn (seeded from
-    #: the persisted results of the same turn when a suspend/resume rebuilds the session), so the
-    #: per-turn cap on recalled characters is a property of the TURN rather than of the session
-    #: object. Only `core_memory` reads it.
-    recall: "RecallBudget | None" = None
+    #: What the calling turn has recalled — the budget spent AND the per-topic read coverage (D57 §4,
+    #: council Codex-11; D64 §2.2) — or None outside an agent turn. Threaded exactly like `stamps`:
+    #: the session owns ONE per logical turn (seeded from the persisted results of the same turn when
+    #: a suspend/resume rebuilds the session), so both are properties of the TURN rather than of the
+    #: session object. Only `core_memory` reads it — and its `delete` FAILS CLOSED without one, since
+    #: coverage is what authorizes destroying a topic.
+    recall: "RecallState | None" = None
 
     def require_deps(self) -> "Deps":
         """The world-handle a deps-using tool needs, narrowed to non-`None`. `deps` is optional on

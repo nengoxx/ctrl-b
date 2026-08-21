@@ -20,6 +20,13 @@ D60 ② makes their ONLY bound — read-class calls no longer count against `max
 every one of them charges at least `recall_min_charge_chars` whatever it returns. Every invocation
 is audited by `ActionService._record` like any other tool.
 
+`delete` gets one more gate, and it is this file's alone (D64 §2.3): the turn's own `RecallState`
+must show the WHOLE topic was read, under the hash it still has. Authority to destroy is minted
+from complete reads and enforced by the server's records — the model carries no token of any kind,
+which is the failure surface the 2026-08-21 incident proved. The corpus keeps its stateless
+`delete(path, expected_hash, …)` precondition underneath, so a non-agent caller that obtained a
+hash itself is still served and the D60 crash-retry branch is untouched.
+
 LOW risk → auto-runs under the agent's CONFIRM privilege, like `memory`. `core=False` (§5) so an
 agent's `tools` allowlist can exclude it.
 """
@@ -41,11 +48,18 @@ from app.services.agent.core_memory import (
     CoreRead,
     CoreSearch,
     render_hits,
+    topic_path,
 )
 from app.services.agent.prompts import resolve
 
 #: Actions that change the corpus — the set the `memory.auto_write` switch governs.
 _MUTATIONS = ("create", "update", "remove", "delete")
+
+#: The `ToolResult.data` key one accepted `read` page leaves its coverage receipt under (D64 §2.2).
+#: Opaque and never model-facing; `AgentSession._seed_recall` consumes it to rebuild this turn's
+#: coverage after a suspend/resume. Defined here, on the only writer, so the reader imports the name
+#: rather than re-spelling the string.
+RECALL_RECEIPT = "recall_read"
 
 #: The READ-CLASS actions (D60 ②). Named here, beside the dispatcher that runs them, because the
 #: agent loop asks this file (`is_recall_call`) rather than knowing the corpus's vocabulary itself.
@@ -92,6 +106,22 @@ class CoreMemoryInput(BaseModel):
         default="",
         description="For `create`: the topic body (markdown, no frontmatter — that is rendered for you).",
     )
+    offset: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "For `read`: the 1-based line to start the page at. Default 1. A page that does not "
+            "reach the end of the topic says so and names the offset to continue at."
+        ),
+    )
+    limit: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "For `read`: at most this many lines. Optional — a page always stops at the topic "
+            "character cap anyway, so leave it out unless you want a smaller peek."
+        ),
+    )
     old_text: str = Field(
         default="",
         description=(
@@ -103,10 +133,6 @@ class CoreMemoryInput(BaseModel):
     new_text: str = Field(
         default="",
         description="For `update`: the replacement for `old_text`.",
-    )
-    content_hash: str = Field(
-        default="",
-        description="For `delete`: the `content_hash` the last `read` of this topic returned.",
     )
     superseded_by: str = Field(
         default="",
@@ -138,7 +164,9 @@ class CoreMemoryInput(BaseModel):
         "answer; `search` when the fact you need might sit in a body the hooks don't mention; "
         "`create` a new topic, `update`/`remove` a passage inside one, `delete` a whole topic that is "
         "wrong or obsolete — a `delete` must name the topic that supersedes it (create that one "
-        "FIRST) or give a reason, and it archives rather than destroys."
+        "FIRST) or give a reason, it archives rather than destroys, and it is allowed only once you "
+        "have read the whole topic in this turn (page through it with `offset` if it takes more than "
+        "one read)."
     ),
     icon="library",
     category="builtin",
@@ -169,9 +197,9 @@ async def core_memory(inp: CoreMemoryInput, ctx: InvocationContext) -> ToolResul
             return spent
     try:
         if inp.action == "read":
-            read = corpus.read_topic(inp.path)
+            read = corpus.read_topic(inp.path, inp.offset, inp.limit)
             # The NORMALIZED path is what the frame names — never the raw argument the model sent.
-            return _recalled(ctx, corpus, read.path, _read_result(read))
+            return _recalled(ctx, corpus, read.path, _read_result(read), read=read)
         if inp.action == "search":
             found = corpus.search(inp.query)
             # Omitted-but-not-shown is NOT "no matches" (D61 ⑤): only an empty search says that.
@@ -189,7 +217,7 @@ async def core_memory(inp: CoreMemoryInput, ctx: InvocationContext) -> ToolResul
         else:
             summary = await corpus.delete(
                 inp.path,
-                inp.content_hash,
+                _delete_gate(ctx, corpus, inp.path),
                 superseded_by=inp.superseded_by,
                 reason=inp.reason,
             )
@@ -249,7 +277,7 @@ def _missing_arg(inp: CoreMemoryInput) -> str | None:
         "create": ("name", "description", "content"),
         "update": ("path", "old_text", "new_text"),
         "remove": ("path", "old_text"),
-        "delete": ("path", "content_hash"),
+        "delete": ("path",),
     }
     for field in required.get(inp.action, ()):
         if not str(getattr(inp, field, "") or "").strip():
@@ -258,13 +286,21 @@ def _missing_arg(inp: CoreMemoryInput) -> str | None:
 
 
 def _read_result(read: CoreRead) -> tuple[str, str]:
-    """(summary, body) for one topic read. The hash rides the body because it is `delete`'s expected-
-    state token, and the truncation note is explicit so the model never treats a clamped topic as
-    whole."""
-    head = f"{read.path} — content_hash: {read.content_hash}"
-    if read.truncated:
-        head += f" (truncated: showing {len(read.text):,} of {read.chars:,} characters)"
-    return f"read {read.path} ({len(read.text):,} chars)", f"{head}\n\n{read.text}"
+    """(summary, body) for one page (D64 §2.1). A page that carried the whole topic gets a plain
+    head — its own path, nothing else. Any other page is marked PARTIAL and states the FACTS: which
+    lines of how many, how many characters of how many, and the exact call that continues it.
+
+    Facts only, deliberately: no per-page restatement of the "don't merge from a fragment" rule. The
+    incident model read the old truncation note and merged anyway — prose that does not work is
+    prose the recall budget pays for every page. The rule is a rail now (`_delete_gate`) and a
+    consolidation-prompt clause, which is where behaviour actually comes from."""
+    span = f"lines {read.first_line:,}-{read.last_line:,} of {read.lines:,}"
+    if read.complete:
+        return f"read {read.path} ({len(read.text):,} chars)", f"{read.path}\n\n{read.text}"
+    head = f"{read.path} (PARTIAL: {span} — {len(read.text):,} of {read.chars:,} chars)"
+    if read.last_line < read.lines:
+        head += f" · continue: read offset={read.last_line + 1}"
+    return f"read {read.path} {span} ({len(read.text):,} chars)", f"{head}\n\n{read.text}"
 
 
 def _hits_result(found: CoreSearch, cap: int) -> tuple[str, str]:
@@ -275,6 +311,107 @@ def _hits_result(found: CoreSearch, cap: int) -> tuple[str, str]:
     shown = f"searched core memory — {len(found.hits)} topic(s) shown"
     tail = f", {found.omitted} not shown" if found.omitted else ""
     return shown + tail, render_hits(found, cap)
+
+
+def _delete_gate(ctx: InvocationContext, corpus: CoreMemoryCorpus, raw_path: str) -> str:
+    """The model-facing door's delete guard (D64 §2.3): the expected-state hash `corpus.delete` will
+    re-check under its lock, or a steering `CoreMemoryError` naming the one call that fixes this.
+
+    The authority to destroy is MINTED FROM READS and held by the server: the model sends no token,
+    and this asks the turn's own record whether it was shown the whole topic. Order matters —
+    freshness before coverage, because coverage of a file that has since changed is not coverage of
+    anything, and telling the model to "read 40 more lines" of a rewritten topic would be steering
+    it into the wrong action.
+
+    Two deliberate pass-throughs, both to the corpus which owns the case: a path that cannot name a
+    topic (its refusal is the canonical one), and a topic with NO live file — the D60 crash-retry
+    shape, where the topic is already archived and only its index line remains. `_delete_blocking`
+    re-checks the hash under the lock whenever a file IS there, so nothing here is load-bearing
+    twice.
+
+    Below full coverage the refusal SPLITS, and the split is the whole point: "continue at offset N"
+    is only true steering when the turn can actually get there. A topic the budget cannot cover goes
+    to the OWNER instead (review round, reproduced), and that branch is checked BEFORE "you have not
+    read this" — an unreachable topic whose first page was already budget-refused has no coverage at
+    all, so ordering it the other way made the owner branch unreachable exactly where it matters."""
+    if ctx.recall is None:
+        # Fail closed. Reachable only outside an agent turn (a direct API invoke, a test): nothing
+        # recorded what was read, so nothing can authorize destroying it. The corpus's own
+        # `delete(path, expected_hash, …)` stays available to a caller that obtained a hash itself.
+        raise CoreMemoryError(
+            "a `delete` is only available inside an agent turn, where the server can verify the "
+            "whole topic was read first — this call carries no read state, so it is refused."
+        )
+    rel = topic_path(raw_path)
+    if rel is None:
+        return ""
+    live = corpus.current_hash(raw_path)  # ONE look at the file — two would compare two moments
+    if live is None:
+        return ""
+    covered = ctx.recall.reads.get(rel)
+    if covered is not None and live != covered.hash:
+        ctx.recall.reads.pop(rel, None)  # what was read describes a topic that no longer exists
+        raise CoreMemoryError(
+            f"{rel} has changed since you read it — read it again (offset=1) before deleting it."
+        )
+    if covered is not None and covered.complete:
+        return covered.hash
+    # Not covered, or not covered fully. Is finishing the read even POSSIBLE in this turn?
+    cap = corpus.recall_char_limit()
+    chars = corpus.topic_chars(rel)
+    if _framed_cost(corpus, rel, chars) > cap:
+        raise CoreMemoryError(
+            f"{rel} is {chars:,} characters — with per-page framing it cannot fit one turn's "
+            f"{cap:,}-character recall budget, so it can never be read in full here. Curating a "
+            "topic that size is an owner/file operation: report it to the owner instead."
+        )
+    if covered is None:
+        raise CoreMemoryError(f"you have not read {rel} this turn — `read` it (offset=1) before deleting it.")
+    raise CoreMemoryError(
+        f"you have read lines 1-{covered.seen:,} of {covered.total_lines:,} of {rel} this turn "
+        f"— continue: read offset={covered.seen + 1}. A topic must be read in full before it "
+        "can be deleted."
+    )
+
+
+def _framed_cost(corpus: CoreMemoryCorpus, rel: str, chars: int) -> int:
+    """A CONSERVATIVE estimate of what reading all of `rel` would charge the recall budget — the
+    classifier that tells "keep paging" from "no turn can read this" (review round MED).
+
+    Raw length was the wrong yardstick: the budget charges the FRAMED page, so a 23K topic under a
+    24,576 cap stops mid-way with the next page budget-refused, and the delete refusal kept saying
+    "continue at offset N" for an offset the turn could never afford. Content + `ceil(chars / page)`
+    frames is the honest floor of the real cost.
+
+    The per-page frame is MEASURED, never a literal: the live `core_memory_recall` text (an owner
+    edit changes it) plus a worst-case PARTIAL marker rendered by `_read_result` itself — the very
+    function the real page uses, so the two cannot drift. Worst-case = the widest numbers this topic
+    could ever print: a full page against the topic's own length, and line numbers standing in at
+    `chars` (a line is at least one character, so the count can never exceed it). That rounding is
+    deliberately UPWARD — steering a borderline topic to the owner costs one honest report, while
+    under-estimating costs an endless continue-grind.
+
+    KNOWN FLOOR (recorded, not engineered away): `ceil(chars / page)` is the page count of a file
+    that packs perfectly, and pages break at LINE boundaries — a topic of long paragraph lines needs
+    more pages than that, so near the cap it can still be judged reachable when it is not. Counting
+    real pages would mean re-reading, at delete time, a file the scan has already read."""
+    page = corpus.topic_char_limit()
+    lines = max(chars, 2)
+    marker = CoreRead(
+        path=rel,
+        text="x" * page,  # a full page → the widest "N of M chars" the head can print
+        content_hash="",
+        chars=chars,
+        lines=lines,
+        first_line=lines - 1,  # not line 1 and not the last line ⇒ PARTIAL, with its continuation
+        last_line=lines - 1,
+    )
+    _summary, body = _read_result(marker)
+    frame = resolve("core_memory_recall", corpus.settings, {"source": rel})
+    # `_recalled` builds `frame + "\n\n" + body`, and `body` is `head + "\n\n" + text` — so the
+    # overhead one page adds beyond its own content is everything here except that page's text.
+    overhead = len(frame) + 2 + len(body) - page
+    return chars + -(-chars // page) * overhead
 
 
 def _charge(ctx: InvocationContext, corpus: CoreMemoryCorpus, chars: int) -> ToolResult | None:
@@ -299,7 +436,11 @@ def _charge(ctx: InvocationContext, corpus: CoreMemoryCorpus, chars: int) -> Too
 
 
 def _recalled(
-    ctx: InvocationContext, corpus: CoreMemoryCorpus, source: str, produced: tuple[str, str]
+    ctx: InvocationContext,
+    corpus: CoreMemoryCorpus,
+    source: str,
+    produced: tuple[str, str],
+    read: CoreRead | None = None,
 ) -> ToolResult:
     """Frame recalled content with the `core_memory_recall` prompt and charge it to the turn's budget.
     The budget counts the COMPLETE framed output — the framing is context the model pays for too —
@@ -307,11 +448,26 @@ def _recalled(
     result is exactly its own length.
 
     The frame is resolved before the check, so a refused read still records the prompt's stamp: the
-    same benign over-report the ephemeral reflection nudge already has (`AgentSession._stamps`)."""
+    same benign over-report the ephemeral reflection nudge already has (`AgentSession._stamps`).
+
+    **Budget acceptance is the MINT POINT** (D64 §2.2): a page whose charge was refused never
+    reached the model, so it banks no coverage. Past the charge, the accepted page advances this
+    path's high-water mark and leaves an opaque receipt in `ToolResult.data` — persisted verbatim
+    with the result, never model-facing (`_tool_content` reads summary/output/error), so a
+    suspend/resume can rebuild the same coverage without re-reading anything."""
     summary, body = produced
     output = resolve("core_memory_recall", corpus.settings, {"source": source}, stamps=ctx.stamps)
     output = f"{output}\n\n{body}"
     refused = _charge(ctx, corpus, len(output) - corpus.recall_min_charge_chars())
     if refused is not None:
         return refused
-    return ToolResult(state=RunState.OK, summary=summary, output=output)
+    data: dict[str, object] = {}
+    if read is not None and ctx.recall is not None:
+        banked = ctx.recall.bank(read.path, read.content_hash, read.lines, read.first_line, read.last_line)
+        data[RECALL_RECEIPT] = {
+            "path": read.path,
+            "hash": banked.hash,
+            "total_lines": banked.total_lines,
+            "seen": banked.seen,
+        }
+    return ToolResult(state=RunState.OK, summary=summary, output=output, data=data)

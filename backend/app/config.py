@@ -410,7 +410,13 @@ class CoreMemoryCfg(BaseModel):
     #: pinned 8192 keeps it (and keeps the pressure, which is what the client's hint is for).
     index_char_limit: int = Field(default=10240, ge=1)
     topic_char_limit: int = Field(default=4096, ge=1)  # per-`read` topic cap (S3)
-    recall_char_limit: int = Field(default=20480, ge=1)  # per-turn total recall cap (S3)
+    #: Per-turn total recall cap (S3). 24576 since D64 §2.5 (6 × the 4096 topic cap): paging charges
+    #: the `core_memory_recall` FRAME once per page, and the §14f measured family (17,183 chars of
+    #: sources ≈ 8 pages) landed within noise of the old 20480 once that framing was priced. A
+    #: deployment that OMITS the key adopts the new headroom on upgrade; one that pinned a value
+    #: keeps it. Not raised further and not raisable mid-turn: the cap also protects small-context
+    #: models, so a topic no turn can read is an owner/file job, not a knob to widen (D64 §2.3).
+    recall_char_limit: int = Field(default=24576, ge=1)
     #: The MINIMUM a single read-class call charges against `recall_char_limit` (D60 §15b-3). Reads no
     #: longer count against `max_calls_per_tool`, so the recall budget is their only bound — and a
     #: zero-char result (an empty `search`, a refused `read`) would otherwise cost nothing and loop

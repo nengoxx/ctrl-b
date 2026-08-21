@@ -136,7 +136,7 @@ def test_the_tier2_slot_is_off_by_default_with_the_locked_shape():
         root="core",
         index_char_limit=10240,  # D61 ④ — the owner's ~10K sizing replaces Kilo's 8192
         topic_char_limit=4096,
-        recall_char_limit=20480,
+        recall_char_limit=24576,  # D64 §2.5
         consolidation_nudge_pct=80,
     )
 
@@ -164,7 +164,7 @@ def test_the_example_config_documents_the_same_tier2_block():
         "root": "core",
         "index_char_limit": 10240,
         "topic_char_limit": 4096,
-        "recall_char_limit": 20480,
+        "recall_char_limit": 24576,
         "recall_min_charge_chars": 256,  # D60 §15b-3
         "consolidation_nudge_pct": 80,
     }

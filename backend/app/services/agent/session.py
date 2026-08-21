@@ -86,8 +86,8 @@ from app.services.agent.compaction import (
     estimate_payload_tokens,
     plan_clearing,
 )
-from app.services.agent.core_memory import CORE_MEMORY_TOOL, CoreMemoryCorpus, RecallBudget
-from app.services.agent.core_memory_tool import is_recall_call
+from app.services.agent.core_memory import CORE_MEMORY_TOOL, CoreMemoryCorpus, RecallState
+from app.services.agent.core_memory_tool import RECALL_RECEIPT, is_recall_call
 from app.services.agent.exec import run_user_exec
 from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
@@ -450,11 +450,12 @@ class AgentSession:
             if (core_memory is not None and core_memory.enabled())
             else frozenset({CORE_MEMORY_TOOL})
         )
-        #: This LOGICAL turn's Core Memory recall budget (D57 §4, council Codex-11), threaded to every
-        #: tool invocation like `_stamps`. Fresh per session — and a session built to resume a
-        #: suspended turn re-SEEDS it from that turn's persisted recall results (`_seed_recall`), so a
-        #: confirm round-trip cannot hand the model a second full allowance.
-        self._recall = RecallBudget()
+        #: This LOGICAL turn's Core Memory read state (D57 §4, council Codex-11; D64 §2.2) — the
+        #: recall budget AND the per-topic coverage a `delete` is minted from — threaded to every tool
+        #: invocation like `_stamps`. Fresh per session, and a session built to resume a suspended
+        #: turn re-SEEDS both from that turn's persisted recall results (`_seed_recall`), so a confirm
+        #: round-trip cannot hand the model a second full allowance nor a second right to destroy.
+        self._recall = RecallState()
         #: Headless subagents (4.5) run with `interactive=False`: a confirm-gated call resolves
         #: DENIED in place rather than suspending the turn (a child has no UI to confirm against —
         #: DESIGN §5.3). `depth` is this session's subagent nesting level, forwarded to each tool
@@ -1243,7 +1244,7 @@ class AgentSession:
             self._actions.end_execute(call_id)
 
     async def _seed_recall(self, thread: Thread) -> None:
-        """Carry the Core Memory recall budget across a suspend/resume (§4, council Codex-11).
+        """Carry the Core Memory read state across a suspend/resume (§4, council Codex-11; D64 §2.2).
 
         A resume builds a FRESH `AgentSession` (ACA-15e), so its budget starts at zero — which would
         hand the model a full second allowance for the same logical turn every time it parked on a
@@ -1258,7 +1259,13 @@ class AgentSession:
         `output` — the exact quantity the tool charged live — and a READ-class call that produced no
         output (a refused read, an empty search) re-charges the `recall_min_charge_chars` floor it
         paid live (§15b-3: the floor is cumulative ACROSS a resume too, so parking on a confirm
-        bubble never refunds a failed read's charge)."""
+        bubble never refunds a failed read's charge).
+
+        READ COVERAGE (D64 §2.2) rides the same walk, from the opaque receipt each accepted page
+        stashed in its `ToolResult.data` — never from the human-readable marker, because a
+        presentation string must not be a safety rail's serialization. Receipts are replayed in
+        TRANSCRIPT ORDER from OK results only, and `RecallState.restore` re-validates every field
+        before it grants anything."""
         turn: list[Message] = []
         for m in reversed(await self._messages.list(thread.id)):
             if m.role == "user" and not m.steer:
@@ -1275,6 +1282,12 @@ class AgentSession:
             for rp in m.tool_results()
             if rp.call_id in calls
         )
+        # `turn` was walked backwards; the receipts replay forwards, so the newest page for a path
+        # lands last — which is the one carrying that path's final high-water mark.
+        for m in reversed(turn):
+            for rp in m.tool_results():
+                if rp.call_id in calls and rp.result.ok:
+                    self._recall.restore(rp.result.data.get(RECALL_RECEIPT))
 
     async def _find_pending(self, thread: Thread, call_id: str) -> Message | None:
         for m in await self._messages.list(thread.id):
@@ -2643,10 +2656,20 @@ class AgentSession:
                             )
                         elif guard.counts.get(sig, 0) >= guard.max_repeat and sig in guard.last_results:
                             prior = guard.last_results[sig]
+                            # D64 §2.7b: carry the prior ERROR through the registry's own slot. A
+                            # suppression that replaces a refusal with "don't repeat this" deletes
+                            # the one fact that could redirect the model — the incident's third
+                            # delete attempt was answered by a note explaining nothing. The prior
+                            # OUTPUT is never carried: a successful result is already in context.
                             suppressed = ToolResult(
                                 state=prior.state,
                                 summary=f"(repeat suppressed) {prior.summary}",
-                                output=resolve("repeat_suppressed", self._settings, stamps=self._stamps),
+                                output=resolve(
+                                    "repeat_suppressed",
+                                    self._settings,
+                                    {"details": f"\n\nIt returned: {prior.error}" if prior.error else ""},
+                                    stamps=self._stamps,
+                                ),
                             )
                         elif not guard.uncapped(cp.tool, cp.args) and guard.tool_counts.get(
                             cp.tool, 0
