@@ -12,7 +12,94 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-20)
+## Current state (2026-08-21)
+
+- **Prod is UNCHANGED: v1.7.4 @ `92cb3a3`** (rollback = v1.7.2; the whole 2026-08-20 record below
+  still governs prod). **NOTHING released this session by owner ruling — everything soaks on DEV
+  first** ("test it thoroughly in the dev server first"). **Origin = `main` @ `d5cc25a`** (13
+  commits pushed 2026-08-21, full pre-push gate green). **Dev units are RUNNING at `d5cc25a`**
+  (:5434 + Vite :5173) for the owner rounds. Every slice below walked the full ladder:
+  council-closed spec → Opus build from the pinned brief → **Emma-lane blind diff round** (the
+  Hermes `emma` lane is now THE standing reviewer by owner ruling — Codex CLI stays logged out) →
+  fix wave → confirm all-RESOLVED, SHIP.
+- **F1 host-up/down notifications ✅ COMPLETE** (`073f377` + `e1ab902` + `014dff8`): the
+  `host_up_down` class (ONE class both directions, ACTION-name-keyed per D50 M5), Conf group-11
+  row default ON, tap → FLEET tab through the R45 router, field-merged defaults at all three
+  frontend read boundaries. The diff round caught a real HIGH (my one-liner broke 3 tests my
+  spot-check missed — wrong filename). **Master notifications switch stays OFF by default
+  (owner re-ruled 2026-08-21** — it also gates agent approvals; the spam guard stands).
+- **D63 LOCKED + C3 SLICE 1 ✅ BUILT AND LIVE-VERIFIED** — chunked TTS (DECISIONS D63 = the full
+  spec; ROADMAP §C3 = the close-out). Evidence: **R50** (probes: opus sample-exact on Speaches,
+  its docs are stale; streaming = ~23 s Kokoro bursts so chunking beats un-buffering 19× vs 3.5×;
+  src-swap seam 4–6 ms vs Kokoro's 250 ms trailing silence; **Chromium never becomes seekable on
+  a Content-Length-less stream** → single-stream mode = recorded NON-BUILD, its seam = the
+  queue's ordered source list). S1 (`6a65f7a` + review wave `7dfb704`): `lib/ttsChunks` chunker ·
+  the element queue with depth-lookahead latch · `chunk_*` config (shipped default `chunking:
+  sentence`, `chunk_format: opus`) · `tts_chunking` policy on `/voice/status` · the
+  `X-Voice-Target`/`prefer` failover pin (chunk 1 bootstraps alone, then the window opens) ·
+  exception-only serve flash behind `X-Voice-Degraded`. **LIVE-VERIFIED on dev against BOTH
+  daily TTS backends** incl. AllTalk-as-primary in-app (5/5 chunks pinned `vault-alltalk/tts-1`;
+  config swapped + restored byte-identical via the product PUT). **R50's addendum = the AllTalk
+  envelope: opus ✓ all containers ✓, synth 1.5–2× realtime → recommend `chunk_lookahead: 2` when
+  AllTalk is primary.**
+- **Auto-stop dictation ✅ BUILT** (`ab70a59` + wave `d5cc25a`; R51 Tier 0, owner-greenlit as an
+  STT Conf toggle): energy-silence detector on the existing mic stream, **default OFF**
+  (`auto_stop` · `auto_stop_silence_s: 3.0` · `auto_stop_threshold: 0.01`), stops through the
+  existing stop path so `auto_send` composes; `visibilitychange→hidden` stop is INDEPENDENT of
+  Web Audio (the review's key catch — a suspended AudioContext degrades the detector but never
+  the hidden-page safety); generation-safe async teardown. **⚠ the 0.01 threshold is
+  UNCALIBRATED — no field provenance; the owner phone round calibrates it.**
+- **ISS-9 ✓ FIXED** (`4b71516`): the post-recording transcribe spinner was invisible (motion in
+  the resting color); `.sending` now takes an accent CHIP (the `.rec` pattern in the accent
+  channel — red = recording, accent chip + roll = transcribing); line layout's filled circle
+  deliberately keeps its face; browser-verified, screenshots delivered to the owner.
+- **R51 realtime-voice dossier bought + curated** → **ROADMAP §C4** (future live-chat mode, NOT
+  scheduled): ranked architecture ① = Speaches-realtime as the ear (already ships `/v1/realtime`,
+  live-probed) + the untouched agent loop + **C3 as the mouth unchanged** (its cancel path IS the
+  barge-in kill verb). **The #1 pre-design gate = the AEC device probe** (Chromium's echo
+  cancellation ignores same-page audio; needs the owner's physical phone — build them a 2-minute
+  probe page when C4 wakes). Curation correction folded: the owner's RealtimeVoiceChat fork is
+  PRIVATE (the agent said public); the hardcoded-key finding downgraded and the **owner ruled
+  IGNORE it** (reference-only repo). Owner context: their two daily TTS backends are Kokoro
+  (fastest) and AllTalk (best quality) — features must serve both; standing permission to probe
+  emma↔vault services when needed.
+
+## ▶▶ NEXT (2026-08-21)
+
+1. **THE OWNER DEVICE ROUNDS on dev — the acceptance for everything above** (dev is up at
+   `d5cc25a`): ① C3 seam audibility — tap ▶ on a long reply (Kokoro pads sentence ends with
+   250 ms silence; desktop seams measured 4–6 ms — Android hardware is the open question;
+   optionally switch TTS primary to AllTalk + `chunk_lookahead: 2` for the quality-backend
+   taste test) · ② auto-stop dictation — enable in Conf → STT, **calibrate the threshold**
+   (quiet speech + room noise; 0.01 is a guess) · ③ the ISS-9 chip eyeball · ④ F1 — master
+   notifications ON, background the app, let a host transition, tap → fleet tab · ⑤ the
+   icon-backdrop FRESH INSTALL (still owed from v1.7.4).
+2. **C3 SLICE 2 — read-along-while-streaming** + the single turn-end ownership entry point:
+   fully designed + council-closed inside D63 (triple-gated resplit · MED-3 ownership rule).
+   The S1 builder recorded the exact hook points in its report: `useAutoTts.ts:50` →
+   becomes `speakTurnEnd`; the queue needs only an `appendChunks` (it is already index-driven
+   with a `waiting` latch); the delta boundary gate lands at `store/chat.ts` `text.delta`.
+   Own slice, own review round.
+3. **The RELEASE ruling** once dev soaking satisfies the owner: the batch = F1 + C3 S1 +
+   dictation + ISS-9 + the doc/research commits — **no schema/config migration** (all additive
+   with defaults; schema stays 6, config VERSION 1). Runbook §Release; rollback stays v1.7.2.
+   Note the new validator coupling: lowering `max_text_chars` in Conf below `chunk_max_chars`
+   now 422s (intended).
+4. **A13 design talk** (OpenAI-OAuth/Codex provider, R49) — unblocked; owner ruled "C3 first,
+   then A13". Headline to weigh: the token buys the Responses-ONLY endpoint (adapter bridge =
+   the real cost) + the ToS-silence risk.
+5. **Phase 19 (D58) owner court** — unchanged, still the big standing gate (spec-complete;
+   §10 rulings + the §3b delta council check).
+6. **Recorded residuals, no action owed:** C3 partial-failure replay never re-requests its
+   failed chunk (reviewer-ruled below the bar; lean fix recorded = drop partial-failure
+   sessions in `finish()`) · the line-layout sending face unchanged (deliberate, ISS-9) ·
+   R48 §8.1 Android src-swap numbers (the owner round IS the probe).
+
+---
+*Everything below is the PRIOR session's record (2026-08-20), kept verbatim until the next
+archive sweep; where it conflicts with the 2026-08-21 blocks above, the above governs.*
+
+## Prior state (2026-08-20)
 
 - **Prod = v1.7.4 @ `92cb3a3`**, live + healthy (https://emma.lobster-vector.ts.net) — RELEASED
   2026-08-20 (Opus-operated runbook run; CI release gate green incl. e2e; no config/DB migration —
@@ -149,8 +236,8 @@
   automated** — the session pends) · ⑥ **ISS-3 CLOSED** (vapor + minimal appbar worked all along
   since D51 deleted the bespoke bar; owner-verified "looks good", menu icon included).
 
-## ▶▶ NEXT — ~~the RELEASE DECISION~~ ✅ RELEASED v1.7.4 2026-08-20 (see Current state); what
-## remains = the owner minis below + **Phase 19 (D58), now truly next in line**
+## Prior ▶▶ (2026-08-20) — ~~the RELEASE DECISION~~ ✅ RELEASED v1.7.4 2026-08-20; superseded
+## where the 2026-08-21 blocks above say so (F1 ✅ built · C3 ✅ designed+S1 · A13 unblocked)
 
 **D61 is BUILT and its live exercise ran 2026-08-20 (see path 2 below). The 2026-08-20 CLOSE-OUT
 SWEEP then drained the closeable backlog (owner: "close all the issues and fixes we can"):**
