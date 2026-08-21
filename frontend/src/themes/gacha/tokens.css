@@ -536,6 +536,16 @@
         #000 calc(100% - var(--gc-oracle-edge-fade)),
         transparent
       );
+      /* The COMB's own at-rest bottom melt (ISS-11 round 2, owner-sized): a thin band matching the strip
+       * under the name plate's JP subtitle (the plate sits 16px off the image bottom), so the hairlines
+       * don't stop dead on one row while the ART keeps its designed crisp edge until ghosting. Its own
+       * token, NOT `--gc-oracle-edge-fade`: the two dissolves are different bands tuned separately. */
+      --gc-scan-edge-fade: 14px;
+      --gc-scan-edge-mask: linear-gradient(
+        to bottom,
+        #000 calc(100% - var(--gc-scan-edge-fade)),
+        transparent
+      );
 
       /* Composer surface (prototype `.composer`) — G3, when the look-named shared `arcade` skin lands. */
       --gc-composer: #15172e;

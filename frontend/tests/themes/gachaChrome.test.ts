@@ -968,17 +968,20 @@ describe("gacha — the card's INNER FRAME (owner ask 2026-08-08, two rounds)", 
   });
 });
 
-describe("gacha M7 — the oracle's BOTTOM DISSOLVE, split in two (owner reports 2026-08-06)", () => {
-  it("dissolves the COMB always, and the ART only once it starts ghosting", () => {
-    // ① the scanline's own mask runs for the whole of fade mode — the owner likes the softened comb at
-    // rest too. On the scan LAYER, because a mask is applied to an element's own rendering BEFORE it is
-    // blended into its parent: the comb's alpha ramps down first and `mix-blend-mode: screen` then
-    // contributes nothing at the bottom.
-    expect(ruleBlock(rules, 'body[data-oracle="fade"] .gc-oracle-scan {')).toContain(
-      "mask-image: var(--gc-oracle-edge-mask)",
-    );
-    // ② the BLOCK's mask is gated on the driver's boolean stamp, so at rest the art keeps the designed
-    // crisp bottom edge and only the ghosting state dissolves it.
+describe("gacha M7 — the oracle's BOTTOM DISSOLVE (2026-08-06, re-ruled at ISS-11 2026-08-21)", () => {
+  it("melts the COMB over its own thin band on a STATIONARY frame; the ART only once it ghosts", () => {
+    // ① ISS-11's invariant: the comb's at-rest melt lives on the NON-ANIMATED frame — a mask is painted
+    // in its host's box, so a mask on the traveling layer rides the 7s loop (the recorded pulse). The
+    // frame carries the mask and never the animation; ::before carries the animation and never the mask.
+    const frame = ruleBlock(rules, "\n    .gc-oracle-scan {");
+    expect(frame).toContain("mask-image: var(--gc-scan-edge-mask)");
+    expect(frame).toContain("-webkit-mask-image: var(--gc-scan-edge-mask)");
+    expect(frame).not.toContain("animation");
+    const comb = ruleBlock(rules, ".gc-oracle-scan::before {");
+    expect(comb).toContain("animation: gacha-oracle-scan");
+    expect(comb).not.toContain("mask");
+    // ② the BLOCK's 48px dissolve is gated on the driver's boolean stamp, so at rest the art keeps the
+    // designed crisp bottom edge and only the ghosting state dissolves it.
     const gated = ruleBlock(rules, 'body[data-oracle="fade"] .gc-oracle[data-gc-ghosting] {');
     expect(gated).toContain("mask-image: var(--gc-oracle-edge-mask)");
     expect(gated).toContain("-webkit-mask-image: var(--gc-oracle-edge-mask)");
@@ -995,6 +998,11 @@ describe("gacha M7 — the oracle's BOTTOM DISSOLVE, split in two (owner reports
     expect(mask).not.toContain("--gc-oracle-p");
     expect(mask).toContain("var(--gc-oracle-edge-fade)"); // the band is the tunable, and it is one token
     expect(tokens).toMatch(/--gc-oracle-edge-fade:\s*\d+px/);
+    // The comb's own band is the same shape: its own tunable, its own mask, no ramp coupling.
+    const scanMask = /--gc-scan-edge-mask:([\s\S]*?);/.exec(tokens)![1];
+    expect(scanMask).not.toContain("--gc-oracle-p");
+    expect(scanMask).toContain("var(--gc-scan-edge-fade)");
+    expect(tokens).toMatch(/--gc-scan-edge-fade:\s*\d+px/);
   });
 });
 

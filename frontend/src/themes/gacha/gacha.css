@@ -4091,23 +4091,38 @@
       background: var(--gc-oracle-scrim);
     }
     /* M6 — the scanline. Transform-only travel over a STATIC comb (§14.11), blended to screen like the
-     * banner's glow. Sits above the scrim, below the name plate. */
+     * banner's glow. Sits above the scrim, below the name plate.
+     *
+     * SPLIT INTO A STATIONARY FRAME + A TRAVELING COMB (ISS-11 round 2). The element itself never moves:
+     * it holds the thin at-rest bottom melt (`--gc-scan-edge-mask`) — a mask is painted in its host's own
+     * box, so a mask on the ANIMATED layer rides the travel (the ISS-11 pulse: the band slid 28px down
+     * every cycle and snapped back). The comb + the 7s loop live on `::before`, and the mask composites
+     * the whole subtree in the frame's fixed box: the melt stays bolted to the image bottom while the
+     * hairlines slide beneath it. While ghosting, the block mask overlaps this one across its last 14px —
+     * both ramps are near-zero there, nothing visible doubles (unlike the old 48×48 over-dim). */
     .gc-oracle-scan {
       position: absolute;
-      /* TALLER THAN THE BOX BY EXACTLY THE TRAVEL (owner report 2026-08-03). The comb is painted by this
-       * element's own background, so it can only cover the element's box — and the loop slides that box down
-       * by `--gc-scan-travel`. At `inset: 0` the last frames of every cycle therefore exposed an uncombed
-       * band across the top of the art, growing to the full 28px right before the restart. Starting the layer
-       * one travel-length ABOVE the block keeps the visible 0…H band covered at every phase; the overhang
-       * (above at rest, below at the end) is clipped by `.gc-oracle`'s own `overflow: hidden`.
-       * The offset READS THE TRAVEL TOKEN rather than restating 28px, so the two can never drift out of
-       * agreement — and because the travel is exactly 7 periods of the 4px comb, the phase at the block's top
-       * edge is unchanged: the animation itself is untouched, only the strip it has to paint on. */
-      inset: calc(-1 * var(--gc-scan-travel)) 0 0 0;
+      inset: 0;
       z-index: 3; /* above BOTH faces (and above a face's own name plate at z 2) */
       pointer-events: none;
+      mix-blend-mode: screen; /* the masked subtree blends as one — mask applies before the parent blend */
+      -webkit-mask-image: var(--gc-scan-edge-mask);
+      mask-image: var(--gc-scan-edge-mask);
+    }
+    .gc-oracle-scan::before {
+      content: "";
+      position: absolute;
+      /* TALLER THAN THE BOX BY EXACTLY THE TRAVEL (owner report 2026-08-03). The comb is painted by this
+       * layer's own background, so it can only cover the layer's box — and the loop slides that box down
+       * by `--gc-scan-travel`. At `inset: 0` the last frames of every cycle therefore exposed an uncombed
+       * band across the top of the art, growing to the full 28px right before the restart. Starting the
+       * layer one travel-length ABOVE the frame keeps the visible 0…H band covered at every phase; the
+       * overhang (above at rest, below at the end) is clipped by `.gc-oracle`'s own `overflow: hidden`.
+       * The offset READS THE TRAVEL TOKEN rather than restating 28px, so the two can never drift out of
+       * agreement — and because the travel is exactly 7 periods of the 4px comb, the phase at the block's
+       * top edge is unchanged. */
+      inset: calc(-1 * var(--gc-scan-travel)) 0 0 0;
       background: var(--gc-scanline);
-      mix-blend-mode: screen;
       animation: gacha-oracle-scan 7s linear infinite;
     }
     @keyframes gacha-oracle-scan {
@@ -4118,7 +4133,7 @@
     /* The two global axes, exactly as M5's glow is gated (§10.3: this app has no `.expensive-effect`
      * class — the gates are hand-authored rules off the ui store's body stamps). `data-motion` stops the
      * travel; `data-perf="lite"` removes the BLENDED layer outright, which is the expensive half. */
-    body[data-motion="reduced"] .gc-oracle-scan {
+    body[data-motion="reduced"] .gc-oracle-scan::before {
       animation: none;
     }
     body[data-perf="lite"] .gc-oracle-scan {
@@ -4167,35 +4182,25 @@
        * is earned rather than cargo-culted. */
       will-change: opacity;
     }
-    /* ── THE BOTTOM DISSOLVE (owner reports 2026-08-06, and it SPLITS in two) ──────────────────────────
-     * REPORTED: once ghosted, the block ends in a CLEAN-CUT horizontal line behind the chat log — and the
-     * follow-up named the worst of it precisely: the SCANLINE. A soft picture can end softly, but the
-     * comb's straight hairlines all stop dead on the same row, which is what makes the cut read as an edge
-     * rather than as depth. Then a second report split the answer, because the two halves want different
-     * lifetimes:
-     *
-     *   ① THE COMB dissolves ALWAYS, for the whole of fade mode — the owner likes the softened comb at
-     *     rest as well as ghosted. So the mask goes on `.gc-oracle-scan` itself. A mask is applied to an
-     *     element's own composited rendering BEFORE it is blended into its parent, so the comb's alpha is
-     *     ramped down first and `mix-blend-mode: screen` then contributes nothing at the bottom — which is
-     *     exactly the reading we want and is why this does not need to be a second mask on the block.
-     *   ② THE ART's edge dissolves only ONCE IT STARTS GHOSTING. At rest the crisp bottom edge is the
-     *     designed hairline look and must come back, so the block's mask is gated on the driver's
-     *     `[data-gc-ghosting]` stamp.
+    /* ── THE BOTTOM DISSOLVE (owner reports 2026-08-06; re-ruled 2026-08-21, ISS-11) ───────────────────
+     * Once the block GHOSTS, its bottom edge dissolves into the page instead of ending in a CLEAN-CUT
+     * horizontal line behind the chat log; at rest the crisp bottom edge is the designed hairline look,
+     * so the mask is gated on the driver's `[data-gc-ghosting]` stamp. ONE mask, on the BLOCK: it
+     * composites the whole subtree — art, scrim, name plate AND the scan comb — so the scanlines
+     * dissolve with the image as one surface. (ISS-11 history: the 2026-08-06 round ALSO gave the comb
+     * an always-on copy of this mask of its own — but the comb is the element the M6 7s travel
+     * animates, and a mask is painted in its host's box, so the fade band slid down with each cycle
+     * and snapped back: a periodic pulse at rest. The owner ruled the at-rest softening un-wanted;
+     * deleting that rule fixed the pulse AND the double-masking the pair produced while ghosted.)
      *
      * WHY A BOOLEAN STAMP and not the ramp itself: a mask whose GEOMETRY rode `--gc-oracle-p` would
      * re-rasterize a gradient on every frame of the ramp — the paint cost M7's entire design avoids (its
      * contract is one custom-property write plus compositor work per scroll frame). The stamp flips at
      * most twice per gesture, and `GachaAgent`'s driver writes it only on a FLIP, with hysteresis.
      *
-     * Both masks are STATIC and MODE-SCOPED: outside `data-oracle="fade"` the block is a header you scroll
+     * The mask is STATIC and MODE-SCOPED: outside `data-oracle="fade"` the block is a header you scroll
      * past, there is nothing to dissolve into, and that mode renders exactly as it did. A mask makes the
-     * element a stacking context — the block already is one under this mode (`z-index: 0` above) and the
-     * scan layer is a positioned, z-indexed child either way, so nothing moves for the blend's scope. */
-    body[data-oracle="fade"] .gc-oracle-scan {
-      -webkit-mask-image: var(--gc-oracle-edge-mask);
-      mask-image: var(--gc-oracle-edge-mask);
-    }
+     * element a stacking context — the block already is one under this mode (`z-index: 0` above). */
     body[data-oracle="fade"] .gc-oracle[data-gc-ghosting] {
       -webkit-mask-image: var(--gc-oracle-edge-mask);
       mask-image: var(--gc-oracle-edge-mask);
