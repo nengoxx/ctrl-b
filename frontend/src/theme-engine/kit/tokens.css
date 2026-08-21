@@ -68,4 +68,15 @@ body {
   --radius-sm: 11px;
   /* density multiplier — a cosmetic per-theme lever (1 = comfortable; a theme scopes <1 for compact) */
   --density-pad: 1;
+  /* motion — the micro-interaction band (R52 §8.1: two durations + two easings, picked where M3 / Fluent /
+   * Carbon / LibreChat already agree). Every timed micro-interaction in kit.css reads one of these, so "how
+   * fast does this app feel" is four values instead of a drift of literals; the easings are chosen by
+   * DIRECTION OF TRAVEL (§2.3), which is the rule that makes motion read as one language. Theme-overridable
+   * in @layer theme like every other contract token (D7). Deliberately NOT named `--motion-*`: nothing here
+   * is coupled to the `data-motion` attribute. The reduced-motion COLLAPSE is not in this file — it lives in
+   * kit/axes.css (@layer axes) so it also outranks a theme's override of these names; see its motion block. */
+  --dur-fast: 150ms; /* THE default micro-transition: state tints, presses, menus */
+  --dur-slow: 200ms; /* the composer bar, popovers, sheets, overlays */
+  --ease-std: cubic-bezier(0.2, 0, 0, 1); /* both ends visible — front-loaded (M3 standard) */
+  --ease-out: cubic-bezier(0, 0, 0, 1); /* arriving/decelerate (M3 standard-decelerate) */
 }

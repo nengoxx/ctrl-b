@@ -43,7 +43,8 @@ export function SuggestPopover({ suggest }: { suggest: ComposerSuggest }) {
   const listRef = useRef<HTMLUListElement>(null);
   const { open, items, activeIndex, displaced } = suggest;
   // The app's OWN motion lever (never `matchMedia`/`prefers-reduced-motion` — §14.11: the switch may turn
-  // motion back ON for a user whose OS asks for less). Under `reduced` kit.css sets `transition: none`.
+  // motion back ON for a user whose OS asks for less). Under `reduced` the kit collapses the motion band to
+  // 1ms (kit/axes.css) — the exit is imperceptible but its transition events still fire (see below).
   const reducedMotion = useUISlice((s) => s.motion === "reduced");
 
   // WHAT THE SHELL RENDERS — its own state, not `items` directly, because the shell OUTLIVES the list.
@@ -57,10 +58,12 @@ export function SuggestPopover({ suggest }: { suggest: ComposerSuggest }) {
   // The retained rows are RELEASED once the exit is over (Codex, LOW) — the composer re-renders on every
   // keystroke, so rows kept forever after a dismissal are a permanent per-keystroke reconcile cost, real on
   // Fennec with a large discovered skill/agent registry. Normally the shell's own transition event releases
-  // them (`releaseRows` below). But when there is no slide to wait for AT THE CLOSE ITSELF — reduced motion,
-  // or another overlay already displaced us and kit.css snapped us out so we can't ghost over it — the
-  // transition is `none` and no transition event ever fires, so those two paths release synchronously at the
-  // close edge instead of leaning on a timer.
+  // them (`releaseRows` below); these two paths release synchronously at the close edge instead of leaning
+  // on a timer. `displaced` is LOAD-BEARING: another overlay took the slot, kit.css's handoff snap set
+  // `transition: none` so we can't ghost over it, and no transition event will ever fire. `reducedMotion` is
+  // belt-and-braces since ISS-10 ① — the reduced collapse is 1ms rather than `none` precisely so the event
+  // still fires (R52 §8.3) — kept because it releases on the close edge itself, and a double release is free
+  // (the functional update returns the SAME `NO_ROWS` reference, which React bails out of).
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);

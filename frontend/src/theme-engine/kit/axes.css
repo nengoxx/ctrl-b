@@ -4,9 +4,10 @@
  * own overrides (@layer theme), while staying under `reset`. That order is the whole point of the axis: the
  * stamp already encodes the theme-default + the user's override RESOLVED (kit/axes.ts#useOutlines), so a
  * theme's chat borders must not be able to veto an outlines-OFF the user (or the theme's own default) asked
- * for. axes only STRIPS resting borders / swaps a focus ring — never fills — precisely because it outranks
- * @layer theme: any `background`/fill here would clobber a theme's chat inks (frontier's bubble fills), and
- * fill-differentiation stays each theme's job. Only Kit semantic-contract tokens are used (§15).
+ * for. axes only STRIPS resting borders / swaps a focus ring / COLLAPSES a timing token — never fills —
+ * precisely because it outranks @layer theme: any `background`/fill here would clobber a theme's chat inks
+ * (frontier's bubble fills), and fill-differentiation stays each theme's job. Only Kit semantic-contract
+ * tokens are used (§15).
  *
  * ── axis: `outlines` (default ON — reskins keep the Kit's bordered chrome; frontier defaults OFF) ──
  * When `body[data-outlines="off"]`, the CHAT-surface resting borders are stripped and the element
@@ -21,6 +22,27 @@
  * family · the PrivilegeChip). Deliberately NOT here: the Clear-appbar squared icon buttons (owner-requested
  * kit chrome), `:focus-visible` outlines (a11y), the composer (`.kit-composer*`/`.kit-cbtn` — its own axis
  * slice), mini-player, Conf/Utils/overlay chrome — those stay frontier-local until promoted. */
+
+/* ── axis: `motion` — the reduced-motion collapse of the kit's micro-interaction band (ISS-10 ①) ──
+ * The band itself (`--dur-fast`/`--dur-slow`/`--ease-std`/`--ease-out`) is DECLARED in kit/tokens.css at
+ * @layer base, where a theme may re-time it in @layer theme. The COLLAPSE has to live in a layer that
+ * outranks that override — a theme may choose its own tempo, but it must never out-declare a user who asked
+ * for less motion — which is exactly this file's mandate, so it lands here rather than beside the defaults.
+ * Two deviations from the outlines axis above, both deliberate:
+ *   • declared on `body` and NOT scoped under `.kit` — this is a token declaration, not chrome: it paints
+ *     nothing, and it must reach every reader of the band (kit.css's `.kit-*` rules AND a theme that adopts
+ *     the vocabulary). `body` also beats a theme declaring the band on `:root` by INHERITANCE PROXIMITY —
+ *     a `:root` rule never matches `body`, so body's own value is what the tree inherits — which makes the
+ *     collapse hold whatever layer that theme rule lands in. Every theme self-layers into `theme` today
+ *     (verified across all five tokens.css), so the layer order is the primary guarantee and this is belt.
+ *   • 1ms, NOT `none`/`0s` — a zero-length transition fires no `transitionend`, and SuggestPopover releases
+ *     its retained rows on that event (R52 §2.2 ④ / §8.3). One millisecond is imperceptible AND observable.
+ * Infinite ambient animations are NOT covered here: they keep their own `animation: none` gates in kit.css
+ * (a 1 ms infinite spin is a pathology, not a collapse). */
+body[data-motion="reduced"] {
+  --dur-fast: 1ms;
+  --dur-slow: 1ms;
+}
 
 /* ── chat bubbles ── */
 /* sys — the kit's dashed caption frame goes; the muted centered caption reads without a box. */

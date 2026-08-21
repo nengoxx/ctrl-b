@@ -282,7 +282,7 @@ body[data-motion="reduced"] .kit .tab.active {
   border: 1px solid var(--line);
   color: var(--text-2);
   flex: none;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
 }
 .kit-iconbtn:active {
   background: var(--surface-2);
@@ -598,10 +598,15 @@ body[data-perf="lite"] .kit-composer {
   border-radius: 999px;
   border: 1px solid var(--line-2);
   color: var(--text-2);
-  /* border-color + transform ride the same 0.15s as the fill (R52 cut-down #1): the rec/sending
+  /* border-color + transform ride the same --dur-fast as the fill (R52 cut-down #1): the rec/sending
    * chip's ring used to SNAP while its background faded, and `.mic.press`'s scale snapped both
    * directions — the state chrome now moves as one. */
-  transition: background 0.15s, color 0.15s, opacity 0.2s, border-color 0.15s, transform 0.15s;
+  transition:
+    background var(--dur-fast) var(--ease-std),
+    color var(--dur-fast) var(--ease-std),
+    opacity var(--dur-slow) var(--ease-std),
+    border-color var(--dur-fast) var(--ease-std),
+    transform var(--dur-fast) var(--ease-std);
   /* stay snapped to the trailing edge at any plan-pill width — never squished/pushed out when the row
    * runs short (the flexbox min-content fix's partner; covers the stacked layout under any composer skin). */
   flex-shrink: 0;
@@ -657,7 +662,7 @@ body[data-motion="reduced"] .kit-cbtn.mic.sending svg {
   border-radius: 999px;
   background: var(--accent-fill);
   color: var(--accent-ink);
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-fast) var(--ease-std);
   /* like `.kit-cbtn`: the send button holds the trailing edge and never shrinks under a wide pill. */
   flex-shrink: 0;
 }
@@ -735,7 +740,8 @@ body[data-perf="lite"] .kit .tools-sheet {
  *
  * MOTION: they stay MOUNTED and toggle `.open` — the plan sheet's idiom, and for the same reason: a panel
  * that unmounts on close can only animate its ENTER. Same values as the sheet (opacity + translateY(14px),
- * .2s ease — transform/opacity only, §14.11), gated on `data-motion` (never the raw OS query). The closed
+ * `--dur-slow`/`--ease-std` — transform/opacity only, §14.11); `data-motion` gates them through the motion
+ * band itself (kit/axes.css collapses it to 1ms), never the raw OS query. The closed
  * shell is `inert` (SuggestPopover/ToolsMenuSheet) — out of tab order AND the a11y tree, which is what
  * makes "stay mounted" safe here; `pointer-events: none` below is the pointer half of the same contract. */
 .kit .kit-suggest,
@@ -752,17 +758,13 @@ body[data-perf="lite"] .kit .tools-sheet {
   opacity: 0;
   transform: translateY(14px);
   pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity var(--dur-slow) var(--ease-std), transform var(--dur-slow) var(--ease-std);
 }
 .kit .kit-suggest.open,
 .kit .tools-sheet.open {
   opacity: 1;
   transform: none;
   pointer-events: auto;
-}
-body[data-motion="reduced"] .kit .kit-suggest,
-body[data-motion="reduced"] .kit .tools-sheet {
-  transition: none; /* §14.11: reduced motion → snap open/closed, no slide */
 }
 /* HANDOFF SNAP (Codex review of the motion slice). The three overlays share ONE slot, so opening B while A
  * is still mid-exit painted A's dying .2s fade OVER B: the composer pair tie at z 5 and both outrank the
@@ -1169,7 +1171,7 @@ body[data-motion="reduced"] .kit-composer.line .kit-cbtn.mic.line-btn.rec {
  * as IT appears: the pill when a plan starts, the trigger with the bar). */
 body[data-motion="full"] .kit-composer.line .line-btn,
 body[data-motion="full"] .kit-composer.line .line-controls > * {
-  animation: kit-btn-pop 0.15s ease-out;
+  animation: kit-btn-pop var(--dur-fast) var(--ease-out);
 }
 
 /* ═══ composer SKINS — the `composerSkin` presentation axis (D37 / §14.16, F5 slice B) ════════════════════
@@ -1638,7 +1640,7 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   cursor: pointer;
   color: var(--text-3);
   display: inline-flex;
-  transition: transform 0.2s;
+  transition: transform var(--dur-slow) var(--ease-std);
 }
 .kit-device.open .chev {
   transform: rotate(90deg);
@@ -1656,7 +1658,7 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   border-radius: 50%;
   border: 1px solid var(--line-2);
   color: var(--text-2);
-  transition: background 0.15s, opacity 0.2s;
+  transition: background var(--dur-fast) var(--ease-std), opacity var(--dur-slow) var(--ease-std);
 }
 .kit-device .act.wake {
   color: var(--accent);
@@ -1931,7 +1933,7 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   font-size: 11.5px;
   font-weight: 600;
   color: var(--text-3);
-  transition: color 0.15s, background 0.15s;
+  transition: color var(--dur-fast) var(--ease-std), background var(--dur-fast) var(--ease-std);
   /* A WRAPPED seg's lines must fill the capsule (owner device round 2026-07-31): the container
    * cannot shrink below its widest line once flex wraps, so fixed-width chips left a dead gutter
    * beside the shorter line. Growing chips fill each line instead — and on the common single-line
@@ -1977,7 +1979,7 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   background: var(--surface-2);
   position: relative;
   border: 1px solid var(--line-2);
-  transition: background 0.2s, border-color 0.2s;
+  transition: background var(--dur-slow) var(--ease-std), border-color var(--dur-slow) var(--ease-std);
 }
 .kit .switch .knob::after {
   content: "";
@@ -1989,7 +1991,7 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   border-radius: 50%;
   background: var(--text-3);
   /* slide via transform (compositor-friendly, §14.11) — not `left` like vapor's legacy recipe */
-  transition: transform 0.2s, background 0.2s;
+  transition: transform var(--dur-slow) var(--ease-std), background var(--dur-slow) var(--ease-std);
 }
 .kit .switch.on .knob {
   background: var(--accent-fill);
@@ -2034,7 +2036,7 @@ body[data-composer-skin="arcade"] .kit-composer textarea::placeholder {
   padding: 2px;
   border-radius: 999px;
   border: 2px solid transparent;
-  transition: border-color 0.15s;
+  transition: border-color var(--dur-fast) var(--ease-std);
 }
 .kit .swatches .sw.active {
   border-color: var(--accent);
@@ -2121,7 +2123,7 @@ body[data-mode="light"] .kit .modal {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, opacity 0.15s;
+  transition: background var(--dur-fast) var(--ease-std), opacity var(--dur-fast) var(--ease-std);
 }
 .kit .modal button.cancel {
   background: var(--surface-2);
@@ -2218,7 +2220,7 @@ body[data-mode="light"] .kit .pm {
   font-size: 14px;
   color: var(--text-2);
   border: 1px solid var(--line-2);
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
 }
 .kit .pm-x:active {
   background: var(--surface-2);
@@ -2782,7 +2784,7 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   color: var(--accent);
   font-size: 14px;
   line-height: 1;
-  transition: transform 0.2s;
+  transition: transform var(--dur-slow) var(--ease-std);
   transform: rotate(90deg); /* expanded: points down */
 }
 .kit .confgroup.collapsed .conf-chev {
@@ -2881,7 +2883,7 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   color: var(--accent);
   font-size: 16px;
   line-height: 1;
-  transition: transform 0.2s;
+  transition: transform var(--dur-slow) var(--ease-std);
 }
 /* The pill is shared with the G5 media gallery's per-file warnings (`.mgal-meta`) — one recipe, not a
  * second badge language: same three states (ok / stale = a file that will not work / dim = advisory). */
@@ -3145,7 +3147,7 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   color: var(--accent-ink);
   background: var(--accent-fill);
   border: 1px solid transparent;
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-fast) var(--ease-std);
 }
 .kit .conf-save:active {
   opacity: 0.85;
@@ -3394,7 +3396,7 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   content: "▸";
   color: var(--accent);
   font-size: 9px;
-  transition: transform 0.15s;
+  transition: transform var(--dur-fast) var(--ease-std);
 }
 .kit .b .think[open] > summary::before {
   transform: rotate(90deg);
@@ -3722,7 +3724,7 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
   margin-left: auto;
   color: var(--text-3);
   font-size: 10px;
-  transition: transform 0.15s ease;
+  transition: transform var(--dur-fast) var(--ease-std);
 }
 .kit .b.cmd .cmd-detail[open] > summary .chev {
   transform: rotate(180deg);
@@ -3864,7 +3866,7 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
   margin-left: auto;
   color: var(--text-3);
   font-size: 10px;
-  transition: transform 0.15s ease;
+  transition: transform var(--dur-fast) var(--ease-std);
 }
 .kit .b.cmd .cmd-output[open] > summary .chev {
   transform: rotate(180deg);
@@ -3981,7 +3983,7 @@ body[data-motion="reduced"] .kit .b.bot .who .status-tag {
   opacity: 0.72;
   -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black' stroke='black' stroke-width='2.4' stroke-linejoin='round'/></svg>") center/contain no-repeat;
           mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M8 5v14l11-7z' fill='black' stroke='black' stroke-width='2.4' stroke-linejoin='round'/></svg>") center/contain no-repeat;
-  transition: opacity 0.12s ease;
+  transition: opacity var(--dur-fast) var(--ease-std);
 }
 .kit .b.bot .who .tts-play:hover {
   opacity: 1;
@@ -4041,7 +4043,7 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
 .kit .plan-pin-head .chev {
   color: var(--accent);
   font-size: 9px;
-  transition: transform 0.16s ease; /* ▴ points up (sheet rises); rotates when open */
+  transition: transform var(--dur-fast) var(--ease-std); /* ▴ points up (sheet rises); rotates when open */
 }
 .kit .plan-pill.open .chev,
 .kit .plan-pin-head.open .chev {
@@ -4108,7 +4110,7 @@ body[data-motion="reduced"] .kit .b.cmd .cmd-result.running {
   opacity: 0;
   transform: translateY(14px);
   pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity var(--dur-slow) var(--ease-std), transform var(--dur-slow) var(--ease-std);
 }
 .kit .plan-sheet.open {
   opacity: 1;
@@ -4136,9 +4138,6 @@ body[data-composer-skin="glass"] .kit .plan-sheet,
 body[data-perf="lite"][data-composer-skin="glass"] .kit .plan-sheet,
 body[data-perf="lite"] .kit-main:has(.kit-composer.line) .plan-sheet {
   background: var(--surface); /* opaque + neutral (no accent wash) under the lite gate */
-}
-body[data-motion="reduced"] .kit .plan-sheet {
-  transition: none; /* §14.11: reduced motion → snap open/closed, no slide */
 }
 .kit .plan-steps {
   list-style: none;
@@ -4274,7 +4273,7 @@ body[data-motion="reduced"] .kit .plan-sheet {
   opacity: 0;
   transform: translateY(-6px);
   pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity var(--dur-slow) var(--ease-std), transform var(--dur-slow) var(--ease-std);
 }
 .kit .plan-pin-drop.open {
   opacity: 1;
@@ -4286,9 +4285,6 @@ body[data-perf="lite"] .kit .plan-pin-drop {
   background: color-mix(in oklch, var(--surface) 93%, var(--accent));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-}
-body[data-motion="reduced"] .kit .plan-pin-drop {
-  transition: none; /* §14.11: reduced motion → snap open/closed, no slide */
 }
 
 /* ── session-privilege chip + menu (.priv-*) — the tap-friendly twin of /privilege ── */
@@ -4352,7 +4348,7 @@ body[data-motion="reduced"] .kit .plan-pin-drop {
   z-index: 61;
   min-width: 124px;
   transform-origin: top right;
-  animation: kit-navmenu-in 0.16s ease;
+  animation: kit-navmenu-in var(--dur-fast) var(--ease-std);
 }
 body[data-motion="reduced"] .kit .priv-menu {
   animation: none;
@@ -4420,7 +4416,7 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   color: var(--accent);
   font-size: 16px;
   line-height: 1;
-  transition: transform 0.2s;
+  transition: transform var(--dur-slow) var(--ease-std);
 }
 .kit .svc-edit.open .svc-chev {
   transform: rotate(90deg);
@@ -5688,19 +5684,14 @@ body[data-motion="reduced"] .kit .bs-sheet {
  * may still override in @layer theme. */
 .kit .kit-composer {
   transition:
-    opacity 0.2s ease,
-    transform 0.2s ease,
-    visibility 0.2s;
+    opacity var(--dur-slow) var(--ease-std),
+    transform var(--dur-slow) var(--ease-std),
+    visibility var(--dur-slow) var(--ease-std);
 }
 body[data-sheet="open"] .kit .kit-composer {
   opacity: 0;
   transform: translateY(10px);
   visibility: hidden;
-}
-/* reduced-motion snap the theme copies MISSED (a §14.11 correctness upgrade at promotion) — mirrors the
- * `.bs-sheet` reduced-motion rule above. */
-body[data-motion="reduced"] .kit .kit-composer {
-  transition-duration: 0.001s;
 }
 
 .kit .bs-handle {
@@ -5804,7 +5795,7 @@ body[data-motion="reduced"] .kit .kit-composer {
   cursor: pointer;
   color: var(--text-2);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5)); /* keep it legible over the bright starfield/planets */
-  transition: color 0.15s, transform 0.12s;
+  transition: color var(--dur-fast) var(--ease-std), transform var(--dur-fast) var(--ease-std);
 }
 /* hover/press feedback ONLY on real pointer devices — on touch, `:active`/`:hover` STICK until the next tap
  * (Android quirk), which read as the button being "stuck clicked". The open state (`[data-open]`) is the
@@ -5886,7 +5877,7 @@ body[data-motion="reduced"] .kit .kit-composer {
   border: 1px solid var(--line-2);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   transform-origin: top right;
-  animation: kit-navmenu-in 0.16s ease;
+  animation: kit-navmenu-in var(--dur-fast) var(--ease-std);
 }
 body[data-motion="reduced"] .kit .navmenu-pop {
   animation: none;
@@ -5910,7 +5901,7 @@ body[data-motion="reduced"] .kit .navmenu-pop {
   border-radius: 12px;
   cursor: pointer;
   color: var(--text-2);
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--dur-fast) var(--ease-std), color var(--dur-fast) var(--ease-std);
 }
 .kit .navmenu-item:hover {
   background: var(--surface-2);
@@ -5953,7 +5944,7 @@ body[data-perf="lite"] .kit .navmenu-pop {
   cursor: pointer;
   color: var(--text-2);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
-  transition: color 0.15s, transform 0.12s;
+  transition: color var(--dur-fast) var(--ease-std), transform var(--dur-fast) var(--ease-std);
 }
 /* hover/press feedback only on real pointer devices — on touch `:hover`/`:active` STICK until the next tap
  * (the same Android quirk the floating launcher guards against). */
