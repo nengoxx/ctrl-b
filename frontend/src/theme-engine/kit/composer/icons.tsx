@@ -70,14 +70,19 @@ export function SpinnerIcon({ size = 26 }: { size?: number }) {
     >
       {/* 2.4 (between the arrowhead's 2.2 and the mic's 2.6): eight short bars at equal weight read
           thinner than the mic's long strokes, so they get a touch more. */}
-      <path d="M12 2v4" />
-      <path d="m16.2 7.8 2.9-2.9" />
-      <path d="M18 12h4" />
-      <path d="m16.2 16.2 2.9 2.9" />
-      <path d="M12 18v4" />
-      <path d="m4.9 19.1 2.9-2.9" />
-      <path d="M2 12h4" />
-      <path d="m4.9 4.9 2.9 2.9" />
+      {/* Graded opacity tail (owner round 2026-08-21): equal-weight bars under the 45°-step roll land
+          every frame on a pixel-identical image — the spin was invisible. The iOS/Material segmented-
+          spinner fix: a bright head fading counter-clockwise behind it, so each step visibly advances
+          the head clockwise; the static face (reduced motion, line's frozen glyph) still reads as a
+          spinner rather than a gapped icon. */}
+      <path d="M12 2v4" opacity="1" />
+      <path d="m16.2 7.8 2.9-2.9" opacity="0.14" />
+      <path d="M18 12h4" opacity="0.22" />
+      <path d="m16.2 16.2 2.9 2.9" opacity="0.31" />
+      <path d="M12 18v4" opacity="0.42" />
+      <path d="m4.9 19.1 2.9-2.9" opacity="0.55" />
+      <path d="M2 12h4" opacity="0.7" />
+      <path d="m4.9 4.9 2.9 2.9" opacity="0.85" />
     </svg>
   );
 }
