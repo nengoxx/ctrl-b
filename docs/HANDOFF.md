@@ -12,7 +12,53 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-21)
+## Current state (2026-08-21, SECOND session — the owner-round wave)
+
+- **Prod still UNCHANGED: v1.7.4 @ `92cb3a3`** (rollback v1.7.2). **7 new commits on local `main`
+  through `b069beb` — UNPUSHED (push needs the owner's word)**; origin remains `d5cc25a`. Dev units
+  still RUNNING and serving the new work via HMR.
+- **THE OWNER DEVICE ROUND (partial) landed and drove the session:** ① auto-stop dictation ✓ WORKS
+  (incl. under chunked TTS) · ② **ISS-9 round 2**: the accent chip landed but the spin itself was
+  invisible — 8 equal bars under a 45°-step rotation = every frame pixel-identical; fixed
+  `52510fe` (graded opacity tail, iOS/Material pattern), **owner-confirmed "looks much better"** ·
+  ③ **NEW: the per-chunk scrubber failed real use** → became S1.5 below · ④ F1 notifications
+  test still owed (owner's afternoon).
+- **C3 SLICE 1.5 ✅ BUILT + FULLY REVIEW-CLOSED — whole-message virtual-timeline scrubber**
+  (D63 AMENDED 2026-08-21, the amendment block inside the D63 entry = the spec of record).
+  The owner overruled "scrubber v1 per-chunk": the bar + seek now span the WHOLE reply while
+  playback stays the untouched opus src-swap queue — per-chunk durations (exact via metadata
+  probe once a blob exists, chars/sec-learned estimates before), global position/duration,
+  seek → (chunk, offset) with backward-instant + forward on-demand synth, and the **three-state
+  waveform (owner's idea): accent played · filled synthesized · HOLLOW OUTLINE estimated**, `~`
+  on the time label while estimating. LobeChat's blob-rebuild stays a non-build (R48 §2.5:
+  mp3-bound + per-seam reload). **The full ladder ran:** Opus build from the pinned brief
+  (`9c6b482`) → Emma-lane blind round **SHIP WITH FIXES, 2 MED** (interrupted-play() race ·
+  pending seek banked in estimated seconds) → fix wave (`c00a76d`: playOp token + within-chunk
+  FRACTION paid out via one-shot loadedmetadata, end-guarded 50 ms) → confirm round **both
+  RESOLVED + 1 NEW catch** (a newer same-chunk drag couldn't disarm the stale payout) → fixed
+  (`b069beb`, `Session.metaSeek` canceller) → final confirm **"RESOLVED — no new findings."**
+  FE tests 2219 → 2236; every commit full-gate green. **Live-verified visually on dev** (Playwright
+  probe, real Kokoro): all three bar states simultaneously + `~-0:42` + a 20% tap landing at
+  22% (within one bar); screenshots delivered to the owner. Accepted residuals recorded in the
+  amendment §8 + the 9c6b482 ladder notes (mid-message rewind after forward-seek holes ·
+  permanent `~` after a failed chunk · the ok-branch's ms-wide estimate window, reviewer-agreed
+  below-bar).
+- **R52 motion-language dossier BOUGHT + VERIFIED + INDEXED** (`58fc52a`; ISS-10's research).
+  Headlines: 6/6 peers animate NO composer glyph swaps (we'd be ahead, not behind); the field's
+  small-state pattern = scale+opacity cross-fade with direction-asymmetric timing (M3 checkbox
+  150/350 ms ≙ Apple ReplaceSymbolEffect); consistency = a shared duration/easing token scale
+  (our audit: 4 ad-hoc durations, 0 named easings); **a motion-style settings toggle has ZERO
+  field precedent** — reduced-motion (ours exists) + per-theme token overrides is the pattern.
+  **Cut-down #1 SHIPPED** (`b0c7db3`): `.kit-cbtn` now transitions border-color + transform (the
+  rec/sending chip's ring used to snap while its fill faded). **The rest is PARKED by owner
+  ruling (2026-08-21): "nothing fancy, consistent with the buttons, park for proper review
+  later, after the TTS thing"** — the owner likes the current mic→mic+send animation and asked
+  why 3×3 tokens; the wake-up is a DESIGN CONVERSATION (prose), not a build. ISS-10 stays OPEN
+  with the pointer.
+- **ISS ledger moves:** ISS-9 round-2 record + owner confirmation · **ISS-10 NEW** (icon-swap
+  transitions, owner wish, parked pending the design talk).
+
+## Prior state (2026-08-21, first session)
 
 - **Prod is UNCHANGED: v1.7.4 @ `92cb3a3`** (rollback = v1.7.2; the whole 2026-08-20 record below
   still governs prod). **NOTHING released this session by owner ruling — everything soaks on DEV
@@ -64,16 +110,34 @@
   (fastest) and AllTalk (best quality) — features must serve both; standing permission to probe
   emma↔vault services when needed.
 
-## ▶▶ NEXT (2026-08-21)
+## ▶▶ NEXT (2026-08-21, second session — supersedes the list below where struck)
 
-1. **THE OWNER DEVICE ROUNDS on dev — the acceptance for everything above** (dev is up at
-   `d5cc25a`): ① C3 seam audibility — tap ▶ on a long reply (Kokoro pads sentence ends with
-   250 ms silence; desktop seams measured 4–6 ms — Android hardware is the open question;
-   optionally switch TTS primary to AllTalk + `chunk_lookahead: 2` for the quality-backend
-   taste test) · ② auto-stop dictation — enable in Conf → STT, **calibrate the threshold**
-   (quiet speech + room noise; 0.01 is a guess) · ③ the ISS-9 chip eyeball · ④ F1 — master
-   notifications ON, background the app, let a host transition, tap → fleet tab · ⑤ the
-   icon-backdrop FRESH INSTALL (still owed from v1.7.4).
+0. **PUSH the 7 unpushed commits** (`52510fe`..`b069beb`) once the owner says push — everything
+   is committed, gated, review-closed.
+1. **THE OWNER DEVICE ROUNDS on dev — still the acceptance** (dev serves the new work via HMR):
+   ① C3 seam audibility on Android — **now PLUS the S1.5 scrubber feel** (whole-bar seek, the
+   hollow-outline tail at phone size — the recorded fallback if outlines read as noise is a
+   fainter fill — and the `~-0:42` tilde placement, a builder-flagged eyeball item;
+   optionally AllTalk-primary + `chunk_lookahead: 2`) · ~~② auto-stop dictation~~ **✓ WORKS
+   (owner, this round)** — threshold 0.01 held; recalibrate only if a real session misfires ·
+   ~~③ ISS-9 chip~~ **✓ round 2 confirmed "looks much better"** · ② F1 — master notifications
+   ON, background the app, let a host transition, tap → fleet tab (**owner: this afternoon**) ·
+   ③ the icon-backdrop FRESH INSTALL (still owed from v1.7.4) · ④ the R52 cut-down eyeball
+   rides along free (the mic chip's ring now fades with its fill).
+2. **C3 SLICE 2 — read-along-while-streaming** (unchanged, D63-designed): the S1 hook points in
+   the builder report + **S1.5's growth contract is recorded in its build report** (push onto the
+   five parallel Session arrays + `publishTimeline` + `pump`; the ONE addition S2 must make = a
+   `growing` latch so end-of-queue holds instead of `finish()`).
+3. **The RELEASE ruling** — the batch grew by this session's 7 commits (still no schema/config
+   migration; schema 6, VERSION 1; rollback v1.7.2).
+4. **The ISS-10 motion design talk** (owner-parked, after the TTS thing): start from R52 §8 +
+   the owner's words — likes the current mic→mic+send animation, "nothing fancy", asked why
+   3×3 tokens; converse in prose first, no build until ruled.
+5. **A13 design talk** and **Phase 19 (D58) owner court** — unchanged, in that order.
+
+## Prior ▶▶ (2026-08-21, first session)
+
+1. ~~THE OWNER DEVICE ROUNDS~~ — partially run; see the second-session list above.
 2. **C3 SLICE 2 — read-along-while-streaming** + the single turn-end ownership entry point:
    fully designed + council-closed inside D63 (triple-gated resplit · MED-3 ownership rule).
    The S1 builder recorded the exact hook points in its report: `useAutoTts.ts:50` →
