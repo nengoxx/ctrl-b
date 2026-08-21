@@ -507,8 +507,19 @@ one — only the browser binary can). That splits C2 into two features that must
   Speaches' pipe-muxed mp3 carries ~46 ms dead air per chunk (measured); `opus`/`wav` are
   sample-exact.** Riders the build must carry (R48 §7): `max_text_chars` semantics under chunking ·
   per-chunk failover × the D62 `X-Voice-Served-By` chip · the blob cache going N-per-message
-  (SYS-17c gets worse). Pre-build gate: the 20-min device probe of the real src-swap gap on
-  Fennec + Chrome Android (only that result could justify Web Audio).
+  (SYS-17c gets worse). ~~Pre-build gate: the 20-min device probe of the real src-swap gap on
+  Fennec + Chrome Android (only that result could justify Web Audio).~~
+- **→ DESIGN LOCKED as [D63] 2026-08-21** (owner rulings + the
+  [R50](./research/R50-c3-playback-probes.md) probe pass; council efficiency round SHIP AS
+  DESIGNED after 2 HIGH + 6 MED folded — the full spec lives in the D-entry). Headlines:
+  element src-swap queue, depth-1 latch (desktop seam MEASURED 4–6 ms — Web Audio/MSE dead;
+  the Android seam check moves to the first device round) · `chunking: sentence` shipped ON ·
+  `chunk_format: opus` with request>model>service precedence · failover PIN via
+  `X-Voice-Target` echo → `prefer` · single-message blob retention · `toSpeech` goes
+  newline-preserving + table/emoji strips · read-along = slice 2 behind a triple-gated resplit
+  + one turn-end ownership entry point. **Single-stream progressive mode = recorded NON-BUILD**
+  (R50 P2/P4: slower TTFA than chunking and Chromium never becomes seekable) — the queue's
+  ordered source list is the seam if ever revisited. Build pends the owner S1 go.
 
 ---
 

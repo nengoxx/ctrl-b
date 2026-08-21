@@ -4541,3 +4541,62 @@ with sr-only/aria labels carrying the words. Every segment is omitted when its d
 pre-D62 messages have no `source` → plain who-line, no chip, no disclosure (the honest
 degradation). Per-section context breakdown (skills/tools shares) is a recorded NON-BUILD —
 routed to the D58/DP-B harness pass; it would join later as one more additive key.
+
+## D63 — Chunked TTS: sentence queue on the element, opus, failover pin ✏️ LOCKED 2026-08-21 (owner rulings in conversation; drives ROADMAP §C3; evidence = R48 + R50 probes; council = Hermes emma lane efficiency round, 2 HIGH + 6 MED all folded, confirm all-RESOLVED, SHIP AS DESIGNED)
+
+**Mechanism (probe-settled):** replies synthesize + play as sequential chunks on the ONE existing
+`audioController` `HTMLAudioElement` — `src`-swap on `ended`, synth-ahead depth 1 with the
+waiting latch (AnythingLLM's shape). Measured: first audio ~0.7 s vs 13.6 s today (R50 P2); the
+swap seam 4–6 ms vs Kokoro's 250 ms sentence-end silence (P3). NO Web Audio, NO MSE, NO
+single-stream mode (P4: chunking beats streaming 19× vs 3.5× on TTFA and Chromium never becomes
+seekable on a Content-Length-less stream) — the queue consumes an ordered chunk list, which IS
+the recorded seam if a streaming source is ever revisited. Cancellation = the existing `reqSeq`
+generation + AbortController + queue clear; ≤1 wasted synth per cancel by the depth bound; a
+failed chunk is skipped (one toast per message), never a queue abort.
+
+**Chunker (pure, shared by both slices):** input = `toSpeech` prose; `toSpeech` first gains
+table-row + emoji strips (never rely on Speaches' server-side strip — portability) and its
+whitespace pass becomes NEWLINE-PRESERVING (council HIGH-1: the old collapse-all erased every
+paragraph/newline boundary). Sentence split `/(?<=[.!?…])\s+|\n+/` · paragraph `\n{2,}` · merge
+floor <4 words OR <50 chars forward · max `chunk_max_chars` at the last word boundary, HARD-CUT
+when none exists under the cap (council MED-8; progress guaranteed). Config validated at load:
+`chunk_min_chars <= chunk_max_chars <= max_text_chars`, lookahead 1..4. Deliberately not
+list-aware; no `Intl.Segmenter` (probed, no better).
+
+**Config (additive on `TtsServiceCfg`, no migration):** `chunking: off|paragraph|sentence`
+(SHIPPED DEFAULT `sentence` — owner ruling) · `chunk_format` (default `opus` — R50 P1
+sample-exact on Speaches + P5 universal across peers; mp3 disqualified: +48 ms dead air/chunk) ·
+`chunk_min_words 4` · `chunk_min_chars 50` · `chunk_max_chars 400` · `chunk_lookahead 1`.
+`off` = today's whole-blob path byte-identical, which keeps `format` untouched. Runtime delivery
+(council HIGH-2): the non-secret `tts_chunking` client-policy object rides the always-on
+`GET /voice/status`; Conf rows are hand-authored in the existing voice-group pattern (rows,
+`VoiceTts` types, setters, numeric coercion) — nothing auto-renders. The chunk request carries a
+bounded request-level format override with precedence request > model > service (council MED-4:
+a model-level `format: mp3` must not silently defeat the chunk path).
+
+**Failover pin (owner-ruled; stateless):** response gains `X-Voice-Target: provider/model`
+(display `X-Voice-Served-By` untouched); the client echoes it as `prefer` on chunks 2..N; the
+route tries that TARGET first then the normal chain (council MED-5: provider alone is ambiguous
+— one provider may carry two models). A vanished `prefer` is ignored (miss → normal chain). No
+re-paying a dead primary per chunk, no mid-reply voice change, still fails over if the pin dies.
+Serve flash shows once per message + on pin change only. `max_text_chars` re-expression: the
+per-request 422 stays; the per-MESSAGE bound moves to the chunker (tail dropped + one toast) —
+council-judged no loss under the single-owner tailnet model.
+
+**Blob lifecycle:** retention = ONE message (new play revokes the previous message's chunk URLs;
+`/clear` reaps all; older-message replay re-synthesizes — synth is 6.1× realtime). Council
+MED-7: the generation is re-checked after blob creation and BEFORE cache insert; a
+stale-generation URL is revoked on the spot (closes the cancel race that could leave two
+messages resident).
+
+**Slice 2 — read-along-while-streaming:** resplit of the growing buffer gated THREE ways
+(council MED-6 — the store does not coalesce deltas): only when the arriving delta contains a
+boundary char `[.!?…\n]`, only while the session is active (auto-TTS on, not user-stopped), and
+never past the per-message cap; index-dedupe against last-enqueued; turn end flushes the tail.
+Turn-end ownership (council MED-3): ONE controller entry point — flush an owned read-along
+session, else start normal playback; `useAutoTts` calls only it (`toggle` keeps human-tap
+semantics). User stop kills the session for the turn. Scrubber v1 is per-chunk; whole-message
+seeking = recorded non-build (LobeChat's blob rebuild, R48 §2.5). Slices: S1 = chunker + queue +
+config + pin (play-button + turn-end auto-TTS) · S2 = read-along; each Opus-built from a pinned
+brief, blind diff round, full gate. Android seam audibility = the first device round (R50's
+desktop margins predict fine).
