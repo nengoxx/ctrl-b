@@ -526,7 +526,14 @@ one — only the browser binary can). That splits C2 into two features that must
   `toggle`, which under chunking simply starts the queue). Review wave folded same day: pin
   bootstrap (chunk 1 alone until its target lands) · a play-intent flag so a pause taken under the
   waiting latch survives it · an all-failed queue dropped instead of cached · the serve flash
-  demoted to exception-only behind `X-Voice-Degraded` (D63 amendment). **S2 —
+  demoted to exception-only behind `X-Voice-Degraded` (D63 amendment). **LIVE-VERIFIED on dev
+  2026-08-21, BOTH daily backends:** the API half (status policy · normal serve · `prefer` pinned
+  to `vault-alltalk/tts-1` cross-host · wav override · bogus-format 422) and the browser half
+  (a real agent turn through the composer → chunked playback, chunk 0 unpinned then the pin on
+  every later chunk; then AllTalk swapped to PRIMARY via the product PUT — 5/5 chunks served
+  `vault-alltalk/tts-1`, pinned — and the config restored byte-identical). R50's addendum holds
+  the AllTalk envelope (opus ✓, ~1.5–2× realtime → recommend `chunk_lookahead: 2` when AllTalk
+  is primary). OWED: the owner's phone round (Android seam audibility). **S2 —
   read-along-while-streaming and the single turn-end ownership entry point — is still open.**
 
 ---
