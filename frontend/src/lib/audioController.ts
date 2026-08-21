@@ -74,6 +74,12 @@ let pb: Playback = IDLE;
 const cache = new Map<string, string>(); // `off` path: messageId → object URL (synth once per message)
 let el: HTMLAudioElement | null = null;
 let reqSeq = 0; // guards against an out-of-order synth resolving after a newer toggle
+// Generation of the last `play()` the QUEUE started. A `play()` interrupted by a newer `src` rejects
+// with AbortError — often AFTER the newer clip's `play` event has already landed — and the generation
+// alone can't see that (both belong to the same message). Publishing "paused" there would lie about
+// live audio AND wedge the transport (a tap then calls `play()` on an already-playing element, which
+// fires no `play` event to correct it). Only the play that is still the latest may settle the status.
+let playOp = 0;
 
 /** Pre-D63 behavior until the server tells us otherwise — the policy has exactly one source. */
 let policy: ChunkPolicy = {
@@ -110,7 +116,11 @@ interface Session {
   playIdx: number; // chunk currently loaded in the element (-1 = none yet)
   waiting: boolean; // playback caught up to synthesis and is holding for the next chunk
   wantPlay: boolean; // the user's play/pause INTENT — a pause taken under the latch must survive it
-  seek: { idx: number; offset: number } | null; // a forward seek waiting for its chunk (one-shot)
+  // A forward seek waiting for its chunk (one-shot). The position is a FRACTION of the target span, not
+  // seconds: the span it was measured against is an ESTIMATE, so seconds would land past the end of a
+  // shorter chunk (instant `ended` → an unwanted rewind) or far short of a longer one, and refinement
+  // would never remap the stored intent. The fraction survives the estimate being wrong.
+  seek: { idx: number; frac: number } | null;
   pin: string | null; // `X-Voice-Target` of the serving endpoint, echoed as `prefer` on later chunks
   pinned: boolean; // chunk 1 answered: the pin is settled (or given up on) and the window may open
   errored: boolean; // a chunk failed and we already toasted (one toast per message)
@@ -180,7 +190,10 @@ function globalCurrent(s: Session): number {
   const { spans } = s.tl;
   // A forward seek waiting for its chunk owns the playhead: the element is paused on the OLD chunk and
   // its `currentTime` would drag the bar backwards every time a lookahead chunk lands.
-  if (s.seek) return (spans[s.seek.idx]?.start ?? 0) + s.seek.offset;
+  if (s.seek) {
+    const sp = spans[s.seek.idx];
+    return (sp?.start ?? 0) + s.seek.frac * (sp?.dur ?? 0);
+  }
   if (s.playIdx < 0 || !el) return 0;
   return (spans[s.playIdx]?.start ?? 0) + el.currentTime;
 }
@@ -526,15 +539,19 @@ function playNext(s: Session): void {
   // A forward seek that latched on a not-yet-synthesized chunk pays out HERE, exactly once: it belongs
   // to the chunk it targeted, so it is consumed whether or not this is that chunk (a target that failed
   // in the meantime hands off to the next playable one, from its start).
-  let offset = 0;
+  let frac = 0;
   if (s.seek) {
-    if (s.seek.idx === i) offset = s.seek.offset;
+    if (s.seek.idx === i) frac = s.seek.frac;
     s.seek = null;
   }
+  const span = s.tl.spans[i];
   a.src = s.urls[i]!;
-  a.currentTime = offset;
+  a.currentTime = 0;
+  // The fraction can only become seconds once the element knows how long this chunk REALLY is; until
+  // then the chunk starts at 0 and the published position rides the estimate.
+  if (frac > 0) applySeekOnMetadata(s, i, a, frac);
   pump(s); // window moved: start the next synth WHILE this chunk plays
-  const at = (s.tl.spans[i]?.start ?? 0) + offset;
+  const at = (span?.start ?? 0) + frac * (span?.dur ?? 0);
   if (!s.wantPlay) {
     // Paused while the latch was holding: load this chunk and HOLD it. Playing here would undo a pause
     // the element itself never saw (it had already ended when the tap landed).
@@ -542,9 +559,28 @@ function playNext(s: Session): void {
     return;
   }
   set({ current: at }); // publish the seam immediately — `timeupdate` only arrives ~4×/sec
+  const op = ++playOp;
   void a.play().catch(() => {
-    if (s.seq === reqSeq) set({ status: "paused" });
+    if (s.seq === reqSeq && op === playOp) set({ status: "paused" });
   });
+}
+
+/** Convert a pending seek's within-chunk FRACTION into `currentTime` the moment the element reports the
+ *  chunk's real length, then republish the refined position. One-shot and self-removing, and inert if
+ *  the queue moved on while the metadata loaded (the duration probe's discipline). Unreadable metadata
+ *  is not worth recovering from: the chunk simply plays from its start. */
+function applySeekOnMetadata(s: Session, i: number, a: HTMLAudioElement, frac: number): void {
+  const apply = (): void => {
+    a.removeEventListener("loadedmetadata", apply);
+    if (s.seq !== reqSeq || session !== s || s.playIdx !== i) return;
+    const d = a.duration;
+    if (!Number.isFinite(d) || d <= 0) return;
+    // The end-guard keeps a fraction of ~1 off the very end, where `currentTime` would fire `ended`
+    // immediately and cascade into the end-of-queue rewind instead of playing the tail the user asked for.
+    a.currentTime = Math.min(frac * d, Math.max(0, d - 0.05));
+    set({ current: (s.tl.spans[i]?.start ?? 0) + a.currentTime });
+  };
+  a.addEventListener("loadedmetadata", apply);
 }
 
 /** End of the queue: rewind to the first playable chunk so a re-tap replays the message from the top
@@ -646,8 +682,8 @@ export function seekFraction(f: number): void {
  *   · synthesized → load that chunk at the offset (or just move `currentTime`, if it is already the one
  *     on the element — re-assigning the same `src` would restart the decode for nothing).
  *   · not yet synthesized → arrange for the queue to land THERE: park the cursor one before it, hold the
- *     latch, and record the offset for `playNext` to apply on arrival. `pump` is playIdx-windowed, so
- *     moving the cursor is also what puts the target chunk on the wire.
+ *     latch, and bank the within-chunk FRACTION for `playNext` to apply once the chunk's real length is
+ *     known. `pump` is playIdx-windowed, so moving the cursor is also what puts the target on the wire.
  *   · failed → hand off forward to the next playable chunk, the same skip rule `playNext` uses.
  *  Play/pause INTENT is preserved: whatever the transport reads right now is what the landing does.
  *  Backward seeks hit retained blobs and are instant. Seeks before the first audio never get here — the
@@ -685,14 +721,17 @@ function seekChunked(s: Session, f: number): void {
       return;
     }
     set({ current: at });
+    const op = ++playOp;
     void a.play().catch(() => {
-      if (s.seq === reqSeq) set({ status: "paused" });
+      if (s.seq === reqSeq && op === playOp) set({ status: "paused" });
     });
     return;
   }
 
   s.waiting = true; // set BEFORE the pause, so the pause event reads as the latch and not as a user tap
-  s.seek = { idx: i, offset };
+  // Banked as a FRACTION of the (estimated) span — `offset` is already clamped into it, so a target that
+  // was handed off from a failed chunk banks 0, and a degenerate span can't divide by zero.
+  s.seek = { idx: i, frac: spans[i].dur > 0 ? offset / spans[i].dur : 0 };
   s.playIdx = i - 1;
   a.pause();
   pump(s);

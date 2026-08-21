@@ -782,7 +782,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     act(() => metaFor("blob:1", 2)); // 2 chars/s → 0–2 · 2–4 · 4–7
     expect(calls).toHaveLength(2); // chunk 2 in flight, chunk 3 not requested
 
-    act(() => seekFraction(5 / 7)); // 1 s into chunk 3
+    act(() => seekFraction(5 / 7)); // a third of the way into chunk 3
     expect(calls).toHaveLength(3);
     expect(calls[2].body.text).toBe("Three."); // the synth window followed the cursor
     expect(result.current.status).toBe("playing"); // latched, exactly like a mid-queue catch-up
@@ -791,14 +791,119 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     await act(async () => calls[2].resolve(okRes()));
     await flush();
     expect(lastAudio.src).toBe("blob:2"); // chunk 3's blob is the SECOND one made
-    expect(lastAudio.currentTime).toBeCloseTo(1, 6);
+    expect(lastAudio.currentTime).toBe(0); // nothing lands until the REAL length is known
+    act(() => lastAudio.meta(3)); // ...and the estimate was right: 3 s
+    expect(lastAudio.currentTime).toBeCloseTo(1, 6); // a third of 3 s
     expect(lastAudio.paused).toBe(false);
 
-    // ...and the offset is one-shot: the end-of-queue rewind starts its chunk at 0, not at 1.
+    // ...and the seek is one-shot: the end-of-queue rewind starts its chunk at 0, not a third in.
     await act(async () => lastAudio.finish());
     await flush();
     expect(lastAudio.src).toBe("blob:1");
     expect(lastAudio.currentTime).toBe(0);
+  });
+
+  it("banks the seek as a FRACTION, so an over-long estimate can't overshoot the real chunk", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2)); // 2 chars/s → chunk 3 is ESTIMATED at 3 s (0–2 · 2–4 · 4–7)
+
+    act(() => seekFraction(1)); // hard to the end — fraction 1 of the target span
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    act(() => lastAudio.meta(1)); // the chunk is really only 1 s
+
+    // Seconds would have set 3 s on a 1 s clip: an instant `ended` cascading into the rewind. The end
+    // guard keeps the playhead just inside the tail instead, and the chunk is still the one loaded.
+    expect(lastAudio.currentTime).toBeCloseTo(0.95, 6);
+    expect(lastAudio.src).toBe("blob:2");
+    expect(result.current.status).toBe("playing");
+  });
+
+  it("banks the seek as a FRACTION, so an under-long estimate still lands proportionally", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2));
+
+    act(() => seekFraction(5 / 7)); // a third into a span ESTIMATED at 3 s
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    act(() => lastAudio.meta(6)); // the chunk is really 6 s
+
+    expect(lastAudio.currentTime).toBeCloseTo(2, 6); // a third of 6 s — not the 1 s of the estimate
+    expect(result.current.current).toBeCloseTo(6, 6); // ...and the published position follows it
+  });
+
+  it("the metadata one-shot fires once, and a stale one is inert after the message changes", async () => {
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2));
+    act(() => seekFraction(5 / 7));
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+
+    act(() => lastAudio.meta(6));
+    expect(lastAudio.currentTime).toBeCloseTo(2, 6);
+    act(() => lastAudio.meta(12)); // a LATER metadata event must not re-apply the spent seek
+    expect(lastAudio.currentTime).toBeCloseTo(2, 6);
+  });
+
+  it("a metadata one-shot left dangling by a message switch touches nothing", async () => {
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2));
+    act(() => seekFraction(5 / 7));
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    expect(lastAudio.currentTime).toBe(0); // loaded + armed, but metadata has not read yet
+
+    await act(async () => {
+      await toggle("m2", REPLY); // ...and the user moves to another message first
+    });
+    const parked = lastAudio.currentTime;
+    act(() => lastAudio.meta(6));
+    expect(lastAudio.currentTime).toBe(parked);
+  });
+
+  it("a play() interrupted by a newer seek never publishes 'paused' over the live one", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await timeline3();
+    // Seek A's play() is the one that loses the race: hold its rejection until B is already running.
+    const realPlay = lastAudio.play.bind(lastAudio);
+    let rejectA!: (e: unknown) => void;
+    lastAudio.play = () =>
+      new Promise<void>((_resolve, reject) => {
+        rejectA = reject;
+      });
+    act(() => seekFraction(7 / 10.5)); // A — src swapped, play() left hanging
+    lastAudio.play = realPlay;
+    act(() => seekFraction(1 / 10.5)); // B — swaps src again and really plays
+    expect(result.current.status).toBe("playing");
+
+    await act(async () => {
+      rejectA(new DOMException("interrupted by a new load request", "AbortError"));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(result.current.status).toBe("playing"); // A's stale rejection did NOT settle the transport
+    expect(lastAudio.src).toBe("blob:1"); // ...and B is still the clip on the element
   });
 
   it("a forward seek taken while PAUSED loads the target at its offset and holds it", async () => {
@@ -819,6 +924,7 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     await act(async () => calls[2].resolve(okRes()));
     await flush();
     expect(lastAudio.src).toBe("blob:2");
+    act(() => lastAudio.meta(3)); // the offset lands off the real length, playing or not
     expect(lastAudio.currentTime).toBeCloseTo(1, 6);
     expect(lastAudio.paused).toBe(true); // loaded and held, the latch's pause semantics
     expect(result.current.status).toBe("paused");
