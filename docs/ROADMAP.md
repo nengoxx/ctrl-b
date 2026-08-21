@@ -762,7 +762,7 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 > `7168521`): `notifications: {enabled=False, events:{agent_input, turn_done, action_failed}}` (master
 > OFF = the owner's spam guard) · one engine in `<AppEngines/>` gated on hidden-page + permission,
 > fed by BOTH streams **on every transport** (live, buffered, `turn.sync`, re-attach — thread-namespaced
-> dedupe keys) · Conf group 10 with honest denied/no-HTTPS states · Android delivers via the existing
+> dedupe keys) · Conf group 11 with honest denied/no-HTTPS states · Android delivers via the existing
 > SW registration (`Notification` constructor throws there; SW-path taps inform but don't navigate —
 > the click handler belongs to channel 2's custom worker). **Recorded residuals:** cross-device prefs
 > staleness on a hidden page (PUT-echo seeding fixed same-device; polling/SSE-invalidation declined) ·
@@ -806,6 +806,13 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
 > full acceptance. The Fennec caveat stays recorded for reference: Bugzilla **1880000** is `NEW`,
 > `client.focus()` may not foreground an installed PWA there — the routing deliberately does not
 > ride on `focus()` succeeding.) **Channel 1 is fully closed — delivery AND tap routing.**
+>
+> **HOST UP/DOWN CLASS ✅ BUILT 2026-08-21** (council-closed, Hermes emma lane; 1 MED folded — both
+> frontend read boundaries field-merge the events dict against the class defaults, so a payload that
+> predates a class reads as ON, not silently OFF): `host_up_down` — ONE class for both directions,
+> matched on the Event ACTION name (never `status`), default ON, a Conf group-11 row, tap → the
+> FLEET tab through the R45 router (`focus:"fleet"` → `/?tab=fleet`). Backend = one additive
+> `NotificationEventsCfg` field, no migration. **F1 channel 1 now has no open items.**
 >
 > **CHANNEL 2 (Web Push) — RESEARCHED, then PARKED 2026-07-31 (owner).** The design research is
 > bought and banked: **R10** (stack/standards) + **R11** (peer field pass) in `docs/research/`.

@@ -160,3 +160,60 @@ describe("notifyForEvent · a finished automation run", () => {
     expect(captured).toHaveLength(0);
   });
 });
+
+// ── D50 M5 — the monitor's confirmed host transitions. The backend records both directions with
+// `status = OK` (a host going down is an observation, not a failed action), so the arm has to match on
+// the ACTION name; matching on status would be both wrong and unbuildable.
+
+const hostWire = (over: Record<string, unknown>) =>
+  JSON.stringify({
+    id: "ev-4",
+    ts: "2026-08-21T10:00:00Z",
+    actor: "system",
+    action: "host_down",
+    target: "corsair",
+    status: "ok",
+    summary: "detected down after 3 consecutive misses",
+    origin: "system",
+    ...over,
+  });
+
+describe("notifyForEvent · a host went down or came back", () => {
+  it.each([
+    ["host_down", "Host down"],
+    ["host_up", "Host back up"],
+  ])("%s → a host_up_down signal titled %s", (action, title) => {
+    notifyForEvent(hostWire({ action }));
+    expect(captured).toHaveLength(1);
+    expect(captured[0].cls).toBe("host_up_down");
+    expect(captured[0].title).toBe(title);
+    // The host id IS the human name here, so it leads the body ahead of the evidence count.
+    expect(captured[0].body).toBe("corsair — detected down after 3 consecutive misses");
+    // Keyed on the Event, NOT the host: a down and a later up are two occurrences, both worth saying.
+    expect(captured[0].key).toBe("event:ev-4");
+    // Owner ruling 2026-08-20 — the tap opens the Fleet tab, with no per-host focus.
+    expect(captured[0].focus).toBe("fleet");
+  });
+
+  it("does not ALSO file under action_failed — the arm returns, and the status is ok anyway", () => {
+    notifyForEvent(hostWire({}));
+    expect(captured).toHaveLength(1);
+    expect(captured[0].cls).toBe("host_up_down");
+  });
+
+  it("names the host even when the frame carried no summary", () => {
+    notifyForEvent(hostWire({ summary: null }));
+    expect(captured[0].body).toBe("corsair — state changed");
+  });
+
+  it("falls back to the title when the frame named no host either", () => {
+    notifyForEvent(hostWire({ target: null, summary: null }));
+    expect(captured[0].body).toBe("Host down");
+    expect(captured[0].key).toBe("event:ev-4");
+  });
+
+  it("keys on action:target when the frame carried no id", () => {
+    notifyForEvent(hostWire({ id: null }));
+    expect(captured[0].key).toBe("event:host_down:corsair");
+  });
+});

@@ -57,6 +57,8 @@ def test_defaults_are_master_off_classes_on() -> None:
     assert (n.events.agent_input, n.events.turn_done, n.events.action_failed) == (True, True, True)
     # A3 14d — the fourth class (an automation run reached a terminal) joins on the same rule.
     assert n.events.automation_done is True
+    # D50 M5 — and the fifth (a monitor-confirmed host transition, both directions).
+    assert n.events.host_up_down is True
 
 
 def test_absent_section_loads_as_defaults() -> None:
@@ -96,6 +98,7 @@ def test_get_notifications_and_put_roundtrip() -> None:
                     "turn_done": True,
                     "action_failed": True,
                     "automation_done": True,
+                    "host_up_down": True,
                 },
             }
 
@@ -105,7 +108,7 @@ def test_get_notifications_and_put_roundtrip() -> None:
                 json={
                     "notifications": {
                         "enabled": True,
-                        "events": {"turn_done": False, "automation_done": False},
+                        "events": {"turn_done": False, "automation_done": False, "host_up_down": False},
                     }
                 },
             )
@@ -120,6 +123,7 @@ def test_get_notifications_and_put_roundtrip() -> None:
                     "turn_done": False,
                     "action_failed": True,
                     "automation_done": False,
+                    "host_up_down": False,
                 },
             }
             # …and persisted, with the file's comments intact (the shared writer's contract)
@@ -131,6 +135,8 @@ def test_get_notifications_and_put_roundtrip() -> None:
             # A3 14d — the newest class round-trips like its siblings: PUT → thin GET → a fresh load
             # from disk. A class that read back as its default would silently re-arm itself on restart.
             assert reloaded.notifications.events.automation_done is False
+            # D50 M5 — same for the host-transition class, added the same additive way.
+            assert reloaded.notifications.events.host_up_down is False
     finally:
         os.environ.pop("CTRLB_CONFIG", None)
         os.environ.pop("CTRLB_DB", None)

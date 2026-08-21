@@ -946,7 +946,7 @@ class NotificationEventsCfg(BaseModel):
     """Which event CLASSES are notify-worthy (F1). Each class is one optional field on the ONE unified
     events object — the next class is an additive field with a default, never a sibling map.
 
-    All four default **on**, because the master `NotificationsCfg.enabled` is what actually arms the
+    All five default **on**, because the master `NotificationsCfg.enabled` is what actually arms the
     feature (owner's spam guard, ROADMAP F1 "decided defaults"): nothing can fire while it's off, so a
     per-class default of False would only mean "enabling notifications does nothing".
 
@@ -958,7 +958,11 @@ class NotificationEventsCfg(BaseModel):
     - `automation_done`: a scheduled or manual automation run reached a terminal (A3 14d) — the class
       that makes an unattended run reportable at all, since nobody is watching the tab when it fires.
       A FAILED run notifies under this class too, not under `action_failed`: the toggle governs
-      automation noise as a whole, and one run must never raise two notifications."""
+      automation noise as a whole, and one run must never raise two notifications.
+    - `host_up_down`: the monitor confirmed a fleet host went down or came back (D50 M5) — ONE class
+      for BOTH directions, since a host's liveness is one concern the owner arms or silences as a
+      whole. The client classifies on the ACTION name (`host_up`/`host_down`), never on `status`:
+      both directions record `OK` here, because the observation succeeded."""
 
     model_config = {"extra": "allow"}
 
@@ -966,6 +970,7 @@ class NotificationEventsCfg(BaseModel):
     turn_done: bool = True
     action_failed: bool = True
     automation_done: bool = True
+    host_up_down: bool = True
 
 
 class NotificationsCfg(BaseModel):

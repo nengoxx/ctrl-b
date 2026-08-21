@@ -1169,8 +1169,9 @@ Not v1 scope, but the owner wants these; v1 must leave room. Detail + design not
       **Telegram-Discord** channels. **Discord/Telegram bots** as thin API clients (E1).
       *Channel 1 ✅ FULLY CLOSED 2026-08-20 — foreground shipped 2026-07-29, delivery proven
       2026-08-19 (SYS-19 was the mystery; the "custom SW required" premise was FALSE, R45), tap
-      routing shipped v1.7.4 + device-confirmed (lands on the agent tab). OPEN = **host up/down
-      toggle (GREENLIT 2026-08-20, tap → fleet tab — ROADMAP F1)** · Web Push (channel 2, parked
+      routing shipped v1.7.4 + device-confirmed (lands on the agent tab). The **host up/down class
+      ✅ BUILT 2026-08-21** (council-closed; `host_up_down`, one class both directions, tap → fleet
+      tab — ROADMAP F1), so channel 1 has no open items. OPEN = Web Push (channel 2, parked
       — closed-app delivery only) · ntfy · bots (E1).*
 - [ ] **Security hardening**: known_hosts pinning, per-action tokens, secret encryption-at-rest (G).
 
@@ -1239,7 +1240,7 @@ Codex round → owner pause.
       3/3 CLOSED, zero new). Backend tests 1199→1239. Codex ruling kept: the
       `poll_seconds` boot-refusal validator stands for a UI-managed single-user config.
       The record≠notify backend predicate was CUT per D50 overrule ② (FE classifier owns notify
-      when F1's `host_up_down` class lands).**
+      when F1's `host_up_down` class lands — **✅ landed 2026-08-21**).**
 - [x] **15b — the wake edge, armed:** confirmed OFFLINE→ONLINE edge → `wake_host` through
       `ActionService.invoke` for each `wake_on_presence` host (per-host cooldown, D2-B map
       pattern; `presence_cooldown_s: 3600` global + `wake_presence_cooldown_s` per-host override) ·

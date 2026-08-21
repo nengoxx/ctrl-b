@@ -30,7 +30,7 @@ self.addEventListener("notificationclick", (event) => {
         // Android `client.focus()` does not foreground an installed PWA (Bugzilla 1880000, still NEW)
         // and may reject outright; `postMessage` has no transient-activation requirement, so the tab
         // switch must not ride on focus succeeding. Then even on the broken engine the owner arrives
-        // on the agent tab whenever they reach the app by any route.
+        // on the notification's tab whenever they reach the app by any route.
         client.postMessage({ type: "ctrlb:notification-click", focus: data.focus });
         try {
           await client.focus();
@@ -40,9 +40,11 @@ self.addEventListener("notificationclick", (event) => {
         return;
       }
       // No live client: the page died. `tab` is PERSISTED in `ctrlb.ui`, so a bare "/" would restore
-      // whatever tab was last used — the fallback would silently fail its one job. `?tab=agent` is the
-      // instruction for this open; `store/ui.ts#consumeTabParam` reads and strips it at boot.
-      await self.clients.openWindow(data.focus === "agent" ? "/?tab=agent" : "/");
+      // whatever tab was last used — the fallback would silently fail its one job. `?tab=<focus>` is
+      // the instruction for this open; `store/ui.ts#consumeTabParam` reads and strips it at boot.
+      // Allowlisted, never interpolated blind: `focus` crossed the tray from another realm.
+      const dest = ["agent", "fleet"].includes(data.focus) ? `/?tab=${data.focus}` : "/";
+      await self.clients.openWindow(dest);
     })(),
   );
 });

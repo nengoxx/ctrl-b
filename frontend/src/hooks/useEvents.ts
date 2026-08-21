@@ -67,6 +67,15 @@ const RUN_TERMINALS: Record<string, string> = {
   cancelled: "Automation interrupted",
 };
 
+// F1/D50 M5 — the monitor's CONFIRMED host transitions, and how each one reads. Matched on the ACTION
+// name and never on `status` (which is `OK` in both directions, deliberately: the backend observed the
+// transition successfully and owns no notify policy). One class for both directions — a host's
+// liveness is one concern the owner arms or silences as a whole.
+const HOST_TRANSITIONS: Record<string, string> = {
+  host_up: "Host back up",
+  host_down: "Host down",
+};
+
 /** The subset of the domain `Event` (backend `domain/event.py`) this client reads off the wire.
  *  Everything optional: the parse is defensive by design — a frame we can't understand must
  *  invalidate caches like always and simply not notify. */
@@ -149,6 +158,24 @@ export function notifyForEvent(raw: string): void {
       // and the run happened while they were elsewhere by definition.
     });
     return; // never also under `action_failed` — see RUN_TERMINALS
+  }
+  const host = HOST_TRANSITIONS[str(ev.action)];
+  if (host) {
+    const where = str(ev.target);
+    publishNotify({
+      cls: "host_up_down",
+      // The Event id again: two genuine transitions of one host (down, then up) must BOTH notify, so
+      // the key names the occurrence, not the host — only a re-delivered frame is silenced.
+      key: `event:${str(ev.id) || `${str(ev.action)}:${where}`}`,
+      title: host,
+      // The frame carries no friendly name, and in this app the host id IS the human name (corsair,
+      // emma…) — so the body stays pure, with no query-cache lookup.
+      body: where ? `${where} — ${str(ev.summary) || "state changed"}` : str(ev.summary) || host,
+      // The one class whose answer lives on ONE tab (owner ruling 2026-08-20): the tap opens Fleet,
+      // with no per-host focus.
+      focus: "fleet",
+    });
+    return; // status is OK both ways, so the failure arm couldn't fire — the return says so structurally
   }
   const title = FAILED_STATES[str(ev.status)];
   if (!title) return;

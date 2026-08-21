@@ -28,10 +28,18 @@ import {
   useForegroundNotifications,
 } from "../../src/hooks/useForegroundNotifications";
 import { publishNotify, type NotifySignal } from "../../src/lib/notifyBus";
+// Type-only, so the `vi.mock` above (which replaces the module's runtime exports) is irrelevant here.
+import type { NotificationPrefs } from "../../src/hooks/useNotificationPrefs";
 
 const ALL_ON = {
   enabled: true,
-  events: { agent_input: true, turn_done: true, action_failed: true, automation_done: true },
+  events: {
+    agent_input: true,
+    turn_done: true,
+    action_failed: true,
+    automation_done: true,
+    host_up_down: true,
+  },
 };
 
 const signal = (over: Partial<NotifySignal> = {}): NotifySignal => ({
@@ -126,6 +134,22 @@ describe("shouldNotify · the gate matrix", () => {
     expect(shouldNotify(signal({ cls: "turn_done" }), prefs, env)).toBe(true);
     expect(shouldNotify(signal({ cls: "action_failed" }), prefs, env)).toBe(true);
     expect(shouldNotify(signal({ cls: "automation_done" }), prefs, env)).toBe(true);
+    expect(shouldNotify(signal({ cls: "host_up_down" }), prefs, env)).toBe(true);
+  });
+
+  it("a payload that predates a class defaults it ON at the read boundary, not off", async () => {
+    // The gate reads a MISSING key as false, so an older backend's `events` dict (no `host_up_down`)
+    // would silence a class the Conf row shows as on. `importActual` because this file mocks the probe
+    // wholesale for every other test — the merge itself is what's pinned here.
+    const { withEventDefaults } = await vi.importActual<
+      typeof import("../../src/hooks/useNotificationPrefs")
+    >("../../src/hooks/useNotificationPrefs");
+    const partial = withEventDefaults({
+      enabled: true,
+      events: { agent_input: false },
+    } as unknown as NotificationPrefs);
+    expect(shouldNotify(signal({ cls: "host_up_down" }), partial, env)).toBe(true);
+    expect(shouldNotify(signal({ cls: "agent_input" }), partial, env)).toBe(false); // a real `false` survives
   });
 
   it("blocks while the page is visible (the toast UI already told the user)", () => {
@@ -218,6 +242,12 @@ describe("useForegroundNotifications · end to end", () => {
     // `tag` is the tray's de-dupe key; `data` is the payload that SURVIVES the tray and reaches
     // public/notify-sw.js, which is the only way the SW path knows where to send the owner.
     expect(shown[0].options.data).toEqual({ focus: "agent", key: "perm:call-1" });
+  });
+
+  it("carries focus:fleet for a host up/down — the value the worker turns into ?tab=fleet", () => {
+    renderHook(() => useForegroundNotifications());
+    publishNotify(signal({ cls: "host_up_down", key: "event:ev-4", focus: "fleet" }));
+    expect(shown[0].options.data).toEqual({ focus: "fleet", key: "event:ev-4" });
   });
 
   it("the service-worker fallback keeps ONE permanent readiness observer — timeouts accumulate nothing", async () => {
@@ -316,6 +346,13 @@ describe("applyNotificationFocus · the one router", () => {
     setUI({ tab: "fleet" });
     applyNotificationFocus("agent");
     expect(getUI().tab).toBe("agent");
+  });
+
+  it("sends a host up/down activation to the Fleet tab", async () => {
+    const { setUI, getUI } = await import("../../src/store/ui");
+    setUI({ tab: "agent" });
+    applyNotificationFocus("fleet");
+    expect(getUI().tab).toBe("fleet");
   });
 
   it("ignores anything that isn't a known destination", async () => {

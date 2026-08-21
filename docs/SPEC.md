@@ -491,7 +491,7 @@ $CTRLB_HOME/
 | `shell` / `tailscale` | the two guarded escape hatches | live |
 | `mcp_servers[]` / `openapi_servers[]` | remote toolsets | between-turn rediscovery |
 | `tool_overrides{}` | per-tool description + agent access (D22) **+ `approvals[]` — the persisted "always allow" rules (D44), served back on `GET /api/actions` so the catalog renders + revokes them** + `max_calls` — this tool's per-turn call cap, REPLACING the agent's blanket `max_calls_per_tool` (D60 ②) | live overlay |
-| `notifications` | foreground-notification prefs: `{enabled, events{agent_input, turn_done, action_failed, automation_done}}` (F1) — read by the client through the thin `GET /api/notifications`; the backend never sends a notification itself | live |
+| `notifications` | foreground-notification prefs: `{enabled, events{agent_input, turn_done, action_failed, automation_done, host_up_down}}` (F1) — read by the client through the thin `GET /api/notifications`; the backend never sends a notification itself | live |
 | `wake` | fleet wake automation: the D2-B connect cooldown + the D2-A presence tunables (`presence_device_ips`, per-host `wake_on_presence`) | live |
 | `monitor` | the `MonitorService` tick interval + the asymmetric up/down damping thresholds (D2-A/D50) | live (re-read per tick — the master switch is live) |
 | `automations` | the `AutomationRunner` tunables only (`default_timeout_s`, …) — the **definitions live in SQLite**, not in YAML (D49) | live (re-read per tick) |

@@ -158,6 +158,8 @@ export function useForegroundNotifications(): void {
  *  second router. Exported so both halves' routing is testable without a service worker. */
 export function applyNotificationFocus(focus: unknown): void {
   if (focus === "agent") setUI({ tab: "agent" });
+  // F1/D50 M5 — a host up/down lands on the fleet, where the answer to "what happened to it" is.
+  if (focus === "fleet") setUI({ tab: "fleet" });
 }
 
 /** Raise the actual browser notification. Two paths, deliberately in this order:
@@ -196,7 +198,7 @@ function show(signal: NotifySignal): void {
     const n = new window.Notification(signal.title, options);
     n.onclick = () => {
       window.focus();
-      applyNotificationFocus(signal.focus); // agent-side signals land the owner on the agent tab
+      applyNotificationFocus(signal.focus); // the classes that name a destination land the owner there
       n.close();
     };
   } catch {

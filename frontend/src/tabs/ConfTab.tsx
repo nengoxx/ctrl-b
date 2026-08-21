@@ -34,6 +34,7 @@ import {
 } from "../hooks/useForegroundNotifications";
 import { useIntegrationsStatus, useRediscover } from "../hooks/useIntegrations";
 import { type MemoryCfg } from "../hooks/useMemory";
+import { NOTIFICATION_EVENT_DEFAULTS, withEventDefaults } from "../hooks/useNotificationPrefs";
 import { promptsSummary, usePrompts } from "../hooks/usePrompts";
 import {
   useProviders,
@@ -709,7 +710,7 @@ type Draft = Pick<
 // one explicit default. Same defensive shape `memoryCfg`/`agentCfg` use for their sections.
 const NOTIFICATIONS_FALLBACK: SettingsDoc["notifications"] = {
   enabled: false,
-  events: { agent_input: true, turn_done: true, action_failed: true, automation_done: true },
+  events: NOTIFICATION_EVENT_DEFAULTS,
 };
 
 // D2-A/D50 (15c) — same defensive seeds as NOTIFICATIONS_FALLBACK above, for the same reason: the
@@ -740,7 +741,10 @@ function pickDraft(s: SettingsDoc): Draft {
     open_terminal: s.open_terminal,
     shell: s.shell,
     voice: s.voice,
-    notifications: s.notifications ?? NOTIFICATIONS_FALLBACK,
+    // `withEventDefaults` on top of the section fallback for the same field-wise reason as the two
+    // sections below, plus one of its own: a doc from a build that predates an event class omits its
+    // key, and a missing key renders the row UNCHECKED — and saves it that way.
+    notifications: withEventDefaults(s.notifications ?? NOTIFICATIONS_FALLBACK),
     // Field-wise seeding, not `?? FALLBACK` (15c review, MED): a PARTIAL section from an older doc
     // (`extra=allow` keeps whatever was written) would bypass a section-level fallback entirely,
     // rendering blank rows whose missing numerics then coerce to NaN → JSON null on an UNRELATED
@@ -1278,7 +1282,7 @@ export function ConfTab({ active }: Props) {
     );
   }
 
-  // F1 — the notifications master + the three per-class toggles. `setNotifyEvent` writes into the ONE
+  // F1 — the notifications master + the per-class toggles. `setNotifyEvent` writes into the ONE
   // nested `events` object (mirroring `NotificationEventsCfg`), so a future class is one more key here
   // and a new row below — never a second setter or a sibling map.
   function setNotifyEnabled(on: boolean) {
@@ -2266,7 +2270,7 @@ export function ConfTab({ active }: Props) {
               disabled={notifPerm === "unsupported"}
             />
           </SettingRow>
-          {/* The four classes mirror `NotificationEventsCfg` one-for-one. Inert (but visible, and
+          {/* The five classes mirror `NotificationEventsCfg` one-for-one. Inert (but visible, and
               still saved) until the master is on — the master is the spam guard, so these describe
               WHICH events would notify, not whether any do. */}
           <SettingRow label="Agent needs you" desc="a confirm bubble or a question is waiting">
@@ -2300,6 +2304,16 @@ export function ConfTab({ active }: Props) {
               on={!!notif?.events.automation_done}
               onToggle={() => setNotifyEvent("automation_done", !notif?.events.automation_done)}
               label="Notify on automation done"
+              disabled={!notif?.enabled}
+            />
+          </SettingRow>
+          {/* D50 M5 — ONE toggle for BOTH directions: a host's liveness is one concern, and the
+              monitor's damping already means at most one Event per direction per couple of minutes. */}
+          <SettingRow label="Host up / down" desc="a fleet host comes up or goes down">
+            <Switch
+              on={!!notif?.events.host_up_down}
+              onToggle={() => setNotifyEvent("host_up_down", !notif?.events.host_up_down)}
+              label="Notify on host up or down"
               disabled={!notif?.enabled}
             />
           </SettingRow>

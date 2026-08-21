@@ -118,9 +118,18 @@ describe("notify-sw · no live client (the page died)", () => {
     expect(clientsApi.openWindow).toHaveBeenCalledWith("/?tab=agent");
   });
 
-  it("opens the plain app for a signal with no focus", async () => {
+  it("opens the fleet tab for a host up/down signal", async () => {
+    await tap({ focus: "fleet" });
+    expect(clientsApi.openWindow).toHaveBeenCalledWith("/?tab=fleet");
+  });
+
+  it("opens the plain app for a signal with no focus, or an unknown destination", async () => {
     await tap({ key: "event:e1" });
     expect(clientsApi.openWindow).toHaveBeenCalledWith("/");
+    // Allowlisted, never interpolated blind: a real tab id that isn't a focus destination is not a URL
+    // this builds — the value crossed the tray from another realm.
+    await tap({ focus: "conf" });
+    expect(clientsApi.openWindow).toHaveBeenLastCalledWith("/");
   });
 
   it("survives a notification with no data at all", async () => {

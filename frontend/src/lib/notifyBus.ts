@@ -17,7 +17,8 @@
 
 /** Which per-event preference (`notifications.events.*`) governs a signal. Mirrors the backend
  *  `NotificationEventsCfg` field names one-for-one, so the gate is a direct key lookup. */
-export type NotifyClass = "agent_input" | "turn_done" | "action_failed" | "automation_done";
+export type NotifyClass =
+  "agent_input" | "turn_done" | "action_failed" | "automation_done" | "host_up_down";
 
 export interface NotifySignal {
   /** The preference key that gates this signal. */
@@ -29,9 +30,10 @@ export interface NotifySignal {
   key: string;
   title: string;
   body: string;
-  /** Tapping the notification focuses the window; when set, it also switches to this tab. Only the
-   *  agent-side classes set it — a fleet action failure is legible from wherever the user was. */
-  focus?: "agent";
+  /** Tapping the notification focuses the window; when set, it also switches to this tab. Set by the
+   *  agent-side classes and by a host up/down (which lands on Fleet) — a fleet action FAILURE still
+   *  leaves it unset, being legible from wherever the user was. */
+  focus?: "agent" | "fleet";
 }
 
 type Listener = (signal: NotifySignal) => void;

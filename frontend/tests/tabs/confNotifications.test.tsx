@@ -71,7 +71,13 @@ const makeSettings = () => ({
   },
   notifications: {
     enabled: false,
-    events: { agent_input: true, turn_done: true, action_failed: true, automation_done: true },
+    events: {
+      agent_input: true,
+      turn_done: true,
+      action_failed: true,
+      automation_done: true,
+      host_up_down: true,
+    },
   },
   mcp_servers: [],
   openapi_servers: [],
@@ -195,6 +201,8 @@ const perClass = () => [
   // A3 14d — the fourth class, wired exactly like the other three (one more key on the ONE events
   // object, never a sibling map): inert while the master is off, and saved with the same setter.
   screen.getByLabelText("Notify on automation done"),
+  // D50 M5 — the fifth class, ONE toggle for both directions of a host transition.
+  screen.getByLabelText("Notify on host up or down"),
 ];
 const saveButton = () =>
   screen.getAllByRole<HTMLButtonElement>("button", { name: /Save changes|Saved|Saving/ })[0];
@@ -236,6 +244,7 @@ describe("ConfTab · Notifications (F1)", () => {
           turn_done: true,
           action_failed: true,
           automation_done: true,
+          host_up_down: true,
         },
       },
     };
@@ -276,12 +285,30 @@ describe("ConfTab · Notifications (F1)", () => {
     const patch = h.save.mock.calls[0][0] as {
       notifications?: { events: Record<string, boolean> };
     };
-    // ONE events object, with the other three untouched — not a sibling map, not a partial overwrite.
+    // ONE events object, with the other four untouched — not a sibling map, not a partial overwrite.
     expect(patch.notifications?.events).toEqual({
       agent_input: true,
       turn_done: true,
       action_failed: true,
       automation_done: false,
+      host_up_down: true,
     });
+  });
+
+  it("a settings doc that predates a class still renders its row CHECKED (the field-merge)", () => {
+    // The draft is picked from the fetched doc, so a payload written by a build without the key would
+    // otherwise render the row off — and SAVE it off on the owner's next unrelated edit.
+    const s = makeSettings();
+    // Destructured away rather than set to `undefined`: an older backend OMITS the key, and only a
+    // genuinely absent one exercises the merge (a present `undefined` would override the default).
+    const { host_up_down: _absent, ...older } = s.notifications.events;
+    h.settings = {
+      ...s,
+      notifications: { enabled: true, events: older as typeof s.notifications.events },
+    };
+    render(<ConfTab active />);
+    expect(screen.getByLabelText("Notify on host up or down").getAttribute("aria-checked")).toBe(
+      "true",
+    );
   });
 });

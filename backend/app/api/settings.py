@@ -70,7 +70,7 @@ async def get_appearance(request: Request) -> dict[str, Any]:
 @router.get("/notifications")
 async def get_notifications(request: Request) -> dict[str, Any]:
     """The notification preferences only (F1): `{enabled, events:{agent_input, turn_done,
-    action_failed, automation_done}}`.
+    action_failed, automation_done, host_up_down}}`.
 
     The same lightweight always-on read as `GET /api/appearance` above, and for the same reason: the
     consumer is an app-global engine (the foreground-notification hook in `<AppEngines/>`), while the

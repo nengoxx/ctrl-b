@@ -557,7 +557,13 @@ def test_the_notifications_read_projection_carries_the_new_class() -> None:
     with _workspace(), _client() as c:
         events = c.get("/api/notifications").json()["events"]
         assert events["automation_done"] is True
-        assert set(events) == {"agent_input", "turn_done", "action_failed", "automation_done"}
+        assert set(events) == {
+            "agent_input",
+            "turn_done",
+            "action_failed",
+            "automation_done",
+            "host_up_down",
+        }
 
 
 if __name__ == "__main__":
