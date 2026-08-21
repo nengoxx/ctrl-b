@@ -15,8 +15,10 @@ surface `X-Voice-Served-By`. Per attempt the served target's D40 request gate is
 effective `max_concurrent_requests` is finite (R4), held for that one attempt and **waited for only up
 to `connect_timeout_s` while a next hop exists** (`timeout_s` on the last one, where failing fast buys
 nothing) — a saturated server fails the hop so the chain can fall over, instead of parking a mic clip
-behind another section's long call. TTS buffers the **whole
-clip** (full-clip playback → a seekable blob), so failover wraps the entire synth atomically.
+behind another section's long call. Every TTS call buffers its **whole
+response** (playback wants a seekable blob), so failover wraps the entire synth atomically — under D63
+chunking the caller simply makes N such calls, one per chunk, and pins the winner of the first with
+`prefer` so a chunked reply doesn't re-pay a dead primary N times or change voice mid-sentence.
 All-endpoints-failed → `VoiceError`.
 
 Generation drain (R5, mirroring `InferenceClient`): a `providers`/voice-section change rebuilds this
@@ -53,6 +55,11 @@ _MEDIA_TYPES = {
     "pcm": "audio/pcm",
 }
 
+#: The CLOSED container allowlist (D63) — the keys of the media-type map above, which is the only place
+#: a container is turned into something the browser can play. The API validates a request-level
+#: `format` override against this so an arbitrary string never reaches a provider.
+AUDIO_FORMATS = frozenset(_MEDIA_TYPES)
+
 
 class VoiceError(RuntimeError):
     """Voice unconfigured, or every endpoint in the chain failed — turned into a clean API error."""
@@ -62,14 +69,37 @@ class VoiceError(RuntimeError):
 class VoiceReply:
     """Where a successful voice op was served from (for the `X-Voice-Served-By` header). `served` is the
     served target's PROVIDER NAME (A11); `degraded` is True when a prior hop failed before this one
-    answered."""
+    answered. `target` is the FULL `provider/model` identity (D63's `X-Voice-Target`) — one provider can
+    carry two models, so the display name alone can't be echoed back as a failover pin."""
 
     served: str
     degraded: bool
+    target: str = ""
+
+
+def target_id(t: "ResolvedTarget") -> str:
+    """The canonical `provider/model` identity of a resolved target — the `X-Voice-Target` wire form and
+    the exact string a request's `prefer` is matched against. One spelling, one place."""
+    return f"{t.provider}/{t.model}"
 
 
 def _reply(chain: "tuple[ResolvedTarget, ...]", result: FailoverResult) -> VoiceReply:
-    return VoiceReply(served=chain[result.served_index].provider, degraded=result.degraded)
+    served = chain[result.served_index]
+    return VoiceReply(served=served.provider, degraded=result.degraded, target=target_id(served))
+
+
+def _preferred_first(chain: "tuple[ResolvedTarget, ...]", prefer: str | None) -> "tuple[ResolvedTarget, ...]":
+    """The per-request chain (D63 failover pin): the target whose `provider/model` equals `prefer` moves
+    to the front, everything else keeps its configured order behind it. A blank / unknown / vanished
+    `prefer` is a silent MISS — the chain is returned untouched, so a pin that dies between chunks just
+    falls back to the normal walk instead of erroring. This is the only place a voice chain is reordered;
+    the walk itself stays `core.failover`'s."""
+    if not prefer:
+        return chain
+    hit = next((t for t in chain if target_id(t) == prefer), None)
+    if hit is None:
+        return chain
+    return (hit, *(t for t in chain if t is not hit))
 
 
 class VoiceClient:
@@ -195,25 +225,37 @@ class VoiceClient:
         finally:
             await self._release_inflight()
 
-    async def synthesize(self, *, text: str, voice: str | None = None) -> tuple[bytes, str, VoiceReply]:
+    async def synthesize(
+        self,
+        *,
+        text: str,
+        voice: str | None = None,
+        audio_format: str | None = None,
+        prefer: str | None = None,
+    ) -> tuple[bytes, str, VoiceReply]:
         """Read-aloud TTS: synthesize the **whole clip** (buffered, for a seekable blob) via each target's
         `/v1/audio/speech` until one answers. `voice` precedence = request > model voice > "alloy"; `speed`
         is sent iff the model set it. Each attempt returns `(bytes, effective_format)` where the format is
-        model > service (C8); the response media type maps the WINNING hop's format. Returns
-        `(audio_bytes, media_type, served)`. Raises `VoiceError`."""
+        request > model > service (D63/C8 — a model-level `format: mp3` must not silently defeat a
+        chunk-format request); the response media type maps the WINNING hop's format. `prefer`
+        (`provider/model`) moves that target to the front of THIS request's chain (D63's failover pin);
+        an unknown one is a silent miss. Returns `(audio_bytes, media_type, served)`. Raises `VoiceError`."""
         if not self.configured("tts"):
             raise VoiceError("text-to-speech is not configured")
         self._inflight += 1
         try:
             policy = self._tts_policy
             base_extra: dict = {"extra_body": policy.extra_body} if policy.extra_body else {}
+            # The per-request chain: one reorder, then the ordinary walk. The gate's "is this the LAST
+            # hop" read and `_reply`'s served_index both index THIS chain, so it's built once here.
+            chain = _preferred_first(self._tts, prefer)
 
             async def attempt(target: "ResolvedTarget") -> tuple[bytes, str]:
-                effective_format = target.format or policy.format or "mp3"
+                effective_format = audio_format or target.format or policy.format or "mp3"
                 kwargs: dict = dict(base_extra)
                 if target.speed is not None:
                     kwargs["speed"] = target.speed
-                async with self._gate(target, policy, self._tts):
+                async with self._gate(target, policy, chain):
                     resp = await self._client(
                         target, policy.connect_timeout_s, policy.timeout_s
                     ).audio.speech.create(
@@ -227,11 +269,11 @@ class VoiceClient:
                 return data, effective_format
 
             try:
-                result = await failover_collect(self._tts, attempt, label=lambda t: t.provider)
+                result = await failover_collect(chain, attempt, label=lambda t: t.provider)
             except FailoverError as exc:
                 raise VoiceError(str(exc)) from exc
             audio, fmt = result.value
-            return audio, _MEDIA_TYPES.get(fmt, "application/octet-stream"), _reply(self._tts, result)
+            return audio, _MEDIA_TYPES.get(fmt, "application/octet-stream"), _reply(chain, result)
         finally:
             await self._release_inflight()
 

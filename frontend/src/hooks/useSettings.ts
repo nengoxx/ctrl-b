@@ -79,6 +79,14 @@ export interface VoiceStt extends VoiceServiceCommon {
 }
 export interface VoiceTts extends VoiceServiceCommon {
   format: string; // response_format/container (mp3 = universally seekable)
+  // D63 chunked synthesis — the reply is split into chunks that synth+play sequentially, so audio
+  // starts after the first sentence. `chunking: "off"` = the pre-D63 whole-message synth.
+  chunking: "off" | "paragraph" | "sentence";
+  chunk_format: string; // per-chunk container (opus is sample-exact from a pipe; mp3 adds dead air)
+  chunk_min_words: number; // merge floor — a chunk under EITHER floor keeps accumulating forward
+  chunk_min_chars: number;
+  chunk_max_chars: number; // split at the last word boundary under this (must be <= max_text_chars)
+  chunk_lookahead: number; // synth-ahead depth, 1..4
 }
 
 export interface SettingsDoc {

@@ -560,14 +560,46 @@ class SttServiceCfg(VoiceServiceCfg):
 
 
 class TtsServiceCfg(VoiceServiceCfg):
-    """TTS service (Phase 6). `format` is the `response_format`/container — mp3 is the universally
-    `<audio>`-seekable choice the mini-player needs. Playback speed stays **client-side**
-    (`<audio>.playbackRate`, live-adjustable without re-synth — owner's call), so it's not here."""
+    """TTS service (Phase 6; chunked synthesis = D63). `format` is the `response_format`/container —
+    mp3 is the universally `<audio>`-seekable choice the mini-player needs for a WHOLE-clip synth.
+    Playback speed stays **client-side** (`<audio>.playbackRate`, live-adjustable without re-synth —
+    owner's call), so it's not here.
+
+    The `chunk_*` block is the D63 client policy: the reply is split into speakable chunks that
+    synth+play sequentially on the one `<audio>` element (time-to-first-audio ~0.7 s vs ~13.6 s
+    whole-clip, R50 P2). It is delivered to the PWA verbatim by `GET /voice/status` — nothing here is
+    a secret, and no layer below the browser chunks anything. `chunking: "off"` = today's whole-blob
+    path, which is also why `chunk_format` is separate from `format`: chunks want a container that is
+    sample-exact from a pipe (`opus`; Speaches' pipe-muxed mp3 carries ~48 ms of dead air per chunk,
+    R50 P1), while `format` keeps governing the single-blob path the mini-player scrubs."""
 
     format: str = "mp3"  # response_format (mp3|opus|aac|flac|wav|pcm)
     # Reject an over-long synthesis request (SYS-17a). Default = OpenAI's own TTS input limit; `gt=0`
     # so a blanked Conf field can't disable the cap (an int, so `.inf`/NaN are rejected by type).
     max_text_chars: int = Field(default=4096, gt=0)
+    # D63 — chunked synthesis. `sentence` ships ON (owner ruling; the one peer with the three-way mode
+    # defaults the same way). `off` = the pre-D63 whole-blob path, byte-identical.
+    chunking: Literal["off", "paragraph", "sentence"] = "sentence"
+    chunk_format: str = "opus"  # per-chunk response_format (request > model > service at the wire)
+    chunk_min_words: int = Field(default=4, ge=1)  # merge floor — a chunk under EITHER floor keeps
+    chunk_min_chars: int = Field(default=50, ge=1)  # accumulating forward (open-webui's rule + numbers)
+    chunk_max_chars: int = Field(default=400, gt=0)  # split at the last word boundary under this
+    chunk_lookahead: int = Field(default=1, ge=1, le=4)  # synth-ahead depth (1 = synth N+1 while N plays)
+
+    @model_validator(mode="after")
+    def _chunk_bounds(self) -> "TtsServiceCfg":
+        """The two orderings that must hold for the chunker to make progress (D63): a floor above the
+        cap would never close a chunk, and a cap above the per-message limit would emit a first chunk
+        the per-request 422 rejects. Checked at LOAD so a bad Conf save 422s instead of muting TTS."""
+        if self.chunk_min_chars > self.chunk_max_chars:
+            raise ValueError(
+                f"chunk_min_chars ({self.chunk_min_chars}) must be <= chunk_max_chars ({self.chunk_max_chars})"
+            )
+        if self.chunk_max_chars > self.max_text_chars:
+            raise ValueError(
+                f"chunk_max_chars ({self.chunk_max_chars}) must be <= max_text_chars ({self.max_text_chars})"
+            )
+        return self
 
 
 class VoiceCfg(BaseModel):

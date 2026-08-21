@@ -1,8 +1,9 @@
 {
+  "//target": "ES2024 is the SYNTAX floor tsc allows, not an emit target (this project is noEmit; the BUILD target comes from vite.config.ts). Raised from ES2022 for D63: lib/toSpeech's emoji strip uses `\\p{RGI_Emoji}`, a property-of-STRINGS that only matches whole ZWJ/skin-tone sequences under the ES2024 regex `v` flag. Engine floor that implies: Chrome 112 / Firefox 116 / Safari 17 (all 2023).",
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ES2024",
     "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",

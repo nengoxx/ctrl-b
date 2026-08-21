@@ -280,6 +280,14 @@ voice:
     format: mp3            # response container (mp3|opus|aac|flac|wav|pcm); the model's format wins if set
     connect_timeout_s: 3
     timeout_s: 30
+    # Chunked synthesis (D63) — the reply is split into speakable chunks that synth+play sequentially
+    # on one <audio> element, so audio starts after the FIRST sentence instead of the whole clip.
+    chunking: sentence     # off | paragraph | sentence ("off" = the pre-D63 whole-blob synth)
+    chunk_format: opus     # per-chunk container; opus is sample-exact from a pipe (mp3 adds dead air)
+    chunk_min_words: 4     # merge floor — a chunk under BOTH floors keeps accumulating forward
+    chunk_min_chars: 50
+    chunk_max_chars: 400   # split at the last word boundary under this (must be <= max_text_chars)
+    chunk_lookahead: 1     # synth-ahead depth (1 = synthesize chunk N+1 while N plays)
 
 # Embeddings backend (Phase 4f, D9; A11/D48 Slice 2). POINTS at the `providers` map — a flat `provider`
 # primary (+ `model`, omittable iff the catalog has exactly one model) and an ordered `fallbacks` chain of

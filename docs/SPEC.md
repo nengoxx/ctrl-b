@@ -356,8 +356,12 @@ sequenceDiagram
 
 Mic state machine: `idle ↔ recording → sending → idle`, plus reactive `unavailable` (502, re-arms
 on next status probe) and `insecure` (no secure context — tappable, explains the HTTPS fix).
-TTS: per-bubble ▶/⏸ + auto-TTS on turn completion → `/api/voice/tts` (whole-clip, seekable) →
-singleton `<audio>` + blob cache + docked MiniPlayer.
+TTS: per-bubble ▶/⏸ + auto-TTS on turn completion → `/api/voice/tts` → singleton `<audio>` + blob
+cache + docked MiniPlayer. Under **D63 chunking** (default `sentence`) the reply is split client-side
+(`lib/ttsChunks`) and the chunks synth+play sequentially on that one element — `src`-swap on `ended`,
+synth-ahead `chunk_lookahead` deep with a waiting latch, a failed chunk skipped (one toast), the
+winner of chunk 1 echoed as `prefer` (`X-Voice-Target`) so the rest of the reply doesn't re-walk a dead
+primary, and blob retention of exactly ONE message. `chunking: off` = the whole-clip, seekable path.
 
 ### 5.5 Theme switch ✅
 
@@ -487,7 +491,7 @@ $CTRLB_HOME/
 | `agent` | defaults (AgentDef base incl. `max_parallel_tools`, D40, + failure-fallback `routing` — `lead`/`failure_threshold`/`fallback_turns`, the global `agent.defaults.routing`, D43), compaction v2 (`threshold_frac`/`keep_recent_tokens`/`clear_output_min_tokens`/`clear_keep_steps`/`max_consecutive_failures`/`reserve_output` + `threshold_tokens` no-window fallback, D42; the Tier-1 clearing gate `clear_trigger_pct`/`clear_min_reclaim_tokens`/`clear_exclude_tools`, D60), ModelRef call config (`max_tokens`/`reasoning_effort`/`reasoning_tokens`, D42/A10), skills, subagent caps, streaming mode, auto-route, durable-turn + steer-queue knobs (`turns.*` incl. `steer_queue_max`, D41) | live (compaction/window/routing edits apply at the next turn — D42 Inv-11) |
 | `memory` | tier-1 stores, caps, auto-write, nudges, reflection, git backup **+ the tier-2 slot `longterm{backend, core{root, index_char_limit, topic_char_limit, recall_char_limit, recall_min_charge_chars, consolidation_nudge_pct}}`** (D57 — `backend` is the only switch, null = off) | live |
 | `prompts{}` | per-prompt overrides keyed by the registry id (Phase 18/D56; **24 ids** — D57 added `core_memory_policy`, `core_memory_recall`, `consolidation`, `consolidation_promote`, `memory_cap_error`; D60 adds `consolidation_dryrun`) | live |
-| `voice` / `searxng` / `embeddings` / `open_terminal` | endpoints + per-op risk | rebuild-on-change |
+| `voice` / `searxng` / `embeddings` / `open_terminal` | endpoints + per-op risk; **`voice.tts` also carries the D63 chunk policy — `chunking` (off\|paragraph\|sentence, default `sentence`) · `chunk_format` (`opus`) · `chunk_min_words`/`chunk_min_chars`/`chunk_max_chars`/`chunk_lookahead` — a CLIENT policy delivered by `GET /voice/status`, load-validated `chunk_min_chars <= chunk_max_chars <= max_text_chars` and lookahead 1..4** | rebuild-on-change (the chunk policy is re-read by the PWA when the voice-status query invalidates) |
 | `shell` / `tailscale` | the two guarded escape hatches | live |
 | `mcp_servers[]` / `openapi_servers[]` | remote toolsets | between-turn rediscovery |
 | `tool_overrides{}` | per-tool description + agent access (D22) **+ `approvals[]` — the persisted "always allow" rules (D44), served back on `GET /api/actions` so the catalog renders + revokes them** + `max_calls` — this tool's per-turn call cap, REPLACING the agent's blanket `max_calls_per_tool` (D60 ②) | live overlay |

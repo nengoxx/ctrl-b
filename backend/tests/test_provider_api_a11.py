@@ -634,7 +634,9 @@ def test_get_providers_voice_sections_and_verb_exclusion() -> None:
 
 def test_voice_status_endpoint_keeps_auto_send() -> None:
     with _client(_VOICE_BASE) as (c, _cfg):
-        assert c.get("/api/voice/status").json() == {"stt": True, "tts": True, "stt_auto_send": False}
+        body = c.get("/api/voice/status").json()
+        # (D63 added `tts_chunking` to this payload; the capability + auto-send contract is unchanged.)
+        assert (body["stt"], body["tts"], body["stt_auto_send"]) == (True, True, False)
         # flip auto_send via a voice PUT and re-read (composed live from settings at the API layer)
         r = c.put("/api/settings", json={"voice": {"stt": {"auto_send": True}}})
         assert r.status_code == 200, r.text

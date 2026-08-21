@@ -13,6 +13,9 @@ Covers:
 - config/secret: a voice-referenced provider's `api_key` masks on read + blank-keeps on PUT (the standard
   `providers.*.api_key` path — the legacy `voice.*.primary.api_key` leaf is gone).
 - API: `/voice/status` (composes `stt_auto_send` from live settings), `/voice/stt`, `/voice/tts`.
+- D63 chunked TTS: the `chunk_*` load-time bounds, the `tts_chunking` client policy on `/voice/status`,
+  the request-level `format` override + its closed allowlist, and the `prefer`/`X-Voice-Target` pin
+  (reorder, silent miss, still-fails-over).
 """
 
 from __future__ import annotations
@@ -340,6 +343,7 @@ class _StubVoice:
 
     def __init__(self, *, stt=True, tts=True, served="speaches") -> None:
         self._stt, self._tts, self._served = stt, tts, served
+        self.calls: list[dict] = []  # every synthesize() call, in order (D63 request-field assertions)
 
     def configured(self, service: str) -> bool:
         return self._stt if service == "stt" else self._tts
@@ -350,11 +354,18 @@ class _StubVoice:
     async def transcribe(self, *, content, filename, content_type):
         return "transcribed text", SimpleNamespace(served=self._served, degraded=self._served != "speaches")
 
-    async def synthesize(self, *, text, voice=None):
-        return b"AUDIOBYTES", "audio/mpeg", SimpleNamespace(served=self._served, degraded=False)
+    async def synthesize(self, *, text, voice=None, audio_format=None, prefer=None):
+        self.calls.append({"text": text, "voice": voice, "format": audio_format, "prefer": prefer})
+        return (
+            b"AUDIOBYTES",
+            "audio/mpeg",
+            SimpleNamespace(served=self._served, degraded=False, target=f"{self._served}/kokoro"),
+        )
 
 
-def _app(stub: _StubVoice, *, auto_send=False, stt_max_bytes=None, tts_max_chars=None) -> TestClient:
+def _app(
+    stub: _StubVoice, *, auto_send=False, stt_max_bytes=None, tts_max_chars=None, tts=None
+) -> TestClient:
     from app.api import voice as voice_api
 
     app = FastAPI()
@@ -363,8 +374,11 @@ def _app(stub: _StubVoice, *, auto_send=False, stt_max_bytes=None, tts_max_chars
     if stt_max_bytes is not None:
         stt_cfg["max_upload_bytes"] = stt_max_bytes
     voice_cfg: dict = {"stt": stt_cfg}
+    tts_cfg: dict = dict(tts or {})
     if tts_max_chars is not None:
-        voice_cfg["tts"] = {"max_text_chars": tts_max_chars}
+        tts_cfg["max_text_chars"] = tts_max_chars
+    if tts_cfg:
+        voice_cfg["tts"] = tts_cfg
     app.state.settings = Settings.model_validate({"voice": voice_cfg})
     app.include_router(voice_api.router, prefix="/api")
     return TestClient(app)
@@ -373,7 +387,8 @@ def _app(stub: _StubVoice, *, auto_send=False, stt_max_bytes=None, tts_max_chars
 def test_api_status_composes_auto_send_and_stt() -> None:
     c = _app(_StubVoice(served="vault-whisper"), auto_send=True)
     # the API composes stt_auto_send from live settings (the client's status() no longer carries it)
-    assert c.get("/api/voice/status").json() == {"stt": True, "tts": True, "stt_auto_send": True}
+    body = c.get("/api/voice/status").json()
+    assert (body["stt"], body["tts"], body["stt_auto_send"]) == (True, True, True)
     r = c.post("/api/voice/stt", files={"file": ("clip.webm", b"abc", "audio/webm")})
     assert r.status_code == 200
     assert r.json() == {"text": "transcribed text"}
@@ -410,7 +425,8 @@ def test_api_stt_rejects_oversized_upload() -> None:
 
 def test_api_tts_rejects_overlong_text() -> None:
     # SYS-17a: text over the configured char cap is rejected (422); at the cap it still synthesizes.
-    c = _app(_StubVoice(), tts_max_chars=5)
+    # D63 bounds the chunk cap by this cap, so a tiny per-request limit needs the chunk sizes under it.
+    c = _app(_StubVoice(), tts_max_chars=5, tts={"chunk_min_chars": 5, "chunk_max_chars": 5})
     assert c.post("/api/voice/tts", json={"text": "hello"}).status_code == 200  # exactly at the cap
     over = c.post("/api/voice/tts", json={"text": "hello!"})
     assert over.status_code == 422
@@ -433,6 +449,150 @@ def test_voice_caps_reject_zero_and_inf() -> None:
             raise AssertionError(f"expected ValidationError for {bad}")
         except ValidationError:
             pass
+
+
+# --- D63 chunked TTS: config bounds, the client policy, the pin, the format override --------------
+
+
+def test_chunk_config_bounds_validate_at_load() -> None:
+    """The two orderings the chunker needs to make progress are load-time errors (a bad Conf save 422s
+    instead of silently muting TTS), and `chunk_lookahead` is bounded 1..4."""
+    from pydantic import ValidationError
+
+    from app.config import VoiceCfg
+
+    ok = VoiceCfg.model_validate({"tts": {"chunk_min_chars": 400, "chunk_max_chars": 400}}).tts
+    assert (ok.chunking, ok.chunk_format, ok.chunk_lookahead) == ("sentence", "opus", 1)  # shipped defaults
+    for bad in (
+        {"tts": {"chunk_min_chars": 401, "chunk_max_chars": 400}},  # floor above the cap
+        {"tts": {"chunk_max_chars": 5000}},  # cap above the per-message limit (4096)
+        {"tts": {"chunk_lookahead": 0}},
+        {"tts": {"chunk_lookahead": 5}},
+        {"tts": {"chunking": "words"}},
+        {"tts": {"chunk_min_words": 0}},
+    ):
+        try:
+            VoiceCfg.model_validate(bad)
+            raise AssertionError(f"expected ValidationError for {bad}")
+        except ValidationError:
+            pass
+
+
+def test_api_status_carries_the_chunk_policy() -> None:
+    """`tts_chunking` rides the always-on probe (D63 HIGH-2) — shape only, no endpoint/key/model."""
+    c = _app(_StubVoice(), tts={"chunking": "paragraph", "chunk_max_chars": 300, "chunk_lookahead": 2})
+    policy = c.get("/api/voice/status").json()["tts_chunking"]
+    assert policy == {
+        "mode": "paragraph",
+        "min_words": 4,
+        "min_chars": 50,
+        "max_chars": 300,
+        "lookahead": 2,
+        "max_text_chars": 4096,
+        "format": "opus",
+    }
+
+
+def test_api_tts_passes_format_and_prefer_and_returns_target() -> None:
+    stub = _StubVoice(served="emma")
+    c = _app(stub)
+    r = c.post("/api/voice/tts", json={"text": "hi", "format": "opus", "prefer": "emma/kokoro"})
+    assert r.status_code == 200
+    assert stub.calls[-1] == {"text": "hi", "voice": None, "format": "opus", "prefer": "emma/kokoro"}
+    assert r.headers["X-Voice-Served-By"] == "emma"  # display name, byte-identical to pre-D63
+    assert r.headers["X-Voice-Target"] == "emma/kokoro"  # the machine-readable pin
+    # the container allowlist is CLOSED — an arbitrary string never reaches a provider
+    assert c.post("/api/voice/tts", json={"text": "hi", "format": "ogg"}).status_code == 422
+    # omitted → no override at all (the adapter falls through to model > service)
+    c.post("/api/voice/tts", json={"text": "hi"})
+    assert stub.calls[-1]["format"] is None and stub.calls[-1]["prefer"] is None
+
+
+def test_synthesize_format_precedence_request_over_model_over_service() -> None:
+    """D63/MED-4: a model-level `format: mp3` must not silently defeat the chunk format."""
+
+    async def go():
+        seen: dict = {}
+
+        def on_speech(model, voice, text, fmt, kw):
+            seen["fmt"] = fmt
+            return b"AUD"
+
+        vc = _vc(
+            tts=[target("emma", "http://p/v1", "kokoro", fmt="mp3")],
+            tts_policy=TtsPolicy(format="flac"),
+            by_url={"http://p/v1": _fake_client(on_speech=on_speech)},
+        )
+        _, media_type, _ = await vc.synthesize(text="hi")
+        assert (seen["fmt"], media_type) == ("mp3", "audio/mpeg")  # model over service
+        _, media_type, _ = await vc.synthesize(text="hi", audio_format="opus")
+        assert (seen["fmt"], media_type) == ("opus", "audio/ogg")  # request over model
+        # no model format → service
+        vc2 = _vc(
+            tts=[target("emma", "http://p/v1", "kokoro")],
+            tts_policy=TtsPolicy(format="flac"),
+            by_url={"http://p/v1": _fake_client(on_speech=on_speech)},
+        )
+        await vc2.synthesize(text="hi")
+        assert seen["fmt"] == "flac"
+
+    _run(go())
+
+
+def test_synthesize_prefer_reorders_the_chain_and_misses_silently() -> None:
+    """The pin tries that TARGET first (provider alone is ambiguous — one provider, two models); an
+    unknown/vanished pin falls back to the configured order rather than erroring."""
+
+    async def go():
+        served: list[str] = []
+
+        def on_speech(model, voice, text, fmt, kw):
+            served.append(model)
+            return b"AUD"
+
+        chain = [
+            target("emma", "http://p/v1", "kokoro"),
+            target("emma", "http://p/v1", "piper"),  # same provider, second model
+            target("vault", "http://f/v1", "alltalk"),
+        ]
+        clients = {
+            "http://p/v1": _fake_client(on_speech=on_speech),
+            "http://f/v1": _fake_client(on_speech=on_speech),
+        }
+        vc = _vc(tts=chain, by_url=clients)
+
+        _, _, reply = await vc.synthesize(text="hi")
+        assert served[-1] == "kokoro" and reply.target == "emma/kokoro" and reply.degraded is False
+        _, _, reply = await vc.synthesize(text="hi", prefer="emma/piper")
+        assert served[-1] == "piper" and reply.target == "emma/piper"
+        assert reply.served == "emma" and reply.degraded is False  # pinned = position 0, NOT a fallback
+        _, _, reply = await vc.synthesize(text="hi", prefer="vault/alltalk")
+        assert served[-1] == "alltalk" and reply.served == "vault"
+        # a vanished pin: silent miss → the normal chain, primary serves
+        _, _, reply = await vc.synthesize(text="hi", prefer="ghost/model")
+        assert served[-1] == "kokoro" and reply.target == "emma/kokoro"
+
+    _run(go())
+
+
+def test_synthesize_prefer_still_fails_over_when_the_pin_dies() -> None:
+    """A pinned target that has gone down doesn't strand the reply — the rest of the chain still walks."""
+
+    async def go():
+        vc = _vc(
+            tts=[
+                target("emma", "http://p/v1", "kokoro"),
+                target("vault", "http://f/v1", "alltalk"),
+            ],
+            by_url={
+                "http://p/v1": _fake_client(on_speech=RuntimeError("down")),
+                "http://f/v1": _fake_client(on_speech=lambda *a: b"AUD"),
+            },
+        )
+        _, _, reply = await vc.synthesize(text="hi", prefer="emma/kokoro")
+        assert reply.served == "vault" and reply.target == "vault/alltalk" and reply.degraded is True
+
+    _run(go())
 
 
 if __name__ == "__main__":

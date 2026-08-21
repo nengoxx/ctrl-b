@@ -520,6 +520,11 @@ one — only the browser binary can). That splits C2 into two features that must
   + one turn-end ownership entry point. **Single-stream progressive mode = recorded NON-BUILD**
   (R50 P2/P4: slower TTFA than chunking and Chromium never becomes seekable) — the queue's
   ordered source list is the seam if ever revisited. Build pends the owner S1 go.
+- **S1 ✅ BUILT 2026-08-21** — chunker (`lib/ttsChunks`) + the element queue + the `TtsServiceCfg`
+  `chunk_*` block + client-policy delivery on `GET /voice/status` + the `X-Voice-Target`/`prefer`
+  failover pin, serving the per-bubble ▶ and the existing turn-end auto-TTS (`useAutoTts` still calls
+  `toggle`, which under chunking simply starts the queue). **S2 — read-along-while-streaming and the
+  single turn-end ownership entry point — is still open.**
 
 ---
 

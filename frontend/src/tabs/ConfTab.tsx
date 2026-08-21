@@ -46,6 +46,7 @@ import {
   type SavePatch,
   type SectionRef,
   type SettingsDoc,
+  type VoiceTts,
 } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
 import { promptPreview } from "../lib/promptPreview";
@@ -1543,6 +1544,13 @@ export function ConfTab({ active }: Props) {
           ...draft.voice.tts,
           connect_timeout_s: Number(draft.voice.tts.connect_timeout_s),
           timeout_s: Number(draft.voice.tts.timeout_s),
+          // D63 chunk sizes. Bare `Number` like the timeouts beside them, NOT `numOrNull`: 0 is not a
+          // meaningful value for any of them (the backend floors every one at >= 1), so a cleared field
+          // becoming 0 earns the same visible 422 a cleared timeout does.
+          chunk_min_words: Number(draft.voice.tts.chunk_min_words),
+          chunk_min_chars: Number(draft.voice.tts.chunk_min_chars),
+          chunk_max_chars: Number(draft.voice.tts.chunk_max_chars),
+          chunk_lookahead: Number(draft.voice.tts.chunk_lookahead),
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
@@ -2217,6 +2225,63 @@ export function ConfTab({ active }: Props) {
               onPick={(v) => setTts("format", v)}
             />
           </SettingRow>
+          {/* D63 — chunked synthesis. Hand-authored like every row in this group (nothing auto-renders
+              from the config shape); the same values ride `GET /voice/status` to the playback queue. */}
+          <SettingRow
+            label="Chunking"
+            desc="split the reply and read it chunk by chunk — audio starts after the first sentence, not the whole clip"
+          >
+            <Seg<VoiceTts["chunking"]>
+              label="Chunking"
+              current={vtts?.chunking ?? "sentence"}
+              options={[
+                { val: "off", label: "off" },
+                { val: "paragraph", label: "paragraph" },
+                { val: "sentence", label: "sentence" },
+              ]}
+              onPick={(v) => setTts("chunking", v)}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Chunk format"
+            desc="per-chunk container — opus is gapless from a pipe; mp3 adds dead air at every seam"
+          >
+            <Seg<string>
+              label="Chunk format"
+              current={vtts?.chunk_format ?? "opus"}
+              options={[
+                { val: "opus", label: "opus" },
+                { val: "wav", label: "wav" },
+                { val: "flac", label: "flac" },
+                { val: "mp3", label: "mp3" },
+              ]}
+              onPick={(v) => setTts("chunk_format", v)}
+            />
+          </SettingRow>
+          <Field
+            label="Chunk min words"
+            desc="merge floor — a chunk under this many words joins the next"
+            value={String(vtts?.chunk_min_words ?? "")}
+            onChange={(v) => setTts("chunk_min_words", v as unknown as number)}
+          />
+          <Field
+            label="Chunk min chars"
+            desc="merge floor — a chunk shorter than this joins the next"
+            value={String(vtts?.chunk_min_chars ?? "")}
+            onChange={(v) => setTts("chunk_min_chars", v as unknown as number)}
+          />
+          <Field
+            label="Chunk max chars"
+            desc="split at the last word boundary under this; must be ≤ the per-request text limit"
+            value={String(vtts?.chunk_max_chars ?? "")}
+            onChange={(v) => setTts("chunk_max_chars", v as unknown as number)}
+          />
+          <Field
+            label="Chunk lookahead"
+            desc="how many chunks to synthesize ahead of the one playing (1–4)"
+            value={String(vtts?.chunk_lookahead ?? "")}
+            onChange={(v) => setTts("chunk_lookahead", v as unknown as number)}
+          />
           {/* A11/D48 Slice 2 — the TTS primary + ordered fallbacks point at the registry; the server
               voice id + playback speed are per-model fields (edited on the provider card's model row). */}
           <SectionRefEditor
