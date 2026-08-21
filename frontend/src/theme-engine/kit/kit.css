@@ -598,7 +598,10 @@ body[data-perf="lite"] .kit-composer {
   border-radius: 999px;
   border: 1px solid var(--line-2);
   color: var(--text-2);
-  transition: background 0.15s, color 0.15s, opacity 0.2s;
+  /* border-color + transform ride the same 0.15s as the fill (R52 cut-down #1): the rec/sending
+   * chip's ring used to SNAP while its background faded, and `.mic.press`'s scale snapped both
+   * directions — the state chrome now moves as one. */
+  transition: background 0.15s, color 0.15s, opacity 0.2s, border-color 0.15s, transform 0.15s;
   /* stay snapped to the trailing edge at any plan-pill width — never squished/pushed out when the row
    * runs short (the flexbox min-content fix's partner; covers the stacked layout under any composer skin). */
   flex-shrink: 0;
