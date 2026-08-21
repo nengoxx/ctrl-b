@@ -12,7 +12,50 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-21, SECOND session — the owner-round wave)
+## Current state (2026-08-21, THIRD session — D64 end-to-end + the owner live rounds)
+
+- **Prod UNCHANGED: v1.7.4 @ `92cb3a3`.** **13 commits now unpushed through `2368f50`** (the second
+  session's 7 + this session's 6; push = the owner's word). Dev units RUNNING on the new code
+  (backend restarted post-D64; FE via HMR).
+- **D64 ✅ THE WHOLE LADDER IN ONE SESSION — Core Memory honest reads + server-side delete guard**
+  (`2368f50`; DECISIONS D64 amends D60's model-carried-hash clause; as-built = CORE_MEMORY_PLAN
+  §17, incl. §17.4 accepted residuals). The chain: the owner's failed dev consolidation →
+  incident forensics (Opus audit, main-seat-verified: qwen SPLICED a 71-char content_hash from
+  two hashes in context; separately the 11K topic was read truncated and merged lossy) → the dev
+  corpus HAND-REPAIRED same day (unseen 2,915-char tail restored from .archive, mangled slug
+  renamed, family completed; 53/53 index verified) → R53 bought+verified+indexed (field: 5/6
+  peers page, 0/6 gate destructive ops on completeness; our truncation was announced-but-
+  unrecoverable) → **the owner pointed at the Maia vault**: the Claude Code memory source spec +
+  the Hermes Core Memory v1 contract (approved same day) — all three sources converge on
+  server-side read-state, and the over-engineering verdict landed on the model-carried hash →
+  design → **FULL council** (Emma correctness 3 HIGH/5 MED/1 LOW + adversarial Opus architecture
+  F1–F9, every finding folded, none overruled; confirm passes BUILD ×2) → Opus-built 6 slices →
+  Emma blind diff round SHIP WITH FIXES (the MED she REPRODUCED: framed-cost owner-steer) → fix
+  wave → confirm **all-RESOLVED, SHIP**. Gate BE 1873 / FE 2236. Headlines: `read` pages
+  (offset/limit, facts-only PARTIAL marker naming the next call) · `RecallState` high-water
+  coverage minted at budget acceptance, receipts in `ToolResult.data`, suspend/resume reseed ·
+  delete = `{path, superseded_by}` (no token; tool-layer freshness→coverage→owner-steer; corpus
+  stays stateless; D60 crash-retry intact) · consolidation+dryrun prompts corrected ·
+  `recall_char_limit` default 24,576 (measured: the §14f family = 81.7% vs 98.1% under the old
+  cap) · riders (slug `.md`, suppression `{{details}}`, `_drop_entry`, `CoreStatus.oversized`).
+  **The real acceptance still owed: a fresh owner consolidation run on dev under D64.**
+- **ISS-10 ① ✅ SHIPPED (`8463082`)** — the motion-token band (2 durations + 2 easings in the
+  semantic contract, 33 kit rules retokenized, ONE reduced-motion collapse in @layer axes,
+  ease→M3-standard feel swap for the owner to eyeball). Emma diff round: SHIP, zero findings.
+  **Stage ② (glyph-swap cross-fades) HELD UNBUILT by owner ruling ("if nobody does it, we don't
+  need it either" — 6/6 peers don't); ISS-10 stays open-recorded.**
+- **The mini-player bars** slimmed by owner round (`8504c4c`: 48 bars / 2.5px gap; the hollow
+  "estimated" state → the recorded faint-fill fallback at the new width). Owner-confirmed.
+- **ISS-11 ✅ found→blind-confirmed→fixed TWICE in one session (`74db7c8`)** — the oracle
+  scanline pulse (the edge mask rode the M6 travel; Emma's blind round derived the identical
+  mechanism from the symptom alone). Round 1 = owner ruled crisp-at-rest (one rule deleted, also
+  ended the ghosting double-mask over-dim); round 2 = the owner-sized 14px melt rebuilt
+  pulse-proof (stationary `.gc-oracle-scan` frame, comb+travel on `::before`; tunable
+  `--gc-scan-edge-fade`). Owner-confirmed on dev. gachaChrome re-pins the invariant.
+- Also: R53 committed `d9e55c7` · the D64+ISS-11 docs commit `19e3f75` · the dev corpus repair
+  is committed in `~/.ctrl-b-dev/memories` git (`f0a116b` + the watcher's `0583e02`).
+
+## Prior state (2026-08-21, SECOND session — the owner-round wave)
 
 - **Prod still UNCHANGED: v1.7.4 @ `92cb3a3`** (rollback v1.7.2). **7 new commits on local `main`
   through `b069beb` — UNPUSHED (push needs the owner's word)**; origin remains `d5cc25a`. Dev units
@@ -110,7 +153,26 @@
   (fastest) and AllTalk (best quality) — features must serve both; standing permission to probe
   emma↔vault services when needed.
 
-## ▶▶ NEXT (2026-08-21, second session — supersedes the list below where struck)
+## ▶▶ NEXT (2026-08-21, third session — supersedes both lists below where struck)
+
+0. **PUSH the 13 unpushed commits** (`52510fe`..`2368f50`) on the owner's word — everything
+   committed, gated, review-closed.
+1. **THE D64 LIVE ACCEPTANCE: a fresh owner consolidation run on dev** (the backend is restarted
+   on the new code; tier 2 ON with the repaired corpus). Watch for: paging in the read trail,
+   the delete rail's steering if anything goes partial, and NO hash anywhere in the transcript.
+2. **Owner device rounds still open:** the motion-token feel (①'s ease swap — does the composer
+   read snappier or wrong?) · C3 seam audibility + the S1.5 scrubber at the NEW bar width ·
+   F1 notifications (master ON, background, host transition, tap→fleet) · the icon-backdrop
+   fresh install.
+3. **C3 SLICE 2 — read-along-while-streaming** (unchanged; the growth contract is recorded).
+4. **The RELEASE ruling** — the batch is now 13 commits incl. D64 (still no schema/config
+   migration; the `recall_char_limit` default change is code-side with config-file values
+   overriding; rollback stays v1.7.2).
+5. **ISS-10 ② stays parked** (owner ruling); **ISS-11 closed**; the ISS-10 ledger entry could
+   take a ①-shipped note on the next docs pass.
+6. **A13 design talk** and **Phase 19 (D58) owner court** — unchanged, in that order.
+
+## Prior ▶▶ (2026-08-21, second session — superseded)
 
 0. **PUSH the 7 unpushed commits** (`52510fe`..`b069beb`) once the owner says push — everything
    is committed, gated, review-closed.
