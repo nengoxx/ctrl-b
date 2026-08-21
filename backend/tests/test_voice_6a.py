@@ -12,7 +12,9 @@ Covers:
   configured/enabled; drain closes SDK clients.
 - config/secret: a voice-referenced provider's `api_key` masks on read + blank-keeps on PUT (the standard
   `providers.*.api_key` path — the legacy `voice.*.primary.api_key` leaf is gone).
-- API: `/voice/status` (composes `stt_auto_send` from live settings), `/voice/stt`, `/voice/tts`.
+- API: `/voice/status` (composes `stt_auto_send` + the R51 Tier-0 `stt_auto_stop` policy from live
+  settings), `/voice/stt`, `/voice/tts`.
+- R51 Tier 0 auto-stop dictation: the config defaults (OFF) + the both-ways bounds on its two tunables.
 - D63 chunked TTS: the `chunk_*` load-time bounds, the `tts_chunking` client policy on `/voice/status`,
   the request-level `format` override + its closed allowlist, the `prefer`/`X-Voice-Target` pin
   (reorder, silent miss, still-fails-over), and the degraded-only `X-Voice-Degraded` marker.
@@ -364,13 +366,13 @@ class _StubVoice:
 
 
 def _app(
-    stub: _StubVoice, *, auto_send=False, stt_max_bytes=None, tts_max_chars=None, tts=None
+    stub: _StubVoice, *, auto_send=False, stt_max_bytes=None, tts_max_chars=None, stt=None, tts=None
 ) -> TestClient:
     from app.api import voice as voice_api
 
     app = FastAPI()
     app.state.voice = stub
-    stt_cfg: dict = {"auto_send": auto_send}
+    stt_cfg: dict = {"auto_send": auto_send, **(stt or {})}
     if stt_max_bytes is not None:
         stt_cfg["max_upload_bytes"] = stt_max_bytes
     voice_cfg: dict = {"stt": stt_cfg}
@@ -449,6 +451,47 @@ def test_voice_caps_reject_zero_and_inf() -> None:
             raise AssertionError(f"expected ValidationError for {bad}")
         except ValidationError:
             pass
+
+
+# --- R51 Tier 0: the auto-stop dictation policy ---------------------------------------------------
+
+
+def test_auto_stop_defaults_off_and_bounds_reject_wedging_values() -> None:
+    """Ships OFF (push-to-talk untouched), and both tunables are bounded BOTH ways — a ~0 s window would
+    end every clip before a word and an unbounded one would never end; a 0 threshold never fires and a
+    huge one stops on speech. `inf`/NaN are rejected by the same bounds."""
+    from pydantic import ValidationError
+
+    from app.config import VoiceCfg
+
+    stt = VoiceCfg.model_validate({}).stt
+    assert (stt.auto_stop, stt.auto_stop_silence_s, stt.auto_stop_threshold) == (False, 3.0, 0.01)
+    for bad in (
+        {"stt": {"auto_stop_silence_s": 0.4}},
+        {"stt": {"auto_stop_silence_s": 31}},
+        {"stt": {"auto_stop_silence_s": float("inf")}},
+        {"stt": {"auto_stop_threshold": 0}},
+        {"stt": {"auto_stop_threshold": 0.6}},
+        {"stt": {"auto_stop_threshold": float("nan")}},
+    ):
+        try:
+            VoiceCfg.model_validate(bad)
+            raise AssertionError(f"expected ValidationError for {bad}")
+        except ValidationError:
+            pass
+
+
+def test_api_status_carries_the_auto_stop_policy() -> None:
+    """`stt_auto_stop` rides the always-on probe beside `stt_auto_send` — shape only (a toggle + two
+    thresholds), no endpoint/key/model. The mic is the only thing that listens."""
+    off = _app(_StubVoice()).get("/api/voice/status").json()
+    assert off["stt_auto_stop"] == {"enabled": False, "silence_s": 3.0, "threshold": 0.01}
+    c = _app(_StubVoice(), stt={"auto_stop": True, "auto_stop_silence_s": 2.0})
+    assert c.get("/api/voice/status").json()["stt_auto_stop"] == {
+        "enabled": True,
+        "silence_s": 2.0,
+        "threshold": 0.01,
+    }
 
 
 # --- D63 chunked TTS: config bounds, the client policy, the pin, the format override --------------

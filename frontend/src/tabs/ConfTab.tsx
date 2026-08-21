@@ -1539,6 +1539,10 @@ export function ConfTab({ active }: Props) {
           ...draft.voice.stt,
           connect_timeout_s: Number(draft.voice.stt.connect_timeout_s),
           timeout_s: Number(draft.voice.stt.timeout_s),
+          // R51 Tier 0. Bare `Number` like the timeouts beside them: the backend floors both well above
+          // 0 (0.5 s / 0.001), so a cleared field earns the same visible 422, never a silent zero.
+          auto_stop_silence_s: Number(draft.voice.stt.auto_stop_silence_s),
+          auto_stop_threshold: Number(draft.voice.stt.auto_stop_threshold),
         },
         tts: {
           ...draft.voice.tts,
@@ -2168,6 +2172,30 @@ export function ConfTab({ active }: Props) {
               label="STT auto-send"
             />
           </SettingRow>
+          {/* R51 Tier 0 — auto-stop dictation. Hand-authored like every row in this group; the same
+              values ride `GET /voice/status` to the mic, which does the listening. */}
+          <SettingRow
+            label="Auto-stop mic"
+            desc="stop recording after a run of silence; off → tap the mic again to stop"
+          >
+            <Switch
+              on={!!vstt?.auto_stop}
+              onToggle={() => setStt("auto_stop", !vstt?.auto_stop)}
+              label="STT auto-stop"
+            />
+          </SettingRow>
+          <Field
+            label="Silence window"
+            desc="seconds of silence before the recording stops (0.5–30)"
+            value={String(vstt?.auto_stop_silence_s ?? "")}
+            onChange={(v) => setStt("auto_stop_silence_s", v as unknown as number)}
+          />
+          <Field
+            label="Silence threshold"
+            desc="mic level counted as silence (0.001–0.5) — lower it if it cuts you off, raise it in a noisy room"
+            value={String(vstt?.auto_stop_threshold ?? "")}
+            onChange={(v) => setStt("auto_stop_threshold", v as unknown as number)}
+          />
           {/* A11/D48 Slice 2 — the STT primary + ordered fallbacks point at the registry (provider + model
               scoped to its catalog); the whisper endpoint/key/model now live on the provider card. */}
           <SectionRefEditor

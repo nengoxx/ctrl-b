@@ -271,6 +271,11 @@ voice:
     vad_filter: true       # voice-activity detection: drop silence (avoids whisper silence-hallucinations)
     hotwords: ""           # space-separated recognition bias (fleet names, jargon)
     auto_send: false       # true → mic sends the transcript; false → fills the composer for review
+    # Auto-stop dictation (R51 Tier 0) — the PWA ends the recording itself after a silence run, through
+    # the same stop path as tapping the button (`auto_send` then applies unchanged). OFF = push-to-talk.
+    auto_stop: false       # true → hands-free stop; false → tap to stop (the shipped default)
+    auto_stop_silence_s: 3.0    # silence run that ends the recording (0.5–30)
+    auto_stop_threshold: 0.01   # normalized RMS below this counts as silence (0.001–0.5; calibrate on-device)
     connect_timeout_s: 3   # fail-fast on an unreachable endpoint → fall over
     timeout_s: 30          # read window for the transcription itself
   tts:

@@ -33,6 +33,9 @@ export function useComposer(): ComposerController {
     sttReady,
     statusStamp: voice.dataUpdatedAt,
     autoSend: voice.data?.stt_auto_send ?? false,
+    // R51 Tier 0 — the mic's silence auto-stop policy rides the same always-on probe as auto-send;
+    // absent (older backend / stub) → undefined → plain push-to-talk.
+    autoStop: voice.data?.stt_auto_stop,
   });
   const isStreaming = status === "streaming";
 

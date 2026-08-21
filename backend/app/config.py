@@ -544,7 +544,13 @@ class SttServiceCfg(VoiceServiceCfg):
     hallucinations; on by default). `hotwords` is a space-separated bias list — proper nouns / fleet
     names whisper would otherwise mangle (e.g. "minig"→"mini G"). `vad_filter`/`hotwords` are
     faster-whisper/Speaches extras, sent to the server via `extra_body` by the adapter (they're not
-    standard OpenAI params), so a non-faster-whisper fallback just ignores/rejects them."""
+    standard OpenAI params), so a non-faster-whisper fallback just ignores/rejects them.
+
+    The `auto_*` knobs are CLIENT behavior (nothing here transcribes): `auto_send` sends the transcript
+    the moment it lands, and the `auto_stop` block (R51 Tier 0) ends the recording itself after
+    `auto_stop_silence_s` of continuous silence below `auto_stop_threshold`. Both ride
+    `GET /voice/status` to the always-on mic. Auto-stop defaults OFF — push-to-talk is unchanged until
+    the owner flips it."""
 
     language: str = "en"  # default English; "" → auto-detect
     vad_filter: bool = True  # voice-activity-detection: skip silence
@@ -557,6 +563,17 @@ class SttServiceCfg(VoiceServiceCfg):
     # immediately; False (default) → fills the composer for review-before-send. Surfaced to the
     # always-on mic via `GET /voice/status` (the Conf-scoped settings query isn't read on Fleet/Agent).
     auto_send: bool = False
+    # R51 Tier 0 — auto-stop dictation: the PWA watches the recording's energy and stops through its
+    # ordinary stop path after a silence run (`auto_send` then applies unchanged). OFF by default, so
+    # the shipped behavior stays push-to-talk until the owner asks for hands-free.
+    auto_stop: bool = False
+    #: The silence run that ends a recording. Bounded both ways so a blanked/absurd Conf value can't
+    #: wedge dictation — a ~0 s window would end every clip before a word, an unbounded one never ends.
+    auto_stop_silence_s: float = Field(default=3.0, ge=0.5, le=30.0)
+    #: Normalized RMS floor treated as silence. A STARTING default with no field provenance (the peers
+    #: that ship this measure different quantities) — the knob exists so the owner calibrates it on the
+    #: phone against quiet speech + room noise; the bounds keep it a floor, never a mute or a gate.
+    auto_stop_threshold: float = Field(default=0.01, ge=0.001, le=0.5)
 
 
 class TtsServiceCfg(VoiceServiceCfg):

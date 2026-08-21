@@ -67,4 +67,21 @@ describe("useVoiceStatus · the D63 chunk policy reaches the playback controller
     await waitFor(() => expect(result.current.data?.tts).toBe(true));
     expect(h.setChunkPolicy).not.toHaveBeenCalled();
   });
+
+  // R51 Tier 0 — the mic's auto-stop policy rides the SAME probe, but its consumer is a React hook
+  // (`useDictation`, via `useComposer`), so it stays on `data` instead of being published to a
+  // singleton. Absent → undefined → the mic's own default, plain push-to-talk (LOW-4).
+  it("carries the auto-stop policy on `data`, and reads absent as undefined", async () => {
+    const auto_stop = { enabled: true, silence_s: 2.5, threshold: 0.02 };
+    mockStatus({ stt: true, tts: false, stt_auto_send: false, stt_auto_stop: auto_stop });
+    const { result } = renderHook(() => useVoiceStatus(), { wrapper });
+    await waitFor(() => expect(result.current.data?.stt).toBe(true));
+    expect(result.current.data?.stt_auto_stop).toEqual(auto_stop);
+
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mockStatus({ stt: true, tts: false, stt_auto_send: false });
+    const older = renderHook(() => useVoiceStatus(), { wrapper });
+    await waitFor(() => expect(older.result.current.data?.stt).toBe(true));
+    expect(older.result.current.data?.stt_auto_stop).toBeUndefined();
+  });
 });

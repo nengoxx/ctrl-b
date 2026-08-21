@@ -557,6 +557,10 @@ one — only the browser binary can). That splits C2 into two features that must
   kill verb barge-in needs (R51 §9.1).
 - **Tier 0 quick win, buildable anytime:** auto-stop dictation (~1 day — energy detector +
   config silence timeout on the field's 3.0–3.2 s number + the existing `stt_auto_send`).
+  **✅ BUILT 2026-08-21 (default OFF; threshold pends the owner phone calibration)** —
+  `voice.stt.auto_stop{,_silence_s,_threshold}` → `GET /voice/status` → an AnalyserNode in
+  `useDictation` that ends the recording through the ordinary stop path (a hidden page ends it
+  outright; a context that won't run degrades to push-to-talk).
 - **Scope when built:** screen-on / app-foreground / Wake Lock ("docked on a stand") — screen-off
   always-listening needs a Capacitor shell (R14 §5) and Firefox cannot do it at all. Needs a
   D-entry + the AEC device probe before any build.

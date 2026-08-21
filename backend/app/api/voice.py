@@ -33,17 +33,24 @@ def _client(request: Request) -> VoiceClient:
 
 @router.get("/status")
 async def voice_status(request: Request) -> dict[str, object]:
-    """Capability probe: which voice services are configured + enabled, the STT auto-send flag, and the
-    D63 TTS chunk policy (`{stt, tts, stt_auto_send, tts_chunking}`). Everything past the two capability
-    bits is CLIENT BEHAVIOR composed HERE from live settings (A11/R2) — the frozen resolved chain the
-    `VoiceClient` holds deliberately doesn't carry it — and this probe is the always-on endpoint the PWA
-    already polls, so the chunker needs no query of its own.
+    """Capability probe: which voice services are configured + enabled, the STT auto-send flag, the R51
+    Tier-0 auto-stop policy, and the D63 TTS chunk policy (`{stt, tts, stt_auto_send, stt_auto_stop,
+    tts_chunking}`). Everything past the two capability bits is CLIENT BEHAVIOR composed HERE from live
+    settings (A11/R2) — the frozen resolved chain the `VoiceClient` holds deliberately doesn't carry it —
+    and this probe is the always-on endpoint the PWA already polls, so neither the chunker nor the mic's
+    silence detector needs a query of its own.
 
-    `tts_chunking` is shape-only: split mode + the size floors/caps + the container the client should ask
-    for. No endpoint, no key, no model id — nothing here says whether a secret exists."""
+    `stt_auto_stop` and `tts_chunking` are shape-only: a toggle + thresholds, and the split mode + size
+    floors/caps + container. No endpoint, no key, no model id — nothing here says whether a secret exists."""
     status: dict[str, object] = dict(_client(request).status())
+    stt = request.app.state.settings.voice.stt
     tts = request.app.state.settings.voice.tts
-    status["stt_auto_send"] = request.app.state.settings.voice.stt.auto_send
+    status["stt_auto_send"] = stt.auto_send
+    status["stt_auto_stop"] = {
+        "enabled": stt.auto_stop,
+        "silence_s": stt.auto_stop_silence_s,
+        "threshold": stt.auto_stop_threshold,
+    }
     status["tts_chunking"] = {
         "mode": tts.chunking,
         "min_words": tts.chunk_min_words,

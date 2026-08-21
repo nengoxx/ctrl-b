@@ -76,6 +76,11 @@ export interface VoiceStt extends VoiceServiceCommon {
   vad_filter: boolean; // skip silence
   hotwords: string; // space-separated recognition bias
   auto_send: boolean; // true → mic sends the transcript; false (default) → fill composer for review
+  // R51 Tier 0 — auto-stop dictation: the mic ends its own recording after a silence run (the same
+  // stop path as tapping the button, so `auto_send` still applies). Off → today's push-to-talk.
+  auto_stop: boolean;
+  auto_stop_silence_s: number; // silence run that ends the recording (0.5–30)
+  auto_stop_threshold: number; // normalized RMS below this counts as silence (0.001–0.5)
 }
 export interface VoiceTts extends VoiceServiceCommon {
   format: string; // response_format/container (mp3 = universally seekable)

@@ -16,6 +16,15 @@ import { setChunkPolicy } from "../lib/audioController";
 // `lib/audioController` right where the response lands rather than through an effect in every one of
 // this hook's six consumers. This is the only endpoint the chunker needs, and it was already always-on.
 
+/** The `stt_auto_stop` object, in wire spelling (`SttServiceCfg.auto_stop*`, backend/app/config.py).
+ *  Unlike the chunk policy this one has a React consumer (`useDictation`, via `useComposer`), so it
+ *  rides the query's `data` rather than being published to a singleton. */
+export interface SttAutoStopWire {
+  enabled: boolean;
+  silence_s: number;
+  threshold: number;
+}
+
 /** The `tts_chunking` object, in wire spelling (`TtsServiceCfg.chunk_*`, backend/app/config.py). */
 export interface TtsChunkingWire {
   mode: "off" | "paragraph" | "sentence";
@@ -34,6 +43,9 @@ export interface VoiceStatus {
    *  fills the composer for review. Surfaced here (not just /api/settings) because the mic is on
    *  Fleet/Agent and the settings query is Conf-scoped. */
   stt_auto_send: boolean;
+  /** Client behavior (R51 Tier 0): the mic's silence auto-stop policy. Optional so a pre-Tier-0 backend
+   *  (or a test stub) simply leaves the mic on plain push-to-talk — absent reads as disabled. */
+  stt_auto_stop?: SttAutoStopWire;
   /** Client behavior (D63): how to split a reply for read-aloud. Optional so a pre-D63 backend (or a
    *  test stub) simply leaves the controller on its whole-message default. */
   tts_chunking?: TtsChunkingWire;
