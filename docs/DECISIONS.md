@@ -4629,3 +4629,44 @@ owner eyeballs. The prior non-builds STAND for their mechanisms: single-stream m
 unseekable) and the cumulative-blob rebuild (mp3-bound + per-seam reload) stay non-builds; this
 amendment replaces only "per-chunk is the v1 scrubber contract". Read-along (S2) composes: an
 appended chunk is one more estimated entry on a timeline that already grows.
+
+## D64 — Core Memory honest reads: paged `read` + server-side delete guard (the model carries no tokens) ✏️ LOCKED 2026-08-21 (owner directive "fix it forever, lean, no model overload" + full council: Emma lane correctness BUILD WITH CHANGES [3 HIGH · 5 MED · 1 LOW] and an adversarial Opus architecture round BUILD WITH CHANGES [F1–F9] + BUILD confirm pass — every finding folded, none overruled; evidence = the 2026-08-21 incident forensics [Emma audit], R53, and the owner's Maia vault: the Claude Code memory source specification + the Hermes Core Memory v1 contract; design of record = the session's d64-design.md v2.1, to be transcribed as CORE_MEMORY_PLAN §17 with the build)
+
+**Amends D60:** the guarded-soft-delete CLAUSE that made the model carry `content_hash` is
+superseded — the incident proved a model-carried token is the failure surface (a 71-char
+hash splice), and all three field sources converge on server-side read-state (Claude Code's
+`readFileState`; Hermes v1's complete-read-minted write token; the Emma audit's coverage
+grant). Everything else in D57/D60/D61 stands.
+
+**The shape (headlines; the design doc is normative until §17 lands):**
+- `read` pages: `offset` (1-based line) + optional `limit`; page ends at `limit` lines or
+  `topic_char_limit` chars, breaks ONLY at line boundaries (an over-budget line is emitted
+  WHOLE — the honesty rule); past-EOF refuses; marker = FACTS ONLY with the computed next
+  call. No new config knob — `topic_char_limit` is the page budget.
+- Per-turn `RecallState` (the RENAMED `RecallBudget` + a `reads` coverage dict — one object,
+  the shape-to-extend rule): per path a monotone high-water `seen` under one hash, minted
+  ONLY when `_charge` accepts the framed page, reset on hash change; suspend/resume reseeds
+  from opaque receipts in `ToolResult.data` (persisted, never model-facing).
+- `delete` (model-facing) = `{path, superseded_by|reason}` — `content_hash` leaves the tool
+  schema, `CoreRead`, and the read head. The TOOL layer checks freshness-then-coverage with
+  exact steering; the CORPUS keeps stateless `delete(path, expected_hash, …)` (any non-agent
+  caller can satisfy it; the D60 crash-retry index-only branch survives untouched). Absent
+  `RecallState` fails closed; every `InvocationContext` construction site that exposes
+  `core_memory` is enumerated + test-pinned to thread one.
+- Turn-scoped coverage, the REAL rationale recorded: past a turn boundary "has read" stops
+  implying "can still see" (§15b lossy tiers). A topic no turn can read steers to the
+  OWNER's hands, never to raising `recall_char_limit` live.
+- Shipped `recall_char_limit` default 20,480 → 24,576 (framed-cost arithmetic: the §14f
+  family + per-page recall frames lands within noise of the old cap; build asserts ≥10%
+  margin by measurement).
+- Same commit: the two consolidation prompt clauses that told the model to "work from what a
+  truncated read shows" become "continue at the marker's offset; NEVER create a merge from,
+  or delete, a source not fully read — if the budget can't cover the family, stop and
+  report". Riders: `_slug` strips a trailing `.md` (+ legacy `-md.md` twin refusal on
+  create) · repeat-suppression carries the prior ERROR via a `{{details}}` slot ·
+  `_drop_entry` contract narrowed honestly (LF-normalized reads are pre-existing) + trailing
+  blanks preserved · `CoreStatus.oversized` (derived, from new `CoreTopic.chars`) replaces
+  any counter · the partial-prefix `old_text` pinning test.
+- Non-builds recorded: cap raise/removal · `read_full` · acknowledgement params ·
+  model-carried tokens of any kind · range-union coverage · per-line third bound ·
+  cross-turn coverage · marker policy prose · post-write echo (on measured need only).
