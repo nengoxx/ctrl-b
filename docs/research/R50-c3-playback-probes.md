@@ -291,3 +291,37 @@ Sources: [OpenAI create-speech reference](https://developers.openai.com/api/refe
 7. **Headless caveat, stated plainly.** Both engines ran without an audio sink. Playback advanced at
    true wall-clock realtime (20.4–21.1 s for 19.16 s of audio), so decode + event scheduling are
    genuinely measured; hardware sink restart cost is not.
+
+---
+
+## Addendum 2026-08-21 — the SECOND backend: AllTalk on vault (VERIFIED, owner-requested)
+
+The owner's two daily TTS backends are Speaches/Kokoro on emma (fast) and **AllTalk on vault**
+(`vault-alltalk`, `http://192.168.1.137:7851/v1`, XTTS-class quality engine — already the dev TTS
+FALLBACK). Probed live 2026-08-21 (owner woke the host), same 98-char two-sentence input as §P1.
+
+| `response_format` | HTTP | Content-Type | decode | note |
+|---|---|---|---|---|
+| `wav`  | 200 | `audio/wav`  | clean | |
+| **`opus`** | **200** | **`audio/opus`** | **clean** | same non-standard MIME as Speaches |
+| `mp3`  | 200 | `audio/mp3`  | clean | |
+| `aac` / `flac` | 200 | as named | clean | |
+| `pcm`  | **500** | text/plain | — | not in our path; harmless |
+
+**Latency (opus, chunk-sized inputs):** 48-char sentence → **2.24 s** synth for 3.35 s of audio;
+98 chars → **3.7–4.5 s** for ~6 s of audio. `ttfb ≈ total` (AllTalk buffers whole responses — no
+streaming, which is irrelevant to the chunked design and would have KILLED the rejected
+single-stream mode on this backend: a third independent confirmation of that ruling).
+
+**Consequences:**
+1. **The chunked design works on both daily backends, opus included** — `chunk_format: opus`
+   needs no per-provider override. (Cross-format sample-exactness is unmeasurable on AllTalk:
+   XTTS is generative, every call is a different rendition — the §P1 methodology doesn't
+   transfer; clean decode + onset behavior is the achievable bar.)
+2. **Synth speed ≈ 1.5× realtime** (vs Kokoro's 6.1×). Depth-1 lookahead keeps up on average
+   but a short-chunk-then-long-chunk pattern can open an audible inter-chunk wait; the merge
+   floor absorbs most of it, and **`chunk_lookahead: 2` is the recommended Conf value when
+   AllTalk is primary** (safe once the S1 review wave's pin-bootstrap fix landed — before that
+   fix, lookahead >1 defeated the pin).
+3. Chunking's win is LARGEST here: a long reply's whole-blob synth on AllTalk is ~55 s+; chunked
+   first audio is ~2–4 s.
