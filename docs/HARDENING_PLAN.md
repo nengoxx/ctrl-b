@@ -75,7 +75,9 @@ one reconciliation + one fix ladder.
 
 **Staleness rule (spec-only deferral):** §7/§8 are snapshots @ `cdfd48d` and are the ordering
 evidence. If execution opens after further releases, **re-run the inventory + sweep as a delta
-pass before H0** — the packet ranking is only as good as its numbers.
+pass before H0** — the packet ranking is only as good as its numbers. *(The qualitative half of
+that delta is already written for everything through v1.7.5 — **§7b**, 2026-08-22; the H1
+re-measure still owns the numbers.)*
 
 ## 2. The methodology
 
@@ -449,9 +451,10 @@ One bounded agent per buy, no nested subagents, dossier drafted by the agent int
   context-not-gag, two reviewers never share a lens on the same artifact.
 - **Owner cadence**: autonomous audit/measure work in the mornings; rulings + eyeball rounds in
   the afternoons; the afternoon queue carries only M+/behavior-visible/D-entry/security items
-  (§2.3.5). Pause between packets; the owner's four standing owed items (notifications retest ·
-  first prompt-edit drive · media-gallery round · corsair cold-boot watch) keep priority over
-  new ruling asks.
+  (§2.3.5). Pause between packets; the owner's standing owed items (~~notifications retest~~ ✓
+  2026-08-19/20 · first prompt-edit drive · media-gallery round · ~~corsair cold-boot watch~~ ✓
+  2026-08-22 · post-v1.7.5: the F1 device test + the icon fresh-install) keep priority over new
+  ruling asks.
 - **Session hygiene**: long audit stretches hand off per the standing >200–300k context rule —
   the plan + as-builts must always be current enough to resume from.
 - **No new deps** without a named robustness/quality justification (standing owner posture:
@@ -506,6 +509,26 @@ No-direct-test modules (import-level, verified): BE `searxng.py`, `wol.py`, `fsu
 `MiniPlayer`, `PrivilegeChip`, `toolsMenu` sheets, `cosmosDive`, `useMemory`, `useTools`,
 `lib/prefetch`, `lib/promptPreview`, a.o. (Phase 20 for the FE list.)
 
+### 7b. Post-spec delta register (2026-08-22 — everything landed after `cdfd48d`, assigned; numbers await the H1 re-measure)
+
+Releases since the spec: **v1.7.4** (2026-08-20) + the **v1.7.5 batch** (37 commits, 2026-08-22).
+Every new or changed surface below is assigned to its packet + lens so no audit brief misses it.
+The §1 staleness rule still governs: H1 re-measures the inventory and the §8 sweep re-runs as a
+delta before H0 — this register is the qualitative half, written while the changes are fresh.
+
+| New/changed surface | What it added | Packet / lens |
+|---|---|---|
+| **Core Memory D60 + D61 + D64** (consolidation redesign · `/consolidate` verb + pressure note · paged reads + server-side delete guard) | `core_memory.py`/`core_memory_tool.py` substantially rebuilt post-inventory: paged `read` (offset/limit, line-boundary honesty rule), per-turn `RecallState` coverage minted at budget acceptance with receipts in `ToolResult.data`, framed-cost owner-steer, tool-layer delete gate (`{path, superseded_by}`, corpus stays stateless), the consolidation prompt family rewritten (D60 ④ + §14f tuning + the 2026-08-22 bare-name clause). D64 §17.4 accepted residuals (page-count floor · scan-dependent steer) are recorded context, not re-findings. | **Packet ③** (perf/reliability; the §14b-template readiness rider now also exercises the D64 shapes — paging + steer, not just the S5 verbs) · **DP-B** (honest-reads + tiering design vs field; **R53** joins the bought evidence) |
+| **D62 per-message serve attribution** | `Message.source` (`{served, degraded, from?, failed_hops?, context_window?}`) + `usage.cached_tokens`/`duration_ms` riding the `messages.meta` JSON column; threaded on `message.end`; `_persist_assistant` = the single persist door; FE `BotWhoLine` chip/disclosure | **Packet ②** — the SSE wire contract GREW: the §1 rule (wire audited with `store/chat.ts` as consumer, never backend-only) now covers `source` too |
+| **D63 chunked TTS + the S1.5 whole-message scrubber (C3)** | Backend: `chunk_*` config keys, `tts_chunking` policy on `/voice/status`, the `X-Voice-Target`/`prefer` failover pin, exception-only `X-Voice-Degraded`. FE: `lib/ttsChunks` + `audioController` grew into a real subsystem (element queue, virtual timeline, seek/latch/parked lifecycle — the parked-flag lifecycle was review-hardened 2026-08-22, two MED catches). | **Packet ③** (the voice adapter + the new voice wire headers/pin) · FE queue internals = **Phase 20/DP-A** (perf lens stays trigger-gated) |
+| **Notifications close-out** (R45 tap slice + F1 `host_up_down`) | `frontend/public/notify-sw.js` via `workbox.importScripts` (content-hashed URL) — **the SW surface is now two files**; `data:{focus,key}` + the shared `applyNotificationFocus` router + the `?tab=agent` boot reader; the `host_up_down` classifier class + Conf toggle (D50 M5, ACTION-name-keyed; host transition events carry status=OK both directions — a contract the class depends on) | **Packet ④** (notify-sw joins the SW-update-mid-session matrix item) · **Packet ③** (the monitor-loop event contract feeding the class) |
+| **W5 icon backdrop (D59)** | The backend now serves + patches `/manifest.webmanifest` itself (GET+HEAD, no-cache, sha ETag, closed allowlist, sha-pinned Clear refusal) — a new PWA contract surface | **Packet ④** |
+| **W3 media revision** | The `mtime:size:ino:ctime` `_stamp` recipe in the resolver (+ the engine-wide SVG-filter waiver sweep test) | **Packet ④** (the §7 "no cache" note stands — H1 measures) |
+| **qwen wire normalization + the prod flip** (R41/R42) | Wire-level system-message normalization in the inference adapter; corsair/qwen = prod PRIMARY with a real fallback chain behind it; the D60 ① pressure gate armed via `context_window` on every chain entry (`effective_window` ladder) | **Packet ②** (inference/failover — the normalization + the window ladder join the audit scope; failover is now daily-exercised in prod, not latent) |
+| **Auto-stop dictation** (R51 T0) | FE energy-silence detector on the existing mic stream + `auto_stop*` STT config keys (default OFF; hidden-stop independent of Web Audio) | **Phase 20/DP-A** (FE voice) · Packet ① inherits only the config keys |
+| **Motion-token band (ISS-10 ①) + `composerSkin` widening (W2/D37) + the W1 plan-band tokens** | `--motion-*`/`--ease-*` shipped in the semantic contract (33 kit rules, one reduced-motion collapse); the 11-slot `--skin-*` vocabulary; derived plan-band insets | **DP-A** — its "motion system" scope line is now a SHIPPED token layer with **R52** as bought evidence (was a gap at spec time) |
+| **Prompt registry growth** | The consolidation family rewrite + D64's truncation-clause correction | Packet ② spot-check unchanged (still the best-tested unit) |
+
 ## 8. The known-open register (2026-08-16 sweep of all 11 ledgers — every packet brief carries its slice)
 
 **8.1 Ledger verdicts:** QH-1…16 fully closed · PRE_DEPLOY closed (one stale §6 QR line — §P
@@ -524,9 +547,12 @@ smoke-scale vs theme matrix — ROADMAP exit) · SYS-9.3 (`store/chat.ts` raw fe
 `api/client.ts` — Phase 20 unless Packet ② touches it) · kit standing items (`getJSON` timeout
 — H2; sr-only dup; a11y-e2e no-sheet-arm; `skipActiveViewTransition` global) · C2-L6/L7
 (subagent-safety + skills-zero-context contracts partially unpinned — Packet ③) · SYS-17c (TTS
-blob accumulation, conditional LRU) · C3 chunked TTS (buildable, big TTFA win — voice, Packet ③
-records, likely ROADMAP exit) · 6b list (Switch div→button · store HMR · F29 draft persistence
-[design LOCKED 2026-06-16] · knob `left`→`translateX` · motion tokens — all Phase 20) ·
+blob accumulation, conditional LRU) · ~~C3 chunked TTS (buildable, big TTFA win)~~ **→ BUILT +
+review-closed 2026-08-21/22 (D63 + S1.5 + the parked-flag waves, ships v1.7.5; the new voice
+wire/queue surfaces are assigned in §7b — no Packet ③ pre-work remains, the packet audits the
+shipped thing)** · 6b list (Switch div→button · store HMR · F29 draft persistence [design LOCKED
+2026-06-16] · knob `left`→`translateX` · ~~motion tokens~~ **→ SHIPPED 2026-08-21 as ISS-10 ①;
+stage ② owner-parked** — rest Phase 20) ·
 **CM-1 (added 2026-08-17):** the core-memory secret gate is best-effort by construction —
 `_SECRET_MIN_CHARS = 8` floor means a real ≤7-char credential is outside the rail
 (CORE_MEMORY_PLAN §14b; joins Packet ③'s SECURITY_MODEL §5 re-walk) · ~~CM-2 (added
@@ -541,10 +567,15 @@ re-prefill (~11 s at 9k tok, 4/4 samples). **Remedy is HOST-SIDE** (`--swa-full`
 context checkpoints on the llama.cpp box), zero repo change — an H2/Packet ① ops one-liner;
 cloud prefix caching unaffected.
 
-**8.3 OWNER-GATED / PARKED (ask, don't assume; §P never re-propose):** notifications retest
-(path 2) · web-push parked (2 Fennec checks) · D2-A daily-use round · media-gallery round ·
-vault spec · gacha color-theory session · R28 icon pickup · fleet-liveness decoupling (watch
-first) · ~80 MB gacha originals call · **§P: QR-to-phone · picker disclosure**.
+**8.3 OWNER-GATED / PARKED (ask, don't assume; §P never re-propose):** ~~notifications retest~~
+**✓ CLOSED 2026-08-19/20 (delivery + tap both device-passed; the 2 Fennec checks moot)** ·
+web-push parked (its remaining value = closed-app delivery only) · D2-A daily-use round ·
+media-gallery round · vault spec (NOTE: the owner's parallel Maia-vault specs proved decisive
+for D64 — check them before re-researching adjacent ground) · gacha color-theory session ·
+~~R28 icon pickup~~ **→ superseded by W5/D59; what remains = the owner's fresh-install check
+(post-v1.7.5)** · fleet-liveness decoupling (watch-first stands; the 2026-08-22 owner-watched
+cold-boot wake worked — no recurrence) · ~80 MB gacha originals call · **§P: QR-to-phone ·
+picker disclosure**.
 
 **8.4 The 8 bookkeeping-drift items (H2 fixes):** ① SYS-7 homeless (its named home, the D3
 slice, completed without it) · ② ~~eslint-warn count disagrees 27/38/42~~ **✓ fixed 2026-08-20**
