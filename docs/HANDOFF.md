@@ -12,7 +12,71 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-22 — the pre-release close-out; supersedes the §0 menu below where struck)
+## Current state (2026-08-22, SECOND block — 🏁 RELEASED + LIVE v1.7.6; supersedes everything below)
+
+- **PROD = v1.7.6 @ `6a2ccaa`, RELEASED + LIVE 2026-08-22** (Opus-operated runbook run; CI release
+  gate genuinely green incl. e2e, 7m12s; no config/DB migration — schema 6, config VERSION 1; DB
+  snapshot `ctrlb-20260822-131921.db.gz`; config backup unchanged, newest =
+  `config.yaml.20260820T111619Z`). **Rollback = v1.7.4** (`update.sh v1.7.4`).
+  **⚠ v1.7.5 is tagged NEVER DEPLOYED — NOT a rollback target** (joins v1.7.0/v1.7.3): its release
+  gate went red on the STALE-E2E-PIN CLASS, third burn — Playwright `name:` is SUBSTRING matching,
+  C3's new "Chunk format" seg made `name: "Format"` ambiguous. Fixed `6a2ccaa` (`exact: true` +
+  class comment + a sweep of every non-exact e2e name against the new voice controls — no other
+  collision) and **verified by running the spec LOCALLY before re-tagging** (10/10 both projects) —
+  make that the standing pre-tag move whenever a batch touched Conf/labels. Runbook §Release step 3
+  now documents that the TAG push runs the full ~4-min local gate (don't read it as a hang).
+- **The batch shipped:** chunked TTS D63 + the whole-message scrubber S1.5 + the 2026-08-22
+  partial-failure/parked-flag waves (~0.7 s first audio vs 13.6 s before, both backends) ·
+  auto-stop dictation (OFF) · F1 host-up/down notifications (master OFF) · ISS-9 spinner · the
+  motion-token band (ISS-10 ①) · ISS-11 scanlines · D64 memory hardening + the consolidation
+  bare-name clause · D62/D60 already in v1.7.4. Origin = local = prod sha; nothing unpushed.
+- **This morning's session (first block below + HANDOFF `a1cc26e`):** the owner clarification
+  round drained the register · D64 live acceptance PASSED on dev · the pre-release pair built +
+  Emma-review-closed (2 MED catches, `parked` flag) · HARDENING_PLAN gained **§7b** (the post-spec
+  delta register: every v1.7.4/v1.7.6 surface assigned to its packet + lens; §8 rows flipped).
+- Dev units STOPPED post-release (on-demand policy); dev's tier-2 memory state stays on disk.
+
+## ▶▶ NEXT (2026-08-22, the clean-session menu — pick from here; supersedes all prior ▶▶ lists)
+
+**A · The owner's post-release device pair on PROD (the only OWED items):**
+① **F1 notifications device test** — Conf: master notifications ON → background the app → let a
+host transition → the notification's tap must land on the FLEET tab. ② **Icon-backdrop fresh
+install** (standing since v1.7.4) — install fresh from Chrome, the chosen backdrop mints directly.
+③ (free rider) chunked TTS + the scrubber get their first prod ride in ordinary daily use.
+
+**B · Owner-paced sessions (owner at the screen; schedule on wish):**
+- **Media-gallery test-and-refine** (parked 2026-08-12): file-drops + real-touch drag-reorder.
+- **Root cross-fade damp** (GACHA_PLAN §12.6 E1): eyeball, don't remove blind.
+- **D2-A wake-on-presence first real use**: flip `wake_on_presence` ON for a machine in the
+  machine editor (phone h20 already registered) — next real Tailscale-on wakes it.
+- **Edit a prompt for real** (Phase 18's first owner-driving).
+- **ISS-10 ② / motion design talk** (prose, R52 §8 = the base; owner-parked "after the TTS thing").
+
+**C · The work queue (in the standing order):**
+1. **Phase 19 (D58) owner court** — the big standing gate, now fully current: HARDENING_PLAN is
+   spec-complete + **§7b delta register (2026-08-22)** covers everything through this release. At
+   wake: the **§3b delta council check FIRST** (one Codex + one Opus round over Track D only),
+   then the §10 rulings (journeys · pre-authorized fix class · packet ranking · two-phase charter
+   · D58 lock · Track D ordering).
+2. **A13 design talk** (OpenAI-OAuth/Codex provider; R49 = the evidence; prose conversation →
+   D-entry before any build; headline cost = the Responses-only adapter bridge + ToS silence).
+3. **C3 S2 read-along-while-streaming** — designed inside D63, hook points recorded; owner ruled
+   "not necessary for now" (2026-08-22): build only on an explicit ask.
+4. **D64 residual watch** (no action owed): paged reads + the owner-steer branch ran only in
+   tests so far — a future consolidation touching `frontier-theme-prep` (~3 pages) or
+   `gacha-theme-progress` (the steer case) exercises them live, in the owner's ordinary curation.
+
+**D · Parked / ruled (never re-propose; §P discipline):** web-push (closed-app delivery only) ·
+vault/wiki spec (owner designing elsewhere; their Maia specs = decisive D64 evidence — check
+before researching adjacent ground) · arcade (owner 2026-08-22: fine as-is, DROPPED from lists —
+they'll ask) · color-theory palette session · gacha originals stay untracked · ISS-10 ② glyph
+swaps (revive on wish) · eslint/F13 Compiler-prep backlog (trigger-gated, count in QUALITY.md) ·
+the §17.4 / D63-§8 accepted residuals · ROADMAP §P (QR-to-phone · picker disclosure).
+
+*(A future archive sweep can move the 2026-08-20/21 blocks below to HANDOFF_ARCHIVE.md — optional
+chore, the 2026-08-12 precedent.)*
+
+## Prior state (2026-08-22, first block — the pre-release close-out; superseded above)
 
 - **Prod UNCHANGED: v1.7.4 @ `92cb3a3`.** Local `main` @ `bdc484e` — **4 new commits UNPUSHED**
   on top of origin `136e29d`; the release batch is now **37 commits**. Recommendation unchanged:
