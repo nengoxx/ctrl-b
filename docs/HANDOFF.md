@@ -12,7 +12,42 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-21, THIRD session — D64 end-to-end + the owner live rounds)
+## Current state (2026-08-22 — the pre-release close-out; supersedes the §0 menu below where struck)
+
+- **Prod UNCHANGED: v1.7.4 @ `92cb3a3`.** Local `main` @ `bdc484e` — **4 new commits UNPUSHED**
+  on top of origin `136e29d`; the release batch is now **37 commits**. Recommendation unchanged:
+  **release as v1.7.5**, no schema/config migration, **rollback = v1.7.4**.
+- **THE OWNER CLARIFICATION ROUND (this session) drained the open register:** motion feel ✓
+  accepted ("looks good") · dictation threshold ✓ accepted as calibrated by use · ISS-10 ② stays
+  parked · scrubber residuals accepted (owner: "it's fine") · arcade DROPPED from the list entirely
+  (owner will ask if ever wanted) · gacha originals stay untracked · **corsair cold-boot wake
+  CLOSED** (owner watched one, works — the Tailscale-liveness behavior as recorded) · media-gallery
+  + root-cross-fade sessions → owner-paced ("maybe tomorrow") · F1 device test + icon-backdrop
+  fresh install → deliberately POST-release on prod (owner's call).
+- **D64 LIVE ACCEPTANCE ✅ PASSED** — a fresh owner `/consolidate` on dev consolidated the
+  coding-discipline family (3 reads full-coverage → create → 3 `{path, superseded_by}` deletes,
+  **no hash anywhere model-facing**, clean archive/index/git trail, delta report). One cosmetic
+  blemish (frontmatter `name` carried `.md`; the slug rider worked) hand-fixed in the dev corpus
+  (`fc56efe`) **and closed forward by the prompt clause below**. Honest caveat recorded: this
+  family was all single-page, so paged reads + the owner-steer branch ran only in tests — both
+  will exercise organically (frontier-theme-prep ≈3 pages; gacha-theme-progress = the steer case).
+- **The pre-release pair (owner-picked from the menu) — built, gated, review-closed:**
+  - `6b72405` **consolidation bare-name clause** (step 2 + description + golden; the `32ec0e0`
+    fold-the-blemish precedent).
+  - `270030a` **C3 partial-failure drop** (the recorded lean fix: any failed chunk at end-of-queue
+    drops the queue; a replay re-requests it; retires the "permanent ~" residual) → **Emma-lane
+    blind diff round SHIP WITH FIXES, 1 MED 0.96** (a straggler synth failing AFTER the park
+    recreated the stale replay one layer deeper) → `6656727` (**`parked` flag** + shared
+    `dropSession()`; her flag shape won over the main seat's leaner-but-wrong all-ok-only
+    retention — an existing test pins benign-hole retention) → confirm round **NOT RESOLVED, 2nd
+    catch** (startChunked's replay re-arm kept the stale flag → a failing retry would drop an
+    ACTIVE replay mid-listen) → `bdc484e` (one line in the re-arm block) → final confirm
+    **"RESOLVED. No new findings."** Every wave's test stash-verified non-vacuous; full gate green
+    per commit (BE 1873 · FE 2240).
+- **NEXT: the release ruling is the only thing open** — push + runbook §Release (Opus-operated)
+  on the owner's word; then the owner's post-release device pair (F1 + icon fresh-install).
+
+## Prior state (2026-08-21, THIRD session — D64 end-to-end + the owner live rounds)
 
 - **Prod UNCHANGED: v1.7.4 @ `92cb3a3`.** **13 commits now unpushed through `2368f50`** (the second
   session's 7 + this session's 6; push = the owner's word). Dev units RUNNING on the new code
