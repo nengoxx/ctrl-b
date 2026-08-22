@@ -491,6 +491,51 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(result.current.status).toBe("playing");
   });
 
+  it("a straggler synth failing after the queue parked drops it too — no stale replay survives", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2)); // 2 chars/s → 0–2 · 2–4 · 4–7
+    act(() => seekFraction(5 / 7)); // forward into chunk 3 — chunk 2 stays in flight
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish()); // chunk 3 ends → end of queue, chunk 2 still pending
+    await flush();
+    expect(result.current.id).toBe("m1"); // a benign hole parks the queue for replay
+    expect(result.current.status).toBe("paused");
+
+    await act(async () => calls[1].resolve(errRes(500))); // ...and then the straggler fails
+    await flush();
+    expect(result.current.id).toBeNull(); // the parked queue is dropped — the finish() drop, late
+    expect(revoked).toContain("blob:1");
+  });
+
+  it("a straggler synth landing OK after the park enriches the retained queue instead", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2));
+    act(() => seekFraction(5 / 7));
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish());
+    await flush();
+
+    await act(async () => calls[1].resolve(okRes())); // the straggler lands fine
+    await flush();
+    expect(result.current.id).toBe("m1"); // retention intact — the hole simply filled in
+    expect(result.current.status).toBe("paused");
+    expect(lastAudio.src).toBe("blob:1"); // still rewound, ready to replay from the top
+  });
+
   it("cancelling mid-flight aborts the queue: nothing plays, nothing is retained", async () => {
     const calls = deferredFetch();
     const { result } = renderHook(() => usePlayback((p) => p));

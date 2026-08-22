@@ -127,6 +127,10 @@ interface Session {
   pin: string | null; // `X-Voice-Target` of the serving endpoint, echoed as `prefer` on later chunks
   pinned: boolean; // chunk 1 answered: the pin is settled (or given up on) and the window may open
   errored: boolean; // a chunk failed and we already toasted (one toast per message)
+  // `finish()` retained this queue for replay. A straggler synth that FAILS while parked must drop the
+  // queue (the finish() drop, one landing too late) — parked is what tells that apart from an ordinary
+  // mid-play failure, which playback will surface itself. Cleared by any resume/navigation.
+  parked: boolean;
   abort: AbortController;
 }
 let session: Session | null = null;
@@ -444,6 +448,7 @@ function startChunked(id: string, markdown: string, seq: number): void {
       pin: null,
       pinned: false,
       errored: false,
+      parked: false,
       abort: new AbortController(),
     };
     session = s;
@@ -494,6 +499,14 @@ async function synthChunk(s: Session, i: number): Promise<void> {
 
   if (!out.ok) {
     if (stale) return;
+    if (s.parked) {
+      // The queue already finished and parked for replay; this straggler failing means the retained
+      // queue would replay with a permanently skipped chunk — take the finish() drop, one landing
+      // too late (the Emma round's catch, 2026-08-22).
+      if (!s.errored) pushToast(out.message ?? "Read-aloud failed", "err");
+      dropSession(s);
+      return;
+    }
     s.states[i] = "failed";
     publishTimeline(s);
     if (!s.errored) {
@@ -599,6 +612,13 @@ function applySeekOnMetadata(s: Session, i: number, a: HTMLAudioElement, frac: n
 
 /** End of the queue: rewind to the first playable chunk so a re-tap replays the message from the top
  *  (the pre-D63 `ended` contract — "reset to start, ready to replay" — one message wide). */
+/** The queue is unsalvageable for replay: drop it entirely so the next tap is a fresh synth. */
+function dropSession(s: Session): void {
+  reset(); // bumps the generation + aborts any straggler synth while `session` is still this one
+  revokeSession(s);
+  if (session === s) session = null;
+}
+
 function finish(s: Session, a: HTMLAudioElement): void {
   const first = s.states.indexOf("ok");
   if (first < 0 || s.states.includes("failed")) {
@@ -606,11 +626,10 @@ function finish(s: Session, a: HTMLAudioElement): void {
     // failed chunks skipped forever — never re-requesting them long after the TTS server came back
     // (all-failed, the worst case, would finish instantly on top). Dropping it makes the next tap a
     // fresh synth of the whole message. The one error toast already went out.
-    reset(); // bumps the generation + aborts any straggler synth while `session` is still this one
-    revokeSession(s);
-    if (session === s) session = null;
+    dropSession(s);
     return;
   }
+  s.parked = true; // retained for replay — a straggler synth failing from here drops the queue too
   s.playIdx = first;
   s.waiting = false;
   s.seek = null;
@@ -639,7 +658,10 @@ function transport(): void {
     return;
   }
   if (pb.status !== "paused") return; // loading → ignore taps until it resolves
-  if (s) s.wantPlay = true;
+  if (s) {
+    s.wantPlay = true;
+    s.parked = false; // resuming (a replay included) makes it an ordinary live queue again
+  }
   if (s?.waiting) {
     set({ status: "playing" }); // nothing loaded to resume — the chunk in flight starts on arrival
     return;
@@ -720,6 +742,7 @@ function seekChunked(s: Session, f: number): void {
   // same-chunk fast path below would otherwise let the stale fraction snap back over it (confirm-round
   // catch). Only past the early returns: a no-op seek must not cancel anything.
   s.metaSeek?.();
+  s.parked = false; // a navigation makes the parked queue live again
   const play = pb.status === "playing"; // the latch already encodes intent in the published status
   s.wantPlay = play;
 
