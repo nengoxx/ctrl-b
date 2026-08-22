@@ -601,10 +601,11 @@ function applySeekOnMetadata(s: Session, i: number, a: HTMLAudioElement, frac: n
  *  (the pre-D63 `ended` contract — "reset to start, ready to replay" — one message wide). */
 function finish(s: Session, a: HTMLAudioElement): void {
   const first = s.states.indexOf("ok");
-  if (first < 0) {
-    // EVERY chunk failed (reaching here at all means nothing playable is left). Drop the QUEUE, not just
-    // the player: a retained all-failed session would make the next tap replay it — finishing instantly,
-    // never re-requesting — long after the TTS server came back. The one error toast already went out.
+  if (first < 0 || s.states.includes("failed")) {
+    // ANY failed chunk drops the QUEUE, not just the player: a retained session replays with its
+    // failed chunks skipped forever — never re-requesting them long after the TTS server came back
+    // (all-failed, the worst case, would finish instantly on top). Dropping it makes the next tap a
+    // fresh synth of the whole message. The one error toast already went out.
     reset(); // bumps the generation + aborts any straggler synth while `session` is still this one
     revokeSession(s);
     if (session === s) session = null;

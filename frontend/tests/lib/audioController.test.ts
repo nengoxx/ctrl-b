@@ -458,6 +458,39 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(result.current.status).toBe("playing");
   });
 
+  it("a partly-failed message is not kept for replay: the next tap re-requests the failed chunk", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    await act(async () => calls[1].resolve(errRes(500))); // chunk 2 fails while chunk 1 plays
+    await flush();
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish()); // chunk 1 ends → skip 2 → chunk 3
+    await flush();
+    await act(async () => lastAudio.finish()); // chunk 3 ends → end of the queue
+    await flush();
+
+    expect(result.current.id).toBeNull(); // a failed chunk means no retained queue — back to idle
+    expect(revoked).toContain("blob:1"); // the retained blobs went with it
+
+    globalThis.fetch = vi.fn(async () => okRes()); // the TTS server came back
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    const fresh = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const texts = fresh.mock.calls.map(
+      ([, init]) => (JSON.parse(String((init as RequestInit).body)) as { text: string }).text,
+    );
+    expect(texts).toContain("Two."); // the previously failed chunk is on the wire again
+    expect(result.current.status).toBe("playing");
+  });
+
   it("cancelling mid-flight aborts the queue: nothing plays, nothing is retained", async () => {
     const calls = deferredFetch();
     const { result } = renderHook(() => usePlayback((p) => p));
