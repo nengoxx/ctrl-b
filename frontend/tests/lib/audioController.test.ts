@@ -536,6 +536,32 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(lastAudio.src).toBe("blob:1"); // still rewound, ready to replay from the top
   });
 
+  it("a replay after dismiss sheds the parked flag: a chunk failing mid-replay skips, not drops", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2));
+    act(() => seekFraction(5 / 7)); // chunk 2 stays in flight
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish()); // parks with the hole
+    await flush();
+    act(() => dismiss()); // aborts the straggler but retains the session for replay
+    await flush();
+
+    await act(async () => {
+      await toggle("m1", REPLY); // replay resumes the retained queue and re-requests the hole
+    });
+    await flush();
+    await act(async () => calls[calls.length - 1].resolve(errRes(500))); // the retry fails mid-replay
+    await flush();
+    expect(result.current.id).toBe("m1"); // ordinary failure handling: skip at playback, no drop
+  });
+
   it("cancelling mid-flight aborts the queue: nothing plays, nothing is retained", async () => {
     const calls = deferredFetch();
     const { result } = renderHook(() => usePlayback((p) => p));

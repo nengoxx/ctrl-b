@@ -415,6 +415,8 @@ function startChunked(id: string, markdown: string, seq: number): void {
     s.playIdx = -1;
     s.waiting = false;
     s.wantPlay = true;
+    s.parked = false; // a replay is a live queue — a stale flag would let a retried chunk's failure
+    // drop the session mid-listen instead of taking the ordinary skip (confirm-round catch)
     s.seek = null;
     s.metaSeek?.(); // a replay must not inherit a stale armed payout (chunk 0 could re-match it)
     // Re-probe anything that has a blob but no exact duration — a probe launched by the previous play
