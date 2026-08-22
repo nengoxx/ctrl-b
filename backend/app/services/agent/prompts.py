@@ -397,7 +397,8 @@ REGISTRY: dict[str, PromptDef] = {
             'absolutely ("2026-08-19", never "last week"), and a one-line hook saying what it '
             "answers. Do not write a frontmatter block into the body — the call's fields are the "
             "frontmatter — and reference only topics you verified exist in this run's index or "
-            "reads, never ones remembered.\n"
+            "reads, never ones remembered. The `name` you pass is a bare slug with no `.md` "
+            "extension — the service derives the filename itself.\n"
             "3. `delete` each source with `superseded_by` set to the merged topic's path — a delete "
             "whose replacement does not exist is refused, so create first, always. Deletes archive "
             "rather than destroy, so a mistake is recoverable but still a mistake.\n\n"
@@ -420,7 +421,9 @@ REGISTRY: dict[str, PromptDef] = {
             "mechanics (read all → create merged → delete each with `superseded_by`) match the rails "
             "the tool actually enforces, and the create-before-delete order is the one run 2 got wrong. "
             "The no-frontmatter and verified-references lines in step 2 fix run 3's two blemishes "
-            "(CORE_MEMORY_PLAN §14f). D64 corrected the truncation clause: reads PAGE now, so "
+            "(CORE_MEMORY_PLAN §14f); the bare-name line fixes the D64 acceptance run's blemish "
+            "(2026-08-22: the frontmatter `name` arrived carrying `.md`). "
+            "D64 corrected the truncation clause: reads PAGE now, so "
             "'work from what it shows' had become factually false — and a source that is not fully "
             "read can no longer be merged from or deleted, because the tool itself refuses."
         ),
