@@ -98,7 +98,8 @@ test("Conf · Voice TTS — auto-read + format + timeouts + pickers", async ({ p
   const tts = page.locator("#voice-tts");
   await expect(tts.getByRole("switch", { name: "Auto read-aloud" })).toBeVisible();
   // the Format segmented control stays (C8 service fallback: model format > service format)
-  const format = tts.getByRole("group", { name: "Format" });
+  // `name:` is substring-matching by default — C3's "Chunk format" seg made the bare "Format" ambiguous
+  const format = tts.getByRole("group", { name: "Format", exact: true });
   await expect(format).toBeVisible();
   await format.getByRole("button", { name: "opus" }).click();
   await expect(format.getByRole("button", { name: "opus" })).toHaveAttribute(

@@ -215,6 +215,8 @@ gh run list --branch main --limit 1         # CI conclusion for HEAD must be suc
 # 3) TAG + PUSH — the tag push triggers the CI RELEASE GATE (full gate + Playwright e2e on Linux):
 git tag -a vX.Y.Z <sha> -m "one-line release notes"
 git push origin vX.Y.Z
+#    NOTE: .githooks/pre-push is unconditional — the TAG push runs the full local gate too (~4 min;
+#    use TMPDIR=/home/emma/.cache/tmp). A "hung" tag push is almost certainly the gate, not the network.
 # 4) WAIT for the release gate — NEVER re-pin on red or pending:
 gh run watch $(gh run list --limit 5 --json databaseId,headBranch \
   --jq '[.[]|select(.headBranch=="vX.Y.Z")][0].databaseId') --exit-status
