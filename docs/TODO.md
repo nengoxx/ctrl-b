@@ -1369,9 +1369,10 @@ stamping (the eval seam), + the symbol-keyed AST backstop. Build against the pla
 - [x] Slice 3 — Conf UI Prompts section (two-field PromptModal, restore-by-delete, side-by-side view, placeholder list, coupling warnings)
 - [x] ROADMAP entry for the eval harness phase (= A12, `9a85c34`) (promptfoo-shaped; scenarios from real transcripts; metrics per the R31 addendum; the deferred L-2 tables land there) — harness itself is NOT this phase
 
-## Phase 19 — The hardening pass — **📋 SPEC WRITTEN, PARKED owner-gated · spec = [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) (its §10 owner court + §3b delta council run at wake; locks as D58)**
+## Phase 19 — The hardening pass — **📋 SPEC WRITTEN, PARKED owner-gated · spec = [`HARDENING_PLAN.md`](./HARDENING_PLAN.md) (its §10 owner court + the delta council check run at wake; locks as D58) · scope WIDENED 2026-08-23: the frontend in-phase on both lenses (Packet ⑤ + DP-C) + the H-E2E suite slice — no separate FE phase**
 
-Deliberately ordered BEHIND Phase 20 (owner, 2026-08-17). No boxes until its charter is ruled.
+Deliberately ordered BEHIND Phase 20 (owner, 2026-08-17; Phase 20 shipped — 19 is next in
+line). No boxes until its charter is ruled.
 
 ## Phase 20 — Core Memory: the tier-2 long-term memory lane — **✅ DESIGN LOCKED 2026-08-17 ([`D57`](./DECISIONS.md)) · spec = [`CORE_MEMORY_PLAN.md`](./CORE_MEMORY_PLAN.md) (§13 council record; build against the plan, NOT this list)**
 

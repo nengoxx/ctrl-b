@@ -54,10 +54,12 @@ install** (standing since v1.7.4) — install fresh from Chrome, the chosen back
 
 **C · The work queue (in the standing order):**
 1. **Phase 19 (D58) owner court** — the big standing gate, now fully current: HARDENING_PLAN is
-   spec-complete + **§7b delta register (2026-08-22)** covers everything through this release. At
-   wake: the **§3b delta council check FIRST** (one Codex + one Opus round over Track D only),
-   then the §10 rulings (journeys · pre-authorized fix class · packet ranking · two-phase charter
-   · D58 lock · Track D ordering).
+   spec-complete + **§7b delta register (2026-08-22)** + the **2026-08-23 owner scope amendment**
+   (the frontend joins IN-PHASE on both lenses — Track P Packet ⑤/H7 + Track D DP-C — and the
+   e2e suite gets its own H-E2E slice; the separate FE phase is DISSOLVED, §10 ④ pre-ruled;
+   F9/F13 audit-now/fix-on-numbers). At wake: the **delta council check FIRST** (one Codex +
+   one Opus round over §3b + the amendment), then the remaining §10 rulings (journeys ·
+   pre-authorized fix class · packet ranking incl. ⑤/H-E2E · D58 lock · Track D ordering).
 2. **A13 design talk** (OpenAI-OAuth/Codex provider; R49 = the evidence; prose conversation →
    D-entry before any build; headline cost = the Responses-only adapter bridge + ToS silence).
 3. **C3 S2 read-along-while-streaming** — designed inside D63, hook points recorded; owner ruled

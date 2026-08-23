@@ -7,6 +7,16 @@
 > Council-reviewed 2026-08-16 (Codex + an independent Opus lens, both BUILD-WITH-CHANGES; all
 > findings reconciled in §9). Evidence: [`research/R33-hardening-methodology.md`](./research/R33-hardening-methodology.md)
 > · the 2026-08-16 open-findings sweep (§8) · the measured subsystem inventory @ `cdfd48d` (§7).
+>
+> **AMENDED 2026-08-23 (owner ruling, prose round): scope WIDENED.** ① The frontend joins
+> Phase 19 on BOTH lenses — **Track P Packet ⑤** (H7, FE performance/reliability) + **Track D
+> DP-C** (FE implementation design), pairing exactly as Packet ② pairs with DP-B. ② The **e2e
+> suite gets its own audit slice (H-E2E)**, right after H2. The separately-chartered FE phase
+> (called "Phase 20" in the original text; that TODO number has since gone to Core Memory) is
+> **DISSOLVED into this phase**; the F9/F13 *audit* is no longer trigger-gated (fix acceptance
+> still requires a number, §6). The owed **delta council check now covers §3b + this amendment**
+> (one Codex + one Opus round over the delta). Superseded text below is marked, not silently
+> rewritten.
 
 ## 0. The charge (owner, 2026-08-16, lightly compressed)
 
@@ -26,22 +36,29 @@ projects like Claude Code, Codex, Hermes Agent, OpenClaw, and other efficient ag
 Research bought and saved per the standing dossier convention. This is **Track D** (§3b);
 the perf/reliability packets are **Track P**.
 
+**Third directive (owner, 2026-08-23, prose round — widens both tracks):** the e2e suite gets
+its own audit slice, *"as well as the frontend performance — also on the frontend performance
+is also the design itself and the way it's implemented."* Folded as **H-E2E** + **Packet ⑤
+(H7)** + **DP-C**; the separate FE phase is dissolved (§1).
+
 ## 1. Scope and non-goals
 
-**Phase 19 runs two tracks.** **Track P = backend + ops perf/reliability hardening** (packets
-①–④, §3). **Track D = the design & architecture comparative pass** (packets DP-A and DP-B,
-§3b) — a *design-lens* review, not a perf pass, judged against field practice via bought
-dossiers.
+**Phase 19 runs two tracks.** **Track P = perf/reliability hardening, backend + ops + frontend**
+(packets ①–⑤, §3). **Track D = the design & architecture comparative pass** (packets DP-A,
+DP-B and DP-C, §3b) — a *design-lens* review, not a perf pass, judged against field practice
+via bought dossiers. **Plus one infrastructure slice**: the e2e suite's own audit (H-E2E, §3).
 
-Frontend/theme **performance** hardening remains a **separately chartered Phase 20**, opened
-only if Phase 19's outcome and the F9/F13 trigger justify it. Rationale (council, accepted):
-the FE perf headline items are *already owner-ruled* defer-until-measured with a named trigger
-(UI_AUDIT F9/F13, set 2026-07-20), so a FE perf audit now would either re-report them or force
-a re-ruling; and FE perf work is device-round-shaped — it needs owner screen time and cannot
-close on autonomous mornings. **DP-A does not collide with this**: it reviews the *design* of
-the theme engine/UI (contracts, token architecture, consistency, design-level inefficiency)
-from docs + code + dossiers — measurement-light, morning-runnable; anything it finds that is
-perf-measurement-shaped exits to Phase 20's charter, not into DP-A's fix wave.
+~~Frontend/theme **performance** hardening remains a **separately chartered Phase 20**~~
+**SUPERSEDED 2026-08-23 (owner ruling): the frontend is IN-PHASE — Track P Packet ⑤ (H7) on
+the perf/reliability lens + Track D DP-C on the implementation-design lens.** The original
+deferral rationale (F9/F13 already owner-ruled defer-until-measured with a named trigger,
+2026-07-20; FE perf work is device-round-shaped) is answered, not erased: the *audit* now runs
+in-phase regardless of trigger while the *fix* still needs a number (§6, measure-before-accept),
+and the device-round-shaped measurement (the H1 phone trace) schedules into owner afternoons
+per the standing cadence — the rest stays morning-runnable. **The three FE lenses don't
+collide**: DP-A reviews the design SYSTEM (tokens, motion, UX grammar), DP-C reviews the CODE
+design (how it's built), Packet ⑤ owns measurement + reliability; anything DP-A/DP-C find that
+is perf-measurement-shaped exits to **Packet ⑤'s brief** (was: a future FE-phase charter).
 
 **One deliberate cross-stack exception:** the SSE **wire contract** is audited end-to-end
 including its client (`frontend/src/store/chat.ts` as the contract's consumer, plus the e2e
@@ -54,7 +71,7 @@ mode without pulling FE internals into this phase.
 - No CodSpeed / instruction-count CI benching (its cheap mode struggles with I/O — SQLite,
   subprocess, HTTP-to-LLM is our entire hot-path profile).
 - No Lighthouse *scores* on emma (4 high-impact variance sources on a shared box; Lighthouse
-  *audits* — the diagnostic list — remain fair game in Phase 20).
+  *audits* — the diagnostic list — remain fair game in Packet ⑤).
 - No wall-clock perf gates in CI, ever. Gates only for deterministic quantities (bytes, counts,
   lint-shaped invariants). Where a timing assertion is genuinely wanted: a **catastrophe ceiling
   at ~10× observed** (goose posture — catches hangs, cannot flake).
@@ -68,10 +85,10 @@ as ROADMAP entries with named triggers — `open, unscheduled` is a **banned sta
 phase (the SYS-2/SYS-3/SYS-15 lesson: items that exited past audits into "opportunistically"
 were still open months later). "Question every design choice" gets an end because every packet
 is time-boxed: **one audit pass + one Codex round + one fix wave, hard stop.** One sizing
-release valve (confirm-round fold): Packets ② and ③ are each larger than the whole of Packet ①
-(~10k LOC each) — either **may split into two audit sub-waves at brief time** without
-re-opening the charter; the time-box then applies per sub-wave, and the packet still closes with
-one reconciliation + one fix ladder.
+release valve (confirm-round fold): Packets ②, ③ and ⑤ are each larger than the whole of
+Packet ① (~10k+ LOC each; ⑤ is the largest) — any of them **may split into two audit
+sub-waves at brief time** without re-opening the charter; the time-box then applies per
+sub-wave, and the packet still closes with one reconciliation + one fix ladder.
 
 **Staleness rule (spec-only deferral):** §7/§8 are snapshots @ `cdfd48d` and are the ordering
 evidence. If execution opens after further releases, **re-run the inventory + sweep as a delta
@@ -130,6 +147,7 @@ cross-subsystem modes, each probed where safe:
 | Shutdown/restart during DB write / active SSE | ① + ② |
 | Provider timeout/failover mid-stream, partial tool call | ② |
 | Service-worker update while a session is active | ④ |
+| Streaming turn + hidden-tab/visibility churn (`useScopedQuery` pause vs the SSE reducer vs background throttling) | ⑤ (2026-08-23) |
 
 Each credible mode gets **exactly one disposition**: a safe probe (temp `CTRLB_CONFIG`/
 `CTRLB_DB`, stubbed fault, dev unit), an existing test (named), or an explicit
@@ -213,9 +231,14 @@ blocks. Instruments:
   representative bindings, table cardinalities, and observed query times**. A `SCAN` on a
   growing table is a *lead*, not automatically a finding (council caveat: a query intentionally
   returning most rows, or using an index for ordering, legitimately scans).
-- **FE bytes as a trend point only** (Phase 20 owns FE): split initial JS / lazy JS / CSS /
-  compressed transfer / SW precache / media; `dist/stats.html` and sourcemaps excluded (raw
-  `dist du` = 9.4 MB is NOT a user-relevant number). `rollup-plugin-visualizer` is already wired.
+- **FE bytes** (a real baseline now — Packet ⑤ owns the FE, 2026-08-23): split initial JS /
+  lazy JS / CSS / compressed transfer / SW precache / media; `dist/stats.html` and sourcemaps
+  excluded (raw `dist du` = 9.4 MB is NOT a user-relevant number). `rollup-plugin-visualizer`
+  is already wired.
+- **The production-build phone trace** (added 2026-08-23; supersedes the council's C1 deferral,
+  which pointed at the now-dissolved FE phase): one on-device trace of the built app on the
+  owner's phone during the chat journey. Device-round-shaped → scheduled into an afternoon;
+  the rest of H1 stays morning-runnable and does not wait on it.
 
 Output: a **measured-baseline table appended to this plan** (§ as-built), sha-stamped. It is the
 before-picture every later before/after claim compares against.
@@ -253,6 +276,32 @@ the ATAM utility tree is dropped as ceremony, the measured inventory already ord
   measure first).
 - One combined Codex round over the whole slice.
 
+### H-E2E — The e2e suite's own audit slice (added 2026-08-23; runs right after H2, while the preflight machinery is warm)
+
+The suite is test infrastructure, not a runtime subsystem, so it gets a **slice with its own
+form**, not a packet — same three-view loop, one fix wave, hard close. Earned by evidence:
+**three release tags burned** (v1.7.0 · v1.7.3 · v1.7.5), all on the stale-pin class, and
+`layout.spec.ts` (1,808 lines / 31 tests) dominates suite runtime. Scope:
+
+- **Coverage-vs-journeys map**: every ruled §10.① journey mapped to the specs that actually pin
+  it — what is pinned vs merely assumed. **SYS-18c** (e2e smoke-scale vs the theme matrix)
+  comes OFF the ROADMAP-exit path and is dispositioned here.
+- **Brittleness-class audit**: the substring-`name:` class (3 burns; the `6a2ccaa` `exact: true`
+  sweep fixed the *instances* — verify the *class* is fenced, e.g. a lint-shaped invariant on
+  non-exact role queries against Conf labels) · order-dependent pins · theme-coupled geometry
+  pins (the v1.7.3 arcade-lift class + its mirror-pin) · anything else a census over the three
+  burns' shape turns up.
+- **Runtime + structure**: the `layout.spec.ts` monolith, per-spec cost, what parallelizes,
+  whether the 69-test suite's shape matches what the release gate actually needs.
+- **Determinism on emma**: tmpfs discipline honored, flake census over the CI-run history.
+- **The release-gate coupling**: the local pre-push gate runs NO e2e (the v1.7.0 lesson) — this
+  slice RULES whether a targeted local subset joins the pre-push gate, or the standing
+  "pre-tag local spec run whenever a batch touched Conf/labels" move is enough; either way the
+  outcome becomes a written rule in QUALITY.md, not session lore.
+
+(H2's e2e-local preflight stays where it is — it proves the journeys *run* on demand; this
+slice audits the suite itself.)
+
 ### H3 — Packet ① Persistence + config/bootstrap → calibration checkpoint
 
 `db.py` + `domain/` + `config.py` + `main.py`/`runtime.py`/`deps.py`. The worst-covered
@@ -271,7 +320,7 @@ the packet form** before Packet ②.
 
 `services/agent/` (session/turns/compaction/steering/exec) + `api/agent.py` + events/
 conversation + `adapters/inference.py` + provider registry/failover + **the wire contract
-including `store/chat.ts` as consumer** (contract level only — FE internals stay Phase 20).
+including `store/chat.ts` as consumer** (contract level only — FE internals are Packet ⑤'s).
 The seams BETWEEN loop/wire/inference are this packet's reason to exist as one unit (largest
 backend file `session.py` 2,646 with 3 `while True` drive loops; `api/agent.py` 2,008 — a
 router grown into a subsystem, itself a structural finding candidate; the `while True` retry
@@ -306,7 +355,28 @@ self-rescheduling = structurally overlap-free; verify all four match it).
 first real exercise 2026-08-16 — precache manifest, the 2 runtimeCaching routes and their
 interaction with `Cache-Control: no-cache`). Matrix item: SW update mid-session.
 
-**→ CONTINUE/CLOSE CHECKPOINT**, then:
+### H7 — Packet ⑤ The frontend: performance + reliability (added 2026-08-23) → continue/close checkpoint
+
+`src/` minus what other packets already own: FE shell/lib + the query layer (`useFleet`/
+`useServices` polling architecture, `useScopedQuery`) + the stores beyond the wire contract
+(`store/chat.ts` *internals* — per-frame patches, localStorage persistence; the wire-consumer
+lens stays Packet ②'s) + chat/composer UI (the unvirtualized `ChatThread` = **F9's home — the
+audit runs NOW; the fix still ships only on numbers**, the §6 standing rule) + `ConfTab.tsx`
+(the 2,577-line component) + voice FE (the `audioController` queue/virtual-timeline/scrubber
+subsystem, D63/S1.5, review-hardened but never perf-audited; auto-stop dictation) + kit
+*runtime* behavior (`safeRafLoop`, the 4 canvas/rAF theme surfaces — swept here; themes ×5
+still get **no per-theme packet**: best-tested corpus, feature-closed). Owns **F9/F13/ACA-14**
+(trigger-gating superseded 2026-08-23 — audited in-phase, measure-before-fix stands; the
+2026-08-20 F13 measurement is prior evidence, not a substitute for the packet), **SYS-9.3**,
+**SYS-17c**, the §8.2 6b-list remainder, and the §7 no-direct-test FE module list. Matrix
+item: streaming turn + hidden-tab/visibility churn. Measurement: H1's FE half (bundle/precache
+split + the production-build phone trace). **Pairs with DP-C exactly as Packet ② pairs with
+DP-B**: one shared FE read, two lenses; DP-C runs first-or-with, and its design verdicts
+inform this packet's fix wave (never harden an implementation the design review is about to
+overturn).
+
+**→ CONTINUE/CLOSE CHECKPOINT** (sits after the LAST packet; moved from ④ when ⑤ was added),
+then:
 
 ### Hf — Fitness functions + close
 
@@ -317,8 +387,8 @@ found worth pinning becomes a `test_arch_invariants_*` test ("the guarantee must
 a type" — R30's registry-bypass evidence). Wall-clock stays recorded-not-gated. Deploy/update
 path + quality harness get their short review here (proven by 5 live releases; the H2 preflight
 already validated the measurement/e2e machinery). Then the phase **closes**: residue → ROADMAP
-with triggers; the **Phase 20 (FE/theme) charter decision** goes to the owner with Phase 19's
-numbers in hand.
+with triggers. *(The former "Phase 20 FE/theme charter decision" is gone — the FE is in-phase
+per the 2026-08-23 amendment; no successor phase is chartered by default.)*
 
 ### The unit→packet manifest (every §7 unit assigned exactly once — nothing escapes silently)
 
@@ -329,9 +399,10 @@ numbers in hand.
 | Tools/actions/permissions · memory/skills/subagents **(incl. D57 core memory — the §7 delta)** · fleet/monitor/wake · automations · external adapters + voice backend | Packet ③ |
 | Media resolver · PWA/service worker | Packet ④ |
 | Deploy/update path · quality harness | Hf (H2 carries the preflight) |
-| FE shell/lib · FE query layer · FE stores (non-wire) · chat/composer UI · ConfTab/editors · theme engine/kit · themes · voice FE | **Perf lens: Phase 20** (F9/F13 triggers stand) · **Design lens: DP-A** (theme engine/motion/UX; §3b) |
+| FE shell/lib · FE query layer · FE stores (non-wire) · chat/composer UI · ConfTab/editors · voice FE | **Perf lens: Packet ⑤ (H7)** — F9/F13 audit in-phase, fix numbers-gated (2026-08-23) · **Design lens: DP-C** (§3b) |
+| Theme engine/kit · themes ×5 | **Design lens: DP-A** (§3b) · runtime sweep (`safeRafLoop` + the 4 canvas/rAF surfaces): Packet ⑤ — still no per-theme packet (best-tested corpus, feature-closed) |
 | Agent harness design-vs-field (turns + capability layer) | **DP-B** (§3b — Packet ② keeps the perf/reliability lens on the same code) |
-| E2E suite | Consumed by H2 preflight + fix waves; SYS-18c widening exits to ROADMAP with a trigger |
+| E2E suite | **H-E2E — its own audit slice** (2026-08-23); H2 keeps the run-on-demand preflight; SYS-18c is dispositioned in H-E2E (no ROADMAP exit) |
 
 ## 3b. Track D — the design & architecture comparative pass
 
@@ -372,7 +443,7 @@ overlooked design flaws · inconsistencies (internal and vs-field) · design-lev
 (e.g. token-layer structure vs the field's primitive→semantic→component layering; kit.css
 monolith vs per-surface files; per-theme duplication the token contract should absorb).
 Locked constraints honored: vapor byte-frozen (D51) · cosmos feature-closed · **no new themes**
-· D7 per-theme fidelity. Perf-measurement-shaped findings exit to Phase 20's charter.
+· D7 per-theme fidelity. Perf-measurement-shaped findings exit to Packet ⑤'s brief.
 
 ### DP-B — The agent harness: turns + how the agent works
 
@@ -392,12 +463,29 @@ FIRST or together with Packet ②'s audit pass (one subsystem read can serve bot
 briefs say which lens each reviewer carries); DP-B design verdicts inform Packet ②'s fix wave
 so we never harden a design the review is about to overturn (the fix-in-owning-phase rule).
 
+### DP-C — The frontend implementation (added 2026-08-23)
+
+Scope: **how the frontend is BUILT**, judged with the design-packet form (a–d above) — the
+owner's third directive: *"also on the frontend performance is also the design itself and the
+way it's implemented."* Component architecture and composition patterns · the store layer
+(the D23 `createStore` bindings vs field state management) · the query layer (TanStack usage,
+polling architecture) · data flow wire→store→render · the `ConfTab.tsx` monolith (one
+2,577-line component — a structural finding candidate) · `api/client.ts` bypasses (**SYS-9.3
+comes home here**) · lazy/code-split boundaries · the b/c sweeps (consistency + Ousterhout)
+over the FE corpus. **The lane split: DP-A owns the design SYSTEM (tokens, motion, UX
+grammar); DP-C owns the CODE design; Packet ⑤ owns measurement.** Evidence: R34 where it
+reaches + the UI_AUDIT §1–6b analysis as the internal baseline; where the shelf is silent on
+peer FE architecture, a bounded follow-up buy (§5) or a recorded evidence-gap — never
+folklore. Runs before-or-with Packet ⑤ (the DP-B/② rule); locked constraints honored (vapor
+byte-frozen · cosmos feature-closed · no new themes).
+
 ### Ordering (owner-reorderable at charter)
 
 DP packets are morning-runnable (docs + dossiers + code reads; no device rounds). Default:
 **DP-B before or with Track P Packet ②** (shared read, see above) · **DP-A anytime**,
-naturally after the H2 hygiene slice; its fix wave lands before Phase 20 is chartered so the
-Phase-20 decision sees the post-design-review landscape.
+naturally after the H2 hygiene slice · **DP-C after DP-A** (the design-system verdicts feed
+the code-design read) **and before or with Packet ⑤**, so the FE fix wave lands on
+post-design-review ground.
 
 ## 4. Where results land (doc plumbing)
 
@@ -425,7 +513,8 @@ Phase-20 decision sees the post-design-review landscape.
 | LLM provider failure-mode handling (timeouts, retries/idempotency, streaming aborts, partial tool calls) | Before Packet ② (same agent if scope allows) |
 | Observability/logging posture in peers (SYS-11's seam: what to log, health surfaces, crash recovery) | Before Packet ① or ③ (wherever SYS-11 lands) |
 | SQLite practice at our shape beyond R33 (single writer, aiosqlite, schema evolution) | Only if Packet ①'s questions exceed R33 |
-| Peer FE long-thread performance | Phase 20's charter, not now |
+| Peer FE long-thread performance | Before Packet ⑤ (H7) — no direct dossier on the shelf today; the 2026-08-20 F13 measurement rig (UI_AUDIT F9 §) is the internal baseline; buy the peer half fresh (2026-08-23) |
+| Peer FE architecture patterns (component/store/query layering in the peer class) | Before DP-C — only if R34 + the shelf leave a gap (the §3b evidence-gap rule) |
 
 One bounded agent per buy, no nested subagents, dossier drafted by the agent into
 `docs/research/` per that README's conventions, indexed by the main seat.
@@ -507,7 +596,7 @@ LOC · tests · spec § · perf notes) is reproduced from the inventory pass:
 No-direct-test modules (import-level, verified): BE `searxng.py`, `wol.py`, `fsutil.py`,
 `core/agents.py`, `svc.py`; FE `vapor/heroScene.ts` (284 L, largest untested FE module),
 `MiniPlayer`, `PrivilegeChip`, `toolsMenu` sheets, `cosmosDive`, `useMemory`, `useTools`,
-`lib/prefetch`, `lib/promptPreview`, a.o. (Phase 20 for the FE list.)
+`lib/prefetch`, `lib/promptPreview`, a.o. (Packet ⑤ for the FE list — 2026-08-23.)
 
 ### 7b. Post-spec delta register (2026-08-22 — everything landed after `cdfd48d`, assigned; numbers await the H1 re-measure)
 
@@ -520,12 +609,12 @@ delta before H0 — this register is the qualitative half, written while the cha
 |---|---|---|
 | **Core Memory D60 + D61 + D64** (consolidation redesign · `/consolidate` verb + pressure note · paged reads + server-side delete guard) | `core_memory.py`/`core_memory_tool.py` substantially rebuilt post-inventory: paged `read` (offset/limit, line-boundary honesty rule), per-turn `RecallState` coverage minted at budget acceptance with receipts in `ToolResult.data`, framed-cost owner-steer, tool-layer delete gate (`{path, superseded_by}`, corpus stays stateless), the consolidation prompt family rewritten (D60 ④ + §14f tuning + the 2026-08-22 bare-name clause). D64 §17.4 accepted residuals (page-count floor · scan-dependent steer) are recorded context, not re-findings. | **Packet ③** (perf/reliability; the §14b-template readiness rider now also exercises the D64 shapes — paging + steer, not just the S5 verbs) · **DP-B** (honest-reads + tiering design vs field; **R53** joins the bought evidence) |
 | **D62 per-message serve attribution** | `Message.source` (`{served, degraded, from?, failed_hops?, context_window?}`) + `usage.cached_tokens`/`duration_ms` riding the `messages.meta` JSON column; threaded on `message.end`; `_persist_assistant` = the single persist door; FE `BotWhoLine` chip/disclosure | **Packet ②** — the SSE wire contract GREW: the §1 rule (wire audited with `store/chat.ts` as consumer, never backend-only) now covers `source` too |
-| **D63 chunked TTS + the S1.5 whole-message scrubber (C3)** | Backend: `chunk_*` config keys, `tts_chunking` policy on `/voice/status`, the `X-Voice-Target`/`prefer` failover pin, exception-only `X-Voice-Degraded`. FE: `lib/ttsChunks` + `audioController` grew into a real subsystem (element queue, virtual timeline, seek/latch/parked lifecycle — the parked-flag lifecycle was review-hardened 2026-08-22, two MED catches). | **Packet ③** (the voice adapter + the new voice wire headers/pin) · FE queue internals = **Phase 20/DP-A** (perf lens stays trigger-gated) |
+| **D63 chunked TTS + the S1.5 whole-message scrubber (C3)** | Backend: `chunk_*` config keys, `tts_chunking` policy on `/voice/status`, the `X-Voice-Target`/`prefer` failover pin, exception-only `X-Voice-Degraded`. FE: `lib/ttsChunks` + `audioController` grew into a real subsystem (element queue, virtual timeline, seek/latch/parked lifecycle — the parked-flag lifecycle was review-hardened 2026-08-22, two MED catches). | **Packet ③** (the voice adapter + the new voice wire headers/pin) · FE queue internals = **Packet ⑤ + DP-C** (2026-08-23 amendment) |
 | **Notifications close-out** (R45 tap slice + F1 `host_up_down`) | `frontend/public/notify-sw.js` via `workbox.importScripts` (content-hashed URL) — **the SW surface is now two files**; `data:{focus,key}` + the shared `applyNotificationFocus` router + the `?tab=agent` boot reader; the `host_up_down` classifier class + Conf toggle (D50 M5, ACTION-name-keyed; host transition events carry status=OK both directions — a contract the class depends on) | **Packet ④** (notify-sw joins the SW-update-mid-session matrix item) · **Packet ③** (the monitor-loop event contract feeding the class) |
 | **W5 icon backdrop (D59)** | The backend now serves + patches `/manifest.webmanifest` itself (GET+HEAD, no-cache, sha ETag, closed allowlist, sha-pinned Clear refusal) — a new PWA contract surface | **Packet ④** |
 | **W3 media revision** | The `mtime:size:ino:ctime` `_stamp` recipe in the resolver (+ the engine-wide SVG-filter waiver sweep test) | **Packet ④** (the §7 "no cache" note stands — H1 measures) |
 | **qwen wire normalization + the prod flip** (R41/R42) | Wire-level system-message normalization in the inference adapter; corsair/qwen = prod PRIMARY with a real fallback chain behind it; the D60 ① pressure gate armed via `context_window` on every chain entry (`effective_window` ladder) | **Packet ②** (inference/failover — the normalization + the window ladder join the audit scope; failover is now daily-exercised in prod, not latent) |
-| **Auto-stop dictation** (R51 T0) | FE energy-silence detector on the existing mic stream + `auto_stop*` STT config keys (default OFF; hidden-stop independent of Web Audio) | **Phase 20/DP-A** (FE voice) · Packet ① inherits only the config keys |
+| **Auto-stop dictation** (R51 T0) | FE energy-silence detector on the existing mic stream + `auto_stop*` STT config keys (default OFF; hidden-stop independent of Web Audio) | **Packet ⑤** (FE voice; DP-C carries its design seam) · Packet ① inherits only the config keys |
 | **Motion-token band (ISS-10 ①) + `composerSkin` widening (W2/D37) + the W1 plan-band tokens** | `--motion-*`/`--ease-*` shipped in the semantic contract (33 kit rules, one reduced-motion collapse); the 11-slot `--skin-*` vocabulary; derived plan-band insets | **DP-A** — its "motion system" scope line is now a SHIPPED token layer with **R52** as bought evidence (was a gap at spec time) |
 | **Prompt registry growth** | The consolidation family rewrite + D64's truncation-clause correction | Packet ② spot-check unchanged (still the best-tested unit) |
 
@@ -533,8 +622,9 @@ delta before H0 — this register is the qualitative half, written while the cha
 
 **8.1 Ledger verdicts:** QH-1…16 fully closed · PRE_DEPLOY closed (one stale §6 QR line — §P
 wins) · PROMPTS_AUDIT: only PR-1 (deliberate-non-fix, `params:{}` seam recorded) · ACA Slices
-0–8 shipped (residue below) · UI_AUDIT F1–F29 shipped except F9/F13 (trigger-gated: thread
->~200 msgs OR owner-reported input lag while streaming) + the §6b later-list.
+0–8 shipped (residue below) · UI_AUDIT F1–F29 shipped except F9/F13 (~~trigger-gated: thread
+>~200 msgs OR owner-reported input lag while streaming~~ **→ 2026-08-23: the AUDIT is in-phase,
+Packet ⑤; fix acceptance still numbers-gated**) + the §6b later-list.
 
 **8.2 Genuinely OPEN, buildable (the audits must not re-report these — CONFIRMS/EXTENDS only):**
 SYS-2 (two-phase `Deps` init, invalid states representable — Packet ①) · SYS-3 (tool overrides
@@ -543,16 +633,17 @@ fleet polling tunables; **homeless** — H2 rehomes) · SYS-10 (default-theme li
 across codebases) · SYS-11 (logs-only observability; no logging-config seam) · SYS-15 halves
 (coverage measurement — H2; fleet/svc characterization tests — Packet ③) · SYS-16 strict
 ratchet (own slice, post-emma) + ASYNC240 lexical blind spot (recorded gap) · SYS-18c (e2e
-smoke-scale vs theme matrix — ROADMAP exit) · SYS-9.3 (`store/chat.ts` raw fetch bypasses
-`api/client.ts` — Phase 20 unless Packet ② touches it) · kit standing items (`getJSON` timeout
+smoke-scale vs theme matrix — **H-E2E slice**, 2026-08-23; was a ROADMAP exit) · SYS-9.3
+(`store/chat.ts` raw fetch bypasses `api/client.ts` — **DP-C/Packet ⑤ home**, 2026-08-23) ·
+kit standing items (`getJSON` timeout
 — H2; sr-only dup; a11y-e2e no-sheet-arm; `skipActiveViewTransition` global) · C2-L6/L7
 (subagent-safety + skills-zero-context contracts partially unpinned — Packet ③) · SYS-17c (TTS
-blob accumulation, conditional LRU) · ~~C3 chunked TTS (buildable, big TTFA win)~~ **→ BUILT +
+blob accumulation, conditional LRU — **Packet ⑤**, 2026-08-23) · ~~C3 chunked TTS (buildable, big TTFA win)~~ **→ BUILT +
 review-closed 2026-08-21/22 (D63 + S1.5 + the parked-flag waves, ships v1.7.5; the new voice
 wire/queue surfaces are assigned in §7b — no Packet ③ pre-work remains, the packet audits the
 shipped thing)** · 6b list (Switch div→button · store HMR · F29 draft persistence [design LOCKED
 2026-06-16] · knob `left`→`translateX` · ~~motion tokens~~ **→ SHIPPED 2026-08-21 as ISS-10 ①;
-stage ② owner-parked** — rest Phase 20) ·
+stage ② owner-parked** — rest Packet ⑤, 2026-08-23) ·
 **CM-1 (added 2026-08-17):** the core-memory secret gate is best-effort by construction —
 `_SECRET_MIN_CHARS = 8` floor means a real ≤7-char credential is outside the rail
 (CORE_MEMORY_PLAN §14b; joins Packet ③'s SECURITY_MODEL §5 re-walk) · ~~CM-2 (added
@@ -640,8 +731,12 @@ cuts-only Codex round for M+ fix waves.
 **Scope note:** §3b (Track D) was added **after** this council round, on the owner's second
 2026-08-16 directive. It reuses the council-reviewed machinery unchanged (three-view loop, H-#
 index, close rule, fix classes); the new material is the design-packet form and the DP-A/DP-B
-scoping. **A delta council check on §3b is owed before the execution go** — one Codex round +
-one Opus round over §3b only, not a re-review of the whole plan.
+scoping. The **2026-08-23 owner amendment** (H-E2E · Packet ⑤/H7 · DP-C · the dissolved FE
+phase) also post-dates the council. **A delta council check is owed before the execution go**
+— one Codex round + one Opus round over the post-council material (§3b + the 2026-08-23
+amendment), not a re-review of the whole plan. *(The council's H-C two-phase-charter finding
+is superseded by owner ruling 2026-08-23 — recorded, not erased; its underlying evidence, the
+F9/F13 fix-gating, survives as the audit-now/fix-on-numbers split.)*
 
 ## 10. OWNER COURT — the rulings needed before execution (nothing here is decided)
 
@@ -653,12 +748,15 @@ detection clause are then set at H0 with numbers in hand.
 ② **The pre-authorized fix class** (§2.3.5) — this is the one process change: XS/S,
 in-packet-scope, non-behavioral, non-D-entry, non-security fixes ship without per-item rulings.
 ③ **The packet ranking** — proposed ① persistence/config → ② agent turn → ③ subprocess family
-→ ④ media/PWA. Reorderable at H0.
-④ **The two-phase charter** — Phase 19 backend+ops now; Phase 20 FE/theme later, chartered on
-Phase 19's numbers + the F9 trigger.
+→ ④ media/PWA → **⑤ frontend last (H7; its design twin DP-C runs before/with it)**, with
+**H-E2E right after H2**. Reorderable at H0.
+④ ~~The two-phase charter~~ **RULED 2026-08-23 (owner, prose round): ONE phase — the frontend
+joins Phase 19 (Packet ⑤ + DP-C) and the e2e suite gets H-E2E; no separate FE phase is
+chartered by default.** (Kept in this list so H0 ratifies the close rule against the widened
+scope.)
 ⑤ **D58 lock** — on go, DECISIONS.md gains D58 (this methodology; D57 = Core Memory, owner 2026-08-17), TODO gains Phase 19, HANDOFF
 points here.
 ⑥ **Track D ordering** — proposed: DP-B runs before/with Track P Packet ② (shared subsystem
-read, design verdicts inform the hardening fixes); DP-A runs after H2, before the Phase-20
-charter decision. Confirm or reorder. (The §3b delta council check runs before the go
-regardless.)
+read, design verdicts inform the hardening fixes); DP-A runs after H2; **DP-C runs after DP-A
+and before/with Packet ⑤**. Confirm or reorder. (The delta council check — §3b + the
+2026-08-23 amendment — runs before the go regardless.)
