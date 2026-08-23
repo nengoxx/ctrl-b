@@ -12,7 +12,45 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-22, SECOND block — 🏁 RELEASED + LIVE v1.7.6; supersedes everything below)
+## Current state (2026-08-23 — the scope-amendment session; supersedes the blocks below where it speaks)
+
+- **Prod UNCHANGED: v1.7.6 @ `6a2ccaa`.** Local `main` — **2 commits UNPUSHED** on top of origin
+  `74c3c9a`: `4c851b7` (the Phase 19 scope amendment) + the handoff commit carrying this block.
+  Push on the owner's word. Dev units stayed STOPPED (docs-only session).
+- **Phase 19 SCOPE WIDENED by owner ruling (prose round, committed `4c851b7`):** ① the frontend
+  joins IN-PHASE on both lenses — Track P **Packet ⑤ (H7)**, FE perf/reliability (owns
+  F9/F13/ACA-14 with trigger-gating superseded: audit now, fix still numbers-gated · SYS-9.3 ·
+  SYS-17c · the audioController subsystem · kit runtime + the 4 canvas surfaces · a new matrix
+  row: streaming turn + hidden-tab churn) + Track D **DP-C**, FE implementation design
+  (components/stores/query/data-flow, the ConfTab monolith; lane split: DP-A = the design
+  SYSTEM, DP-C = the CODE design, ⑤ = measurement) — pairing exactly like Packet ②/DP-B; ② the
+  e2e suite gets its own **H-E2E audit slice** right after H2 (the three burned tags = the
+  evidence; SYS-18c dispositioned there, no ROADMAP exit). **The separate FE phase is
+  DISSOLVED** (§10 ④ pre-ruled); the ladder = H1→H0→H2→H-E2E→①②③④⑤→Hf; H1 gains the FE
+  bundle baseline + the production-build phone trace; the owed delta council check now covers
+  **§3b + the amendment**. Pointers updated in TODO / UI_AUDIT / this file's menu below.
+- **The hardening court/session itself stays DEFERRED (owner: "at a later time")** — everything
+  else in the 2026-08-22 menu below stands unchanged.
+
+## ▶▶ NEXT (2026-08-23): the media-gallery design conversation (owner-picked for the next clean session)
+
+**The next session is a DESIGN + IMPLEMENTATION CONVERSATION on the media gallery** (owner's
+words: "talk about the design and implementation of the media gallery thing") — prose
+back-and-forth per the standing preference; no build until ruled. Pre-flight for that session:
+- Read **MEDIA_PLAN.md** (D53 media namespaces v2, shipped v1.5.0) + `backend/app/core/media.py`
+  + `api/media.py` + the gallery FE surfaces BEFORE proposing anything (the mandatory
+  pre-flight; map what exists first).
+- Standing context: the **media-gallery test-and-refine round has been parked since
+  2026-08-12** — file-drops + real-touch drag-reorder are BUILT but UNTRIED on device. The
+  owner's ask may fold that round in, or redesign around it — let the conversation decide;
+  don't pre-empt with fixes.
+- Phase 19 overlap note: `core/media.py` is Packet ④'s unit and the gallery FE now belongs to
+  Packet ⑤/DP-C — if the conversation spawns build work, honor the fix-in-owning-phase rule or
+  have the owner rule it forward explicitly.
+- After that: the 2026-08-22 menu below still governs (the owner device pair on prod · the
+  Phase 19 court when the owner calls it · the A13 talk).
+
+## Prior state (2026-08-22, SECOND block — 🏁 RELEASED + LIVE v1.7.6; superseded above where the 2026-08-23 block speaks)
 
 - **PROD = v1.7.6 @ `6a2ccaa`, RELEASED + LIVE 2026-08-22** (Opus-operated runbook run; CI release
   gate genuinely green incl. e2e, 7m12s; no config/DB migration — schema 6, config VERSION 1; DB
