@@ -1,492 +1,524 @@
-# MEDIA_MANAGER_PLAN — the media manager: in-app upload · crop · delete · the gallery redesign
+# MEDIA_MANAGER_PLAN — the media manager v2: per-destination art LIBRARIES · upload · crop · focal point · reorder
 
-**Status: COUNCIL-CLOSED 2026-08-24 (§11: Emma correctness lens 10 findings + 2 confirm catches →
-all-RESOLVED · adversarial Opus design lens 3 HIGH/7 MED/3 LOW/3 sweep + 3 confirm interaction
-pins → "RESOLVED overall"; every finding folded, one PARTIAL overrule recorded). OWNER RULINGS
-PENDING (§9) — nothing builds until the owner's decision session rules.** Owner directive (2026-08-24): this ships **before Phase 19 completes** — an explicit
-forward-ruling on the Packet ④ (`core/media.py`) / Packet ⑤ (gallery FE) overlap. Evidence =
-**R54** (crop/picker client) · **R55** (upload backend) · **R56** (gallery UX), all bought, verified
-and curated 2026-08-24. Locks as **D65** (amending D52 §5.4 + D53). Parent read-side records:
-MEDIA_PLAN.md (D53/D54) stays the authority on namespaces/roles/kinds.
+**Status: v2.1 — COUNCIL ROUND 2 CLOSED 2026-08-24, BOTH LENSES FINAL-CONFIRMED RESOLVED
+(record: §15; Emma correctness lens 1 HIGH + 9 MED · adversarial Opus architecture lens 5 HIGH +
+8 MED + 3 sweep; every finding ruled and folded; each lens's confirm rounds ran to an explicit
+"RESOLVED — ready to build"). The owner DECISION-SESSION rulings (§10) all stand, and the
+H5 refinement (role-family cards for data-derived keys, §6.1) is **OWNER-RATIFIED 2026-08-24**
+("we could try your suggestion first"). NOTHING BUILDS until the owner reads this document and
+rules the push.**
 
-## 0. Goal (owner's words, condensed)
+Locks as **D65** (amending D52 §5.4 + D53/D54). MEDIA_PLAN.md (D53/D54) stays the authority on
+namespaces/roles/kinds/serving; this plan is the authority on writes, libraries, and management UI.
 
-For every custom-art surface: **upload images directly from the phone** (an image picker, no camera
-path), **crop at upload or use as-is**, **delete**, and **reorder for priority** — all inside the
-Conf galleries, each gallery collapsed under its own drop-down so the Theme-art/Shared-art groups
-stay uncluttered, with a **separate upload button per image/icon section** (no global upload, no
-typing binding keys). Easy to manage and understand.
+## 0. Goal (the owner's words, condensed — 2026-08-24 decision session)
 
-## 1. The security reversal (D65) — the one locked thing this plan changes
+Every custom-art destination is a **section with its OWN gallery: a LIBRARY of images stored on
+disk** so the owner can switch art later **without re-uploading**. Uploads are **purely
+additive** — nothing replaces anything, delete is the only removal, **priority order decides what
+is active**. **Bundled default images appear in every gallery as first-class entries.** The Conf
+tab stays uncluttered: **tap a section → its gallery opens full-screen** — upload, crop, focal
+point (v1, owner-ruled), reorder (drag primary), delete.
 
-D52 §5.4 ruled "no write API, ever" because the app has no auth and the tailnet is the boundary.
-**The owner reverses that for typed media writes.** The original concern was real and R55 §2
-sharpened it into the actual mechanism: the danger was never "someone on the tailnet" (the owner's
-own devices) — it is the owner's **browser**, which executes other people's JavaScript all day, and
-a cross-origin `POST` of `multipart/form-data` is **CORS-safelisted**: no preflight, the write
-lands, from any website. The fix is free and structural:
+**Standing design principle (owner):** CORE feature — best-practice architecture and code,
+several review eyes, and **everything customizable** (tunables in config or the registry, never
+magic numbers).
 
-- **The write endpoints take a raw body via `PUT` and `DELETE`** — never multipart, never `POST`.
-  Non-safelisted verbs force a CORS preflight; we run no CORS middleware (verified: zero hits) and
-  answer no `Access-Control-Allow-Origin`, so a cross-origin browser write dies before it is sent.
-  Same protection `PUT /api/settings` already enjoys, now by recorded design rather than accident.
-- Writes land **only** in registered `$CTRLB_HOME/media/<ns>/<role>/` dirs (the same
-  `MEDIA_NAMESPACES` + `media_health` gates the read side uses); bytes are validated with the
-  existing `probe_image` **before** the file reaches its final name; extension must agree with the
-  probed format; a streamed byte counter enforces the cap (`Content-Length` is not trusted); a
-  rejected upload leaves zero bytes behind.
-- **A whole-feature kill switch** (`media_write.enabled` — it gates BOTH verbs, §2/§5) per the standing enable/disable
-  requirement — a posture reversal you can switch back off.
-- **No server-side image processing, still.** No Pillow, no decode. The crop runs on the phone; the
-  server receives finished png/jpg/webp bytes and probes their headers, exactly as it does for SSH
-  drops. (R55: no peer in class magic-byte-validates uploads at all — we keep the stronger gate.)
-- SECURITY_MODEL gains a §2.x for the write surface, **including the premise correction**: the §CSRF
-  "no session to steal" reasoning does not cover unauthenticated *writes*; the safelisted-verb
-  analysis is the operative rule. The existing `POST /api/voice/stt` (`UploadFile`) is the one
-  standing instance of the safelisted class — **dispositioned to the Phase 19 register**
-  (HARDENING_PLAN §8.2), not fixed here (fix-in-owning-phase).
-- **Recorded residual — DNS rebinding (Emma council #3):** the preflight argument protects
-  cross-ORIGIN writes; a rebinding attack makes the request same-origin against the raw LAN
-  `0.0.0.0:5433` bind (Host is never validated), and CORS never runs. This is a property of the
-  WHOLE API today (`PUT /api/settings` included), not of the new endpoints — so it lands in
-  SECURITY_MODEL as a named residual **plus a Phase 19 register row** with the lean app-wide fix
-  named (Starlette `TrustedHostMiddleware` allowlisting emma's names/IPs), rather than a bespoke
-  media-route guard. The plan's CORS invariant is also pinned by tests (§6) and an architecture
-  guard: adding CORS middleware without revisiting D65 must fail a test.
-- The read-side docstrings that assert "there must never be a write API here"
-  (`core/media.py` header, `api/media.py` header, `MediaGallery.tsx` header) are rewritten to keep
-  the original reasoning and record what changed the answer (R55 §9 ②) — the doc-truth rule.
+## 1. D65 — the security reversal (RATIFIED 2026-08-24; NO kill switch)
 
-## 2. The backend write API (R55's contract, adopted)
+D52 §5.4 ruled "no write API, ever". **The owner reverses that for typed media writes** on R55
+§2's mechanism: the realistic attacker is the owner's browser — a cross-origin
+`multipart/form-data` POST is CORS-safelisted. Therefore:
 
-```
-PUT    /api/media/{ns}/files/{role}/{filename}[?overwrite=<revision>]
-       Content-Type: image/png | image/jpeg | image/webp · body = raw image bytes
-    -> 201 MediaFile (describe_file — the existing wire model) · 200 when overwrite replaced
-    -> 404 unknown ns/role · namespace disabled · (DELETE) not there
-       409 name exists and no overwrite given — the detail carries the existing file's
-           revision; ALSO 409 when the given overwrite revision no longer matches (the file
-           changed or vanished since the client saw it — re-offer, don't clobber)
-       413 streamed bytes exceeded the cap (detail names the limit, never the true size)
-       415 extension not allowlisted, or probed bytes disagree with the extension
-       422 filename not representable, or empty body
-       503 media_write.enabled is off (BOTH verbs — the kill switch gates DELETE too)
+- **Raw-body `PUT`/`DELETE`, never multipart, never POST.** Non-safelisted verbs force a CORS
+  preflight; we run no CORS middleware and answer no ACAO — a cross-origin browser write dies
+  unsent. Pinned by tests + an architecture guard (adding CORS middleware without revisiting D65
+  fails a test).
+- Writes land **only** in registered `$CTRLB_HOME/media/<ns>/<role>/` dirs; `probe_image`
+  validates bytes **before** the final name; extension must agree; streamed byte counter; a
+  rejected upload leaves zero bytes.
+- **No kill switch — the reversal is UNCONDITIONAL (owner ruling; the standing whole-feature-
+  toggle rule knowingly waived).** No `enabled` flag, no 503 branch, no `write_enabled`, no
+  degraded mode. A toggle stays trivially additive later.
+- **No server-side image processing, still** (no Pillow, no decode — header probes only, same as
+  SSH drops; stronger than every peer, R55).
+- SECURITY_MODEL §2.x with the premise correction (the §CSRF "no session" reasoning never covered
+  unauthenticated writes). **Residuals → Phase 19 register:** DNS rebinding (whole-API property;
+  lean fix `TrustedHostMiddleware`) · `POST /api/voice/stt` (the standing safelisted-class
+  instance).
+- The three read-side "never a write API" docstrings rewritten (doc-truth rule).
 
-DELETE /api/media/{ns}/files/{role}/{filename}[?revision=<revision>]
-    -> 204 | 404 | 503 · 409 when a revision is given and the file on disk no longer matches it
-       (it was replaced since the caller observed it — refuse, don't destroy the newer bytes)
-```
+## 2. The library data model (the core of v2)
 
-- **Overwrite is revision-preconditioned, never a bare flag (Emma council #2):** the 409 hands the
-  client the existing file's `revision`; the Replace retry sends it back
-  (`?overwrite=<revision>` — If-Match semantics on the identity token the wire already carries).
-  A stale confirmation left open on one device can no longer clobber a newer replace or resurrect
-  a concurrent delete — both re-409. The stat→replace micro-window that remains without a lock is
-  an **accepted residual** (single owner, atomic `os.replace` — the file is always one complete
-  version of one upload); a global write lock is the recorded road not taken.
+### 2.1 Sections
 
-- **Shared URL with the read mount is safe** (verified: Starlette records a method mismatch as
-  `Match.PARTIAL` and keeps looking — GET falls through to the mount; the router is already
-  registered before the mounts in `create_app`).
-- **Persist pipeline** (R55 §4.4, order load-bearing): validate address → `mkstemp(dir=role_dir,
-  prefix=".upload-", suffix=".part")` → `fchmod 0o644` (match SSH-drop modes) → stream+count → 413
-  on excess → `flush`+`fsync(fd)` → `probe_image(tmp)` → 415 on mismatch → `os.link` (no-clobber,
-  409 on `FileExistsError`) or `os.replace` (overwrite) → unlink tmp → `fsync_dir(role_dir)` →
-  return `describe_file(dest, ns, role)`. **The `.part` suffix is load-bearing**: `list_role`
-  filters on extension alone, so an allowlisted-suffix temp would appear in a concurrent index and
-  take a pool position (R55 §4.2).
-- **Filename rules = TWO tiers, one home (`core/media.py`), and the split is upgrade-safety
-  (Emma council #1):** the **addressable** predicate (non-empty, not `.`/`..`, no `/` or `\`) is
-  today's `config.py` order-list semantics extracted verbatim — the config validator adopts it with
-  **no tightening**, so a config that boots today boots after the upgrade (files like `.hero.png`
-  or NFD names that the read side already lists and orders stay valid there; an upgrade test pins
-  one such entry). The **upload-admission** predicate composes on top for new writes only:
-  NFC-required (reject, don't rewrite — a rewritten stem in a named role binds to nothing), no
-  `<>:"|?*` and no C0 controls or DEL (the client's Windows set + DEL), **no U+FFFD** (uvicorn decodes malformed percent-encodings with
-  replacement, so `bad%FF.png` would otherwise silently create a name differing from the requested
-  bytes — Emma #8), no leading dot, no trailing dot/space, stdlib **`ntpath.isreserved`** for the
-  DOS-device class (a hand-rolled set misses `con.foo.png` and superscript aliases — Emma #9),
-  ≤255 UTF-8 **bytes** (measured `NAME_MAX`), extension ∈ `ALLOWED_TYPES`.
-  **Reject with the reason, never sanitize into something else.**
-- **DELETE touches no config** (verified: dangling `order` names drop silently at `list_role` and
-  self-heal on the next reorder; a dangling pin renders "(missing)" for the owner to clear). Guards:
-  the read side's `is_served_file` (third consumer of the one rule), 204/404 split, `fsync_dir`.
-- **Boot sweep:** `ensure_media_dirs` gains a ~5-line sweep of stale `.part` files (a hard kill
-  mid-upload leaves one; nothing else ever would).
-- **Concurrency needs no lock**: per-request `mkstemp` + atomic `link`/`replace` — the filesystem
-  primitive is the lock (R55 §8.1).
-- **Reuse ledger** (everything but the streaming writer exists): `MEDIA_NAMESPACES` ·
-  `media_health` · `ALLOWED_TYPES` · `probe_image` · `is_served_file` · `describe_file` · `role_dir`
-  · `fsutil._fsync_dir` promoted to public `fsync_dir` (keeps the OS-branch allowlist count — a
-  re-derived dir-fsync would add a fifth branch and fail `test_arch_invariants_qh9`).
+A **section** = one art destination. Two kinds, ONE gallery UI driven by a **capability
+descriptor** (council M1 — the difference is data, never implicit):
 
-## 3. The client pipeline: pick → guard → crop-or-as-is → export → upload (R54, adopted)
+- **Library-backed sections** — one per (namespace, role): the role directory + the role's
+  bundled entries. Capabilities: upload · reorder/drag · set-active (= move-to-front) · In-use
+  toggle · delete · framing.
+- **Pin-backed seat sections** — the D54 slots (gacha `wallpaper`/`hero`/`oracle`/`reel_figure`,
+  frontier `hero`, kit slots): a **read-only VIEW over the source library plus exactly one
+  write — the pin**. The tile action reads **"Use here"** (never "Set as active"); no upload,
+  no drag, no delete, no In-use toggle, no framing from a seat (those belong to the source
+  library's own section — one grid component reading capabilities, not two behaviors sharing a
+  label).
 
-- **Picker:** hidden `<input type="file" accept="image/png,image/jpeg,image/webp">` (explicit types
-  — routes to the Android photo picker on Chrome 13+ and seeds `EXTRA_MIME_TYPES` on both browsers;
-  still a hint, so validation stands). No `capture` attribute — **note the owner's "no camera"
-  ruling is honored as "we build no camera path"; both Android browsers add a camera source to
-  their chooser regardless, and that cannot be suppressed** (R54 §5.1). `input.value = ""` reset in
-  the change handler (the classic cancel-then-repick dead-end). Desktop drag-drop + paste ride along
-  (~15 lines, phone-inert).
-- **Input guard, before any decode:** byte cap → header-parsed dimensions cap → HEIC/TIFF/SVG
-  refused **by name** (Android does not transcode images; neither engine decodes HEIC; no wasm
-  decoder — a `heic2any`-class bundle would dwarf the app). Then `createImageBitmap(file)` as the
-  decodability proof; its rejection is the catch-all. **The client header reader is scoped to the
-  DIMENSION read only** (format identity is `createImageBitmap`'s job) **and fenced (Opus council
-  M7):** it is the one place the repo holds two parsers of one byte format, so a **shared fixture
-  corpus** feeds both — the same image files drive the pytest `probe_image` arms and a vitest arm
-  asserting identical (w, h) verdicts — a dimension-only reader has no format verdict to
-  compare (Opus confirm); drift fails a test instead of shipping.
-- **Crop step (R56 §5 + R54 §2):** immediate modal on pick — **`react-easy-crop@6.2.3`** (8.60 KB
-  gzip measured, no dep tree, the only candidate with real pinch-zoom, crop rect already in source
-  pixels; adoption riders: `aria` via `cropperProps`, a visible zoom slider, CSS imported with
-  `disableAutomaticStylesInjection`). **The window opens FREE-RATIO — at the image's own aspect —
-  for every role in v1 (Opus council H1):** the draft's fixed-aspect windows were checked against
-  the CSS they claimed to describe and were wrong on all three declared roles — `kit-svcicon` and
-  the brand mask paint `contain` (nothing crops; a forced 1:1 would make the owner cut a wordmark
-  that letterboxes fine today), and the service-banner's crop geometry is adopter-variable
-  (`--kit-banner-size/pos`, the D54 A2 contract) so it belongs to the theme, not the role. Because
-  crop is destructive, a wrong declared aspect permanently discards pixels a surface would have
-  used. The per-role/per-key `hint` prose carries the shape guidance it already carries; if a
-  shape guide is ever wanted it lands where the geometry lives (`MediaKeyDef.aspect` for the
-  frontier stack) — recorded, not built. **The window opens at the image's own rect; confirming untouched IS "use as is"** — two
-  verbs, one ✓ (the Telegram shape — no product ships a skip button; its cover-fit-default
-  idea, restated for a free-ratio window).
-  Cancel unwinds totally.
-- **Export (R54 §8, the probe-grounded rules):** in a Worker (`OffscreenCanvas.convertToBlob` —
-  the main-thread pipeline drops ~4 frames on Gecko); **`ctx.drawImage(src, sx,sy,sw,sh, …)` and
-  never `createImageBitmap`'s crop-rect form** (Chromium returns the wrong region on EXIF-rotated
-  photos — probed, and Chromium's own `TODO(crbug.com/40773069)` says so); output capped to the
-  role's registry `pixels` bound (≤4 MP ⇒ 60× under every canvas limit); two-step downscale past
-  3×; `bmp.close()` everywhere; a one-pixel readback verifies the canvas actually painted (Chromium
-  fails oversize canvases **silently**); **`blob.type` is read back and names the file's extension**
-  (an unsupported `toBlob` type silently yields PNG — probed).
-- **Always re-encode — "as is" is a crop rect covering the whole image, not a bypass.** One path
-  applies the crop, normalizes to the allowlist, caps pixels, and **strips EXIF/GPS/XMP** (measured
-  in both engines — the owner's home coordinates never land in the media tree, and the server needs
-  no Pillow to strip them). Format policy: alpha-possible sources → `image/webp` q0.90, else
-  `image/jpeg` q0.85 (the measured knee); fall back deliberately on an unexpected `blob.type`.
-  **Per-role export override (Opus council L1):** an optional `export?: {type?, quality?}` beside
-  `bounds` in the registry, defaulting to the two globals — `brand` (painted as a CSS MASK: only
-  alpha is read, and lossy WebP rings a hard silhouette's edge) and the frontier `stack` (layer
-  art) declare `image/png`. Same additive per-role shape the bounds already proved (Opus M6).
-  **For a lossless export type the byte step-down is SKIPPED** (Opus confirm ③ — PNG has no
-  quality axis): the upload proceeds and the advisory badge is the message, the plan's own honest
-  fallback; one test arm pins it.
-- **Named roles get the invisible "upload as":** the per-key upload affordance (the key panel row's
-  button) names the file after its key — the owner never types a stem. Pool roles keep the picked
-  file's sanitized stem. **Key-collision rule (Emma council #4):** the per-key flow checks for an
-  existing file binding that key by NORMALIZED STEM (reusing `classifyNamed` — the gallery already
-  computes it), not by exact filename: `cube.png` on disk + a new `cube.webp` upload is a REPLACE
-  of the binding, not a fresh 201 beside a stale winner. The flow confirms, uploads the new file
-  first, then deletes the old one (publish-before-delete — a failure leaves the old art intact;
-  the one-request window where both exist and collation picks is an accepted flicker). **The
-  cleanup DELETE is revision-conditioned (Emma confirm, new MED):** it carries the old file's
-  revision as observed when the flow began; a 409 (someone replaced that file during the crop
-  flow — a window spanning the whole confirmation, not the accepted micro-window) leaves BOTH
-  files on disk, and the gallery's existing duplicate diagnostics make that visible and
-  recoverable — never data loss. **And cleanup is SKIPPED when the final filename equals the old
-  one** (Emma confirm 2): a same-name Replace is already the overwrite — its own success changed
-  the revision, so a conditioned cleanup there would be a guaranteed false 409.
-- **Upload:** `fetch` PUT with the blob; `["media", ns]` invalidation on success (the existing
-  key). **The retry payload is the exported Blob + its final name/type — never the original
-  `File`** (Emma council #6: retrying the source would bypass crop, the pixel cap, format
-  normalization and the EXIF/GPS strip); the `File` is released after export, and a
-  backgrounded-PWA eviction losing the transient retry is ordinary in-memory-state behavior.
-  409 → a Replace / Cancel prompt (re-PUT with `overwrite=<revision>` from the 409's detail).
-- **One job per role section (Emma council #5; scope pinned by Opus M9):** every admission path
-  for a section — header button, per-key buttons, drop, paste — is disabled from pick until the
-  job's terminal success/failure. This is a **second, per-section flag composed with** the
-  existing gallery-global `busy` (`save.isPending` — correctly global, it guards the one settings
-  PUT), **not a widening of it**: an export in role A must not block a reorder in role B. Queue
-  depth is 1 in v1 (single-file pick, §9 Q9) — `multiple` would turn the latch into a queue and
-  change nothing else. A second pick can never replace an in-flight job's `File`, revoke its
-  preview URL, or receive a late worker callback aimed at the first.
-- **Pool stem collisions get the same guard as named keys (Opus council sweep ①):** every pin
-  addresses a STEM and every pin sources from a pool, so two files sharing a stem
-  (`wallpaper.png` + a new `wallpaper.webp`) make a pin ambiguous — the `MediaFile.name` docstring
-  already calls this a foot-gun. A pool upload whose normalized stem matches an existing file
-  runs the same Replace / Cancel flow (Replace = publish-then-conditioned-delete of the other
-  stem-holder), so the one-tap path cannot mint routine duplicates SSH drops only minted rarely.
-  **And a pool Replace that changes the filename patches the `order` list in place (Opus confirm
-  ②):** `order` holds FILENAMES — the dangling old name self-heals, but the NEW file would fall to
-  the collation tail, and on a first-wins pool (background/brand/hero/oracle) that silently
-  changes which picture paints. `useMediaUpload` substitutes new-for-old through the gallery's
-  existing `patch({roles: {[role]: {order}}})` write (~3 lines at the chokepoint the gallery
-  already owns). Named-key Replace needs none — order is only a tie-break there and the loser is
-  deleted.
-- **Post-encode byte check (Emma council #7, fix re-derived):** encoding size is entropy-driven,
-  so the role's `bytes` bound can be exceeded below its pixel cap. The exporter makes ONE quality
-  step-down retry when over; if still over, the upload proceeds and the existing advisory badge
-  reports it — the bounds are advisories by design ("an oversize icon still paints"), and a hard
-  client reject would make uploads stricter than SSH drops for no server-side reason. The §6
-  "uploads never trip the badges" invariant is DROPPED for the honest version: the step-down is
-  unit-tested, the badge stays the message.
-- **NO `MediaRoleDef.aspect` in v1** (Opus council H1 — see the crop-step bullet above: the draft's
-  three declared aspects were wrong against their own CSS; free-ratio everywhere, hints carry
-  guidance, `MediaKeyDef.aspect` recorded as the future home). The one registry addition is the
-  per-role `export` override above. Focal point stays out of v1 as an additive per-role capability
-  (§9 Q6).
+Each section descriptor declares `activate: "reorder" | "pin"` + its capability set + (council
+H1) its **active resolver** — see §2.4. A multi-window source (gacha characters feeds 11
+windows) is ONE library; the focal point (§5) handles per-window crops.
 
-## 4. The gallery redesign (R56 adopted; house inventory pinned by the Opus council)
-
-- **Role disclosures reuse what the repo already owns (Opus council H2 — the draft re-derived
-  three house primitives):** collapse state = **`store/collapse`'s `useCollapsed`**
-  (localStorage-backed, the persisted-collapse store ConfGroup itself uses), keyed
-  `media-<ns>-<role>` — NOT a parallel map in `UIState` (that would be "different code for similar
-  things"); the header's disclosure semantics = **`lib/disclosure`'s `disclosureToggle`** (the D25
-  keyboard-operable contract). The role header is lightweight NEW markup only because ConfGroup's
-  header forbids interactive children (D25 nested-interactive) and this header needs the upload
-  button as a **sibling** of the disclosure control. One drop-down per role (the owner's ruling),
-  multi-open (never auto-collapse siblings), all collapsed on first visit. **The collapsed header
-  is a status line** — `<role> · n files` plus a warning badge whenever the section holds an
-  unusable file, a `no match`, or a pin naming a missing file (GOV.UK's summary slot). **And the
-  problem chip surfaces one level up too:** the namespace's existing `ConfGroup` `right` slot
-  (today `media/<ns>/`) gains the warning badge, so a broken file is visible before EITHER
-  disclosure level is opened (the galleries already sit inside collapsed ConfGroups — a role-level
-  chip alone would die behind the group fold). **Auto-open is a pinned rule, not a "may" (Opus
-  sweep ③):** a persisted collapse key always wins; auto-open applies only when the role has NO
-  persisted key and holds a problem; it never writes back.
-- **The FE decomposition is pinned (Opus council H3 — a silent brief beside the ConfTab monolith
-  invites another):** `MediaGallery.tsx` (the ns shell: index query, settings save, pins —
-  unchanged in kind) · `MediaRoleSection.tsx` (disclosure + status header + list) ·
-  `MediaFileRow.tsx` (thumb, badges, move buttons, `⋯` menu) · `CropModal.tsx` (react-easy-crop +
-  zoom slider + the aria riders + the object-URL lifecycle) · `hooks/useMediaUpload.ts` (the
-  per-section job state machine: pick → guard → crop → export → PUT → invalidate, plus the latch,
-  the 409 Replace flow, failure list, retry — unit-testable with no DOM) · `lib/imageExport.ts` +
-  its worker module (guard, drawImage pipeline, format policy — pure, fixture-tested). The `⋯`
-  menu's chrome is the kit's ONE existing popover shell, not a new menu look.
-- **The list stays a list** (rows are half diagnostic text; a 3-column grid at 390 px cannot hold
-  it). **↑/↓ stay permanently** — WCAG 2.2 SC 2.5.7 names adjacent move buttons as *the* conforming
-  reorder pattern — with hit areas fixed to ≥44 px (SC 2.5.8), plus **Move to top / Move to
-  bottom** in a per-row `⋯` menu (the 30-item fix, WCAG-blessed). Handle-drag is deferred polish
-  (§9 Q8): if ever built it reuses `useDragReorder`, handle-only `touch-action: none`, never
-  long-press-lift (the Pointer Events snapshot rule makes that structurally fragile).
-- **Upload affordances:** one button per role-disclosure header; the empty state becomes a
-  **placeholder card** carrying the existing sentence and the `media/<ns>/<role>/` path (the SSH
-  route remains documented — it stays the exact-bytes path, since uploads are always re-encoded);
-  the card becomes tappable in S3b, when there is a flow to tap into (Opus M10 — S2 ships no dead
-  affordance). Named roles: per-key buttons in the key panel. No in-grid "+" tile (no reference
-  product ships one). **Every upload affordance renders only when the server says writes are on:**
-  `MediaIndex` gains a `write_enabled` boolean (Opus M4 — the same server-authority shape as the
-  existing `disabled`/`reason` pair, zero new queries), so a killed switch degrades to today's
-  SSH-only gallery instead of a cropper that dies on a 503. **The model default is `False`, set
-  `True` by `build_index` from `media_write.enabled`** (Opus confirm ①): `disabled_index` builds
-  from two arguments and would otherwise report writes-on for a namespace whose tree is not even
-  mounted — safe-by-default makes the disabled path right by construction.
-- **Delete:** per-row via the `⋯` menu → **the house confirm host** — `store/confirm`'s
-  `requestConfirm({title, body, confirmLabel: "Delete", danger: true})` + the existing
-  `ConfirmDialog` (already the destructive-remove path for agents/skills/servers, F17 focus work
-  done; Opus H2 — no second modal implementation). Filename in the title, "cannot be
-  undone" bolded, destructive-styled **Delete** (never "OK"), dismissive on the left. The manual
-  delete sends **no** revision (the owner deletes a NAME deliberately; today's 204/404 semantics);
-  only the automated Replace-flow cleanup conditions on `?revision=` (§3). **No undo
-  toast** (no trash ⇒ no honest undo; M3 forbids the timed variant on web) and **no
-  don't-ask-again**. The row vanishing on refetch is the inline feedback.
-- **Progress:** one **indeterminate** indicator per section while its upload is in flight (LAN
-  post-crop uploads are sub-second; `fetch` has no upload progress and doesn't need it here);
-  per-file rows appear **only on failure** with retry + dismiss (retry re-uses the held blob).
-  After success the existing index refetch paints the row with its badges already
-  computed — the upload flow feeds the badge vocabulary instead of duplicating it (R56 §7.3).
-- **Rider bug fix:** gallery thumbs switch to `revUrl(f.url, f.revision)` — the SW's
-  StaleWhileRevalidate cache is URL-keyed, so an in-place replace currently paints stale bytes; the
-  helper exists and the gallery is the one consumer not using it (R55 §8.4). **And the
-  `ctrlb-media` cache's `maxEntries: 64` is raised in the same commit as the upload flow (Opus
-  sweep ②):** replaces now mint fresh `?rev=` keys routinely, and a populated install already sits
-  near that budget — one number, one comment, or the symptom is cold-start thumbs.
-
-## 5. Config (§9 Q1–Q3 pend; the shape below is the recommendation)
+### 2.2 Config shape — schema 6 → 7 (the clean fold, owner-ruled)
 
 ```yaml
-media_write:           # top-level, additive — no migration (R47 §4 precedent). Named for the
-  enabled: true        #   OPERATION (Opus M6): `enabled: false` answers 503 on BOTH verbs —
-  max_bytes: 8388608   #   a kill switch that leaves DELETE live would be a reversal you cannot
-                       #   actually switch off. 8 MB (Opus M7): anchored on the actual producer —
-                       #   the client always re-encodes (largest role bound 1.5 MB, generous
-                       #   multiple); exact oversized bytes take the SSH route (§4). gt=0, the
-                       #   voice.stt shape; the detail never echoes the true size.
+media:
+  write:                    # write-path tunables (per-operation naming)
+    max_bytes: 15728640     #   15 MB (owner-ruled). gt=0. Detail never echoes the true size.
+  namespaces:               # ← today's media.<ns> blocks move here ("write" would otherwise
+    gacha:                  #   parse as a namespace — the fold is the migration's whole reason)
+      roles:
+        characters:
+          files:            # ONE ordered list of per-item objects; replaces `order: [names]`
+            - name: lyra-2.png              # a disk file (exactly one of name|bundled — a
+              focal: {x: 0.42, y: 0.18, rev: "…"}   # discriminated union, validator-enforced,
+            - bundled: pegasus              #   identities unique per role; council E10)
+            - name: my-drop.png
+              hidden: true                  # excluded from use, still in the library (§2.3)
+      slots: {wallpaper: lyra-2, ...}       # pins: unchanged shape and meaning
 ```
 
-Inside `media:` is not an option without restructuring — its keys are namespace-validated. The
-green-field fold (`media: {namespaces:…, write:…}`) is recorded as the road not taken: a real
-schema migration of an owner-populated prod key, for a purely cosmetic gain. Client-side ceilings
-(the 40 MP input decode guard, export quality/format defaults) live as named registry constants
-beside the advisory bounds — the same "a knob nobody would turn" rule that put the bounds there.
-The FE reads the switch as `MediaIndex.write_enabled` (§4) — server authority, no config coupling
-in the gallery.
+- **`files` is the unified per-item object list** (the 2026-06-24 extend-don't-migrate directive;
+  Sanity/Umbraco's shape, R57 §6.1). List position = priority. Additive growth (`key`, `hidden`,
+  `focal`, future `z`) — never a sibling map. **Item identity is a discriminated union**: exactly
+  one of `name` (disk file) | `bundled` (registry id); `(kind, id)` unique per role (Emma #10).
+- **`hidden: true`** — the exclusion mechanism (council-renamed from `disabled`, which already
+  means two other things in this subsystem — Opus sweep ②): a hidden entry stays in the gallery
+  (dimmed) but is skipped by resolution everywhere. It is how a bundled default (or any entry) is
+  retired from an all-entries role (rosters/dealt pools, where order cannot exclude). UI label:
+  the **"In use"** switch. **`hidden` and `unusable` take OPPOSITE list treatments (Opus confirm
+  sweep ②): `unusable` HOLDS its position** (the shipped `cycleAt` rule — one bad file must not
+  re-deal the fleet) **while `hidden` is FILTERED OUT** (set-membership; re-dealing is its
+  purpose). Never fold the two into one predicate; §11 pins the pair.
+- **`focal: {x, y, rev}`** — the framing point (§5) **keyed to the file's `revision`** (Opus M2,
+  restoring R57 §9⑤'s dropped safety clause): an in-place SSH overwrite under a stable name makes
+  the stale focal wrong on every window; `rev` mismatch ⇒ treated as unset, framing sheet says
+  "framing was reset — the file changed".
+- **Named keys — metadata binding with the stem fallback as a PERMANENT rule** (Opus M7: not a
+  legacy seam — "drop a file in and it binds" is the shipped owner-facing contract of the
+  namespace and keeps working for SSH drops forever). **Precedence, per-item:** an item binds by
+  its `key` field if present, else by its stem; a key's active art = first usable bound item in
+  collation order (one mental model: priority). The detail panel names the binding source.
+  Uploads always set `key`. On-disk layout UNCHANGED (no media-tree migration; the road not
+  taken: per-key subfolders).
+- **Migration 6→7** (UPDATE_PLAN rules, no-legacy-seams): `media.<ns>` → `media.namespaces.<ns>`;
+  `order: [n1, n2]` → `files: [{name: n1}, {name: n2}]`; `media.write` added; old keys deleted in
+  the write-back. The migration is **config-pure** (steps never touch the filesystem — its own
+  contract) and **writes no bundled entries**: paint parity holds by construction via §2.3's
+  fallback-tier rule. The addressable-name predicate is kept verbatim **and loosened by one
+  character** (§3, defect #8 re-ruled). Idempotency + round-trip collation tests (§11).
 
-## 6. Test obligations
+### 2.3 Collation — ONE chokepoint, server-side (council H2)
 
-BE: the R55 §6 pin list (delete-vs-order/pins config untouched · symlink 404 · double-delete
-204→404 · traversal/encoded-separator 404 · `.part` invisible to index and mount) + streamed-cap
-413 with temp cleanup on both Content-Length and chunked bodies + probe-reject 415 leaves no bytes
-+ `os.link` 409 vs revision-preconditioned overwrite (match → 200 · stale/vanished → 409) + mode
-0644 + the TWO-tier predicate (upgrade test: an order entry legal today — `.hero.png`-class —
-still boots · malformed percent-encoding `%FF` → 422, tested apart from encoded separators ·
-`con.png`/`con.foo.png`/`COM¹.png` all 422 via `ntpath.isreserved`) + sweep-on-boot +
-kill-switch 503 **on both verbs** + `write_enabled` false in the index while killed AND on a
-disabled namespace (the safe-default arm) + **the no-CORS invariant** (Emma #10: an evil-Origin `OPTIONS` preflight for
-PUT/DELETE gets no `Access-Control-Allow-Origin`; plus an architecture guard that fails if CORS
-middleware is ever added without revisiting D65) + revision-conditioned DELETE (match → 204 ·
-replaced-since-observed → 409, file untouched). FE: role-disclosure persistence via `store/collapse` + collapsed
-warning badge (role header AND the ConfGroup `right` chip) + the pinned auto-open rule ·
-affordances hidden when `write_enabled` is false · per-key upload naming + the normalized-stem
-collision Replace path (named keys AND pools) · the section admission latch (a second pick during export is refused — the
-state-machine test) · crop-modal state machine (cancel unwinds, same-file re-pick fires,
-object-URL revoke discipline per R54 §6.1) · export worker (dimensions + `blob.type` asserted —
-**never bytes**, the engines differ; the one-step quality step-down when over the role's byte
-bound) · 409→Replace flow carries the revision · retry uses the exported Blob, never the source
-`File` · failure-row retry/dismiss · `revUrl` thumbs. E2E: one gallery round-trip (upload →
-appears with badges → reorder → delete) on the dev backend. Stylelint: the `image-orientation`
-disallow rule (R54 sweep ② — the two engines read the property off different elements; one stray
-rule would rotate exports on exactly one engine).
+The **server is the collator**; `list_role` stays the one implementation. The rule:
 
-## 7. Slices
+1. `files` entries in list order — disk items resolved against the directory (dangling names
+   drop and self-heal), **bundled items emitted as index rows** (`{bundled: <id>}`, no url — the
+   client maps id → its Vite-hashed asset; the backend registry gains the per-role bundled id
+   list, mirrored FE-side under the existing registry-mirror discipline);
+2. then unlisted disk files (name-sorted — today's rule);
+3. then unlisted bundled entries, **as the FALLBACK TIER**: they participate in RESOLUTION only
+   when the theme's ladder falls through to them (§2.4) — exactly today's semantics, which is
+   what makes the migration parity-free. An explicitly LISTED bundled entry is a full mixed
+   citizen — **and listing is per-ENTRY and deliberate, never a side effect (Opus confirm ①,
+   split by tier at his final confirm): config writes are BUNDLED-TIER-PRESERVING.** A
+   reorder/set-active/toggle may sweep **unlisted DISK rows** into `files` (they already sit in
+   the resolution prefix — listing them changes only their order, zero paint effect, and without
+   this a drag below an SSH-dropped file would be inexpressible and snap back); **unlisted
+   BUNDLED rows are never swept in** — only the bundled entry the owner explicitly acted on
+   becomes listed (the owner's first drag must not promote five bundled characters into the
+   fleet deal — paint parity holds after the first write, not just at rest). The
+   `lib/mediaLibrary` transforms own this rule; §11 pins both arms.
+4. **The wire carries the WHOLE truth, so resolution is decidable from the index alone (Emma
+   confirm E2):** the index emits **every** entry — hidden ones included, marked — and each row
+   carries its per-item facts: `focal`, `hidden`, and **`listed`** (true for a `files` entry,
+   false for an appended fallback row; on bundled rows this is exactly the listed-vs-fallback
+   tier distinction the ladders need — e.g. gacha's role-presence-before-usability predicates
+   read `listed`/disk rows only, and fall through to fallback rows precisely as they fall
+   through to bundled art today). **Resolution skips `hidden`; the gallery shows hidden rows
+   dimmed** — one index, two consumers, no config side-channel. `MediaIndex.collation` is
+   re-versioned **`library-v1`** (Opus sweep ① — the contract string states the new rule).
+
+**Pins resolve against the collated library** — first entry whose stem (disk) or id (bundled)
+matches. **The stem/id tie-break is stated in the pin hint, and the pin row surfaces a duplicate
+note when both a file stem and a bundled id match** (Opus sweep ③ — the old claim leaned on
+diagnostics that never ran there; composes with defect #4's dedupe work in S2).
+
+### 2.4 Active resolution — theme-owned, registry-declared (council H1)
+
+"Which image is live" is **theme-ladder knowledge** (`wallpaperArt`'s pin → kit background →
+bundled scene; `oracleArt`; `serviceIconFrom`; …). The gallery is namespace-generic by
+construction and must never re-derive a ladder (the shipped rule: *"the gallery cannot claim a
+binding the render will not honour"*). **Each section descriptor therefore declares an `active`
+resolver — one function, supplied by the theme module that already owns the ladder, imported by
+BOTH the paint site and the gallery** (the same seam shape as `MediaSlotDef.from`/`bundled`). It
+returns the active/used entry ids + the mode word (`all` / `first` / `deal`) **+ an optional
+`overriddenBy: {sectionId, label}` (Opus confirm ②) for the half of gacha's ladders where the
+winner lives in another section** — when the oracle PIN beats the oracle pool, the pool
+section's card truthfully reads "Currently set by <seat> →" and links the seat section, instead
+of painting a phantom its own grid doesn't hold or claiming emptiness. **Import direction is
+pinned (Opus H1 rider): the registry may import the theme ladder modules
+(`themes/*/roster.ts`, `kit/ownerArt.ts`, `frontier/ownerArt.ts`); those modules never import
+the registry back** (the store↛registry lesson) — and since the import exists, the FE bundled-id
+rows are DERIVED from `defaultRoster()`/`ART`, never hand-mirrored. **Resolvers are pure
+functions of the index rows + the wire's slots — never of config directly** (the §2.3 ④ wire
+facts make that sufficient: `listed`/`hidden` on every row). Ladders keep their shipped fallback
+predicates untouched — which is precisely why upgrade paint-parity needs no filesystem-reading
+migration (Emma #2, re-derived; the `listed` fact is what makes the predicates implementable,
+Emma confirm E2).
+
+### 2.5 No collisions, by construction
+
+Filenames carry no user-facing meaning. Uploads mint auto-unique names: sanitized stem
+(admission predicate, §3), **truncated on a code-point boundary with the UTF-8 byte budget
+reserved for extension + the largest suffix** (Emma #7); on clash `-2`, `-3`, … to a **fixed
+attempt cap, then the timestamp fallback**; the server's plain 409-on-exists is the race guard,
+auto-retried with the next suffix — never a dialog. The v1 revision/overwrite/Replace machinery
+stays deleted (replaces do not exist). `classifyNamed` duplicate diagnostics remain for SSH-drop
+duplicates (defect #4).
+
+## 3. The backend write API
+
+```
+PUT    /api/media/{ns}/files/{role}/{filename}      body = raw png|jpeg|webp bytes
+    -> 201 MediaFile · 404 · 409 name exists (race guard) · 413 over media.write.max_bytes
+       415 extension/bytes disagree · 422 filename/empty body
+DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
+```
+
+- **Persist pipeline** (R55 §4.4, unchanged): mkstemp `.part` in the role dir → fchmod 0644 →
+  stream+count → 413 → fsync → probe → 415 → `os.link` (no-clobber, 409) → unlink tmp →
+  `fsync_dir` → `describe_file`. `.part` boot sweep. `fsutil._fsync_dir` promoted public.
+  No lock (mkstemp + atomic link).
+- **Filename rules, two tiers, one home (`core/media.py`):** addressable tier = today's config
+  semantics **with the `\` clause REMOVED from the bare-filename predicate** (defect #8
+  RE-RULED by council M5: tightening `is_served_file` would make a currently-painting POSIX
+  file vanish from the fleet; the config check is self-described defense-in-depth, so the
+  zero-regression fix is to let config express what the index already serves — `/`, `.`, `..`,
+  empty stay rejected; `is_served_file` is untouched and keeps meaning "will this surface serve
+  it"). Admission tier for new uploads unchanged: NFC-required, no `<>:"|?*`/C0/DEL/U+FFFD, no
+  leading dot / trailing dot-space, `ntpath.isreserved`, ≤255 UTF-8 bytes, allowlisted extension;
+  reject with the reason, never sanitize.
+- **DELETE touches no config**; delete-active-promotes-next is a client composition —
+  **DELETE-first, then the config write; a cleanup failure leaves a dangling entry that drops
+  harmlessly at collation** (Emma-verified degrade path; partial success reported).
+- Shared URL with the read mount stays safe (`Match.PARTIAL`); router registered before mounts.
+
+## 4. The client upload pipeline
+
+- **Picker** (R54): hidden input, explicit `accept`, no `capture`, `input.value` reset,
+  drag-drop + paste riders. **Single-file per pick.**
+- **Input guard:** 15 MB → header-parsed **64 MP** (Honor 20 = 48 MP; ≈ Chrome/Android RAM÷25 on
+  6 GB; guards the PNG/WebP full-size decode path) → HEIC/TIFF/SVG refused by name →
+  `createImageBitmap` proof. Named registry constants (customizable principle). Dimension reader
+  fenced by the shared fixture corpus.
+- **Crop** (unchanged): react-easy-crop@6.2.3, free-ratio, confirm-untouched = "use as is",
+  cancel unwinds; the crop centre seeds the focal point.
+- **Export** (unchanged): worker `OffscreenCanvas.convertToBlob`, `drawImage` never
+  bitmap-crop-rect, pixels capped to the role bound, readback check, `blob.type` naming the
+  extension, EXIF/GPS stripped, webp q0.90-alpha / jpeg q0.85, per-role `export` override
+  (brand/stack png; lossless skips the byte step-down), one step-down retry then badge.
+- **Upload → register, as a two-phase job with idempotent retry** (Emma #4): PUT the blob →
+  201 → ONE config write appending `{name, key?, focal?}`. The failure row persists the
+  **minted filename + phase**; a retry after a 201 **never re-uploads the blob** — it reconciles
+  against the index/config and retries only the registration for that exact identity.
+- **Write serialization** (Emma #3, re-derived lean): ALL media config writes flow through the
+  one existing gallery chokepoint (`patch`), **queued client-side and recomputed from the latest
+  state at send time** — two sections' jobs can't replace each other's list. The two-devices-
+  simultaneously lost-update remains an **accepted residual** (single owner; consistent with the
+  standing micro-window rulings). Server-side revision tokens = the road not taken.
+- **ONE admission path** (Opus M8 — the v1 per-section latch was accordion residue): the entry
+  card always opens the gallery; the gallery's labeled **Add row is the single upload
+  entrance**; exactly one section is ever visible, so ONE job latch (a synchronous in-flight
+  ref, not rendered state) guards admission. The v1 second per-section flag is deleted.
+
+## 5. The focal point (v1; R57 + council H3/E1/E6 folded)
+
+- **Value:** per-item `{x, y}` 0..1 (2 decimals; absent = unset), `rev`-keyed (§2.2).
+- **Control:** fixed centre reticle over a pannable image (react-easy-crop reused; focal = crop
+  centre, one line; no occlusion), tap-to-place coarse entry, transient rule-of-thirds flash.
+  **Flow:** upload seeds focal silently; editing = **"Set framing"** on the item detail —
+  editable any time. **Framing previews:** one small window per destination, geometry from the
+  registry's preview descriptors — **declared coarse and captioned "previews are examples"**
+  (Statamic's honesty; council M4 partial: preview aspects are approximations by design, the
+  real surfaces' CSS stays the paint authority; where a card aspect must be exact it gets the
+  house invariant-test treatment).
+- **The math, with its guard as part of the contract (Emma #1 — HIGH):**
+  `P(f, s) = s ≤ 1+ε ? 0.5 : clamp01((f·s − 0.5)/(s − 1))` per axis — under cover at least one
+  axis has s = 1 (division by zero in the bare formula; NaN would void the whole
+  `object-position`). Exact-1 and near-1 test arms pinned.
+- **The render contract is a property of the ITEM, not the call site (council H3):** one
+  `focalPosition(item, box)` where an item carries its mapping mode — owner items = centred
+  `{x,y}`; **bundled items = `mode: proportional`** (their hand-tuned strings, untouched
+  semantics). Every consumer becomes a per-window `useFocalPosition(ref, item)`
+  (ResizeObserver-measured box): **the `--cv-focus`/`--cv-hero-focus` CSS inheritance chain is
+  REWRITTEN** (a centred value is a function of each window's own overflow — it cannot be
+  published once and inherited by two windows), and `coverHeroFocus`'s percentage-point
+  arithmetic is re-expressed as a per-window fractional offset. **S4 is honestly sized: a
+  rewrite of ~10 paint sites, not plumbing reuse.** A surface that cannot measure falls back to
+  proportional (visible, weaker — recorded). Cover surfaces only (`contain` + focal is actively
+  wrong); the registry says which roles offer it.
+- **Bundled entries are non-framable in v1** (Emma #6: converting a hand-tuned proportional
+  value through the reticle produces a visible no-op-edit jump; a per-entry focus-mode edit
+  path is the recorded future).
+- Future recorded, not built: `z` zoom (additive field), per-destination crop overrides, region
+  hotspot (rejected for v1).
+
+## 6. The gallery (R59 + council folds)
+
+- **6.1 Entry affordance:** **one card per DECLARED destination** (council H5, refining the
+  uniform-scope ruling — **OWNER-RATIFIED 2026-08-24**; the owner's own alternative, one POOLED
+  family gallery whose image ORDER maps positionally onto the PCs/services, is the recorded
+  road-not-taken: positional binding makes a reorder silently re-assign which machine gets which
+  picture, and a fleet add/rename shifts every assignment — per-key libraries keep bindings
+  explicit; revive only on the owner's ask if the two-tap flow annoys in practice): pool roles and static named keys (frontier's 3 stack
+  layers) get their own card; **data-derived key families (`kit/services` ×2, `kit/hosts`) get
+  ONE role card** carrying the key list (today's RoleSection shape) — tapping a key row opens
+  the SAME gallery modal scoped to that key, and an **"Unassigned" bucket** homes files bound to
+  no key (a rename's aftermath — otherwise invisible and undeletable). Every key still has its
+  own gallery; the Conf tab doesn't grow dozens of art-painting cards. The card: full-width,
+  destination-shaped (`aspect-ratio` from the registry), painted with the **active image per the
+  §2.4 resolver**, status line + warning chip; multi-active = collage + the mode word from the
+  same resolver; **when the resolver reports `overriddenBy`, the card says "Currently set by
+  <seat> →" and links that seat section** (§2.4 — never a phantom image its own grid doesn't
+  hold). Empty = "Add an image" face (opens the gallery, §4). Gutenberg a11y shape. No
+  hover-revealed actions.
+- **6.2 Container:** full-screen modal on the house dialog shell (`role="dialog" aria-modal`,
+  `lib/focusTrap`, Escape, focus restore; never `BottomSheet`). **The Android-Back guard is a
+  shared hook `useOverlayBackGuard`** (Opus H4 — second/third customers already exist) with
+  **one close primitive** (Emma #5): UI close (✕/Escape) calls `history.back()` and the
+  `popstate` handler is the ONLY closer — no orphaned history entries, re-entry guarded.
+  Chrome: ✕ + section title; the labeled `Add an image` row (≥56 px).
+- **6.3 Grid:** 3 columns; tiles at the role aspect (square unknown); gap/gutter 12–16 px; kit
+  radius. Corners: bottom-end = in use (24 px check + 2 px accent ring) · top-end = problem ·
+  bottom-start = origin (bundled glyph). **Decode budget stated** (Opus M3): `loading="lazy"`,
+  `decoding="async"`, `content-visibility: auto`, in-flight decode cap — the grid paints
+  originals (no server thumbnails by ruling) and libraries grow monotonically. **The SW
+  `ctrlb-media` bound is re-based on a plain generous constant with a written rationale**
+  (the registry cannot derive library sizes — the v2.0 rider line was wrong).
+- **6.4 Item detail panel** (tap a tile): filename, dimensions/size, badges spelled out, the
+  binding source (key vs stem, §2.2), and the capability-gated actions: Set as active / Use here
+  · Set framing · In use · Delete (absent on bundled). Tap = open detail, never tap = apply.
+- **6.5 Selection & state:** `files` order stays the storage; **Set as active = move-to-front**;
+  seat sections write the pin ("Use here"). In-use marks from the §2.4 resolver: first-wins →
+  the active tile; roster/pool → check per used member, `hidden` entries dimmed, rotation said
+  in words (no live "currently painted" tile for dealt pools — the field's honest form).
+  **a11y (Emma #9):** tiles stay plain dialog-opening buttons — membership lives in the
+  accessible description; `aria-checked` only on the detail panel's real "In use" switch;
+  `aria-current="true"` on a genuinely current item. Delete-active promotes the next entry in
+  the same write; delete keeps `requestConfirm`; no undo toast.
+- **6.6 Bundled entries:** one grid, mixed by priority once listed (§2.3); origin glyph +
+  "Bundled" in the detail; undeletable (action absent, not disabled); non-framable in v1 (§5).
+- **6.7 Rider fixes** (defect register §8): the `?rev=` freshness class closed at every paint
+  site; SW cache single-keyed + re-based bound; the media index query scoped to the Conf
+  surface.
+
+## 7. Reorder (R58; drag primary)
+
+Extend `useDragReorder` (never dnd-kit: +15.3 KB gz, frozen pre-React-19 line). Gap work
+G1–G10 (~150 TS + 25 CSS + 40 tests), order G6/G5 → G1 → G2 → G4 → G3 → hygiene; the field's
+displaced-motion numbers are literally our `--dur-slow`/`--ease-std` tokens. **The held-commit
+state machine is explicit (Emma #8):** success holds the transform until the authoritative
+refetch lands; **error releases in `finally`** — snap back to the pre-drag order, clear
+autoscroll/transforms, keep the error toast; drag start is refused through a synchronous
+in-flight ref. ↑/↓ buttons stay (WCAG floor, ≥44 px) with move-to-top/bottom in the detail
+panel; both drag and buttons hidden where order is meaningless.
+
+## 8. The defect register (12 verified findings; fix homes — #8 re-ruled per §3)
+
+| # | sev | defect | fix home |
+|---|---|---|---|
+| 1 | HIGH | `?rev=` missing at ~10 paint sites (resolvers drop `revision`) — stale art fleet-wide after in-place replaces | S2 |
+| 2 | MED | SW cache double-filled (bare vs `?rev=` keys) vs `maxEntries: 64` | S2 (single-key via #1; re-based bound §6.3) |
+| 3 | MED | media index refetches both namespaces on EVERY window focus once Conf opened | S2 (scope to the Conf surface) |
+| 4 | MED | duplicate pool stems invisible; pin select emits duplicate options | S2 (+ §2.3's stem/id pin note) |
+| 5 | MED | 3 gacha pins empty on fresh installs | dissolved by §2.3 (bundled ids on the wire); registry rows S0 |
+| 6 | MED | fixed namespace stays disabled till restart; message silent about it | S1 (one sentence) |
+| 7 | MED | "unreadable file" mislabels unsupported formats | S1 (one string) |
+| 8 | MED | backslash filename breaks reorder with an opaque 422 | S1 — **RE-RULED (council M5): drop `\` from the bare-filename predicate** (config accepts what the index serves); `is_served_file` untouched |
+| 9 | LOW | alpha-art thumbs invisible | S2 (checkerboard + contain) |
+| 10 | LOW | stacked "Settings saved" toasts per reorder tap | S2 (quiet flag on `patch`) |
+| 11 | LOW | ↑/↓ shown where order is meaningless | S2 |
+| 12 | LOW | a11y batch (headings, `role="status"`, badge text, img attrs) | S2 |
+
+Audited sound (don't re-tread): reorder concurrency, failed-PUT surfacing, object-URL hygiene,
+write shape, Conf-draft isolation, `(missing)` pins, backend probe/collation/containment.
+
+## 9. Performance & Phase-19 fit (council M6)
+
+`build_index` stats + header-probes every file per GET; the library model grows the tree by
+design. **Recorded as the Packet ④ item** (revision-keyed memo seam = the SYS-8 recorded home)
+with an expected-library-size note so H1's media baseline is taken AFTER this ships; the new FE
+modules (§12) are logged in HARDENING §7b's delta register in S0 so Packet ⑤ audits a real
+inventory. Defect #3's scoping fix addresses frequency; the memo addresses unit cost — both
+recorded, neither silently absorbed.
+
+## 10. The ruling ledger (2026-08-24 decision session — ALL CLOSED)
+
+① kill switch DROPPED (unconditional; toggle-rule waiver recorded) · ② config = the clean fold,
+schema 6→7 · ③ 15 MB · ④ 64 MP (Honor 20) · ⑤ free-ratio ratified; "derive from the element" =
+the framing previews · ⑥ focal IN v1 · ⑦ collisions designed away (additive-only, auto-unique) ·
+⑧ drag primary (extend the house hook) · ⑨ single-file pick · ⑩ 1.7.x; 1.8 RESERVED · plus: the
+LIBRARY model · bundled defaults first-class · per-key scope (§6.1's H5 role-family-card refinement
+OWNER-RATIFIED 2026-08-24; the pooled positional-order family gallery = the recorded
+road-not-taken) · full-screen gallery · in-use highlight per §6.5 · D65 RATIFIED as amended ·
+push after the council closes + the owner's final read.
+
+## 11. Test obligations
+
+BE: R55's pin list (delete-vs-config · symlink 404 · double-delete · traversal/encoded-separator
+404 · `.part` invisible) + streamed-cap 413 both body kinds + 415 leaves no bytes + `os.link`
+409 + mode 0644 + the two-tier predicate (upgrade arm incl. **a backslash-named order entry
+loading AND reordering after the predicate loosening**; `%FF` → 422; DOS-device names → 422) +
+boot sweep + the no-CORS invariant + architecture guard + **schema-7 migration arms** (fold +
+files transform + write-back deletes old keys; idempotent; **a populated v6 config round-trips
+to identical collation output, incl. the all-unusable-role arm** — parity is by construction,
+the test proves it) + **collation arms** (hidden skipped · unlisted appends · fallback-tier
+bundled · listed-bundled mixing · pin over stem/id + the duplicate note · discriminated-union
+validation: `{name,bundled}` both → 422, duplicate identity → 422) + **wire arms** (`MediaFile.
+focal`/`hidden`/`listed` merged; hidden rows present-but-marked; bundled rows carry id + `listed`,
+no url; a fallback bundled row vs a listed one distinguishable from the wire alone — the E2 arm;
+`collation: "library-v1"`; resolver purity: active resolvers consume index+slots only) +
+**bundled-tier-preserving writes** (a drag may sweep unlisted DISK rows in — the arm: a drag
+past an unlisted SSH-dropped file COMMITS AND HOLDS, no snap-back — while unlisted BUNDLED rows
+are never swept; the first-drag parity arm) + **`overriddenBy`** (pin
+beats pool → the pool card carries the seat pointer, no phantom active) + **the
+`hidden`-vs-`unusable` pair arm** (unusable holds position · hidden filtered out — asserted
+side by side so neither predicate absorbs the other). FE: entry
+cards (active from the §2.4 resolver · collage + mode word · status chip) · the H5 role-family
+card + key rows + Unassigned bucket · gallery modal (focus trap · Escape-via-history.back ·
+popstate single-closer — the orphan-entry regression arm) · grid corners + a11y (description-
+carried membership · `aria-checked` on the switch only · `aria-current`) · set-active both kinds
+(move-to-front · pin write; seat sections read-only otherwise) · delete-active-promotes-next
+single write · hidden toggle dims + excludes · bundled undeletable/non-framable · auto-unique
+naming (byte-budget truncation · suffix cap · timestamp fallback · 409-race retry) · the ONE
+admission latch (sync ref) · two-phase upload retry (never re-uploads after 201) · serialized
+`patch` queue (recompute-at-send; interleaved sections) · crop modal state machine · export
+worker arms · focal: `focalPosition` table (exact-1 · near-1 · clamps · proportional mode ·
+missing w/h) · `useFocalPosition` fallback · framing previews from registry + the "examples"
+caption · drag (displacement pure fn · autoscroll curve · held-commit success/error release ·
+sync-ref drag refusal) · defect regression arms (#1 rev per resolver · #3 no focus refetch when
+Conf inactive · #4 dedupe+badge · #10 quiet write). E2E: one full round-trip (open section →
+upload → crop → active → framing → drag reorder → delete → bundled fallback paints) + the
+Back-gesture close. Stylelint: `image-orientation` disallow.
+
+## 12. Slices (each: Opus build from a pinned brief → main-seat audit → Emma-lane review → owner eyeball)
+
+**The FE module map is PINNED (council H4). Acceptance line: `ConfTab.tsx` gains ZERO net
+lines — `MediaGallery` stays its single child and hosts the modal.**
+Pure: `lib/mediaLibrary.ts` (**config transforms only** — setActive / toggle-hidden /
+delete-promote / append / the tier-preserving write rule — unit-tested like `lib/media.ts`,
+**taking section descriptors as ARGUMENTS: `lib/` stays theme-free** — the descriptors + active
+resolvers live in `theme-engine/mediaRegistry.ts`, the module allowed to know themes; Opus H4
+confirm rider) · `lib/focalPosition.ts` ·
+`lib/imageExport.ts` + worker. Hooks: `hooks/useMediaLibrary.ts` (index + settings + registry →
+sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks/useMediaUpload.ts`
+(pick → guard → crop → export → PUT → register; owns the latch + two-phase retry) ·
+`hooks/useFocalPosition.ts` · `hooks/useOverlayBackGuard.ts`. Components:
+`components/media/{SectionCard, GalleryModal, LibraryGrid, ItemDetail, FramingSheet, CropModal}.tsx`.
 
 | slice | content | gate |
 |---|---|---|
-| S0 | D65 entry (+ in-place AMENDMENT pointers on D52/D53, the D54 §12 precedent) · SECURITY_MODEL §2.x · docstring truth pass (3 headers) · **MEDIA_PLAN §0/§7 amendment** (they assert "no write API anywhere" — the doc-truth class) · **SPEC.md** API inventory + the read-only line · **CLAUDE.md doc-map row** for this plan (AGENTS.md carries no per-plan map — Opus confirm) · **RESEARCH.md pin row** for react-easy-crop@6.2.3 (the first runtime dep beyond react/query) · ROADMAP H2 → pointer here · TODO phase · HARDENING §8.2 rows (STT class · DNS-rebinding/TrustedHost · the forward-ruling note) | docs-only commit |
-| S1 | the write API: two-tier filename predicate · streaming writer in `core/media.py` · PUT/DELETE routes (revision preconditions) · `media_write` config + `MediaIndex.write_enabled` · `.part` boot sweep · `fsync_dir` promotion · BE tests | full gate + curl round on dev |
-| S2 | gallery restructure on the pinned decomposition: role disclosures (`useCollapsed` + `disclosureToggle`) + status headers + the ConfGroup `right` chip · `⋯` menu (kit popover shell; move top/bottom · delete via `requestConfirm`) · ≥44 px hit areas · empty-state card (non-tappable yet) · `revUrl` fix + the SW `maxEntries` raise | full gate + gallery e2e |
-| S3a | the pure half: `lib/imageExport` + the worker + the input guard + the format policy + the shared-fixture fence — fixture-tested, wired to nothing | full gate |
-| S3b | the wiring: picker + `CropModal` + `useMediaUpload` (latch · 409 Replace · failure rows · retry) + per-key & pool stem-collision flows + the empty card goes tappable | full gate + e2e arm |
-| S4 | the owner device round (the parked 2026-08-12 round folds in here: real drops, real-touch reorder, crop feel, HEIC refusal wording, R54/R56's named device probes) | owner acceptance |
-| S5? | handle-drag reorder via `useDragReorder` — only if the device round asks for it | own round |
+| S0 | docs: D65 · SECURITY_MODEL §2.x · MEDIA_PLAN amendment · SPEC · doc-map row · RESEARCH pins · backend+FE registry bundled-id rows (**retire `MediaSlotDef.bundled`** — M4 rider; **FE ids derived from `defaultRoster()`/`ART`, not hand-mirrored** — H1 rider; **"coarse, examples only" in the preview-descriptor TYPE's doc comment** — M4 confirm ask) · ROADMAP/TODO · HARDENING §8.2 rows + §7b FE-module delta entries (§9) · docstring truth pass | docs-only commit |
+| S1 | backend: write API · schema-7 migration · `media.write` · collation v2 + wire (`focal`/`hidden`/bundled rows/`library-v1`) · predicate loosening (#8) · `.part` sweep · `fsync_dir` · defects #6/#7 · BE tests | full gate + curl round on dev |
+| S2 | gallery: section descriptors + active resolvers (H1) · entry/role-family cards · modal + `useOverlayBackGuard` · grid + detail panel · set-active/use-here/promote/hidden · defect #1–#4, #9–#12 · e2e | full gate + e2e |
+| S3a | pure: imageExport + worker + guard + fixture fence | full gate |
+| S3b | wiring: picker + CropModal + useMediaUpload (latch · naming · two-phase retry · failure rows) + add-row live | full gate + e2e arm |
+| S4 | focal: focalPosition/useFocalPosition + FramingSheet + registry preview descriptors + **the ~10 paint-site rewrite** (the `--cv-*` chain → per-window hooks; `coverHeroFocus` refractionalized) | full gate + visual probe |
+| S5 | drag: G6/G5→G1→G2→G4→G3→hygiene + held-commit machine | full gate |
+| S6 | owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball · crop/framing/drag feel · Fennec expected-partials | owner acceptance |
 
-Each slice: Opus build from a pinned brief → main-seat audit → Emma-lane review → owner eyeball
-(the standing cadence).
-
-## 8. Research reconciliation (main-seat rulings on the three dossiers)
+## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 
 | finding | source | ruling |
 |---|---|---|
-| multipart POST is CORS-safelisted ⇒ drive-by write; use raw-body PUT/DELETE | R55 §2 | **ACCEPTED** — the shape-picking finding (§1/§2) |
-| R54's state machine names "R55's multipart POST" | R54 §6.2 | **stale cross-reference, overruled** — PUT wins |
-| `UploadFile` spools to `/tmp` (RAM on emma) before the handler runs | R55 §1.1 | **ACCEPTED** — second, independent argument for the raw stream |
-| streamed counter is the only honest cap; 413 mid-body verified | R55 §3 | **ACCEPTED**, cap in config (voice.stt shape) |
-| `.part` temps; extension-only index filter trap | R55 §4.2 | **ACCEPTED** |
-| one shared bare-filename predicate (config.py + upload) | R55 §5.1 | **ACCEPTED** (no-duplication rule) |
-| 409 + `?overwrite=1`; auto-suffix rejected | R55 §5.3 | **ACCEPTED**; UI = Replace/Cancel (§9 Q7) |
-| DELETE touches no config; `(missing)` is pins-only | R55 §6 | **ACCEPTED**, verified in code |
-| gallery thumbs need `revUrl` | R55 §8.4 | **ACCEPTED** (rider fix, S2) |
-| STT endpoint is the existing safelisted-class instance | R55 §2 | **ACCEPTED → Phase 19 register**, not fixed here |
-| react-easy-crop ①, with the three adoption riders | R54 §2.6 | **ACCEPTED** (deps-OK memory; 8.6 KB vs ~200 lines of gesture code) |
-| `drawImage` never the crop-rect form; worker export; read `blob.type`; silent-canvas readback | R54 §3–§4, §10① | **ACCEPTED wholesale** — probe-grounded |
-| always re-encode (EXIF/GPS strip; allowlist normalization) | R54 §3.4/§6.2 | **ACCEPTED**; SSH stays the exact-bytes path, stated in the gallery copy |
-| refuse HEIC by name; no wasm decoder | R54 §5.2 | **ACCEPTED** |
-| stylelint `image-orientation` disallow | R54 sweep ② | **ACCEPTED** (cheap fence, invisible-bug class) |
-| buttons are WCAG's named reorder pattern; drag = optional, handle-only | R56 §3 | **ACCEPTED**; drag deferred to S5-on-ask |
-| cover-fit default = "use as is"; no skip button | R56 §5 | **ACCEPTED**, composed with R54's always-re-encode |
-| modal delete confirm; no undo toast; no suppress-checkbox | R56 §6 | **ACCEPTED** |
-| header upload + tappable empty card; no in-grid tile | R56 §4 | **ACCEPTED** |
-| accordion: multi-open, persisted, status in header, auto-open-once on problem | R56 §8 | **ACCEPTED**; persistence home CORRECTED by the Opus council (H2): `store/collapse`, the house's persisted-collapse store — R56 guessed `UIState` without finding it |
-| focal point is a per-role capability for variable-ratio surfaces only | R56 §9 | **ACCEPTED as deferral** (§9 Q6) — `kit/background` is the one candidate |
-| Immich: indeterminate group progress; failure rows w/ retry; no Wake Lock | R56 §7 | **ACCEPTED** (Wake Lock divergence recorded) |
+| v1 Replace/Cancel · `?overwrite` · revision cleanup · order-patch rider · `write_enabled` | R55/R56 + council 1 | SUPERSEDED (library model) |
+| v1 focal deferred · accordion disclosures | R56 | SUPERSEDED (owner; R59) |
+| clamped-centred math + the s≤1 guard as contract | R57 §5 + Emma #1 | ACCEPTED |
+| reticle control · editable-later · previews · `{x,y}` storage · rev-keying | R57 §9 | ACCEPTED (rev-key restored by Opus M2) |
+| per-item mapping mode (proportional bundled · centred owner) | council H3 | ACCEPTED — supersedes "one rule everywhere" with "one FUNCTION everywhere" |
+| extend `useDragReorder`; held-commit | R58 | ACCEPTED (+ the explicit error release, Emma #8) |
+| 3-col grid · full-screen modal · preview-card entry · explicit set-active · two corners · detail panel | R59 §11 | ACCEPTED |
+| defaults below a labelled divider | R59 §11.5 | DEVIATION recorded (§6.6): ours are reorderable by owner ruling |
+| "currently painted" marker for dealt pools | R59 §6.4 | NON-BUILD (word-in-header adopted) |
+| server manifest for migration parity | Emma #2 fix | ROAD NOT TAKEN — fallback-tier collation (§2.3/§2.4) achieves parity config-pure |
+| server revision tokens for `files` writes | Emma #3 fix | ROAD NOT TAKEN — client serialization at the chokepoint; two-device residual accepted |
 
-## 9. Open owner questions (the clean-session agenda; REC = the standing recommendation)
+## 14. Council record — round 1 (2026-08-24 morning, on v1)
 
-1. **Kill-switch default** — `media_write.enabled`: REC **ON** (the verb choice already closes the
-   drive-by class; the switch exists for posture, not as the gate). It gates BOTH verbs.
-2. **Config home** — REC the additive top-level `media_write:` block; the `media:` fold is a real
-   prod migration for cosmetics.
-3. **`max_bytes` default** — REC **8 MB** (Opus council M7: anchored on the actual producer — the
-   client always re-encodes, largest role bound 1.5 MB; exact oversized bytes take the SSH route).
-4. **Input decode guard** — REC 40 MP (every phone camera through 48 MP-binned; refuses 108/200 MP
-   modes); 24 MP is the stricter defensible alternative.
-5. **The crop window is free-ratio for EVERY role in v1** (Opus council H1 made this the rule, not
-   the exception — the draft's three fixed-aspect roles were wrong against their own CSS). REC:
-   ratify; aspect-preset chips or per-key destination shapes are recorded future options.
-6. **Focal point** — REC: not in v1; recorded as an additive `MediaRoleDef` capability;
-   `kit/background` (viewport-filling) is the only role the field's discriminator says wants one.
-7. **Collision UI** — REC Replace / Cancel only (no keep-both; auto-suffix binds to nothing in
-   named roles and silently re-deals pools). Applies to named keys AND pool stem collisions.
-8. **Reorder beyond the buttons** — REC not in v1; buttons + move-to-top/bottom. If the device
-   round wants more, the options in order of field confidence (R56 §11.2): a per-section
-   **Reorder mode** (the iOS lever — removes the drag/scroll conflict), then handle-drag via
-   `useDragReorder` (S5).
-9. **Multi-file pick** — REC single-file per pick in v1 (each pick flows through one crop modal);
-   `multiple` turns the per-section latch into a queue and changes nothing else, later, if real
-   use wants batch.
-10. **Phase/version** — REC: new TODO phase (next free number), rides the 1.7.x line per the
-    version policy.
+Emma BUILD WITH CHANGES (9 MED + 1 LOW + 2 confirm catches → all-RESOLVED); adversarial Opus
+BUILD WITH CHANGES (3 HIGH/7 MED/3 LOW/3 sweep + 3 confirm pins → "RESOLVED overall"); one
+partial overrule (standalone phase doc). Surviving catches: the two-tier predicate, the
+`.part`/persist ladder, the fixture fence, free-ratio (H1), house-primitive reuse (H2), per-role
+export (L1). The v1 six-module decomposition (H3) is superseded by §12's larger pinned map.
+Findings superseded by the owner's model change are struck in §13 — the premise moved, not the
+catches.
 
-## 10. Device-round probes owed (named by the dossiers; fold into S4)
+## 15. Council record — round 2 (2026-08-24, on THIS rewrite; confirm rounds pending)
 
-EXIF orientation of a real portrait phone photo through the full pipeline (R56 sweep ③ / R54 §3) ·
-the 413-mid-body behavior over Tailscale Serve HTTPS from mobile browsers (R55 §10) · whether the
-owner's phone produces HEIC (decides the refusal message's prominence, R54 §11.3) · PWA-standalone
-survival across the photo-picker activity (R54 §11.4) · jpeg q0.85 eyeball on 2–3 real art files
-(R54 §11.5) · crop feel + Fennec expected-partials.
+**Emma lane (blind, sol high; correctness/security): BUILD WITH CHANGES — 1 HIGH + 9 MED.**
+E1 focal singularity (HIGH) → folded §5 (guard = contract). E2 migration needs FS facts → fix
+RE-DERIVED (fallback-tier collation, §2.3/§2.4; her manifest = road not taken); **her confirm
+round caught the re-derivation incomplete — the wire lacked the listed-vs-fallback fact, so
+ladders couldn't implement their predicates without a config side-channel; closed by §2.3 ④
+(`listed` on every row · hidden rows present-but-marked · resolver purity) + the §11 E2 arm.** E3 files-list
+lost update → RE-DERIVED lean (serialized chokepoint queue, §4; tokens = road not taken;
+two-device residual accepted). E4 two-phase upload retry → folded §4. E5 history orphan → folded
+§6.2 (single closer). E6 bundled framing jump → folded §5/§6.6 (non-framable v1). E7 suffix vs
+255 bytes → folded §2.5. E8 drag error release → folded §7. E9 aria-checked → folded §6.5.
+E10 identity invariants → folded §2.2. Sound list: collation determinism, pin tie-break
+determinism, v7-under-v6 rollback refusal, verb design, DELETE-first degrade, #8
+index/mount consistency (now moot per M5), contain-exclusion, cross-role write composition.
 
-## 11. Council record (2026-08-24 — the pre-build design round)
+**Adversarial Opus (architecture/design): SHIP WITH CHANGES — 5 HIGH + 8 MED + 3 sweep.**
+H1 active-resolution seam → folded §2.4. H2 collation chokepoint + wire → folded §2.3.
+H3 focal three-patterns → folded §5 (item-mode; S4 re-sized). H4 FE module map → folded §12
+(+ zero-net-lines acceptance). H5 derived-key card explosion + unbound files → folded §6.1
+(⚠ owner eyeball: refines the uniform-scope ruling). M1 seat capabilities → folded §2.1/§6.4.
+M2 focal rev-key → folded §2.2. M3 decode budget + SW bound re-base → folded §6.3. M4 preview
+geometry → PARTIAL (coarse-by-design + "examples" caption + invariant tests where exact; CSS-var
+inversion = road not taken; rider ACCEPTED: retire `MediaSlotDef.bundled`, S0). M5 defect-#8
+re-ruling → folded §3/§8. M6 Packet ④/⑤ notes → folded §9. M7 key-vs-stem precedence → folded
+§2.2. M8 latch residue → folded §4. Sweep: `collation: "library-v1"` (folded §2.3) · `hidden`
+rename (folded §2.2) · pin stem/id note (folded §2.3). Incidental: the all-unusable-role parity
+arm → folded §11.
 
-**Emma lane (blind, gpt-5.6-sol high; correctness/security lens): BUILD WITH CHANGES — 9 MED +
-1 LOW, every finding ruled, none dropped:**
+**Main-seat notes:** two Emma prescriptions re-derived leaner per the standing calibration (take
+the finding, re-derive the fix); H5 refines an owner ruling and is flagged for the owner's
+eyeball in §6.1/§10; E6+H3 compose (item-mode carries bundled-proportional; framing hidden on
+bundled).
 
-| # | finding (condensed) | ruling |
-|---|---|---|
-| 1 | one strict predicate would break existing configs at boot (`.hero.png`/NFD in `order`) | **ACCEPTED** → two-tier predicate: addressable (config, today's semantics verbatim) + upload-admission (strict, new writes only); upgrade test (§2) |
-| 2 | a stale Replace confirm clobbers a newer replace / resurrects a delete; bare `overwrite=1` underspecified | **ACCEPTED, fix re-derived leaner**: revision-preconditioned `?overwrite=<revision>` (If-Match semantics on the wire's existing token) instead of her global write lock; stat→replace micro-window = accepted residual (§2) |
-| 3 | DNS rebinding defeats the preflight argument on the raw LAN bind (conf 0.72) | **ACCEPTED as register item**: app-wide property, not media-specific → SECURITY_MODEL residual + Phase 19 row naming `TrustedHostMiddleware` (§1) |
-| 4 | named-role uploads collide by BINDING KEY across extensions without a 409 (`cube.png` vs new `cube.webp`) | **ACCEPTED**: per-key flow detects by normalized stem (`classifyNamed` reuse), Replace confirm, publish-before-delete (§3) |
-| 5 | a second pick can replace an in-flight job's state | **ACCEPTED**: per-section admission latch, pick→terminal (§3) |
-| 6 | "retry holds the original File" contradicts the always-re-encode pipeline | **ACCEPTED** (a real internal contradiction of the draft): retry payload = exported Blob + final name/type only (§3) |
-| 7 | pixel cap ≠ byte bound; the "never trips badges" test invariant cannot hold | **ACCEPTED, fix re-derived**: one quality step-down retry, then upload WITH the advisory badge — her hard reject would contradict the bounds' advisory-by-design charter; the invariant test dropped (§3/§6) |
-| 8 | malformed `%FF` percent-encoding arrives as U+FFFD and silently mints a different name | **ACCEPTED**: U+FFFD rejected in upload-admission (§2) |
-| 9 | hand-rolled DOS-device set misses `con.foo.png` / `COM¹.png` | **ACCEPTED**: stdlib `ntpath.isreserved` (§2) |
-| 10 | the no-CORS assumption is load-bearing and untested | **ACCEPTED**: evil-Origin preflight test + an anti-CORS-middleware architecture guard (§6) |
+**Confirm rounds (2026-08-24):**
+- **Emma: 9/10 CONFIRMED-RESOLVED on the first pass; her E2 confirm caught the re-derivation
+  incomplete** (the wire lacked the listed-vs-fallback fact) → closed by §2.3 ④ →
+  **final micro-confirm: "CONFIRMED-RESOLVED … Final verdict on v2.1 — RESOLVED."**
+- **Opus: 14/16 CONFIRMED-RESOLVED; 2 blockers + 4 rider residuals, all folded:** the same wire
+  fact (H2 — landed §2.3 ④ concurrently with his read) · **cross-lens ① first-drag tier
+  promotion** (whole-list writes would sweep the fallback tier into the fleet deal) → the
+  tier-preserving-writes rule, §2.3 · **cross-lens ② pin-beats-pool phantom** → `overriddenBy`
+  on the resolver return, §2.4/§6.1 · H1 rider (import direction + derived FE bundled ids,
+  §2.4/S0) · H4 rider (descriptors live in the registry, `lib/` stays theme-free, §12) ·
+  M4 ask (type-doc caption, S0) · sweep-② rider (`hidden` vs `unusable` opposite treatments,
+  §2.2). **His final confirm caught the tier rule one clause too broad** (uniform tier
+  preservation made a drag below an unlisted SSH-dropped file inexpressible — visible snap-back
+  on the owner's populated tree) → **split by kind, §2.3 ③** (disk rows sweepable, order-only
+  effect; bundled rows never) → **final confirm: "CONFIRMED-RESOLVED … Final verdict: RESOLVED —
+  the plan is ready to build; no blockers remain from the architecture/design lens."**
 
-Her sound-areas note confirms: no request shape makes PUT preflight-free; `no-cors`/forms/WebSockets
-do not reopen the class; the `.part` ordering and `os.link` no-clobber are sound; a 503 kill-switch
-surfacing as an ordinary failure row is acceptable.
+**COUNCIL ROUND 2: CLOSED, both lenses at an explicit final RESOLVED (2026-08-24).**
 
-**Emma confirm rounds (three, to all-RESOLVED):** round 1 — #1–#3, #5–#10 RESOLVED; both
-re-derivations upheld in terms (#2: the compare→replace micro-window "is exactly the documented
-residual… a lock is disproportionate"; #7: "a hard rejection would contradict the existing
-SSH-drop and advisory-bound contract"); one NEW MED (0.97), accepted verbatim — the #4 Replace
-flow's cleanup DELETE was unconditional while its stale window spans the whole crop flow → the
-cleanup DELETE became revision-conditioned (`?revision=`, 409 leaves both files, duplicate
-diagnostics make it recoverable). Round 2 — #4 RESOLVED, one edge: a same-filename Replace would
-guarantee a false 409 from its own cleanup → cleanup skipped when final filename == old filename
-(adopted verbatim); manual per-row delete confirmed unaffected. Round 3 — **"RESOLVED overall."**
+## 16. Device-round probes (S6)
 
-**Adversarial Opus (architecture/design lens): BUILD WITH CHANGES — 3 HIGH · 7 MED · 3 LOW +
-3 sweep items; every load-bearing claim main-seat re-verified against the code before folding
-(store/collapse · disclosureToggle · requestConfirm · the kit CSS geometry · SW maxEntries).**
-Its summary judgement, accepted: the backend half was grounded; the FE half had adopted R54/R56
-recommendations "without checking them against what this repo already owns and against what its
-own CSS does."
-
-| finding | ruling |
-|---|---|
-| H1: `MediaRoleDef.aspect` wrong on all three declared roles (svcicon/brand paint `contain`; banner geometry is adopter-variable per D54 A2) — a wrong aspect destructively discards pixels | **ACCEPTED** — no role aspect in v1; free-ratio everywhere; hints carry guidance; `MediaKeyDef.aspect` recorded as the future home (§3/§9 Q5) |
-| H2: §4 re-derived `store/collapse`, `disclosureToggle`, `requestConfirm`; missed that galleries already sit inside collapsed ConfGroups | **ACCEPTED** — all three house primitives named in §4; the ns-level ConfGroup `right` slot carries the warning chip; new markup only where D25 forces it |
-| H3: no FE decomposition pinned beside the ConfTab-monolith precedent | **ACCEPTED** — the six-module decomposition pinned in §4; `useMediaUpload` + `lib/imageExport` are DOM-free by construction |
-| M4: the kill switch had no read path to the UI | **ACCEPTED** — `MediaIndex.write_enabled` (§4/§5) |
-| M5: S0 missed MEDIA_PLAN §0/§7, SPEC.md, the doc-map row, RESEARCH.md's pin row, D52/D53 amendment pointers | **ACCEPTED** — S0 row expanded (§7) |
-| M6: `media_upload` misnamed; must gate DELETE | **ACCEPTED** — `media_write`, 503 on both verbs (§2/§5) |
-| M7: 30 MB cap justified by a consumer §4 routes to SSH | **ACCEPTED** — 8 MB, producer-anchored (§5/§9 Q3) |
-| M8: the client header probe forks `probe_image` with no fence | **ACCEPTED** — dimension-read only + the shared fixture corpus (§3) |
-| M9: "serial queue" vs the latch; "widened busy" inverts scope | **ACCEPTED** — queue depth 1; per-section flag composed with the global `busy` (§3) |
-| M10: S3 monolith-shaped; S2's tappable card has no target; R56's Reorder-mode option dropped from Q8 | **ACCEPTED** — S3a/S3b split; card tappable at S3b; Q8 lists Reorder mode first (§7/§9) |
-| L1: one global export quality wrongs the mask/layer roles | **ACCEPTED** — per-role `export?: {type?, quality?}`; `brand`/`stack` declare png (§3) |
-| L2: doc name/vocab — fold into MEDIA_PLAN §13, or point both ways; "section" is a taken word | **PARTIAL** — fold OVERRULED (phase plans with council records + slice ladders are their own docs: GACHA/PROMPTS/CORE_MEMORY precedent; MEDIA_PLAN stays the namespace authority and gains the two-way pointer in S0); vocabulary ACCEPTED: "role disclosures", keys `media-<ns>-<role>` |
-| L3 (sweep ③): the accordion's three opening rules could contradict | **ACCEPTED** — pinned: persisted key wins · auto-open only with no key + a problem · no write-back (§4) |
-| sweep ①: pool uploads mint routine stem duplicates; pins address stems | **ACCEPTED** — the same normalized-stem Replace/Cancel guard on pool uploads (§3) |
-| sweep ②: `?rev=` churn vs the SW cache's 64 entries | **ACCEPTED** — `maxEntries` raised in the S3b commit (§4) |
-
-**Opus confirm round: "RESOLVED overall"** — every H/M/L/sweep individually RESOLVED; the L2
-overrule judged to stand on its own precedent ("three instances against my one"). Five closing
-pins from the round, all folded: the §1 `media_write` name residue · the doc-map row is
-CLAUDE.md's alone (AGENTS.md carries no per-plan map) · the fixture fence asserts (w, h) only (a
-dimension-only reader has no format verdict) · **interaction ①**: `MediaIndex.write_enabled`
-defaults `False`, set by `build_index` — `disabled_index` right by construction · **interaction
-②**: a pool Replace that changes the filename substitutes new-for-old in the `order` list (else
-a first-wins pool silently changes winners) · **interaction ③**: lossless export types skip the
-byte step-down (PNG has no quality axis); the badge is the message. Cleared as non-interactions:
-the pool stem-guard preserves pin resolution by construction; the ConfGroup `right` chip is
-D25-legal (non-interactive).
-
-**Council verdict of record: BUILD WITH CHANGES from both lenses → all changes folded → both
-lenses confirm-closed RESOLVED. The plan is build-ready pending the §9 owner rulings.**
+EXIF portrait end-to-end · 413-mid-body over Tailscale Serve HTTPS · does the Honor 20 produce
+HEIC · PWA-standalone survival across the picker activity · jpeg q0.85 eyeball · crop/framing/
+drag feel · Fennec expected-partials · the Back-gesture close on device.

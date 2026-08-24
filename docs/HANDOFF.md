@@ -12,7 +12,51 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-24 — the media-manager design session; supersedes below where it speaks)
+## Current state (2026-08-24, SECOND session — the media-manager DECISION + COUNCIL session; supersedes everything below where it speaks)
+
+- **PUSHED on the owner's word — origin = local `main` (this session's docs commit on top of
+  `7bee1d5`; the previous block's "5 unpushed" were already on origin by session start —
+  stale note, corrected).** Prod UNCHANGED: v1.7.6 @ `6a2ccaa`. Dev units stayed STOPPED
+  (docs-only session).
+- **THE DECISION SESSION RAN — every §9 question RULED, with owner amendments that reshaped the
+  design:** the **LIBRARY model** (every art destination = its own gallery of stored images;
+  uploads purely ADDITIVE — no collisions by design, no Replace UI; order = priority; delete =
+  the only removal; **bundled defaults are first-class gallery entries**; Conf stays uncluttered
+  — tap a section → full-screen gallery) · **focal point IN v1** (draggable-framing wish →
+  reticle design) · **drag reorder PRIMARY** · **NO kill switch** (unconditional D65 reversal,
+  toggle rule knowingly waived) · config = the **clean fold, schema 6→7** (`media.{namespaces,
+  write}`) · **15 MB cap · 64 MP decode guard** (the owner's phone is an Honor 20 — 48 MP; the
+  old 40 MP REC would have refused their own camera) · single-file picks · 1.7.x, **1.8 RESERVED
+  for the final ROADMAP/ISSUES cleanup wave**.
+- **Research bought + indexed: R57** (focal/crop UX — the field's TWO incompatible focal maths;
+  clamped-centred wins, formula re-derived) · **R58** (touch drag-reorder — extend the house
+  hook, reject dnd-kit) · **R59** (library presentation — full-screen modal, 3-col grid,
+  preview-card entries, explicit set-active) · plus a **12-finding defect audit** of the current
+  gallery (headline: the `?rev=` cache-buster is missing at ~10 paint sites — stale art
+  fleet-wide after in-place replaces), all main-seat verified.
+- **MEDIA_MANAGER_PLAN REWRITTEN to v2.1 (the library model) and COUNCIL ROUND 2 RAN TO
+  CLOSURE in-session:** Emma lane (blind, sol high) 1 HIGH + 9 MED · adversarial Opus 5 HIGH +
+  8 MED + 3 sweep — every finding ruled + folded (two Emma fixes re-derived leaner; the confirm
+  rounds themselves caught three incomplete folds, all closed); **BOTH lenses final-confirmed
+  "RESOLVED — ready to build"**. Full audit trail = the plan's **§15**. H5 (role-family cards
+  for data-derived keys + the Unassigned bucket) **OWNER-RATIFIED**; the pooled
+  positional-order family gallery = the recorded road-not-taken.
+- **NOTHING BUILT — by design.** The plan is the complete, council-closed build spec.
+
+## ▶▶ NEXT: START THE BUILD — MEDIA_MANAGER_PLAN §12, S0 first (a clean session; owner-ruled)
+
+**The plan is the only brief needed: [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md) v2.1,
+council-closed on both lenses.** The ladder: **S0 docs → S1 backend (write API + the schema-7
+migration) → S2 gallery (library UI) → S3a/S3b crop+upload → S4 focal → S5 drag → S6 the owner
+device round** (the parked 2026-08-12 round folds in there). Standing cadence per slice: Opus
+build from a pinned brief → main-seat audit → Emma-lane review → owner eyeball; **pause between
+slices** (the standing memory). Load-bearing pins for every builder brief: the §12 FE module map
+(acceptance line: **ConfTab gains ZERO net lines**) · §2.3/§2.4's collation + active-resolver
+seams · §11's test obligations · everything customizable (§0). Version: 1.7.x. Start the dev
+units for owner pokes after slices; stop when done. After this phase, the 2026-08-22 menu below
+still governs (Phase 19 court · A13 talk · the owner device pair).
+
+## Prior state (2026-08-24, FIRST session — the design council; superseded above)
 
 - **Prod UNCHANGED: v1.7.6 @ `6a2ccaa`.** Local `main` — **5 commits
   UNPUSHED** on top of origin `74c3c9a`: the two 2026-08-23 docs commits + this session's three
@@ -60,7 +104,7 @@
 - **The hardening court/session itself stays DEFERRED (owner: "at a later time")** — everything
   else in the 2026-08-22 menu below stands unchanged.
 
-## ▶▶ NEXT (2026-08-24): the MEDIA-MANAGER DECISION SESSION (owner-ruled: its OWN clean session, outside the standing menu)
+## ▶▶ PRIOR (2026-08-24): the MEDIA-MANAGER DECISION SESSION — ✅ RAN same day (the SECOND-session block above is the record; superseded)
 
 **The owner decides; everything they need is [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)
 §9 — ten questions, each with a REC.** The short list: ① kill-switch default (REC ON) · ② config
