@@ -12,7 +12,35 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-23 — the scope-amendment session; supersedes the blocks below where it speaks)
+## Current state (2026-08-24 — the media-manager design session; supersedes below where it speaks)
+
+- **Prod UNCHANGED: v1.7.6 @ `6a2ccaa`.** Local `main` — **5 commits
+  UNPUSHED** on top of origin `74c3c9a`: the two 2026-08-23 docs commits + this session's three
+  (`75c8dd0` R54–R56 dossiers · `72e438b` MEDIA_MANAGER_PLAN · the handoff commit carrying this
+  block). Push on the owner's word. Dev units stayed STOPPED (docs-only session).
+- **THE MEDIA-MANAGER DESIGN IS COUNCIL-CLOSED** — the owner's ask (in-app upload from the phone ·
+  crop-or-use-as-is · delete · reorder · per-section drop-downs + per-section upload buttons,
+  ruled to ship BEFORE Phase 19 completes = an explicit Packet ④/⑤ forward-ruling):
+  - **Evidence bought + curated: R54/R55/R56** (committed `75c8dd0`; index rows in). Headlines:
+    multipart POST is CORS-safelisted ⇒ the write API is raw-body PUT/DELETE · two probed
+    cross-engine crop defects pick the drawImage/worker pipeline · react-easy-crop@6.2.3 ranked
+    (8.6 KB measured) · WCAG names our ↑/↓ buttons as THE reorder pattern · no peer
+    magic-byte-validates uploads (we stay stronger).
+  - **The plan of record: [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)** (`72e438b`) —
+    D65-pending contract, client pipeline, gallery redesign on the house primitives
+    (store/collapse · disclosureToggle · requestConfirm), pinned six-module FE decomposition,
+    `media_write` config, §6 tests, §7 slice ladder S0→S5.
+  - **Council record = its §11, both lenses confirm-closed:** Emma lane (blind, sol high)
+    BUILD WITH CHANGES — 9 MED + 1 LOW, then 2 more catches across 3 confirm rounds
+    (revision-preconditioned overwrite AND cleanup delete; same-filename skip) → all-RESOLVED.
+    Adversarial Opus design lens BUILD WITH CHANGES — 3 HIGH (the aspect field was wrong against
+    its own CSS · the draft re-derived three house primitives · no decomposition pinned) +
+    7 MED/3 LOW/3 sweep, then 3 interaction pins in its confirm → "RESOLVED overall." Every
+    finding folded; ONE partial overrule recorded (doc fold into MEDIA_PLAN — standalone-phase-doc
+    precedent won). ⚠ 529-overload note: the Opus lens took 4 launch attempts — nothing was lost,
+    each death was pre-output.
+- **NOTHING BUILT — by design.** The plan's status line: owner rulings pending, nothing builds
+  until the decision session rules.
 
 - **Prod UNCHANGED: v1.7.6 @ `6a2ccaa`.** Local `main` — **2 commits UNPUSHED** on top of origin
   `74c3c9a`: `4c851b7` (the Phase 19 scope amendment) + the handoff commit carrying this block.
@@ -32,7 +60,20 @@
 - **The hardening court/session itself stays DEFERRED (owner: "at a later time")** — everything
   else in the 2026-08-22 menu below stands unchanged.
 
-## ▶▶ NEXT (2026-08-23): the media-gallery design conversation (owner-picked for the next clean session)
+## ▶▶ NEXT (2026-08-24): the MEDIA-MANAGER DECISION SESSION (owner-ruled: its OWN clean session, outside the standing menu)
+
+**The owner decides; everything they need is [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)
+§9 — ten questions, each with a REC.** The short list: ① kill-switch default (REC ON) · ② config
+home (REC additive `media_write:`) · ③ `max_bytes` 8 MB (REC) · ④ input decode guard 40 MP (REC) ·
+⑤ ratify free-ratio crop windows · ⑥ focal point deferred (REC) · ⑦ Replace/Cancel-only collision
+UI (REC) · ⑧ reorder stays buttons; Reorder-mode > drag if more is wanted · ⑨ single-file picks
+(REC) · ⑩ phase number + 1.7.x. Also to ratify: the D65 D-entry itself (the §1 security reversal +
+its residuals). **After the rulings:** S0 docs → S1 backend → S2 gallery → S3a/S3b upload →
+S4 device round (the parked 2026-08-12 test-and-refine round folds into S4). Standing cadence per
+slice: Opus build from a pinned brief → main-seat audit → Emma-lane review → owner eyeball.
+**Also owed at session start: the push ruling on the 5 unpushed commits.**
+
+## ▶▶ PRIOR (2026-08-23): the media-gallery design conversation — ✅ RAN 2026-08-24, superseded by the block above
 
 **The next session is a DESIGN + IMPLEMENTATION CONVERSATION on the media gallery** (owner's
 words: "talk about the design and implementation of the media gallery thing") — prose
