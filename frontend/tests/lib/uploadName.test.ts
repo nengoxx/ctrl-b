@@ -98,6 +98,20 @@ describe("mintName", () => {
     );
   });
 
+  it("CHECKS the timestamp fallback too, and advances it until free (Emma #6)", () => {
+    // "Unique by construction" is a claim about a CLOCK, and a clock is the wrong thing to bet a
+    // filename on: a rollback, a frozen one, a deterministic import, or two retries inside the same
+    // millisecond all produce a candidate the folder already holds. Returning it unchecked spent all
+    // five of the server's 409 retries re-proposing the same name.
+    const stamp = (at: number) => `x-${at.toString(36)}.webp`;
+    const walked = ["x.webp", ...Array.from({ length: 98 }, (_, i) => `x-${i + 2}.webp`)];
+    const now = 1_700_000_000_000;
+    expect(mintName("x", ".webp", [...walked, stamp(now)], LIMITS, now)).toBe(stamp(now + 1));
+    expect(mintName("x", ".webp", [...walked, stamp(now), stamp(now + 1)], LIMITS, now)).toBe(
+      stamp(now + 2),
+    );
+  });
+
   it("reserves the extension AND the largest suffix inside the byte budget", () => {
     // The arm Emma #7 asked for by name. A 400-character name is 400 bytes; the mint must fit the
     // base, its extension AND whatever the walk may append — checked on the SUFFIXED form, which is

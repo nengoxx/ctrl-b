@@ -532,6 +532,36 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 >   put a redundant default in the owner's config and make every uploaded file look deliberately
 >   framed. **S4 owns focal entirely**, where it earns its keep: one library feeding windows of
 >   different shapes. Flagged to the main seat, not absorbed.
+> · **THE S3 REVIEW WAVE (Emma lane, blind; main-seat ruled 2026-08-25 — all 6 findings ACCEPTed with
+>   her lean fixes as written).** Five of them are one theme: *a fact must come from the thing it is a
+>   fact about.*
+>   · **The job carries its own DESTINATION** (#1). `run`/`deliver` read the LIVE section, so closing
+>     the gallery while the worker was exporting left them with nothing to deliver to — and they
+>     returned without releasing the latch, so every Add row in every gallery silently refused every
+>     pick for the rest of the session. The section and scope are bound into the job at ADMISSION and
+>     never re-read; closing the gallery now means the owner stopped watching, not the upload stopped.
+>   · **The unknown-outcome reconcile must be a DEMONSTRABLY FRESH read** (#2). `invalidateQueries`
+>     refetches active observers and swallows a failed refetch, handing back a cache that PREDATES the
+>     upload — the exact failure the reconcile exists to recover from, and the retry then stored a
+>     second copy under the next suffix. It is now the query's own fetcher called DIRECTLY
+>     (`useMedia#readMediaIndex`): fresh, throwing, and invisible to the cache — a cache-writing read
+>     published its own transient failure to the gallery and unmounted the panel the failure row had to
+>     appear in (found while building the arm). A failed reconcile keeps the job in the unknown state
+>     and never falls through to a PUT; a **409 on a resumed original-name PUT reconciles that exact
+>     name again before any suffixing**.
+>   · **Alpha comes from the BYTES, not from `File.type`** (#3). An Android content URI hands over an
+>     empty MIME type, and the old rule sent a transparent logo down the jpeg path — flattened,
+>     permanently, in the stored file. The guard already proved the format; it is carried through, and
+>     only a byte-proven JPEG loses alpha. Unknown keeps it.
+>   · **The 64 MP cap is enforced after the PROOF decode too** (#4). The header reader admits what it
+>     cannot measure (a JPEG whose frame header sits past the head, AVIF, GIF), so the cap was only
+>     true of the files we could parse — and a 108 MP one went on to a second full decode in the worker.
+>   · **The readback asks the CANVAS, not the owner's art** (#5). Sampling five points and refusing an
+>     all-transparent result cannot tell a dead canvas from a sparse mask silhouette — the art the
+>     `brand` and `stack` roles exist FOR. A sentinel is written and read back before the draw (and
+>     cleared, so it cannot show through an alpha composite).
+>   · **The timestamp fallback is checked like every other candidate** (#6) — "unique by construction"
+>     was a claim about a clock.
 > · **The crop's "untouched" rule is not what a first reading suggests.** `react-easy-crop` emits
 >   `onCropChange`, `onZoomChange` AND `onCropComplete` while it MEASURES its own container — caught in
 >   the browser, where a freshly opened modal already offered "Use this crop". Reading any of those as

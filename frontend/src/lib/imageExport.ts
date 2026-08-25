@@ -25,8 +25,9 @@
 //  ② **Chromium fails an over-limit canvas SILENTLY** — a canvas past `kMaxCanvasArea` accepts draws
 //     and reads back `[0,0,0,0]` with no exception, and `toBlob` on it still produces a VALID image
 //     file. The failure mode is "a fully transparent PNG lands in the media directory and passes the
-//     server's magic-byte check". So the export VERIFIES rather than assumes: pixels are read back,
-//     and the produced blob's own header is re-read (§`checkReadback` / `checkEncoded`).
+//     server's magic-byte check". So the export VERIFIES rather than assumes — and it asks the
+//     question of the PLATFORM, never of the owner's art (`ExportSurface.probe` writes and reads a
+//     sentinel BEFORE the draw; `checkEncoded` re-reads the produced blob's own header).
 //
 // ── shape ────────────────────────────────────────────────────────────────────────────────────────
 //
@@ -36,7 +37,7 @@
 // main thread's client. The policy numbers arrive from `theme-engine/mediaRegistry.ts` as arguments —
 // `lib/` stays registry-free (the council H4 rider).
 
-import { readImageHeader } from "./imageProbe";
+import { readImageHeader, type ImageFormat } from "./imageProbe";
 
 /** The three types this app stores. Anything else `convertToBlob` might hand back is a refusal. */
 export type OutputType = "image/png" | "image/jpeg" | "image/webp";
@@ -100,33 +101,41 @@ export const MAX_DOWNSCALE_STEP = 3;
 /** A floor no real encoded image is under. Paired with the pixel readback: together they are the
  *  answer to Chromium's silent canvas failure, which produces a VALID but empty file. */
 export const MIN_OUTPUT_BYTES = 64;
-/** Where the readback samples: the four corners and the centre, as fractions of the output. Five
- *  1×1 `getImageData` reads — a dead canvas is uniformly `[0,0,0,0]`, so any non-zero byte across
- *  these proves the allocation and the draw both happened. */
-const READBACK_POINTS: readonly (readonly [number, number])[] = [
-  [0.5, 0.5],
-  [0.02, 0.02],
-  [0.98, 0.02],
-  [0.02, 0.98],
-  [0.98, 0.98],
-];
-
-/** Source MIME types that CAN carry transparency. A source outside this set cannot lose alpha it
- *  never had, so jpeg is the honest (and far cheaper) encode for it. */
-const ALPHA_SOURCES = new Set(["image/png", "image/webp", "image/avif", "image/gif"]);
+/** The colour the surface probe writes and reads back (see `ExportSurface.probe`). Opaque and
+ *  asymmetric on purpose: a dead canvas reads back `[0,0,0,0]`, so no channel of this can be mistaken
+ *  for one, and no two channels can be swapped without the check noticing. */
+export const SENTINEL_RGBA: readonly [number, number, number, number] = [127, 63, 31, 255];
+/** How far a channel may drift and still count. A 2D context is sRGB and round-trips an opaque
+ *  `fillRect` exactly on both engines; one unit of slack costs nothing and keeps the check from
+ *  becoming a colour-management bug report. */
+const SENTINEL_TOLERANCE = 1;
 
 /** How this file will be encoded (R54 §3.4).
  *
  *  The role's override wins outright — a destination that paints its file as a CSS mask, or
  *  composites three transparent layers, is not expressing a preference but a requirement, and no
- *  property of the source can override it. Otherwise: alpha possible ⇒ webp (the one format of the
- *  three that keeps it and that BOTH engines can encode — Firefox has done so since 96; Safari is the
- *  one that cannot, and is not a target); else jpeg. */
-export function exportPolicy(sourceType: string, override?: ExportOverride): ExportPolicy {
+ *  property of the source can override it.
+ *
+ *  Otherwise the question is only ever "can this picture carry alpha?", and it is answered from the
+ *  **BYTES** — the format the header reader proved, never `File.type` (Emma #3). An Android
+ *  content-URI file routinely arrives with an EMPTY MIME type, and deciding from that flattened a
+ *  transparent logo onto black, permanently, in the stored file. So:
+ *
+ *   · a byte-proven **JPEG** is the one format that provably has no alpha to lose ⇒ jpeg, which is
+ *     also far cheaper (R54 §3.3: 18–23 ms against 311–332 ms at 4 MP);
+ *   · **everything else — png, webp, and UNKNOWN — keeps alpha** ⇒ webp, the one of the three that
+ *     carries it and that both engines encode (Firefox since 96; Safari cannot, and is not a target).
+ *
+ *  Unknown erring toward webp is the deliberate asymmetry: the cost of being wrong that way is some
+ *  milliseconds and a few kilobytes, and the cost of being wrong the other way is the owner's picture. */
+export function exportPolicy(
+  sourceFormat: ImageFormat | null,
+  override?: ExportOverride,
+): ExportPolicy {
   const forced = override?.type;
   if (forced !== undefined)
     return { type: forced, quality: qualityFor(forced), stepDown: stepDownFor(forced) };
-  const alpha = override?.alpha === true || ALPHA_SOURCES.has(sourceType.toLowerCase());
+  const alpha = override?.alpha === true || sourceFormat !== "jpeg";
   const type: OutputType = alpha ? "image/webp" : "image/jpeg";
   return { type, quality: qualityFor(type), stepDown: stepDownFor(type) };
 }
@@ -206,8 +215,16 @@ export interface DecodedImage extends DrawSource {
  *  a crop can be expressed here (defect ① above). */
 export interface ExportSurface extends DrawSource {
   draw(src: DrawSource, rect: CropRect): void;
-  /** The RGBA of one pixel, for the readback check. */
-  sample(x: number, y: number): readonly number[];
+  /** **Is the backing store actually THERE?** Write a known pixel, read it back, clear it — a
+   *  question about the CANVAS, asked before the owner's picture is anywhere near it (Emma #5).
+   *
+   *  The first cut asked it of the exported image instead, by sampling five points and refusing an
+   *  all-transparent result. That confuses "this art is sparse" with "this allocation failed": a small
+   *  off-centre glyph, a corner decoration, a mask silhouette — exactly the art the `brand` and
+   *  `stack` roles exist for — can be transparent at every one of those points and perfectly valid
+   *  everywhere else, and it was refused with a sentence about the picture being too large. The
+   *  owner's content can never answer a question about the platform. */
+  probe(): boolean;
   encode(type: string, quality: number): Promise<Blob>;
   /** Release the backing canvas once nothing will draw from it again. */
   release(): void;
@@ -222,9 +239,10 @@ export interface ExportEnv {
 /** One export, as posted to the worker: every field structured-cloneable. */
 export interface ExportJob {
   file: Blob;
-  /** The source's own MIME type, for the alpha decision. `File.type` may be empty on an Android
-   *  content URI, which simply reads as "no alpha claimed" and takes the jpeg path. */
-  sourceType: string;
+  /** The format the guard's header reader PROVED from the bytes — not `File.type`, which is empty on
+   *  an Android content URI and is what the alpha decision must never be made from (Emma #3).
+   *  `null` = the reader could not name it, which `exportPolicy` treats as "may carry alpha". */
+  sourceFormat: ImageFormat | null;
   rect: CropRect;
   bounds: ExportBounds;
   override?: ExportOverride;
@@ -266,6 +284,14 @@ export async function runExport(env: ExportEnv, job: ExportJob): Promise<ExportO
     for (const step of downscalePlan(rect.width, rect.height, out.width, out.height)) {
       const next = env.surface(step.width, step.height);
       made.push(next);
+      // Defect ②, asked of the CANVAS and asked of EVERY rung, before anything is drawn: Chromium
+      // accepts draws into an over-limit canvas and reads back `[0,0,0,0]` without throwing, and
+      // `toBlob` on it still produces a perfectly valid, perfectly empty image file.
+      if (!next.probe()) {
+        throw new ExportError(
+          "this browser could not make a drawing surface that size — the picture may be larger than this device can process. Try a smaller crop.",
+        );
+      }
       next.draw(src, srcRect);
       // The previous rung is finished with the moment it has been drawn from: the decoded bitmap goes
       // back immediately rather than at GC's convenience, and an intermediate canvas with it.
@@ -275,8 +301,7 @@ export async function runExport(env: ExportEnv, job: ExportJob): Promise<ExportO
       srcRect = { x: 0, y: 0, width: next.width, height: next.height };
     }
     const surface = src as ExportSurface;
-    checkReadback(surface);
-    const policy = exportPolicy(job.sourceType, job.override);
+    const policy = exportPolicy(job.sourceFormat, job.override);
     let blob = await surface.encode(policy.type, policy.quality);
     if (blob.size > job.bounds.bytes && policy.stepDown !== null) {
       const smaller = await surface.encode(policy.type, policy.stepDown);
@@ -313,24 +338,6 @@ export function clampRect(rect: CropRect, width: number, height: number): CropRe
     width: w,
     height: h,
   };
-}
-
-/** Defect ②, first half: prove the canvas is actually THERE. Chromium accepts draws into an
- *  over-limit canvas and reads back `[0,0,0,0]` without throwing, so an unverified export can store a
- *  perfectly valid, perfectly empty picture. Five samples, and any non-zero byte is proof.
- *
- *  The false positive is a genuinely blank image — a fully transparent PNG the owner picked by
- *  mistake. Refusing that is the right answer anyway: it paints nothing wherever it lands, and the
- *  sentence says exactly what was found. */
-function checkReadback(surface: ExportSurface): void {
-  for (const [fx, fy] of READBACK_POINTS) {
-    const x = Math.min(surface.width - 1, Math.floor(surface.width * fx));
-    const y = Math.min(surface.height - 1, Math.floor(surface.height * fy));
-    if (surface.sample(x, y).some((channel) => channel !== 0)) return;
-  }
-  throw new ExportError(
-    "the cropped image came back empty — the picture may be larger than this browser can process. Try a smaller crop.",
-  );
 }
 
 /** Defect ② second half, and the naming authority in one read: the produced blob's OWN header.
@@ -398,7 +405,17 @@ export function canvasSurface(
         height,
       );
     },
-    sample: (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data),
+    probe() {
+      const [r, g, b, a] = SENTINEL_RGBA;
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a / 255})`;
+      ctx.fillRect(0, 0, 1, 1);
+      const read = ctx.getImageData(0, 0, 1, 1).data;
+      // CLEARED, not left to be overwritten by the draw: an image with alpha composites OVER what is
+      // already there, so a surviving sentinel would show through the transparent corner of the
+      // owner's own picture as a stray coloured pixel in the stored file.
+      ctx.clearRect(0, 0, 1, 1);
+      return SENTINEL_RGBA.every((want, i) => Math.abs(read[i] - want) <= SENTINEL_TOLERANCE);
+    },
     encode: (type, quality) => canvas.convertToBlob({ type, quality }),
     // Zeroing the canvas is how a surface is released: there is no `close()`, and a 0×0 canvas frees
     // its backing store immediately instead of at GC's convenience.
@@ -429,16 +446,35 @@ export type WorkerReply = { ok: true; result: ExportOutput } | { ok: false; erro
  *
  *  One worker per export, terminated when it answers: exports are a deliberate owner gesture, not a
  *  stream, and a pooled worker would be state to own for no measurable gain. */
-export function exportImage(job: ExportJob): Promise<ExportOutput> {
+/** How the worker is made. A parameter so the CLIENT's own contract — terminate on every exit, settle
+ *  exactly once, survive a worker that dies without answering — is testable: a worker cannot be
+ *  constructed in jsdom, and "exercised indirectly whenever the happy path works" is not coverage of
+ *  the paths that only run when something has already gone wrong. */
+export type WorkerFactory = () => Worker;
+
+const spawnWorker: WorkerFactory = () =>
+  new Worker(new URL("./imageExport.worker.ts", import.meta.url), { type: "module" });
+
+export function exportImage(
+  job: ExportJob,
+  make: WorkerFactory = spawnWorker,
+): Promise<ExportOutput> {
   return new Promise<ExportOutput>((resolve, reject) => {
     let worker: Worker;
     try {
-      worker = new Worker(new URL("./imageExport.worker.ts", import.meta.url), { type: "module" });
+      worker = make();
     } catch {
       reject(new ExportError("this browser cannot process images in the background."));
       return;
     }
+    // ONE exit, taken once. A worker may deliver a second message, and `onerror` can fire AFTER it has
+    // answered; the promise ignores the extra by construction, but `terminate()` must not run twice —
+    // and, far more importantly, must run EXACTLY once on every path, or a failed export leaks a
+    // thread that is still holding a decoded bitmap.
+    let settled = false;
     const done = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
       worker.terminate();
       fn();
     };

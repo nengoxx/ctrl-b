@@ -107,6 +107,33 @@ const main = async () => {
   // export's own floor (`MIN_OUTPUT_BYTES`) is nowhere near it — a 64px thumbnail can encode to a
   // few dozen bytes, which is indistinguishable from the dead-canvas failure the floor exists for.
   write("photo-320x240.png", await quadrants(320, 240).png().toBuffer());
+  // SPARSE TRANSPARENT ART — the shape the readback check used to refuse (Emma #5). 200x200,
+  // transparent everywhere except one 40x40 opaque block, deliberately placed to miss the centre AND
+  // all four 2%/98% corners the old five-point sample read. A small off-centre glyph, a corner
+  // decoration, a mask silhouette: exactly the art the `brand` and `stack` roles exist for.
+  // It doubles as the EMPTY-MIME alpha arm (finding 3) — its transparency must survive the export.
+  write(
+    "sparse-alpha-200x200.png",
+    await sharp({
+      create: { width: 200, height: 200, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+    })
+      .composite([
+        {
+          input: {
+            create: {
+              width: 40,
+              height: 40,
+              channels: 4,
+              background: { r: 240, g: 80, b: 20, alpha: 1 },
+            },
+          },
+          left: 20,
+          top: 120,
+        },
+      ])
+      .png()
+      .toBuffer(),
+  );
 
   // ── the refusal arms: formats this surface does not serve, said by NAME ─────────────────────────
   write("tiff-8x6.tiff", await quadrants(8, 6).tiff().toBuffer());

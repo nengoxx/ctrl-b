@@ -98,15 +98,24 @@ export function guardPick(size: number, head: Uint8Array, limits: GuardLimits): 
     };
   }
   if (header.width !== null && header.height !== null) {
-    const pixels = header.width * header.height;
-    if (pixels > limits.maxPixels) {
-      return {
-        ok: false,
-        reason: `that picture is ${header.width}×${header.height} (${(pixels / MEGAPIXEL).toFixed(0)} megapixels) — this app decodes up to ${Math.round(limits.maxPixels / MEGAPIXEL)}. Your camera's smaller resolution setting will fit.`,
-      };
-    }
+    const refusal = pixelRefusal(header.width, header.height, limits.maxPixels);
+    if (refusal !== null) return { ok: false, reason: refusal };
   }
   return { ok: true, header };
+}
+
+/** The megapixel refusal, or `null` when the size is fine — **one sentence, two callers** (Emma #4).
+ *
+ *  The header reader cannot measure everything it admits: a JPEG whose frame header sits past the head
+ *  we read, and every format this parser deliberately does not dimension (AVIF behind ISO-BMFF boxes, a
+ *  GIF behind its own decode), reach `createImageBitmap` with NO pixel count. The decode PROOF is where
+ *  their real size first exists, so the cap has to be applied there too — and the owner must meet the
+ *  same sentence whichever rung refused them, or the 64 MP contract is only true of the files we happened
+ *  to be able to parse. */
+export function pixelRefusal(width: number, height: number, maxPixels: number): string | null {
+  const pixels = width * height;
+  if (pixels <= maxPixels) return null;
+  return `that picture is ${width}×${height} (${(pixels / MEGAPIXEL).toFixed(0)} megapixels) — this app decodes up to ${Math.round(maxPixels / MEGAPIXEL)}. Your camera's smaller resolution setting will fit.`;
 }
 
 function refusalText(what: RefusedFormat): string {

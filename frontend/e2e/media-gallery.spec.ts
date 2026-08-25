@@ -497,3 +497,53 @@ function sofSize(jpeg: Buffer): { width: number; height: number } | null {
   }
   return null;
 }
+
+test("Conf · Theme art — an empty-MIME transparent picture keeps its alpha, and its sparseness is not a failure", async ({
+  page,
+}) => {
+  // Two of Emma's S3 findings, in the one place that can prove either — a real decoder and a real
+  // encoder:
+  //  · **#3** the alpha decision must come from the BYTES. An Android content URI routinely hands over
+  //    a `File` with an EMPTY MIME type, and deciding from that sent a transparent logo down the jpeg
+  //    path, flattening it onto black permanently, in the stored file.
+  //  · **#5** the export's own check must be about the CANVAS. This fixture is transparent at its
+  //    centre and at all four corners — the five points the first readback sampled — with one small
+  //    opaque block off to one side. It is a mask silhouette, a corner glyph, exactly the art the
+  //    `brand` and `stack` roles exist for, and it was refused as "the cropped image came back empty".
+  await bootConf(page);
+  const { uploads } = await statefulMedia(page, { onDisk: [], files: [] });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open the characters gallery", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+
+  const chooser = page.waitForEvent("filechooser");
+  await dialog.getByRole("button", { name: /Add an image/ }).click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "logo.png",
+    mimeType: "", // what the photo picker hands over, and what must decide nothing
+    buffer: readFileSync(image("sparse-alpha-200x200.png")),
+  });
+  await page
+    .getByRole("dialog", { name: "Frame the image" })
+    .getByRole("button", { name: "Use as is", exact: true })
+    .click();
+
+  // It EXPORTED at all — #5.
+  await expect.poll(() => uploads.length).toBe(1);
+  // …as a WEBP, from the bytes' own format rather than from the absent MIME type — #3.
+  expect(uploads[0].filename).toBe("logo.webp");
+  const body = uploads[0].body;
+  expect(body.subarray(0, 4).toString("latin1")).toBe("RIFF");
+  expect(body.subarray(8, 12).toString("latin1")).toBe("WEBP");
+  // …and the transparency survived. Asserted from the CONTAINER rather than by hunting for a byte
+  // string: a WebP carries alpha either as a lossless `VP8L` bitstream, or as an extended `VP8X`
+  // whose first flag byte sets the ALPHA bit (RFC 9649 §2.5.2). A bare `VP8 `, or a `VP8X` with that
+  // bit clear, is the flattened picture this arm exists to catch.
+  const container = body.subarray(12, 16).toString("latin1");
+  const VP8X_ALPHA = 0x10;
+  expect(container === "VP8L" || (container === "VP8X" && (body[20] & VP8X_ALPHA) !== 0)).toBe(
+    true,
+  );
+});

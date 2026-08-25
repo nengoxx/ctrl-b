@@ -65,6 +65,10 @@ vi.mock("../../src/lib/imageExport", async (importOriginal) => ({
 import { MediaGallery } from "../../src/components/MediaGallery";
 import { setUI } from "../../src/store/ui";
 
+/** What the PROOF decode reports — the only place some formats' real size ever exists (Emma #4). */
+let decoded = { width: 64, height: 48 };
+const closeBitmap = vi.fn();
+
 const OUTPUT = {
   blob: new Blob([fixture("png-2x3.png")], { type: "image/webp" }),
   type: "image/webp" as const,
@@ -85,9 +89,13 @@ const emptyIndex = (roles: Record<string, MediaIndex["roles"][string]>): MediaIn
   slots: {},
 });
 
+/** Queries must not retry: the reconcile arms need a refetch that FAILS, promptly and once. */
+const testClient = () =>
+  new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
+
 function renderGallery(payload: MediaIndex = emptyIndex({})): void {
   api.getJSON.mockResolvedValue(payload);
-  const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  const qc = testClient();
   const ui: ReactElement = (
     <QueryClientProvider client={qc}>
       <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
@@ -140,11 +148,13 @@ beforeEach(() => {
   // jsdom has no image decoder. The `createImageBitmap` PROOF rung is the guard's catch-all, so the
   // stub answers with a size for a real image and rejects for anything else — which is exactly the
   // distinction the rung exists to draw.
+  decoded = { width: 64, height: 48 };
   globalThis.createImageBitmap = vi.fn((source: Blob) =>
     source.size > 0
-      ? Promise.resolve({ width: 64, height: 48, close: vi.fn() } as unknown as ImageBitmap)
+      ? Promise.resolve({ ...decoded, close: closeBitmap } as unknown as ImageBitmap)
       : Promise.reject(new Error("undecodable")),
   ) as typeof createImageBitmap;
+  closeBitmap.mockClear();
   // react-easy-crop measures its container.
   globalThis.ResizeObserver = class {
     observe() {}
@@ -376,7 +386,7 @@ describe("scoped sections", () => {
       slots: {},
     });
     cleanup();
-    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const qc = testClient();
     render(
       <QueryClientProvider client={qc}>
         <MediaGallery ns="frontier" def={MEDIA_NS.frontier} />
@@ -397,5 +407,172 @@ describe("scoped sections", () => {
     expect((exporter.exportImage.mock.calls[0][0] as { override?: unknown }).override).toEqual({
       type: "image/png",
     });
+  });
+});
+
+describe("the job's own CONTEXT (Emma #1)", () => {
+  it("closing the gallery mid-EXPORT does not wedge the latch — the upload lands and the next pick is admitted", async () => {
+    // The wedge: `run`/`deliver` read the LIVE section, so closing the gallery while the worker was
+    // exporting left them with no destination and they returned without releasing `running`. Every
+    // gallery then showed an enabled Add row that silently refused every pick for the rest of the
+    // session. The destination is now bound into the job at admission.
+    renderGallery();
+    let release!: (out: typeof OUTPUT) => void;
+    exporter.exportImage.mockReturnValueOnce(
+      new Promise<typeof OUTPUT>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const dialog = await openSection("characters");
+    await pick(dialog, pickFile("mid-flight.png"));
+    await confirmCrop();
+
+    // The owner walks away while the worker is busy. (A beat first: the crop modal's own unmount
+    // reclaims its history entry asynchronously, and a gesture inside that window is swallowed as
+    // that unwind — the guard's designed behaviour, and not what this arm is about.)
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await act(async () => {
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // …and the export finishes into a gallery that is no longer on screen. The upload still LANDS:
+    // the owner committed to it, and the write queue lives a level above the modal.
+    await act(async () => {
+      release(OUTPUT);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.putBytes).toHaveBeenCalledTimes(1));
+    expect(api.putBytes.mock.calls[0][0]).toContain("mid-flight.webp");
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+
+    // THE claim: the latch is free, so the next pick is admitted.
+    const again = await openSection("banner");
+    await pick(again, pickFile("after.png"));
+    expect(await screen.findByRole("button", { name: "Use as is" })).toBeTruthy();
+  });
+});
+
+describe("the unknown-outcome reconcile (Emma #2)", () => {
+  /** Her exact scenario: the server STORED the bytes and the response was lost. */
+  const storedRow = (filename: string) => ({
+    name: filename.replace(/\.[^.]+$/, ""),
+    file: filename,
+    url: `/api/media/gacha/files/characters/${filename}`,
+    format: "webp",
+    size_bytes: 10,
+    revision: "1",
+    width: 1,
+    height: 1,
+    unusable: false,
+    unusable_reason: null,
+  });
+
+  it("a failed reconcile NEVER falls through to a second upload — the job stays retryable", async () => {
+    renderGallery();
+    // Phase one: the bytes reach the server, the response does not.
+    api.putBytes.mockRejectedValueOnce(new Error("network error"));
+    const dialog = await openSection("characters");
+    await pick(dialog, pickFile("photo.png"));
+    await confirmCrop();
+    const firstRow = await within(dialog).findByText(/did not reach the server/);
+    expect(firstRow).toBeTruthy();
+    expect(api.putBytes).toHaveBeenCalledTimes(1);
+
+    // The retry's reconciliation read FAILS. This is the moment the whole finding is about: an
+    // invalidation would have swallowed it and handed back a cache that PREDATES the upload, the
+    // retry PUT would have been answered 409 by our own file, and `photo-2.webp` would have been
+    // stored beside an orphaned `photo.webp`.
+    api.getJSON.mockRejectedValueOnce(new Error("index unreachable"));
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Try again" }));
+      await Promise.resolve();
+    });
+    const unknown = await within(dialog).findByText(/may or may not have reached the server/);
+    expect(unknown.textContent).toContain("photo.webp");
+    // NO second upload, and the job is still retryable.
+    expect(api.putBytes).toHaveBeenCalledTimes(1);
+    expect(within(dialog).getByRole("button", { name: "Try again" })).toBeTruthy();
+
+    // Now the read succeeds and the file IS there: the job resolves to the ORIGINAL name with zero
+    // further PUTs, and only the registration runs.
+    api.getJSON.mockResolvedValue(emptyIndex({ characters: [storedRow("photo.webp")] }));
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Try again" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(api.putBytes).toHaveBeenCalledTimes(1);
+    expect(api.putJSON.mock.calls[0][1]).toEqual({
+      media: {
+        namespaces: {
+          gacha: { roles: { characters: { files: [{ name: "photo.webp" }] } } },
+        },
+      },
+    });
+  });
+
+  it("a 409 on a RESUMED original-name PUT reconciles that name before suffixing", async () => {
+    // The other half of the same failure: the reconcile read succeeded but was taken before the
+    // server finished writing, so the retry's PUT is answered 409 — by our own earlier upload. Minting
+    // `photo-2.webp` there stores the same picture twice and orphans the first copy.
+    renderGallery();
+    api.putBytes
+      .mockRejectedValueOnce(new Error("network error"))
+      .mockRejectedValueOnce(new api.ApiError("name exists", 409));
+    const dialog = await openSection("characters");
+    await pick(dialog, pickFile("photo.png"));
+    await confirmCrop();
+    await within(dialog).findByText(/did not reach the server/);
+
+    // First read: not there yet. Second (after the 409): there.
+    api.getJSON
+      .mockResolvedValueOnce(emptyIndex({}))
+      .mockResolvedValue(emptyIndex({ characters: [storedRow("photo.webp")] }));
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Try again" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    // Two PUTs total — the lost one and the resumed one — and NO suffixed third.
+    expect(api.putBytes).toHaveBeenCalledTimes(2);
+    expect(api.putBytes.mock.calls[1][0]).toContain("photo.webp");
+    expect(api.putJSON.mock.calls[0][1]).toEqual({
+      media: {
+        namespaces: {
+          gacha: { roles: { characters: { files: [{ name: "photo.webp" }] } } },
+        },
+      },
+    });
+  });
+});
+
+describe("the 64 MP cap after the PROOF decode (Emma #4)", () => {
+  it("refuses a file the header could not measure, before the crop modal opens", async () => {
+    // A JPEG whose frame header sits past the 64 KB head, an AVIF, a GIF: the reader admits them with
+    // no pixel count, so the decode proof is where their real size first exists. Without the cap
+    // there, a 108 MP file went on to be decoded a SECOND time in the worker.
+    renderGallery();
+    decoded = { width: 12_000, height: 9_000 }; // 108 MP
+    const dialog = await openSection("characters");
+    await pick(dialog, pickFile("huge.png"));
+    const row = await within(dialog).findByText(/12000×9000/);
+    expect(row.textContent).toContain("108 megapixels");
+    expect(row.textContent).toContain("64");
+    expect(screen.queryByRole("button", { name: "Use as is" })).toBeNull();
+    expect(exporter.exportImage).not.toHaveBeenCalled();
+    // …and the proof decode's own bitmap is released whichever way it went.
+    expect(closeBitmap).toHaveBeenCalled();
+  });
+
+  it("admits one that fits, and releases the proof bitmap either way", async () => {
+    renderGallery();
+    const dialog = await openSection("characters");
+    await pick(dialog, pickFile("ok.png"));
+    expect(await screen.findByRole("button", { name: "Use as is" })).toBeTruthy();
+    expect(closeBitmap).toHaveBeenCalled();
   });
 });

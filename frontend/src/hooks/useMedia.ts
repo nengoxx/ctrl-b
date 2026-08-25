@@ -113,6 +113,26 @@ function mediaQuery(ns: string) {
   };
 }
 
+/** A read that is DEMONSTRABLY FRESH, straight from the server, and INVISIBLE to everything else —
+ *  for the one caller that needs a FACT rather than a repaint (Emma #2: the upload's unknown-outcome
+ *  reconcile, "did my bytes land?").
+ *
+ *  Two things disqualify the cache here, and each one on its own is a lost file:
+ *   · `invalidateQueries` marks the query stale and refetches ACTIVE observers, TanStack swallows a
+ *     failed refetch by default, and the caller is then handed the STALE cache with no way to tell.
+ *     For a reconcile that is precisely the failure it exists to recover from — "did my upload land?"
+ *     answered "no" by a cache that predates the upload, and a second copy of the file follows.
+ *   · a read that WRITES to the shared key publishes its own failure to every observer: a transient
+ *     network blip during the reconcile would replace the open gallery with "media index unreachable"
+ *     and unmount the very panel the failure row has to appear in. (Observed, in the arm below.)
+ *
+ *  So it is the query's own fetcher, called directly: maximally fresh, throws when the server cannot
+ *  be reached, and changes nothing anyone is watching. The cache catches up on its own — the config
+ *  write that follows invalidates `["media"]` anyway. */
+export function readMediaIndex(ns: string): Promise<MediaIndex> {
+  return mediaQuery(ns).queryFn();
+}
+
 /** The CONF GALLERY's read of the same query (defect #3).
  *
  *  Fresh-on-entry is the right policy for the one screen the owner opens right after copying files in

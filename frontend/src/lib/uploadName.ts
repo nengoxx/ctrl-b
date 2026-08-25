@@ -136,8 +136,21 @@ export function mintName(
     if (free(candidate)) return candidate;
   }
   // The walk is exhausted — a folder holding `x`, `x-2` … `x-99` is not a race, it is a library, and
-  // walking further would only be slower. A timestamp is unique by construction and still inside the
-  // reserved budget. (If even THAT is taken, the server's 409 sends the caller back here with the
-  // name added to `taken`, and the next millisecond answers.)
+  // walking further would only be slower. A timestamp is unique in practice and still inside the
+  // reserved budget.
+  //
+  // **And it is CHECKED like every other candidate** (Emma #6). "Unique by construction" is a claim
+  // about a clock, and a clock is exactly the wrong thing to bet a filename on: a rollback, a frozen
+  // one, a deterministic import, or simply two retries inside the same millisecond all produce a
+  // candidate the folder already holds — and returning it would spend all five of the server's 409
+  // retries re-proposing the same name. Advancing the injected instant keeps the base-36 length (and
+  // so the reserved budget) while making the next candidate a different name.
+  for (let bump = 0; bump <= limits.attempts; bump++) {
+    const candidate = `${base}-${(now + bump).toString(36)}${ext}`;
+    if (free(candidate)) return candidate;
+  }
+  // Every candidate this function can express is taken — which takes a folder that is not a library
+  // but a fixture. The server's own 409 is the backstop, and it sends the caller back here with the
+  // name added to `taken`.
   return `${base}${stamp}${ext}`;
 }
