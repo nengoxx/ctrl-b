@@ -1419,9 +1419,12 @@ owner eyeball; each passes `tools/check.py`.
       ROADMAP §H2 + this stanza · HARDENING §8.2 + §7b · backend+FE per-role bundled-id rows
       (`MediaSlotDef.bundled` retired; FE ids DERIVED from `defaultRoster()`/`ART`) · the
       preview-descriptor type · the docstring truth pass
-- [ ] S1 — Backend: the write API · the `media.namespaces`/`media.write` fold + `files` migration ·
-      collation v2 + wire (`focal`/`hidden`/bundled rows/`library-v1`) · the predicate loosening
-      (defect #8) · `.part` boot sweep · `fsync_dir` promoted · defects #6/#7 · BE tests
+- [x] S1 — Backend: the write API · the `media.namespaces`/`media.write` fold + `files` migration
+      (`config_version` 1 → 2, step 2) · collation v2 + wire (`focal`/`hidden`/bundled rows/
+      `library-v1`) · the predicate loosening (defect #8) · `.part` boot sweep · `fsync_dir`
+      promoted · defects #6/#7 · BE tests + the no-CORS/no-multipart architecture guard
+      (+ the mechanical FE riders that keep the shipped UI painting: the gallery's folded write
+      paths and the three resolver boundaries skipping bundled rows until S2 rewrites them)
 - [ ] S2 — Gallery: section descriptors + active resolvers (H1) · entry + role-family cards · the
       full-screen modal + `useOverlayBackGuard` · grid + item detail · set-active / use-here /
       delete-promotes-next / hidden · defects #1–#4, #9–#12 · e2e

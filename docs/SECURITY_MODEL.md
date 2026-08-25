@@ -267,17 +267,18 @@ the slot is on. Two rails hold it, plus one framing:
 ### 2.7 The media write path — typed, raw-body, registry-confined (D65)
 
 `PUT`/`DELETE /api/media/{ns}/files/{role}/{filename}` (`api/media.py`, persist pipeline in
-`core/media.py`) will be the **first and only endpoint that writes owner files to disk**. It reverses
+`core/media.py`) is the **first and only endpoint that writes owner files to disk**. It reverses
 D52 §5.4's "no write API, ever" for exactly one typed shape, and the reversal is
 **unconditional — there is no kill switch** (owner ruling; the standing whole-feature-toggle rule
 knowingly waived, D65). What makes that safe is not a flag but four rails.
 
-**Status (2026-08-24): the RULING is locked, the ROUTES are not built.** D65 landed at the
-media-manager phase's S0 (docs + registry rows); the endpoints, the persist pipeline and the tests
-that pin them **land at S1** (MEDIA_MANAGER_PLAN §12). Everything below is therefore stated as the
-**contract S1 must satisfy** — normative, not descriptive. Read it as the specification an
-implementation is measured against, and as the reference for any future unauthenticated write path;
-do not read it as a claim about code that exists today.
+**Status (2026-08-25): BUILT and test-pinned.** The routes, the persist pipeline, the two filename
+tiers, the `.part` boot sweep and the `config_version` 1 → 2 fold landed at the media-manager
+phase's S1 (MEDIA_MANAGER_PLAN §12). Everything below is now DESCRIPTIVE of shipped code as well as
+normative for anything that touches it — including **the two negatives, which are asserted by
+`backend/tests/test_media_write_d65.py`**: no CORS middleware anywhere in the app (middleware stack
++ a source scan), and no POST/multipart route on the media surface. It also stays the reference for
+any future unauthenticated write path.
 
 - **The VERB is the CORS control.** The realistic attacker here is not a tailnet peer (there are
   none, §1) — it is **the owner's own browser on some other origin**, and the only cross-origin
@@ -299,7 +300,10 @@ do not read it as a claim about code that exists today.
   → stream with a byte counter (`413` past `media.write.max_bytes`) → fsync → **`probe_image`
   header probe** (`415` when the bytes and the extension disagree) → `os.link` no-clobber (`409`)
   → unlink the temp → `fsync_dir`. **A rejected upload leaves zero bytes**, and a `.part` boot
-  sweep clears anything a crash stranded.
+  sweep — registered role dirs of HEALTHY namespaces only, and only files carrying the prefix this
+  code mints, so it can never follow a symlink or remove an owner file — clears what a crash
+  stranded. (`fchmod` is expressed as an `os.supports_fd` capability probe, not an OS branch: the
+  server-OS allowlist is closed, ARCHITECTURE §6.)
 - **Still no decoder on the server.** No Pillow, no decode, no re-encode, no thumbnails — header
   probes only. An untrusted-decoder surface was refused at D52 §10.4 and stays refused; all image
   work (crop, resize, EXIF/GPS stripping, re-encode) happens in the **client's** worker.

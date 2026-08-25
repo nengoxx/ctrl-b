@@ -153,8 +153,8 @@ records this so the update chain's schema history stays honest.
   = s.normalize("NFC").toLowerCase()` — **the contract IS JavaScript semantics** (JS has no
   full Unicode casefold; `ß`/final-sigma cases resolve per `toLowerCase`, and the tests pin
   JS behavior, not casefold ideals). Keys are computed CLIENT-side only, so one
-  implementation exists by construction (the server's `casefold-natural` collation orders
-  listings; it never computes keys). A file binds when `normalize(stem)` equals the key.
+  implementation exists by construction (the server's collation — `casefold-natural`, re-versioned
+  `library-v1` at D65 — orders listings; it never computes keys). A file binds when `normalize(stem)` equals the key.
   Keys containing path separators or other non-stem-representable characters cannot have
   icons (documented; the gallery says so). Collisions: two FILES reaching one key →
   **first-in-server-index-order wins**; two SERVICES collapsing to one key → **both share
@@ -384,9 +384,9 @@ owns. Read that plan before touching the write path, the gallery, or anything th
    **priority order decides what is active**. The Conf gallery this plan shipped (`MediaGallery`'s
    role sections + pins) becomes the entry surface for a full-screen per-section gallery
    (MEDIA_MANAGER_PLAN §6).
-3. **`files` supersedes `order:` at the config fold.** `media.<ns>` moves to
-   `media.namespaces.<ns>` (making room for `media.write`), and `roles.<role>.order: [names]`
-   becomes **`roles.<role>.files: [{name|bundled, key?, hidden?, focal?}]`** — ONE ordered list of
+3. **`files` supersedes `order:` at the config fold (BUILT at S1, 2026-08-25).** `media.<ns>` moved
+   to `media.namespaces.<ns>` (making room for `media.write`), and `roles.<role>.order: [names]`
+   became **`roles.<role>.files: [{name|bundled, key?, hidden?, focal?}]`** — ONE ordered list of
    per-item objects, per the extend-don't-migrate directive, so the next per-item dimension is an
    additive field rather than a sibling map. §4's ns-generic `media:` model and its
    validate-against-the-registry rule survive intact; only the leaf shape changes, through an

@@ -4678,10 +4678,13 @@ grant). Everything else in D57/D60/D61 stands.
 the management UI). `MEDIA_MANAGER_PLAN.md` is normative — the headlines below are the record, not
 a second spec.
 
-**What is BUILT as of this entry: nothing but S0** (the docs + the per-role registry rows). The
-routes, the persist pipeline, the migration and the tests that pin them **land at S1**
-(plan §12). Everything stated below is the ruling and the contract it imposes — normative, not a
-description of shipped code.
+**What is BUILT (2026-08-25): S0 + S1** — the docs and per-role registry rows, then the BACKEND: the
+raw-body `PUT`/`DELETE` routes + the persist pipeline (`core.media.UploadPart`), the two filename
+tiers, the `library-v1` collation with `focal`/`hidden`/`listed`/`bundled` on every index row, the
+`config_version` 1 → 2 fold (migration step 2), the `.part` boot sweep, and the tests + architecture
+guard that pin the no-CORS/no-multipart negatives. **The GALLERY, the upload client, focal painting
+and drag are S2–S5 and are not built**; everything about them below is the ruling and the contract
+it imposes, not a description of shipped code.
 
 **The reversal, and the mechanism it rests on (plan §1).** D52 §5.4 refused a write API because
 the app has no application-layer auth — the tailnet IS the boundary (SECURITY_MODEL §1). The
