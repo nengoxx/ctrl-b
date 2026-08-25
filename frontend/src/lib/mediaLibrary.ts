@@ -353,7 +353,9 @@ export function setActive(
 ): LibraryEntry[] {
   const order = displayOrder(rows);
   const from = order.indexOf(id);
-  if (from < 0) return writeFiles(entries, rows, { order, touched: [], sweep: true });
+  // Gone by send time: refused, and a refusal states no new order (`moveBy`'s rule — sweeping here
+  // would promote the fallback tier as the side effect of a gesture that activated nothing).
+  if (from < 0) return writeFiles(entries, rows, { order, touched: [] });
   return writeFiles(entries, rows, {
     order: reordered(order, from, 0),
     touched: [id],
@@ -423,7 +425,10 @@ export function moveToEdge(
 ): LibraryEntry[] {
   const order = displayOrder(rows);
   const from = order.indexOf(id);
-  if (from < 0) return writeFiles(entries, rows, { order, touched: [], sweep: true });
+  // The row is gone by send time: REFUSED, and a refusal states no new order — `moveBy`'s own rule.
+  // Sweeping here would promote the whole fallback tier as the side effect of a gesture that moved
+  // nothing, and tier membership decides what a later upload replaces.
+  if (from < 0) return writeFiles(entries, rows, { order, touched: [] });
   const to = edge === "top" ? 0 : order.length - 1;
   return writeFiles(entries, rows, { order: reordered(order, from, to), touched: [], sweep: true });
 }

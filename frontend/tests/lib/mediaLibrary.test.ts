@@ -348,6 +348,15 @@ describe("reorder edges", () => {
       { name: "b.webp" },
     ]);
   });
+
+  it("a row GONE by send time refuses without sweeping — every order intent, one rule", () => {
+    // A refusal states no new order, so it must not promote the fallback tier either: tier membership
+    // decides what a later upload replaces, and a gesture that moved nothing may not change it.
+    const refused = [{ name: "a.webp" }, { name: "b.webp" }];
+    expect(moveBy(undefined, rows, "f:gone.webp", 1)).toEqual(refused);
+    expect(moveToEdge(undefined, rows, "f:gone.webp", "bottom")).toEqual(refused);
+    expect(setActive(undefined, rows, "f:gone.webp")).toEqual(refused);
+  });
 });
 
 describe("the In-use switch (§2.2's `hidden`)", () => {
