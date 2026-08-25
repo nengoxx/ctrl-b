@@ -102,7 +102,7 @@ export function GalleryModal({
   });
 
   const rows = scopedRows(view.rows, scope);
-  const items = libraryItems(rows, view.active);
+  const items = libraryItems(rows, view.active, section.pin !== undefined);
   const selected = items.find((i) => i.id === selectedId);
   const problems = items.filter((i) => i.row.unusable).length;
   const danglingPin =

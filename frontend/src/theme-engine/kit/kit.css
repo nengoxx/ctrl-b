@@ -6458,6 +6458,14 @@ body[data-perf="lite"] .kit .navmenu-pop {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* The duplicate's sentence — a badge says there is a clash, this says which entry answers and how to
+   change that (§2.3's stem/id note). Same weight as the meta line: it is diagnostics, not an alarm. */
+.kit .mgal-detail-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
 .kit .mgal-actions {
   display: grid;
   gap: 8px;

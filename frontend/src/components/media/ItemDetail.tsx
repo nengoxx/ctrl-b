@@ -75,11 +75,7 @@ export function ItemDetail({
       </p>
       <div className="mgal-detail-badges">
         {item.hidden && <span className="badge dim">not in use</span>}
-        {item.duplicate && (
-          <span className="badge dim" title="another entry already took this name">
-            duplicate name
-          </span>
-        )}
+        {item.duplicate && <span className="badge dim">duplicate name</span>}
         {badges.map((code) => (
           <span className={"badge" + (ADVISORIES[code]?.bad ? " stale" : " dim")} key={code}>
             {/* The PROBED format rides the mismatch badge: the bytes are a jpeg however the name
@@ -91,6 +87,11 @@ export function ItemDetail({
           </span>
         ))}
       </div>
+      {/* The duplicate's own sentence, with the TIE-BREAK in it (§2.3, Emma's S2 review #6). A badge
+          alone says there is a clash; what the owner needs is which entry answers to the name and how
+          to change that — and the answer is the same one rule everywhere here: the library's own
+          order decides, so "Set as active" is the fix. */}
+      {item.duplicate && <p className="mgal-detail-note">{duplicateNote(section, item)}</p>}
 
       <div className="mgal-actions">
         {section.caps.activate !== "none" && !pinnedHere && (
@@ -183,6 +184,19 @@ async function confirmDelete(item: LibraryItem, onDelete: () => void): Promise<v
     danger: true,
   });
   if (ok) onDelete();
+}
+
+/** What the duplicate MEANS here, in the section's own terms. Two shapes share one note because they
+ *  share one tie-break: a `named` role where two files claim one key, and a PIN-capable section where a
+ *  file stem and a bundled id answer to the same name (§2.3's stem/id note — the `f:`/`b:` identities
+ *  stay separate, but one pin VALUE can only reach one of them). */
+function duplicateNote(section: MediaSection, item: LibraryItem): string {
+  const pinned = section.pin !== undefined;
+  const name = pinned || item.bundled ? item.row.name : (item.key ?? item.row.name);
+  const what = pinned
+    ? `Another entry here answers to the name “${name}”, so the pin can only reach one of them.`
+    : `Another file here binds to “${name}” too.`;
+  return `${what} The one the library lists FIRST is the one that answers — use “Set as active” on this entry to make it that one.`;
 }
 
 /** How this file found its destination — the wire's `key` field, or its own filename stem. Only said

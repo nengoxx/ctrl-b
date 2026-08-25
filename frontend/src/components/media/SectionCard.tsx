@@ -74,7 +74,11 @@ export function SectionCard({
     return <FamilyCard view={view} source={source} onOpen={onOpen} />;
   }
 
-  const items = libraryItems(scopedRows(view.rows, { key: section.key }), view.active);
+  const items = libraryItems(
+    scopedRows(view.rows, { key: section.key }),
+    view.active,
+    section.pin !== undefined,
+  );
   const active = items.filter((i) => i.active);
   const art = active
     .map((i) => tileUrl(i.row, section))
@@ -108,7 +112,7 @@ export function SectionCard({
         <span className="mgal-card-body">
           <span className="mgal-card-title">{section.title}</span>
           <span className="mgal-card-status" id={descId}>
-            {status(view, items.length, active.length)}
+            {status(view, items, active)}
           </span>
           {warning(view, items) != null && (
             <span className="badge stale">{warning(view, items)}</span>
@@ -212,18 +216,32 @@ function FamilyCard({
   );
 }
 
-/** The status line: how many entries, and — in WORDS, never an invented badge — how they are used. */
-function status(view: SectionView, total: number, active: number): string {
-  const n = `${total} ${total === 1 ? "image" : "images"}`;
+/** The status line: how many entries, and — in WORDS, never an invented badge — how they are used.
+ *
+ *  Every claim here comes from the section's §2.4 RESOLVER, never from the config value (Emma's S2
+ *  review #3). The two differ exactly where it matters: a seat whose pin names an entry the library no
+ *  longer holds resolves to NOTHING, the surface has already fallen through to its own next rung, and
+ *  saying "deleted in use" would name a picture nobody can see — beside a warning chip saying that
+ *  same picture is missing. */
+function status(
+  view: SectionView,
+  items: ReturnType<typeof libraryItems>,
+  active: ReturnType<typeof libraryItems>,
+): string {
+  const n = `${items.length} ${items.length === 1 ? "image" : "images"}`;
   if (view.section.kind === "seat") {
-    return view.pinned == null || view.pinned === ""
-      ? `${n} to choose from · none pinned`
-      : `${view.pinned} in use`;
+    // The resolver's own row — the pin's, or whatever the seat's ladder fell through to (the hero
+    // slide reads the fleet backdrop's pin when it has none of its own).
+    if (active.length > 0) return `${active[0].row.name} in use`;
+    const pinned = view.pinned != null && view.pinned !== "";
+    return pinned
+      ? `${n} to choose from · the pinned image is gone — a fallback is in use`
+      : `${n} to choose from · none pinned`;
   }
   if (view.overriddenBy != null) return `${n} · overridden`;
-  if (active === 0) return `${n} · nothing in use`;
+  if (active.length === 0) return `${n} · nothing in use`;
   if (view.active.mode === "deal") return `${n} · dealt to machines in this order`;
-  if (view.active.mode === "all") return `${n} · all ${active} shown`;
+  if (view.active.mode === "all") return `${n} · all ${active.length} shown`;
   return `${n} · 1 in use`;
 }
 
