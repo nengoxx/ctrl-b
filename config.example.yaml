@@ -37,6 +37,25 @@ server:
 # wake:
 #   cooldown_s: 300
 
+# Owner media (D52/D53 + D65's write path). The ART itself is FILES — drop them into
+# $CTRLB_HOME/media/<ns>/<role>/ over SSH, or upload them from Conf → the gallery; this block only
+# records what a folder listing cannot: the per-role PRIORITY list (`files`, one entry per picture:
+# exactly one of `name` (a file in that folder) or `bundled` (an id the role ships), plus optional
+# `key` / `hidden` / `focal`) and the cross-role `slots` pins. Everything the gallery writes lands
+# here; you rarely hand-author it. `write.max_bytes` is the one knob that is purely yours: the
+# streamed upload cap, counted as the body arrives (never from Content-Length).
+# media:
+#   write:
+#     max_bytes: 15728640            # 15 MB
+#   namespaces:
+#     gacha:
+#       roles:
+#         characters:
+#           files:
+#             - name: lyra-2.png
+#             - bundled: pegasus     # a shipped default, listed as a first-class library entry
+#       slots: {wallpaper: lyra-2}   # a pin: the value is a file STEM (or a bundled id)
+
 # Tailscale Serve (Phase 6c-2, D20) — the in-app HTTPS toggle (Conf → Access). `serve` only, never
 # funnel (tailnet-only by construction). `target_port` = the local port Serve fronts: 5433 (the
 # default) is the backend-served prod SPA; set 5173 to front the dev Vite server instead. Also
