@@ -1,8 +1,10 @@
 import { useState } from "react";
 
+import { CropModal } from "./media/CropModal";
 import { GalleryModal } from "./media/GalleryModal";
 import { SectionCard } from "./media/SectionCard";
 import { useMediaLibrary, type GalleryScope } from "../hooks/useMediaLibrary";
+import { useMediaUpload } from "../hooks/useMediaUpload";
 import type { MediaNsDef } from "../theme-engine/mediaRegistry";
 
 // The owner-media gallery (D65 / MEDIA_MANAGER_PLAN §6) — the Conf half of the media surface, and the
@@ -25,6 +27,17 @@ import type { MediaNsDef } from "../theme-engine/mediaRegistry";
 export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
   const lib = useMediaLibrary(ns, def);
   const [open, setOpen] = useState<{ id: string; scope: GalleryScope } | null>(null);
+  const opened = open === null ? undefined : lib.sections.find((v) => v.section.id === open.id);
+  // The UPLOAD job lives HERE, one level above the gallery modal, for two reasons that are really
+  // one: the crop step must be a SIBLING of the gallery rather than a child (a nested dialog would
+  // ride the gallery's own keydown trap, so Escape in the crop would close the gallery underneath
+  // it), and a job outliving the modal it was started from must not be unmounted with it.
+  const upload = useMediaUpload({
+    section: opened?.section,
+    scope: open?.scope ?? {},
+    rows: opened?.rows ?? [],
+    append: lib.write.append,
+  });
 
   if (lib.error)
     return <div className="conf-card mgal-msg">media index unreachable: {lib.error.message}</div>;
@@ -41,7 +54,6 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
     );
   }
 
-  const opened = open === null ? undefined : lib.sections.find((v) => v.section.id === open.id);
   return (
     <div className="conf-card mgal">
       {lib.sections.map((view) => (
@@ -58,7 +70,16 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
           busy={lib.busy}
           ready={lib.ready}
           write={lib.write}
+          upload={upload}
           onClose={() => setOpen(null)}
+        />
+      )}
+      {upload.crop !== null && (
+        <CropModal
+          job={upload.crop}
+          aspect={opened?.section.aspect}
+          onConfirm={upload.confirm}
+          onCancel={upload.cancel}
         />
       )}
     </div>

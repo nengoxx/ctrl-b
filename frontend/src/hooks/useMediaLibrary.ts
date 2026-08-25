@@ -6,6 +6,7 @@ import { useSaveSettings, useSettings, type MediaFileEntry, type SettingsDoc } f
 import { del } from "../api/client";
 import { bindingKey, boundByKey } from "../lib/media";
 import {
+  appendItem,
   ladderRows,
   makeEligible,
   moveBy,
@@ -111,7 +112,17 @@ interface Job {
   /** What to tell the owner if THIS write fails — for a job whose other half already happened and
    *  cannot be undone (the DELETE cleanup). Absent ⇒ the ordinary save error. */
   failNote?: string;
+  /** How this job ENDED, for the one caller that has to know: the upload's REGISTER phase (§4's
+   *  two-phase job). Every other gesture here is fire-and-forget — its outcome is the next repaint,
+   *  and its failure is the queue's own toast. An upload is different because the bytes are already
+   *  on the server: the failure row has to say which phase failed and offer a retry that never
+   *  re-uploads, and it can only do that if the queue tells it. */
+  settle?: (outcome: JobOutcome) => void;
 }
+
+/** `written` — the server took it · `skipped` — the queue refused to compute it (no authoritative
+ *  state, or the refetch-bound discard) · `failed` — the save was refused. */
+export type JobOutcome = "written" | "skipped" | "failed";
 
 export function useMediaLibrary(ns: string, def: MediaNsDef) {
   const { data, isLoading, error } = useMediaGalleryIndex(ns);
@@ -192,13 +203,19 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
           qc.getQueryData<MediaIndex>(["media", ns]),
         );
         // The honest refusal: without the state this write needs, the only safe patch is none.
-        if (block === null) continue;
+        if (block === null) {
+          job.settle?.("skipped");
+          continue;
+        }
         try {
           sending.current = job;
           await save.mutateAsync({ media: { namespaces: { [ns]: block } } });
+          job.settle?.("written");
         } catch {
           // The reason is already toasted (`onError` above). Drop the rest of the queue rather than
           // replaying intents against a list the server refused — the owner can see what happened.
+          job.settle?.("failed");
+          for (const dropped of queue.current) dropped.settle?.("skipped");
           queue.current.length = 0;
         } finally {
           sending.current = null;
@@ -213,6 +230,7 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
         if (stale.current) {
           stale.current = false;
           if (queue.current.length > 0) {
+            for (const dropped of queue.current) dropped.settle?.("skipped");
             queue.current.length = 0;
             pushToast(
               "The art list did not come back in time — the rest of your changes were not saved. Try again.",
@@ -289,6 +307,21 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
           },
         });
       },
+      /** The REGISTER phase of an upload (§4): the freshly stored file joins `files` at the END,
+       *  keeping every other entry's priority — uploads are purely ADDITIVE, and nothing an owner
+       *  arranged may be re-ordered by one arriving.
+       *
+       *  It is the same queued, recompute-at-send chokepoint every other gesture uses — there is no
+       *  second write path for uploads (§4's write serialization). What it adds is an ANSWER: the
+       *  bytes are already on the server by the time this runs, so the upload's failure row has to
+       *  know whether the list write landed, and a retry of it must never re-upload anything. */
+      append: (section: MediaSection, filename: string, fields: LibraryEntry = {}) =>
+        new Promise<JobOutcome>((resolve) => {
+          enqueue({
+            ...listJob(section.role, (e, r) => appendItem(e, r, filename, fields)),
+            settle: resolve,
+          });
+        }),
       /** Clear a pin — the section falls back to its own ladder. The one write that genuinely needs
        *  no state: removing a binding cannot produce an unresolvable one. */
       unpin: (section: MediaSection) => {

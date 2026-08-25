@@ -10,7 +10,9 @@ import {
   type SectionView,
 } from "../../hooks/useMediaLibrary";
 import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
+import type { MediaUpload } from "../../hooks/useMediaUpload";
 import { modalKeyDown } from "../../lib/focusTrap";
+import { UPLOAD_ACCEPT } from "../../theme-engine/mediaRegistry";
 
 // The full-screen GALLERY (MEDIA_MANAGER_PLAN §6.2, R59 §11.2) — one section's whole library, on the
 // HOUSE dialog shell.
@@ -25,9 +27,9 @@ import { modalKeyDown } from "../../lib/focusTrap";
 // both call `close()`, which is `history.back()`, and the hook's `popstate` handler is what actually
 // closes. One entry pushed, one entry consumed — no orphans (Emma #5).
 //
-// The labelled **Add an image** row is PRESENT AND INERT. Uploading is S3b's slice; a row that looked
-// live and did nothing would be worse than a row that says when it arrives, and hiding it entirely
-// would hide the layout the next slice lands in.
+// The labelled **Add an image** row is the ONE ADMISSION PATH for uploads (§4, Opus M8): exactly one
+// section is ever on screen, so one row, one job, one latch. The desktop riders — a drop onto the
+// panel, a paste — are the same entrance, not a second one: both hand their file to `upload.offer`.
 
 export function GalleryModal({
   view,
@@ -35,6 +37,7 @@ export function GalleryModal({
   busy,
   ready,
   write,
+  upload,
   onClose,
 }: {
   view: SectionView;
@@ -53,6 +56,7 @@ export function GalleryModal({
     setHidden: (section: SectionView["section"], item: LibraryItem, hidden: boolean) => void;
     remove: (section: SectionView["section"], item: LibraryItem) => Promise<void>;
   };
+  upload: MediaUpload;
   onClose: () => void;
 }) {
   const { section } = view;
@@ -137,12 +141,63 @@ export function GalleryModal({
             ✕
           </button>
         </div>
-        <div className="pm-body mgal-body">
+        {/* The DESKTOP riders (R54 §5.4): `preventDefault` on dragover is what makes an element a drop
+            target at all, and a paste handler reading `clipboardData.files` gets "copy image → paste"
+            for three lines. Neither costs anything on the phone, and both go through the same
+            `offer` — one admission path, one latch. */}
+        <div
+          className="pm-body mgal-body"
+          onDragOver={(e) => {
+            if (!section.caps.upload) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+          }}
+          onDrop={(e) => {
+            if (!section.caps.upload) return;
+            e.preventDefault();
+            upload.offer(e.dataTransfer.files[0]);
+          }}
+          onPaste={(e) => upload.offer(e.clipboardData.files[0])}
+        >
           {section.caps.upload && (
-            <button type="button" className="mgal-add" disabled aria-disabled="true">
-              <span aria-hidden>＋</span> Add an image
-              <small>uploading arrives in the next slice — copy files in over SSH for now</small>
-            </button>
+            <>
+              {/* HIDDEN, `accept`ed by explicit types, and NO `capture` (R54 §5.1/§5.4): both engines
+                  already offer the camera in the chooser for an image accept list, and `capture`
+                  would make the camera the only option. `input.value` is reset in the handler. */}
+              <input
+                ref={upload.inputRef}
+                type="file"
+                accept={UPLOAD_ACCEPT}
+                hidden
+                onChange={upload.onInputChange}
+              />
+              <button
+                type="button"
+                className="mgal-add"
+                disabled={!upload.ready || upload.busy}
+                onClick={upload.pick}
+              >
+                <span aria-hidden>＋</span> {upload.busy ? working(upload.phase) : "Add an image"}
+                <small>
+                  {upload.busy
+                    ? "keep this open until it finishes"
+                    : "a photo or a picture — you can crop it next"}
+                </small>
+              </button>
+            </>
+          )}
+          {upload.failure !== null && (
+            <p className="mgal-fail" role="status">
+              <b>{failureTitle(upload.failure.phase)}</b> {upload.failure.message}
+              {upload.failure.retry !== undefined && (
+                <button type="button" className="mgal-act" onClick={upload.failure.retry}>
+                  Try again
+                </button>
+              )}
+              <button type="button" className="mgal-act" onClick={upload.dismiss}>
+                Dismiss
+              </button>
+            </p>
           )}
           <p className="mgal-scope">
             <span className="path">
@@ -169,8 +224,7 @@ export function GalleryModal({
           )}
           {items.length === 0 ? (
             <p className="mgal-empty">
-              Empty — copy .png/.jpg/.webp files into the folder above, or use Add an image once it
-              lands.
+              Empty — use <b>Add an image</b> above, or copy .png/.jpg/.webp files into the folder.
             </p>
           ) : selected !== undefined ? (
             <ItemDetail
@@ -207,6 +261,28 @@ export function GalleryModal({
       </div>
     </div>
   );
+}
+
+/** What the Add row says while a job runs. Per PHASE, because they take visibly different amounts of
+ *  time on a phone and "working…" for four seconds reads as a hang. */
+function working(phase: MediaUpload["phase"]): string {
+  // `null` while the CROP step is open: the job holds the latch, but nothing is running — the app is
+  // waiting for the owner, behind a modal that covers this row anyway.
+  if (phase === null) return "Working…";
+  if (phase === "guard") return "Opening the picture…";
+  if (phase === "export") return "Preparing the image…";
+  if (phase === "upload") return "Uploading…";
+  return "Saving…";
+}
+
+/** The failure row's own heading — WHICH step failed, because the answer differs completely: a
+ *  refused pick means choose another file, a failed upload means try again, and a failed
+ *  registration means the picture is already on the server. */
+function failureTitle(phase: MediaUpload["phase"]): string {
+  if (phase === "guard") return "That picture cannot be used —";
+  if (phase === "export") return "The image could not be prepared —";
+  if (phase === "upload") return "The upload did not finish —";
+  return "Uploaded, but not saved to the list —";
 }
 
 /** The dialog's own name. A section scoped to a KEY is titled by that key plus what a file of the role

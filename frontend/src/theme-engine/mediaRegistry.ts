@@ -84,6 +84,8 @@ export interface MediaBounds {
 export interface UploadLimits extends Omit<GuardLimits, "maxBytes">, NameLimits {
   /** What the guard uses for `maxBytes` until the settings snapshot supplies the real one. */
   maxBytesFallback: number;
+  /** How many `409` name races one upload answers before giving up. */
+  raceRetries: number;
 }
 
 export const UPLOAD_LIMITS: UploadLimits = {
@@ -106,6 +108,12 @@ export const UPLOAD_LIMITS: UploadLimits = {
    *  the walk is O(n) over a folder listing the gallery already holds, and a hundredth copy of one
    *  picture is a library, not a collision. */
   attempts: 99,
+  /** How many times a `409` from the server's race guard is answered with the next suffix before the
+   *  upload gives up and says so (§2.5 — "never a dialog"). A 409 means another writer took the name
+   *  between our listing and our PUT, which needs a second device uploading in the same instant; a
+   *  handful of retries is generous for that and still bounded, because an unbounded walk against a
+   *  server that answers 409 to everything is an infinite upload loop. */
+  raceRetries: 5,
 };
 
 /** What the PICKER asks for. EXPLICIT types rather than `image/*`, on R54's source reading of both

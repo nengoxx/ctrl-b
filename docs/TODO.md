@@ -1434,9 +1434,15 @@ owner eyeball; each passes `tools/check.py`.
       success, the single `?rev=` stamp; + her CONFIRM round: the queue's one send-time invariant
       (pin eligibility recomputed at send · the timeout discards ALL) and the idempotent close
       primitive; as-built note in MEDIA_MANAGER_PLAN §2.1/§6.5)
-- [ ] S3a — Pure: `lib/imageExport` + worker + the input guard + the fixture fence
-- [ ] S3b — Wiring: picker + `CropModal` + `useMediaUpload` (the ONE admission latch · auto-unique
+- [x] S3a — Pure: `lib/imageExport` + worker + the input guard + the fixture fence
+      (three modules, not one — `lib/imageProbe.ts` (guard + header reader) · `lib/imageExport.ts`
+      + `imageExport.worker.ts` · `lib/uploadName.ts`; `UPLOAD_LIMITS`/`UPLOAD_ACCEPT` + the per-role
+      `export` override in the registry; the stylelint `image-orientation` ban)
+- [x] S3b — Wiring: picker + `CropModal` + `useMediaUpload` (the ONE admission latch · auto-unique
       naming · two-phase retry · failure rows) + the live Add row
+      (+ `putBytes` · `write.append` + the queue's per-job outcome · the crop `touched` rule
+      corrected against a real browser · **no `focal` seeded — the plan's "crop centre seeds focal"
+      is vacuous under the library model; S4 owns it**, MEDIA_MANAGER_PLAN §12 as-built)
 - [ ] S4 — Focal: `focalPosition`/`useFocalPosition` + `FramingSheet` + registry preview descriptors
       + **the ~10 paint-site rewrite** (the `--cv-*` inheritance chain → per-window hooks;
       `coverHeroFocus` refractionalized)

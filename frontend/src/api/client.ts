@@ -104,6 +104,43 @@ export function putJSON<T>(path: string, body: unknown): Promise<T> {
   return sendJSON<T>("PUT", path, body);
 }
 
+/** PUT RAW BYTES — the ONE write in this app that is not JSON (D65 / MEDIA_MANAGER_PLAN §3).
+ *
+ *  **The verb and the body shape ARE the security control**, which is why this is its own function
+ *  rather than an option on `sendJSON`: the app has no application-layer auth (the tailnet is the
+ *  boundary), so the realistic attacker is the owner's own browser on another origin — and the only
+ *  cross-origin requests a page can fire without a preflight are the CORS-SAFELISTED ones, which
+ *  include `multipart/form-data` POSTs. A raw-body `PUT` is not safelisted: it forces an `OPTIONS`
+ *  preflight that this app answers with no ACAO, so a cross-origin write dies unsent. Never turn this
+ *  into a POST, and never send `FormData` from it (SECURITY_MODEL §2.7).
+ *
+ *  The `Content-Type` is the blob's own and is advisory only — the server reads the MAGIC BYTES and
+ *  answers 415 if they disagree with the extension in the URL.
+ *
+ *  Errors keep their STATUS (`ApiError.status`), because the media write's callers branch on it: a
+ *  `409` is the name-race guard and is retried with the next suffix rather than shown to anyone. */
+export async function putBytes<T>(path: string, body: Blob): Promise<T> {
+  const res = await fetch(path, {
+    method: "PUT",
+    headers: {
+      "Content-Type": body.type || "application/octet-stream",
+      Accept: "application/json",
+    },
+    body,
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const j = (await res.json()) as { detail?: unknown };
+      detail = formatDetail(j?.detail) ?? detail;
+    } catch {
+      /* non-JSON error body — keep the status line */
+    }
+    throw new ApiError(detail, res.status);
+  }
+  return (await res.json()) as T;
+}
+
 /** DELETE a resource. Surfaces FastAPI `detail` on error; tolerates an empty 204 body. */
 export async function del(path: string): Promise<void> {
   const res = await fetch(path, { method: "DELETE", headers: { Accept: "application/json" } });

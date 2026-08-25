@@ -412,14 +412,25 @@ describe("the gallery modal (§6.2)", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("carries the Add row — PRESENT and inert, because uploading lands in the next slice", async () => {
+  it("carries the Add row — the ONE admission path, with its hidden picker beside it (S3b)", async () => {
     renderGallery();
     const dialog = await openSection("characters");
     const add = within(dialog)
       .getByText(/Add an image/)
       .closest("button");
-    expect(add).toHaveProperty("disabled", true);
-    expect(add!.textContent).toContain("next slice");
+    expect(add).toHaveProperty("disabled", false);
+    // Explicit accept types (never `image/*`) and NO `capture`: both engines already offer the camera
+    // in the chooser for an image accept list, and `capture` would make it the only option (R54 §5).
+    const input = dialog.querySelector("input[type=file]");
+    expect(input?.getAttribute("accept")).toBe("image/png,image/jpeg,image/webp");
+    expect(input?.hasAttribute("capture")).toBe(false);
+    expect(input?.hasAttribute("multiple")).toBe(false);
+  });
+
+  it("…and a SEAT has none: a read-only view over another library has nothing to upload to", async () => {
+    renderGallery();
+    const dialog = await openSection("Fleet backdrop");
+    expect(within(dialog).queryByText(/Add an image/)).toBeNull();
     expect(dialog.querySelector("input[type=file]")).toBeNull();
   });
 

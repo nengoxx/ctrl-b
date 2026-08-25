@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import AxeBuilder from "@axe-core/playwright";
 
 import { expect, test } from "./fixtures";
@@ -126,6 +129,7 @@ async function statefulMedia(
   const st = { onDisk: [...initial.onDisk], files: [...initial.files] };
   const puts: Record<string, unknown>[] = [];
   const deletes: string[] = [];
+  const uploads: { filename: string; body: Buffer }[] = [];
   await page.route("**/api/**", async (route) => {
     const req = route.request();
     const path = new URL(req.url()).pathname;
@@ -139,6 +143,19 @@ async function statefulMedia(
           roles: { characters: collate(st.files, st.onDisk), banner: [], reel: [], oracle: [] },
           slots: {},
         }),
+      });
+    }
+    // D65's typed write verb: the BYTES, raw-bodied, never multipart and never POST. The mock is the
+    // server's own contract in miniature — the file joins the folder, so the next index read collates
+    // it exactly as the real one would.
+    if (req.method() === "PUT" && path.includes("/api/media/gacha/files/")) {
+      const filename = decodeURIComponent(path.split("/").pop() ?? "");
+      uploads.push({ filename, body: req.postDataBuffer() ?? Buffer.alloc(0) });
+      st.onDisk.push(filename);
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ name: filename.replace(/\.[^.]+$/, ""), file: filename }),
       });
     }
     if (req.method() === "DELETE" && path.includes("/api/media/gacha/files/")) {
@@ -161,8 +178,12 @@ async function statefulMedia(
     }
     return route.fallback();
   });
-  return { st, puts, deletes };
+  return { st, puts, deletes, uploads };
 }
+
+/** The e2e's own picker files, from the shared corpus (`scripts/gen-test-images.mjs`). */
+const image = (name: string) =>
+  fileURLToPath(new URL(`../tests/fixtures/images/${name}`, import.meta.url));
 
 test("Conf · Theme art — the library round trip: activate · reorder · In use · delete", async ({
   page,
@@ -360,4 +381,119 @@ async function expectNoViolations(page: import("@playwright/test").Page) {
     violations,
     `\n${violations.map((v) => `${v.id} (${v.impact}, ${v.nodes.length} nodes)`).join("\n")}`,
   ).toEqual([]);
+}
+
+test("Conf · Theme art — the UPLOAD round trip: Add → pick → crop → tile → active → delete", async ({
+  page,
+}) => {
+  // §11's full round trip, and the only place the export pipeline runs for REAL: a real picker
+  // activity, a real `createImageBitmap`, a real worker, a real `OffscreenCanvas.convertToBlob`.
+  // Everything the vitest suite pins is a SHAPE against a faked worker; what only a browser can prove
+  // is that the pipeline produces bytes at all, that they leave through D65's typed verb, and that
+  // the file the server then lists is the one the gallery paints.
+  await bootConf(page);
+  const { st, puts, uploads, deletes } = await statefulMedia(page, { onDisk: [], files: [] });
+
+  await page.goto("/");
+  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  await card.click();
+  const dialog = page.getByRole("dialog");
+  // The role is empty of OWNER files; its bundled tier is what the grid holds until now.
+  await expect(dialog.getByRole("status")).toContainText("5 images");
+
+  // ① the ADD ROW is the one admission path, and it opens the real picker.
+  const chooser = page.waitForEvent("filechooser");
+  await dialog.getByRole("button", { name: /Add an image/ }).click();
+  await (await chooser).setFiles(image("photo-320x240.png"));
+
+  // ② the crop step. Untouched ⇒ "use as is" — the whole picture, through the same export.
+  const crop = page.getByRole("dialog", { name: "Frame the image" });
+  await expect(crop).toBeVisible();
+  await crop.getByRole("button", { name: "Use as is", exact: true }).click();
+
+  // ③ the BYTES leave through the typed PUT, under a name minted from the picked stem and the
+  //    EXPORT's own extension — a PNG source keeps alpha, so it lands as webp.
+  await expect.poll(() => uploads.length).toBe(1);
+  expect(uploads[0].filename).toBe("photo-320x240.webp");
+  expect(uploads[0].body.length).toBeGreaterThan(64);
+  // The real encoder's own header, not a label we chose: `RIFF....WEBP`.
+  expect(uploads[0].body.subarray(0, 4).toString("latin1")).toBe("RIFF");
+  expect(uploads[0].body.subarray(8, 12).toString("latin1")).toBe("WEBP");
+
+  // ④ …then ONE config write appends it, and the server's next listing is what repaints.
+  await expect.poll(() => puts.length).toBe(1);
+  expect(st.files).toEqual([{ name: "photo-320x240.webp" }]);
+  const tile = dialog.getByRole("button", { name: "photo-320x240.webp", exact: true });
+  await expect(tile).toBeVisible();
+  await expect(dialog.getByRole("status")).toContainText("6 images"); // the upload + the bundled tier
+
+  // ⑤ it is an ordinary library entry from here on: activate it, then delete it.
+  await tile.click();
+  await dialog.getByRole("button", { name: "Set as active", exact: true }).click();
+  await expect.poll(() => puts.length).toBe(2);
+  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).last().click();
+  await expect.poll(() => deletes.length).toBe(1);
+  expect(deletes[0]).toBe("/api/media/gacha/files/characters/photo-320x240.webp");
+  await expect.poll(() => st.files).toEqual([]);
+});
+
+test("Conf · Theme art — the export strips EXIF, and the picked extension decides nothing", async ({
+  page,
+}) => {
+  // The privacy half of "always re-encode" (R54 §3.5, measured in both engines): the owner uploads
+  // phone photos to a homelab panel, and the GPS tag of their house must not land in
+  // `$CTRLB_HOME/media`. It is also why the SERVER needs no metadata stripper — it has no decoder at
+  // all, by D65's own rule — so this assertion is the only thing standing behind that claim.
+  await bootConf(page);
+  const { uploads } = await statefulMedia(page, { onDisk: [], files: [] });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open the characters gallery", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+
+  const chooser = page.waitForEvent("filechooser");
+  await dialog.getByRole("button", { name: /Add an image/ }).click();
+  await (await chooser).setFiles(image("jpeg-exif-portrait.jpg"));
+  await page
+    .getByRole("dialog", { name: "Frame the image" })
+    .getByRole("button", { name: "Use as is", exact: true })
+    .click();
+
+  await expect.poll(() => uploads.length).toBe(1);
+  // A JPEG source cannot carry alpha, so the policy sends it to jpeg — and the stored NAME follows
+  // the produced bytes (`.jpg`), never the `.jpeg` that was picked.
+  expect(uploads[0].filename).toBe("jpeg-exif-portrait.jpg");
+  const head = uploads[0].body.subarray(0, 4096).toString("latin1");
+  expect(uploads[0].body.subarray(0, 2).toString("hex")).toBe("ffd8");
+  expect(head).not.toContain("Exif");
+  expect(head).not.toContain("ns.adobe.com/xap"); // XMP
+
+  // …and the SOURCE really carries one, which is the half a stripping test silently loses: a fixture
+  // whose EXIF never got written makes every assertion above vacuously true. (It happened — sharp's
+  // `withExifMerge` wrote `Orientation: 1` where 6 was asked for.)
+  const source = readFileSync(image("jpeg-exif-portrait.jpg"));
+  expect(source.subarray(0, 4096).toString("latin1")).toContain("Exif");
+
+  // THE orientation fact, end to end. The file is ENCODED 400×200 with `Orientation=6`, so every
+  // engine DISPLAYS it 200×400 — and what we store must be what the owner saw. A stored 400×200 would
+  // mean the decode ignored EXIF; the wrong REGION would mean the crop went through
+  // `createImageBitmap`'s rect form, which returns the wrong quadrant on exactly this input in
+  // Chromium (R54 §3.2, its own `TODO(crbug.com/40773069)`).
+  expect(sofSize(uploads[0].body)).toEqual({ width: 200, height: 400 });
+});
+
+/** A JPEG's frame size, from its own bytes — the only honest way to ask what was stored. */
+function sofSize(jpeg: Buffer): { width: number; height: number } | null {
+  for (let i = 2; i + 9 < jpeg.length;) {
+    if (jpeg[i] !== 0xff) {
+      i++;
+      continue;
+    }
+    const marker = jpeg[i + 1];
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return { width: jpeg.readUInt16BE(i + 7), height: jpeg.readUInt16BE(i + 5) };
+    }
+    i += 2 + jpeg.readUInt16BE(i + 2);
+  }
+  return null;
 }

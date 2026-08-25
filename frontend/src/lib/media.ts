@@ -209,6 +209,16 @@ export function revUrl(url: string, revision?: string): string {
   return revision ? `${url}?rev=${encodeURIComponent(revision)}` : url;
 }
 
+/** The mount URL of ONE file — the only place the client ever BUILDS a media path, and it exists for
+ *  exactly one caller: an upload's `PUT`, whose file has no index row yet to read a `url` off (D65 /
+ *  MEDIA_MANAGER_PLAN §3). Every other consumer keeps the standing rule and uses `MediaFile.url`.
+ *
+ *  Mirrors `core/media.py#file_url`: the same `<root>/<ns>/files/<role>/<file>` shape and the same
+ *  per-segment percent-encoding, so the name the server parses back out is the one that was minted. */
+export function mediaFileUrl(ns: string, role: string, filename: string): string {
+  return `/api/media/${encodeURIComponent(ns)}/files/${encodeURIComponent(role)}/${encodeURIComponent(filename)}`;
+}
+
 /** Bind a role's files to KEYS by casefolded stem — the `named` kind's whole mechanism (MEDIA_PLAN §2).
  *
  *  A file binds to the key its `normalizeMediaKey`d stem EQUALS. Nothing else binds: a stem matching no

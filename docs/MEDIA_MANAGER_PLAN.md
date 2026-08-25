@@ -512,6 +512,32 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 | S2 | gallery: section descriptors + active resolvers (H1) · entry/role-family cards · modal + `useOverlayBackGuard` · grid + detail panel · set-active/use-here/promote/hidden · defect #1–#4, #9–#12 · e2e | full gate + e2e |
 | S3a | pure: imageExport + worker + guard + fixture fence | full gate |
 | S3b | wiring: picker + CropModal + useMediaUpload (latch · naming · two-phase retry · failure rows) + add-row live | full gate + e2e arm |
+
+> **S3a/S3b AS-BUILT (2026-08-25) — four notes, three of them deviations from this document.**
+>
+> · **The pure module is THREE modules.** The map above pins `lib/imageExport.ts` + worker; the build
+>   split off `lib/imageProbe.ts` (the header reader + the guard ladder) and `lib/uploadName.ts` (§2.5's
+>   minter). Each is a different subject with its own fixture fence, and folding a byte-level format
+>   parser into the export module is how a 500-line file nobody re-reads gets made. The pin's SUBSTANCE
+>   is intact — every one of them is pure, takes its policy as an argument, and imports no registry.
+> · **The upload's tunables live in `theme-engine/mediaRegistry.ts#UPLOAD_LIMITS`** (64 MP · the 15 MB
+>   fallback · the head slice · the name budget · the suffix-attempt cap · the 409 race cap), with
+>   `UPLOAD_ACCEPT` beside it and a per-role `export` override on `MediaRoleDef` (`kit/brand` and
+>   `frontier/stack` force PNG). `media.write.max_bytes` stays the SERVER's, read off the settings
+>   snapshot.
+> · **NO `focal` is seeded by an upload (§4's "the crop centre seeds the focal point" is VACUOUS here,
+>   and is not built).** What gets stored IS the crop, so the framed subject is at the centre of the
+>   stored file by construction: the seeded value would be `{x: 0.5, y: 0.5}` for every upload, crop
+>   and "use as is" alike — which is exactly what an ABSENT focal already means (§5). Writing it would
+>   put a redundant default in the owner's config and make every uploaded file look deliberately
+>   framed. **S4 owns focal entirely**, where it earns its keep: one library feeding windows of
+>   different shapes. Flagged to the main seat, not absorbed.
+> · **The crop's "untouched" rule is not what a first reading suggests.** `react-easy-crop` emits
+>   `onCropChange`, `onZoomChange` AND `onCropComplete` while it MEASURES its own container — caught in
+>   the browser, where a freshly opened modal already offered "Use this crop". Reading any of those as
+>   an edit makes "confirm-untouched = use as is" unreachable on every upload forever. Only
+>   `onInteractionStart`, our own zoom slider and the shape row set `touched`; the reducer's arms pin
+>   both halves.
 | S4 | focal: focalPosition/useFocalPosition + FramingSheet + registry preview descriptors + **the ~10 paint-site rewrite** (the `--cv-*` chain → per-window hooks; `coverHeroFocus` refractionalized) | full gate + visual probe |
 | S5 | drag: G6/G5→G1→G2→G4→G3→hygiene + held-commit machine | full gate |
 | S6 | owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball · crop/framing/drag feel · Fennec expected-partials | owner acceptance |

@@ -84,7 +84,10 @@ const main = async () => {
   write(
     "jpeg-exif-portrait.jpg",
     await quadrants(400, 200)
-      .withExifMerge({ IFD0: { Orientation: "6" } })
+      // `withMetadata({orientation})` writes the EXIF tag WITHOUT rotating the pixels, which is the
+      // whole point — `withExifMerge({IFD0:{Orientation:"6"}})` silently wrote a 1 (verified by
+      // reading the tag back), leaving a fixture that proved nothing.
+      .withMetadata({ orientation: 6 })
       .jpeg({ quality: 70 })
       .toBuffer(),
   );
@@ -99,8 +102,11 @@ const main = async () => {
       .webp()
       .toBuffer(),
   );
-  // The e2e's picker file: big enough that a crop and a downscale both mean something.
   write("photo-64x48.png", await quadrants(64, 48).png().toBuffer());
+  // The E2E's picker file, and the one place a real ENCODE happens in a test. Big enough that the
+  // export's own floor (`MIN_OUTPUT_BYTES`) is nowhere near it — a 64px thumbnail can encode to a
+  // few dozen bytes, which is indistinguishable from the dead-canvas failure the floor exists for.
+  write("photo-320x240.png", await quadrants(320, 240).png().toBuffer());
 
   // ── the refusal arms: formats this surface does not serve, said by NAME ─────────────────────────
   write("tiff-8x6.tiff", await quadrants(8, 6).tiff().toBuffer());
