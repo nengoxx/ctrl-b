@@ -23,7 +23,13 @@
 
 import type { ActiveResolver } from "../lib/mediaLibrary";
 import { ART as FRONTIER_ART, RIG_KEYS } from "../themes/frontier/art";
-import { activeHero, activeRigs, activeStackLayer, STACK_KEYS } from "../themes/frontier/ownerArt";
+import {
+  activeHero,
+  activeRigs,
+  activeStackLayer,
+  STACK_ART,
+  STACK_KEYS,
+} from "../themes/frontier/ownerArt";
 import {
   activeCast,
   activeOraclePool,
@@ -42,14 +48,6 @@ const BUNDLED_ROSTER = defaultRoster();
  *  is per list because a roster entry's art hangs off a different field than a scene's. */
 const bundle = <T>(entries: readonly T[], id: (e: T) => string, url: (e: T) => string) =>
   entries.map((e) => ({ id: id(e), url: url(e) }));
-
-/** frontier's stack layers by their KEY — the same three assets `frontierArtFromIndex` falls back to,
- *  keyed the way the ids are spelled (the theme's own object names them `cube`/`mid`/`base`). */
-const STACK_ART: Record<(typeof STACK_KEYS)[number], string> = {
-  cube: FRONTIER_ART.stack.cube,
-  "platform-mid": FRONTIER_ART.stack.mid,
-  "platform-base": FRONTIER_ART.stack.base,
-};
 
 /** What a role's files ARE, publicly (MEDIA_PLAN §2's two kinds). `pool` = the ordered list the server
  *  collates and the gallery reorders, where POSITION is the assignment. `named` = files binding to KEYS

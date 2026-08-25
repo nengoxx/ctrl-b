@@ -35,14 +35,21 @@ const CHIPS = ["Which rigs are online?", "Any incidents today?"] as const;
 // Art per LAYER (D53 M2): the owner's `media/frontier/stack/<layer>.png` where they have named one, the
 // bundled `stack` partition of art.ts where they have not — resolved by `useFrontierArt`, which reads the
 // same shared query the Fleet body does (one request for both bodies).
+function Layer({ name, url }: { name: string; url?: string }) {
+  if (url === undefined) return null;
+  return <div className={`layer ${name}`} style={{ backgroundImage: `url(${url})` }} />;
+}
+
 function RigStack() {
   const { stack } = useFrontierArt();
   return (
     <div className="fr-rigstack-pin" aria-hidden>
       <div className="fr-rigstack">
-        <div className="layer base" style={{ backgroundImage: `url(${stack.base})` }} />
-        <div className="layer mid" style={{ backgroundImage: `url(${stack.mid})` }} />
-        <div className="layer cube" style={{ backgroundImage: `url(${stack.cube})` }} />
+        {/* A layer the owner switched OFF paints nothing at all (Emma's S2 review #2) — the three
+            composite, so a retired layer leaves a gap in the picture rather than restoring itself. */}
+        <Layer name="base" url={stack.base} />
+        <Layer name="mid" url={stack.mid} />
+        <Layer name="cube" url={stack.cube} />
       </div>
     </div>
   );

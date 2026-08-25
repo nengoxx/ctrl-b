@@ -20,6 +20,7 @@ import { cycleAt, firstUsable, resolveNamed, revUrl } from "../../lib/media";
 import {
   activeIds,
   ladderRows,
+  offersBundled,
   rowId,
   shown,
   usableLadderRows,
@@ -32,23 +33,44 @@ import { ART, RIG_KEYS } from "./art";
  *  Ordered as they are dropped in the gallery, back to front. */
 export const STACK_KEYS = ["cube", "platform-mid", "platform-base"] as const;
 
+export type StackKey = (typeof STACK_KEYS)[number];
+
+/** The bundled layer each KEY stands for. Here rather than in the media registry (which used to hold a
+ *  second copy) because the registry may import this module and never the other way round (§2.4's pinned
+ *  import direction) — and because the ladder below needs it: a bundled stack ROW resolves to exactly
+ *  this asset, so the gallery's "in use" and the surface's paint read one table. */
+export const STACK_ART: Record<StackKey, string> = {
+  cube: ART.stack.cube,
+  "platform-mid": ART.stack.mid,
+  "platform-base": ART.stack.base,
+};
+
 /** What the frontier surfaces paint, after the owner's folder has had its say. */
 export interface FrontierArt {
-  /** The OWNER's rig for display position `i`, or `undefined` when they have supplied none for it.
+  /** The rig for display position `i`, in THREE answers — because "no URL" means two different things
+   *  and a card must not treat them alike (Emma's S2 review #2):
    *
-   *  Partial on purpose, and it is the one accessor here that is: the bundled fallback for a rig is
-   *  INDEXED (`present()` names it as an asset key, `RIG_KEYS[i % 6]`), so putting the last rung in
-   *  here would mean a second copy of that modulo living beside the first. The consumer writes
-   *  `rigUrlFor(i) ?? assets[enc.asset]` — which degenerates to exactly the pre-M2 expression when the
-   *  folder is empty, so byte-identity on a fresh install holds BY CONSTRUCTION rather than by
-   *  assertion. Hero and the stack have no such index-driven bundled default, so they are total. */
-  rigUrlFor: (i: number) => string | undefined;
-  /** The map cover: the `hero` pin, else that folder's first usable file, else the bundled vista. */
+   *   · a URL — paint it. An owner file, or the bundled rig the fallback tier deals at that position.
+   *   · `undefined` — this position's entry cannot paint (a broken drop; a bundled id the theme no
+   *     longer ships). The consumer's own INDEXED rig stands, which is the shipped placeholder rule:
+   *     an unusable file holds its slot and only ITS card falls back, so one bad drop can never
+   *     re-deal the fleet. It is also the answer for a stub payload that never described the role.
+   *   · `null` — the role RESOLVED TO NOTHING although the payload described it: the owner switched
+   *     every entry off. Paint no rig. The In-use switch has to mean what it says, and a card that
+   *     kept showing the bundled rig would make the gallery's "nothing in use" a lie.
+   *
+   *  The bundled fallback for a position is INDEXED (`present()` names it `RIG_KEYS[i % 6]`), which is
+   *  why the last rung stays at the consumer rather than being copied here. */
+  rigUrlFor: (i: number) => string | null | undefined;
+  /** The map cover: the `hero` pin, else that folder's first usable file, else the bundled vista. The
+   *  vista is addressed by NO id (the role ships no bundled entries), so it is not a library entry the
+   *  owner can retire — which is why this rung is unconditional where the two above are not. */
   hero: string;
-  /** The Comms stack, per LAYER — owner file where one is named for that layer, bundled where not.
+  /** The Comms stack, per LAYER — owner file where one is named for that layer, the bundled layer
+   *  where the library still offers it, and NOTHING where the owner switched that bundled entry off.
    *  A partial drop therefore COMPOSITES owner over bundled, deliberately (§3): the layers are one
    *  picture, and refusing to mix them would mean the owner had to redraw all three to change one. */
-  stack: { cube: string; mid: string; base: string };
+  stack: { cube?: string; mid?: string; base?: string };
 }
 
 /** Resolve the theme's art from a media-index payload. `undefined` — the query has not answered, or
@@ -61,11 +83,16 @@ export function frontierArtFromIndex(index: MediaIndex | undefined): FrontierArt
     const files = index?.roles?.[name];
     return Array.isArray(files) ? files : [];
   };
-  const rigs = rigRows(role("rigs"));
-  const stack = stackRows(role("stack"));
+  const rigRowsIn = role("rigs");
+  const rigs = rigRows(rigRowsIn);
+  // Whether this payload described the rig role's bundled TIER at all. It is what separates "the owner
+  // retired the shipped rigs" from "this is a stub payload" — see `offersBundled`.
+  const rigTier = offersBundled(rigRowsIn);
+  const stack = role("stack");
 
   return {
     rigUrlFor: (i) => {
+      if (rigs.length === 0) return rigTier ? null : undefined;
       // `cycleAt`, so the pool is dealt WHOLE and position-preserving (the shipped gacha invariant):
       // an unusable file HOLDS its position, and only that one card falls back — one broken drop can
       // never re-deal the rest of the fleet's art.
@@ -74,9 +101,9 @@ export function frontierArtFromIndex(index: MediaIndex | undefined): FrontierArt
     },
     hero: heroRow(role("hero"), index?.slots ?? {}) ?? ART.hero,
     stack: {
-      cube: stack.get("cube") ?? ART.stack.cube,
-      mid: stack.get("platform-mid") ?? ART.stack.mid,
-      base: stack.get("platform-base") ?? ART.stack.base,
+      cube: stackLayerUrl(stack, "cube"),
+      mid: stackLayerUrl(stack, "platform-mid"),
+      base: stackLayerUrl(stack, "platform-base"),
     },
   };
 }
@@ -110,19 +137,36 @@ function heroRow(rows: readonly MediaFile[], slots: Record<string, string>): str
   return pick === undefined ? undefined : revUrl(pick.url, pick.revision);
 }
 
-/** The Comms stack, per LAYER. The bundled ids ARE the layer keys, so a bundled row answers its own
- *  key — and a partial drop still composites owner over bundled, one layer at a time. */
-function stackRows(rows: readonly MediaFile[]): Map<string, string> {
-  const out = new Map<string, string>();
+/** ONE stack layer's row — the §2.4 ladder BOTH the Comms surface and the Conf gallery read (they
+ *  used to run two near-copies of it, which is how they came to disagree): the owner's file named for
+ *  that layer, else the bundled row carrying the same id. Hidden entries are skipped on both rungs.
+ *
+ *  The bundled ids ARE the layer keys, so a bundled row answers its own key — and a partial drop
+ *  still composites owner over bundled, one layer at a time. */
+function stackLayerRow(rows: readonly MediaFile[], key: string): MediaFile | undefined {
+  const visible = shown(rows);
   const owner = resolveNamed(
-    shown(rows).filter((f) => f.bundled == null),
-    STACK_KEYS,
-  );
-  for (const key of STACK_KEYS) {
-    const file = owner.get(key);
-    if (file !== undefined) out.set(key, revUrl(file.url, file.revision));
+    visible.filter((f) => f.bundled == null),
+    [key],
+  ).get(key);
+  return owner ?? visible.find((f) => f.bundled === key);
+}
+
+/** What one layer PAINTS. `undefined` = nothing — which since the S2 review is a state the owner can
+ *  reach: switching the bundled layer's In-use off retires it, and compositing it back in anyway would
+ *  make the gallery's "nothing in use" a lie (Emma's #2).
+ *
+ *  The shipped layer may still stand as the last DEGRADE rung, and the test is per-KEY rather than
+ *  per-role because that is where the honest line sits: a payload that carries no bundled ENTRY for
+ *  this layer never offered the owner a way to retire it (a stub, a partial mock — or an unusable
+ *  owner file in a payload that listed nothing else), so the shipped layer is still the truthful
+ *  answer. A bundled row that IS on the wire and hidden is the owner's own answer. */
+function stackLayerUrl(rows: readonly MediaFile[], key: StackKey): string | undefined {
+  const row = stackLayerRow(rows, key);
+  if (row !== undefined) {
+    return row.bundled != null ? STACK_ART[key] : revUrl(row.url, row.revision);
   }
-  return out;
+  return rows.some((f) => f.bundled === key) ? undefined : STACK_ART[key];
 }
 
 /** The gallery's reading of the rig pool — every member is dealt, in this order. */
@@ -142,17 +186,11 @@ export function activeHero(
   return { ids: pick ? [rowId(pick)] : [], mode: "first" };
 }
 
-/** The gallery's reading of ONE stack layer (each is its own section, §6.1): the owner's file for that
- *  key, else the bundled row carrying the same id. */
+/** The gallery's reading of ONE stack layer (each is its own section, §6.1) — the SAME `stackLayerRow`
+ *  the surface paints through, which is the whole of §2.4's one-ladder rule. */
 export function activeStackLayer(key: string) {
   return (rows: readonly LibraryRow[]): ActiveArt => {
-    const files = rows as readonly MediaFile[];
-    const owner = resolveNamed(
-      shown(files).filter((f) => f.bundled == null),
-      [key],
-    ).get(key);
-    const fallback = shown(files).find((f) => f.bundled === key);
-    const pick = owner ?? fallback;
+    const pick = stackLayerRow(rows as readonly MediaFile[], key);
     return { ids: pick ? [rowId(pick)] : [], mode: "first" };
   };
 }

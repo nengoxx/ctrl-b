@@ -16,7 +16,10 @@ import type { Host, Service } from "../../types";
 interface Props {
   host: Host;
   services: Service[];
-  art: string; // the rig art URL — the SAME asset the map/grid card shows (passed from FrontierFleet's placement)
+  /** The rig art URL — the SAME asset the map/grid card shows (passed from FrontierFleet's placement).
+   *  Absent when the owner has switched every entry of the rig library off: the banner then carries its
+   *  own ground rather than a retired picture (Emma's S2 review #2). */
+  art?: string;
   plate: string; // the license plate — the SAME as the card
   busy: boolean; // host action in flight (disables the bar)
   run: (action: FleetAction, host: Host) => Promise<void>;
@@ -91,7 +94,10 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
           meta line; drag-up reveals the stats, actions + services. */}
       <div data-bs-peek>
         <div className={"banner" + (online ? "" : " dim")}>
-          <div className="img" style={{ backgroundImage: `url(${art})` }} />
+          <div
+            className="img"
+            style={art === undefined ? undefined : { backgroundImage: `url(${art})` }}
+          />
           <div className="ov" />
           <div className={"stat" + (online ? "" : " off")}>
             <span className="led" aria-hidden />

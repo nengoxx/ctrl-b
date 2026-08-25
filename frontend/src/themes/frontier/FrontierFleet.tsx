@@ -33,6 +33,13 @@ import { present } from "./present";
 const SHEET_KEY = "frontier-host-detail";
 const persistSheetSnap = (snap: SheetDetent) => setSheetSnap(SHEET_KEY, snap);
 
+/** The card's art, out of the ladder's three answers (`FrontierArt.rigUrlFor`): the resolved URL, else
+ *  the theme's own indexed rig — except for `null`, which is the library saying the owner retired every
+ *  entry and the card must paint nothing. */
+function rigArt(resolved: string | null | undefined, indexed: string): string | undefined {
+  return resolved === null ? undefined : (resolved ?? indexed);
+}
+
 export function FrontierFleet({ active }: { active: boolean }) {
   const { hosts, svcByHost, run, busy, isLoading, error } = useFleet();
   const selected = useFrontierSelection();
@@ -63,8 +70,10 @@ export function FrontierFleet({ active }: { active: boolean }) {
           y,
           // The owner's rig for this position, else the theme's own indexed one (`enc.asset` is a
           // validated rig key → its hashed URL). With an empty `rigs/` folder this IS the pre-M2
-          // expression, which is what makes a fresh install byte-identical.
-          art: art.rigUrlFor(i) ?? assets[enc.asset as string],
+          // expression, which is what makes a fresh install byte-identical — but `null` is NOT that
+          // state: it means the library described the role and the owner switched every entry off,
+          // so the card paints no rig rather than resurrecting one (Emma's S2 review #2).
+          art: rigArt(art.rigUrlFor(i), assets[enc.asset as string]),
           plate: enc.plate as string,
           online: !!host.status?.online,
         };
@@ -190,7 +199,10 @@ export function FrontierFleet({ active }: { active: boolean }) {
                   aria-label={`${p.host.name} — ${p.online ? "online" : "asleep"}`}
                 >
                   <span className="led" aria-hidden />
-                  <div className="art" style={{ backgroundImage: `url(${p.art})` }} />
+                  <div
+                    className="art"
+                    style={p.art === undefined ? undefined : { backgroundImage: `url(${p.art})` }}
+                  />
                   <span className="plate">{p.plate}</span>
                   <div className="meta">
                     <div className="nm">{p.host.name}</div>

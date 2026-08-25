@@ -405,4 +405,14 @@ describe("the D65 wire facts", () => {
     // A dangling pin falls THROUGH rather than marking nothing — the ladder the layer itself paints.
     expect(activePool("background")(rows, { background: "gone" }).ids).toEqual(["f:jellyfin.png"]);
   });
+
+  it("hiding everything resolves to NOTHING — there is no shipped rung here to resurrect", () => {
+    // The kit's half of Emma's S2 review #2, and the reason it needed no fix: this namespace ships no
+    // bundled art at all (§3), so "resolved to nothing" already IS what the surfaces paint. Pinned so a
+    // later bundled-art row cannot quietly grow the resurrection the other two themes had.
+    const off = [file("jellyfin", { hidden: true }), file("emby", { hidden: true })];
+    expect(activePool("background")(off, {}).ids).toEqual([]);
+    expect(activeNamedKey("jellyfin")(off).ids).toEqual([]);
+    expect(backgroundArtFrom(index({ background: off }))).toBeUndefined();
+  });
 });

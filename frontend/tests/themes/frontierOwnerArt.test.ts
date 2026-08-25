@@ -234,6 +234,28 @@ describe("the bundled FALLBACK TIER (D65 §2.3)", () => {
     expect(broken.rigUrlFor(1)).toBe(painted("b"));
   });
 
+  it("hiding the whole tier leaves the role EMPTY — 'not in use' means not in use", () => {
+    // Emma's S2 review #2, the frontier half. `rigUrlFor` used to answer `undefined` here, and the
+    // consumer reads that as "fall back to my own indexed rig" — so the map kept dealing exactly the
+    // six rigs the owner had just retired while the gallery said nothing was in use. `null` is the
+    // third answer that tells the two apart.
+    const off = tier.map((b) => ({ ...b, hidden: true }));
+    const art = frontierArtFromIndex(index({ rigs: off }));
+    for (let i = 0; i < 8; i++) expect(art.rigUrlFor(i)).toBeNull();
+    // …and the same for one stack LAYER, which is its own destination with its own switch.
+    const layers = STACK_KEYS.map((k) => bundledRow(k, { hidden: k === "cube" }));
+    const stack = frontierArtFromIndex(index({ stack: layers })).stack;
+    expect(stack.cube).toBeUndefined();
+    expect(stack.mid).toBe(ART.stack.mid); // the other two are untouched — the layers composite
+  });
+
+  it("…while a payload that never described the tier still degrades to the shipped art", () => {
+    // The other half of the predicate: a stub mock or a partial response keeps painting the theme.
+    const art = frontierArtFromIndex(index({ rigs: [], stack: [] }));
+    expect(art.rigUrlFor(0)).toBeUndefined(); // ⇒ the consumer's own indexed rig
+    expect(art.stack).toEqual({ cube: ART.stack.cube, mid: ART.stack.mid, base: ART.stack.base });
+  });
+
   it("a bundled STACK row answers its own layer, and an owner file still wins it", () => {
     const layers = STACK_KEYS.map((k) => bundledRow(k));
     expect(frontierArtFromIndex(index({ stack: layers })).stack).toEqual({

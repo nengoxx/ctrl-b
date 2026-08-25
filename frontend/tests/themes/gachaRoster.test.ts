@@ -4,6 +4,7 @@ import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
 import { MEDIA_NS } from "../../src/theme-engine/mediaRegistry";
 import { ART } from "../../src/themes/gacha/art";
 import {
+  activePool,
   artForHost,
   assignArt,
   defaultRoster,
@@ -377,6 +378,49 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(r.entries).toEqual(defaultRoster().entries);
   });
 
+  it("…but hiding the BUNDLED tier TOO leaves the role EMPTY — the switch means what it says", () => {
+    // Emma's S2 review #2. The render-side fallback used to read "resolved to nothing" as "this must be
+    // a stub payload" and restore the shipped cast — so the gallery said "nothing in use" while the
+    // fleet kept dealing exactly the art the owner had just retired.
+    const off = castTier.map((b) => ({ ...b, hidden: true }));
+    const r = rosterFromIndex(index({ characters: off, banner: [], reel: [] }));
+    expect(r.entries).toEqual([]);
+    // …and the same for the two other roles that ship art, each on its own row.
+    const scenes = rosterFromIndex(
+      index({ banner: [bundled("b2", { hidden: true }), bundled("b3", { hidden: true })] }),
+    );
+    expect(scenes.scenes).toEqual([]);
+    const reel = rosterFromIndex(index({ reel: [bundled("lyra", { hidden: true })] }));
+    expect(reelFigureArt(reel)).toBeNull();
+  });
+
+  it("a PIN can only name what the ladder deals — which is why the pin write LISTS its entry", () => {
+    // Emma's S2 review #1 ②, at the resolver. With an owner cutout present the ladder never offers the
+    // fallback tier, so a pin naming a bundled id resolves to nothing and the pool's own first pick
+    // keeps painting — the card claiming one picture while the transition shows another.
+    const owner = file("cut");
+    const lyra = bundled("lyra");
+    const pin = { reel_figure: "lyra" };
+    expect(activePool("reel_figure")([owner, lyra], pin).ids).toEqual(["f:cut.webp"]);
+    // LISTED — which is exactly what the gallery now writes in the same patch — it is a full citizen.
+    const listed = { ...lyra, listed: true };
+    expect(activePool("reel_figure")([owner, listed], pin).ids).toEqual(["b:lyra"]);
+    // …and the theme's own paint site agrees, because it is the same rule read twice.
+    expect(reelFigureArt(rosterFromIndex(index({ reel: [owner, listed] }, pin)))).toMatchObject({
+      url: ART.cutout,
+    });
+  });
+
+  it("…while a payload that never described the tier still degrades to the shipped art", () => {
+    // The other half of the same predicate, and the reason it is not simply "did anything resolve":
+    // a stub mock, a partial response or a proxy answering `{}` must keep showing the theme rather
+    // than a fleet of placeholders.
+    const stub = rosterFromIndex(index({ characters: [], banner: [], reel: [], oracle: [] }));
+    expect(stub.entries).toEqual(defaultRoster().entries);
+    expect(stub.scenes).toEqual(defaultRoster().scenes);
+    expect(reelFigureArt(stub)).toMatchObject({ url: ART.cutout });
+  });
+
   it("characters/ REPLACES the dealt cast, in the order the index handed over", () => {
     const r = rosterFromIndex(index({ characters: [file("kira"), file("nova")] }));
     expect(r.entries.map((e) => e.name)).toEqual(["kira", "nova"]);
@@ -542,10 +586,19 @@ const kitFile = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
   ...over,
 });
 
+/** The kit rung as the ladder hands it over: PAINT-READY, like every other rung (D65 defect #1 + its
+ *  S2 review rider #8). It used to hand back the bare mount URL and leave the `?rev=` to its two call
+ *  sites — which is how one of them came to stamp a string another rung had already stamped, giving one
+ *  file two cache keys on the one screen that shows both. */
+const kitRung = (f: MediaFile) => ({
+  url: `${f.url}?rev=${encodeURIComponent(f.revision)}`,
+  rev: f.revision,
+});
+
 describe("wallpaperArt — the three-rung fleet backdrop (G6.3)", () => {
   it("takes the SHARED kit background when nothing is pinned, INSTEAD of the bundled scene", () => {
     const kit = kitFile("shared");
-    expect(wallpaperArt(roster([entry("a")]), kit)).toEqual({ url: kit.url, rev: kit.revision });
+    expect(wallpaperArt(roster([entry("a")]), kit)).toEqual(kitRung(kit));
   });
 
   it("loses to the gacha PIN — binding a cast portrait is the half the theme kept", () => {
@@ -576,13 +629,13 @@ describe("wallpaperArt — the three-rung fleet backdrop (G6.3)", () => {
   it("a DANGLING pin falls through to the kit picture, never to a hole", () => {
     const kit = kitFile("shared");
     const r = roster([entry("a")], { wallpaper: "ghost" });
-    expect(wallpaperArt(r, kit)).toEqual({ url: kit.url, rev: kit.revision });
+    expect(wallpaperArt(r, kit)).toEqual(kitRung(kit));
   });
 
   it("an UNUSABLE pinned entry falls through too (the pin is found, but not painted)", () => {
     const kit = kitFile("shared");
     const r = roster([entry("a", { wide: "a-wide.webp", unusable: true })], { wallpaper: "a" });
-    expect(wallpaperArt(r, kit)).toEqual({ url: kit.url, rev: kit.revision });
+    expect(wallpaperArt(r, kit)).toEqual(kitRung(kit));
   });
 
   it("the HERO slide reads the SAME ladder — the two must never show different pictures (§5.3)", () => {

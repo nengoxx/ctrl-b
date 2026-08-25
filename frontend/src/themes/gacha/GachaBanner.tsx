@@ -21,7 +21,6 @@ import {
   type CarouselEvent,
   type CarouselState,
 } from "./carousel";
-import { revUrl } from "../../lib/media";
 import { GACHA_COPY } from "./copy";
 import { openLabel, promoCopy, sceneTitle } from "./fleet";
 import { safeRafLoop, type SafeRafLoop } from "../../theme-engine/safeRafLoop";
@@ -440,10 +439,11 @@ export function GachaBanner({ slides, active, rate, pity, onOpenHost }: Props) {
             >
               {s.art && (
                 <img
-                  // `?rev=`-stamped like the backdrop publish (Codex G6.3 MED-1): the hero and the fleet
-                  // backdrop can resolve to the SAME shared-background file, and a bare URL here let an
-                  // in-place overwrite show two different versions of one picture on one screen.
-                  src={revUrl(s.art.url, s.art.rev)}
+                  // PAINT-READY from the resolver (D65 defect #1 + its S2 review rider #8): the hero and
+                  // the fleet backdrop can resolve to the SAME shared-background file, so the URL has to
+                  // carry the file's `?rev=` — and the ladder is the one place that stamps it. Stamping
+                  // again here gave the same bytes a second cache key on the one screen that shows both.
+                  src={s.art.url}
                   alt=""
                   draggable={false}
                   style={s.art.focus === undefined ? undefined : { objectPosition: s.art.focus }}

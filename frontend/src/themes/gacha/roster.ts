@@ -29,6 +29,7 @@ import { cycleAssign, cycleAt, firstUsable, orderedUsable, revUrl } from "../../
 import {
   activeIds,
   ladderRows,
+  offersBundled,
   rowId,
   usableLadderRows,
   type ActiveArt,
@@ -281,19 +282,26 @@ export function rosterFromIndex(index: MediaIndex | undefined): Roster {
     return Array.isArray(files) ? files : [];
   };
   const bundled = defaultRoster();
-  const cast = castRows(role("characters")).map(toEntry);
-  const scenes = sceneRows(role("banner")).map((f) => toNamed(f, sceneUrl(f.bundled)));
-  const reel = poolRows(role("reel")).map((f) => toNamed(f, cutoutUrl(f.bundled)));
+  const characters = role("characters");
+  const banner = role("banner");
+  const reelFiles = role("reel");
+  const cast = castRows(characters).map(toEntry);
+  const scenes = sceneRows(banner).map((f) => toNamed(f, sceneUrl(f.bundled)));
+  const reel = poolRows(reelFiles).map((f) => toNamed(f, cutoutUrl(f.bundled)));
+  // The last DEGRADE rung, and only that (Emma's S2 review #2). A role that resolved to nothing may
+  // fall back to the shipped set ONLY while this payload never described the bundled tier — a stub, a
+  // partial mock, a proxy answering `{}` — because the real server emits every role's bundled ids and
+  // marks the hidden ones. Once the tier IS on the wire, "nothing resolved" is the owner's own answer:
+  // they switched the entries off, and a fleet that kept painting them would make the In-use switch a
+  // lie. `offersBundled` is the one predicate; the tier rules above decide everything after it.
+  const shipped = <T>(resolved: T[], rows: readonly MediaFile[], fallback: T[]): T[] =>
+    resolved.length > 0 || offersBundled(rows) ? resolved : fallback;
   return {
-    // The last degrade rung, and only that: a payload carrying NO rows at all for a role is one the
-    // real server never sends (it emits the fallback tier for every role that ships art), so an empty
-    // list here means a stub, a partial mock or a proxy answering `{}` — and the shipped art is a
-    // better answer than a fleet of placeholders. Once any row arrives, the tier rules above decide.
-    entries: cast.length > 0 ? cast : bundled.entries,
+    entries: shipped(cast, characters, bundled.entries),
     slots: index.slots ?? {},
-    scenes: scenes.length > 0 ? scenes : bundled.scenes,
+    scenes: shipped(scenes, banner, bundled.scenes),
     pools: {
-      reel: reel.length > 0 ? reel : bundled.pools.reel,
+      reel: shipped(reel, reelFiles, bundled.pools.reel),
       oracle: poolRows(role("oracle")).map((f) => toNamed(f, undefined)),
     },
   };
@@ -392,10 +400,16 @@ function toArt(entry: RosterEntry | null | undefined): ResolvedArt | null {
  *  by `kit/ownerArt.ts#backgroundArtFrom` — i.e. the kit's own pin-then-first-usable pick — so this only
  *  restates it as `ResolvedArt`. `undefined` in, `null` out: the rung is simply absent.
  *
- *  No focal point: the kit role has none to declare, so the surface keeps tokens.css's default crop. */
+ *  No focal point: the kit role has none to declare, so the surface keeps tokens.css's default crop.
+ *
+ *  PAINT-READY like every other rung (Emma's S2 review #8): `ResolvedArt.url` carries its own `?rev=`,
+ *  so a consumer paints it and nothing else. This rung used to hand back the bare mount URL and leave
+ *  the stamping to its two call sites — which is exactly the split that made one of them stamp a
+ *  string another rung had already stamped, giving the same bytes two cache keys. One contract, one
+ *  spelling, one key. */
 function toKitArt(file: MediaFile | undefined): ResolvedArt | null {
   if (file === undefined) return null;
-  return { url: file.url, rev: file.revision };
+  return { url: revUrl(file.url, file.revision), rev: file.revision };
 }
 
 /** The fleet wallpaper / pickup-banner backdrop — THREE rungs, and only the first is gacha's own folder:

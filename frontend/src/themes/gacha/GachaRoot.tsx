@@ -3,7 +3,6 @@ import { useLayoutEffect } from "react";
 import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
 import { useKitBackgroundArt } from "../../theme-engine/kit/ownerArt";
 import { useThemeSetting } from "../../theme-engine/settings";
-import { revUrl } from "../../lib/media";
 import { useUISlice } from "../../store/ui";
 import { GACHA_COPY } from "./copy";
 import { GachaAgent } from "./GachaAgent";
@@ -93,10 +92,11 @@ export function GachaRoot() {
   // the two VALUES rather than the object, so a re-fetch that resolves to the same art cannot re-stamp
   // `body` for nothing.
   const art = wallpaperArt(useGachaRoster(), useKitBackgroundArt());
-  // `?rev=`-stamped like every CSS-painted owner surface (`lib/media.ts#revUrl`, G6.3): the wallpaper is a
-  // background with no element to re-key, so an in-place overwrite must move the URL or the stale decode
-  // survives the repair. Bundled art has no `rev` and keeps its bare URL.
-  const artUrl = revUrl(art.url, art.rev);
+  // PAINT-READY from the resolver (D65 defect #1, and its S2 review rider #8): `ResolvedArt.url` already
+  // carries its `?rev=` — the wallpaper is a background with no element to re-key, so an in-place
+  // overwrite must move the URL or the stale decode survives the repair, and the ladder is where that is
+  // spelled ONCE. Stamping again here would give the same bytes a second cache key.
+  const artUrl = art.url;
   const artFocus = art.focus;
 
   useLayoutEffect(() => {
