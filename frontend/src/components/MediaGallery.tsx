@@ -1,5 +1,5 @@
 import { useMediaIndex, type MediaFile } from "../hooks/useMedia";
-import { useSaveSettings, useSettings } from "../hooks/useSettings";
+import { useSaveSettings, useSettings, type MediaFileEntry } from "../hooks/useSettings";
 import {
   classifyNamed,
   deriveKeyBindings,
@@ -111,6 +111,48 @@ function metaText(f: MediaFile): string {
   return f.width && f.height ? `${f.width}×${f.height} · ${size}` : size;
 }
 
+/** The config `files` list a reorder should persist: `order` is the new sequence of FILENAMES this
+ *  surface shows, and `configured` is what is on disk in config today.
+ *
+ *  A pure transform over the CONFIG list, never a rebuild from the index — that distinction is the
+ *  whole point. Each name keeps the entry it already had (`key`, `hidden`, `focal`, and anything a
+ *  later slice adds ride along untouched), and **`bundled` entries hold their own positions**: they
+ *  are not on screen here, so this surface has no opinion about where they go, and moving them would
+ *  re-deal the fallback tier the owner never touched (§2.3 ③, the tier-preserving rule).
+ *
+ *  A name in config whose file is no longer on disk falls out — the collation already drops it, and
+ *  the pre-D65 whole-list write dropped it too, so this is the shipped behaviour restated, not a new
+ *  deletion. A name with no entry yet (an unlisted SSH drop) joins as a bare `{name}`, which is
+ *  exactly what listing it means.
+ *
+ *  **Local on purpose**: S2 owns `lib/mediaLibrary.ts` and replaces this component's whole write
+ *  layer with it — putting this transform there now would be a module built to be deleted. */
+export function reorderFiles(
+  configured: MediaFileEntry[] | undefined,
+  order: readonly string[],
+): MediaFileEntry[] {
+  const byName = new Map(
+    (configured ?? [])
+      .filter((e) => typeof e?.name === "string")
+      .map((e) => [e.name as string, e] as const),
+  );
+  const take = (name: string): MediaFileEntry => byName.get(name) ?? { name };
+  const out: MediaFileEntry[] = [];
+  let i = 0;
+  for (const entry of configured ?? []) {
+    if (typeof entry?.bundled === "string") {
+      out.push(entry); // holds its position — this surface never lists or moves one
+      continue;
+    }
+    // a NAME slot: filled from the new order. When config names more files than are on disk, the
+    // surplus slots simply go unfilled — those entries were dangling and the listing already ignored
+    // them.
+    if (i < order.length) out.push(take(order[i++]));
+  }
+  for (; i < order.length; i++) out.push(take(order[i])); // names config did not list yet
+  return out;
+}
+
 export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
   // FRESH on entry (Codex F7). The files are dropped in OUT OF BAND — over SSH, from another machine —
   // so a long-lived query with a 60s staleTime would show the owner a listing that predates the copy
@@ -133,7 +175,13 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
   // list currently on screen, so a second tap landing before the index refetched would be computed off a
   // stale list and undo the first move. Blocking the input is the honest fix; a local optimistic order
   // would be a second source of truth for something the server already owns.
-  const busy = save.isPending;
+  //
+  // …and disabled until the SETTINGS snapshot is here too. The write is a read-modify-write over the
+  // persisted `files` list; without that list a reorder can only reconstruct bare `{name}` rows, which
+  // destroys every per-item field the owner set (`key`, `hidden`, `focal`) — silently, and on a tap
+  // that looks like it only moved a row. Refusing the input for the moment the query is in flight is
+  // the honest failure; writing a lossy list is not.
+  const busy = save.isPending || settings === undefined;
 
   if (error)
     return <div className="conf-card mgal-msg">media index unreachable: {error.message}</div>;
@@ -159,23 +207,20 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
 
   /** Move one file within its role and persist the WHOLE role list — the config field is the order
    *  itself, not a diff, and writing the full list is what keeps the stored order meaningful after the
-   *  owner drops a new file in beside it (unlisted names simply follow, in the server's collation).
-   *
-   *  Each name is written back as the ENTRY that is already persisted for it, so per-item state the
-   *  owner set elsewhere survives a reorder; a file with no entry yet (an unlisted drop) joins as a
-   *  bare `{name}`, which is what listing it means. */
+   *  owner drops a new file in beside it (unlisted names simply follow, in the server's collation). */
   const move = (role: string, from: number, to: number) => {
     const names = roleFiles(role).map((f) => f.file);
-    if (to < 0 || to >= names.length) return;
+    if (to < 0 || to >= names.length || settings === undefined) return;
     const next = [...names];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
-    const configured = new Map(
-      (settings?.media?.namespaces?.[ns]?.roles?.[role]?.files ?? [])
-        .filter((e) => typeof e?.name === "string")
-        .map((e) => [e.name as string, e] as const),
-    );
-    patch({ roles: { [role]: { files: next.map((n) => configured.get(n) ?? { name: n }) } } });
+    patch({
+      roles: {
+        [role]: {
+          files: reorderFiles(settings.media?.namespaces?.[ns]?.roles?.[role]?.files, next),
+        },
+      },
+    });
   };
 
   const roles = Object.keys(data.roles);

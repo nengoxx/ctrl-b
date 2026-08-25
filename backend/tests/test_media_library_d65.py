@@ -141,6 +141,10 @@ def test_the_index_carries_focal_hidden_and_listed_on_every_row(home: Path) -> N
 
         assert rows["a"]["focal"] == {"x": 0.42, "y": 0.18, "rev": "r1"}
         assert (rows["a"]["listed"], rows["a"]["hidden"]) == (True, False)
+        # …including the BINDING key (§2.3 ④): a named role's file binds by this field when it has
+        # one and by its stem otherwise, and a resolver may not read config to find that out.
+        assert rows["a"]["key"] == "hero"
+        assert rows["b"]["key"] is None  # no explicit key ⇒ it binds by its stem, the permanent rule
         # HIDDEN IS PRESENT, MARKED — never dropped: the gallery has to show what resolution skips,
         # and one index serves both consumers (no config side-channel).
         assert (rows["b"]["listed"], rows["b"]["hidden"], rows["b"]["focal"]) == (True, True, None)
@@ -156,6 +160,7 @@ def test_a_bundled_row_carries_its_id_and_nothing_it_could_not_know(home: Path) 
         )
         assert row["name"] == "pegasus"
         assert (row["file"], row["url"], row["revision"], row["format"]) == ("", "", "", None)
+        assert row["key"] is None  # a bundled asset binds through the theme's ladder, not a stem
         assert (row["width"], row["height"]) == (None, None)
         assert (row["unusable"], row["unusable_reason"]) == (False, None)
 
@@ -433,6 +438,53 @@ def test_a_namespaces_key_of_the_wrong_shape_is_REFUSED_not_overwritten(tmp_path
     monkeypatch.delenv("CTRLB_CONFIG", raising=False)
     with pytest.raises(cm.MigrationRefused):
         cm.apply(cm.context_from_env())
+
+
+@pytest.mark.parametrize(
+    ("order_yaml", "label"),
+    [("order:", "null"), ("order: lyra.png", "a scalar"), ("order: {a: 1}", "a mapping")],
+)
+def test_a_malformed_order_is_REFUSED_rather_than_folded_into_an_empty_library(
+    tmp_path, monkeypatch, order_yaml: str, label: str
+) -> None:
+    """The A11 refuse-don't-coerce precedent, at the leaf. Popping an unreadable `order:` and writing
+    `files: []` would destroy the owner's library — silently, under a "verified" stamp, with the
+    migration reporting success. The remedy names the path, because a hand-authored `order: lyra.png`
+    is one character from correct."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        f"server:\n  port: 5433\nmedia:\n  gacha:\n    roles:\n      reel:\n        {order_yaml}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CTRLB_HOME", str(home))
+    monkeypatch.delenv("CTRLB_CONFIG", raising=False)
+    with pytest.raises(cm.MigrationRefused) as exc:
+        cm.apply(cm.context_from_env())
+    assert "media.namespaces.gacha.roles.reel.order" in str(exc.value), label
+    # …and NOTHING was written: the owner's file still says what it said.
+    assert order_yaml.split(":")[0] in (home / "config.yaml").read_text(encoding="utf-8")
+
+
+def test_a_malformed_order_beside_an_existing_files_list_is_dropped_not_refused(
+    tmp_path, monkeypatch
+) -> None:
+    """The one exception, and it is new-wins rather than leniency: with `files:` already there the
+    unreadable legacy key is genuinely dead, so deleting it is the migration finishing its job."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "server:\n  port: 5433\nmedia:\n  namespaces:\n    gacha:\n      roles:\n        reel:\n"
+        "          files:\n          - name: cut.png\n          order: 7\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CTRLB_HOME", str(home))
+    monkeypatch.delenv("CTRLB_CONFIG", raising=False)
+    cm.apply(cm.context_from_env())
+    doc = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    reel = doc["media"]["namespaces"]["gacha"]["roles"]["reel"]
+    assert reel == {"files": [{"name": "cut.png"}]}
+    assert cm.needs_migration(cm.context_from_env()) is False
 
 
 def test_an_unknown_namespace_key_is_left_where_the_owner_wrote_it(tmp_path, monkeypatch) -> None:

@@ -93,8 +93,10 @@ function savedBlock(): Record<string, unknown> {
 
 beforeEach(() => {
   api.getJSON.mockReset();
-  // `useSettings` is Conf-scoped and reads through `getJSONWithHeader`; the default is "no settings
-  // fetched", which is what every arm below except the read-modify-write one exercises.
+  // This component only ever renders INSIDE the Conf tab, and its reorder is a read-modify-write over
+  // the settings doc — a Conf-SCOPED query (`useSettings`, through `getJSONWithHeader`). So the suite
+  // runs in the tab the component lives in; a test that wants the snapshot missing says so itself.
+  setUI({ tab: "conf" });
   api.getJSONWithHeader.mockReset().mockResolvedValue({ data: {}, header: "r1" });
   api.putJSON.mockReset().mockResolvedValue({
     settings: { notifications: {} },
@@ -103,7 +105,10 @@ beforeEach(() => {
     providers_rev: "r1",
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  setUI({ tab: "fleet" });
+});
 
 describe("MediaGallery", () => {
   it("lists each role's files with their metadata, and names the folder to copy into", async () => {
@@ -202,7 +207,6 @@ describe("MediaGallery", () => {
     // binding `key`, the framing `focal`, the In-use `hidden` flag. Rebuilding the list from the index
     // would silently drop all of it on the next ↑/↓ tap, which is a data-loss bug the owner would only
     // notice as art that stopped being framed.
-    setUI({ tab: "conf" }); // the settings query is Conf-scoped, like the gallery itself
     api.getJSONWithHeader.mockResolvedValue({
       data: {
         media: {
@@ -222,26 +226,79 @@ describe("MediaGallery", () => {
       },
       header: "r1",
     });
-    try {
-      renderGallery();
-      await screen.findByText("a.webp");
-      await waitFor(() => expect(api.getJSONWithHeader).toHaveBeenCalled());
-      fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
-      await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
-      expect(savedBlock()).toEqual({
-        roles: {
-          characters: {
-            files: [
-              { name: "a.webp", key: "hero", focal: { x: 0.4, y: 0.2, rev: "r9" } },
-              { name: "c.webp" }, // no entry yet — listing it is what the reorder means
-              { name: "b.webp", hidden: true },
-            ],
+    renderGallery();
+    await screen.findByText("a.webp");
+    await waitFor(() => expect(api.getJSONWithHeader).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
+    expect(savedBlock()).toEqual({
+      roles: {
+        characters: {
+          files: [
+            { name: "a.webp", key: "hero", focal: { x: 0.4, y: 0.2, rev: "r9" } },
+            { name: "c.webp" }, // no entry yet — listing it is what the reorder means
+            { name: "b.webp", hidden: true },
+          ],
+        },
+      },
+    });
+  });
+
+  it("refuses to reorder until the SETTINGS snapshot is here — a lossy write is worse than a wait", async () => {
+    // Emma MED-4 ①. The write is a read-modify-write over the persisted `files` list; without that
+    // list the only thing a tap could write is bare `{name}` rows, which destroys `key`/`hidden`/
+    // `focal` on a gesture that looks like it only moved a row.
+    api.getJSONWithHeader.mockReturnValue(new Promise(() => undefined)); // never resolves
+    renderGallery();
+    await screen.findByText("a.webp");
+    const down = screen.getByRole("button", { name: "Move a.webp down" });
+    expect(down).toHaveProperty("disabled", true);
+    fireEvent.click(down);
+    await waitFor(() => expect(screen.getByText("b.webp")).toBeTruthy());
+    expect(api.putJSON).not.toHaveBeenCalled();
+  });
+
+  it("a LISTED bundled entry survives a reorder, in place and with its fields", async () => {
+    // Emma MED-4 ②. The screen shows only disk rows, so a `{bundled}` entry the owner listed is
+    // invisible here — and a rebuild from the screen would delete it (and re-deal the fallback tier)
+    // on the next ↑/↓ tap. It holds its position instead, fields untouched.
+    api.getJSONWithHeader.mockResolvedValue({
+      data: {
+        media: {
+          namespaces: {
+            gacha: {
+              roles: {
+                characters: {
+                  files: [
+                    { name: "a.webp", key: "hero" },
+                    { bundled: "lyra", hidden: true },
+                    { name: "b.webp" },
+                  ],
+                },
+              },
+            },
           },
         },
-      });
-    } finally {
-      setUI({ tab: "fleet" });
-    }
+      },
+      header: "r1",
+    });
+    renderGallery();
+    await screen.findByText("a.webp");
+    await waitFor(() => expect(api.getJSONWithHeader).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
+    expect(savedBlock()).toEqual({
+      roles: {
+        characters: {
+          files: [
+            { name: "a.webp", key: "hero" },
+            { bundled: "lyra", hidden: true }, // held its slot, kept its per-item state
+            { name: "c.webp" },
+            { name: "b.webp" },
+          ],
+        },
+      },
+    });
   });
 
   it("never lists or writes a BUNDLED row — the fallback tier is S2's, and a drag must not promote it", async () => {

@@ -66,6 +66,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/config_migration/__init__.py", "_retired_path"),
         ("app/config_migration/__init__.py", "validate"),
         ("app/config_migration/steps.py", "_refuse_unmappable"),
+        ("app/config_migration/steps.py", "media_v2_apply"),
         ("app/main.py", "_preflight_config"),
     ),
     "diagnostics — log lines and operator-facing HTTP/exception detail": (

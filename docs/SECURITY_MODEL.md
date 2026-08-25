@@ -294,16 +294,22 @@ any future unauthenticated write path.
   `$CTRLB_HOME/media/<ns>/<role>/` directory (`MEDIA_NAMESPACES`); the filename must satisfy the
   admission predicate (NFC, no separators/`.`/`..`, no `<>:"|?*`/C0/DEL, no leading dot or trailing
   dot-space, not a DOS device name, ≤255 UTF-8 bytes, allowlisted extension) and is **rejected with
-  a reason, never sanitised**. The read side's rules are unchanged (§ the hardened mount: closed
+  a reason, never sanitised**. `DELETE` is deliberately WIDER (an SSH drop the app would refuse to
+  mint must still be removable) with one exception: names the path API would REINTERPRET — a
+  backslash, or a drive qualifier like `C:foo.png`, which `ntpath` resolves relative to a drive — are
+  refused there too, whatever the server OS, or a delete could unlink a file the request never named. The read side's rules are unchanged (§ the hardened mount: closed
   extension allowlist, server-set Content-Type, `nosniff`, no symlinks, regular files only).
-- **The bytes are checked before the name exists.** mkstemp `.part` in the role dir → `fchmod 0644`
-  → stream with a byte counter (`413` past `media.write.max_bytes`) → fsync → **`probe_image`
-  header probe** (`415` when the bytes and the extension disagree) → `os.link` no-clobber (`409`)
-  → unlink the temp → `fsync_dir`. **A rejected upload leaves zero bytes**, and a `.part` boot
-  sweep — registered role dirs of HEALTHY namespaces only, and only files carrying the prefix this
-  code mints, so it can never follow a symlink or remove an owner file — clears what a crash
-  stranded. (`fchmod` is expressed as an `os.supports_fd` capability probe, not an OS branch: the
-  server-OS allowlist is closed, ARCHITECTURE §6.)
+- **The bytes are checked before the name exists.** mkstemp `.part` in the role's app-owned
+  `.parts/` scratch dir → `fchmod 0644` → stream with a byte counter (`413` past
+  `media.write.max_bytes`) → fsync → **`probe_image` header probe** (`415` when the bytes and the
+  extension disagree) → `os.link` no-clobber (`409`, same filesystem so it stays atomic) → unlink the
+  temp → `fsync_dir`. **A rejected upload leaves zero bytes**, and a boot sweep empties those
+  `.parts/` dirs (registered roles of HEALTHY namespaces only; a symlinked `.parts` is refused, not
+  walked). **The scratch DIRECTORY is what makes the sweep safe, not a filename convention** — an
+  owner is entitled to drop a file called `.ctrlb-upload-x.part` into a role folder, so "only the app
+  writes here" has to be a property of the location, not a guess from a name. (`fchmod` is expressed
+  as an `os.supports_fd` capability probe, not an OS branch: the server-OS allowlist is closed,
+  ARCHITECTURE §6.)
 - **Still no decoder on the server.** No Pillow, no decode, no re-encode, no thumbnails — header
   probes only. An untrusted-decoder surface was refused at D52 §10.4 and stays refused; all image
   work (crop, resize, EXIF/GPS stripping, re-encode) happens in the **client's** worker.

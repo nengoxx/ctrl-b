@@ -68,6 +68,11 @@ export interface MediaFile {
   /** The framing point (0..1 per axis), keyed to the file's `revision`: a `rev` that disagrees with the
    *  row's `revision` means the bytes changed underneath it and the point reads as unset. */
   focal?: { x: number; y: number; rev: string } | null;
+  /** The explicit named-role BINDING key the owner (or an upload) set on this entry; `null`/absent = it
+   *  binds by its filename stem, the permanent fallback rule that keeps SSH drops binding forever
+   *  (§2.2). On the wire so a resolver never reads config and the detail panel can name WHICH of the
+   *  two bound the file. Always absent on a bundled row. */
+  key?: string | null;
 }
 
 export interface MediaIndex {

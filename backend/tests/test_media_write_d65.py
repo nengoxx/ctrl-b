@@ -20,11 +20,26 @@ from urllib.parse import quote
 import pytest
 from test_media_g5 import disk, home, jpeg_bytes, make_client, png_bytes, role, webp_bytes
 
-from app.core.media import PART_PREFIX, PART_SUFFIX, admission_reason, sweep_part_files
+from app.core.media import (
+    PART_PREFIX,
+    PART_SUFFIX,
+    PARTS_DIRNAME,
+    admission_reason,
+    sweep_part_files,
+)
 
 __all__ = ["home"]  # the fixture is imported, not redefined — one temp-workspace recipe
 
 URL = "/api/media/gacha/files/characters"
+
+
+def leftovers(home: Path, role_name: str = "characters") -> list[str]:
+    """What a role folder holds — the app's own `.parts/` scratch DIRECTORY aside, but everything
+    inside it included. "A rejected upload leaves zero bytes" is a claim about FILES, and the temp
+    dir's continued existence is not a leak; a temp still sitting in it would be."""
+    d = role(home, role_name)
+    names = sorted(p.name for p in d.iterdir() if p.name != PARTS_DIRNAME)
+    return names + sorted(f"{PARTS_DIRNAME}/{p.name}" for p in (d / PARTS_DIRNAME).glob("*"))
 
 
 # ── the happy path ────────────────────────────────────────────────────────────────────────────────
@@ -91,7 +106,7 @@ def test_an_oversize_body_is_413_and_leaves_nothing_behind(home: Path) -> None:
         r = c.put(f"{URL}/big.png", content=png_bytes(1, 1) + b"\x00" * 4096)
         assert r.status_code == 413, r.text
         assert "max_bytes" in r.json()["detail"]
-        assert list(role(home, "characters").iterdir()) == []  # no file, and no `.part` either
+        assert leftovers(home) == []  # no file, and no temp left in the scratch dir either
 
 
 def test_a_CHUNKED_body_hits_the_same_cap(home: Path) -> None:
@@ -107,7 +122,7 @@ def test_a_CHUNKED_body_hits_the_same_cap(home: Path) -> None:
         _tiny_cap(c, 64)
         r = c.put(f"{URL}/big.png", content=chunks())
         assert r.status_code == 413, r.text
-        assert list(role(home, "characters").iterdir()) == []
+        assert leftovers(home) == []
 
 
 def test_a_body_exactly_at_the_cap_is_accepted(home: Path) -> None:
@@ -130,17 +145,17 @@ def test_bytes_that_disagree_with_the_extension_are_415_and_leave_zero_bytes(hom
         r = c.put(f"{URL}/liar.png", content=jpeg_bytes(10, 10))
         assert r.status_code == 415, r.text
         assert "jpeg" in r.json()["detail"]
-        assert list(role(home, "characters").iterdir()) == []
+        assert leftovers(home) == []
 
         # …and so is a body that is not an image at all.
         assert c.put(f"{URL}/nope.png", content=b"<!doctype html>").status_code == 415
-        assert list(role(home, "characters").iterdir()) == []
+        assert leftovers(home) == []
 
 
 def test_an_empty_body_is_422(home: Path) -> None:
     with make_client() as c:
         assert c.put(f"{URL}/empty.png", content=b"").status_code == 422
-        assert list(role(home, "characters").iterdir()) == []
+        assert leftovers(home) == []
 
 
 def test_a_duplicate_name_is_409_and_never_overwrites(home: Path) -> None:
@@ -153,7 +168,7 @@ def test_a_duplicate_name_is_409_and_never_overwrites(home: Path) -> None:
         r = c.put(f"{URL}/a.png", content=png_bytes(9, 9))
         assert r.status_code == 409, r.text
         assert (role(home, "characters") / "a.png").read_bytes() == first
-        assert [p.name for p in role(home, "characters").iterdir()] == ["a.png"]
+        assert leftovers(home) == ["a.png"]  # the refused upload's temp is gone too
 
 
 @pytest.mark.parametrize(
@@ -186,7 +201,7 @@ def test_a_name_this_surface_may_not_mint_is_422_with_a_reason(home: Path, name:
         r = c.put(f"{URL}/{quote(name)}", content=png_bytes())
         assert r.status_code == 422, f"{name} → {r.status_code}"
         assert r.json()["detail"] == admission_reason(name)
-        assert list(role(home, "characters").iterdir()) == []
+        assert leftovers(home) == []
 
 
 def test_a_raw_undecodable_byte_in_the_name_is_422(home: Path) -> None:
@@ -198,7 +213,7 @@ def test_a_raw_undecodable_byte_in_the_name_is_422(home: Path) -> None:
         r = c.put(f"{URL}/a%FFb.png", content=png_bytes())
         assert r.status_code == 422, r.text
         assert "not allowed" in r.json()["detail"]
-        assert list(role(home, "characters").iterdir()) == []
+        assert leftovers(home) == []
 
 
 @pytest.mark.parametrize(
@@ -278,6 +293,22 @@ def test_delete_touches_no_config_and_the_dangling_entry_self_heals(home: Path) 
         assert disk(c.get("/api/media/gacha").json()["roles"]["characters"]) == ["a.png"]
 
 
+@pytest.mark.parametrize("alias", ["C:foo.png", "c:foo.png", "D:foo.png", "C:sub%5Cfoo.png"])
+def test_delete_refuses_a_DRIVE_QUALIFIED_name(home: Path, alias: str) -> None:
+    """Emma MED-1. `ntpath` reads `C:foo.png` as a DRIVE-RELATIVE path, so on a Windows deployment
+    `directory / name` would resolve to `directory/foo.png` (same drive) or to whatever `D:`'s working
+    directory happens to be (cross-drive) — a DELETE removing a file the request never named. Refused
+    OS-agnostically, because the hazard is the path API's, not the platform's (the server-OS branch
+    allowlist is closed). The control below is the point: the file the alias would have aliased TO is
+    still there afterwards."""
+    with make_client() as c:
+        (role(home, "characters") / "foo.png").write_bytes(png_bytes())
+        assert c.delete(f"{URL}/{alias}").status_code == 404, alias
+        assert (role(home, "characters") / "foo.png").exists()
+        # …and the plain name still deletes, so the guard did not swallow the ordinary case
+        assert c.delete(f"{URL}/foo.png").status_code == 204
+
+
 def test_delete_refuses_a_symlink_and_anything_the_index_would_not_serve(home: Path, tmp_path) -> None:
     """The delete gate is `is_served_file`, the SAME predicate the index and the mount use: a symlink
     inside a role is not a supported shape at any level of this tree, so it is not a thing this API
@@ -297,32 +328,80 @@ def test_delete_refuses_a_symlink_and_anything_the_index_would_not_serve(home: P
 # ── the `.part` temp file ─────────────────────────────────────────────────────────────────────────
 
 
-def test_a_stranded_part_file_is_invisible_and_swept_at_boot(home: Path) -> None:
-    """A crash mid-upload is the only way one of these survives (the route unlinks its own temp in a
-    `finally`). It must be invisible while it is there — `.part` is not an allowlisted extension, so
-    neither the index nor the mount can see it — and gone at the next boot."""
+def test_an_upload_streams_through_the_role_s_own_parts_dir(home: Path) -> None:
+    """The temp lives in an APP-OWNED scratch dir inside the role folder (Emma MED-2): same
+    filesystem, so `os.link` stays atomic — and a directory this code creates is EVIDENCE of who
+    wrote a file, which a name convention never was."""
+    chars = role(home, "characters")
+    parts = chars / PARTS_DIRNAME
+    with make_client() as c:
+        assert not parts.exists()  # created lazily, by the first write
+        assert c.put(f"{URL}/a.png", content=png_bytes()).status_code == 201
+        assert parts.is_dir()
+        assert list(parts.iterdir()) == []  # the successful upload took its temp with it
+        assert [p.name for p in chars.iterdir() if p.is_file()] == ["a.png"]
+
+
+def test_the_parts_dir_is_invisible_to_the_index_and_the_mount(home: Path) -> None:
+    """By construction, not by filtering: `.parts` is not an allowlisted extension (so the index skips
+    it and the mount 404s the directory), and anything inside it is three segments deep, which the
+    mount's two-segment shape gate refuses."""
     chars = role(home, "characters")
     chars.mkdir(parents=True, exist_ok=True)
-    stranded = chars / f"{PART_PREFIX}dead{PART_SUFFIX}"
+    (chars / PARTS_DIRNAME).mkdir()
+    stranded = chars / PARTS_DIRNAME / f"{PART_PREFIX}dead{PART_SUFFIX}"
     stranded.write_bytes(png_bytes())
+    (chars / "real.png").write_bytes(png_bytes())
+    with make_client() as c:
+        body = c.get("/api/media/gacha").json()
+        assert disk(body["roles"]["characters"]) == ["real.png"]
+        assert c.get(f"{URL}/{PARTS_DIRNAME}").status_code == 404
+        assert c.get(f"{URL}/{PARTS_DIRNAME}/{stranded.name}").status_code == 404
+
+
+def test_a_stranded_temp_is_swept_at_boot_and_owner_files_are_NEVER_candidates(home: Path) -> None:
+    """The sweep's safety is the DIRECTORY, not the name (Emma MED-2). An owner is entitled to drop a
+    file called `.ctrlb-upload-x.part` into a role folder — the old name-matching sweep would have
+    deleted it at the next boot. Now the only paths the sweep can even see are inside the scratch dir
+    this module makes for itself."""
+    chars = role(home, "characters")
+    chars.mkdir(parents=True, exist_ok=True)
+    (chars / PARTS_DIRNAME).mkdir()
+    stranded = chars / PARTS_DIRNAME / f"{PART_PREFIX}dead{PART_SUFFIX}"
+    stranded.write_bytes(png_bytes())
+    owner_lookalike = chars / f"{PART_PREFIX}mine{PART_SUFFIX}"  # the owner's, byte-identical naming
+    owner_lookalike.write_bytes(png_bytes())
     keep = chars / "real.png"
     keep.write_bytes(png_bytes())
-    decoy = chars / "notes.part"  # an owner file that merely ENDS the same way — never swept
-    decoy.write_text("mine", encoding="utf-8")
 
-    with make_client() as c:
-        assert disk(c.get("/api/media/gacha").json()["roles"]["characters"]) == ["real.png"]
-        assert c.get(f"{URL}/{stranded.name}").status_code == 404
+    with make_client():
+        pass
     assert not stranded.exists()
-    assert keep.exists() and decoy.exists()
+    assert owner_lookalike.exists() and keep.exists()
+
+
+def test_the_sweep_refuses_a_symlinked_parts_dir(home: Path, tmp_path) -> None:
+    """One level down from `ensure_media_dirs`' reasoning: a link RELOCATES the sweep, so it would be
+    unlinking files somewhere else entirely. Refused, not followed."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    bait = elsewhere / f"{PART_PREFIX}x{PART_SUFFIX}"
+    bait.write_bytes(b"x")
+    chars = role(home, "characters")
+    chars.mkdir(parents=True, exist_ok=True)
+    (chars / PARTS_DIRNAME).symlink_to(elsewhere, target_is_directory=True)
+
+    with make_client():
+        pass
+    assert bait.exists()
 
 
 def test_the_sweep_skips_a_namespace_whose_tree_was_refused(home: Path, tmp_path) -> None:
-    """It must never follow a symlink: a refused tree's "role dirs" may point anywhere, and a sweep
-    that walked one would be deleting files outside `$CTRLB_HOME` entirely."""
+    """A refused tree's "role dirs" may point anywhere, so a disabled namespace is not passed in at
+    all — the sweep never walks one."""
     elsewhere = tmp_path / "elsewhere"
-    (elsewhere / "characters").mkdir(parents=True)
-    bait = elsewhere / "characters" / f"{PART_PREFIX}x{PART_SUFFIX}"
+    (elsewhere / "characters" / PARTS_DIRNAME).mkdir(parents=True)
+    bait = elsewhere / "characters" / PARTS_DIRNAME / f"{PART_PREFIX}x{PART_SUFFIX}"
     bait.write_bytes(b"x")
     (home / "media").mkdir(parents=True, exist_ok=True)
     (home / "media" / "gacha").symlink_to(elsewhere, target_is_directory=True)

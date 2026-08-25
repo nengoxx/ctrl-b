@@ -148,7 +148,9 @@ The **server is the collator**; `list_role` stays the one implementation. The ru
    `lib/mediaLibrary` transforms own this rule; §11 pins both arms.
 4. **The wire carries the WHOLE truth, so resolution is decidable from the index alone (Emma
    confirm E2):** the index emits **every** entry — hidden ones included, marked — and each row
-   carries its per-item facts: `focal`, `hidden`, and **`listed`** (true for a `files` entry,
+   carries its per-item facts: `focal`, `hidden`, `key` (the binding override — the S1
+   main-seat rider: a resolver may not read config to learn whether key or stem bound a
+   file), and **`listed`** (true for a `files` entry,
    false for an appended fallback row; on bundled rows this is exactly the listed-vs-fallback
    tier distinction the ladders need — e.g. gacha's role-presence-before-usability predicates
    read `listed`/disk rows only, and fall through to fallback rows precisely as they fall

@@ -618,9 +618,24 @@ def media_v2_apply(ctx: Context) -> Plan:
 
     for ns, role in _roles_with_order(namespaces):
         cfg = namespaces[ns]["roles"][role]
-        order = cfg.pop("order")
+        where = f"media.namespaces.{ns}.roles.{role}.order"
+        # REFUSE, don't coerce (the A11 `providers:` precedent). `order: null`, a scalar or a mapping
+        # carries the owner's intent in a shape this step cannot read — and popping it anyway would
+        # turn their library into an empty list under a "verified" stamp, which is data destroyed
+        # silently. A `files` already beside it is the one exception: new-wins, so the unreadable
+        # legacy key is genuinely dead and dropping it is the migration doing its job.
+        order = cfg["order"]
+        if "files" not in cfg and not isinstance(order, list):
+            raise MigrationRefused(
+                f"`{where}` must be a list of filenames — this build cannot fold "
+                f"{type(order).__name__} into the new `files:` list",
+                remedy=(
+                    f"make `{where}` a list (or delete the key, and re-order in the gallery), then re-run"
+                ),
+            )
+        del cfg["order"]
         consumed.append(("media", "namespaces", ns, "roles", role, "order"))
-        if "files" not in cfg and isinstance(order, list):
+        if "files" not in cfg:
             cfg["files"] = [{"name": n} for n in order]
 
     return Plan(config=raw, consumes=list(consumed))

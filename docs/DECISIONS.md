@@ -4680,7 +4680,7 @@ a second spec.
 
 **What is BUILT (2026-08-25): S0 + S1** — the docs and per-role registry rows, then the BACKEND: the
 raw-body `PUT`/`DELETE` routes + the persist pipeline (`core.media.UploadPart`), the two filename
-tiers, the `library-v1` collation with `focal`/`hidden`/`listed`/`bundled` on every index row, the
+tiers, the `library-v1` collation with `focal`/`hidden`/`listed`/`key`/`bundled` on every index row, the
 `config_version` 1 → 2 fold (migration step 2), the `.part` boot sweep, and the tests + architecture
 guard that pin the no-CORS/no-multipart negatives. **The GALLERY, the upload client, focal painting
 and drag are S2–S5 and are not built**; everything about them below is the ruling and the contract
@@ -4700,8 +4700,9 @@ scoped to the shape that is NOT safelisted:
 - Writes land **only** inside registered `$CTRLB_HOME/media/<ns>/<role>/` dirs; `probe_image`
   validates the BYTES before the file ever reaches its final name; the extension must agree with
   them; the body is counted as it streams; **a rejected upload leaves zero bytes** (mkstemp `.part`
-  → stream+count → fsync → probe → `os.link` no-clobber → unlink → `fsync_dir`, with a boot sweep
-  for orphaned `.part` files).
+  in the role's app-owned `.parts/` scratch dir → stream+count → fsync → probe → `os.link`
+  no-clobber → unlink → `fsync_dir`, with a boot sweep that empties those scratch dirs — the
+  DIRECTORY is the safety property, since an owner may legitimately name a file `.part` too).
 - **No server-side image processing, still.** No Pillow, no decode — header probes only, the same
   posture the read side has always had, and stronger than every peer surveyed (R55).
 - **NO kill switch — the reversal is UNCONDITIONAL (owner ruling ①).** No `enabled` flag, no

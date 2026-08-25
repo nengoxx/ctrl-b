@@ -339,6 +339,12 @@ class MediaFile(BaseModel):
     #: purity). `None` = unset; a `rev` that disagrees with `revision` below is treated as unset by the
     #: client, which is what makes an in-place file replacement safe.
     focal: MediaFocal | None = None
+    #: The item's explicit named-role BINDING key, echoed from config; `None` = it binds by its stem
+    #: (§2.2's permanent fallback rule — "drop a file in and it binds" is the shipped contract of a
+    #: named role and keeps working forever for SSH drops). On the wire for the same reason every other
+    #: per-item fact is: the whole truth rides the index, so a resolver never reads config and the
+    #: detail panel can NAME which of the two bound this file. Always `None` on a bundled row.
+    key: str | None = None
     #: The format read from the file's MAGIC BYTES, not its extension. `None` = unreadable, or bytes
     #: that are not in the allowlist at all (an `.png` that is really HTML).
     format: str | None = None
@@ -752,6 +758,7 @@ def describe_file(
     listed: bool = False,
     hidden: bool = False,
     focal: MediaFocal | None = None,
+    key: str | None = None,
 ) -> MediaFile:
     """One directory entry, probed and judged — FACTS plus the one verdict that needs the bytes.
 
@@ -759,9 +766,9 @@ def describe_file(
     whether the mount could serve it at all. Whether it is *too* big is per-role policy the client
     owns — this ships the numbers it decides on.
 
-    The three keyword facts come from the owner's `files` ENTRY, not from the file: they are what the
+    The four keyword facts come from the owner's `files` ENTRY, not from the file: they are what the
     collation knows and the filesystem does not (D65). They default to "not listed, not hidden, no
-    framing", which is exactly an unlisted drop.
+    framing, bound by stem", which is exactly an unlisted drop.
     """
     ext_type = ALLOWED_TYPES.get(path.suffix.lower())
     probe = probe_image(path)
@@ -790,6 +797,7 @@ def describe_file(
         listed=listed,
         hidden=hidden,
         focal=focal,
+        key=key,
     )
 
 
@@ -847,7 +855,9 @@ def list_role(home: Path, ns: str, role: str, files: Sequence[MediaItem] | None 
         path = on_disk.pop(item.name or "", None)
         if path is None:
             continue
-        out.append(describe_file(path, ns, role, listed=True, hidden=item.hidden, focal=item.focal))
+        out.append(
+            describe_file(path, ns, role, listed=True, hidden=item.hidden, focal=item.focal, key=item.key)
+        )
     out += [describe_file(p, ns, role) for p in sorted(on_disk.values(), key=lambda p: sort_key(p.name))]
     out += [bundled_row(b) for b in ships if b not in listed_ids]
     return out
@@ -964,9 +974,17 @@ class MediaWriteError(Exception):
         self.detail = detail
 
 
-#: The in-flight upload's temp-file naming. A `.part` suffix keeps it out of the index and the mount
-#: for free (neither is an allowlisted extension), and the prefix is what the boot sweep matches on —
-#: so the sweep can never remove an owner file, whatever it is called.
+#: The app-owned scratch directory for in-flight uploads, one per role folder, plus the temp naming
+#: inside it. **The DIRECTORY is what makes the boot sweep safe, not the name** (Emma MED-2): a name
+#: convention is a guess about who created a file — an owner may legitimately drop
+#: `.ctrlb-upload-x.part` into a role folder — while a directory this code creates and nothing else
+#: writes to is EVIDENCE. The sweep therefore empties `.parts/` and never touches the role dir itself.
+#:
+#: Invisible to both halves of the read surface by construction: `.parts` is not an allowlisted
+#: extension (so the index skips it and the mount 404s the directory itself), and anything inside it
+#: is three path segments deep, which the mount's two-segment shape gate refuses. It sits INSIDE the
+#: role dir so `os.link` from it stays a same-filesystem, atomic operation.
+PARTS_DIRNAME = ".parts"
 PART_PREFIX = ".ctrlb-upload-"
 PART_SUFFIX = ".part"
 
@@ -976,15 +994,15 @@ class UploadPart:
 
     The order is the security control (D65 / R55 §4.4), not an implementation detail:
 
-        mkstemp `.part` IN THE ROLE DIR → chmod 0644 → stream + COUNT (413) → fsync → probe the
-        BYTES (415) → `os.link` no-clobber (409) → unlink the temp → `fsync_dir`
+        mkstemp `.part` in the role's `.parts/` → chmod 0644 → stream + COUNT (413) → fsync → probe
+        the BYTES (415) → `os.link` no-clobber (409) → unlink the temp → `fsync_dir`
 
     Every property that matters falls out of that order. The bytes are validated **before the file
     has its final name**, so a rejected upload leaves ZERO bytes and never a half-file in the roster.
-    The temp lives in the DESTINATION directory, so `os.link` is a same-filesystem operation that
-    either creates the name or raises `FileExistsError` — which is the whole concurrency story: no
-    lock, no check-then-act window, and the 409 the client retries with its next suffix (§2.5). The
-    directory fsync is what makes the new NAME durable, not just its contents.
+    The temp lives in a scratch dir INSIDE the destination directory, so `os.link` is a
+    same-filesystem operation that either creates the name or raises `FileExistsError` — which is the
+    whole concurrency story: no lock, no check-then-act window, and the 409 the client retries with
+    its next suffix (§2.5). The directory fsync is what makes the new NAME durable, not its contents.
 
     Not a context manager: the route needs `write()` calls interleaved with `await`s on the request
     stream, and `discard()` is idempotent — it is called in the route's `finally` whatever happened.
@@ -998,7 +1016,12 @@ class UploadPart:
 
     @classmethod
     def open(cls, directory: Path, *, max_bytes: int) -> "UploadPart":
-        fd, name = tempfile.mkstemp(dir=str(directory), prefix=PART_PREFIX, suffix=PART_SUFFIX)
+        # `parents=False`: the role dir is the registry's to create (`ensure_media_dirs` at boot), and
+        # a write must not resurrect a tree the owner deleted or the health check refused — only the
+        # scratch dir inside it is this code's to make.
+        parts = directory / PARTS_DIRNAME
+        parts.mkdir(parents=False, exist_ok=True)
+        fd, name = tempfile.mkstemp(dir=str(parts), prefix=PART_PREFIX, suffix=PART_SUFFIX)
         part = cls(Path(name), os.fdopen(fd, "wb"), max_bytes)
         # `mkstemp` creates at 0600 (right for a secret, wrong for art the mount has to read back
         # under whatever user it runs as). Set the mode on the FD where the platform supports it, so
@@ -1075,13 +1098,24 @@ def delete_file(directory: Path, filename: str) -> bool:
     Gated by `is_served_file`, the SAME predicate the index and the mount use: a delete may only
     reach something this surface would serve, so a symlink, a directory, a `.part` in flight and a
     file that was never there are all one indistinguishable "no" — the answer a probe should get.
-    Deliberately NOT gated by `admission_reason`: that tier decides what may be CREATED, and a file
-    the owner dropped over SSH under a name we would refuse to mint must still be deletable.
+    Deliberately NOT gated by `admission_reason`: that tier decides what may be CREATED, and this one
+    answers "may this be removed", which is a wider question — an SSH drop the app would refuse to
+    MINT (a decomposed name, an NTFS-illegal one) must still be deletable.
+
+    **Wider, with one honest exception: names the path API would REINTERPRET** (Emma MED-1). `\\` and
+    a drive qualifier (`C:foo.png`, `D:x.png`) are separators to `ntpath`, so `directory / name` would
+    resolve somewhere the request never named — the same file under a different spelling on the same
+    drive, or another drive's working directory entirely. Those names are refused here whatever the
+    server OS is, because the hazard belongs to the path API rather than to the platform (the
+    server-OS branch allowlist is closed, ARCHITECTURE §6). The practical consequence, stated so it is
+    a rule and not a surprise: a file dropped under such a name over SSH is deletable over SSH only.
 
     Touches no config (§3). Delete-then-config-write is the client's composition, and a cleanup that
     never happens leaves a dangling `files` entry that `list_role` drops.
     """
     if not is_addressable_name(filename) or "\\" in filename:
+        return False
+    if ntpath.splitdrive(filename)[0]:  # `C:foo.png` — a drive-relative alias, not a bare name
         return False
     if Path(filename).suffix.lower() not in ALLOWED_TYPES:
         return False
@@ -1097,13 +1131,18 @@ def delete_file(directory: Path, filename: str) -> bool:
 
 
 def sweep_part_files(home: Path, namespaces: Iterable[str]) -> int:
-    """Remove `.part` files stranded by a crash or a kill mid-upload, in REGISTERED role dirs only.
+    """Empty the `.parts/` scratch dir of every REGISTERED role — the temps a crash stranded.
 
     Called once at app construction. Nothing else can clean them: the pipeline unlinks its own temp
-    in `finally`, so anything still here outlived the process that made it. Scoped to the registry's
-    own directories and to the prefix this module mints, so the sweep can only ever remove something
-    it created — and skipped for a namespace whose tree was refused (its role "directories" may be
-    symlinks pointing somewhere else entirely).
+    in `finally`, so anything still there outlived the process that made it.
+
+    **It cannot remove owner data, by construction rather than by claim** (Emma MED-2): the only
+    paths it looks at are inside a directory THIS module creates for its own scratch files, so no
+    owner file is ever a candidate — including one named `.ctrlb-upload-x.part`, which the owner is
+    entitled to drop in a role folder. The prefix/suffix match inside `.parts/` stays as
+    belt-and-braces, and a `.parts` that is a SYMLINK is refused rather than walked (it would relocate
+    the sweep somewhere else entirely — the `ensure_media_dirs` reasoning, one level down). A
+    namespace whose tree failed the boot check is not passed in at all.
     """
     removed = 0
     for ns in namespaces:
@@ -1111,9 +1150,12 @@ def sweep_part_files(home: Path, namespaces: Iterable[str]) -> int:
         if row is None:
             continue
         for role in row.roles:
+            parts = role_dir(home, ns, role) / PARTS_DIRNAME
+            if parts.is_symlink():
+                continue
             try:
-                entries = list(role_dir(home, ns, role).iterdir())
-            except OSError:
+                entries = list(parts.iterdir())
+            except OSError:  # no `.parts/` yet, or it is not a directory — nothing to sweep
                 continue
             for p in entries:
                 if p.name.startswith(PART_PREFIX) and p.name.endswith(PART_SUFFIX):
