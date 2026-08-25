@@ -325,6 +325,28 @@ describe("MediaGallery", () => {
     expect(options).toEqual(["—", "lyra"]); // useful on a fresh install, not an empty select
   });
 
+  it("EVERY pin falls back to its SOURCE ROLE's bundled ids on a fresh install (D65)", async () => {
+    // The ruled fresh-install behaviour, pinned for all four pins rather than only the figure. Since
+    // D65 the fallback names come from `roles[slot.from].bundled` — one list, DERIVED from the theme's
+    // own ladder module — instead of a hand-typed per-slot copy (`MediaSlotDef.bundled`, retired). The
+    // three character-sourced pins therefore offer the bundled CAST, which is exactly what `slotEntry`
+    // resolves against while `characters/` is empty: the select cannot offer a name the theme refuses.
+    renderGallery(index({ roles: { characters: [], reel: [] } }));
+    await screen.findByRole("combobox", { name: /Fleet backdrop/ });
+    const cast = ["—", "pegasus", "atlas", "3", "4", "lyra"];
+    for (const [label, expected] of [
+      [/Fleet backdrop/, cast], // from `characters`
+      [/Hero slide/, cast], // from `characters`
+      [/Operator backdrop/, cast], // from `characters`
+      [/Transition figure/, ["—", "lyra"]], // from `reel` — a CUTOUT, never the cast (Codex F4)
+    ] as const) {
+      const options = [...screen.getByRole("combobox", { name: label }).children].map(
+        (o) => o.textContent,
+      );
+      expect(options, String(label)).toEqual(expected);
+    }
+  });
+
   it("a LEGACY pin naming something the slot no longer offers is shown as missing, not hidden", async () => {
     // The F4 re-rule stopped offering characters for the figure; a config written before it must be
     // visible so the owner can clear it — the theme has already degraded to the default underneath.

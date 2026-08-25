@@ -288,6 +288,22 @@ describe("the frontier row (D53 M2)", () => {
 
 const BACKEND_MEDIA = join(import.meta.dirname, "../../../backend/app/core/media.py");
 
+/** The rows of one `*_ROLES` dict body → `{role: bundled[]}`.
+ *
+ *  **Anchored to a row's own INDENTATION** (`^ {4}"…`, multiline) rather than matched free-floating, so
+ *  only a LIVE dict entry can participate: a commented-out `# "characters": MediaRole(bundled=(…))` sits
+ *  behind a `#` and never reaches column 4. Un-anchored, such a line matched — and if it sat *after* the
+ *  live row it overwrote the parsed value, so a guard whose whole job is catching drift would have
+ *  accepted it silently. Exported as its own function purely so that failure mode is testable. */
+function parseRoleEntries(body: string): Record<string, string[]> {
+  const entry = /^ {4}"([^"]+)":\s*MediaRole\(\s*(?:bundled=\(\s*([^)]*?)\s*\))?\s*,?\s*\)/gm;
+  const out: Record<string, string[]> = {};
+  for (const m of body.matchAll(entry)) {
+    out[m[1]] = [...(m[2] ?? "").matchAll(/"([^"]*)"/g)].map((s) => s[1]);
+  }
+  return out;
+}
+
 /** Parse one `<NAME>_ROLES: dict[str, MediaRole] = { … }` block out of `core/media.py` into
  *  `{role: bundled[]}`. Anchored on the exact declaration so a rename or a reshape fails here instead of
  *  quietly matching nothing. */
@@ -302,11 +318,7 @@ function backendRoles(constName: string): Record<string, string[]> {
     `could not find \`${constName}: dict[str, MediaRole] = { … }\` in ${BACKEND_MEDIA} — the backend ` +
       "registry was renamed or reshaped; update this guard (and confirm the bundled ids still match)",
   ).not.toBeNull();
-  const out: Record<string, string[]> = {};
-  const entry = /"([^"]+)":\s*MediaRole\(\s*(?:bundled=\(\s*([^)]*?)\s*\))?\s*,?\s*\)/gs;
-  for (const m of block![1].matchAll(entry)) {
-    out[m[1]] = [...(m[2] ?? "").matchAll(/"([^"]*)"/g)].map((s) => s[1]);
-  }
+  const out = parseRoleEntries(block![1]);
   expect(
     Object.keys(out).length,
     `${constName} parsed to no roles — the guard's entry regex is stale`,
@@ -358,6 +370,19 @@ describe("bundled ids — derived front-end-side, mirrored on the backend", () =
         }
       }
     }
+  });
+
+  it("the mirror guard's parser IGNORES a commented-out row (it cannot be talked out of drift)", () => {
+    // The failure this arm exists for: a `#`-commented entry AFTER the live one used to match and
+    // overwrite it, so a stale/removed id could be smuggled past the very test that guards it. Only a
+    // row at a dict entry's own indentation counts.
+    const body = [
+      '    "characters": MediaRole(bundled=("pegasus", "lyra")),',
+      '    # "characters": MediaRole(bundled=("ghost",)),',
+      '    # was: "banner": MediaRole(bundled=("b1",)),',
+      '    "oracle": MediaRole(),',
+    ].join("\n");
+    expect(parseRoleEntries(body)).toEqual({ characters: ["pegasus", "lyra"], oracle: [] });
   });
 
   it("the BACKEND's hand-listed ids match this registry's derived ones, role for role", () => {

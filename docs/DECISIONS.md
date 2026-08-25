@@ -4678,6 +4678,11 @@ grant). Everything else in D57/D60/D61 stands.
 the management UI). `MEDIA_MANAGER_PLAN.md` is normative — the headlines below are the record, not
 a second spec.
 
+**What is BUILT as of this entry: nothing but S0** (the docs + the per-role registry rows). The
+routes, the persist pipeline, the migration and the tests that pin them **land at S1**
+(plan §12). Everything stated below is the ruling and the contract it imposes — normative, not a
+description of shipped code.
+
 **The reversal, and the mechanism it rests on (plan §1).** D52 §5.4 refused a write API because
 the app has no application-layer auth — the tailnet IS the boundary (SECURITY_MODEL §1). The
 realistic attacker was never a tailnet peer (there are none) but **the owner's own browser on
@@ -4687,8 +4692,8 @@ scoped to the shape that is NOT safelisted:
 
 - **Raw-body `PUT`/`DELETE`, never multipart, never POST.** A non-safelisted verb forces a CORS
   preflight; we run no CORS middleware and answer no ACAO, so a cross-origin browser write dies at
-  the `OPTIONS`. **Pinned by tests + an architecture guard** — adding CORS middleware without
-  revisiting this entry fails the gate.
+  the `OPTIONS`. **S1 pins this with tests + an architecture guard** — so that adding CORS
+  middleware without revisiting this entry fails the gate.
 - Writes land **only** inside registered `$CTRLB_HOME/media/<ns>/<role>/` dirs; `probe_image`
   validates the BYTES before the file ever reaches its final name; the extension must agree with
   them; the body is counted as it streams; **a rejected upload leaves zero bytes** (mkstemp `.part`
@@ -4739,9 +4744,14 @@ never a Replace dialog).
 **Security posture:** SECURITY_MODEL **§2.7** carries the write path + the CORS-safelist reasoning,
 and makes the **PREMISE CORRECTION** the reversal exposed — §1's "no session to steal" line never
 covered *unauthenticated writes*, so "no auth" stopped being a complete answer the moment a write
-verb existed. **Residuals recorded into the Phase 19 register (HARDENING §8.2):** DNS rebinding (a
-whole-API property, not this feature's — lean fix `TrustedHostMiddleware`) · `POST /api/voice/stt`
-(the standing safelisted-class instance).
+verb existed. **Scoped precisely (review rider):** a CORS-safelisted `POST` was always *send-able*
+cross-origin (CORS withholds the read-back, not the send), so the state-changing safelisted POST
+routes we already ship are **pre-existing** and not this feature's doing; what D65 introduces is the
+first surface writing owner **FILES**, and the first where the request's SHAPE is the whole defence.
+**Residuals recorded into the Phase 19 register (HARDENING §8.2):** DNS rebinding (a whole-API
+property, not this feature's — lean fix `TrustedHostMiddleware`) · **safelisted-reachable POST
+mutations as a CLASS** (multipart `/voice/stt` + the bodyless/path-param routes that run whatever
+content type a form sends) — enumeration and disposition owned by Packet ③, not by this entry.
 
 **Doc-truth rider:** the three read-side "there is no write API and there must never be one"
 docstrings (`core/media.py`, `api/media.py`, `MediaGallery.tsx`) are rewritten to this ruling —

@@ -36,10 +36,13 @@ The person who can reach the endpoint *is* the owner, by construction of the net
   not a CSRF control — see §2.3.)
   **⚠ PREMISE CORRECTION (D65, 2026-08-24) — this line was never the whole answer for WRITES.**
   "No session to steal" answers *session riding*; it does not answer a **cross-origin write that needs
-  no session at all**, because with no auth every request is already privileged. That gap was harmless
-  while every state-changing endpoint sat behind the SPA's own origin and no file-writing verb existed;
-  the media write API is the first surface where the shape of the request is the whole defence. **What
-  actually holds it is the CORS preflight, not the absence of a session — see §2.7**, which is now the
+  no session at all**, because with no auth every request is already privileged. **That is not new and
+  it is not the media path's doing:** a CORS-safelisted `POST` has always been *send-able* cross-origin
+  — CORS blocks the attacker's read-back, never the send — so the state-changing safelisted POST routes
+  we already ship are a **pre-existing residual**, enumerated as a class in §2.7 and owned by Phase 19.
+  What D65 changes is narrower and worth stating exactly: the media path is the first surface that
+  writes owner **FILES**, and the first where **the shape of the request is the whole defence**. **What
+  holds that one is the CORS preflight, not the absence of a session — see §2.7**, which is the
   reference for any future unauthenticated write path.
 
 If ctrl-b were ever exposed beyond a single-user tailnet, this model would not hold and would need a real
@@ -264,10 +267,17 @@ the slot is on. Two rails hold it, plus one framing:
 ### 2.7 The media write path — typed, raw-body, registry-confined (D65)
 
 `PUT`/`DELETE /api/media/{ns}/files/{role}/{filename}` (`api/media.py`, persist pipeline in
-`core/media.py`) is the **first and only endpoint that writes owner files to disk**. It reverses
+`core/media.py`) will be the **first and only endpoint that writes owner files to disk**. It reverses
 D52 §5.4's "no write API, ever" for exactly one typed shape, and the reversal is
 **unconditional — there is no kill switch** (owner ruling; the standing whole-feature-toggle rule
-knowingly waived, D65). What makes that safe is not a flag but four rails:
+knowingly waived, D65). What makes that safe is not a flag but four rails.
+
+**Status (2026-08-24): the RULING is locked, the ROUTES are not built.** D65 landed at the
+media-manager phase's S0 (docs + registry rows); the endpoints, the persist pipeline and the tests
+that pin them **land at S1** (MEDIA_MANAGER_PLAN §12). Everything below is therefore stated as the
+**contract S1 must satisfy** — normative, not descriptive. Read it as the specification an
+implementation is measured against, and as the reference for any future unauthenticated write path;
+do not read it as a claim about code that exists today.
 
 - **The VERB is the CORS control.** The realistic attacker here is not a tailnet peer (there are
   none, §1) — it is **the owner's own browser on some other origin**, and the only cross-origin
@@ -277,7 +287,7 @@ knowingly waived, D65). What makes that safe is not a flag but four rails:
   preflight, **ctrl-b mounts no CORS middleware and answers no `Access-Control-Allow-Origin`**, so
   the write dies unsent. The attacker cannot read the response either way; the point is that the
   *write itself* never happens. **This is load-bearing: adding CORS middleware — or accepting a
-  multipart/POST upload — silently removes the defence.** Both are pinned by tests plus an
+  multipart/POST upload — silently removes the defence.** S1 must pin both with tests plus an
   architecture guard, and neither may be introduced without revisiting D65.
 - **Containment by registry, not by string handling.** A write resolves only inside a registered
   `$CTRLB_HOME/media/<ns>/<role>/` directory (`MEDIA_NAMESPACES`); the filename must satisfy the
@@ -301,9 +311,18 @@ knowingly waived, D65). What makes that safe is not a flag but four rails:
   becomes same-origin and is no longer subject to CORS at all. This has always been true of the
   whole API; the write path only raises the value of the target. Lean fix when the packet runs:
   `TrustedHostMiddleware` with the deploy's real names.
-- **`POST /api/voice/stt`** is the standing **safelisted-class** endpoint (multipart audio upload).
-  It writes no owner file and only spends an STT call, which is why it was never a gate — it is
-  listed so the class is enumerated rather than forgotten.
+- **Safelisted-reachable POST mutations — a CLASS, and a pre-existing one.** A cross-origin page
+  can *send* a CORS-safelisted `POST` (CORS withholds the read-back, not the send), so any POST route
+  that executes without needing a JSON content type is reachable that way. Two shapes exist here:
+  **multipart** (`POST /api/voice/stt` — writes no owner file, spends an STT call) and
+  **bodyless / path-param** routes, which run regardless of what content type a form sends — e.g.
+  `POST /api/automations/{id}/run-now`, `POST /api/integrations/rediscover`,
+  `POST /api/agent/turns/{thread_id}/cancel`. (JSON-body POSTs are effectively content-type-guarded:
+  a urlencoded form body 422s before anything runs.) **None of this is new and none of it is the
+  media path's doing** — it is why §1's premise correction scopes D65's "first surface" claim to
+  owner FILES. Listed so the class is enumerated rather than forgotten; **the enumeration and the
+  disposition belong to Phase 19 Packet ③** (HARDENING §8.2), and the three routes above are
+  examples, not the list.
 
 **Safe-defaults fit:** nothing here is a toggle, so nothing here is a checklist item to *set*. The
 checklist gains one line (§6) because the property that must survive is a **negative**: no CORS
@@ -330,9 +349,9 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | **`!exec` steer gate is enforced at DRAIN, not only at enqueue (D41)** | **accepted, fail-closed** | A `!<cmd>` steered into a busy turn checks `shell.user_exec_enabled` at enqueue (UX 403) **and again, live, at drain** — the drain is the only place `run_shell`@FULL actually runs, so disabling the shell mid-queue **drops** the queued command instead of running it. **Commit-before-run:** a harvested/crashed queue **loses** the command rather than double-running it (for a shell command, lost-on-crash beats double-run). |
 | **A persisted approval also auto-allows AGENT + headless re-runs of that exact call (D44)** | **accepted, deliberate** | Owner ruling ④ — approvals are actor-agnostic (§2.5). A grant given at a chat bubble silences the same call for the agent and headless subagents. Bounded by args-exact pinning, allow-only matching, the un-approvable forced-confirm rung, and the mandatory `[auto-allowed: …]` summary marker; revocable any time in Conf → Tools. Fail-closed on a miss (headless CONFIRM → DENIED, unchanged). |
 | **Approvals never expire in v1 (D44)** | **accepted** | No TTL / decay-on-disuse (that needs a queryable fire-log = an events-schema migration; reserved). A grant stands until revoked in Conf → Tools or `config.yaml`; revocation is live from the next invoke. |
-| **The media write API has no kill switch (D65)** | **accepted, owner waiver 2026-08-24** | The whole-feature-toggle rule is knowingly waived: `PUT`/`DELETE /api/media/…` is unconditional. A toggle over one typed, allowlisted, registry-confined path buys nothing a rollback does not, and stays trivially additive (§2.7). |
-| **DNS rebinding reaches the whole API** (an attacker-controlled name re-resolving to the LAN/tailnet address is same-origin, so CORS never applies) | **open → Phase 19** | Pre-existing, whole-API; the D65 write path raises its value. Lean fix = `TrustedHostMiddleware`. Tracked in HARDENING §8.2 (§2.7). |
-| **`POST /api/voice/stt` is a CORS-safelisted write-shaped endpoint** (multipart) | **accepted, enumerated** | Writes no owner file; spends an STT call. Listed so the safelisted class is enumerated rather than forgotten (§2.7); re-checked in Phase 19. |
+| **The media write API will have no kill switch (D65)** | **accepted, owner waiver 2026-08-24** | The whole-feature-toggle rule is knowingly waived: `PUT`/`DELETE /api/media/…` is specified unconditional. A toggle over one typed, allowlisted, registry-confined path buys nothing a rollback does not, and stays trivially additive (§2.7). *Ruled at S0; the routes land at S1.* |
+| **DNS rebinding reaches the whole API** (an attacker-controlled name re-resolving to the LAN/tailnet address is same-origin, so CORS never applies) | **open → Phase 19** | Pre-existing, whole-API; the D65 write path will raise the value of the target. Lean fix = `TrustedHostMiddleware`. Tracked in HARDENING §8.2 (§2.7). |
+| **Safelisted-reachable POST mutations are a CLASS** — multipart (`POST /api/voice/stt`) plus the bodyless / path-param routes that run whatever content type a cross-origin form sends | **pre-existing, open → Phase 19** | CORS withholds a cross-origin read-back, never the send. Not introduced by D65 — surfaced by it, which is why §1's correction scopes the "first surface" claim to owner FILES. Enumeration + disposition = Packet ③ (HARDENING §8.2); §2.7 names three examples. |
 | **The steer queue is in-memory (D41)** | **accepted** | A backend restart loses queued-but-undrained steers — no durability is promised (mirrors the in-memory confirm-token stance). Single-user, the queue is seconds-lived; accepted. |
 
 ---

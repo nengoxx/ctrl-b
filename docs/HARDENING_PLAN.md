@@ -650,9 +650,16 @@ name that re-resolves to the app's LAN/tailnet address is *same-origin*, so no C
 applies. Pre-existing and whole-API (not the media feature's); D65 recorded it because the write
 path raises the value of the target. **Lean fix = `TrustedHostMiddleware`** with the deploy's real
 names — **Packet ①** (bootstrap/app assembly), SECURITY_MODEL §2.7 · **D65-R2 (added
-2026-08-24):** **`POST /api/voice/stt` is the standing CORS-safelisted-class endpoint** (multipart
-audio). It writes no owner file and only spends an STT call, which is why it is enumerated rather
-than gated — **Packet ③** re-walks it with the voice adapter so the class stays counted ·
+2026-08-24; WIDENED from the `/voice/stt` instance to the CLASS at the S0 review):**
+**CORS-safelisted-reachable POST mutations.** A cross-origin page can *send* a safelisted `POST` —
+CORS withholds the read-back, never the send — so every POST route that runs without needing a JSON
+content type is reachable that way. Two shapes: **multipart** (`POST /api/voice/stt`; writes no
+owner file, spends an STT call) and **bodyless / path-param** routes, which execute whatever content
+type a form sends — e.g. `POST /api/automations/{id}/run-now`,
+`POST /api/integrations/rediscover`, `POST /api/agent/turns/{thread_id}/cancel`. (JSON-body POSTs
+are effectively content-type-guarded: a urlencoded body 422s first.) **Pre-existing, NOT introduced
+by D65** — surfaced by it, and deliberately not enumerated in the D-entry. **Packet ③ owns the
+enumeration and the disposition** (the three above are examples, not the list); SECURITY_MODEL §2.7 ·
 **D65-P4 (added 2026-08-24, per MEDIA_MANAGER_PLAN §9):** `build_index` **stats and header-probes
 EVERY file on every GET**, and the library model grows the tree by design (uploads are additive;
 delete is the only removal). Frequency is addressed by the plan's defect #3 (scope the index query
