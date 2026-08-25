@@ -1,5 +1,5 @@
 import { render, waitFor, within } from "@testing-library/react";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { useOverlayBackGuard } from "../../src/hooks/useOverlayBackGuard";
@@ -136,6 +136,39 @@ describe("useOverlayBackGuard", () => {
     closer(view)!.click();
     closer(view)!.click();
     expect(took).toEqual([true, false]);
+  });
+
+  it("survives a setup → cleanup → setup cycle in ONE task — one entry, no reclamation", async () => {
+    // StrictMode IS the arm: it double-invokes every effect in development, which is the shape React's
+    // contract permits everywhere. Before the deferred push this cost a push, a pending `history.back()`
+    // and a second push — after which the browser sat one entry BELOW what the module believed, so the
+    // ✕ traversed past the app's own entry. On the dev server that meant `about:blank`, with the whole
+    // tab gone, on every single gallery close.
+    const push = vi.spyOn(history, "pushState");
+    const back = vi.spyOn(history, "back");
+    const onClose = vi.fn();
+    const before = history.length;
+    const view = render(
+      <StrictMode>
+        <Host onClose={onClose} />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(ours()).toBe(true));
+    // The claim: the whole cycle costs exactly ONE entry and NO reclaiming traversal.
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(back).not.toHaveBeenCalled();
+    expect(history.length).toBe(before + 1);
+
+    // …and the exit is the ordinary one: one back, one close, the entry spent rather than piled on.
+    // Asserted on THIS entry's id rather than on `ours()`: an earlier case in this file may still be
+    // sitting on an overlay entry of its own, and going back onto it is correct — what must not
+    // survive is the entry this cycle pushed.
+    const pushedId = (push.mock.calls[0][0] as { id: number }).id;
+    closer(view)!.click();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(back).toHaveBeenCalledTimes(1);
+    expect((history.state as { id?: number } | null)?.id).not.toBe(pushedId);
+    expect(history.length).toBeLessThanOrEqual(before + 1);
   });
 
   it("NESTED: one Back closes the TOP overlay and leaves the one under it standing", async () => {

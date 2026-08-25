@@ -626,3 +626,16 @@ bundled).
 EXIF portrait end-to-end · 413-mid-body over Tailscale Serve HTTPS · does the Honor 20 produce
 HEIC · PWA-standalone survival across the picker activity · jpeg q0.85 eyeball · crop/framing/
 drag feel · Fennec expected-partials · the Back-gesture close on device.
+
+> **S3b riders (2026-08-25).**
+> · **EXIF portrait is ALREADY ANSWERED on the desktop half** — the built app against the real dev
+>   backend stored an `Orientation=6` 400×200 JPEG as a **200×400** file with EXIF/XMP gone (JFIF + a
+>   ~470-byte sRGB ICC left, exactly as R54 §3.5 measured), and the e2e now asserts both in-browser.
+>   What is left for the device is the PHONE's own decoder on the phone's own photo.
+> · **NEW PROBE — the guard's DOUBLE DECODE.** §4's ladder ends in a `createImageBitmap` proof, and
+>   the worker then decodes the same file again to export it: two full decodes per pick, ~192 MB of
+>   peak RGBA apiece on the owner's 48 MP camera. Desktop cost is invisible (55–190 ms); a mid-range
+>   Android is 4–8× slower on this work and Chrome caps decoded bytes at `totalRAM / 25`. **Time one
+>   48 MP pick on the Honor 20**: if the proof rung is what hurts, the recorded alternative is to let
+>   the crop modal's own `<img>` load BE the proof (it already decodes, and its `onerror` is the same
+>   verdict) at the cost of surfacing an undecodable file one step later.

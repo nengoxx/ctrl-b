@@ -91,21 +91,46 @@ export function useOverlayBackGuard(open: boolean, onClose: () => void): () => b
   useEffect(() => {
     if (!open || typeof history === "undefined") return;
     const id = nextId++;
-    mine.current = id;
     closing.current = false;
-    // The TOP entry is the only one a pop can reach, which is what lets a confirm close over a gallery
-    // that stays open behind it — and what makes the next Back close that gallery.
-    stack.push({
-      id,
-      close: () => {
-        mine.current = null;
-        closing.current = false;
-        onCloseRef.current();
-      },
+    /** The entry is actually ON the stack. Until then there is nothing to reclaim. */
+    let pushed = false;
+    /** Cleared by the cleanup — which is how a setup→cleanup→setup cycle costs nothing at all. */
+    let armed = true;
+    // **DEFERRED BY ONE MICROTASK, and that is a CORRECTNESS requirement, not a nicety.**
+    //
+    // React's effect contract allows a setup to be undone and re-run in the SAME task, and StrictMode
+    // double-invokes exactly that way in development. The pair "push an entry synchronously / reclaim
+    // it with an asynchronous `history.back()`" cannot survive it: the reclaiming traversal is still
+    // in flight when the second setup pushes, so the browser's current entry and this module's stack
+    // end up disagreeing about which entry is which — and the next `close()` spends an entry that is
+    // not ours and walks the app clean off its own page (observed: opening the gallery on the dev
+    // server and pressing Escape navigated the tab to `about:blank`, taking the app with it).
+    //
+    // Deferring lets the cleanup CANCEL the push instead of undoing it. Cycle in, cycle out, nothing
+    // happened: one entry per genuinely-open overlay, and the reclamation path below is left for what
+    // it was written for — a real unmount while the overlay is still open.
+    queueMicrotask(() => {
+      if (!armed) return;
+      pushed = true;
+      mine.current = id;
+      // The TOP entry is the only one a pop can reach, which is what lets a confirm close over a
+      // gallery that stays open behind it — and what makes the next Back close that gallery.
+      stack.push({
+        id,
+        close: () => {
+          mine.current = null;
+          closing.current = false;
+          onCloseRef.current();
+        },
+      });
+      listen();
+      history.pushState({ ...OVERLAY_STATE, id }, "");
     });
-    listen();
-    history.pushState({ ...OVERLAY_STATE, id }, "");
     return () => {
+      armed = false;
+      // Never claimed (the cycle above, or an overlay closed inside the same task it opened in):
+      // there is no entry, so there is nothing to give back and `mine.current` is still untouched.
+      if (!pushed) return;
       const at = stack.findIndex((e) => e.id === id);
       if (at < 0) return; // already spent by a pop
       stack.splice(at, 1);
@@ -127,8 +152,9 @@ export function useOverlayBackGuard(open: boolean, onClose: () => void): () => b
 
   // `history.back()` is the whole of it: the popstate handler above is what actually closes, so there
   // is exactly one path out and no way to leave an entry behind. Without an entry of our own (the
-  // guard is disabled, or the environment has no history) close directly rather than stealing the
-  // caller's real back.
+  // guard is disabled, the environment has no history, or the overlay is being closed inside the very
+  // task it opened in — before the deferred push) close directly rather than stealing the caller's
+  // real back.
   //
   // Returns whether THIS call is the one taking the exit — `false` means a close is already in flight
   // and the caller's gesture came too late to decide anything.
