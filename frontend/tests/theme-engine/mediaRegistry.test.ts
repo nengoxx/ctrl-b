@@ -1,6 +1,11 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { RIG_KEYS } from "../../src/themes/frontier/art";
+import { STACK_KEYS } from "../../src/themes/frontier/ownerArt";
 import { gacha } from "../../src/themes/gacha";
+import { defaultRoster } from "../../src/themes/gacha/roster";
 import { applicableNs, MEDIA_NS, type MediaNsDef } from "../../src/theme-engine/mediaRegistry";
 import { registeredThemes } from "../../src/theme-engine/registry";
 import type { ThemeDef } from "../../src/theme-engine/types";
@@ -263,6 +268,114 @@ describe("the frontier row (D53 M2)", () => {
         const keys = (role.keys ?? []).map((k) => k.key.normalize("NFC").toLowerCase());
         expect(new Set(keys).size, `${nsName}/${roleName}`).toBe(keys.length);
       }
+    }
+  });
+});
+
+// ── the per-role BUNDLED ids (D65) ───────────────────────────────────────────────────────────────────
+//
+// Three claims, and they are deliberately different in kind:
+//   ① the lists are DERIVED from the theme ladder modules, not hand-typed (the H1 rider) — asserted by
+//     comparing against the same exports the registry reads, plus the LITERALS, so a derivation that
+//     silently agrees with itself on both sides still fails when the theme's shipped art changes;
+//   ② shape invariants — an id is a bare stable NAME, never a filename or a path, unique in its role;
+//   ③ the cross-language MIRROR: the backend hand-lists the same ids in `core/media.py`.
+//
+// ③ lives HERE rather than in pytest for one reason: this side is DERIVED, and deriving it needs Vite's
+// asset globs — a Python test could only read literals that no longer exist. So the guard is the SYS-10
+// drift-guard pattern (`test_arch_invariants_sys10.py`) pointed the other way: read the OTHER language's
+// source with a pinned regex, and fail loudly if the declaration was reshaped rather than skipping.
+
+const BACKEND_MEDIA = join(import.meta.dirname, "../../../backend/app/core/media.py");
+
+/** Parse one `<NAME>_ROLES: dict[str, MediaRole] = { … }` block out of `core/media.py` into
+ *  `{role: bundled[]}`. Anchored on the exact declaration so a rename or a reshape fails here instead of
+ *  quietly matching nothing. */
+function backendRoles(constName: string): Record<string, string[]> {
+  const src = readFileSync(BACKEND_MEDIA, "utf8");
+  const block = new RegExp(
+    `\\n${constName}: dict\\[str, MediaRole\\] = \\{\\n(.*?)\\n\\}`,
+    "s",
+  ).exec(src);
+  expect(
+    block,
+    `could not find \`${constName}: dict[str, MediaRole] = { … }\` in ${BACKEND_MEDIA} — the backend ` +
+      "registry was renamed or reshaped; update this guard (and confirm the bundled ids still match)",
+  ).not.toBeNull();
+  const out: Record<string, string[]> = {};
+  const entry = /"([^"]+)":\s*MediaRole\(\s*(?:bundled=\(\s*([^)]*?)\s*\))?\s*,?\s*\)/gs;
+  for (const m of block![1].matchAll(entry)) {
+    out[m[1]] = [...(m[2] ?? "").matchAll(/"([^"]*)"/g)].map((s) => s[1]);
+  }
+  expect(
+    Object.keys(out).length,
+    `${constName} parsed to no roles — the guard's entry regex is stale`,
+  ).toBeGreaterThan(0);
+  return out;
+}
+
+describe("bundled ids — derived front-end-side, mirrored on the backend", () => {
+  const roster = defaultRoster();
+
+  it("gacha's ids are the roster's own names — cast, scenes, cutout pool, and NOTHING for the oracle", () => {
+    // Each list is the theme's, read where the theme keeps it. The oracle's emptiness is the load-bearing
+    // one: its bundled backdrop is SCENE art addressed by no name (`pools.oracle` is empty on purpose), so
+    // it stays the last rung of `oracleArt`'s ladder instead of becoming a library entry with an invented id.
+    expect(MEDIA_NS.gacha.roles.characters.bundled).toEqual(roster.entries.map((e) => e.name));
+    expect(MEDIA_NS.gacha.roles.banner.bundled).toEqual(roster.scenes.map((s) => s.name));
+    expect(MEDIA_NS.gacha.roles.reel.bundled).toEqual(roster.pools.reel.map((a) => a.name));
+    expect(MEDIA_NS.gacha.roles.oracle.bundled).toEqual([]);
+    // The literals the theme ships today — the half a derivation cannot catch.
+    expect(MEDIA_NS.gacha.roles.characters.bundled).toEqual(["pegasus", "atlas", "3", "4", "lyra"]);
+    expect(MEDIA_NS.gacha.roles.banner.bundled).toEqual(["b2", "b3"]);
+    expect(MEDIA_NS.gacha.roles.reel.bundled).toEqual(["lyra"]);
+  });
+
+  it("frontier's ids are its key tuples — and the hero vista, which nothing names, gets none", () => {
+    expect(MEDIA_NS.frontier.roles.rigs.bundled).toEqual([...RIG_KEYS]);
+    expect(MEDIA_NS.frontier.roles.stack.bundled).toEqual([...STACK_KEYS]);
+    expect(MEDIA_NS.frontier.roles.hero.bundled).toEqual([]);
+  });
+
+  it("the kit ships no bundled art at all, and every role SAYS so", () => {
+    // Not an omission (§3): absent art means the surface renders exactly as it does without it. The field
+    // is required precisely so "nothing bundled" cannot be confused with "nobody filled this in".
+    for (const [role, def] of Object.entries(MEDIA_NS.kit.roles)) {
+      expect(def.bundled, role).toEqual([]);
+    }
+  });
+
+  it("every id is a bare, stable, unique NAME — never a filename, never a path", () => {
+    // An id is an IDENTITY the client maps to a hashed asset; a duplicate would make a `{bundled: …}`
+    // library entry ambiguous, and a dotted or slashed one would read as a file the mount could serve.
+    for (const [nsName, ns] of Object.entries(MEDIA_NS)) {
+      for (const [roleName, role] of Object.entries(ns.roles)) {
+        const where = `${nsName}/${roleName}`;
+        expect(new Set(role.bundled).size, where).toBe(role.bundled.length);
+        for (const id of role.bundled) {
+          expect(id.length, where).toBeGreaterThan(0);
+          expect(id, where).not.toMatch(/[/\\.]/);
+        }
+      }
+    }
+  });
+
+  it("the BACKEND's hand-listed ids match this registry's derived ones, role for role", () => {
+    // The mirror the collation depends on: the server emits `{bundled: <id>}` index rows and the client
+    // maps the id to its asset, so a name that exists on only one side is a row nothing can paint.
+    for (const [constName, ns] of [
+      ["GACHA_ROLES", "gacha"],
+      ["FRONTIER_ROLES", "frontier"],
+      ["KIT_ROLES", "kit"],
+    ] as const) {
+      const backend = backendRoles(constName);
+      const frontend = Object.fromEntries(
+        Object.entries(MEDIA_NS[ns].roles).map(([role, def]) => [role, [...def.bundled]]),
+      );
+      // Role NAMES too, in declaration order — the two registries have always mirrored row for row, and
+      // the bundled lists are only meaningful if the roles they hang off agree.
+      expect(Object.keys(backend), ns).toEqual(Object.keys(frontend));
+      expect(backend, ns).toEqual(frontend);
     }
   });
 });

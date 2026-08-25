@@ -1414,7 +1414,7 @@ toggle rule). Ships in the 1.7.x line (1.8 stays RESERVED for the ROADMAP/ISSUES
 Standing cadence per slice: Opus build from a pinned brief → main-seat audit → Emma-lane review →
 owner eyeball; each passes `tools/check.py`.
 
-- [ ] S0 — Docs + registry rows: D65 · SECURITY_MODEL §2.7 · MEDIA_PLAN §13 amendment · SPEC
+- [x] S0 — Docs + registry rows: D65 · SECURITY_MODEL §2.7 · MEDIA_PLAN §13 amendment · SPEC
       inventories · doc-map row · RESEARCH pins (react-easy-crop ADOPTED / dnd-kit REJECTED) ·
       ROADMAP §H2 + this stanza · HARDENING §8.2 + §7b · backend+FE per-role bundled-id rows
       (`MediaSlotDef.bundled` retired; FE ids DERIVED from `defaultRoster()`/`ART`) · the

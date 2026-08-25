@@ -1,10 +1,21 @@
-"""Owner-supplied media — the namespace-generic read-only library (D52/G5; GACHA_PLAN §5.4 + §10.4).
+"""Owner-supplied media — the namespace-generic art library (D52/G5; GACHA_PLAN §5.4 + §10.4).
 
-The owner drops image files into `$CTRLB_HOME/media/<ns>/<role>/` from any machine (SSH/SMB) and the
-app serves them read-only. **There is no write API and there must never be one here** (§5.4 ruled
-option (b)): the app has no application-layer auth — the tailnet IS the boundary (SECURITY_MODEL §1) —
-so an upload endpoint would be reachable by anything on the tailnet. This module lists and describes
-what is on disk; `app/api/media.py` publishes it and mounts the hardened static surface.
+The owner drops image files into `$CTRLB_HOME/media/<ns>/<role>/` from any machine (SSH/SMB) — and,
+per **D65**, uploads them from the app itself. This module lists and describes what is on disk;
+`app/api/media.py` publishes that index, mounts the hardened static surface, and owns the write path.
+
+**A typed write API is RULED, and its SHAPE is the security control (D65, 2026-08-24 — superseding
+§5.4's "there is no write API and there must never be one here"; the routes and the persist pipeline
+land at MEDIA_MANAGER_PLAN's S1, and what follows is the contract they must satisfy).** The
+app has no application-layer auth — the tailnet IS the
+boundary (SECURITY_MODEL §1) — so the realistic attacker was never a tailnet peer but the owner's own
+browser on another origin, and the only cross-origin request a page can fire without a preflight is a
+CORS-SAFELISTED one (`GET`/`HEAD`/`POST`, `multipart/form-data` included). Hence: **raw-body
+`PUT`/`DELETE`, never multipart, never POST** — a non-safelisted verb forces an `OPTIONS` preflight
+that this app answers with no ACAO, so a cross-origin write dies unsent. Writes land only inside
+registered role dirs, `probe_image` below validates the BYTES before the file reaches its final name,
+and a rejected upload leaves zero bytes. Full reasoning: SECURITY_MODEL §2.7 + MEDIA_MANAGER_PLAN §1.
+Everything the READ side does is unchanged by that reversal.
 
 **Namespace-generic by construction** (council M9): `gacha` is the first namespace, and the next
 art-bearing theme is a row in `MEDIA_NAMESPACES` — not a new route, not a new mount class. Nothing in
@@ -44,6 +55,32 @@ MEDIA_DIRNAME = "media"
 MEDIA_URL_ROOT = "/api/media"
 MEDIA_FILES_SEGMENT = "files"
 
+
+@dataclass(frozen=True)
+class MediaRole:
+    """One role FOLDER's registry facts. An OBJECT rather than a bare name in a tuple (D65), because
+    a role is about to grow more per-role dimensions and the alternative — a sibling `{role: ids}`
+    map beside a name list — is exactly the shape the 2026-06-24 extend-don't-migrate directive
+    bans: every new dimension would be a new top-level map plus new read/merge code. Here the next
+    one is an additive field with a default. Migrated while it was still cheap (one field).
+
+    `bundled` = the ids of the art this role SHIPS — the entries a theme's own module can paint with
+    no owner file present, addressable by a stable name. D65 makes those first-class library entries:
+    the collation emits an unlisted bundled id as a fallback-tier row and a listed one as a full
+    mixed citizen, and the client maps id → its Vite-hashed asset (the server never sees the URL, so
+    it emits no `url` for them). **Order is the theme's own** — for a dealt pool it IS the deal.
+
+    The list is hand-written HERE and DERIVED on the front end (`theme-engine/mediaRegistry.ts`, from
+    `defaultRoster()` / `ART` — the H1 import-direction rider), because only the FE modules know
+    which bundled assets exist. A drift test holds the two in step; see the mirror guard in
+    `frontend/tests/theme-engine/mediaRegistry.test.ts`. **An asset with no stable name gets NO id**
+    (gacha's oracle scene, frontier's hero vista): inventing one would create a second identity space
+    that no ladder could resolve.
+    """
+
+    bundled: tuple[str, ...] = ()
+
+
 #: The gacha role folders (§5.4). `oracle` has its own folder for symmetry (the G5-brief default).
 #: Order matters only for the ensure-dir walk and for how the Conf gallery lists sections.
 #:
@@ -54,7 +91,20 @@ MEDIA_FILES_SEGMENT = "files"
 #: — that is gacha's own mechanism (bind a cast portrait to the backdrop) and the kit has no equivalent.
 #: A clean removal, not a deprecation: media v2 has never shipped to prod, so there is no owner data to
 #: migrate and no compat branch to carry (the no-legacy-seams rule).
-GACHA_ROLES: tuple[str, ...] = ("characters", "banner", "reel", "oracle")
+GACHA_ROLES: dict[str, MediaRole] = {
+    # The cast the roster deals to hosts, positionally. Its bundled ids are the `defaultRoster()`
+    # entry names (themes/gacha/roster.ts) — the five portraits a fresh install shows.
+    "characters": MediaRole(bundled=("pegasus", "atlas", "3", "4", "lyra")),
+    # The pickup-carousel scene slides: `defaultRoster().scenes`, named `b2`/`b3` in gacha/art.ts.
+    "banner": MediaRole(bundled=("b2", "b3")),
+    # The transition cutout: `defaultRoster().pools.reel`, DERIVED from the entries carrying a
+    # `cutout` field — today exactly `lyra`, which is why she stays last in the cast.
+    "reel": MediaRole(bundled=("lyra",)),
+    # NO bundled id: the oracle's bundled backdrop is SCENE art addressed by no name and pinnable
+    # through no slot (`defaultRoster().pools.oracle` is empty on purpose), so it is the last rung of
+    # `oracleArt`'s ladder rather than a library entry. An id is not invented for it.
+    "oracle": MediaRole(),
+}
 
 #: The gacha `slots` pin keys (§5.2) — the cross-role bindings the Conf gallery offers. `wallpaper` is
 #: still here with its folder gone, and the two are deliberately independent: a pin key names a SLOT the
@@ -66,7 +116,18 @@ GACHA_SLOTS: tuple[str, ...] = ("wallpaper", "hero", "oracle", "reel_figure")
 #: The frontier role folders (D53 / MEDIA_PLAN §3). `rigs` and `hero` are POOLS (the badlands cards and
 #: the map cover); `stack` is the NAMED role — its three layers bind by filename STEM
 #: (`cube`/`platform-mid`/`platform-base`), so the drop-in IS the binding and no pin exists for it.
-FRONTIER_ROLES: tuple[str, ...] = ("rigs", "hero", "stack")
+FRONTIER_ROLES: dict[str, MediaRole] = {
+    # The bundled rig pool, addressed by asset KEY: `present()` names position i's rig as
+    # `RIG_KEYS[i % 6]` and the consumer paints `assets[key]` when the owner has dropped none
+    # (themes/frontier/art.ts).
+    "rigs": MediaRole(bundled=("rig1", "rig2", "rig3", "rig4", "rig5", "rig6")),
+    # NO bundled id: `ART.hero` is the ladder's last rung, a bare URL that no pin and no key
+    # addresses — the same rule as the gacha oracle above.
+    "hero": MediaRole(),
+    # The three layers, by the KEY a stem must match (`STACK_KEYS`, themes/frontier/ownerArt.ts).
+    # Each key has its own bundled layer, so a partial drop composites owner over bundled.
+    "stack": MediaRole(bundled=("cube", "platform-mid", "platform-base")),
+}
 
 #: The frontier `slots` pin keys. Only `hero`: a pool with a first-wins default that the owner may
 #: override by name (the kit pins are the same shape). The named role gets none.
@@ -86,7 +147,17 @@ FRONTIER_SLOTS: tuple[str, ...] = ("hero",)
 #: identity its stem matches — which is why there is no key list here: those live in `config.yaml`, not
 #: in this registry. They get no pin for the same reason the frontier stack has none: the filename IS the
 #: binding. Only the pools need one.
-KIT_ROLES: tuple[str, ...] = ("services", "service-banners", "hosts", "background", "brand")
+#: **No kit role carries a bundled id**, and that is the namespace's design rather than an omission
+#: (§3): the kit ships no fallback art — a service with no dropped file keeps its icon-less row, and
+#: the shared background/brand layers simply do not mount. There is nothing for a gallery to list as
+#: a bundled entry, so every list here is empty and stays empty.
+KIT_ROLES: dict[str, MediaRole] = {
+    "services": MediaRole(),
+    "service-banners": MediaRole(),
+    "hosts": MediaRole(),
+    "background": MediaRole(),
+    "brand": MediaRole(),
+}
 
 #: The kit `slots` pin keys — one per POOL, and each is the same shape as the frontier hero pin: a
 #: first-wins default the owner may override by name.
@@ -98,9 +169,14 @@ class MediaNamespace:
     """One namespace's registry row: the role FOLDERS on disk plus the `slots` pin KEYS its config may
     bind. Both belong here because both are namespace facts the ns-generic `media.<ns>` config model
     validates against (MEDIA_PLAN §4) — a slot key typed on a per-namespace pydantic class would be the
-    banned sibling shape, and a typo in either is only visible if this registry is the authority."""
+    banned sibling shape, and a typo in either is only visible if this registry is the authority.
 
-    roles: tuple[str, ...]
+    `roles` is an ORDER-PRESERVING map (D65): iteration yields the role names in declaration order —
+    which is what the ensure-dir walk, the mount and the gallery's section order all read — while the
+    VALUE carries that role's own facts (`MediaRole`). Every consumer that only wants names keeps
+    iterating this exactly as it iterated the old tuple."""
+
+    roles: dict[str, MediaRole]
     slots: tuple[str, ...] = ()
 
 

@@ -12,8 +12,25 @@
 // dict. The alternative — each theme exporting its own row — would have the theme modules importing the
 // shared bound constants back out of this module, and a registry↔theme import cycle is the one shape a
 // module-scope map cannot survive (the store↛registry lesson).
+//
+// THE IMPORT DIRECTION IS PINNED (D65 / MEDIA_MANAGER_PLAN §2.4, the H1 rider). This module MAY import the
+// theme ladder modules (`themes/*/roster.ts`, `themes/*/ownerArt.ts`, `themes/*/art.ts`); those modules must
+// NEVER import this registry back. One arrow, always this way — which is the same store↛registry lesson
+// stated as a rule rather than as a hazard. It buys the thing hand-mirroring could not: the per-role BUNDLED
+// ids below are DERIVED from `defaultRoster()` / `ART` / the key tuples, so a theme that changes its shipped
+// art cannot leave a stale name in this registry. (The other half of that mirror — the BACKEND's hand-listed
+// copy in `core/media.py` — is held in step by a drift guard in tests/theme-engine/mediaRegistry.test.ts.)
 
+import { RIG_KEYS } from "../themes/frontier/art";
+import { STACK_KEYS } from "../themes/frontier/ownerArt";
+import { defaultRoster } from "../themes/gacha/roster";
 import type { ThemeDef } from "./types";
+
+/** The bundled ids of one gacha role, read off the roster the theme actually falls back to. `defaultRoster()`
+ *  builds a fresh object per call, so it is called ONCE here and the three lists are taken from that. */
+const BUNDLED_ROSTER = defaultRoster();
+const names = (entries: readonly { name: string }[]): readonly string[] =>
+  entries.map((e) => e.name);
 
 /** What a role's files ARE, publicly (MEDIA_PLAN §2's two kinds). `pool` = the ordered list the server
  *  collates and the gallery reorders, where POSITION is the assignment. `named` = files binding to KEYS
@@ -56,11 +73,45 @@ export interface MediaKeyDef {
  *  A1 — the third source must be a row, not a third branch). */
 export type MediaKeySource = "services" | "hosts";
 
+/** ONE framing-preview window for a role: a small box the framing sheet paints the image into so the owner
+ *  can see roughly where their focal point lands on a real destination (MEDIA_MANAGER_PLAN §5).
+ *
+ *  ⚠ **COARSE, EXAMPLES ONLY — by design (council M4).** These aspects are APPROXIMATIONS of the surfaces
+ *  that consume the role, and the previews are captioned as examples for exactly that reason. **The real
+ *  surfaces' CSS remains the paint authority**: a card that grows a different aspect, a theme that crops
+ *  differently, a responsive box that changes shape at another width — none of that is knowable here, and a
+ *  registry that pretended otherwise would be lying in a place the owner cannot check. Where one preview's
+ *  aspect really must be exact, that surface gets the house invariant-test treatment instead of a promise.
+ *  Never compute a stored value from these numbers; they exist to be looked at.
+ *
+ *  Data rows land at S4 with the focal-point slice — the TYPE is declared now so the descriptor shape is
+ *  settled before anything reads it. */
+export interface MediaPreviewDef {
+  /** What this window IS, in the owner's words ("capsule card", "promo slide") — the caption. */
+  label: string;
+  /** width / height. Coarse, per the warning above. */
+  aspect: number;
+}
+
 /** One role folder under `media/<ns>/`. The server's index is the authority on which roles EXIST; this
  *  supplies the words and the policy for them, because "what does `reel/` mean" is knowledge no generic
  *  gallery could invent. */
 export interface MediaRoleDef {
   kind: MediaKind;
+  /** The ids of the BUNDLED art this role ships — the entries a theme paints with no owner file present,
+   *  each addressable by a stable name. D65 makes them first-class library entries: they appear in the
+   *  role's gallery, they can be listed and ordered among the owner's own files, and the client maps an id
+   *  to its Vite-hashed asset (the server emits the id, never a url).
+   *
+   *  **DERIVED, never hand-typed** (the H1 rider, see the header): every list below is read off the theme's
+   *  own ladder module, so this registry cannot hold a name the theme would refuse. **REQUIRED**, empty
+   *  included — a role that ships nothing must say so, because "no bundled art" is a real answer (the whole
+   *  kit namespace) and an omitted field would make it indistinguishable from a forgotten one.
+   *
+   *  An asset with **no stable name gets no id**: gacha's oracle backdrop and frontier's hero vista are the
+   *  last rung of a ladder that nothing addresses by name, so they are `[]` rather than an invented
+   *  identity no resolver could honour. */
+  bundled: readonly string[];
   /** Shown under the role's heading in the gallery. A role with no hint still renders. */
   hint?: string;
   bounds: MediaBounds;
@@ -76,6 +127,10 @@ export interface MediaRoleDef {
    *  no "a/an" is needed. Required in practice for a `keySource` role (a registry invariant test pins
    *  it); the static-key and pool roles say what they are in their own `hint`. */
   asset?: string;
+  /** The framing sheet's preview windows for this role — see `MediaPreviewDef` for what they are and are
+   *  NOT. Absent = no previews (a role that offers no focal point, or one whose destinations are not worth
+   *  approximating). Rows land at S4. */
+  previews?: readonly MediaPreviewDef[];
 }
 
 /** A `slots` pin the gallery offers: binding one named file INTO a role, overriding that role folder's own
@@ -86,9 +141,10 @@ export interface MediaRoleDef {
  *  options come from `reel/`, never from the cast. Offering a character portrait there would let the owner
  *  pick something that sweeps across the screen as a rectangle.
  *
- *  `bundled` names what the THEME can supply for the slot while `from` is still empty, so the pin is useful
- *  on a fresh install instead of an empty select. They must be names that theme's own resolver would
- *  accept — a theme test keeps the two in step.
+ *  There is no per-slot `bundled` list any more (**RETIRED at D65**, the M4 rider): the names a pin may
+ *  offer while `from` is still empty are the SOURCE ROLE's own bundled ids, so keeping a second hand-typed
+ *  copy on the slot was one list in two places — and the copy was the one that could go stale. The pin
+ *  reads `roles[slot.from].bundled` instead.
  *
  *  `hint` is the per-pin line under the select, on exactly the terms `MediaRoleDef.hint` is (G6.3): the
  *  section's own copy describes what a pin GENERALLY is, and a pin whose ladder differs from that needs a
@@ -98,7 +154,6 @@ export interface MediaSlotDef {
   key: string;
   label: string;
   from: string;
-  bundled?: string[];
   hint?: string;
 }
 
@@ -156,8 +211,17 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         kind: "pool",
         hint: "Capsule cards + the dossier portrait, dealt to machines in this order.",
         bounds: FULL_ART,
+        // The bundled cast, in the order the default roster deals it — the entry names a `slots` pin
+        // addresses and `slotEntry` resolves against while `characters/` is still empty.
+        bundled: names(BUNDLED_ROSTER.entries),
       },
-      banner: { kind: "pool", hint: "One extra pickup-banner slide per image.", bounds: FULL_ART },
+      banner: {
+        kind: "pool",
+        hint: "One extra pickup-banner slide per image.",
+        bounds: FULL_ART,
+        // The bundled scene slides (`b2`/`b3`) — named because each slide needs a stable key.
+        bundled: names(BUNDLED_ROSTER.scenes),
+      },
       // NO `wallpaper` ROLE — removed at G6.3 on the owner's ruling ("just having the background in the
       // kit is the better approach — no duplicated systems"). The fleet backdrop's drop-in home is the
       // SHARED `kit/background` pool: one folder for "a big picture behind the app", not one per theme
@@ -170,15 +234,24 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         kind: "pool",
         hint: "The cutout that rides the tab transition. Dropped-in cutouts are painted as-is: the bundled one has its glow baked into the file, so a plain transparent PNG will look flatter.",
         bounds: FULL_ART,
+        // The bundled reel POOL, which the roster derives from the entries carrying a `cutout` — today
+        // exactly `lyra`. This is the list the `reel_figure` pin offers while `reel/` is empty; it used to
+        // be hand-typed on the slot (`MediaSlotDef.bundled`, retired at D65).
+        bundled: names(BUNDLED_ROSTER.pools.reel),
       },
       oracle: {
         kind: "pool",
         hint: "The agent operator's backdrop. The first image wins.",
         bounds: FULL_ART,
+        // EMPTY, and derived that way rather than asserted: the roster's oracle pool is empty on purpose
+        // because the bundled backdrop is SCENE art addressed by no name — it is the last rung of
+        // `oracleArt`'s ladder, not a library entry.
+        bundled: names(BUNDLED_ROSTER.pools.oracle),
       },
     },
     // The §5.2 pins that survived the role re-rule. Three of them bind a CHARACTER into a role — a
-    // portrait crops fine as a backdrop. The FIGURE does not (Codex F4, above).
+    // portrait crops fine as a backdrop. The FIGURE does not (Codex F4, above). Each one's bundled
+    // fallback options are its SOURCE ROLE's `bundled` ids (D65 — no per-slot copy).
     //
     // `wallpaper` is the one whose ROLE FOLDER no longer exists (G6.3), and it is therefore the one pin
     // that is not merely an override of a folder's first pick: it is now the TOP of gacha's backdrop
@@ -196,7 +269,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
       { key: "oracle", label: "Operator backdrop", from: "characters" },
       // `bundled` mirrors the cutout-bearing entries of `defaultRoster()` (themes/gacha/roster.ts) — a
       // roster test fails if the two ever drift.
-      { key: "reel_figure", label: "Transition figure", from: "reel", bundled: ["lyra"] },
+      // Its bundled option is the `reel` ROLE's own list above (D65 retired the per-slot copy).
+      { key: "reel_figure", label: "Transition figure", from: "reel" },
     ],
   },
   // frontier (D53 M2): the badlands theme's three art surfaces. Two POOLS and the first NAMED role —
@@ -211,11 +285,17 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         kind: "pool",
         hint: "The rig cards and the host sheet, dealt to machines in this order — your own rig first.",
         bounds: FULL_ART,
+        // The bundled rig pool, addressed by ASSET KEY: `present()` names position i's rig
+        // `RIG_KEYS[i % 6]` and the card paints `assets[key]` when the owner has dropped none.
+        bundled: RIG_KEYS,
       },
       hero: {
         kind: "pool",
         hint: "The badlands map cover. The first image wins.",
         bounds: FULL_ART,
+        // EMPTY: `ART.hero` is the ladder's last rung, a bare URL no pin and no key addresses — the same
+        // rule as gacha's oracle. No id is invented for it.
+        bundled: [],
       },
       stack: {
         kind: "named",
@@ -223,6 +303,9 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // `Cube.PNG` all reach the same layer; only the stem is read.
         hint: "The floating stack on Comms — one file per LAYER, named for it. Transparent PNGs; each is fitted into its box, so a wrong shape letterboxes rather than stretches. A layer you drop nothing for keeps its bundled art.",
         bounds: LAYER_ART,
+        // One bundled layer per KEY — the ids ARE `STACK_KEYS`, which is why a partial drop composites
+        // owner over bundled instead of blanking the other two.
+        bundled: STACK_KEYS,
         keys: [
           // The aspect ratios are the bundled art's own, and the boxes they are painted into agree
           // with them (frontier.css `.fr-rigstack .cube/.mid/.base`).
@@ -264,6 +347,9 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
     alwaysOn: true,
     roles: {
       services: {
+        // The kit ships NO fallback art (§3): absent = the surface renders exactly as it does
+        // without it. Empty, and stated rather than omitted — "nothing bundled" is a real answer.
+        bundled: [],
         kind: "named",
         keySource: "services",
         asset: "icon",
@@ -271,6 +357,9 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         bounds: ICON_ART,
       },
       "service-banners": {
+        // The kit ships NO fallback art (§3): absent = the surface renders exactly as it does
+        // without it. Empty, and stated rather than omitted — "nothing bundled" is a real answer.
+        bundled: [],
         kind: "named",
         keySource: "services",
         asset: "banner",
@@ -279,6 +368,9 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         bounds: BANNER_ART,
       },
       hosts: {
+        // The kit ships NO fallback art (§3): absent = the surface renders exactly as it does
+        // without it. Empty, and stated rather than omitted — "nothing bundled" is a real answer.
+        bundled: [],
         kind: "named",
         keySource: "hosts",
         asset: "picture",
@@ -286,6 +378,9 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         bounds: FULL_ART,
       },
       background: {
+        // The kit ships NO fallback art (§3): absent = the surface renders exactly as it does
+        // without it. Empty, and stated rather than omitted — "nothing bundled" is a real answer.
+        bundled: [],
         kind: "pool",
         // Re-worded at G6.3 (owner device round). The old sentence ended "Themes with scenery of their
         // own ignore it", which stopped being true the moment gacha made this image the last rung of its
@@ -297,6 +392,9 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         bounds: FULL_ART,
       },
       brand: {
+        // The kit ships NO fallback art (§3): absent = the surface renders exactly as it does
+        // without it. Empty, and stated rather than omitted — "nothing bundled" is a real answer.
+        bundled: [],
         kind: "pool",
         // ALPHA is the shape (G6.3): the file is painted as a CSS mask, never as an image, so only its
         // transparency is read and every theme tints the result with its own accent. Said plainly in the

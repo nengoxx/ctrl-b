@@ -144,8 +144,10 @@ export function defaultRoster(): Roster {
       // chosen, so its bundled option needs a name the owner can select — and it has to survive the
       // owner replacing the cast, which is exactly what an entries-only fallback got wrong (drop in four
       // portraits and the tab transition silently lost its figure). DERIVED from the entries' `cutout`
-      // field so the schema stays the one source; `ThemeDef.media.slots[].bundled` mirrors these names
-      // for the gallery, and a test keeps the two in step.
+      // field so the schema stays the one source — and since D65 the MEDIA REGISTRY derives its
+      // `roles.reel.bundled` ids from THIS list in turn (`theme-engine/mediaRegistry.ts` imports
+      // `defaultRoster()`; the arrow never points back), so the gallery cannot offer a name this pool
+      // would refuse. The backend's hand-listed copy is held in step by a drift test.
       reel: BUNDLED_ENTRIES.filter((e) => e.cutout !== undefined).map((e) => ({
         name: e.name,
         url: e.cutout as string,

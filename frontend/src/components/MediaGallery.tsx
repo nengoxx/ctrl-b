@@ -9,19 +9,22 @@ import {
 import { useMediaKeySource } from "../theme-engine/mediaKeySources";
 import type { MediaNsDef, MediaRoleDef } from "../theme-engine/mediaRegistry";
 
-// The owner-media gallery (D52/G5, GACHA_PLAN §5.4) — the Conf half of the read-only media surface.
+// The owner-media gallery (D52/G5, GACHA_PLAN §5.4) — the Conf half of the media surface.
 //
-// WHAT IT IS NOT is the shortest way to say what it is: there are no file operations here. No upload, no
-// delete, no rename — §5.4 ruled option (b), and the app has no application-layer auth (the tailnet IS the
-// boundary), so a write endpoint would be reachable by anything on the tailnet. The owner copies files in
-// from another machine; this ORDERS and PINS them, and tells them when a file will not work.
+// **AS BUILT, this component performs no file operations**: it ORDERS and PINS what is on disk and tells
+// the owner when a file will not work; the owner copies files in from another machine. That was once a
+// RULE (§5.4's option (b): no write API, ever) — **D65 reversed it.** A typed media write path exists
+// (raw-body `PUT`/`DELETE /api/media/{ns}/files/{role}/{filename}`, never multipart, never POST — the
+// CORS-preflight defence, SECURITY_MODEL §2.7), and the library gallery that drives it is
+// MEDIA_MANAGER_PLAN §6, landing at S2/S3. So read the absence of upload/crop/delete below as "not yet
+// built here", not as "must never exist" — and build it against that plan.
 //
 // NAMESPACE-GENERIC: everything descriptive arrives as a `MediaNsDef` row from `theme-engine/mediaRegistry`
 // (D53 §5's inversion — a namespace need not belong to a theme), and which roles EXIST comes from the
 // server's index. So the next namespace is a registry row, not a second gallery.
 //
-// Writes go through the ordinary `PUT /api/settings` — `media.<ns>.roles.<role>.order` and
-// `media.<ns>.slots.<key>`. There is no media-specific write path to secure or to keep in sync.
+// CONFIG writes still go through the ordinary `PUT /api/settings` — `media.<ns>.roles.<role>.order` and
+// `media.<ns>.slots.<key>` — and that stays true after D65: only FILE BYTES use the media write path.
 
 /** Advisory code → what the owner should read. Two come from the server's `unusable_reason` (only it read
  *  the bytes); the other two are derived HERE from the file's numbers against the role's bounds, because
@@ -177,10 +180,16 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
               // The options come from the slot's OWN source role, which is not always the role being
               // pinned (ruled, Codex F4): the gacha reel figure needs a transparent cutout, so it offers
               // `reel/` and never the cast — a character pinned there would sweep the screen as a
-              // rectangle. When that folder is still empty the theme's `bundled` names stand in, so the
+              // rectangle. When that folder is still empty the source role's BUNDLED ids stand in, so the
               // pin is useful on a fresh install instead of an empty select.
+              //
+              // Those ids come from the ROLE, not from a per-slot copy (D65 retired `MediaSlotDef.bundled`):
+              // one list, derived from the theme's own ladder module, so the select can never offer a name
+              // the resolver would refuse. A role the registry has no row for falls back to no options,
+              // exactly as an undeclared `bundled` did.
               const files = data.roles[slot.from] ?? [];
-              const options = files.length > 0 ? files.map((f) => f.name) : (slot.bundled ?? []);
+              const bundled = def.roles[slot.from]?.bundled ?? [];
+              const options = files.length > 0 ? files.map((f) => f.name) : bundled;
               const current = data.slots[slot.key];
               return (
                 <label className="mgal-pin" key={slot.key}>

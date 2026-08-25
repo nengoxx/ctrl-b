@@ -27,7 +27,14 @@ from fastapi.testclient import TestClient
 
 from app.api.media import MediaFiles
 from app.config import Settings
-from app.core.media import MEDIA_NAMESPACES, ensure_media_dirs, ns_dir, probe_image, sort_key
+from app.core.media import (
+    MEDIA_NAMESPACES,
+    MediaRole,
+    ensure_media_dirs,
+    ns_dir,
+    probe_image,
+    sort_key,
+)
 
 # ── fixtures ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -113,6 +120,70 @@ def test_role_dirs_are_created_at_app_construction(home: Path, ns: str) -> None:
 def test_unknown_namespace_is_404(home: Path) -> None:
     with make_client() as c:
         assert c.get("/api/media/cosmos").status_code == 404
+
+
+# ── the per-role registry object (D65) ────────────────────────────────────────────────────────────
+
+
+def test_every_role_row_is_a_media_role_and_declaration_order_is_the_role_order() -> None:
+    """`MediaNamespace.roles` is an ORDER-PRESERVING MAP of role -> `MediaRole` (D65), not a name
+    tuple. Iterating it must still yield the role names in declaration order, because that order is
+    what the ensure-dir walk, the mount and the gallery's section list all read — the reshape is
+    supposed to be invisible to every consumer that only wants names."""
+    assert list(MEDIA_NAMESPACES["gacha"].roles) == ["characters", "banner", "reel", "oracle"]
+    assert list(MEDIA_NAMESPACES["frontier"].roles) == ["rigs", "hero", "stack"]
+    assert list(MEDIA_NAMESPACES["kit"].roles) == [
+        "services",
+        "service-banners",
+        "hosts",
+        "background",
+        "brand",
+    ]
+    for ns, row in MEDIA_NAMESPACES.items():
+        for role, cfg in row.roles.items():
+            assert isinstance(cfg, MediaRole), f"{ns}/{role}"
+
+
+def test_the_bundled_ids_are_the_ones_the_front_end_derives() -> None:
+    """The backend half of the bundled-id MIRROR (D65 / MEDIA_MANAGER_PLAN §2.3). These ids are
+    hand-listed here and DERIVED front-end-side from the theme ladder modules
+    (`defaultRoster()` / `ART`); the cross-language drift guard lives in
+    `frontend/tests/theme-engine/mediaRegistry.test.ts`, which can compute the derived side and
+    parses this file for the expected one. Pinned literally HERE too, so a backend-only edit fails
+    on its own side rather than only in the other language's suite.
+
+    The empty rows are the load-bearing half: an asset with **no stable name** gets NO id (gacha's
+    oracle scene and frontier's hero vista are ladder rungs no pin and no key addresses), and the
+    whole kit namespace ships no fallback art by design — inventing ids for either would create a
+    second identity space that no theme resolver could resolve."""
+    bundled = {ns: {r: c.bundled for r, c in row.roles.items()} for ns, row in MEDIA_NAMESPACES.items()}
+    assert bundled["gacha"] == {
+        "characters": ("pegasus", "atlas", "3", "4", "lyra"),
+        "banner": ("b2", "b3"),
+        "reel": ("lyra",),
+        "oracle": (),
+    }
+    assert bundled["frontier"] == {
+        "rigs": ("rig1", "rig2", "rig3", "rig4", "rig5", "rig6"),
+        "hero": (),
+        "stack": ("cube", "platform-mid", "platform-base"),
+    }
+    assert all(ids == () for ids in bundled["kit"].values())
+
+
+def test_a_bundled_id_is_a_bare_stable_name_unique_within_its_role() -> None:
+    """Shape invariants, so a future row cannot smuggle a path or a duplicate in. An id is an
+    IDENTITY the client maps to a hashed asset — never a filename, never a URL — and two equal ids
+    in one role would make `files: [{bundled: …}]` ambiguous (the discriminated union's uniqueness
+    rule, MEDIA_MANAGER_PLAN §2.2)."""
+    for ns, row in MEDIA_NAMESPACES.items():
+        for role, cfg in row.roles.items():
+            where = f"{ns}/{role}"
+            assert len(set(cfg.bundled)) == len(cfg.bundled), where
+            for i in cfg.bundled:
+                assert i and i.strip() == i, where
+                assert not any(c in i for c in "/\\"), where
+                assert "." not in i, f"{where}: {i!r} looks like a filename, not an id"
 
 
 # ── ② traversal ───────────────────────────────────────────────────────────────────────────────────

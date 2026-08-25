@@ -430,15 +430,26 @@ describe("reelFigureArt — the pin selects a CUTOUT, never a portrait", () => {
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
   });
 
-  it("the registry's declared `bundled` pin options ARE the bundled cutout-bearing entries", () => {
-    // The gallery offers `slot.bundled` while reel/ is empty; if the two drift, the owner is offered a
-    // name the resolver would refuse. Kept in step here rather than by comment — the declaration moved to
-    // the media registry at M1b, the resolver did not.
-    const declared = MEDIA_NS.gacha.slots?.find((s) => s.key === "reel_figure")?.bundled ?? [];
+  it("the REEL ROLE's bundled ids ARE the bundled cutout-bearing entries", () => {
+    // The gallery offers these while reel/ is empty; if they drift, the owner is offered a name the
+    // resolver would refuse. Since **D65** the ids live on the ROLE (`MediaSlotDef.bundled` retired) and
+    // are DERIVED from this pool — the registry imports `defaultRoster()`, never the reverse — so the
+    // meaningful assertion is that the derivation still lands on the names this file's own schema rule
+    // produces, and on the literal one the theme ships.
+    const declared = MEDIA_NS.gacha.roles.reel.bundled;
     const withCutouts = defaultRoster()
       .entries.filter((e) => e.cutout !== undefined)
       .map((e) => e.name);
     expect(declared).toEqual(withCutouts);
+    // The literal, so a roster edit that changes WHICH entry carries the cutout is visible here rather
+    // than quietly agreeing with itself on both sides of a derivation.
+    expect(declared).toEqual(["lyra"]);
+    // …and the pin no longer carries a copy of it.
+    expect(MEDIA_NS.gacha.slots?.find((s) => s.key === "reel_figure")).toEqual({
+      key: "reel_figure",
+      label: "Transition figure",
+      from: "reel",
+    });
   });
 });
 

@@ -1,4 +1,5 @@
-"""Owner media API — the JSON index + the hardened read-only static surface (D52/G5, §10.4).
+"""Owner media API — the JSON index, the hardened static surface, and (per **D65**) the typed write
+path (D52/G5, §10.4).
 
 **Two routes, split on purpose** (§10.4 detail ②):
 
@@ -7,10 +8,17 @@
   * `/api/media/{ns}/files/…` — the MOUNT (`MediaFiles`, registered in `main.create_app`). A single
     shared prefix would invite route-order collisions between a path parameter and a mount.
 
-**Read-only, and deliberately so.** No upload, no delete, no rename — §5.4 ruled option (b): the
-tailnet is the only boundary there is (SECURITY_MODEL §1), so a write endpoint here would be
-reachable by anything on it. The owner drops files in from another machine; the gallery only orders
-and pins, through the ordinary `PUT /api/settings`.
+**Writes are RULED, and the VERB is the security control (D65 — superseding §5.4's "read-only, and
+deliberately so"; the routes land at MEDIA_MANAGER_PLAN's S1, and this is the contract they must
+satisfy).** The app has no application-layer auth (SECURITY_MODEL §1), so the attacker worth
+designing against is the owner's own browser on another origin — and the only cross-origin request a
+page can fire without a preflight is a CORS-SAFELISTED one (`GET`/`HEAD`/`POST`, `multipart/form-data`
+included). So the write path is **raw-body `PUT`/`DELETE` on `/api/media/{ns}/files/{role}/{filename}`,
+never multipart and never POST**: the non-safelisted verb forces an `OPTIONS` preflight, this app
+mounts no CORS middleware and answers no ACAO, and the write dies unsent. **Adding CORS middleware, or
+accepting a multipart/POST upload, silently removes that defence** — S1 test-pins both, and neither
+may land without revisiting D65 (SECURITY_MODEL §2.7). Ordering/pinning still rides the ordinary
+`PUT /api/settings`; only FILE bytes come through here.
 
 Thin by design: everything mechanical lives in `app.core.media`, which knows nothing about themes.
 """
@@ -19,7 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Sequence
+from collections.abc import Iterable
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -75,7 +83,10 @@ class MediaFiles(StaticFiles):
     namespace's role list.
     """
 
-    def __init__(self, *, directory: Path, roles: Sequence[str]) -> None:
+    def __init__(self, *, directory: Path, roles: Iterable[str]) -> None:
+        # `Iterable`, not `Sequence`: the registry row's `roles` is an order-preserving MAP since D65
+        # (`MediaNamespace.roles: dict[str, MediaRole]`), and the mount wants exactly its KEYS — which
+        # is what iterating it yields. Nothing here cares about order; the shape gate below is a set.
         # check_dir stays TRUE (the loud failure is the useful one) — a namespace whose tree is not
         # servable is never mounted at all (`ensure_media_dirs` health, W2), so reaching here means the
         # directory exists.
