@@ -6619,3 +6619,136 @@ body[data-perf="lite"] .kit .navmenu-pop {
   gap: 8px;
   padding: 12px 14px 16px;
 }
+
+/* THE FRAMING SHEET (D65 / MEDIA_MANAGER_PLAN §5) — the reticle, the thirds flash and the destination
+ * previews. Same z-band and the same reasons as the crop modal above: above the gallery (45), below the
+ * confirm dialog (50), and a SIBLING of the gallery so its Escape never reaches the gallery's trap. */
+.kit .pm-backdrop.mgal-frame-pm {
+  z-index: 48;
+}
+.kit .mgal-frame {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.kit .mgal-frame-lede,
+.kit .mgal-frame-note,
+.kit .mgal-frame-caption {
+  margin: 0;
+  padding: 0 14px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.kit .mgal-frame-lede {
+  padding-top: 10px;
+}
+.kit .mgal-frame-note {
+  padding-top: 6px;
+  color: var(--text-2);
+}
+/* The stage IS react-easy-crop's container, so it must have a real height at every viewport width —
+ * the crop modal's own constraint, for the same reason. */
+.kit .mgal-frame-stage {
+  position: relative;
+  flex: 1;
+  min-height: 200px;
+  margin-top: 10px;
+  background: var(--bg);
+  /* The whole picture is the aim target, and the library pans it with pointer events — the browser
+   * must not take the gesture for a scroll first. */
+  touch-action: none;
+}
+/* THE RETICLE. The library's crop area, restyled from a crop window into a target: a ring rather than a
+ * frame, and inert to pointers so a tap ON it still places the point (Umbraco's load-bearing
+ * `pointer-events: none`, R57 §2.2a). */
+.kit .mgal-reticle {
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.42);
+  pointer-events: none;
+}
+/* The transient RULE OF THIRDS, over the whole picture (Gutenberg's 600ms flash, R57 §8①). Two
+ * repeating gradients rather than four elements; `opacity` is the only animated property. */
+.kit .mgal-frame-thirds {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+  background:
+    linear-gradient(
+      to right,
+      transparent calc(33.333% - 1px),
+      rgb(255 255 255 / 0.45) calc(33.333% - 1px) 33.333%,
+      transparent 33.333% calc(66.667% - 1px),
+      rgb(255 255 255 / 0.45) calc(66.667% - 1px) 66.667%,
+      transparent 66.667%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent calc(33.333% - 1px),
+      rgb(255 255 255 / 0.45) calc(33.333% - 1px) 33.333%,
+      transparent 33.333% calc(66.667% - 1px),
+      rgb(255 255 255 / 0.45) calc(66.667% - 1px) 66.667%,
+      transparent 66.667%
+    );
+}
+.kit .mgal-frame-thirds.on {
+  opacity: 1;
+}
+/* The global Motion lever (gated on data-motion, never the raw OS query): reduced/off keeps the guide —
+ * it is information, not decoration — and drops the fade. */
+body[data-motion="reduced"] .kit .mgal-frame-thirds,
+body[data-motion="off"] .kit .mgal-frame-thirds {
+  transition: none;
+}
+/* THE DESTINATION PREVIEWS. One window per registry row, each an `object-fit: cover` box that measures
+ * itself — the same code path the real surface runs, which is what makes them honest about the MATH
+ * while their aspects stay coarse (the caption says so). */
+.kit .mgal-frame-previews {
+  padding: 12px 14px 0;
+}
+.kit .mgal-frame-previews ul {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  overflow-x: auto;
+}
+.kit .mgal-frame-previews li {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  font-size: 10px;
+  color: var(--text-3);
+}
+.kit .mgal-frame-win {
+  display: block;
+  width: 76px;
+  height: auto;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.kit .mgal-frame-win img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.kit .mgal-frame-caption {
+  padding: 0;
+}
+.kit .mgal-frame-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 16px;
+}
+.kit .mgal-frame-actions .mgal-act {
+  flex: 1;
+}

@@ -185,8 +185,8 @@ export type MediaKeySource = "services" | "hosts";
  *  aspect really must be exact, that surface gets the house invariant-test treatment instead of a promise.
  *  Never compute a stored value from these numbers; they exist to be looked at.
  *
- *  Data rows land at S4 with the focal-point slice — the TYPE is declared now so the descriptor shape is
- *  settled before anything reads it. */
+ *  Two to four per role, never nine (R57 §9③): each one is a real window on a 390 px phone, and the
+ *  useful set is the one that SPANS the shapes — two previews a finger apart in aspect teach nothing. */
 export interface MediaPreviewDef {
   /** What this window IS, in the owner's words ("capsule card", "promo slide") — the caption. */
   label: string;
@@ -231,9 +231,27 @@ export interface MediaRoleDef {
    *  no "a/an" is needed. Required in practice for a `keySource` role (a registry invariant test pins
    *  it); the static-key and pool roles say what they are in their own `hint`. */
   asset?: string;
+  /** Whether this role's items offer a FRAMING point (D65 / MEDIA_MANAGER_PLAN §5). It is declared per
+   *  ROLE and not inferred, because the answer is a fact about the DESTINATIONS and nothing generic can
+   *  see them. Two conditions, both required:
+   *
+   *   · **every surface that paints the role COVERS.** On a `contain` surface a focal point is not merely
+   *     useless but actively wrong (R57 §5.5①): with no crop, `object-position` moves the LETTERBOXED
+   *     picture into a corner and puts the empty space on the other two sides. frontier's rig stack is
+   *     `contain` and the kit's brand mark is painted as an alpha MASK — neither is framable, ever.
+   *   · **every one of those surfaces resolves its position per-window** (`hooks/useFocalPosition.ts`).
+   *     Offering framing for a surface still on the old published-once path would let the gallery promise
+   *     a framing the render cannot keep, which is the same lie §2.4 exists to prevent about activation.
+   *
+   *  Absent = false. **v1 ships it for gacha's three cover roles only** — the multi-window case the
+   *  feature exists for (one cast painted into a 3/4 card, a wide promo band, a portrait and a
+   *  full-viewport cover). frontier's `rigs`/`hero` and the kit's cover roles hand their consumers a bare
+   *  URL with no focal channel at all, so making them framable is a per-theme SEAM change rather than the
+   *  paint-site rewrite S4 owns; recorded in MEDIA_MANAGER_PLAN §12's S4 as-built. */
+  framable?: boolean;
   /** The framing sheet's preview windows for this role — see `MediaPreviewDef` for what they are and are
    *  NOT. Absent = no previews (a role that offers no focal point, or one whose destinations are not worth
-   *  approximating). Rows land at S4. */
+   *  approximating). */
   previews?: readonly MediaPreviewDef[];
   /** width / height of the DESTINATION, for the gallery's entry card and its grid tiles (§6.1/§6.3 —
    *  "shaped like the destination", four independent confirmations in R59). **Coarse on exactly the
@@ -340,6 +358,20 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // A 3/4 portrait: the capsule card's own shape, and the crop every other consumer takes it
         // through (the dossier portrait, the wide promo band).
         aspect: 3 / 4,
+        // THE role a framing point exists for: one cast, eight windows, no two the same shape.
+        framable: true,
+        // Three windows that SPAN those shapes rather than sample them evenly — a tall portrait, a wide
+        // band and the full frame. The numbers are the shipped surfaces' own (gacha.css: `.gc-card`
+        // `aspect-ratio: 3/4`; `.gc-banner` 232px tall at the viewport's width; the cover fills the fleet
+        // frame), taken at the owner's 390px phone where a height is involved — which is exactly the
+        // approximation `MediaPreviewDef` warns about, and why the sheet captions them as examples.
+        // Deliberately NOT here: the dossier portrait (104x138 ≈ 3/4 — the capsule card already shows
+        // that shape) and the poster's sheared slice (its clip-path is not an aspect at all).
+        previews: [
+          { label: "capsule card", aspect: 3 / 4 },
+          { label: "promo slide", aspect: 390 / 232 },
+          { label: "magazine cover", aspect: 9 / 16 },
+        ],
         active: activeCast,
         // The bundled cast, in the order the default roster deals it — the entry names a `slots` pin
         // addresses and `slotEntry` resolves against while `characters/` is still empty.
@@ -354,6 +386,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         hint: "One extra pickup-banner slide per image.",
         bounds: FULL_ART,
         aspect: 16 / 9,
+        // One destination, one window (`.gc-slide img`, `object-fit: cover`) — but a slide is much wider
+        // than it is tall, so a portrait photo dropped here crops hard and the framing point is what
+        // decides where. The preview is the band's real geometry (232px at the phone's width).
+        framable: true,
+        previews: [{ label: "banner slide", aspect: 390 / 232 }],
         active: activeScenes,
         // The bundled scene slides (`b2`/`b3`) — named because each slide needs a stable key.
         bundled: bundle(
@@ -392,6 +429,10 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         hint: "The agent operator's backdrop. The first image wins.",
         bounds: FULL_ART,
         aspect: 16 / 9,
+        // The 300px operator block (`--gc-oracle-h`), which covers — and which a `characters` entry can
+        // also be bound into through the `oracle` seat, so the two roles have to agree about framing.
+        framable: true,
+        previews: [{ label: "operator backdrop", aspect: 390 / 300 }],
         // The one ladder whose winner can live in ANOTHER section: the `oracle` SEAT pin (a character
         // bound into the backdrop) outranks this folder entirely, and the card says so with a pointer
         // rather than painting a phantom (§2.4).
@@ -677,6 +718,10 @@ export interface MediaCaps {
   hidden: boolean;
   remove: boolean;
   upload: boolean;
+  /** "Set framing" (§5). The ROLE decides (`MediaRoleDef.framable`), but a section can still refuse it:
+   *  a SEAT is a read-only view whose one write is the pin, and the UNASSIGNED bucket holds files that
+   *  paint nowhere — framing either would be an edit with no destination. */
+  frame: boolean;
 }
 
 /** One art destination, resolved from the registry + the server's role list. */
@@ -720,6 +765,8 @@ const LIBRARY_CAPS: MediaCaps = {
   hidden: true,
   remove: true,
   upload: true,
+  // Per ROLE, never per kind — every library section below folds in its own `row.framable`.
+  frame: false,
 };
 
 /** The UNASSIGNED bucket of a `named` role (§6.1): the files that bound NO key — a rename's aftermath,
@@ -742,7 +789,14 @@ function unassigned(
     kind: "unassigned",
     title: "Unassigned",
     hint: "Files here match no name this role uses, so nothing paints them. Rename one to a key above — or delete it.",
-    caps: { reorder: false, activate: "none", hidden: true, remove: true, upload: false },
+    caps: {
+      reorder: false,
+      activate: "none",
+      hidden: true,
+      remove: true,
+      upload: false,
+      frame: false,
+    },
   };
 }
 
@@ -781,7 +835,7 @@ export function mediaSections(
           aspect: k.aspect ?? row.aspect,
           // Order buys nothing here but the duplicate tie-break, so the ↑/↓ pair is hidden (#11) —
           // "Set as active" is how a shadowed duplicate wins its key, and that is move-to-front.
-          caps: { ...LIBRARY_CAPS, reorder: false },
+          caps: { ...LIBRARY_CAPS, reorder: false, frame: row.framable === true },
           active: row.activeForKey?.(k.key),
         });
       }
@@ -795,7 +849,7 @@ export function mediaSections(
         kind: "family",
         title: role,
         keySource: row.keySource,
-        caps: { ...LIBRARY_CAPS, reorder: false },
+        caps: { ...LIBRARY_CAPS, reorder: false, frame: row.framable === true },
       });
       out.push(unassigned(ns, role, common, { keySource: row.keySource }));
       continue;
@@ -809,7 +863,7 @@ export function mediaSections(
       kind: "pool",
       title: role,
       pin: pin?.key,
-      caps: { ...LIBRARY_CAPS, activate: pin ? "pin" : "order" },
+      caps: { ...LIBRARY_CAPS, activate: pin ? "pin" : "order", frame: row.framable === true },
       active: row.active,
     });
   }
@@ -831,7 +885,14 @@ export function mediaSections(
       bounds: row.bounds,
       aspect: row.aspect,
       pin: slot.key,
-      caps: { reorder: false, activate: "pin", hidden: false, remove: false, upload: false },
+      caps: {
+        reorder: false,
+        activate: "pin",
+        hidden: false,
+        remove: false,
+        upload: false,
+        frame: false,
+      },
       active: slot.active,
     });
   }

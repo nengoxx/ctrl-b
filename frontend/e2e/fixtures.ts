@@ -115,7 +115,12 @@ const voiceSvc = {
   extra_body: {},
 };
 
-const SETTINGS = {
+/** The settings doc `GET /api/settings` answers with. **Exported** because a spec that drives a settings
+ *  WRITE has to echo a whole doc back: `useSaveSettings` adopts the PUT's response as the settings cache,
+ *  and the real endpoint always returns the complete masked config — so an echo missing a section (voice,
+ *  say) hands Conf a doc it then reads a field off and throws on. Spread it, override the section under
+ *  test. */
+export const SETTINGS = {
   server: { host: "0.0.0.0", port: 5433, poll_seconds: 5, feature_cycle_seconds: 8, debug: false },
   // A11/D48 — the unified provider registry; inference, voice, and embeddings all point at it.
   providers: {

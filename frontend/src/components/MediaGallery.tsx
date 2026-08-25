@@ -1,9 +1,10 @@
 import { useState } from "react";
 
 import { CropModal } from "./media/CropModal";
+import { FramingSheet } from "./media/FramingSheet";
 import { GalleryModal } from "./media/GalleryModal";
 import { SectionCard } from "./media/SectionCard";
-import { useMediaLibrary, type GalleryScope } from "../hooks/useMediaLibrary";
+import { useMediaLibrary, type GalleryScope, type LibraryItem } from "../hooks/useMediaLibrary";
 import { useMediaUpload } from "../hooks/useMediaUpload";
 import type { MediaNsDef } from "../theme-engine/mediaRegistry";
 
@@ -27,6 +28,10 @@ import type { MediaNsDef } from "../theme-engine/mediaRegistry";
 export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
   const lib = useMediaLibrary(ns, def);
   const [open, setOpen] = useState<{ id: string; scope: GalleryScope } | null>(null);
+  // The FRAMING sheet's subject, for the reason the crop job lives here: it must be a SIBLING of the
+  // gallery modal, never a child, or its Escape would ride the gallery's own keydown trap and close the
+  // screen underneath it (the same rule the crop step states above).
+  const [framing, setFraming] = useState<LibraryItem | null>(null);
   const opened = open === null ? undefined : lib.sections.find((v) => v.section.id === open.id);
   // The UPLOAD job lives HERE, one level above the gallery modal, for two reasons that are really
   // one: the crop step must be a SIBLING of the gallery rather than a child (a nested dialog would
@@ -71,7 +76,22 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
           ready={lib.ready}
           write={lib.write}
           upload={upload}
-          onClose={() => setOpen(null)}
+          onFrame={setFraming}
+          onClose={() => {
+            setFraming(null);
+            setOpen(null);
+          }}
+        />
+      )}
+      {framing !== null && opened !== undefined && (
+        <FramingSheet
+          section={opened.section}
+          item={framing}
+          onSave={(point) => {
+            lib.write.setFocal(opened.section, framing, point);
+            setFraming(null);
+          }}
+          onCancel={() => setFraming(null)}
         />
       )}
       {upload.crop !== null && (

@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useMediaGalleryIndex, type MediaFile, type MediaIndex } from "./useMedia";
 import { useSaveSettings, useSettings, type MediaFileEntry, type SettingsDoc } from "./useSettings";
 import { del } from "../api/client";
+import type { FocalPoint } from "../lib/focalPosition";
 import { bindingKey, boundByKey } from "../lib/media";
 import {
   appendItem,
@@ -14,6 +15,7 @@ import {
   removeItem,
   rowId,
   setActive,
+  setFocal,
   setHidden,
   type ActiveArt,
   type LibraryEntry,
@@ -322,6 +324,35 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
             settle: resolve,
           });
         }),
+      /** The **framing point** (§5). The owner's `{x, y}`, or `null` to clear it.
+       *
+       *  The `rev` is minted INSIDE the patch, from the authoritative index row, for the reason the
+       *  pin's eligibility is decided there (the queue's one send-time invariant): a point is keyed to
+       *  the bytes it was set against, and between the tap and the send the file may have been
+       *  replaced under its stable name. Reading the revision off the tapped item would then store a
+       *  point keyed to bytes that no longer exist — which the rev-keying exists to detect, written by
+       *  the one writer that should never produce it. A row that is GONE by send time is the honest
+       *  refusal: no authoritative row, no write. */
+      setFocal: (section: MediaSection, item: LibraryItem, point: FocalPoint | null) => {
+        if (!section.caps.frame || item.bundled) return;
+        enqueue({
+          patch: (settings, index) => {
+            const rows = index?.roles?.[section.role];
+            if (rows === undefined) return null;
+            const row = rows.find((r) => rowId(r) === item.id);
+            if (row === undefined) return null;
+            const focal = point === null ? null : { ...point, rev: row.revision };
+            const roles = filesBlock(
+              ns,
+              section.role,
+              (e, r) => setFocal(e, r, item.id, focal),
+              settings,
+              index,
+            );
+            return roles === null ? null : { roles };
+          },
+        });
+      },
       /** Clear a pin — the section falls back to its own ladder. The one write that genuinely needs
        *  no state: removing a binding cannot produce an unresolvable one. */
       unpin: (section: MediaSection) => {

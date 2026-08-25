@@ -38,6 +38,7 @@ export function GalleryModal({
   ready,
   write,
   upload,
+  onFrame,
   onClose,
 }: {
   view: SectionView;
@@ -57,6 +58,10 @@ export function GalleryModal({
     remove: (section: SectionView["section"], item: LibraryItem) => Promise<void>;
   };
   upload: MediaUpload;
+  /** Open the FRAMING sheet for one entry. Like the crop step, that sheet is a SIBLING of this dialog
+   *  rather than a child (`MediaGallery` renders both) — a nested dialog would ride this one's keydown
+   *  trap, so its Escape would close the gallery underneath it. Hence a callback rather than state. */
+  onFrame: (item: LibraryItem) => void;
   onClose: () => void;
 }) {
   const { section } = view;
@@ -242,6 +247,7 @@ export function GalleryModal({
               onMove={(delta) => write.move(section, selected, delta)}
               onMoveToEdge={(edge) => write.moveToEdge(section, selected, edge)}
               onHidden={(hidden) => write.setHidden(section, selected, hidden)}
+              onFrame={() => onFrame(selected)}
               onDelete={() => {
                 void write.remove(section, selected);
                 setSelectedId(null);

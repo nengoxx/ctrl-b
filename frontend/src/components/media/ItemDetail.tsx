@@ -1,6 +1,6 @@
 import { Switch } from "../Switch";
 import type { LibraryItem } from "../../hooks/useMediaLibrary";
-import { ADVISORIES, advisoriesOf, metaText, tileUrl } from "../../lib/mediaLibrary";
+import { ADVISORIES, advisoriesOf, focalState, metaText, tileUrl } from "../../lib/mediaLibrary";
 import { requestConfirm } from "../../store/confirm";
 import type { MediaSection } from "../../theme-engine/mediaRegistry";
 
@@ -13,8 +13,12 @@ import type { MediaSection } from "../../theme-engine/mediaRegistry";
 // entry has NO delete at all — absent, not disabled, which is GNOME's rule and the honest one (a
 // disabled control invites the owner to look for the way to enable it).
 //
-// Framing ("Set framing") is deliberately ABSENT until S4 builds the focal point. There is no stub, no
-// disabled row: the plan's own instruction is not to fake what the next slice owns.
+// FRAMING ("Set framing") is capability-gated the same way (§5): it appears only where the ROLE's
+// destinations actually cover — `section.caps.frame`, which the registry decides — and it is ABSENT on a
+// BUNDLED entry rather than disabled (Emma #6). That last one is not a UI preference: a bundled entry's
+// hand-tuned value is PROPORTIONAL, so putting it through this reticle, which means CENTRED, would move
+// the picture on every surface the moment the owner saved a point they had not moved. A per-entry
+// focus-mode edit path is the recorded future; offering the control and refusing the edit is not.
 
 export function ItemDetail({
   section,
@@ -31,6 +35,7 @@ export function ItemDetail({
   onMove,
   onMoveToEdge,
   onHidden,
+  onFrame,
   onDelete,
 }: {
   section: MediaSection;
@@ -50,11 +55,15 @@ export function ItemDetail({
   onMove: (delta: number) => void;
   onMoveToEdge: (edge: "top" | "bottom") => void;
   onHidden: (hidden: boolean) => void;
+  onFrame: () => void;
   onDelete: () => void;
 }) {
   const url = tileUrl(item.row, section);
   const badges = advisoriesOf(item.row, section.bounds);
   const seat = section.kind === "seat";
+  // A file with no readable bytes has nothing to frame: the sheet would open on a broken image and the
+  // previews would be three empty boxes. The badges above already say why.
+  const canFrame = section.caps.frame && !item.bundled && item.row.unusable !== true;
   // The entry this section's PIN names — the only one that can clear it, and the reason "Set as
   // active" disappears there (it is already the answer).
   const pinnedHere = section.pin !== undefined && pinned === item.row.name;
@@ -116,6 +125,14 @@ export function ItemDetail({
               label={`In use — ${item.bundled ? item.row.name : item.row.file}`}
             />
           </label>
+        )}
+        {canFrame && (
+          <button type="button" className="mgal-act" disabled={!ready} onClick={onFrame}>
+            Set framing
+            {/* WHETHER one is set, on the control itself: the alternative is a badge the owner has to
+                find, for a setting that is invisible until you compare two crops. */}
+            <small>{focalState(item.row) === "set" ? "set" : "not set"}</small>
+          </button>
         )}
         {canReorder && (
           <div className="mgal-act-move">

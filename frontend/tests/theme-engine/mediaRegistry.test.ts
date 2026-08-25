@@ -455,6 +455,9 @@ describe("mediaSections — the destinations the Conf tab shows", () => {
     expect(seat?.role).toBe("characters"); // it VIEWS the cast
     expect(seat?.caps).toEqual({
       reorder: false,
+      // A seat is a VIEW: framing edits the item, which belongs to the source role's own gallery
+      // (§5) — offering it here would write into a library this section is read-only over.
+      frame: false,
       activate: "pin",
       hidden: false,
       remove: false,
@@ -488,6 +491,8 @@ describe("mediaSections — the destinations the Conf tab shows", () => {
     ]);
     expect(out.find((s) => s.kind === "unassigned")?.caps).toEqual({
       reorder: false,
+      // …and a file bound to no key paints in no window, so there is nothing to frame it for.
+      frame: false,
       activate: "none", // a file bound to no key paints nowhere; there is nothing to activate
       hidden: true,
       remove: true,
