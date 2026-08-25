@@ -766,6 +766,40 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 >   our own event plumbing rather than the browser's. The long press, the scroll-intent abandon and the
 >   activation slop are pinned in vitest with fake timers; how the hold FEELS under a thumb is an S6
 >   probe, and §16 now carries it.
+
+> **THE S5 REVIEW WAVE (Emma lane, blind; main-seat ruled 2026-08-25 — all 3 findings ACCEPTed with her
+> lean fixes as written). Verdict was SHIP WITH FIXES, and two of the three are the same sentence: an
+> INDEX IS ONLY A NAME FOR A ROW WHILE THE ORDER HOLDS STILL.**
+>
+> · **A same-length reorder walked straight through the guard (#1, MED).** `count` was the only thing
+>   that aborted a stale gesture, so an interleaved queued write — or another device's refetch — turning
+>   `[A,B,C]` into `[B,A,C]` mid-drag left `from`, the frozen rects and the row under the finger all
+>   describing a list that no longer existed, while the consumer resolved `items[from]` from the new one:
+>   the owner drags A and the write moves B. **`orderKey` now aborts an in-flight gesture as well as
+>   releasing a held commit** (captured at press, compared in the same layout effect — and a consumer
+>   that passes no signature, i.e. the fallback chains, keeps exactly the old length-only behaviour). The
+>   second half is the boundary: `LibraryGrid` captures the ITEM at lift through a new `onPick`, and
+>   `GalleryModal` is handed that item rather than looking one up again at drop. The abort makes the
+>   index trustworthy; the capture makes trusting it unnecessary.
+> · **`release()` acted on whichever hold was current, not its own (#2, MED).** Idempotent only while no
+>   LATER hold existed — and one can: an earlier write's refetch releases this drag's hold before its own
+>   promise settles, the surface goes live, the owner drags again, and then the first `finally` fires and
+>   clears the second drag's transform and phase while its write is still on the wire. The refused-cancel
+>   arm cannot catch it, because both calls are honest `released` signals about different commits. Each
+>   hold is now a TOKEN and `release(expected)` no-ops unless it is still the current one; the layout
+>   effect and the promise closure each pass their own.
+> · **List mode had quietly gained an X-follow (#3, MED).** The extended hook handed the grid's
+>   two-dimensional transform to every consumer, so a fallback row that crossed the 6px threshold and
+>   then drifted sideways followed the pointer out of its own panel — while its target, chosen from Y
+>   alone, correctly never moved. `axis: "list"` emits `translateY(dy)` again; the two-dimensional
+>   transform is grid-only. **The existing arms could never have caught this** — they assert committed
+>   indices, and the indices were right the whole time.
+>
+> Her coverage-honesty section named the four blind spots by name and all four are now armed: an
+> `orderKey` mutation during an active drag, a second hold created between a release and its settlement,
+> the list row's X transform as a VISUAL, and the pick-up identity. (The fourth, an e2e that interleaves
+> writes, stays unbuilt on purpose: the spec waits for each write before the next drag by design, and
+> making it not do so would be a race the test itself owns rather than the app.)
 | S6 | owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball · crop/framing/drag feel · Fennec expected-partials | owner acceptance |
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)

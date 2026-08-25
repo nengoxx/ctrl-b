@@ -139,6 +139,28 @@ describe("useDragReorder (synthetic pointer sequence)", () => {
     expect(container.querySelector("[data-live]")!.textContent).toBe("reorder cancelled");
   });
 
+  it("keeps the dragged row on the Y AXIS ALONE, however far the pointer drifts sideways", () => {
+    // Emma's S5 review #3. The list's target has always been chosen from Y only — but the extended
+    // hook briefly gave every consumer the GRID's two-dimensional transform, so drifting sideways on a
+    // fallback handle slid the whole settings row out of its panel while the insertion slot, correctly,
+    // never moved. The old visual is the right one here, and the indices alone could never have caught
+    // this: they were unchanged the whole time.
+    const onReorder = vi.fn();
+    const { container } = render(<Harness onReorder={onReorder} />);
+    stubRects(container);
+    fireEvent.pointerDown(container.querySelector('[data-handle="0"]')!, {
+      clientX: 0,
+      clientY: 10,
+      button: 0,
+      pointerId: 1,
+    });
+    fireEvent.pointerMove(document, { clientX: 300, clientY: 70, pointerId: 1 });
+    const row = container.querySelector<HTMLElement>('[data-row="0"]')!;
+    expect(row.style.transform).toBe("translateY(60px)");
+    fireEvent.pointerUp(document, { pointerId: 1 });
+    expect(onReorder).toHaveBeenCalledWith(0, 1); // …and the move it committed is the Y one
+  });
+
   it("ignores events from a SECOND pointer (multi-touch) once one pointer owns the gesture", () => {
     const onReorder = vi.fn();
     const { container } = render(<Harness onReorder={onReorder} />);
@@ -273,13 +295,21 @@ function GridHarness({
   orderKey,
   onOpen,
   limit,
+  onPick,
 }: {
   onReorder: (from: number, to: number) => void | Promise<unknown>;
   orderKey?: string;
   onOpen?: () => void;
   limit?: (from: number) => number;
+  onPick?: (index: number) => void;
 }) {
-  const d = useDragReorder(3, onReorder, { axis: "grid", activation: "press", orderKey, limit });
+  const d = useDragReorder(3, onReorder, {
+    axis: "grid",
+    activation: "press",
+    orderKey,
+    limit,
+    onPick,
+  });
   return (
     <div>
       {[0, 1, 2].map((i) => (
@@ -410,6 +440,55 @@ describe("useDragReorder (press activation — the gallery grid)", () => {
   });
 });
 
+describe("useDragReorder (the order moving under the gesture — review #1)", () => {
+  it("ABORTS an in-flight drag the moment the authoritative order changes, SAME LENGTH included", () => {
+    // The count check cannot see this one: an interleaved queued write, or another device's refetch,
+    // can turn [A,B,C] into [B,A,C] while A is being dragged. `from`, the frozen rects and the row
+    // under the finger all describe the old list, so a drop would persist a move the owner never made.
+    const onReorder = vi.fn();
+    const { container, rerender } = render(<GridHarness onReorder={onReorder} orderKey="a b c" />);
+    stubCells(container);
+    mouseDown(container.querySelector('[data-handle="0"]')!, 10);
+    moveTo(60, 110);
+    expect(container.querySelector("[data-dragging]")).not.toBeNull();
+
+    rerender(<GridHarness onReorder={onReorder} orderKey="b a c" />);
+    expect(container.querySelector("[data-dragging]")).toBeNull();
+    expect(container.querySelector("[data-live]")!.textContent).toBe("reorder cancelled");
+
+    // The listeners went with it, so the release is a no-op rather than a commit against stale geometry.
+    release();
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("…and a list the surface itself owns (no `orderKey`) is unaffected", () => {
+    // The fallback chains pass no signature and must keep behaving exactly as they did: only a LENGTH
+    // change can abort them, because their order is not something a server can move.
+    const onReorder = vi.fn();
+    const { container, rerender } = render(<GridHarness onReorder={onReorder} />);
+    stubCells(container);
+    mouseDown(container.querySelector('[data-handle="0"]')!, 10);
+    moveTo(60, 110);
+    rerender(<GridHarness onReorder={onReorder} />);
+    release();
+    expect(onReorder).toHaveBeenCalledWith(0, 2);
+  });
+
+  it("tells the consumer WHAT it picked up, once, at lift", () => {
+    // The other half of the fix: a consumer that re-derives its subject from the index at DROP time is
+    // trusting the list not to have moved. It is handed the row instead.
+    const picked = vi.fn();
+    const { container } = render(<GridHarness onReorder={vi.fn()} onPick={picked} />);
+    stubCells(container);
+    mouseDown(container.querySelector('[data-handle="1"]')!, 50);
+    expect(picked).not.toHaveBeenCalled(); // a press is not a pick-up
+    moveTo(10, 10);
+    expect(picked).toHaveBeenCalledTimes(1);
+    expect(picked).toHaveBeenCalledWith(1);
+    release();
+  });
+});
+
 describe("useDragReorder (the HELD commit — Emma #8)", () => {
   it("holds the dropped arrangement until the AUTHORITATIVE order arrives", async () => {
     let settle = () => {};
@@ -483,6 +562,52 @@ describe("useDragReorder (the HELD commit — Emma #8)", () => {
     moveTo(10, 10);
     release();
     expect(onReorder).toHaveBeenCalledTimes(2);
+  });
+
+  it("a settlement releases ONLY ITS OWN hold (review #2)", async () => {
+    // The scenario Emma named, step for step. A drag is queued behind an earlier media write; that
+    // earlier write's refetch changes the order, which releases THIS drag's hold before its own promise
+    // settles, so the surface goes live and the owner drags again. When the first promise finally
+    // settles, its `finally` must not reach into the second drag — clearing a transform and sending a
+    // machine home while that write is still on the wire. The reducer cannot catch it: both calls are
+    // honest `released` signals, about different holds.
+    const settles: (() => void)[] = [];
+    const onReorder = vi.fn(() => new Promise<void>((r) => settles.push(r)));
+    const { container, rerender } = render(<GridHarness onReorder={onReorder} orderKey="a b c" />);
+    stubCells(container);
+
+    // hold A
+    mouseDown(container.querySelector('[data-handle="0"]')!, 10);
+    moveTo(60, 110);
+    release();
+    expect(container.querySelector("[data-drag-held]")).not.toBeNull();
+
+    // the earlier write's order lands: A is released, and the surface is live again.
+    rerender(<GridHarness onReorder={onReorder} orderKey="c a b" />);
+    expect(container.querySelector("[data-drag-held]")).toBeNull();
+
+    // hold B
+    mouseDown(container.querySelector('[data-handle="0"]')!, 10);
+    moveTo(60, 110);
+    release();
+    const heldB = container.querySelector<HTMLElement>("[data-drag-held]")!;
+    const transformB = heldB.style.transform;
+    expect(transformB).toContain("translate");
+    expect(onReorder).toHaveBeenCalledTimes(2);
+
+    // …and NOW A settles.
+    await act(async () => {
+      settles[0]();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(container.querySelector("[data-drag-held]")).toBe(heldB); // the phase is intact…
+    expect(heldB.style.transform).toBe(transformB); // …and so is the transform
+
+    await act(async () => {
+      settles[1]();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(container.querySelector("[data-drag-held]")).toBeNull(); // B's own settlement DOES release it
   });
 
   it("announces the commit, which a fast drag used to swallow (G10)", () => {

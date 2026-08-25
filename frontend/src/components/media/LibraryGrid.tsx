@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useRef } from "react";
 
 import type { LibraryItem } from "../../hooks/useMediaLibrary";
 import { lastExpressible, tileUrl } from "../../lib/mediaLibrary";
@@ -44,38 +44,56 @@ export function LibraryGrid({
    *  pair are hidden by the same fact, in the same breath). */
   canReorder?: boolean;
   onSelect: (item: LibraryItem) => void;
-  /** Commit a drag. The returned promise is what the HELD commit waits on: the tile stays where the
-   *  owner dropped it until the authoritative order lands, and snaps back if the write is refused. */
-  onReorder?: (from: number, to: number) => Promise<unknown> | void;
+  /** Commit a drag. The subject arrives as the ITEM that was picked up, not as an index to look up
+   *  again — an index is only a name for a row while the order holds still (Emma's S5 review #1). The
+   *  returned promise is what the HELD commit waits on: the tile stays where the owner dropped it until
+   *  the authoritative order lands, and snaps back if the write is refused. */
+  onReorder?: (item: LibraryItem, from: number, to: number) => Promise<unknown> | void;
 }) {
   const descId = useId();
+  /** WHAT is being dragged, resolved once when the gesture takes hold. The hook aborts an in-flight
+   *  gesture the moment the rendered order changes, so this can never disagree with `from` — capturing
+   *  it is how that stays true by construction rather than by argument. */
+  const picked = useRef<LibraryItem | null>(null);
   // THE DRAG (MEDIA_MANAGER_PLAN §7 / R58) — the house hook in its GRID + PRESS shape: three columns, so
   // the insertion slot is reading order rather than a column of midpoints, and the tile is its own
   // handle, so touch activates on a long press and a swipe still scrolls the grid. The ↑/↓ + move-to-edge
   // pair in the detail panel stays exactly where it was: this is the primary gesture, not the only one.
   //
-  // `orderKey` is what releases the held transform: the FIRST render carrying a different order is the
-  // authoritative one, and the release rides that same commit.
-  const drag = useDragReorder(items.length, (from, to) => onReorder?.(from, to), {
-    axis: "grid",
-    activation: "press",
-    disabled: !canReorder || onReorder === undefined,
-    orderKey: items.map((i) => i.id).join(" "),
-    // How far down the list actually GOES, by the write's own rule (§2.3 ③): the trailing bundled
-    // entries that no `files` list names are not arrangeable, because ordering anything after one
-    // would mean LISTING it — the promotion the tier rule exists to prevent. So a drag aimed past
-    // them lands on the honest bottom instead, exactly where "Move to bottom" puts it. Asking
-    // `lib/mediaLibrary` for the number rather than re-deriving it here is what keeps the gesture and
-    // the write from ever disagreeing about where the list ends.
-    limit: (from) => {
-      const item = items[from];
-      if (item === undefined) return items.length - 1;
-      return lastExpressible(
-        items.map((i) => i.row),
-        item.id,
-      );
+  // `orderKey` is both halves of "the list moved under us": the FIRST render carrying a different order
+  // releases a held transform, and it ABORTS a gesture still in flight — a same-length reorder from an
+  // interleaved write is invisible to the count check, and the frozen rects would be describing a list
+  // nobody is looking at any more.
+  const drag = useDragReorder(
+    items.length,
+    (from, to) => {
+      const item = picked.current;
+      return item === null ? undefined : onReorder?.(item, from, to);
     },
-  });
+    {
+      axis: "grid",
+      activation: "press",
+      disabled: !canReorder || onReorder === undefined,
+      orderKey: items.map((i) => i.id).join(" "),
+      onPick: (i) => {
+        picked.current = items[i] ?? null;
+      },
+      // How far down the list actually GOES, by the write's own rule (§2.3 ③): the trailing bundled
+      // entries that no `files` list names are not arrangeable, because ordering anything after one
+      // would mean LISTING it — the promotion the tier rule exists to prevent. So a drag aimed past
+      // them lands on the honest bottom instead, exactly where "Move to bottom" puts it. Asking
+      // `lib/mediaLibrary` for the number rather than re-deriving it here is what keeps the gesture and
+      // the write from ever disagreeing about where the list ends.
+      limit: (from) => {
+        const item = items[from];
+        if (item === undefined) return items.length - 1;
+        return lastExpressible(
+          items.map((i) => i.row),
+          item.id,
+        );
+      },
+    },
+  );
   return (
     <>
       <ul

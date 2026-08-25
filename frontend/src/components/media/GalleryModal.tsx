@@ -263,12 +263,13 @@ export function GalleryModal({
               // condition) — plus `ready`, because a drag whose write the queue would refuse is a drag
               // that snaps back for a reason the owner cannot see.
               canReorder={section.caps.reorder && items.length > 1 && ready}
-              onReorder={(from, to) => {
-                const item = items[from];
-                // The drag produces a TARGET; the transform owns the tier rule (§2.3 ③), and it is the
-                // very same `moveBy` intent the ↑/↓ buttons enqueue — recomputed at send, one write path.
-                return item === undefined ? undefined : write.move(section, item, to - from);
-              }}
+              // The subject is the item the GESTURE picked up, handed over rather than looked up again:
+              // resolving `items[from]` here would read the order as it is at DROP time, and a write
+              // that landed in between would make that a different row than the one under the finger
+              // (Emma's S5 review #1). The drag produces a TARGET; the transform owns the tier rule
+              // (§2.3 ③); and it is the very same `moveBy` intent the ↑/↓ buttons enqueue — recomputed
+              // at send, one write path.
+              onReorder={(item, from, to) => write.move(section, item, to - from)}
               onSelect={(item) => {
                 cameFrom.current = item.bundled ? `${item.row.name} (bundled)` : item.row.file;
                 setSelectedId(item.id);

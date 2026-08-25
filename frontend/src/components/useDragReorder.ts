@@ -216,6 +216,14 @@ export function dragReduce(phase: DragPhase, signal: DragSignal): DragPhase {
   }
 }
 
+/** ONE held commit — the node whose transform is frozen and the order signature it was made against.
+ *  Compared by IDENTITY, never by value: it is the token that tells one commit's settlement from
+ *  another's (Emma's S5 review #2). */
+interface Hold {
+  node: HTMLElement | null;
+  key: string | undefined;
+}
+
 export interface DragReorderOptions {
   /** How the insertion slot is decided: one column of bands, or reading order over a grid. */
   axis?: "list" | "grid";
@@ -224,9 +232,19 @@ export interface DragReorderOptions {
   /** Nothing here is orderable (the capability is off, the list holds one item, the write path is not
    *  ready). The gesture refuses at admission; the consumer hides its affordances (§7). */
   disabled?: boolean;
-  /** A signature of the RENDERED order. While a commit is held, the first change of this releases the
-   *  held transforms — in the same commit that paints the new order, so there is no double jump. Absent
-   *  ⇒ the commit's own settlement is the only release. */
+  /** A signature of the RENDERED order — and the hook's whole defence against acting on a list that
+   *  moved underneath it. Two jobs:
+   *
+   *   · while a commit is HELD, the first change releases the held transforms — in the same commit that
+   *     paints the new order, so there is no double jump;
+   *   · while a gesture is IN FLIGHT, the first change ABORTS it. `count` alone cannot see this: an
+   *     interleaved write or another device's refetch can reorder a list of the same length, and then
+   *     `from` names a different row than the one under the finger, every frozen rect is a lie, and the
+   *     drop would persist a move the owner never made (Emma's S5 review #1).
+   *
+   *  Absent ⇒ neither protection: the commit's own settlement is the only release, and only a length
+   *  change aborts. Fine for a list the surface itself owns (the fallback chains); not for one the
+   *  server owns. */
   orderKey?: string;
   /** The last slot a drop from `from` may ASK FOR, when the consumer's storage cannot express every
    *  position. The gallery's can't: the collation's trailing bundled tier is not arrangeable, so a drag
@@ -234,6 +252,11 @@ export interface DragReorderOptions {
    *  gesture is clamped while the finger is still down instead, so what the owner sees is what will be
    *  saved. Absent ⇒ every slot is reachable. */
   limit?: (from: number) => number;
+  /** The gesture has TAKEN HOLD of row `index` — the moment to capture what that row IS. An index is
+   *  only a name for a row while the order it indexes stays put, so a consumer that re-derives its
+   *  subject from the number at drop time is trusting the list not to have moved. The abort above makes
+   *  that trust well-founded; this makes it unnecessary (Emma's S5 review #1, second half). */
+  onPick?: (index: number) => void;
 }
 
 export function useDragReorder(
@@ -241,7 +264,14 @@ export function useDragReorder(
   onReorder: (from: number, to: number) => void | Promise<unknown>,
   options: DragReorderOptions = {},
 ) {
-  const { axis = "list", activation = "handle", disabled = false, orderKey, limit } = options;
+  const {
+    axis = "list",
+    activation = "handle",
+    disabled = false,
+    orderKey,
+    limit,
+    onPick,
+  } = options;
   const rows = useRef(new Map<number, HTMLElement>());
   const [phase, setPhase] = useState<DragPhase>(IDLE);
   // The SYNCHRONOUS view of the machine. Every DOM handler reads this (a React state read would be one
@@ -250,10 +280,16 @@ export function useDragReorder(
   const phaseRef = useRef<DragPhase>(IDLE);
   const [announce, setAnnounce] = useState("");
   // in-flight gesture: `teardown` removes listeners; `cancel` also clears drag state + announces (unmount
-  // cleanup + count-change abort use these without reaching into the closure).
-  const active = useRef<{ teardown: () => void; cancel: () => void } | null>(null);
-  /** The HELD commit: the node whose transform is frozen, and the order it was computed against. */
-  const held = useRef<{ node: HTMLElement | null; key: string | undefined } | null>(null);
+  // cleanup + the count/order aborts use these without reaching into the closure). `key` is the order
+  // signature the gesture's geometry was frozen against — the thing the abort compares.
+  const active = useRef<{
+    teardown: () => void;
+    cancel: () => void;
+    key: string | undefined;
+  } | null>(null);
+  /** The HELD commit: the node whose transform is frozen, and the order it was computed against. It is
+   *  an OBJECT so it can be a token — see `release`. */
+  const held = useRef<Hold | null>(null);
   /** Gone. A held commit outlives its surface by design — closing the gallery does not un-send a write —
    *  so its settlement arrives at a hook nobody is rendering, and must not try to paint. */
   const dead = useRef(false);
@@ -265,6 +301,8 @@ export function useDragReorder(
   // Read at MOVE time, not at press time: the list it is a fact about is the one being rendered now.
   const limitRef = useRef(limit);
   limitRef.current = limit;
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
 
   const setRow = (i: number, el: HTMLElement | null) => {
     if (el) rows.current.set(i, el);
@@ -282,11 +320,18 @@ export function useDragReorder(
     if (next.kind !== "press") setPhase(next);
   };
 
-  /** Let a held row go: the node returns to being an ordinary row, and the machine goes home. */
-  const release = () => {
-    const h = held.current;
+  /** Let a held row go — but only THAT hold (Emma's S5 review #2).
+   *
+   *  Every releaser names the commit it is releasing, because a settlement can arrive long after its own
+   *  hold ended: an earlier queued write changes `orderKey`, which releases this drag's hold, the surface
+   *  goes live, the owner drags again — and only then does the first promise settle. A `release()` that
+   *  acted on "whatever is held now" would clear the SECOND drag's transform and send its machine home
+   *  while its write was still on the wire. The reducer cannot catch it: both calls are honest
+   *  `released` signals, just about different holds. */
+  const release = (expected: Hold) => {
+    if (held.current !== expected) return;
     held.current = null;
-    if (h?.node != null) restore(h.node);
+    if (expected.node !== null) restore(expected.node);
     signal({ type: "released" });
   };
 
@@ -400,6 +445,8 @@ export function useDragReorder(
       }
       if (g.node !== null) g.node.style.transition = "none";
       signal({ type: "lift", rects });
+      // WHAT was picked up, told to the consumer once, here — before any of this can go stale.
+      onPickRef.current?.(g.from);
       setAnnounce(`picked up item ${g.from + 1} of ${count}`);
       if (g.scroller !== null && typeof requestAnimationFrame === "function") {
         g.raf = requestAnimationFrame(tick);
@@ -413,7 +460,14 @@ export function useDragReorder(
       const ds = g.scroller === null ? 0 : g.scroller.scrollTop - g.top0;
       const dl = g.scroller === null ? 0 : g.scroller.scrollLeft - g.left0;
       if (g.node !== null) {
-        g.node.style.transform = `translate(${g.x - startX + dl}px, ${g.y - startY + ds}px)`;
+        // A LIST row travels on Y and only Y — the axis its target is chosen on, and the axis it has
+        // always travelled on (Emma's S5 review #3: the grid's two-dimensional transform had been
+        // handed to the fallback chains too, where drifting sideways slid a settings row out of its
+        // own panel while the insertion slot, correctly, never moved).
+        g.node.style.transform =
+          axis === "grid"
+            ? `translate(${g.x - startX + dl}px, ${g.y - startY + ds}px)`
+            : `translateY(${g.y - startY + ds}px)`;
       }
       const aimed =
         axis === "grid"
@@ -499,7 +553,10 @@ export function useDragReorder(
       // G10 — announced on COMMIT. The debounce above is cleared by `teardown`, so a fast drag used to
       // announce nothing at all.
       setAnnounce(`moved to position ${to + 1} of ${count}`);
-      held.current = { node, key: orderKeyRef.current };
+      // THIS commit's token. Every releaser below names it, so a settlement that arrives after its own
+      // hold has already ended cannot reach into a later one.
+      const hold: Hold = { node, key: orderKeyRef.current };
+      held.current = hold;
       signal({ type: "drop" });
       const result = onReorderRef.current(from, to);
       if (isThenable(result)) {
@@ -510,10 +567,10 @@ export function useDragReorder(
             // The consumer owns the message (the gallery's write queue toasts its own failures). What is
             // owed HERE is the visual, and it is owed on both outcomes — hence `finally`.
           } finally {
-            release();
+            release(hold);
           }
         })();
-      } else release();
+      } else release(hold);
     }
     function pointercancel(ev: PointerEvent) {
       if (!mine(ev)) return;
@@ -524,7 +581,9 @@ export function useDragReorder(
       abort();
     }
 
-    active.current = { teardown, cancel: abort };
+    // The order this gesture is ABOUT, captured before it can move (review #1). Everything the gesture
+    // will do — `from`, the frozen rects, the index it commits — is a fact about this one signature.
+    active.current = { teardown, cancel: abort, key: orderKeyRef.current };
     signal({ type: "press", from: index });
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
@@ -556,15 +615,23 @@ export function useDragReorder(
   useEffect(() => {
     active.current?.cancel();
   }, [count]);
-  // The authoritative order arrived. Released in a LAYOUT effect so the transforms clear in the same
-  // commit that paints the new order — an ordinary effect would paint one frame of the new order still
-  // wearing the old drag's displacement.
+  // THE AUTHORITATIVE ORDER MOVED. Two different things owe an answer, and they are never both live at
+  // once (the latch refuses a press while a commit is held):
+  //
+  //  · a HELD commit is RELEASED — its arrangement is now the real one. In a LAYOUT effect so the
+  //    transforms clear in the same commit that paints the new order; an ordinary effect would paint one
+  //    frame of the new order still wearing the old drag's displacement.
+  //  · an IN-FLIGHT gesture is ABORTED (review #1). Its `from`, its frozen rects and the row under the
+  //    finger all describe an order that no longer exists, and a list of the SAME LENGTH slips past the
+  //    count check below. Nothing about a stale gesture can be salvaged, so nothing is: it goes home and
+  //    the owner drags again on the list they can actually see.
   useLayoutEffect(() => {
     const h = held.current;
-    if (h === null || h.key === undefined || h.key === orderKey) return;
-    release();
+    if (h !== null && h.key !== undefined && h.key !== orderKey) release(h);
+    const gesture = active.current;
+    if (gesture !== null && gesture.key !== undefined && gesture.key !== orderKey) gesture.cancel();
     // `release` is re-created every render and is deliberately NOT a dependency: the trigger is the
-    // order signature, and the guard above is what makes a re-run a no-op.
+    // order signature, and the guards above are what make a re-run a no-op.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey]);
 

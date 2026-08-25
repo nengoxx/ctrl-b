@@ -1478,6 +1478,14 @@ owner eyeball; each passes `tools/check.py`.
       PUT mock. It is the whole `SETTINGS` now, and `pageErrors` is asserted — which turned out to
       matter twice over, since dropping `notifications` from the echo makes the save's own success
       path throw and the queue then computes its next write from an index that never refetched)
+      (+ the Emma-lane review wave, all 3 findings ACCEPTed — `orderKey` now ABORTS an in-flight gesture
+      as well as releasing a held one (a same-length reorder walked through the `count` guard, and the
+      consumer then resolved a different row than the one under the finger; `LibraryGrid` captures the
+      item at lift via `onPick` and `GalleryModal` is handed it), each hold is a TOKEN so a settlement
+      can only release its OWN commit (an earlier write's refetch could release hold A, admit hold B,
+      and then A's `finally` cleared B), and `axis: "list"` emits `translateY` again — the grid's
+      two-dimensional transform had been handed to the fallback chains, where a sideways drift slid a
+      settings row out of its panel while its target correctly never moved)
 - [ ] S6 — Owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over
       Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball ·
       crop/framing/drag feel · Fennec expected-partials
