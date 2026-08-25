@@ -326,14 +326,26 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
         }),
       /** The **framing point** (§5). The owner's `{x, y}`, or `null` to clear it.
        *
-       *  The `rev` is minted INSIDE the patch, from the authoritative index row, for the reason the
-       *  pin's eligibility is decided there (the queue's one send-time invariant): a point is keyed to
-       *  the bytes it was set against, and between the tap and the send the file may have been
-       *  replaced under its stable name. Reading the revision off the tapped item would then store a
-       *  point keyed to bytes that no longer exist — which the rev-keying exists to detect, written by
-       *  the one writer that should never produce it. A row that is GONE by send time is the honest
-       *  refusal: no authoritative row, no write. */
-      setFocal: (section: MediaSection, item: LibraryItem, point: FocalPoint | null) => {
+       *  `expectedRev` is the revision the SHEET rendered — the bytes the owner was actually looking
+       *  at while they placed the point. It is the whole of Emma's S4 review #2, and the hole it
+       *  closes is subtle: the `rev` a point is stored under has to be read at SEND time (the queue's
+       *  one invariant), but the COORDINATES were chosen at open time. If the file is replaced under
+       *  its stable name in between — an SSH overwrite, the ordinary repair — a send-time `rev` would
+       *  marry the OLD picture's coordinates to the NEW picture's revision, and `focalState` would
+       *  then call that pair live forever. Rev-keying exists to fold exactly that pair to "unset", so
+       *  the one writer that must never mint it is this one.
+       *
+       *  So the two are checked against each other and a disagreement REFUSES rather than guesses: the
+       *  owner is told, and framing the new bytes is a new look at a new picture. CLEARING is
+       *  revision-independent — "no framing" is true of whatever is there now.
+       *
+       *  A row GONE by send time is the same honest refusal: no authoritative row, no write. */
+      setFocal: (
+        section: MediaSection,
+        item: LibraryItem,
+        point: FocalPoint | null,
+        expectedRev: string,
+      ) => {
         if (!section.caps.frame || item.bundled) return;
         enqueue({
           patch: (settings, index) => {
@@ -341,6 +353,18 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
             if (rows === undefined) return null;
             const row = rows.find((r) => rowId(r) === item.id);
             if (row === undefined) return null;
+            if (point !== null && row.revision !== expectedRev) {
+              // The REASON is toasted here rather than through the queue's `failNote`, because this is
+              // the only place that knows which of the refusals happened — the queue's other `null`s
+              // (no index, no row) are states the owner cannot act on and are rightly silent.
+              pushToast(
+                "The picture changed while you were framing it — nothing was saved. Open it again to frame the new one.",
+                "err",
+              );
+              return null;
+            }
+            // Equal to `expectedRev` by the guard above; read off the row so "the stored rev is the
+            // authoritative one" stays literally true rather than true by argument.
             const focal = point === null ? null : { ...point, rev: row.revision };
             const roles = filesBlock(
               ns,

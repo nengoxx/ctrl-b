@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -34,7 +34,8 @@ const api = vi.hoisted(() => ({
   del: vi.fn(),
 }));
 vi.mock("../../src/api/client", () => api);
-vi.mock("../../src/store/toast", () => ({ pushToast: vi.fn() }));
+const toast = vi.hoisted(() => ({ pushToast: vi.fn() }));
+vi.mock("../../src/store/toast", () => toast);
 vi.mock("../../src/lib/composer", () => ({ loadProviders: vi.fn(), loadAgents: vi.fn() }));
 // jsdom ships no ResizeObserver; the framing sheet measures its stage with one and every `FocalImg`
 // preview does too. A no-op is enough here — the MEASURED path has its own suite
@@ -52,18 +53,24 @@ import { MediaGallery } from "../../src/components/MediaGallery";
 import {
   clampPan,
   framingReducer,
-  initialFramingState,
+  initialFraming,
   panLimit,
   roundFocal,
+  seedPan,
   tapPan,
 } from "../../src/components/media/FramingSheet";
 import { setUI } from "../../src/store/ui";
 
 // ── the pure half ────────────────────────────────────────────────────────────────────────────────
 
+const MEDIA = { width: 300, height: 200, naturalWidth: 1200, naturalHeight: 800 };
+
+/** The state an UNFRAMED item opens in — no seed, so reports are live immediately. */
+const fresh = initialFraming(undefined);
+
 describe("framingReducer — the focal point IS the crop centre (R57 §9①)", () => {
   it("reads the point off the crop area's PERCENTAGES, not its rounded pixels", () => {
-    const next = framingReducer(initialFramingState, {
+    const next = framingReducer(fresh, {
       t: "area",
       area: { x: 10, y: 60, width: 20, height: 20 },
     });
@@ -71,7 +78,7 @@ describe("framingReducer — the focal point IS the crop centre (R57 §9①)", (
   });
 
   it("clamps a point the library reports outside the picture", () => {
-    const out = framingReducer(initialFramingState, {
+    const out = framingReducer(fresh, {
       t: "area",
       area: { x: -30, y: 95, width: 20, height: 20 },
     });
@@ -79,10 +86,65 @@ describe("framingReducer — the focal point IS the crop centre (R57 §9①)", (
   });
 
   it("keeps the pan and the loaded size as plain state", () => {
-    const panned = framingReducer(initialFramingState, { t: "pan", crop: { x: 12, y: -4 } });
+    const panned = framingReducer(fresh, { t: "pan", crop: { x: 12, y: -4 } });
     expect(panned.crop).toEqual({ x: 12, y: -4 });
-    const media = { width: 300, height: 200, naturalWidth: 1200, naturalHeight: 800 };
-    expect(framingReducer(panned, { t: "loaded", media }).media).toBe(media);
+    expect(framingReducer(panned, { t: "loaded", media: MEDIA }).media).toBe(MEDIA);
+  });
+});
+
+describe("the SEED — opening a framed image shows its framing (Emma's S4 review #1)", () => {
+  const seed = { x: 0.2, y: 0.75 };
+
+  it("opens ON the stored point, before anything has loaded or been reported", () => {
+    expect(initialFraming(seed).point).toEqual(seed);
+    // …and an unframed item opens with nothing, exactly as before.
+    expect(fresh.point).toBeNull();
+    expect(fresh.applied, "no seed ⇒ reports are live from the first one").toBe(true);
+  });
+
+  it("IGNORES the centre the library reports while it measures", () => {
+    // `onMediaLoad` calls `emitCropData()` and only then `onMediaLoaded` (react-easy-crop
+    // index.module.mjs:308-316), so the first area report always describes the picture at crop {0,0}
+    // — its centre. Reading it would replace the owner's framing with the middle of the picture on a
+    // sheet they only opened to look at, which is exactly the bug this arm exists for.
+    const centre = { x: 35, y: 35, width: 30, height: 30 };
+    expect(framingReducer(initialFraming(seed), { t: "area", area: centre }).point).toEqual(seed);
+  });
+
+  it("derives the pan once the picture's size is known, and only then goes live", () => {
+    const loaded = framingReducer(initialFraming(seed), { t: "loaded", media: MEDIA });
+    expect(loaded.crop).toEqual(seedPan(seed, MEDIA));
+    expect(loaded.applied).toBe(true);
+    // …and from here the library's report IS the truth — this is the owner moving the picture.
+    const moved = framingReducer(loaded, {
+      t: "area",
+      area: { x: 0, y: 0, width: 30, height: 30 },
+    });
+    expect(moved.point).toEqual({ x: 0.15, y: 0.15 });
+  });
+
+  it("a second `loaded` (a resize re-measure) does not re-seat the picture under the owner", () => {
+    const loaded = framingReducer(initialFraming(seed), { t: "loaded", media: MEDIA });
+    const moved = framingReducer(loaded, { t: "pan", crop: { x: 5, y: 5 } });
+    expect(framingReducer(moved, { t: "loaded", media: MEDIA }).crop).toEqual({ x: 5, y: 5 });
+  });
+});
+
+describe("seedPan — where a stored point has to sit", () => {
+  it("offsets the picture by exactly how far the point is from its middle", () => {
+    // `crop` is the offset of the picture's centre from the reticle's, so the point at `f` sits at
+    // `(f − 0.5)·media + crop`; putting it under the reticle means `crop = (0.5 − f)·media`.
+    expect(seedPan({ x: 0.5, y: 0.5 }, MEDIA)).toEqual({ x: 0, y: 0 });
+    expect(seedPan({ x: 0.25, y: 0.75 }, MEDIA)).toEqual({ x: 75, y: -50 });
+  });
+
+  it("reaches the picture's own corners without the clamp biting", () => {
+    expect(seedPan({ x: 0, y: 0 }, MEDIA)).toEqual(panLimit(MEDIA));
+    expect(seedPan({ x: 1, y: 1 }, MEDIA)).toEqual({ x: -150, y: -100 });
+  });
+
+  it("clamps a hand-edited point from OUTSIDE the picture rather than panning it off the stage", () => {
+    expect(seedPan({ x: -3, y: 9 }, MEDIA)).toEqual({ x: 150, y: -100 });
   });
 });
 
@@ -173,7 +235,10 @@ function index(characters: MediaFile[]): MediaIndex {
   };
 }
 
-function renderGallery(payload: MediaIndex): ReturnType<typeof render> {
+/** The QueryClient is handed BACK so a test can push a new index into it — which is exactly what an
+ *  authoritative refetch does, and the only way to drive "the file was replaced while the sheet was
+ *  open" deterministically. */
+function renderGallery(payload: MediaIndex): { qc: QueryClient } {
   api.getJSON.mockResolvedValue(payload);
   const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const ui: ReactElement = (
@@ -181,7 +246,8 @@ function renderGallery(payload: MediaIndex): ReturnType<typeof render> {
       <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
     </QueryClientProvider>
   );
-  return render(ui);
+  render(ui);
+  return { qc };
 }
 
 async function openItem(role: string, name: string): Promise<HTMLElement> {
@@ -203,6 +269,7 @@ function savedFiles(at = 0): unknown[] {
 
 beforeEach(() => {
   api.getJSON.mockReset();
+  toast.pushToast.mockReset();
   api.del.mockReset().mockResolvedValue(undefined);
   setUI({ tab: "conf" });
   api.getJSONWithHeader.mockReset().mockResolvedValue({ data: {}, header: "r1" });
@@ -303,6 +370,73 @@ describe("the sheet itself", () => {
     fireEvent.click(within(gallery).getByRole("button", { name: /Set framing/ }));
     const sheet = await screen.findByRole("dialog", { name: "Set framing" });
     expect(within(sheet).getByText("Framing was reset — the file changed.")).toBeTruthy();
+  });
+
+  it("SEEDS from the stored point, so an untouched Save stores the SAME value (Emma #1)", async () => {
+    // THE regression. The sheet used to open at the centre and the library reported that centre as
+    // the live point while it measured, so opening a correctly framed image to look at it and
+    // confirming without moving anything replaced the owner's framing with the middle of the picture.
+    //
+    // There is no "touched" rule here (unlike the crop step, where an untouched confirm means
+    // something different from a framed one): Save always writes the point the sheet is SHOWING. That
+    // is only safe because the point it shows is now the stored one — which is what this asserts, end
+    // to end: a stored 0.18/0.82 goes in and 0.18/0.82 comes back out on the wire.
+    renderGallery(
+      index([file("a", "characters", { focal: { x: 0.18, y: 0.82, rev: "1:88000" } }), ...cast]),
+    );
+    const gallery = await openItem("characters", "a.webp");
+    fireEvent.click(within(gallery).getByRole("button", { name: /Set framing/ }));
+    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
+    // The previews paint the STORED framing on open — the sheet's own visible proof of the seed.
+    const preview = sheet.querySelector<HTMLImageElement>(".mgal-frame-win img");
+    expect(preview?.style.objectPosition, "the previews show the stored point").toBe("18% 82%");
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save framing" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedFiles()).toEqual([{ name: "a.webp", focal: { x: 0.18, y: 0.82, rev: "1:88000" } }]);
+  });
+
+  it("REFUSES when the file was replaced while the owner was framing it (Emma #2)", async () => {
+    // The coordinates were chosen against revision A; the `rev` they are stored under is read at SEND
+    // time, which is revision B. Marrying the two would make `focalState` call the OLD picture's point
+    // live on the NEW picture forever — the exact pair rev-keying exists to fold to "unset".
+    const { qc } = renderGallery(
+      index([file("a", "characters", { focal: { x: 0.18, y: 0.82, rev: "1:88000" } }), ...cast]),
+    );
+    const gallery = await openItem("characters", "a.webp");
+    fireEvent.click(within(gallery).getByRole("button", { name: /Set framing/ }));
+    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
+
+    // …and now an SSH overwrite lands and the authoritative refetch publishes it.
+    act(() => {
+      qc.setQueryData(
+        ["media", "gacha"],
+        index([file("a", "characters", { revision: "2:99000" }), ...cast]),
+      );
+    });
+
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save framing" }));
+    await waitFor(() => expect(toast.pushToast).toHaveBeenCalled());
+    expect(String(toast.pushToast.mock.calls[0][0])).toContain("The picture changed");
+    expect(api.putJSON, "nothing is written at all").not.toHaveBeenCalled();
+  });
+
+  it("CLEARING stays revision-independent — 'no framing' is true of whatever is there now", async () => {
+    const { qc } = renderGallery(
+      index([file("a", "characters", { focal: { x: 0.18, y: 0.82, rev: "1:88000" } }), ...cast]),
+    );
+    const gallery = await openItem("characters", "a.webp");
+    fireEvent.click(within(gallery).getByRole("button", { name: /Set framing/ }));
+    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
+    act(() => {
+      qc.setQueryData(
+        ["media", "gacha"],
+        index([file("a", "characters", { revision: "2:99000" }), ...cast]),
+      );
+    });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Clear framing" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedFiles()).toEqual([{ name: "a.webp" }]);
+    expect(toast.pushToast).not.toHaveBeenCalled();
   });
 
   it("offers CLEAR only where there is a live point to clear, and it removes the field", async () => {

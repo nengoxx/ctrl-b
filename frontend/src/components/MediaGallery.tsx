@@ -87,8 +87,8 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
         <FramingSheet
           section={opened.section}
           item={framing}
-          onSave={(point) => {
-            lib.write.setFocal(opened.section, framing, point);
+          onSave={(point, expectedRev) => {
+            lib.write.setFocal(opened.section, framing, point, expectedRev);
             setFraming(null);
           }}
           onCancel={() => setFraming(null)}

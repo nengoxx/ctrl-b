@@ -15,7 +15,7 @@ import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
 import type { LibraryItem } from "../../hooks/useMediaLibrary";
 import { centredFocal, type FocalPoint } from "../../lib/focalPosition";
 import { modalKeyDown } from "../../lib/focusTrap";
-import { focalState, tileUrl } from "../../lib/mediaLibrary";
+import { focalState, rowFocal, tileUrl } from "../../lib/mediaLibrary";
 import type { MediaSection } from "../../theme-engine/mediaRegistry";
 
 // THE FRAMING SHEET (D65 / MEDIA_MANAGER_PLAN §5, R57 §9) — where the owner says which part of a
@@ -77,10 +77,16 @@ const FOCAL_DECIMALS = 2;
 interface FramingState {
   /** The library's pan, in container pixels — the offset of the media's centre from the reticle's. */
   crop: { x: number; y: number };
-  /** The live focal point, from the crop area's own percentages. `null` until the first report. */
+  /** The live focal point, from the crop area's own percentages — or, until the picture has loaded,
+   *  the STORED one this sheet opened on. `null` only when there is neither. */
   point: FocalPoint | null;
   /** The rendered + natural media size, once the picture has loaded. */
   media: MediaSize | null;
+  /** The point this sheet OPENED on (Emma's S4 review #1), or `null` for an unframed item. */
+  seed: FocalPoint | null;
+  /** The seed's pan has been derived and handed to the library — from here the reports are the truth.
+   *  Always true when there is no seed, so an unframed item behaves exactly as it did. */
+  applied: boolean;
 }
 
 type FramingAction =
@@ -88,13 +94,31 @@ type FramingAction =
   | { t: "area"; area: Area }
   | { t: "loaded"; media: MediaSize };
 
-export const initialFramingState: FramingState = { crop: { x: 0, y: 0 }, point: null, media: null };
+/** The sheet's opening state, from whatever framing the item already has.
+ *
+ *  A `useReducer` LAZY initializer rather than a constant, because the seed is a prop: an item opened
+ *  for a look rather than an edit must not have its framing quietly replaced by the centre. */
+export function initialFraming(seed: FocalPoint | undefined): FramingState {
+  return {
+    crop: { x: 0, y: 0 },
+    point: seed ?? null,
+    media: null,
+    seed: seed ?? null,
+    applied: seed === undefined,
+  };
+}
 
 export function framingReducer(state: FramingState, action: FramingAction): FramingState {
   switch (action.t) {
     case "pan":
       return { ...state, crop: action.crop };
     case "area":
+      // A report that arrives BEFORE the seed's pan has been handed over describes the picture at
+      // `crop {0,0}` — i.e. its CENTRE — and must not overwrite the point the owner already set. That
+      // is not a hypothetical ordering: `onMediaLoad` calls `emitCropData()` and only THEN
+      // `onMediaLoaded` (react-easy-crop `index.module.mjs:308-316`), so the centre is always reported
+      // first. It is the exact path that made an inspect-and-save silently re-centre a framed image.
+      if (!state.applied) return state;
       // THE ONE LINE the whole control is (R57 §9①): the focal point is the crop area's centre. Taken
       // from the PERCENTAGE report rather than the pixel one — the pixels are rounded to whole source
       // pixels by the library, and a percentage is what a 0..1 fraction already is.
@@ -105,8 +129,18 @@ export function framingReducer(state: FramingState, action: FramingAction): Fram
           y: clamp01((action.area.y + action.area.height / 2) / 100),
         },
       };
-    case "loaded":
-      return { ...state, media: action.media };
+    case "loaded": {
+      // The picture's size is the last thing the seed needed: until now there was no way to say where
+      // 0.42 across it IS. Deriving the pan here is what puts the stored point under the reticle, and
+      // the library's own next report closes the loop by handing the same point back.
+      if (state.seed === null || state.applied) return { ...state, media: action.media };
+      return {
+        ...state,
+        media: action.media,
+        applied: true,
+        crop: seedPan(state.seed, action.media),
+      };
+    }
   }
 }
 
@@ -134,6 +168,21 @@ export function clampPan(
   if (media === null) return crop;
   const limit = panLimit(media);
   return { x: clamp(crop.x, limit.x), y: clamp(crop.y, limit.y) };
+}
+
+/** The pan that puts a STORED point under the reticle (Emma's S4 review #1).
+ *
+ *  `crop` is the offset of the picture's centre from the reticle's, so the point at fraction `f` sits
+ *  at `(f − 0.5)·media + crop`; putting it under the reticle means `crop = (0.5 − f)·media`. It runs
+ *  through the same `clampPan` a drag does — which cannot bind for a point inside the picture (the
+ *  limit IS half the picture), and which keeps a hand-edited `focal` outside 0..1 from panning the
+ *  picture off the stage.
+ *
+ *  It is the whole of "open a framed image and see its framing", and without it the sheet opened at
+ *  the centre while the library immediately reported that centre as the live point — so confirming
+ *  without touching anything replaced the owner's framing with the middle of the picture. */
+export function seedPan(point: FocalPoint, media: MediaSize): { x: number; y: number } {
+  return clampPan({ x: media.width * (0.5 - point.x), y: media.height * (0.5 - point.y) }, media);
 }
 
 /** The pan that puts the media point currently under `(dx, dy)` — an offset from the reticle's centre,
@@ -169,10 +218,15 @@ export function FramingSheet({
 }: {
   section: MediaSection;
   item: LibraryItem;
-  onSave: (point: FocalPoint | null) => void;
+  /** Save the point — WITH the revision this sheet rendered, so the write can refuse if the bytes
+   *  were replaced while the owner was framing them (Emma's S4 review #2). The sheet supplies it
+   *  because the sheet is the only thing that can be authoritative about what it showed. */
+  onSave: (point: FocalPoint | null, expectedRev: string) => void;
   onCancel: () => void;
 }) {
-  const [state, dispatch] = useReducer(framingReducer, initialFramingState);
+  // SEEDED from whatever framing the item already carries — `rowFocal` is the shared predicate, so a
+  // STALE point seeds nothing and the sheet opens centred with its own "framing was reset" note.
+  const [state, dispatch] = useReducer(framingReducer, rowFocal(item.row), initialFraming);
   const [thirds, setThirds] = useState(false);
   const [stage, setStage] = useState<{ width: number; height: number } | null>(null);
   const labelId = useId();
@@ -353,7 +407,11 @@ export function FramingSheet({
           </button>
           {/* Absent unless there IS one to clear — the house rule for a control with nothing to do. */}
           {stored === "set" && (
-            <button type="button" className="mgal-act" onClick={() => onSave(null)}>
+            <button
+              type="button"
+              className="mgal-act"
+              onClick={() => onSave(null, item.row.revision)}
+            >
               Clear framing
             </button>
           )}
@@ -361,7 +419,9 @@ export function FramingSheet({
             type="button"
             className="mgal-act primary"
             disabled={state.point === null}
-            onClick={() => state.point !== null && onSave(roundFocal(state.point))}
+            onClick={() =>
+              state.point !== null && onSave(roundFocal(state.point), item.row.revision)
+            }
           >
             Save framing
           </button>

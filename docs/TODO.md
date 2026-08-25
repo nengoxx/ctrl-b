@@ -1453,6 +1453,11 @@ owner eyeball; each passes `tools/check.py`.
       OFF so the focal can reach the picture's edges; **the visual probe is `e2e/media-framing.spec.ts`**
       — the paint moves on the axis each window crops, and the bundled art is byte-identical;
       MEDIA_MANAGER_PLAN §12 as-built + §16's three S4 device probes)
+      (+ the Emma-lane review wave, all 4 findings ACCEPTed — the sheet SEEDS from the stored point
+      (opening a framed image and confirming used to re-centre it), the send-time write REFUSES when
+      the file changed mid-edit, the JPEG probe reads EXIF orientation so `width`/`height` are the
+      PAINTED dimensions (SSH drops only — uploads were always normalized), and the parity arms became
+      an independent pre-S4 golden table over all nine windows)
 - [ ] S5 — Drag: G6/G5 → G1 → G2 → G4 → G3 → hygiene + the held-commit state machine
 - [ ] S6 — Owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over
       Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball ·

@@ -101,6 +101,22 @@ describe("focalPosition — one item's framing in one window", () => {
   });
 });
 
+describe("the dimensions the mapping trusts are the PAINTED ones (Emma's S4 review #3)", () => {
+  it("crops the axis the BROWSER crops, for a quarter-turn JPEG dropped in over SSH", () => {
+    // A phone portrait shot lands on disk as a 400x200 frame with EXIF Orientation=6, and every engine
+    // lays it out 200x400. The server now reports the PAINTED size (`core/media.py#_exif_orientation`),
+    // so this is what reaches the mapper — and in a 200-wide, 200-tall window that means the picture
+    // overflows VERTICALLY (s = 2 down, 1 across), which is the opposite of what the frame header says.
+    const painted = centredFocal({ x: 0.5, y: 0.25 }, 200, 400);
+    expect(focalPosition(painted, { width: 200, height: 200 })).toBe("50% 0%");
+    // …and had the raw frame been reported instead, the SAME point would have moved the picture along
+    // the axis that is not cropping and left the one that is at the guard's centre. That is the whole
+    // defect, stated as the value it would have produced.
+    const raw = centredFocal({ x: 0.5, y: 0.25 }, 400, 200);
+    expect(focalPosition(raw, { width: 200, height: 200 })).toBe("50% 50%");
+  });
+});
+
 describe("shiftFocalX — the per-window offset that replaced `coverHeroFocus`", () => {
   // Every arm below is the retired function's own, with the SAME expected strings: the S4 rewrite is
   // accepted on producing byte-identical output for every state that exists today.

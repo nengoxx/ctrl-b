@@ -630,6 +630,49 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 >   failure. **`e2e/media-gallery.spec.ts` has the same partial echo and does not assert `pageErrors`** —
 >   left alone here (it is S2's file and its assertions are unaffected), flagged for the S2/S5 owner.
 
+> **THE S4 REVIEW WAVE (Emma lane, blind; main-seat ruled 2026-08-25 — all 4 findings ACCEPTed with her
+> lean fixes as written). Verdict was DO NOT SHIP, and two of the four were about the same thing: what
+> the sheet is looking at.**
+>
+> · **The sheet never seeded from the existing point (#1, HIGH).** It opened at `crop {0,0}` with
+>   `point: null`, and `react-easy-crop` reports the crop area WHILE IT MEASURES — `onMediaLoad` calls
+>   `emitCropData()` and only then `onMediaLoaded` — so the picture's CENTRE arrived as the live point
+>   before anything had happened. Opening a correctly framed image to look at it and confirming
+>   without moving anything therefore replaced the owner's framing with the middle of the picture.
+>   There is no "touched" rule here (unlike the crop step, where untouched means something different),
+>   so the fix had to be the seed itself: `initialFraming(rowFocal(item.row))` opens ON the stored
+>   point, `seedPan` derives the controlled pan once the media size is known
+>   (`crop = (0.5 − f)·media`, through the same `clampPan` a drag uses), and reports are IGNORED until
+>   that pan has been handed over. A stale point seeds nothing — `rowFocal` is the same predicate — so
+>   that case still opens centred under its own "framing was reset" note.
+> · **A mid-edit file replacement blessed the wrong coordinates (#2, MED).** The `rev` a point is
+>   stored under is read at SEND time (the queue's one invariant) but the COORDINATES were chosen at
+>   open time, so an SSH overwrite landing in between married the old picture's point to the new
+>   picture's revision — and `focalState` then called that pair live forever, which is exactly the pair
+>   rev-keying exists to fold to "unset". The sheet now carries the revision it RENDERED
+>   (`onSave(point, expectedRev)` — the sheet supplies it because the sheet is the only thing that can
+>   be authoritative about what it showed), and the send-time patch refuses on a disagreement with a
+>   toast rather than guessing. **Clearing stays revision-independent**: "no framing" is true of
+>   whatever is there now.
+> · **The JPEG probe ignored EXIF orientation (#3, MED — the one backend fix in S4).** The SOF carries
+>   the frame as STORED and every browser paints it as EXIF says to, so an SSH-dropped phone portrait
+>   reported 4000x3000 and laid out 3000x4000. Nothing cared until the focal point, which decides which
+>   axis a window crops from the file's aspect — so the centred mapping moved the picture along the
+>   axis that was not cropping. `_exif_orientation` now reads the tag during the marker walk the reader
+>   already does (the APP1 sits ahead of the SOF, so it costs no extra I/O and stays inside
+>   `_JPEG_SCAN_LIMIT`), and `Probe.width`/`height` are documented as the PAINTED dimensions.
+>   **Uploads were always immune** — the export re-encodes at the painted orientation and strips EXIF —
+>   which is exactly why this could only ever be found by reading the SSH path.
+> · **The parity arms compared the new code to itself (#4, LOW).** The arm named as the bundled-art
+>   parity line checked two windows, and the dossier assertions derived their expected values through
+>   `focalPosition` — so a lost CSS default or a dropped inline override on the other seven windows
+>   would have passed. There is now an independent GOLDEN in `e2e/media-framing.spec.ts`: a table of
+>   literals read out of `git show 492738e` (the commit before the rewrite), asserted in the browser
+>   across all nine windows and each distinct capsule shape. Two shapes needed staging to exist at all
+>   — `pair` only appears on a THREE-machine fleet, and `.gc-card.feat`'s own default only when
+>   position 0's art carries no framing, which the bundled cast never does. Both mutation-checked: a
+>   changed CSS default and a dropped inline override each fail it.
+
 | S5 | drag: G6/G5→G1→G2→G4→G3→hygiene + held-commit machine | full gate |
 | S6 | owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball · crop/framing/drag feel · Fennec expected-partials | owner acceptance |
 

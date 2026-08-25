@@ -76,8 +76,8 @@ const bundledRow = (id: string) => ({
 
 /** The stateful mock: the config `files` list plus (optionally) one owner file on disk, collated the
  *  way `core/media.py#list_role` does and mutated by the settings PUT the framing sheet makes. */
-async function mockMedia(page: Page, opts: { withFile: boolean }) {
-  const st: { files: Entry[] } = { files: [] };
+async function mockMedia(page: Page, opts: { withFile: boolean; files?: Entry[] }) {
+  const st: { files: Entry[] } = { files: opts.files ?? [] };
   const puts: Record<string, unknown>[] = [];
   await page.route("**/api/**", async (route) => {
     const req = route.request();
@@ -243,43 +243,302 @@ test("the framing point MOVES the paint, on every window that crops (the S4 visu
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 
-test("the BUNDLED art paints exactly what it painted before the rewrite (the parity line)", async ({
+test("an already-framed image OPENS on its framing, and an untouched Save keeps it (Emma #1)", async ({
   page,
   pageErrors,
 }) => {
-  // The state every install is in until an owner sets a point — and therefore the state the ~10-site
-  // rewrite is ACCEPTED on. The magazine cover is the sharpest arm: it is where the retired
-  // `--cv-focus` / `--cv-hero-focus` chain lived, one element serving two seats with two different
-  // values, and the hero's twenty-point leftward shift has to survive to the digit.
+  // The browser half of the seed, and the one only a browser can prove: the vitest arm stops before
+  // `react-easy-crop` has loaded anything, so it never exercises the DERIVED PAN. Here the picture
+  // really loads, `onMediaLoaded` really fires, the seeded pan really goes to the library, and the
+  // library's own report has to hand the same point back — which is the round trip that decides
+  // whether opening a framed image to look at it leaves it framed.
+  const stored = { x: 0.18, y: 0.82, rev: REVISION };
+  const { puts } = await mockMedia(page, {
+    withFile: true,
+    files: [{ name: "hero.png", focal: stored }],
+  });
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab: "conf", v: 1 });
+  await page.addInitScript(() =>
+    localStorage.setItem("ctrlb.collapsed", JSON.stringify({ "media-gacha": false })),
+  );
+  await page.goto("/");
+
+  // The framed picture as the fleet paints it, BEFORE anything is opened — so the "unchanged" claim
+  // below is about pixels and not only about the wire.
+  const card = ".gc-card.feat img";
+  await page.locator("#tabbtn-fleet").click();
+  await expect(page.locator(card)).toBeVisible();
+  const painted = await positionOf(page, card);
+
+  await page.locator("#tabbtn-conf").click();
+  await page.getByRole("button", { name: "Open the characters gallery" }).click();
+  const gallery = page.getByRole("dialog");
+  await gallery.getByRole("button", { name: "hero.png", exact: true }).click();
+  // The affordance already says a point is set, before the sheet is even open.
+  await expect(gallery.getByRole("button", { name: /Set framing/ })).toContainText("set");
+  await gallery.getByRole("button", { name: /Set framing/ }).click();
+  const sheet = page.getByRole("dialog", { name: "Set framing" });
+  await expect(sheet.locator(".mgal-frame-stage img")).toBeVisible();
+  // THE RETICLE IS ON THE STORED POINT, read off the library's own transform rather than off anything
+  // S4 computes. A point LEFT of and BELOW centre means the picture has to move RIGHT and UP for it to
+  // land under a reticle fixed at the middle — so `translate` must be `+x, −y`. Unseeded it is `0, 0`,
+  // which is what this would have caught: the sheet showing the middle of the picture while claiming
+  // to show the owner's framing.
+  await expect
+    .poll(() =>
+      sheet
+        .locator(".reactEasyCrop_Image")
+        .evaluate((el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).e),
+    )
+    .toBeGreaterThan(1);
+  expect(
+    await sheet
+      .locator(".reactEasyCrop_Image")
+      .evaluate((el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).f),
+  ).toBeLessThan(-1);
+
+  // …and confirming without moving anything writes exactly what was already there.
+  await sheet.getByRole("button", { name: "Save framing" }).click();
+  await expect.poll(() => puts.length).toBe(1);
+  const saved = (
+    puts[0] as { media: { namespaces: { gacha: { roles: { characters: { files: Entry[] } } } } } }
+  ).media.namespaces.gacha.roles.characters.files;
+  expect(saved.find((f) => f.name === "hero.png")?.focal).toEqual(stored);
+
+  // …and the fleet paints the same pixels it painted before the sheet was ever opened.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.locator("#tabbtn-fleet").click();
+  await expect(page.locator(card)).toBeVisible();
+  expect(await positionOf(page, card)).toBe(painted);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+// ── THE PARITY GOLDEN (Emma's S4 review #4) ─────────────────────────────────────────────────────
+//
+// Every literal below was read out of `git show 492738e` — the commit BEFORE the rewrite — and none of
+// it is derived from `focalPosition`, `shiftFocalX` or any other S4 code. That is the whole point: a
+// parity assertion computed by the thing under test proves only that it agrees with itself, and it
+// cannot catch the two failures that matter here — a call site whose CSS default was lost in the
+// rewrite, and an inline override that stopped being written.
+//
+// Nine windows, and each distinct capsule shape, in the state every install is in.
+
+/** `gacha.css` / `tokens.css` at 492738e — the crop each surface fell back to with no framing set. */
+const CSS_DEFAULT = {
+  cardPair: "50% 16%", // .gc-card img
+  cardFeat: "50% 6%", // .gc-card.feat img
+  cardWide: "50% 46%", // .gc-card.wide img
+  slideScene: "52% 30%", // .gc-slide img
+  slidePromo: "50% 12%", // .gc-slide.promo img
+  avatar: "50% 14%", // .gc-dossier .avatar
+  watermark: "50% 14%", // .gc-dossier-mark
+  posterSlice: "50% 26%", // .po-art img       (was `var(--po-focus, …)`)
+  coverSeat: "50% 22%", // .cv-shot img       (was `var(--cv-focus, …)`)
+  oracle: "50% 46%", // .gc-oracle-art     (was `var(--gc-oracle-pos)`, tokens.css)
+  wallpaper: "56% 30%", // --gc-wallpaper-pos, tokens.css
+} as const;
+
+/** `themes/gacha/roster.ts` at 492738e — the hand-tuned values the bundled cast carries, which every
+ *  site painted INLINE, and the cover hero's shifted form (`coverHeroFocus`, `50% − 20`). */
+const BUNDLED_FOCUS = { pegasus: "50% 12%", three: "50% 14%", four: "50% 8%" } as const;
+const HERO_SHIFTED = "30% 12%";
+
+/** Boot gacha's fleet on a given layout with NO owner art — the bundled cast, dealt to the fixture's
+ *  two machines: position 0 = `pegasus` (which carries a focus), position 1 = `atlas` (which does not).
+ *  `hosts` overrides the fleet when a third machine is needed to reach the `pair` shape. */
+async function bootBundled(
+  page: Page,
+  opts: { layout?: string; tab?: string; hosts?: unknown[] } = {},
+) {
   await mockMedia(page, { withFile: false });
+  if (opts.hosts !== undefined) {
+    await page.route("**/api/hosts", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(opts.hosts),
+      }),
+    );
+  }
   await seedUI(page, {
     theme: "gacha",
     mode: "dark",
     accent: "arcade",
-    tab: "fleet",
-    themeSettings: { gacha: { fleetLayout: "cover" } },
+    tab: opts.tab ?? "fleet",
+    ...(opts.layout === undefined
+      ? {}
+      : { themeSettings: { gacha: { fleetLayout: opts.layout } } }),
     v: 1,
   });
   await page.goto("/");
+}
 
-  const hero = ".cv-card.is-hero .cv-shot img";
-  const cut = ".cv-card.is-cut .cv-shot img";
-  await expect(page.locator(hero)).toBeVisible();
-  // Display position 0 is `pegasus`, whose hand-tuned PROPORTIONAL value is `50% 12%`; the hero seat
-  // slides it twenty points left, exactly as `coverHeroFocus` did.
-  expect(await positionOf(page, hero)).toBe("30% 12%");
-  // Position 1 is `atlas`, which declares none — so NO inline position at all and the lab's own default
-  // stands. A computed override here would be a claim about a crop nobody authored.
-  expect(await positionOf(page, cut)).toBe("50% 22%");
-  // …and the retired custom properties are gone from the card, not merely unread.
-  const published = await page
-    .locator(".cv-card")
-    .first()
-    .evaluate((el) => [
-      el.style.getPropertyValue("--cv-focus"),
-      el.style.getPropertyValue("--cv-hero-focus"),
-    ]);
-  expect(published).toEqual(["", ""]);
+/** A third fixture machine, so the capsule track deals `feat · pair · pair` and the PAIR shape (and
+ *  therefore its own default crop) is on screen. Two machines deal `feat · wide`. */
+const THREE_HOSTS = [
+  {
+    id: "vault",
+    name: "vault",
+    ip: "192.168.1.137",
+    mac: "aa:bb:cc:dd:ee:ff",
+    os_type: "linux",
+    role: "server",
+    tags: [],
+    status: { online: true, latency_ms: 3, checked_at: "2026-06-24T00:00:00Z" },
+  },
+  {
+    id: "corsair",
+    name: "corsair",
+    ip: "192.168.1.128",
+    mac: null,
+    os_type: "windows",
+    role: "desktop",
+    tags: [],
+    status: { online: false, latency_ms: null, checked_at: "2026-06-24T00:00:00Z" },
+  },
+  {
+    id: "g5",
+    name: "g5",
+    ip: "192.168.1.140",
+    mac: null,
+    os_type: "linux",
+    role: "server",
+    tags: [],
+    status: { online: true, latency_ms: 5, checked_at: "2026-06-24T00:00:00Z" },
+  },
+];
+
+test("PARITY — the capsule track, the banner and the backdrop paint their pre-S4 strings", async ({
+  page,
+  pageErrors,
+}) => {
+  await bootBundled(page);
+  await expect(page.locator(".gc-card.feat img")).toBeVisible();
+
+  // ① the FEATURED card, painting `pegasus` — the INLINE path: the entry's own hand-tuned value beats
+  //    the shape's default, exactly as it did when the value was written straight onto the element.
+  expect(await positionOf(page, ".gc-card.feat img")).toBe(BUNDLED_FOCUS.pegasus);
+  // ② the WIDE card, painting `atlas` — the DEFAULT path: no framing, so no inline declaration at all
+  //    and the shape's own crop stands. This is the assertion a lost CSS default would fail.
+  expect(await positionOf(page, ".gc-card.wide img")).toBe(CSS_DEFAULT.cardWide);
+  // ③ the banner's fixed HERO slide is scene art, which declares no focus.
+  expect(await positionOf(page, ".gc-slide:not(.promo) img")).toBe(CSS_DEFAULT.slideScene);
+  // ④ the PROMO slides: the same two entries again, in a window of a completely different shape —
+  //    `pegasus` inline, `atlas` on the promo default.
+  const promos = page.locator(".gc-slide.promo img");
+  expect(await promos.nth(0).evaluate((el) => getComputedStyle(el).objectPosition)).toBe(
+    BUNDLED_FOCUS.pegasus,
+  );
+  expect(await promos.nth(1).evaluate((el) => getComputedStyle(el).objectPosition)).toBe(
+    CSS_DEFAULT.slidePromo,
+  );
+  // ⑤ the fleet BACKDROP — the one surface that cannot measure itself, so its value is published on
+  //    `body` exactly as before. It is the second layer of a two-layer background.
+  const backdrop = await page
+    .locator(".kit-main")
+    .evaluate((el) => getComputedStyle(el).backgroundPosition);
+  expect(backdrop, "the wallpaper's own default crop").toContain(CSS_DEFAULT.wallpaper);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("PARITY — the PAIR capsule shape, which only a third machine puts on screen", async ({
+  page,
+  pageErrors,
+}) => {
+  // Two machines deal `feat · wide`; three deal `feat · pair · pair` (`fleet.ts#cardShapes`). Without
+  // this arm the `pair` shape's default — the base `.gc-card img` rule — is never painted at all.
+  await bootBundled(page, { hosts: THREE_HOSTS });
+  const pairs = page.locator(".gc-card:not(.feat):not(.wide) img");
+  await expect(pairs.first()).toBeVisible();
+  // position 1 is `atlas` (no focus) → the base default; position 2 is `3` (focus `50% 14%`) → inline.
+  expect(await pairs.nth(0).evaluate((el) => getComputedStyle(el).objectPosition)).toBe(
+    CSS_DEFAULT.cardPair,
+  );
+  expect(await pairs.nth(1).evaluate((el) => getComputedStyle(el).objectPosition)).toBe(
+    BUNDLED_FOCUS.three,
+  );
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("PARITY — the FEATURED shape's own default, which needs art carrying no framing", async ({
+  page,
+  pageErrors,
+}) => {
+  // `pegasus` sits at position 0 and carries a focus, so the bundled cast can never show `.gc-card.feat`
+  // falling back to its own crop. One owner file — which carries no framing until someone sets one — is
+  // what puts that default on screen.
+  await mockMedia(page, { withFile: true });
+  await seedUI(page, { theme: "gacha", mode: "dark", accent: "arcade", tab: "fleet", v: 1 });
+  await page.goto("/");
+  await expect(page.locator(".gc-card.feat img")).toBeVisible();
+  expect(await positionOf(page, ".gc-card.feat img")).toBe(CSS_DEFAULT.cardFeat);
+
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("PARITY — the DOSSIER's two windows, the poster slice, the cover's two seats, the oracle", async ({
+  page,
+  pageErrors,
+}) => {
+  // ── the DOSSIER: one entry, two windows on one sheet (a 104x138 portrait and a 66%-wide watermark),
+  //    which is the case a single published value served wrongly by construction.
+  await bootBundled(page);
+  await page.getByRole("button", { name: "open vault dossier, online" }).click();
+  await expect(page.locator(".gc-dossier .avatar")).toBeVisible();
+  expect(await positionOf(page, ".gc-dossier .avatar")).toBe(BUNDLED_FOCUS.pegasus);
+  expect(await positionOf(page, ".gc-dossier-mark")).toBe(BUNDLED_FOCUS.pegasus);
+  // …and their own defaults, on art that declares no framing: `corsair` is position 1 = `atlas`.
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".gc-dossier")).toHaveCount(0);
+  await page.getByRole("button", { name: "open corsair dossier, sleeping" }).click();
+  await expect(page.locator(".gc-dossier .avatar")).toBeVisible();
+  expect(await positionOf(page, ".gc-dossier .avatar")).toBe(CSS_DEFAULT.avatar);
+  expect(await positionOf(page, ".gc-dossier-mark")).toBe(CSS_DEFAULT.watermark);
+
+  // ── the POSTER, where the value used to ride `--po-focus` on the slice button.
+  await bootBundled(page, { layout: "poster" });
+  const slices = page.locator(".po-art img");
+  await expect(slices.first()).toBeVisible();
+  expect(await slices.nth(0).evaluate((el) => getComputedStyle(el).objectPosition)).toBe(
+    BUNDLED_FOCUS.pegasus,
+  );
+  expect(await slices.nth(1).evaluate((el) => getComputedStyle(el).objectPosition)).toBe(
+    CSS_DEFAULT.posterSlice,
+  );
+  // …and the retired property is gone from the button, not merely unread.
+  expect(
+    await page
+      .locator(".po-slice")
+      .first()
+      .evaluate((el) => el.style.getPropertyValue("--po-focus")),
+  ).toBe("");
+
+  // ── the COVER: ONE element, TWO seats, and the sharpest arm of the lot — it is where the
+  //    `--cv-focus` / `--cv-hero-focus` chain lived, and the hero's twenty-point slide has to survive
+  //    to the digit.
+  await bootBundled(page, { layout: "cover" });
+  await expect(page.locator(".cv-card.is-hero .cv-shot img")).toBeVisible();
+  expect(await positionOf(page, ".cv-card.is-hero .cv-shot img")).toBe(HERO_SHIFTED);
+  expect(await positionOf(page, ".cv-card.is-cut .cv-shot img")).toBe(CSS_DEFAULT.coverSeat);
+  expect(
+    await page
+      .locator(".cv-card")
+      .first()
+      .evaluate((el) => [
+        el.style.getPropertyValue("--cv-focus"),
+        el.style.getPropertyValue("--cv-hero-focus"),
+      ]),
+  ).toEqual(["", ""]);
+
+  // ── the ORACLE: one window, two stacked copies, and the one custom property that legitimately
+  //    survived. Its bundled art is scene art and declares no framing.
+  await bootBundled(page, { tab: "agent" });
+  await expect(page.locator(".gc-oracle-art").first()).toBeVisible();
+  expect(await positionOf(page, ".gc-oracle-art")).toBe(CSS_DEFAULT.oracle);
 
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
