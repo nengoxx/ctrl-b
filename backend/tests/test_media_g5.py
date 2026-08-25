@@ -89,6 +89,20 @@ def role(home: Path, name: str) -> Path:
     return ns_dir(home, "gacha") / name
 
 
+def disk(rows: list[dict]) -> list[str]:
+    """The FILE names of one role's library rows, in order — bundled rows dropped.
+
+    Since D65 every role's listing ends with its unlisted BUNDLED ids (the fallback tier), which
+    carry no file and no url. The G5 obligations below are all about what is ON DISK, so they filter;
+    the tier itself is `test_media_library_d65.py`'s subject."""
+    return [r["file"] for r in rows if r["bundled"] is None]
+
+
+def stems(rows: list[dict]) -> list[str]:
+    """…the same, by STEM (what a `slots` pin names)."""
+    return [r["name"] for r in rows if r["bundled"] is None]
+
+
 # ── ① the ensure-dir (§10.4 detail ①) ─────────────────────────────────────────────────────────────
 
 
@@ -112,8 +126,15 @@ def test_role_dirs_are_created_at_app_construction(home: Path, ns: str) -> None:
         assert sorted(p.name for p in ns_dir(home, ns).iterdir()) == sorted(roles)
         body = c.get(f"/api/media/{ns}").json()
         assert body["ns"] == ns
-        assert body["collation"] == "casefold-natural"
-        assert body["roles"] == {r: [] for r in roles}
+        assert body["collation"] == "library-v1"
+        # Nothing on disk — so every role's library is exactly its BUNDLED ids, in the registry's
+        # order, as the unlisted fallback tier (D65 §2.3 ③). That is what makes a fresh install's
+        # gallery non-empty and the pins offerable without a single owner file.
+        assert {r: disk(rows) for r, rows in body["roles"].items()} == {r: [] for r in roles}
+        assert {r: [f["bundled"] for f in rows] for r, rows in body["roles"].items()} == {
+            r: list(cfg.bundled) for r, cfg in roles.items()
+        }
+        assert all(not f["listed"] for rows in body["roles"].values() for f in rows)
         assert body["slots"] == {}
 
 
@@ -223,7 +244,7 @@ def test_only_registered_role_paths_are_served(home: Path) -> None:
             assert c.get(f"/api/media/gacha/files/{path}").status_code == 404, path
         # …and none of them is advertised either
         body = c.get("/api/media/gacha").json()
-        assert body["roles"]["characters"] == []
+        assert disk(body["roles"]["characters"]) == []
         assert "private" not in body["roles"]
         # the control: a file in a REGISTERED role still serves
         (role(home, "characters") / "ok.png").write_bytes(png_bytes())
@@ -289,7 +310,7 @@ def test_a_healthy_namespace_is_unaffected_and_says_so(home: Path) -> None:
         body = c.get("/api/media/gacha").json()
         assert body["disabled"] is False
         assert body["reason"] == ""
-        assert [f["file"] for f in body["roles"]["characters"]] == ["a.png"]
+        assert disk(body["roles"]["characters"]) == ["a.png"]
         assert c.get("/api/media/gacha/files/characters/a.png").status_code == 200
 
 
@@ -310,7 +331,7 @@ def test_one_disabled_namespace_leaves_the_others_healthy(home: Path, tmp_path) 
         (role(home, "characters") / "a.png").write_bytes(png_bytes())
         gacha = c.get("/api/media/gacha").json()
         assert gacha["disabled"] is False
-        assert [f["file"] for f in gacha["roles"]["characters"]] == ["a.png"]
+        assert disk(gacha["roles"]["characters"]) == ["a.png"]
         assert c.get("/api/media/gacha/files/characters/a.png").status_code == 200
 
 
@@ -322,13 +343,16 @@ def test_the_frontier_namespace_serves_its_three_roles(home: Path) -> None:
         (ns_dir(home, "frontier") / "rigs" / "01-rig.png").write_bytes(png_bytes())
         (ns_dir(home, "frontier") / "hero" / "vista.webp").write_bytes(webp_bytes())
         (ns_dir(home, "frontier") / "stack" / "cube.png").write_bytes(png_bytes())
-        r = c.put("/api/settings", json={"media": {"frontier": {"slots": {"hero": "vista"}}}})
+        r = c.put(
+            "/api/settings",
+            json={"media": {"namespaces": {"frontier": {"slots": {"hero": "vista"}}}}},
+        )
         assert r.status_code == 200, r.text
 
         body = c.get("/api/media/frontier").json()
-        assert [f["file"] for f in body["roles"]["rigs"]] == ["01-rig.png"]
-        assert [f["name"] for f in body["roles"]["hero"]] == ["vista"]
-        assert [f["name"] for f in body["roles"]["stack"]] == ["cube"]
+        assert disk(body["roles"]["rigs"]) == ["01-rig.png"]
+        assert stems(body["roles"]["hero"]) == ["vista"]
+        assert stems(body["roles"]["stack"]) == ["cube"]
         assert body["slots"] == {"hero": "vista"}
         assert c.get(body["roles"]["stack"][0]["url"]).status_code == 200
 
@@ -357,21 +381,21 @@ def test_the_kit_namespace_serves_its_five_roles_and_its_two_pool_pins(home: Pat
             "background",
             "brand",
         ]
-        assert [f["name"] for f in body["roles"]["services"]] == ["Jellyfin"]
-        assert [f["name"] for f in body["roles"]["service-banners"]] == ["Jellyfin"]
-        assert [f["name"] for f in body["roles"]["hosts"]] == ["corsair"]
-        assert [f["name"] for f in body["roles"]["brand"]] == ["sigil"]
+        assert stems(body["roles"]["services"]) == ["Jellyfin"]
+        assert stems(body["roles"]["service-banners"]) == ["Jellyfin"]
+        assert stems(body["roles"]["hosts"]) == ["corsair"]
+        assert stems(body["roles"]["brand"]) == ["sigil"]
         assert body["slots"] == {}
         for role in ("services", "service-banners", "hosts", "background", "brand"):
             assert c.get(body["roles"][role][0]["url"]).status_code == 200, role
 
         # An empty `media.kit` block is valid config (there may be nothing to persist: no order worth
         # keeping for a role where the FILENAME is the assignment, and no pin chosen)…
-        assert c.put("/api/settings", json={"media": {"kit": {}}}).status_code == 200
+        assert c.put("/api/settings", json={"media": {"namespaces": {"kit": {}}}}).status_code == 200
         # …both declared pins are accepted and echoed for the client resolver, independently…
         r = c.put(
             "/api/settings",
-            json={"media": {"kit": {"slots": {"background": "nebula", "brand": "sigil"}}}},
+            json={"media": {"namespaces": {"kit": {"slots": {"background": "nebula", "brand": "sigil"}}}}},
         )
         assert r.status_code == 200, r.text
         assert c.get("/api/media/kit").json()["slots"] == {
@@ -381,14 +405,24 @@ def test_the_kit_namespace_serves_its_five_roles_and_its_two_pool_pins(home: Pat
         # …and a pin naming a NAMED role is refused, like every other slot typo: those bind by filename,
         # so a pin for one would be a knob that silently did nothing.
         assert (
-            c.put("/api/settings", json={"media": {"kit": {"slots": {"services": "x"}}}}).status_code == 422
+            c.put(
+                "/api/settings",
+                json={"media": {"namespaces": {"kit": {"slots": {"services": "x"}}}}},
+            ).status_code
+            == 422
         )
         # The owner's ORDER is persistable per role, including the hyphenated one (it is the tie-break
         # for two files reaching one key — the one thing order still buys on a named role).
         assert (
             c.put(
                 "/api/settings",
-                json={"media": {"kit": {"roles": {"service-banners": {"order": ["Jellyfin.webp"]}}}}},
+                json={
+                    "media": {
+                        "namespaces": {
+                            "kit": {"roles": {"service-banners": {"files": [{"name": "Jellyfin.webp"}]}}}
+                        }
+                    }
+                },
             ).status_code
             == 200
         )
@@ -416,8 +450,7 @@ def test_symlinked_FILES_inside_a_role_are_neither_listed_nor_served(home: Path,
         (chars / "to-outside.png").symlink_to(outside)  # right out of the tree
         (chars / "to-nowhere.png").symlink_to(chars / "gone.png")  # dangling
 
-        listed = [f["file"] for f in c.get("/api/media/gacha").json()["roles"]["characters"]]
-        assert listed == ["real.png"]
+        assert disk(c.get("/api/media/gacha").json()["roles"]["characters"]) == ["real.png"]
         for name in ("to-other-role.png", "to-namespace.png", "to-outside.png", "to-nowhere.png"):
             assert c.get(f"/api/media/gacha/files/characters/{name}").status_code == 404, name
         # the agreement, stated as such: everything the index lists is servable, and nothing else is
@@ -442,7 +475,7 @@ def test_a_non_utf8_filename_is_skipped_instead_of_500ing_the_namespace(home: Pa
 
         r = c.get("/api/media/gacha")
         assert r.status_code == 200, r.text
-        assert [f["file"] for f in r.json()["roles"]["characters"]] == ["real.png"]
+        assert disk(r.json()["roles"]["characters"]) == ["real.png"]
         assert c.get("/api/media/gacha/files/characters/real.png").status_code == 200
 
 
@@ -461,8 +494,7 @@ def test_disallowed_extensions_404_and_are_never_listed(home: Path) -> None:
         (chars / "ok.png").write_bytes(png_bytes())
         for name in ("evil.html", "evil.svg", "notes.txt"):
             assert c.get(f"/api/media/gacha/files/characters/{name}").status_code == 404
-        listed = [f["file"] for f in c.get("/api/media/gacha").json()["roles"]["characters"]]
-        assert listed == ["ok.png"]
+        assert disk(c.get("/api/media/gacha").json()["roles"]["characters"]) == ["ok.png"]
 
 
 def test_served_headers_are_the_allowlisted_type_plus_nosniff_and_no_cache(home: Path) -> None:
@@ -561,8 +593,12 @@ def test_index_default_order_is_the_collation(home: Path) -> None:
     with make_client() as c:
         for name in ("10.png", "2.png", "banner-b.png", "Banner-a.png"):
             (role(home, "characters") / name).write_bytes(png_bytes())
-        listed = [f["file"] for f in c.get("/api/media/gacha").json()["roles"]["characters"]]
-        assert listed == ["2.png", "10.png", "Banner-a.png", "banner-b.png"]
+        assert disk(c.get("/api/media/gacha").json()["roles"]["characters"]) == [
+            "2.png",
+            "10.png",
+            "Banner-a.png",
+            "banner-b.png",
+        ]
 
 
 # ── ⑦ the magic-byte reader ───────────────────────────────────────────────────────────────────────
@@ -795,41 +831,40 @@ def test_absent_media_section_loads_as_defaults() -> None:
     must default cleanly rather than 422 — that is what keeps every consumer on its bundled art until
     the gallery is used."""
     s = Settings.model_validate({"server": {"port": 5433}})
-    assert s.media == {}
+    assert s.media.namespaces == {}
+    assert s.media.write.max_bytes == 15 * 1024 * 1024  # D65 ruling ③, from the model's own default
     assert s.media_overrides("gacha") == ({}, {})
 
 
 def test_namespace_role_and_slot_typos_are_refused() -> None:
     """Every key of the ns-generic block is checked against `MEDIA_NAMESPACES` (D53 §4): a namespace,
     role or slot name the registry does not know would be silently inert, which is a typo the owner
-    could never see. Path-shaped `order` entries are refused for the same visibility reason plus
+    could never see. Path-shaped `files` names are refused for the same visibility reason plus
     defence-in-depth — the value is only ever matched against a directory listing."""
     for bad in (
-        {"cosmos": {"roles": {"planets": {"order": ["a.png"]}}}},  # not a namespace
-        {"gacha": {"roles": {"charcters": {"order": ["a.png"]}}}},
+        {"cosmos": {"roles": {"planets": {"files": [{"name": "a.png"}]}}}},  # not a namespace
+        {"gacha": {"roles": {"charcters": {"files": [{"name": "a.png"}]}}}},
         {"gacha": {"slots": {"reel_figur": "lyra"}}},
         # frontier is a namespace since D53 M2 — but `stack` is a ROLE, not a pin. Its layers bind by
         # filename stem, so a config trying to pin one is a mistake the owner must be shown.
         {"frontier": {"slots": {"stack": "cube"}}},
-        {"frontier": {"roles": {"rig": {"order": ["a.png"]}}}},
-        {"gacha": {"roles": {"characters": {"order": ["../../config.yaml"]}}}},
-        {"gacha": {"roles": {"characters": {"order": [".."]}}}},
-        {"gacha": {"roles": {"characters": {"order": ["sub\\a.png"]}}}},
-        {"gacha": {"roles": {"characters": {"order": ["  "]}}}},
+        {"frontier": {"roles": {"rig": {"files": [{"name": "a.png"}]}}}},
+        {"gacha": {"roles": {"characters": {"files": [{"name": "../../config.yaml"}]}}}},
+        {"gacha": {"roles": {"characters": {"files": [{"name": ".."}]}}}},
+        {"gacha": {"roles": {"characters": {"files": [{"name": "  "}]}}}},
     ):
         with pytest.raises(ValueError):
-            Settings.model_validate({"media": bad})
+            Settings.model_validate({"media": {"namespaces": bad}})
 
     # …and the other half of the same rule: every registry row's real roles and pins VALIDATE, so a
     # namespace that was added but never taught to the config model would fail here.
     for ns, row in MEDIA_NAMESPACES.items():
         block = {
-            "roles": {r: {"order": ["a.png"]} for r in row.roles},
+            "roles": {r: {"files": [{"name": "a.png"}]} for r in row.roles},
             "slots": {s: "a" for s in row.slots},
         }
-        assert Settings.model_validate({"media": {ns: block}}).media_overrides(ns)[0] == {
-            r: ["a.png"] for r in row.roles
-        }
+        files = Settings.model_validate({"media": {"namespaces": {ns: block}}}).media_overrides(ns)[0]
+        assert {r: [i.name for i in items] for r, items in files.items()} == {r: ["a.png"] for r in row.roles}
 
 
 def test_configured_order_and_slots_drive_the_index(home: Path) -> None:
@@ -843,26 +878,44 @@ def test_configured_order_and_slots_drive_the_index(home: Path) -> None:
             "/api/settings",
             json={
                 "media": {
-                    "gacha": {
-                        "roles": {"characters": {"order": ["c.png", "gone.png", "a.png"]}},
-                        "slots": {"reel_figure": "lyra", "wallpaper": ""},
+                    "namespaces": {
+                        "gacha": {
+                            "roles": {
+                                "characters": {
+                                    "files": [
+                                        {"name": "c.png"},
+                                        {"name": "gone.png"},
+                                        {"name": "a.png"},
+                                    ]
+                                }
+                            },
+                            "slots": {"reel_figure": "lyra", "wallpaper": ""},
+                        }
                     }
                 }
             },
         )
         assert r.status_code == 200, r.text
         body = c.get("/api/media/gacha").json()
-        assert [f["file"] for f in body["roles"]["characters"]] == ["c.png", "a.png", "b.png"]
+        assert disk(body["roles"]["characters"]) == ["c.png", "a.png", "b.png"]
         # blank pins are not pins — only the real one reaches the client
         assert body["slots"] == {"reel_figure": "lyra"}
-        # …and it survives a reload from disk
-        reloaded = c.get("/api/settings").json()["media"]["gacha"]
-        assert reloaded["roles"]["characters"]["order"] == ["c.png", "gone.png", "a.png"]
+        # …and it survives a reload from disk — the DANGLING entry included: a name whose file is
+        # gone is ignored by the listing but kept in config (the owner may put the file back).
+        reloaded = c.get("/api/settings").json()["media"]["namespaces"]["gacha"]
+        assert [i["name"] for i in reloaded["roles"]["characters"]["files"]] == [
+            "c.png",
+            "gone.png",
+            "a.png",
+        ]
 
 
 def test_a_bad_media_patch_is_a_422_not_a_500(home: Path) -> None:
     with make_client() as c:
-        r = c.put("/api/settings", json={"media": {"gacha": {"roles": {"nope": {"order": []}}}}})
+        r = c.put(
+            "/api/settings",
+            json={"media": {"namespaces": {"gacha": {"roles": {"nope": {"files": []}}}}}},
+        )
         assert r.status_code == 422, r.text
 
 
@@ -884,18 +937,25 @@ def test_the_gacha_wallpaper_PIN_outlives_its_deleted_role_folder(home: Path) ->
             "reel",
             "oracle",
         ]
-        # The folder is not merely unlisted — it cannot be configured either, so a leftover `order:`
+        # The folder is not merely unlisted — it cannot be configured either, so a leftover `files:`
         # block is a visible 422 rather than a knob that silently does nothing.
         assert (
             c.put(
                 "/api/settings",
-                json={"media": {"gacha": {"roles": {"wallpaper": {"order": ["a.png"]}}}}},
+                json={
+                    "media": {
+                        "namespaces": {"gacha": {"roles": {"wallpaper": {"files": [{"name": "a.png"}]}}}}
+                    }
+                },
             ).status_code
             == 422
         )
         # …while the PIN, whose options come from `characters/`, is untouched.
         (role(home, "characters") / "kira.png").write_bytes(png_bytes())
-        r = c.put("/api/settings", json={"media": {"gacha": {"slots": {"wallpaper": "kira"}}}})
+        r = c.put(
+            "/api/settings",
+            json={"media": {"namespaces": {"gacha": {"slots": {"wallpaper": "kira"}}}}},
+        )
         assert r.status_code == 200, r.text
         assert c.get("/api/media/gacha").json()["slots"] == {"wallpaper": "kira"}
 
@@ -925,22 +985,28 @@ def test_old_themes_media_keys_are_inert_and_the_gallery_writes_only_media(home:
             (role(home, "characters") / name).write_bytes(png_bytes())
         # ignored: the listing is the plain collation and the old pin reaches nobody
         body = c.get("/api/media/gacha").json()
-        assert [f["file"] for f in body["roles"]["characters"]] == ["a.png", "z.png"]
+        assert disk(body["roles"]["characters"]) == ["a.png", "z.png"]
         assert body["slots"] == {}
 
         r = c.put(
             "/api/settings",
-            json={"media": {"gacha": {"roles": {"characters": {"order": ["z.png", "a.png"]}}}}},
+            json={
+                "media": {
+                    "namespaces": {
+                        "gacha": {"roles": {"characters": {"files": [{"name": "z.png"}, {"name": "a.png"}]}}}
+                    }
+                }
+            },
         )
         assert r.status_code == 200, r.text
-        assert [f["file"] for f in c.get("/api/media/gacha").json()["roles"]["characters"]] == [
-            "z.png",
-            "a.png",
-        ]
+        assert disk(c.get("/api/media/gacha").json()["roles"]["characters"]) == ["z.png", "a.png"]
 
     written = cfg.read_text(encoding="utf-8")
     doc = yaml.safe_load(written)
-    assert doc["media"]["gacha"]["roles"]["characters"]["order"] == ["z.png", "a.png"]
+    assert doc["media"]["namespaces"]["gacha"]["roles"]["characters"]["files"] == [
+        {"name": "z.png"},
+        {"name": "a.png"},
+    ]
     # the leftover survived untouched — the write path edits the leaves it was given and nothing else
     assert doc["themes"] == {
         "gacha": {"roles": {"characters": {"order": ["z.png"]}}, "slots": {"reel_figure": "ghost"}}

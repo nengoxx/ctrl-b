@@ -1,12 +1,13 @@
 """Owner-supplied media — the namespace-generic art library (D52/G5; GACHA_PLAN §5.4 + §10.4).
 
 The owner drops image files into `$CTRLB_HOME/media/<ns>/<role>/` from any machine (SSH/SMB) — and,
-per **D65**, uploads them from the app itself. This module lists and describes what is on disk;
-`app/api/media.py` publishes that index, mounts the hardened static surface, and owns the write path.
+per **D65**, uploads them from the app itself. This module lists and describes what is on disk, and
+since S1 it also owns the PERSIST PIPELINE (`UploadPart` below); `app/api/media.py` publishes the
+index, mounts the hardened static surface, and routes the writes into it.
 
 **A typed write API is RULED, and its SHAPE is the security control (D65, 2026-08-24 — superseding
 §5.4's "there is no write API and there must never be one here"; the routes and the persist pipeline
-land at MEDIA_MANAGER_PLAN's S1, and what follows is the contract they must satisfy).** The
+are BUILT as of MEDIA_MANAGER_PLAN's S1, and what follows is the contract they satisfy).** The
 app has no application-layer auth — the tailnet IS the
 boundary (SECURITY_MODEL §1) — so the realistic attacker was never a tailnet peer but the owner's own
 browser on another origin, and the only cross-origin request a page can fire without a preflight is a
@@ -22,8 +23,11 @@ art-bearing theme is a row in `MEDIA_NAMESPACES` — not a new route, not a new 
 this module or in the API layer knows what a "capsule card" is.
 
 **Drop-in = assignment** (the G1-eyeball re-rule): the role FOLDER a file lands in is what binds it to
-a consumer. Ordering INSIDE a role is `ROLE_COLLATION` by default, overridden per role by the Conf
-gallery's persisted `media.<ns>.roles.<role>.order` (§5.4's 2026-08-04 ruling).
+a consumer. Ordering INSIDE a role is the LIBRARY collation (`ROLE_COLLATION` = `library-v1`, D65):
+the owner's persisted `media.namespaces.<ns>.roles.<role>.files` list first, then everything else on
+disk by `sort_key`, then the role's unlisted BUNDLED ids as the fallback tier. `list_role` is the one
+implementation of that rule (council H2) and the wire carries the whole truth — `listed`, `hidden`
+and `focal` on every row — so a client resolver never needs a config side-channel.
 
 **No decoder dependency.** User files get no server-side re-encode and no Pillow (a new runtime dep
 AND an untrusted-decoder surface, §10.4). `probe_image` below is a stdlib magic-byte + dimension
@@ -35,15 +39,23 @@ that needs the bytes (`unusable_reason`); "too big" is per-role policy the front
 
 from __future__ import annotations
 
+import contextlib
+import ntpath
+import os
 import re
 import stat
 import struct
+import tempfile
+import unicodedata
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Literal
 from urllib.parse import quote
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
+
+from app.core.fsutil import fsync_dir
 
 #: The workspace subdirectory holding every namespace (`$CTRLB_HOME/media/`).
 MEDIA_DIRNAME = "media"
@@ -202,24 +214,131 @@ ALLOWED_TYPES: dict[str, tuple[str, str]] = {
 }
 
 #: The ONE deterministic collation, named on the wire (`MediaIndex.collation`) so the client and the
-#: server can never disagree about what "default order" means (§5.4's ruling). See `sort_key`.
-ROLE_COLLATION = "casefold-natural"
+#: server can never disagree about what "default order" means (§5.4's ruling). **Re-versioned
+#: `library-v1` at D65** (MEDIA_MANAGER_PLAN §2.3, Opus sweep ①) because the RULE changed, not merely
+#: the code: a role is now `files` entries in the owner's order, then unlisted disk files, then the
+#: role's unlisted BUNDLED ids as a fallback tier. The tie-break INSIDE tier ② is unchanged and still
+#: casefold-natural — see `sort_key`, which is that half and keeps its own name.
+ROLE_COLLATION = "library-v1"
+
+
+# ── the library's per-item models (config AND wire — one definition) ──────────────────────────────
+
+
+class MediaFocal(BaseModel):
+    """The framing point of one library item (D65 / MEDIA_MANAGER_PLAN §5): where in the picture the
+    subject is, so a cover crop can keep it on screen.
+
+    Stored per ITEM in config and echoed on the index row, which is why the model lives HERE rather
+    than in `config.py`: two definitions of one shape is exactly the drift the wire/config split
+    invites. `config.py` imports the media registry from this module already (the one-way
+    core→config edge), so the item models ride the same import.
+
+    `rev` KEYS the point to the file's `revision` (Opus M2): owner files are mutable IN PLACE under a
+    stable name, so an SSH overwrite would leave a focal point describing a picture that is gone. A
+    `rev` that does not match the file's current revision reads as UNSET — the client says "framing
+    was reset — the file changed" rather than cropping to the wrong spot. An empty `rev` therefore
+    degrades the same way (it matches no revision), which is what makes the field safely additive.
+    """
+
+    model_config = {"extra": "allow"}
+
+    x: float = Field(ge=0.0, le=1.0)
+    y: float = Field(ge=0.0, le=1.0)
+    rev: str = ""
+
+
+class MediaItem(BaseModel):
+    """ONE entry in a role's `files` list — the library's unit of PRIORITY (D65 §2.2).
+
+    `files` replaced the old `order: [names]` because the list grew dimensions: the entry carries its
+    own `hidden`, `focal` and `key` today and `z` (zoom) tomorrow, and the alternative — a
+    `hidden: {name: bool}` map beside an `order:` list beside a `focal: {name: …}` map — is the
+    sibling shape the 2026-06-24 extend-don't-migrate directive bans.
+
+    **Identity is a discriminated union** (Emma #10): exactly one of `name` (a file in the role
+    folder) or `bundled` (a registry id from `MediaRole.bundled`). Both, or neither, is a 422 — a
+    listed entry that named two things would make "which picture is this" a question with two
+    answers, and one that named nothing would occupy a priority slot for no picture. Uniqueness of
+    `(kind, id)` within a role is checked one level up, in `Settings`, which is where the role's
+    registry row is in scope.
+
+    `key` is the METADATA BINDING override (§2.2's permanent rule): an item binds to a named-role key
+    by this field when it has one, else by its filename stem — so "drop a file in and it binds" keeps
+    working forever for SSH drops while an upload can bind explicitly.
+    """
+
+    model_config = {"extra": "allow"}
+
+    name: str | None = None
+    bundled: str | None = None
+    key: str | None = None
+    #: Excluded from RESOLUTION everywhere, still in the library (dimmed in the gallery, "In use" off).
+    #: The mechanism for retiring one entry of an all-entries role, where order cannot exclude.
+    #: **Not the same treatment as `unusable`** (§2.2): an unusable file HOLDS its position — the
+    #: shipped `cycleAt` rule, so one bad drop cannot re-deal the fleet — while `hidden` is a
+    #: set-membership question the client filters on. The index emits hidden rows MARKED, never
+    #: dropped, so the gallery can show what the resolution skips.
+    hidden: bool = False
+    focal: MediaFocal | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_identity(self) -> "MediaItem":
+        if (self.name is None) == (self.bundled is None):
+            raise ValueError(
+                "a media `files` entry needs exactly one of `name` (a file in the role folder) or "
+                "`bundled` (an id from that role's bundled art)"
+            )
+        return self
+
+    @property
+    def identity(self) -> tuple[str, str]:
+        """`(kind, id)` — the uniqueness key a role's list is checked against."""
+        return ("bundled", self.bundled) if self.bundled is not None else ("name", self.name or "")
 
 
 # ── the index's wire models ───────────────────────────────────────────────────────────────────────
 
 
 class MediaFile(BaseModel):
-    """One servable file in a role folder, as the index reports it."""
+    """One entry of a role's LIBRARY, as the index reports it: a servable file on disk, or — since
+    D65 — a BUNDLED id the client maps to its own Vite-hashed asset.
+
+    ONE row type for both, deliberately (§2.3): the gallery, the pins and every theme ladder consume
+    one ordered list per role, and a second row type would fork all three. A bundled row carries its
+    id in `bundled` and `name`, and NOTHING the server could only learn from bytes (`file`, `url`,
+    `revision`, `format`, the dimensions) — the server has never seen that asset and must not invent
+    a URL for it."""
 
     #: The filename STEM — what a `slots` pin names, and the entry name the client resolver deals.
     #: Two files sharing a stem (`lyra.png` + `lyra.webp`) are a foot-gun the owner can see in the
-    #: gallery; a pin then resolves to whichever comes first in this role's order.
+    #: gallery; a pin then resolves to whichever comes first in this role's order. On a BUNDLED row
+    #: this is the bundled ID, for exactly that reason: a pin addresses one identity space.
     name: str
-    #: The filename inside the role folder (what the config's `order` list holds).
+    #: The filename inside the role folder (what a config `files` entry's `name` holds). Empty on a
+    #: bundled row — there is no file.
     file: str
     #: The absolute, percent-encoded URL of the static mount's copy — the client never builds paths.
+    #: Empty on a bundled row: the asset is the CLIENT's, hashed by its own build, so the id is the
+    #: only thing the server can honestly say about it.
     url: str
+    #: The registry id when this row IS a bundled entry, `None` for a file on disk. The client maps it
+    #: to its own asset (`defaultRoster()` / `ART`); no server-side URL exists.
+    bundled: str | None = None
+    #: True when this row came from the owner's `files` list, False when the collation APPENDED it —
+    #: an unlisted file on disk, or an unlisted bundled id (the fallback tier). Ladders read it to keep
+    #: today's semantics exactly: a fallback bundled row participates only where the ladder already
+    #: fell through to bundled art, which is what makes the config-pure migration paint-parity-free
+    #: (§2.3 ④, Emma confirm E2).
+    listed: bool = False
+    #: Excluded from resolution by the owner, still shown (dimmed) in the gallery. The server only
+    #: REPORTS it — skipping hidden rows is the client resolver's job, and `unusable` (below) keeps the
+    #: opposite treatment: it holds its position. Never fold the two predicates together (§2.2).
+    hidden: bool = False
+    #: The item's framing point, echoed from config so a paint site never reads config (§2.4's resolver
+    #: purity). `None` = unset; a `rev` that disagrees with `revision` below is treated as unset by the
+    #: client, which is what makes an in-place file replacement safe.
+    focal: MediaFocal | None = None
     #: The format read from the file's MAGIC BYTES, not its extension. `None` = unreadable, or bytes
     #: that are not in the allowlist at all (an `.png` that is really HTML).
     format: str | None = None
@@ -237,6 +356,10 @@ class MediaFile(BaseModel):
     height: int | None = None
     #: WHY, machine-readable — `None` when the file is fine. The two verdicts here are the ones only
     #: the server can reach, because only it read the bytes; the gallery turns them into sentences.
+    #: **`unreadable` means "these bytes are not an allowlisted image"** (defect #7): truncated,
+    #: corrupt — or a perfectly valid GIF/HEIC/TIFF/SVG, which this surface does not serve. The
+    #: renderer must say both halves; claiming "unreadable file" about a readable-but-unsupported
+    #: format sent the owner hunting for a corruption that was never there.
     #: SIZE-derived advisories are deliberately NOT here (MEDIA_PLAN §5): "too big" is per-ROLE policy
     #: (an icon is oversized at kilobytes, a wallpaper only at megapixels) and one global constant
     #: served neither, so the client derives them from the numbers above against its registry's bounds.
@@ -271,7 +394,8 @@ class MediaIndex(BaseModel):
     #: difference between "you have not dropped anything in yet" and "the app cannot read your folder".
     disabled: bool = False
     reason: str = ""
-    #: role -> files, already in the RULED order (config order first, then the collation).
+    #: role -> its whole LIBRARY, already in the ruled order (the owner's `files` entries, then
+    #: unlisted disk files, then unlisted bundled ids as the fallback tier — `library-v1`).
     roles: dict[str, list[MediaFile]] = Field(default_factory=dict)
     #: The §5.2 `slots` pins as configured, echoed verbatim — a dangling pin is the client resolver's
     #: problem to degrade from, not something to silently drop here (it would hide the owner's typo).
@@ -293,6 +417,12 @@ def ns_dir(home: Path, ns: str) -> Path:
 
 def role_dir(home: Path, ns: str, role: str) -> Path:
     return ns_dir(home, ns) / role
+
+
+#: Appended to every `ensure_media_dirs` refusal (defect #6). The shape check runs ONCE, at startup —
+#: the namespace is either mounted or not for the life of the process — so "fix the folder" is only
+#: half the remedy and the half that is silent is the one that leaves the owner stuck.
+_RESTART_NOTE = " This is checked at startup, so restart ctrl-b once the folder is fixed."
 
 
 @dataclass(frozen=True)
@@ -333,6 +463,10 @@ def ensure_media_dirs(home: Path) -> dict[str, NamespaceHealth]:
 
     Symlinked FILES inside a role are a different question and are handled where they are reachable:
     the mount's `lookup_path` and the index's listing both require a regular file (W1).
+
+    Every refusal reason ends with `_RESTART_NOTE` (defect #6): this is a BOOT-TIME check, so fixing
+    the tree does not re-enable anything until the backend restarts — and a message that omits that
+    leaves the owner staring at a folder they just repaired and a namespace that is still disabled.
     """
     root = media_root(home)
     health: dict[str, NamespaceHealth] = {}
@@ -354,7 +488,9 @@ def ensure_media_dirs(home: Path) -> dict[str, NamespaceHealth]:
             except OSError as exc:
                 reason = f"'{path}' could not be created: {exc.strerror or type(exc).__name__}."
                 break
-        health[ns] = NamespaceHealth(ns=ns, ok=not reason, reason=reason)
+        health[ns] = NamespaceHealth(
+            ns=ns, ok=not reason, reason=f"{reason}{_RESTART_NOTE}" if reason else ""
+        )
     return health
 
 
@@ -608,12 +744,24 @@ def _probe_webp(head: bytes, size: int) -> Probe:
 # ── the listing ───────────────────────────────────────────────────────────────────────────────────
 
 
-def describe_file(path: Path, ns: str, role: str) -> MediaFile:
+def describe_file(
+    path: Path,
+    ns: str,
+    role: str,
+    *,
+    listed: bool = False,
+    hidden: bool = False,
+    focal: MediaFocal | None = None,
+) -> MediaFile:
     """One directory entry, probed and judged — FACTS plus the one verdict that needs the bytes.
 
     The judgement stops here on purpose (MEDIA_PLAN §5): what the header says, how big it is, and
     whether the mount could serve it at all. Whether it is *too* big is per-role policy the client
     owns — this ships the numbers it decides on.
+
+    The three keyword facts come from the owner's `files` ENTRY, not from the file: they are what the
+    collation knows and the filesystem does not (D65). They default to "not listed, not hidden, no
+    framing", which is exactly an unlisted drop.
     """
     ext_type = ALLOWED_TYPES.get(path.suffix.lower())
     probe = probe_image(path)
@@ -639,27 +787,70 @@ def describe_file(path: Path, ns: str, role: str) -> MediaFile:
         width=probe.width,
         height=probe.height,
         unusable_reason=reason,
+        listed=listed,
+        hidden=hidden,
+        focal=focal,
     )
 
 
-def list_role(home: Path, ns: str, role: str, order: list[str] | None = None) -> list[MediaFile]:
-    """A role folder's servable files in the RULED order: the owner's persisted `order` first (names
-    that are actually still on disk), then everything else by `sort_key`.
+def bundled_row(
+    bundled: str, *, listed: bool = False, hidden: bool = False, focal: MediaFocal | None = None
+) -> MediaFile:
+    """One BUNDLED id as an index row (D65 §2.3). No `file`, no `url`, no `revision`, no probe facts:
+    the asset belongs to the client's build and the server has never seen it. The id rides in both
+    `bundled` (what it IS) and `name` (how a pin addresses it — one identity space, §2.3)."""
+    return MediaFile(
+        name=bundled, file="", url="", bundled=bundled, listed=listed, hidden=hidden, focal=focal
+    )
+
+
+def list_role(home: Path, ns: str, role: str, files: Sequence[MediaItem] | None = None) -> list[MediaFile]:
+    """A role's whole LIBRARY in the ruled order — the ONE collation chokepoint (council H2), the rule
+    named on the wire as `library-v1`:
+
+      1. the owner's `files` entries, in list order. A `name` is resolved against the directory and a
+         DANGLING one simply drops (self-heal: deleting a file is a delete plus a config write, and a
+         failure between them must not leave a 404 in the roster). A `bundled` id becomes a row.
+      2. then every remaining file on disk, by `sort_key` — today's rule, unchanged.
+      3. then the role's remaining BUNDLED ids, as the FALLBACK TIER: present so the gallery can show
+         them and the pins can offer them, `listed=False` so a ladder keeps falling through to them
+         exactly as it falls through to bundled art today. That is what makes the config-pure
+         migration paint-parity-free (§2.3/§2.4) — the fallback tier IS today's semantics.
 
     Only allowlisted EXTENSIONS are listed at all, so the gallery can never show a row the mount would
     404 — and a stray `notes.txt` beside the art is simply invisible rather than an error. Symlinks
     that escape the role folder are dropped for the same reason: the mount rejects them
-    (`follow_symlink=False`), so advertising them would be a lie.
+    (`follow_symlink=False`), so advertising them would be a lie. `.part` uploads in flight are
+    invisible by the same gate (their extension is not in the allowlist).
+
+    A `bundled` entry naming an id this role does not SHIP drops like a dangling filename: config
+    validation refuses one, so reaching here means the registry row shrank under a config that named
+    it, and a row the client cannot map to an asset would paint nothing at a real priority slot.
     """
     directory = role_dir(home, ns, role)
     try:
         entries = [p for p in directory.iterdir() if p.suffix.lower() in ALLOWED_TYPES]
     except OSError:  # the owner deleted the folder under us — an empty role, not a 500
-        return []
-    files: dict[str, Path] = {p.name: p for p in entries if is_served_file(p)}
-    pinned = [files.pop(name) for name in (order or []) if name in files]
-    rest = sorted(files.values(), key=lambda p: sort_key(p.name))
-    return [describe_file(p, ns, role) for p in (*pinned, *rest)]
+        entries = []
+    on_disk: dict[str, Path] = {p.name: p for p in entries if is_served_file(p)}
+    row = MEDIA_NAMESPACES.get(ns)
+    ships = row.roles[role].bundled if row is not None and role in row.roles else ()
+
+    out: list[MediaFile] = []
+    listed_ids: set[str] = set()
+    for item in files or ():
+        if item.bundled is not None:
+            if item.bundled in ships and item.bundled not in listed_ids:
+                listed_ids.add(item.bundled)
+                out.append(bundled_row(item.bundled, listed=True, hidden=item.hidden, focal=item.focal))
+            continue
+        path = on_disk.pop(item.name or "", None)
+        if path is None:
+            continue
+        out.append(describe_file(path, ns, role, listed=True, hidden=item.hidden, focal=item.focal))
+    out += [describe_file(p, ns, role) for p in sorted(on_disk.values(), key=lambda p: sort_key(p.name))]
+    out += [bundled_row(b) for b in ships if b not in listed_ids]
+    return out
 
 
 def disabled_index(ns: str, reason: str) -> MediaIndex:
@@ -672,16 +863,261 @@ def build_index(
     home: Path,
     ns: str,
     *,
-    order: dict[str, list[str]] | None = None,
+    files: dict[str, list[MediaItem]] | None = None,
     slots: dict[str, str] | None = None,
 ) -> MediaIndex:
-    """The whole `GET /api/media/{ns}` payload. `order`/`slots` come from the owner's config
-    (`media.<ns>`) — this module never reads settings itself, so a second namespace is one registry
-    row plus its own config block."""
-    order = order or {}
+    """The whole `GET /api/media/{ns}` payload. `files`/`slots` come from the owner's config
+    (`media.namespaces.<ns>`, projected by `Settings.media_overrides`) — this module never reads
+    settings itself, so a second namespace is one registry row plus its own config block."""
+    files = files or {}
     row = MEDIA_NAMESPACES.get(ns)
     return MediaIndex(
         ns=ns,
-        roles={role: list_role(home, ns, role, order.get(role)) for role in (row.roles if row else ())},
+        roles={role: list_role(home, ns, role, files.get(role)) for role in (row.roles if row else ())},
         slots=dict(slots or {}),
     )
+
+
+# ── the write path (D65): the two filename tiers, then the persist pipeline ───────────────────────
+#
+# **Two tiers, one home** (MEDIA_MANAGER_PLAN §3). They answer different questions and only one of
+# them is a gate on the owner:
+#
+#   * `is_addressable_name` — the ADDRESSABLE tier, read by `Settings`: can a config `files` entry
+#     name this file at all? It is defence-in-depth (the value is only ever matched against a
+#     directory listing), so it stays as permissive as the index is. Defect #8 re-ruled: the `\`
+#     clause is GONE, because a backslash is an ordinary POSIX filename character and the index
+#     serves such a file happily — the old check made a currently-painting drop impossible to
+#     REORDER, with an opaque 422. `is_served_file` is untouched.
+#   * `admission_reason` — the ADMISSION tier, read by the write route: may this be a NEW name we
+#     create? Strict, cross-platform, and it REJECTS WITH A REASON rather than sanitising (a
+#     sanitiser invents a name the client did not ask for, and the client's own minter already
+#     guarantees uniqueness — §2.5).
+#
+# The asymmetry is deliberate: the app never has to be able to CREATE every name it can SERVE.
+
+
+def is_addressable_name(name: str) -> bool:
+    """Can a config `files` entry name this? Non-blank, not `.`/`..`, and no `/` — the value names a
+    file INSIDE one role folder and is only ever matched against that folder's listing."""
+    return bool(name.strip()) and name not in (".", "..") and "/" not in name
+
+
+#: The POSIX/NTFS filename budget every mainstream filesystem shares. Measured in UTF-8 BYTES because
+#: that is what the filesystem counts — a 100-character name of 3-byte code points is 300 bytes.
+MAX_NAME_BYTES = 255
+
+#: Characters no NEW upload may carry. `<>:"|?*` are illegal on NTFS (a name the owner could never
+#: sync to their Windows box), C0/DEL make a filename unprintable in every listing they would compare
+#: it against, and U+FFFD is the replacement character — its presence means a decode already lost the
+#: real name upstream, so accepting it would persist a corruption.
+_ADMISSION_FORBIDDEN = frozenset('<>:"|?*') | {"\ufffd"} | frozenset(chr(c) for c in (*range(0x20), 0x7F))
+
+
+def admission_reason(filename: str) -> str | None:
+    """Why this filename may not be CREATED, or `None` when it may (MEDIA_MANAGER_PLAN §3).
+
+    Every clause returns the sentence the client shows, because "422" alone tells the owner nothing
+    about a name their own picker produced. Ordered from structural to cosmetic so the first failure
+    is the most explanatory one.
+    """
+    if not filename:
+        return "the filename is empty"
+    if "/" in filename or "\\" in filename:
+        return "a filename cannot contain a path separator"
+    if filename in (".", ".."):
+        return "that name addresses a directory, not a file"
+    # NFC is REQUIRED rather than applied (§3: reject with the reason, never sanitise). macOS hands
+    # out decomposed names; storing one makes the file's stem unequal to the key every client-side
+    # comparison normalises to NFC first (`lib/media.ts#normalizeMediaKey`), so it would bind to
+    # nothing while looking identical in every listing.
+    if unicodedata.normalize("NFC", filename) != filename:
+        return "the filename is not in Unicode NFC form"
+    if any(c in _ADMISSION_FORBIDDEN for c in filename):
+        return 'the filename contains a character that is not allowed (< > : " | ? * or a control character)'
+    if filename.startswith("."):
+        return "a filename cannot start with a dot"
+    if filename[-1] in ". ":
+        return "a filename cannot end with a dot or a space"
+    # Windows reserves these device names WITH ANY EXTENSION (`CON.png`), and `ntpath.isreserved`
+    # is the stdlib's own answer — a hand-written list would rot the moment it disagreed with it.
+    if ntpath.isreserved(filename):
+        return "that name is reserved by Windows"
+    if len(filename.encode("utf-8")) > MAX_NAME_BYTES:
+        return f"the filename is longer than {MAX_NAME_BYTES} bytes"
+    if Path(filename).suffix.lower() not in ALLOWED_TYPES:
+        return "only " + ", ".join(sorted(ALLOWED_TYPES)) + " files are accepted"
+    return None
+
+
+class MediaWriteError(Exception):
+    """A refused write, carrying the STATUS the route answers with and the sentence it says.
+
+    The status is decided where the rule lives (here), not re-derived from an exception type in the
+    API layer: the ladder below is the contract (`413` cap · `415` bytes/extension · `409` name
+    exists), and splitting it across two files is how those three answers drift.
+    """
+
+    def __init__(self, status: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
+
+
+#: The in-flight upload's temp-file naming. A `.part` suffix keeps it out of the index and the mount
+#: for free (neither is an allowlisted extension), and the prefix is what the boot sweep matches on —
+#: so the sweep can never remove an owner file, whatever it is called.
+PART_PREFIX = ".ctrlb-upload-"
+PART_SUFFIX = ".part"
+
+
+class UploadPart:
+    """The `.part` file one upload streams into, and the ladder that turns it into a media file.
+
+    The order is the security control (D65 / R55 §4.4), not an implementation detail:
+
+        mkstemp `.part` IN THE ROLE DIR → chmod 0644 → stream + COUNT (413) → fsync → probe the
+        BYTES (415) → `os.link` no-clobber (409) → unlink the temp → `fsync_dir`
+
+    Every property that matters falls out of that order. The bytes are validated **before the file
+    has its final name**, so a rejected upload leaves ZERO bytes and never a half-file in the roster.
+    The temp lives in the DESTINATION directory, so `os.link` is a same-filesystem operation that
+    either creates the name or raises `FileExistsError` — which is the whole concurrency story: no
+    lock, no check-then-act window, and the 409 the client retries with its next suffix (§2.5). The
+    directory fsync is what makes the new NAME durable, not just its contents.
+
+    Not a context manager: the route needs `write()` calls interleaved with `await`s on the request
+    stream, and `discard()` is idempotent — it is called in the route's `finally` whatever happened.
+    """
+
+    def __init__(self, path: Path, file: IO[bytes], max_bytes: int) -> None:
+        self.path = path
+        self.received = 0
+        self._file: IO[bytes] | None = file
+        self._max_bytes = max_bytes
+
+    @classmethod
+    def open(cls, directory: Path, *, max_bytes: int) -> "UploadPart":
+        fd, name = tempfile.mkstemp(dir=str(directory), prefix=PART_PREFIX, suffix=PART_SUFFIX)
+        part = cls(Path(name), os.fdopen(fd, "wb"), max_bytes)
+        # `mkstemp` creates at 0600 (right for a secret, wrong for art the mount has to read back
+        # under whatever user it runs as). Set the mode on the FD where the platform supports it, so
+        # nothing can swap the path between the create and the chmod; `os.supports_fd` is a
+        # capability probe, deliberately not an OS branch (the closed allowlist, ARCHITECTURE §6).
+        try:
+            if os.chmod in os.supports_fd:
+                os.chmod(part._file.fileno(), 0o644)  # type: ignore[union-attr]  # just opened
+            else:  # pragma: no cover — POSIX runs the fd path; Windows ignores the mode bits anyway
+                os.chmod(part.path, 0o644)
+        except OSError:  # a filesystem with no mode bits (exFAT/SMB) — the write is still valid
+            pass
+        return part
+
+    def write(self, chunk: bytes) -> None:
+        """Append one streamed chunk, counting as it goes.
+
+        The COUNTER is the cap, never `Content-Length`: a header is a claim, and a chunked body has
+        none at all. The detail names the LIMIT (a config value the owner set) and never the size
+        actually received.
+        """
+        if self._file is None:  # pragma: no cover — the route never writes after finish/discard
+            raise RuntimeError("upload part is closed")
+        self.received += len(chunk)
+        if self.received > self._max_bytes:
+            raise MediaWriteError(
+                413, f"the upload is larger than media.write.max_bytes ({self._max_bytes} bytes)"
+            )
+        self._file.write(chunk)
+
+    def finish(self, target: Path, ns: str, role: str) -> MediaFile:
+        """Durably link the streamed bytes to their final name and describe the result."""
+        file = self._file
+        if file is None:  # pragma: no cover — same
+            raise RuntimeError("upload part is closed")
+        file.flush()
+        os.fsync(file.fileno())
+        file.close()
+        self._file = None
+
+        probe = probe_image(self.path)
+        expected = ALLOWED_TYPES.get(target.suffix.lower())
+        if expected is None or probe.fmt != expected[1]:
+            # The mount serves the Content-Type the EXTENSION claims under `nosniff`, so a mismatch
+            # is a guaranteed broken image — refused at the door rather than listed as `unusable`
+            # (an SSH drop has no door; an upload does).
+            raise MediaWriteError(
+                415,
+                f"the bytes are {probe.fmt or 'not an accepted image format'}, which does not match "
+                f"the {target.suffix.lower()} extension",
+            )
+        try:
+            os.link(self.path, target)
+        except FileExistsError:
+            raise MediaWriteError(409, f"{target.name} already exists") from None
+        self.discard()
+        fsync_dir(target.parent)
+        return describe_file(target, ns, role)
+
+    def discard(self) -> None:
+        """Close and remove the temp file. Idempotent, and never raises: it runs in the route's
+        `finally`, where a second failure would replace the real one."""
+        if self._file is not None:
+            with contextlib.suppress(OSError):
+                self._file.close()
+            self._file = None
+        with contextlib.suppress(OSError):
+            self.path.unlink()
+
+
+def delete_file(directory: Path, filename: str) -> bool:
+    """Remove one owner file. `True` = removed, `False` = there is nothing here to remove (404).
+
+    Gated by `is_served_file`, the SAME predicate the index and the mount use: a delete may only
+    reach something this surface would serve, so a symlink, a directory, a `.part` in flight and a
+    file that was never there are all one indistinguishable "no" — the answer a probe should get.
+    Deliberately NOT gated by `admission_reason`: that tier decides what may be CREATED, and a file
+    the owner dropped over SSH under a name we would refuse to mint must still be deletable.
+
+    Touches no config (§3). Delete-then-config-write is the client's composition, and a cleanup that
+    never happens leaves a dangling `files` entry that `list_role` drops.
+    """
+    if not is_addressable_name(filename) or "\\" in filename:
+        return False
+    if Path(filename).suffix.lower() not in ALLOWED_TYPES:
+        return False
+    path = directory / filename
+    if not is_served_file(path):
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    fsync_dir(path.parent)
+    return True
+
+
+def sweep_part_files(home: Path, namespaces: Iterable[str]) -> int:
+    """Remove `.part` files stranded by a crash or a kill mid-upload, in REGISTERED role dirs only.
+
+    Called once at app construction. Nothing else can clean them: the pipeline unlinks its own temp
+    in `finally`, so anything still here outlived the process that made it. Scoped to the registry's
+    own directories and to the prefix this module mints, so the sweep can only ever remove something
+    it created — and skipped for a namespace whose tree was refused (its role "directories" may be
+    symlinks pointing somewhere else entirely).
+    """
+    removed = 0
+    for ns in namespaces:
+        row = MEDIA_NAMESPACES.get(ns)
+        if row is None:
+            continue
+        for role in row.roles:
+            try:
+                entries = list(role_dir(home, ns, role).iterdir())
+            except OSError:
+                continue
+            for p in entries:
+                if p.name.startswith(PART_PREFIX) and p.name.endswith(PART_SUFFIX):
+                    with contextlib.suppress(OSError):
+                        p.unlink()
+                        removed += 1
+    return removed

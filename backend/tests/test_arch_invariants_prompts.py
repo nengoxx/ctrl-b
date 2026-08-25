@@ -76,6 +76,8 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/api/agent.py", "_agent_folder"),
         ("app/api/agent.py", "_resume_skills"),
         ("app/api/agent.py", "apply_proposal_endpoint"),
+        ("app/core/media.py", "MediaItem._exactly_one_identity"),
+        ("app/core/media.py", "admission_reason"),
         ("app/core/media.py", "ensure_media_dirs"),
         ("app/core/provider_registry.py", "EndpointGates.hold"),
         ("app/core/provider_registry.py", "_compute_gate_caps"),

@@ -152,6 +152,9 @@ def test_no_secret_looking_field_is_unclassified() -> None:
         "max_tokens",
         "max_tokens_field",
         "reasoning_tokens",
+        # D65: `media…files[].key` is the NAMED-role binding key a file answers to (a service kind, a
+        # machine name) — owner-facing identity, printed in the gallery, never a credential.
+        "key",
     }
     names = _all_field_names(Settings)
     candidates = {n for n in names if any(h in n.lower() for h in SECRET_HINTS)}

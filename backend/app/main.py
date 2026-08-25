@@ -78,6 +78,7 @@ from app.core.media import (
     MEDIA_URL_ROOT,
     ensure_media_dirs,
     ns_dir,
+    sweep_part_files,
 )
 from app.core.pwa import (
     PWA_MANIFEST_PATH,
@@ -566,6 +567,14 @@ def create_app() -> FastAPI:
     # an ordinary uvicorn failure — which `Restart=on-failure` retries every 5s. An art folder with the
     # wrong shape must not be able to crash-loop the control panel.
     app.state.media_health = ensure_media_dirs(home)
+    # D65's boot sweep: an upload killed mid-stream leaves its `.part` behind (the route unlinks its
+    # own temp in a `finally`, so anything still there outlived the process that made it). Invisible
+    # to the index and the mount either way — `.part` is not an allowlisted extension — but a crash
+    # loop would otherwise accrete them forever. Healthy namespaces only: a refused tree's "role
+    # dirs" may be symlinks, and a sweep must never follow one.
+    swept = sweep_part_files(home, [ns for ns, h in app.state.media_health.items() if h.ok])
+    if swept:
+        logger.info("media: removed %d stranded .part upload(s) at startup", swept)
     for ns, row in MEDIA_NAMESPACES.items():
         # `ns_health`, not `health` — that name is the health ROUTER module, imported above.
         ns_health = app.state.media_health[ns]

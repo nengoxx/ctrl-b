@@ -1,10 +1,13 @@
-"""The A11 fold — the one and only config-shape migration step (`docs/UPDATE_PLAN.md` §11 / D48).
+"""The config-shape migration steps (`docs/UPDATE_PLAN.md` §3) — today: the A11 fold (step 1) and
+D65's media fold (step 2).
 
-**This file is the deletable part.** It holds every piece of knowledge about the legacy config shape:
+**This file is the deletable part.** It holds every piece of knowledge about the legacy config shapes:
 the `inference.local`/`cloud`/`fallbacks` slots, the `voice.stt`/`voice.tts` `primary`/`fallback` pairs,
-the single-endpoint `embeddings` block, and `mode: local|cloud` inside a `ModelRef`. Nothing outside
-this package reads any of it any more — `config.py` was stripped of the fold when this file was
-created, so retiring the migration is deleting this file, emptying `STEPS` and bumping `VERSION`.
+the single-endpoint `embeddings` block, `mode: local|cloud` inside a `ModelRef` — and the pre-D65
+`media.<ns>` blocks with their `order: [names]` lists. Nothing outside this package reads any of it any
+more — `config.py` was stripped of the A11 fold when this file was created and never learned the old
+media shape at all, so retiring a migration is deleting its half of this file, dropping it from `STEPS`
+and bumping `VERSION`.
 
 Lifted verbatim from `config.py::_migrate_legacy` (A11/D48), with four changes, each with a reason:
 
@@ -33,6 +36,7 @@ from urllib.parse import urlsplit
 
 from app.config import MODEL_REF_HOMES, model_ref_at
 from app.config_migration import Context, MigrationRefused, Plan, Step
+from app.core.media import MEDIA_NAMESPACES
 
 #: The `ModelRef` homes INSIDE an `agents/<name>/agent.yaml`. That file is an `agent.defaults`-shaped
 #: document, so its homes are exactly `MODEL_REF_HOMES`' `agent.defaults.*` entries with the prefix
@@ -518,5 +522,110 @@ A11_RETIRED_ENV_PATHS: tuple[tuple[str, str], ...] = (
     ("embeddings", "dim"),
 )
 
-#: The one migration step. `applies` is checked on every run regardless of the file's stamp (§3.1).
+#: Step 1. `applies` is checked on every run regardless of the file's stamp (§3.1).
 A11 = Step(version=1, applies=a11_applies, apply=a11_apply, retires=A11_RETIRED_ENV_PATHS)
+
+
+# ── step 2: D65's media fold (`config_version` 1 → 2) ────────────────────────────────────────────
+#
+# Two shape changes in one step, because they are one ruling (MEDIA_MANAGER_PLAN §2.2):
+#
+#   1. `media.<ns>` → `media.namespaces.<ns>`. The `media` block needed a sibling that is NOT a
+#      namespace (`media.write.max_bytes`), and `write:` beside `gacha:`/`kit:` would parse as a
+#      namespace called "write". That is the fold's whole reason.
+#   2. `…roles.<role>.order: [n1, n2]` → `…roles.<role>.files: [{name: n1}, {name: n2}]`. The same
+#      list, grown from bare names into per-item objects so an entry can carry its own `hidden`,
+#      `focal` and `key` (the extend-don't-migrate directive).
+#
+# **Config-pure and BUNDLED-FREE.** A step never touches the filesystem (its own contract), and this
+# one writes no `{bundled: …}` entries even though bundled art is now listable: paint parity is
+# achieved by the COLLATION instead (`list_role`'s fallback tier), which is exactly what makes the
+# migration implementable without reading the owner's media tree (§2.3/§2.4, Emma #2 re-derived).
+# A migrated config therefore looks like the config the owner had, and the index looks like the index
+# they had — with the bundled ids appended as the unlisted tier they already behaved as.
+
+
+def _media_namespace_keys(media: Mapping[str, Any]) -> list[str]:
+    """The namespace blocks still sitting at `media.<ns>` (pre-fold). Only KNOWN namespaces move: a
+    typo'd `media.gachaa` is not a namespace this build can name, so the step leaves it exactly where
+    the owner wrote it rather than inventing a home for it (inert cruft is visible; a guess is not)."""
+    return [k for k in media if k in MEDIA_NAMESPACES]
+
+
+def _roles_with_order(namespaces: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """`(ns, role)` for every role block still carrying an `order:` list, under the FOLDED shape."""
+    out: list[tuple[str, str]] = []
+    for ns, block in namespaces.items():
+        if not isinstance(block, dict):
+            continue
+        roles = block.get("roles")
+        if not isinstance(roles, dict):
+            continue
+        out += [(ns, role) for role, cfg in roles.items() if isinstance(cfg, dict) and "order" in cfg]
+    return out
+
+
+def _media_view(config: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """`(media, namespaces)` as plain dicts — the two nodes both halves of this step read. Either can
+    be absent or the wrong shape in a hand-authored file; both come back `{}` then, and `applies`
+    answers False, which is the right verdict for a document this step cannot honestly fold."""
+    media = config.get("media")
+    if not isinstance(media, dict):
+        return {}, {}
+    nss = media.get("namespaces")
+    return media, nss if isinstance(nss, dict) else {}
+
+
+def media_v2_applies(ctx: Context) -> bool:
+    """True while a namespace block sits at `media.<ns>`, or any role still carries `order:`."""
+    media, namespaces = _media_view(ctx.config)
+    if not media:
+        return False
+    return bool(_media_namespace_keys(media)) or bool(
+        _roles_with_order({**namespaces, **{k: media[k] for k in _media_namespace_keys(media)}})
+    )
+
+
+def media_v2_apply(ctx: Context) -> Plan:
+    """Fold the namespaces down a level and turn every `order:` list into a `files:` list.
+
+    New-wins on a collision (the house rule every A11 fold above follows): a document holding BOTH
+    `media.gacha` and `media.namespaces.gacha` keeps the folded one and still declares the old key
+    consumed, so the write-back deletes it — a half-migrated file converges instead of accreting.
+    """
+    raw: dict[str, Any] = copy.deepcopy(dict(ctx.config))
+    media = raw.get("media")
+    if not isinstance(media, dict):  # pragma: no cover — `applies` already refused this
+        return Plan(config=raw)
+    consumed: list[tuple[str, ...]] = []
+
+    # The A11 `providers:` precedent: a key that is neither absent, null nor a mapping is REFUSED
+    # rather than coerced — folding into it would overwrite whatever the operator actually wrote,
+    # and the diff writer would record that as an ordinary change nobody authorised.
+    existing = media.get("namespaces")
+    if existing is not None and not isinstance(existing, dict):
+        raise MigrationRefused(
+            "`media.namespaces:` must be a mapping of namespace -> its media block",
+            remedy="fix or remove the `media.namespaces:` key, then re-run",
+        )
+    namespaces: dict[str, Any] = existing if isinstance(existing, dict) else {}
+    for ns in _media_namespace_keys(media):
+        namespaces.setdefault(ns, media[ns])
+        del media[ns]
+        consumed.append(("media", ns))
+    if namespaces or "namespaces" in media:
+        media["namespaces"] = namespaces
+
+    for ns, role in _roles_with_order(namespaces):
+        cfg = namespaces[ns]["roles"][role]
+        order = cfg.pop("order")
+        consumed.append(("media", "namespaces", ns, "roles", role, "order"))
+        if "files" not in cfg and isinstance(order, list):
+            cfg["files"] = [{"name": n} for n in order]
+
+    return Plan(config=raw, consumes=list(consumed))
+
+
+#: Step 2 — D65's media fold. Retires no env override: `media` was never a one-level scalar path, so
+#: `CTRLB_MEDIA__…` never reached anything (the A11 list's rule ① — only what the grammar can address).
+MEDIA_V2 = Step(version=2, applies=media_v2_applies, apply=media_v2_apply)

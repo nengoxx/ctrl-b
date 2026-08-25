@@ -359,10 +359,11 @@ def test_fx_d_suffix_fits_as_the_counter_grows_digits() -> None:
 
 
 def test_the_a11_step_is_the_registered_one() -> None:
-    """`VERSION` is 1 because THIS step is version 1 — the file `update.sh` reads and the tuple the
-    runner walks must not drift apart."""
-    assert cm.STEPS == (A11,)
-    assert A11.version == cm.CONFIG_VERSION == 1
+    """A11 is step 1, and the `VERSION` file `update.sh` reads must equal the LAST step's version —
+    the tuple the runner walks and the number on disk must not drift apart."""
+    assert cm.STEPS[0] == A11 and A11.version == 1
+    assert [s.version for s in cm.STEPS] == sorted(s.version for s in cm.STEPS)
+    assert cm.CONFIG_VERSION == cm.STEPS[-1].version
 
 
 def test_a_providers_key_no_longer_blocks_the_chat_fold(tmp_path, monkeypatch) -> None:

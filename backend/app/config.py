@@ -37,7 +37,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.error import CommentMark
 from ruamel.yaml.tokens import CommentToken
 
-from app.core.media import MEDIA_NAMESPACES
+from app.core.media import MEDIA_NAMESPACES, MediaItem, is_addressable_name
 from app.core.pwa import PWA_ICON_VARIANTS
 from app.domain.agent import AgentDef, CompactionCfg, ModelRef
 from app.domain.enums import OSType, Risk
@@ -1171,24 +1171,31 @@ class AutomationsCfg(BaseModel):
 
 
 class MediaRoleCfg(BaseModel):
-    """The owner's persisted overrides for ONE media role folder (D52/G5, GACHA_PLAN §5.4).
+    """The owner's persisted state for ONE media role folder — that role's LIBRARY (D65, §2.2).
 
-    ONE object per role rather than a `role_order:` map beside a future `role_hidden:` map — the next
-    per-role dimension is an additive field with a default here (the extend-don't-migrate directive,
-    D48's `providers` precedent). Today it carries exactly one:
+    ONE object per role rather than an `order:` map beside a `hidden:` map beside a `focal:` map — the
+    next per-role dimension is an additive field with a default here (the extend-don't-migrate
+    directive, D48's `providers` precedent). Today it carries exactly one:
 
-    - `order`: filenames in the owner's chosen order, written by the Conf gallery. It OVERRIDES the
-      index's default collation for the names it lists; anything on disk it does not name follows in
-      that collation, and a name whose file is gone is ignored (a deleted drop must not 404 a listing).
+    - `files`: the library, in the owner's PRIORITY order. Each entry is a `MediaItem` — exactly one
+      of `name` (a file in the folder) or `bundled` (an id the role ships), plus that entry's own
+      `key`/`hidden`/`focal`. It OVERRIDES the index's default collation for the entries it lists;
+      anything on disk it does not name follows in that collation and the role's unlisted bundled ids
+      follow as the fallback tier, and an entry whose file is gone is ignored (a deleted drop must not
+      404 a listing).
+
+    `files` REPLACED the `order: [names]` list at `config_version` 2 — the same list, grown from bare
+    names into per-item objects because the entry had to carry `hidden` and `focal`. The migration is
+    in `config_migration/steps.py`; no reader of the old key survives here (the no-legacy-seams rule).
     """
 
     model_config = {"extra": "allow"}
 
-    order: list[str] = Field(default_factory=list)
+    files: list[MediaItem] = Field(default_factory=list)
 
 
 class MediaNsCfg(BaseModel):
-    """`media.<ns>` — everything the Conf gallery persists for ONE media namespace (D53, MEDIA_PLAN §4).
+    """`media.namespaces.<ns>` — everything the gallery persists for ONE namespace (D53, MEDIA_PLAN §4).
 
     Deliberately NOT the art itself: the files live in `$CTRLB_HOME/media/<ns>/<role>/` and the role
     folder a file sits in IS its assignment (§5.4's re-rule). This block only records the two things a
@@ -1207,6 +1214,34 @@ class MediaNsCfg(BaseModel):
 
     roles: dict[str, MediaRoleCfg] = Field(default_factory=dict)
     slots: dict[str, str | None] = Field(default_factory=dict)
+
+
+class MediaWriteCfg(BaseModel):
+    """`media.write` — the write-path tunables (D65 §2.2). Per-OPERATION rather than per-namespace: the
+    cap is about what this SERVER accepts through one endpoint, not about what a theme's art should be.
+
+    - `max_bytes`: the streamed upload cap (15 MB, owner ruling ③). The route counts the body as it
+      arrives and answers `413` past this — never from `Content-Length`, which is a claim.
+    """
+
+    model_config = {"extra": "allow"}
+
+    max_bytes: int = Field(default=15 * 1024 * 1024, gt=0)
+
+
+class MediaCfg(BaseModel):
+    """`media` — the owner's whole media state (D65's fold).
+
+    The namespaces moved DOWN one level (`media.<ns>` → `media.namespaces.<ns>`) for one structural
+    reason: this block needed a sibling that is not a namespace (`write`), and a `write:` key beside
+    `gacha:`/`kit:` would parse as a namespace called "write". The fold is the migration's whole
+    reason and it is what keeps every future non-namespace knob additive.
+    """
+
+    model_config = {"extra": "allow"}
+
+    write: MediaWriteCfg = Field(default_factory=MediaWriteCfg)
+    namespaces: dict[str, MediaNsCfg] = Field(default_factory=dict)
 
 
 class Settings(BaseModel):
@@ -1243,11 +1278,12 @@ class Settings(BaseModel):
     monitor: MonitorCfg = Field(default_factory=MonitorCfg)
     #: Scheduled agent automations (A3/D49) — runner tunables only; the definitions live in SQLite.
     automations: AutomationsCfg = Field(default_factory=AutomationsCfg)
-    #: Owner media state (D52/G5 + D53), keyed by NAMESPACE — the map mirrors `MEDIA_NAMESPACES`, which
-    #: is why it is not per-theme: `kit` is a namespace no theme owns. Purely additive: a config with no
-    #: `media:` key loads empty, which is what keeps every consumer on its bundled art until the owner
+    #: Owner media state (D52/G5 + D53 + **D65's fold**): the per-operation `write` tunables plus
+    #: `namespaces`, keyed by NAMESPACE — that map mirrors `MEDIA_NAMESPACES`, which is why it is not
+    #: per-theme: `kit` is a namespace no theme owns. Purely additive: a config with no `media:` key
+    #: loads the defaults, which is what keeps every consumer on its bundled art until the owner
     #: touches the gallery.
-    media: dict[str, MediaNsCfg] = Field(default_factory=dict)
+    media: MediaCfg = Field(default_factory=MediaCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`
@@ -1345,14 +1381,20 @@ class Settings(BaseModel):
 
     @field_validator("media")
     @classmethod
-    def _known_media_namespaces_roles_and_slots(cls, v: dict[str, MediaNsCfg]) -> dict[str, MediaNsCfg]:
+    def _known_media_namespaces_roles_and_slots(cls, v: MediaCfg) -> MediaCfg:
         """Every key is checked against `MEDIA_NAMESPACES` (D53 §4). A namespace, role or slot key that
         is not in the registry would be silently inert — a typo the owner could never see — so it is a
-        load/PUT error instead. And an `order` entry is a FILENAME inside its role folder, never a path:
-        rejecting separators keeps the config incapable of expressing something the index would have to
-        sanitise (the value is only ever matched against a directory listing, so this is
-        defence-in-depth, not the containment itself)."""
-        for ns, block in v.items():
+        load/PUT error instead. The same rule reaches inside a `files` entry (D65):
+
+        * a `name` is a FILENAME inside its role folder, never a path — `is_addressable_name` is the
+          one predicate (defect #8 re-ruled it: a `\\` is an ordinary POSIX filename character that
+          this surface SERVES, so refusing to let config name such a file only made it unreorderable);
+        * a `bundled` id must be one this role actually SHIPS, or the entry occupies a priority slot
+          for a picture no client could map;
+        * `(kind, id)` is unique within a role (Emma #10) — a list naming one entry twice has no
+          single answer to "where does it sit".
+        """
+        for ns, block in v.namespaces.items():
             row = MEDIA_NAMESPACES.get(ns)
             if row is None:
                 raise ValueError(f"unknown media namespace {ns!r} (expected one of {list(MEDIA_NAMESPACES)})")
@@ -1361,9 +1403,19 @@ class Settings(BaseModel):
                     raise ValueError(
                         f"unknown media role {role!r} in namespace {ns!r} (expected one of {list(row.roles)})"
                     )
-                for name in cfg.order:
-                    if not name.strip() or name in (".", "..") or "/" in name or "\\" in name:
-                        raise ValueError(f"media.{ns}.roles.{role}.order: {name!r} is not a bare filename")
+                where = f"media.namespaces.{ns}.roles.{role}.files"
+                seen: set[tuple[str, str]] = set()
+                for item in cfg.files:
+                    if item.name is not None and not is_addressable_name(item.name):
+                        raise ValueError(f"{where}: {item.name!r} is not a bare filename")
+                    if item.bundled is not None and item.bundled not in row.roles[role].bundled:
+                        raise ValueError(
+                            f"{where}: {item.bundled!r} is not a bundled id of this role "
+                            f"(expected one of {list(row.roles[role].bundled)})"
+                        )
+                    if item.identity in seen:
+                        raise ValueError(f"{where}: {item.identity[1]!r} is listed twice")
+                    seen.add(item.identity)
             for slot in block.slots:
                 if slot not in row.slots:
                     raise ValueError(
@@ -1371,17 +1423,17 @@ class Settings(BaseModel):
                     )
         return v
 
-    def media_overrides(self, ns: str) -> tuple[dict[str, list[str]], dict[str, str]]:
-        """`(order-by-role, slots)` for one media namespace — the projection the namespace-generic media
+    def media_overrides(self, ns: str) -> tuple[dict[str, list[MediaItem]], dict[str, str]]:
+        """`(files-by-role, slots)` for one media namespace — the projection the namespace-generic media
         index consumes, so the API layer never branches on a namespace. Empty for a namespace the owner
         has never touched, which is exactly what "no owner overrides" looks like. A blank pin is not a
         pin: the gallery clears with `null`, and a hand-authored `""` must not reach the resolver."""
-        block = self.media.get(ns)
+        block = self.media.namespaces.get(ns)
         if block is None:
             return {}, {}
-        order = {role: list(cfg.order) for role, cfg in block.roles.items() if cfg.order}
+        files = {role: list(cfg.files) for role, cfg in block.roles.items() if cfg.files}
         slots = {k: v for k, v in block.slots.items() if isinstance(v, str) and v.strip()}
-        return order, slots
+        return files, slots
 
     def hosts(self) -> list[Host]:
         """Project the `computers` map into typed domain `Host`s (stable slug id from name)."""

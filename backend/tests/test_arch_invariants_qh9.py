@@ -2,7 +2,7 @@
 
 1. **Server-OS branches are a closed allowlist** (ARCHITECTURE §6 / CLAUDE.md): code must branch on
    `host.os_type` (the managed host), never the server's OS. The sanctioned exceptions are
-   `fleet._ping_cmd` (local ping syntax), `run_shell`'s per-OS shell, and `fsutil._fsync_dir`
+   `fleet._ping_cmd` (local ping syntax), `run_shell`'s per-OS shell, and `fsutil.fsync_dir`
    (a POSIX-only durability no-op — hoisted out of `memory.py` by D57). `tools/check.py` is the runner's own OS chokepoint and lives
    outside `app/` — deliberately out of scope here. A new `os.name`/`platform.system()`/
    `sys.platform` use fails until it's consciously added to BOTH this allowlist and §6.
@@ -31,7 +31,7 @@ _OS_TOKEN = re.compile(
 _ALLOWED_OS_BRANCH_FILES = {
     "app/services/fleet.py",  # _ping_cmd — the local ping syntax (ARCHITECTURE §6)
     "app/services/actions/shell.py",  # run_shell's per-OS shell
-    "app/core/fsutil.py",  # _fsync_dir — dir-fsync no-op on Windows (hoisted from memory.py, D57)
+    "app/core/fsutil.py",  # fsync_dir — dir-fsync no-op on Windows (hoisted from memory.py, D57)
 }
 
 

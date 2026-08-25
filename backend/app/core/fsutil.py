@@ -9,6 +9,10 @@ the skills file API and the agent self-author tool share one writer instead of e
 `services/agent/memory.py:_atomic_write` until D57 hoisted it here (CORE_MEMORY_PLAN §3, council M7):
 tier 1 and the tier-2 corpus both need durable atomic replacement, and `write_text_eol` alone is not
 that (no fsync, no dir-fsync). One writer, two callers — never a second copy.
+
+`fsync_dir` is PUBLIC as of D65 (MEDIA_MANAGER_PLAN §3): the media write path's persist ladder ends
+with a directory fsync so a freshly linked filename survives a power cut, and that is exactly what
+`atomic_write_text` already needed — one helper, two callers, rather than a private one copied out.
 """
 
 from __future__ import annotations
@@ -47,10 +51,10 @@ def atomic_write_text(path: Path, content: str) -> None:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
         raise
-    _fsync_dir(path.parent)
+    fsync_dir(path.parent)
 
 
-def _fsync_dir(d: Path) -> None:
+def fsync_dir(d: Path) -> None:
     """Best-effort fsync of a directory so a fresh file's name is durable (POSIX). No-op on Windows,
     which doesn't support directory fsync — and the git commit is the durable record regardless."""
     if os.name == "nt":
