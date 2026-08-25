@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -41,6 +41,7 @@ vi.mock("../../src/store/toast", () => toast);
 // has no business making, and the api client above is already mocked.
 vi.mock("../../src/lib/composer", () => ({ loadProviders: vi.fn(), loadAgents: vi.fn() }));
 
+import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { MediaGallery } from "../../src/components/MediaGallery";
 import { setUI } from "../../src/store/ui";
 
@@ -793,5 +794,275 @@ describe("the namespace-level states", () => {
       </QueryClientProvider>,
     );
     expect(await screen.findByText(/media index unreachable: boom/)).toBeTruthy();
+  });
+});
+
+// ── the S2 REVIEW arms (Emma's blind pass, all main-seat ACCEPTed). Each one is a state the gallery
+//    could reach on its own and describe wrongly: an activation the render ignores, a pin the ladder
+//    cannot resolve, a queue replayed against a listing that is no longer the server's, a delete whose
+//    cleanup failed reported as a delete that failed.
+
+describe("activation guarantees ELIGIBILITY (review #1)", () => {
+  it("SET AS ACTIVE switches a hidden entry back on, in the same write", () => {
+    // Moving a hidden entry to the front changes nothing the owner can see: resolution skips hidden
+    // rows everywhere, so the tile would sit first and stay excluded while the card painted somebody
+    // else — the gallery claiming a binding the render ignores.
+    renderGallery(
+      index({
+        roles: {
+          characters: [file("a", "characters"), file("off", "characters", { hidden: true })],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
+    );
+    return openSection("characters").then(async (dialog) => {
+      openItem(dialog, "off.webp");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+      await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+      expect(filesOf(savedBlock())).toEqual([{ name: "off.webp" }, { name: "a.webp" }]);
+    });
+  });
+
+  it("an IN-ROLE pin of a fallback bundled entry writes the pin AND lists it — one patch", async () => {
+    // The reel's `reel_figure` pin resolves inside the list `poolRows` deals, and the fallback tier is
+    // offered only while the owner's own tier is empty. With an owner cutout present, pinning bundled
+    // `lyra` used to write a value the ladder could never find: the card claimed lyra, the transition
+    // kept painting the owner's file, and the detail offered to "clear a pin" that was never active.
+    renderGallery(
+      index({
+        roles: {
+          characters: [],
+          banner: [],
+          reel: [file("cut", "reel"), bundledRow("lyra")],
+          oracle: [],
+        },
+      }),
+    );
+    const dialog = await openSection("reel");
+    openItem(dialog, "lyra (bundled)");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    // ONE write, both halves — a pin whose eligibility landed separately could fail on its own.
+    expect(savedBlock()).toEqual({
+      slots: { reel_figure: "lyra" },
+      roles: { reel: { files: [{ name: "cut.webp" }, { bundled: "lyra" }] } },
+    });
+  });
+
+  it("…and a SEAT still writes only its pin — it is a VIEW over someone else's library", async () => {
+    // The exception, and it is the tier rule protecting the source: a seat shows bundled rows only
+    // because the source's own tier is empty, so listing one would collapse the whole bundled cast to
+    // that single entry — a five-character fleet becoming a one-character fleet on a pin.
+    renderGallery(index({ roles: { characters: cast, banner: [], reel: [], oracle: [] } }));
+    const dialog = await openSection("Fleet backdrop");
+    openItem(dialog, "atlas (bundled)");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedBlock()).toEqual({ slots: { wallpaper: "atlas" } });
+  });
+});
+
+describe("what the card CLAIMS is what the resolver answers (review #3)", () => {
+  it("a dangling seat pin reads as a MISSING pin with a fallback in use — never as in use", async () => {
+    // `wallpaper: deleted` resolves to nothing: the backdrop has already fallen through to the kit
+    // picture or the bundled scene. Saying "deleted in use" named a picture nobody can see, beside a
+    // warning chip saying that same picture is missing.
+    renderGallery(index({ slots: { wallpaper: "deleted" } }));
+    const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
+    expect(card.textContent).not.toContain("deleted in use");
+    expect(card.textContent).toContain("the pinned image is gone — a fallback is in use");
+    expect(card.textContent).toContain("pinned image is missing"); // the chip still points at the fix
+  });
+
+  it("…and a resolved seat names the row the RESOLVER picked, pin or fall-through", async () => {
+    // The hero slide has no pin of its own: its ladder reads the fleet backdrop's. The card says what
+    // that ladder resolved, which is the whole of §2.4's one-resolver rule.
+    renderGallery(index({ slots: { wallpaper: "b" } }));
+    const hero = await screen.findByRole("button", { name: "Open the Hero slide gallery" });
+    expect(hero.textContent).toContain("b in use");
+  });
+});
+
+describe("the stem/id pin collision note (review #6, §2.3's owed sentence)", () => {
+  it("a file stem and a bundled id that answer to ONE pin value are called out, with the tie-break", async () => {
+    // The `f:`/`b:` identities stay separate — they are two library entries — but a pin VALUE is a bare
+    // name and reaches whichever the collation lists first. That ambiguity is invisible from the grid.
+    renderGallery(
+      index({
+        roles: {
+          characters: [],
+          banner: [],
+          reel: [file("lyra", "reel"), bundledRow("lyra")],
+          oracle: [],
+        },
+      }),
+    );
+    const card = await screen.findByRole("button", { name: "Open the reel gallery" });
+    expect(card.textContent).toContain("duplicate names");
+    const dialog = await openSection("reel");
+    openItem(dialog, "lyra (bundled)");
+    expect(within(dialog).getByText("duplicate name")).toBeTruthy();
+    expect(within(dialog).getByText(/answers to the name/).textContent).toContain(
+      "The one the library lists FIRST is the one that answers",
+    );
+  });
+
+  it("…and a role with no pin never invents one — its files bind by KEY, not by pin value", async () => {
+    // The same two names in a POOL that writes no pin are two ordinary entries: nothing addresses them
+    // by name there, so calling them a duplicate would be a warning about nothing.
+    renderGallery(
+      index({
+        roles: {
+          characters: [file("lyra", "characters"), bundledRow("lyra")],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
+    );
+    const card = await screen.findByRole("button", { name: "Open the characters gallery" });
+    expect(card.textContent).not.toContain("duplicate names");
+  });
+});
+
+describe("the queue past its failure and staleness bounds (reviews #4 and #7)", () => {
+  /** Let React and the fake clock catch up together. `waitFor` cannot be used under fake timers here
+   *  (it never sees the clock move), so the flush is explicit. */
+  const flush = async (ms = 0) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+
+  it("a refetch that misses its bound DISCARDS the rest of the queue, and says so", async () => {
+    // The window Emma found: the first PUT succeeds, its authoritative refetch runs past the 5s bound,
+    // `mutateAsync` resolves anyway — and the loop then recomputes the NEXT queued intent from an index
+    // the server may already have superseded, whose write can undo the first one.
+    vi.useFakeTimers();
+    try {
+      api.getJSON
+        .mockResolvedValueOnce(index())
+        .mockImplementation(() => new Promise<MediaIndex>(() => undefined)); // never lands
+      const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+      render(
+        <QueryClientProvider client={qc}>
+          <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+        </QueryClientProvider>,
+      );
+      await flush();
+      fireEvent.click(screen.getByRole("button", { name: "Open the characters gallery" }));
+      await flush();
+      const dialog = screen.getByRole("dialog");
+      openItem(dialog, "c.webp");
+      const up = within(dialog).getByRole("button", { name: "↑ Move up" });
+      fireEvent.click(up);
+      fireEvent.click(up);
+      await flush();
+      expect(api.putJSON).toHaveBeenCalledTimes(1);
+
+      await flush(5_000); // the bound expires; the save resolves with the index unknown
+      expect(api.putJSON).toHaveBeenCalledTimes(1); // the queued intent was DROPPED, not replayed
+      expect(toast.pushToast).toHaveBeenCalledWith(
+        expect.stringContaining("did not come back in time"),
+        "err",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a DELETE whose config cleanup fails reads as a partial success, not as a failed delete", async () => {
+    // The bytes are already gone. "Save failed" here sends the owner looking for a file the server no
+    // longer has — and the dangling entry it leaves drops on its own at the next collation.
+    const confirm = await import("../../src/store/confirm");
+    api.putJSON.mockRejectedValue(new Error("config write refused"));
+    renderGallery();
+    const dialog = await openSection("characters");
+    openItem(dialog, "a.webp");
+    const asked = new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await asked;
+    confirm.resolveConfirm(true);
+    await waitFor(() => expect(toast.pushToast).toHaveBeenCalled());
+    const [message, kind] = toast.pushToast.mock.calls[0] as [string, string];
+    expect(message).toContain("a.webp was deleted");
+    expect(message).toContain("library entry could not be cleaned up");
+    expect(kind).toBe("err");
+    expect(message).not.toBe("config write refused"); // the bare save error would read as "not deleted"
+  });
+
+  it("a failed write drains the queue and RELEASES busy — the gallery is usable again", async () => {
+    api.putJSON.mockRejectedValueOnce(new Error("nope"));
+    renderGallery();
+    const dialog = await openSection("characters");
+    openItem(dialog, "c.webp");
+    const up = within(dialog).getByRole("button", { name: "↑ Move up" });
+    fireEvent.click(up);
+    fireEvent.click(up);
+    await waitFor(() => expect(toast.pushToast).toHaveBeenCalledWith("nope", "err"));
+    // The second intent was dropped rather than replayed against a list the server refused…
+    await new Promise((r) => setTimeout(r, 10));
+    expect(api.putJSON).toHaveBeenCalledTimes(1);
+    // …and the status line is no longer saving, so the next gesture is not blocked behind a stuck flag.
+    expect(within(dialog).getByRole("status").textContent).not.toContain("saving");
+    fireEvent.click(up);
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
+  });
+
+  it("two SECTIONS' writes interleave through the one chokepoint, each carrying its own block", async () => {
+    // The queue is per-namespace, not per-section: two destinations' jobs must compose rather than
+    // replace each other's list (§4's whole reason for serialising at one place).
+    renderGallery(
+      index({
+        roles: {
+          characters: [file("a", "characters"), file("b", "characters")],
+          banner: [],
+          reel: [file("cut", "reel"), file("cut2", "reel")],
+          oracle: [],
+        },
+      }),
+    );
+    let dialog = await openSection("characters");
+    openItem(dialog, "b.webp");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    dialog = await openSection("reel");
+    openItem(dialog, "cut2.webp");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
+    expect(filesOf(savedBlock(0))).toEqual([{ name: "b.webp" }, { name: "a.webp" }]);
+    expect(savedBlock(1)).toEqual({ slots: { reel_figure: "cut2" } });
+  });
+});
+
+describe("the overlay STACK: a confirm over the gallery (review #5)", () => {
+  it("Back cancels the CONFIRM and leaves the gallery standing; the next Back closes the gallery", async () => {
+    // The regression: the confirm had no history entry, so the gallery's guard consumed the Back —
+    // unmounting the gallery and leaving the alert dialog on screen with its captured trigger gone and
+    // a promise nobody could resolve.
+    api.getJSON.mockResolvedValue(index());
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+        <ConfirmDialog />
+      </QueryClientProvider>,
+    );
+    const dialog = await openSection("characters");
+    openItem(dialog, "a.webp");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await screen.findByRole("alertdialog");
+
+    history.back();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(screen.getByRole("dialog")).toBeTruthy(); // the gallery is still open behind it
+    expect(api.del).not.toHaveBeenCalled(); // …and Back CANCELLED, it did not confirm
+
+    history.back();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });
