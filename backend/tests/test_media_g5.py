@@ -47,11 +47,38 @@ def png_bytes(w: int = 4, h: int = 3) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + ihdr + b"\x00" * 4
 
 
-def jpeg_bytes(w: int = 8, h: int = 6) -> bytes:
-    """SOI + a JFIF APP0 the reader must SKIP + the SOF0 that actually carries the size."""
+def app1(body: bytes) -> bytes:
+    """One APP1 segment around `body`, with the length field the walk actually navigates by (it counts
+    itself plus the body). Hand-writing that number is how a fixture silently stops testing anything —
+    the reader jumps to the wrong offset and never reaches the frame header at all."""
+    return b"\xff\xe1" + struct.pack(">H", len(body) + 2) + body
+
+
+def exif_app1(orientation: int, *, endian: str = "big", tiff_type: int = 3) -> bytes:
+    """One APP1 segment carrying nothing but an IFD0 with an Orientation tag — the shape a phone writes
+    and the only part of EXIF this reader looks at (`core/media.py#_exif_orientation`)."""
+    e = ">" if endian == "big" else "<"
+    entry = struct.pack(f"{e}HHI", 0x0112, tiff_type, 1)
+    # A short value is padded to the LEFT of the 4-byte value field (i.e. its low addresses) in both
+    # byte orders — which is what makes reading `tiff_type` bytes from its start correct either way.
+    entry += (
+        struct.pack(f"{e}H", orientation) + b"\x00" * 2
+        if tiff_type == 3
+        else struct.pack(f"{e}I", orientation)
+    )
+    tiff = (b"MM" if endian == "big" else b"II") + struct.pack(f"{e}HI", 0x2A, 8)
+    tiff += struct.pack(f"{e}H", 1) + entry + struct.pack(f"{e}I", 0)  # one entry, no next IFD
+    return app1(b"Exif\x00\x00" + tiff)
+
+
+def jpeg_bytes(w: int = 8, h: int = 6, app1: bytes = b"") -> bytes:
+    """SOI + a JFIF APP0 the reader must SKIP + the SOF0 that actually carries the size.
+
+    `app1` is an optional EXIF segment, placed where a real writer puts it: AHEAD of the frame header,
+    so the reader meets it on the way past (`exif_app1`)."""
     app0 = b"\xff\xe0" + struct.pack(">H", 16) + b"JFIF\x00" + b"\x00" * 11
     sof0 = b"\xff\xc0" + struct.pack(">H", 17) + b"\x08" + struct.pack(">HH", h, w) + b"\x03" + b"\x00" * 9
-    return b"\xff\xd8" + app0 + sof0
+    return b"\xff\xd8" + app0 + app1 + sof0
 
 
 def webp_bytes(w: int = 12, h: int = 10) -> bytes:
@@ -614,6 +641,84 @@ def test_probe_reads_dimensions_from_each_allowed_format(tmp_path) -> None:
     assert (probe_image(p).fmt, probe_image(p).width, probe_image(p).height) == ("webp", 720, 1000)
     p.write_bytes(b"<!doctype html><p>not art")
     assert probe_image(p).fmt is None
+
+
+@pytest.mark.parametrize(
+    ("orientation", "expected"),
+    [
+        (1, (400, 200)),  # identity
+        (2, (400, 200)),  # mirrored
+        (3, (400, 200)),  # half turn
+        (4, (400, 200)),  # mirrored + half turn
+        (5, (200, 400)),  # …the quarter turns, which TRANSPOSE what the browser lays out
+        (6, (200, 400)),
+        (7, (200, 400)),
+        (8, (200, 400)),
+    ],
+)
+def test_a_jpeg_reports_its_PAINTED_size_not_its_frame_header(tmp_path, orientation, expected) -> None:
+    """Emma's S4 review #3. The SOF carries the frame as STORED; every browser paints it as EXIF says
+    to. Nothing cared until the focal point: `focalPosition` decides which axis a window crops from the
+    file's aspect, so an untransposed report moves the picture along the axis that is NOT cropping and
+    leaves the one that is. Uploads are immune (the export normalizes and strips EXIF); an SSH drop of
+    a phone photo is exactly this case."""
+    p = tmp_path / "x.jpg"
+    p.write_bytes(jpeg_bytes(400, 200, exif_app1(orientation)))
+    probe = probe_image(p)
+    assert (probe.fmt, probe.width, probe.height) == ("jpeg", *expected)
+
+
+@pytest.mark.parametrize(
+    ("label", "app1"),
+    [
+        # Both byte orders, and the LONG type some encoders write for a field specified SHORT — read as
+        # a SHORT it is right by accident on a little-endian file and reads 0 on a big-endian one.
+        ("little-endian TIFF", exif_app1(6, endian="little")),
+        ("orientation written LONG", exif_app1(6, tiff_type=4)),
+        ("little-endian LONG", exif_app1(6, endian="little", tiff_type=4)),
+    ],
+)
+def test_the_orientation_tag_is_read_in_both_byte_orders_and_both_widths(tmp_path, label, app1) -> None:
+    p = tmp_path / "x.jpg"
+    p.write_bytes(jpeg_bytes(400, 200, app1))
+    assert (probe_image(p).width, probe_image(p).height) == (200, 400), label
+
+
+@pytest.mark.parametrize(
+    ("label", "app1"),
+    [
+        ("no APP1 at all", b""),
+        ("APP1 that is not EXIF (XMP)", app1(b"http://ns.adobe.com/xap/1.0/\x00")),
+        ("EXIF truncated before its TIFF header", app1(b"Exif\x00\x00II")),
+        (
+            "a byte-order mark that is neither II nor MM",
+            app1(b"Exif\x00\x00XX" + struct.pack(">HI", 0x2A, 8)),
+        ),
+        ("the TIFF magic missing", app1(b"Exif\x00\x00MM" + struct.pack(">HI", 0x2B, 8))),
+        (
+            "an IFD offset pointing inside its own header",
+            app1(b"Exif\x00\x00MM" + struct.pack(">HI", 0x2A, 4)),
+        ),
+        ("an IFD offset past the segment", app1(b"Exif\x00\x00MM" + struct.pack(">HI", 0x2A, 9999))),
+        (
+            "an entry count larger than the entries present",
+            app1(b"Exif\x00\x00MM" + struct.pack(">HI", 0x2A, 8) + struct.pack(">H", 50)),
+        ),
+        (
+            "an IFD that stops mid-entry",
+            app1(b"Exif\x00\x00MM" + struct.pack(">HI", 0x2A, 8) + struct.pack(">H", 1) + b"\x01\x12\x00"),
+        ),
+        ("an orientation outside 1..8", exif_app1(99)),
+        ("an orientation of 0", exif_app1(0)),
+    ],
+)
+def test_an_unreadable_orientation_reports_the_frame_UNCHANGED(tmp_path, label, app1) -> None:
+    """Every failure path answers "report the frame as stored", which is what happened before this
+    existed — so a segment the reader cannot parse costs nothing and changes nothing. The input is a
+    file the owner wrote behind our back and the caller is a listing endpoint: never an exception."""
+    p = tmp_path / "x.jpg"
+    p.write_bytes(jpeg_bytes(400, 200, app1))
+    assert (probe_image(p).fmt, probe_image(p).width, probe_image(p).height) == ("jpeg", 400, 200), label
 
 
 def test_a_malformed_jpeg_gives_up_instead_of_walking_the_whole_file(tmp_path) -> None:

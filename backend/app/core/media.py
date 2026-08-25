@@ -569,7 +569,13 @@ def sort_key(filename: str) -> tuple[tuple[object, ...], str]:
 
 @dataclass(frozen=True)
 class Probe:
-    """What the first bytes of a file actually say. `fmt is None` = not an allowlisted image."""
+    """What the first bytes of a file actually say. `fmt is None` = not an allowlisted image.
+
+    **`width`/`height` are the PAINTED dimensions** — what a browser will actually lay the picture out
+    as, not the raw frame header's numbers. The two differ for exactly one shipped case: a JPEG whose
+    EXIF says it is rotated a quarter turn (orientations 5-8), where every engine paints the frame
+    transposed and `_probe_jpeg` therefore reports it transposed. See `_exif_orientation`.
+    """
 
     fmt: str | None = None
     width: int | None = None
@@ -581,6 +587,17 @@ class Probe:
 _JPEG_SOF = {*range(0xC0, 0xD0)} - {0xC4, 0xC8, 0xCC}
 #: Standalone markers with no length field.
 _JPEG_STANDALONE = {0x01, 0xD8, *range(0xD0, 0xD8)}
+#: The application segment EXIF lives in (TIFF/EP §4.6.4). A conforming writer puts it first.
+_JPEG_APP1 = 0xE1
+#: The EXIF orientations that ROTATE a quarter turn, and therefore transpose the painted size. The
+#: other four (1 identity, 2/4 mirrors, 3 half turn) keep the frame's own proportions.
+_EXIF_TRANSPOSED = frozenset({5, 6, 7, 8})
+#: TIFF field types, and how many bytes one value of each occupies. Orientation is specified SHORT and
+#: is written LONG by enough encoders to be worth reading properly — a LONG read as a SHORT is right by
+#: accident on a little-endian file and reads 0 on a big-endian one, which would silently drop the tag.
+_TIFF_VALUE_BYTES = {3: 2, 4: 4}
+#: The tag itself (0x0112).
+_TIFF_ORIENTATION = 0x0112
 #: How far into a JPEG the SOF hunt may run before giving up. A conforming file puts SOF within a few KB
 #: (EXIF thumbnails and ICC profiles are the only things ahead of it), so this only ever bites a
 #: malformed one — where an unbounded walk would be paid on every index request.
@@ -615,6 +632,8 @@ def probe_image(path: Path) -> Probe:
     all truncated files that no browser will render, and reporting them usable would put a permanently
     broken image in the roster with nothing to explain it. Signature-only ⇒ `Probe()` ⇒ the index marks
     the file unusable with a warning, which is the one place the owner can act on it.
+
+    The dimensions it reports are the PAINTED ones — see `Probe`.
     """
     try:
         size = path.stat().st_size
@@ -647,8 +666,23 @@ def _probe_jpeg(f: IO[bytes], head: bytes) -> Probe:
 
     Reaching a real SOFn is the format claim: a stream that ends, runs past `_JPEG_SCAN_LIMIT`, or
     carries a malformed segment length yields `Probe()` (unusable), never a bare `Probe("jpeg")`.
+
+    **The EXIF orientation is read on the way past** (Emma's S4 review #3), and the dimensions come
+    back TRANSPOSED for the quarter-turn orientations. The SOF carries the frame as STORED; every
+    browser paints it as EXIF says to, so a phone's portrait photo dropped in over SSH has a 4000x3000
+    frame header and lays out 3000x4000. Nothing cared until the focal point: `focalPosition` computes
+    which axis a window crops from the file's aspect, so an untransposed report makes it move the
+    picture along the axis that is not cropping and leave the one that is. UPLOADS are immune (the
+    export re-encodes at the painted orientation and strips EXIF, R54 §3.5) — SSH drops are not, and
+    they are an ordinary supported path.
+
+    It costs no extra I/O: the APP1 sits AHEAD of the SOF, so the walk has to read past it either way.
+    A nonconforming file that puts its SOF first simply reports untransposed, which is what it did
+    before.
     """
     buf = head
+    #: The EXIF orientation, if an APP1 carrying one was passed before the frame header.
+    orientation: int | None = None
 
     def need(end: int) -> bool:
         """Ensure `buf` holds at least `end` bytes, reading in chunks. False = EOF or past the cap."""
@@ -702,9 +736,60 @@ def _probe_jpeg(f: IO[bytes], head: bytes) -> Probe:
                 return Probe()
             h = int.from_bytes(buf[i + 3 : i + 5], "big")
             w = int.from_bytes(buf[i + 5 : i + 7], "big")
-            return Probe("jpeg", w, h)
+            # The quarter turns. 1-4 are identity/flips/180, which keep the frame's own proportions;
+            # 5-8 rotate, and a rotated frame is laid out with its axes swapped.
+            return Probe("jpeg", h, w) if orientation in _EXIF_TRANSPOSED else Probe("jpeg", w, h)
+        if m == _JPEG_APP1 and orientation is None:
+            # Reading the body is what the walk was about to do anyway on its way to the SOF, and it
+            # stays inside `need`'s `_JPEG_SCAN_LIMIT` cap — no new unbounded read.
+            if not need(i + length):
+                return Probe()
+            orientation = _exif_orientation(buf[i + 2 : i + length])
         i += length
     return Probe()
+
+
+def _exif_orientation(seg: bytes) -> int | None:
+    """The EXIF orientation in one APP1 segment BODY (everything after the 2-byte length), or `None`
+    for anything this cannot read with certainty.
+
+    Every step is bounded by `len(seg)` and every failure is `None`, on the same terms the rest of this
+    reader works on: the input is a file the owner wrote behind our back, and the caller is a listing
+    endpoint. `None` means "report the frame as stored", which is exactly what happened before this
+    existed — so a segment we cannot parse costs nothing and changes nothing.
+
+    The structure (TIFF 6.0 §2 through the EXIF profile): `Exif\\0\\0`, then a TIFF header — a byte-order
+    mark, the 0x002A magic, and IFD0's offset FROM THE TIFF HEADER — then IFD0 itself: a 2-byte entry
+    count and 12-byte entries of `tag · type · count · value-or-offset`. Orientation is a single value
+    and therefore lives INLINE in the entry's last four bytes (TIFF pads short values to the left of
+    that field, i.e. at its low addresses, in both byte orders).
+    """
+    if not seg.startswith(b"Exif\x00\x00"):
+        return None
+    tiff = seg[6:]
+    if len(tiff) < 8 or tiff[:2] not in (b"II", b"MM"):
+        return None
+    endian: Literal["little", "big"] = "little" if tiff[:2] == b"II" else "big"
+    if int.from_bytes(tiff[2:4], endian) != 0x2A:
+        return None
+    ifd = int.from_bytes(tiff[4:8], endian)
+    # An offset inside the header it is measured from is not an IFD; one past the segment is not there.
+    if ifd < 8 or ifd + 2 > len(tiff):
+        return None
+    entry = ifd + 2
+    for _ in range(int.from_bytes(tiff[ifd : ifd + 2], endian)):
+        if entry + 12 > len(tiff):
+            return None
+        if int.from_bytes(tiff[entry : entry + 2], endian) == _TIFF_ORIENTATION:
+            width = _TIFF_VALUE_BYTES.get(int.from_bytes(tiff[entry + 2 : entry + 4], endian))
+            if width is None:
+                return None
+            value = int.from_bytes(tiff[entry + 8 : entry + 8 + width], endian)
+            # 1-8 is the whole defined range; anything else is a writer bug, and guessing at it would
+            # transpose a picture for no reason the owner could ever find.
+            return value if 1 <= value <= 8 else None
+        entry += 12
+    return None
 
 
 def _probe_webp(head: bytes, size: int) -> Probe:
