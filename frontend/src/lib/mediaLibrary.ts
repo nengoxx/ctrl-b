@@ -101,6 +101,24 @@ export function fallbackTier<T extends LibraryRow>(rows: readonly T[]): T[] {
   return rows.filter((r) => r.bundled != null && r.listed !== true);
 }
 
+/** Whether this payload OFFERED the role's bundled tier at all.
+ *
+ *  The predicate that separates *"the owner retired the shipped art"* from *"this payload never
+ *  described it"* — and every theme ladder's last rung hangs off it (Emma's S2 review #2). A ladder
+ *  ends in the theme's own bundled asset, and restoring that rung after the role RESOLVED to nothing
+ *  would resurrect art the owner explicitly switched OFF: the gallery says "nothing in use" while the
+ *  surface keeps painting it. But the rung must stay for a STUB payload — an e2e mock, a proxy
+ *  answering `{}`, a partial response — which is what these render paths have always degraded to, and
+ *  the one thing that keeps a theme from painting holes while the backend is unreachable.
+ *
+ *  A bundled ROW is what tells the two apart. The real server emits every role's bundled ids, hidden
+ *  ones included and marked (§2.3 ④), so a payload carrying none is one that never described the
+ *  tier — while a bundled row the owner switched off is still an ENTRY, and hiding it means what it
+ *  says. */
+export function offersBundled(rows: readonly LibraryRow[]): boolean {
+  return rows.some((r) => r.bundled != null);
+}
+
 /** The ONE shape every "the owner's drops, else the bundled art" ladder has (gacha's cast, its scene
  *  slides and its reel pool; frontier's rigs): the owner's tier when it holds anything at all, else
  *  the fallback tier. Hidden rows are skipped first, so switching the last owner file OFF falls the
@@ -245,7 +263,13 @@ function reordered(order: readonly RowId[], from: number, to: number): RowId[] {
 }
 
 /** **Set as active** = move-to-front (§6.5). The list order IS the priority, so the explicit intent
- *  the owner expresses in the detail panel is stored as the thing every ladder already reads. */
+ *  the owner expresses in the detail panel is stored as the thing every ladder already reads.
+ *
+ *  ACTIVATION GUARANTEES ELIGIBILITY, in the same write (Emma's S2 review #1). Moving a `hidden`
+ *  entry to the front changes nothing an owner can see: resolution skips hidden rows everywhere, so
+ *  the tile would sit first and stay excluded while the card kept painting someone else. "Set as
+ *  active" therefore switches it back on too — one gesture, one write, one outcome the owner asked
+ *  for. */
 export function setActive(
   entries: readonly LibraryEntry[] | undefined,
   rows: readonly LibraryRow[],
@@ -254,7 +278,37 @@ export function setActive(
   const order = displayOrder(rows);
   const from = order.indexOf(id);
   if (from < 0) return writeFiles(entries, rows, { order, touched: [] });
-  return writeFiles(entries, rows, { order: reordered(order, from, 0), touched: [id] });
+  return writeFiles(entries, rows, {
+    order: reordered(order, from, 0),
+    touched: [id],
+    edit: { id, fields: { hidden: undefined } },
+  });
+}
+
+/** Make ONE entry eligible WHERE IT STANDS — the `files` half of a PIN write (Emma's S2 review #1 ②).
+ *
+ *  A pin resolves against the list its own ladder deals, so pinning an entry that ladder does not
+ *  offer writes a value nothing can honour: the card would claim the pick while the render kept
+ *  painting the previous winner, and the detail panel would offer to "clear a pin" for an entry that
+ *  was never active. Two states need repairing, and both are repaired here rather than by a second
+ *  queued write, so the pin and its eligibility land in one patch or not at all:
+ *
+ *   · a `hidden` entry — resolution skips it, so it is switched back on;
+ *   · a FALLBACK-TIER bundled entry — the ladder falls through to that tier only while the owner's
+ *     own tier is empty, so the entry is LISTED. That is the tier rule's own escape (§2.3 ③): only
+ *     the entry the owner explicitly ACTED ON becomes listed, and a pin is as explicit as it gets.
+ *
+ *  The ORDER is untouched: the pin is what this gesture means, not the priority. */
+export function makeEligible(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  id: RowId,
+): LibraryEntry[] {
+  return writeFiles(entries, rows, {
+    order: displayOrder(rows),
+    touched: [id],
+    edit: { id, fields: { hidden: undefined } },
+  });
 }
 
 /** Move one entry by `delta` positions (the ↑/↓ buttons — the WCAG floor, and S5's drag lands on the

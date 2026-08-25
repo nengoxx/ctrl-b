@@ -296,7 +296,19 @@ const MEDIA_REFETCH_TIMEOUT_MS = 5_000;
  *  ERROR still toast — those are things the owner could not otherwise learn, and no gallery write has
  *  ever produced one. Hook-level rather than per-call so it can never ride the PATCH BODY to the
  *  server (`SavePatch` is an open index; a stray `quiet` key would be sent). */
-export function useSaveSettings(opts?: { quiet?: boolean }) {
+export function useSaveSettings(opts?: {
+  quiet?: boolean;
+  /** The bounded media refetch below did NOT land before its timeout — the caller's view of the index
+   *  is no longer known-authoritative. Only a caller that COMPUTES from the index needs this (the
+   *  gallery's write queue recomputes every queued intent from it, so a second write against a stale
+   *  list can undo the first); everything else can ignore a late listing. */
+  onMediaStale?: () => void;
+  /** Report this save's failure in the caller's OWN words; return `true` when it did, and the generic
+   *  toast below stays silent. It exists for the one class this hook cannot word: a write that is the
+   *  second half of an already-irreversible action (the gallery's DELETE cleanup), where "Save failed"
+   *  reads as "the delete failed" and sends the owner looking for a file that is already gone. */
+  onError?: (e: Error) => boolean;
+}) {
   const quiet = opts?.quiet === true;
   const qc = useQueryClient();
   return useMutation({
@@ -358,12 +370,19 @@ export function useSaveSettings(opts?: { quiet?: boolean }) {
       // open forever, over an art listing. On the bound the save resolves and the gallery's move-block
       // simply ends with a possibly-stale order; the race F5 closed is the NORMAL path, where the
       // refetch lands in milliseconds on a LAN, and that path still waits for the fresh order.
-      await Promise.race([
-        qc.invalidateQueries({ queryKey: ["media"] }),
-        new Promise((resolve) => setTimeout(resolve, MEDIA_REFETCH_TIMEOUT_MS)),
+      //
+      // …and the bound is REPORTED, not swallowed (Emma's S2 review #4). On the timeout the save
+      // resolves with the index in an unknown state, and a caller that computes its next write from
+      // that index must be told: replaying a queued intent against a listing the server may already
+      // have superseded is how the second write undoes the first.
+      const landed = await Promise.race([
+        qc.invalidateQueries({ queryKey: ["media"] }).then(() => true),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), MEDIA_REFETCH_TIMEOUT_MS)),
       ]);
+      if (!landed) opts?.onMediaStale?.();
     },
     onError: (e: Error, patch) => {
+      if (opts?.onError?.(e) === true) return;
       // FX15 (Codex#12): the providers-conflict path applies ONLY to a 409 whose patch actually carried
       // the `providers` map (a full-map replacement conflict). The agent-busy 409 (a tool_overrides save
       // mid-turn) and every other error keep the generic toast with their own detail message.

@@ -7,9 +7,11 @@ import {
   entryId,
   fallbackTier,
   ladderRows,
+  makeEligible,
   metaText,
   moveBy,
   moveToEdge,
+  offersBundled,
   ownTier,
   removeItem,
   rowId,
@@ -198,6 +200,55 @@ describe("set as active — move-to-front (§6.5)", () => {
       { name: "b.webp" },
       { name: "c.webp" },
     ]);
+  });
+
+  it("SWITCHES THE ENTRY BACK ON — activation has to make it eligible, in the same write", () => {
+    // Emma's S2 review #1. Moving a hidden entry to the front changes nothing the owner can see:
+    // resolution skips hidden rows everywhere, so the tile would sit first and stay excluded while the
+    // card kept painting somebody else — and the gallery would be claiming a binding the render ignores.
+    const held: LibraryEntry[] = [{ name: "a.webp" }, { name: "c.webp", hidden: true, focal: {} }];
+    const rowsOff = [disk("a.webp"), disk("c.webp", { hidden: true })];
+    expect(setActive(held, rowsOff, "f:c.webp")).toEqual([
+      { name: "c.webp", focal: {} }, // `hidden` gone; every other persisted field kept
+      { name: "a.webp" },
+    ]);
+  });
+});
+
+describe("makeEligible — the `files` half of a PIN write (Emma's S2 review #1 ②)", () => {
+  it("LISTS a fallback-tier bundled entry, leaving every priority where it was", () => {
+    // A pin is resolved inside the list its ladder deals, and the fallback tier is offered only while
+    // the owner's own tier is empty. Pinning a bundled entry beside owner files therefore has to list
+    // it — one entry, the one the owner acted on, exactly as §2.3 ③ allows.
+    const rows = [disk("cut.webp"), bundled("lyra")];
+    expect(makeEligible(undefined, rows, "b:lyra")).toEqual([
+      { name: "cut.webp" }, // order untouched: the PIN is what this gesture means
+      { bundled: "lyra" },
+    ]);
+  });
+
+  it("…and switches a hidden entry back on, for the same reason", () => {
+    const rows = [disk("cut.webp", { hidden: true }), disk("other.webp")];
+    expect(makeEligible([{ name: "cut.webp", hidden: true }], rows, "f:cut.webp")).toEqual([
+      { name: "cut.webp" },
+      { name: "other.webp" },
+    ]);
+  });
+
+  it("never sweeps the REST of the fallback tier in behind it", () => {
+    const rows = [bundled("lyra"), bundled("pegasus"), bundled("atlas")];
+    expect(makeEligible(undefined, rows, "b:lyra")).toEqual([{ bundled: "lyra" }]);
+  });
+});
+
+describe("offersBundled — degrade vs resolved-empty (Emma's S2 review #2)", () => {
+  it("is TRUE the moment the payload describes the tier, hidden rows included", () => {
+    // The predicate every theme ladder's last rung hangs off. A bundled row the owner switched OFF is
+    // still an ENTRY — restoring the shipped art for it would make the In-use switch a lie — while a
+    // payload carrying no bundled row at all never described the tier and may still degrade.
+    expect(offersBundled([disk("a.webp")])).toBe(false);
+    expect(offersBundled([])).toBe(false);
+    expect(offersBundled([disk("a.webp"), bundled("lyra", { hidden: true })])).toBe(true);
   });
 });
 

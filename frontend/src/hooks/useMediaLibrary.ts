@@ -7,6 +7,7 @@ import { del } from "../api/client";
 import { bindingKey, boundByKey } from "../lib/media";
 import {
   ladderRows,
+  makeEligible,
   moveBy,
   moveToEdge,
   removeItem,
@@ -90,15 +91,23 @@ export function scopedRows(rows: readonly MediaFile[], scope: GalleryScope): Med
   );
 }
 
-/** One queued write. `files` jobs are INTENTS over a role's list — recomputed at send; `slot` jobs are
- *  a single scalar and need no recomputation. */
-type Job =
-  | {
-      kind: "files";
-      role: string;
-      apply: (entries: LibraryEntry[], rows: MediaFile[]) => LibraryEntry[];
-    }
-  | { kind: "slot"; slot: string; value: string | null };
+/** One queued write — ONE settings patch, whatever it touches.
+ *
+ *  The two halves are separate fields rather than two job kinds because some gestures are genuinely
+ *  both and must land together or not at all: pinning a fallback-tier bundled entry writes the pin AND
+ *  lists that entry, and a pin the ladder cannot resolve is exactly the claim §2.4 exists to prevent
+ *  (Emma's S2 review #1 ②). A `files` half is an INTENT over the role's list, recomputed at send; a
+ *  `slot` half is a scalar and needs no recomputation. */
+interface Job {
+  files?: {
+    role: string;
+    apply: (entries: LibraryEntry[], rows: MediaFile[]) => LibraryEntry[];
+  };
+  slot?: { key: string; value: string | null };
+  /** What to tell the owner if THIS write fails — for a job whose other half already happened and
+   *  cannot be undone (the DELETE cleanup). Absent ⇒ the ordinary save error. */
+  failNote?: string;
+}
 
 export function useMediaLibrary(ns: string, def: MediaNsDef) {
   const { data, isLoading, error } = useMediaGalleryIndex(ns);
@@ -107,11 +116,27 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
   // what is persisted — rebuilding from the index would silently drop all of it. Conf-scoped and
   // already fetched by the tab this renders in: the same shared query, not a second request.
   const { data: settings } = useSettings();
-  const save = useSaveSettings({ quiet: true });
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const queue = useRef<Job[]>([]);
   const draining = useRef(false);
+  /** The last save's media refetch did not land inside its bound — the cached index is no longer
+   *  known-authoritative (§4's recompute-at-send has nothing trustworthy to recompute from). */
+  const stale = useRef(false);
+  /** The job being sent, so its own wording reaches the error toast. */
+  const sending = useRef<Job | null>(null);
+  const save = useSaveSettings({
+    quiet: true,
+    onMediaStale: () => {
+      stale.current = true;
+    },
+    // The queue words its own failures: a config write that follows an already-successful DELETE is a
+    // PARTIAL success and has to be said as one (Emma's S2 review #7).
+    onError: (e) => {
+      pushToast(sending.current?.failNote ?? e.message ?? "Save failed", "err");
+      return true;
+    },
+  });
 
   const sections = useMemo((): SectionView[] => {
     if (data === undefined || data.disabled === true) return [];
@@ -160,17 +185,40 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
         // applied to the list as it is NOW, never to the snapshot the tap was made against.
         const fresh = qc.getQueryData<SettingsDoc>(["settings"]);
         const index = qc.getQueryData<MediaIndex>(["media", ns]);
-        const block =
-          job.kind === "slot"
-            ? { slots: { [job.slot]: job.value } }
-            : filesBlock(ns, job, fresh, index);
-        if (block === null) continue;
+        const block: Record<string, unknown> = {};
+        if (job.slot !== undefined) block.slots = { [job.slot.key]: job.slot.value };
+        if (job.files !== undefined) {
+          const roles = filesBlock(ns, job.files, fresh, index);
+          // The honest refusal: a list rebuilt without the persisted entries would drop every per-item
+          // field the owner set. Refuse the WHOLE job — half of a pin-plus-list write is the claim it
+          // was written to prevent.
+          if (roles === null) continue;
+          block.roles = roles;
+        }
         try {
+          sending.current = job;
           await save.mutateAsync({ media: { namespaces: { [ns]: block } } });
         } catch {
-          // `useSaveSettings` has already toasted the reason. Drop the rest of the queue rather than
+          // The reason is already toasted (`onError` above). Drop the rest of the queue rather than
           // replaying intents against a list the server refused — the owner can see what happened.
           queue.current.length = 0;
+        } finally {
+          sending.current = null;
+        }
+        // The authoritative refetch did not land inside its bound, so the cached index is no longer
+        // known to be the server's (Emma's S2 review #4). Every remaining `files` intent would be
+        // recomputed FROM that index — which is how a second write undoes the first — so they are
+        // dropped and said out loud. Scalar `slot` jobs recompute from nothing and survive.
+        if (stale.current) {
+          stale.current = false;
+          const kept = queue.current.filter((j) => j.files === undefined);
+          if (kept.length !== queue.current.length) {
+            queue.current = kept;
+            pushToast(
+              "The art list did not come back in time — the rest of your changes were not saved. Try again.",
+              "err",
+            );
+          }
         }
       }
     } finally {
@@ -189,37 +237,38 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
 
   const write = useMemo(
     () => ({
-      /** "Set as active" — move-to-front, or the PIN where the section's ladder has one above it. */
+      /** "Set as active" — move-to-front, or the PIN where the section's ladder has one above it.
+       *
+       *  Either way the write GUARANTEES the entry is eligible (Emma's S2 review #1): move-to-front
+       *  switches a hidden entry back on inside `setActive`, and a pin adds the `files` half that makes
+       *  its target resolvable — otherwise the card claims a pick the render walks straight past. */
       activate: (section: MediaSection, item: LibraryItem) => {
         if (section.caps.activate === "none") return;
         if (section.caps.activate === "pin" && section.pin !== undefined) {
-          enqueue({ kind: "slot", slot: section.pin, value: item.row.name });
+          enqueue({
+            slot: { key: section.pin, value: item.row.name },
+            files: eligibility(section, item),
+          });
           return;
         }
-        enqueue({ kind: "files", role: section.role, apply: (e, r) => setActive(e, r, item.id) });
+        enqueue({ files: { role: section.role, apply: (e, r) => setActive(e, r, item.id) } });
       },
       /** Clear a pin — the section falls back to its own ladder. */
       unpin: (section: MediaSection) => {
         if (section.pin === undefined) return;
-        enqueue({ kind: "slot", slot: section.pin, value: null });
+        enqueue({ slot: { key: section.pin, value: null } });
       },
       move: (section: MediaSection, item: LibraryItem, delta: number) =>
         enqueue({
-          kind: "files",
-          role: section.role,
-          apply: (e, r) => moveBy(e, r, item.id, delta),
+          files: { role: section.role, apply: (e, r) => moveBy(e, r, item.id, delta) },
         }),
       moveToEdge: (section: MediaSection, item: LibraryItem, edge: "top" | "bottom") =>
         enqueue({
-          kind: "files",
-          role: section.role,
-          apply: (e, r) => moveToEdge(e, r, item.id, edge),
+          files: { role: section.role, apply: (e, r) => moveToEdge(e, r, item.id, edge) },
         }),
       setHidden: (section: MediaSection, item: LibraryItem, hidden: boolean) =>
         enqueue({
-          kind: "files",
-          role: section.role,
-          apply: (e, r) => setHidden(e, r, item.id, hidden),
+          files: { role: section.role, apply: (e, r) => setHidden(e, r, item.id, hidden) },
         }),
       /** DELETE-first, then ONE config write that also promotes whatever was next (§3/§6.4).
        *
@@ -235,7 +284,13 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
           pushToast(e instanceof Error ? e.message : "Delete failed", "err");
           return;
         }
-        enqueue({ kind: "files", role: section.role, apply: (e, r) => removeItem(e, r, item.id) });
+        enqueue({
+          files: { role: section.role, apply: (e, r) => removeItem(e, r, item.id) },
+          // The bytes are already gone, so this write's failure is a PARTIAL success and must read as
+          // one (Emma's S2 review #7): a bare "Save failed" here says the delete failed, which sends
+          // the owner looking for a file the server no longer has.
+          failNote: `${item.row.file} was deleted, but the library entry could not be cleaned up — it will drop on its own the next time the folder is read.`,
+        });
       },
     }),
     [enqueue],
@@ -257,19 +312,39 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
   };
 }
 
+/** The `files` half a PIN write needs so its target can actually RESOLVE — `undefined` when the entry
+ *  is already eligible and the pin is the whole write (Emma's S2 review #1 ②).
+ *
+ *  A pin is looked up in the list its ladder DEALS, and two library states put an entry outside that
+ *  list: `hidden` (resolution skips it everywhere) and the FALLBACK TIER (a bundled id no `files` entry
+ *  names — offered only while the owner's own tier is empty). Pinning either wrote a value nothing
+ *  could honour, and the card then claimed a binding the render ignored.
+ *
+ *  A SEAT is the exception, and deliberately: it is a read-only VIEW over ANOTHER destination's library
+ *  (§2.1), showing only what that ladder already resolves — so its bundled rows are on offer precisely
+ *  because the source's owner tier is empty, and listing one would make the source's whole bundled set
+ *  collapse to that single entry. The seat's write stays exactly the one write it is declared to be. */
+function eligibility(section: MediaSection, item: LibraryItem): Job["files"] {
+  if (section.kind === "seat") return undefined;
+  const stranded = item.hidden || (item.bundled && item.row.listed !== true);
+  return stranded
+    ? { role: section.role, apply: (e, r) => makeEligible(e, r, item.id) }
+    : undefined;
+}
+
 /** The `roles.<role>.files` block one intent produces against the freshest state — `null` when the
  *  settings snapshot is missing, which is the honest refusal: a list rebuilt without the persisted
  *  entries would drop every per-item field the owner set. */
 function filesBlock(
   ns: string,
-  job: Extract<Job, { kind: "files" }>,
+  job: NonNullable<Job["files"]>,
   settings: SettingsDoc | undefined,
   index: MediaIndex | undefined,
-): { roles: Record<string, { files: MediaFileEntry[] }> } | null {
+): Record<string, { files: MediaFileEntry[] }> | null {
   if (settings === undefined) return null;
   const entries = settings.media?.namespaces?.[ns]?.roles?.[job.role]?.files ?? [];
   const rows = index?.roles?.[job.role] ?? [];
-  return { roles: { [job.role]: { files: job.apply(entries, rows) } } };
+  return { [job.role]: { files: job.apply(entries, rows) } };
 }
 
 /** The per-row view model one grid renders (§6.3/§6.5).
@@ -277,19 +352,32 @@ function filesBlock(
  *  DUPLICATES are computed here for BOTH role kinds through the one binding rule (defect #4): a row is
  *  a duplicate when an earlier usable row already claimed its key — which in a `named` role is the
  *  shadowed loser `classifyNamed` names, and in a POOL is the `a.png` / `a.webp` pair whose second half
- *  no `slots` pin could ever address. It used to be invisible in both. */
+ *  no `slots` pin could ever address. It used to be invisible in both.
+ *
+ *  `pinnable` adds the STEM/ID collision §2.3 owes the owner (Emma's S2 review #6). Where a section
+ *  writes a PIN, the value is a bare name and BOTH identity spaces answer to it: a file called
+ *  `lyra.webp` and the bundled id `lyra` are two different library entries (`f:` / `b:` — that split is
+ *  right and stays), but one pin value reaches whichever the collation lists FIRST. That ambiguity is
+ *  invisible from the grid, so it is surfaced as the same duplicate note the shadowed-key case uses;
+ *  the pin name is `MediaFile.name` for both kinds, which is exactly what `firstUsable` compares. */
 export function libraryItems(
   rows: readonly MediaFile[],
   active: ActiveArt,
+  pinnable = false,
   ids: ReadonlySet<RowId> = new Set(active.ids),
 ): LibraryItem[] {
   const claimed = new Set<string>();
+  const pinned = new Set<string>();
   return rows.map((row) => {
     const id = rowId(row);
     const key = bindingKey(row);
     const claims = row.bundled == null && row.unusable !== true;
-    const duplicate = claims && claimed.has(key);
+    let duplicate = claims && claimed.has(key);
     if (claims) claimed.add(key);
+    if (pinnable && row.unusable !== true) {
+      if (pinned.has(row.name)) duplicate = true;
+      pinned.add(row.name);
+    }
     return {
       id,
       row,
