@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 
+import { useOverlayBackGuard } from "../hooks/useOverlayBackGuard";
 import { resolveConfirm, useConfirm } from "../store/confirm";
 
 // The single confirm dialog host (Phase 2: gates shutdown; now also remove-agent /
@@ -34,6 +35,15 @@ import { resolveConfirm, useConfirm } from "../store/confirm";
 // + the existing `aria-modal="true"` already prevent keyboard escape; adding inert
 // would need either a portal or sibling-by-sibling tagging (fragile when new
 // children are added to <App>). Easy to layer in later if a real need surfaces.
+//
+// THE ANDROID BACK GESTURE (Emma's S2 media review #5). This dialog is the top overlay whenever it is
+// open — it covers the media gallery, which is itself back-guarded — so it takes its own entry on the
+// shared `useOverlayBackGuard` stack. Without one, Back reached the gallery's guard instead: the
+// gallery unmounted and this alert stayed on screen, holding a resolve nobody could reach and a
+// captured trigger that no longer existed. With one, Back CANCELS the confirm, the gallery stays put,
+// and the next Back closes that. Every exit routes through the guard's single close primitive, so the
+// entry is always spent exactly once — including the CONFIRM path, which carries its outcome in a ref
+// rather than resolving straight away (one closer, two answers).
 
 export function ConfirmDialog() {
   const req = useConfirm();
@@ -42,10 +52,15 @@ export function ConfirmDialog() {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const goRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  /** What the pending close means. Back and every cancel path leave it `false`, which is also the
+   *  right answer for a close nobody chose. */
+  const answer = useRef(false);
+  const close = useOverlayBackGuard(req !== null, () => resolveConfirm(answer.current));
 
   // Capture the opening trigger, move focus to Confirm, restore on close.
   useEffect(() => {
     if (!req) return;
+    answer.current = false;
     triggerRef.current = document.activeElement as HTMLElement | null;
     // Defer one tick so the dialog DOM is mounted before .focus() runs.
     queueMicrotask(() => goRef.current?.focus());
@@ -59,13 +74,19 @@ export function ConfirmDialog() {
 
   if (!req) return null;
 
+  /** The ONE way out (the guard's close primitive), carrying the choice with it. */
+  const finish = (ok: boolean) => {
+    answer.current = ok;
+    close();
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      resolveConfirm(false);
+      finish(false);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      resolveConfirm(true);
+      finish(true);
     } else if (e.key === "Tab") {
       // Two-element cycle: Cancel ↔ Confirm.
       e.preventDefault();
@@ -76,7 +97,7 @@ export function ConfirmDialog() {
   };
 
   return (
-    <div className="modal-backdrop" onClick={() => resolveConfirm(false)} onKeyDown={onKeyDown}>
+    <div className="modal-backdrop" onClick={() => finish(false)} onKeyDown={onKeyDown}>
       <div
         className="modal"
         role="alertdialog"
@@ -88,13 +109,13 @@ export function ConfirmDialog() {
         <h3 id={labelId}>{req.title}</h3>
         {req.body && <p id={descId}>{req.body}</p>}
         <div className="row">
-          <button className="cancel" ref={cancelRef} onClick={() => resolveConfirm(false)}>
+          <button className="cancel" ref={cancelRef} onClick={() => finish(false)}>
             {req.cancelLabel ?? "Cancel"}
           </button>
           <button
             className={"go" + (req.danger ? " danger" : "")}
             ref={goRef}
-            onClick={() => resolveConfirm(true)}
+            onClick={() => finish(true)}
           >
             {req.confirmLabel ?? "Confirm"}
           </button>

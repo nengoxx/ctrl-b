@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
-// The Android BACK gesture over a full-screen overlay (MEDIA_MANAGER_PLAN §6.2, Opus H4 + Emma #5).
+// The Android BACK gesture over an overlay (MEDIA_MANAGER_PLAN §6.2, Opus H4 + Emma #5, made a STACK
+// by her S2 review #5).
 //
 // ctrl-b has no router and wants none (R59 §11.6 ①: a route + history stack is a navigation model we
 // would then have to own). What it needs is the bounded half of one: while an overlay is open, the
@@ -12,17 +13,57 @@ import { useCallback, useEffect, useRef } from "react";
 // pushed, so a session of open/close/open/close builds a pile of history entries and the owner has to
 // press Back five times to leave the app. Here the UI's close (✕, Escape, a completed action) calls
 // `close()`, which calls `history.back()`; the popstate handler is the ONLY thing that ever invokes
-// `onClose`. Exactly one entry exists while the overlay is open, and exactly one is consumed closing it.
+// `onClose`. Exactly one entry exists per open overlay, and exactly one is consumed closing it.
 //
-// Re-entry guarded (the same finding's other half): the effect pushes ONCE per open, and an unmount
-// that happens while the entry is still ours pops it silently rather than leaving it behind for the
-// next Back press to spend on nothing.
+// **A STACK, WITH IDENTITY** (her S2 review #5). Overlays nest — the gallery opens a delete confirm
+// over itself — and a `popstate` fires on EVERY listener, so a guard that only asked "did a pop
+// happen?" had the outer overlay closing under the inner one: Back would take the gallery away and
+// leave its alert dialog on screen with the trigger it captured already gone. A pop consumes exactly
+// ONE entry, and it is always the innermost overlay's, so only the owner of the TOP entry may close.
+// The stack is module-level because it is a property of the DOCUMENT's history, not of any component:
+// two guards in two trees still share one back button.
 
 /** The marker this hook writes into its own history entries. Read by nothing — a `popstate` fires for
  *  whichever entry is being restored, not for ours — but a labelled entry is what makes the mechanism
  *  legible in a devtools session, and it keeps the state object from being `null` (which some engines
  *  treat as "no state at all"). */
 const OVERLAY_STATE = { ctrlbOverlay: true } as const;
+
+/** One guarded overlay's entry on the history stack. */
+interface OverlayEntry {
+  id: number;
+  /** Close it — the hook's own `onClose`, plus forgetting the entry. */
+  close: () => void;
+}
+
+/** The guarded overlays with an entry on the history stack, outermost FIRST. */
+const stack: OverlayEntry[] = [];
+let nextId = 1;
+/** Entries a cleanup is spending itself: the pops they produce are ours and close nothing. A COUNTER,
+ *  not a flag with a timer — `history.back()` delivers its pop on a task we do not schedule, so
+ *  "release the swallow after the next tick" is a race, and one that only shows up when a SECOND guard
+ *  is listening (it then reads itself as the top and closes for nothing). One pop, one decrement. */
+let unwinding = 0;
+
+/** The ONE `popstate` listener the whole stack shares.
+ *
+ *  One listener rather than one per guard, because a pop is delivered to EVERY listener while it
+ *  consumes exactly ONE entry: with a listener each, "was that pop mine?" has to be answered N times
+ *  from shared state, and every bookkeeping flag becomes N-way. Here the question is asked once. */
+function onPop(): void {
+  if (unwinding > 0) {
+    unwinding--;
+    return;
+  }
+  stack.pop()?.close();
+}
+
+let listening = false;
+function listen(): void {
+  if (listening) return;
+  window.addEventListener("popstate", onPop);
+  listening = true;
+}
 
 /** Guard `open`, returning the ONE close primitive the UI may call.
  *
@@ -35,37 +76,40 @@ export function useOverlayBackGuard(open: boolean, onClose: () => void): () => v
   useEffect(() => {
     onCloseRef.current = onClose;
   });
-  /** Ours is on the stack right now. */
-  const pushed = useRef(false);
-  /** We asked for the pop ourselves (an unmount cleanup) — swallow the close it will deliver. */
-  const unwinding = useRef(false);
+  /** Our entry's id while it is on the stack, else `null`. */
+  const mine = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open || typeof history === "undefined") return;
-    history.pushState(OVERLAY_STATE, "");
-    pushed.current = true;
-    const onPop = () => {
-      // Our entry is gone the moment this fires, whoever caused it: the owner's Back gesture, the
-      // ✕ (through `close` below), or our own cleanup.
-      pushed.current = false;
-      if (!unwinding.current) onCloseRef.current();
-    };
-    window.addEventListener("popstate", onPop);
+    const id = nextId++;
+    mine.current = id;
+    // The TOP entry is the only one a pop can reach, which is what lets a confirm close over a gallery
+    // that stays open behind it — and what makes the next Back close that gallery.
+    stack.push({
+      id,
+      close: () => {
+        mine.current = null;
+        onCloseRef.current();
+      },
+    });
+    listen();
+    history.pushState({ ...OVERLAY_STATE, id }, "");
     return () => {
-      window.removeEventListener("popstate", onPop);
+      const at = stack.findIndex((e) => e.id === id);
+      if (at < 0) return; // already spent by a pop
+      stack.splice(at, 1);
+      mine.current = null;
       // Unmounted (or `open` flipped) without the pop having happened — a parent removed us, a tab
-      // switched. The entry is still ours and would otherwise be spent on nothing, so consume it,
-      // and swallow the close it triggers: whatever set `open` false already did the closing.
-      if (pushed.current) {
-        unwinding.current = true;
-        pushed.current = false;
-        history.back();
-        // The pop lands on a later task; release the swallow after it, or the NEXT open would start
-        // with its close disarmed.
-        setTimeout(() => {
-          unwinding.current = false;
-        }, 0);
-      }
+      // switched. Our entry is still the one the browser is sitting on, and would otherwise be spent
+      // on nothing, so consume it — and swallow the pop it delivers: whatever set `open` false already
+      // did the closing, and without the swallow that pop would fall to the guard beneath us.
+      //
+      // An entry that is no longer the top cannot be reclaimed: the history API can only step, not
+      // splice. It is left where it is, which costs one extra Back press — and it takes an overlay
+      // unmounting UNDER an overlay that is still open to produce, which no flow here does.
+      if (at !== stack.length) return;
+      unwinding++;
+      history.back();
     };
   }, [open]);
 
@@ -74,7 +118,7 @@ export function useOverlayBackGuard(open: boolean, onClose: () => void): () => v
     // there is exactly one path out and no way to leave an entry behind. Without an entry of our own
     // (the guard is disabled, or the environment has no history) close directly rather than stealing
     // the caller's real back.
-    if (pushed.current) history.back();
+    if (mine.current !== null) history.back();
     else onCloseRef.current();
   }, []);
 }

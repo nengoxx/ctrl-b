@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { render, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -12,6 +12,9 @@ import { useOverlayBackGuard } from "../../src/hooks/useOverlayBackGuard";
 //     owner has to press Back five times to leave the app (the orphan-entry regression).
 //  ② The entry is CONSUMED exactly once, whoever spends it: the owner's gesture, the ✕, or an unmount
 //     while the overlay is still open.
+//  ③ A STACK, with identity (her S2 review #5). Overlays nest, `popstate` fires on every listener, and
+//     one pop consumes exactly ONE entry — the innermost one's. So only the TOP owner may close, or
+//     Back takes the outer overlay away and leaves the inner one stranded on top of nothing.
 
 /** A minimal host: renders while `open`, and reports every close the hook delivers. */
 function Host({ onClose }: { onClose: () => void }) {
@@ -36,6 +39,11 @@ function Host({ onClose }: { onClose: () => void }) {
  *  truncates whatever was ahead — so the leak this hook prevents shows up as the stack GROWING across
  *  open/close cycles, not as a length that fails to shrink. Both are asserted below. */
 const ours = () => (history.state as { ctrlbOverlay?: boolean } | null)?.ctrlbOverlay === true;
+
+/** ONE tree's close button. Scoped to its own container, because two nested overlays put two of them
+ *  in the document and RTL's top-level queries search all of it. */
+const closer = (view: ReturnType<typeof render>) =>
+  within(view.container).queryByRole("button", { name: "close" });
 
 describe("useOverlayBackGuard", () => {
   it("pushes exactly ONE entry while open, and the ✕ spends it", async () => {
@@ -90,5 +98,58 @@ describe("useOverlayBackGuard", () => {
     // it TRUNCATES rather than piles. A UI path that closed without spending its entry would have
     // grown the stack by three — the shape the owner meets as "Back does nothing five times".
     expect(history.length).toBeLessThanOrEqual(before + 1);
+  });
+
+  it("NESTED: one Back closes the TOP overlay and leaves the one under it standing", async () => {
+    // The regression this pins is the one Emma found: with a single shared listener every guard reacted
+    // to every pop, so Back over the gallery's delete confirm unmounted the GALLERY and left the alert
+    // dialog on screen — holding a promise nobody could reach and a captured trigger that was gone.
+    const outer = vi.fn();
+    const inner = vi.fn();
+    const view = render(<Host onClose={outer} />);
+    await waitFor(() => expect(ours()).toBe(true));
+    const nested = render(<Host onClose={inner} />);
+    await waitFor(() => expect(closer(nested)).not.toBeNull());
+
+    history.back();
+    await waitFor(() => expect(inner).toHaveBeenCalledTimes(1));
+    expect(outer).not.toHaveBeenCalled(); // …and the gallery is still open behind it
+    expect(closer(view)).not.toBeNull();
+
+    // …and the NEXT Back closes the one underneath, having spent its own entry and no one else's.
+    history.back();
+    await waitFor(() => expect(outer).toHaveBeenCalledTimes(1));
+    expect(inner).toHaveBeenCalledTimes(1);
+  });
+
+  it("…and an inner overlay's own close spends only the inner entry", async () => {
+    const outer = vi.fn();
+    const inner = vi.fn();
+    const view = render(<Host onClose={outer} />);
+    await waitFor(() => expect(ours()).toBe(true));
+    const nested = render(<Host onClose={inner} />);
+    await waitFor(() => expect(closer(nested)).not.toBeNull());
+
+    closer(nested)!.click();
+    await waitFor(() => expect(inner).toHaveBeenCalledTimes(1));
+    expect(outer).not.toHaveBeenCalled();
+    // The OUTER guard's entry is the one the browser is sitting on again — its own close still works.
+    closer(view)!.click();
+    await waitFor(() => expect(outer).toHaveBeenCalledTimes(1));
+  });
+
+  it("an inner UNMOUNT does not hand its pop to the guard underneath", async () => {
+    // The swallow has to be shared: the unmounting guard has already removed its listener, so a
+    // per-instance flag would let the one below read itself as the top and close for nothing.
+    const outer = vi.fn();
+    render(<Host onClose={outer} />);
+    await waitFor(() => expect(ours()).toBe(true));
+    const nested = render(<Host onClose={() => undefined} />);
+    await waitFor(() => expect(closer(nested)).not.toBeNull());
+
+    nested.unmount();
+    await waitFor(() => expect(ours()).toBe(true)); // back on the outer overlay's own entry
+    await new Promise((r) => setTimeout(r, 10));
+    expect(outer).not.toHaveBeenCalled();
   });
 });
