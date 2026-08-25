@@ -13,6 +13,22 @@ const notifySwHash = createHash("sha256")
   .digest("hex")
   .slice(0, 8);
 
+/** How many owner MEDIA files the runtime cache holds (D65 / MEDIA_MANAGER_PLAN §6.3, defect #2).
+ *
+ *  RE-BASED from 64, which was sized for "a folder of art the owner drops in over SSH" and is now
+ *  wrong twice over: the LIBRARY model keeps every image the owner ever added — uploads are purely
+ *  additive, delete is the only removal — across five namespace-roles per theme plus the shared kit
+ *  roles, and each file can now occupy MORE than one entry while a `?rev=` moves (Workbox keys on the
+ *  full URL, query included, and the old copy only ages out at the bound).
+ *
+ *  A plain generous constant, deliberately, and it cannot be anything else: the registry knows the
+ *  role list but nothing at all about how many images the owner will put in one — the v2.0 rider that
+ *  proposed deriving it from the registry was wrong. So the number is chosen against the failure it
+ *  prevents: too LOW evicts art the owner is actively using (the cache thrashes and the PWA paints
+ *  nothing offline), too HIGH costs disk on a device that has plenty. 240 is roughly a decade of
+ *  ordinary use at this app's scale, and Workbox's LRU sweep keeps it bounded either way. */
+const MEDIA_CACHE_ENTRIES = 240;
+
 // Dev: proxy /api to the FastAPI backend (single origin → no CORS, no mixed content).
 // Backend runs on 5433 so v2 coexists with the live Flask app on 5432 until cutover.
 // The proxy target is `VITE_API_TARGET` (default :5433) so the SAME config serves both the local
@@ -146,8 +162,8 @@ export default defineConfig({
             options: {
               cacheName: "ctrlb-media",
               // Bounded because these are the owner's own files at whatever size they dropped in
-              // (the index warns about a 3.6 MB one; it does not refuse it).
-              expiration: { maxEntries: 64, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              // (the write path caps ONE upload at 15 MB; it does not cap the folder).
+              expiration: { maxEntries: MEDIA_CACHE_ENTRIES, maxAgeSeconds: 60 * 60 * 24 * 30 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

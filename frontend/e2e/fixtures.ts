@@ -220,7 +220,7 @@ const ROUTES: Record<string, unknown> = {
   // `$CTRLB_HOME/media/`. The path is namespaced, so a second art-bearing theme adds its own row.
   "/api/media/gacha": {
     ns: "gacha",
-    collation: "casefold-natural",
+    collation: "library-v1",
     roles: { characters: [], banner: [], reel: [], oracle: [] },
     slots: {},
   },
@@ -228,7 +228,7 @@ const ROUTES: Record<string, unknown> = {
   // BUNDLED map cover, rig cards and stack layers, which is the fresh-install rendering).
   "/api/media/frontier": {
     ns: "frontier",
-    collation: "casefold-natural",
+    collation: "library-v1",
     roles: { rigs: [], hero: [], stack: [] },
     slots: {},
   },
@@ -238,7 +238,7 @@ const ROUTES: Record<string, unknown> = {
   // no shared background layer. The specs that prove any of them land override it.
   "/api/media/kit": {
     ns: "kit",
-    collation: "casefold-natural",
+    collation: "library-v1",
     roles: { services: [], "service-banners": [], hosts: [], background: [], brand: [] },
     slots: {},
   },
