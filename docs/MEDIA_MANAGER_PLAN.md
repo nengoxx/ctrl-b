@@ -69,7 +69,14 @@ Each section descriptor declares `activate: "reorder" | "pin"` + its capability 
 H1) its **active resolver** — see §2.4. A multi-window source (gacha characters feeds 11
 windows) is ONE library; the focal point (§5) handles per-window crops.
 
-### 2.2 Config shape — schema 6 → 7 (the clean fold, owner-ruled)
+### 2.2 Config shape — the clean fold, `config_version` 1 → 2 (owner-ruled)
+
+> **Numbering correction (S0 audit, 2026-08-25):** this fold was recorded in-session as
+> "schema 6→7" — a mislabel. **6 is the DB `schema_version`** (`app/db.py`), untouched by this
+> phase; the config-shape marker is **`config_version`** (`config_migration/VERSION`), currently
+> **1**, and this fold is its step **1 → 2**. The ruling's substance (the fold itself) is
+> unchanged; every "schema 6→7"/"schema-7" shorthand in this document reads as `config_version
+> 1→2`.
 
 ```yaml
 media:
@@ -111,7 +118,7 @@ media:
   collation order (one mental model: priority). The detail panel names the binding source.
   Uploads always set `key`. On-disk layout UNCHANGED (no media-tree migration; the road not
   taken: per-key subfolders).
-- **Migration 6→7** (UPDATE_PLAN rules, no-legacy-seams): `media.<ns>` → `media.namespaces.<ns>`;
+- **Migration `config_version` 1→2** (UPDATE_PLAN rules, no-legacy-seams): `media.<ns>` → `media.namespaces.<ns>`;
   `order: [n1, n2]` → `files: [{name: n1}, {name: n2}]`; `media.write` added; old keys deleted in
   the write-back. The migration is **config-pure** (steps never touch the filesystem — its own
   contract) and **writes no bundled entries**: paint parity holds by construction via §2.3's
@@ -366,7 +373,7 @@ recorded, neither silently absorbed.
 ## 10. The ruling ledger (2026-08-24 decision session — ALL CLOSED)
 
 ① kill switch DROPPED (unconditional; toggle-rule waiver recorded) · ② config = the clean fold,
-schema 6→7 · ③ 15 MB · ④ 64 MP (Honor 20) · ⑤ free-ratio ratified; "derive from the element" =
+"schema 6→7" (= `config_version` 1→2 — the §2.2 numbering correction) · ③ 15 MB · ④ 64 MP (Honor 20) · ⑤ free-ratio ratified; "derive from the element" =
 the framing previews · ⑥ focal IN v1 · ⑦ collisions designed away (additive-only, auto-unique) ·
 ⑧ drag primary (extend the house hook) · ⑨ single-file pick · ⑩ 1.7.x; 1.8 RESERVED · plus: the
 LIBRARY model · bundled defaults first-class · per-key scope (§6.1's H5 role-family-card refinement
@@ -380,7 +387,7 @@ BE: R55's pin list (delete-vs-config · symlink 404 · double-delete · traversa
 404 · `.part` invisible) + streamed-cap 413 both body kinds + 415 leaves no bytes + `os.link`
 409 + mode 0644 + the two-tier predicate (upgrade arm incl. **a backslash-named order entry
 loading AND reordering after the predicate loosening**; `%FF` → 422; DOS-device names → 422) +
-boot sweep + the no-CORS invariant + architecture guard + **schema-7 migration arms** (fold +
+boot sweep + the no-CORS invariant + architecture guard + **config_version-2 migration arms** (fold +
 files transform + write-back deletes old keys; idempotent; **a populated v6 config round-trips
 to identical collation output, incl. the all-unusable-role arm** — parity is by construction,
 the test proves it) + **collation arms** (hidden skipped · unlisted appends · fallback-tier
@@ -430,7 +437,7 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 | slice | content | gate |
 |---|---|---|
 | S0 | docs: D65 · SECURITY_MODEL §2.x · MEDIA_PLAN amendment · SPEC · doc-map row · RESEARCH pins · backend+FE registry bundled-id rows (**retire `MediaSlotDef.bundled`** — M4 rider; **FE ids derived from `defaultRoster()`/`ART`, not hand-mirrored** — H1 rider; **"coarse, examples only" in the preview-descriptor TYPE's doc comment** — M4 confirm ask) · ROADMAP/TODO · HARDENING §8.2 rows + §7b FE-module delta entries (§9) · docstring truth pass | docs-only commit |
-| S1 | backend: write API · schema-7 migration · `media.write` · collation v2 + wire (`focal`/`hidden`/bundled rows/`library-v1`) · predicate loosening (#8) · `.part` sweep · `fsync_dir` · defects #6/#7 · BE tests | full gate + curl round on dev |
+| S1 | backend: write API · `config_version` 1→2 migration · `media.write` · collation v2 + wire (`focal`/`hidden`/bundled rows/`library-v1`) · predicate loosening (#8) · `.part` sweep · `fsync_dir` · defects #6/#7 · BE tests | full gate + curl round on dev |
 | S2 | gallery: section descriptors + active resolvers (H1) · entry/role-family cards · modal + `useOverlayBackGuard` · grid + detail panel · set-active/use-here/promote/hidden · defect #1–#4, #9–#12 · e2e | full gate + e2e |
 | S3a | pure: imageExport + worker + guard + fixture fence | full gate |
 | S3b | wiring: picker + CropModal + useMediaUpload (latch · naming · two-phase retry · failure rows) + add-row live | full gate + e2e arm |
@@ -464,7 +471,7 @@ export (L1). The v1 six-module decomposition (H3) is superseded by §12's larger
 Findings superseded by the owner's model change are struck in §13 — the premise moved, not the
 catches.
 
-## 15. Council record — round 2 (2026-08-24, on THIS rewrite; confirm rounds pending)
+## 15. Council record — round 2 (2026-08-24, on THIS rewrite; confirm rounds CLOSED, both lenses final-RESOLVED)
 
 **Emma lane (blind, sol high; correctness/security): BUILD WITH CHANGES — 1 HIGH + 9 MED.**
 E1 focal singularity (HIGH) → folded §5 (guard = contract). E2 migration needs FS facts → fix
