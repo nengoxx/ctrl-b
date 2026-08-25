@@ -1,3 +1,5 @@
+import AxeBuilder from "@axe-core/playwright";
+
 import { expect, test } from "./fixtures";
 
 // The owner-media LIBRARY round trip (D65 / MEDIA_MANAGER_PLAN §6), driven in the real built app. The
@@ -244,3 +246,47 @@ test("Conf · Theme art — the phone's BACK gesture closes the gallery, not the
   // Still in the app, on the tab we opened from — the entry that was spent was OURS.
   await expect(card).toBeVisible();
 });
+
+test("Conf · Theme art — the gallery + its detail panel pass the a11y gate", async ({ page }) => {
+  // The §11 "#12 a11y batch", with teeth. The tab-level scans in `a11y.spec.ts` never see this
+  // surface: the media group ships collapsed, and the modal only exists once it is opened. So the
+  // scan comes to it — the grid AND the detail panel, which is where every control lives.
+  await bootConf(page);
+  await page.route("**/api/media/gacha", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ns: "gacha",
+        collation: "library-v1",
+        roles: { characters: collate([], ["a.webp"]), banner: [], reel: [], oracle: [] },
+        slots: {},
+      }),
+    }),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open the characters gallery", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expectNoViolations(page);
+
+  await dialog
+    .getByRole("button", { name: /bundled/ })
+    .first()
+    .click();
+  await expect(dialog.getByRole("switch")).toBeVisible();
+  await expectNoViolations(page);
+});
+
+/** axe over the open dialog, on the house exemption (D24: the palettes are deliberate). */
+async function expectNoViolations(page: import("@playwright/test").Page) {
+  const { violations } = await new AxeBuilder({ page })
+    .include('[role="dialog"]')
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .disableRules(["color-contrast"])
+    .analyze();
+  expect(
+    violations,
+    `\n${violations.map((v) => `${v.id} (${v.impact}, ${v.nodes.length} nodes)`).join("\n")}`,
+  ).toEqual([]);
+}
