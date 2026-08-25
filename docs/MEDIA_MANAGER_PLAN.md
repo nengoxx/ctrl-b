@@ -706,6 +706,66 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > still reached first.
 
 | S5 | drag: G6/G5→G1→G2→G4→G3→hygiene + held-commit machine | full gate |
+
+> **S5 AS-BUILT (2026-08-25) — seven notes; three are deviations from this document.**
+>
+> · **THE HOOK GREW TWO AXES OF SHAPE, and every existing consumer is on the old value of both.**
+>   `SectionRefEditor` (the Inference / Voice STT / Voice TTS / Embeddings fallback chains — the hook's
+>   only prior consumer) passes no options at all, so it keeps `activation: "handle"` (a dedicated ⠿
+>   with `touch-action: none`, 6px distance activation, ArrowUp/Down on the same control) and
+>   `axis: "list"` (`targetIndex`, unchanged and still Y-only, so a purely horizontal wobble on a
+>   handle still does nothing). The gallery grid passes `activation: "press"` + `axis: "grid"`. That
+>   pairing is not two independent flags in practice — a control whose primary meaning is "open me"
+>   cannot also be a reorder control on the keyboard — so `press` deliberately emits **no** `onKeyDown`
+>   and no `aria-roledescription`: the tile's a11y contract stays exactly as S2 designed it (Emma #9),
+>   and the WCAG floor for order stays the ↑/↓ + move-to-edge pair in the detail panel, which is
+>   untouched.
+> · **G-BY-G**: **G6** rects are measured ONCE at lift and the dragged node's transform is written
+>   straight to the DOM (never through React state), so a `pointermove` costs no layout and no render;
+>   only a midpoint CROSSING re-renders. **G5** the container's scroll delta is added to both the
+>   transform and the hit test, against those frozen rects. **G1** `displacement()` is pure and returns
+>   the NEIGHBOUR SLOT's own geometry rather than a height-plus-gap sum — which is what lets one
+>   function serve a list and a 3-column grid, since in a uniform layout slot *k*'s geometry is rect
+>   *k*'s. **G2** the lift scales the TILE, not its grid cell, so the cell's box — the geometry the hit
+>   test was frozen from — never moves. **G4** autoscroll: band `min(20%, 96px)`, `p²` ramp to
+>   ~600px/s, 200ms of edge dead time, rAF, on the nearest genuinely-scrollable ancestor. **G3** the
+>   held commit, below. **G7/G8/G9/G10** selection kill + the one-shot capture-phase click guard;
+>   `resize`/`visibilitychange` cancel and `contextmenu`/`dragstart` refused; a pick-up announcement and
+>   — the one that was a real hole — an announcement on COMMIT, which the debounce used to swallow
+>   whenever a drag was fast.
+> · **The MACHINE is a pure reducer (`dragReduce`) with `phaseRef` as its synchronous read**, which is
+>   also the admission latch (S3's pattern): `idle → press → drag → hold → idle`. Two arms carry the
+>   design. A `drop` that never left its own slot goes straight home — there is nothing to commit. And
+>   **`cancel` is REFUSED while holding**: Escape, a blur or a `pointercancel` may abandon a gesture,
+>   none of them may abandon a write already on the wire. Release is whichever comes first of the
+>   authoritative `orderKey` changing (in a **layout** effect, so the transforms clear in the very
+>   commit that paints the new order — an ordinary effect paints one frame of the new order still
+>   wearing the old displacement) and the write settling, in `finally`, refusal included.
+> · **`write.move` ANSWERS now.** It was fire-and-forget; the held commit needs to know when to let go,
+>   so it returns its `JobOutcome` the way the upload's register phase already did. It is the same
+>   queued, recompute-at-send `moveBy` intent the ↑/↓ buttons enqueue — RELATIVE, not absolute, because
+>   the position the owner dropped at is a fact about the list they were looking at. There is no second
+>   write path for the drag.
+> · **A drag can point where a write cannot go, so the GESTURE is clamped — deviation, and the one this
+>   slice would have shipped a visible snap-back without.** The collation's trailing bundled tier is not
+>   arrangeable (§2.3 ③), so a drag aimed at "the very bottom" past five bundled entries would have
+>   committed as something else: the file landing several slots short a refetch later, and the bundled
+>   row that happened to be at the drop index promoted into the deal. `lastExpressible` — the number
+>   "Move to bottom" already used — is now EXPORTED and read by the gesture through a `limit` option, so
+>   the drop clamps while the finger is still down. One rule, one implementation, and the e2e drives it
+>   on a real 8-tile grid (three files + the bundled cast).
+> · **`e2e/media-gallery.spec.ts`'s partial echo (the S4 rider) is closed, and it was hiding more than a
+>   recoverable render error.** The mock now echoes the whole `SETTINGS` and every write-driving test
+>   asserts `pageErrors`. Building it surfaced the interesting half: an echo that drops `notifications`
+>   makes `useSaveSettings`'s own success path throw BEFORE it reaches the awaited media refetch — so
+>   the mutation rejects, the index never refetches, and the queue's next intent is computed from a list
+>   the server has already superseded. The invariant is the same one the queue states about itself;
+>   what this shows is that a test double which is not the server's whole answer can violate it.
+> · **Not built, deliberately: a TOUCH drag in the e2e.** Playwright's touchscreen API is `tap` only, so
+>   a long-press drag would have to be hand-dispatched touch events — a mock of the gesture, asserting
+>   our own event plumbing rather than the browser's. The long press, the scroll-intent abandon and the
+>   activation slop are pinned in vitest with fake timers; how the hold FEELS under a thumb is an S6
+>   probe, and §16 now carries it.
 | S6 | owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball · crop/framing/drag feel · Fennec expected-partials | owner acceptance |
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
@@ -814,6 +874,29 @@ drag feel · Fennec expected-partials · the Back-gesture close on device.
 >   one that is expected to look WEAKER: the fleet backdrop**, which cannot measure itself and falls back
 >   to proportional alignment (see §12's S4 as-built). Is that visible through the scrim, and does the
 >   owner mind?
+
+> **S5 riders (2026-08-25) — three probes only a thumb can answer.**
+> · **THE LONG PRESS.** Touch activates on a 500ms hold (Android's `ViewConfiguration` long-press
+>   timeout and iOS's `minimumPressDuration`, which agree) with 10pt of slop (Apple's
+>   `allowableMovement`) — and every one of those numbers is somebody else's, chosen because the field
+>   agrees rather than because we measured a thumb on THIS grid. Ask on device: does the hold land
+>   before the owner gives up on it, and does the lift READ as a lift when it does (the tile scales
+>   1.02 and takes a shadow — is that visible at 110px, or does it need the shadow to grow rather than
+>   the tile)? A haptic tick on activation is the field's other answer and is deliberately NOT built:
+>   it is an OS-level effect with no house switch behind it, and inventing one for a 3ms buzz is the
+>   wrong order of operations.
+> · **DRAG vs SCROLL.** The whole compromise of a body-grab is that a swipe must still scroll: movement
+>   before the hold lands ABANDONS the gesture and hands the pointer back to the page. Drive the grid
+>   the way a phone gets driven — flick to scroll, hold to drag — and say whether either ever steals
+>   the other. The failure to watch for is the *near miss*: a hold that lands just as the finger starts
+>   to move, which is a drag the owner meant as a scroll.
+> · **AUTOSCROLL, one-handed.** Band `min(20% of the modal body, 96px)`, `p²` ramp to ~600px/s, 200ms
+>   of dead time before the first pixel. On a full library the owner has to drag a tile from the bottom
+>   of a long grid to the top: is the band reachable with the thumb that is already holding the tile,
+>   is 600px/s the difference between "it moves" and "it flings", and does the 200ms of dead time stop
+>   an ordinary pass near the edge from scrolling at all? These are the numbers R58 §3.7 said were
+>   worth 5× disagreement across four shipped libraries — ours is a reading of that spread, not a
+>   measurement.
 
 > **S3b riders (2026-08-25).**
 > · **EXIF portrait is ALREADY ANSWERED on the desktop half** — the built app against the real dev

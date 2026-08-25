@@ -384,8 +384,22 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
         const pin = section.pin;
         enqueue({ patch: () => ({ slots: { [pin]: null } }) });
       },
+      /** Move one entry by `delta` positions — the ↑/↓ buttons AND the drag, which produces a target
+       *  index and hands it over as the same relative intent (§7). Relative, not absolute, because the
+       *  queue recomputes at SEND: the position the owner dropped it at is a fact about the list they
+       *  were looking at, and by send time an interleaved write may have moved everything under it.
+       *
+       *  It ANSWERS, like the upload's register phase does, because the drag's held commit has to know
+       *  when to let go: the transform stays on the dropped tile until this settles (or until the
+       *  authoritative order arrives, whichever is first), and a refusal releases it back to where the
+       *  owner picked it up. */
       move: (section: MediaSection, item: LibraryItem, delta: number) =>
-        enqueue(listJob(section.role, (e, r) => moveBy(e, r, item.id, delta))),
+        new Promise<JobOutcome>((resolve) => {
+          enqueue({
+            ...listJob(section.role, (e, r) => moveBy(e, r, item.id, delta)),
+            settle: resolve,
+          });
+        }),
       moveToEdge: (section: MediaSection, item: LibraryItem, edge: "top" | "bottom") =>
         enqueue(listJob(section.role, (e, r) => moveToEdge(e, r, item.id, edge))),
       setHidden: (section: MediaSection, item: LibraryItem, hidden: boolean) =>

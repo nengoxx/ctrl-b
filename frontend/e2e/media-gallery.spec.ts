@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import AxeBuilder from "@axe-core/playwright";
 
-import { expect, test } from "./fixtures";
+import { expect, SETTINGS, test } from "./fixtures";
 
 // The owner-media LIBRARY round trip (D65 / MEDIA_MANAGER_PLAN §6), driven in the real built app. The
 // vitest suite (tests/components/mediaGallery.test.tsx) pins every patch SHAPE against a mocked api
@@ -80,12 +80,21 @@ function collate(files: Entry[], onDisk: string[]) {
   return rows;
 }
 
-/** The PUT's answer, as the real endpoint gives it: the whole masked config back. It matters that the
- *  ECHO carries the media block — `useSaveSettings` adopts it as the settings cache, and the gallery's
- *  next write is a read-modify-write over exactly that. An echo that dropped it would let the next
- *  gesture rebuild the list from the index alone and silently lose every per-item field. */
+/** The PUT's answer, as the real endpoint gives it: the WHOLE masked config back.
+ *
+ *  Two things ride on that being whole (the S4 rider, closed here). The ECHO has to carry the media
+ *  block — `useSaveSettings` adopts it as the settings cache, and the gallery's next write is a
+ *  read-modify-write over exactly that, so an echo that dropped it would let the next gesture rebuild
+ *  the list from the index alone and silently lose every per-item field. And it has to carry EVERY
+ *  OTHER section too: Conf reads each one off the adopted doc, so a partial echo hands the tab a config
+ *  with no `voice` and the next render throws — a React recoverable error (#520) that no assertion in
+ *  this file was looking at, which is why `pageErrors` is asserted beside them now.
+ *
+ *  `notifications` is spelled out because the save's own success path reads it off the echo
+ *  (`useSaveSettings` adopts it as the notification-prefs cache) — `SETTINGS` has no such section. */
 const saveEcho = (files: Entry[]) => ({
   settings: {
+    ...SETTINGS,
     notifications: {},
     media: { namespaces: { gacha: { roles: { characters: { files } } } } },
   },
@@ -187,6 +196,7 @@ const image = (name: string) =>
 
 test("Conf · Theme art — the library round trip: activate · reorder · In use · delete", async ({
   page,
+  pageErrors,
 }) => {
   await bootConf(page);
   const { st, puts, deletes } = await statefulMedia(page, {
@@ -264,6 +274,156 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(card).toContainText("dealt to machines");
   await expect(card.locator("img")).toHaveCount(4); // the collage of the bundled cast, capped at four
+
+  // …and nothing above threw. Every write here adopts the PUT's echo as the settings cache and Conf
+  // reads every section off it, so a partial echo surfaces as a recoverable React error and NOTHING
+  // else (S4's rider). This is the assertion that makes that class visible.
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+/** Drag the tile at `from` onto the tile at `to`, with a real pointer: press, cross the activation
+ *  distance, land on the LEADING half of the target tile (the grid's insertion rule is reading order —
+ *  past a tile's horizontal midpoint means "after it"), release. */
+async function dragTile(
+  page: import("@playwright/test").Page,
+  from: import("@playwright/test").Locator,
+  to: import("@playwright/test").Locator,
+) {
+  const a = (await from.boundingBox())!;
+  const b = (await to.boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  // Two steps: one to cross the 6px activation distance, one to arrive. A single jump would put the
+  // whole gesture in one `pointermove`, which is not what a hand does and not what the hit test sees.
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2 + 12);
+  await page.mouse.move(b.x + b.width * 0.2, b.y + b.height / 2, { steps: 8 });
+  await page.mouse.up();
+}
+
+test("Conf · Theme art — a DRAG reorders, holds through the commit, and the order survives a reload", async ({
+  page,
+  pageErrors,
+}) => {
+  // S5's own round trip (MEDIA_MANAGER_PLAN §7). The vitest suite pins the gesture's machine and its
+  // geometry against stubbed rects; what only a browser can prove is that a real pointer over a real
+  // 3-column grid lands on the slot the owner aimed at, that the write it produces is the SAME `moveBy`
+  // intent the ↑/↓ buttons enqueue — tier rule included, so no bundled row is swept in — and that the
+  // order the server then serves is the one already on screen.
+  await bootConf(page);
+  const { st, puts } = await statefulMedia(page, {
+    onDisk: ["a.webp", "b.webp", "c.webp"],
+    files: [],
+  });
+
+  await page.goto("/");
+  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  await card.click();
+  const dialog = page.getByRole("dialog");
+  const tiles = dialog.locator(".mgal-tile");
+  await expect(tiles).toHaveCount(8); // three files on disk + the five bundled
+  await expect(tiles.first()).toHaveAttribute("aria-label", "a.webp");
+
+  // ① drag the THIRD tile in front of the first.
+  await dragTile(page, tiles.nth(2), tiles.nth(0));
+  await expect.poll(() => puts.length).toBe(1);
+  expect(puts[0]).toEqual({
+    media: {
+      namespaces: {
+        gacha: {
+          roles: {
+            characters: {
+              // The unlisted DISK rows are swept in (without that the order is inexpressible and the
+              // drag would snap back); the five unlisted BUNDLED rows are not (§2.3 ③).
+              files: [{ name: "c.webp" }, { name: "a.webp" }, { name: "b.webp" }],
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // ② the grid repaints from the SERVER's listing — and the held transform is gone with it, so what is
+  //    on screen is the real order rather than a transform pretending to be one.
+  await expect(tiles.first()).toHaveAttribute("aria-label", "c.webp");
+  await expect(dialog.locator("[data-drag-held]")).toHaveCount(0);
+  await expect(dialog.locator('[style*="translate"]')).toHaveCount(0);
+
+  // ③ THE BOTTOM OF THE LIST IS WHERE THE WRITE CAN SAY IT IS. Drag that same file onto the very LAST
+  //    tile — a bundled one. The trailing bundled tier is not arrangeable (ordering anything after it
+  //    would list it, and listing it promotes it into the deal), so the gesture is clamped to the last
+  //    disk row while the finger is still down: it lands where "Move to bottom" would put it, the write
+  //    agrees, and nothing slides afterwards.
+  await dragTile(page, tiles.nth(0), tiles.nth(7));
+  await expect.poll(() => puts.length).toBe(2);
+  expect(puts[1]).toEqual({
+    media: {
+      namespaces: {
+        gacha: {
+          roles: {
+            characters: {
+              files: [{ name: "a.webp" }, { name: "b.webp" }, { name: "c.webp" }],
+            },
+          },
+        },
+      },
+    },
+  });
+  await expect(tiles.nth(2)).toHaveAttribute("aria-label", "c.webp");
+  await expect(tiles.nth(3)).toHaveAttribute("aria-label", /bundled/); // still the fallback tier
+  await expect(dialog.locator('[style*="translate"]')).toHaveCount(0);
+
+  // ④ …and it is PERSISTED, not just painted.
+  await page.reload();
+  await card.click();
+  await expect(page.getByRole("dialog").locator(".mgal-tile").first()).toHaveAttribute(
+    "aria-label",
+    "a.webp",
+  );
+  expect(st.files).toEqual([{ name: "a.webp" }, { name: "b.webp" }, { name: "c.webp" }]);
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("Conf · Theme art — a REFUSED drag snaps back, says so, and the next drag is admitted", async ({
+  page,
+  pageErrors,
+}) => {
+  // The other half of the held commit (Emma #8): the transform is held on the OPTIMISM that the server
+  // will agree, so a refusal has to release it in `finally` — back to the order the owner picked it up
+  // from, with the queue's own error toast left standing and the surface still live. A held transform
+  // that outlived a failed write would be the worst outcome available: the gallery showing an
+  // arrangement the server rejected.
+  await bootConf(page);
+  await statefulMedia(page, { onDisk: ["a.webp", "b.webp", "c.webp"], files: [] });
+  let attempts = 0;
+  // Registered AFTER the stateful mock, so it wins on the settings PUT and nothing else.
+  await page.route("**/api/settings", async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    attempts++;
+    return route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "the config could not be written" }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open the characters gallery", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const tiles = dialog.locator(".mgal-tile");
+  await expect(tiles).toHaveCount(8);
+
+  await dragTile(page, tiles.nth(2), tiles.nth(0));
+  await expect.poll(() => attempts).toBe(1);
+  await expect(page.locator(".toast.err")).toBeVisible();
+  // Released: the order is the pre-drag one, and no tile is still wearing a drag transform.
+  await expect(tiles.first()).toHaveAttribute("aria-label", "a.webp");
+  await expect(dialog.locator("[data-drag-held]")).toHaveCount(0);
+  await expect(dialog.locator('[style*="translate"]')).toHaveCount(0);
+
+  // …and the latch let go with it: a fresh drag is admitted rather than silently refused forever.
+  await dragTile(page, tiles.nth(2), tiles.nth(0));
+  await expect.poll(() => attempts).toBe(2);
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 
 test("Conf · Theme art — what the gallery says is in use is what the FLEET paints", async ({

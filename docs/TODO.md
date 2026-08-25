@@ -1462,7 +1462,22 @@ owner eyeball; each passes `tools/check.py`.
       `Allow: PUT, DELETE` — S1's own "one URL space, one answer" rule, unclosed. `absent_router` is
       the 404 rung below the mounts, GET+HEAD, no OPTIONS; it was DEV-only (SYS-5's catch-all masked it
       whenever `frontend/dist` existed), which is what made a backend test flip with a frontend build)
-- [ ] S5 — Drag: G6/G5 → G1 → G2 → G4 → G3 → hygiene + the held-commit state machine
+- [x] S5 — Drag: G6/G5 → G1 → G2 → G4 → G3 → hygiene + the held-commit state machine
+      (`useDragReorder` EXTENDED in place, never forked — two activation shapes (`handle` keeps the
+      provider fallback chains byte-identical; `press` is the gallery tile's long-press) and two hit
+      rules (`targetIndex` untouched; `gridTargetIndex` = reading order, for three columns). The
+      machine is the pure `dragReduce` reducer: idle → press → drag → hold → idle, where a `cancel`
+      is REFUSED while holding and the release is either the authoritative `orderKey` (in a LAYOUT
+      effect, so the transforms clear in the commit that paints the new order) or the write's own
+      settlement in `finally`. The commit is the SAME `moveBy` intent the ↑/↓ buttons enqueue —
+      `write.move` now answers with its outcome — and the drop target is clamped by
+      `lib/mediaLibrary#lastExpressible`, so a drag aimed past the trailing bundled tier lands on the
+      honest bottom instead of snapping back with a bundled character promoted into the deal.
+      MEDIA_MANAGER_PLAN §12 as-built + §16's three S5 device probes)
+      (+ the S4 RIDER, closed here: `e2e/media-gallery.spec.ts` echoed a PARTIAL settings doc from its
+      PUT mock. It is the whole `SETTINGS` now, and `pageErrors` is asserted — which turned out to
+      matter twice over, since dropping `notifications` from the echo makes the save's own success
+      path throw and the queue then computes its next write from an index that never refetched)
 - [ ] S6 — Owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over
       Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball ·
       crop/framing/drag feel · Fennec expected-partials

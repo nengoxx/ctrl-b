@@ -48,7 +48,9 @@ export function GalleryModal({
   write: {
     activate: (section: SectionView["section"], item: LibraryItem) => void;
     unpin: (section: SectionView["section"]) => void;
-    move: (section: SectionView["section"], item: LibraryItem, delta: number) => void;
+    /** Returns when the write has SETTLED — what the drag's held commit waits on (§7). The ↑/↓ buttons
+     *  ignore it: their affordance is the disabled state `busy` already drives. */
+    move: (section: SectionView["section"], item: LibraryItem, delta: number) => Promise<unknown>;
     moveToEdge: (
       section: SectionView["section"],
       item: LibraryItem,
@@ -244,7 +246,7 @@ export function GalleryModal({
               onBack={() => setSelectedId(null)}
               onActivate={() => write.activate(section, selected)}
               onUnpin={() => write.unpin(section)}
-              onMove={(delta) => write.move(section, selected, delta)}
+              onMove={(delta) => void write.move(section, selected, delta)}
               onMoveToEdge={(edge) => write.moveToEdge(section, selected, edge)}
               onHidden={(hidden) => write.setHidden(section, selected, hidden)}
               onFrame={() => onFrame(selected)}
@@ -257,6 +259,16 @@ export function GalleryModal({
             <LibraryGrid
               section={section}
               items={items}
+              // The SAME fact that shows the ↑/↓ pair in the detail panel (§7: both affordances, one
+              // condition) — plus `ready`, because a drag whose write the queue would refuse is a drag
+              // that snaps back for a reason the owner cannot see.
+              canReorder={section.caps.reorder && items.length > 1 && ready}
+              onReorder={(from, to) => {
+                const item = items[from];
+                // The drag produces a TARGET; the transform owns the tier rule (§2.3 ③), and it is the
+                // very same `moveBy` intent the ↑/↓ buttons enqueue — recomputed at send, one write path.
+                return item === undefined ? undefined : write.move(section, item, to - from);
+              }}
               onSelect={(item) => {
                 cameFrom.current = item.bundled ? `${item.row.name} (bundled)` : item.row.file;
                 setSelectedId(item.id);

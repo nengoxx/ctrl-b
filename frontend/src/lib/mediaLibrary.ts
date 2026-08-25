@@ -302,8 +302,14 @@ export function displayOrder(rows: readonly LibraryRow[]): RowId[] {
  *  Untouched fallback-tier rows always trail the collation, so nothing can be ordered after them
  *  without listing them — and listing them is the one thing the tier rule forbids. Move-to-bottom
  *  therefore lands on the last row that is not an untouched fallback: the honest bottom of the list
- *  the owner is allowed to arrange, and the position the next refetch will agree with (no snap-back). */
-function lastExpressible(rows: readonly LibraryRow[], id: RowId): number {
+ *  the owner is allowed to arrange, and the position the next refetch will agree with (no snap-back).
+ *
+ *  **Exported because the DRAG needs the same number while the finger is still down** (S5): a gesture
+ *  that can point anywhere has to be told where the arrangeable list ENDS, or dropping a file "at the
+ *  very bottom" past five bundled entries would ask for an order the write cannot say — and the owner
+ *  would watch it slide back several slots one refetch later, with a bundled character promoted into
+ *  the deal on the way. One rule, one implementation, read by the write AND by the gesture. */
+export function lastExpressible(rows: readonly LibraryRow[], id: RowId): number {
   let last = 0;
   rows.forEach((row, i) => {
     if (rowId(row) === id || row.bundled == null || row.listed === true) last = i;

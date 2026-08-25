@@ -4731,6 +4731,29 @@ body[data-motion="reduced"] .kit .plan-step.active .tick {
   cursor: grabbing;
   color: var(--accent);
 }
+/* DRAG REORDER, the paint half (R58 G1/G2 · MEDIA_MANAGER_PLAN §7). `useDragReorder` writes the
+ * geometry — the dragged row's transform straight onto the node, every DISPLACED row's through its style
+ * prop — and everything that is a LOOK lives here.
+ *
+ * The timing is the kit's own motion contract and nothing else: `--dur-slow`/`--ease-std` are literally
+ * the 200ms and `cubic-bezier(0.2, 0, 0, 1)` dnd-kit, @hello-pangea/dnd and AndroidX all converged on
+ * (R58 §3.4), and axes.css already collapses both to 1ms under the reduced-motion axis — so less motion
+ * comes from the owner's Appearance switch through `data-motion`, never from an OS media query.
+ * Transform/opacity only (§14.11). The row being dragged carries its own inline `transition: none`, so
+ * it follows the finger frame-perfectly and the rule below cannot slow it down. */
+.kit .fallback-row {
+  transition: transform var(--dur-slow) var(--ease-std);
+}
+.kit [data-dragging],
+.kit [data-drag-held] {
+  position: relative;
+  z-index: 2;
+}
+.kit .fallback-row[data-dragging],
+.kit .fallback-row[data-drag-held] {
+  opacity: 0.9;
+}
+
 /* P3 — these `all: unset` buttons carry `.kit .foo` (2-class) selectors that TIE the global
  * `.kit :focus-visible` ring and, being later in source, their `all: unset` resets `outline` back to none.
  * Restore the keyboard ring with an equal-or-higher-specificity `:focus-visible` rule (outline-based, so it
@@ -6352,6 +6375,14 @@ body[data-perf="lite"] .kit .navmenu-pop {
   background:
     repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0 / 12px 12px;
   border: 1px solid var(--line);
+  /* A tile is its own drag handle (§7), so a long press on it must not raise the selection callout or
+   * start a selection instead. NOT `touch-action: none` — the grid has to keep scrolling, which is the
+   * whole reason touch activates on a hold rather than on distance here. */
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition:
+    transform var(--dur-fast) var(--ease-std),
+    box-shadow var(--dur-fast) var(--ease-std);
 }
 .kit .mgal-tile:focus-visible {
   outline: 2px solid var(--accent);
@@ -6363,6 +6394,20 @@ body[data-perf="lite"] .kit .navmenu-pop {
 }
 .kit .mgal-tile.sel {
   outline: 2px solid var(--accent);
+}
+/* THE DRAG, in the grid (R58 G1/G2 · §7) — the generic half is up beside `.drag-handle`; this is what
+ * a TILE does. The cell travels (its transform comes from the hook's displacement math); the tile
+ * inside it LIFTS, so the cell's own box — the geometry the insertion test was frozen from — never
+ * moves. 1.02 is enough to read as picked-up at 110px; 1.05 (dnd-kit's overlay demo) is not, because
+ * ours is an in-flow tile rather than a portal overlay. */
+.kit .mgal-cell {
+  transition: transform var(--dur-slow) var(--ease-std);
+}
+.kit .mgal-cell[data-dragging] .mgal-tile,
+.kit .mgal-cell[data-drag-held] .mgal-tile {
+  transform: scale(1.02);
+  border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 .kit .mgal-tile-img {
   width: 100%;

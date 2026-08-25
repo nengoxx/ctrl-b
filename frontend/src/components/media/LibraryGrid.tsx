@@ -1,8 +1,9 @@
 import { useId } from "react";
 
 import type { LibraryItem } from "../../hooks/useMediaLibrary";
-import { tileUrl } from "../../lib/mediaLibrary";
+import { lastExpressible, tileUrl } from "../../lib/mediaLibrary";
 import type { MediaSection } from "../../theme-engine/mediaRegistry";
+import { useDragReorder } from "../useDragReorder";
 
 // The library GRID (MEDIA_MANAGER_PLAN §6.3, R59 §11.3) — three columns of destination-shaped tiles,
 // and the ONE place a library row becomes a picture.
@@ -32,78 +33,125 @@ export function LibraryGrid({
   section,
   items,
   selectedId,
+  canReorder = false,
   onSelect,
+  onReorder,
 }: {
   section: MediaSection;
   items: LibraryItem[];
   selectedId?: string;
+  /** Order MEANS something here, and there is more than one entry to order (§7 — the drag and the ↑/↓
+   *  pair are hidden by the same fact, in the same breath). */
+  canReorder?: boolean;
   onSelect: (item: LibraryItem) => void;
+  /** Commit a drag. The returned promise is what the HELD commit waits on: the tile stays where the
+   *  owner dropped it until the authoritative order lands, and snaps back if the write is refused. */
+  onReorder?: (from: number, to: number) => Promise<unknown> | void;
 }) {
   const descId = useId();
+  // THE DRAG (MEDIA_MANAGER_PLAN §7 / R58) — the house hook in its GRID + PRESS shape: three columns, so
+  // the insertion slot is reading order rather than a column of midpoints, and the tile is its own
+  // handle, so touch activates on a long press and a swipe still scrolls the grid. The ↑/↓ + move-to-edge
+  // pair in the detail panel stays exactly where it was: this is the primary gesture, not the only one.
+  //
+  // `orderKey` is what releases the held transform: the FIRST render carrying a different order is the
+  // authoritative one, and the release rides that same commit.
+  const drag = useDragReorder(items.length, (from, to) => onReorder?.(from, to), {
+    axis: "grid",
+    activation: "press",
+    disabled: !canReorder || onReorder === undefined,
+    orderKey: items.map((i) => i.id).join(" "),
+    // How far down the list actually GOES, by the write's own rule (§2.3 ③): the trailing bundled
+    // entries that no `files` list names are not arrangeable, because ordering anything after one
+    // would mean LISTING it — the promotion the tier rule exists to prevent. So a drag aimed past
+    // them lands on the honest bottom instead, exactly where "Move to bottom" puts it. Asking
+    // `lib/mediaLibrary` for the number rather than re-deriving it here is what keeps the gesture and
+    // the write from ever disagreeing about where the list ends.
+    limit: (from) => {
+      const item = items[from];
+      if (item === undefined) return items.length - 1;
+      return lastExpressible(
+        items.map((i) => i.row),
+        item.id,
+      );
+    },
+  });
   return (
-    <ul
-      className="mgal-grid"
-      style={{ ["--mgal-tile-aspect" as string]: String(section.aspect ?? 1) }}
-    >
-      {items.map((item, i) => {
-        const url = tileUrl(item.row, section);
-        const problem = item.row.unusable || item.duplicate;
-        return (
-          <li key={item.id}>
-            <button
-              type="button"
-              // The tile is a plain button that opens this item's detail — never a toggle (Emma #9):
-              // `aria-checked` belongs to the real In-use SWITCH in that panel, and membership is
-              // something the description says rather than something a role pretends to model.
-              className={
-                "mgal-tile" +
-                (item.active ? " on" : "") +
-                (item.hidden ? " off" : "") +
-                (item.id === selectedId ? " sel" : "")
-              }
-              aria-label={item.bundled ? `${item.row.name} (bundled)` : item.row.file}
-              aria-describedby={`${descId}-${i}`}
-              // Only where ONE entry genuinely wins. A dealt pool has no current member.
-              aria-current={item.current ? "true" : undefined}
-              onClick={() => onSelect(item)}
-            >
-              {url === undefined ? (
-                <span className="mgal-tile-none" aria-hidden />
-              ) : (
-                <img
-                  src={url}
-                  alt=""
-                  loading={i < EAGER_TILES ? "eager" : "lazy"}
-                  decoding="async"
-                  // Defect #9: alpha art on a dark tile was invisible. `contain` (never `cover`) keeps a
-                  // silhouette whole, and the checkerboard behind it is what makes transparency READ as
-                  // transparency instead of as a missing picture.
-                  className={"mgal-tile-img" + (item.hidden ? " dim" : "")}
-                />
-              )}
-              {item.active && (
-                <span className="mgal-corner end" aria-hidden>
-                  ✓
+    <>
+      <ul
+        className="mgal-grid"
+        style={{ ["--mgal-tile-aspect" as string]: String(section.aspect ?? 1) }}
+      >
+        {items.map((item, i) => {
+          const url = tileUrl(item.row, section);
+          const problem = item.row.unusable || item.duplicate;
+          return (
+            <li key={item.id} className="mgal-cell" {...drag.rowProps(i)}>
+              <button
+                type="button"
+                {...drag.handleProps(i)}
+                // The tile is a plain button that opens this item's detail — never a toggle (Emma #9):
+                // `aria-checked` belongs to the real In-use SWITCH in that panel, and membership is
+                // something the description says rather than something a role pretends to model.
+                className={
+                  "mgal-tile" +
+                  (item.active ? " on" : "") +
+                  (item.hidden ? " off" : "") +
+                  (item.id === selectedId ? " sel" : "")
+                }
+                aria-label={item.bundled ? `${item.row.name} (bundled)` : item.row.file}
+                aria-describedby={`${descId}-${i}`}
+                // Only where ONE entry genuinely wins. A dealt pool has no current member.
+                aria-current={item.current ? "true" : undefined}
+                onClick={() => onSelect(item)}
+              >
+                {url === undefined ? (
+                  <span className="mgal-tile-none" aria-hidden />
+                ) : (
+                  <img
+                    src={url}
+                    alt=""
+                    loading={i < EAGER_TILES ? "eager" : "lazy"}
+                    decoding="async"
+                    // Defect #9: alpha art on a dark tile was invisible. `contain` (never `cover`) keeps
+                    // a silhouette whole, and the checkerboard behind it is what makes transparency READ
+                    // as transparency instead of as a missing picture.
+                    className={"mgal-tile-img" + (item.hidden ? " dim" : "")}
+                  />
+                )}
+                {item.active && (
+                  <span className="mgal-corner end" aria-hidden>
+                    ✓
+                  </span>
+                )}
+                {problem && (
+                  <span className="mgal-corner top" aria-hidden>
+                    !
+                  </span>
+                )}
+                {item.bundled && (
+                  <span className="mgal-corner start" aria-hidden>
+                    ◆
+                  </span>
+                )}
+                <span className="mgal-sr" id={`${descId}-${i}`}>
+                  {describe(item)}
                 </span>
-              )}
-              {problem && (
-                <span className="mgal-corner top" aria-hidden>
-                  !
-                </span>
-              )}
-              {item.bundled && (
-                <span className="mgal-corner start" aria-hidden>
-                  ◆
-                </span>
-              )}
-              <span className="mgal-sr" id={`${descId}-${i}`}>
-                {describe(item)}
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {/* Where the drag SAYS what it did. The gesture is a pointer one, but a pointer user with a screen
+          reader is a real reader of this — and the commit announcement is the one the field usually
+          swallows (R58 G10). */}
+      {/* `aria-live` WITHOUT `role="status"` — the same shape SectionRefEditor's region has, and for a
+          reason beyond consistency: the header count above is the section's one `status`, and a second
+          one would make "the live region" ambiguous to anything that goes looking for it. */}
+      <p className="mgal-sr" aria-live="polite">
+        {drag.announce}
+      </p>
+    </>
   );
 }
 
