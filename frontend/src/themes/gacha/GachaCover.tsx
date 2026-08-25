@@ -1,12 +1,13 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
+import { FocalImg } from "../../components/FocalImg";
 import type { Host } from "../../types";
 import { GACHA_COPY } from "./copy";
 import { GachaStar } from "./GachaStar";
 import { useCeremony } from "./ceremony";
 import {
+  COVER_HERO_SHIFT,
   coverDevelopAnnounce,
-  coverHeroFocus,
   coverPromoteAnnounce,
   coverSettledAnnounce,
   issueLine,
@@ -38,8 +39,11 @@ import { isHighStar, starsFor } from "./stars";
 //    Only the HERO acts: it opens its dossier when online, and DEVELOPS (wakes) when asleep. The routing
 //    itself is `GachaFleet`'s; this file only dramatizes what came back, poll-truthfully (ruling 4).
 //  · THE HERO CROP IS DERIVED, NOT DATA (ruling 9): the lab's per-id `COVER_HERO_FOCUS` map does not port.
-//    `coverHeroFocus` shifts whatever focal point the art entry resolved LEFT by a fixed constant, which
-//    slides the subject out from under the cut-in column; the E5 device round tunes the constant.
+//    The hero window shifts whatever framing the art entry resolved LEFT by a fixed fraction, which slides
+//    the subject out from under the cut-in column; the E5 device round tunes the constant. Since S4 that
+//    shift is applied by the WINDOW to its own resolved position (`FocalImg`'s `shiftX`) rather than
+//    published as a second custom property — see the `--cv-focus`/`--cv-hero-focus` note in MEDIA_MANAGER
+//    _PLAN §5: a centred point is a function of each box's own overflow and cannot be inherited.
 //  · IT OPENS PLAIN. No View-Transition morph is offered (ruling 5(2), as signed for cover — the walked lab
 //    opens the cover's dossier with the plain path, and R26's re-amendment named only the poster). The
 //    plain fallback already lives in `openHostDossier`, so this passes nothing and there is no branch here.
@@ -319,8 +323,6 @@ export function GachaCover({
     const isBusy = busy.has(host.id);
     const stamped = devLive && dev.stamped && dev.id === host.id;
     const entry = art(index);
-    const focus = entry?.focus;
-    const heroFocus = coverHeroFocus(focus);
     const chip = waking.has(host.id) ? "WAKING" : online ? "ONLINE" : "SLEEPING";
     return (
       <button
@@ -341,8 +343,6 @@ export function GachaCover({
             // load-bearing for the same reason: an inline custom property beats every selector, so the
             // sleeping suppression has to override a DIFFERENT property than the one written here.
             "--cv-rar": unitHueToken(index),
-            ...(focus === undefined ? null : { "--cv-focus": focus }),
-            ...(heroFocus === undefined ? null : { "--cv-hero-focus": heroFocus }),
           } as CSSProperties
         }
         aria-label={labelCover(host, stars, isHero)}
@@ -374,7 +374,18 @@ export function GachaCover({
       >
         <span className="cv-shot">
           {entry ? (
-            <img src={entry.url} alt="" draggable={false} decoding="async" />
+            // §5: ONE element, TWO windows — the same node is a full-frame hero in one render and a
+            // 112px cut-in in the next, so its framing has to be a function of the box it currently
+            // has. The hero's leftward shift is applied HERE, to this window's own resolved value; it
+            // used to be a second custom property (`--cv-hero-focus`) computed off the item alone.
+            <FocalImg
+              src={entry.url}
+              alt=""
+              draggable={false}
+              decoding="async"
+              art={entry.focus}
+              shiftX={isHero ? -COVER_HERO_SHIFT : undefined}
+            />
           ) : (
             // The resolver's placeholder case: a machine without art is still on the cover — hue, name,
             // role and chip all read (§5.3's "render stays silent"; the Conf gallery is where the owner

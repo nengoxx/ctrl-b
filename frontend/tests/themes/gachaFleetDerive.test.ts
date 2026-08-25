@@ -8,7 +8,6 @@ import {
   cardShapes,
   counterText,
   coverDevelopAnnounce,
-  coverHeroFocus,
   coverPromoteAnnounce,
   coverSettledAnnounce,
   dossierSub,
@@ -665,44 +664,13 @@ describe("the cover's three ceremony sentences (lab wording, poll-truthful endin
   });
 });
 
-describe("coverHeroFocus — the DERIVED hero crop (ruling 9: not a per-id map)", () => {
-  it("shifts the X left by the constant and leaves the Y alone", () => {
-    expect(COVER_HERO_SHIFT).toBe(20);
-    expect(coverHeroFocus("50% 26%")).toBe("30% 26%");
-    // the bundled entries carry real focal points now, and the shift STACKS on top of them
-    expect(coverHeroFocus("50% 12%")).toBe("30% 12%");
-    expect(coverHeroFocus("50% 8%")).toBe("30% 8%");
-  });
-
-  it("passes NO focus through as no override — the CSS default chain stands", () => {
-    // The owner's own art deliberately declares none, which is the case this branch exists for: a
-    // computed `30% …` would be a claim about a crop nobody authored.
-    expect(coverHeroFocus(undefined)).toBeUndefined();
-  });
-
-  it("clamps at zero rather than going negative", () => {
-    expect(coverHeroFocus("10% 40%")).toBe("0% 40%");
-    expect(coverHeroFocus("0% 40%")).toBe("0% 40%");
-  });
-
-  it("degrades junk to the INPUT rather than throwing (it is on a render path)", () => {
-    for (const junk of ["center top", "", "50%", "left 20%", "not a focus at all"])
-      expect(coverHeroFocus(junk)).toBe(junk);
-  });
-
-  it("keeps a fractional X fractional", () => {
-    expect(coverHeroFocus("50.5% 30%")).toBe("30.5% 30%");
-  });
-
-  it("refuses a percentage that PARSES but is not finite (Codex E2 LOW-8)", () => {
-    // A 400-digit percentage matches the shape and converts through `Number()` to Infinity, and
-    // `Infinity% 20%` is not a crop — it is an invalid declaration the browser drops, taking the entry's
-    // own focus down with it. Degrade to the input, like every other junk case.
-    const huge = `${"9".repeat(400)}% 20%`;
-    expect(Number("9".repeat(400)), "the fixture must really overflow").toBe(
-      Number.POSITIVE_INFINITY,
-    );
-    expect(coverHeroFocus(huge)).toBe(huge);
-    expect(coverHeroFocus(`-${"9".repeat(400)}% 20%`)).toBe(`-${"9".repeat(400)}% 20%`);
+describe("COVER_HERO_SHIFT — the hero's leftward offset (ruling 9: not a per-id map)", () => {
+  it("is a FRACTION of the position range since S4, and still the lab's twenty points", () => {
+    // The offset is applied by the hero WINDOW to the position that window resolved (`FocalImg`'s
+    // `shiftX` -> `lib/focalPosition.ts#shiftFocalX`), so it is expressed in the same 0..1 space a
+    // resolved position is. `coverHeroFocus` — which computed it from the ENTRY alone and published it
+    // as `--cv-hero-focus` for the image to inherit — is retired with the rest of that chain (D65 §5).
+    // Its whole arm table moved to tests/lib/focalPosition.test.ts, byte-for-byte outputs included.
+    expect(COVER_HERO_SHIFT).toBe(0.2);
   });
 });

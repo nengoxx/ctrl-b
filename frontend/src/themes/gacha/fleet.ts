@@ -328,37 +328,23 @@ export function coverDevelopAnnounce(name: string): string {
   return `Developing the cover. Waking ${name}.`;
 }
 
-/** How far the HERO slot shifts its art's focal point LEFT, in `object-position` percentage points.
+/** How far the HERO slot shifts its art's framing LEFT — a FRACTION of the position range (0.20 = the
+ *  twenty `object-position` percentage points this has always been).
  *
  *  A LOWER X shows more of the image's left, which slides the SUBJECT rightwards on screen — out from
  *  under the cut-in column that runs down the leading edge. Exported because §12.6 §12.3② hands the number
  *  to the E5 device round: the lab's four hand-authored heroes land between 14 and 20 points of shift
  *  (50% → 30/34/34/36), and 20 is the deepest of them, which is the right default for a column that only
- *  gets wider as the fleet grows. */
-export const COVER_HERO_SHIFT = 20;
-
-/** The HERO crop, DERIVED from whatever focal point the art entry resolved (§12.6 ruling 9 — the lab's
- *  per-id `COVER_HERO_FOCUS` map does NOT port: it was authored against a fixture roster, and the owner's
- *  own art deliberately carries no focus at all).
+ *  gets wider as the fleet grows.
  *
- *  · no focus → no override, so the CSS default chain stands (`--cv-hero-focus` → `--cv-focus` → the lab's
- *    `50% 22%`), which is exactly the case the owner's art is in.
- *  · a focus → its X moves LEFT by `COVER_HERO_SHIFT`, clamped at 0; the Y is untouched, because the
- *    vertical crop is the entry's own framing decision (the bundled entries now carry real ones —
- *    `pegasus` 50% 12%, `3` 50% 14%, `4` 50% 8% — and the shift stacks on top of them).
- *  · anything else → the input, unchanged. This is a RENDER path: an unparseable focus (a hand-edited
- *    roster, a future syntax) must degrade to what the other surfaces already draw, never throw. That
- *    includes a value that PARSES but is not a number the arithmetic can carry: a 400-digit percentage
- *    matches the shape and converts to `Infinity`, and `Infinity% 20%` is not a crop — it is an invalid
- *    declaration the browser drops, taking the entry's own focus down with it (Codex E2 LOW-8). */
-export function coverHeroFocus(focus: string | undefined): string | undefined {
-  if (focus === undefined) return undefined;
-  const m = /^\s*(-?\d+(?:\.\d+)?)%\s+(\S+)\s*$/.exec(focus);
-  if (!m) return focus;
-  const x = Number(m[1]);
-  if (!Number.isFinite(x)) return focus;
-  return `${Math.max(0, x - COVER_HERO_SHIFT)}% ${m[2]}`;
-}
+ *  It is a FRACTION rather than points since S4 (D65 / MEDIA_MANAGER_PLAN §5): the shift is applied by the
+ *  hero WINDOW to the position that window itself resolved (`FocalImg`'s `shiftX` -> `lib/focalPosition.ts
+ *  #shiftFocalX`), where a framing point has already been mapped through that box's own overflow. The old
+ *  `coverHeroFocus` computed it from the ENTRY alone and published it as `--cv-hero-focus` for the image
+ *  to inherit, which only a proportional value could ever be. `shiftFocalX` keeps every degrade that
+ *  function had — an unparseable or non-finite value comes back untouched rather than voiding the whole
+ *  declaration — and its arithmetic is byte-identical on the shipped hand-tuned strings. */
+export const COVER_HERO_SHIFT = 0.2;
 
 /** How many stops the per-unit hue ring carries (tokens.css `--gc-unit-1..5`). FIVE because that is how
  *  many per-unit colours the finalists lab defines — a floor, not a choice. */

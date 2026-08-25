@@ -25,9 +25,11 @@
 // actually supplied is replaced.
 
 import type { MediaFile, MediaIndex } from "../../hooks/useMedia";
+import { proportionalFocal, type FocalArt } from "../../lib/focalPosition";
 import { cycleAssign, cycleAt, firstUsable, orderedUsable, revUrl } from "../../lib/media";
 import {
   activeIds,
+  artFocal,
   ladderRows,
   offersBundled,
   rowId,
@@ -50,8 +52,13 @@ export interface RosterEntry {
   cutout?: string;
   /** Optional landscape variant for wide-consuming slots (banner / backdrop / oracle). */
   wide?: string;
-  /** Optional `object-position` focal point; absent → the theme's default crop. */
-  focus?: string;
+  /** Optional focal point; absent → the theme's default crop. **The entry carries its own mapping
+   *  MODE** (D65 / MEDIA_MANAGER_PLAN §5, council H3): a bundled entry's is `proportional` — the
+   *  hand-tuned `object-position` string below, meaning exactly what the browser has always done with
+   *  it — while an owner file's is `centred`, mapped into each window's own overflow at the paint
+   *  site. The mode is a property of the ITEM and never of the surface, which is what stops a rewrite
+   *  of this module's consumers from silently re-cropping the theme that ships. */
+  focus?: FocalArt;
   /** The entry exists in the roster but its file cannot be used — missing on disk, an unreadable or
    *  disallowed format, a zero-byte upload (the G5 index endpoint's magic-byte reader decides).
    *
@@ -109,7 +116,9 @@ export interface ResolvedArt {
    *  — a class of bug the RESOLVER contract closes once instead of ten patches (`lib/media.ts#revUrl`
    *  is still the one spelling). Bundled art is content-hashed by the build and takes no query. */
   url: string;
-  focus?: string;
+  /** The entry's framing, WITH its mapping mode (§5) — handed straight to the paint site's own
+   *  `useFocalPosition`/`FocalImg`, which is where the window that will paint it is measured. */
+  focus?: FocalArt;
   /** The index's change token for these bytes, when the art came from the owner's media folder. Absent
    *  for bundled art, which is content-hashed and cannot change under a running app. Only a consumer
    *  that REMEMBERS something about one file needs it (the reel figure's failure latch, G4/F6). */
@@ -131,15 +140,20 @@ const BUNDLED_ENTRIES: RosterEntry[] = [
   // Focal points (owner, 2026-08-08 — "frame at face height, like the other two"): pegasus's and 3's
   // faces sit high in their art (eyes ~17% / ~20% from the top), so the poster band's default crop
   // (50% 26%) landed on the chest and hood. Same one-value-re-aims-every-surface contract as `4` below.
-  { name: "pegasus", image: ART.characters[0], focus: "50% 12%" },
+  //
+  // PROPORTIONAL, and stated rather than assumed (§5's council H3): these three strings were hand-tuned
+  // against these exact pictures in these exact windows under the browser's own percentage rule, so
+  // re-reading them as the owner's CENTRED points would re-crop the shipped theme on every surface.
+  // The S4 rewrite passes them through byte-identically; `tests/lib/focalPosition.test.ts` pins that.
+  { name: "pegasus", image: ART.characters[0], focus: proportionalFocal("50% 12%") },
   { name: "atlas", image: ART.characters[1] },
   // The owner's own drops (G1 eyeball round 3): dealt to display positions 2 and 3 — vault and g5 on
   // the owner's fleet. `rook` left the deal for them; the file stays bundled for the G5 gallery.
-  { name: "3", image: ART.characters[2], focus: "50% 14%" },
+  { name: "3", image: ART.characters[2], focus: proportionalFocal("50% 14%") },
   // Focal point (owner round 3): a full-body seated composition with the face ~18% from the top — the
   // wide CARD's default crop (50% 46%, tuned for lyra's art) landed on the shirt. One per-entry value
   // re-aims every surface (card shapes + promo); measured against simulated 16:9 and banner bands.
-  { name: "4", image: ART.characters[3], focus: "50% 8%" },
+  { name: "4", image: ART.characters[3], focus: proportionalFocal("50% 8%") },
   // The TAIL entry: never dealt on a four-host fleet, but still the one CUTOUT-bearing entry — the G4
   // reel figure's bundled option is derived from exactly this field.
   { name: "lyra", image: ART.characters[4], cutout: ART.cutout },
@@ -314,18 +328,33 @@ const BUNDLED_BY_ID = new Map(BUNDLED_ENTRIES.map((e) => [e.name, e]));
 /** One library row as a roster ENTRY. A bundled row resolves to this theme's own asset (the server
  *  emits the id and never a url); one it cannot resolve keeps its POSITION as an unusable entry rather
  *  than vanishing, because vanishing would re-deal every host after it. An owner file has no
- *  `wide`/`cutout`/`focus`: the folder a file sits in is the whole of its assignment. */
+ *  `wide`/`cutout`: the folder a file sits in is the whole of the rest of its assignment.
+ *
+ *  Its FRAMING is its own, though (§5): `artFocal` is the one predicate that folds "no point set" and
+ *  "set against bytes that have since been replaced" into the same answer, so a stale point can never
+ *  reach a surface. */
 function toEntry(f: MediaFile): RosterEntry {
   if (f.bundled != null)
     return BUNDLED_BY_ID.get(f.bundled) ?? { name: f.bundled, image: "", unusable: true };
-  return { name: f.name, image: revUrl(f.url, f.revision), ...(f.unusable && { unusable: true }) };
+  const focus = artFocal(f);
+  return {
+    name: f.name,
+    image: revUrl(f.url, f.revision),
+    ...(focus !== undefined && { focus }),
+    ...(f.unusable && { unusable: true }),
+  };
 }
 
 /** One library row as a POOL member. `bundledUrl` is the theme asset that id stands for, per role. */
 function toNamed(f: MediaFile, bundledUrl: string | undefined): NamedArt {
-  return f.bundled != null
-    ? { name: f.bundled, url: bundledUrl ?? "" }
-    : { name: f.name, url: revUrl(f.url, f.revision), rev: f.revision };
+  if (f.bundled != null) return { name: f.bundled, url: bundledUrl ?? "" };
+  const focus = artFocal(f);
+  return {
+    name: f.name,
+    url: revUrl(f.url, f.revision),
+    rev: f.revision,
+    ...(focus !== undefined && { focus }),
+  };
 }
 
 const sceneUrl = (id: string | null | undefined): string | undefined =>

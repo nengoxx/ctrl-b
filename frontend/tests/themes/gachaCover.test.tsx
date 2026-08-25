@@ -227,15 +227,25 @@ describe("the cover resolves through the fleet Surface", () => {
 
   it("DERIVES the hero crop, and leaves art with no focus alone (ruling 9)", () => {
     const { container } = render(<GachaFleet active />);
-    // the bundled entry at display position 0 declares `50% 12%`; the hero slot shifts its X left by 20
+    // PER WINDOW since S4 (D65 §5): the position is inline on the IMAGE, computed from the box that
+    // image actually got — the `--cv-focus`/`--cv-hero-focus` chain the card used to publish is gone,
+    // because a centred framing point is a function of each box's own overflow and cannot be inherited.
+    const shot = (card: HTMLElement) => card.querySelector<HTMLImageElement>(".cv-shot img")!;
+    // the bundled entry at display position 0 declares `50% 12%` PROPORTIONALLY (a hand-tuned string);
+    // the hero seat shifts its X left by the same twenty points it always has
     const pegasus = cards(container)[0];
-    expect(pegasus.style.getPropertyValue("--cv-focus")).toBe("50% 12%");
-    expect(pegasus.style.getPropertyValue("--cv-hero-focus")).toBe("30% 12%");
-    // …and the entry at position 1 declares none, so NEITHER variable is written and the CSS default
-    // chain stands — a computed override would be a claim about a crop nobody authored
+    expect(pegasus.classList.contains("is-hero")).toBe(true);
+    expect(shot(pegasus).style.objectPosition).toBe("30% 12%");
+    // …and the entry at position 1 declares none, so NO inline position is written at all and the CSS
+    // default stands — a computed override would be a claim about a crop nobody authored
     const atlas = cards(container)[1];
-    expect(atlas.style.getPropertyValue("--cv-focus")).toBe("");
-    expect(atlas.style.getPropertyValue("--cv-hero-focus")).toBe("");
+    expect(atlas.classList.contains("is-cut")).toBe(true);
+    expect(shot(atlas).style.objectPosition).toBe("");
+    // …and neither card publishes the retired custom properties any more.
+    for (const card of cards(container)) {
+      expect(card.style.getPropertyValue("--cv-focus")).toBe("");
+      expect(card.style.getPropertyValue("--cv-hero-focus")).toBe("");
+    }
   });
 });
 

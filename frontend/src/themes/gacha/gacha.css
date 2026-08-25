@@ -1927,7 +1927,10 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      object-position: var(--po-focus, 50% 26%);
+      /* The slice's DEFAULT crop. An entry that carries a framing point overrides it INLINE, from the
+       * slice's own measured box (`FocalImg`) — it used to arrive here through a `--po-focus` custom
+       * property published on the button, which only a proportional value could ever be (§5). */
+      object-position: 50% 26%;
       transform-origin: 60% 40%;
     }
     /* IDLE: one staggered breath, the lab's. Transform-only and both global axes gate it — `data-motion`
@@ -2413,16 +2416,16 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      object-position: var(--cv-focus, 50% 22%);
-    }
-    /* THE HERO CROP IS THE COVER'S OWN (ruling 9, DERIVED — `fleet.ts#coverHeroFocus`). Raising the
-     * cut-in column under the masthead puts paper over the leading edge of the frame, so the hero art
-     * shifts its focal point LEFT: a LOWER object-position X shows more of the image's left, which slides
-     * the subject RIGHTWARDS on screen, out from under the stack. The chain below is what makes the
-     * derivation optional — art that declares no focus at all (the owner's own drops) falls through to
-     * the lab's default and nothing is computed. */
-    .cv-card.is-hero .cv-shot img {
-      object-position: var(--cv-hero-focus, var(--cv-focus, 50% 22%));
+      /* The lab's DEFAULT crop, for both seats — art that declares no framing at all (the state every
+       * fresh install is in) lands here and nothing is computed.
+       *
+       * There is no `--cv-focus`/`--cv-hero-focus` chain any more (D65 §5, S4). It published ONE value
+       * on the card for the image to inherit, plus a second pre-shifted one for the hero seat — and a
+       * centred framing point cannot be published that way, because it is a function of how much THIS
+       * box crops away and the same node is a full-frame hero in one render and a 112px cut-in in the
+       * next. Both now arrive inline from the element's own measured box, hero shift included
+       * (`GachaCover` -> `FocalImg`), which is also why the hero no longer needs a rule of its own. */
+      object-position: 50% 22%;
     }
     .cv-card.asleep .cv-shot img {
       /* the capsule track's own sleep treatment, so all three layouts read one machine the same way */

@@ -1,5 +1,6 @@
 import { useLayoutEffect } from "react";
 
+import { focalPosition } from "../../lib/focalPosition";
 import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
 import { useKitBackgroundArt } from "../../theme-engine/kit/ownerArt";
 import { useThemeSetting } from "../../theme-engine/settings";
@@ -97,7 +98,15 @@ export function GachaRoot() {
   // overwrite must move the URL or the stale decode survives the repair, and the ladder is where that is
   // spelled ONCE. Stamping again here would give the same bytes a second cache key.
   const artUrl = art.url;
-  const artFocus = art.focus;
+  // THE ONE SURFACE THAT CANNOT MEASURE ITSELF, and the recorded degrade §5 names for exactly it: the
+  // backdrop is a `background-image` on `.kit-main` — a node `DefaultRoot` owns and this component has no
+  // ref to — so a focal point here is resolved with NO box and falls back to PROPORTIONAL alignment (the
+  // subject roughly over there, rather than centred). It is a weaker promise, it is visible, and it is the
+  // right trade here: this surface paints under `--gc-wallpaper-scrim`, which is between 72% and fully
+  // opaque over the picture. A bundled entry's hand-tuned string is unaffected — proportional is what it
+  // already meant — so the shipped paint is byte-identical. (The recorded fix, if the owner ever wants it:
+  // a ref threaded from `DefaultRoot`, i.e. a kit-layer seam, not a gacha edit.)
+  const artFocus = art.focus === undefined ? undefined : focalPosition(art.focus, null);
 
   useLayoutEffect(() => {
     const b = document.body;

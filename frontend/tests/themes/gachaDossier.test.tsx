@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { focalPosition, type FocalArt } from "../../src/lib/focalPosition";
 import { relativeTime } from "../../src/lib/relativeTime";
 import { rebaseServiceUrl, serviceBase } from "../../src/lib/serviceBase";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
@@ -28,6 +29,12 @@ import type { Host, HostServiceCfg, Service } from "../../src/types";
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => ({ data: undefined }) }));
 
 afterEach(cleanup);
+
+/** What a resolved entry's framing PAINTS as here (D65 §5). jsdom has no `ResizeObserver` and no layout,
+ *  so no window can be measured — the recorded degrade — and a BUNDLED entry is proportional in any case,
+ *  so this is its hand-tuned string exactly as it shipped. */
+const focusValue = (art: FocalArt | undefined) =>
+  art === undefined ? "" : focalPosition(art, null);
 
 /** N CONFIGURED services (the star + Services-metric input — the host's own array, not the live list). */
 const cfg = (n: number): HostServiceCfg[] =>
@@ -195,7 +202,10 @@ describe("the dossier agrees with the capsule card", () => {
     // entry 3 declares its own focal point — it must reach the portrait, not just the card
     const focused = renderD({ index: 3 });
     const img = focused.container.querySelector<HTMLImageElement>(".avatar")!;
-    expect(img.style.objectPosition).toBe(artForHost(ROSTER, 3)!.focus);
+    // jsdom has no ResizeObserver and no layout, so the window cannot be measured — which is exactly
+    // the recorded proportional degrade, and for a BUNDLED entry (whose mode is proportional anyway)
+    // that is its hand-tuned string, unchanged.
+    expect(img.style.objectPosition).toBe(focusValue(artForHost(ROSTER, 3)!.focus));
   });
 
   it("no usable art → the frame keeps its shape and its rarity badge", () => {
@@ -422,7 +432,7 @@ describe("the character watermark", () => {
 
   it("takes the roster entry's own focal point, exactly as the portrait does", () => {
     const { container } = renderD({ index: 3 }); // entry 3 declares a focus
-    expect(mark(container)!.style.objectPosition).toBe(artForHost(ROSTER, 3)!.focus);
+    expect(mark(container)!.style.objectPosition).toBe(focusValue(artForHost(ROSTER, 3)!.focus));
   });
 
   it("no art → no watermark (a placeholder frame has nothing to echo)", () => {

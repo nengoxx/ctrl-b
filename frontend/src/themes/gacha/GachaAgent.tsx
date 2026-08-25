@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { ChatThread } from "../../components/ChatThread";
 import { PrivilegeChip } from "../../components/PrivilegeChip";
 import { useAgentChat } from "../../hooks/useAgentChat";
+import { useFocalPosition } from "../../hooks/useFocalPosition";
 import { fillComposer } from "../../lib/composer";
 import { PinnedPlanPanel } from "../../theme-engine/kit/composer/plan/PinnedPlanPanel";
 import { usePlanPlacement } from "../../theme-engine/kit/composer/plan/placement";
@@ -243,19 +244,23 @@ function GachaOracle({
   oracleRef: RefObject<HTMLDivElement | null>;
   anchorRef: RefObject<HTMLDivElement | null>;
 }) {
+  const position = useFocalPosition(oracleRef, art.focus);
   return (
     <>
       {/* The measurement anchor: zero-height, never sticky, so its offset is the oracle's TRUE flow
           position at any scroll offset. Rendering it costs one empty div and saves the driver from having
           to reason about a stuck element's own coordinates. */}
       <div className="gc-oracle-anchor" ref={anchorRef} aria-hidden />
-      {/* The focal crop rides a custom property, the wallpaper precedent: it belongs to the SURFACE, so both
-          stacked copies of the art read it from here rather than each carrying its own. Absent → the
-          tokens.css default (the prototype's own crop) stands. */}
+      {/* The framing rides a custom property, and here that is still right AFTER S4's per-window rewrite
+          (D65 / MEDIA_MANAGER_PLAN §5): the two stacked faces are the SAME window painted twice — both are
+          `inset: 0` inside this block, and their scale is a transform, which moves no layout box — so
+          there is one box to measure and one value, read by both copies. What changed is where the value
+          comes from: `useFocalPosition` measures THIS block rather than the entry publishing a string every
+          surface inherits. Absent → the tokens.css default (the prototype's own crop) stands. */}
       <div
         className="gc-oracle"
         ref={oracleRef}
-        style={art.focus === undefined ? undefined : { ["--gc-oracle-pos" as string]: art.focus }}
+        style={position === undefined ? undefined : { ["--gc-oracle-pos" as string]: position }}
       >
         {/* The SHARP face. Art + scrim + name plate — the whole surface, because that is the prototype's
             own M7 target. */}

@@ -1,3 +1,4 @@
+import { FocalImg } from "../../components/FocalImg";
 import type { FleetAction } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
@@ -84,13 +85,10 @@ export function GachaHostDetail({
   // what the morph is named on (gacha.css) and what GachaFleet suppresses for a capture, so wrapping it
   // must not move it. The placeholder case never becomes a button: there is no art to enlarge.
   const portrait = art ? (
-    <img
-      className="avatar"
-      src={art.url}
-      alt=""
-      draggable={false}
-      style={art.focus === undefined ? undefined : { objectPosition: art.focus }}
-    />
+    // §5: the 104x138 portrait is its OWN window and measures itself — the same entry is also painted
+    // into the 66%-wide watermark below and into the fleet's cards, and one published value cannot be
+    // centred in all of them.
+    <FocalImg className="avatar" src={art.url} alt="" draggable={false} art={art.focus} />
   ) : (
     // The resolver's placeholder case (empty roster / unusable file): the frame still holds the rarity
     // badge, so the dossier's composition survives a missing character.
@@ -125,13 +123,13 @@ export function GachaHostDetail({
           trap `.gc-dossier-close`'s z-index 2 inside a local context, and that 2 exists precisely to clear
           the handle's z-1 drag strip in the SHEET's stacking context. */}
       {art && (
-        <img
+        <FocalImg
           className="gc-dossier-mark"
           src={art.url}
           alt=""
           aria-hidden
           draggable={false}
-          style={art.focus === undefined ? undefined : { objectPosition: art.focus }}
+          art={art.focus}
         />
       )}
       {/* data-bs-peek: the PEEK detent ends here — the sheet opens showing the portrait, the rarity and the

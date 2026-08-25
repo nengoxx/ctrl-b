@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
+import { proportionalFocal } from "../../src/lib/focalPosition";
 import { MEDIA_NS } from "../../src/theme-engine/mediaRegistry";
 import { ART } from "../../src/themes/gacha/art";
 import {
@@ -95,8 +96,8 @@ describe("entryForHost / artForHost — positional assignment over the display o
   });
 
   it("carries the entry's focal point through, and omits it when absent", () => {
-    const r = roster([entry("a", { focus: "50% 30%" }), entry("b")]);
-    expect(artForHost(r, 0)).toEqual({ url: "a.webp", focus: "50% 30%" });
+    const r = roster([entry("a", { focus: proportionalFocal("50% 30%") }), entry("b")]);
+    expect(artForHost(r, 0)).toEqual({ url: "a.webp", focus: proportionalFocal("50% 30%") });
     expect(artForHost(r, 1)).toEqual({ url: "b.webp" });
   });
 
@@ -179,13 +180,16 @@ describe("wideArtForHost — the promo crop of the SAME assignment", () => {
   });
 
   it("falls back to the entry's image + its focal crop — never a hole (§5.2)", () => {
-    const r = roster([entry("a", { focus: "50% 12%" })]);
-    expect(wideArtForHost(r, 0)).toEqual({ url: "a.webp", focus: "50% 12%" });
+    const r = roster([entry("a", { focus: proportionalFocal("50% 12%") })]);
+    expect(wideArtForHost(r, 0)).toEqual({ url: "a.webp", focus: proportionalFocal("50% 12%") });
   });
 
   it("carries the focus through the wide variant too", () => {
-    const r = roster([entry("a", { wide: "a-wide.webp", focus: "20% 80%" })]);
-    expect(wideArtForHost(r, 0)).toEqual({ url: "a-wide.webp", focus: "20% 80%" });
+    const r = roster([entry("a", { wide: "a-wide.webp", focus: proportionalFocal("20% 80%") })]);
+    expect(wideArtForHost(r, 0)).toEqual({
+      url: "a-wide.webp",
+      focus: proportionalFocal("20% 80%"),
+    });
   });
 
   it("yields the placeholder on the same terms as the card art: empty roster, unusable entry, bad index", () => {
@@ -203,8 +207,8 @@ describe("slots — pins, and what happens when a pin dangles", () => {
   });
 
   it("a wide-consuming slot on an entry WITHOUT a wide variant falls back to its image — never a hole", () => {
-    const r = roster([entry("a", { focus: "50% 10%" })], { wallpaper: "a" });
-    expect(wallpaperArt(r)).toEqual({ url: "a.webp", focus: "50% 10%" });
+    const r = roster([entry("a", { focus: proportionalFocal("50% 10%") })], { wallpaper: "a" });
+    expect(wallpaperArt(r)).toEqual({ url: "a.webp", focus: proportionalFocal("50% 10%") });
   });
 
   it("a pin naming a MISSING entry (deleted/renamed) degrades to the default — never crashes", () => {
@@ -607,8 +611,13 @@ describe("wallpaperArt — the three-rung fleet backdrop (G6.3)", () => {
     expect(wallpaperArt(pinned, kit)).toEqual({ url: "a-wide.webp" });
     // …and the pin goes through the WIDE ladder, so a portrait with no landscape variant still crops
     // rather than being skipped.
-    const noWide = roster([entry("a", { focus: "50% 10%" })], { wallpaper: "a" });
-    expect(wallpaperArt(noWide, kit)).toEqual({ url: "a.webp", focus: "50% 10%" });
+    const noWide = roster([entry("a", { focus: proportionalFocal("50% 10%") })], {
+      wallpaper: "a",
+    });
+    expect(wallpaperArt(noWide, kit)).toEqual({
+      url: "a.webp",
+      focus: proportionalFocal("50% 10%"),
+    });
   });
 
   it("there is NO gacha wallpaper pool left to sit between them — the Roster has no such field", () => {

@@ -7,6 +7,7 @@ import {
   type PointerEvent,
 } from "react";
 
+import { FocalImg } from "../../components/FocalImg";
 import { useGachaReelRunning } from "../../store/gachaReel";
 import { useUISlice } from "../../store/ui";
 import type { Host } from "../../types";
@@ -438,7 +439,7 @@ export function GachaBanner({ slides, active, rate, pity, onOpenHost }: Props) {
               aria-hidden={inactive || undefined}
             >
               {s.art && (
-                <img
+                <FocalImg
                   // PAINT-READY from the resolver (D65 defect #1 + its S2 review rider #8): the hero and
                   // the fleet backdrop can resolve to the SAME shared-background file, so the URL has to
                   // carry the file's `?rev=` — and the ladder is the one place that stamps it. Stamping
@@ -446,7 +447,9 @@ export function GachaBanner({ slides, active, rate, pity, onOpenHost }: Props) {
                   src={s.art.url}
                   alt=""
                   draggable={false}
-                  style={s.art.focus === undefined ? undefined : { objectPosition: s.art.focus }}
+                  // §5: the SLIDE is the window. A promo band and a capsule card are the same picture in
+                  // two very different boxes, which is exactly the case a published-once value gets wrong.
+                  art={s.art.focus}
                 />
               )}
               {s.kind === "promo" ? (

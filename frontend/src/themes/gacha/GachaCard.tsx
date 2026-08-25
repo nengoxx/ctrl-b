@@ -1,5 +1,6 @@
 import type { PointerEvent } from "react";
 
+import { FocalImg } from "../../components/FocalImg";
 import type { Host } from "../../types";
 import { openLabel, plateSub, type CapsuleShape } from "./fleet";
 import { GachaStar } from "./GachaStar";
@@ -71,12 +72,10 @@ export function GachaCard({ host, art, shape, mode, onOpen, isNew }: Props) {
     >
       <span className="gc-card-face">
         {art ? (
-          <img
-            src={art.url}
-            alt=""
-            draggable={false}
-            style={art.focus === undefined ? undefined : { objectPosition: art.focus }}
-          />
+          // THE CARD'S WINDOW frames the entry's point itself (§5): the three capsule shapes are three
+          // different boxes (`gacha.css` gives each its own default crop), so the position has to be a
+          // function of the box this card actually got — not a value published once for all of them.
+          <FocalImg src={art.url} alt="" draggable={false} art={art.focus} />
         ) : (
           // The resolver's placeholder case (an empty roster or an unusable file): a card without art is
           // still a card — the plate, chip and rarity all read, over the theme's own surface (§5.3's

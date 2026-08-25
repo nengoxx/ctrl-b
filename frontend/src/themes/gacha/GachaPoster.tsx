@@ -1,5 +1,6 @@
 import { useRef, useState, type CSSProperties } from "react";
 
+import { FocalImg } from "../../components/FocalImg";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { useThemeSetting } from "../../theme-engine/settings";
 import type { Host, Service } from "../../types";
@@ -208,8 +209,6 @@ export function GachaPoster({
                       // How far this slice steps aside while the stack parts. Zero at rest so the ceremony's
                       // transition has a resting value to animate from and back to.
                       "--po-part": parting ? partingStep(i, stageIndex) : 0,
-                      // The roster entry's own focal crop, when it declares one (the card/promo idiom).
-                      ...(slice?.focus === undefined ? null : { "--po-focus": slice.focus }),
                     } as CSSProperties
                   }
                   aria-label={pickLabel(host, stars, isPicked)}
@@ -245,7 +244,16 @@ export function GachaPoster({
                   <span className="po-plate">
                     <span className="po-art">
                       {slice ? (
-                        <img src={slice.url} alt="" draggable={false} decoding="async" />
+                        // §5: the slice's OWN sheared window measures itself. This used to publish
+                        // `--po-focus` on the button for `.po-art img` to inherit — which a centred
+                        // point cannot be, since it is a function of how much THIS box crops away.
+                        <FocalImg
+                          src={slice.url}
+                          alt=""
+                          draggable={false}
+                          decoding="async"
+                          art={slice.focus}
+                        />
                       ) : (
                         // The resolver's placeholder case (an empty roster or an unusable file): a slice
                         // without art is still a slice — hue, name, role and chip all read (§5.3's "render
