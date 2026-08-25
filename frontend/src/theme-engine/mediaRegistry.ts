@@ -21,7 +21,10 @@
 // art cannot leave a stale name in this registry. (The other half of that mirror — the BACKEND's hand-listed
 // copy in `core/media.py` — is held in step by a drift guard in tests/theme-engine/mediaRegistry.test.ts.)
 
+import type { ExportOverride } from "../lib/imageExport";
+import type { GuardLimits } from "../lib/imageProbe";
 import type { ActiveResolver } from "../lib/mediaLibrary";
+import type { NameLimits } from "../lib/uploadName";
 import { ART as FRONTIER_ART, RIG_KEYS } from "../themes/frontier/art";
 import {
   activeHero,
@@ -63,6 +66,62 @@ export interface MediaBounds {
   bytes: number;
   pixels: number;
 }
+
+// ── the UPLOAD policy (D65 / MEDIA_MANAGER_PLAN §4) ──────────────────────────────────────────────
+
+/** Every tunable the client's upload path judges against, in ONE object — the standing customizable
+ *  principle ("tunables in config or the registry, never magic numbers", §0) applied to a pipeline
+ *  whose numbers are otherwise scattered across a guard, a name minter and an export.
+ *
+ *  It lives HERE rather than in `lib/` for the reason the section descriptors do (the council H4
+ *  rider): `lib/imageProbe`, `lib/uploadName` and `lib/imageExport` are pure and take their policy as
+ *  ARGUMENTS, so the numbers have exactly one home and every test can state its own.
+ *
+ *  The one number that is NOT here is the byte cap: `media.write.max_bytes` is the SERVER's setting
+ *  (`MediaWriteCfg`, owner-ruled 15 MB) and the client reads it off the settings snapshot, so the two
+ *  ends cannot disagree about what a 413 means. `maxBytesFallback` below is only what the guard uses
+ *  before that snapshot has landed. */
+export interface UploadLimits extends Omit<GuardLimits, "maxBytes">, NameLimits {
+  /** What the guard uses for `maxBytes` until the settings snapshot supplies the real one. */
+  maxBytesFallback: number;
+}
+
+export const UPLOAD_LIMITS: UploadLimits = {
+  /** The DECODE guard, and the one number the owner's own hardware chose: an Honor 20 shoots 48 MP
+   *  (8000×6000), so a cap that refused it would refuse the phone this app is used from. 64 MP admits
+   *  it with room and still refuses the 108/200 MP modes, whose 432–800 MB of RGBA is past what
+   *  Chrome Android will decode on any device (its cap is `totalRAM / 25`) and what Gecko — which has
+   *  no cap at all — would survive attempting (R54 §4.1). Owner ruling ④. */
+  maxPixels: 64_000_000,
+  /** `MediaWriteCfg.max_bytes`'s default, mirrored for the window before settings arrive. 15 MB,
+   *  owner ruling ③ — a phone JPEG at 12–50 MP is 3–15 MB. */
+  maxBytesFallback: 15 * 1024 * 1024,
+  /** How much of a picked file the header reader is handed. 64 KB reaches the SOF of every conforming
+   *  JPEG (only EXIF thumbnails and ICC profiles sit in front of it) and is a `Blob.slice` view, so
+   *  the cost is the read, not a copy. */
+  headBytes: 65_536,
+  /** `core/media.py#MAX_NAME_BYTES` — the POSIX/NTFS budget, in UTF-8 BYTES. */
+  maxNameBytes: 255,
+  /** How far the `-2`, `-3`, … walk runs before the timestamp fallback (§2.5). Ninety-nine because
+   *  the walk is O(n) over a folder listing the gallery already holds, and a hundredth copy of one
+   *  picture is a library, not a collision. */
+  attempts: 99,
+};
+
+/** What the PICKER asks for. EXPLICIT types rather than `image/*`, on R54's source reading of both
+ *  browsers: Chrome routes to the Android 13+ system photo picker as long as every entry starts with
+ *  `image/`, and both engines put exactly this list into `EXTRA_MIME_TYPES`, so HEIC drops out of the
+ *  default view. It is a HINT, never a guarantee (MDN says so in as many words) — the guard is what
+ *  actually decides. `capture` is deliberately absent: both engines add the camera to the chooser for
+ *  an image accept list anyway, and `capture` would make the camera the ONLY option. */
+export const UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp";
+
+/** A role's per-destination override of the export's format policy (`lib/imageExport#exportPolicy`).
+ *
+ *  Declared per ROLE for the same reason the size bounds are (Opus M6): what a file of this role IS
+ *  decides how it may be encoded, and one global answer serves neither a photograph nor a mask. Absent
+ *  ⇒ the source decides (alpha-capable source ⇒ webp, else jpeg). */
+export type MediaExportDef = ExportOverride;
 
 /** ONE bundled entry a role ships: the stable ID the server emits as an index row, and the CLIENT-side
  *  asset it stands for (a Vite-hashed build url — the server has never seen the bytes and emits no url
@@ -149,6 +208,9 @@ export interface MediaRoleDef {
   /** Shown under the role's heading in the gallery. A role with no hint still renders. */
   hint?: string;
   bounds: MediaBounds;
+  /** How an UPLOAD to this role is encoded, when the source's own type is not the right answer (see
+   *  `MediaExportDef`). Absent for every role whose files are ordinary pictures. */
+  export?: MediaExportDef;
   /** `named` roles with a STATIC key list (frontier's stack). Absent for a pool, and absent for a named
    *  role whose keys are derived from live data — which declares `keySource` instead. */
   keys?: readonly MediaKeyDef[];
@@ -415,6 +477,12 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // `Cube.PNG` all reach the same layer; only the stem is read.
         hint: "The floating stack on Comms — one file per LAYER, named for it. Transparent PNGs; each is fitted into its box, so a wrong shape letterboxes rather than stretches. A layer you drop nothing for keeps its bundled art.",
         bounds: LAYER_ART,
+        // FORCED PNG. Three transparent layers are composited over each other at small sizes, where a
+        // lossy encoder's ringing shows up as a halo along every edge — and the layers are tiny (the
+        // biggest box is 196×33 CSS px), so lossless costs kilobytes. Being lossless, it also skips
+        // the byte step-down: there is no quality to lower, and the advisory badge is the honest
+        // answer for a layer that lands over `LAYER_ART`'s bound.
+        export: { type: "image/png" },
         // One bundled layer per KEY — the ids ARE `STACK_KEYS`, which is why a partial drop composites
         // owner over bundled instead of blanking the other two.
         bundled: bundle(
@@ -539,6 +607,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         active: activeKitPool("brand"),
         hint: "Your own mark beside the app title. A transparent PNG or WebP — only the SHAPE is used, and each theme colours it with its own accent, so a flat silhouette works best. The first image wins (or pin one below).",
         bounds: ICON_ART,
+        // FORCED PNG, and here it is not a quality preference but a correctness one: the file is
+        // painted as a CSS MASK, so only its ALPHA is ever read. A lossy encode blurs the alpha edge
+        // into a fringe of partial coverage, which the mask turns into a soft halo of accent colour
+        // around the mark. Lossless keeps the silhouette exact — and at 512×512 it costs nothing.
+        export: { type: "image/png" },
       },
     },
     // One pin per POOL, each the same shape as the frontier map cover's: a first-wins default the owner

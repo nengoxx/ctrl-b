@@ -38,6 +38,28 @@ export default {
       { severity: "warning", message: "custom properties must be kebab-case" },
     ],
 
+    // ── `image-orientation` is FORBIDDEN outright (D65 / MEDIA_MANAGER_PLAN §11, R54 §10②) ───────
+    // An ERROR, not a warning, on the same terms as the two accent rules below: a correctness
+    // invariant with zero current violations.
+    //
+    // The property is INHERITED and applies to ALL elements (CSS Images 3, verbatim: *Initial:
+    // from-image · Applies to: all elements · Inherited: yes*), and the two engines read it off
+    // DIFFERENT elements when a canvas draws an image — Chromium off the CANVAS ("We always use the
+    // image-orientation property on the canvas element…", `canvas_2d_recorder_context.cc`), Gecko off
+    // the SOURCE element's frame (`nsLayoutUtils.cpp`). So a single reset rule anywhere above either
+    // element would silently rotate the pixels ctrl-b EXPORTS AND STORES, in one engine only —
+    // invisible on desktop Chrome and wrong on the owner's phone, permanently, in the file. There is
+    // no legitimate use of it here: the export decodes with `createImageBitmap`, which ignores CSS in
+    // both engines, and every browser already applies EXIF orientation unconditionally (`none` is a
+    // no-op in both — measured). One line for a class of bug that is otherwise very hard to find.
+    "property-disallowed-list": [
+      ["image-orientation"],
+      {
+        message:
+          "never set image-orientation: the two engines read it off different elements, so it silently rotates EXPORTED pixels in one of them (R54 §10②)",
+      },
+    ],
+
     // ── The two bespoke accent correctness rules (ERRORS — see plugin header) ────────────────────
     "ctrlb/accent-fill-contexts": true,
     "ctrlb/accent-is-color": true,
