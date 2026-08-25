@@ -189,6 +189,18 @@ def test_a_name_this_surface_may_not_mint_is_422_with_a_reason(home: Path, name:
         assert list(role(home, "characters").iterdir()) == []
 
 
+def test_a_raw_undecodable_byte_in_the_name_is_422(home: Path) -> None:
+    """`%FF` is not valid UTF-8, and the server decodes a request path with replacement — so the name
+    that reaches the handler carries U+FFFD. That is why the replacement character is in the forbidden
+    set: accepting it would persist a filename whose real bytes were already lost upstream, under a
+    name no client could ever address again (the R55 pin)."""
+    with make_client() as c:
+        r = c.put(f"{URL}/a%FFb.png", content=png_bytes())
+        assert r.status_code == 422, r.text
+        assert "not allowed" in r.json()["detail"]
+        assert list(role(home, "characters").iterdir()) == []
+
+
 @pytest.mark.parametrize(
     "path",
     [
