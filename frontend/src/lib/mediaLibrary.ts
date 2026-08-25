@@ -25,6 +25,7 @@
 //
 // Both arms are pinned in tests/lib/mediaLibrary.test.ts.
 
+import { centredFocal, type FocalArt, type FocalPoint } from "./focalPosition";
 import { orderedUsable, revUrl, type MediaNamed } from "./media";
 
 /** One collated LIBRARY row, structurally — the wire's `MediaFile` and anything derived from one.
@@ -40,6 +41,21 @@ export interface LibraryRow extends MediaNamed {
   listed?: boolean;
   /** The owner excluded it from resolution while keeping it in the library. */
   hidden?: boolean;
+}
+
+/** The stored framing point, structurally — `MediaFile["focal"]` without the import. */
+export interface StoredFocal extends FocalPoint {
+  /** The `revision` these coordinates were set against (§2.2). */
+  rev: string;
+}
+
+/** A row carrying enough to answer "is its framing still about THIS picture" — the wire's `focal` and
+ *  the `revision` it is keyed to. */
+export interface FocalRow {
+  focal?: StoredFocal | null;
+  revision?: string;
+  width?: number | null;
+  height?: number | null;
 }
 
 /** One `files` entry, structurally — `hooks/useSettings.ts#MediaFileEntry` without the import. Open,
@@ -141,6 +157,46 @@ export function usableLadderRows<T extends LibraryRow>(rows: readonly T[]): T[] 
   const visible = shown(rows);
   const own = orderedUsable(ownTier(visible));
   return own.length > 0 ? own : orderedUsable(fallbackTier(visible));
+}
+
+// ── the framing point, rev-keyed (§2.2 / §5) ─────────────────────────────────────────────────────
+//
+// ONE predicate, here, because "does this row have a framing point" is asked in four places that must
+// never disagree: the paint sites (through `artFocal`), the framing sheet (which has to SAY why the
+// point it is not showing is gone), the item detail's affordance, and the write that replaces it.
+
+/** Three states, not two (`set`/`unset` would swallow the third and it is the one the owner needs
+ *  told about):
+ *
+ *   · `unset` — no point was ever stored. Every surface uses its own default crop.
+ *   · `set`   — stored, and still about these bytes.
+ *   · `stale` — stored against a DIFFERENT `revision`. Owner media is mutable in place under a stable
+ *     name (an SSH overwrite is the ordinary repair), so a point set on the old picture describes a
+ *     spot in a picture that is gone. It reads as UNSET everywhere, and the framing sheet says
+ *     "framing was reset — the file changed" rather than silently cropping to a stranger's shoulder. */
+export type FocalState = "unset" | "set" | "stale";
+
+export function focalState(row: FocalRow): FocalState {
+  const focal = row.focal;
+  if (focal == null || !Number.isFinite(focal.x) || !Number.isFinite(focal.y)) return "unset";
+  // An empty `rev` matches no revision, which is what makes the field safely additive: a point
+  // written by anything that did not know about the keying degrades rather than lying.
+  return focal.rev !== "" && focal.rev === (row.revision ?? "") ? "set" : "stale";
+}
+
+/** The row's LIVE point, or `undefined` for unset AND for stale — the one place that fold happens. */
+export function rowFocal(row: FocalRow): FocalPoint | undefined {
+  const focal = row.focal;
+  return focal != null && focalState(row) === "set" ? { x: focal.x, y: focal.y } : undefined;
+}
+
+/** The row as a paint-site input (§5's council H3): an owner file with a live point is CENTRED, and
+ *  carries the source pixels the centred mapping needs. Everything else has no framing of its own and
+ *  leaves the surface on its own default crop. Bundled rows never come through here — their
+ *  proportional strings live in the theme's own ladder module. */
+export function artFocal(row: FocalRow): FocalArt | undefined {
+  const point = rowFocal(row);
+  return point === undefined ? undefined : centredFocal(point, row.width, row.height);
 }
 
 // ── active resolution (§2.4) ─────────────────────────────────────────────────────────────────────
@@ -366,6 +422,31 @@ export function setHidden(
   });
 }
 
+/** The **framing point** write (§5). Order untouched — framing is not priority — and the whole disk
+ *  tier is written for the reason `setHidden` writes it: listing ONE entry into an otherwise-empty
+ *  `files` list would move it to the front of the collation and silently re-prioritise the role.
+ *
+ *  `null` CLEARS it, and clearing removes the field rather than persisting a `{0.5, 0.5}` that means
+ *  the same thing — R57 §5.5⑤'s finding (every product in the field treats centre as unset) applied to
+ *  a config file the owner may open.
+ *
+ *  The `rev` is the CALLER's: it has to be read from the authoritative index row at SEND time, not
+ *  from the tile the owner tapped, or a point could be keyed to a revision the file no longer has.
+ *  `hooks/useMediaLibrary.ts#setFocal` is where that happens — the same recompute-at-send rule the
+ *  pin's eligibility runs on. */
+export function setFocal(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  id: RowId,
+  focal: StoredFocal | null,
+): LibraryEntry[] {
+  return writeFiles(entries, rows, {
+    order: displayOrder(rows),
+    touched: [id],
+    edit: { id, fields: { focal: focal ?? undefined } },
+  });
+}
+
 /** The config half of a DELETE (§6.4): the entry drops, and every other disk row is written in its
  *  current order — so whatever was second becomes first in the SAME write (delete-active-promotes-
  *  next, one write, no window in which the role has no active entry). */
@@ -399,13 +480,10 @@ export function appendItem(
 
 /** The wire facts a picture is made of — `MediaFile`, structurally (this module stays wire-free for
  *  the reason `lib/media.ts` does). */
-export interface ArtRow extends LibraryRow {
+export interface ArtRow extends LibraryRow, FocalRow {
   url: string;
-  revision?: string;
   format?: string | null;
   size_bytes: number;
-  width?: number | null;
-  height?: number | null;
   unusable_reason?: string | null;
 }
 

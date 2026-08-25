@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   advisoriesOf,
   appendItem,
+  artFocal,
+  focalState,
   displayOrder,
   entryId,
   fallbackTier,
@@ -15,7 +17,9 @@ import {
   ownTier,
   removeItem,
   rowId,
+  rowFocal,
   setActive,
+  setFocal,
   setHidden,
   shown,
   tileUrl,
@@ -336,6 +340,102 @@ describe("append — the upload's register phase (S3b calls it; the rule lives h
       { name: "a.webp" },
       { name: "new.webp", key: "jellyfin" },
     ]);
+  });
+});
+
+// ── the framing point (§2.2's rev-keying + §5) ──────────────────────────────────────────────────
+
+describe("focalState — rev-keying, the three-valued predicate", () => {
+  it("UNSET when there is none, however the wire spells it", () => {
+    expect(focalState(disk("a.webp"))).toBe("unset");
+    expect(focalState(disk("a.webp", { focal: null }))).toBe("unset");
+    // A non-finite coordinate is not a point: a hand-edited config must not reach the math.
+    expect(focalState(disk("a.webp", { focal: { x: Number.NaN, y: 0.2, rev: "1:100" } }))).toBe(
+      "unset",
+    );
+  });
+
+  it("SET only while the rev matches the row's own revision", () => {
+    expect(focalState(disk("a.webp", { focal: { x: 0.4, y: 0.2, rev: "1:100" } }))).toBe("set");
+  });
+
+  it("STALE when the bytes moved under a stable name (Opus M2 — the R57 §9⑤ safety clause)", () => {
+    // The ordinary repair is an SSH overwrite of `lyra.webp`. The URL cannot move for it, so nothing
+    // else notices — and a point measured on the old picture describes a spot that is gone.
+    expect(focalState(disk("a.webp", { focal: { x: 0.4, y: 0.2, rev: "2:200" } }))).toBe("stale");
+    // An EMPTY rev matches no revision, which is what makes the field safely additive.
+    expect(focalState(disk("a.webp", { focal: { x: 0.4, y: 0.2, rev: "" } }))).toBe("stale");
+    // …and it stays stale even against a row the server could not `stat` (revision "").
+    expect(focalState(bundled("pegasus", { focal: { x: 0.4, y: 0.2, rev: "" } }))).toBe("stale");
+  });
+
+  it("STALE reads as UNSET everywhere a surface asks — one fold, one place", () => {
+    const stale = disk("a.webp", { focal: { x: 0.4, y: 0.2, rev: "2:200" } });
+    expect(rowFocal(stale)).toBeUndefined();
+    expect(artFocal(stale)).toBeUndefined();
+    const live = disk("a.webp", {
+      focal: { x: 0.4, y: 0.2, rev: "1:100" },
+      width: 600,
+      height: 300,
+    });
+    expect(rowFocal(live)).toEqual({ x: 0.4, y: 0.2 });
+    // …and the paint-site form carries the mapping MODE and the source pixels the mapping needs.
+    expect(artFocal(live)).toEqual({
+      mode: "centred",
+      point: { x: 0.4, y: 0.2 },
+      width: 600,
+      height: 300,
+    });
+  });
+
+  it("carries a MISSING source size through as null rather than inventing one", () => {
+    const live = disk("a.webp", {
+      focal: { x: 0.4, y: 0.2, rev: "1:100" },
+      width: null,
+      height: null,
+    });
+    expect(artFocal(live)).toEqual({
+      mode: "centred",
+      point: { x: 0.4, y: 0.2 },
+      width: null,
+      height: null,
+    });
+  });
+});
+
+describe("setFocal — the framing write (§5)", () => {
+  const rows = [disk("a.webp", { listed: true }), disk("b.webp"), bundled("pegasus")];
+
+  it("writes the point on its own entry, keeps the order, and sweeps only the DISK tier", () => {
+    const out = setFocal([{ name: "a.webp" }], rows, "f:a.webp", {
+      x: 0.42,
+      y: 0.18,
+      rev: "1:100",
+    });
+    expect(out).toEqual([
+      { name: "a.webp", focal: { x: 0.42, y: 0.18, rev: "1:100" } },
+      { name: "b.webp" },
+    ]);
+  });
+
+  it("CLEARS by removing the field, never by persisting a centre that means the same thing", () => {
+    // R57 §5.5⑤: every product in the field treats {0.5, 0.5} as unset. A redundant default in a
+    // config file the owner may open is noise, and `prune` is the house spelling for dropping it.
+    const held: LibraryEntry[] = [{ name: "a.webp", focal: { x: 0.42, y: 0.18, rev: "1:100" } }];
+    expect(setFocal(held, rows, "f:a.webp", null)).toEqual([
+      { name: "a.webp" },
+      { name: "b.webp" },
+    ]);
+  });
+
+  it("leaves every OTHER per-item field on the entry (read-modify-write, never a rebuild)", () => {
+    const held: LibraryEntry[] = [{ name: "a.webp", key: "vault", hidden: true }];
+    expect(setFocal(held, rows, "f:a.webp", { x: 0.5, y: 0.1, rev: "1:100" })[0]).toEqual({
+      name: "a.webp",
+      key: "vault",
+      hidden: true,
+      focal: { x: 0.5, y: 0.1, rev: "1:100" },
+    });
   });
 });
 
