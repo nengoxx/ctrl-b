@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
-import { ART, RIG_KEYS, assets } from "../../src/themes/frontier/art";
+import { ART, HERO_KEY, RIG_KEYS, assets } from "../../src/themes/frontier/art";
 import { frontierArtFromIndex, STACK_KEYS } from "../../src/themes/frontier/ownerArt";
 import { present } from "../../src/themes/frontier/present";
 
@@ -25,6 +25,20 @@ const file = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
   height: 10,
   unusable: false,
   unusable_reason: null,
+  ...over,
+});
+
+/** A BUNDLED row, as the server collates it: no file, no url, its id in both `name` and `bundled`. */
+const bundled = (id: string, over: Partial<MediaFile> = {}): MediaFile => ({
+  ...file(id),
+  file: "",
+  url: "",
+  bundled: id,
+  format: null,
+  size_bytes: 0,
+  revision: "",
+  width: null,
+  height: null,
   ...over,
 });
 
@@ -125,6 +139,40 @@ describe("hero — a pool with a pin (the kit-background shape)", () => {
   it("an all-unusable folder falls all the way through to the bundled vista", () => {
     const art = frontierArtFromIndex(index({ hero: [file("one", { unusable: true })] }));
     expect(art.hero).toBe(ART.hero);
+  });
+
+  // ── the vista as a LIBRARY ENTRY (S6) ──────────────────────────────────────────────────────────
+  //
+  // It used to be a bare URL on the ladder's last rung that no id addressed, which meant the one
+  // picture this role paints was in no gallery: unreachable, unorderable, unretirable. It is a bundled
+  // row now, and these three arms are what that costs and buys.
+
+  it("the bundled ROW resolves to this theme's own asset — the server emits an id, never a url", () => {
+    const art = frontierArtFromIndex(index({ hero: [bundled(HERO_KEY)] }));
+    expect(art.hero).toBe(ART.hero);
+  });
+
+  it("an owner file still outranks it, because the owner's tier replaces the fallback one", () => {
+    const art = frontierArtFromIndex(index({ hero: [file("one"), bundled(HERO_KEY)] }));
+    expect(art.hero).toBe(painted("one"));
+  });
+
+  it("switching it OFF paints no cover — the In-use switch has to mean what it says", () => {
+    // The half that a hard-coded last rung made impossible: the gallery would say "nothing in use"
+    // while the map kept painting the retired vista (Emma's S2 review #2, on this surface).
+    const art = frontierArtFromIndex(index({ hero: [bundled(HERO_KEY, { hidden: true })] }));
+    expect(art.hero).toBeUndefined();
+  });
+
+  it("…but a STUB payload still gets it — `offersBundled` is what tells the two apart", () => {
+    // An e2e mock, a proxy answering `{}`, a partial response: none of them ever described the tier,
+    // so "nothing resolved" is not the owner's answer and the shipped theme stands.
+    expect(frontierArtFromIndex(index({})).hero).toBe(ART.hero);
+    expect(frontierArtFromIndex(undefined).hero).toBe(ART.hero);
+  });
+
+  it("an id the theme no longer ships resolves to nothing rather than to a broken url", () => {
+    expect(frontierArtFromIndex(index({ hero: [bundled("retired")] })).hero).toBeUndefined();
   });
 });
 

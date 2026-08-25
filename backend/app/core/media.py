@@ -105,17 +105,22 @@ class MediaRole:
 #: migrate and no compat branch to carry (the no-legacy-seams rule).
 GACHA_ROLES: dict[str, MediaRole] = {
     # The cast the roster deals to hosts, positionally. Its bundled ids are the `defaultRoster()`
-    # entry names (themes/gacha/roster.ts) — the five portraits a fresh install shows.
-    "characters": MediaRole(bundled=("pegasus", "atlas", "3", "4", "lyra")),
+    # entry names (themes/gacha/roster.ts) — the portraits a fresh install shows. `rook` is the TAIL
+    # entry and joined the list in the S6 owner round: the file always shipped, the manifest comment
+    # always claimed it was "bundled for the gallery", and it was in no role's list on either side of
+    # the mirror — so it appeared in no gallery and could not be reached, reordered or retired.
+    "characters": MediaRole(bundled=("pegasus", "atlas", "3", "4", "lyra", "rook")),
     # The pickup-carousel scene slides: `defaultRoster().scenes`, named `b2`/`b3` in gacha/art.ts.
     "banner": MediaRole(bundled=("b2", "b3")),
     # The transition cutout: `defaultRoster().pools.reel`, DERIVED from the entries carrying a
     # `cutout` field — today exactly `lyra`, which is why she stays last in the cast.
     "reel": MediaRole(bundled=("lyra",)),
-    # NO bundled id: the oracle's bundled backdrop is SCENE art addressed by no name and pinnable
-    # through no slot (`defaultRoster().pools.oracle` is empty on purpose), so it is the last rung of
-    # `oracleArt`'s ladder rather than a library entry. An id is not invented for it.
-    "oracle": MediaRole(),
+    # The operator backdrop, which `defaultRoster().pools.oracle` now carries as an ordinary pool
+    # member. It used to be listed nowhere on the reasoning that scene art no pin addresses is the last
+    # rung of a ladder rather than a library entry — and the consequence was that the one picture the
+    # role paints was invisible in its own gallery and could not be replaced from the app at all (the
+    # S6 owner ruling: shipped art is an ordinary entry, visible, reorderable and hideable).
+    "oracle": MediaRole(bundled=("oracle",)),
 }
 
 #: The gacha `slots` pin keys (§5.2) — the cross-role bindings the Conf gallery offers. `wallpaper` is
@@ -133,9 +138,10 @@ FRONTIER_ROLES: dict[str, MediaRole] = {
     # `RIG_KEYS[i % 6]` and the consumer paints `assets[key]` when the owner has dropped none
     # (themes/frontier/art.ts).
     "rigs": MediaRole(bundled=("rig1", "rig2", "rig3", "rig4", "rig5", "rig6")),
-    # NO bundled id: `ART.hero` is the ladder's last rung, a bare URL that no pin and no key
-    # addresses — the same rule as the gacha oracle above.
-    "hero": MediaRole(),
+    # The badlands map cover — `ART.hero`, under the stem the manifest already addresses it by
+    # (`HERO_KEY`, themes/frontier/art.ts). Listed for the same reason the gacha oracle now is: art
+    # nothing names is art the owner cannot see, reorder or replace.
+    "hero": MediaRole(bundled=("hero",)),
     # The three layers, by the KEY a stem must match (`STACK_KEYS`, themes/frontier/ownerArt.ts).
     # Each key has its own bundled layer, so a partial drop composites owner over bundled.
     "stack": MediaRole(bundled=("cube", "platform-mid", "platform-base")),

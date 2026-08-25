@@ -25,7 +25,11 @@ import type { ExportOverride } from "../lib/imageExport";
 import type { GuardLimits } from "../lib/imageProbe";
 import type { ActiveResolver } from "../lib/mediaLibrary";
 import type { NameLimits } from "../lib/uploadName";
-import { ART as FRONTIER_ART, RIG_KEYS } from "../themes/frontier/art";
+import {
+  ART as FRONTIER_ART,
+  HERO_KEY as FRONTIER_HERO_KEY,
+  RIG_KEYS,
+} from "../themes/frontier/art";
 import {
   activeHero,
   activeRigs,
@@ -209,9 +213,11 @@ export interface MediaRoleDef {
    *  included — a role that ships nothing must say so, because "no bundled art" is a real answer (the whole
    *  kit namespace) and an omitted field would make it indistinguishable from a forgotten one.
    *
-   *  An asset with **no stable name gets no id**: gacha's oracle backdrop and frontier's hero vista are the
-   *  last rung of a ladder that nothing addresses by name, so they are `[]` rather than an invented
-   *  identity no resolver could honour. */
+   *  **Everything a theme ships is listed** (the S6 owner ruling): gacha's oracle backdrop and frontier's
+   *  hero vista were the two exceptions — art on the last rung of a ladder that nothing addressed by name
+   *  — and the consequence was that the one picture each of those roles paints appeared in no gallery and
+   *  could not be reordered, replaced or retired. They carry the stem their own asset file has. An empty
+   *  list now means only what the kit means by it: this role ships nothing. */
   bundled: readonly MediaBundledDef[];
   /** Shown under the role's heading in the gallery. A role with no hint still renders. */
   hint?: string;
@@ -437,9 +443,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // bound into the backdrop) outranks this folder entirely, and the card says so with a pointer
         // rather than painting a phantom (§2.4).
         active: activeOraclePool,
-        // EMPTY, and derived that way rather than asserted: the roster's oracle pool is empty on purpose
-        // because the bundled backdrop is SCENE art addressed by no name — it is the last rung of
-        // `oracleArt`'s ladder, not a library entry.
+        // The bundled backdrop, as an ordinary pool member (S6). It used to be EMPTY on the reasoning
+        // that scene art no pin addresses belongs on the last rung of `oracleArt`'s ladder rather than
+        // in a library — which was right about pins and wrong about the gallery: the owner could see
+        // neither the picture this role paints nor a way to replace it. Derived, like every other list
+        // here, so the roster stays the one source.
         bundled: bundle(
           BUNDLED_ROSTER.pools.oracle,
           (a) => a.name,
@@ -516,9 +524,13 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         bounds: FULL_ART,
         aspect: 16 / 9,
         active: activeHero,
-        // EMPTY: `ART.hero` is the ladder's last rung, a bare URL no pin and no key addresses — the same
-        // rule as gacha's oracle. No id is invented for it.
-        bundled: [],
+        // The bundled vista, under the stem the manifest already addresses it by (S6) — the same change
+        // as gacha's oracle, for the same reason: art nothing names is art the owner cannot see.
+        bundled: bundle(
+          [FRONTIER_HERO_KEY],
+          (k) => k,
+          () => FRONTIER_ART.hero,
+        ),
       },
       stack: {
         kind: "named",

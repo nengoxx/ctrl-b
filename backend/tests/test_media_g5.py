@@ -204,20 +204,22 @@ def test_the_bundled_ids_are_the_ones_the_front_end_derives() -> None:
     parses this file for the expected one. Pinned literally HERE too, so a backend-only edit fails
     on its own side rather than only in the other language's suite.
 
-    The empty rows are the load-bearing half: an asset with **no stable name** gets NO id (gacha's
-    oracle scene and frontier's hero vista are ladder rungs no pin and no key addresses), and the
-    whole kit namespace ships no fallback art by design — inventing ids for either would create a
-    second identity space that no theme resolver could resolve."""
+    EVERYTHING A THEME SHIPS IS LISTED (the S6 owner ruling, 2026-08-25). gacha's oracle backdrop and
+    frontier's hero vista used to be the exceptions — ladder rungs no pin and no key addressed — and the
+    consequence was that the one picture each of those roles paints appeared in no gallery and could be
+    neither reordered, replaced nor retired. They carry the stem their own asset file has. The kit's
+    empty rows are the remaining load-bearing ones, and they mean what they always did: that namespace
+    ships no fallback art, so a service with no dropped file keeps its icon-less row."""
     bundled = {ns: {r: c.bundled for r, c in row.roles.items()} for ns, row in MEDIA_NAMESPACES.items()}
     assert bundled["gacha"] == {
-        "characters": ("pegasus", "atlas", "3", "4", "lyra"),
+        "characters": ("pegasus", "atlas", "3", "4", "lyra", "rook"),
         "banner": ("b2", "b3"),
         "reel": ("lyra",),
-        "oracle": (),
+        "oracle": ("oracle",),
     }
     assert bundled["frontier"] == {
         "rigs": ("rig1", "rig2", "rig3", "rig4", "rig5", "rig6"),
-        "hero": (),
+        "hero": ("hero",),
         "stack": ("cube", "platform-mid", "platform-base"),
     }
     assert all(ids == () for ids in bundled["kit"].values())

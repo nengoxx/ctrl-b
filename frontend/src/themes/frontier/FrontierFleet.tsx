@@ -135,7 +135,12 @@ export function FrontierFleet({ active }: { active: boolean }) {
           if (!(e.target as Element).closest(".frontier-beacon")) setFrontierSelection(null);
         }}
       >
-        <div className="pic" style={{ backgroundImage: `url(${art.hero})` }} />
+        {/* No `hero` = the owner switched the cover off in the gallery (S6 — the vista is an ordinary
+            library entry now). The map keeps its scrim, its sweep and its label and simply carries no
+            picture: dormancy by ABSENCE, the kit-art rule, so no rule matches and nothing is painted. */}
+        {art.hero !== undefined && (
+          <div className="pic" style={{ backgroundImage: `url(${art.hero})` }} />
+        )}
         <div className="scrim" />
         <div className="frontier-sweep" aria-hidden />
 

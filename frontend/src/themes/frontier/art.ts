@@ -33,6 +33,12 @@ function byName(name: string): string {
 // RETIRED that override; the owner's own rig pool replaces it.
 export const RIG_KEYS = ["rig1", "rig2", "rig3", "rig4", "rig5", "rig6"] as const;
 
+// The map cover's own key — the stem `byName` already addresses the file by, promoted to a NAME so the
+// `hero` role can list it as a bundled library entry (S6). It used to be addressed by nothing, which
+// meant the one picture that role paints was in no gallery: the owner could drop a file in front of it
+// but could never see it, order it or switch it off.
+export const HERO_KEY = "hero";
+
 // The PARTITIONED manifest (adversarial-review rule): the modulo pool present() cycles through is `rigs`
 // ONLY — hero + the F4 stack layers live in their own partitions and can NEVER be assigned to a beacon/card
 // by `index % RIG_KEYS.length`. `rigs` is in NUMERIC order (RIG_KEYS is already ordered) so `index → rig`

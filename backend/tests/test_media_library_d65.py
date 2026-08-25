@@ -34,7 +34,7 @@ from app.core.media import (
 
 __all__ = ["home"]
 
-CHARS = MEDIA_NAMESPACES["gacha"].roles["characters"].bundled  # pegasus atlas 3 4 lyra
+CHARS = MEDIA_NAMESPACES["gacha"].roles["characters"].bundled  # pegasus atlas 3 4 lyra rook
 
 
 def items(*entries: dict) -> list[MediaItem]:
@@ -70,6 +70,7 @@ def test_the_three_tiers_come_out_in_order(home: Path) -> None:
         ("atlas", False, "atlas"),
         ("3", False, "3"),
         ("4", False, "4"),
+        ("rook", False, "rook"),
     ]
 
 
@@ -111,12 +112,13 @@ def test_the_unlisted_tiers_are_stable_across_calls(home: Path) -> None:
 
 
 def test_a_role_that_ships_nothing_has_no_third_tier(home: Path) -> None:
-    """The kit ships no fallback art BY DESIGN (§3) and gacha's oracle scene is addressed by no name —
-    so those roles' libraries are exactly what is on disk, and the tier is absent rather than empty."""
-    role(home, "oracle").mkdir(parents=True)
-    assert list_role(home, "gacha", "oracle") == []
+    """The kit ships no fallback art BY DESIGN (§3), so its roles' libraries are exactly what is on
+    disk and the tier is absent rather than empty. It is the whole namespace now: every THEME role
+    ships something and says so (the S6 ruling), gacha's oracle backdrop included."""
     (home / "media" / "kit" / "background").mkdir(parents=True)
     assert list_role(home, "kit", "background") == []
+    (home / "media" / "kit" / "services").mkdir(parents=True)
+    assert list_role(home, "kit", "services") == []
 
 
 # ── ② the wire: the per-item facts, and hidden vs unusable ────────────────────────────────────────

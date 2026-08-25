@@ -783,14 +783,18 @@ describe("the capsule track (§6.1/§6.2)", () => {
   });
 
   it("cycles the roster when there are MORE hosts than entries (never a placeholder)", () => {
-    setFleet({ hosts: Array.from({ length: 6 }, (_, i) => host(`h${i}`, true)) });
+    const n = defaultRoster().entries.length;
+    setFleet({ hosts: Array.from({ length: n + 1 }, (_, i) => host(`h${i}`, true)) });
     const { container } = render(<GachaFleet active />);
     const srcs = [...container.querySelectorAll<HTMLImageElement>(".gc-card img")].map(
       (i) => i.src,
     );
-    expect(srcs).toHaveLength(6);
-    expect(srcs[5]).toBe(srcs[0]); // 5 bundled entries → host 5 wraps back to host 0's
-    expect(new Set(srcs).size).toBe(5);
+    // One more host than the roster has entries: the last one wraps to the first entry's art, and the
+    // set of distinct pictures is the roster itself. Counted off the roster rather than written as a
+    // literal, so adding a bundled character stays a one-line change (S6 added `rook`).
+    expect(srcs).toHaveLength(n + 1);
+    expect(srcs[n]).toBe(srcs[0]);
+    expect(new Set(srcs).size).toBe(n);
   });
 
   it("draws stars from CONFIGURED services, and re-draws the ladder when the mode changes", () => {

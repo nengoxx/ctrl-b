@@ -43,8 +43,14 @@ function entry(name: string, extra: Partial<RosterEntry> = {}): RosterEntry {
   return { name, image: `${name}.webp`, ...extra };
 }
 
-/** A roster with NO owner media (G5): empty role pools everywhere, which is the state a fresh install is
- *  in and the state every ladder below must degrade to. The owner-supplied cases pass `over`. */
+/** A roster with NO owner media (G5) — the state a fresh install is in and the state every ladder below
+ *  must degrade to. The owner-supplied cases pass `over`.
+ *
+ *  The ORACLE pool carries the bundled backdrop, because since S6 that is what "no owner media" means
+ *  for this role: the shipped picture is an ordinary pool member reached through the fallback tier, not
+ *  a hard-coded rung inside `oracleArt` (which would have outranked the In-use switch). An EMPTY oracle
+ *  pool is a different state entirely — the owner switched it off — and the surface paints nothing.
+ *  `reel` stays empty: its own bundled cutout is supplied by the arms that are about it. */
 function roster(
   entries: RosterEntry[],
   slots: Roster["slots"] = {},
@@ -54,7 +60,7 @@ function roster(
     entries,
     slots,
     scenes: [],
-    pools: { reel: [], oracle: [] },
+    pools: { reel: [], oracle: defaultRoster().pools.oracle },
     ...over,
   };
 }
@@ -148,7 +154,7 @@ describe("unusable entries hold their position", () => {
     });
     expect(slotEntry(r, "wallpaper")?.name).toBe("a"); // it is still FOUND…
     expect(wallpaperArt(r)).toEqual({ url: ART.banner }); // …but not painted
-    expect(oracleArt(r)).toEqual({ url: ART.oracle });
+    expect(oracleArt(r)).toMatchObject({ url: ART.oracle });
   });
 
   it("an unusable cutout never reaches the reel POOL, so it is never the figure", () => {
@@ -215,7 +221,7 @@ describe("slots — pins, and what happens when a pin dangles", () => {
     const r = roster([entry("a")], { wallpaper: "ghost", oracle: "ghost", hero: "ghost" });
     expect(slotEntry(r, "wallpaper")).toBeUndefined();
     expect(wallpaperArt(r)).toEqual({ url: ART.banner }); // the bundled scene art
-    expect(oracleArt(r)).toEqual({ url: ART.oracle });
+    expect(oracleArt(r)).toMatchObject({ url: ART.oracle });
     expect(heroArt(r)).toEqual({ url: ART.banner }); // hero → wallpaper → the default
   });
 
@@ -246,10 +252,12 @@ describe("reelFigureArt — the figure is chosen from the REEL POOL alone", () =
 describe("defaultRoster — the bundled fallback set (§5.5)", () => {
   const r = defaultRoster();
 
-  it("is the dealt set the owner picked at the G1 eyeball: two prototype characters, the two drops, and the cutout-bearing tail", () => {
+  it("is the dealt set the owner picked at the G1 eyeball, plus the two tail entries", () => {
     // `3`/`4` sit at display positions 2/3 — vault and g5 on the owner's fleet (round-3 swap); `lyra`
-    // stays LAST so the reel figure's cutout default survives without her being dealt to a host.
-    expect(r.entries.map((e) => e.name)).toEqual(["pegasus", "atlas", "3", "4", "lyra"]);
+    // trails so the reel figure's cutout default survives without her being dealt to a four-host fleet,
+    // and `rook` trails her (S6: the file always shipped, and no role had ever named it — so it was in
+    // no gallery). Positions 0-3 are unchanged, which is the whole of the paint-parity claim here.
+    expect(r.entries.map((e) => e.name)).toEqual(["pegasus", "atlas", "3", "4", "lyra", "rook"]);
     expect(r.entries.every((e) => e.image.length > 0)).toBe(true);
   });
 
@@ -260,7 +268,7 @@ describe("defaultRoster — the bundled fallback set (§5.5)", () => {
   it("resolves every slot without configuration: scene art for the wide slots, lyra for the figure", () => {
     expect(wallpaperArt(r)).toEqual({ url: ART.banner });
     expect(heroArt(r)).toEqual({ url: ART.banner });
-    expect(oracleArt(r)).toEqual({ url: ART.oracle });
+    expect(oracleArt(r)).toMatchObject({ url: ART.oracle });
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
   });
 
@@ -321,7 +329,7 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(r.entries).toEqual(defaultRoster().entries);
     expect(r.scenes).toEqual(defaultRoster().scenes);
     expect(wallpaperArt(r)).toEqual({ url: ART.banner });
-    expect(oracleArt(r)).toEqual({ url: ART.oracle });
+    expect(oracleArt(r)).toMatchObject({ url: ART.oracle });
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
   });
 
@@ -338,7 +346,7 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     ...over,
   });
   /** What the server actually sends for `characters/` on a fresh install: the fallback tier, whole. */
-  const castTier = ["pegasus", "atlas", "3", "4", "lyra"].map((id) => bundled(id));
+  const castTier = ["pegasus", "atlas", "3", "4", "lyra", "rook"].map((id) => bundled(id));
 
   it("the FALLBACK TIER is what a fresh install deals — byte-identical to the bundled roster", () => {
     // Paint parity by construction (§2.4): the registry derives its ids FROM `defaultRoster()`, so
@@ -348,6 +356,29 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(r.entries).toEqual(defaultRoster().entries);
     expect(r.pools.reel).toEqual(defaultRoster().pools.reel);
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
+  });
+
+  // ── the ORACLE backdrop as a LIBRARY ENTRY (S6) ────────────────────────────────────────────────
+  //
+  // It used to live on `oracleArt`'s last rung as a bare URL no id addressed, so the one picture that
+  // role paints was in no gallery: unreachable, unorderable, unretirable. It is a pool member now.
+
+  it("the bundled BACKDROP resolves through the pool, and an owner drop still outranks it", () => {
+    const shipped = rosterFromIndex(index({ oracle: [bundled("oracle")] }));
+    expect(oracleArt(shipped)).toMatchObject({ url: ART.oracle });
+    const dropped = rosterFromIndex(index({ oracle: [file("night"), bundled("oracle")] }));
+    expect(oracleArt(dropped)).toMatchObject({ url: painted("night") });
+  });
+
+  it("switching the backdrop OFF paints none — and a STUB payload still gets the shipped one", () => {
+    // The pair `offersBundled` exists for. A hidden bundled row is the owner's own answer, and a
+    // hard-coded rung inside `oracleArt` would have outranked it — the operator block would keep
+    // painting art the gallery said was retired. A payload that never described the tier still
+    // degrades to the shipped picture, which is what keeps a stub from painting a hole.
+    expect(
+      oracleArt(rosterFromIndex(index({ oracle: [bundled("oracle", { hidden: true })] }))),
+    ).toBe(null);
+    expect(oracleArt(rosterFromIndex(index({ oracle: [] })))).toMatchObject({ url: ART.oracle });
   });
 
   it("one owner file DEMOTES the whole fallback tier — the shipped 'drop one in' semantics", () => {
@@ -661,6 +692,6 @@ describe("wallpaperArt — the three-rung fleet backdrop (G6.3)", () => {
     // The operator art is its own surface with its own folder and its own bundled default; the owner
     // asked for the fleet backdrop, and a shared picture silently taking over every gacha surface is
     // not that.
-    expect(oracleArt(roster([entry("a")]))).toEqual({ url: ART.oracle });
+    expect(oracleArt(roster([entry("a")]))).toMatchObject({ url: ART.oracle });
   });
 });

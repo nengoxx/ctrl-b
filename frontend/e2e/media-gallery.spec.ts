@@ -20,7 +20,7 @@ import { expect, SETTINGS, test } from "./fixtures";
 // the next read serves.
 
 /** The bundled cast the real registry ships for `gacha/characters`. */
-const BUNDLED = ["pegasus", "atlas", "3", "4", "lyra"];
+const BUNDLED = ["pegasus", "atlas", "3", "4", "lyra", "rook"];
 
 interface Entry {
   name?: string;
@@ -217,13 +217,13 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
 
   // ① the ENTRY CARD paints what the §2.4 resolver says is live — the owner's two files, dealt — and
   //    the five bundled entries sit in the library rather than in the deal.
-  await expect(card).toContainText("7 images");
+  await expect(card).toContainText(`${BUNDLED.length + 2} images`);
   await expect(card).toContainText("dealt to machines in this order");
   await expect(card.locator("img")).toHaveCount(2);
 
   await card.click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("status")).toContainText("7 images");
+  await expect(dialog.getByRole("status")).toContainText(`${BUNDLED.length + 2} images`);
 
   // ② SET AS ACTIVE = move-to-front, and it is an ORDER intent, so the write names the WHOLE section
   //    — the two files and the five bundled defaults, in the order they now sit (§2.3 ③ as amended).
@@ -277,7 +277,7 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
     ...castEntries(),
   ]);
   await dialog.getByRole("button", { name: "‹ All images", exact: true }).click();
-  await expect(dialog.getByRole("status")).toContainText("7 images"); // still listed…
+  await expect(dialog.getByRole("status")).toContainText(`${BUNDLED.length + 2} images`); // still listed…
   await expectFocusTrapped(page);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -359,7 +359,7 @@ test("Conf · Theme art — a DRAG reorders, holds through the commit, and the o
   await card.click();
   const dialog = page.getByRole("dialog");
   const tiles = dialog.locator(".mgal-tile");
-  await expect(tiles).toHaveCount(8); // three files on disk + the five bundled
+  await expect(tiles).toHaveCount(BUNDLED.length + 3); // three files on disk + the bundled cast
   await expect(tiles.first()).toHaveAttribute("aria-label", "a.webp");
 
   // ① drag the THIRD tile in front of the first.
@@ -393,7 +393,7 @@ test("Conf · Theme art — a DRAG reorders, holds through the commit, and the o
   //    arrangeable, so the drop landed three slots short of where the finger was. The 2026-08-25
   //    amendment makes an order write state the WHOLE section's order, so the file goes where it was
   //    put and the write names every entry it passed on the way (same art, new order).
-  await dragTile(page, tiles.nth(0), tiles.nth(7), "after");
+  await dragTile(page, tiles.nth(0), tiles.nth(BUNDLED.length + 2), "after");
   await expect.poll(() => puts.length).toBe(2);
   expect(puts[1]).toEqual({
     media: {
@@ -401,23 +401,14 @@ test("Conf · Theme art — a DRAG reorders, holds through the commit, and the o
         gacha: {
           roles: {
             characters: {
-              files: [
-                { name: "a.webp" },
-                { name: "b.webp" },
-                { bundled: "pegasus" },
-                { bundled: "atlas" },
-                { bundled: "3" },
-                { bundled: "4" },
-                { bundled: "lyra" },
-                { name: "c.webp" },
-              ],
+              files: [{ name: "a.webp" }, { name: "b.webp" }, ...castEntries(), { name: "c.webp" }],
             },
           },
         },
       },
     },
   });
-  await expect(tiles.nth(7)).toHaveAttribute("aria-label", "c.webp");
+  await expect(tiles.nth(BUNDLED.length + 2)).toHaveAttribute("aria-label", "c.webp");
   await expect(tiles.nth(2)).toHaveAttribute("aria-label", "pegasus (bundled)");
   await expect(dialog.locator('[style*="translate"]')).toHaveCount(0);
 
@@ -431,11 +422,7 @@ test("Conf · Theme art — a DRAG reorders, holds through the commit, and the o
   expect(st.files.map((e) => e.name ?? e.bundled)).toEqual([
     "a.webp",
     "b.webp",
-    "pegasus",
-    "atlas",
-    "3",
-    "4",
-    "lyra",
+    ...BUNDLED,
     "c.webp",
   ]);
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
@@ -465,7 +452,11 @@ test("Conf · Theme art — a section of nothing but DEFAULTS drags, downwards i
   // the second row's first tile, which is the insertion slot after `atlas` and `3` (reading order).
   await dragTile(page, tiles.nth(0), tiles.nth(3));
   await expect.poll(() => puts.length).toBe(1);
-  expect(st.files.map((e) => e.bundled)).toEqual(["atlas", "3", "pegasus", "4", "lyra"]);
+  expect(st.files.map((e) => e.bundled)).toEqual([
+    ...BUNDLED.slice(1, 3),
+    BUNDLED[0],
+    ...BUNDLED.slice(3),
+  ]);
   // The SERVER's collation is what repaints, so this is the order the owner keeps.
   await expect(tiles.nth(2)).toHaveAttribute("aria-label", "pegasus (bundled)");
   await expect(dialog.locator("[data-drag-held]")).toHaveCount(0);
@@ -504,7 +495,7 @@ test("Conf · Theme art — a REFUSED drag snaps back, says so, and the next dra
   await page.getByRole("button", { name: "Open the characters gallery", exact: true }).click();
   const dialog = page.getByRole("dialog");
   const tiles = dialog.locator(".mgal-tile");
-  await expect(tiles).toHaveCount(8);
+  await expect(tiles).toHaveCount(BUNDLED.length + 3);
 
   await dragTile(page, tiles.nth(2), tiles.nth(0));
   await expect.poll(() => attempts).toBe(1);
@@ -655,7 +646,7 @@ test("Conf · Theme art — the UPLOAD round trip: Add → pick → crop → til
   await card.click();
   const dialog = page.getByRole("dialog");
   // The role is empty of OWNER files; its bundled tier is what the grid holds until now.
-  await expect(dialog.getByRole("status")).toContainText("5 images");
+  await expect(dialog.getByRole("status")).toContainText(`${BUNDLED.length} images`);
 
   // ① the ADD ROW is the one admission path, and it opens the real picker.
   const chooser = page.waitForEvent("filechooser");
@@ -681,7 +672,7 @@ test("Conf · Theme art — the UPLOAD round trip: Add → pick → crop → til
   expect(st.files).toEqual([{ name: "photo-320x240.webp" }]);
   const tile = dialog.getByRole("button", { name: "photo-320x240.webp", exact: true });
   await expect(tile).toBeVisible();
-  await expect(dialog.getByRole("status")).toContainText("6 images"); // the upload + the bundled tier
+  await expect(dialog.getByRole("status")).toContainText(`${BUNDLED.length + 1} images`); // the upload + the bundled tier
 
   // ⑤ it is an ordinary library entry from here on: activate it, then delete it.
   await tile.click();

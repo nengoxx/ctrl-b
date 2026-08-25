@@ -27,7 +27,7 @@ import {
   type ActiveArt,
   type LibraryRow,
 } from "../../lib/mediaLibrary";
-import { ART, RIG_KEYS } from "./art";
+import { ART, HERO_KEY, RIG_KEYS } from "./art";
 
 /** The three layer files, by the KEY their stem must match (the owner-ruled NAMED convention, §10.1).
  *  Ordered as they are dropped in the gallery, back to front. */
@@ -62,10 +62,14 @@ export interface FrontierArt {
    *  The bundled fallback for a position is INDEXED (`present()` names it `RIG_KEYS[i % 6]`), which is
    *  why the last rung stays at the consumer rather than being copied here. */
   rigUrlFor: (i: number) => string | null | undefined;
-  /** The map cover: the `hero` pin, else that folder's first usable file, else the bundled vista. The
-   *  vista is addressed by NO id (the role ships no bundled entries), so it is not a library entry the
-   *  owner can retire — which is why this rung is unconditional where the two above are not. */
-  hero: string;
+  /** The map cover: the `hero` pin, else that folder's first usable member — which since S6 includes
+   *  the bundled vista, an ordinary library entry under `HERO_KEY` rather than a URL no id addressed.
+   *
+   *  `undefined` = nothing to paint, and it means here exactly what `null` means for a rig: the role
+   *  RESOLVED to nothing although the payload described it, i.e. the owner switched the vista off. A
+   *  stub payload still gets the vista (`offersBundled` is the predicate, as everywhere else), so a
+   *  first paint and an unreachable backend both show the shipped theme. */
+  hero?: string;
   /** The Comms stack, per LAYER — owner file where one is named for that layer, the bundled layer
    *  where the library still offers it, and NOTHING where the owner switched that bundled entry off.
    *  A partial drop therefore COMPOSITES owner over bundled, deliberately (§3): the layers are one
@@ -88,6 +92,7 @@ export function frontierArtFromIndex(index: MediaIndex | undefined): FrontierArt
   // Whether this payload described the rig role's bundled TIER at all. It is what separates "the owner
   // retired the shipped rigs" from "this is a stub payload" — see `offersBundled`.
   const rigTier = offersBundled(rigRowsIn);
+  const heroRowsIn = role("hero");
   const stack = role("stack");
 
   return {
@@ -99,7 +104,10 @@ export function frontierArtFromIndex(index: MediaIndex | undefined): FrontierArt
       const f = cycleAt(rigs, i);
       return f === null || f.unusable ? undefined : rigUrl(f);
     },
-    hero: heroRow(role("hero"), index?.slots ?? {}) ?? ART.hero,
+    // The same degrade rule as the rigs, one rung shorter: the shipped vista stands while this payload
+    // never described the role's bundled tier, and is the owner's own answer once it did.
+    hero:
+      heroRow(heroRowsIn, index?.slots ?? {}) ?? (offersBundled(heroRowsIn) ? undefined : ART.hero),
     stack: {
       cube: stackLayerUrl(stack, "cube"),
       mid: stackLayerUrl(stack, "platform-mid"),
@@ -130,11 +138,16 @@ function rigUrl(f: MediaFile): string | undefined {
   return at < 0 ? undefined : ART.rigs[at];
 }
 
-/** The map cover: the `hero` pin, else the folder's first usable file. `undefined` = the ladder falls
- *  through to the bundled vista, which is art no id addresses (the role ships none). */
+/** The map cover: the `hero` pin, else the folder's first usable member. `undefined` = the ladder
+ *  resolved nothing at all, which the caller reads against `offersBundled` to tell "the owner switched
+ *  the vista off" from "this payload never described the role". */
 function heroRow(rows: readonly MediaFile[], slots: Record<string, string>): string | undefined {
   const pick = firstUsable(usableLadderRows(rows), slots.hero || undefined);
-  return pick === undefined ? undefined : revUrl(pick.url, pick.revision);
+  if (pick === undefined) return undefined;
+  // A bundled row resolves to this theme's own asset — the server emits the id and never a url. An id
+  // the theme no longer ships resolves to nothing, exactly as a rig's does.
+  if (pick.bundled != null) return pick.bundled === HERO_KEY ? ART.hero : undefined;
+  return revUrl(pick.url, pick.revision);
 }
 
 /** ONE stack layer's row — the §2.4 ladder BOTH the Comms surface and the Conf gallery read (they

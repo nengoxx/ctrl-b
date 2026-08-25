@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { RIG_KEYS } from "../../src/themes/frontier/art";
+import { HERO_KEY, RIG_KEYS } from "../../src/themes/frontier/art";
 import { STACK_KEYS } from "../../src/themes/frontier/ownerArt";
 import { gacha } from "../../src/themes/gacha";
 import { defaultRoster } from "../../src/themes/gacha/roster";
@@ -339,24 +339,34 @@ const ids = (role: { bundled: readonly { id: string }[] }) => role.bundled.map((
 describe("bundled ids — derived front-end-side, mirrored on the backend", () => {
   const roster = defaultRoster();
 
-  it("gacha's ids are the roster's own names — cast, scenes, cutout pool, and NOTHING for the oracle", () => {
-    // Each list is the theme's, read where the theme keeps it. The oracle's emptiness is the load-bearing
-    // one: its bundled backdrop is SCENE art addressed by no name (`pools.oracle` is empty on purpose), so
-    // it stays the last rung of `oracleArt`'s ladder instead of becoming a library entry with an invented id.
+  it("gacha's ids are the roster's own names — cast, scenes, cutout pool AND the oracle backdrop", () => {
+    // Each list is the theme's, read where the theme keeps it. The oracle is the load-bearing one, and
+    // it changed direction in the S6 owner round: its backdrop used to be listed nowhere (scene art no
+    // pin addresses, on the last rung of `oracleArt`'s ladder), which meant the one picture that role
+    // paints was in no gallery and could be neither replaced nor retired. Shipped art is an entry.
     expect(ids(MEDIA_NS.gacha.roles.characters)).toEqual(roster.entries.map((e) => e.name));
     expect(ids(MEDIA_NS.gacha.roles.banner)).toEqual(roster.scenes.map((s) => s.name));
     expect(ids(MEDIA_NS.gacha.roles.reel)).toEqual(roster.pools.reel.map((a) => a.name));
-    expect(ids(MEDIA_NS.gacha.roles.oracle)).toEqual([]);
-    // The literals the theme ships today — the half a derivation cannot catch.
-    expect(ids(MEDIA_NS.gacha.roles.characters)).toEqual(["pegasus", "atlas", "3", "4", "lyra"]);
+    expect(ids(MEDIA_NS.gacha.roles.oracle)).toEqual(roster.pools.oracle.map((a) => a.name));
+    // The literals the theme ships today — the half a derivation cannot catch. `rook` joined the cast
+    // list in the same round: the file always shipped and no role had ever named it.
+    expect(ids(MEDIA_NS.gacha.roles.characters)).toEqual([
+      "pegasus",
+      "atlas",
+      "3",
+      "4",
+      "lyra",
+      "rook",
+    ]);
     expect(ids(MEDIA_NS.gacha.roles.banner)).toEqual(["b2", "b3"]);
     expect(ids(MEDIA_NS.gacha.roles.reel)).toEqual(["lyra"]);
+    expect(ids(MEDIA_NS.gacha.roles.oracle)).toEqual(["oracle"]);
   });
 
-  it("frontier's ids are its key tuples — and the hero vista, which nothing names, gets none", () => {
+  it("frontier's ids are its key tuples — and the hero vista, under its own asset stem", () => {
     expect(ids(MEDIA_NS.frontier.roles.rigs)).toEqual([...RIG_KEYS]);
     expect(ids(MEDIA_NS.frontier.roles.stack)).toEqual([...STACK_KEYS]);
-    expect(ids(MEDIA_NS.frontier.roles.hero)).toEqual([]);
+    expect(ids(MEDIA_NS.frontier.roles.hero)).toEqual([HERO_KEY]);
   });
 
   it("the kit ships no bundled art at all, and every role SAYS so", () => {

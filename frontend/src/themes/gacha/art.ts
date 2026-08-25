@@ -115,11 +115,13 @@ function byName(name: string): string {
  *    ["banner images/b2.png","b2.webp",1240,700,70,"cover",false],
  *    ["banner images/b3.png","b3.webp",1240,700,70,"cover",false]   // (b2/b3 = banner scene drops)
  *
- *  (sources under design/prototypes/gacha/). `lyra` stays LAST rather than leaving: with four hosts the
- *  tail entry is never dealt, but she is still the one entry carrying a cutout — removing her would
- *  silently kill the G4 reel figure's default. `rook` left the deal entirely; the file stays bundled for
- *  the G5 gallery. */
-export const CHARACTER_KEYS = ["pegasus", "atlas", "3", "4", "lyra"] as const;
+ *  (sources under design/prototypes/gacha/). `lyra` stays rather than leaving: with four hosts the tail
+ *  entries are never dealt, but she is still the one entry carrying a cutout — removing her would
+ *  silently kill the G4 reel figure's default. `rook` lost its place in the deal to `3`/`4` and sits
+ *  LAST; it is in the list because the file ships, and the S6 owner ruling is that shipped art is an
+ *  ordinary library entry. Leaving it out of the keys was what made "the file stays bundled for the
+ *  gallery" untrue for a whole phase: no role listed the id, so no gallery could show it. */
+export const CHARACTER_KEYS = ["pegasus", "atlas", "3", "4", "lyra", "rook"] as const;
 
 /** The owner's banner-art drops (G1 eyeball round 3), which ride the pickup carousel as EXTRA SLIDES
  *  beside the hero and the per-host promos — the owner's pick over cycling the hero's art. NAMED rather

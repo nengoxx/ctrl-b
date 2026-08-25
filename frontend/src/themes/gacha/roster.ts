@@ -157,7 +157,22 @@ const BUNDLED_ENTRIES: RosterEntry[] = [
   // The TAIL entry: never dealt on a four-host fleet, but still the one CUTOUT-bearing entry — the G4
   // reel figure's bundled option is derived from exactly this field.
   { name: "lyra", image: ART.characters[4], cutout: ART.cutout },
+  // The other tail entry (S6): `rook` lost its place in the deal to the owner's `3`/`4` and kept its
+  // file. It is dealt only on a fleet of six or more — and it is HERE so that the gallery can show it
+  // at all, which is the whole of the owner's "nothing shipped is left behind" ruling.
+  { name: "rook", image: ART.characters[5] },
 ];
+
+/** The ORACLE pool's bundled member — the operator backdrop, addressed by the stem its file already
+ *  has. It used to be deliberately empty: the backdrop was scene art no pin named, so it lived on the
+ *  last rung of `oracleArt`'s ladder instead of in the pool. That reasoning was sound about PINS and
+ *  wrong about the LIBRARY (S6): a picture in no pool is a picture in no gallery, and the owner could
+ *  neither see the one image that role paints nor put another in front of it.
+ *
+ *  Being a pool member makes it an ordinary entry — the fallback tier deals it while `oracle/` is
+ *  empty, an owner drop replaces it, and switching it off means the operator block paints no backdrop
+ *  (which `GachaAgent` already renders: the block keeps its own gradient). */
+const BUNDLED_ORACLE: NamedArt[] = [{ name: "oracle", url: ART.oracle }];
 
 export function defaultRoster(): Roster {
   return {
@@ -165,9 +180,7 @@ export function defaultRoster(): Roster {
     slots: {},
     scenes: ART.scenes.map((s) => ({ name: s.name, url: s.url })),
     pools: {
-      // Oracle is EMPTY on purpose: its bundled art is SCENE art, addressed by no name and pinnable
-      // through no slot, so it belongs on the last rung of that ladder below rather than in a pool.
-      oracle: [],
+      oracle: BUNDLED_ORACLE,
       // The reel pool is different, and the difference is the PIN (§5.2 / Codex F4): the figure can be
       // chosen, so its bundled option needs a name the owner can select — and it has to survive the
       // owner replacing the cast, which is exactly what an entries-only fallback got wrong (drop in four
@@ -299,6 +312,7 @@ export function rosterFromIndex(index: MediaIndex | undefined): Roster {
   const characters = role("characters");
   const banner = role("banner");
   const reelFiles = role("reel");
+  const oracleFiles = role("oracle");
   const cast = castRows(characters).map(toEntry);
   const scenes = sceneRows(banner).map((f) => toNamed(f, sceneUrl(f.bundled)));
   const reel = poolRows(reelFiles).map((f) => toNamed(f, cutoutUrl(f.bundled)));
@@ -316,7 +330,11 @@ export function rosterFromIndex(index: MediaIndex | undefined): Roster {
     scenes: shipped(scenes, banner, bundled.scenes),
     pools: {
       reel: shipped(reel, reelFiles, bundled.pools.reel),
-      oracle: poolRows(role("oracle")).map((f) => toNamed(f, undefined)),
+      oracle: shipped(
+        poolRows(oracleFiles).map((f) => toNamed(f, oracleUrl(f.bundled))),
+        oracleFiles,
+        bundled.pools.oracle,
+      ),
     },
   };
 }
@@ -361,6 +379,8 @@ const sceneUrl = (id: string | null | undefined): string | undefined =>
   ART.scenes.find((s) => s.name === id)?.url;
 const cutoutUrl = (id: string | null | undefined): string | undefined =>
   id == null ? undefined : BUNDLED_BY_ID.get(id)?.cutout;
+const oracleUrl = (id: string | null | undefined): string | undefined =>
+  BUNDLED_ORACLE.find((a) => a.name === id)?.url;
 
 /** The entry a host at `index` (its position in the fleet's DISPLAY order) is assigned.
  *
@@ -478,12 +498,16 @@ export function heroArt(roster: Roster, kitBackground?: MediaFile): ResolvedArt 
   return toWideArt(slotEntry(roster, "hero")) ?? wallpaperArt(roster, kitBackground);
 }
 
-/** The agent oracle's backdrop. */
-export function oracleArt(roster: Roster): ResolvedArt {
-  return (
-    toWideArt(slotEntry(roster, "oracle")) ??
-    firstUsable(roster.pools.oracle) ?? { url: ART.oracle }
-  );
+/** The agent oracle's backdrop — the `oracle` SEAT pin (a character bound into the block), else the
+ *  role's own first usable member, else NOTHING.
+ *
+ *  The bundled backdrop is a pool MEMBER now (`BUNDLED_ORACLE`), so it reaches this ladder through the
+ *  same rung an owner drop does and `rosterFromIndex`'s `shipped` guard is what keeps a stub payload
+ *  painting it. A hard-coded last rung here would have outranked the In-use switch: the gallery would
+ *  say "nothing in use" while the block kept painting the retired picture — Emma's S2 review #2, in the
+ *  one place the pool had no member to be honest with. `null` = paint no backdrop. */
+export function oracleArt(roster: Roster): ResolvedArt | null {
+  return toWideArt(slotEntry(roster, "oracle")) ?? firstUsable(roster.pools.oracle) ?? null;
 }
 
 /** The reel figure (G4) — a CUTOUT, not a crop, and therefore the ONE ladder that reads a single pool:

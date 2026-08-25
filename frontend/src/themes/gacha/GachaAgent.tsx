@@ -238,13 +238,19 @@ function GachaOracle({
 }: {
   fade: boolean;
   /** The backdrop, already resolved by the body through §5.3's ONE resolver (G5): an `oracle:` pin, else
-   *  the owner's `media/gacha/oracle/` drop, else the bundled scene. Both stacked copies paint it — they
-   *  are the same surface twice, so they cannot be handed different art. */
-  art: ResolvedArt;
+   *  the owner's `media/gacha/oracle/` drop — which since S6 is where the BUNDLED backdrop lives too, as
+   *  an ordinary library member. Both stacked copies paint it: they are the same surface twice, so they
+   *  cannot be handed different art.
+   *
+   *  `null` = the role resolved to nothing, which the owner can now reach by switching every entry off.
+   *  The block keeps its plate, its scrim and its scanline and simply carries no picture — the In-use
+   *  switch has to mean what it says, and a header that kept painting the retired art would make the
+   *  gallery's "nothing in use" a lie (Emma's S2 review #2, applied to this surface). */
+  art: ResolvedArt | null;
   oracleRef: RefObject<HTMLDivElement | null>;
   anchorRef: RefObject<HTMLDivElement | null>;
 }) {
-  const position = useFocalPosition(oracleRef, art.focus);
+  const position = useFocalPosition(oracleRef, art?.focus);
   return (
     <>
       {/* The measurement anchor: zero-height, never sticky, so its offset is the oracle's TRUE flow
@@ -265,7 +271,7 @@ function GachaOracle({
         {/* The SHARP face. Art + scrim + name plate — the whole surface, because that is the prototype's
             own M7 target. */}
         <div className="gc-oracle-face sharp">
-          <img className="gc-oracle-art" src={art.url} alt="" draggable={false} />
+          {art !== null && <img className="gc-oracle-art" src={art.url} alt="" draggable={false} />}
           <div className="gc-oracle-name">
             <p className="eyebrow">PRIZE OPERATOR</p>
             <h1>
@@ -279,7 +285,9 @@ function GachaOracle({
             already announces, so the tab still has exactly ONE heading in the accessibility tree. */}
         {fade && (
           <div className="gc-oracle-face soft" aria-hidden>
-            <img className="gc-oracle-art" src={art.url} alt="" draggable={false} />
+            {art !== null && (
+              <img className="gc-oracle-art" src={art.url} alt="" draggable={false} />
+            )}
             <div className="gc-oracle-name">
               <p className="eyebrow">PRIZE OPERATOR</p>
               <h1>
