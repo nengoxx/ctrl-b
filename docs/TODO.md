@@ -1425,9 +1425,13 @@ owner eyeball; each passes `tools/check.py`.
       promoted · defects #6/#7 · BE tests + the no-CORS/no-multipart architecture guard
       (+ the mechanical FE riders that keep the shipped UI painting: the gallery's folded write
       paths and the three resolver boundaries skipping bundled rows until S2 rewrites them)
-- [ ] S2 — Gallery: section descriptors + active resolvers (H1) · entry + role-family cards · the
+- [x] S2 — Gallery: section descriptors + active resolvers (H1) · entry + role-family cards · the
       full-screen modal + `useOverlayBackGuard` · grid + item detail · set-active / use-here /
       delete-promotes-next / hidden · defects #1–#4, #9–#12 · e2e
+      (+ the Emma-lane review wave, all 9 findings ACCEPTed — activation-guarantees-eligibility,
+      resolved-empty vs degrade, resolver-derived seat status, the refetch-bound queue discard, the
+      back guard as a STACK with `ConfirmDialog` joining it, the stem/id pin note, DELETE partial
+      success, the single `?rev=` stamp; as-built note in MEDIA_MANAGER_PLAN §2.1/§6.5)
 - [ ] S3a — Pure: `lib/imageExport` + worker + the input guard + the fixture fence
 - [ ] S3b — Wiring: picker + `CropModal` + `useMediaUpload` (the ONE admission latch · auto-unique
       naming · two-phase retry · failure rows) + the live Add row

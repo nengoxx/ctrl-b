@@ -69,6 +69,27 @@ Each section descriptor declares `activate: "reorder" | "pin"` + its capability 
 H1) its **active resolver** — see §2.4. A multi-window source (gacha characters feeds 11
 windows) is ONE library; the focal point (§5) handles per-window crops.
 
+> **S2 AS-BUILT — the `MediaSlotDef.seat` split (main-seat ruling 2026-08-25, Emma-reviewed).**
+> The two kinds above are drawn by ONE fact on the pin, `MediaSlotDef.seat`, because a pin is a
+> section of its own only when it is **its own destination**:
+>
+> · **In-role pins** — gacha `reel_figure`, frontier `hero`, kit `background`/`brand` — are the top
+>   rung of **their own role's ladder**, not a separate surface. They FOLD into that role's card
+>   (`seat` absent ⇒ `mediaSections` gives the pool `activate: "pin"`), because one destination gets
+>   one card: a `reel/` section beside a "Transition figure" section would be two cards for one
+>   picture. "Set as active" there writes the **PIN** — move-to-front would leave the pin silently
+>   winning above it — **and, per the review's #1 ②, it lists an acted-on FALLBACK-tier bundled entry
+>   in the same patch**, since a pin can only name what its ladder deals (§2.3 ③'s "only the entry
+>   the owner explicitly acted on becomes listed" — a pin is as explicit as it gets).
+> · **Cross-role seats** — gacha `wallpaper`/`hero`/`oracle`, which bind a CAST portrait into a
+>   surface the cast does not own — stay their own sections (`seat: true`). Their write is the pin
+>   and nothing else: a seat is a read-only VIEW over another library, so listing one of its bundled
+>   rows would collapse the SOURCE role's whole fallback tier to that single entry.
+
+**Every claim a card makes comes from the §2.4 resolver, never from the config value** (review #3):
+a pin naming an entry the library no longer holds resolves to nothing, so the card reads
+*"the pinned image is gone — a fallback is in use"* rather than naming the missing value as active.
+
 ### 2.2 Config shape — the clean fold, `config_version` 1 → 2 (owner-ruled)
 
 > **Numbering correction (S0 audit, 2026-08-25):** this fold was recorded in-session as
@@ -326,6 +347,33 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
   accessible description; `aria-checked` only on the detail panel's real "In use" switch;
   `aria-current="true"` on a genuinely current item. Delete-active promotes the next entry in
   the same write; delete keeps `requestConfirm`; no undo toast.
+  > **S2 AS-BUILT — the review wave (main-seat ruled 2026-08-25, all 9 Emma findings ACCEPTed).**
+  > · **Activation GUARANTEES eligibility, atomically (#1).** Both spellings of "this one, please"
+  >   leave the entry actually resolvable, in ONE queued patch: move-to-front also clears `hidden`
+  >   (a hidden entry at the front is still skipped everywhere), and the in-role pin write also
+  >   LISTS an acted-on fallback bundled row (§2.1's as-built note). Neither may land as two writes
+  >   — half of it is exactly the claim the gallery exists to prevent.
+  > · **The DEGRADE rung is per-payload, not per-result (#2).** A theme ladder may restore its
+  >   shipped art only while the payload never described the role's bundled tier (a stub, an e2e
+  >   mock, a proxy answering `{}` — `lib/mediaLibrary#offersBundled`). A role whose tier IS on the
+  >   wire and resolves to nothing paints NOTHING: that is what the In-use switch means, and
+  >   resurrecting the default would make the card's "nothing in use" a lie. Audited across all
+  >   three ladder modules; `kit` needed no fix (it ships no bundled art) and carries a pin.
+  > · **Queue integrity past the refetch bound (#4).** When the post-PUT authoritative refetch
+  >   misses `MEDIA_REFETCH_TIMEOUT_MS`, `useSaveSettings` reports it (`onMediaStale`) and the queue
+  >   DISCARDS its remaining `files` intents with a toast — an intent recomputed from an index known
+  >   stale is how the second write undoes the first. `busy` still releases in `finally`.
+  > · **The Android-Back guard is a STACK with per-entry identity (#5),** and `ConfirmDialog` joins
+  >   it with its own entry: Back cancels the top-most confirm, the gallery under it stays, the next
+  >   Back closes the gallery. One shared `popstate` listener; only the popped TOP owner closes.
+  > · **The stem/id pin note (#6, §2.3's owed sentence).** In a pin-capable section a file stem and
+  >   a bundled id that answer to one pin value carry the duplicate badge plus a sentence stating
+  >   the tie-break — collation order wins, and "Set as active" is how the owner changes it.
+  > · **DELETE partial success (#7).** The bytes go first, so a failed config cleanup toasts
+  >   "…was deleted, but the library entry could not be cleaned up — it will drop on its own",
+  >   never a bare save error (which reads as "the delete failed").
+  > · **One `?rev=` stamp (#8).** `ResolvedArt.url` is paint-ready at every rung, the kit rung
+  >   included; consumers paint it and stamp nothing — a second stamp gave one file two cache keys.
 - **6.6 Bundled entries:** one grid, mixed by priority once listed (§2.3); origin glyph +
   "Bundled" in the detail; undeletable (action absent, not disabled); non-framable in v1 (§5).
 - **6.7 Rider fixes** (defect register §8): the `?rev=` freshness class closed at every paint
