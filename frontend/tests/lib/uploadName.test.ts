@@ -21,6 +21,12 @@ import {
 
 const LIMITS: NameLimits = { maxNameBytes: 255, attempts: 99 };
 
+/** A fixed instant, so the fallback arms are deterministic rather than a clock race. */
+const NOW = 1_700_000_000_000;
+const stamp = (at: number) => `x-${at.toString(36)}.webp`;
+/** The whole `-2`…`-99` walk, occupied — what pushes the mint into its timestamp fallback. */
+const WALKED = ["x.webp", ...Array.from({ length: 98 }, (_, i) => `x-${i + 2}.webp`)];
+
 describe("sanitizeStem", () => {
   it("keeps an ordinary name and drops the picked extension", () => {
     // The stored extension comes from the EXPORT's own bytes, never from what was picked.
@@ -103,13 +109,37 @@ describe("mintName", () => {
     // filename on: a rollback, a frozen one, a deterministic import, or two retries inside the same
     // millisecond all produce a candidate the folder already holds. Returning it unchecked spent all
     // five of the server's 409 retries re-proposing the same name.
-    const stamp = (at: number) => `x-${at.toString(36)}.webp`;
-    const walked = ["x.webp", ...Array.from({ length: 98 }, (_, i) => `x-${i + 2}.webp`)];
-    const now = 1_700_000_000_000;
-    expect(mintName("x", ".webp", [...walked, stamp(now)], LIMITS, now)).toBe(stamp(now + 1));
-    expect(mintName("x", ".webp", [...walked, stamp(now), stamp(now + 1)], LIMITS, now)).toBe(
-      stamp(now + 2),
+    expect(mintName("x", ".webp", [...WALKED, stamp(NOW)], LIMITS, NOW)).toBe(stamp(NOW + 1));
+    expect(mintName("x", ".webp", [...WALKED, stamp(NOW), stamp(NOW + 1)], LIMITS, NOW)).toBe(
+      stamp(NOW + 2),
     );
+  });
+
+  it("…with NO CAP on the advance — the loop provably terminates, so bounding it only broke it", () => {
+    // The confirm round's finding. A BOUNDED scan that gives up has to return something, and what it
+    // returned was the unadvanced stamp — the one candidate iteration one had already proven occupied,
+    // which is the repeated-409 failure the whole fix was for. `used` is finite and every iteration
+    // eliminates one of its members, so there is nothing to bound.
+    const occupied = Array.from({ length: 150 }, (_, i) => stamp(NOW + i));
+    const minted = mintName("x", ".webp", [...WALKED, ...occupied], LIMITS, NOW);
+    expect(minted).toBe(stamp(NOW + 150));
+    expect([...WALKED, ...occupied]).not.toContain(minted);
+  });
+
+  it("…and the byte budget still holds at the furthest instant the advance can reach", () => {
+    // The reserve is sized for `now + used.size`, not for `now`: the advance can roll the base-36
+    // digit count over, and a name one byte past 255 is a 422 on the retry after the upload was
+    // already spent.
+    const long = "n".repeat(400);
+    const base = mintName(long, ".webp", [], LIMITS).replace(/\.webp$/, "");
+    const occupied = [
+      `${base}.webp`,
+      ...Array.from({ length: 99 }, (_, i) => `${base}-${i + 2}.webp`),
+      ...Array.from({ length: 200 }, (_, i) => `${base}-${(NOW + i).toString(36)}.webp`),
+    ];
+    const minted = mintName(long, ".webp", occupied, LIMITS, NOW);
+    expect(occupied).not.toContain(minted);
+    expect(new TextEncoder().encode(minted).length).toBeLessThanOrEqual(255);
   });
 
   it("reserves the extension AND the largest suffix inside the byte budget", () => {

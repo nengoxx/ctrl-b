@@ -122,9 +122,14 @@ export function mintName(
 ): string {
   const used = new Set<string>();
   for (const name of taken) used.add(normalizeMediaKey(name));
-  const stamp = `-${now.toString(36)}`;
   // Reserve for the LONGEST thing that can be appended, always — the walk must not be able to produce
   // a name the server refuses for length after the upload was already spent on the first try.
+  //
+  // The timestamp half is sized for the FURTHEST the advance below can reach, not for `now`: every
+  // iteration that does not return eliminates one distinct member of `used`, so the returned instant
+  // is at most `now + used.size`. Computing the reserve from that makes the budget exact rather than
+  // "true until the base-36 digit count rolls over".
+  const stamp = `-${(now + used.size).toString(36)}`;
   const reserve = Math.max(byteLength(`-${limits.attempts}`), byteLength(stamp));
   const budget = limits.maxNameBytes - byteLength(ext) - reserve;
   const base = truncateToBytes(sanitizeStem(rawStem), Math.max(1, budget)) || FALLBACK_STEM;
@@ -135,22 +140,25 @@ export function mintName(
     const candidate = `${base}-${n}${ext}`;
     if (free(candidate)) return candidate;
   }
-  // The walk is exhausted — a folder holding `x`, `x-2` … `x-99` is not a race, it is a library, and
-  // walking further would only be slower. A timestamp is unique in practice and still inside the
-  // reserved budget.
+  // The `-n` walk is exhausted — a folder holding `x`, `x-2` … `x-99` is not a race, it is a library,
+  // and walking further would only be slower. The timestamp takes over.
   //
-  // **And it is CHECKED like every other candidate** (Emma #6). "Unique by construction" is a claim
-  // about a clock, and a clock is exactly the wrong thing to bet a filename on: a rollback, a frozen
-  // one, a deterministic import, or simply two retries inside the same millisecond all produce a
-  // candidate the folder already holds — and returning it would spend all five of the server's 409
-  // retries re-proposing the same name. Advancing the injected instant keeps the base-36 length (and
-  // so the reserved budget) while making the next candidate a different name.
-  for (let bump = 0; bump <= limits.attempts; bump++) {
-    const candidate = `${base}-${(now + bump).toString(36)}${ext}`;
+  // **It is CHECKED like every other candidate, and the check has NO CAP** (Emma #6, and her confirm
+  // round on the first fix). Two mistakes live here and the second is the interesting one:
+  //
+  //  · "unique by construction" is a claim about a CLOCK, and a clock is the wrong thing to bet a
+  //    filename on — a rollback, a frozen one, a deterministic import, or two retries inside the same
+  //    millisecond all produce a candidate the folder already holds;
+  //  · and BOUNDING the advance re-created exactly that: after a bounded scan gave up it returned the
+  //    unadvanced stamp, i.e. the one candidate the first iteration had already PROVEN occupied. The
+  //    cap was the bug. A cap on a provably-terminating loop buys nothing and costs correctness.
+  //
+  // **It terminates, and the proof is one line:** `used` is a finite set, each iteration produces a
+  // distinct candidate (the instant strictly increases), and any iteration that does not return has
+  // eliminated one member of `used` — so this runs at most `used.size + 1` times, over a set that is
+  // one directory listing.
+  for (let at = now; ; at++) {
+    const candidate = `${base}-${at.toString(36)}${ext}`;
     if (free(candidate)) return candidate;
   }
-  // Every candidate this function can express is taken — which takes a folder that is not a library
-  // but a fixture. The server's own 409 is the backstop, and it sends the caller back here with the
-  // name added to `taken`.
-  return `${base}${stamp}${ext}`;
 }
