@@ -54,11 +54,15 @@ def app1(body: bytes) -> bytes:
     return b"\xff\xe1" + struct.pack(">H", len(body) + 2) + body
 
 
-def exif_app1(orientation: int, *, endian: str = "big", tiff_type: int = 3) -> bytes:
+def exif_app1(orientation: int, *, endian: str = "big", tiff_type: int = 3, count: int = 1) -> bytes:
     """One APP1 segment carrying nothing but an IFD0 with an Orientation tag — the shape a phone writes
-    and the only part of EXIF this reader looks at (`core/media.py#_exif_orientation`)."""
+    and the only part of EXIF this reader looks at (`core/media.py#_exif_orientation`).
+
+    `count` is a knob because it is what decides whether the entry's last four bytes are a VALUE at
+    all: at anything but 1 they are an OFFSET, and `orientation` below is then the offset rather than
+    the number."""
     e = ">" if endian == "big" else "<"
-    entry = struct.pack(f"{e}HHI", 0x0112, tiff_type, 1)
+    entry = struct.pack(f"{e}HHI", 0x0112, tiff_type, count)
     # A short value is padded to the LEFT of the 4-byte value field (i.e. its low addresses) in both
     # byte orders — which is what makes reading `tiff_type` bytes from its start correct either way.
     entry += (
@@ -680,7 +684,10 @@ def test_a_jpeg_reports_its_PAINTED_size_not_its_frame_header(tmp_path, orientat
         # a SHORT it is right by accident on a little-endian file and reads 0 on a big-endian one.
         ("little-endian TIFF", exif_app1(6, endian="little")),
         ("orientation written LONG", exif_app1(6, tiff_type=4)),
-        ("little-endian LONG", exif_app1(6, endian="little", tiff_type=4)),
+        (
+            "little-endian LONG at count 1 — the one shape that IS inline",
+            exif_app1(6, endian="little", tiff_type=4, count=1),
+        ),
     ],
 )
 def test_the_orientation_tag_is_read_in_both_byte_orders_and_both_widths(tmp_path, label, app1) -> None:
@@ -715,6 +722,19 @@ def test_the_orientation_tag_is_read_in_both_byte_orders_and_both_widths(tmp_pat
         ),
         ("an orientation outside 1..8", exif_app1(99)),
         ("an orientation of 0", exif_app1(0)),
+        # ── the COUNT (Emma's S4 confirm-round LOW, runtime-probed). A TIFF entry's last four bytes
+        # are the value only while it FITS there; at any other count they are an OFFSET into the TIFF
+        # block. Read as a value, an offset that happens to be 1..8 transposes the picture for a
+        # number that was never an orientation — the first fixture below is hers, verbatim: a LONG
+        # with count 2, whose offset field reads 6.
+        ("a LONG with count 2 — the field is an OFFSET (Emma's fixture)", exif_app1(6, tiff_type=4, count=2)),
+        ("…the same, little-endian", exif_app1(6, endian="little", tiff_type=4, count=2)),
+        (
+            "a SHORT with count 2 — two orientations is a writer bug, and picking one is guessing",
+            exif_app1(6, count=2),
+        ),
+        ("a count of 0 — no value at all", exif_app1(6, count=0)),
+        ("a count large enough to be an offset past the segment", exif_app1(6, count=9999)),
     ],
 )
 def test_an_unreadable_orientation_reports_the_frame_UNCHANGED(tmp_path, label, app1) -> None:

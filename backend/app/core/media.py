@@ -760,9 +760,13 @@ def _exif_orientation(seg: bytes) -> int | None:
 
     The structure (TIFF 6.0 §2 through the EXIF profile): `Exif\\0\\0`, then a TIFF header — a byte-order
     mark, the 0x002A magic, and IFD0's offset FROM THE TIFF HEADER — then IFD0 itself: a 2-byte entry
-    count and 12-byte entries of `tag · type · count · value-or-offset`. Orientation is a single value
-    and therefore lives INLINE in the entry's last four bytes (TIFF pads short values to the left of
-    that field, i.e. at its low addresses, in both byte orders).
+    count and 12-byte entries of `tag · type · COUNT · value-or-offset`.
+
+    **That last field is a value only while the field FITS in it** — otherwise it is an offset into the
+    TIFF block, which is why the count is read and not skipped. Orientation is specified as a single
+    SHORT, so this requires `count == 1` and reads the value inline (TIFF pads a short value to the
+    left of the field, i.e. at its low addresses, in both byte orders). Anything else is a writer this
+    reader will not second-guess.
     """
     if not seg.startswith(b"Exif\x00\x00"):
         return None
@@ -782,7 +786,14 @@ def _exif_orientation(seg: bytes) -> int | None:
             return None
         if int.from_bytes(tiff[entry : entry + 2], endian) == _TIFF_ORIENTATION:
             width = _TIFF_VALUE_BYTES.get(int.from_bytes(tiff[entry + 2 : entry + 4], endian))
-            if width is None:
+            # THE COUNT decides whether those last four bytes are a value AT ALL. TIFF stores a field
+            # inline only while it fits in them; at any other count they hold an OFFSET into the TIFF
+            # block instead — and an offset that happens to land in 1..8 would transpose the picture
+            # for a number that was never an orientation (a LONG at count 2 whose offset field reads
+            # 6 is the probed case). Orientation is specified as a SINGLE SHORT, so `count == 1` is
+            # both the inline rule and the spec: two orientations is a writer bug, and choosing one
+            # of them is exactly the guessing this reader does not do.
+            if width is None or int.from_bytes(tiff[entry + 4 : entry + 8], endian) != 1:
                 return None
             value = int.from_bytes(tiff[entry + 8 : entry + 8 + width], endian)
             # 1-8 is the whole defined range; anything else is a writer bug, and guessing at it would

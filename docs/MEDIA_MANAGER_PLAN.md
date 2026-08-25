@@ -673,6 +673,18 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 >   position 0's art carries no framing, which the bundled cast never does. Both mutation-checked: a
 >   changed CSS default and a dropped inline override each fail it.
 
+> **S4 CONFIRM ROUND — the EXIF entry's COUNT (Emma, runtime-probed; ruled 2026-08-25).** All four
+> review findings and the rider confirmed resolved, and one new LOW: `_exif_orientation` read the
+> entry's TYPE and its inline value but skipped the four bytes between them — the COUNT. A TIFF field
+> lives in those last four bytes only while it FITS there; at any other count they hold an OFFSET into
+> the TIFF block instead. Her fixture (a LONG at count 2 whose offset field reads 6) therefore probed
+> as orientation 6 and transposed a 400x200 frame — against the parser's own
+> cannot-read-with-certainty ⇒ unchanged contract. `count == 1` is now required, which is both the
+> inline rule and the spec (Orientation is a single SHORT); two orientations is a writer bug and
+> picking one of them is the guessing this reader does not do. Five fixtures pin it — hers verbatim,
+> its little-endian twin, a SHORT at count 2, a count of 0, and a count large enough to be an offset
+> past the segment — beside a count-1 LONG little-endian arm proving the real shape still reads.
+>
 > **S4 RIDER — the disabled namespace's 405 (main-seat ruled 2026-08-25, found by the S4 gate).**
 > A READ of a file path whose namespace is not mounted answered `405` with `Allow: PUT, DELETE`,
 > advertising the write route on a namespace the server had already refused to serve — against S1's
