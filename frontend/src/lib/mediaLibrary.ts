@@ -13,17 +13,32 @@
 // `media.namespaces.<ns>.roles.<role>.files` is an ORDERED list of per-item objects, and the server
 // collates it into the library the gallery shows (`core/media.py#list_role`, `library-v1`): the listed
 // entries in order, then unlisted files on disk, then the role's unlisted BUNDLED ids as the FALLBACK
-// TIER. A write therefore has to express an order over rows that are not all listed — and the two
-// unlisted tiers get OPPOSITE treatments (§2.3 ③, the cross-lens ① ruling):
+// TIER. A write therefore has to express an order over rows that are not all listed, and what it may
+// list is decided by the INTENT, not by the tier (§2.3 ③ as AMENDED by the owner 2026-08-25):
 //
-//   · unlisted DISK rows may be swept into `files` freely. They already sit in the resolution prefix,
-//     so listing them changes only their order — zero paint effect — and without the sweep a drag
-//     below an SSH-dropped file would be inexpressible and would snap back on the next refetch.
-//   · unlisted BUNDLED rows are NEVER swept. Only the entry the owner explicitly ACTED ON becomes
-//     listed, because listing a bundled id promotes it out of the fallback tier and into the owner's
-//     own deal — the owner's first drag must not enlist five bundled characters into the fleet.
+//   · an ORDER intent — `moveBy`, `moveToEdge`, `setActive`, and therefore the drag — SWEEPS THE WHOLE
+//     SECTION into `files` in the resulting display order, unlisted disk rows and unlisted bundled rows
+//     alike. The section's order becomes explicit, which is the only shape that can say it: a partial
+//     listing cannot express a mid-list position at all (a downward drag inside an all-bundled section
+//     had no expressible target and snapped home), and listing only the two rows of a swap SHRANK the
+//     deal — `ladderRows`' own-tier-replaces-fallback rule then dealt those two portraits across the
+//     whole fleet. A full sweep is THE SAME ART IN THE NEW ORDER: zero paint surprise, and the fleet
+//     the owner was looking at is the fleet they keep.
+//   · every OTHER intent — `setHidden`, `setFocal`, `makeEligible`, `appendItem`, `removeItem` — still
+//     lists only the entry it acted on (plus the disk tier, which is free: those rows already sit in
+//     the resolution prefix, so listing them changes nothing but their order). None of them is a claim
+//     about the section's ORDER, so none of them may make one.
 //
-// Both arms are pinned in tests/lib/mediaLibrary.test.ts.
+// The rule this amends said no write may ever list a bundled row it was not pointed at, so that "the
+// owner's first drag must not enlist five bundled characters into the fleet". The owner overruled it:
+// reordering the shipped cast IS the feature, and a drag that will not move is a worse answer than a
+// config file that names the art it already paints. What the amendment does NOT touch is the VIRGIN
+// section: a role nobody has reordered still has an empty `files` list, so an upload into it replaces
+// the bundled tier exactly as it always did (the ladder fallback is untouched) — which is what keeps
+// the config-shape migration paint-parity-free. After a sweep the defaults are owner-tier members, and
+// an upload joins them at the end under the ordinary additive rule.
+//
+// Every arm is pinned in tests/lib/mediaLibrary.test.ts.
 
 import { centredFocal, type FocalArt, type FocalPoint } from "./focalPosition";
 import { orderedUsable, revUrl, type MediaNamed } from "./media";
@@ -239,8 +254,12 @@ export function activeIds(rows: readonly LibraryRow[]): RowId[] {
 interface WriteSpec {
   /** The display order the owner asked for, as row ids. */
   order: readonly RowId[];
-  /** The ids the owner explicitly ACTED ON — the only bundled rows this write may list. */
+  /** The ids the owner explicitly ACTED ON — the only bundled rows a NON-order write may list. */
   touched: readonly RowId[];
+  /** This write is an ORDER INTENT: `order` above is a statement about the whole section, so every
+   *  bundled row in it is listed too (the 2026-08-25 amendment — see the header). Absent ⇒ the write
+   *  says nothing about order and lists only what it acted on. */
+  sweep?: boolean;
   /** Per-entry field edits (the In-use switch writes `hidden` here). */
   edit?: { id: RowId; fields: LibraryEntry };
   /** An id to drop from the list entirely (a delete's config half). */
@@ -272,10 +291,12 @@ function writeFiles(
   for (const id of spec.order) {
     if (!known.has(id) || id === spec.drop) continue;
     const held = persisted.get(id);
-    // The tier rule: a bundled row this write did not act on stays in the fallback tier, whatever
-    // position the requested order gave it. The server appends it after everything listed, which is
-    // where it already was.
-    if (isBundledId(id) && held === undefined && !touched.has(id)) continue;
+    // The tier rule: outside an ORDER intent, a bundled row this write did not act on stays in the
+    // fallback tier, whatever position the requested order gave it. The server appends it after
+    // everything listed, which is where it already was — and a write that is not about order has no
+    // business moving it there. An order intent sweeps it in, because the order it states is the
+    // whole section's.
+    if (spec.sweep !== true && isBundledId(id) && held === undefined && !touched.has(id)) continue;
     const base: LibraryEntry =
       held ?? (isBundledId(id) ? { bundled: id.slice(2) } : { name: id.slice(2) });
     out.push(spec.edit?.id === id ? prune({ ...base, ...spec.edit.fields }) : base);
@@ -297,26 +318,6 @@ export function displayOrder(rows: readonly LibraryRow[]): RowId[] {
   return rows.map(rowId);
 }
 
-/** The last position a write can actually EXPRESS for `id`.
- *
- *  Untouched fallback-tier rows always trail the collation, so nothing can be ordered after them
- *  without listing them — and listing them is the one thing the tier rule forbids. Move-to-bottom
- *  therefore lands on the last row that is not an untouched fallback: the honest bottom of the list
- *  the owner is allowed to arrange, and the position the next refetch will agree with (no snap-back).
- *
- *  **Exported because the DRAG needs the same number while the finger is still down** (S5): a gesture
- *  that can point anywhere has to be told where the arrangeable list ENDS, or dropping a file "at the
- *  very bottom" past five bundled entries would ask for an order the write cannot say — and the owner
- *  would watch it slide back several slots one refetch later, with a bundled character promoted into
- *  the deal on the way. One rule, one implementation, read by the write AND by the gesture. */
-export function lastExpressible(rows: readonly LibraryRow[], id: RowId): number {
-  let last = 0;
-  rows.forEach((row, i) => {
-    if (rowId(row) === id || row.bundled == null || row.listed === true) last = i;
-  });
-  return last;
-}
-
 function reordered(order: readonly RowId[], from: number, to: number): RowId[] {
   const next = [...order];
   const [moved] = next.splice(from, 1);
@@ -331,7 +332,11 @@ function reordered(order: readonly RowId[], from: number, to: number): RowId[] {
  *  entry to the front changes nothing an owner can see: resolution skips hidden rows everywhere, so
  *  the tile would sit first and stay excluded while the card kept painting someone else. "Set as
  *  active" therefore switches it back on too — one gesture, one write, one outcome the owner asked
- *  for. */
+ *  for.
+ *
+ *  It is an ORDER intent, so it SWEEPS: picking one of five bundled defaults writes all five, that one
+ *  first. Listing only the pick would have made it the owner's entire tier and retired the other four
+ *  — the deal-shrinking half of the 2026-08-25 amendment, in its most literal form. */
 export function setActive(
   entries: readonly LibraryEntry[] | undefined,
   rows: readonly LibraryRow[],
@@ -339,10 +344,11 @@ export function setActive(
 ): LibraryEntry[] {
   const order = displayOrder(rows);
   const from = order.indexOf(id);
-  if (from < 0) return writeFiles(entries, rows, { order, touched: [] });
+  if (from < 0) return writeFiles(entries, rows, { order, touched: [], sweep: true });
   return writeFiles(entries, rows, {
     order: reordered(order, from, 0),
     touched: [id],
+    sweep: true,
     edit: { id, fields: { hidden: undefined } },
   });
 }
@@ -376,9 +382,11 @@ export function makeEligible(
 /** Move one entry by `delta` positions (the ↑/↓ buttons — the WCAG floor, and S5's drag lands on the
  *  same transform).
  *
- *  BOTH rows of the swap count as acted on, which is what makes the move expressible when the
- *  neighbour is a fallback-tier bundled row: the owner is visibly moving that entry too, and a swap
- *  can promote at most ONE bundled id — never the sweep the tier rule exists to prevent. */
+ *  EXACT: whatever the mix of listed, unlisted-disk and unlisted-bundled rows, the collation of what
+ *  this writes IS the order asked for. That is the whole of the 2026-08-25 amendment — the previous
+ *  rule could express a move only where the destination was already listed, so inside a section of
+ *  bundled defaults (every theme section of a fresh install) a downward move had no expressible
+ *  target and an upward one landed short. */
 export function moveBy(
   entries: readonly LibraryEntry[] | undefined,
   rows: readonly LibraryRow[],
@@ -388,15 +396,16 @@ export function moveBy(
   const order = displayOrder(rows);
   const from = order.indexOf(id);
   const to = from + delta;
+  // A move off either end is REFUSED rather than clamped into a surprise — and refusing it writes the
+  // order unchanged rather than nothing, because the ↑/↓ pair is disabled at the ends and only a race
+  // reaches here. `sweep` stays off: nothing moved, so this states no new order.
   if (from < 0 || to < 0 || to >= order.length)
     return writeFiles(entries, rows, { order, touched: [] });
-  return writeFiles(entries, rows, {
-    order: reordered(order, from, to),
-    touched: [id, order[to]],
-  });
+  return writeFiles(entries, rows, { order: reordered(order, from, to), touched: [], sweep: true });
 }
 
-/** Move one entry to the top or the bottom of the arrangeable list (the detail panel's pair). */
+/** Move one entry to the top or the bottom of the list (the detail panel's pair). The bottom is the
+ *  BOTTOM now: every position is expressible, so there is no shorter honest answer to clamp to. */
 export function moveToEdge(
   entries: readonly LibraryEntry[] | undefined,
   rows: readonly LibraryRow[],
@@ -405,9 +414,9 @@ export function moveToEdge(
 ): LibraryEntry[] {
   const order = displayOrder(rows);
   const from = order.indexOf(id);
-  if (from < 0) return writeFiles(entries, rows, { order, touched: [] });
-  const to = edge === "top" ? 0 : lastExpressible(rows, id);
-  return writeFiles(entries, rows, { order: reordered(order, from, to), touched: [id] });
+  if (from < 0) return writeFiles(entries, rows, { order, touched: [], sweep: true });
+  const to = edge === "top" ? 0 : order.length - 1;
+  return writeFiles(entries, rows, { order: reordered(order, from, to), touched: [], sweep: true });
 }
 
 /** The **In use** switch (§2.2's `hidden`). The order is untouched — but every disk row is still

@@ -26,18 +26,20 @@ import {
   usableLadderRows,
   type ArtRow,
   type LibraryEntry,
+  type RowId,
 } from "../../src/lib/mediaLibrary";
 
 // The library's PURE half (D65 / MEDIA_MANAGER_PLAN §2.3 + §6.5). Every obligation here is a claim
 // about CONFIG — what a gallery gesture writes — so it is a unit test over plain objects, exactly like
 // `lib/media.ts`'s. The gallery suite then only has to prove it calls these.
 //
-// The two load-bearing rules, and the ones §11 pins by name:
-//  · a write may SWEEP unlisted DISK rows into `files` (they are already in the resolution prefix, so
-//    listing them changes only their order) — without it a reorder past an SSH-dropped file would be
-//    inexpressible and would snap back on the next refetch;
-//  · a write NEVER sweeps unlisted BUNDLED rows. Only the one the owner acted on becomes listed, or
-//    the first drag would promote the whole fallback tier into the fleet's deal.
+// The two load-bearing rules, and the ones §11 pins by name (§2.3 ③ as AMENDED, owner 2026-08-25):
+//  · an ORDER intent — `moveBy`, `moveToEdge`, `setActive`, and so the drag — SWEEPS the whole section
+//    into `files` in the resulting order, bundled rows included. It is the only shape that can SAY the
+//    order: partial listing could not express a mid-list position at all, and listing only the rows of
+//    a swap made those rows the owner's entire tier, shrinking the deal to two portraits;
+//  · every OTHER intent still lists only what it acted on (plus the disk tier, which is free). None of
+//    them is a claim about order, so none of them may make one.
 
 /** A row on disk, as the server collates it. */
 const disk = (file: string, over: Partial<ArtRow> = {}): ArtRow => ({
@@ -132,22 +134,81 @@ describe("the tier-preserving write rule (§2.3 ③)", () => {
     // The arm §11 names: config is EMPTY, both files arrived over SSH, and the owner drags the second
     // above the first. Without the sweep the write could not express the order at all.
     const next = moveBy(undefined, rows, "f:b.webp", -1);
-    expect(next).toEqual([{ name: "b.webp" }, { name: "a.webp" }]);
     // …and the collation the server will run over that list puts them back in exactly that order,
-    // with the untouched bundled tier still trailing (which is where it already was).
-    expect(next.map((e) => entryId(e))).toEqual(["f:b.webp", "f:a.webp"]);
+    // the bundled tier still trailing (which is where it already was — the sweep names it, it does
+    // not move it).
+    expect(next.map((e) => entryId(e))).toEqual(["f:b.webp", "f:a.webp", "b:pegasus", "b:atlas"]);
   });
 
-  it("…and NEVER sweeps the bundled fallback tier — the first drag must not re-deal the fleet", () => {
+  it("…and SWEEPS THE BUNDLED TIER TOO — an order write states the whole section's order", () => {
+    // The 2026-08-25 amendment. The old rule listed only the rows the gesture touched, which made the
+    // section's order unsayable: this drag can be written at all only because `pegasus` and `atlas`
+    // are named too. Same art, new order — nothing on any surface moves.
     const next = moveBy(undefined, rows, "f:b.webp", -1);
-    expect(next.some((e) => "bundled" in e)).toBe(false);
+    expect(next).toEqual([
+      { name: "b.webp" },
+      { name: "a.webp" },
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+    ]);
   });
 
-  it("a swap WITH a fallback row lists that ONE entry — the only way to express it", () => {
-    // `b.webp` is the last disk row; moving it down means moving `pegasus` above it, which the owner
-    // is visibly asking for. One bundled id becomes listed; the other three stay in the fallback tier.
+  it("a swap WITH a fallback row lands EXACTLY where it was asked to", () => {
+    // `b.webp` is the last disk row; moving it down means moving `pegasus` above it. Under the old
+    // rule that listed `pegasus` alone beside `b.webp` and `atlas` stayed behind in the fallback tier
+    // — which, in a role whose ladder replaces the fallback tier with the owner's, retired it.
     const next = moveBy(undefined, rows, "f:b.webp", 1);
-    expect(next).toEqual([{ name: "a.webp" }, { bundled: "pegasus" }, { name: "b.webp" }]);
+    expect(next).toEqual([
+      { name: "a.webp" },
+      { bundled: "pegasus" },
+      { name: "b.webp" },
+      { bundled: "atlas" },
+    ]);
+  });
+
+  it("EXACT EXPRESSION: for any from/to over any mix of tiers, the collation IS the order asked for", () => {
+    // The property the amendment exists for, stated as one. `collate` is the server's `library-v1`
+    // rule (`core/media.py#list_role`) in three lines: listed entries in order, then the unlisted
+    // rows in their own collation order. If the write is exact, re-collating it reproduces the
+    // requested order for every pair of positions — which is what "it lands where you dropped it"
+    // means, and what a snap-back one refetch later would disprove.
+    const mixed = [disk("a.webp"), bundled("pegasus"), disk("b.webp"), bundled("atlas")];
+    const collate = (entries: LibraryEntry[]): (RowId | null)[] => {
+      const listed = entries.map(entryId);
+      return [...listed, ...displayOrder(mixed).filter((id) => !listed.includes(id))];
+    };
+    for (let from = 0; from < mixed.length; from++) {
+      for (let to = 0; to < mixed.length; to++) {
+        const want = displayOrder(mixed);
+        want.splice(to, 0, want.splice(from, 1)[0]);
+        expect(collate(moveBy(undefined, mixed, want[to], to - from))).toEqual(want);
+      }
+    }
+  });
+
+  it("A SECTION OF NOTHING BUT DEFAULTS IS ARRANGEABLE — the owner-round defect, both halves", () => {
+    // The state EVERY theme section is in on a fresh install: five bundled characters, no `files`.
+    const cast = ["pegasus", "atlas", "3", "4", "lyra"].map((id) => bundled(id));
+    // ① DOWNWARD. Every downward drag used to be a no-op: the clamp put the last expressible slot at
+    //    the row's own index, so the tile snapped home and the owner saw the gesture refuse itself.
+    expect(moveBy(undefined, cast, "b:pegasus", 2).map(entryId)).toEqual([
+      "b:atlas",
+      "b:3",
+      "b:pegasus",
+      "b:4",
+      "b:lyra",
+    ]);
+    // ② UPWARD, more than one slot. It wrote `[lyra, 3]` — the two rows of the "swap" — and the
+    //    collation then read [lyra, 3, pegasus, atlas, 4]: not the order asked for, and the fleet was
+    //    now dealt two portraits instead of five (`ladderRows` replaces the fallback tier with the
+    //    owner's the moment the owner's holds anything).
+    expect(moveBy(undefined, cast, "b:lyra", -2).map(entryId)).toEqual([
+      "b:pegasus",
+      "b:atlas",
+      "b:lyra",
+      "b:3",
+      "b:4",
+    ]);
   });
 
   it("an entry keeps every field the gallery does not understand (read-modify-WRITE)", () => {
@@ -158,6 +219,10 @@ describe("the tier-preserving write rule (§2.3 ③)", () => {
     expect(moveBy(entries, rows, "f:b.webp", -1)).toEqual([
       { name: "b.webp", hidden: true },
       { name: "a.webp", key: "hero", focal: { x: 0.4, y: 0.2, rev: "r9" } },
+      // The swept bundled rows join as the bare `{bundled}` that listing one MEANS — they carried
+      // nothing to preserve, and inventing a field for them would be the rebuild this never does.
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
     ]);
   });
 
@@ -259,16 +324,18 @@ describe("offersBundled — degrade vs resolved-empty (Emma's S2 review #2)", ()
 describe("reorder edges", () => {
   const rows = [disk("a.webp"), disk("b.webp"), bundled("pegasus")];
 
-  it("move-to-top is move-to-front; move-to-bottom stops at the last EXPRESSIBLE position", () => {
+  it("move-to-top is move-to-front; move-to-bottom is the BOTTOM", () => {
     expect(moveToEdge(undefined, rows, "f:b.webp", "top")).toEqual([
       { name: "b.webp" },
       { name: "a.webp" },
+      { bundled: "pegasus" },
     ]);
-    // Not "after pegasus": nothing can be ordered after an untouched fallback row without listing it,
-    // and listing it is the one thing the tier rule forbids. The bottom of the arrangeable list is the
-    // honest answer, and it is the position the next refetch agrees with.
+    // AFTER pegasus, which is where the words say it goes. This used to stop one short — nothing could
+    // be ordered after an untouched fallback row without listing it, and listing it was forbidden — so
+    // "Move to bottom" quietly meant "move to second-from-bottom" in every section holding a default.
     expect(moveToEdge(undefined, rows, "f:a.webp", "bottom")).toEqual([
       { name: "b.webp" },
+      { bundled: "pegasus" },
       { name: "a.webp" },
     ]);
   });

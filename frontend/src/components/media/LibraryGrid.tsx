@@ -1,7 +1,7 @@
 import { useId, useRef } from "react";
 
 import type { LibraryItem } from "../../hooks/useMediaLibrary";
-import { lastExpressible, tileUrl } from "../../lib/mediaLibrary";
+import { tileUrl } from "../../lib/mediaLibrary";
 import type { MediaSection } from "../../theme-engine/mediaRegistry";
 import { useDragReorder } from "../useDragReorder";
 
@@ -77,20 +77,6 @@ export function LibraryGrid({
       orderKey: items.map((i) => i.id).join(" "),
       onPick: (i) => {
         picked.current = items[i] ?? null;
-      },
-      // How far down the list actually GOES, by the write's own rule (§2.3 ③): the trailing bundled
-      // entries that no `files` list names are not arrangeable, because ordering anything after one
-      // would mean LISTING it — the promotion the tier rule exists to prevent. So a drag aimed past
-      // them lands on the honest bottom instead, exactly where "Move to bottom" puts it. Asking
-      // `lib/mediaLibrary` for the number rather than re-deriving it here is what keeps the gesture and
-      // the write from ever disagreeing about where the list ends.
-      limit: (from) => {
-        const item = items[from];
-        if (item === undefined) return items.length - 1;
-        return lastExpressible(
-          items.map((i) => i.row),
-          item.id,
-        );
       },
     },
   );

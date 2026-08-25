@@ -519,12 +519,19 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     openItem(dialog, "c.webp");
     fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
-    // The tier rule in one assertion: the disk rows are swept in (order is otherwise inexpressible),
-    // the five bundled fallback rows are NOT (the first gesture must not re-deal the fleet).
+    // The amended tier rule in one assertion (§2.3 ③, owner 2026-08-25): an ORDER intent names the
+    // WHOLE section — the disk rows and the five bundled defaults alike, in the resulting order. The
+    // old rule listed only the three files, which made those three the owner's entire tier and retired
+    // the cast the fleet was painting.
     expect(filesOf(savedBlock())).toEqual([
       { name: "c.webp" },
       { name: "a.webp" },
       { name: "b.webp" },
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      { bundled: "3" },
+      { bundled: "4" },
+      { bundled: "lyra" },
     ]);
   });
 
@@ -583,10 +590,16 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     openItem(dialog, "b.webp");
     fireEvent.click(within(dialog).getByRole("button", { name: "↑ Move up" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    // An ORDER intent, so the section is named whole — the ↑/↓ pair and the drag are one transform.
     expect(filesOf(savedBlock())).toEqual([
       { name: "b.webp" },
       { name: "a.webp" },
       { name: "c.webp" },
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      { bundled: "3" },
+      { bundled: "4" },
+      { bundled: "lyra" },
     ]);
   });
 
@@ -750,6 +763,11 @@ describe("the write queue (§4 — serialized, recomputed at send, quiet)", () =
       { name: "c.webp" },
       { name: "a.webp" },
       { name: "b.webp" },
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      { bundled: "3" },
+      { bundled: "4" },
+      { bundled: "lyra" },
     ]);
   });
 

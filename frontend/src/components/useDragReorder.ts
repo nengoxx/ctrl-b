@@ -246,12 +246,6 @@ export interface DragReorderOptions {
    *  change aborts. Fine for a list the surface itself owns (the fallback chains); not for one the
    *  server owns. */
   orderKey?: string;
-  /** The last slot a drop from `from` may ASK FOR, when the consumer's storage cannot express every
-   *  position. The gallery's can't: the collation's trailing bundled tier is not arrangeable, so a drag
-   *  that pointed past it would be committed as something else and slide back a refetch later. The
-   *  gesture is clamped while the finger is still down instead, so what the owner sees is what will be
-   *  saved. Absent ⇒ every slot is reachable. */
-  limit?: (from: number) => number;
   /** The gesture has TAKEN HOLD of row `index` — the moment to capture what that row IS. An index is
    *  only a name for a row while the order it indexes stays put, so a consumer that re-derives its
    *  subject from the number at drop time is trusting the list not to have moved. The abort above makes
@@ -264,14 +258,7 @@ export function useDragReorder(
   onReorder: (from: number, to: number) => void | Promise<unknown>,
   options: DragReorderOptions = {},
 ) {
-  const {
-    axis = "list",
-    activation = "handle",
-    disabled = false,
-    orderKey,
-    limit,
-    onPick,
-  } = options;
+  const { axis = "list", activation = "handle", disabled = false, orderKey, onPick } = options;
   const rows = useRef(new Map<number, HTMLElement>());
   const [phase, setPhase] = useState<DragPhase>(IDLE);
   // The SYNCHRONOUS view of the machine. Every DOM handler reads this (a React state read would be one
@@ -298,9 +285,6 @@ export function useDragReorder(
   onReorderRef.current = onReorder;
   const orderKeyRef = useRef(orderKey);
   orderKeyRef.current = orderKey;
-  // Read at MOVE time, not at press time: the list it is a fact about is the one being rendered now.
-  const limitRef = useRef(limit);
-  limitRef.current = limit;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
 
@@ -469,13 +453,14 @@ export function useDragReorder(
             ? `translate(${g.x - startX + dl}px, ${g.y - startY + ds}px)`
             : `translateY(${g.y - startY + ds}px)`;
       }
-      const aimed =
+      // EVERY slot is reachable. The gallery used to clamp this to the last position its write could
+      // express, because the collation's trailing bundled tier was not arrangeable; the 2026-08-25
+      // amendment made an order write state the whole section's order, so there is no shorter list to
+      // stop at and a drop lands exactly where the owner put it (`lib/mediaLibrary.ts`'s header).
+      const to =
         axis === "grid"
           ? gridTargetIndex(g.x + dl, g.y + ds, g.from, g.rects, count)
           : targetIndex(g.y + ds, g.from, g.rects, count);
-      // Clamped HERE rather than at the commit: a gesture that shows a slot it cannot save is a
-      // gesture that lies for one round trip.
-      const to = limitRef.current === undefined ? aimed : Math.min(aimed, limitRef.current(g.from));
       if (to === g.to) return;
       g.to = to;
       clearTimeout(timer);

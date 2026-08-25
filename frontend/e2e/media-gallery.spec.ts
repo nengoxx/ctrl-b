@@ -15,7 +15,9 @@ import { expect, SETTINGS, test } from "./fixtures";
 // The mock is STATEFUL (the appearance-write precedent in fixtures.ts) and COLLATES like the server:
 // the owner's `files` entries in order, then unlisted files on disk, then the role's unlisted bundled
 // ids as the fallback tier (`library-v1`). A static index would make every repaint assertion vacuous —
-// and the fallback tier is exactly what proves a gesture did NOT sweep the bundled art into the deal.
+// and the fallback tier is what an untouched section looks like — a gesture that ORDERS the section
+// names it whole (§2.3 ③ as amended 2026-08-25), which is what makes the order the owner sees the one
+// the next read serves.
 
 /** The bundled cast the real registry ships for `gacha/characters`. */
 const BUNDLED = ["pegasus", "atlas", "3", "4", "lyra"];
@@ -25,6 +27,11 @@ interface Entry {
   bundled?: string;
   hidden?: boolean;
 }
+
+/** The bundled cast as `files` ENTRIES — what an order write names when it sweeps the section (§2.3 ③
+ *  as amended 2026-08-25: an ORDER intent states the whole section's order, defaults included). */
+const castEntries = (order: readonly string[] = BUNDLED): Entry[] =>
+  order.map((bundled) => ({ bundled }));
 
 const diskRow = (filename: string, listed: boolean, hidden: boolean) => ({
   name: filename.replace(/\.webp$/, ""),
@@ -218,14 +225,21 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("status")).toContainText("7 images");
 
-  // ② SET AS ACTIVE = move-to-front, and the write sweeps only the DISK rows (§2.3 ③).
+  // ② SET AS ACTIVE = move-to-front, and it is an ORDER intent, so the write names the WHOLE section
+  //    — the two files and the five bundled defaults, in the order they now sit (§2.3 ③ as amended).
   await dialog.getByRole("button", { name: "b.webp", exact: true }).click();
   await dialog.getByRole("button", { name: "Set as active", exact: true }).click();
   await expect.poll(() => puts.length).toBe(1);
   expect(puts[0]).toEqual({
     media: {
       namespaces: {
-        gacha: { roles: { characters: { files: [{ name: "b.webp" }, { name: "a.webp" }] } } },
+        gacha: {
+          roles: {
+            characters: {
+              files: [{ name: "b.webp" }, { name: "a.webp" }, ...castEntries()],
+            },
+          },
+        },
       },
     },
   });
@@ -241,7 +255,13 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
   expect(puts[1]).toMatchObject({
     media: {
       namespaces: {
-        gacha: { roles: { characters: { files: [{ name: "a.webp" }, { name: "b.webp" }] } } },
+        gacha: {
+          roles: {
+            characters: {
+              files: [{ name: "a.webp" }, { name: "b.webp" }, ...castEntries()],
+            },
+          },
+        },
       },
     },
   });
@@ -249,13 +269,25 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
   // ④ the In-use switch writes `hidden`, and the entry leaves the deal while staying in the library.
   await dialog.getByRole("switch", { name: /In use — a.webp/ }).click();
   await expect.poll(() => puts.length).toBe(3);
-  expect(st.files).toEqual([{ name: "a.webp", hidden: true }, { name: "b.webp" }]);
+  // The In-use switch is NOT an order intent, so it adds nothing of its own — the cast is listed
+  //    because the two order writes above already said so.
+  expect(st.files).toEqual([
+    { name: "a.webp", hidden: true },
+    { name: "b.webp" },
+    ...castEntries(),
+  ]);
   await dialog.getByRole("button", { name: "‹ All images", exact: true }).click();
   await expect(dialog.getByRole("status")).toContainText("7 images"); // still listed…
   await expectFocusTrapped(page);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(card.locator("img")).toHaveCount(1); // …but only one is dealt
+  // …but IT is out of the deal. The collage is capped at four, so the count says nothing useful here
+  // — what says it is that `a.webp` is not among the pictures and `b.webp` still is. (The five
+  // defaults are dealt beside it now: ②'s order write listed them, which puts them in the owner's own
+  // tier. That is the amendment's one real consequence in a MIXED section, and the In-use switch is
+  // how a default leaves again — exactly as it is for a file.)
+  await expect(card.locator(`img[src="${painted("a.webp")}"]`)).toHaveCount(0);
+  await expect(card.locator(`img[src="${painted("b.webp")}"]`)).toHaveCount(1);
 
   // ⑤ DELETE — the bytes leave through D65's typed verb FIRST, then ONE config write.
   await card.click();
@@ -265,10 +297,12 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
   await expect.poll(() => deletes.length).toBe(1);
   expect(deletes[0]).toBe("/api/media/gacha/files/characters/b.webp");
   await expect.poll(() => puts.length).toBe(4);
-  expect(st.files).toEqual([{ name: "a.webp", hidden: true }]);
+  expect(st.files).toEqual([{ name: "a.webp", hidden: true }, ...castEntries()]);
 
-  // ⑥ and with the owner's only usable file switched off, the BUNDLED tier is what the fleet deals —
-  //    the fallback-tier semantics that make the whole model paint-parity-free.
+  // ⑥ and with the owner's only usable file switched off, the BUNDLED CAST is what the fleet deals.
+  //    It reaches the deal through the OWNER's tier now rather than through the fallback one — the
+  //    sweep listed it two gestures ago — and that is the amendment's whole claim: the same art, in
+  //    the order the owner arranged, whichever tier is carrying it.
   await expectFocusTrapped(page);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -288,6 +322,9 @@ async function dragTile(
   page: import("@playwright/test").Page,
   from: import("@playwright/test").Locator,
   to: import("@playwright/test").Locator,
+  /** Which half of the target tile the finger lets go over — i.e. which SIDE of it the row lands on.
+   *  `after` is what "drop it at the very end" is, and it is a different slot from `before`. */
+  side: "before" | "after" = "before",
 ) {
   const a = (await from.boundingBox())!;
   const b = (await to.boundingBox())!;
@@ -296,7 +333,9 @@ async function dragTile(
   // Two steps: one to cross the 6px activation distance, one to arrive. A single jump would put the
   // whole gesture in one `pointermove`, which is not what a hand does and not what the hit test sees.
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2 + 12);
-  await page.mouse.move(b.x + b.width * 0.2, b.y + b.height / 2, { steps: 8 });
+  await page.mouse.move(b.x + b.width * (side === "after" ? 0.8 : 0.2), b.y + b.height / 2, {
+    steps: 8,
+  });
   await page.mouse.up();
 }
 
@@ -332,9 +371,10 @@ test("Conf · Theme art — a DRAG reorders, holds through the commit, and the o
         gacha: {
           roles: {
             characters: {
-              // The unlisted DISK rows are swept in (without that the order is inexpressible and the
-              // drag would snap back); the five unlisted BUNDLED rows are not (§2.3 ③).
-              files: [{ name: "c.webp" }, { name: "a.webp" }, { name: "b.webp" }],
+              // The WHOLE section, in the order the drag produced (§2.3 ③ as amended): the disk rows
+              // — without which the order is inexpressible and the drag snaps back — and the five
+              // bundled defaults, which is what makes the next drag able to say anything at all.
+              files: [{ name: "c.webp" }, { name: "a.webp" }, { name: "b.webp" }, ...castEntries()],
             },
           },
         },
@@ -348,12 +388,12 @@ test("Conf · Theme art — a DRAG reorders, holds through the commit, and the o
   await expect(dialog.locator("[data-drag-held]")).toHaveCount(0);
   await expect(dialog.locator('[style*="translate"]')).toHaveCount(0);
 
-  // ③ THE BOTTOM OF THE LIST IS WHERE THE WRITE CAN SAY IT IS. Drag that same file onto the very LAST
-  //    tile — a bundled one. The trailing bundled tier is not arrangeable (ordering anything after it
-  //    would list it, and listing it promotes it into the deal), so the gesture is clamped to the last
-  //    disk row while the finger is still down: it lands where "Move to bottom" would put it, the write
-  //    agrees, and nothing slides afterwards.
-  await dragTile(page, tiles.nth(0), tiles.nth(7));
+  // ③ THE BOTTOM OF THE LIST IS THE BOTTOM OF THE LIST. Drag that same file onto the very LAST tile —
+  //    a bundled one. This used to be CLAMPED to the last disk row: the trailing bundled tier was not
+  //    arrangeable, so the drop landed three slots short of where the finger was. The 2026-08-25
+  //    amendment makes an order write state the WHOLE section's order, so the file goes where it was
+  //    put and the write names every entry it passed on the way (same art, new order).
+  await dragTile(page, tiles.nth(0), tiles.nth(7), "after");
   await expect.poll(() => puts.length).toBe(2);
   expect(puts[1]).toEqual({
     media: {
@@ -361,15 +401,24 @@ test("Conf · Theme art — a DRAG reorders, holds through the commit, and the o
         gacha: {
           roles: {
             characters: {
-              files: [{ name: "a.webp" }, { name: "b.webp" }, { name: "c.webp" }],
+              files: [
+                { name: "a.webp" },
+                { name: "b.webp" },
+                { bundled: "pegasus" },
+                { bundled: "atlas" },
+                { bundled: "3" },
+                { bundled: "4" },
+                { bundled: "lyra" },
+                { name: "c.webp" },
+              ],
             },
           },
         },
       },
     },
   });
-  await expect(tiles.nth(2)).toHaveAttribute("aria-label", "c.webp");
-  await expect(tiles.nth(3)).toHaveAttribute("aria-label", /bundled/); // still the fallback tier
+  await expect(tiles.nth(7)).toHaveAttribute("aria-label", "c.webp");
+  await expect(tiles.nth(2)).toHaveAttribute("aria-label", "pegasus (bundled)");
   await expect(dialog.locator('[style*="translate"]')).toHaveCount(0);
 
   // ④ …and it is PERSISTED, not just painted.
@@ -379,7 +428,52 @@ test("Conf · Theme art — a DRAG reorders, holds through the commit, and the o
     "aria-label",
     "a.webp",
   );
-  expect(st.files).toEqual([{ name: "a.webp" }, { name: "b.webp" }, { name: "c.webp" }]);
+  expect(st.files.map((e) => e.name ?? e.bundled)).toEqual([
+    "a.webp",
+    "b.webp",
+    "pegasus",
+    "atlas",
+    "3",
+    "4",
+    "lyra",
+    "c.webp",
+  ]);
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("Conf · Theme art — a section of nothing but DEFAULTS drags, downwards included", async ({
+  page,
+  pageErrors,
+}) => {
+  // The owner-round defect (2026-08-25), in the state every theme section is in on a fresh install:
+  // no owner files, five bundled characters, an empty `files` list. Every downward drag used to be a
+  // no-op — the write could express no position past the row's own, so the gesture clamped to where it
+  // started and the tile snapped home — and an upward multi-slot drag landed somewhere else entirely.
+  // Reordering the shipped cast IS the feature; this is the browser proof that it works.
+  await bootConf(page);
+  const { st, puts } = await statefulMedia(page, { onDisk: [], files: [] });
+
+  await page.goto("/");
+  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  await card.click();
+  const dialog = page.getByRole("dialog");
+  const tiles = dialog.locator(".mgal-tile");
+  await expect(tiles).toHaveCount(BUNDLED.length);
+  await expect(tiles.first()).toHaveAttribute("aria-label", "pegasus (bundled)");
+
+  // DOWN two slots — the direction that used to refuse itself. The drop lands on the LEADING half of
+  // the second row's first tile, which is the insertion slot after `atlas` and `3` (reading order).
+  await dragTile(page, tiles.nth(0), tiles.nth(3));
+  await expect.poll(() => puts.length).toBe(1);
+  expect(st.files.map((e) => e.bundled)).toEqual(["atlas", "3", "pegasus", "4", "lyra"]);
+  // The SERVER's collation is what repaints, so this is the order the owner keeps.
+  await expect(tiles.nth(2)).toHaveAttribute("aria-label", "pegasus (bundled)");
+  await expect(dialog.locator("[data-drag-held]")).toHaveCount(0);
+
+  // …and the cast is still five, not the two rows the swap touched (the deal-shrinking half).
+  await page.reload();
+  await card.click();
+  await expect(page.getByRole("dialog").locator(".mgal-tile")).toHaveCount(BUNDLED.length);
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 
@@ -448,7 +542,9 @@ test("Conf · Theme art — what the gallery says is in use is what the FLEET pa
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "b.webp", exact: true }).click();
   await dialog.getByRole("button", { name: "Set as active", exact: true }).click();
-  await expect.poll(() => st.files).toEqual([{ name: "b.webp" }, { name: "a.webp" }]);
+  await expect
+    .poll(() => st.files)
+    .toEqual([{ name: "b.webp" }, { name: "a.webp" }, ...castEntries()]);
   await expectFocusTrapped(page);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -595,7 +691,9 @@ test("Conf · Theme art — the UPLOAD round trip: Add → pick → crop → til
   await page.getByRole("button", { name: "Delete", exact: true }).last().click();
   await expect.poll(() => deletes.length).toBe(1);
   expect(deletes[0]).toBe("/api/media/gacha/files/characters/photo-320x240.webp");
-  await expect.poll(() => st.files).toEqual([]);
+  // The upload's entry is gone; the cast stays listed, because ⑤'s "Set as active" was an order
+  // intent and named it. A DELETE is not one, so it removes exactly the one entry it was about.
+  await expect.poll(() => st.files).toEqual(castEntries());
 });
 
 test("Conf · Theme art — the export strips EXIF, and the picked extension decides nothing", async ({

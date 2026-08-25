@@ -294,20 +294,17 @@ function GridHarness({
   onReorder,
   orderKey,
   onOpen,
-  limit,
   onPick,
 }: {
   onReorder: (from: number, to: number) => void | Promise<unknown>;
   orderKey?: string;
   onOpen?: () => void;
-  limit?: (from: number) => number;
   onPick?: (index: number) => void;
 }) {
   const d = useDragReorder(3, onReorder, {
     axis: "grid",
     activation: "press",
     orderKey,
-    limit,
     onPick,
   });
   return (
@@ -426,17 +423,17 @@ describe("useDragReorder (press activation — the gallery grid)", () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("never aims past the last slot the CONSUMER can express", () => {
-    // The gallery storage cannot order anything after its trailing bundled tier, so the drop clamps
-    // while the finger is still down — a gesture that showed slot 2 and saved slot 1 would slide back
-    // one refetch later, which is exactly the snap-back the held commit exists to avoid.
+  it("aims at the LAST slot, because every slot is expressible now", () => {
+    // The gallery used to clamp this to the bottom of its arrangeable list — the collation's trailing
+    // bundled tier was not orderable. The 2026-08-25 amendment made an order write state the whole
+    // section's order, so a drop lands exactly where the owner put it (`lib/mediaLibrary.ts`).
     const onReorder = vi.fn();
-    const { container } = render(<GridHarness onReorder={onReorder} limit={() => 1} />);
+    const { container } = render(<GridHarness onReorder={onReorder} />);
     stubCells(container);
     mouseDown(container.querySelector('[data-handle="0"]')!, 10);
     moveTo(60, 110); // aimed at the very end…
     release();
-    expect(onReorder).toHaveBeenCalledWith(0, 1); // …landed on the honest bottom
+    expect(onReorder).toHaveBeenCalledWith(0, 2); // …and got it
   });
 });
 
