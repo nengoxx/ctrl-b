@@ -617,6 +617,7 @@ delta before H0 — this register is the qualitative half, written while the cha
 | **Auto-stop dictation** (R51 T0) | FE energy-silence detector on the existing mic stream + `auto_stop*` STT config keys (default OFF; hidden-stop independent of Web Audio) | **Packet ⑤** (FE voice; DP-C carries its design seam) · Packet ① inherits only the config keys |
 | **Motion-token band (ISS-10 ①) + `composerSkin` widening (W2/D37) + the W1 plan-band tokens** | `--motion-*`/`--ease-*` shipped in the semantic contract (33 kit rules, one reduced-motion collapse); the 11-slot `--skin-*` vocabulary; derived plan-band insets | **DP-A** — its "motion system" scope line is now a SHIPPED token layer with **R52** as bought evidence (was a gap at spec time) |
 | **Prompt registry growth** | The consolidation family rewrite + D64's truncation-clause correction | Packet ② spot-check unchanged (still the best-tested unit) |
+| **D65 the media manager — Phase 21** (added 2026-08-24 at its S0; spec = [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)) | **Backend:** the first owner-file WRITE path (`PUT`/`DELETE /api/media/…`, raw body, the persist ladder + `.part` boot sweep + `fsutil._fsync_dir` promoted public), the `media.namespaces`/`media.write` config fold with its `files` migration step, and collation v2 (`library-v1` — bundled rows, `focal`/`hidden`/`listed` on the wire). **Frontend — the whole §12 module map, PINNED at design time so the audit inventory is knowable before the code exists:** `lib/mediaLibrary` (config transforms, theme-free) · `lib/focalPosition` · `lib/imageExport` **+ its worker** (`OffscreenCanvas` — a NEW off-main-thread surface) · `hooks/useMediaLibrary` (owns the serialized quiet `patch` queue + invalidation) · `hooks/useMediaUpload` (the sync-ref admission latch + two-phase retry) · `hooks/useFocalPosition` (**ResizeObserver per paint window** — the `--cv-*`/`--cv-hero-focus` CSS inheritance chain is REWRITTEN across ~10 sites) · `hooks/useOverlayBackGuard` (history/`popstate` single-closer) · `components/media/{SectionCard, GalleryModal, LibraryGrid, ItemDetail, FramingSheet, CropModal}` · dep **react-easy-crop@6.2.3** (8.6 KB gz). | **Packet ⑤ + DP-C** for every FE module above (the grid's decode budget — `loading="lazy"`/`decoding="async"`/`content-visibility`/in-flight decode cap — and the per-window ResizeObserver fan-out are the two named perf shapes; DP-C carries the descriptor/resolver seam) · **Packet ④** for the backend write path + the re-based `ctrlb-media` SW bound + the `?rev=` single-keying · **Packet ①** inherits only the new config keys + the migration step |
 
 ## 8. The known-open register (2026-08-16 sweep of all 11 ledgers — every packet brief carries its slice)
 
@@ -644,6 +645,22 @@ wire/queue surfaces are assigned in §7b — no Packet ③ pre-work remains, the
 shipped thing)** · 6b list (Switch div→button · store HMR · F29 draft persistence [design LOCKED
 2026-06-16] · knob `left`→`translateX` · ~~motion tokens~~ **→ SHIPPED 2026-08-21 as ISS-10 ①;
 stage ② owner-parked** — rest Packet ⑤, 2026-08-23) ·
+**D65-R1 (added 2026-08-24):** **DNS rebinding reaches the whole API** — an attacker-controlled
+name that re-resolves to the app's LAN/tailnet address is *same-origin*, so no CORS control
+applies. Pre-existing and whole-API (not the media feature's); D65 recorded it because the write
+path raises the value of the target. **Lean fix = `TrustedHostMiddleware`** with the deploy's real
+names — **Packet ①** (bootstrap/app assembly), SECURITY_MODEL §2.7 · **D65-R2 (added
+2026-08-24):** **`POST /api/voice/stt` is the standing CORS-safelisted-class endpoint** (multipart
+audio). It writes no owner file and only spends an STT call, which is why it is enumerated rather
+than gated — **Packet ③** re-walks it with the voice adapter so the class stays counted ·
+**D65-P4 (added 2026-08-24, per MEDIA_MANAGER_PLAN §9):** `build_index` **stats and header-probes
+EVERY file on every GET**, and the library model grows the tree by design (uploads are additive;
+delete is the only removal). Frequency is addressed by the plan's defect #3 (scope the index query
+to the Conf surface, S2); **unit cost is not** — the fix is a **revision-keyed memo**, which is
+exactly the seam **SYS-8** already records as its home (§8.5 deliberate-non-fix: "per-call FS/CPU
+rework; mtime-memo seam"), so this is a CONFIRM/EXTEND of SYS-8, not a new finding. **Packet ④.**
+**Sequencing note for H1:** the media baseline must be taken **AFTER Phase 21 ships** — measuring a
+pre-library tree would set the expected-library-size envelope an order of magnitude too small ·
 **CM-1 (added 2026-08-17):** the core-memory secret gate is best-effort by construction —
 `_SECRET_MIN_CHARS = 8` floor means a real ≤7-char credential is outside the rail
 (CORE_MEMORY_PLAN §14b; joins Packet ③'s SECURITY_MODEL §5 re-walk) · ~~CM-2 (added
@@ -661,7 +678,8 @@ cloud prefix caching unaffected.
 **8.3 OWNER-GATED / PARKED (ask, don't assume; §P never re-propose):** ~~notifications retest~~
 **✓ CLOSED 2026-08-19/20 (delivery + tap both device-passed; the 2 Fennec checks moot)** ·
 web-push parked (its remaining value = closed-app delivery only) · D2-A daily-use round ·
-media-gallery round · vault spec (NOTE: the owner's parallel Maia-vault specs proved decisive
+~~media-gallery round~~ **→ 2026-08-24: no longer a loose parked item — it FOLDS INTO Phase 21's
+S6 owner device round (D65 / MEDIA_MANAGER_PLAN §12 + §16)** · vault spec (NOTE: the owner's parallel Maia-vault specs proved decisive
 for D64 — check them before re-researching adjacent ground) · gacha color-theory session ·
 ~~R28 icon pickup~~ **→ superseded by W5/D59; what remains = the owner's fresh-install check
 (post-v1.7.5)** · fleet-liveness decoupling (watch-first stands; the 2026-08-22 owner-watched

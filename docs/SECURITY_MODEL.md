@@ -34,6 +34,13 @@ The person who can reach the endpoint *is* the owner, by construction of the net
 - **Classic web attacks (CSRF, session hijacking, XSS-for-privilege).** With no auth and no other users
   there is no session to steal and no privilege to escalate to. (Confirm-tokens look CSRF-shaped but are
   not a CSRF control — see §2.3.)
+  **⚠ PREMISE CORRECTION (D65, 2026-08-24) — this line was never the whole answer for WRITES.**
+  "No session to steal" answers *session riding*; it does not answer a **cross-origin write that needs
+  no session at all**, because with no auth every request is already privileged. That gap was harmless
+  while every state-changing endpoint sat behind the SPA's own origin and no file-writing verb existed;
+  the media write API is the first surface where the shape of the request is the whole defence. **What
+  actually holds it is the CORS preflight, not the absence of a session — see §2.7**, which is now the
+  reference for any future unauthenticated write path.
 
 If ctrl-b were ever exposed beyond a single-user tailnet, this model would not hold and would need a real
 authentication layer first.
@@ -254,6 +261,54 @@ the slot is on. Two rails hold it, plus one framing:
   possibly copied in from another tool — as untrusted. Treat that clause as load-bearing when editing
   those prompts (Phase 18 overrides can rewrite them).
 
+### 2.7 The media write path — typed, raw-body, registry-confined (D65)
+
+`PUT`/`DELETE /api/media/{ns}/files/{role}/{filename}` (`api/media.py`, persist pipeline in
+`core/media.py`) is the **first and only endpoint that writes owner files to disk**. It reverses
+D52 §5.4's "no write API, ever" for exactly one typed shape, and the reversal is
+**unconditional — there is no kill switch** (owner ruling; the standing whole-feature-toggle rule
+knowingly waived, D65). What makes that safe is not a flag but four rails:
+
+- **The VERB is the CORS control.** The realistic attacker here is not a tailnet peer (there are
+  none, §1) — it is **the owner's own browser on some other origin**, and the only cross-origin
+  request a page can fire *without* a preflight is a **CORS-safelisted** one: `GET`/`HEAD`/`POST`
+  with a safelisted content type, `multipart/form-data` included. That is why uploads are
+  **raw-body `PUT`, never multipart and never POST**: a non-safelisted verb forces an `OPTIONS`
+  preflight, **ctrl-b mounts no CORS middleware and answers no `Access-Control-Allow-Origin`**, so
+  the write dies unsent. The attacker cannot read the response either way; the point is that the
+  *write itself* never happens. **This is load-bearing: adding CORS middleware — or accepting a
+  multipart/POST upload — silently removes the defence.** Both are pinned by tests plus an
+  architecture guard, and neither may be introduced without revisiting D65.
+- **Containment by registry, not by string handling.** A write resolves only inside a registered
+  `$CTRLB_HOME/media/<ns>/<role>/` directory (`MEDIA_NAMESPACES`); the filename must satisfy the
+  admission predicate (NFC, no separators/`.`/`..`, no `<>:"|?*`/C0/DEL, no leading dot or trailing
+  dot-space, not a DOS device name, ≤255 UTF-8 bytes, allowlisted extension) and is **rejected with
+  a reason, never sanitised**. The read side's rules are unchanged (§ the hardened mount: closed
+  extension allowlist, server-set Content-Type, `nosniff`, no symlinks, regular files only).
+- **The bytes are checked before the name exists.** mkstemp `.part` in the role dir → `fchmod 0644`
+  → stream with a byte counter (`413` past `media.write.max_bytes`) → fsync → **`probe_image`
+  header probe** (`415` when the bytes and the extension disagree) → `os.link` no-clobber (`409`)
+  → unlink the temp → `fsync_dir`. **A rejected upload leaves zero bytes**, and a `.part` boot
+  sweep clears anything a crash stranded.
+- **Still no decoder on the server.** No Pillow, no decode, no re-encode, no thumbnails — header
+  probes only. An untrusted-decoder surface was refused at D52 §10.4 and stays refused; all image
+  work (crop, resize, EXIF/GPS stripping, re-encode) happens in the **client's** worker.
+
+**Residuals this path made worth naming** (whole-API properties, not new holes; both recorded in
+[`HARDENING_PLAN.md`](./HARDENING_PLAN.md) §8.2 for Phase 19):
+
+- **DNS rebinding.** A page on an attacker domain that re-resolves to the app's LAN/tailnet address
+  becomes same-origin and is no longer subject to CORS at all. This has always been true of the
+  whole API; the write path only raises the value of the target. Lean fix when the packet runs:
+  `TrustedHostMiddleware` with the deploy's real names.
+- **`POST /api/voice/stt`** is the standing **safelisted-class** endpoint (multipart audio upload).
+  It writes no owner file and only spends an STT call, which is why it was never a gate — it is
+  listed so the class is enumerated rather than forgotten.
+
+**Safe-defaults fit:** nothing here is a toggle, so nothing here is a checklist item to *set*. The
+checklist gains one line (§6) because the property that must survive is a **negative**: no CORS
+middleware, and no upload route that a cross-origin form could post to.
+
 ---
 
 ## 3. Residual & accepted risks + known gaps
@@ -275,6 +330,9 @@ Honest register. "Accepted" = intended within the boundary; "gap → step N" = a
 | **`!exec` steer gate is enforced at DRAIN, not only at enqueue (D41)** | **accepted, fail-closed** | A `!<cmd>` steered into a busy turn checks `shell.user_exec_enabled` at enqueue (UX 403) **and again, live, at drain** — the drain is the only place `run_shell`@FULL actually runs, so disabling the shell mid-queue **drops** the queued command instead of running it. **Commit-before-run:** a harvested/crashed queue **loses** the command rather than double-running it (for a shell command, lost-on-crash beats double-run). |
 | **A persisted approval also auto-allows AGENT + headless re-runs of that exact call (D44)** | **accepted, deliberate** | Owner ruling ④ — approvals are actor-agnostic (§2.5). A grant given at a chat bubble silences the same call for the agent and headless subagents. Bounded by args-exact pinning, allow-only matching, the un-approvable forced-confirm rung, and the mandatory `[auto-allowed: …]` summary marker; revocable any time in Conf → Tools. Fail-closed on a miss (headless CONFIRM → DENIED, unchanged). |
 | **Approvals never expire in v1 (D44)** | **accepted** | No TTL / decay-on-disuse (that needs a queryable fire-log = an events-schema migration; reserved). A grant stands until revoked in Conf → Tools or `config.yaml`; revocation is live from the next invoke. |
+| **The media write API has no kill switch (D65)** | **accepted, owner waiver 2026-08-24** | The whole-feature-toggle rule is knowingly waived: `PUT`/`DELETE /api/media/…` is unconditional. A toggle over one typed, allowlisted, registry-confined path buys nothing a rollback does not, and stays trivially additive (§2.7). |
+| **DNS rebinding reaches the whole API** (an attacker-controlled name re-resolving to the LAN/tailnet address is same-origin, so CORS never applies) | **open → Phase 19** | Pre-existing, whole-API; the D65 write path raises its value. Lean fix = `TrustedHostMiddleware`. Tracked in HARDENING §8.2 (§2.7). |
+| **`POST /api/voice/stt` is a CORS-safelisted write-shaped endpoint** (multipart) | **accepted, enumerated** | Writes no owner file; spends an STT call. Listed so the safelisted class is enumerated rather than forgotten (§2.7); re-checked in Phase 19. |
 | **The steer queue is in-memory (D41)** | **accepted** | A backend restart loses queued-but-undrained steers — no durability is promised (mirrors the in-memory confirm-token stance). Single-user, the queue is seconds-lived; accepted. |
 
 ---
@@ -348,11 +406,14 @@ are the intended way to give the agent shell-like reach, not the raw `!` escape.
       on, **`memory.longterm.core.root`** points at a directory you are content for the agent to write
       files into — the confinement rails refuse a bad root, but they can't tell a *valid* wrong one from
       a right one. Remember the write-side secret gate is best-effort, not a boundary.
+- [ ] **No CORS middleware is mounted, and no upload route accepts `multipart/form-data` or POST**
+      (§2.7, D65) — the media write path's whole defence is that a cross-origin write is forced into
+      a preflight nobody answers. This is a negative to preserve, not a setting to choose.
 - [ ] `config.yaml` present and owner-only readable on the host (`chmod 600`).
 
 ---
 
 ## References
-- Enforced rules for agents: [`AGENTS.md`](../AGENTS.md) §6 · Deploy/exposure: [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) · DECISIONS D1 (Tailscale Serve HTTPS), D3 (hybrid execution model), D32 (topology), D44 (persisted approvals — §2.5).
+- Enforced rules for agents: [`AGENTS.md`](../AGENTS.md) §6 · Deploy/exposure: [`DEPLOY_EMMA.md`](./DEPLOY_EMMA.md) · DECISIONS D1 (Tailscale Serve HTTPS), D3 (hybrid execution model), D32 (topology), D44 (persisted approvals — §2.5), D65 (the media write path — §2.7; spec of record [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md)).
 - Code anchors: `config.py` (`ServerCfg`, `ShellCfg`, `ApprovalRule`/`ToolOverride`, `secret_values`/`mask_secrets`) · `core/permissions.py` (`decide`, `canonical_str`/`glob_escape`/`exact_arg_pins`/`approval_match`) · `core/tool.py` (registry, `ToolSpec`) · `services/action_service.py` (confirm-tokens, the gate consult + the `[auto-allowed: …]` marker) · `runtime.py` (`grant_approval`, `settings_write_lock`) · `core/redact.py` · `adapters/ssh.py`.
 - Hardening that closed the flagged gaps: [`PRE_DEPLOY.md`](./PRE_DEPLOY.md) steps 3 (secret-hygiene tests) + 4b (stale confirm-token recovery) — **both shipped 2026-07-02; the §3 register carries no open "gap → step N" rows.**

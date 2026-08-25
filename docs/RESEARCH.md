@@ -83,6 +83,24 @@ than Serve's free trusted cert, so they're not worth it.
 - Radix primitives only if/when accessible dialogs/menus/sheets are needed (confirmation
   dialogs for shutdown/kill are a good candidate).
 
+### Media manager — the two library rulings (2026-08-24, D65)
+
+Added long after the 2026-05 survey, and kept here for the same reason as everything above: the
+*rationale*. The live pins are `frontend/package-lock.json`. Full evidence:
+[R56](./research/R56-gallery-management-ux.md) (crop clients),
+[R57](./research/R57-focal-point-crop-ux.md) (focal point),
+[R58](./research/R58-touch-drag-reorder.md) (drag reorder).
+
+| Dep | Role | Verdict |
+|---|---|---|
+| **`react-easy-crop@6.2.3`** | the crop viewport **and** the focal-point reticle | **ADOPTED.** **8.6 KB gz measured** (not the ~15 KB the docs imply), zero peer deps beyond React, touch pinch/pan handled, and it ranked first in R56's comparison on exactly the axis that matters on a phone. It earns its keep **twice**: the same component is the focal control (the focal point IS the crop centre, one line — R57 §9), so v1 gets framing for the cost of the crop editor. Free-ratio is the owner's ruling; "derive the ratio from the element" became the framing PREVIEW windows instead. |
+| **`@dnd-kit/*`** | touch drag-reorder for the library grid | **REJECTED.** **+15.3 KB gz** for a capability we already ship, on a line that is **frozen pre-React-19** (no releases against the current React major — a dependency that cannot follow us). **We extend the house `useDragReorder` instead** (R58's G1–G10 gap list, ~150 TS + 25 CSS + 40 tests) — and the field's own displaced-motion numbers turn out to be literally our `--dur-slow`/`--ease-std` tokens, so the polish is already in the design system. This is the "don't add a dep for something we own" rule with a measured price tag. |
+
+Also ruled at D65 and worth recording as non-pins: **no server-side image library** (no Pillow —
+an untrusted-decoder surface; all crop/resize/re-encode/EXIF-stripping happens in a client
+`OffscreenCanvas` worker) and **no upload library** on the backend (the raw-body `PUT` is
+`request.stream()` + stdlib; multipart parsing is exactly the shape SECURITY_MODEL §2.7 refuses).
+
 ---
 
 ## Backend
@@ -228,3 +246,6 @@ The chat+agent subsystem is large enough to be its own project — survey proven
 - Tailscale enabling HTTPS / cert provisioning: <https://tailscale.com/docs/how-to/set-up-https-certificates>
 - Tailscale Funnel (public exposure — the thing we do NOT enable): <https://tailscale.com/docs/features/tailscale-funnel>
 - Chromium: deprecating powerful features on insecure origins (why the flag route is dead on Android): <https://www.chromium.org/Home/chromium-security/deprecating-powerful-features-on-insecure-origins/>
+- react-easy-crop (the crop viewport + the focal reticle, D65): <https://github.com/ValentinH/react-easy-crop>
+- dnd-kit (surveyed and REJECTED at D65 — size + a pre-React-19 line): <https://github.com/clauderic/dnd-kit>
+- MDN CORS simple/safelisted requests (why the media write path is `PUT`, never multipart/POST): <https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS#simple_requests>

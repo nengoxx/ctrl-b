@@ -614,7 +614,11 @@ frontend; `$CTRLB_HOME` has no media dir or route; the only upload endpoint is t
 - **✅ RULED (owner, 2026-08-02, this prep session): option (b).** The read-only owner
   directory + the phone-facing Conf gallery for ORDERING and PINNING (the gallery
   selects/orders/pins; it never writes files — the owner drops files in from another machine).
-  Option (c) stays a possible later layer behind the same directory + schema. **Council
+  Option (c) stays a possible later layer behind the same directory + schema. **→ AMENDED by
+  D65 (2026-08-24): that later layer arrived.** The typed subset of option (c) — raw-body
+  `PUT`/`DELETE`, never multipart, never POST — is built behind this exact directory + schema, so
+  "the gallery never writes files" and "no write API, ever" are historical record from here on.
+  See [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md) + SECURITY_MODEL §2.7. **Council
   amendment (M9, mechanics not shape):** the mount is namespace-generic — the directory is
   **`$CTRLB_HOME/media/gacha/`** under a single `/api/media/{ns}/` route, so the next
   art-bearing theme is a path segment, not a new route. (Same ruled shape; the literal path

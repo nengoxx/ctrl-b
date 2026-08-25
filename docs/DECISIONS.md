@@ -4670,3 +4670,85 @@ grant). Everything else in D57/D60/D61 stands.
 - Non-builds recorded: cap raise/removal · `read_full` · acknowledgement params ·
   model-carried tokens of any kind · range-union coverage · per-line third bound ·
   cross-turn coverage · marker policy prose · post-write echo (on measured need only).
+
+## D65 — The media manager: typed media WRITES (raw-body PUT/DELETE) + the per-destination art LIBRARY model ✏️ RATIFIED 2026-08-24 (owner decision session, all §10 rulings closed; spec of record = [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md) v2.1 incl. its §15 council record; council round 2 = Emma correctness lens [1 HIGH + 9 MED] + adversarial Opus architecture lens [5 HIGH + 8 MED + 3 sweep], every finding ruled and folded, BOTH lenses at an explicit final "RESOLVED — ready to build")
+
+**Amends D52 §5.4** (`"no write API, ever"` — reversed for typed media writes) **and D53/D54**
+(which stay the authority on namespaces/roles/kinds/serving; this entry owns writes, libraries and
+the management UI). `MEDIA_MANAGER_PLAN.md` is normative — the headlines below are the record, not
+a second spec.
+
+**The reversal, and the mechanism it rests on (plan §1).** D52 §5.4 refused a write API because
+the app has no application-layer auth — the tailnet IS the boundary (SECURITY_MODEL §1). The
+realistic attacker was never a tailnet peer (there are none) but **the owner's own browser on
+another origin**, and R55 §2 pinned exactly which shape that attacker can use: a cross-origin
+`multipart/form-data` POST is **CORS-safelisted** and fires unsent-blind. So the reversal is
+scoped to the shape that is NOT safelisted:
+
+- **Raw-body `PUT`/`DELETE`, never multipart, never POST.** A non-safelisted verb forces a CORS
+  preflight; we run no CORS middleware and answer no ACAO, so a cross-origin browser write dies at
+  the `OPTIONS`. **Pinned by tests + an architecture guard** — adding CORS middleware without
+  revisiting this entry fails the gate.
+- Writes land **only** inside registered `$CTRLB_HOME/media/<ns>/<role>/` dirs; `probe_image`
+  validates the BYTES before the file ever reaches its final name; the extension must agree with
+  them; the body is counted as it streams; **a rejected upload leaves zero bytes** (mkstemp `.part`
+  → stream+count → fsync → probe → `os.link` no-clobber → unlink → `fsync_dir`, with a boot sweep
+  for orphaned `.part` files).
+- **No server-side image processing, still.** No Pillow, no decode — header probes only, the same
+  posture the read side has always had, and stronger than every peer surveyed (R55).
+- **NO kill switch — the reversal is UNCONDITIONAL (owner ruling ①).** No `enabled` flag, no
+  `write_enabled`, no 503 branch, no degraded mode. **The standing whole-feature-toggle rule is
+  KNOWINGLY WAIVED by the owner**, on the reasoning that a toggle over one typed, allowlisted,
+  registry-confined path buys nothing a rollback does not — and stays *trivially additive* later
+  (one config key + one guard), so nothing is designed around its absence.
+
+**The library model (plan §2 — the shape of the feature).** Every custom-art destination is a
+**section with its own LIBRARY on disk**, so the owner switches art later without re-uploading.
+Uploads are purely ADDITIVE (delete is the only removal; **priority order decides what is
+active**), and **bundled default images are first-class entries in every gallery**. Two section
+kinds, ONE gallery UI driven by a capability descriptor: *library-backed* (upload · reorder ·
+set-active · In-use · delete · framing) and *pin-backed seat* (a read-only VIEW over the source
+library plus exactly one write — the pin; the tile action reads "Use here").
+**Collation stays ONE server-side chokepoint** (`list_role`), re-versioned **`collation:
+"library-v1"`**: `files` entries in list order, then unlisted disk files, then unlisted bundled
+entries as the **fallback tier**; the wire carries the WHOLE truth (`focal` · `hidden` · `listed`
+on every row) so resolution is decidable from the index alone. **"Which image is live" stays
+theme-ladder knowledge**, declared per section as an `active` resolver supplied by the module that
+already owns the ladder — the registry may import those theme modules, never the reverse (the
+store↛registry lesson), and the FE bundled-id rows are DERIVED from `defaultRoster()`/`ART`
+rather than hand-mirrored.
+
+**Config = a clean fold, no legacy seam.** `media.<ns>` → `media.namespaces.<ns>` (`write` would
+otherwise parse as a namespace — the fold's whole reason) + `media.write.max_bytes` (**15 MB**,
+owner ruling ③); `order: [names]` → **`files: [{name|bundled, key?, hidden?, focal?}]`**, ONE
+ordered list of per-item objects (the 2026-06-24 extend-don't-migrate directive; item identity is
+a validator-enforced discriminated union, unique per role). The migration is **config-pure** —
+steps never touch the filesystem — and writes no bundled entries: **paint parity holds by
+construction** via the fallback-tier rule, which is what let Emma's server-manifest fix be
+re-derived away. Old keys are deleted in the write-back (no-legacy-seams).
+
+**Client-side, in headlines:** input guard 15 MB → **64 MP** (the owner's Honor 20 is 48 MP,
+ruling ④) → HEIC/TIFF/SVG refused by name → `createImageBitmap` proof; crop = **react-easy-crop**
+free-ratio (ruling ⑤), whose crop centre seeds the **focal point — IN v1** (ruling ⑥), stored
+per item as `{x, y}` **keyed to the file's `revision`**; export through an `OffscreenCanvas`
+worker (EXIF/GPS stripped); **drag is the primary reorder** and extends the house `useDragReorder`
+(ruling ⑧ — dnd-kit REJECTED, +15.3 KB gz on a pre-React-19 line); single-file pick (ruling ⑨);
+collisions are **designed away** (auto-unique minted names, 409-on-exists as the race guard —
+never a Replace dialog).
+
+**Security posture:** SECURITY_MODEL **§2.7** carries the write path + the CORS-safelist reasoning,
+and makes the **PREMISE CORRECTION** the reversal exposed — §1's "no session to steal" line never
+covered *unauthenticated writes*, so "no auth" stopped being a complete answer the moment a write
+verb existed. **Residuals recorded into the Phase 19 register (HARDENING §8.2):** DNS rebinding (a
+whole-API property, not this feature's — lean fix `TrustedHostMiddleware`) · `POST /api/voice/stt`
+(the standing safelisted-class instance).
+
+**Doc-truth rider:** the three read-side "there is no write API and there must never be one"
+docstrings (`core/media.py`, `api/media.py`, `MediaGallery.tsx`) are rewritten to this ruling —
+D52 §5.4's option-(b) prose stands as the historical record, amended by a pointer here.
+
+**Non-builds recorded** (don't re-propose): a kill switch / `write_enabled` · server-side decode
+or re-encode · server thumbnails · multipart or POST uploads · server revision tokens for `files`
+writes (client serialization at the chokepoint instead; the two-devices-at-once lost update is an
+**accepted residual**) · a server manifest for migration parity · per-destination crop overrides ·
+region hotspots · v1 Replace/overwrite machinery · dnd-kit.

@@ -182,7 +182,9 @@ tests parametrize over the three namespaces.
 
 Same read-only mount, allowlist/nosniff/no-cache/symlink rules, degrade law, for both new
 namespaces. Icons render in more places but are same-origin `<img>` from the hardened mount —
-no new surface class. No write API anywhere.
+no new surface class. ~~No write API anywhere.~~ **→ AMENDED by D65 (2026-08-24): a typed
+raw-body `PUT`/`DELETE` write path exists — see §13 below and SECURITY_MODEL §2.7. Everything
+else in this section stands verbatim: the READ surface is untouched.**
 
 ## 8. Slices + gates (council M4 re-slice; BEFORE G6 — owner-ruled)
 
@@ -356,3 +358,43 @@ image wins, or pin one in Conf → Shared art → *App icon*. Only the shape is 
 active theme's accent. Drop nothing and the app bar keeps the mark it has today. **`media/gacha/`
 no longer has a `wallpaper/` folder**: put the fleet backdrop in `media/kit/background/`, or pin a
 character to it in Conf → Theme art → *Fleet backdrop*.
+
+---
+
+## 13. AMENDMENT — D65, the media manager (2026-08-24)
+
+**Not a rewrite of anything above.** This plan (D53/D54) stays the authority on **namespaces,
+roles, kinds and serving** — the registry rows, `pool` vs `named`, the stem binding, the hardened
+read mount, the degrade law, the FE descriptor inversion. Everything in §0–§12 that describes
+those is still true and still normative.
+
+What moved out from under it is **writes, libraries and the management UI**, which
+[`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md) (v2.1, council-closed; locked as **D65**) now
+owns. Read that plan before touching the write path, the gallery, or anything that resolves
+"which image is live".
+
+**The three deltas against the text above, stated plainly:**
+
+1. **§7's "No write API anywhere" is amended.** `PUT`/`DELETE /api/media/{ns}/files/{role}/{filename}`
+   exists — raw body, never multipart, never POST (the CORS-preflight mechanism; SECURITY_MODEL
+   §2.7). The read surface, the mount's rules and the "no server-side decoder" posture are
+   **unchanged**.
+2. **The LIBRARY model supersedes drop-in-only.** Every destination is a section with its own
+   on-disk library; uploads are additive, bundled defaults are first-class gallery entries, and
+   **priority order decides what is active**. The Conf gallery this plan shipped (`MediaGallery`'s
+   role sections + pins) becomes the entry surface for a full-screen per-section gallery
+   (MEDIA_MANAGER_PLAN §6).
+3. **`files` supersedes `order:` at the config fold.** `media.<ns>` moves to
+   `media.namespaces.<ns>` (making room for `media.write`), and `roles.<role>.order: [names]`
+   becomes **`roles.<role>.files: [{name|bundled, key?, hidden?, focal?}]`** — ONE ordered list of
+   per-item objects, per the extend-don't-migrate directive, so the next per-item dimension is an
+   additive field rather than a sibling map. §4's ns-generic `media:` model and its
+   validate-against-the-registry rule survive intact; only the leaf shape changes, through an
+   ordinary config-migration step that deletes the old keys (no-legacy-seams).
+
+**Unchanged and worth restating, because the library model leans on it:** the backend registry row
+is still the one place a namespace exists, and the FE registry still mirrors it row-for-row. D65
+adds **per-role bundled ids** to both — hand-listed on the backend, **DERIVED** on the front end
+from the theme ladder modules (`defaultRoster()` / `ART`), with a drift test holding the two in
+step. That is what lets a bundled default appear as an ordinary gallery entry without inventing a
+second identity space.

@@ -473,7 +473,8 @@ $CTRLB_HOME/
 ├── skills/<name>/SKILL.md # global skills (frontmatter + instructions)
 ├── agents/<slug>/         # specialists: agent.yaml (overrides) + SOUL.md + skills/
 ├── media/<ns>/<role>/     # owner art per NAMESPACE + role (D53; `core/media.py` validates the shape,
-│                          #   served read-only at /api/media/<ns>/files — a stray folder stays invisible)
+│                          #   served at /api/media/<ns>/files — a stray folder stays invisible. D65: the
+│                          #   ONLY tree the app writes owner files into, via PUT/DELETE — SECURITY_MODEL §2.7)
 └── memories/              # ← local git repo (D26, auto-commit + external-edit sweep)
     ├── MEMORY.md USER.md STATE.md      # tier 1: default agent + global stores (capped, § entries)
     ├── agents/<slug>/MEMORY.md STATE.md
@@ -499,7 +500,7 @@ $CTRLB_HOME/
 | `wake` | fleet wake automation: the D2-B connect cooldown + the D2-A presence tunables (`presence_device_ips`, per-host `wake_on_presence`) | live |
 | `monitor` | the `MonitorService` tick interval + the asymmetric up/down damping thresholds (D2-A/D50) | live (re-read per tick — the master switch is live) |
 | `automations` | the `AutomationRunner` tunables only (`default_timeout_s`, …) — the **definitions live in SQLite**, not in YAML (D49) | live (re-read per tick) |
-| `media{}` | owner media state keyed by **namespace** (mirrors `MEDIA_NAMESPACES`, incl. `kit`, which no theme owns — D52/G5 + D53); absent key = every consumer stays on its bundled art | live |
+| `media{}` | owner media state keyed by **namespace** (mirrors `MEDIA_NAMESPACES`, incl. `kit`, which no theme owns — D52/G5 + D53); absent key = every consumer stays on its bundled art. **D65 folds the shape:** the namespace blocks move under `media.namespaces.<ns>` (making room for `media.write.max_bytes`, 15 MB) and each role's `order: [names]` becomes **`files: [{name\|bundled, key?, hidden?, focal?}]`** — one ordered list of per-item objects (extend-don't-migrate); a config-migration step folds it and deletes the old keys (the plan calls this "schema 7"; mechanically it is the `config_version` marker, not the DB `schema_version`) | live |
 | `appearance` | theme/mode/accent/motion/perf + per-theme settings + the two kit switches + `pwa_icon_background` (D59 — the installed-icon backdrop, a closed variant allowlist) (server-stamped LWW) | live |
 
 Secrets: two-rule model (declared leaf keys + hinted credential-map subkeys) → masked on GET,
@@ -584,7 +585,7 @@ router-relative.
 | voice | `status` · `stt` · `tts` |
 | events / access / health | audit list + SSE · Tailscale Serve control · health |
 | automations (D49) | `GET /automations` · `POST /automations` (201) · `POST /automations/schedule-preview` (validate a cron + show the next fires) · `PUT /automations/{id}` · `POST /automations/{id}/enabled` · `DELETE /automations/{id}` (204) · `POST /automations/{id}/run-now` (202) · `GET /automations/{id}/runs` · `POST /automations/runs/{run_id}/read` |
-| media (D53) | `GET /media/{ns}` (the namespace index — roles + what the owner has installed) + a per-namespace **static mount** at `/media/{ns}/files` (`MediaFiles`, restricted to the roles the index advertises, so a folder parked beside them is invisible rather than quietly public) |
+| media (D53 · **writes D65**) | `GET /media/{ns}` (the namespace index — roles + what the owner has installed; `collation: "library-v1"` once D65's collation lands: `files` order → unlisted disk → unlisted BUNDLED as the fallback tier, every row carrying `focal`/`hidden`/`listed`) + a per-namespace **static mount** at `/media/{ns}/files` (`MediaFiles`, restricted to the roles the index advertises, so a folder parked beside them is invisible rather than quietly public) · **`PUT /media/{ns}/files/{role}/{filename}`** — raw `png\|jpeg\|webp` body, **never multipart, never POST** (the CORS-preflight defence, SECURITY_MODEL §2.7) → `201 MediaFile` · `404` unknown ns/role · `409` name exists (the race guard, client retries with the next suffix) · `413` over `media.write.max_bytes` · `415` extension/bytes disagree · `422` bad filename or empty body · **`DELETE` the same path** → `204 \| 404` (touches no config; the client composes delete-then-config-write) |
 | agent turns (D39/D41) | `GET /agent/turns/{t}` (status + `steer_queue`) · `GET …/stream` (re-attach) · `POST …/cancel` (idempotent Stop; harvests `steer_queue`) · `DELETE …/steer/{entry_id}` (unsend a queued steer) |
 
 Two routes sit **outside** `/api`, in `main.py`'s prod-only branch (absent in dev, where Vite owns

@@ -985,7 +985,19 @@ e.g. `web_search` default result count, `dns_trace` record types / timeout, `ip_
   Evidence = [R18](./research/R18-ensemble-collage-fleet.md) + R22–R26; the build record + per-slice
   as-builts = **GACHA_PLAN §12** (Phase 17 DONE end to end).
 
-### H2. Visual art manager — upload + crop/focal-point editing (**owner, 2026-08-08 — future, unscheduled**)
+### H2. Visual art manager — upload + crop/focal-point editing — **✅ SPEC'D + SCHEDULED 2026-08-24: this is now Phase 21** (design LOCKED as [`D65`](./DECISIONS.md) · spec of record = [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md) v2.1, council-closed; evidence = [R54](./research/R54-crop-upload-client.md)–[R59](./research/R59-art-library-presentation.md))
+
+> **Read the plan, not this entry.** What follows is the 2026-08-08 origin record, kept because the
+> owner's framing and the seam analysis are still the reason the feature has the shape it has. Three
+> things it says are now superseded: (a) "future, unscheduled" — it is Phase 21, and the ladder is
+> MEDIA_MANAGER_PLAN §12 (S0–S6); (b) "the Conf gallery … never writes files" (§ the seam list
+> below, inherited from D52 §5.4) — **D65 reverses that** for a typed raw-body `PUT`/`DELETE`
+> (SECURITY_MODEL §2.7); (c) the guess that owner-file focus data would be "likely a sidecar in the
+> media index" — it is a **per-item `focal: {x, y, rev}` field in the config's `files` list**, keyed
+> to the file's revision, and the owner-vs-bundled asymmetry the entry flags as "the known GAP" is
+> closed by the per-ITEM mapping mode (owner items centred, bundled items proportional; plan §5).
+> The **parked 2026-08-12 media-gallery test-and-refine round folds into the plan's S6** owner device
+> round — it is not a separate item to schedule.
 
 - **What (owner's words, condensed):** an in-app, visual way to edit every selectable image — the
   per-PC portraits, the banner/scene art, "every single image that you can select." Upload a file

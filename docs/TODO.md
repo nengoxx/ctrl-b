@@ -1403,6 +1403,39 @@ go-ahead between slices; each passes `tools/check.py`.
       floor + zero-write refusal (plan **§14b**; `8637855`, 2026-08-17). **🏁 PHASE 20 BUILT +
       LIVE-DRIVEN on dev; remaining = the prod owner round (HANDOFF ▶▶ 2).**
 
+## Phase 21 — The media manager: per-destination art LIBRARIES · upload · crop · focal point · reorder — **✅ DESIGN LOCKED 2026-08-24 ([`D65`](./DECISIONS.md)) · spec = [`MEDIA_MANAGER_PLAN.md`](./MEDIA_MANAGER_PLAN.md) v2.1 (council round 2 CLOSED, both lenses final-RESOLVED; §12 = the slice ladder; build against the plan, NOT this list)**
+
+Every custom-art destination becomes a **section with its own LIBRARY on disk** — upload, crop,
+focal point, drag-reorder, delete, without re-uploading to switch art. Uploads are purely additive,
+bundled defaults are first-class gallery entries, and priority order decides what is active. Backed
+by the D65 reversal: a **typed raw-body `PUT`/`DELETE`** media write API (never multipart, never
+POST — SECURITY_MODEL §2.7), **unconditional, no kill switch** (owner waiver of the whole-feature
+toggle rule). Ships in the 1.7.x line (1.8 stays RESERVED for the ROADMAP/ISSUES cleanup wave).
+Standing cadence per slice: Opus build from a pinned brief → main-seat audit → Emma-lane review →
+owner eyeball; each passes `tools/check.py`.
+
+- [ ] S0 — Docs + registry rows: D65 · SECURITY_MODEL §2.7 · MEDIA_PLAN §13 amendment · SPEC
+      inventories · doc-map row · RESEARCH pins (react-easy-crop ADOPTED / dnd-kit REJECTED) ·
+      ROADMAP §H2 + this stanza · HARDENING §8.2 + §7b · backend+FE per-role bundled-id rows
+      (`MediaSlotDef.bundled` retired; FE ids DERIVED from `defaultRoster()`/`ART`) · the
+      preview-descriptor type · the docstring truth pass
+- [ ] S1 — Backend: the write API · the `media.namespaces`/`media.write` fold + `files` migration ·
+      collation v2 + wire (`focal`/`hidden`/bundled rows/`library-v1`) · the predicate loosening
+      (defect #8) · `.part` boot sweep · `fsync_dir` promoted · defects #6/#7 · BE tests
+- [ ] S2 — Gallery: section descriptors + active resolvers (H1) · entry + role-family cards · the
+      full-screen modal + `useOverlayBackGuard` · grid + item detail · set-active / use-here /
+      delete-promotes-next / hidden · defects #1–#4, #9–#12 · e2e
+- [ ] S3a — Pure: `lib/imageExport` + worker + the input guard + the fixture fence
+- [ ] S3b — Wiring: picker + `CropModal` + `useMediaUpload` (the ONE admission latch · auto-unique
+      naming · two-phase retry · failure rows) + the live Add row
+- [ ] S4 — Focal: `focalPosition`/`useFocalPosition` + `FramingSheet` + registry preview descriptors
+      + **the ~10 paint-site rewrite** (the `--cv-*` inheritance chain → per-window hooks;
+      `coverHeroFocus` refractionalized)
+- [ ] S5 — Drag: G6/G5 → G1 → G2 → G4 → G3 → hygiene + the held-commit state machine
+- [ ] S6 — Owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over
+      Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball ·
+      crop/framing/drag feel · Fennec expected-partials
+
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.
