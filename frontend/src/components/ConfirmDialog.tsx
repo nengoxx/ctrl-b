@@ -74,10 +74,18 @@ export function ConfirmDialog() {
 
   if (!req) return null;
 
-  /** The ONE way out (the guard's close primitive), carrying the choice with it. */
+  /** The ONE way out (the guard's close primitive), carrying the choice with it.
+   *
+   *  THE FIRST EXIT DECISION WINS (Emma's S2 confirm round). `history.back()` is asynchronous and this
+   *  dialog stays mounted until the pop lands, so a second gesture inside that window used to rewrite
+   *  the answer the first one recorded: Enter then Escape resolved a CANCEL on a confirmation the
+   *  owner had already given, and the reverse order confirmed a destructive action they had just
+   *  cancelled. The guard's close is the latch — it answers `false` once a close is in flight — so the
+   *  answer is recorded only by the gesture that actually takes the exit. */
   const finish = (ok: boolean) => {
+    const previous = answer.current;
     answer.current = ok;
-    close();
+    if (!close()) answer.current = previous;
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {

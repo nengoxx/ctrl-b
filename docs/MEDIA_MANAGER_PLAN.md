@@ -359,13 +359,26 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
   >   wire and resolves to nothing paints NOTHING: that is what the In-use switch means, and
   >   resurrecting the default would make the card's "nothing in use" a lie. Audited across all
   >   three ladder modules; `kit` needed no fix (it ships no bundled art) and carries a pin.
-  > · **Queue integrity past the refetch bound (#4).** When the post-PUT authoritative refetch
-  >   misses `MEDIA_REFETCH_TIMEOUT_MS`, `useSaveSettings` reports it (`onMediaStale`) and the queue
-  >   DISCARDS its remaining `files` intents with a toast — an intent recomputed from an index known
-  >   stale is how the second write undoes the first. `busy` still releases in `finally`.
+  > · **THE QUEUE'S ONE INVARIANT (#1/#4, restated at Emma's confirm round): every write is computed
+  >   from AUTHORITATIVE state at SEND time; no authoritative state, no write.** A job is an INTENT
+  >   and its patch is a function of the freshest cached settings + index, `null` being its honest
+  >   refusal. The rule used to hold only of the `files` half, and both carve-outs were holes:
+  >   a PIN's ELIGIBILITY (is the target `hidden`? is it a fallback-tier row needing listing?) was
+  >   decided when the owner TAPPED, off the rendered item — so hiding an entry and activating it
+  >   before the refetch landed minted a scalar-only pin onto an entry that was already hidden; and
+  >   the timeout discard SPARED scalar jobs, so that pin survived the very timeout meant to stop it.
+  >   Now eligibility is recomputed at send from the index, and a refetch that misses
+  >   `MEDIA_REFETCH_TIMEOUT_MS` (`useSaveSettings#onMediaStale`) discards **every** remaining job
+  >   with a toast: a dropped write costs one re-tap, a retained one writes a binding nothing
+  >   honours. `busy` still releases in `finally`.
   > · **The Android-Back guard is a STACK with per-entry identity (#5),** and `ConfirmDialog` joins
   >   it with its own entry: Back cancels the top-most confirm, the gallery under it stays, the next
   >   Back closes the gallery. One shared `popstate` listener; only the popped TOP owner closes.
+  >   **`close()` is idempotent while its pop is in flight** and returns whether THIS call took the
+  >   exit (her confirm round): closing is asynchronous and the overlay stays mounted through it, so
+  >   a second gesture used to spend a second history entry — and, in the confirm, to rewrite the
+  >   first one's answer (Enter then Escape cancelled a confirmation already given, and the reverse
+  >   confirmed a destructive action just cancelled). The FIRST exit decision wins.
   > · **The stem/id pin note (#6, §2.3's owed sentence).** In a pin-capable section a file stem and
   >   a bundled id that answer to one pin value carry the duplicate badge plus a sentence stating
   >   the tie-break — collation order wins, and "Set as active" is how the owner changes it.

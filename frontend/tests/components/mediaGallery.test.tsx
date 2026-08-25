@@ -153,9 +153,14 @@ beforeEach(() => {
     providers_rev: "r1",
   });
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   setUI({ tab: "fleet" });
+  // Let the back guard's unmount finish. It reclaims its history entry with an asynchronous
+  // `history.back()`, and jsdom delivers that pop on a later task — which, without this, is a task
+  // inside the NEXT test, where the guard swallows it as its own unwind and the next Escape appears
+  // to do nothing. A real browser has no test boundary to leak across; the suite does.
+  await new Promise((r) => setTimeout(r, 0));
 });
 
 describe("the entry cards (§6.1)", () => {
@@ -964,6 +969,99 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
 
       await flush(5_000); // the bound expires; the save resolves with the index unknown
       expect(api.putJSON).toHaveBeenCalledTimes(1); // the queued intent was DROPPED, not replayed
+      expect(toast.pushToast).toHaveBeenCalledWith(
+        expect.stringContaining("did not come back in time"),
+        "err",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A pin-capable role (`reel` ← the `reel_figure` pin) holding two owner files. */
+  const reelIndex = (over: Partial<MediaFile> = {}) =>
+    index({
+      roles: {
+        characters: [],
+        banner: [],
+        reel: [file("cut", "reel", over), file("other", "reel")],
+        oracle: [],
+      },
+    });
+
+  /** A PUT that echoes the patch back as the settings doc, the way the real endpoint does — so the
+   *  next queued job's read-modify-write reads what the last one actually persisted. */
+  const echoingPut = () =>
+    api.putJSON.mockImplementation((_url: string, body: Record<string, unknown>) =>
+      Promise.resolve({
+        settings: { notifications: {}, ...body },
+        restart_required: [],
+        warnings: [],
+        providers_rev: "r1",
+      }),
+    );
+
+  it("a PIN decides its ELIGIBILITY at SEND, not from the item that was on screen", async () => {
+    // Emma's confirm-round scenario, minus the timeout. On a pin-capable role: toggle A's In-use OFF,
+    // then press Set as active before the refetch has updated the rendered detail. Minted from that
+    // stale item the pin was "already eligible" and went out SCALAR-ONLY — written onto the entry the
+    // job ahead of it had just hidden, where no ladder can resolve it. Eligibility is a fact about the
+    // index, so it is recomputed from the index at send like every other part of a write.
+    echoingPut();
+    api.getJSON.mockResolvedValueOnce(reelIndex()).mockResolvedValue(reelIndex({ hidden: true }));
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+      </QueryClientProvider>,
+    );
+    const dialog = await openSection("reel");
+    openItem(dialog, "cut.webp");
+    // Both gestures land before the first write's refetch does — the second is queued off the state
+    // the first one is in the middle of changing.
+    fireEvent.click(within(dialog).getByRole("switch", { name: /In use — cut.webp/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
+    expect(filesOf(savedBlock(0), "reel")).toEqual([
+      { name: "cut.webp", hidden: true },
+      { name: "other.webp" },
+    ]);
+    // The pin AND the `hidden` clear that makes it resolvable, in the one patch.
+    expect(savedBlock(1)).toEqual({
+      slots: { reel_figure: "cut" },
+      roles: { reel: { files: [{ name: "cut.webp" }, { name: "other.webp" }] } },
+    });
+  });
+
+  it("…and on a refetch timeout the pin is DISCARDED with everything else, carve-out and all", async () => {
+    // The same scenario with step 5: the hide lands but its authoritative refetch does not. A scalar
+    // pin looks safe to keep — it recomputes from nothing — and is not: whether it can RESOLVE is a
+    // fact about the index we no longer have. So the queue drops everything.
+    vi.useFakeTimers();
+    try {
+      echoingPut();
+      api.getJSON
+        .mockResolvedValueOnce(reelIndex())
+        .mockImplementation(() => new Promise<MediaIndex>(() => undefined));
+      const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+      render(
+        <QueryClientProvider client={qc}>
+          <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+        </QueryClientProvider>,
+      );
+      await flush();
+      fireEvent.click(screen.getByRole("button", { name: "Open the reel gallery" }));
+      await flush();
+      const dialog = screen.getByRole("dialog");
+      openItem(dialog, "cut.webp");
+      fireEvent.click(within(dialog).getByRole("switch", { name: /In use — cut.webp/ }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+      await flush();
+      expect(api.putJSON).toHaveBeenCalledTimes(1); // the hide
+
+      await flush(5_000);
+      expect(api.putJSON).toHaveBeenCalledTimes(1); // …and the pin never went out onto a hidden entry
       expect(toast.pushToast).toHaveBeenCalledWith(
         expect.stringContaining("did not come back in time"),
         "err",

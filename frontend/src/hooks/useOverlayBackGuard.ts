@@ -65,11 +65,13 @@ function listen(): void {
   listening = true;
 }
 
-/** Guard `open`, returning the ONE close primitive the UI may call.
+/** Guard `open`, returning the ONE close primitive the UI may call. It answers whether THIS call took
+ *  the exit — see `closing` below; a caller that records something about the way it closed (which
+ *  answer a confirm is resolving with) must only record it when the answer is `true`.
  *
  *  `onClose` is read through a ref, so a handler recreated every render (the ordinary case for a
  *  closure over component state) never re-pushes the history entry. */
-export function useOverlayBackGuard(open: boolean, onClose: () => void): () => void {
+export function useOverlayBackGuard(open: boolean, onClose: () => void): () => boolean {
   const onCloseRef = useRef(onClose);
   // Written in an effect rather than during render (the React-Compiler rule the repo lints for): the
   // only reader is a `popstate` handler, which cannot fire before this commit anyway.
@@ -78,17 +80,26 @@ export function useOverlayBackGuard(open: boolean, onClose: () => void): () => v
   });
   /** Our entry's id while it is on the stack, else `null`. */
   const mine = useRef<number | null>(null);
+  /** A close is already IN FLIGHT — `history.back()` was asked for and its pop has not landed yet.
+   *
+   *  `close()` is idempotent across that window (Emma's S2 confirm round, the ConfirmDialog race). The
+   *  overlay stays mounted until the pop, so a second gesture in it — a double-tapped ✕, Escape after
+   *  Enter — used to spend a SECOND history entry: the first pop closed the overlay and the second was
+   *  a real navigation out of the app. The first exit wins; the rest are no-ops. */
+  const closing = useRef(false);
 
   useEffect(() => {
     if (!open || typeof history === "undefined") return;
     const id = nextId++;
     mine.current = id;
+    closing.current = false;
     // The TOP entry is the only one a pop can reach, which is what lets a confirm close over a gallery
     // that stays open behind it — and what makes the next Back close that gallery.
     stack.push({
       id,
       close: () => {
         mine.current = null;
+        closing.current = false;
         onCloseRef.current();
       },
     });
@@ -99,6 +110,7 @@ export function useOverlayBackGuard(open: boolean, onClose: () => void): () => v
       if (at < 0) return; // already spent by a pop
       stack.splice(at, 1);
       mine.current = null;
+      closing.current = false;
       // Unmounted (or `open` flipped) without the pop having happened — a parent removed us, a tab
       // switched. Our entry is still the one the browser is sitting on, and would otherwise be spent
       // on nothing, so consume it — and swallow the pop it delivers: whatever set `open` false already
@@ -113,12 +125,21 @@ export function useOverlayBackGuard(open: boolean, onClose: () => void): () => v
     };
   }, [open]);
 
-  return useCallback(() => {
-    // `history.back()` is the whole of it: the popstate handler above is what actually closes, so
-    // there is exactly one path out and no way to leave an entry behind. Without an entry of our own
-    // (the guard is disabled, or the environment has no history) close directly rather than stealing
-    // the caller's real back.
-    if (mine.current !== null) history.back();
-    else onCloseRef.current();
+  // `history.back()` is the whole of it: the popstate handler above is what actually closes, so there
+  // is exactly one path out and no way to leave an entry behind. Without an entry of our own (the
+  // guard is disabled, or the environment has no history) close directly rather than stealing the
+  // caller's real back.
+  //
+  // Returns whether THIS call is the one taking the exit — `false` means a close is already in flight
+  // and the caller's gesture came too late to decide anything.
+  return useCallback((): boolean => {
+    if (closing.current) return false;
+    if (mine.current !== null) {
+      closing.current = true;
+      history.back();
+    } else {
+      onCloseRef.current();
+    }
+    return true;
   }, []);
 }

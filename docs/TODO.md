@@ -1431,7 +1431,9 @@ owner eyeball; each passes `tools/check.py`.
       (+ the Emma-lane review wave, all 9 findings ACCEPTed — activation-guarantees-eligibility,
       resolved-empty vs degrade, resolver-derived seat status, the refetch-bound queue discard, the
       back guard as a STACK with `ConfirmDialog` joining it, the stem/id pin note, DELETE partial
-      success, the single `?rev=` stamp; as-built note in MEDIA_MANAGER_PLAN §2.1/§6.5)
+      success, the single `?rev=` stamp; + her CONFIRM round: the queue's one send-time invariant
+      (pin eligibility recomputed at send · the timeout discards ALL) and the idempotent close
+      primitive; as-built note in MEDIA_MANAGER_PLAN §2.1/§6.5)
 - [ ] S3a — Pure: `lib/imageExport` + worker + the input guard + the fixture fence
 - [ ] S3b — Wiring: picker + `CropModal` + `useMediaUpload` (the ONE admission latch · auto-unique
       naming · two-phase retry · failure rows) + the live Add row

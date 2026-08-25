@@ -15,6 +15,10 @@ import { useOverlayBackGuard } from "../../src/hooks/useOverlayBackGuard";
 //  ③ A STACK, with identity (her S2 review #5). Overlays nest, `popstate` fires on every listener, and
 //     one pop consumes exactly ONE entry — the innermost one's. So only the TOP owner may close, or
 //     Back takes the outer overlay away and leaves the inner one stranded on top of nothing.
+//  ④ CLOSE IS IDEMPOTENT while its pop is in flight (her confirm round). Closing is asynchronous and
+//     the overlay stays mounted until the pop lands, so a second gesture in that window used to spend
+//     a SECOND history entry — the first pop closed the overlay and the second was a real navigation
+//     out of the app. The first exit wins, and `close()` says so to its caller.
 
 /** A minimal host: renders while `open`, and reports every close the hook delivers. */
 function Host({ onClose }: { onClose: () => void }) {
@@ -98,6 +102,40 @@ describe("useOverlayBackGuard", () => {
     // it TRUNCATES rather than piles. A UI path that closed without spending its entry would have
     // grown the stack by three — the shape the owner meets as "Back does nothing five times".
     expect(history.length).toBeLessThanOrEqual(before + 1);
+  });
+
+  it("a SECOND close before the pop lands is a no-op — one gesture, one entry", async () => {
+    const onClose = vi.fn();
+    const before = history.length;
+    const view = render(<Host onClose={onClose} />);
+    await waitFor(() => expect(ours()).toBe(true));
+
+    // Two taps inside the async window. The second must not spend another entry: with the overlay
+    // still mounted, the extra `history.back()` navigated the app itself.
+    closer(view)!.click();
+    closer(view)!.click();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(ours()).toBe(false);
+    expect(history.length).toBeLessThanOrEqual(before + 1);
+  });
+
+  it("…and it SAYS which gesture took the exit — how a caller knows whose answer to record", async () => {
+    // ConfirmDialog records its answer only on `true`: the second gesture came too late to decide
+    // anything, and letting it write would turn a confirmation into a cancellation (or the reverse).
+    const took: boolean[] = [];
+    function Reporter() {
+      const close = useOverlayBackGuard(true, () => undefined);
+      return (
+        <button type="button" onClick={() => took.push(close())}>
+          close
+        </button>
+      );
+    }
+    const view = render(<Reporter />);
+    await waitFor(() => expect(ours()).toBe(true));
+    closer(view)!.click();
+    closer(view)!.click();
+    expect(took).toEqual([true, false]);
   });
 
   it("NESTED: one Back closes the TOP overlay and leaves the one under it standing", async () => {

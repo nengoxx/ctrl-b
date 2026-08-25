@@ -91,19 +91,23 @@ export function scopedRows(rows: readonly MediaFile[], scope: GalleryScope): Med
   );
 }
 
-/** One queued write — ONE settings patch, whatever it touches.
+/** The `media.namespaces.<ns>` block one write carries. */
+type NsBlock = Record<string, unknown>;
+
+/** One queued write, as an INTENT — and THE QUEUE'S ONE INVARIANT (Emma's S2 confirm round):
  *
- *  The two halves are separate fields rather than two job kinds because some gestures are genuinely
- *  both and must land together or not at all: pinning a fallback-tier bundled entry writes the pin AND
- *  lists that entry, and a pin the ladder cannot resolve is exactly the claim §2.4 exists to prevent
- *  (Emma's S2 review #1 ②). A `files` half is an INTENT over the role's list, recomputed at send; a
- *  `slot` half is a scalar and needs no recomputation. */
+ *  > **every write is computed from AUTHORITATIVE state at SEND time; no authoritative state, no
+ *  > write.**
+ *
+ *  It used to be stated only of the `files` half, and the carve-out was where the hole was: a PIN's
+ *  eligibility — whether its target is `hidden`, whether it is a fallback-tier bundled row that has to
+ *  be listed — was decided when the owner TAPPED, off the rendered item. Toggle an entry off and
+ *  activate it before the refetch lands and the pin was minted "already eligible", so it wrote onto a
+ *  hidden entry and could never resolve. A scalar is simple; whether it may RESOLVE is not, and that
+ *  is a fact about the index. So there is one rule and no kinds: a job is a function of the freshest
+ *  cached settings + index, and `null` is its honest refusal. */
 interface Job {
-  files?: {
-    role: string;
-    apply: (entries: LibraryEntry[], rows: MediaFile[]) => LibraryEntry[];
-  };
-  slot?: { key: string; value: string | null };
+  patch: (settings: SettingsDoc | undefined, index: MediaIndex | undefined) => NsBlock | null;
   /** What to tell the owner if THIS write fails — for a job whose other half already happened and
    *  cannot be undone (the DELETE cleanup). Absent ⇒ the ordinary save error. */
   failNote?: string;
@@ -183,18 +187,12 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
         // RECOMPUTE AT SEND (Emma #3). The cache is the truth the previous job left behind —
         // `useSaveSettings` adopts the PUT's echo and awaits the media refetch — so a queued intent is
         // applied to the list as it is NOW, never to the snapshot the tap was made against.
-        const fresh = qc.getQueryData<SettingsDoc>(["settings"]);
-        const index = qc.getQueryData<MediaIndex>(["media", ns]);
-        const block: Record<string, unknown> = {};
-        if (job.slot !== undefined) block.slots = { [job.slot.key]: job.slot.value };
-        if (job.files !== undefined) {
-          const roles = filesBlock(ns, job.files, fresh, index);
-          // The honest refusal: a list rebuilt without the persisted entries would drop every per-item
-          // field the owner set. Refuse the WHOLE job — half of a pin-plus-list write is the claim it
-          // was written to prevent.
-          if (roles === null) continue;
-          block.roles = roles;
-        }
+        const block = job.patch(
+          qc.getQueryData<SettingsDoc>(["settings"]),
+          qc.getQueryData<MediaIndex>(["media", ns]),
+        );
+        // The honest refusal: without the state this write needs, the only safe patch is none.
+        if (block === null) continue;
         try {
           sending.current = job;
           await save.mutateAsync({ media: { namespaces: { [ns]: block } } });
@@ -206,14 +204,16 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
           sending.current = null;
         }
         // The authoritative refetch did not land inside its bound, so the cached index is no longer
-        // known to be the server's (Emma's S2 review #4). Every remaining `files` intent would be
-        // recomputed FROM that index — which is how a second write undoes the first — so they are
-        // dropped and said out loud. Scalar `slot` jobs recompute from nothing and survive.
+        // known to be the server's (Emma's S2 review #4) — and the invariant above says: no
+        // authoritative state, no write. EVERY remaining job goes, with no carve-out for the scalar
+        // ones (her confirm round). The carve-out looked safe because a pin value needs no
+        // recomputation, and it was not: whether that pin can RESOLVE is a fact about the index, so a
+        // retained pin could be written onto an entry the queue had just hidden. A dropped write costs
+        // the owner one re-tap; a retained one writes a binding nothing honours.
         if (stale.current) {
           stale.current = false;
-          const kept = queue.current.filter((j) => j.files === undefined);
-          if (kept.length !== queue.current.length) {
-            queue.current = kept;
+          if (queue.current.length > 0) {
+            queue.current.length = 0;
             pushToast(
               "The art list did not come back in time — the rest of your changes were not saved. Try again.",
               "err",
@@ -235,41 +235,69 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
     [drain],
   );
 
-  const write = useMemo(
-    () => ({
+  const write = useMemo(() => {
+    /** A write over ONE role's `files` list, recomputed from the freshest state at send. */
+    const listJob = (
+      role: string,
+      apply: (entries: LibraryEntry[], rows: MediaFile[]) => LibraryEntry[],
+      failNote?: string,
+    ): Job => ({
+      patch: (settings, index) => {
+        const roles = filesBlock(ns, role, apply, settings, index);
+        return roles === null ? null : { roles };
+      },
+      failNote,
+    });
+    return {
       /** "Set as active" — move-to-front, or the PIN where the section's ladder has one above it.
        *
        *  Either way the write GUARANTEES the entry is eligible (Emma's S2 review #1): move-to-front
-       *  switches a hidden entry back on inside `setActive`, and a pin adds the `files` half that makes
-       *  its target resolvable — otherwise the card claims a pick the render walks straight past. */
+       *  switches a hidden entry back on inside `setActive`, and a pin carries whatever `files` half
+       *  makes its target resolvable — otherwise the card claims a pick the render walks past.
+       *
+       *  The pin's half is decided INSIDE the patch, i.e. at SEND, against the authoritative index —
+       *  never here, off the rendered item (her confirm round). The tap only records the INTENT:
+       *  "activate this identity in this section". Between the tap and the send the queue may have
+       *  hidden that very entry, and a job minted "already eligible" would then pin something nothing
+       *  can resolve. */
       activate: (section: MediaSection, item: LibraryItem) => {
         if (section.caps.activate === "none") return;
-        if (section.caps.activate === "pin" && section.pin !== undefined) {
-          enqueue({
-            slot: { key: section.pin, value: item.row.name },
-            files: eligibility(section, item),
-          });
+        if (section.caps.activate !== "pin" || section.pin === undefined) {
+          enqueue(listJob(section.role, (e, r) => setActive(e, r, item.id)));
           return;
         }
-        enqueue({ files: { role: section.role, apply: (e, r) => setActive(e, r, item.id) } });
+        const pin = section.pin;
+        enqueue({
+          patch: (settings, index) => {
+            const rows = index?.roles?.[section.role];
+            // No authoritative index ⇒ no write. Whether this pin can RESOLVE is a fact about the
+            // library, and writing one that cannot is the claim §2.4 exists to prevent.
+            if (rows === undefined) return null;
+            const block: NsBlock = { slots: { [pin]: item.row.name } };
+            const apply = eligibility(section, item.id, rows);
+            if (apply !== undefined) {
+              const roles = filesBlock(ns, section.role, apply, settings, index);
+              // Half of a pin-plus-eligibility write is the very thing it was written to prevent.
+              if (roles === null) return null;
+              block.roles = roles;
+            }
+            return block;
+          },
+        });
       },
-      /** Clear a pin — the section falls back to its own ladder. */
+      /** Clear a pin — the section falls back to its own ladder. The one write that genuinely needs
+       *  no state: removing a binding cannot produce an unresolvable one. */
       unpin: (section: MediaSection) => {
         if (section.pin === undefined) return;
-        enqueue({ slot: { key: section.pin, value: null } });
+        const pin = section.pin;
+        enqueue({ patch: () => ({ slots: { [pin]: null } }) });
       },
       move: (section: MediaSection, item: LibraryItem, delta: number) =>
-        enqueue({
-          files: { role: section.role, apply: (e, r) => moveBy(e, r, item.id, delta) },
-        }),
+        enqueue(listJob(section.role, (e, r) => moveBy(e, r, item.id, delta))),
       moveToEdge: (section: MediaSection, item: LibraryItem, edge: "top" | "bottom") =>
-        enqueue({
-          files: { role: section.role, apply: (e, r) => moveToEdge(e, r, item.id, edge) },
-        }),
+        enqueue(listJob(section.role, (e, r) => moveToEdge(e, r, item.id, edge))),
       setHidden: (section: MediaSection, item: LibraryItem, hidden: boolean) =>
-        enqueue({
-          files: { role: section.role, apply: (e, r) => setHidden(e, r, item.id, hidden) },
-        }),
+        enqueue(listJob(section.role, (e, r) => setHidden(e, r, item.id, hidden))),
       /** DELETE-first, then ONE config write that also promotes whatever was next (§3/§6.4).
        *
        *  The order is the ruled one: the bytes go first, and a failure between the two steps leaves a
@@ -284,17 +312,19 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
           pushToast(e instanceof Error ? e.message : "Delete failed", "err");
           return;
         }
-        enqueue({
-          files: { role: section.role, apply: (e, r) => removeItem(e, r, item.id) },
-          // The bytes are already gone, so this write's failure is a PARTIAL success and must read as
-          // one (Emma's S2 review #7): a bare "Save failed" here says the delete failed, which sends
-          // the owner looking for a file the server no longer has.
-          failNote: `${item.row.file} was deleted, but the library entry could not be cleaned up — it will drop on its own the next time the folder is read.`,
-        });
+        enqueue(
+          listJob(
+            section.role,
+            (e, r) => removeItem(e, r, item.id),
+            // The bytes are already gone, so this write's failure is a PARTIAL success and must read
+            // as one (Emma's S2 review #7): a bare "Save failed" here says the delete failed, which
+            // sends the owner looking for a file the server no longer has.
+            `${item.row.file} was deleted, but the library entry could not be cleaned up — it will drop on its own the next time the folder is read.`,
+          ),
+        );
       },
-    }),
-    [enqueue],
-  );
+    };
+  }, [enqueue, ns]);
 
   return {
     index: data,
@@ -312,24 +342,35 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
   };
 }
 
-/** The `files` half a PIN write needs so its target can actually RESOLVE — `undefined` when the entry
- *  is already eligible and the pin is the whole write (Emma's S2 review #1 ②).
+/** The `files` transform a PIN write needs so its target can actually RESOLVE — `undefined` when the
+ *  entry is already eligible and the pin is the whole write (Emma's S2 review #1 ②).
+ *
+ *  **Computed from the AUTHORITATIVE `rows`, at send** (her confirm round). It read the rendered item
+ *  before, and the rendered item is a snapshot: toggle an entry's In-use off and activate it before
+ *  the refetch lands, and the pin was minted "already eligible" off a stale `hidden: false` — then
+ *  written onto an entry that is hidden, where it can never resolve.
  *
  *  A pin is looked up in the list its ladder DEALS, and two library states put an entry outside that
  *  list: `hidden` (resolution skips it everywhere) and the FALLBACK TIER (a bundled id no `files` entry
- *  names — offered only while the owner's own tier is empty). Pinning either wrote a value nothing
- *  could honour, and the card then claimed a binding the render ignored.
+ *  names — offered only while the owner's own tier is empty).
  *
- *  A SEAT is the exception, and deliberately: it is a read-only VIEW over ANOTHER destination's library
- *  (§2.1), showing only what that ladder already resolves — so its bundled rows are on offer precisely
- *  because the source's owner tier is empty, and listing one would make the source's whole bundled set
- *  collapse to that single entry. The seat's write stays exactly the one write it is declared to be. */
-function eligibility(section: MediaSection, item: LibraryItem): Job["files"] {
-  if (section.kind === "seat") return undefined;
-  const stranded = item.hidden || (item.bundled && item.row.listed !== true);
-  return stranded
-    ? { role: section.role, apply: (e, r) => makeEligible(e, r, item.id) }
-    : undefined;
+ *  A SEAT may not LIST, deliberately: it is a read-only VIEW over ANOTHER destination's library (§2.1),
+ *  so promoting one of its bundled rows into the SOURCE role's own tier would collapse that role's
+ *  whole bundled deal to a single entry. It has nothing to list either — a seat is scoped to
+ *  `ladderRows`, so the bundled rows it offers are exactly the ones already resolving. Clearing a
+ *  `hidden` DISK row is not that write and stays available to it: listing a disk row is order-only
+ *  with zero paint effect (§2.3 ③), and it is the only thing that makes the pin honest. */
+function eligibility(
+  section: MediaSection,
+  id: RowId,
+  rows: readonly MediaFile[],
+): ((entries: LibraryEntry[], r: MediaFile[]) => LibraryEntry[]) | undefined {
+  const row = rows.find((r) => rowId(r) === id);
+  if (row === undefined) return undefined; // gone from the library: a dangling pin the card reports
+  const fallback = row.bundled != null && row.listed !== true;
+  if (section.kind === "seat" && fallback) return undefined;
+  if (row.hidden !== true && !fallback) return undefined;
+  return (e, r) => makeEligible(e, r, id);
 }
 
 /** The `roles.<role>.files` block one intent produces against the freshest state — `null` when the
@@ -337,14 +378,15 @@ function eligibility(section: MediaSection, item: LibraryItem): Job["files"] {
  *  entries would drop every per-item field the owner set. */
 function filesBlock(
   ns: string,
-  job: NonNullable<Job["files"]>,
+  role: string,
+  apply: (entries: LibraryEntry[], rows: MediaFile[]) => LibraryEntry[],
   settings: SettingsDoc | undefined,
   index: MediaIndex | undefined,
 ): Record<string, { files: MediaFileEntry[] }> | null {
   if (settings === undefined) return null;
-  const entries = settings.media?.namespaces?.[ns]?.roles?.[job.role]?.files ?? [];
-  const rows = index?.roles?.[job.role] ?? [];
-  return { [job.role]: { files: job.apply(entries, rows) } };
+  const entries = settings.media?.namespaces?.[ns]?.roles?.[role]?.files ?? [];
+  const rows = index?.roles?.[role] ?? [];
+  return { [role]: { files: apply(entries, rows) } };
 }
 
 /** The per-row view model one grid renders (§6.3/§6.5).
