@@ -105,7 +105,7 @@ const runFn = (): ReturnType<typeof vi.fn> => fleet.view.run as ReturnType<typeo
  *  bundled cast, so "no owner files" is not the same thing as "no art". */
 const unusableIndex = {
   ns: "gacha",
-  collation: "casefold-natural",
+  collation: "library-v1",
   roles: {
     characters: [
       {

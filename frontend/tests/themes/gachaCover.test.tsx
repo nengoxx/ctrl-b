@@ -900,7 +900,7 @@ describe("the cover's states match the capsule track's", () => {
     setFleet({ hosts: [host("solo", true)] });
     media.data = {
       ns: "gacha",
-      collation: "casefold-natural",
+      collation: "library-v1",
       roles: {
         characters: [
           {

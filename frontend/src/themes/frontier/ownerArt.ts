@@ -50,7 +50,9 @@ export function frontierArtFromIndex(index: MediaIndex | undefined): FrontierArt
   // inside a theme's render — the `rosterFromIndex` precedent.
   const role = (name: string): MediaFile[] => {
     const files = index?.roles?.[name];
-    return Array.isArray(files) ? files : [];
+    // S2's §2.4 resolver rewrite replaces this function and owns deleting this skip: the index now
+    // also carries BUNDLED rows (the fallback tier), which this ladder still expresses as `ART`.
+    return Array.isArray(files) ? files.filter((f) => f.bundled == null) : [];
   };
   const rigs = role("rigs");
   const stack = resolveNamed(role("stack"), STACK_KEYS);

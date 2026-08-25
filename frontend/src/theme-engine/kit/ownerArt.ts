@@ -50,7 +50,11 @@ const BRAND_SLOT = "brand";
  *  `frontierArtFromIndex` / `rosterFromIndex` precedent. */
 function roleFiles(index: MediaIndex | undefined, role: string): MediaFile[] {
   const files = index?.roles?.[role];
-  return Array.isArray(files) ? files : [];
+  // S2's §2.4 resolver rewrite replaces this function and owns deleting this skip: the index carries
+  // BUNDLED rows since D65, and a kit accessor answers "which OWNER file" — the kit namespace ships
+  // no bundled art at all (`MediaRole.bundled` is empty for every kit role), so the filter is the
+  // uniform statement of the rule rather than a behaviour change here.
+  return Array.isArray(files) ? files.filter((f) => f.bundled == null) : [];
 }
 
 /** One key's file in a NAMED role. Binding goes through `lib/media.ts#stemIndex` rather than through a

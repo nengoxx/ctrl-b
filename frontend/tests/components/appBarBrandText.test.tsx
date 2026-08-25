@@ -156,7 +156,7 @@ const brandFile = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
 });
 
 const brandIndex = (files: MediaFile[], slots: Record<string, string> = {}) =>
-  ({ ns: "kit", collation: "casefold-natural", roles: { brand: files }, slots }) as MediaIndex;
+  ({ ns: "kit", collation: "library-v1", roles: { brand: files }, slots }) as MediaIndex;
 
 const mark = (c: HTMLElement) => c.querySelector<HTMLElement>(".kit-brand-mark");
 

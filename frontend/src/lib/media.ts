@@ -78,7 +78,7 @@ export function firstUsable<T extends MediaNamed>(
  *
  *  **The contract IS JavaScript semantics, not casefold ideals**: JS has no full Unicode casefold, so
  *  `ß` does not fold to `ss` and a final sigma resolves however `toLowerCase` resolves it. That is
- *  acceptable *because keys are computed client-side ONLY* — the server's `casefold-natural` collation
+ *  acceptable *because keys are computed client-side ONLY* — the server's `library-v1` collation
  *  orders listings and never computes a key, so one implementation exists by construction and there is
  *  nothing for a second one to disagree with. M3's `keyFor(service)` is this function over
  *  `kind ?? name`; sharing it is what keeps the two ends of the binding on one rule. */

@@ -1,5 +1,5 @@
 import { useMediaIndex, type MediaFile } from "../hooks/useMedia";
-import { useSaveSettings } from "../hooks/useSettings";
+import { useSaveSettings, useSettings } from "../hooks/useSettings";
 import {
   classifyNamed,
   deriveKeyBindings,
@@ -23,15 +23,26 @@ import type { MediaNsDef, MediaRoleDef } from "../theme-engine/mediaRegistry";
 // (D53 §5's inversion — a namespace need not belong to a theme), and which roles EXIST comes from the
 // server's index. So the next namespace is a registry row, not a second gallery.
 //
-// CONFIG writes still go through the ordinary `PUT /api/settings` — `media.<ns>.roles.<role>.order` and
-// `media.<ns>.slots.<key>` — and that stays true after D65: only FILE BYTES use the media write path.
+// CONFIG writes still go through the ordinary `PUT /api/settings` — since D65's fold that is
+// `media.namespaces.<ns>.roles.<role>.files` (a list of per-item objects, replacing the old bare-name
+// `order` list) and `media.namespaces.<ns>.slots.<key>` — and only FILE BYTES use the media write path.
+//
+// **BUNDLED rows are filtered out here, on purpose and TEMPORARILY.** The index now emits every role's
+// bundled ids as library entries (the fallback tier), which S2's gallery redesign shows as first-class
+// tiles. This surface predates that: it would render them as reorderable rows and a reorder would then
+// write bundled entries into `files`, promoting the fallback tier into the owner's deal on the first
+// drag — exactly the "bundled-tier-preserving writes" rule (§2.3 ③) forbids. So until S2 replaces this
+// component, it reads what it has always read: the owner's files on disk.
 
 /** Advisory code → what the owner should read. Two come from the server's `unusable_reason` (only it read
  *  the bytes); the other two are derived HERE from the file's numbers against the role's bounds, because
  *  "too big" is per-role policy and the server ships facts (MEDIA_PLAN §5). An unrecognised server reason
  *  is shown verbatim rather than swallowed, so a new one is never invisible. */
 const ADVISORIES: Record<string, { text: string; bad?: boolean }> = {
-  unreadable: { text: "unreadable file", bad: true },
+  // Defect #7: the server's `unreadable` covers truncated/corrupt bytes AND a readable format this
+  // surface does not serve (a GIF, a HEIC the phone produced). "unreadable file" sent the owner
+  // hunting for a corruption that was never there; the truthful sentence names both causes.
+  unreadable: { text: "unreadable or unsupported format", bad: true },
   "format-mismatch": { text: "wrong extension", bad: true },
   oversize: { text: "large file" },
   dimensions: { text: "very large image" },
@@ -112,6 +123,12 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
     refetchOnMount: "always",
   });
   const save = useSaveSettings();
+  // The CONFIG side of a reorder (D65). A `files` entry carries per-item state this surface neither
+  // shows nor understands (`key`, `focal`, `hidden`, anything a later slice adds), so a reorder is a
+  // READ-MODIFY-WRITE against the entries that are actually persisted — reconstructing the list from
+  // the index alone would silently drop every one of those fields. Conf-scoped and already fetched by
+  // the tab this renders in, so it is the same shared query, not a second request.
+  const { data: settings } = useSettings();
   // Reordering is DISABLED while a save is in flight, deliberately: the next order is computed from the
   // list currently on screen, so a second tap landing before the index refetched would be computed off a
   // stale list and undo the first move. Blocking the input is the honest fix; a local optimistic order
@@ -132,18 +149,33 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
     );
   }
 
-  const patch = (block: Record<string, unknown>) => save.mutate({ media: { [ns]: block } });
+  const patch = (block: Record<string, unknown>) =>
+    save.mutate({ media: { namespaces: { [ns]: block } } });
 
-  /** Move one file within its role and persist the WHOLE role order — the config field is the order
+  /** One role's OWNER FILES, in the server's ruled order — bundled rows dropped (see the note at the
+   *  top of this file: they are S2's to render, and a reorder must never sweep them into `files`). */
+  const roleFiles = (role: string): MediaFile[] =>
+    (data.roles[role] ?? []).filter((f) => f.bundled == null);
+
+  /** Move one file within its role and persist the WHOLE role list — the config field is the order
    *  itself, not a diff, and writing the full list is what keeps the stored order meaningful after the
-   *  owner drops a new file in beside it (unlisted names simply follow, in the server's collation). */
+   *  owner drops a new file in beside it (unlisted names simply follow, in the server's collation).
+   *
+   *  Each name is written back as the ENTRY that is already persisted for it, so per-item state the
+   *  owner set elsewhere survives a reorder; a file with no entry yet (an unlisted drop) joins as a
+   *  bare `{name}`, which is what listing it means. */
   const move = (role: string, from: number, to: number) => {
-    const names = (data.roles[role] ?? []).map((f) => f.file);
+    const names = roleFiles(role).map((f) => f.file);
     if (to < 0 || to >= names.length) return;
     const next = [...names];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
-    patch({ roles: { [role]: { order: next } } });
+    const configured = new Map(
+      (settings?.media?.namespaces?.[ns]?.roles?.[role]?.files ?? [])
+        .filter((e) => typeof e?.name === "string")
+        .map((e) => [e.name as string, e] as const),
+    );
+    patch({ roles: { [role]: { files: next.map((n) => configured.get(n) ?? { name: n }) } } });
   };
 
   const roles = Object.keys(data.roles);
@@ -154,7 +186,7 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
           key={role}
           ns={ns}
           role={role}
-          files={data.roles[role] ?? []}
+          files={roleFiles(role)}
           // The server is the authority on which roles EXIST; the registry only describes them, so a role
           // it has no row for still lists and still reorders — it just carries no hint, no size advisories
           // and no key panel.
@@ -187,7 +219,7 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
               // one list, derived from the theme's own ladder module, so the select can never offer a name
               // the resolver would refuse. A role the registry has no row for falls back to no options,
               // exactly as an undeclared `bundled` did.
-              const files = data.roles[slot.from] ?? [];
+              const files = roleFiles(slot.from);
               const bundled = def.roles[slot.from]?.bundled ?? [];
               const options = files.length > 0 ? files.map((f) => f.name) : bundled;
               const current = data.slots[slot.key];

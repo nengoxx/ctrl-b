@@ -76,7 +76,7 @@ const mediaIndex = (
   slots: Record<string, string> = {},
 ): MediaIndex => ({
   ns: "frontier",
-  collation: "casefold-natural",
+  collation: "library-v1",
   roles: { rigs: [], hero: [], stack: [], ...roles },
   slots,
 });

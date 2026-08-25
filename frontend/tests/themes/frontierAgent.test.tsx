@@ -127,7 +127,7 @@ describe("FrontierAgent rig-stack art (D53 M2)", () => {
   it("a single named drop replaces ONLY its layer — owner over bundled, composited", () => {
     media.data = {
       ns: "frontier",
-      collation: "casefold-natural",
+      collation: "library-v1",
       roles: {
         rigs: [],
         hero: [],

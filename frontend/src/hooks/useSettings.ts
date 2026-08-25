@@ -94,6 +94,15 @@ export interface VoiceTts extends VoiceServiceCommon {
   chunk_lookahead: number; // synth-ahead depth, 1..4
 }
 
+/** One entry of `media.namespaces.<ns>.roles.<role>.files` — the library's unit of priority (D65 §2.2).
+ *  Exactly one of `name`/`bundled` identifies it (the backend validates that); the open index keeps the
+ *  entry's other per-item fields intact through a read-modify-write it does not interpret. */
+export interface MediaFileEntry {
+  name?: string;
+  bundled?: string;
+  [k: string]: unknown;
+}
+
 export interface SettingsDoc {
   server: {
     host: string;
@@ -167,6 +176,20 @@ export interface SettingsDoc {
     presence_offline_after_s: number;
     presence_cooldown_s: number;
     tailscale_socket_path: string;
+  };
+  // Owner media (D52/D53 + D65's fold): the per-operation `write` tunables plus the per-namespace
+  // libraries. Declared because the gallery's reorder is a READ-MODIFY-WRITE over `files` — an entry
+  // carries per-item state (`key`, `hidden`, `focal`, whatever a later slice adds) that a rewrite from
+  // the index alone would drop. Everything not read here round-trips untouched, hence the open entry.
+  media?: {
+    write?: { max_bytes?: number };
+    namespaces?: Record<
+      string,
+      {
+        roles?: Record<string, { files?: MediaFileEntry[] }>;
+        slots?: Record<string, string | null>;
+      }
+    >;
   };
   mcp_servers: McpServer[]; // Phase 7c-b — managed via the integrations CRUD endpoints, read here
   openapi_servers: OpenApiServer[];

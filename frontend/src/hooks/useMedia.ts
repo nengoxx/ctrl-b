@@ -16,11 +16,21 @@ import { getJSON } from "../api/client";
 // reload; `staleTime` then keeps a tab switch from refetching a listing that changes only when the
 // owner copies a file in from another machine.
 
-/** One servable file in a role folder. Mirrors `app.core.media.MediaFile` — the wire contract. */
+/** One entry of a role's LIBRARY. Mirrors `app.core.media.MediaFile` — the wire contract.
+ *
+ *  Since D65 a row is either a file on disk or a BUNDLED id (`bundled` set), and every row carries the
+ *  per-item facts the owner configured (`listed`/`hidden`/`focal`) so resolution is decidable from the
+ *  index alone — no consumer ever reads media config (MEDIA_MANAGER_PLAN §2.3 ④).
+ *
+ *  The four D65 fields are declared OPTIONAL, deliberately: every consumer here already treats this as
+ *  wire data that may arrive partial (an e2e mock, a proxy answering `{}`) and degrades rather than
+ *  throwing — the same posture `rosterFromIndex` states. The server always sends them. */
 export interface MediaFile {
-  /** The filename STEM: the entry name the resolver deals, and what a `slots` pin names. */
+  /** The filename STEM: the entry name the resolver deals, and what a `slots` pin names. On a BUNDLED
+   *  row this is the bundled ID — one identity space, so a pin addresses either the same way. */
   name: string;
-  /** The filename inside the role folder — the identity the Conf gallery's `order` list writes. */
+  /** The filename inside the role folder — the identity a config `files` entry's `name` holds. Empty
+   *  on a bundled row. */
   file: string;
   /** The percent-encoded mount URL. The client NEVER builds media paths itself. */
   url: string;
@@ -40,15 +50,32 @@ export interface MediaFile {
   /** WHY it is unusable, machine-readable, `null` when it is not — one of the two verdicts only the SERVER
    *  can reach (it read the bytes). Named apart from the index's own `disabled`/`reason` below, which are
    *  about the whole NAMESPACE. The gallery turns it into a sentence; every SIZE-derived advisory is the
-   *  client's own, from the numbers above against the registry's per-role bounds (MEDIA_PLAN §5). */
+   *  client's own, from the numbers above against the registry's per-role bounds (MEDIA_PLAN §5).
+   *  `unreadable` covers BOTH truncated bytes and a readable format this surface does not serve (a GIF,
+   *  a HEIC) — the sentence must say both, or an owner hunts for a corruption that isn't there (#7). */
   unusable_reason: "unreadable" | "format-mismatch" | null;
+  /** The registry id when this row is a BUNDLED entry — the client maps it to its own hashed asset.
+   *  `null`/absent = a file on disk. (D65: bundled defaults are first-class library entries.) */
+  bundled?: string | null;
+  /** True when the owner's `files` list holds this entry; false when the collation appended it (an
+   *  unlisted drop, or an unlisted bundled id — the FALLBACK TIER). A theme ladder reads this to keep
+   *  its shipped semantics: a fallback bundled row participates exactly where bundled art already did. */
+  listed?: boolean;
+  /** The owner excluded this entry from resolution while keeping it in the library. Resolution SKIPS a
+   *  hidden row; the gallery shows it dimmed. Note the opposite treatment from `unusable`, which HOLDS
+   *  its position — never fold the two predicates together (MEDIA_MANAGER_PLAN §2.2). */
+  hidden?: boolean;
+  /** The framing point (0..1 per axis), keyed to the file's `revision`: a `rev` that disagrees with the
+   *  row's `revision` means the bytes changed underneath it and the point reads as unset. */
+  focal?: { x: number; y: number; rev: string } | null;
 }
 
 export interface MediaIndex {
   ns: string;
-  /** The name of the server's default ordering rule, so both ends can state the same contract. */
+  /** The name of the server's ordering rule, so both ends can state the same contract. `library-v1`
+   *  since D65: the owner's `files` entries, then unlisted disk files, then unlisted BUNDLED ids. */
   collation: string;
-  /** role → files, already in the ruled order (the owner's persisted order first, then the collation). */
+  /** role → its whole library, already in that ruled order. */
   roles: Record<string, MediaFile[]>;
   /** The `slots` pins as configured (§5.2). A pin naming nothing on disk degrades in the resolver. */
   slots: Record<string, string>;

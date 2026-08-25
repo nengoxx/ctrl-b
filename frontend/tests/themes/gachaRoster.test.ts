@@ -294,7 +294,7 @@ const index = (
   slots: Record<string, string> = {},
 ): MediaIndex => ({
   ns: "gacha",
-  collation: "casefold-natural",
+  collation: "library-v1",
   roles,
   slots,
 });
@@ -311,6 +311,25 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(wallpaperArt(r)).toEqual({ url: ART.banner });
     expect(oracleArt(r)).toEqual({ url: ART.oracle });
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
+  });
+
+  it("BUNDLED rows on the wire are skipped — this ladder still states its own fallbacks (D65)", () => {
+    // The index carries every role's bundled ids since D65 (the fallback tier). Dealing one as an
+    // entry would put a row with no `url` into the fleet; and an all-bundled role must still read as
+    // "the owner dropped nothing here", i.e. the bundled set — which is exactly what it painted
+    // before. S2's §2.4 resolver rewrite replaces this skip with real bundled-entry resolution.
+    const bundled = (name: string): MediaFile => ({
+      ...file(name),
+      bundled: name,
+      file: "",
+      url: "",
+      revision: "",
+    });
+    const r = rosterFromIndex(
+      index({ characters: [file("kira"), bundled("lyra")], reel: [bundled("lyra")] }),
+    );
+    expect(r.entries.map((e) => e.name)).toEqual(["kira"]);
+    expect(r.pools.reel).toEqual(defaultRoster().pools.reel);
   });
 
   it("characters/ REPLACES the dealt cast, in the order the index handed over", () => {

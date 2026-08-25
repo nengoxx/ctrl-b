@@ -119,7 +119,7 @@ describe("GachaAgent — the oracle block", () => {
   it("paints the owner's oracle/ drop on BOTH faces when there is one", () => {
     media.data = {
       ns: "gacha",
-      collation: "casefold-natural",
+      collation: "library-v1",
       roles: {
         oracle: [
           {

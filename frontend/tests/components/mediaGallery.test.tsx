@@ -27,6 +27,7 @@ import { MEDIA_NS } from "../../src/theme-engine/mediaRegistry";
 
 const api = vi.hoisted(() => ({
   getJSON: vi.fn(),
+  getJSONWithHeader: vi.fn(),
   putJSON: vi.fn(),
   postJSON: vi.fn(),
   del: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock("../../src/store/toast", () => ({ pushToast: vi.fn() }));
 vi.mock("../../src/lib/composer", () => ({ loadProviders: vi.fn(), loadAgents: vi.fn() }));
 
 import { MediaGallery } from "../../src/components/MediaGallery";
+import { setUI } from "../../src/store/ui";
 
 const file = (name: string, role: string, over: Partial<MediaIndex["roles"][string][0]> = {}) => ({
   name,
@@ -57,7 +59,7 @@ const file = (name: string, role: string, over: Partial<MediaIndex["roles"][stri
 function index(over: Partial<MediaIndex> = {}): MediaIndex {
   return {
     ns: "gacha",
-    collation: "casefold-natural",
+    collation: "library-v1",
     roles: {
       characters: [file("a", "characters"), file("b", "characters"), file("c", "characters")],
       reel: [],
@@ -78,16 +80,22 @@ function renderGallery(payload: MediaIndex = index()): ReturnType<typeof render>
   return render(ui);
 }
 
-/** The `media.<ns>` block of the single PUT the gallery made. */
+/** The `media.namespaces.<ns>` block of the single PUT the gallery made (D65's fold). */
 function savedBlock(): Record<string, unknown> {
   expect(api.putJSON).toHaveBeenCalledTimes(1);
-  const [url, body] = api.putJSON.mock.calls[0] as [string, { media: Record<string, unknown> }];
-  expect(url).toBe("/api/settings"); // the ORDINARY write path — no media-specific endpoint exists
-  return body.media.gacha as Record<string, unknown>;
+  const [url, body] = api.putJSON.mock.calls[0] as [
+    string,
+    { media: { namespaces: Record<string, unknown> } },
+  ];
+  expect(url).toBe("/api/settings"); // the ORDINARY write path — file BYTES have their own verb (D65)
+  return body.media.namespaces.gacha as Record<string, unknown>;
 }
 
 beforeEach(() => {
   api.getJSON.mockReset();
+  // `useSettings` is Conf-scoped and reads through `getJSONWithHeader`; the default is "no settings
+  // fetched", which is what every arm below except the read-modify-write one exercises.
+  api.getJSONWithHeader.mockReset().mockResolvedValue({ data: {}, header: "r1" });
   api.putJSON.mockReset().mockResolvedValue({
     settings: { notifications: {} },
     restart_required: [],
@@ -147,7 +155,9 @@ describe("MediaGallery", () => {
     // The PROBED format rides the mismatch badge (§5's client-compares-format-to-extension line): the
     // bytes are a jpeg however the name reads, which is the whole of what the owner has to act on.
     expect(screen.getByText("wrong extension (jpeg)")).toBeTruthy();
-    expect(screen.getByText("unreadable file")).toBeTruthy();
+    // Defect #7: the server's `unreadable` also covers a READABLE format this surface does not serve
+    // (a GIF, a phone's HEIC), so the sentence names both causes rather than only corruption.
+    expect(screen.getByText("unreadable or unsupported format")).toBeTruthy();
     expect(screen.getByText("large file")).toBeTruthy();
     expect(screen.getByText("very large image")).toBeTruthy();
     expect(container.querySelectorAll(".mgal-item.bad")).toHaveLength(2);
@@ -171,13 +181,94 @@ describe("MediaGallery", () => {
     expect(container.querySelectorAll(".mgal-item .badge")).toHaveLength(0);
   });
 
-  it("moving a file writes the WHOLE role order through PUT /api/settings", async () => {
+  it("moving a file writes the WHOLE role list through PUT /api/settings", async () => {
     renderGallery();
     await screen.findByText("a.webp");
     fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
+    // D65: the field is `files`, a list of per-item objects. A file with no persisted entry joins as
+    // a bare `{name}` — listing it is exactly what a reorder means.
     expect(savedBlock()).toEqual({
-      roles: { characters: { order: ["a.webp", "c.webp", "b.webp"] } },
+      roles: {
+        characters: {
+          files: [{ name: "a.webp" }, { name: "c.webp" }, { name: "b.webp" }],
+        },
+      },
+    });
+  });
+
+  it("a reorder PRESERVES each entry's own config fields (read-modify-write, not a rewrite)", async () => {
+    // D65: a `files` entry carries per-item state this surface neither shows nor understands — the
+    // binding `key`, the framing `focal`, the In-use `hidden` flag. Rebuilding the list from the index
+    // would silently drop all of it on the next ↑/↓ tap, which is a data-loss bug the owner would only
+    // notice as art that stopped being framed.
+    setUI({ tab: "conf" }); // the settings query is Conf-scoped, like the gallery itself
+    api.getJSONWithHeader.mockResolvedValue({
+      data: {
+        media: {
+          namespaces: {
+            gacha: {
+              roles: {
+                characters: {
+                  files: [
+                    { name: "a.webp", key: "hero", focal: { x: 0.4, y: 0.2, rev: "r9" } },
+                    { name: "b.webp", hidden: true },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+      header: "r1",
+    });
+    try {
+      renderGallery();
+      await screen.findByText("a.webp");
+      await waitFor(() => expect(api.getJSONWithHeader).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
+      await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
+      expect(savedBlock()).toEqual({
+        roles: {
+          characters: {
+            files: [
+              { name: "a.webp", key: "hero", focal: { x: 0.4, y: 0.2, rev: "r9" } },
+              { name: "c.webp" }, // no entry yet — listing it is what the reorder means
+              { name: "b.webp", hidden: true },
+            ],
+          },
+        },
+      });
+    } finally {
+      setUI({ tab: "fleet" });
+    }
+  });
+
+  it("never lists or writes a BUNDLED row — the fallback tier is S2's, and a drag must not promote it", async () => {
+    // §2.3 ③ (bundled-tier-preserving writes): the index carries every role's bundled ids now. This
+    // surface filters them out, so the owner's first reorder cannot sweep five bundled characters into
+    // the fleet deal — the paint-parity property the config-pure migration depends on.
+    const { container } = renderGallery(
+      index({
+        roles: {
+          characters: [
+            file("a", "characters"),
+            file("b", "characters"),
+            { ...file("lyra", "characters"), bundled: "lyra", file: "", url: "", listed: false },
+          ],
+          reel: [],
+        },
+      }),
+    );
+    await screen.findByText("a.webp");
+    expect([...container.querySelectorAll(".mgal-item .name")].map((n) => n.textContent)).toEqual([
+      "a.webp",
+      "b.webp",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Move b.webp up" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
+    expect(savedBlock()).toEqual({
+      roles: { characters: { files: [{ name: "b.webp" }, { name: "a.webp" }] } },
     });
   });
 
@@ -251,9 +342,16 @@ describe("MediaGallery", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Move a.webp down" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
-    const [, body] = api.putJSON.mock.calls[1] as [string, { media: { gacha: unknown } }];
-    expect(body.media.gacha).toEqual({
-      roles: { characters: { order: ["c.webp", "a.webp", "b.webp"] } },
+    const [, body] = api.putJSON.mock.calls[1] as [
+      string,
+      { media: { namespaces: { gacha: unknown } } },
+    ];
+    expect(body.media.namespaces.gacha).toEqual({
+      roles: {
+        characters: {
+          files: [{ name: "c.webp" }, { name: "a.webp" }, { name: "b.webp" }],
+        },
+      },
     });
   });
 
@@ -388,7 +486,7 @@ describe("MediaGallery", () => {
     // the same. The theme is already on its bundled art underneath.
     renderGallery({
       ns: "gacha",
-      collation: "casefold-natural",
+      collation: "library-v1",
       roles: {},
       slots: {},
       disabled: true,
@@ -483,7 +581,7 @@ function renderKitGallery(
     }
     return Promise.resolve({
       ns: "kit",
-      collation: "casefold-natural",
+      collation: "library-v1",
       roles: { services: files },
       slots: {},
     });
@@ -655,7 +753,7 @@ function renderHostsGallery(files: MediaFile[], hosts: { id: string; name: strin
     }
     return Promise.resolve({
       ns: "kit",
-      collation: "casefold-natural",
+      collation: "library-v1",
       roles: { hosts: files },
       slots: {},
     });
@@ -731,7 +829,7 @@ describe("MediaGallery · kit machine pictures", () => {
 function renderStackGallery(files: MediaFile[]) {
   api.getJSON.mockResolvedValue({
     ns: "frontier",
-    collation: "casefold-natural",
+    collation: "library-v1",
     roles: { rigs: [], hero: [], stack: files },
     slots: {},
   });

@@ -75,7 +75,7 @@ const file = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
 const index = (roles: Partial<Record<string, MediaFile[]>>, slots: Record<string, string> = {}) =>
   ({
     ns: "kit",
-    collation: "casefold-natural",
+    collation: "library-v1",
     roles,
     slots,
   }) as MediaIndex;

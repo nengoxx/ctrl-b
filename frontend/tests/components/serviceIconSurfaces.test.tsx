@@ -97,14 +97,14 @@ const iconFile = (revision: string): MediaFile => ({
 
 const withIcon = (revision = "1:4000"): MediaIndex => ({
   ns: "kit",
-  collation: "casefold-natural",
+  collation: "library-v1",
   roles: { services: [iconFile(revision)] },
   slots: {},
 });
 
 const EMPTY: MediaIndex = {
   ns: "kit",
-  collation: "casefold-natural",
+  collation: "library-v1",
   roles: { services: [] },
   slots: {},
 };

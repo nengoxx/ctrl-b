@@ -361,7 +361,7 @@ describe("the reel figure", () => {
 
   const ownerCutout = (name: string, revision = "1:1") => ({
     ns: "gacha",
-    collation: "casefold-natural",
+    collation: "library-v1",
     roles: {
       reel: [
         {

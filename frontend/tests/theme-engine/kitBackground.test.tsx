@@ -63,7 +63,7 @@ const painted = (name: string) =>
 
 /** Put a background role + pins on the mocked index (the state every arm here runs in). */
 function seedIndex(files: MediaFile[], slots: Record<string, string> = {}) {
-  media.data = { ns: "kit", collation: "casefold-natural", roles: { background: files }, slots };
+  media.data = { ns: "kit", collation: "library-v1", roles: { background: files }, slots };
 }
 
 function draw(ui: ReactElement) {

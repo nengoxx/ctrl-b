@@ -87,7 +87,7 @@ const painted = (role: string, name: string, revision = `1:90000:${name}`) =>
   `url("/api/media/kit/files/${role}/${name}.png?rev=${encodeURIComponent(revision)}")`;
 
 const index = (roles: Partial<Record<string, MediaFile[]>>): MediaIndex =>
-  ({ ns: "kit", collation: "casefold-natural", roles, slots: {} }) as MediaIndex;
+  ({ ns: "kit", collation: "library-v1", roles, slots: {} }) as MediaIndex;
 
 const run = async () => {};
 const noop = () => {};

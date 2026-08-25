@@ -104,7 +104,7 @@ const mediaFile = (name: string, role: string) => ({
 });
 const mediaIndex = (roles: Record<string, ReturnType<typeof mediaFile>[]>) => ({
   ns: "gacha",
-  collation: "casefold-natural",
+  collation: "library-v1",
   roles,
   slots: {},
 });
