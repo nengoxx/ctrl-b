@@ -12,7 +12,64 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-24, SECOND session — the media-manager DECISION + COUNCIL session; supersedes everything below where it speaks)
+## Current state (2026-08-25 — THE MEDIA-MANAGER BUILD SESSION: S0→S5 ALL BUILT + REVIEW-CLOSED; supersedes everything below where it speaks)
+
+- **THE WHOLE BUILD LADDER RAN IN ONE SESSION — Phase 21 S0 through S5, all six slices
+  Emma-lane-closed at an explicit final RESOLVED.** 40 commits on local `main` on top of
+  `fef36aa` (`6c01e4d` … `034cbd1`), **NOTHING PUSHED** (the owner's word rules the push).
+  Prod UNCHANGED: v1.7.6 @ `6a2ccaa`. Dev units RUNNING (:5434 + :5173) on the full stack,
+  dev config migrated to `config_version` 2 (backup in `~/.ctrl-b-dev/backups/`).
+- **The cadence per slice:** Opus 5 build from a pinned main-seat brief → main-seat audit →
+  Emma-lane blind review (sol high, `--ignore-rules`) → fix waves to her explicit RESOLVED —
+  the owner amended the standing pause-between-slices rule to continue-through for this phase
+  (2026-08-25); S6 stays the owner gate. Per-slice as-built + review records live in
+  MEDIA_MANAGER_PLAN §12's blocks; the audit trail below is the headline register.
+- **What shipped, per slice:** **S0** docs (D65 ratified · SECURITY_MODEL §2.7 + the §1
+  premise correction, later rescoped to the safelisted-POST CLASS · registry bundled-id rows,
+  `MediaSlotDef.bundled` retired) + the `config_version` 1→2 numbering correction (the plan's
+  "schema 6→7" was a mislabel — 6 is the DB schema, untouched). **S1** the D65 write API
+  (raw-body PUT/DELETE, the `.parts/` staging pipeline, admission tier), collation
+  **library-v1** (`focal`/`hidden`/`listed`/`bundled`/`key` on the wire), the config fold
+  migration (step 2), defects #6/#7/#8. **S2** the library gallery (section descriptors +
+  §2.4 active resolvers exported by the theme ladder modules · H5 role-family cards +
+  Unassigned · the full-screen modal on a STACK-aware `useOverlayBackGuard` ConfirmDialog
+  joins · `lib/mediaLibrary` transforms owning the tier rule · the send-time-authoritative
+  queue with three-valued pin eligibility · defects #1–#4, #9–#12; the `MediaSlotDef.seat`
+  refinement: in-role pins fold into their role card, set-active writes the PIN). **S3**
+  upload/crop (imageProbe/imageExport-worker/uploadName · react-easy-crop@6.2.3 ·
+  the two-phase idempotent job with cache-invisible reconcile · alpha decided from BYTES ·
+  the canvas-sentinel readback · the StrictMode guard fix). **S4** focal (the clamped-centred
+  math with the s≤1 guard as contract · the 9-window paint-site rewrite off the `--cv-*`
+  chain, parity pinned against pre-S4 literals · FramingSheet seeding from the stored point ·
+  `expectedRev` refuse-on-race · backend EXIF-orientation with the count==1 predicate · the
+  disabled-ns 404-all-verbs backstop that also killed a dist-presence-dependent route
+  divergence). **S5** drag (the house hook extended, never forked · the pure held-commit
+  machine with per-hold tokens · press-key abort on order change · the `lastExpressible`
+  clamp · list mode restored to Y-only).
+- **Gate state at tip:** full gate green (BE **1,990** · FE **2,518** / e2e **301** local,
+  all three projects). The e2e media spec was RE-WRITTEN in S2 (the shipped one was stale
+  since S1 — asserting the pre-fold config shape; only a release-tag CI run would have caught
+  it — the local-e2e-before-tag rule vindicated again).
+- **Known-open, recorded not absorbed:** frontier/kit roles are NOT framable in v1 (no focal
+  channel in their seams — future seam work, plan §12) · the fleet backdrop degrades to
+  proportional (§5's named case) · autoscroll is unit-tested only (S6 probes feel) ·
+  `SectionRefEditor` still lacks a single-pointer alternative (R58 §6 ② — pre-existing, the
+  real SC 2.5.7 gap, backlog) · a pre-existing `layout.spec.ts` scroll-restoration flake
+  (~1-in-5 desktop) → Phase 19's H-E2E slice · the two-devices lost-update residual stands
+  (accepted at council).
+
+## ▶▶ NEXT: ① the PUSH ruling (40 commits) · ② S6 — THE OWNER DEVICE ROUND (plan §16 = the probe list)
+
+**S6 is the owner gate and the phase's acceptance.** The §16 probe list (grown by every
+slice): the parked 2026-08-12 round folds in · EXIF portrait end-to-end (✅ already proven
+live via a real Orientation=6 upload, re-confirm on the phone) · 413-mid-body over Tailscale
+HTTPS · the Honor 20 HEIC refusal copy · PWA-standalone picker survival · q0.85 eyeball ·
+crop/framing/drag FEEL (long-press · drag-vs-scroll · one-handed autoscroll reach · reticle
+feel · preview honesty) · the 48 MP double-decode datapoint · Fennec expected-partials.
+Version on release: **1.7.x** (1.8 stays RESERVED). After S6 + release, the 2026-08-22 menu
+below still governs (Phase 19 court · A13 talk).
+
+## Prior state (2026-08-24, SECOND session — the media-manager DECISION + COUNCIL session; superseded above)
 
 - **PUSHED on the owner's word — origin = local `main` (this session's docs commit on top of
   `7bee1d5`; the previous block's "5 unpushed" were already on origin by session start —
