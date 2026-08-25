@@ -1443,9 +1443,16 @@ owner eyeball; each passes `tools/check.py`.
       (+ `putBytes` · `write.append` + the queue's per-job outcome · the crop `touched` rule
       corrected against a real browser · **no `focal` seeded — the plan's "crop centre seeds focal"
       is vacuous under the library model; S4 owns it**, MEDIA_MANAGER_PLAN §12 as-built)
-- [ ] S4 — Focal: `focalPosition`/`useFocalPosition` + `FramingSheet` + registry preview descriptors
+- [x] S4 — Focal: `focalPosition`/`useFocalPosition` + `FramingSheet` + registry preview descriptors
       + **the ~10 paint-site rewrite** (the `--cv-*` inheritance chain → per-window hooks;
       `coverHeroFocus` refractionalized)
+      (+ `components/FocalImg.tsx` — the hook cannot be called from the three windows built inside a
+      `.map()`; `MediaCaps.frame` + `MediaRoleDef.framable`, declared for gacha's three cover roles in
+      v1 — frontier's and the kit's carry no focal channel, a per-theme SEAM change; the fleet backdrop
+      takes §5's recorded proportional degrade; the reticle turns react-easy-crop's `restrictPosition`
+      OFF so the focal can reach the picture's edges; **the visual probe is `e2e/media-framing.spec.ts`**
+      — the paint moves on the axis each window crops, and the bundled art is byte-identical;
+      MEDIA_MANAGER_PLAN §12 as-built + §16's three S4 device probes)
 - [ ] S5 — Drag: G6/G5 → G1 → G2 → G4 → G3 → hygiene + the held-commit state machine
 - [ ] S6 — Owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over
       Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball ·

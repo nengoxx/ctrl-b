@@ -297,7 +297,9 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
   arithmetic is re-expressed as a per-window fractional offset. **S4 is honestly sized: a
   rewrite of ~10 paint sites, not plumbing reuse.** A surface that cannot measure falls back to
   proportional (visible, weaker — recorded). Cover surfaces only (`contain` + focal is actively
-  wrong); the registry says which roles offer it.
+  wrong); the registry says which roles offer it — **`MediaRoleDef.framable`, declared for gacha's
+  `characters`/`banner`/`oracle` in v1** (§12's S4 as-built states why frontier's and the kit's cover
+  roles are not, and which one surface takes the proportional degrade).
 - **Bundled entries are non-framable in v1** (Emma #6: converting a hand-tuned proportional
   value through the reticle produces a visible no-op-edit jump; a per-entry focus-mode edit
   path is the recorded future).
@@ -569,6 +571,65 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 >   `onInteractionStart`, our own zoom slider and the shape row set `touched`; the reducer's arms pin
 >   both halves.
 | S4 | focal: focalPosition/useFocalPosition + FramingSheet + registry preview descriptors + **the ~10 paint-site rewrite** (the `--cv-*` chain → per-window hooks; `coverHeroFocus` refractionalized) | full gate + visual probe |
+
+> **S4 AS-BUILT (2026-08-25) — eight notes; five are deviations from this document.**
+>
+> · **THE PAINT-SITE INVENTORY, and what "~10" turned out to be.** Nine windows consume a framing point,
+>   all of them gacha's, and every one is now a per-window `useFocalPosition` call:
+>   the capsule card · the banner slide (promo, scene and hero seat alike) · the dossier portrait · the
+>   dossier watermark · the poster slice · the cover CUT-IN · the cover HERO · the operator backdrop ·
+>   the fleet backdrop. The reel figure is a cutout and takes none. **The `--cv-focus` /
+>   `--cv-hero-focus` chain and `--po-focus` are DELETED** — both published one value on a parent for an
+>   image to inherit, and the cover's hero rule (`var(--cv-hero-focus, var(--cv-focus, 50% 22%))`) is
+>   gone with them: both seats now read the same `50% 22%` default and the difference is applied by the
+>   window. `--gc-oracle-pos` and `--gc-wallpaper-pos` SURVIVE, and the reason is not inconsistency (see
+>   the next two notes).
+> · **FRAMABLE IS A DECLARED ROLE FIELD, and v1 declares it for THREE roles** (`MediaRoleDef.framable`;
+>   gacha `characters` · `banner` · `oracle`). §5 says "cover surfaces only; the registry says which
+>   roles offer it" and leaves the set open — this is the set. frontier's `rigs`/`hero` and the kit's
+>   three cover roles (`background`, `hosts`, `service-banners`) are cover surfaces and are **NOT**
+>   framable in v1: their theme seams hand consumers a bare URL (`FrontierArt.rigUrlFor`/`hero`) or
+>   background props for a parent element rendered inside a `.map()` in two themes, so there is no focal
+>   channel to carry a point down. Making them framable is a per-theme SEAM change, not the paint-site
+>   rewrite S4 owns, and the honest v1 answer is that the gallery does not offer what the render cannot
+>   keep. Recorded, not absorbed.
+> · **The fleet BACKDROP is the recorded "cannot measure" degrade, and it is the only one.** It paints as
+>   a `background-image` on `.kit-main` — a node `DefaultRoot` owns, which `GachaRoot` has no ref to — so
+>   `focalPosition(art, null)` resolves it PROPORTIONALLY (the subject roughly over there rather than
+>   centred). §5 names this case; this is where it landed. It sits under a 72%-to-opaque scrim, and the
+>   recorded fix is a ref threaded from `DefaultRoot`, i.e. a kit-layer seam.
+> · **The OPERATOR backdrop keeps its custom property, and that is still per-window.** `.gc-oracle`'s two
+>   stacked faces are the SAME box painted twice (both `inset: 0`, and their scale is a transform, which
+>   moves no layout box), so there is one window to measure and one value for two copies. What changed is
+>   the source: the hook measures the block, rather than the item publishing a string every surface reads.
+> · **`coverHeroFocus` is RETIRED, not refactored** (§5's "refractionalized", made concrete). The shift is
+>   now `lib/focalPosition.ts#shiftFocalX` applied by the hero WINDOW to the position that window
+>   resolved, and `COVER_HERO_SHIFT` is a FRACTION (`0.2`) rather than twenty percentage points. Its whole
+>   arm table moved to `tests/lib/focalPosition.test.ts` with the SAME expected strings — including the
+>   non-finite and unparseable degrades, which a render path still needs.
+> · **`components/FocalImg.tsx` is a module the pinned map does not name, and it is load-bearing.** §12
+>   pins `useFocalPosition(ref, item)`; three of the nine windows (the banner slide, the poster slice, the
+>   cover card) are built by plain FUNCTIONS called inside a `.map()`, where no hook can be called at all.
+>   A component is the only shape that gives each one its own ref and its own observer. It is ten lines
+>   over the hook, it takes the `shiftX` the cover needs, and it is what the framing previews use too — so
+>   a preview runs the same code path as the real surface.
+> · **The reticle turns the library's `restrictPosition` OFF.** react-easy-crop's fence keeps the whole
+>   crop AREA inside the media, which is right for a crop and wrong for a reticle: it would confine the
+>   focal point to `[r/2W, 1 − r/2W]` — with a 30% reticle over a contained portrait, the middle three
+>   fifths of the picture — and a subject near an edge would be silently unaddressable. The pan is clamped
+>   here instead, to HALF the picture, so the reticle's centre reaches every point including the corners.
+>   (Caught by the desktop viewport in the visual probe, not by review.)
+> · **The capability lives in `MediaCaps.frame`, not on the section**, matching `reorder`/`activate`/
+>   `hidden`/`remove`/`upload` — the role decides, and a SEAT or the Unassigned bucket still refuses (a
+>   seat is a read-only view over another destination's library; an unassigned file paints nowhere). No
+>   `previews` field was added to `MediaSection`: `section.def.previews` was already reachable.
+> · **`e2e/fixtures.ts` now EXPORTS `SETTINGS`.** A spec that drives a settings WRITE has to echo a whole
+>   doc back — `useSaveSettings` adopts the PUT's response as the settings cache and Conf then reads every
+>   section off it, so an echo carrying only the media block hands the tab a doc with no `voice` and the
+>   next render throws. It surfaced as a React recoverable-error (#520) in the probe, not as a visible
+>   failure. **`e2e/media-gallery.spec.ts` has the same partial echo and does not assert `pageErrors`** —
+>   left alone here (it is S2's file and its assertions are unaffected), flagged for the S2/S5 owner.
+
 | S5 | drag: G6/G5→G1→G2→G4→G3→hygiene + held-commit machine | full gate |
 | S6 | owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball · crop/framing/drag feel · Fennec expected-partials | owner acceptance |
 
@@ -656,6 +717,28 @@ bundled).
 EXIF portrait end-to-end · 413-mid-body over Tailscale Serve HTTPS · does the Honor 20 produce
 HEIC · PWA-standalone survival across the picker activity · jpeg q0.85 eyeball · crop/framing/
 drag feel · Fennec expected-partials · the Back-gesture close on device.
+
+> **S4 riders (2026-08-25) — three probes the desktop half cannot answer.**
+> · **RETICLE FEEL ON TOUCH.** The whole control is a pan under a fixed square, and its two numbers are
+>   guesses until a thumb is on them: `RETICLE_FRACTION` (0.3 of the stage's short axis, floored at 64 px)
+>   and `TAP_SLOP` (6 px — a tap that moved further is a drag, and the click a drag leaves behind must not
+>   re-place the point). Ask on device: is the square big enough to aim with and small enough to see past;
+>   does tap-to-place ever fire when the owner meant to drag; is the corner actually reachable now that the
+>   pan runs to half the picture. There are no arrow keys on a phone, so the previews are the only
+>   compensator for a fingertip being ~11% of the picture wide (R57 §2.3).
+> · **PREVIEW HONESTY ON THE REAL DESTINATIONS.** The three `characters` previews are declared COARSE
+>   (capsule card 3/4 · promo slide 390/232 · magazine cover 9/16, the last two measured at 390 px). The
+>   question is not whether they are exact — they are captioned "Previews are examples" precisely because
+>   they are not — but whether they are USEFUL: set a point on the phone, then walk the fleet, the dossier,
+>   the poster and the cover and say whether the previews predicted what happened. If one of the three
+>   teaches nothing, it is a row to drop; if a fourth window keeps surprising, it is a row to add.
+> · **PER-WINDOW CORRECTNESS ON THE MULTI-WINDOW CAST.** The claim S4 exists to make: ONE library entry,
+>   framed once, staying framed in eight differently-shaped windows. Drive it on the real cast — a
+>   portrait with a face high in the frame, a landscape with the subject off to one side — across all
+>   three fleet layouts, the dossier's portrait AND its watermark, and the operator backdrop. **And the
+>   one that is expected to look WEAKER: the fleet backdrop**, which cannot measure itself and falls back
+>   to proportional alignment (see §12's S4 as-built). Is that visible through the scrim, and does the
+>   owner mind?
 
 > **S3b riders (2026-08-25).**
 > · **EXIF portrait is ALREADY ANSWERED on the desktop half** — the built app against the real dev
