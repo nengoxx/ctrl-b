@@ -371,6 +371,14 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
   >   `MEDIA_REFETCH_TIMEOUT_MS` (`useSaveSettings#onMediaStale`) discards **every** remaining job
   >   with a toast: a dropped write costs one re-tap, a retained one writes a binding nothing
   >   honours. `busy` still releases in `finally`.
+  >   **Eligibility is THREE-valued** (her final confirm): `ready` · a `files` transform · `refuse`,
+  >   the last nulling the whole job. "No `files` half needed" and "cannot be made to resolve from
+  >   here" were one value, and the caller read both as pin-only-safe — so a SEAT asked to use a
+  >   bundled source row that has since been retired, or any pin whose target is ABSENT from the
+  >   send-time index, wrote a binding nothing could honour. A seat refuses on a bundled row
+  >   specifically: both repairs (listing it, un-hiding it) put that row into the SOURCE role's own
+  >   tier, which is the collapse judgment A forbids. The question itself is `ladderRows` — the same
+  >   §2.3 rule the pin will be looked up in, so it cannot drift from it.
   > · **The Android-Back guard is a STACK with per-entry identity (#5),** and `ConfirmDialog` joins
   >   it with its own entry: Back cancels the top-most confirm, the gallery under it stays, the next
   >   Back closes the gallery. One shared `popstate` listener; only the popped TOP owner closes.

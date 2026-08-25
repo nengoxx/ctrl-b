@@ -1034,6 +1034,82 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     });
   });
 
+  it("a SEAT REFUSES a pin it cannot make resolve, rather than writing one that never will", async () => {
+    // Emma's final-confirm sequence. "No files half needed" and "cannot be made eligible" were the
+    // same value, and the caller read both as pin-only-safe: hide a bundled SOURCE row, then use its
+    // still-rendered seat tile before the refetch lands, and the seat wrote a pin onto an entry that
+    // is hidden — while the one repair that would fix it (putting that bundled row into the source
+    // role's own tier) is the write a seat must never make, because it collapses the source's whole
+    // bundled deal to that single entry.
+    let landed: (v: MediaIndex) => void = () => undefined;
+    const fresh = index({ roles: { characters: cast, banner: [], reel: [], oracle: [] } });
+    api.getJSON
+      .mockResolvedValueOnce(fresh)
+      .mockImplementationOnce(() => new Promise<MediaIndex>((r) => (landed = r)))
+      .mockResolvedValue(fresh);
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+      </QueryClientProvider>,
+    );
+    // ① retire a bundled entry from the SOURCE role — the only section that may.
+    let dialog = await openSection("characters");
+    openItem(dialog, "atlas (bundled)");
+    fireEvent.click(within(dialog).getByRole("switch", { name: /In use — atlas/ }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // ② the seat is still showing the pre-hide library, so the tile is there to tap.
+    dialog = await openSection("Fleet backdrop");
+    openItem(dialog, "atlas (bundled)");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
+
+    // ③ the authoritative listing lands, with atlas retired…
+    landed(
+      index({
+        roles: {
+          characters: cast.map((r) =>
+            r.bundled === "atlas" ? { ...r, hidden: true, listed: true } : r,
+          ),
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
+    );
+    // …and the queued pin is refused outright rather than written onto a retired entry.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.putJSON).toHaveBeenCalledTimes(1);
+    expect(filesOf(savedBlock(0))).toEqual([{ bundled: "atlas", hidden: true }]);
+  });
+
+  it("…and so does a pin whose target is GONE from the library by the time it sends", async () => {
+    // The other half of the same conflation: the row was deleted out of band (or dropped by a
+    // collation that self-healed) between the tap and the send. There is nothing to repair, and the
+    // pin would be dangling by construction.
+    echoingPut();
+    api.getJSON.mockResolvedValueOnce(reelIndex()).mockResolvedValue(
+      index({
+        roles: { characters: [], banner: [], reel: [file("other", "reel")], oracle: [] },
+      }),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+      </QueryClientProvider>,
+    );
+    const dialog = await openSection("reel");
+    openItem(dialog, "cut.webp");
+    fireEvent.click(within(dialog).getByRole("switch", { name: /In use — cut.webp/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.putJSON).toHaveBeenCalledTimes(1); // the hide; the pin refused
+    expect(api.putJSON.mock.calls[0][1]).not.toHaveProperty("media.namespaces.gacha.slots");
+  });
+
   it("…and on a refetch timeout the pin is DISCARDED with everything else, carve-out and all", async () => {
     // The same scenario with step 5: the hide lands but its authoritative refetch does not. A scalar
     // pin looks safe to keep — it recomputes from nothing — and is not: whether it can RESOLVE is a

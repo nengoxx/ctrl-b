@@ -273,10 +273,14 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
             // No authoritative index ⇒ no write. Whether this pin can RESOLVE is a fact about the
             // library, and writing one that cannot is the claim §2.4 exists to prevent.
             if (rows === undefined) return null;
+            const repair = eligibility(section, item.id, rows);
+            // The target cannot be MADE resolvable from here. Write nothing at all: a pin is a claim
+            // about what paints, and the one thing worse than not honouring the tap is honouring it
+            // with a binding the render walks past.
+            if (repair === "refuse") return null;
             const block: NsBlock = { slots: { [pin]: item.row.name } };
-            const apply = eligibility(section, item.id, rows);
-            if (apply !== undefined) {
-              const roles = filesBlock(ns, section.role, apply, settings, index);
+            if (repair !== "ready") {
+              const roles = filesBlock(ns, section.role, repair, settings, index);
               // Half of a pin-plus-eligibility write is the very thing it was written to prevent.
               if (roles === null) return null;
               block.roles = roles;
@@ -342,34 +346,39 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
   };
 }
 
-/** The `files` transform a PIN write needs so its target can actually RESOLVE — `undefined` when the
- *  entry is already eligible and the pin is the whole write (Emma's S2 review #1 ②).
+/** What a PIN write has to do about its target's ELIGIBILITY — THREE answers, because "no `files`
+ *  half" was two opposite facts wearing one value (Emma's final confirm):
  *
- *  **Computed from the AUTHORITATIVE `rows`, at send** (her confirm round). It read the rendered item
- *  before, and the rendered item is a snapshot: toggle an entry's In-use off and activate it before
- *  the refetch lands, and the pin was minted "already eligible" off a stale `hidden: false` — then
- *  written onto an entry that is hidden, where it can never resolve.
+ *   · `"ready"`  — the target already resolves; the pin alone is the whole write;
+ *   · a TRANSFORM — it can be made to resolve, and this is the `files` half that does it;
+ *   · `"refuse"` — it cannot be made to resolve FROM HERE. The two states used to return the same
+ *     `undefined` the ready case does, and the caller read that as "pin-only is safe" — writing a
+ *     binding nothing can honour, which is the one thing §2.4 exists to prevent. */
+type Eligibility =
+  "ready" | "refuse" | ((entries: LibraryEntry[], rows: MediaFile[]) => LibraryEntry[]);
+
+/** Decide it, from the AUTHORITATIVE `rows`, at send (her confirm round — the rendered item is a
+ *  snapshot, and between the tap and the send the queue may have hidden the very entry being pinned).
  *
- *  A pin is looked up in the list its ladder DEALS, and two library states put an entry outside that
- *  list: `hidden` (resolution skips it everywhere) and the FALLBACK TIER (a bundled id no `files` entry
- *  names — offered only while the owner's own tier is empty).
+ *  A pin is looked up in the list its ladder DEALS, so `ladderRows` — the shared §2.3 tier rule every
+ *  resolver reads — IS the question: is the target in the tier this section actually deals? It cannot
+ *  drift from what the pin will be looked up in, because it is the same function.
  *
- *  A SEAT may not LIST, deliberately: it is a read-only VIEW over ANOTHER destination's library (§2.1),
- *  so promoting one of its bundled rows into the SOURCE role's own tier would collapse that role's
- *  whole bundled deal to a single entry. It has nothing to list either — a seat is scoped to
- *  `ladderRows`, so the bundled rows it offers are exactly the ones already resolving. Clearing a
- *  `hidden` DISK row is not that write and stays available to it: listing a disk row is order-only
- *  with zero paint effect (§2.3 ③), and it is the only thing that makes the pin honest. */
-function eligibility(
-  section: MediaSection,
-  id: RowId,
-  rows: readonly MediaFile[],
-): ((entries: LibraryEntry[], r: MediaFile[]) => LibraryEntry[]) | undefined {
+ *  Two repairs exist for a target that is not: switch a `hidden` entry back on, and LIST a
+ *  fallback-tier bundled id. **A SEAT may make neither on a BUNDLED row** — it is a read-only VIEW
+ *  over ANOTHER destination's library (§2.1), and both repairs put that row into the SOURCE role's own
+ *  tier, which collapses that role's whole bundled deal to the single entry (judgment A, Emma-grounded
+ *  — and un-hiding an already-listed bundled row collapses it exactly as listing an unlisted one
+ *  does). So a seat refuses there rather than writing a pin it knows will not resolve. A `hidden` DISK
+ *  row is a different write and stays available to it: that is the only thing that makes such a pin
+ *  honest, and it is the truthful consequence of "use this here". */
+function eligibility(section: MediaSection, id: RowId, rows: readonly MediaFile[]): Eligibility {
   const row = rows.find((r) => rowId(r) === id);
-  if (row === undefined) return undefined; // gone from the library: a dangling pin the card reports
-  const fallback = row.bundled != null && row.listed !== true;
-  if (section.kind === "seat" && fallback) return undefined;
-  if (row.hidden !== true && !fallback) return undefined;
+  // Gone from the library between the tap and the send (deleted out of band, dropped by a collation
+  // that self-healed). A pin naming it is dangling by construction and there is nothing to repair.
+  if (row === undefined) return "refuse";
+  if (ladderRows(rows).some((r) => rowId(r) === id)) return "ready";
+  if (section.kind === "seat" && row.bundled != null) return "refuse";
   return (e, r) => makeEligible(e, r, id);
 }
 
