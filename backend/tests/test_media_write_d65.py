@@ -380,6 +380,60 @@ def test_a_stranded_temp_is_swept_at_boot_and_owner_files_are_NEVER_candidates(h
     assert owner_lookalike.exists() and keep.exists()
 
 
+def test_a_symlinked_parts_dir_REFUSES_the_upload_instead_of_writing_through_it(home: Path, tmp_path) -> None:
+    """The write end of the symlink rule (Emma's 0.99 probe). `mkdir(exist_ok=True)` accepts an
+    existing symlink and `mkstemp` then follows it — the temp would be created, chmod'd and unlinked
+    OUTSIDE the registered tree, which is exactly what "writes land only inside registered role dirs"
+    must mean. The sweep's own guard cannot help here: it runs at boot, long after the write."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    with make_client() as c:
+        (role(home, "characters") / PARTS_DIRNAME).symlink_to(elsewhere, target_is_directory=True)
+        r = c.put(f"{URL}/a.png", content=png_bytes())
+        assert r.status_code == 500, r.text
+        assert "symlink" in r.json()["detail"] and PARTS_DIRNAME in r.json()["detail"]
+        # zero bytes AT THE TARGET — the whole point — and none in the role dir either
+        assert list(elsewhere.iterdir()) == []
+        assert [p.name for p in role(home, "characters").iterdir()] == [PARTS_DIRNAME]
+
+
+def test_a_parts_path_that_is_a_FILE_refuses_the_upload_too(home: Path) -> None:
+    """The other half of the same shape check (`ensure_media_dirs`' file-where-a-directory-belongs
+    case, one level down): a 500 naming the path, not a `NotADirectoryError` traceback."""
+    with make_client() as c:
+        (role(home, "characters") / PARTS_DIRNAME).write_text("not a folder", encoding="utf-8")
+        r = c.put(f"{URL}/a.png", content=png_bytes())
+        assert r.status_code == 500, r.text
+        assert "directory is needed" in r.json()["detail"]
+        assert [p.name for p in role(home, "characters").iterdir()] == [PARTS_DIRNAME]
+
+
+def test_the_sweep_reaches_the_convention_names_and_NOTHING_else_in_the_scratch_dir(
+    home: Path,
+) -> None:
+    """The scoped claim, pinned (main-seat ruling on Emma's residual). `.parts/` is DECLARED app-owned
+    scratch, so a file matching the temp convention exactly is swept whoever wrote it — and that is
+    the whole deletion surface: anything else in there survives, so a sweep can never widen into
+    "empty the directory"."""
+    chars = role(home, "characters")
+    chars.mkdir(parents=True, exist_ok=True)
+    (chars / PARTS_DIRNAME).mkdir()
+    swept = chars / PARTS_DIRNAME / f"{PART_PREFIX}dead{PART_SUFFIX}"
+    swept.write_bytes(png_bytes())
+    survivors = [
+        chars / PARTS_DIRNAME / "notes.txt",  # neither half of the convention
+        chars / PARTS_DIRNAME / f"keep{PART_SUFFIX}",  # the suffix alone is not the convention
+        chars / PARTS_DIRNAME / f"{PART_PREFIX}x.png",  # …nor is the prefix alone
+    ]
+    for p in survivors:
+        p.write_text("mine", encoding="utf-8")
+
+    with make_client():
+        pass
+    assert not swept.exists()
+    assert all(p.exists() for p in survivors)
+
+
 def test_the_sweep_refuses_a_symlinked_parts_dir(home: Path, tmp_path) -> None:
     """One level down from `ensure_media_dirs`' reasoning: a link RELOCATES the sweep, so it would be
     unlinking files somewhere else entirely. Refused, not followed."""

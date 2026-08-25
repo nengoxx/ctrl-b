@@ -975,10 +975,17 @@ class MediaWriteError(Exception):
 
 
 #: The app-owned scratch directory for in-flight uploads, one per role folder, plus the temp naming
-#: inside it. **The DIRECTORY is what makes the boot sweep safe, not the name** (Emma MED-2): a name
-#: convention is a guess about who created a file — an owner may legitimately drop
-#: `.ctrlb-upload-x.part` into a role folder — while a directory this code creates and nothing else
-#: writes to is EVIDENCE. The sweep therefore empties `.parts/` and never touches the role dir itself.
+#: inside it. **The DIRECTORY is what keeps the boot sweep off OWNER TERRITORY** (Emma MED-2): a name
+#: convention alone is a guess about who created a file — an owner may legitimately drop
+#: `.ctrlb-upload-x.part` into a role folder — so the sweep only ever looks inside `.parts/` and never
+#: at the role dir itself, i.e. never at anything the index or the mount can see.
+#:
+#: **Inside `.parts/` the naming convention IS the contract** (scoped honestly, main-seat ruling on
+#: Emma's residual): this directory is DECLARED app-owned scratch, and a file the owner puts in it
+#: matching `PART_PREFIX`+`PART_SUFFIX` exactly is swept like any other stranded temp. Discriminating
+#: further would mean creation-evidence bookkeeping (inode manifests) that nothing else in this
+#: codebase carries for its own scratch dirs. What IS pinned by test: the sweep reaches exactly the
+#: convention names and nothing else in there.
 #:
 #: Invisible to both halves of the read surface by construction: `.parts` is not an allowlisted
 #: extension (so the index skips it and the mount 404s the directory itself), and anything inside it
@@ -987,6 +994,41 @@ class MediaWriteError(Exception):
 PARTS_DIRNAME = ".parts"
 PART_PREFIX = ".ctrlb-upload-"
 PART_SUFFIX = ".part"
+
+
+def _require_real_scratch_dir(parts: Path) -> None:
+    """Refuse to write into a `.parts` that is a SYMLINK or a non-directory (Emma's 0.99 probe).
+
+    `mkdir(exist_ok=True)` accepts an existing symlink, and `mkstemp` then follows it: the temp would
+    be created, chmod'd and unlinked wherever the link points — outside the registered tree entirely,
+    which is the one thing "writes land only inside registered role dirs" (D65) must mean. The sweep
+    already refuses a symlinked `.parts`; this is the same rule at the other end, and both ends need
+    it because a guard on the cleanup path protects nothing during the write.
+
+    `lstat`-based (`is_symlink`), and deliberately no more: this is the SAME shape check
+    `ensure_media_dirs` runs over the media spine at boot, one level down, and with it the same
+    accepted reasoning — someone able to swap a real directory for a link between this check and the
+    mkstemp already has shell on the box, and a shell user owns everything the app could protect
+    (SECURITY_MODEL §1). TOCTOU theatre would buy nothing over that.
+
+    **500, not 4xx**: nothing about the REQUEST is wrong — the server's own tree is in a shape it
+    cannot write into, and only an operator can fix it. (The disabled-namespace precedent one layer
+    up answers 404, and that is right there because the namespace is genuinely not being served;
+    here the namespace is healthy and listing, so "not found" would be a lie.) The message names the
+    path in the `ensure_media_dirs` voice, because the whole value of it is being enough to act on.
+    """
+    if parts.is_symlink():
+        raise MediaWriteError(
+            500,
+            f"'{parts}' is a symlink; the media tree must be real directories (an upload would "
+            "otherwise be written outside the media folder). Replace it with a directory, then retry.",
+        )
+    if parts.exists() and not parts.is_dir():
+        raise MediaWriteError(
+            500,
+            f"'{parts}' is a file, but a directory is needed there for uploads in flight. "
+            "Move or rename it, then retry.",
+        )
 
 
 class UploadPart:
@@ -1020,6 +1062,7 @@ class UploadPart:
         # a write must not resurrect a tree the owner deleted or the health check refused — only the
         # scratch dir inside it is this code's to make.
         parts = directory / PARTS_DIRNAME
+        _require_real_scratch_dir(parts)
         parts.mkdir(parents=False, exist_ok=True)
         fd, name = tempfile.mkstemp(dir=str(parts), prefix=PART_PREFIX, suffix=PART_SUFFIX)
         part = cls(Path(name), os.fdopen(fd, "wb"), max_bytes)
@@ -1136,13 +1179,22 @@ def sweep_part_files(home: Path, namespaces: Iterable[str]) -> int:
     Called once at app construction. Nothing else can clean them: the pipeline unlinks its own temp
     in `finally`, so anything still there outlived the process that made it.
 
-    **It cannot remove owner data, by construction rather than by claim** (Emma MED-2): the only
-    paths it looks at are inside a directory THIS module creates for its own scratch files, so no
-    owner file is ever a candidate — including one named `.ctrlb-upload-x.part`, which the owner is
-    entitled to drop in a role folder. The prefix/suffix match inside `.parts/` stays as
-    belt-and-braces, and a `.parts` that is a SYMLINK is refused rather than walked (it would relocate
-    the sweep somewhere else entirely — the `ensure_media_dirs` reasoning, one level down). A
-    namespace whose tree failed the boot check is not passed in at all.
+    **It cannot reach OWNER TERRITORY, by construction** (Emma MED-2): the only paths it looks at are
+    inside a directory this module creates for its own scratch files, so nothing the index or the
+    mount can see is ever a candidate — including a file named `.ctrlb-upload-x.part` in the role
+    folder itself, which the owner is entitled to drop there.
+
+    **Inside `.parts/`, the naming convention is the contract** (scoped honestly, main-seat ruling on
+    Emma's residual): the directory is DECLARED app-owned scratch, so a file an owner puts there
+    matching the prefix AND suffix exactly is swept like any other stranded temp. What is enforced —
+    and pinned by test — is the SURFACE: deletion reaches exactly the convention names and nothing
+    else in that directory. Going further would mean creation-evidence bookkeeping (an inode
+    manifest) that nothing else in this codebase carries for its own scratch dirs.
+
+    A `.parts` that is a SYMLINK is refused rather than walked (it would relocate the sweep somewhere
+    else entirely — the `ensure_media_dirs` reasoning, one level down); the WRITE path refuses the
+    same shape (`_require_real_scratch_dir`), because a guard only on the cleanup path protects
+    nothing while an upload is running. A namespace whose tree failed the boot check is not passed in.
     """
     removed = 0
     for ns in namespaces:

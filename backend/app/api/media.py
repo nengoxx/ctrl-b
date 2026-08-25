@@ -242,8 +242,12 @@ async def media_upload(ns: str, role: str, filename: str, request: Request) -> M
     directory = _role_directory(request, ns, role)
     _admit(filename)
     max_bytes = request.app.state.settings.media.write.max_bytes
-    part = await asyncio.to_thread(UploadPart.open, directory, max_bytes=max_bytes)
+    # `UploadPart.open` is INSIDE the try: it refuses a `.parts` that is a symlink or a file (a tree
+    # only an operator can repair), and that refusal has to reach the client as the same translated
+    # detail as every other one rather than as an unhandled 500 with a traceback.
+    part: UploadPart | None = None
     try:
+        part = await asyncio.to_thread(UploadPart.open, directory, max_bytes=max_bytes)
         async for chunk in request.stream():
             part.write(chunk)
         if part.received == 0:
@@ -252,7 +256,8 @@ async def media_upload(ns: str, role: str, filename: str, request: Request) -> M
     except MediaWriteError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
     finally:
-        await asyncio.to_thread(part.discard)
+        if part is not None:
+            await asyncio.to_thread(part.discard)
 
 
 @router.delete("/media/{ns}/files/{role}/{filename:path}", status_code=204)

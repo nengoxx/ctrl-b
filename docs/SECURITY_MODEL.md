@@ -304,11 +304,16 @@ any future unauthenticated write path.
   `media.write.max_bytes`) → fsync → **`probe_image` header probe** (`415` when the bytes and the
   extension disagree) → `os.link` no-clobber (`409`, same filesystem so it stays atomic) → unlink the
   temp → `fsync_dir`. **A rejected upload leaves zero bytes**, and a boot sweep empties those
-  `.parts/` dirs (registered roles of HEALTHY namespaces only; a symlinked `.parts` is refused, not
-  walked). **The scratch DIRECTORY is what makes the sweep safe, not a filename convention** — an
-  owner is entitled to drop a file called `.ctrlb-upload-x.part` into a role folder, so "only the app
-  writes here" has to be a property of the location, not a guess from a name. (`fchmod` is expressed
-  as an `os.supports_fd` capability probe, not an OS branch: the server-OS allowlist is closed,
+  `.parts/` dirs (registered roles of HEALTHY namespaces only). **A `.parts` that is a symlink — or a
+  file — is refused at BOTH ends**: the sweep will not walk it, and the write path will not create a
+  temp through it, because `mkdir(exist_ok=True)` accepts an existing link and `mkstemp` would then
+  write outside the registered tree entirely (a 500 naming the path: the request is fine, the
+  server's tree is not). **Scope of the sweep, stated honestly:** the scratch DIRECTORY is what keeps
+  it off owner territory — an owner may legitimately drop a `.ctrlb-upload-x.part` into a role folder
+  and the sweep never looks there — while INSIDE `.parts/`, which is declared app-owned scratch, the
+  naming convention is the contract; what is enforced (and test-pinned) is that deletion reaches
+  exactly the convention names and nothing else in that directory. (`fchmod` is expressed as an
+  `os.supports_fd` capability probe, not an OS branch: the server-OS allowlist is closed,
   ARCHITECTURE §6.)
 - **Still no decoder on the server.** No Pillow, no decode, no re-encode, no thumbnails — header
   probes only. An untrusted-decoder surface was refused at D52 §10.4 and stays refused; all image
