@@ -158,15 +158,48 @@ The **server is the collator**; `list_role` stays the one implementation. The ru
 3. then unlisted bundled entries, **as the FALLBACK TIER**: they participate in RESOLUTION only
    when the theme's ladder falls through to them (§2.4) — exactly today's semantics, which is
    what makes the migration parity-free. An explicitly LISTED bundled entry is a full mixed
-   citizen — **and listing is per-ENTRY and deliberate, never a side effect (Opus confirm ①,
-   split by tier at his final confirm): config writes are BUNDLED-TIER-PRESERVING.** A
-   reorder/set-active/toggle may sweep **unlisted DISK rows** into `files` (they already sit in
-   the resolution prefix — listing them changes only their order, zero paint effect, and without
-   this a drag below an SSH-dropped file would be inexpressible and snap back); **unlisted
-   BUNDLED rows are never swept in** — only the bundled entry the owner explicitly acted on
-   becomes listed (the owner's first drag must not promote five bundled characters into the
-   fleet deal — paint parity holds after the first write, not just at rest). The
-   `lib/mediaLibrary` transforms own this rule; §11 pins both arms.
+   citizen. **What a write may LIST is decided by its INTENT (AMENDED 2026-08-25 — owner ruling,
+   S6; the box below is the record).** An **ORDER intent** — `moveBy` / `moveToEdge` /
+   `setActive`, and therefore the drag — sweeps the WHOLE section into `files` in the resulting
+   display order, unlisted disk rows and unlisted bundled rows alike, because that order is a
+   statement about the section. **Every other intent** — `setHidden`, `setFocal`, `makeEligible`,
+   `appendItem`, `removeItem` — lists only the entry it acted on, plus the disk tier (free: those
+   rows already sit in the resolution prefix, so listing them changes nothing but their order).
+   The `lib/mediaLibrary` transforms own this rule; §11 pins every arm.
+
+> **THE §2.3 ③ AMENDMENT (owner-ruled 2026-08-25, S6 triage). The rule this replaces read: a write
+> may sweep unlisted DISK rows but NEVER unlisted BUNDLED ones — "only the bundled entry the owner
+> explicitly acted on becomes listed", so that the owner's first drag could not promote five bundled
+> characters into the fleet deal (Opus confirm ①, split by tier at his final confirm).**
+>
+> The owner round found it broke the feature it was protecting. In a section whose entries are ALL
+> unlisted bundled defaults — which is every theme section of a fresh install — a partial listing
+> cannot express a position at all: every downward drag clamped to the row's own index and snapped
+> home, and `moveBy([], rows, "b:lyra", -2)` over the five-character roster wrote `[lyra, 3]`, which
+> collates as `[lyra, 3, pegasus, atlas, 4]` — not the order asked for. Worse, the same partial
+> listing SHRANK THE DEAL: after one ↑/↓ swap on a fresh characters section `files` held the two
+> swapped ids, `ladderRows`' own-tier-replaces-fallback rule read them as the owner's whole tier, and
+> the fleet was dealt two portraits instead of five.
+>
+> **The owner's ruling: reordering the shipped cast IS the feature.** A drag that will not move is a
+> worse answer than a config file naming art it already paints, and the defaults are ordinary library
+> entries — visible, reorderable, hideable. An order write therefore states the whole section's
+> order, and a full sweep is the same art in a new order.
+>
+> Two consequences, both deliberate:
+>
+> · **The VIRGIN section is untouched.** A role nobody has reordered still has an empty `files` list,
+>   so an upload into it replaces the bundled tier exactly as before and the `config_version` 1→2
+>   migration stays paint-parity-free (§2.4). After a sweep the defaults are owner-tier members and an
+>   upload joins them at the end, per the S3 additive rule.
+> · **In a MIXED section the first order write changes the DEAL.** Owner files beside unlisted
+>   defaults deal the files alone; once an order write lists everything, the defaults are in the
+>   owner's tier and are dealt beside them. That is not paint-neutral and is the ruling's real cost.
+>   The In-use switch is how a default leaves again — exactly as it is for a file — and §6.6's
+>   **Restore defaults** is the way back for the whole section. Flagged for the owner's eye in S6.
+>
+> `lastExpressible` and the drag's `limit` clamp are DELETED with the old rule: every position is
+> expressible now, so a drop lands where the owner put it.
 4. **The wire carries the WHOLE truth, so resolution is decidable from the index alone (Emma
    confirm E2):** the index emits **every** entry — hidden ones included, marked — and each row
    carries its per-item facts: `focal`, `hidden`, `key` (the binding override — the S1
@@ -399,6 +432,18 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
   >   included; consumers paint it and stamp nothing — a second stamp gave one file two cache keys.
 - **6.6 Bundled entries:** one grid, mixed by priority once listed (§2.3); origin glyph +
   "Bundled" in the detail; undeletable (action absent, not disabled); non-framable in v1 (§5).
+  **EVERY shipped picture is one** (owner ruling 2026-08-25, S6 — "all shipped default art must be
+  represented in the gallery, overridable, none left behind"): the two roles that deliberately
+  listed none (gacha `oracle`, frontier `hero`) carry their asset's own stem, gacha's orphaned
+  `rook` joined the cast, and the cosmos service-banner set became the `kit/service-banners`
+  bundled tier with a **rotation** section of its own. The only art that is NOT a library entry is
+  art belonging to no role: a SEAT's built-in fallback (gacha's `banner.webp`), shown read-only on
+  the seat card and in its gallery through `MediaSlotDef.builtin` — no hide, no order, and the
+  unpin is its restore. **Restore defaults** (per role section, `requestConfirm`): one write that
+  drops every `bundled:` entry from `files` and strips `hidden` from what remains — the shipped art
+  goes back to the registry's order and nothing stays switched off, while the owner's uploads keep
+  their entries, order, framing and key. Offered only where the section ships art AND `files` says
+  something about it, and scoped to what is on screen (a key gallery restores its own layer).
 - **6.7 Rider fixes** (defect register §8): the `?rev=` freshness class closed at every paint
   site; SW cache single-keyed + re-based bound; the media index query scoped to the Conf
   surface.
@@ -469,9 +514,13 @@ validation: `{name,bundled}` both → 422, duplicate identity → 422) + **wire 
 focal`/`hidden`/`listed` merged; hidden rows present-but-marked; bundled rows carry id + `listed`,
 no url; a fallback bundled row vs a listed one distinguishable from the wire alone — the E2 arm;
 `collation: "library-v1"`; resolver purity: active resolvers consume index+slots only) +
-**bundled-tier-preserving writes** (a drag may sweep unlisted DISK rows in — the arm: a drag
-past an unlisted SSH-dropped file COMMITS AND HOLDS, no snap-back — while unlisted BUNDLED rows
-are never swept; the first-drag parity arm) + **`overriddenBy`** (pin
+**intent-scoped writes** (§2.3 ③ as AMENDED 2026-08-25: an ORDER intent sweeps the whole section
+— the EXACT-EXPRESSION property arm, for any from/to over any mix of tiers, plus the
+all-defaults section in both directions and a browser drag downwards inside one — while every
+other intent lists only what it acted on; the drag-past-an-SSH-dropped-file arm still commits and
+holds) + **restore defaults** (offered only where `files` says something about the shipped art ·
+bundled entries dropped, `hidden` stripped, the owner's files and their per-item fields whole ·
+scoped to the rows on screen) + **`overriddenBy`** (pin
 beats pool → the pool card carries the seat pointer, no phantom active) + **the
 `hidden`-vs-`unusable` pair arm** (unusable holds position · hidden filtered out — asserted
 side by side so neither predicate absorbs the other). FE: entry
@@ -801,6 +850,62 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > writes, stays unbuilt on purpose: the spec waits for each write before the next drag by design, and
 > making it not do so would be a race the test itself owns rather than the app.)
 | S6 | owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball · crop/framing/drag feel · Fennec expected-partials | owner acceptance |
+
+> **THE S6 OWNER-ROUND FIX WAVE (2026-08-25/26) — W1–W4, four commits, all gates + the full e2e
+> suite green. The owner drove the live build and found three things, which turned out to be two
+> causes and one omission.**
+>
+> · **W1 — an order write says the whole section's order** (`bee042e`). The drag was dead in exactly
+>   the section it matters most in, and the deal silently shrank behind a swap. Both are the tier
+>   rule; §2.3 ③ is amended above and carries the whole record. `lastExpressible` + the drag's
+>   `limit` option are deleted (`useDragReorder`'s only consumer was the gallery grid — no seam left
+>   behind). Pinned: an EXACT-EXPRESSION property (for any from/to over any mix of tiers, collating
+>   the write reproduces the requested order), the all-defaults section in both directions, and a
+>   browser arm that drags downwards inside one.
+> · **W2 — nothing a theme ships is left out of its gallery** (`f7d0f17`). Three pictures were in no
+>   library: gacha's operator backdrop, frontier's badlands vista (both "the ladder's last rung, no
+>   id addresses it" — sound about PINS, wrong about the LIBRARY) and `rook.webp`, a genuine orphan
+>   whose manifest comment had claimed for a whole phase that it was "bundled for the gallery". Each
+>   now carries its asset's own stem; `rook` is the cast's tail after `lyra`, so positions 0–3 are
+>   unchanged. **Both ladders lose their hard-coded last rung**, which was the other half of the bug:
+>   it outranked the In-use switch, so retiring the backdrop would have left the gallery saying
+>   "nothing in use" while the surface kept painting it (Emma's S2 review #2, in the two places the
+>   pool had no member to be honest with). `offersBundled` guards the stub degrade as everywhere
+>   else; both surfaces degrade cleanly with no art (the operator block keeps its plate and scrim,
+>   the map its scrim and label).
+> · **W3 — the built-in defaults the gallery never showed** (`84bee6a`). `banner.webp` belongs to no
+>   role folder, so both backdrop SEATS said "none pinned" beside an empty box; they show it now
+>   through `MediaSlotDef.builtin` (§6.6). And the twelve cosmos service banners, which lived in a
+>   private FE array outside the media system entirely, became the `kit/service-banners` bundled tier
+>   with a **"Built-in rotation"** card: order is rotation order, In-use takes a banner out of it, no
+>   upload and no delete (a file dropped in that folder binds to a SERVICE). `CosmosHostDetail` deals
+>   from what the library resolved. A `named` role whose bundled ids are a SET rather than keys says
+>   so (`MediaRotationDef`) — a gallery that guessed would be right for frontier's stack and wrong
+>   here. `kit/ownerArt.ts` stops treating bundled rows as binding candidates, which matters now that
+>   an order write can list them.
+> · **W4 — Restore defaults** (this commit): §6.6's action, its transform (`restoreDefaults` +
+>   `defaultsRestorable`, both pure and index-decidable) and its confirm.
+>
+> **Deviations + judgment calls, recorded rather than swallowed:**
+>
+> · **`rook.webp` was registered, not deleted.** The other honest answer to an orphan is to remove
+>   the file; `art.ts` had stated the intent ("stays bundled for the G5 gallery") so the fix realises
+>   it. It changes the deal only on a fleet of SIX or more (position 5 was `pegasus`, is now `rook`).
+> · **`vapor-logo.png` is out of scope, deliberately.** It is theme CHROME in the kit AppBar's
+>   `brandMark` slot — the same slot the kit's own accent dot fills — not a default for any role, and
+>   it is ALREADY overridable: an owner file in `kit/brand` outranks it (`AppBar.tsx`). Making it a
+>   bundled entry of `kit/brand` would list it as a default under cosmos, minimal and gacha, which do
+>   not paint it. vapor's inline SVG skyline/sun are markup, not files. The minimal theme ships no
+>   art; `public/` holds PWA icons, not theme art.
+> · **A latent crash fixed in passing** (W3's commit): the post-drag click guard scheduled its own
+>   removal on a timer that outlived the hook, so a torn-down document could be dereferenced 50 ms
+>   later — an uncaught `document is not defined` that failed the whole vitest run under gate
+>   contention, and how it was found. The pending removal is held at the hook and the unmount disarms
+>   it outright; clearing the timer alone would have left the guard armed to eat the next real click.
+> · **The rotation section is pinned as SECTIONS, not as a render.** `mediaSections` emits it with
+>   its exact capability set under test; its card and grid are the generic ones every pool section
+>   already exercises, and a kit-namespace render test would have had to stand up the fleet key
+>   source to reach it.
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 

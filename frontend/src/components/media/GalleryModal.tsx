@@ -12,6 +12,8 @@ import {
 import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
 import type { MediaUpload } from "../../hooks/useMediaUpload";
 import { modalKeyDown } from "../../lib/focusTrap";
+import { defaultsRestorable } from "../../lib/mediaLibrary";
+import { requestConfirm } from "../../store/confirm";
 import { UPLOAD_ACCEPT } from "../../theme-engine/mediaRegistry";
 
 // The full-screen GALLERY (MEDIA_MANAGER_PLAN §6.2, R59 §11.2) — one section's whole library, on the
@@ -58,6 +60,7 @@ export function GalleryModal({
     ) => void;
     setHidden: (section: SectionView["section"], item: LibraryItem, hidden: boolean) => void;
     remove: (section: SectionView["section"], item: LibraryItem) => Promise<void>;
+    restoreDefaults: (section: SectionView["section"], ids: ReadonlySet<string>) => void;
   };
   upload: MediaUpload;
   /** Open the FRAMING sheet for one entry. Like the crop step, that sheet is a SIBLING of this dialog
@@ -126,6 +129,14 @@ export function GalleryModal({
   const count = `${items.length} ${items.length === 1 ? "image" : "images"}${
     problems > 0 ? ` · ${problems} will not paint` : ""
   }`;
+  // A section can only "restore" what it SHIPS, and only while the owner has said something about it.
+  // A SEAT is excluded by the same fact that makes it a view: its one write is the pin, and clearing
+  // that pin is the restore it already offers.
+  const restorable =
+    section.caps.hidden &&
+    section.def.bundled.length > 0 &&
+    scope.unassigned !== true &&
+    defaultsRestorable(rows);
 
   return (
     <div
@@ -243,6 +254,27 @@ export function GalleryModal({
               </span>
             </p>
           )}
+          {/* RESTORE DEFAULTS (S6) — shown only where this section HAS shipped art and the owner has
+              said something about it (`defaultsRestorable`), so a section still exactly as it came
+              carries no control at all. Scoped to what is on screen: a key gallery restores its own
+              layer. */}
+          {restorable && (
+            <p className="mgal-restore">
+              <button
+                type="button"
+                className="mgal-act"
+                disabled={busy || !ready}
+                onClick={() => {
+                  void confirmRestore(section, () =>
+                    write.restoreDefaults(section, new Set(items.map((i) => i.id))),
+                  );
+                }}
+              >
+                Restore defaults
+              </button>
+              <small>Puts the built-in art back in order. Your own images stay.</small>
+            </p>
+          )}
           {items.length === 0 ? (
             <p className="mgal-empty">
               Empty — use <b>Add an image</b> above, or copy .png/.jpg/.webp files into the folder.
@@ -294,6 +326,21 @@ export function GalleryModal({
       </div>
     </div>
   );
+}
+
+/** The restore confirm (§6.5 — `requestConfirm`, the house pattern the delete uses). The sentence says
+ *  what moves and what does not: the shipped art goes back to the order and the visibility it came
+ *  with, and nothing the owner put there is touched. */
+async function confirmRestore(
+  section: SectionView["section"],
+  onRestore: () => void,
+): Promise<void> {
+  const ok = await requestConfirm({
+    title: `Restore the built-in art for ${section.title}?`,
+    body: "The images that came with the app go back to their original order, and anything switched off here is switched back on. Your own images, their order and their framing are not touched.",
+    confirmLabel: "Restore",
+  });
+  if (ok) onRestore();
 }
 
 /** What the Add row says while a job runs. Per PHASE, because they take visibly different amounts of

@@ -15,7 +15,9 @@ import {
   moveToEdge,
   offersBundled,
   ownTier,
+  defaultsRestorable,
   removeItem,
+  restoreDefaults,
   rowId,
   rowFocal,
   setActive,
@@ -389,6 +391,58 @@ describe("delete — the config half (§6.4)", () => {
   it("leaves the fallback tier alone while it does it", () => {
     const rows = [disk("a.webp"), bundled("pegasus")];
     expect(removeItem(undefined, rows, "f:a.webp")).toEqual([]);
+  });
+});
+
+describe("restore defaults (the S6 owner ruling)", () => {
+  const swept = [
+    disk("mine.webp", { listed: true }),
+    bundled("pegasus", { listed: true }),
+    bundled("atlas", { listed: true, hidden: true }),
+  ];
+  const entries: LibraryEntry[] = [
+    { name: "mine.webp", focal: { x: 0.4, y: 0.2, rev: "r9" }, key: "hero" },
+    { bundled: "pegasus" },
+    { bundled: "atlas", hidden: true },
+  ];
+
+  it("is OFFERED only where the owner has said something about the shipped art", () => {
+    // A section still exactly as it came carries no control at all — there is nothing to put back.
+    expect(defaultsRestorable([disk("a.webp"), bundled("pegasus")])).toBe(false);
+    // …a listed bundled entry (an order write swept the section) and a hidden one both qualify.
+    expect(defaultsRestorable([bundled("pegasus", { listed: true })])).toBe(true);
+    expect(defaultsRestorable([disk("a.webp", { hidden: true }), bundled("pegasus")])).toBe(true);
+  });
+
+  it("drops every bundled entry back to the fallback tier and switches everything back on", () => {
+    // The bundled ids leave `files` entirely, which is what puts them back in the REGISTRY's order
+    // rather than in whatever order the owner had dragged them into.
+    expect(restoreDefaults(entries, swept)).toEqual([
+      { name: "mine.webp", focal: { x: 0.4, y: 0.2, rev: "r9" }, key: "hero" },
+    ]);
+  });
+
+  it("keeps the owner's own files whole — their order, their framing, their key", () => {
+    const rows = [disk("b.webp", { listed: true }), disk("a.webp", { listed: true, hidden: true })];
+    const held: LibraryEntry[] = [
+      { name: "b.webp", focal: { x: 0.1, y: 0.9, rev: "r1" } },
+      { name: "a.webp", hidden: true, key: "jellyfin" },
+    ];
+    expect(restoreDefaults(held, rows)).toEqual([
+      { name: "b.webp", focal: { x: 0.1, y: 0.9, rev: "r1" } }, // order kept: `b` was first
+      { name: "a.webp", key: "jellyfin" }, // `hidden` gone, everything else untouched
+    ]);
+  });
+
+  it("SCOPES to the rows it was offered for — a key gallery restores its own layer", () => {
+    // The frontier stack is three destinations under one role, so restoring `cube` must leave the
+    // other two layers exactly as the owner arranged them.
+    const rows = [
+      bundled("cube", { listed: true, hidden: true }),
+      bundled("platform-mid", { listed: true }),
+    ];
+    const held: LibraryEntry[] = [{ bundled: "cube", hidden: true }, { bundled: "platform-mid" }];
+    expect(restoreDefaults(held, rows, new Set(["b:cube"]))).toEqual([{ bundled: "platform-mid" }]);
   });
 });
 

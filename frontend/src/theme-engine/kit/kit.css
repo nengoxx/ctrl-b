@@ -6222,6 +6222,22 @@ body[data-perf="lite"] .kit .navmenu-pop {
   font-size: 12px;
   color: var(--text);
 }
+/* RESTORE DEFAULTS (S6) — a section-level action, so it sits with the section's own copy above the
+ * grid rather than in the per-item detail panel. Its sentence carries the whole of what it does not do
+ * (your images stay), because that is the question the word "restore" raises. */
+.kit .mgal-restore {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+.kit .mgal-restore small {
+  flex: 1;
+  min-width: 140px;
+  font-size: 11px;
+  color: var(--text-3);
+}
 .kit .mgal-card-tag {
   position: absolute;
   inset: auto 0 0 0;

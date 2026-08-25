@@ -260,10 +260,15 @@ interface WriteSpec {
    *  bundled row in it is listed too (the 2026-08-25 amendment — see the header). Absent ⇒ the write
    *  says nothing about order and lists only what it acted on. */
   sweep?: boolean;
-  /** Per-entry field edits (the In-use switch writes `hidden` here). */
+  /** Per-entry field edits, for a write about ONE item (the In-use switch writes `hidden` here). */
   edit?: { id: RowId; fields: LibraryEntry };
-  /** An id to drop from the list entirely (a delete's config half). */
-  drop?: RowId;
+  /** Which entries this write drops from the list entirely — a delete's config half (one id), or a
+   *  restore's whole bundled listing. A PREDICATE rather than an id because the two callers differ
+   *  only in how many entries they mean. */
+  drop?: (id: RowId) => boolean;
+  /** Fields to unset on every entry the predicate covers — the shape a write about the SECTION needs,
+   *  where `edit` is the shape a write about one item needs. */
+  clear?: { fields: readonly string[]; on: (id: RowId) => boolean };
 }
 
 /** The next `files` list for a role, under the tier-preserving rule.
@@ -289,7 +294,7 @@ function writeFiles(
   const touched = new Set(spec.touched);
   const out: LibraryEntry[] = [];
   for (const id of spec.order) {
-    if (!known.has(id) || id === spec.drop) continue;
+    if (!known.has(id) || spec.drop?.(id) === true) continue;
     const held = persisted.get(id);
     // The tier rule: outside an ORDER intent, a bundled row this write did not act on stays in the
     // fallback tier, whatever position the requested order gave it. The server appends it after
@@ -299,7 +304,11 @@ function writeFiles(
     if (spec.sweep !== true && isBundledId(id) && held === undefined && !touched.has(id)) continue;
     const base: LibraryEntry =
       held ?? (isBundledId(id) ? { bundled: id.slice(2) } : { name: id.slice(2) });
-    out.push(spec.edit?.id === id ? prune({ ...base, ...spec.edit.fields }) : base);
+    const cleared =
+      spec.clear !== undefined && spec.clear.on(id)
+        ? prune({ ...base, ...Object.fromEntries(spec.clear.fields.map((f) => [f, undefined])) })
+        : base;
+    out.push(spec.edit?.id === id ? prune({ ...cleared, ...spec.edit.fields }) : cleared);
   }
   return out;
 }
@@ -470,7 +479,51 @@ export function removeItem(
   rows: readonly LibraryRow[],
   id: RowId,
 ): LibraryEntry[] {
-  return writeFiles(entries, rows, { order: displayOrder(rows), touched: [], drop: id });
+  return writeFiles(entries, rows, {
+    order: displayOrder(rows),
+    touched: [],
+    drop: (x) => x === id,
+  });
+}
+
+// ── restore defaults (the S6 owner ruling) ───────────────────────────────────────────────────────
+
+/** Whether this section has anything to restore — i.e. whether the owner has said ANYTHING about its
+ *  shipped art. Two states qualify, and they are the two ways `files` can differ from silence:
+ *
+ *   · a bundled entry is LISTED (an order write swept the section, §2.3 ③ as amended) — the defaults
+ *     are in the owner's own tier at the order they gave them;
+ *   · any entry is HIDDEN — switched out of the deal.
+ *
+ *  Decidable from the INDEX alone, like every other question the gallery asks (§2.3 ④), which is what
+ *  keeps the affordance from appearing on a section that is already exactly as it shipped. */
+export function defaultsRestorable(rows: readonly LibraryRow[]): boolean {
+  return rows.some((r) => (r.bundled != null && r.listed === true) || r.hidden === true);
+}
+
+/** Put a section's shipped art back the way it came: every `bundled:` entry leaves `files` — dropping
+ *  the defaults back into the fallback tier, in the registry's own order — and `hidden` is stripped
+ *  from whatever remains, so nothing is left switched off.
+ *
+ *  The owner's OWN files survive it whole: their entries, their relative order, their `focal`, their
+ *  `key`. That is the line the action draws, and it is the only one it could honestly draw — deleting
+ *  uploads is what Delete is for, and a "restore" that removed pictures would be a different word.
+ *
+ *  `within` scopes it to the ids the affordance was shown for — a KEY gallery restores its own layer,
+ *  not the whole role — and the entries outside it are written back untouched. Absent = the whole
+ *  section, which is what a pool's own gallery means. */
+export function restoreDefaults(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  within?: ReadonlySet<RowId>,
+): LibraryEntry[] {
+  const covers = (id: RowId) => within === undefined || within.has(id);
+  return writeFiles(entries, rows, {
+    order: displayOrder(rows),
+    touched: [],
+    drop: (id) => covers(id) && isBundledId(id),
+    clear: { fields: ["hidden"], on: covers },
+  });
 }
 
 /** Append a freshly uploaded file at the END of the list, keeping every other row's priority (S3b's

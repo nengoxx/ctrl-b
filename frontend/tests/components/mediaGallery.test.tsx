@@ -662,6 +662,69 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     expect(within(dialog).queryByRole("button", { name: /Move to top/ })).toBeNull();
   });
 
+  it("RESTORE DEFAULTS is absent on a section still exactly as it shipped, and present once it is not", async () => {
+    // The affordance is the owner's way back (S6) — and a control offering to undo nothing is worse
+    // than none, so it appears only once `files` says something about the shipped art.
+    renderGallery();
+    let dialog = await openSection("characters");
+    expect(within(dialog).queryByRole("button", { name: "Restore defaults" })).toBeNull();
+    cleanup();
+
+    renderGallery(
+      index({
+        roles: {
+          characters: [
+            file("a", "characters", { listed: true }),
+            ...cast.map((b) => ({ ...b, listed: true })),
+          ],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
+    );
+    dialog = await openSection("characters");
+    expect(within(dialog).getByRole("button", { name: "Restore defaults" })).toBeTruthy();
+  });
+
+  it("…and confirming it writes the owner's files ALONE, in their order", async () => {
+    api.getJSON.mockResolvedValue(
+      index({
+        roles: {
+          characters: [
+            ...cast.map((b) => ({ ...b, listed: true })),
+            file("a", "characters", { listed: true, hidden: true }),
+          ],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+        {/* The house confirm (§6.5), same as the delete's — it is not a nested dialog. */}
+        <ConfirmDialog />
+      </QueryClientProvider>,
+    );
+    const dialog = await openSection("characters");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore defaults" }));
+    const confirm = await screen.findByRole("alertdialog");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    // The bundled ids leave `files` for the fallback tier — which is what puts them back in the
+    // registry's own order — and the owner's file keeps its place, switched back on.
+    expect(filesOf(savedBlock())).toEqual([{ name: "a.webp" }]);
+  });
+
+  it("a SEAT offers no restore — clearing its pin IS the restore", async () => {
+    renderGallery(index({ slots: { wallpaper: "a" } }));
+    const dialog = await openSection("Fleet backdrop");
+    expect(within(dialog).queryByRole("button", { name: "Restore defaults" })).toBeNull();
+  });
+
   it("the In-use switch writes `hidden`, and the tile dims + leaves the deal", async () => {
     const { container } = renderGallery();
     const dialog = await openSection("characters");

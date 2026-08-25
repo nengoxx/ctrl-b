@@ -468,6 +468,36 @@ test("Conf · Theme art — a section of nothing but DEFAULTS drags, downwards i
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 
+test("Conf · Theme art — Restore defaults puts the shipped art back and keeps the owner's", async ({
+  page,
+  pageErrors,
+}) => {
+  // The owner's way BACK (S6). Reordering a section now names the defaults in `files`, and switching
+  // one off is a click — so there has to be one action that undoes all of it without touching what the
+  // owner put there. It is absent while the section is still exactly as it shipped.
+  await bootConf(page);
+  const { st, puts } = await statefulMedia(page, {
+    onDisk: ["a.webp"],
+    files: [{ bundled: "lyra" }, { name: "a.webp" }, { bundled: "pegasus", hidden: true }],
+  });
+
+  await page.goto("/");
+  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  await card.click();
+  const dialog = page.getByRole("dialog");
+  const restore = dialog.getByRole("button", { name: "Restore defaults", exact: true });
+  await restore.click();
+  await page.getByRole("button", { name: "Restore", exact: true }).last().click();
+  await expect.poll(() => puts.length).toBe(1);
+  // The bundled ids leave `files` — which is what puts them back in the REGISTRY's order — and the
+  // owner's file keeps its entry, switched back on with it.
+  expect(st.files).toEqual([{ name: "a.webp" }]);
+  // …and the control goes with it: there is nothing left to restore.
+  await expect(restore).toHaveCount(0);
+  await expect(dialog.locator(".mgal-tile").first()).toHaveAttribute("aria-label", "a.webp");
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
 test("Conf · Theme art — a REFUSED drag snaps back, says so, and the next drag is admitted", async ({
   page,
   pageErrors,

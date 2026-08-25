@@ -13,6 +13,7 @@ import {
   moveBy,
   moveToEdge,
   removeItem,
+  restoreDefaults,
   rowId,
   setActive,
   setFocal,
@@ -384,6 +385,18 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
           },
         });
       },
+      /** **Restore defaults** (the S6 owner ruling) — put a section's shipped art back the way it
+       *  came: the bundled entries leave `files` for the fallback tier, in the registry's own order,
+       *  and nothing is left switched off. The owner's own files, their order and their per-item
+       *  fields survive it: deleting uploads is what Delete is for.
+       *
+       *  `ids` scopes it to the rows the affordance was offered for, so a KEY gallery restores its own
+       *  layer rather than the whole role — computed at the TAP because it is a fact about the scope
+       *  the owner is looking at, not about the list at send time (which is what every other job here
+       *  recomputes). The transform still runs against the authoritative rows, so an id that has since
+       *  left the library simply falls out. */
+      restoreDefaults: (section: MediaSection, ids: ReadonlySet<RowId>) =>
+        enqueue(listJob(section.role, (e, r) => restoreDefaults(e, r, ids))),
       /** Clear a pin — the section falls back to its own ladder. The one write that genuinely needs
        *  no state: removing a binding cannot produce an unresolvable one. */
       unpin: (section: MediaSection) => {
