@@ -1,0 +1,418 @@
+// The media LIBRARY's pure half (D65 / MEDIA_MANAGER_PLAN §2.3 + §6.5) — the config transforms every
+// gallery write goes through, and the tier vocabulary every active resolver reads.
+//
+// PURE and theme-free, on exactly the `lib/media.ts` terms it sits beside: no React, no query, no
+// registry import. The section DESCRIPTORS (and the per-ladder `active` resolvers) live in
+// `theme-engine/mediaRegistry.ts` — the one module allowed to know themes — and are handed to these
+// functions as ARGUMENTS (the council H4 rider). What lives here is only what is true of every
+// namespace: how a collated row is identified, which TIER it belongs to, and what a config write may
+// and may not say.
+//
+// ── the write rule, which is the whole reason this module exists ────────────────────────────────
+//
+// `media.namespaces.<ns>.roles.<role>.files` is an ORDERED list of per-item objects, and the server
+// collates it into the library the gallery shows (`core/media.py#list_role`, `library-v1`): the listed
+// entries in order, then unlisted files on disk, then the role's unlisted BUNDLED ids as the FALLBACK
+// TIER. A write therefore has to express an order over rows that are not all listed — and the two
+// unlisted tiers get OPPOSITE treatments (§2.3 ③, the cross-lens ① ruling):
+//
+//   · unlisted DISK rows may be swept into `files` freely. They already sit in the resolution prefix,
+//     so listing them changes only their order — zero paint effect — and without the sweep a drag
+//     below an SSH-dropped file would be inexpressible and would snap back on the next refetch.
+//   · unlisted BUNDLED rows are NEVER swept. Only the entry the owner explicitly ACTED ON becomes
+//     listed, because listing a bundled id promotes it out of the fallback tier and into the owner's
+//     own deal — the owner's first drag must not enlist five bundled characters into the fleet.
+//
+// Both arms are pinned in tests/lib/mediaLibrary.test.ts.
+
+import { orderedUsable, revUrl, type MediaNamed } from "./media";
+
+/** One collated LIBRARY row, structurally — the wire's `MediaFile` and anything derived from one.
+ *  A local interface rather than the wire type for the reason `MediaUsable` is one: this module must
+ *  stay reachable from a theme module without dragging the query layer in behind it. */
+export interface LibraryRow extends MediaNamed {
+  /** The filename inside the role folder — the identity a config `files` entry's `name` holds. Empty
+   *  on a bundled row, whose identity is its registry id instead. */
+  file: string;
+  /** The registry id when this row IS one of the role's bundled entries. */
+  bundled?: string | null;
+  /** True when the owner's `files` list holds this entry (§2.3 ④). */
+  listed?: boolean;
+  /** The owner excluded it from resolution while keeping it in the library. */
+  hidden?: boolean;
+}
+
+/** One `files` entry, structurally — `hooks/useSettings.ts#MediaFileEntry` without the import. Open,
+ *  because an entry carries fields this module neither reads nor may drop (`focal`, `key`, and
+ *  whatever a later slice adds): every transform here is a read-modify-WRITE over the persisted
+ *  object, never a rebuild from the index. */
+export interface LibraryEntry {
+  name?: string;
+  bundled?: string;
+  [k: string]: unknown;
+}
+
+/** A row's IDENTITY as one comparable string — `f:<filename>` for a file on disk, `b:<id>` for a
+ *  bundled entry. The two spaces are kept apart on purpose (the config identity is a discriminated
+ *  union, §2.2): a role may hold a file called `lyra.webp` AND the bundled id `lyra`, and they are two
+ *  different library entries with two different priorities. Doubles as the React key. */
+export type RowId = string;
+
+export function rowId(row: LibraryRow): RowId {
+  return row.bundled != null ? `b:${row.bundled}` : `f:${row.file}`;
+}
+
+/** The same identity for a CONFIG entry — `null` for a malformed one (neither field, or both), which
+ *  the server's validator refuses but a hand-edited config could still carry into a read. */
+export function entryId(entry: LibraryEntry): RowId | null {
+  if (typeof entry?.bundled === "string") {
+    return typeof entry.name === "string" ? null : `b:${entry.bundled}`;
+  }
+  return typeof entry?.name === "string" ? `f:${entry.name}` : null;
+}
+
+/** Whether an id names a BUNDLED entry (the tier that is never swept). */
+export function isBundledId(id: RowId): boolean {
+  return id.startsWith("b:");
+}
+
+// ── the tiers a resolver reads (§2.3 ④ — every fact is on the wire) ──────────────────────────────
+
+/** The rows resolution may consider: everything the owner has not switched OFF.
+ *
+ *  `hidden` and `unusable` take OPPOSITE treatments and must never fold into one predicate (§2.2):
+ *  a hidden row is FILTERED OUT of the set (re-dealing is the point of the switch), while an unusable
+ *  row HOLDS its position (`cycleAt`'s shipped rule — one bad file must not re-deal the fleet). This
+ *  function is the first half; `lib/media.ts#orderedUsable` is the second, and pool ladders compose
+ *  them in that order. */
+export function shown<T extends LibraryRow>(rows: readonly T[]): T[] {
+  return rows.filter((r) => !r.hidden);
+}
+
+/** The OWNER's own tier: files on disk plus any bundled entry they explicitly listed. */
+export function ownTier<T extends LibraryRow>(rows: readonly T[]): T[] {
+  return rows.filter((r) => r.bundled == null || r.listed === true);
+}
+
+/** The FALLBACK tier: the role's bundled ids that no `files` entry names. They participate in
+ *  resolution only where a ladder already fell through to bundled art — which is exactly what makes
+ *  the config-pure migration paint-parity-free (§2.4). */
+export function fallbackTier<T extends LibraryRow>(rows: readonly T[]): T[] {
+  return rows.filter((r) => r.bundled != null && r.listed !== true);
+}
+
+/** The ONE shape every "the owner's drops, else the bundled art" ladder has (gacha's cast, its scene
+ *  slides and its reel pool; frontier's rigs): the owner's tier when it holds anything at all, else
+ *  the fallback tier. Hidden rows are skipped first, so switching the last owner file OFF falls the
+ *  role back to its bundled art rather than blanking it. */
+export function ladderRows<T extends LibraryRow>(rows: readonly T[]): T[] {
+  const visible = shown(rows);
+  const own = ownTier(visible);
+  return own.length > 0 ? own : fallbackTier(visible);
+}
+
+/** `ladderRows` for a ladder that SKIPS broken files rather than dealing them (a first-wins pool, the
+ *  banner's slide set): the tier falls back when the owner's tier holds nothing USABLE, not merely
+ *  nothing at all.
+ *
+ *  The pair is deliberate and each half is a shipped semantic (§2.4 — ladders keep their predicates):
+ *  in a DEALT role a broken file holds its position, so its mere presence means "the owner supplied a
+ *  cast"; in a first-wins role its position buys only a blank surface, so a folder holding nothing but
+ *  broken files still falls through to the bundled art. */
+export function usableLadderRows<T extends LibraryRow>(rows: readonly T[]): T[] {
+  const visible = shown(rows);
+  const own = orderedUsable(ownTier(visible));
+  return own.length > 0 ? own : orderedUsable(fallbackTier(visible));
+}
+
+// ── active resolution (§2.4) ─────────────────────────────────────────────────────────────────────
+
+/** How MANY of a section's entries are live at once, in the owner's words (R59 §11.1 — the field
+ *  expresses rotation as a word, never as an invented badge vocabulary):
+ *   · `first` — one entry wins (a first-usable pool, a pin, a named key);
+ *   · `all`   — every entry is on screen (the banner's scene slides);
+ *   · `deal`  — the entries are dealt positionally across the fleet (the cast, the rigs). */
+export type ActiveMode = "first" | "all" | "deal";
+
+/** What a section's `active` resolver answers: which library rows are LIVE, in how many places, and
+ *  — when the winner lives in another section — which one (Opus confirm ②).
+ *
+ *  `overriddenBySlot` names a `slots` PIN, not a section, because a theme ladder must never know
+ *  section ids (the registry mints those). `useMediaLibrary` turns it into the pointer the card
+ *  renders: "Currently set by <seat> →". */
+export interface ActiveArt {
+  ids: readonly RowId[];
+  mode: ActiveMode;
+  overriddenBySlot?: string;
+}
+
+/** A section's `active` resolver: PURE in the index rows + the wire's `slots`, never in config
+ *  (§2.4 — the wire carries `listed`/`hidden`/`key` precisely so this is sufficient). */
+export type ActiveResolver = (
+  rows: readonly LibraryRow[],
+  slots: Readonly<Record<string, string>>,
+) => ActiveArt;
+
+/** `ids` for however many rows a ladder resolved — the adapter every resolver ends in. */
+export function activeIds(rows: readonly LibraryRow[]): RowId[] {
+  return rows.map(rowId);
+}
+
+// ── the config transforms (§2.3 ③ / §6.5) ────────────────────────────────────────────────────────
+
+/** What ONE write says about the role's `files` list. Built by the named operations below — never
+ *  hand-assembled at a call site, so the tier rule has exactly one implementation. */
+interface WriteSpec {
+  /** The display order the owner asked for, as row ids. */
+  order: readonly RowId[];
+  /** The ids the owner explicitly ACTED ON — the only bundled rows this write may list. */
+  touched: readonly RowId[];
+  /** Per-entry field edits (the In-use switch writes `hidden` here). */
+  edit?: { id: RowId; fields: LibraryEntry };
+  /** An id to drop from the list entirely (a delete's config half). */
+  drop?: RowId;
+}
+
+/** The next `files` list for a role, under the tier-preserving rule.
+ *
+ *  Read-modify-write: every surviving entry is the object that was PERSISTED, so `focal`, `key`,
+ *  `hidden` and anything a later slice adds ride along untouched. A row with no entry yet joins as a
+ *  bare `{name}`/`{bundled}` — which is exactly what listing it means.
+ *
+ *  A config entry naming something the index does not hold (a file deleted out of band) simply falls
+ *  out: the collation already drops it and self-heals, so persisting it would only keep a dangling
+ *  name alive. */
+function writeFiles(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  spec: WriteSpec,
+): LibraryEntry[] {
+  const persisted = new Map<RowId, LibraryEntry>();
+  for (const entry of entries ?? []) {
+    const id = entryId(entry);
+    if (id !== null && !persisted.has(id)) persisted.set(id, entry);
+  }
+  const known = new Set(rows.map(rowId));
+  const touched = new Set(spec.touched);
+  const out: LibraryEntry[] = [];
+  for (const id of spec.order) {
+    if (!known.has(id) || id === spec.drop) continue;
+    const held = persisted.get(id);
+    // The tier rule: a bundled row this write did not act on stays in the fallback tier, whatever
+    // position the requested order gave it. The server appends it after everything listed, which is
+    // where it already was.
+    if (isBundledId(id) && held === undefined && !touched.has(id)) continue;
+    const base: LibraryEntry =
+      held ?? (isBundledId(id) ? { bundled: id.slice(2) } : { name: id.slice(2) });
+    out.push(spec.edit?.id === id ? prune({ ...base, ...spec.edit.fields }) : base);
+  }
+  return out;
+}
+
+/** Drop the keys an edit set to `undefined` — the spelling for "unset this field". A persisted
+ *  `hidden: false` would be a redundant default in a file the owner may open, and the settings PUT
+ *  serialises `undefined` away anyway, so the two must not disagree. */
+function prune(entry: LibraryEntry): LibraryEntry {
+  const out: LibraryEntry = {};
+  for (const [k, v] of Object.entries(entry)) if (v !== undefined) out[k] = v;
+  return out;
+}
+
+/** The rows as the owner sees them, as ids — the starting order for every operation. */
+export function displayOrder(rows: readonly LibraryRow[]): RowId[] {
+  return rows.map(rowId);
+}
+
+/** The last position a write can actually EXPRESS for `id`.
+ *
+ *  Untouched fallback-tier rows always trail the collation, so nothing can be ordered after them
+ *  without listing them — and listing them is the one thing the tier rule forbids. Move-to-bottom
+ *  therefore lands on the last row that is not an untouched fallback: the honest bottom of the list
+ *  the owner is allowed to arrange, and the position the next refetch will agree with (no snap-back). */
+function lastExpressible(rows: readonly LibraryRow[], id: RowId): number {
+  let last = 0;
+  rows.forEach((row, i) => {
+    if (rowId(row) === id || row.bundled == null || row.listed === true) last = i;
+  });
+  return last;
+}
+
+function reordered(order: readonly RowId[], from: number, to: number): RowId[] {
+  const next = [...order];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+/** **Set as active** = move-to-front (§6.5). The list order IS the priority, so the explicit intent
+ *  the owner expresses in the detail panel is stored as the thing every ladder already reads. */
+export function setActive(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  id: RowId,
+): LibraryEntry[] {
+  const order = displayOrder(rows);
+  const from = order.indexOf(id);
+  if (from < 0) return writeFiles(entries, rows, { order, touched: [] });
+  return writeFiles(entries, rows, { order: reordered(order, from, 0), touched: [id] });
+}
+
+/** Move one entry by `delta` positions (the ↑/↓ buttons — the WCAG floor, and S5's drag lands on the
+ *  same transform).
+ *
+ *  BOTH rows of the swap count as acted on, which is what makes the move expressible when the
+ *  neighbour is a fallback-tier bundled row: the owner is visibly moving that entry too, and a swap
+ *  can promote at most ONE bundled id — never the sweep the tier rule exists to prevent. */
+export function moveBy(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  id: RowId,
+  delta: number,
+): LibraryEntry[] {
+  const order = displayOrder(rows);
+  const from = order.indexOf(id);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= order.length)
+    return writeFiles(entries, rows, { order, touched: [] });
+  return writeFiles(entries, rows, {
+    order: reordered(order, from, to),
+    touched: [id, order[to]],
+  });
+}
+
+/** Move one entry to the top or the bottom of the arrangeable list (the detail panel's pair). */
+export function moveToEdge(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  id: RowId,
+  edge: "top" | "bottom",
+): LibraryEntry[] {
+  const order = displayOrder(rows);
+  const from = order.indexOf(id);
+  if (from < 0) return writeFiles(entries, rows, { order, touched: [] });
+  const to = edge === "top" ? 0 : lastExpressible(rows, id);
+  return writeFiles(entries, rows, { order: reordered(order, from, to), touched: [id] });
+}
+
+/** The **In use** switch (§2.2's `hidden`). The order is untouched — but every disk row is still
+ *  written, because listing ONE entry into an otherwise-empty `files` list would move it to the front
+ *  of the collation and silently re-prioritise the role. */
+export function setHidden(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  id: RowId,
+  hidden: boolean,
+): LibraryEntry[] {
+  return writeFiles(entries, rows, {
+    order: displayOrder(rows),
+    touched: [id],
+    // `hidden: false` is the DEFAULT, so switching an entry back on removes the field rather than
+    // persisting a redundant `false` — the config stays the shape a human would have written.
+    edit: { id, fields: hidden ? { hidden: true } : { hidden: undefined } },
+  });
+}
+
+/** The config half of a DELETE (§6.4): the entry drops, and every other disk row is written in its
+ *  current order — so whatever was second becomes first in the SAME write (delete-active-promotes-
+ *  next, one write, no window in which the role has no active entry). */
+export function removeItem(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  id: RowId,
+): LibraryEntry[] {
+  return writeFiles(entries, rows, { order: displayOrder(rows), touched: [], drop: id });
+}
+
+/** Append a freshly uploaded file at the END of the list, keeping every other row's priority (S3b's
+ *  register phase; here because the tier rule is here). `fields` carries what the upload knows —
+ *  its binding `key`, its seeded `focal`. */
+export function appendItem(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  filename: string,
+  fields: LibraryEntry = {},
+): LibraryEntry[] {
+  const id = `f:${filename}`;
+  const listed = writeFiles(entries, rows, { order: displayOrder(rows), touched: [id] });
+  const at = listed.findIndex((e) => entryId(e) === id);
+  // Present already = the index has caught up with the upload (or the retry ran twice): patch the
+  // entry where it stands rather than listing the same file twice.
+  if (at >= 0) return listed.map((e, i) => (i === at ? prune({ ...e, ...fields }) : e));
+  return [...listed, prune({ name: filename, ...fields })];
+}
+
+// ── what a row LOOKS like: the three view rules the card, the grid and the detail panel share ────
+
+/** The wire facts a picture is made of — `MediaFile`, structurally (this module stays wire-free for
+ *  the reason `lib/media.ts` does). */
+export interface ArtRow extends LibraryRow {
+  url: string;
+  revision?: string;
+  format?: string | null;
+  size_bytes: number;
+  width?: number | null;
+  height?: number | null;
+  unusable_reason?: string | null;
+}
+
+/** One bundled entry's id and the client asset it stands for (`MediaBundledDef`, structurally). */
+export interface BundledArt {
+  id: string;
+  url: string;
+}
+
+/** The advisory ceilings of one role (`MediaBounds`, structurally). */
+export interface SizeBounds {
+  bytes: number;
+  pixels: number;
+}
+
+/** The picture one row paints, in the gallery.
+ *
+ *  Two sources, and the split is the wire's (§2.3): a file on disk is served from the mount, with its
+ *  `?rev=` so a replaced-in-place file cannot show its old bytes (defect #1, the same spelling every
+ *  paint site uses); a BUNDLED row carries only an id, and the client maps it to its own hashed asset
+ *  through the registry's `{id, url}` pairs — the server has never seen those bytes. */
+export function tileUrl(
+  row: ArtRow,
+  section: { def: { bundled: readonly BundledArt[] } },
+): string | undefined {
+  if (row.bundled != null) return section.def.bundled.find((b) => b.id === row.bundled)?.url;
+  return row.url === "" ? undefined : revUrl(row.url, row.revision);
+}
+
+/** Advisory code → what the owner should read. Two come from the server's `unusable_reason` (only it
+ *  read the bytes); the other two are derived from the file's numbers against the role's bounds,
+ *  because "too big" is per-role policy and the server ships facts (MEDIA_PLAN §5). An unrecognised
+ *  server reason is shown verbatim rather than swallowed, so a new one is never invisible. */
+export const ADVISORIES: Record<string, { text: string; bad?: boolean }> = {
+  // Defect #7: the server's `unreadable` covers truncated/corrupt bytes AND a readable format this
+  // surface does not serve (a GIF, a HEIC the phone produced). "unreadable file" sent the owner
+  // hunting for a corruption that was never there; the truthful sentence names both causes.
+  unreadable: { text: "unreadable or unsupported format", bad: true },
+  "format-mismatch": { text: "wrong extension", bad: true },
+  oversize: { text: "large file" },
+  dimensions: { text: "very large image" },
+};
+
+/** The advisory codes for one file, in severity order: what makes it unusable first, then the size
+ *  advisories. A role the registry does not describe still shows the server's verdict. */
+export function advisoriesOf(f: ArtRow, bounds: SizeBounds | undefined): string[] {
+  const out: string[] = [];
+  if (f.unusable_reason != null) out.push(f.unusable_reason);
+  if (bounds != null && f.bundled == null) {
+    if (f.size_bytes > bounds.bytes) out.push("oversize");
+    if (f.width != null && f.height != null && f.width * f.height > bounds.pixels)
+      out.push("dimensions");
+  }
+  return out;
+}
+
+/** `640×854 · 88 KB` — the two numbers the size hints are about, and nothing else. */
+export function metaText(f: ArtRow): string {
+  const size =
+    f.size_bytes >= 1_000_000
+      ? `${(f.size_bytes / 1e6).toFixed(1)} MB`
+      : `${Math.round(f.size_bytes / 1000)} KB`;
+  return f.width && f.height ? `${f.width}×${f.height} · ${size}` : size;
+}

@@ -22,9 +22,30 @@ export interface MediaUsable {
   unusable?: boolean;
 }
 
-/** …plus the NAME a pin addresses a member by (the config's `slots` values are filename stems). */
+/** …plus the NAME a pin addresses a member by (the config's `slots` values are filename stems), and
+ *  the explicit BINDING key an upload (or the owner) set on the entry.
+ *
+ *  `key` is the per-item override of the stem rule (D65 / MEDIA_MANAGER_PLAN §2.2): an item binds by
+ *  its `key` when it has one, else by its stem — and the stem fallback is PERMANENT, not a legacy
+ *  seam, because "drop a file in and it binds" is the shipped owner-facing contract of a `named`
+ *  namespace and has to keep working for SSH drops forever. It rides the WIRE (`MediaFile.key`), so no
+ *  resolver ever reads config to learn which of the two bound a file. */
 export interface MediaNamed extends MediaUsable {
   name: string;
+  key?: string | null;
+}
+
+/** The key one item binds to, normalized — its own `key` when it declares one, else its stem. The ONE
+ *  implementation of §2.2's precedence, so the render path, the gallery's annotations and the detail
+ *  panel's "bound by" sentence can never disagree. */
+export function bindingKey(f: MediaNamed): string {
+  const explicit = (f.key ?? "").trim();
+  return normalizeMediaKey(explicit !== "" ? explicit : f.name);
+}
+
+/** Whether it was the item's own `key` field that bound it (the detail panel names the source). */
+export function boundByKey(f: MediaNamed): boolean {
+  return (f.key ?? "").trim() !== "";
 }
 
 /** The whole ordered list, minus what cannot paint — for a consumer that shows EVERY file in a role (the
@@ -235,7 +256,9 @@ export function resolveNamed<T extends MediaNamed>(
 export function stemIndex<T extends MediaNamed>(files: readonly T[]): Map<string, T> {
   const byStem = new Map<string, T>();
   for (const f of orderedUsable(files)) {
-    const stem = normalizeMediaKey(f.name);
+    // `bindingKey`, not the bare stem: an item carrying its own `key` binds to THAT (§2.2), and this
+    // map is where both halves of the rule have to meet.
+    const stem = bindingKey(f);
     // First-wins: a later file reaching a stem that already bound is ignored, never an overwrite.
     if (!byStem.has(stem)) byStem.set(stem, f);
   }
@@ -349,7 +372,7 @@ export function classifyNamed<T extends MediaNamed>(
     // already carries the server's verdict, and THAT is what the owner has to act on. Truthiness, like
     // `orderedUsable` — a junk wire value is excluded there, so it must not be diagnosed here.
     if (f.unusable || keyOf.has(f)) continue;
-    (wanted.has(normalizeMediaKey(f.name)) ? shadowed : unmatched).add(f);
+    (wanted.has(bindingKey(f)) ? shadowed : unmatched).add(f);
   }
   return { byKey, keyOf, shadowed, unmatched };
 }
