@@ -153,7 +153,7 @@ describe("unusable entries hold their position", () => {
     // The pool is where the figure is chosen from (Codex F4), and `pool()` drops unusable files on the
     // way in — a first-wins pool has nothing to gain from holding a member that cannot paint.
     const r = rosterFromIndex(index({ reel: [file("bad", { unusable: true }), file("good")] }, {}));
-    expect(reelFigureArt(r)).toMatchObject({ url: file("good").url });
+    expect(reelFigureArt(r)).toMatchObject({ url: painted("good") });
   });
 });
 
@@ -289,6 +289,13 @@ const file = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
   ...over,
 });
 
+/** The URL that file is PAINTED at (D65 defect #1): a ladder hands its consumer a ready-to-paint url,
+ *  so an owner file carries its `?rev=` and a replace-in-place cannot keep showing the old bytes. */
+const painted = (name: string, over: Partial<MediaFile> = {}) => {
+  const f = file(name, over);
+  return `${f.url}?rev=${encodeURIComponent(f.revision)}`;
+};
+
 const index = (
   roles: Record<string, MediaFile[]>,
   slots: Record<string, string> = {},
@@ -313,32 +320,70 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
   });
 
-  it("BUNDLED rows on the wire are skipped — this ladder still states its own fallbacks (D65)", () => {
-    // The index carries every role's bundled ids since D65 (the fallback tier). Dealing one as an
-    // entry would put a row with no `url` into the fleet; and an all-bundled role must still read as
-    // "the owner dropped nothing here", i.e. the bundled set — which is exactly what it painted
-    // before. S2's §2.4 resolver rewrite replaces this skip with real bundled-entry resolution.
-    const bundled = (name: string): MediaFile => ({
-      ...file(name),
-      bundled: name,
-      file: "",
-      url: "",
-      revision: "",
-    });
-    const r = rosterFromIndex(
-      index({ characters: [file("kira"), bundled("lyra")], reel: [bundled("lyra")] }),
-    );
-    expect(r.entries.map((e) => e.name)).toEqual(["kira"]);
+  // ── the §2.4 resolvers over the wire's BUNDLED tier (D65). The index carries every role's bundled
+  //    ids now, and `castRows`/`sceneRows`/`poolRows` are the ONE rule the gallery reads too — so what
+  //    these arms pin is that the ladder's shipped semantics survived the move.
+  const bundled = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
+    ...file(name),
+    bundled: name,
+    name,
+    file: "",
+    url: "",
+    revision: "",
+    ...over,
+  });
+  /** What the server actually sends for `characters/` on a fresh install: the fallback tier, whole. */
+  const castTier = ["pegasus", "atlas", "3", "4", "lyra"].map((id) => bundled(id));
+
+  it("the FALLBACK TIER is what a fresh install deals — byte-identical to the bundled roster", () => {
+    // Paint parity by construction (§2.4): the registry derives its ids FROM `defaultRoster()`, so
+    // dealing the fallback tier and dealing the bundled set are the same list — mapped back through
+    // `toEntry`, hand-tuned focal points and the cutout included.
+    const r = rosterFromIndex(index({ characters: castTier, reel: [bundled("lyra")] }));
+    expect(r.entries).toEqual(defaultRoster().entries);
     expect(r.pools.reel).toEqual(defaultRoster().pools.reel);
+    expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
+  });
+
+  it("one owner file DEMOTES the whole fallback tier — the shipped 'drop one in' semantics", () => {
+    const r = rosterFromIndex(index({ characters: [file("kira"), ...castTier] }));
+    expect(r.entries.map((e) => e.name)).toEqual(["kira"]);
+  });
+
+  it("…unless the owner LISTED one, which mixes it into the deal at the priority they gave it", () => {
+    // `listed` is the whole difference between the two tiers, and it is on the wire precisely so this
+    // is decidable without reading config.
+    const r = rosterFromIndex(
+      index({ characters: [bundled("lyra", { listed: true }), file("kira"), ...castTier] }),
+    );
+    expect(r.entries.map((e) => e.name)).toEqual(["lyra", "kira"]);
+    // …and the listed bundled entry keeps its own art, not a hole (the server sends no url for it).
+    expect(r.entries[0].image).toBe(defaultRoster().entries[4].image);
+  });
+
+  it("a HIDDEN entry leaves the deal entirely — the OPPOSITE treatment from `unusable` (§2.2)", () => {
+    const r = rosterFromIndex(
+      index({ characters: [file("kira", { hidden: true }), file("nova")] }),
+    );
+    expect(r.entries.map((e) => e.name)).toEqual(["nova"]); // filtered OUT, the fleet re-deals
+    const broken = rosterFromIndex(
+      index({ characters: [file("kira", { unusable: true }), file("nova")] }),
+    );
+    expect(broken.entries.map((e) => e.name)).toEqual(["kira", "nova"]); // HOLDS its position
+  });
+
+  it("hiding the LAST owner file falls the role back to its bundled art rather than blanking it", () => {
+    const r = rosterFromIndex(index({ characters: [file("kira", { hidden: true }), ...castTier] }));
+    expect(r.entries).toEqual(defaultRoster().entries);
   });
 
   it("characters/ REPLACES the dealt cast, in the order the index handed over", () => {
     const r = rosterFromIndex(index({ characters: [file("kira"), file("nova")] }));
     expect(r.entries.map((e) => e.name)).toEqual(["kira", "nova"]);
     expect(assignArt(r, 3).map((a) => a!.url)).toEqual([
-      file("kira").url,
-      file("nova").url,
-      file("kira").url, // the cycling rule is untouched by where the entries came from
+      painted("kira"),
+      painted("nova"),
+      painted("kira"), // the cycling rule is untouched by where the entries came from
     ]);
   });
 
@@ -349,11 +394,7 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(r.entries.map((e) => e.name)).toEqual(["a", "b", "c"]);
     expect(r.entries[1].unusable).toBe(true);
     // …and only ITS host gets the placeholder; the third host still gets the third entry.
-    expect(assignArt(r, 3).map((a) => a?.url ?? null)).toEqual([
-      file("a").url,
-      null,
-      file("c").url,
-    ]);
+    expect(assignArt(r, 3).map((a) => a?.url ?? null)).toEqual([painted("a"), null, painted("c")]);
   });
 
   it("a broken file in a first-wins POOL is SKIPPED — there its position only buys a blank surface", () => {
@@ -363,48 +404,52 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
         banner: [file("s1", { unusable: true })],
       }),
     );
-    expect(oracleArt(r)).toMatchObject({ url: file("good").url });
+    expect(oracleArt(r)).toMatchObject({ url: painted("good") });
     expect(r.scenes).toEqual(defaultRoster().scenes); // the only scene was broken ⇒ the bundled pair
   });
 
   it("banner/ becomes the SCENE slides, one per file, keyed by stem", () => {
     const r = rosterFromIndex(index({ banner: [file("b9"), file("b1")] }));
     expect(r.scenes).toEqual([
-      { name: "b9", url: file("b9").url },
-      { name: "b1", url: file("b1").url }, // the SERVER ruled the order; the client never re-sorts
+      { name: "b9", url: painted("b9"), rev: "1:1000" },
+      { name: "b1", url: painted("b1"), rev: "1:1000" }, // the SERVER ruled the order; never re-sorted
     ]);
   });
 
   it("reel/ outranks the bundled cutout — dropping one in is the whole point of the folder", () => {
     const r = rosterFromIndex(index({ reel: [file("cut")] }));
-    expect(reelFigureArt(r)).toMatchObject({ url: file("cut").url });
+    expect(reelFigureArt(r)).toMatchObject({ url: painted("cut") });
   });
 
   it("carries each pool file's REVISION, so a consumer can tell replaced bytes from the same name", () => {
     const r = rosterFromIndex(index({ reel: [file("cut", { revision: "77:9" })] }));
-    expect(reelFigureArt(r)).toEqual({ name: "cut", url: file("cut").url, rev: "77:9" });
+    expect(reelFigureArt(r)).toEqual({
+      name: "cut",
+      url: `${file("cut").url}?rev=${encodeURIComponent("77:9")}`,
+      rev: "77:9",
+    });
   });
 
   it("a slots PIN still outranks the role folder (the owner binding a character into a role)", () => {
     // Read on the ORACLE ladder since G6.3: it is the surviving pin-over-folder pair (the backdrop's
     // folder is gone, and its own three rungs are pinned at the bottom of this file).
     const withWide = index({ characters: [file("kira")], oracle: [file("w")] }, { oracle: "kira" });
-    expect(oracleArt(rosterFromIndex(withWide))).toMatchObject({ url: file("kira").url });
+    expect(oracleArt(rosterFromIndex(withWide))).toMatchObject({ url: painted("kira") });
     // …and a pin naming nothing on disk degrades to the folder rather than blanking the surface.
     const dangling = index(
       { characters: [file("kira")], oracle: [file("w")] },
       { oracle: "ghost" },
     );
-    expect(oracleArt(rosterFromIndex(dangling))).toMatchObject({ url: file("w").url });
+    expect(oracleArt(rosterFromIndex(dangling))).toMatchObject({ url: painted("w") });
   });
 
   it("owner characters carry no wide/cutout/focus — under the role rule the FOLDER is the assignment", () => {
     const r = rosterFromIndex(index({ characters: [file("kira")] }));
-    expect(r.entries[0]).toEqual({ name: "kira", image: file("kira").url });
+    expect(r.entries[0]).toEqual({ name: "kira", image: painted("kira") });
     // …so a character can never become the reel figure just by existing — and replacing the CAST must
     // not cost the transition its figure either (the reel role falls back on its own).
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
-    expect(reelFigureArt(r)!.url).not.toBe(file("kira").url);
+    expect(reelFigureArt(r)!.url).not.toBe(painted("kira"));
   });
 });
 
@@ -425,7 +470,7 @@ describe("rosterFromIndex — a malformed payload degrades, never throws inside 
 describe("reelFigureArt — the pin selects a CUTOUT, never a portrait", () => {
   it("a pin naming a reel/ file wins over that folder's first entry", () => {
     const r = rosterFromIndex(index({ reel: [file("a"), file("b")] }, { reel_figure: "b" }));
-    expect(reelFigureArt(r)).toMatchObject({ url: file("b").url });
+    expect(reelFigureArt(r)).toMatchObject({ url: painted("b") });
   });
 
   it("a pin naming the BUNDLED cutout entry still resolves (the fresh-install case)", () => {
@@ -441,7 +486,7 @@ describe("reelFigureArt — the pin selects a CUTOUT, never a portrait", () => {
       ),
     );
     // NOT kira's portrait: the pin resolves to nothing and the ladder falls through (§5.3)
-    expect(reelFigureArt(r)).toMatchObject({ url: file("cut").url });
+    expect(reelFigureArt(r)).toMatchObject({ url: painted("cut") });
   });
 
   it("…and with no reel/ files either, the same legacy pin lands on the bundled cutout", () => {
@@ -455,7 +500,7 @@ describe("reelFigureArt — the pin selects a CUTOUT, never a portrait", () => {
     // are DERIVED from this pool — the registry imports `defaultRoster()`, never the reverse — so the
     // meaningful assertion is that the derivation still lands on the names this file's own schema rule
     // produces, and on the literal one the theme ships.
-    const declared = MEDIA_NS.gacha.roles.reel.bundled;
+    const declared = MEDIA_NS.gacha.roles.reel.bundled.map((b) => b.id);
     const withCutouts = defaultRoster()
       .entries.filter((e) => e.cutout !== undefined)
       .map((e) => e.name);

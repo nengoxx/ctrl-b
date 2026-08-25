@@ -32,6 +32,7 @@ import {
   stemIndex,
 } from "../../lib/media";
 import type { ServiceIdentity } from "../../lib/media";
+import { ownTier, rowId, shown, type ActiveArt, type LibraryRow } from "../../lib/mediaLibrary";
 
 /** The namespace and its role folders — named once so the hooks, the gallery and the tests cannot drift
  *  from `core/media.py`'s `KIT_ROLES`/`KIT_SLOTS`. */
@@ -45,16 +46,16 @@ const BRAND_ROLE = "brand";
 const BACKGROUND_SLOT = "background";
 const BRAND_SLOT = "brand";
 
-/** A role's files out of a payload, defensively. Wire data: a stub or partial response (an e2e mock, a
- *  proxy answering `{}`) must degrade to "no art" rather than throw inside a render — the
- *  `frontierArtFromIndex` / `rosterFromIndex` precedent. */
+/** A role's RESOLVABLE rows out of a payload, defensively. Wire data: a stub or partial response (an
+ *  e2e mock, a proxy answering `{}`) must degrade to "no art" rather than throw inside a render — the
+ *  `frontierArtFromIndex` / `rosterFromIndex` precedent.
+ *
+ *  `shown` drops the entries the owner switched OFF (§2.2's `hidden` — resolution skips them
+ *  everywhere), and `ownTier` states the tier rule uniformly even though this namespace has no
+ *  fallback tier to skip: the kit ships NO bundled art (§3), so every row here is a file on disk. */
 function roleFiles(index: MediaIndex | undefined, role: string): MediaFile[] {
   const files = index?.roles?.[role];
-  // S2's §2.4 resolver rewrite replaces this function and owns deleting this skip: the index carries
-  // BUNDLED rows since D65, and a kit accessor answers "which OWNER file" — the kit namespace ships
-  // no bundled art at all (`MediaRole.bundled` is empty for every kit role), so the filter is the
-  // uniform statement of the rule rather than a behaviour change here.
-  return Array.isArray(files) ? files.filter((f) => f.bundled == null) : [];
+  return Array.isArray(files) ? ownTier(shown(files)) : [];
 }
 
 /** One key's file in a NAMED role. Binding goes through `lib/media.ts#stemIndex` rather than through a
@@ -114,6 +115,31 @@ export function backgroundArtFrom(index: MediaIndex | undefined): MediaFile | un
  *  "how it is painted"). */
 export function brandArtFrom(index: MediaIndex | undefined): MediaFile | undefined {
   return firstUsable(roleFiles(index, BRAND_ROLE), index?.slots?.[BRAND_SLOT]);
+}
+
+// ── the §2.4 ACTIVE RESOLVERS (D65, council H1) ──────────────────────────────────────────────────
+//
+// The gallery resolves through the SAME rule the surfaces paint through — for the kit that is
+// `stemIndex` for a keyed role and `firstUsable` for a pool, i.e. exactly the functions above, over
+// the same rows. They take the ROLE's rows (not the whole index) because a section IS a role, and the
+// wire's `slots` for the two pools that carry a pin.
+
+/** ONE key of a `named` role (a service, a machine): the file bound to it, or nothing. The kit ships
+ *  no bundled art, so "nothing" is the ordinary answer and the surface renders as it does without it. */
+export function activeNamedKey(key: string) {
+  return (rows: readonly LibraryRow[]): ActiveArt => {
+    const file = stemIndex(ownTier(shown(rows))).get(normalizeMediaKey(key));
+    return { ids: file ? [rowId(file)] : [], mode: "first" };
+  };
+}
+
+/** A kit POOL (`background`, `brand`): its pin, else the first usable file — `firstUsable`'s ladder,
+ *  the one the layer itself paints through. */
+export function activePool(slot: string) {
+  return (rows: readonly LibraryRow[], slots: Readonly<Record<string, string>>): ActiveArt => {
+    const pick = firstUsable(ownTier(shown(rows)), slots?.[slot] || undefined);
+    return { ids: pick ? [rowId(pick)] : [], mode: "first" };
+  };
 }
 
 // ── the hooks: ONE query, one policy, four readings of it ────────────────────────────────────────

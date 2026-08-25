@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
 import { ART, RIG_KEYS, assets } from "../../src/themes/frontier/art";
-import { frontierArtFromIndex } from "../../src/themes/frontier/ownerArt";
+import { frontierArtFromIndex, STACK_KEYS } from "../../src/themes/frontier/ownerArt";
 import { present } from "../../src/themes/frontier/present";
 
 // The frontier owner-art adapter (D53 M2 / MEDIA_PLAN §9's frontier arms). PURE — a wire payload in,
@@ -27,6 +27,14 @@ const file = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
   unusable_reason: null,
   ...over,
 });
+
+/** The URL that same file is PAINTED at (D65 defect #1): every ladder now hands its consumer a
+ *  ready-to-paint url, so an owner file carries its `?rev=` cache-buster and a replace-in-place cannot
+ *  keep showing the old bytes. `lib/media.ts#revUrl` is the one spelling; this mirrors it. */
+const painted = (name: string, over: Partial<MediaFile> = {}) => {
+  const f = file(name, over);
+  return `${f.url}?rev=${encodeURIComponent(f.revision)}`;
+};
 
 const index = (roles: Partial<Record<string, MediaFile[]>>, slots: Record<string, string> = {}) =>
   ({
@@ -68,14 +76,14 @@ describe("empty folders ⇒ the pre-M2 rendering, byte for byte", () => {
 describe("rigs — the pool dealt over the fleet's display order", () => {
   it("deals position i the i-th file, SELF FIRST (position 0 is the self host — useHosts sorts it there)", () => {
     const art = frontierArtFromIndex(index({ rigs: [file("a"), file("b")] }));
-    expect(art.rigUrlFor(0)).toBe(file("a").url); // the self host's card
-    expect(art.rigUrlFor(1)).toBe(file("b").url);
+    expect(art.rigUrlFor(0)).toBe(painted("a")); // the self host's card
+    expect(art.rigUrlFor(1)).toBe(painted("b"));
   });
 
   it("CYCLES when there are more machines than files", () => {
     const art = frontierArtFromIndex(index({ rigs: [file("a"), file("b")] }));
     expect([0, 1, 2, 3, 4].map((i) => art.rigUrlFor(i))).toEqual(
-      ["a", "b", "a", "b", "a"].map((n) => file(n).url),
+      ["a", "b", "a", "b", "a"].map((n) => painted(n)),
     );
   });
 
@@ -85,10 +93,10 @@ describe("rigs — the pool dealt over the fleet's display order", () => {
     const art = frontierArtFromIndex(
       index({ rigs: [file("a"), file("bad", { unusable: true }), file("c")] }),
     );
-    expect(art.rigUrlFor(0)).toBe(file("a").url);
+    expect(art.rigUrlFor(0)).toBe(painted("a"));
     expect(art.rigUrlFor(1)).toBeUndefined(); // → the consumer's bundled rig for position 1
-    expect(art.rigUrlFor(2)).toBe(file("c").url);
-    expect(art.rigUrlFor(3)).toBe(file("a").url); // the cycle is unchanged
+    expect(art.rigUrlFor(2)).toBe(painted("c"));
+    expect(art.rigUrlFor(3)).toBe(painted("a")); // the cycle is unchanged
   });
 
   it("a nonsense position is unassigned rather than a throw (it is on a render path)", () => {
@@ -101,17 +109,17 @@ describe("rigs — the pool dealt over the fleet's display order", () => {
 describe("hero — a pool with a pin (the kit-background shape)", () => {
   it("first usable wins with no pin", () => {
     const art = frontierArtFromIndex(index({ hero: [file("one"), file("two")] }));
-    expect(art.hero).toBe(file("one").url);
+    expect(art.hero).toBe(painted("one"));
   });
 
   it("the pin names a member of its OWN role and wins", () => {
     const art = frontierArtFromIndex(index({ hero: [file("one"), file("two")] }, { hero: "two" }));
-    expect(art.hero).toBe(file("two").url);
+    expect(art.hero).toBe(painted("two"));
   });
 
   it("a DANGLING pin falls through to the first usable — never a blank cover", () => {
     const art = frontierArtFromIndex(index({ hero: [file("one")] }, { hero: "deleted" }));
-    expect(art.hero).toBe(file("one").url);
+    expect(art.hero).toBe(painted("one"));
   });
 
   it("an all-unusable folder falls all the way through to the bundled vista", () => {
@@ -135,9 +143,9 @@ describe("stack — the NAMED role, all 8 owner/bundled combinations", () => {
     ];
     it(`cube=${has.cube ? "owner" : "bundled"} mid=${has.mid ? "owner" : "bundled"} base=${has.base ? "owner" : "bundled"}`, () => {
       expect(frontierArtFromIndex(index({ stack: files })).stack).toEqual({
-        cube: has.cube ? OWNER.cube.url : BUNDLED.cube,
-        mid: has.mid ? OWNER.mid.url : BUNDLED.mid,
-        base: has.base ? OWNER.base.url : BUNDLED.base,
+        cube: has.cube ? painted("cube") : BUNDLED.cube,
+        mid: has.mid ? painted("platform-mid") : BUNDLED.mid,
+        base: has.base ? painted("platform-base") : BUNDLED.base,
       });
     });
   }
@@ -146,15 +154,20 @@ describe("stack — the NAMED role, all 8 owner/bundled combinations", () => {
     const art = frontierArtFromIndex(
       index({ stack: [file("CUBE", { file: "CUBE.webp" }), file("sketch")] }),
     );
-    expect(art.stack.cube).toBe(file("CUBE").url);
+    expect(art.stack.cube).toBe(painted("CUBE", { file: "CUBE.webp" }));
     expect(art.stack.mid).toBe(ART.stack.mid); // `sketch` bound to nothing
   });
 
   it("a stem COLLISION resolves first-in-index-order — the owner's own listing decides", () => {
     const first = file("cube", { url: "/first.png" });
     const second = file("Cube", { url: "/second.png" });
-    expect(frontierArtFromIndex(index({ stack: [first, second] })).stack.cube).toBe("/first.png");
-    expect(frontierArtFromIndex(index({ stack: [second, first] })).stack.cube).toBe("/second.png");
+    const at = (u: string) => `${u}?rev=${encodeURIComponent(first.revision)}`;
+    expect(frontierArtFromIndex(index({ stack: [first, second] })).stack.cube).toBe(
+      at("/first.png"),
+    );
+    expect(frontierArtFromIndex(index({ stack: [second, first] })).stack.cube).toBe(
+      at("/second.png"),
+    );
   });
 
   it("an unusable layer file keeps the BUNDLED layer rather than painting a hole", () => {
@@ -178,5 +191,58 @@ describe("degrade — the payload is wire data, not our types", () => {
     for (const url of [ART.hero, ART.stack.cube, ART.stack.mid, ART.stack.base]) {
       expect(ART.rigs).not.toContain(url);
     }
+  });
+});
+
+// ── the §2.4 resolvers over the wire's BUNDLED tier (D65). `rigRows` is the ONE rule the Conf gallery
+//    reads too, so these arms are what stop the gallery claiming a deal the cards will not paint.
+
+/** A bundled row as the server emits one: the id in `bundled`, no file, no url, no revision. */
+const bundledRow = (id: string, over: Partial<MediaFile> = {}): MediaFile => ({
+  ...file(id),
+  bundled: id,
+  name: id,
+  file: "",
+  url: "",
+  revision: "",
+  ...over,
+});
+
+describe("the bundled FALLBACK TIER (D65 §2.3)", () => {
+  const tier = RIG_KEYS.map((k) => bundledRow(k));
+
+  it("deals exactly what present() names, position for position — parity by construction", () => {
+    // The fallback tier arrives in RIG_KEYS order and `cycleAt` deals it positionally, which is the
+    // same expression `present()` evaluates (`RIG_KEYS[i % 6]`). A fresh install cannot re-deal.
+    const art = frontierArtFromIndex(index({ rigs: tier }));
+    for (let i = 0; i < 14; i++) expect(art.rigUrlFor(i)).toBe(ART.rigs[i % ART.rigs.length]);
+  });
+
+  it("one owner file DEMOTES the tier — the shipped 'drop one in' semantics", () => {
+    const art = frontierArtFromIndex(index({ rigs: [file("a"), ...tier] }));
+    expect(art.rigUrlFor(0)).toBe(painted("a"));
+    expect(art.rigUrlFor(1)).toBe(painted("a")); // cycles over the owner's one file, as it always did
+  });
+
+  it("a HIDDEN file leaves resolution while an UNUSABLE one holds its slot (§2.2's pair)", () => {
+    const hidden = frontierArtFromIndex(index({ rigs: [file("a", { hidden: true }), file("b")] }));
+    expect(hidden.rigUrlFor(0)).toBe(painted("b")); // filtered OUT — position 0 is b's now
+    const broken = frontierArtFromIndex(
+      index({ rigs: [file("a", { unusable: true }), file("b")] }),
+    );
+    expect(broken.rigUrlFor(0)).toBeUndefined(); // HOLDS its slot; only its own card falls back
+    expect(broken.rigUrlFor(1)).toBe(painted("b"));
+  });
+
+  it("a bundled STACK row answers its own layer, and an owner file still wins it", () => {
+    const layers = STACK_KEYS.map((k) => bundledRow(k));
+    expect(frontierArtFromIndex(index({ stack: layers })).stack).toEqual({
+      cube: ART.stack.cube,
+      mid: ART.stack.mid,
+      base: ART.stack.base,
+    });
+    expect(frontierArtFromIndex(index({ stack: [file("cube"), ...layers] })).stack.cube).toBe(
+      painted("cube"),
+    );
   });
 });

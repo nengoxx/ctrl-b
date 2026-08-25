@@ -21,16 +21,35 @@
 // art cannot leave a stale name in this registry. (The other half of that mirror — the BACKEND's hand-listed
 // copy in `core/media.py` — is held in step by a drift guard in tests/theme-engine/mediaRegistry.test.ts.)
 
-import { RIG_KEYS } from "../themes/frontier/art";
-import { STACK_KEYS } from "../themes/frontier/ownerArt";
-import { defaultRoster } from "../themes/gacha/roster";
+import type { ActiveResolver } from "../lib/mediaLibrary";
+import { ART as FRONTIER_ART, RIG_KEYS } from "../themes/frontier/art";
+import { activeHero, activeRigs, activeStackLayer, STACK_KEYS } from "../themes/frontier/ownerArt";
+import {
+  activeCast,
+  activeOraclePool,
+  activePool,
+  activeScenes,
+  activeSeat,
+  defaultRoster,
+} from "../themes/gacha/roster";
+import { activeNamedKey, activePool as activeKitPool } from "./kit/ownerArt";
 import type { ThemeDef } from "./types";
 
 /** The bundled ids of one gacha role, read off the roster the theme actually falls back to. `defaultRoster()`
  *  builds a fresh object per call, so it is called ONCE here and the three lists are taken from that. */
 const BUNDLED_ROSTER = defaultRoster();
-const names = (entries: readonly { name: string }[]): readonly string[] =>
-  entries.map((e) => e.name);
+/** `{name, url-ish}` pairs from a theme's own list → the registry's `{id, url}` entries. The url getter
+ *  is per list because a roster entry's art hangs off a different field than a scene's. */
+const bundle = <T>(entries: readonly T[], id: (e: T) => string, url: (e: T) => string) =>
+  entries.map((e) => ({ id: id(e), url: url(e) }));
+
+/** frontier's stack layers by their KEY — the same three assets `frontierArtFromIndex` falls back to,
+ *  keyed the way the ids are spelled (the theme's own object names them `cube`/`mid`/`base`). */
+const STACK_ART: Record<(typeof STACK_KEYS)[number], string> = {
+  cube: FRONTIER_ART.stack.cube,
+  "platform-mid": FRONTIER_ART.stack.mid,
+  "platform-base": FRONTIER_ART.stack.base,
+};
 
 /** What a role's files ARE, publicly (MEDIA_PLAN §2's two kinds). `pool` = the ordered list the server
  *  collates and the gallery reorders, where POSITION is the assignment. `named` = files binding to KEYS
@@ -47,6 +66,19 @@ export interface MediaBounds {
   pixels: number;
 }
 
+/** ONE bundled entry a role ships: the stable ID the server emits as an index row, and the CLIENT-side
+ *  asset it stands for (a Vite-hashed build url — the server has never seen the bytes and emits no url
+ *  for them, §2.3).
+ *
+ *  One object rather than an id list beside a `{id: url}` map (the 2026-06-24 extend-don't-migrate
+ *  directive): the two would be keyed by the same names, and the second dimension — the gallery needing
+ *  to PAINT a bundled tile — is exactly the growth that makes sibling maps expensive. Both halves are
+ *  DERIVED from the theme's own ladder module, so neither can name art the theme would refuse. */
+export interface MediaBundledDef {
+  id: string;
+  url: string;
+}
+
 /** One KEY a `named` role's files can bind to, plus the words the owner needs to name a file for it.
  *
  *  The hint carries per-key GUIDANCE — for frontier's stack that is GEOMETRY (Codex MED: the three
@@ -60,6 +92,10 @@ export interface MediaBounds {
 export interface MediaKeyDef {
   key: string;
   hint: string;
+  /** This layer's own destination shape, when it differs from the role's (see `MediaRoleDef.aspect`).
+   *  The frontier stack is three very different boxes under one role, which is the whole reason the
+   *  hints below spell their geometry out. */
+  aspect?: number;
 }
 
 /** The live data a `named` role's keys are DERIVED from, when they are not a static list (MEDIA_PLAN §2's
@@ -111,7 +147,7 @@ export interface MediaRoleDef {
    *  An asset with **no stable name gets no id**: gacha's oracle backdrop and frontier's hero vista are the
    *  last rung of a ladder that nothing addresses by name, so they are `[]` rather than an invented
    *  identity no resolver could honour. */
-  bundled: readonly string[];
+  bundled: readonly MediaBundledDef[];
   /** Shown under the role's heading in the gallery. A role with no hint still renders. */
   hint?: string;
   bounds: MediaBounds;
@@ -131,6 +167,19 @@ export interface MediaRoleDef {
    *  NOT. Absent = no previews (a role that offers no focal point, or one whose destinations are not worth
    *  approximating). Rows land at S4. */
   previews?: readonly MediaPreviewDef[];
+  /** width / height of the DESTINATION, for the gallery's entry card and its grid tiles (§6.1/§6.3 —
+   *  "shaped like the destination", four independent confirmations in R59). **Coarse on exactly the
+   *  terms `MediaPreviewDef` states**: the real surfaces' CSS is the paint authority, and this number
+   *  only decides how the owner's own picture is framed while they choose it. Absent ⇒ square tiles,
+   *  the field's answer for "shape unknown". */
+  aspect?: number;
+  /** §2.4 — the ladder that decides which of this role's entries is LIVE, supplied by the theme module
+   *  that already owns it and imported by BOTH the paint site and the gallery (council H1). A POOL
+   *  declares one resolver; a `named` role declares `activeForKey` instead, because every key is its
+   *  own destination with its own ladder. Absent ⇒ the gallery says nothing about what is in use. */
+  active?: ActiveResolver;
+  /** §2.4 for a `named` role: the resolver for ONE key. */
+  activeForKey?: (key: string) => ActiveResolver;
 }
 
 /** A `slots` pin the gallery offers: binding one named file INTO a role, overriding that role folder's own
@@ -155,6 +204,15 @@ export interface MediaSlotDef {
   label: string;
   from: string;
   hint?: string;
+  /** True when this pin is **its own destination** — a SEAT (§2.1): a surface fed FROM another role's
+   *  library, whose only write is the pin. gacha's three character-bound pins are seats (a portrait
+   *  bound into the fleet backdrop, the hero slide, the operator's backdrop); every other shipped pin
+   *  is the source role's own first-wins OVERRIDE and therefore belongs to that role's section rather
+   *  than to a section of its own — one destination, one card. */
+  seat?: boolean;
+  /** §2.4 — a SEAT's own ladder (what the pin resolves to, and what it falls through to). Pins that
+   *  are not seats need none: their role's `active` resolver already reads them. */
+  active?: ActiveResolver;
 }
 
 export interface MediaNsDef {
@@ -211,16 +269,30 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         kind: "pool",
         hint: "Capsule cards + the dossier portrait, dealt to machines in this order.",
         bounds: FULL_ART,
+        // A 3/4 portrait: the capsule card's own shape, and the crop every other consumer takes it
+        // through (the dossier portrait, the wide promo band).
+        aspect: 3 / 4,
+        active: activeCast,
         // The bundled cast, in the order the default roster deals it — the entry names a `slots` pin
         // addresses and `slotEntry` resolves against while `characters/` is still empty.
-        bundled: names(BUNDLED_ROSTER.entries),
+        bundled: bundle(
+          BUNDLED_ROSTER.entries,
+          (e) => e.name,
+          (e) => e.image,
+        ),
       },
       banner: {
         kind: "pool",
         hint: "One extra pickup-banner slide per image.",
         bounds: FULL_ART,
+        aspect: 16 / 9,
+        active: activeScenes,
         // The bundled scene slides (`b2`/`b3`) — named because each slide needs a stable key.
-        bundled: names(BUNDLED_ROSTER.scenes),
+        bundled: bundle(
+          BUNDLED_ROSTER.scenes,
+          (s) => s.name,
+          (s) => s.url,
+        ),
       },
       // NO `wallpaper` ROLE — removed at G6.3 on the owner's ruling ("just having the background in the
       // kit is the better approach — no duplicated systems"). The fleet backdrop's drop-in home is the
@@ -234,19 +306,36 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         kind: "pool",
         hint: "The cutout that rides the tab transition. Dropped-in cutouts are painted as-is: the bundled one has its glow baked into the file, so a plain transparent PNG will look flatter.",
         bounds: FULL_ART,
+        aspect: 3 / 4,
+        // The `reel_figure` pin is this pool's OWN first-wins override (not a seat), so the pool's
+        // ladder is the one that reads it — which is why "Set as active" here writes the pin.
+        active: activePool("reel_figure"),
         // The bundled reel POOL, which the roster derives from the entries carrying a `cutout` — today
         // exactly `lyra`. This is the list the `reel_figure` pin offers while `reel/` is empty; it used to
         // be hand-typed on the slot (`MediaSlotDef.bundled`, retired at D65).
-        bundled: names(BUNDLED_ROSTER.pools.reel),
+        bundled: bundle(
+          BUNDLED_ROSTER.pools.reel,
+          (a) => a.name,
+          (a) => a.url,
+        ),
       },
       oracle: {
         kind: "pool",
         hint: "The agent operator's backdrop. The first image wins.",
         bounds: FULL_ART,
+        aspect: 16 / 9,
+        // The one ladder whose winner can live in ANOTHER section: the `oracle` SEAT pin (a character
+        // bound into the backdrop) outranks this folder entirely, and the card says so with a pointer
+        // rather than painting a phantom (§2.4).
+        active: activeOraclePool,
         // EMPTY, and derived that way rather than asserted: the roster's oracle pool is empty on purpose
         // because the bundled backdrop is SCENE art addressed by no name — it is the last rung of
         // `oracleArt`'s ladder, not a library entry.
-        bundled: names(BUNDLED_ROSTER.pools.oracle),
+        bundled: bundle(
+          BUNDLED_ROSTER.pools.oracle,
+          (a) => a.name,
+          (a) => a.url,
+        ),
       },
     },
     // The §5.2 pins that survived the role re-rule. Three of them bind a CHARACTER into a role — a
@@ -264,9 +353,26 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         label: "Fleet backdrop",
         from: "characters",
         hint: "Unpinned, the fleet uses your Shared art background — then the bundled scene.",
+        seat: true,
+        active: activeSeat("wallpaper"),
       },
-      { key: "hero", label: "Hero slide", from: "characters" },
-      { key: "oracle", label: "Operator backdrop", from: "characters" },
+      {
+        key: "hero",
+        label: "Hero slide",
+        from: "characters",
+        seat: true,
+        // Its own pin, else the WALLPAPER's (`heroArt` falls through to the whole backdrop ladder):
+        // the hero slide and the fleet backdrop resolving to two different pictures is the
+        // disagreement §5.3's one-resolver ruling exists to prevent, so the seat says so too.
+        active: activeSeat("hero", "wallpaper"),
+      },
+      {
+        key: "oracle",
+        label: "Operator backdrop",
+        from: "characters",
+        seat: true,
+        active: activeSeat("oracle"),
+      },
       // `bundled` mirrors the cutout-bearing entries of `defaultRoster()` (themes/gacha/roster.ts) — a
       // roster test fails if the two ever drift.
       // Its bundled option is the `reel` ROLE's own list above (D65 retired the per-slot copy).
@@ -285,14 +391,22 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         kind: "pool",
         hint: "The rig cards and the host sheet, dealt to machines in this order — your own rig first.",
         bounds: FULL_ART,
+        aspect: 1.18,
+        active: activeRigs,
         // The bundled rig pool, addressed by ASSET KEY: `present()` names position i's rig
         // `RIG_KEYS[i % 6]` and the card paints `assets[key]` when the owner has dropped none.
-        bundled: RIG_KEYS,
+        bundled: bundle(
+          RIG_KEYS,
+          (k) => k,
+          (k) => FRONTIER_ART.rigs[RIG_KEYS.indexOf(k)],
+        ),
       },
       hero: {
         kind: "pool",
         hint: "The badlands map cover. The first image wins.",
         bounds: FULL_ART,
+        aspect: 16 / 9,
+        active: activeHero,
         // EMPTY: `ART.hero` is the ladder's last rung, a bare URL no pin and no key addresses — the same
         // rule as gacha's oracle. No id is invented for it.
         bundled: [],
@@ -305,18 +419,33 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         bounds: LAYER_ART,
         // One bundled layer per KEY — the ids ARE `STACK_KEYS`, which is why a partial drop composites
         // owner over bundled instead of blanking the other two.
-        bundled: STACK_KEYS,
+        bundled: bundle(
+          STACK_KEYS,
+          (k) => k,
+          (k) => STACK_ART[k],
+        ),
+        activeForKey: activeStackLayer,
+        // The ROLE's own shape is square — i.e. "unknown", the field's answer when there is no single
+        // one: the three layers are three very different boxes and each declares its own below. It is
+        // what the Unassigned bucket (a file matching no layer) frames its tiles in.
+        aspect: 1,
         keys: [
           // The aspect ratios are the bundled art's own, and the boxes they are painted into agree
           // with them (frontier.css `.fr-rigstack .cube/.mid/.base`).
-          { key: "cube", hint: "the floating cube — roughly square (bundled 353×364)" },
+          {
+            key: "cube",
+            hint: "the floating cube — roughly square (bundled 353×364)",
+            aspect: 353 / 364,
+          },
           {
             key: "platform-mid",
             hint: "the small slab under it — wide and flat, about 5:1 (bundled 222×45)",
+            aspect: 222 / 45,
           },
           {
             key: "platform-base",
             hint: "the ground slab — widest and flattest, about 6:1 (bundled 558×94)",
+            aspect: 558 / 94,
           },
         ],
       },
@@ -353,6 +482,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         kind: "named",
         keySource: "services",
         asset: "icon",
+        aspect: 1,
+        activeForKey: activeNamedKey,
         hint: "One file per service, named after its KIND (the `kind:` field of a machine's service) — or after its NAME when it declares no kind. Services that share a kind share one icon. A service you drop nothing for keeps today's icon-less row.",
         bounds: ICON_ART,
       },
@@ -363,6 +494,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         kind: "named",
         keySource: "services",
         asset: "banner",
+        aspect: 1000 / 300,
+        activeForKey: activeNamedKey,
         // Same keys as the icons above, deliberately: one identity per service, two pictures of it.
         hint: "The wide art behind a service's row, named exactly like its icon above (KIND, else NAME). Wide and short — it is cropped to the row and dimmed under the text. A service you drop nothing for keeps whatever that theme already paints behind it.",
         bounds: BANNER_ART,
@@ -374,6 +507,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         kind: "named",
         keySource: "hosts",
         asset: "picture",
+        aspect: 16 / 9,
+        activeForKey: activeNamedKey,
         hint: "One picture per MACHINE, named after it. Themes that adopt it paint it faded behind that machine's detail sheet. Renaming a machine leaves its old file unmatched here — rename the file to match.",
         bounds: FULL_ART,
       },
@@ -388,6 +523,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // the copy as a promise the app was breaking. The truth now has two halves and the hint says
         // both: the shared LAYER is what a scenery theme declines to mount, and that theme may still use
         // the picture on its own backdrop, under its own switch.
+        aspect: 9 / 16,
+        active: activeKitPool("background"),
         hint: "A shared background for the whole app. The first image wins (or pin one below), and the Appearance switch turns off the shared layer. A theme with scenery of its own paints this picture on its own backdrop instead, under its own switch.",
         bounds: FULL_ART,
       },
@@ -400,6 +537,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // transparency is read and every theme tints the result with its own accent. Said plainly in the
         // hint because it is the one thing an owner cannot discover by looking at the file — a fully
         // opaque photo drops in happily and paints a solid accent-coloured rectangle.
+        aspect: 1,
+        active: activeKitPool("brand"),
         hint: "Your own mark beside the app title. A transparent PNG or WebP — only the SHAPE is used, and each theme colours it with its own accent, so a flat silhouette works best. The first image wins (or pin one below).",
         bounds: ICON_ART,
       },
@@ -429,4 +568,193 @@ export function applicableNs(
 ): string[] {
   const linked = def?.media?.ns;
   return Object.keys(rows).filter((ns) => ns === linked || rows[ns].alwaysOn === true);
+}
+
+// ── SECTIONS (D65 / MEDIA_MANAGER_PLAN §2.1 + §6.1) ──────────────────────────────────────────────
+//
+// A SECTION is one art DESTINATION: one card in Conf, one full-screen gallery behind it. The two
+// kinds the plan names are ONE UI driven by a capability descriptor (council M1 — the difference is
+// data, never an implicit branch):
+//
+//   · LIBRARY-BACKED  — a role folder (or one KEY of a named role). Upload · reorder · set-active ·
+//     In-use · delete.
+//   · PIN-BACKED SEAT — a read-only VIEW over another role's library whose one write is the pin. The
+//     tile action reads "Use here"; there is no upload, no reorder, no delete, no In-use.
+//
+// The card count is the H5 refinement, OWNER-RATIFIED: pool roles and STATIC named keys get their own
+// card; a role whose keys come from live DATA (kit's services/machines) gets ONE role-family card
+// carrying the key list, because a fleet of twelve services must not put twelve cards in Conf.
+
+/** What ONE section can DO — the capability descriptor the generic gallery reads instead of asking
+ *  which kind of section it is rendering. */
+export interface MediaCaps {
+  /** ↑/↓ and move-to-top/bottom. FALSE where order decides nothing (defect #11): a named key is
+   *  answered by ONE file, and a seat is a view. */
+  reorder: boolean;
+  /** How "this one, please" is written: `order` = move-to-front (the list order IS the priority);
+   *  `pin` = write `slots[pin]` ("Use here", and the same for a pool whose own first pick has a pin
+   *  above it); `none` = nothing to activate (the Unassigned bucket paints nowhere). */
+  activate: "order" | "pin" | "none";
+  hidden: boolean;
+  remove: boolean;
+  upload: boolean;
+}
+
+/** One art destination, resolved from the registry + the server's role list. */
+export interface MediaSection {
+  /** Stable and unique per namespace — the modal's key, and what `overriddenBy` points at. */
+  id: string;
+  ns: string;
+  /** The role folder this section's LIBRARY is (a seat's is its `from` role). */
+  role: string;
+  kind: "pool" | "key" | "family" | "seat" | "unassigned";
+  /** The card's heading. Role sections keep the FOLDER's own name (the owner-facing contract of a
+   *  namespace, spelled out beside it); a key section is titled by its key; a seat by its label. */
+  title: string;
+  hint?: string;
+  /** The named-role key this section is scoped to (`kind: "key"`). */
+  key?: string;
+  /** The live source a family card's key rows come from (`kind: "family"`, and the UNASSIGNED bucket
+   *  of a derived role — which cannot know what "assigned" means until that list arrives). */
+  keySource?: MediaKeySource;
+  /** The DECLARED keys of a static-key role — what the unassigned bucket subtracts. */
+  keys?: readonly string[];
+  /** What ONE file of this role IS, as a bare noun — the word the copy composes with. */
+  asset?: string;
+  /** The `slots` key this section's activation writes (a seat, or a pool with an in-role pin). */
+  pin?: string;
+  /** The role's registry row — bounds, bundled ids, the static key list. */
+  def: MediaRoleDef;
+  aspect?: number;
+  bounds: MediaBounds;
+  caps: MediaCaps;
+  active?: ActiveResolver;
+}
+
+/** A role the SERVER lists and this registry does not describe. It still gets a gallery — the server
+ *  is the authority on which roles exist — it just carries no hint, no bounds policy and no ladder. */
+const UNDESCRIBED: MediaRoleDef = { kind: "pool", bundled: [], bounds: FULL_ART };
+
+const LIBRARY_CAPS: MediaCaps = {
+  reorder: true,
+  activate: "order",
+  hidden: true,
+  remove: true,
+  upload: true,
+};
+
+/** The UNASSIGNED bucket of a `named` role (§6.1): the files that bound NO key — a rename's aftermath,
+ *  a typo, art for a service that is gone. Without it they are invisible in a per-key gallery and
+ *  therefore undeletable, which is the one state a manager must not be able to produce.
+ *
+ *  Emitted for BOTH key sources (a static-key role has typos too) and shown only when it holds
+ *  something — an empty bucket is a card about nothing. Nothing here is ACTIVATABLE: a file bound to no
+ *  key paints nowhere, so the honest capability set is "look, hide, delete". */
+function unassigned(
+  ns: string,
+  role: string,
+  common: Omit<MediaSection, "id" | "kind" | "title" | "caps">,
+  keys: { keys?: readonly string[]; keySource?: MediaKeySource },
+): MediaSection {
+  return {
+    ...common,
+    ...keys,
+    id: `${ns}:${role}#`,
+    kind: "unassigned",
+    title: "Unassigned",
+    hint: "Files here match no name this role uses, so nothing paints them. Rename one to a key above — or delete it.",
+    caps: { reorder: false, activate: "none", hidden: true, remove: true, upload: false },
+  };
+}
+
+/** Every destination one namespace offers, in the order the Conf tab shows them: the role folders
+ *  first (the server's own list — a role the registry never heard of still lists), then the seats.
+ *
+ *  `roles` comes from the INDEX rather than from `def.roles` for the reason the gallery has always
+ *  read it that way: the server is the authority on which folders exist. */
+export function mediaSections(
+  ns: string,
+  def: MediaNsDef,
+  roles: readonly string[],
+): MediaSection[] {
+  const out: MediaSection[] = [];
+  for (const role of roles) {
+    const row = def.roles[role] ?? UNDESCRIBED;
+    const common = {
+      ns,
+      role,
+      def: row,
+      hint: row.hint,
+      asset: row.asset,
+      bounds: row.bounds,
+      aspect: row.aspect,
+    };
+    if (row.kind === "named" && row.keys !== undefined) {
+      // A STATIC key list: each layer is its own destination, with its own shape and its own ladder.
+      for (const k of row.keys) {
+        out.push({
+          ...common,
+          id: `${ns}:${role}#${k.key}`,
+          kind: "key",
+          title: k.key,
+          hint: k.hint,
+          key: k.key,
+          aspect: k.aspect ?? row.aspect,
+          // Order buys nothing here but the duplicate tie-break, so the ↑/↓ pair is hidden (#11) —
+          // "Set as active" is how a shadowed duplicate wins its key, and that is move-to-front.
+          caps: { ...LIBRARY_CAPS, reorder: false },
+          active: row.activeForKey?.(k.key),
+        });
+      }
+      out.push(unassigned(ns, role, common, { keys: row.keys.map((k) => k.key) }));
+      continue;
+    }
+    if (row.kind === "named" && row.keySource !== undefined) {
+      out.push({
+        ...common,
+        id: `${ns}:${role}`,
+        kind: "family",
+        title: role,
+        keySource: row.keySource,
+        caps: { ...LIBRARY_CAPS, reorder: false },
+      });
+      out.push(unassigned(ns, role, common, { keySource: row.keySource }));
+      continue;
+    }
+    // A POOL. Its own `slots` pin (one that is not a seat) is the top rung of its ladder, so "this
+    // one, please" is written as the PIN — move-to-front would leave a pin above it silently winning.
+    const pin = def.slots?.find((s) => s.from === role && s.seat !== true);
+    out.push({
+      ...common,
+      id: `${ns}:${role}`,
+      kind: "pool",
+      title: role,
+      pin: pin?.key,
+      caps: { ...LIBRARY_CAPS, activate: pin ? "pin" : "order" },
+      active: row.active,
+    });
+  }
+  for (const slot of def.slots ?? []) {
+    if (slot.seat !== true) continue;
+    const row = def.roles[slot.from];
+    // A seat over a role the server does not list has no library to view — skip it rather than open
+    // an empty gallery on a folder that is not there.
+    if (row === undefined || !roles.includes(slot.from)) continue;
+    out.push({
+      id: `${ns}:@${slot.key}`,
+      ns,
+      role: slot.from,
+      kind: "seat",
+      title: slot.label,
+      hint: slot.hint,
+      asset: row.asset,
+      def: row,
+      bounds: row.bounds,
+      aspect: row.aspect,
+      pin: slot.key,
+      caps: { reorder: false, activate: "pin", hidden: false, remove: false, upload: false },
+      active: slot.active,
+    });
+  }
+  return out;
 }

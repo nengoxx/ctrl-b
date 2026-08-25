@@ -1,51 +1,125 @@
 import { expect, test } from "./fixtures";
 
-// The owner-media gallery ROUND TRIP, driven in the real built app (D53 M1a's gate; the group id became
-// per-NAMESPACE at M1b, when the Conf tab started rendering one gallery per applicable namespace). The vitest suite
-// (tests/components/mediaGallery.test.tsx) already pins the patch SHAPE against a mocked api client; what
-// only a browser run can prove is the whole chain: the Conf group renders under a media-bearing theme, a
-// reorder leaves through `PUT /api/settings` as a `media.<ns>` patch — the D53 §4 re-home, never the old
-// `themes.<ns>` — and the server's answer is what the gallery shows afterwards, including after a reload.
+// The owner-media LIBRARY round trip (D65 / MEDIA_MANAGER_PLAN §6), driven in the real built app. The
+// vitest suite (tests/components/mediaGallery.test.tsx) pins every patch SHAPE against a mocked api
+// client; what only a browser run can prove is the whole chain — the card opens a real trapped dialog,
+// a gesture leaves through `PUT /api/settings` as a `media.namespaces.<ns>` patch, a delete leaves
+// through D65's typed `DELETE` verb first, the SERVER's answer is what repaints, and the phone's BACK
+// gesture closes the overlay instead of leaving the app.
 //
-// The mock is STATEFUL here (the appearance-write precedent in fixtures.ts): the captured order is applied
-// to the index this handler serves, because the gallery's next write is computed from the listing, so a
-// static index would make the reload assertion vacuous.
+// The mock is STATEFUL (the appearance-write precedent in fixtures.ts) and COLLATES like the server:
+// the owner's `files` entries in order, then unlisted files on disk, then the role's unlisted bundled
+// ids as the fallback tier (`library-v1`). A static index would make every repaint assertion vacuous —
+// and the fallback tier is exactly what proves a gesture did NOT sweep the bundled art into the deal.
 
-const file = (name: string) => ({
-  name: name.replace(/\.webp$/, ""),
-  file: name,
-  url: `/api/media/gacha/files/characters/${name}`,
+/** The bundled cast the real registry ships for `gacha/characters`. */
+const BUNDLED = ["pegasus", "atlas", "3", "4", "lyra"];
+
+interface Entry {
+  name?: string;
+  bundled?: string;
+  hidden?: boolean;
+}
+
+const diskRow = (filename: string, listed: boolean, hidden: boolean) => ({
+  name: filename.replace(/\.webp$/, ""),
+  file: filename,
+  url: `/api/media/gacha/files/characters/${filename}`,
   format: "webp",
   size_bytes: 88_000,
-  revision: `1:88000:${name}`,
+  revision: `1:88000:${filename}`,
   width: 640,
   height: 854,
   unusable: false,
   unusable_reason: null as string | null,
+  listed,
+  hidden,
 });
 
-const SAVE_ECHO = {
-  settings: { notifications: {} },
+const bundledRow = (id: string, listed: boolean, hidden: boolean) => ({
+  name: id,
+  file: "",
+  url: "",
+  bundled: id,
+  format: null,
+  size_bytes: 0,
+  revision: "",
+  width: null,
+  height: null,
+  unusable: false,
+  unusable_reason: null as string | null,
+  listed,
+  hidden,
+});
+
+/** `core/media.py#list_role`, in miniature — the one rule both ends name `library-v1`. */
+function collate(files: Entry[], onDisk: string[]) {
+  const rows: (ReturnType<typeof diskRow> | ReturnType<typeof bundledRow>)[] = [];
+  const seenFiles = new Set<string>();
+  const seenIds = new Set<string>();
+  for (const item of files) {
+    if (item.bundled != null) {
+      if (BUNDLED.includes(item.bundled) && !seenIds.has(item.bundled)) {
+        seenIds.add(item.bundled);
+        rows.push(bundledRow(item.bundled, true, item.hidden === true));
+      }
+      continue;
+    }
+    if (item.name != null && onDisk.includes(item.name) && !seenFiles.has(item.name)) {
+      seenFiles.add(item.name);
+      rows.push(diskRow(item.name, true, item.hidden === true));
+    }
+  }
+  for (const f of [...onDisk].sort()) if (!seenFiles.has(f)) rows.push(diskRow(f, false, false));
+  for (const id of BUNDLED) if (!seenIds.has(id)) rows.push(bundledRow(id, false, false));
+  return rows;
+}
+
+/** The PUT's answer, as the real endpoint gives it: the whole masked config back. It matters that the
+ *  ECHO carries the media block — `useSaveSettings` adopts it as the settings cache, and the gallery's
+ *  next write is a read-modify-write over exactly that. An echo that dropped it would let the next
+ *  gesture rebuild the list from the index alone and silently lose every per-item field. */
+const saveEcho = (files: Entry[]) => ({
+  settings: {
+    notifications: {},
+    media: { namespaces: { gacha: { roles: { characters: { files } } } } },
+  },
   restart_required: [] as string[],
   warnings: [] as string[],
   providers_rev: "r1",
-};
+});
 
-test("Conf · Theme art — a reorder writes `media.<ns>` and survives a reload", async ({ page }) => {
-  let order = ["a.webp", "b.webp"];
-  const puts: Record<string, unknown>[] = [];
+/** Focus must never be left on `<body>`: the trap's Escape and Tab both ride keydown from whatever has
+ *  focus, so an orphaned focus is a dialog the keyboard cannot leave. The gallery unmounts the control
+ *  focus is on twice in an ordinary flow (leaving the detail panel; a delete taking its tile with it),
+ *  which is exactly when it has to re-land. */
+async function expectFocusTrapped(page: import("@playwright/test").Page) {
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.closest('[role="dialog"]') != null))
+    .toBe(true);
+}
 
+/** Boot straight into Conf, under gacha, with the media group already open. */
+async function bootConf(page: import("@playwright/test").Page) {
   await page.addInitScript(() => {
     localStorage.setItem(
       "ctrlb.ui",
       JSON.stringify({ theme: "gacha", mode: "dark", accent: "arcade", tab: "conf", v: 1 }),
     );
-    // The gallery's Conf group ships collapsed; the persisted collapse blob opens it before first paint.
     localStorage.setItem("ctrlb.collapsed", JSON.stringify({ "media-gacha": false }));
   });
+}
 
-  // Registered AFTER the baseline mock, so it wins — and everything it does not own is handed back with
-  // `route.fallback()` rather than re-mocked here.
+test("Conf · Theme art — the library round trip: activate · reorder · In use · delete", async ({
+  page,
+}) => {
+  let onDisk = ["a.webp", "b.webp"];
+  let files: Entry[] = [];
+  const puts: Record<string, unknown>[] = [];
+  const deletes: string[] = [];
+
+  await bootConf(page);
+  // Registered AFTER the baseline mock, so it wins; everything it does not own falls through.
   await page.route("**/api/**", async (route) => {
     const req = route.request();
     const path = new URL(req.url()).pathname;
@@ -55,46 +129,118 @@ test("Conf · Theme art — a reorder writes `media.<ns>` and survives a reload"
         contentType: "application/json",
         body: JSON.stringify({
           ns: "gacha",
-          collation: "casefold-natural",
-          roles: { characters: order.map(file), banner: [], reel: [], oracle: [] },
+          collation: "library-v1",
+          roles: { characters: collate(files, onDisk), banner: [], reel: [], oracle: [] },
           slots: {},
         }),
       });
     }
+    if (req.method() === "DELETE" && path.includes("/api/media/gacha/files/")) {
+      deletes.push(path);
+      onDisk = onDisk.filter((f) => !path.endsWith(f));
+      return route.fulfill({ status: 204, body: "" });
+    }
     if (req.method() === "PUT" && path.endsWith("/api/settings")) {
       const body = req.postDataJSON() as {
-        media?: { gacha?: { roles?: { characters?: { order?: string[] } } } };
+        media?: { namespaces?: { gacha?: { roles?: { characters?: { files?: Entry[] } } } } };
       };
       puts.push(body);
-      const next = body.media?.gacha?.roles?.characters?.order;
-      if (next) order = next;
+      const next = body.media?.namespaces?.gacha?.roles?.characters?.files;
+      if (next) files = next;
       return route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(SAVE_ECHO),
+        body: JSON.stringify(saveEcho(files)),
       });
     }
     return route.fallback();
   });
 
   await page.goto("/");
-  const art = page.locator("#media-gacha");
-  await expect(art.locator(".mgal-item .name").first()).toHaveText("a.webp");
+  const group = page.locator("#media-gacha");
+  const card = group.getByRole("button", { name: "Open the characters gallery", exact: true });
 
-  await art.getByRole("button", { name: "Move b.webp up" }).click();
+  // ① the ENTRY CARD paints what the §2.4 resolver says is live — the owner's two files, dealt — and
+  //    the five bundled entries sit in the library rather than in the deal.
+  await expect(card).toContainText("7 images");
+  await expect(card).toContainText("dealt to machines in this order");
+  await expect(card.locator("img")).toHaveCount(2);
 
-  // ① the wire: the ordinary settings PUT, carrying the WHOLE role order under `media.gacha`
+  await card.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("status")).toContainText("7 images");
+
+  // ② SET AS ACTIVE = move-to-front, and the write sweeps only the DISK rows (§2.3 ③).
+  await dialog.getByRole("button", { name: "b.webp", exact: true }).click();
+  await dialog.getByRole("button", { name: "Set as active", exact: true }).click();
   await expect.poll(() => puts.length).toBe(1);
   expect(puts[0]).toEqual({
-    media: { gacha: { roles: { characters: { order: ["b.webp", "a.webp"] } } } },
+    media: {
+      namespaces: {
+        gacha: { roles: { characters: { files: [{ name: "b.webp" }, { name: "a.webp" }] } } },
+      },
+    },
   });
-  expect(puts[0]).not.toHaveProperty("themes");
 
-  // ② the round trip: the gallery repaints from the SERVER's listing, not from a local optimistic order
-  await expect(art.locator(".mgal-item .name")).toHaveText(["b.webp", "a.webp"]);
+  // …and the grid repaints from the SERVER's listing, not from a local optimistic order.
+  await dialog.getByRole("button", { name: "‹ All images", exact: true }).click();
+  await expect(dialog.locator(".mgal-tile").first()).toHaveAttribute("aria-label", "b.webp");
 
-  // ③ …and the persisted state is what a fresh boot reads back
-  await page.reload();
-  await expect(page.locator("#media-gacha .mgal-item .name")).toHaveText(["b.webp", "a.webp"]);
-  expect(puts).toHaveLength(1); // a reload is not a write
+  // ③ the ↑/↓ pair — the WCAG floor S5's drag never replaces.
+  await dialog.getByRole("button", { name: "a.webp", exact: true }).click();
+  await dialog.getByRole("button", { name: "↑ Move up", exact: true }).click();
+  await expect.poll(() => puts.length).toBe(2);
+  expect(puts[1]).toMatchObject({
+    media: {
+      namespaces: {
+        gacha: { roles: { characters: { files: [{ name: "a.webp" }, { name: "b.webp" }] } } },
+      },
+    },
+  });
+
+  // ④ the In-use switch writes `hidden`, and the entry leaves the deal while staying in the library.
+  await dialog.getByRole("switch", { name: /In use — a.webp/ }).click();
+  await expect.poll(() => puts.length).toBe(3);
+  expect(files).toEqual([{ name: "a.webp", hidden: true }, { name: "b.webp" }]);
+  await dialog.getByRole("button", { name: "‹ All images", exact: true }).click();
+  await expect(dialog.getByRole("status")).toContainText("7 images"); // still listed…
+  await expectFocusTrapped(page);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(card.locator("img")).toHaveCount(1); // …but only one is dealt
+
+  // ⑤ DELETE — the bytes leave through D65's typed verb FIRST, then ONE config write.
+  await card.click();
+  await dialog.getByRole("button", { name: "b.webp", exact: true }).click();
+  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).last().click();
+  await expect.poll(() => deletes.length).toBe(1);
+  expect(deletes[0]).toBe("/api/media/gacha/files/characters/b.webp");
+  await expect.poll(() => puts.length).toBe(4);
+  expect(files).toEqual([{ name: "a.webp", hidden: true }]);
+
+  // ⑥ and with the owner's only usable file switched off, the BUNDLED tier is what the fleet deals —
+  //    the fallback-tier semantics that make the whole model paint-parity-free.
+  await expectFocusTrapped(page);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(card).toContainText("dealt to machines");
+  await expect(card.locator("img")).toHaveCount(4); // the collage of the bundled cast, capped at four
+});
+
+test("Conf · Theme art — the phone's BACK gesture closes the gallery, not the app", async ({
+  page,
+}) => {
+  // The bounded half of a navigation model (§6.2): one history entry while the overlay is open, and the
+  // `popstate` handler is the only closer. Without it Back would leave the PWA outright.
+  await bootConf(page);
+  await page.goto("/");
+  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  await card.click();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+
+  await page.goBack();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Still in the app, on the tab we opened from — the entry that was spent was OURS.
+  await expect(card).toBeVisible();
 });

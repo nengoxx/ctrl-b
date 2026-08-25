@@ -1,29 +1,31 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
 import { MEDIA_NS } from "../../src/theme-engine/mediaRegistry";
 
-// The owner-media gallery (D52/G5, GACHA_PLAN §5.4) — the Conf half of the read-only media surface.
+// The owner-media gallery (D65 / MEDIA_MANAGER_PLAN §6) — the Conf half of the media surface, rebuilt
+// as a LIBRARY manager: one card per art destination, a full-screen gallery behind each, and the item
+// detail panel where every action lives.
 //
 // The api client is mocked BELOW the hooks (the machineEditorDiscoverVpn precedent), so the real
-// `useMediaIndex` + `useSaveSettings` run against a real QueryClient and the assertions are on the WIRE:
-// what the gallery reads, and exactly what patch it writes. That is the contract that matters — the
-// config shape is what the backend validates and what the index re-reads.
+// `useMediaGalleryIndex` + `useSaveSettings` run against a real QueryClient and the assertions are on
+// the WIRE: what the gallery reads, and exactly what patch it writes. That is the contract that
+// matters — the config shape is what the backend validates and what the index re-reads.
 //
 // The load-bearing claims:
-//  · reordering writes the WHOLE role order (the config field is the order itself, not a diff);
-//  · a pin writes `media.<ns>.slots.<key>`, and clearing one writes null — never a stray "";
-//  · nothing here can create, rename or delete a file (§5.4 ruled option (b): there is no write API);
-//  · the advisories are SHOWN — a file the theme cannot use must be visible as such. Since D53 M1b the
-//    gallery DERIVES them: the server's `unusable_reason` for what only it can know (it read the bytes),
-//    and the size/dimension ones here, from the file's numbers against the registry row's per-role bounds.
+//  · a card paints what the section's §2.4 RESOLVER says is live, in the resolver's own mode word —
+//    never a re-derivation, and never a phantom when another section holds the winner;
+//  · a gesture writes the config the plan's transforms produce, tier rule included;
+//  · the modal is the house dialog (trapped, Escape-closes) and the Android Back gesture spends
+//    exactly one history entry;
+//  · the a11y shape of §6.5: tiles are plain buttons carrying their membership in a DESCRIPTION,
+//    `aria-checked` belongs to the In-use switch alone, `aria-current` to a genuinely current entry.
 //
-// The row under test is the REAL `MEDIA_NS.gacha`, not a local fixture: the parity obligation on the M1b
-// lift is that the same files show the same badges as when the server derived them, which is a claim about
-// the bounds that actually ship.
+// The rows under test are the REAL `MEDIA_NS` ones, not local fixtures: what the owner meets is the
+// registry that actually ships.
 
 const api = vi.hoisted(() => ({
   getJSON: vi.fn(),
@@ -33,16 +35,16 @@ const api = vi.hoisted(() => ({
   del: vi.fn(),
 }));
 vi.mock("../../src/api/client", () => api);
-vi.mock("../../src/store/toast", () => ({ pushToast: vi.fn() }));
-// `useSaveSettings` refreshes the composer's verb sets on success; both are network calls
-// this suite has no business making, and the api client above is already mocked — so this
-// only silences the two module-level fetchers.
+const toast = vi.hoisted(() => ({ pushToast: vi.fn() }));
+vi.mock("../../src/store/toast", () => toast);
+// `useSaveSettings` refreshes the composer's verb sets on success; both are network calls this suite
+// has no business making, and the api client above is already mocked.
 vi.mock("../../src/lib/composer", () => ({ loadProviders: vi.fn(), loadAgents: vi.fn() }));
 
 import { MediaGallery } from "../../src/components/MediaGallery";
 import { setUI } from "../../src/store/ui";
 
-const file = (name: string, role: string, over: Partial<MediaIndex["roles"][string][0]> = {}) => ({
+const file = (name: string, role: string, over: Partial<MediaFile> = {}): MediaFile => ({
   name,
   file: `${name}.webp`,
   url: `/api/media/gacha/files/${role}/${name}.webp`,
@@ -53,37 +55,78 @@ const file = (name: string, role: string, over: Partial<MediaIndex["roles"][stri
   height: 854,
   unusable: false,
   unusable_reason: null,
+  listed: false,
+  hidden: false,
   ...over,
 });
+
+/** A bundled row exactly as `core/media.py#bundled_row` emits one: the id in both name fields, no
+ *  file, no url, no probe facts — the client maps the id to its own hashed asset. */
+const bundledRow = (id: string, over: Partial<MediaFile> = {}): MediaFile => ({
+  name: id,
+  file: "",
+  url: "",
+  bundled: id,
+  format: null,
+  size_bytes: 0,
+  revision: "",
+  width: null,
+  height: null,
+  unusable: false,
+  unusable_reason: null,
+  listed: false,
+  hidden: false,
+  ...over,
+});
+
+/** The FALLBACK TIER the real server appends to every gacha role (§2.3 ③). */
+const cast = ["pegasus", "atlas", "3", "4", "lyra"].map((id) => bundledRow(id));
 
 function index(over: Partial<MediaIndex> = {}): MediaIndex {
   return {
     ns: "gacha",
     collation: "library-v1",
     roles: {
-      characters: [file("a", "characters"), file("b", "characters"), file("c", "characters")],
-      reel: [],
+      characters: [
+        file("a", "characters"),
+        file("b", "characters"),
+        file("c", "characters"),
+        ...cast,
+      ],
+      banner: [bundledRow("b2"), bundledRow("b3")],
+      reel: [bundledRow("lyra")],
+      oracle: [],
     },
     slots: {},
     ...over,
   };
 }
 
-function renderGallery(payload: MediaIndex = index()): ReturnType<typeof render> {
+function renderGallery(payload: MediaIndex = index(), ns = "gacha"): ReturnType<typeof render> {
   api.getJSON.mockResolvedValue(payload);
   const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const ui: ReactElement = (
     <QueryClientProvider client={qc}>
-      <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+      <MediaGallery ns={ns} def={MEDIA_NS[ns]} />
     </QueryClientProvider>
   );
   return render(ui);
 }
 
-/** The `media.namespaces.<ns>` block of the single PUT the gallery made (D65's fold). */
-function savedBlock(): Record<string, unknown> {
-  expect(api.putJSON).toHaveBeenCalledTimes(1);
-  const [url, body] = api.putJSON.mock.calls[0] as [
+/** Open one section's gallery and wait for the dialog. */
+async function openSection(name: string): Promise<HTMLElement> {
+  fireEvent.click(await screen.findByRole("button", { name: `Open the ${name} gallery` }));
+  return screen.findByRole("dialog");
+}
+
+/** Open one item's detail panel inside an already-open gallery. */
+function openItem(dialog: HTMLElement, name: string): void {
+  fireEvent.click(within(dialog).getByRole("button", { name }));
+}
+
+/** The `media.namespaces.gacha` block of the single PUT the gallery made (D65's fold). */
+function savedBlock(at = 0): Record<string, unknown> {
+  const [url, body] = api.putJSON.mock.calls[at] as [
     string,
     { media: { namespaces: Record<string, unknown> } },
   ];
@@ -91,11 +134,15 @@ function savedBlock(): Record<string, unknown> {
   return body.media.namespaces.gacha as Record<string, unknown>;
 }
 
+const filesOf = (block: Record<string, unknown>, role = "characters") =>
+  (block.roles as Record<string, { files: unknown[] }>)[role].files;
+
 beforeEach(() => {
   api.getJSON.mockReset();
-  // This component only ever renders INSIDE the Conf tab, and its reorder is a read-modify-write over
-  // the settings doc — a Conf-SCOPED query (`useSettings`, through `getJSONWithHeader`). So the suite
-  // runs in the tab the component lives in; a test that wants the snapshot missing says so itself.
+  api.del.mockReset().mockResolvedValue(undefined);
+  toast.pushToast.mockReset();
+  // This component only ever renders INSIDE the Conf tab, and its writes are read-modify-writes over
+  // the settings doc — a Conf-SCOPED query. So the suite runs in the tab the component lives in.
   setUI({ tab: "conf" });
   api.getJSONWithHeader.mockReset().mockResolvedValue({ data: {}, header: "r1" });
   api.putJSON.mockReset().mockResolvedValue({
@@ -110,437 +157,621 @@ afterEach(() => {
   setUI({ tab: "fleet" });
 });
 
-describe("MediaGallery", () => {
-  it("lists each role's files with their metadata, and names the folder to copy into", async () => {
+describe("the entry cards (§6.1)", () => {
+  it("one card per DECLARED destination — role folders, then the pin-backed seats", async () => {
+    renderGallery();
+    await screen.findByRole("button", { name: "Open the characters gallery" });
+    for (const name of ["characters", "banner", "reel", "oracle"]) {
+      expect(screen.getByRole("button", { name: `Open the ${name} gallery` })).toBeTruthy();
+    }
+    // The three gacha SEATS: a character bound into a surface the cast does not own. `reel_figure` is
+    // NOT one — it pins the reel role's own first pick, so it belongs to that role's card.
+    for (const label of ["Fleet backdrop", "Hero slide", "Operator backdrop"]) {
+      expect(screen.getByRole("button", { name: `Open the ${label} gallery` })).toBeTruthy();
+    }
+    expect(screen.queryByRole("button", { name: /Transition figure/ })).toBeNull();
+  });
+
+  it("paints the ACTIVE art the resolver names, with its mode word — a collage for a dealt set", async () => {
     const { container } = renderGallery();
-    await screen.findByText("a.webp");
-    expect([...container.querySelectorAll(".mgal-item .name")].map((n) => n.textContent)).toEqual([
-      "a.webp",
-      "b.webp",
-      "c.webp",
+    await screen.findByRole("button", { name: "Open the characters gallery" });
+    const card = screen.getByRole("button", { name: "Open the characters gallery" });
+    // The cast is DEALT: every owner file is in use, the bundled tier is not, and the word says how.
+    expect(card.textContent).toContain("dealt to machines in this order");
+    const art = [...card.querySelectorAll("img")].map((i) => i.getAttribute("src"));
+    expect(art).toEqual([
+      "/api/media/gacha/files/characters/a.webp?rev=1%3A88000",
+      "/api/media/gacha/files/characters/b.webp?rev=1%3A88000",
+      "/api/media/gacha/files/characters/c.webp?rev=1%3A88000",
     ]);
-    expect(container.querySelector(".mgal-item .dim")!.textContent).toBe("640×854 · 88 KB");
-    // the thumbnail is the SAME mount url the theme paints from — the gallery cannot flatter a drop
-    expect(container.querySelector<HTMLImageElement>(".mgal-thumb")!.getAttribute("src")).toBe(
-      "/api/media/gacha/files/characters/a.webp",
+    expect(container.querySelector(".mgal-card-art.collage")).toBeTruthy();
+  });
+
+  it("…and on a fresh install the same resolver paints the BUNDLED tier instead", async () => {
+    renderGallery(
+      index({
+        roles: { characters: cast, banner: [], reel: [], oracle: [] },
+      }),
     );
-    // an empty role says what to do rather than rendering nothing
-    expect(screen.getByText(/Copy \.png\/\.jpg\/\.webp files into this folder/)).toBeTruthy();
-    expect(screen.getByText("media/gacha/reel/")).toBeTruthy();
+    const card = await screen.findByRole("button", { name: "Open the characters gallery" });
+    // The fallback tier IS what the theme deals when the owner has dropped nothing — the gallery says
+    // exactly that rather than "nothing in use", because the fleet is not blank.
+    expect(card.textContent).toContain("5 images");
+    expect(card.textContent).toContain("dealt to machines");
+    expect(card.querySelectorAll("img")).toHaveLength(4); // the collage caps at four
   });
 
-  it("shows the registry's per-role hint — including the reel cutout's missing-glow expectation", async () => {
+  it("a first-wins role names ONE in use; an empty one offers to add", async () => {
     renderGallery();
-    await screen.findByText("a.webp");
-    expect(screen.getByText(/The cutout that rides the tab transition/)).toBeTruthy();
+    const reel = await screen.findByRole("button", { name: "Open the reel gallery" });
+    expect(reel.textContent).toContain("1 in use");
+    const oracle = screen.getByRole("button", { name: "Open the oracle gallery" });
+    expect(oracle.textContent).toContain("Add an image");
   });
 
-  it("derives the four advisories — the server's verdict plus the role's bounds — and marks the bad row", async () => {
-    const { container } = renderGallery(
+  it("the warning chip names what the owner has to act on, once", async () => {
+    renderGallery(
       index({
         roles: {
           characters: [
-            file("liar", "characters", {
-              unusable: true,
-              unusable_reason: "format-mismatch",
-              format: "jpeg",
-            }),
-            file("stub", "characters", {
-              unusable: true,
-              unusable_reason: "unreadable",
-              format: null,
-            }),
-            // Facts only: 3.6 MB and 12.8 MP, both past the gacha row's full-art bounds.
-            file("huge", "characters", { size_bytes: 3_600_000, width: 3000, height: 4257 }),
+            file("liar", "characters", { unusable: true, unusable_reason: "format-mismatch" }),
+            file("ok", "characters"),
           ],
+          banner: [],
+          reel: [],
+          oracle: [],
         },
       }),
     );
-    await screen.findByText("liar.webp");
-    // The PROBED format rides the mismatch badge (§5's client-compares-format-to-extension line): the
-    // bytes are a jpeg however the name reads, which is the whole of what the owner has to act on.
-    expect(screen.getByText("wrong extension (jpeg)")).toBeTruthy();
-    // Defect #7: the server's `unreadable` also covers a READABLE format this surface does not serve
-    // (a GIF, a phone's HEIC), so the sentence names both causes rather than only corruption.
-    expect(screen.getByText("unreadable or unsupported format")).toBeTruthy();
-    expect(screen.getByText("large file")).toBeTruthy();
-    expect(screen.getByText("very large image")).toBeTruthy();
-    expect(container.querySelectorAll(".mgal-item.bad")).toHaveLength(2);
-    // …and the oversize one still shows its real numbers, because it is still usable
-    expect([...container.querySelectorAll(".mgal-item .dim")][2].textContent).toBe(
-      "3000×4257 · 3.6 MB",
-    );
+    const card = await screen.findByRole("button", { name: "Open the characters gallery" });
+    expect(card.textContent).toContain("1 will not paint");
   });
 
-  it("a file inside the role's bounds carries NO badge — the advisory is a ceiling, not a description", async () => {
-    const { container } = renderGallery(
+  it("a section OVERRIDDEN by a seat points at it instead of painting a phantom (§2.4)", async () => {
+    // The pin-beats-pool case: `oracleArt` reads the `oracle` SEAT before it ever looks at the oracle
+    // folder. The pool's own grid does not hold the winner, so the card must not mark one of its tiles.
+    renderGallery(
       index({
         roles: {
-          characters: [
-            file("ok", "characters", { size_bytes: 1_500_000, width: 2000, height: 2000 }),
-          ],
+          characters: [file("kira", "characters")],
+          banner: [],
+          reel: [],
+          oracle: [file("eye", "oracle")],
         },
+        slots: { oracle: "kira" },
       }),
     );
-    await screen.findByText("ok.webp");
-    expect(container.querySelectorAll(".mgal-item .badge")).toHaveLength(0);
+    const card = await screen.findByRole("button", { name: "Open the oracle gallery" });
+    expect(card.textContent).toContain("overridden");
+    expect(card.querySelectorAll("img")).toHaveLength(0); // no phantom
+    expect(screen.getByRole("button", { name: /Currently set by Operator backdrop/ })).toBeTruthy();
   });
 
-  it("moving a file writes the WHOLE role list through PUT /api/settings", async () => {
+  it("a SEAT offers only what its source LADDER can resolve — never a pick that falls through", async () => {
+    // The pin names an entry the theme looks up in the list it DEALS. On a fresh install that is the
+    // bundled cast; the moment the owner drops one file in, the cast is theirs — and offering the
+    // bundled names beside it would let them pick one the render silently ignores.
+    renderGallery(index({ roles: { characters: cast, banner: [], reel: [], oracle: [] } }));
+    let dialog = await openSection("Fleet backdrop");
+    expect(within(dialog).getByRole("button", { name: "pegasus (bundled)" })).toBeTruthy();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    cleanup();
+
     renderGallery();
-    await screen.findByText("a.webp");
-    fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
-    await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
-    // D65: the field is `files`, a list of per-item objects. A file with no persisted entry joins as
-    // a bare `{name}` — listing it is exactly what a reorder means.
-    expect(savedBlock()).toEqual({
-      roles: {
-        characters: {
-          files: [{ name: "a.webp" }, { name: "c.webp" }, { name: "b.webp" }],
-        },
-      },
-    });
+    dialog = await openSection("Fleet backdrop");
+    expect(within(dialog).getByRole("button", { name: "a.webp" })).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "pegasus (bundled)" })).toBeNull();
   });
 
-  it("a reorder PRESERVES each entry's own config fields (read-modify-write, not a rewrite)", async () => {
-    // D65: a `files` entry carries per-item state this surface neither shows nor understands — the
-    // binding `key`, the framing `focal`, the In-use `hidden` flag. Rebuilding the list from the index
-    // would silently drop all of it on the next ↑/↓ tap, which is a data-loss bug the owner would only
-    // notice as art that stopped being framed.
-    api.getJSONWithHeader.mockResolvedValue({
-      data: {
-        media: {
-          namespaces: {
-            gacha: {
-              roles: {
-                characters: {
-                  files: [
-                    { name: "a.webp", key: "hero", focal: { x: 0.4, y: 0.2, rev: "r9" } },
-                    { name: "b.webp", hidden: true },
-                  ],
-                },
-              },
-            },
-          },
+  it("a SEAT card says what is pinned, and offers the source role's library", async () => {
+    renderGallery(
+      index({
+        roles: {
+          characters: [file("kira", "characters"), file("nova", "characters")],
+          banner: [],
+          reel: [],
+          oracle: [],
         },
-      },
-      header: "r1",
+        slots: { wallpaper: "nova" },
+      }),
+    );
+    const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
+    expect(card.textContent).toContain("nova in use");
+    const dialog = await openSection("Fleet backdrop");
+    expect(within(dialog).getByRole("button", { name: "kira.webp" })).toBeTruthy();
+    // A seat is a VIEW: no upload row, and its detail offers only the pin.
+    expect(within(dialog).queryByText(/Add an image/)).toBeNull();
+  });
+});
+
+describe("the H5 role-family card (kit's derived keys)", () => {
+  const svcFile = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
+    ...file(name, "services"),
+    url: `/api/media/kit/files/services/${name}.png`,
+    file: `${name}.png`,
+    ...over,
+  });
+
+  function renderKit(files: MediaFile[], services: { name: string; kind?: string | null }[]) {
+    api.getJSON.mockImplementation((url: string) => {
+      if (url === "/api/services") return Promise.resolve(services);
+      if (url === "/api/hosts") return Promise.resolve([]);
+      return Promise.resolve({
+        ns: "kit",
+        collation: "library-v1",
+        roles: { services: files, "service-banners": [], hosts: [], background: [], brand: [] },
+        slots: {},
+      });
     });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="kit" def={MEDIA_NS.kit} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("ONE card for the whole family, with a row per KEY that opens that key's gallery", async () => {
+    // The owner-ratified refinement: twelve services must not put twelve cards in Conf.
+    renderKit([svcFile("jellyfin")], [{ name: "Media", kind: "jellyfin" }, { name: "Grafana" }]);
+    // Two roles share the SERVICES key source (icons and banners), so a key row is named by its key
+    // AND by what a file of that role is — "jellyfin" alone would name two different galleries.
+    const row = await screen.findByRole("button", { name: "Open the jellyfin icon gallery" });
+    expect(row.textContent).toContain("Media");
+    expect(row.textContent).toContain("jellyfin.png");
+    expect(
+      screen.getByRole("button", { name: "Open the grafana icon gallery" }).textContent,
+    ).toContain("no icon");
+    fireEvent.click(row);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "jellyfin — icon" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "jellyfin.png" })).toBeTruthy();
+  });
+
+  it("the UNASSIGNED bucket appears only when files bound nothing — and is their only way out", async () => {
+    // A rename's aftermath. Per-key galleries would make the orphan invisible and undeletable, which
+    // is the one state a manager must not be able to produce.
+    renderKit([svcFile("jellyfin"), svcFile("old-name")], [{ name: "Media", kind: "jellyfin" }]);
+    const card = await screen.findByRole("button", { name: "Open the Unassigned gallery" });
+    expect(card.textContent).toContain("1 file matches no name here");
+    fireEvent.click(card);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "old-name.png" })).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "jellyfin.png" })).toBeNull();
+  });
+
+  it("…and never while the KEY LIST is still unknown (a third state, not an empty one)", async () => {
+    api.getJSON.mockImplementation((url: string) => {
+      if (url === "/api/services") return new Promise(() => undefined); // pending forever
+      if (url === "/api/hosts") return Promise.resolve([]);
+      return Promise.resolve({
+        ns: "kit",
+        collation: "library-v1",
+        roles: {
+          services: [svcFile("jellyfin")],
+          "service-banners": [],
+          hosts: [],
+          background: [],
+          brand: [],
+        },
+        slots: {},
+      });
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="kit" def={MEDIA_NS.kit} />
+      </QueryClientProvider>,
+    );
+    await screen.findAllByText(/reading the fleet/);
+    expect(screen.queryByRole("button", { name: "Open the Unassigned gallery" })).toBeNull();
+  });
+});
+
+describe("the gallery modal (§6.2)", () => {
+  it("is the house dialog: labelled, trapped, and Escape closes it", async () => {
     renderGallery();
-    await screen.findByText("a.webp");
-    await waitFor(() => expect(api.getJSONWithHeader).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
-    await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
-    expect(savedBlock()).toEqual({
-      roles: {
-        characters: {
-          files: [
-            { name: "a.webp", key: "hero", focal: { x: 0.4, y: 0.2, rev: "r9" } },
-            { name: "c.webp" }, // no entry yet — listing it is what the reorder means
-            { name: "b.webp", hidden: true },
-          ],
-        },
-      },
-    });
+    const dialog = await openSection("characters");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(within(dialog).getByRole("heading", { name: "characters" })).toBeTruthy();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("refuses to reorder until the SETTINGS snapshot is here — a lossy write is worse than a wait", async () => {
-    // Emma MED-4 ①. The write is a read-modify-write over the persisted `files` list; without that
-    // list the only thing a tap could write is bare `{name}` rows, which destroys `key`/`hidden`/
-    // `focal` on a gesture that looks like it only moved a row.
-    api.getJSONWithHeader.mockReturnValue(new Promise(() => undefined)); // never resolves
+  it("Escape goes through history.back — and the popstate handler is the ONLY closer", async () => {
+    // The orphan-entry regression arm (Emma #5): a close path that did not spend its own history entry
+    // would leave one behind on every open, and the owner would press Back five times to leave the app.
     renderGallery();
-    await screen.findByText("a.webp");
-    const down = screen.getByRole("button", { name: "Move a.webp down" });
-    expect(down).toHaveProperty("disabled", true);
-    fireEvent.click(down);
-    await waitFor(() => expect(screen.getByText("b.webp")).toBeTruthy());
-    expect(api.putJSON).not.toHaveBeenCalled();
+    const before = history.length;
+    const dialog = await openSection("characters");
+    await waitFor(() =>
+      expect((history.state as { ctrlbOverlay?: boolean } | null)?.ctrlbOverlay).toBe(true),
+    );
+    // (`history.length` never SHRINKS on back — the pointer moves and the next push truncates — so the
+    // leak shows up as growth across opens, which is what this bounds.)
+    expect(history.length).toBeLessThanOrEqual(before + 1);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect((history.state as { ctrlbOverlay?: boolean } | null)?.ctrlbOverlay).toBeUndefined();
   });
 
-  it("a LISTED bundled entry survives a reorder, in place and with its fields", async () => {
-    // Emma MED-4 ②. The screen shows only disk rows, so a `{bundled}` entry the owner listed is
-    // invisible here — and a rebuild from the screen would delete it (and re-deal the fallback tier)
-    // on the next ↑/↓ tap. It holds its position instead, fields untouched.
-    api.getJSONWithHeader.mockResolvedValue({
-      data: {
-        media: {
-          namespaces: {
-            gacha: {
-              roles: {
-                characters: {
-                  files: [
-                    { name: "a.webp", key: "hero" },
-                    { bundled: "lyra", hidden: true },
-                    { name: "b.webp" },
-                  ],
-                },
-              },
-            },
-          },
-        },
-      },
-      header: "r1",
-    });
+  it("the owner's BACK gesture closes it too", async () => {
     renderGallery();
-    await screen.findByText("a.webp");
-    await waitFor(() => expect(api.getJSONWithHeader).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
-    await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
-    expect(savedBlock()).toEqual({
-      roles: {
-        characters: {
-          files: [
-            { name: "a.webp", key: "hero" },
-            { bundled: "lyra", hidden: true }, // held its slot, kept its per-item state
-            { name: "c.webp" },
-            { name: "b.webp" },
-          ],
-        },
-      },
-    });
+    await openSection("characters");
+    await waitFor(() =>
+      expect((history.state as { ctrlbOverlay?: boolean } | null)?.ctrlbOverlay).toBe(true),
+    );
+    history.back();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("never lists or writes a BUNDLED row — the fallback tier is S2's, and a drag must not promote it", async () => {
-    // §2.3 ③ (bundled-tier-preserving writes): the index carries every role's bundled ids now. This
-    // surface filters them out, so the owner's first reorder cannot sweep five bundled characters into
-    // the fleet deal — the paint-parity property the config-pure migration depends on.
+  it("carries the Add row — PRESENT and inert, because uploading lands in the next slice", async () => {
+    renderGallery();
+    const dialog = await openSection("characters");
+    const add = within(dialog)
+      .getByText(/Add an image/)
+      .closest("button");
+    expect(add).toHaveProperty("disabled", true);
+    expect(add!.textContent).toContain("next slice");
+    expect(dialog.querySelector("input[type=file]")).toBeNull();
+  });
+
+  it("counts the library in a live region, so a delete is announced", async () => {
+    renderGallery();
+    const dialog = await openSection("characters");
+    expect(within(dialog).getByRole("status").textContent).toContain("8 images");
+  });
+});
+
+describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
+  it("marks IN USE, PROBLEM and BUNDLED in three corners, never sharing one", async () => {
     const { container } = renderGallery(
       index({
         roles: {
           characters: [
             file("a", "characters"),
-            file("b", "characters"),
-            { ...file("lyra", "characters"), bundled: "lyra", file: "", url: "", listed: false },
+            file("bad", "characters", { unusable: true, unusable_reason: "unreadable" }),
+            bundledRow("lyra"),
           ],
+          banner: [],
           reel: [],
+          oracle: [],
         },
       }),
     );
-    await screen.findByText("a.webp");
-    expect([...container.querySelectorAll(".mgal-item .name")].map((n) => n.textContent)).toEqual([
-      "a.webp",
-      "b.webp",
+    await openSection("characters");
+    const tile = (name: string) =>
+      screen.getByRole("button", { name }).parentElement as HTMLElement;
+    expect(container.querySelectorAll(".mgal-corner.end")).toHaveLength(2); // a + bad: both dealt
+    expect(container.querySelectorAll(".mgal-corner.top")).toHaveLength(1); // only the broken one
+    expect(container.querySelectorAll(".mgal-corner.start")).toHaveLength(1); // only the bundled one
+    expect(tile("a.webp")).toBeTruthy();
+  });
+
+  it("a tile is a plain button whose DESCRIPTION carries membership — never a fake toggle", async () => {
+    // Emma #9: `aria-checked` on a tile would claim a state a tile does not own, and a screen reader
+    // cannot check it. Membership is said in words; the switch in the detail panel is the real control.
+    renderGallery();
+    const dialog = await openSection("characters");
+    const tile = within(dialog).getByRole("button", { name: "a.webp" });
+    expect(tile.getAttribute("aria-checked")).toBeNull();
+    const described = document.getElementById(tile.getAttribute("aria-describedby") ?? "");
+    expect(described?.textContent).toContain("in use");
+    // A DEALT pool has no single current member, so nothing claims to be one.
+    expect(dialog.querySelector("[aria-current]")).toBeNull();
+  });
+
+  it("…and `aria-current` marks the ONE genuinely current entry where there is one", async () => {
+    renderGallery(
+      index({
+        roles: {
+          characters: [],
+          banner: [],
+          reel: [file("cut", "reel"), file("cut2", "reel")],
+          oracle: [],
+        },
+      }),
+    );
+    const dialog = await openSection("reel");
+    expect(
+      within(dialog).getByRole("button", { name: "cut.webp" }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      within(dialog).getByRole("button", { name: "cut2.webp" }).getAttribute("aria-current"),
+    ).toBeNull();
+  });
+
+  it("tiles are lazy past the first screenful — the decode budget (Opus M3)", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => file(`f${i}`, "characters"));
+    const { container } = renderGallery(
+      index({ roles: { characters: many, banner: [], reel: [], oracle: [] } }),
+    );
+    await openSection("characters");
+    const imgs = [...container.querySelectorAll(".mgal-grid img")];
+    expect(imgs.filter((i) => i.getAttribute("loading") === "eager")).toHaveLength(9);
+    expect(imgs.filter((i) => i.getAttribute("loading") === "lazy")).toHaveLength(3);
+    for (const img of imgs) expect(img.getAttribute("decoding")).toBe("async");
+  });
+});
+
+describe("the item detail panel (§6.4) and what its actions write", () => {
+  it("SET AS ACTIVE moves the entry to the front of `files`", async () => {
+    renderGallery();
+    const dialog = await openSection("characters");
+    openItem(dialog, "c.webp");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    // The tier rule in one assertion: the disk rows are swept in (order is otherwise inexpressible),
+    // the five bundled fallback rows are NOT (the first gesture must not re-deal the fleet).
+    expect(filesOf(savedBlock())).toEqual([
+      { name: "c.webp" },
+      { name: "a.webp" },
+      { name: "b.webp" },
     ]);
-    fireEvent.click(screen.getByRole("button", { name: "Move b.webp up" }));
-    await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
-    expect(savedBlock()).toEqual({
-      roles: { characters: { files: [{ name: "b.webp" }, { name: "a.webp" }] } },
+  });
+
+  it("…and on a SEAT it is a pin write, worded 'Use here'", async () => {
+    renderGallery();
+    const dialog = await openSection("Fleet backdrop");
+    openItem(dialog, "b.webp");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedBlock()).toEqual({ slots: { wallpaper: "b" } });
+  });
+
+  it("…and on a pool whose ladder HAS a pin, activation writes that pin", async () => {
+    // `reel_figure` sits above the reel folder's own first-wins pick, so move-to-front would leave the
+    // pin silently winning — the gallery would be claiming a binding the render will not honour.
+    renderGallery(
+      index({
+        roles: {
+          characters: [],
+          banner: [],
+          reel: [file("cut", "reel"), file("cut2", "reel")],
+          oracle: [],
+        },
+      }),
+    );
+    const dialog = await openSection("reel");
+    openItem(dialog, "cut2.webp");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedBlock()).toEqual({ slots: { reel_figure: "cut2" } });
+  });
+
+  it("a pinned entry offers to CLEAR the pin instead of setting it again", async () => {
+    renderGallery(index({ slots: { wallpaper: "b" } }));
+    const dialog = await openSection("Fleet backdrop");
+    openItem(dialog, "b.webp");
+    expect(within(dialog).queryByRole("button", { name: "Use here" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear this pin" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    // NULL, never an empty string — the shape the backend reads as "unpinned".
+    expect(savedBlock()).toEqual({ slots: { wallpaper: null } });
+  });
+
+  it("a DANGLING pin can be cleared even though no tile holds it", async () => {
+    renderGallery(index({ slots: { wallpaper: "deleted" } }));
+    const dialog = await openSection("Fleet backdrop");
+    expect(within(dialog).getByText(/is missing/).textContent).toContain("deleted");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear the pin" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedBlock()).toEqual({ slots: { wallpaper: null } });
+  });
+
+  it("the ↑/↓ pair moves one entry, and is HIDDEN where order decides nothing (#11)", async () => {
+    renderGallery();
+    const dialog = await openSection("characters");
+    openItem(dialog, "b.webp");
+    fireEvent.click(within(dialog).getByRole("button", { name: "↑ Move up" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(filesOf(savedBlock())).toEqual([
+      { name: "b.webp" },
+      { name: "a.webp" },
+      { name: "c.webp" },
+    ]);
+  });
+
+  it("…hidden on a SEAT, which is a view over someone else's order", async () => {
+    renderGallery();
+    const dialog = await openSection("Fleet backdrop");
+    openItem(dialog, "b.webp");
+    expect(within(dialog).queryByRole("button", { name: /Move up/ })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: /Move to top/ })).toBeNull();
+  });
+
+  it("the In-use switch writes `hidden`, and the tile dims + leaves the deal", async () => {
+    const { container } = renderGallery();
+    const dialog = await openSection("characters");
+    openItem(dialog, "b.webp");
+    const sw = within(dialog).getByRole("switch", { name: /In use — b.webp/ });
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(sw);
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(filesOf(savedBlock())).toEqual([
+      { name: "a.webp" },
+      { name: "b.webp", hidden: true },
+      { name: "c.webp" },
+    ]);
+    // …and the SWITCH is the only `aria-checked` in the whole surface (Emma #9).
+    expect(container.querySelectorAll("[aria-checked]")).toHaveLength(1);
+  });
+
+  it("a HIDDEN entry is dimmed and out of use, but still in the library", async () => {
+    const { container } = renderGallery(
+      index({
+        roles: {
+          characters: [file("a", "characters"), file("off", "characters", { hidden: true })],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
+    );
+    const card = await screen.findByRole("button", { name: "Open the characters gallery" });
+    expect(card.querySelectorAll("img")).toHaveLength(1); // only `a` is dealt
+    const dialog = await openSection("characters");
+    expect(within(dialog).getByRole("button", { name: "off.webp" })).toBeTruthy();
+    expect(container.querySelectorAll(".mgal-tile-img.dim")).toHaveLength(1);
+  });
+
+  it("DELETE removes the bytes first, then writes ONE config that promotes the next entry", async () => {
+    const confirm = await import("../../src/store/confirm");
+    renderGallery();
+    const dialog = await openSection("characters");
+    openItem(dialog, "a.webp");
+    const asked = new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await asked;
+    confirm.resolveConfirm(true);
+    // DELETE-FIRST: a failure between the two steps leaves a dangling entry the collation drops
+    // harmlessly, where the reverse would leave a file nothing lists — invisible and undeletable.
+    await waitFor(() => expect(api.del).toHaveBeenCalledTimes(1));
+    expect(api.del.mock.calls[0][0]).toBe("/api/media/gacha/files/characters/a.webp");
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(filesOf(savedBlock())).toEqual([{ name: "b.webp" }, { name: "c.webp" }]);
+  });
+
+  it("a BUNDLED entry has no Delete at all — absent, not disabled (§6.6)", async () => {
+    renderGallery();
+    const dialog = await openSection("characters");
+    openItem(dialog, "lyra (bundled)");
+    expect(within(dialog).queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(within(dialog).getByText(/Bundled with the app/)).toBeTruthy();
+    // …and no framing action either: the focal point lands at S4, and a stub would be a promise.
+    expect(within(dialog).queryByRole("button", { name: /framing/i })).toBeNull();
+  });
+
+  it("names the BINDING SOURCE in a named role — the key field, or the filename (§2.2)", async () => {
+    api.getJSON.mockImplementation((url: string) => {
+      if (url === "/api/services") return Promise.resolve([{ name: "Media", kind: "jellyfin" }]);
+      if (url === "/api/hosts") return Promise.resolve([]);
+      return Promise.resolve({
+        ns: "kit",
+        collation: "library-v1",
+        roles: {
+          services: [
+            { ...file("odd-name", "services"), file: "odd-name.png", key: "jellyfin" },
+            { ...file("jellyfin", "services"), file: "jellyfin.png" },
+          ],
+          "service-banners": [],
+          hosts: [],
+          background: [],
+          brand: [],
+        },
+        slots: {},
+      });
     });
-  });
-
-  it("the ends of a role cannot be moved off it", async () => {
-    renderGallery();
-    await screen.findByText("a.webp");
-    expect(screen.getByRole("button", { name: "Move a.webp up" })).toHaveProperty("disabled", true);
-    expect(screen.getByRole("button", { name: "Move c.webp down" })).toHaveProperty(
-      "disabled",
-      true,
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="kit" def={MEDIA_NS.kit} />
+      </QueryClientProvider>,
     );
+    fireEvent.click(await screen.findByRole("button", { name: "Open the jellyfin icon gallery" }));
+    const dialog = await screen.findByRole("dialog");
+    openItem(dialog, "odd-name.png");
+    expect(within(dialog).getByText(/bound by its key/).textContent).toContain("jellyfin");
+    // …and the file that bound by its stem is a DUPLICATE here, which used to be invisible (#4).
+    fireEvent.click(within(dialog).getByRole("button", { name: "‹ All images" }));
+    openItem(dialog, "jellyfin.png");
+    expect(within(dialog).getByText("duplicate name")).toBeTruthy();
+    expect(within(dialog).getByText(/bound by its filename/)).toBeTruthy();
   });
+});
 
-  it("blocks a second move while the first is in flight (the next order is read off the screen)", async () => {
-    api.putJSON.mockReturnValue(new Promise(() => undefined)); // never resolves — the save stays pending
+describe("the write queue (§4 — serialized, recomputed at send, quiet)", () => {
+  it("QUIET: a gesture does not stack a 'Settings saved' toast (#10)", async () => {
     renderGallery();
-    await screen.findByText("a.webp");
-    fireEvent.click(screen.getByRole("button", { name: "Move a.webp down" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Move c.webp up" })).toHaveProperty(
-        "disabled",
-        true,
-      ),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
-    expect(api.putJSON).toHaveBeenCalledTimes(1); // the stale-order write never happened
+    const dialog = await openSection("characters");
+    openItem(dialog, "c.webp");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(toast.pushToast).not.toHaveBeenCalled();
   });
 
-  it("stays blocked until the REFETCHED order is on screen, not merely until the PUT resolves", async () => {
-    // Codex F5. The next order is computed from the list on screen, so the window between "PUT
-    // resolved" and "index refetched" is the dangerous one: a tap in it computes a full order from the
-    // stale list and persists it OVER the move that just landed. `useSaveSettings` awaits the media
-    // invalidation, so `isPending` — and the controls — outlive the round trip.
-    let releaseRefetch: (v: MediaIndex) => void = () => undefined;
+  it("two taps in one second SERIALIZE, and the second is computed from the FIRST's result", async () => {
+    // Emma #3. The dangerous window is between "PUT resolved" and "index refetched": a second gesture
+    // computed off the stale list would persist an order that undoes the first. The queue's intents are
+    // recomputed at send time instead, so they compose.
+    let second: (v: MediaIndex) => void = () => undefined;
     api.getJSON
       .mockResolvedValueOnce(index())
-      .mockImplementationOnce(() => new Promise<MediaIndex>((r) => (releaseRefetch = r)));
-
+      .mockImplementationOnce(() => new Promise<MediaIndex>((r) => (second = r)));
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     render(
       <QueryClientProvider client={qc}>
         <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
       </QueryClientProvider>,
     );
-    await screen.findByText("a.webp");
-
-    fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
+    const dialog = await openSection("characters");
+    openItem(dialog, "c.webp");
+    const up = within(dialog).getByRole("button", { name: "↑ Move up" });
+    fireEvent.click(up);
+    fireEvent.click(up);
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
-    // the PUT has RESOLVED and the refetch has not — the moment the fix exists for
-    await waitFor(() => expect(api.getJSON).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole("button", { name: "Move a.webp down" })).toHaveProperty(
-      "disabled",
-      true,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Move a.webp down" }));
-    expect(api.putJSON).toHaveBeenCalledTimes(1); // the stale-order write never happened
 
-    // …and once the authoritative order lands, the next move is computed from THAT.
-    const fresh = index({
-      roles: {
-        characters: [file("a", "characters"), file("c", "characters"), file("b", "characters")],
-        reel: [],
-      },
-    });
-    releaseRefetch(fresh);
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Move a.webp down" })).toHaveProperty(
-        "disabled",
-        false,
-      ),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Move a.webp down" }));
-    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
-    const [, body] = api.putJSON.mock.calls[1] as [
-      string,
-      { media: { namespaces: { gacha: unknown } } },
-    ];
-    expect(body.media.namespaces.gacha).toEqual({
-      roles: {
-        characters: {
-          files: [{ name: "c.webp" }, { name: "a.webp" }, { name: "b.webp" }],
-        },
-      },
-    });
-  });
-
-  it("re-reads the directory on every entry — files arrive OUT OF BAND, over SSH", async () => {
-    // Codex F7: a 60s-stale listing would show the owner art that predates the copy they just finished.
-    // The gallery's own observer refetches on mount; the theme's surfaces keep the cheap staleTime.
-    api.getJSON.mockResolvedValue(index());
-    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    const ui = (
-      <QueryClientProvider client={qc}>
-        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
-      </QueryClientProvider>
-    );
-    const { unmount } = render(ui);
-    await screen.findByText("a.webp");
-    expect(api.getJSON).toHaveBeenCalledTimes(1);
-
-    unmount();
-    // the owner scp's a new file in while the gallery is not looking
-    api.getJSON.mockResolvedValue(
-      index({ roles: { characters: [file("zzz", "characters")], reel: [] } }),
-    );
-    render(ui);
-    expect(await screen.findByText("zzz.webp")).toBeTruthy();
-    expect(api.getJSON).toHaveBeenCalledTimes(2);
-  });
-
-  it("pinning writes the slot; clearing writes NULL, not an empty string", async () => {
-    renderGallery();
-    await screen.findByText("a.webp");
-    const select = screen.getByRole("combobox", { name: /Fleet backdrop/ });
-    fireEvent.change(select, { target: { value: "b" } });
-    await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
-    expect(savedBlock()).toEqual({ slots: { wallpaper: "b" } });
-
-    api.putJSON.mockClear();
-    fireEvent.change(select, { target: { value: "" } });
-    await waitFor(() => expect(api.putJSON).toHaveBeenCalled());
-    expect(savedBlock()).toEqual({ slots: { wallpaper: null } });
-  });
-
-  it("the figure pin offers CUTOUTS, never the cast (a portrait would sweep as a rectangle)", async () => {
-    renderGallery(
+    // The refetch lands with the first move applied; the queued second intent is applied to THAT.
+    second(
       index({
         roles: {
-          characters: [file("a", "characters"), file("b", "characters")],
-          reel: [file("cut", "reel"), file("cut2", "reel")],
+          characters: [
+            file("a", "characters"),
+            file("c", "characters"),
+            file("b", "characters"),
+            ...cast,
+          ],
+          banner: [],
+          reel: [],
+          oracle: [],
         },
       }),
     );
-    await screen.findByText("a.webp");
-    const options = [...screen.getByRole("combobox", { name: /Transition figure/ }).children].map(
-      (o) => o.textContent,
-    );
-    expect(options).toEqual(["—", "cut", "cut2"]);
-    // the cast is offered for the backdrop, which crops a portrait fine — the two differ on purpose
-    const backdrop = [...screen.getByRole("combobox", { name: /Fleet backdrop/ }).children].map(
-      (o) => o.textContent,
-    );
-    expect(backdrop).toEqual(["—", "a", "b"]);
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
+    expect(filesOf(savedBlock(1))).toEqual([
+      { name: "c.webp" },
+      { name: "a.webp" },
+      { name: "b.webp" },
+    ]);
   });
 
-  it("…and falls back to the theme's BUNDLED cutout names while reel/ is empty", async () => {
-    renderGallery(index({ roles: { characters: [file("a", "characters")], reel: [] } }));
-    await screen.findByText("a.webp");
-    const options = [...screen.getByRole("combobox", { name: /Transition figure/ }).children].map(
-      (o) => o.textContent,
-    );
-    expect(options).toEqual(["—", "lyra"]); // useful on a fresh install, not an empty select
+  it("refuses to write until the SETTINGS snapshot is here — a lossy write is worse than a wait", async () => {
+    // The write is a read-modify-write over the persisted `files` list; without it a gesture could only
+    // write bare `{name}` rows, destroying every per-item field the owner set (`key`/`hidden`/`focal`).
+    api.getJSONWithHeader.mockReturnValue(new Promise(() => undefined)); // never resolves
+    renderGallery();
+    const dialog = await openSection("characters");
+    openItem(dialog, "c.webp");
+    const act = within(dialog).getByRole("button", { name: "Set as active" });
+    expect(act).toHaveProperty("disabled", true);
+    fireEvent.click(act);
+    await waitFor(() => expect(within(dialog).getByText("c.webp")).toBeTruthy());
+    expect(api.putJSON).not.toHaveBeenCalled();
   });
+});
 
-  it("EVERY pin falls back to its SOURCE ROLE's bundled ids on a fresh install (D65)", async () => {
-    // The ruled fresh-install behaviour, pinned for all four pins rather than only the figure. Since
-    // D65 the fallback names come from `roles[slot.from].bundled` — one list, DERIVED from the theme's
-    // own ladder module — instead of a hand-typed per-slot copy (`MediaSlotDef.bundled`, retired). The
-    // three character-sourced pins therefore offer the bundled CAST, which is exactly what `slotEntry`
-    // resolves against while `characters/` is empty: the select cannot offer a name the theme refuses.
-    renderGallery(index({ roles: { characters: [], reel: [] } }));
-    await screen.findByRole("combobox", { name: /Fleet backdrop/ });
-    const cast = ["—", "pegasus", "atlas", "3", "4", "lyra"];
-    for (const [label, expected] of [
-      [/Fleet backdrop/, cast], // from `characters`
-      [/Hero slide/, cast], // from `characters`
-      [/Operator backdrop/, cast], // from `characters`
-      [/Transition figure/, ["—", "lyra"]], // from `reel` — a CUTOUT, never the cast (Codex F4)
-    ] as const) {
-      const options = [...screen.getByRole("combobox", { name: label }).children].map(
-        (o) => o.textContent,
-      );
-      expect(options, String(label)).toEqual(expected);
-    }
+describe("the index read (defect #3)", () => {
+  it("is scoped to Conf: leaving the tab stops the gallery re-reading every namespace on focus", async () => {
+    // Every tab body in this app stays MOUNTED once visited, so the old always-on observer re-read the
+    // directory on every window focus for the rest of the session, from whatever tab the owner was on.
+    renderGallery();
+    await screen.findByRole("button", { name: "Open the characters gallery" });
+    expect(api.getJSON).toHaveBeenCalledTimes(1);
+
+    setUI({ tab: "fleet" });
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(api.getJSON).toHaveBeenCalledTimes(1);
+
+    // …and coming BACK re-reads, because files arrive out of band (Codex F7).
+    setUI({ tab: "conf" });
+    await waitFor(() => expect(api.getJSON).toHaveBeenCalledTimes(2));
   });
+});
 
-  it("a LEGACY pin naming something the slot no longer offers is shown as missing, not hidden", async () => {
-    // The F4 re-rule stopped offering characters for the figure; a config written before it must be
-    // visible so the owner can clear it — the theme has already degraded to the default underneath.
-    renderGallery(
-      index({
-        roles: { characters: [file("kira", "characters")], reel: [file("cut", "reel")] },
-        slots: { reel_figure: "kira" },
-      }),
-    );
-    await screen.findByText("kira.webp");
-    expect(screen.getByRole("option", { name: "kira (missing)" })).toBeTruthy();
-  });
-
-  it("a DANGLING pin stays visible so the owner can see the value they need to clear", async () => {
-    renderGallery(index({ slots: { wallpaper: "deleted" } }));
-    await screen.findByText("a.webp");
-    expect(screen.getByRole("combobox", { name: /Fleet backdrop/ })).toHaveProperty(
-      "value",
-      "deleted",
-    );
-    expect(screen.getByRole("option", { name: "deleted (missing)" })).toBeTruthy();
-  });
-
-  it("offers NO file operation — the surface is read-only by ruling (§5.4)", async () => {
-    const { container } = renderGallery();
-    await screen.findByText("a.webp");
-    const labels = [...container.querySelectorAll("button")].map((b) =>
-      (b.getAttribute("aria-label") ?? b.textContent ?? "").toLowerCase(),
-    );
-    for (const word of ["upload", "delete", "remove", "rename", "add"]) {
-      expect(labels.some((l) => l.includes(word))).toBe(false);
-    }
-    expect(container.querySelector("input[type=file]")).toBeNull();
-  });
-
+describe("the namespace-level states", () => {
   it("says WHY when the namespace is disabled, instead of showing an empty grid", async () => {
-    // Codex W2. An empty grid means "you have not dropped anything in yet"; a disabled namespace means
-    // "the app cannot read your folder". Only one of those is the owner's to fix, so they must not look
-    // the same. The theme is already on its bundled art underneath.
     renderGallery({
       ns: "gacha",
       collation: "library-v1",
@@ -551,42 +782,6 @@ describe("MediaGallery", () => {
     });
     expect(await screen.findByText(/media disabled/)).toBeTruthy();
     expect(screen.getByText(/is a file, but a directory is needed there/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Move/ })).toBeNull();
-  });
-
-  it("a hung media refetch does not hold the save open forever", async () => {
-    // Codex W4. `getJSON` has no timeout (a standing kit-wide gap), so the awaited invalidation is
-    // bounded: on the bound the save settles and the controls unblock with a possibly-stale order,
-    // rather than the Save button hanging over an art listing.
-    vi.useFakeTimers();
-    try {
-      api.getJSON.mockResolvedValueOnce(index()).mockImplementationOnce(
-        () => new Promise<MediaIndex>(() => undefined), // never settles
-      );
-      const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-      render(
-        <QueryClientProvider client={qc}>
-          <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
-        </QueryClientProvider>,
-      );
-      await vi.advanceTimersByTimeAsync(0);
-      expect(screen.getByText("a.webp")).toBeTruthy();
-
-      fireEvent.click(screen.getByRole("button", { name: "Move c.webp up" }));
-      await vi.advanceTimersByTimeAsync(0);
-      expect(screen.getByRole("button", { name: "Move a.webp down" })).toHaveProperty(
-        "disabled",
-        true,
-      );
-
-      await vi.advanceTimersByTimeAsync(6_000); // past the bound
-      expect(screen.getByRole("button", { name: "Move a.webp down" })).toHaveProperty(
-        "disabled",
-        false,
-      );
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it("reports an unreachable index instead of rendering an empty gallery", async () => {
@@ -598,339 +793,5 @@ describe("MediaGallery", () => {
       </QueryClientProvider>,
     );
     expect(await screen.findByText(/media index unreachable: boom/)).toBeTruthy();
-  });
-});
-
-// ── the KEYED gallery, where the keys are DATA (D53 M3 / MEDIA_PLAN §5) ──────────────────────────
-//
-// The kit row's keys are the fleet's SERVICE identities, so this half of the gallery owns a second data
-// dependency (Opus M5) and has four sentences to get right: which key each service wants, which file
-// took it, which files took none and WHY — and, while the service list is still in flight, that it does
-// not know yet. That last one is the load-bearing case: "no service is called that" would be a claim
-// about a list we do not have.
-
-const svcFile = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
-  name,
-  file: `${name}.png`,
-  url: `/api/media/kit/files/services/${name}.png`,
-  format: "png",
-  size_bytes: 4_000,
-  revision: `1:4000:${name}`,
-  width: 64,
-  height: 64,
-  unusable: false,
-  unusable_reason: null,
-  ...over,
-});
-
-/** The kit gallery against a URL-aware client mock: its own index, plus the `/api/services` list it
- *  fetches ITSELF — `services: null` leaves that request pending forever and `"error"` fails it, the two
- *  ways the key list can be unknown. */
-function renderKitGallery(
-  files: MediaFile[],
-  services: { name: string; kind?: string | null }[] | null | "error",
-) {
-  api.getJSON.mockImplementation((url: string) => {
-    if (url === "/api/services") {
-      if (services === null) return new Promise(() => {}); // pending forever
-      if (services === "error") return Promise.reject(new Error("offline"));
-      return Promise.resolve(services);
-    }
-    return Promise.resolve({
-      ns: "kit",
-      collation: "library-v1",
-      roles: { services: files },
-      slots: {},
-    });
-  });
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MediaGallery ns="kit" def={MEDIA_NS.kit} />
-    </QueryClientProvider>,
-  );
-}
-
-/** Wait for the derived key panel to have rendered (the services request has answered). */
-const settled = (c: HTMLElement) =>
-  waitFor(() => expect(c.querySelectorAll(".mgal-keys li").length).toBeGreaterThan(0));
-
-/** The key panel as the owner reads it: `key` → the text beside it → what answers it. */
-const keyRows = (c: HTMLElement) =>
-  [...c.querySelectorAll(".mgal-keys li")].map((li) => ({
-    key: li.querySelector("code")!.textContent,
-    hint: li.querySelector(".h")!.textContent,
-    bound: li.querySelector(".b")!.textContent,
-  }));
-
-/** The badges on one file row, by filename. */
-const badgesOf = (c: HTMLElement, filename: string) =>
-  [...c.querySelectorAll(".mgal-item")]
-    .filter((li) => li.querySelector(".name")!.textContent === filename)
-    .flatMap((li) => [...li.querySelectorAll(".badge")].map((b) => b.textContent));
-
-describe("MediaGallery · kit service icons", () => {
-  it("names the folder to copy into — the whole owner-facing contract of a namespace no theme owns", async () => {
-    const { container } = renderKitGallery([], []);
-    // A fleet with no services at all: nothing to name a file after, and the gallery says so rather
-    // than showing an empty key panel the owner cannot act on.
-    await screen.findByText(/nothing to name a file after/);
-    expect(container.querySelector(".mgal-head .path")!.textContent).toBe("media/kit/services/");
-    expect(screen.getByText(/no icon is painted anywhere yet/)).toBeTruthy();
-    // The sentence is COMPOSED (Codex A1): the role says what a file of it is ("icon"), the source says
-    // what the keys come from ("services") — neither is written into the gallery.
-    expect(screen.getByText(/named after the services above/)).toBeTruthy();
-    expect(keyRows(container)).toEqual([]);
-  });
-
-  it("one row per service key, in fleet order, each showing the file that answers it", async () => {
-    const { container } = renderKitGallery(
-      [svcFile("jellyfin")],
-      [
-        { name: "Media", kind: "jellyfin" },
-        { name: "Grafana", kind: null },
-      ],
-    );
-    await settled(container);
-    expect(keyRows(container)).toEqual([
-      { key: "jellyfin", hint: "Media", bound: "jellyfin.png" },
-      { key: "grafana", hint: "Grafana", bound: "no icon" },
-    ]);
-    // …and the same answer from the FILE's side.
-    expect(badgesOf(container, "jellyfin.png")).toEqual(["jellyfin"]);
-  });
-
-  it("says UNKNOWN while the service list is in flight — never a false 'no service named X'", async () => {
-    const { container } = renderKitGallery([svcFile("jellyfin")], null);
-    await screen.findByText("jellyfin.png");
-    expect(container.querySelector(".mgal-empty")!.textContent).toContain("reading the fleet");
-    expect(keyRows(container)).toEqual([]); // no key panel to be wrong with
-    expect(badgesOf(container, "jellyfin.png")).toEqual(["unknown"]);
-  });
-
-  it("flags a service/service collision on ONE row and says the two share the file", async () => {
-    const { container } = renderKitGallery(
-      [svcFile("jellyfin")],
-      [
-        { name: "media-a", kind: "Jellyfin" },
-        { name: "media-b", kind: "jellyfin" },
-      ],
-    );
-    await settled(container);
-    const [row] = keyRows(container);
-    expect(row.hint).toContain("media-a · media-b");
-    expect(row.hint).toContain("share this icon"); // a file DID win it — see the no-file arm below
-    expect(row.bound).toBe("jellyfin.png");
-  });
-
-  it("flags a file/file collision on the LOSER, and a file no key wants as unmatched", async () => {
-    const { container } = renderKitGallery(
-      [
-        svcFile("jellyfin", { file: "jellyfin.png" }),
-        svcFile("Jellyfin", { file: "Jellyfin.webp" }),
-        svcFile("emby"),
-      ],
-      [{ name: "media", kind: "jellyfin" }],
-    );
-    await settled(container);
-    expect(badgesOf(container, "jellyfin.png")).toEqual(["jellyfin"]); // the winner, by index order
-    expect(badgesOf(container, "Jellyfin.webp")).toEqual(["duplicate"]);
-    expect(badgesOf(container, "emby.png")).toEqual(["no match"]);
-  });
-
-  it("says outright that a service whose key cannot be a filename cannot have an icon", async () => {
-    // Two shapes on purpose (Codex M3-R1 NEW-1): the separator case AND a reserved-name case share ONE
-    // general explanation — the copy must never diagnose a single character class, because the rule is
-    // the whole conservative stem set (lib/media.ts#isStemRepresentable).
-    const { container } = renderKitGallery([], [{ name: "media/plex" }, { name: "CON" }]);
-    await settled(container);
-    for (const row of keyRows(container)) {
-      expect(row.hint).toContain("no icon: no file on the server could be named this");
-      expect(row.bound).toBe("—");
-    }
-  });
-
-  it("an UNUSABLE file keeps the server's verdict as its reason, and gains no second one", async () => {
-    const { container } = renderKitGallery(
-      [svcFile("jellyfin", { unusable: true, unusable_reason: "format-mismatch", format: "jpeg" })],
-      [{ name: "media", kind: "jellyfin" }],
-    );
-    await settled(container);
-    expect(badgesOf(container, "jellyfin.png")).toEqual(["wrong extension (jpeg)"]);
-    expect(keyRows(container)[0].bound).toBe("no icon");
-  });
-
-  it("colliding services with NO file share a KEY, not an icon (Codex M3 LOW-1)", async () => {
-    // The fresh-install wording. "These share one icon" is a claim about a picture that does not
-    // exist — on a fresh install, or when the only candidate file is unusable, what they actually
-    // share is the name the owner has to give the file.
-    const { container } = renderKitGallery(
-      [],
-      [
-        { name: "media-a", kind: "jellyfin" },
-        { name: "media-b", kind: "jellyfin" },
-      ],
-    );
-    await settled(container);
-    const [row] = keyRows(container);
-    expect(row.hint).toContain("use the same icon key");
-    expect(row.hint).not.toContain("share this icon");
-    expect(row.bound).toBe("no icon");
-  });
-
-  it("a FAILED service list says so, instead of spinning forever (Codex M3 LOW-2)", async () => {
-    // The query is terminal — retry is off — so "reading the fleet's services…" would be a spinner
-    // sentence for something that will never arrive. The FILES keep their honest `unknown` badge:
-    // the bindings are unknown, which is not the same as unmatched.
-    const { container } = renderKitGallery([svcFile("jellyfin")], "error");
-    await waitFor(() =>
-      expect(container.querySelector(".mgal-empty")!.textContent).toContain(
-        "service list unavailable",
-      ),
-    );
-    expect(container.querySelector(".mgal-empty")!.textContent).not.toContain("reading the fleet");
-    expect(keyRows(container)).toEqual([]);
-    expect(badgesOf(container, "jellyfin.png")).toEqual(["unknown"]);
-  });
-});
-
-// ── the SECOND derived source: machines (the Kit Art System / Codex A1) ─────────────────────────
-//
-// The whole point of the generic view model is that this panel needed no new gallery code — so what is
-// under test is that the generic path SAYS THE RIGHT THINGS here: machine keys, machine wording, and the
-// picture noun. A hosts panel that said "service" would be the A1 failure mode made visible.
-
-/** The kit gallery showing ONLY the `hosts` role, against its own index + the `/api/hosts` list it
- *  fetches itself. `hosts: null` leaves that request pending forever. */
-function renderHostsGallery(files: MediaFile[], hosts: { id: string; name: string }[] | null) {
-  api.getJSON.mockImplementation((url: string) => {
-    if (url === "/api/hosts") {
-      if (hosts === null) return new Promise(() => {});
-      return Promise.resolve(hosts);
-    }
-    return Promise.resolve({
-      ns: "kit",
-      collation: "library-v1",
-      roles: { hosts: files },
-      slots: {},
-    });
-  });
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MediaGallery ns="kit" def={MEDIA_NS.kit} />
-    </QueryClientProvider>,
-  );
-}
-
-const hostFile = (name: string): MediaFile => ({
-  ...svcFile(name),
-  url: `/api/media/kit/files/hosts/${name}.png`,
-});
-
-describe("MediaGallery · kit machine pictures", () => {
-  it("one row per MACHINE, keyed by its name, showing the file that answers it", async () => {
-    const { container } = renderHostsGallery(
-      [hostFile("corsair")],
-      [
-        { id: "corsair", name: "Corsair" },
-        { id: "vault", name: "vault" },
-      ],
-    );
-    await settled(container);
-    expect(keyRows(container)).toEqual([
-      { key: "corsair", hint: "Corsair", bound: "corsair.png" },
-      { key: "vault", hint: "vault", bound: "no picture" },
-    ]);
-    expect(container.querySelector(".mgal-head .path")!.textContent).toBe("media/kit/hosts/");
-  });
-
-  it("speaks about MACHINES and PICTURES — the generic renderer never leaks the other source's words", async () => {
-    const { container } = renderHostsGallery([], []);
-    await screen.findByText(/nothing to name a file after/);
-    expect(screen.getByText(/No machines are configured yet/)).toBeTruthy();
-    expect(screen.getByText(/no picture is painted anywhere yet/)).toBeTruthy();
-    expect(screen.getByText(/named after the machines above/)).toBeTruthy();
-    expect(container.textContent).not.toContain("service");
-  });
-
-  it("says it is reading the MACHINES while that list is in flight", async () => {
-    const { container } = renderHostsGallery([hostFile("corsair")], null);
-    await screen.findByText("corsair.png");
-    expect(container.querySelector(".mgal-empty")!.textContent).toContain("machines");
-    expect(badgesOf(container, "corsair.png")).toEqual(["unknown"]);
-  });
-
-  it("a RENAMED machine leaves its old picture UNMATCHED, and the new key shows what to call the file", async () => {
-    // The A7 accepted cost, made visible where the owner can act on it: the remedy is one rename, and
-    // both halves of it are on screen — the orphaned file and the key it should carry.
-    const { container } = renderHostsGallery(
-      [hostFile("corsair")],
-      [{ id: "corsair-2", name: "corsair-2" }],
-    );
-    await settled(container);
-    expect(badgesOf(container, "corsair.png")).toEqual(["no match"]);
-    expect(keyRows(container)).toEqual([
-      { key: "corsair-2", hint: "corsair-2", bound: "no picture" },
-    ]);
-  });
-});
-
-// ── the STATIC-key half of the same obligation (Codex M3 MED-1) ──────────────────────────────────
-//
-// The frontier stack's keys come from the registry rather than from live data, but a drop can go wrong
-// in exactly the same two ways — a second file reaching a key that is already taken, and a file whose
-// stem matches no key at all. Before the classifier was shared, this path recorded only the WINNERS, so
-// `Cube.webp` and a mistyped `platform_mis.png` looked exactly like a file that had bound.
-
-function renderStackGallery(files: MediaFile[]) {
-  api.getJSON.mockResolvedValue({
-    ns: "frontier",
-    collation: "library-v1",
-    roles: { rigs: [], hero: [], stack: files },
-    slots: {},
-  });
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MediaGallery ns="frontier" def={MEDIA_NS.frontier} />
-    </QueryClientProvider>,
-  );
-}
-
-const stackFile = (name: string, file: string): MediaFile => ({
-  ...svcFile(name),
-  file,
-  url: `/api/media/frontier/files/stack/${file}`,
-});
-
-describe("MediaGallery · a static-key named role diagnoses drops the same way", () => {
-  it("badges the LOSER of a stem collision, in either index order", async () => {
-    const png = stackFile("cube", "cube.png");
-    const webp = stackFile("Cube", "Cube.webp");
-
-    const first = renderStackGallery([png, webp]);
-    await waitFor(() => expect(first.container.querySelectorAll(".mgal-item")).toHaveLength(2));
-    expect(badgesOf(first.container, "cube.png")).toEqual(["cube"]);
-    expect(badgesOf(first.container, "Cube.webp")).toEqual(["duplicate"]);
-    cleanup();
-
-    // The tie-break is the LISTING, which the owner reorders — so the other order names the other winner.
-    const second = renderStackGallery([webp, png]);
-    await waitFor(() => expect(second.container.querySelectorAll(".mgal-item")).toHaveLength(2));
-    expect(badgesOf(second.container, "Cube.webp")).toEqual(["cube"]);
-    expect(badgesOf(second.container, "cube.png")).toEqual(["duplicate"]);
-  });
-
-  it("flags a file that matches no declared layer — the typo the owner would otherwise hunt for", async () => {
-    const { container } = renderStackGallery([
-      stackFile("cube", "cube.png"),
-      stackFile("platform_mis", "platform_mis.png"),
-    ]);
-    await waitFor(() => expect(container.querySelectorAll(".mgal-item")).toHaveLength(2));
-    expect(badgesOf(container, "platform_mis.png")).toEqual(["no match"]);
-    // …and the key panel still says what that layer is falling back to.
-    const rows = keyRows(container);
-    expect(rows.map((r) => r.bound)).toEqual(["cube.png", "bundled", "bundled"]);
   });
 });

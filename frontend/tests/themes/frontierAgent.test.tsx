@@ -152,7 +152,8 @@ describe("FrontierAgent rig-stack art (D53 M2)", () => {
     expect(layerUrls(container)).toEqual([
       ART.stack.base,
       ART.stack.mid,
-      "/api/media/frontier/files/stack/cube.png",
+      // PAINT-READY (D65 defect #1) — the `?rev=` rides the resolver.
+      "/api/media/frontier/files/stack/cube.png?rev=1%3A10",
     ]);
   });
 });

@@ -2885,10 +2885,10 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   line-height: 1;
   transition: transform var(--dur-slow) var(--ease-std);
 }
-/* The pill is shared with the G5 media gallery's per-file warnings (`.mgal-meta`) — one recipe, not a
+/* The pill is shared with the media gallery's badges (`.mgal`, D65) — one recipe, not a
  * second badge language: same three states (ok / stale = a file that will not work / dim = advisory). */
 .kit .confrow .badge,
-.kit .mgal-meta .badge {
+.kit .mgal .badge {
   font-size: 10px;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -2900,13 +2900,13 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   flex: none;
 }
 .kit .confrow .badge.stale,
-.kit .mgal-meta .badge.stale {
+.kit .mgal .badge.stale {
   background: var(--danger-soft);
   color: var(--danger);
   border-color: var(--danger-soft);
 }
 .kit .confrow .badge.dim,
-.kit .mgal-meta .badge.dim {
+.kit .mgal .badge.dim {
   background: var(--surface-2);
   color: var(--text-3);
   border-color: var(--line);
@@ -5727,13 +5727,15 @@ body[data-sheet="open"] .kit .kit-composer {
   overflow-y: auto;
   overscroll-behavior: contain; /* scrolling the body never chains to the page behind the sheet */
 }
-/* sr-only — ONE recipe, three users: the sheet's close button (keyboard/AT parity without a visible ✕),
+/* sr-only — ONE recipe, four users: the sheet's close button (keyboard/AT parity without a visible ✕),
  * the tools menu's native agent radios (A6 — real radios for real arrow-key group semantics, with the
- * `.tools-row` beside them as the visual; its focus ring is in the tools block), and the D62 who-line
- * (its disclosure toggle — the owner ruled out a visible affordance — plus the words behind the ↑/↓/↯
- * glyphs and the endpoint chip). */
+ * `.tools-row` beside them as the visual; its focus ring is in the tools block), the media gallery's
+ * per-tile description (D65 — a tile's membership is SAID in its description rather than faked with a
+ * role it does not have), and the D62 who-line (its disclosure toggle — the owner ruled out a visible
+ * affordance — plus the words behind the ↑/↓/↯ glyphs and the endpoint chip). */
 .kit .bs-close-sr,
 .kit .tools-sheet .tools-radio,
+.kit .mgal-sr,
 .kit .b .who-sr {
   position: absolute;
   width: 1px;
@@ -6054,22 +6056,28 @@ body[data-perf="lite"] .kit .navmenu-pop {
   justify-self: end;
   max-width: 100%;
 }
-
-/* ── G5 (D52) — the OWNER MEDIA GALLERY (`MediaGallery.tsx`), the Conf half of the read-only media
- * surface. Net-new: the kit has no other thumbnail list. Built from the recipes already here — the
- * `.conf-card` frame, the `.confrow` hairline rhythm, the `.badge`/`.badge.stale`/`.badge.dim` pills,
- * and the `.mform` input reset for the pin selects — so it reads as part of the Conf family under every
- * theme. Every color is a token; the whole block is layout + those tokens, no new visual language. */
+/* ── D65 — the OWNER MEDIA GALLERY (`components/MediaGallery.tsx` + `components/media/*`), the Conf
+ * half of the media surface. One CARD per art destination, and behind each a full-screen library on
+ * the shared `.pm-*` dialog shell.
+ *
+ * Built from the recipes already here — the `.conf-card` frame, the `.confrow` hairline rhythm, the
+ * `.badge`/`.badge.stale`/`.badge.dim` pills, the `.pm` modal — so it reads as part of the Conf family
+ * under every theme. Every colour is a token; the whole block is layout + those tokens, no new visual
+ * language. §14.11: transform/opacity only, nothing animated that is not one of the two.
+ *
+ * The G5 list/`.mgal-pin` select block this replaces is GONE: the read-only listing it styled was
+ * replaced wholesale, and a stylesheet keeping recipes for markup nobody renders is the drift the
+ * banner-ledger sweep exists to prevent. */
 .kit .mgal-msg {
   padding: 14px;
   font-size: 12px;
   color: var(--text-3);
 }
-.kit .mgal-role {
+.kit .mgal-sec {
   padding: 12px 14px 14px;
   border-top: 1px solid var(--line);
 }
-.kit .mgal-role:first-child {
+.kit .mgal-sec:first-child {
   border-top: 0;
 }
 .kit .mgal-head {
@@ -6083,7 +6091,7 @@ body[data-perf="lite"] .kit .navmenu-pop {
   text-transform: uppercase;
   color: var(--text);
 }
-.kit .mgal-head .path {
+.kit .mgal .path {
   font-size: 10px;
   color: var(--text-3);
   overflow-wrap: anywhere;
@@ -6095,9 +6103,101 @@ body[data-perf="lite"] .kit .navmenu-pop {
   line-height: 1.5;
   color: var(--text-3);
 }
-/* A NAMED role's key rows (D53 M2): the layer NAME the file has to be called, its guidance, and what
- * that key currently resolves to. Grid rather than flex so the three columns line up down the list —
- * the name column is the thing being scanned. Wraps to two lines on a narrow phone (the hint spans). */
+
+/* THE ENTRY CARD — the preview IS the button (R59 §11.1). Full-width, destination-shaped art, the
+ * status line under the title, no hover-revealed anything. */
+.kit .mgal-card {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  cursor: pointer;
+}
+.kit .mgal-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .mgal-card:active {
+  transform: scale(0.995);
+}
+.kit .mgal-card-art {
+  flex: none;
+  width: 96px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  /* The alpha checkerboard (defect #9): a transparent silhouette on a dark card was invisible, and
+   * "no picture" and "a picture made of holes" must not look the same. */
+  background:
+    repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0 / 12px 12px;
+}
+/* `cover` HERE and `contain` in the grid, deliberately: this box is a PREVIEW OF THE DESTINATION, so it
+ * crops the way the destination will; a grid tile is the owner CHOOSING, where a cropped silhouette
+ * would hide what they are picking (defect #9). The checkerboard sits behind both. */
+.kit .mgal-card-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* A multi-active role shows a COLLAGE — one entry cannot stand for a set. */
+.kit .mgal-card-art.collage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+}
+.kit .mgal-card-art.collage img {
+  aspect-ratio: 1;
+}
+.kit .mgal-card-none {
+  padding: 8px 4px;
+  font-size: 10px;
+  text-align: center;
+  color: var(--text-3);
+}
+.kit .mgal-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.kit .mgal-card-title {
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .mgal-card-status {
+  font-size: 10px;
+  color: var(--text-3);
+}
+.kit .mgal-card.compact {
+  align-items: center;
+}
+/* The pointer to the seat that currently overrides this section (§2.4). Outside the card button —
+ * an interactive child of a button is the nested-interactive violation D25 pinned. */
+.kit .mgal-seat-link {
+  all: unset;
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.kit .mgal-seat-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A FAMILY card's key rows: today's key panel, each row now a button into that key's gallery. */
 .kit .mgal-keys {
   list-style: none;
   margin: 8px 0 0;
@@ -6106,147 +6206,309 @@ body[data-perf="lite"] .kit .navmenu-pop {
   flex-direction: column;
   gap: 6px;
 }
-.kit .mgal-keys li {
+.kit .mgal-keyrow {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.kit .mgal-keyrow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .mgal-keyrow[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+.kit .mgal-keyrow-art {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background:
+    repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0 / 8px 8px;
+  overflow: hidden;
+}
+.kit .mgal-keyrow-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.kit .mgal-keyrow-text {
+  flex: 1;
+  min-width: 0;
   display: grid;
-  grid-template-columns: minmax(84px, auto) 1fr;
-  gap: 2px 10px;
-  align-items: baseline;
+  gap: 2px;
   font-size: 11px;
   line-height: 1.5;
+  text-align: left;
 }
-.kit .mgal-keys code {
+.kit .mgal-keyrow code {
   font-family: ui-monospace, "JetBrains Mono", monospace;
   font-size: 11px;
   color: var(--text);
   overflow-wrap: anywhere;
 }
-.kit .mgal-keys .h {
+.kit .mgal-keyrow .h {
   color: var(--text-3);
 }
-/* What the key resolves to today — under the name, so the pair reads as one answer. */
-.kit .mgal-keys .b {
-  grid-column: 1 / -1;
+.kit .mgal-keyrow .b {
   color: var(--text-2);
 }
-.kit .mgal-keys .b.none {
+.kit .mgal-keyrow .b.none {
   color: var(--text-3);
   font-style: italic;
 }
-.kit .mgal-list {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
+
+/* THE GALLERY MODAL — the `.pm` shell, at the automations sheet's rung (45) rather than PromptModal's
+ * 60: it OPENS the confirm dialog (z 50) for a delete, so it must sit under it. */
+.kit .pm-backdrop.mgal-pm {
+  z-index: 45;
+}
+.kit .mgal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 14px 20px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-.kit .mgal-item {
-  display: flex;
-  align-items: center;
   gap: 10px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
 }
-/* An unusable drop is marked on the ROW, not just in a badge: it is the one state where the owner has
- * to act (rename or replace the file) before the theme can use it at all. */
-.kit .mgal-item.bad {
-  border-color: var(--danger-soft);
-}
-.kit .mgal-thumb {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-}
-.kit .mgal-meta {
-  flex: 1;
-  min-width: 0;
+/* The one upload entrance (§4/§6.2) — a labelled row, ≥56px, and INERT until S3b makes it live. */
+.kit .mgal-add {
+  all: unset;
+  box-sizing: border-box;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: 4px 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-2);
 }
-.kit .mgal-meta .name {
-  font-size: 12px;
-  color: var(--text);
-  overflow-wrap: anywhere;
+.kit .mgal-add[disabled] {
+  opacity: 0.55;
+  cursor: default;
 }
-.kit .mgal-meta .dim {
+.kit .mgal-add small {
+  flex-basis: 100%;
   font-size: 10px;
   color: var(--text-3);
 }
-/* The move pair. 34px targets rather than the 44px ideal: two of them ride a 44px-tall row on a phone,
- * and the row itself is the spacing that keeps them separable — the same trade the seg chips make. */
-.kit .mgal-move {
-  flex: none;
-  display: flex;
-  gap: 4px;
+.kit .mgal-scope {
+  margin: 0;
+  display: grid;
+  gap: 3px;
 }
-.kit .mgal-move button {
+.kit .mgal-count {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.kit .mgal-dangling {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* THE GRID — three columns, tiles at the role's aspect, two corners with two fixed meanings. */
+.kit .mgal-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.kit .mgal-tile {
   all: unset;
   box-sizing: border-box;
-  width: 34px;
-  height: 34px;
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--mgal-tile-aspect, 1);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+  /* The decode budget's layout half (Opus M3): an off-screen tile is neither laid out nor painted.
+   * `contain-intrinsic-size` keeps the scrollbar honest while they are skipped. */
+  content-visibility: auto;
+  contain-intrinsic-size: 120px;
+  background:
+    repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0 / 12px 12px;
+  border: 1px solid var(--line);
+}
+.kit .mgal-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .mgal-tile.on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.kit .mgal-tile.sel {
+  outline: 2px solid var(--accent);
+}
+.kit .mgal-tile-img {
+  width: 100%;
+  height: 100%;
+  /* `contain`, never `cover` (defect #9): a cutout or a mask silhouette must stay whole in the grid,
+   * and the checkerboard behind it is what says "transparent" rather than "missing". */
+  object-fit: contain;
+}
+.kit .mgal-tile-img.dim {
+  opacity: 0.4;
+}
+.kit .mgal-tile-none {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.kit .mgal-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+}
+.kit .mgal-corner.end {
+  right: 6px;
+  bottom: 6px;
+  background: var(--accent);
+  color: var(--bg);
+}
+.kit .mgal-corner.top {
+  right: 6px;
+  top: 6px;
+  background: var(--danger);
+  color: var(--bg);
+}
+.kit .mgal-corner.start {
+  left: 6px;
+  bottom: 6px;
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: 10px;
+}
+
+/* THE DETAIL PANEL — where every word and every action about one entry lives. */
+.kit .mgal-detail {
+  display: grid;
+  gap: 8px;
+}
+.kit .mgal-back {
+  all: unset;
+  align-self: start;
+  padding: 8px 2px;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.kit .mgal-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .mgal-detail-art {
+  width: 100%;
+  /* A fixed BAND rather than the destination's aspect: this view is about the picture itself — the
+   * whole of it, `contain`ed — and the destination's shape is what the framing previews will show at
+   * S4. A phone-friendly two-fifths of the viewport, so the filename and the actions stay in view. */
+  height: 40vh;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background:
+    repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0 / 12px 12px;
+}
+.kit .mgal-detail-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.kit .mgal-detail-name {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kit .mgal-detail-meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.kit .mgal-detail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kit .mgal-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+.kit .mgal-act {
+  all: unset;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 14px;
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
 }
-.kit .mgal-move button:disabled {
+.kit .mgal-act:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .mgal-act[disabled] {
   opacity: 0.35;
   cursor: default;
 }
-.kit .mgal-move button:not(:disabled):active {
-  transform: scale(0.94);
+.kit .mgal-act:not([disabled]):active {
+  transform: scale(0.98);
+}
+.kit .mgal-act.primary {
   border-color: var(--accent);
   color: var(--accent);
 }
-.kit .mgal-pin-grid {
-  margin-top: 8px;
-  display: grid;
-  gap: 8px;
+.kit .mgal-act.danger {
+  border-color: var(--danger-soft);
+  color: var(--danger);
 }
-.kit .mgal-pin {
-  display: grid;
-  grid-template-columns: 104px 1fr;
-  gap: 12px;
+.kit .mgal-act-row {
+  display: flex;
   align-items: center;
-}
-.kit .mgal-pin > span {
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--text-3);
-}
-.kit .mgal-pin select {
-  all: unset;
-  box-sizing: border-box;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--line);
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
   font-size: 12px;
+  color: var(--text-2);
 }
-.kit .mgal-pin select:disabled {
-  opacity: 0.5;
-}
-/* The optional per-pin line (G6.3). Second column, under the select, so it reads as belonging to THAT
- * control rather than to the label opposite it — the pin row is a 2-col grid, and a third child would
- * otherwise land under the label. Only rendered when the registry declares a hint, so every other pin
- * row is untouched. */
-.kit .mgal-pin-hint {
-  grid-column: 2;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--text-3);
+/* The ↑/↓ pair plus move-to-edge — two columns on a phone, every target ≥44px (the WCAG floor S5's
+ * drag never replaces). */
+.kit .mgal-act-move {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }

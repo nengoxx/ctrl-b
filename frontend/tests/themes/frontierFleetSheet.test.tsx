@@ -71,6 +71,10 @@ const ownerFile = (name: string): MediaFile => ({
   unusable_reason: null,
 });
 
+/** …and the url that file is PAINTED at: the ladders hand over ready-to-paint urls since D65, so an
+ *  owner file carries its `?rev=` (defect #1 — a rig replaced in place must not keep its old bytes). */
+const painted = (name: string) => `${ownerFile(name).url}?rev=1%3A10`;
+
 const mediaIndex = (
   roles: Record<string, MediaFile[]>,
   slots: Record<string, string> = {},
@@ -117,17 +121,17 @@ describe("FrontierFleet owner art (D53 M2)", () => {
     const { container } = render(<FrontierFleet active />);
     expect(cardArt(container)).toEqual([
       assets[present({ name: "pegasus" }, 0).asset as string], // the bundled rig for position 0
-      ownerFile("b").url, // …and position 1 is untouched
+      painted("b"), // …and position 1 is untouched
     ]);
   });
 
   it("the map cover takes the hero pool's first file, and its pin overrides that", () => {
     media.data = mediaIndex({ hero: [ownerFile("one"), ownerFile("two")] });
     const { container, rerender } = render(<FrontierFleet active />);
-    expect(bgUrl(container.querySelector(".frontier-map .pic"))).toBe(ownerFile("one").url);
+    expect(bgUrl(container.querySelector(".frontier-map .pic"))).toBe(painted("one"));
     media.data = mediaIndex({ hero: [ownerFile("one"), ownerFile("two")] }, { hero: "two" });
     rerender(<FrontierFleet active />);
-    expect(bgUrl(container.querySelector(".frontier-map .pic"))).toBe(ownerFile("two").url);
+    expect(bgUrl(container.querySelector(".frontier-map .pic"))).toBe(painted("two"));
   });
 });
 
@@ -186,9 +190,9 @@ describe("FrontierFleet F3 sheet wiring", () => {
     media.data = mediaIndex({ rigs: [ownerFile("a"), ownerFile("b")] });
     setFrontierSelection("atlas"); // display position 1
     const { container } = render(<FrontierFleet active />);
-    expect(cardArt(container)).toEqual([ownerFile("a").url, ownerFile("b").url]);
+    expect(cardArt(container)).toEqual([painted("a"), painted("b")]);
     // The F3 rule: the sheet reuses the CARD's placement, never a second resolution of the art.
-    expect(bgUrl(container.querySelector(".frontier-hd .banner .img"))).toBe(ownerFile("b").url);
+    expect(bgUrl(container.querySelector(".frontier-hd .banner .img"))).toBe(painted("b"));
   });
 
   it("a CONSUMED (defaultPrevented) Escape leaves the sheet open — the modal-layer guard", () => {

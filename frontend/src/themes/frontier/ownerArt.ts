@@ -16,8 +16,17 @@
 import { useMemo } from "react";
 
 import { useMediaIndex, type MediaFile, type MediaIndex } from "../../hooks/useMedia";
-import { cycleAt, firstUsable, resolveNamed } from "../../lib/media";
-import { ART } from "./art";
+import { cycleAt, firstUsable, resolveNamed, revUrl } from "../../lib/media";
+import {
+  activeIds,
+  ladderRows,
+  rowId,
+  shown,
+  usableLadderRows,
+  type ActiveArt,
+  type LibraryRow,
+} from "../../lib/mediaLibrary";
+import { ART, RIG_KEYS } from "./art";
 
 /** The three layer files, by the KEY their stem must match (the owner-ruled NAMED convention, §10.1).
  *  Ordered as they are dropped in the gallery, back to front. */
@@ -50,14 +59,10 @@ export function frontierArtFromIndex(index: MediaIndex | undefined): FrontierArt
   // inside a theme's render — the `rosterFromIndex` precedent.
   const role = (name: string): MediaFile[] => {
     const files = index?.roles?.[name];
-    // S2's §2.4 resolver rewrite replaces this function and owns deleting this skip: the index now
-    // also carries BUNDLED rows (the fallback tier), which this ladder still expresses as `ART`.
-    return Array.isArray(files) ? files.filter((f) => f.bundled == null) : [];
+    return Array.isArray(files) ? files : [];
   };
-  const rigs = role("rigs");
-  const stack = resolveNamed(role("stack"), STACK_KEYS);
-  const layer = (key: (typeof STACK_KEYS)[number], bundled: string): string =>
-    stack.get(key)?.url ?? bundled;
+  const rigs = rigRows(role("rigs"));
+  const stack = stackRows(role("stack"));
 
   return {
     rigUrlFor: (i) => {
@@ -65,14 +70,90 @@ export function frontierArtFromIndex(index: MediaIndex | undefined): FrontierArt
       // an unusable file HOLDS its position, and only that one card falls back — one broken drop can
       // never re-deal the rest of the fleet's art.
       const f = cycleAt(rigs, i);
-      return f === null || f.unusable ? undefined : f.url;
+      return f === null || f.unusable ? undefined : rigUrl(f);
     },
-    hero: firstUsable(role("hero"), index?.slots?.hero)?.url ?? ART.hero,
+    hero: heroRow(role("hero"), index?.slots ?? {}) ?? ART.hero,
     stack: {
-      cube: layer("cube", ART.stack.cube),
-      mid: layer("platform-mid", ART.stack.mid),
-      base: layer("platform-base", ART.stack.base),
+      cube: stack.get("cube") ?? ART.stack.cube,
+      mid: stack.get("platform-mid") ?? ART.stack.mid,
+      base: stack.get("platform-base") ?? ART.stack.base,
     },
+  };
+}
+
+// ── the §2.4 ACTIVE RESOLVERS (D65, council H1) ──────────────────────────────────────────────────
+//
+// One function per ladder, exported so the Conf gallery resolves through the SAME rule the surfaces
+// paint through (`theme-engine/mediaRegistry.ts` imports them; this module never imports it back).
+// Pure in the index rows + the wire's `slots`, and reading only wire facts — `listed` is what lets a
+// ladder keep falling through to bundled art exactly as it always did (§2.3 ④).
+
+/** The rig POOL as dealt: the owner's tier when they have dropped anything, else the six bundled rigs
+ *  in their own order — which is precisely what `present()` deals positionally (`RIG_KEYS[i % 6]`), so
+ *  a fresh install paints what it always painted. */
+export function rigRows(rows: readonly MediaFile[]): MediaFile[] {
+  return ladderRows(rows);
+}
+
+/** A rig row's URL. A bundled row resolves to this theme's own asset (the server emits the id only);
+ *  an id the theme no longer ships resolves to nothing and the consumer keeps its own fallback. */
+function rigUrl(f: MediaFile): string | undefined {
+  if (f.bundled == null) return revUrl(f.url, f.revision);
+  const at = RIG_KEYS.indexOf(f.bundled as (typeof RIG_KEYS)[number]);
+  return at < 0 ? undefined : ART.rigs[at];
+}
+
+/** The map cover: the `hero` pin, else the folder's first usable file. `undefined` = the ladder falls
+ *  through to the bundled vista, which is art no id addresses (the role ships none). */
+function heroRow(rows: readonly MediaFile[], slots: Record<string, string>): string | undefined {
+  const pick = firstUsable(usableLadderRows(rows), slots.hero || undefined);
+  return pick === undefined ? undefined : revUrl(pick.url, pick.revision);
+}
+
+/** The Comms stack, per LAYER. The bundled ids ARE the layer keys, so a bundled row answers its own
+ *  key — and a partial drop still composites owner over bundled, one layer at a time. */
+function stackRows(rows: readonly MediaFile[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const owner = resolveNamed(
+    shown(rows).filter((f) => f.bundled == null),
+    STACK_KEYS,
+  );
+  for (const key of STACK_KEYS) {
+    const file = owner.get(key);
+    if (file !== undefined) out.set(key, revUrl(file.url, file.revision));
+  }
+  return out;
+}
+
+/** The gallery's reading of the rig pool — every member is dealt, in this order. */
+export function activeRigs(rows: readonly LibraryRow[]): ActiveArt {
+  return { ids: activeIds(rigRows(rows as readonly MediaFile[])), mode: "deal" };
+}
+
+/** The gallery's reading of the map cover: pin, else first usable — one winner. */
+export function activeHero(
+  rows: readonly LibraryRow[],
+  slots: Readonly<Record<string, string>>,
+): ActiveArt {
+  const pick = firstUsable(
+    usableLadderRows(rows as readonly MediaFile[]),
+    slots?.hero || undefined,
+  );
+  return { ids: pick ? [rowId(pick)] : [], mode: "first" };
+}
+
+/** The gallery's reading of ONE stack layer (each is its own section, §6.1): the owner's file for that
+ *  key, else the bundled row carrying the same id. */
+export function activeStackLayer(key: string) {
+  return (rows: readonly LibraryRow[]): ActiveArt => {
+    const files = rows as readonly MediaFile[];
+    const owner = resolveNamed(
+      shown(files).filter((f) => f.bundled == null),
+      [key],
+    ).get(key);
+    const fallback = shown(files).find((f) => f.bundled === key);
+    const pick = owner ?? fallback;
+    return { ids: pick ? [rowId(pick)] : [], mode: "first" };
   };
 }
 

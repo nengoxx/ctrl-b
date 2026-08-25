@@ -386,8 +386,12 @@ describe("the reel figure", () => {
     stubImage();
     const { container } = render(<GachaReel />);
     act(() => setUI({ tab: "agent" }));
-    expect(figure(container)!.getAttribute("src")).toBe("/api/media/gacha/files/reel/mine.webp");
-    expect(warmed[0].src).toBe("/api/media/gacha/files/reel/mine.webp");
+    // PAINT-READY (D65 defect #1): the roster hands over the url with its `?rev=` already on it, so a
+    // cutout replaced in place under the same name cannot keep painting the old bytes.
+    expect(figure(container)!.getAttribute("src")).toBe(
+      "/api/media/gacha/files/reel/mine.webp?rev=1%3A1",
+    );
+    expect(warmed[0].src).toBe("/api/media/gacha/files/reel/mine.webp?rev=1%3A1");
   });
 
   it("a REPLACED cutout clears the failure latch — the latch is keyed to the URL that broke", () => {
@@ -402,7 +406,9 @@ describe("the reel figure", () => {
     // theme figure-less until a reload — this must recover on the next render.
     media.data = ownerCutout("fixed");
     act(() => setUI({ tab: "conf" }));
-    expect(figure(container)!.getAttribute("src")).toBe("/api/media/gacha/files/reel/fixed.webp");
+    expect(figure(container)!.getAttribute("src")).toBe(
+      "/api/media/gacha/files/reel/fixed.webp?rev=1%3A1",
+    );
 
     // …and the broken one is still latched: coming BACK to it must not re-mount a known-bad image.
     media.data = ownerCutout("broken");
@@ -438,7 +444,11 @@ describe("the reel figure", () => {
     // same URL, new bytes
     media.data = ownerCutout("cut", "200:9");
     act(() => setUI({ tab: "conf" }));
-    expect(figure(container)!.getAttribute("src")).toBe("/api/media/gacha/files/reel/cut.webp");
+    // …and the painted url MOVES with the revision (defect #1), which is what makes the browser's own
+    // decoded copy and the SW cache entry follow the repair too.
+    expect(figure(container)!.getAttribute("src")).toBe(
+      "/api/media/gacha/files/reel/cut.webp?rev=200%3A9",
+    );
 
     // …and a refetch that returns the SAME revision must not un-latch a still-broken file
     act(() => warmed[warmed.length - 1].onerror!());

@@ -143,7 +143,8 @@ describe("GachaAgent — the oracle block", () => {
     const arts = [...container.querySelectorAll<HTMLImageElement>(".gc-oracle-art")];
     expect(arts).toHaveLength(2); // sharp + the soft ghost (the fade mode is on)
     for (const img of arts) {
-      expect(img.getAttribute("src")).toBe("/api/media/gacha/files/oracle/eye.webp");
+      // PAINT-READY (D65 defect #1) — the `?rev=` rides the resolver, not the call site.
+      expect(img.getAttribute("src")).toBe("/api/media/gacha/files/oracle/eye.webp?rev=1%3A1");
     }
   });
 

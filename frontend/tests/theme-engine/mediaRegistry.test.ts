@@ -6,7 +6,12 @@ import { RIG_KEYS } from "../../src/themes/frontier/art";
 import { STACK_KEYS } from "../../src/themes/frontier/ownerArt";
 import { gacha } from "../../src/themes/gacha";
 import { defaultRoster } from "../../src/themes/gacha/roster";
-import { applicableNs, MEDIA_NS, type MediaNsDef } from "../../src/theme-engine/mediaRegistry";
+import {
+  applicableNs,
+  MEDIA_NS,
+  mediaSections,
+  type MediaNsDef,
+} from "../../src/theme-engine/mediaRegistry";
 import { registeredThemes } from "../../src/theme-engine/registry";
 import type { ThemeDef } from "../../src/theme-engine/types";
 
@@ -326,6 +331,11 @@ function backendRoles(constName: string): Record<string, string[]> {
   return out;
 }
 
+/** The bundled IDS of one role. Since D65 a role's `bundled` list holds `{id, url}` objects — one
+ *  object rather than an id list beside a url map — because the gallery has to PAINT a bundled tile
+ *  and the server emits no url for it. The mirror below is still about the ids. */
+const ids = (role: { bundled: readonly { id: string }[] }) => role.bundled.map((b) => b.id);
+
 describe("bundled ids — derived front-end-side, mirrored on the backend", () => {
   const roster = defaultRoster();
 
@@ -333,27 +343,27 @@ describe("bundled ids — derived front-end-side, mirrored on the backend", () =
     // Each list is the theme's, read where the theme keeps it. The oracle's emptiness is the load-bearing
     // one: its bundled backdrop is SCENE art addressed by no name (`pools.oracle` is empty on purpose), so
     // it stays the last rung of `oracleArt`'s ladder instead of becoming a library entry with an invented id.
-    expect(MEDIA_NS.gacha.roles.characters.bundled).toEqual(roster.entries.map((e) => e.name));
-    expect(MEDIA_NS.gacha.roles.banner.bundled).toEqual(roster.scenes.map((s) => s.name));
-    expect(MEDIA_NS.gacha.roles.reel.bundled).toEqual(roster.pools.reel.map((a) => a.name));
-    expect(MEDIA_NS.gacha.roles.oracle.bundled).toEqual([]);
+    expect(ids(MEDIA_NS.gacha.roles.characters)).toEqual(roster.entries.map((e) => e.name));
+    expect(ids(MEDIA_NS.gacha.roles.banner)).toEqual(roster.scenes.map((s) => s.name));
+    expect(ids(MEDIA_NS.gacha.roles.reel)).toEqual(roster.pools.reel.map((a) => a.name));
+    expect(ids(MEDIA_NS.gacha.roles.oracle)).toEqual([]);
     // The literals the theme ships today — the half a derivation cannot catch.
-    expect(MEDIA_NS.gacha.roles.characters.bundled).toEqual(["pegasus", "atlas", "3", "4", "lyra"]);
-    expect(MEDIA_NS.gacha.roles.banner.bundled).toEqual(["b2", "b3"]);
-    expect(MEDIA_NS.gacha.roles.reel.bundled).toEqual(["lyra"]);
+    expect(ids(MEDIA_NS.gacha.roles.characters)).toEqual(["pegasus", "atlas", "3", "4", "lyra"]);
+    expect(ids(MEDIA_NS.gacha.roles.banner)).toEqual(["b2", "b3"]);
+    expect(ids(MEDIA_NS.gacha.roles.reel)).toEqual(["lyra"]);
   });
 
   it("frontier's ids are its key tuples — and the hero vista, which nothing names, gets none", () => {
-    expect(MEDIA_NS.frontier.roles.rigs.bundled).toEqual([...RIG_KEYS]);
-    expect(MEDIA_NS.frontier.roles.stack.bundled).toEqual([...STACK_KEYS]);
-    expect(MEDIA_NS.frontier.roles.hero.bundled).toEqual([]);
+    expect(ids(MEDIA_NS.frontier.roles.rigs)).toEqual([...RIG_KEYS]);
+    expect(ids(MEDIA_NS.frontier.roles.stack)).toEqual([...STACK_KEYS]);
+    expect(ids(MEDIA_NS.frontier.roles.hero)).toEqual([]);
   });
 
   it("the kit ships no bundled art at all, and every role SAYS so", () => {
     // Not an omission (§3): absent art means the surface renders exactly as it does without it. The field
     // is required precisely so "nothing bundled" cannot be confused with "nobody filled this in".
     for (const [role, def] of Object.entries(MEDIA_NS.kit.roles)) {
-      expect(def.bundled, role).toEqual([]);
+      expect(ids(def), role).toEqual([]);
     }
   });
 
@@ -363,10 +373,12 @@ describe("bundled ids — derived front-end-side, mirrored on the backend", () =
     for (const [nsName, ns] of Object.entries(MEDIA_NS)) {
       for (const [roleName, role] of Object.entries(ns.roles)) {
         const where = `${nsName}/${roleName}`;
-        expect(new Set(role.bundled).size, where).toBe(role.bundled.length);
-        for (const id of role.bundled) {
+        expect(new Set(ids(role)).size, where).toBe(role.bundled.length);
+        for (const { id, url } of role.bundled) {
           expect(id.length, where).toBeGreaterThan(0);
           expect(id, where).not.toMatch(/[/\\.]/);
+          // …and every id resolves to an ASSET, because the gallery paints bundled tiles from these.
+          expect(url.length, `${where} ${id}`).toBeGreaterThan(0);
         }
       }
     }
@@ -395,12 +407,153 @@ describe("bundled ids — derived front-end-side, mirrored on the backend", () =
     ] as const) {
       const backend = backendRoles(constName);
       const frontend = Object.fromEntries(
-        Object.entries(MEDIA_NS[ns].roles).map(([role, def]) => [role, [...def.bundled]]),
+        Object.entries(MEDIA_NS[ns].roles).map(([role, def]) => [role, ids(def)]),
       );
       // Role NAMES too, in declaration order — the two registries have always mirrored row for row, and
       // the bundled lists are only meaningful if the roles they hang off agree.
       expect(Object.keys(backend), ns).toEqual(Object.keys(frontend));
       expect(backend, ns).toEqual(frontend);
     }
+  });
+});
+
+// ── SECTIONS + the §2.4 active resolvers (D65, council H1/H5/M1) ─────────────────────────────────
+//
+// A SECTION is one art destination; the capability descriptor on it is what makes the two kinds (a
+// library-backed folder, a pin-backed seat) ONE gallery instead of two behaviours sharing a label.
+// These arms pin the two things a renderer must not have to re-derive: which destinations exist, and
+// which of them can do what.
+
+/** The role list the SERVER would send for one namespace (the authority on which folders exist). */
+const rolesOf = (ns: string) => Object.keys(MEDIA_NS[ns].roles);
+
+describe("mediaSections — the destinations the Conf tab shows", () => {
+  it("gacha: one card per role folder, then the three character-bound SEATS", () => {
+    const out = mediaSections("gacha", MEDIA_NS.gacha, rolesOf("gacha"));
+    expect(out.map((s) => s.id)).toEqual([
+      "gacha:characters",
+      "gacha:banner",
+      "gacha:reel",
+      "gacha:oracle",
+      "gacha:@wallpaper",
+      "gacha:@hero",
+      "gacha:@oracle",
+    ]);
+    // `reel_figure` is NOT a seat: it pins the reel role's own first-wins pick, so it is that role's
+    // ladder rather than a destination of its own — one destination, one card.
+    const reel = out.find((s) => s.id === "gacha:reel");
+    expect(reel?.pin).toBe("reel_figure");
+    expect(reel?.caps.activate).toBe("pin");
+    // …while a pool with no pin above it activates by ORDER (move-to-front).
+    expect(out.find((s) => s.id === "gacha:characters")?.caps.activate).toBe("order");
+  });
+
+  it("a SEAT is a read-only view: pin only, and nothing that would write the source library", () => {
+    const seat = mediaSections("gacha", MEDIA_NS.gacha, rolesOf("gacha")).find(
+      (s) => s.id === "gacha:@wallpaper",
+    );
+    expect(seat?.role).toBe("characters"); // it VIEWS the cast
+    expect(seat?.caps).toEqual({
+      reorder: false,
+      activate: "pin",
+      hidden: false,
+      remove: false,
+      upload: false,
+    });
+  });
+
+  it("frontier: each STATIC key is its own destination, with its own shape", () => {
+    const out = mediaSections("frontier", MEDIA_NS.frontier, rolesOf("frontier"));
+    expect(out.filter((s) => s.kind === "key").map((s) => s.key)).toEqual([...STACK_KEYS]);
+    const cube = out.find((s) => s.key === "cube");
+    expect(cube?.aspect).toBeCloseTo(353 / 364, 5);
+    // Order buys nothing but the duplicate tie-break in a named role, so the ↑/↓ pair is hidden (#11).
+    expect(cube?.caps.reorder).toBe(false);
+    expect(cube?.caps.activate).toBe("order"); // move-to-front IS how a duplicate wins its key
+  });
+
+  it("kit: ONE family card per data-derived role, plus its Unassigned bucket (H5)", () => {
+    const out = mediaSections("kit", MEDIA_NS.kit, rolesOf("kit"));
+    expect(out.filter((s) => s.kind === "family").map((s) => s.role)).toEqual([
+      "services",
+      "service-banners",
+      "hosts",
+    ]);
+    // Every named role gets a bucket for the files that bound nothing — otherwise a rename's orphan is
+    // invisible AND undeletable, the one state a manager must not be able to produce.
+    expect(out.filter((s) => s.kind === "unassigned").map((s) => s.id)).toEqual([
+      "kit:services#",
+      "kit:service-banners#",
+      "kit:hosts#",
+    ]);
+    expect(out.find((s) => s.kind === "unassigned")?.caps).toEqual({
+      reorder: false,
+      activate: "none", // a file bound to no key paints nowhere; there is nothing to activate
+      hidden: true,
+      remove: true,
+      upload: false,
+    });
+  });
+
+  it("a role the SERVER lists and this registry does not describe still gets a gallery", () => {
+    const out = mediaSections("gacha", MEDIA_NS.gacha, ["characters", "mystery"]);
+    const mystery = out.find((s) => s.role === "mystery");
+    expect(mystery?.kind).toBe("pool");
+    expect(mystery?.active).toBeUndefined(); // no ladder to claim — so it claims nothing
+  });
+
+  it("every declared destination has a SHAPE and a bounds policy", () => {
+    for (const ns of Object.keys(MEDIA_NS)) {
+      for (const s of mediaSections(ns, MEDIA_NS[ns], rolesOf(ns))) {
+        expect(s.bounds.bytes, s.id).toBeGreaterThan(0);
+        expect(s.aspect, s.id).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe("the §2.4 active resolvers are PURE in the index (§11's purity arm)", () => {
+  /** One collated row, minimal. */
+  const row = (file: string, over = {}) => ({
+    name: file.replace(/\.\w+$/, ""),
+    file,
+    url: `/api/media/x/files/r/${file}`,
+    revision: "1:1",
+    unusable: false,
+    ...over,
+  });
+
+  it("takes the ROWS and the wire's SLOTS — never config, never settings", () => {
+    // The seam that makes the gallery incapable of claiming a binding the render will not honour: the
+    // resolver is the theme's own ladder, and its whole input is the payload both ends already share.
+    // A third parameter would be a config side-channel — §2.3 ④ exists precisely so none is needed.
+    for (const ns of Object.keys(MEDIA_NS)) {
+      for (const s of mediaSections(ns, MEDIA_NS[ns], rolesOf(ns))) {
+        if (s.active === undefined) continue;
+        expect(s.active.length, s.id).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  it("every id it returns is a row it was GIVEN — no invented entry, ever", () => {
+    const rows = [row("a.webp"), row("b.webp")];
+    for (const ns of Object.keys(MEDIA_NS)) {
+      for (const s of mediaSections(ns, MEDIA_NS[ns], rolesOf(ns))) {
+        const out = s.active?.(rows, {});
+        for (const id of out?.ids ?? []) {
+          expect(["f:a.webp", "f:b.webp"], s.id).toContain(id);
+        }
+      }
+    }
+  });
+
+  it("the oracle POOL reports the SEAT that overrides it, rather than a phantom of its own", () => {
+    const pool = mediaSections("gacha", MEDIA_NS.gacha, rolesOf("gacha")).find(
+      (s) => s.id === "gacha:oracle",
+    );
+    expect(pool?.active?.([row("eye.webp")], {})?.ids).toEqual(["f:eye.webp"]);
+    const beaten = pool?.active?.([row("eye.webp")], { oracle: "kira" });
+    expect(beaten?.ids).toEqual([]);
+    expect(beaten?.overriddenBySlot).toBe("oracle");
   });
 });

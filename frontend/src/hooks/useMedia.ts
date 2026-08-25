@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getJSON } from "../api/client";
+import { useScopedQuery } from "./useScopedQuery";
 
 // The owner MEDIA index (D52/G5, GACHA_PLAN §5.4 + §10.4) — `GET /api/media/{ns}`: what the owner has
 // dropped into `$CTRLB_HOME/media/<ns>/<role>/`, per role, already in the order the server rules.
@@ -101,10 +102,29 @@ export function useMediaIndex(
   ns: string,
   opts?: { staleTime?: number; refetchOnMount?: "always"; refetchOnWindowFocus?: boolean },
 ) {
-  return useQuery<MediaIndex>({
-    queryKey: ["media", ns],
+  return useQuery<MediaIndex>({ ...mediaQuery(ns), staleTime: 60_000, ...opts });
+}
+
+/** The key + fetcher, once — so the gallery's own observer below cannot drift from the render paths'. */
+function mediaQuery(ns: string) {
+  return {
+    queryKey: ["media", ns] as const,
     queryFn: () => getJSON<MediaIndex>(`/api/media/${ns}`),
-    staleTime: 60_000,
-    ...opts,
-  });
+  };
+}
+
+/** The CONF GALLERY's read of the same query (defect #3).
+ *
+ *  Fresh-on-entry is the right policy for the one screen the owner opens right after copying files in
+ *  (Codex F7) — but it used to ride the ORDINARY observer, and every tab body in this app stays MOUNTED
+ *  once visited (`DefaultRoot`'s mount loop latches them). So a single visit to Conf left a `staleTime:
+ *  0` observer alive for the rest of the session, re-reading EVERY applicable namespace's directory on
+ *  every window focus, forever, while the owner was on Fleet.
+ *
+ *  `useScopedQuery` is exactly this policy stated properly: the observer is enabled only while Conf is
+ *  the active tab, and re-entry forces a fresh read (`refetchOnMount: "always"`). Off the tab the query
+ *  keeps whatever cadence its RENDER-path observers ask for — the theme surfaces' long staleTime — and
+ *  the gallery contributes nothing. */
+export function useMediaGalleryIndex(ns: string) {
+  return useScopedQuery<MediaIndex>("conf", { ...mediaQuery(ns), staleTime: 0 });
 }

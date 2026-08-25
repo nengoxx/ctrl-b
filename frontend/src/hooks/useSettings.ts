@@ -288,8 +288,16 @@ export function useProviders() {
  *  Save button. Retire this bound when the kit grows a global request timeout. */
 const MEDIA_REFETCH_TIMEOUT_MS = 5_000;
 
-/** Save a partial settings patch. Invalidates the cache + toasts; surfaces a restart note. */
-export function useSaveSettings() {
+/** Save a partial settings patch. Invalidates the cache + toasts; surfaces a restart note.
+ *
+ *  `quiet` suppresses only the "Settings saved" CONFIRMATION (defect #10): the media gallery writes
+ *  once per reorder tap, per In-use switch, per delete, and a stack of identical toasts over a surface
+ *  whose own pixels already show the result is noise the owner has to dismiss. A restart note and every
+ *  ERROR still toast — those are things the owner could not otherwise learn, and no gallery write has
+ *  ever produced one. Hook-level rather than per-call so it can never ride the PATCH BODY to the
+ *  server (`SavePatch` is an open index; a stray `quiet` key would be sent). */
+export function useSaveSettings(opts?: { quiet?: boolean }) {
+  const quiet = opts?.quiet === true;
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (patch: SavePatch) => putJSON<SaveResult>("/api/settings", patch),
@@ -325,7 +333,7 @@ export function useSaveSettings() {
       void loadAgents(); // SYS-9.2 — a save may change the default-agent selection; keep the composer's `/agent` set + resolved default fresh (best-effort)
       if (res.restart_required.length) {
         pushToast(`Saved · restart to apply: ${res.restart_required.join(", ")}`, "info");
-      } else {
+      } else if (!quiet) {
         pushToast("Settings saved", "ok");
       }
       // D52/G5 — a `media.<ns>` save changes the ORDER the media index serves (and its slot pins), and

@@ -30,6 +30,8 @@ vi.mock("../../src/lib/media", async (importOriginal) => {
 
 import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
 import {
+  activeNamedKey,
+  activePool,
   backgroundArtFrom,
   brandArtFrom,
   hostArtFrom,
@@ -368,5 +370,39 @@ describe("the kit index's OWN query policy (Opus M3)", () => {
     qc.setQueryData(["media", KIT_NS], { ns: KIT_NS });
     void qc.invalidateQueries({ queryKey: ["media"] });
     expect(qc.getQueryState(["media", KIT_NS])?.isInvalidated).toBe(true);
+  });
+});
+
+// ── D65: the wire's per-item facts, and the §2.4 resolvers the Conf gallery shares with these
+//    accessors. The kit ships NO bundled art, so what changes here is only the `hidden` skip — but it
+//    has to be the SAME skip, or the gallery would mark an entry in use that no surface paints.
+
+describe("the D65 wire facts", () => {
+  it("a HIDDEN file is skipped by every accessor — resolution never sees it", () => {
+    const rows = index({
+      services: [file("jellyfin", { hidden: true }), file("emby")],
+      background: [file("wall", { hidden: true }), file("wall2")],
+    });
+    expect(serviceIconFrom(rows, { name: "media", kind: "jellyfin" })).toBeUndefined();
+    expect(backgroundArtFrom(rows)?.name).toBe("wall2");
+  });
+
+  it("an item's own `key` binds it, and the stem stays the permanent fallback (§2.2)", () => {
+    // "Drop a file in and it binds" is the shipped owner-facing contract and keeps working forever;
+    // an upload sets `key` instead, so a file may be named anything and still reach its service.
+    const rows = index({ services: [file("odd-name", { key: "jellyfin" }), file("emby")] });
+    expect(serviceIconFrom(rows, { name: "media", kind: "jellyfin" })?.name).toBe("odd-name");
+    expect(serviceIconFrom(rows, { name: "Emby" })?.name).toBe("emby");
+  });
+
+  it("the gallery's resolver IS the accessor's rule — one answer, two readers", () => {
+    const rows = [file("jellyfin"), file("emby")];
+    expect(activeNamedKey("jellyfin")(rows).ids).toEqual(["f:jellyfin.png"]);
+    expect(activeNamedKey("plex")(rows).ids).toEqual([]); // nothing bundled to fall back to
+    // …and the pool's, pin included.
+    expect(activePool("background")(rows, {}).ids).toEqual(["f:jellyfin.png"]);
+    expect(activePool("background")(rows, { background: "emby" }).ids).toEqual(["f:emby.png"]);
+    // A dangling pin falls THROUGH rather than marking nothing — the ladder the layer itself paints.
+    expect(activePool("background")(rows, { background: "gone" }).ids).toEqual(["f:jellyfin.png"]);
   });
 });

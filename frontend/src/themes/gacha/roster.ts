@@ -25,7 +25,15 @@
 // actually supplied is replaced.
 
 import type { MediaFile, MediaIndex } from "../../hooks/useMedia";
-import { cycleAssign, cycleAt, firstUsable, orderedUsable } from "../../lib/media";
+import { cycleAssign, cycleAt, firstUsable, orderedUsable, revUrl } from "../../lib/media";
+import {
+  activeIds,
+  ladderRows,
+  rowId,
+  usableLadderRows,
+  type ActiveArt,
+  type LibraryRow,
+} from "../../lib/mediaLibrary";
 import { ART } from "./art";
 
 /** One roster entry — one object per character, extended with optional fields rather than grown into
@@ -94,6 +102,11 @@ export interface Roster {
  *  one. `null` means PLACEHOLDER: the roster is empty, or the pick was unusable. Consumers render their own
  *  neutral treatment for it (a capsule card without art is still a card) — the resolver never invents a URL. */
 export interface ResolvedArt {
+  /** PAINT-READY (defect #1, D65): an owner file's URL already carries its `?rev=` cache-buster, so a
+   *  consumer paints `art.url` and nothing else. The cache-buster used to be each call site's job and
+   *  ~10 of them forgot it, which left a replaced-in-place file painting its old bytes across the fleet
+   *  — a class of bug the RESOLVER contract closes once instead of ten patches (`lib/media.ts#revUrl`
+   *  is still the one spelling). Bundled art is content-hashed by the build and takes no query. */
   url: string;
   focus?: string;
   /** The index's change token for these bytes, when the art came from the owner's media folder. Absent
@@ -156,6 +169,95 @@ export function defaultRoster(): Roster {
   };
 }
 
+// ── the §2.4 ACTIVE RESOLVERS (D65, council H1) ──────────────────────────────────────────────────
+//
+// "Which image is live" is LADDER knowledge, and the ladders are gacha's. Each role's rule is ONE
+// exported function over the collated index rows, imported by BOTH the paint site (`rosterFromIndex`
+// below) and the Conf gallery (through `theme-engine/mediaRegistry.ts`, which imports this module —
+// the arrow never points back). That is what stops the gallery claiming a binding the render will not
+// honour: there is only one rule to claim.
+//
+// Every one of them is PURE in the rows (plus the wire's `slots` where a pin is involved) and reads
+// only facts the wire carries — `listed`, `hidden`, `unusable` — so no resolver ever touches config
+// (§2.3 ④). The BUNDLED rows they may return are mapped back to this theme's own assets by
+// `bundledEntry` below; the server emits an id, never a url.
+
+/** The dealt CAST. `ladderRows` is the presence-based tier rule, which is exactly what shipped: an
+ *  owner `characters/` folder replaces the bundled cast even when every file in it is broken (each
+ *  broken entry keeps its position and only ITS host gets the placeholder — dropping it would re-deal
+ *  every host after it). */
+export function castRows(rows: readonly MediaFile[]): MediaFile[] {
+  return ladderRows(rows);
+}
+
+/** The banner's SCENE slides — every usable entry, in order. Usability decides the tier here (the
+ *  `usableLadderRows` half of the pair): a folder holding nothing but broken slides falls back to the
+ *  bundled pair rather than showing an empty carousel. */
+export function sceneRows(rows: readonly MediaFile[]): MediaFile[] {
+  return usableLadderRows(rows);
+}
+
+/** A single-pick POOL (`reel`, `oracle`): presence-based tier, then first-wins at the call site. */
+export function poolRows(rows: readonly MediaFile[]): MediaFile[] {
+  return orderedUsable(ladderRows(rows));
+}
+
+/** The gallery's reading of a dealt role — every member is in use, and the mode word says how. */
+export function activeCast(rows: readonly LibraryRow[]): ActiveArt {
+  return { ids: activeIds(castRows(rows as readonly MediaFile[])), mode: "deal" };
+}
+
+export function activeScenes(rows: readonly LibraryRow[]): ActiveArt {
+  return { ids: activeIds(sceneRows(rows as readonly MediaFile[])), mode: "all" };
+}
+
+/** A first-wins pool with an in-role PIN (`reel` ← `reel_figure`): the pin, else the pool's first
+ *  usable member. `slot` is the pin's key, so the one function serves every pool of this shape. */
+export function activePool(slot?: string) {
+  return (rows: readonly LibraryRow[], slots: Readonly<Record<string, string>>): ActiveArt => {
+    const pick = firstUsable(
+      poolRows(rows as readonly MediaFile[]),
+      slot ? slots[slot] : undefined,
+    );
+    return { ids: pick ? [rowId(pick)] : [], mode: "first" };
+  };
+}
+
+/** The ORACLE pool, whose winner may live in ANOTHER section: `oracleArt` reads the `oracle` SEAT pin
+ *  (a character bound into the backdrop) before it ever looks here. When that pin is set, this pool
+ *  paints nothing — and the card must say so with a pointer to the seat rather than marking a tile
+ *  that is not on screen (Opus confirm ②, the pin-beats-pool phantom). */
+export function activeOraclePool(
+  rows: readonly LibraryRow[],
+  slots: Readonly<Record<string, string>>,
+): ActiveArt {
+  if (slotEntryName(slots, "oracle") !== undefined) {
+    return { ids: [], mode: "first", overriddenBySlot: "oracle" };
+  }
+  return activePool()(rows, slots);
+}
+
+/** A SEAT (§2.1's pin-backed section): a read-only view over the source role where the ONE write is
+ *  the pin. Active = the row the pin names, resolved against this same list — a dangling pin marks
+ *  nothing, exactly as the ladder falls through. */
+export function activeSeat(slot: string, ...fallbacks: string[]) {
+  return (rows: readonly LibraryRow[], slots: Readonly<Record<string, string>>): ActiveArt => {
+    for (const key of [slot, ...fallbacks]) {
+      const name = slotEntryName(slots, key);
+      const row = name === undefined ? undefined : rows.find((r) => r.name === name && !r.unusable);
+      if (row !== undefined) return { ids: [rowId(row)], mode: "first" };
+    }
+    return { ids: [], mode: "first" };
+  };
+}
+
+/** A pin's value, or `undefined` for unset/blank — the one place the empty-string case is handled, so
+ *  a cleared pin can never read as a pin on an entry called "". */
+function slotEntryName(slots: Readonly<Record<string, string>>, key: string): string | undefined {
+  const value = slots?.[key];
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
 /** Build the live roster from the media index (§5.4) — the ONE adapter between the endpoint and the
  *  resolver. `undefined` (the query has not answered, or failed) is the bundled set, so first paint and
  *  a backend hiccup both show art rather than placeholders.
@@ -164,48 +266,64 @@ export function defaultRoster(): Roster {
  *  owner-filled `banner/` still wins its own slides. That is what makes "drop one file in" a complete,
  *  useful action instead of an all-or-nothing switch to a half-empty theme.
  *
- *  UNUSABLE files are treated differently in the two positions, and deliberately (§5.3): a broken
- *  CHARACTER keeps its slot in the list — the order IS the host assignment, so dropping it would
- *  silently re-deal every host after it — while a broken file in a first-wins POOL is skipped, because
- *  there the only thing its position buys is a blank surface. */
+ *  Since D65 the FALLBACK is the index's own bundled tier rather than a second list held here: the
+ *  resolvers above return rows, `toEntry`/`toNamed` map a bundled row back to this theme's asset, and a
+ *  bundled entry the owner LISTED mixes into the deal at the priority they gave it. A fresh install is
+ *  byte-identical to `defaultRoster()` by construction — the fallback tier is the whole bundled set, in
+ *  the registry's order, which is derived from `defaultRoster()` in the first place. */
 export function rosterFromIndex(index: MediaIndex | undefined): Roster {
-  const bundled = defaultRoster();
-  if (index === undefined) return bundled;
+  if (index === undefined) return defaultRoster();
   // Defensive against the PAYLOAD, not against our own types: this is wire data, and a stub/partial
   // response (an e2e mock, a proxy answering `{}`) must degrade to the bundled set rather than throw
   // inside a theme's render.
   const role = (name: string): MediaFile[] => {
     const files = index.roles?.[name];
-    // S2's §2.4 resolver rewrite replaces this function and owns deleting this skip: the index now
-    // also carries BUNDLED rows (the fallback tier), which this ladder still expresses as its own
-    // `defaultRoster()` fallbacks below.
-    return Array.isArray(files) ? files.filter((f) => f.bundled == null) : [];
+    return Array.isArray(files) ? files : [];
   };
-  const characters = role("characters");
-  const scenes = orderedUsable(role("banner"));
+  const bundled = defaultRoster();
+  const cast = castRows(role("characters")).map(toEntry);
+  const scenes = sceneRows(role("banner")).map((f) => toNamed(f, sceneUrl(f.bundled)));
+  const reel = poolRows(role("reel")).map((f) => toNamed(f, cutoutUrl(f.bundled)));
   return {
-    entries: characters.length > 0 ? characters.map(toEntry) : bundled.entries,
+    // The last degrade rung, and only that: a payload carrying NO rows at all for a role is one the
+    // real server never sends (it emits the fallback tier for every role that ships art), so an empty
+    // list here means a stub, a partial mock or a proxy answering `{}` — and the shipped art is a
+    // better answer than a fleet of placeholders. Once any row arrives, the tier rules above decide.
+    entries: cast.length > 0 ? cast : bundled.entries,
     slots: index.slots ?? {},
-    scenes: scenes.length > 0 ? scenes.map((f) => ({ name: f.name, url: f.url })) : bundled.scenes,
+    scenes: scenes.length > 0 ? scenes : bundled.scenes,
     pools: {
-      // Per-role fallback, the same rule the cast and the scenes follow: an empty `reel/` keeps the
-      // BUNDLED cutout, whatever the owner did to the other roles.
-      reel: role("reel").length > 0 ? pool(role("reel")) : bundled.pools.reel,
-      oracle: pool(role("oracle")),
+      reel: reel.length > 0 ? reel : bundled.pools.reel,
+      oracle: poolRows(role("oracle")).map((f) => toNamed(f, undefined)),
     },
   };
 }
 
-/** One owner file as a roster ENTRY. No `wide`/`cutout`/`focus`: under the role re-rule those fields
- *  describe the BUNDLED defaults only — an owner's backdrop lives in the shared `kit/background/`, their
- *  cutout in `reel/`, and the folder a file sits in is the whole of its assignment. */
+/** The bundled CAST by id — the same objects `defaultRoster()` deals, so a bundled row that reaches
+ *  the fleet keeps its hand-tuned focal point and its cutout. */
+const BUNDLED_BY_ID = new Map(BUNDLED_ENTRIES.map((e) => [e.name, e]));
+
+/** One library row as a roster ENTRY. A bundled row resolves to this theme's own asset (the server
+ *  emits the id and never a url); one it cannot resolve keeps its POSITION as an unusable entry rather
+ *  than vanishing, because vanishing would re-deal every host after it. An owner file has no
+ *  `wide`/`cutout`/`focus`: the folder a file sits in is the whole of its assignment. */
 function toEntry(f: MediaFile): RosterEntry {
-  return { name: f.name, image: f.url, ...(f.unusable && { unusable: true }) };
+  if (f.bundled != null)
+    return BUNDLED_BY_ID.get(f.bundled) ?? { name: f.bundled, image: "", unusable: true };
+  return { name: f.name, image: revUrl(f.url, f.revision), ...(f.unusable && { unusable: true }) };
 }
 
-function pool(files: MediaFile[]): NamedArt[] {
-  return orderedUsable(files).map((f) => ({ name: f.name, url: f.url, rev: f.revision }));
+/** One library row as a POOL member. `bundledUrl` is the theme asset that id stands for, per role. */
+function toNamed(f: MediaFile, bundledUrl: string | undefined): NamedArt {
+  return f.bundled != null
+    ? { name: f.bundled, url: bundledUrl ?? "" }
+    : { name: f.name, url: revUrl(f.url, f.revision), rev: f.revision };
 }
+
+const sceneUrl = (id: string | null | undefined): string | undefined =>
+  ART.scenes.find((s) => s.name === id)?.url;
+const cutoutUrl = (id: string | null | undefined): string | undefined =>
+  id == null ? undefined : BUNDLED_BY_ID.get(id)?.cutout;
 
 /** The entry a host at `index` (its position in the fleet's DISPLAY order) is assigned.
  *
