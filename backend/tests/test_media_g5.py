@@ -307,7 +307,12 @@ def test_a_symlinked_media_path_DISABLES_the_namespace_without_bricking_the_app(
         assert body["disabled"] is True
         assert "symlink" in body["reason"] and str(link) in body["reason"]
         assert body["roles"] == {}
-        # NOT MOUNTED: the link's target is unreachable, and so is everything else under it
+        # NOT MOUNTED: the link's target is unreachable, and so is everything else under it.
+        # The 404 is UNCONDITIONAL since the S4 rider (`api/media.py#media_file_absent`). It used to
+        # come from whatever happened to full-match instead — SYS-5's catch-all when `frontend/dist`
+        # existed, and nothing at all when it did not, in which case the write route's method mismatch
+        # answered 405. So this line's outcome moved with a FRONTEND BUILD ARTIFACT; the property it
+        # is about is pinned from the other side in test_media_write_d65.py.
         assert c.get("/api/media/gacha/files/characters/secret.png").status_code == 404
         # …and the rest of the app is fine
         assert c.get("/api/health").status_code == 200

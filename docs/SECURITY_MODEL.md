@@ -290,6 +290,21 @@ any future unauthenticated write path.
   *write itself* never happens. **This is load-bearing: adding CORS middleware — or accepting a
   multipart/POST upload — silently removes the defence.** S1 must pin both with tests plus an
   architecture guard, and neither may be introduced without revisiting D65.
+- **ONE URL SPACE, ONE "not there" (S4 rider, ruled 2026-08-25).** A READ of a file path whose
+  namespace is not mounted — a tree that failed the boot shape check, or one the registry never had —
+  answers **404 for every verb**, never a `405`. It used to answer 405: with no mount registered
+  nothing FULLY matches, so Starlette falls back to the write route's PARTIAL (path matches, method
+  does not) and the response carries `Allow: PUT, DELETE` — telling an unauthenticated prober that a
+  write API exists at that exact URL, on a namespace this server has already refused to serve. That
+  is precisely what the read side's own rule forbids: *the 404 is indistinguishable from "not
+  there"*. `api/media.py#media_file_absent` is the rung below the mounts (GET **and HEAD** — FastAPI's
+  `APIRoute` does not add HEAD the way Starlette's does, and a 405 with no body is the same leak),
+  registered after the mount loop so it cannot shadow them and **outside** the prod-only SPA branch.
+  The last part is not tidiness: the leak was reachable in **DEV ONLY**, because with `frontend/dist`
+  present SYS-5's `/api/{rest:path}` GET catch-all full-matches and answers 404 — so the shipped
+  answer differed by deployment profile, and the profile that leaked is the one the owner develops in.
+  **No OPTIONS handler was added**, deliberately: answering a preflight is exactly what the verb rail
+  above depends on this server never doing.
 - **Containment by registry, not by string handling.** A write resolves only inside a registered
   `$CTRLB_HOME/media/<ns>/<role>/` directory (`MEDIA_NAMESPACES`); the filename must satisfy the
   admission predicate (NFC, no separators/`.`/`..`, no `<>:"|?*`/C0/DEL, no leading dot or trailing

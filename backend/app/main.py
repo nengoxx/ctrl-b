@@ -589,6 +589,13 @@ def create_app() -> FastAPI:
             MediaFiles(directory=ns_dir(home, ns), roles=row.roles),
             name=f"media-{ns}",
         )
+    # …and the rung BELOW every one of those mounts (S4 rider, ruled 2026-08-25): a read of a file path
+    # whose namespace is NOT mounted answers 404 rather than the 405 the write route's method mismatch
+    # would otherwise produce — which advertises `Allow: PUT, DELETE` on a namespace this server has
+    # already refused to serve. It must be included HERE, after the loop, or it would shadow the mounts
+    # it exists to sit under; and outside the prod-only branch below, for the same
+    # one-placement-serves-both-profiles reason the mounts are. See `api/media.py#media_file_absent`.
+    app.include_router(media_api.absent_router, prefix="/api")
 
     # Prod single-origin serving. Absent in dev (Vite owns the SPA + proxies /api here).
     if _FRONTEND_DIST.is_dir():

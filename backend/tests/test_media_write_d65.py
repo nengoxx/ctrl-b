@@ -484,6 +484,56 @@ def test_a_get_on_a_write_path_still_reaches_the_static_mount(home: Path) -> Non
         assert c.get(f"{URL}/missing.png").status_code == 404
 
 
+def test_a_get_on_a_DISABLED_namespace_is_404_and_never_advertises_the_write_verbs(
+    home: Path, tmp_path
+) -> None:
+    """The other side of the property above, and the S4 rider (ruled 2026-08-25).
+
+    With the namespace disabled there is NO mount, so nothing FULLY matches this path and Starlette
+    falls back to the write route's partial match — a `405` carrying `Allow: PUT, DELETE`. That tells
+    an unauthenticated prober a write API exists at this exact URL, on a namespace the server has
+    already refused to serve. `media_upload`'s own docstring states the rule it breaks: *one URL
+    space, one answer for "there is nothing there"*.
+
+    **It was reachable in DEV only**, which is why it went unnoticed and why a backend test's outcome
+    moved with a frontend artifact: with `frontend/dist` present, SYS-5's `/api/{rest:path}` GET
+    catch-all full-matches and answers 404 (a FULL match beats a PARTIAL wherever it sits), so prod
+    said 404 and the profile the owner develops in said 405. `absent_router` is registered
+    unconditionally, so both profiles now say the same thing whatever is on disk.
+    """
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "secret.png").write_bytes(png_bytes())
+    (home / "media" / "gacha").parent.mkdir(parents=True, exist_ok=True)
+    (home / "media" / "gacha").symlink_to(elsewhere, target_is_directory=True)
+    with make_client() as c:
+        for path in (f"{URL}/secret.png", f"{URL}/nothing-here.png", "/api/media/gacha/files/x/y.png"):
+            got = c.get(path)
+            assert got.status_code == 404, (path, got.status_code)
+            # The header is the leak itself: a 405 is required to carry `Allow`.
+            assert "allow" not in {k.lower() for k in got.headers}, path
+        assert c.head(f"{URL}/secret.png").status_code == 404
+        # …and the file behind the link is not served by any of it.
+        assert c.get(f"{URL}/secret.png").content != png_bytes()
+
+
+def test_the_no_CORS_posture_is_untouched_by_that_404(home: Path, tmp_path) -> None:
+    """No OPTIONS handler was invented for the files path — answering a preflight is precisely what
+    this server must not do (D65: the non-safelisted verb is the control only because the preflight
+    dies unanswered). OPTIONS keeps whatever Starlette already gave it, and carries no ACAO either
+    way."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (home / "media" / "gacha").parent.mkdir(parents=True, exist_ok=True)
+    (home / "media" / "gacha").symlink_to(elsewhere, target_is_directory=True)
+    with make_client() as c:
+        got = c.options(
+            f"{URL}/a.png", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "PUT"}
+        )
+        assert got.status_code == 405
+        assert "access-control-allow-origin" not in {k.lower() for k in got.headers}
+
+
 # ── the architecture guard: what must never appear (SECURITY_MODEL §2.7) ──────────────────────────
 
 

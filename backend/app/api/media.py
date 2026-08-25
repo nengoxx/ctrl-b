@@ -60,6 +60,49 @@ from app.core.media import (
 
 router = APIRouter(tags=["media"])
 
+#: The files path's LAST rung, registered by `main.create_app` AFTER the per-namespace mounts (S4
+#: rider, ruled 2026-08-25). See `media_file_absent` for what it is for and why it cannot live on the
+#: router above.
+absent_router = APIRouter(tags=["media"], include_in_schema=False)
+
+
+@absent_router.api_route("/media/{ns}/files/{role}/{filename:path}", methods=["GET", "HEAD"])
+async def media_file_absent() -> Response:
+    """`404` for a READ of a file path whose namespace is not mounted — a disabled tree, or one the
+    registry never had.
+
+    **Without it that read is a `405`**, and the 405 is the whole problem: it carries an `Allow: PUT,
+    DELETE` and so tells an unauthenticated prober that a write API exists at this exact URL, on a
+    namespace the server has already refused to serve. `media_upload`'s own docstring states the rule
+    this closes — *one URL space, one answer for "there is nothing there"* — and a namespace that is
+    not mounted is the case it did not reach. The 404 is indistinguishable from "not there", which is
+    what a probe must learn.
+
+    Two mechanics are load-bearing:
+
+    · **It is registered AFTER the mounts, which is why it is its own router.** Route matching is by
+      registration order for a FULL match, and `include_router` runs before `app.mount` — so a GET
+      handler on the main router above would shadow every namespace's `StaticFiles` mount and no owner
+      file would ever be served again. Its whole job is to be the rung below them.
+    · **It is unconditional, not part of the prod-only SPA branch.** The 405 was reachable in DEV
+      only: with `frontend/dist` present, SYS-5's `/api/{rest:path}` GET catch-all full-matches and
+      answers 404, and a FULL match beats the write route's PARTIAL wherever it sits in the table. So
+      the answer depended on whether a frontend build existed on disk — prod said 404, the profile the
+      owner develops in said 405, and a backend test's outcome moved with a frontend artifact. One
+      placement, both profiles, one answer.
+
+    **HEAD is declared, because FastAPI's `APIRoute` does not add it** the way a plain Starlette
+    `Route` does — left implicit, a HEAD kept answering the 405 with its `Allow`, which is the same
+    leak with no body. SYS-5's opposite ruling (its `/api/{rest:path}` catch-all is GET-only precisely
+    so a HEAD on a real GET endpoint stays an honest 405) does not reach here: this path has no
+    GET-only endpoint to shadow — only the write verbs, and the mounts, which match first and serve
+    HEAD themselves.
+
+    **No OPTIONS**, deliberately: inventing one would answer a preflight this server must not answer
+    (D65's no-CORS posture is the whole reason a non-safelisted verb is a control).
+    """
+    raise HTTPException(status_code=404, detail="not found")
+
 
 class MediaFiles(StaticFiles):
     """StaticFiles narrowed to exactly what the index advertises: `<role>/<allowlisted image>`.

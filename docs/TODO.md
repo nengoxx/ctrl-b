@@ -1458,6 +1458,10 @@ owner eyeball; each passes `tools/check.py`.
       the file changed mid-edit, the JPEG probe reads EXIF orientation so `width`/`height` are the
       PAINTED dimensions (SSH drops only — uploads were always normalized), and the parity arms became
       an independent pre-S4 golden table over all nine windows)
+      (+ the S4 RIDER, main-seat ruled: a read of an unmounted namespace's file path answered 405 with
+      `Allow: PUT, DELETE` — S1's own "one URL space, one answer" rule, unclosed. `absent_router` is
+      the 404 rung below the mounts, GET+HEAD, no OPTIONS; it was DEV-only (SYS-5's catch-all masked it
+      whenever `frontend/dist` existed), which is what made a backend test flip with a frontend build)
 - [ ] S5 — Drag: G6/G5 → G1 → G2 → G4 → G3 → hygiene + the held-commit state machine
 - [ ] S6 — Owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over
       Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball ·

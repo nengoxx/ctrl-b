@@ -673,6 +673,26 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 >   position 0's art carries no framing, which the bundled cast never does. Both mutation-checked: a
 >   changed CSS default and a dropped inline override each fail it.
 
+> **S4 RIDER — the disabled namespace's 405 (main-seat ruled 2026-08-25, found by the S4 gate).**
+> A READ of a file path whose namespace is not mounted answered `405` with `Allow: PUT, DELETE`,
+> advertising the write route on a namespace the server had already refused to serve — against S1's
+> own stated rule (`media_upload`'s docstring: *one URL space, one answer for "there is nothing
+> there"*). `api/media.py#absent_router` is the rung BELOW the mounts: its own router because
+> `include_router` runs before `app.mount`, so a GET on the main router would have shadowed every
+> namespace's `StaticFiles` and no owner file would ever be served again. GET **and HEAD** (FastAPI's
+> `APIRoute` does not add HEAD the way Starlette's does, and a bodyless 405 leaks the same header);
+> **no OPTIONS**, which would answer the preflight D65's whole defence depends on going unanswered.
+>
+> **Why it hid, and why it was worth chasing:** the leak was reachable in the DEV profile only. With
+> `frontend/dist` present, SYS-5's `/api/{rest:path}` GET catch-all full-matches and answers 404 (a
+> FULL match beats a PARTIAL wherever it sits in the table), so prod said 404 and dev said 405 — and
+> `test_a_symlinked_media_path_DISABLES_…` flipped with **whether a frontend build existed on disk**,
+> which is what read as flakiness across the S4 gate runs. The backstop is registered unconditionally,
+> so both profiles now answer the same thing whatever is on disk. Pinned from both sides: the
+> disabled-namespace 404 + the absent `Allow` header + HEAD + the untouched OPTIONS
+> (`test_media_write_d65.py`), and the healthy-namespace `Match.PARTIAL` arm that proves the mount is
+> still reached first.
+
 | S5 | drag: G6/G5→G1→G2→G4→G3→hygiene + held-commit machine | full gate |
 | S6 | owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball · crop/framing/drag feel · Fennec expected-partials | owner acceptance |
 
