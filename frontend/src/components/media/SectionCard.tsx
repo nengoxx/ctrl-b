@@ -74,11 +74,8 @@ export function SectionCard({
     return <FamilyCard view={view} source={source} onOpen={onOpen} />;
   }
 
-  const items = libraryItems(
-    scopedRows(view.rows, { key: section.key }),
-    view.active,
-    section.pin !== undefined,
-  );
+  const scope: GalleryScope = { key: section.key, rotation: section.kind === "rotation" };
+  const items = libraryItems(scopedRows(view.rows, scope), view.active, section.pin !== undefined);
   const active = items.filter((i) => i.active);
   const art = active
     .map((i) => tileUrl(i.row, section))
@@ -91,13 +88,21 @@ export function SectionCard({
         aria-haspopup="dialog"
         aria-label={`Open the ${section.title} gallery`}
         aria-describedby={descId}
-        onClick={() => onOpen(section.id, { key: section.key })}
+        onClick={() => onOpen(section.id, scope)}
       >
         <span
           className={"mgal-card-art" + (art.length > 1 ? " collage" : "")}
           style={{ aspectRatio: String(section.aspect ?? 1) }}
         >
-          {art.length === 0 ? (
+          {art.length === 0 && section.builtin !== undefined ? (
+            // The seat's BUILT-IN default (S6). It is what the ladder ends on rather than what is
+            // painted this instant — a rung in between may be answering, and the hint under the card
+            // is where that is spelled out — so it is captioned `built-in` and never marked in use.
+            <>
+              <img src={section.builtin.url} alt="" loading="lazy" decoding="async" />
+              <span className="mgal-card-tag">built-in</span>
+            </>
+          ) : art.length === 0 ? (
             <span className="mgal-card-none">
               {items.length === 0 ? "Add an image" : "Nothing in use"}
             </span>
@@ -234,9 +239,12 @@ function status(
     // slide reads the fleet backdrop's pin when it has none of its own).
     if (active.length > 0) return `${active[0].row.name} in use`;
     const pinned = view.pinned != null && view.pinned !== "";
-    return pinned
-      ? `${n} to choose from · the pinned image is gone — a fallback is in use`
-      : `${n} to choose from · none pinned`;
+    if (pinned) return `${n} to choose from · the pinned image is gone — a fallback is in use`;
+    // "none pinned" alone said nothing about what the surface actually shows, which is what left the
+    // built-in default invisible (S6). Named only where there IS one to name.
+    return view.section.builtin === undefined
+      ? `${n} to choose from · none pinned`
+      : `${n} to choose from · none pinned — the built-in default`;
   }
   if (view.overriddenBy != null) return `${n} · overridden`;
   if (active.length === 0) return `${n} · nothing in use`;

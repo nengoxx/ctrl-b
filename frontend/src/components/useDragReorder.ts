@@ -280,6 +280,11 @@ export function useDragReorder(
   /** Gone. A held commit outlives its surface by design — closing the gallery does not un-send a write —
    *  so its settlement arrives at a hook nobody is rendering, and must not try to paint. */
   const dead = useRef(false);
+  /** The post-drag click guard's pending removal, and the timer that will run it. Held HERE, at the
+   *  hook, because it is the one piece of a gesture that deliberately outlives that gesture — so the
+   *  only thing that can cancel it is the unmount. See `teardown`. */
+  const disarm = useRef<(() => void) | null>(null);
+  const guardAt = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Keep the latest onReorder so a mid-gesture rerender (new closure) can't commit through a stale callback.
   const onReorderRef = useRef(onReorder);
   onReorderRef.current = onReorder;
@@ -368,7 +373,18 @@ export function useDragReorder(
       // for the same reason).
       if (guarding) {
         guarding = false;
-        setTimeout(() => document.removeEventListener("click", guardClick, true), CLICK_GUARD_MS);
+        // …but NOT past the HOOK's own life, which is why the pending removal is held in a ref rather
+        // than left to a fire-and-forget timer. On unmount there is no synthesised click left to
+        // swallow, and the timer would still be holding a `document` that no longer has to exist —
+        // a pointless wake-up in a browser, and an uncaught `document is not defined` under a runner
+        // tearing the environment down between files, which is how this surfaced. Clearing the timer
+        // alone would be worse than either: the guard would sit armed on the document and eat the next
+        // REAL click, so the unmount path disarms it outright.
+        disarm.current = () => document.removeEventListener("click", guardClick, true);
+        guardAt.current = setTimeout(() => {
+          disarm.current?.();
+          disarm.current = null;
+        }, CLICK_GUARD_MS);
       }
       active.current = null;
     }
@@ -592,6 +608,11 @@ export function useDragReorder(
     return () => {
       dead.current = true;
       active.current?.teardown();
+      // The click guard is the one thing `teardown` leaves running on purpose; nothing is left to
+      // guard now, so it goes at once rather than on its timer.
+      clearTimeout(guardAt.current);
+      disarm.current?.();
+      disarm.current = null;
     };
   }, []);
   // The list length changed mid-drag (a row was added/removed) — the captured indices/rects are now stale,

@@ -423,6 +423,27 @@ describe("useDragReorder (press activation — the gallery grid)", () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
+  it("UNMOUNTING mid-guard leaves no timer holding a torn-down document", () => {
+    // The post-drag click suppression outlives the GESTURE by a tick on purpose (the synthesised click
+    // arrives after every listener is gone). It must not outlive the HOOK: on unmount there is nothing
+    // left to swallow, and a deferred removal keeps a timer naming a `document` that no longer has to
+    // exist — an uncaught `ReferenceError` under a runner tearing the environment down between files,
+    // which is exactly how this surfaced. Unmounting while the guard is armed removes it at once.
+    const onReorder = vi.fn();
+    const { container, unmount } = render(<GridHarness onReorder={onReorder} />);
+    stubCells(container);
+    mouseDown(container.querySelector('[data-handle="0"]')!, 10);
+    moveTo(60, 110);
+    release(); // …arms the guard
+    const removals: unknown[] = [];
+    const spy = vi
+      .spyOn(document, "removeEventListener")
+      .mockImplementation((...args) => void removals.push(args[0]));
+    unmount();
+    expect(removals).toContain("click"); // synchronously, not on a timer
+    spy.mockRestore();
+  });
+
   it("aims at the LAST slot, because every slot is expressible now", () => {
     // The gallery used to clamp this to the bottom of its arrangeable list — the collation's trailing
     // bundled tier was not orderable. The 2026-08-25 amendment made an order write state the whole

@@ -222,7 +222,16 @@ def test_the_bundled_ids_are_the_ones_the_front_end_derives() -> None:
         "hero": ("hero",),
         "stack": ("cube", "platform-mid", "platform-base"),
     }
-    assert all(ids == () for ids in bundled["kit"].values())
+    # The kit ships no art OF ITS OWN — but `service-banners` carries cosmos's twelve-banner rotation,
+    # because a role is where the owner manages the art it paints (S6). Before that those pictures were
+    # a private front-end array outside the media system: in no gallery, unorderable, unretirable.
+    assert bundled["kit"] == {
+        "services": (),
+        "service-banners": tuple(f"banner-{i:02d}" for i in range(1, 13)),
+        "hosts": (),
+        "background": (),
+        "brand": (),
+    }
 
 
 def test_a_bundled_id_is_a_bare_stable_name_unique_within_its_role() -> None:

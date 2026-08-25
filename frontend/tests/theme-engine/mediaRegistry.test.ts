@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import { HERO_KEY, RIG_KEYS } from "../../src/themes/frontier/art";
 import { STACK_KEYS } from "../../src/themes/frontier/ownerArt";
 import { gacha } from "../../src/themes/gacha";
+import { SERVICE_BANNER_SET } from "../../src/themes/cosmos/serviceBanners";
+import { ART as GACHA_ART } from "../../src/themes/gacha/art";
 import { defaultRoster } from "../../src/themes/gacha/roster";
 import {
   applicableNs,
@@ -209,13 +211,30 @@ describe("the gacha row", () => {
     expect(slots.find((s) => s.key === "reel_figure")?.from).toBe("reel");
   });
 
-  it("the backdrop pin carries the HINT that names its fallback — the folder it used to have is gone", () => {
+  it("the two BACKDROP seats carry a hint naming the rung between the pin and the built-in", () => {
     // With no `wallpaper/` role there is nowhere else in the gallery to learn where the fleet backdrop
     // comes from, and the pins section's generic copy ("overriding that folder's own first pick") is no
-    // longer the whole truth for this one. It is the only gacha pin that needs a line of its own.
-    const hint = MEDIA_NS.gacha.slots?.find((s) => s.key === "wallpaper")?.hint ?? "";
-    expect(hint).toMatch(/shared/i);
-    expect(MEDIA_NS.gacha.slots?.filter((s) => s.hint !== undefined)).toHaveLength(1);
+    // longer the whole truth for it. The hero slide needs the same sentence for the same reason since
+    // S6: its card SHOWS the built-in default, and what sits between it and the pin (the fleet
+    // backdrop's own ladder) is invisible without a line saying so.
+    const hint = (key: string) => MEDIA_NS.gacha.slots?.find((s) => s.key === key)?.hint ?? "";
+    expect(hint("wallpaper")).toMatch(/shared/i);
+    expect(hint("hero")).toMatch(/fleet backdrop/i);
+    expect(MEDIA_NS.gacha.slots?.filter((s) => s.hint !== undefined)).toHaveLength(2);
+  });
+
+  it("the two backdrop seats show the SAME built-in default, and stay independently pinnable", () => {
+    // The owner ruling (S6): `banner.webp` appeared in no gallery at all, and the two seats that end on
+    // it must each show it — they hold their own pins, so surfacing the shared default is not the same
+    // as merging the two surfaces. It is a DISPLAY channel: no role folder holds it, so it can carry no
+    // `hidden`, no order and no delete, and the way back to it is the seat's own unpin.
+    const seat = (key: string) => MEDIA_NS.gacha.slots?.find((s) => s.key === key);
+    expect(seat("wallpaper")?.builtin?.url).toBe(GACHA_ART.banner);
+    expect(seat("hero")?.builtin?.url).toBe(GACHA_ART.banner);
+    expect(seat("wallpaper")?.key).not.toBe(seat("hero")?.key);
+    // The operator backdrop gets none: its ladder ends in the `oracle` ROLE, whose own section holds
+    // that picture as a real library entry since S6, and a second uneditable copy would be a duplicate.
+    expect(seat("oracle")?.builtin).toBeUndefined();
   });
 });
 
@@ -369,12 +388,43 @@ describe("bundled ids — derived front-end-side, mirrored on the backend", () =
     expect(ids(MEDIA_NS.frontier.roles.hero)).toEqual([HERO_KEY]);
   });
 
-  it("the kit ships no bundled art at all, and every role SAYS so", () => {
+  it("the kit ships no art of its OWN — and carries cosmos's rotation on the role it belongs to", () => {
     // Not an omission (§3): absent art means the surface renders exactly as it does without it. The field
     // is required precisely so "nothing bundled" cannot be confused with "nobody filled this in".
     for (const [role, def] of Object.entries(MEDIA_NS.kit.roles)) {
+      if (role === "service-banners") continue;
       expect(ids(def), role).toEqual([]);
     }
+    // The one exception, and it is a theme's set on a kit ROLE rather than the kit shipping art: cosmos
+    // deals these twelve across a host's service rows. Derived from the theme's own module, and DECLARED
+    // as a rotation — without that the per-key machinery would try to bind `banner-01` to a service.
+    expect(ids(MEDIA_NS.kit.roles["service-banners"])).toEqual(SERVICE_BANNER_SET.map((b) => b.id));
+    expect(ids(MEDIA_NS.kit.roles["service-banners"])).toHaveLength(12);
+    expect(MEDIA_NS.kit.roles["service-banners"].rotation).toBeDefined();
+    expect(MEDIA_NS.kit.roles.services.rotation).toBeUndefined();
+  });
+
+  it("the rotation gets its OWN section, beside the family card and the unassigned bucket", () => {
+    // The H5 shape: one card per destination. The family card is about per-service files; this one is
+    // about the set behind every service nobody dropped a file for, so it is its own card with its own
+    // capabilities — order and In-use, never upload or delete (a file dropped here binds to a SERVICE).
+    const out = mediaSections("kit", MEDIA_NS.kit, ["service-banners"]);
+    const rotation = out.find((s) => s.kind === "rotation");
+    expect(rotation?.id).toBe("kit:service-banners@");
+    expect(rotation?.role).toBe("service-banners");
+    expect(rotation?.caps).toEqual({
+      reorder: true,
+      activate: "order",
+      hidden: true,
+      remove: false,
+      upload: false,
+      frame: false,
+    });
+    // …and only where a rotation is DECLARED. Every other named role emits family + unassigned alone.
+    expect(mediaSections("kit", MEDIA_NS.kit, ["services"]).map((s) => s.kind)).toEqual([
+      "family",
+      "unassigned",
+    ]);
   });
 
   it("every id is a bare, stable, unique NAME — never a filename, never a path", () => {

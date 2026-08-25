@@ -289,6 +289,57 @@ describe("the entry cards (§6.1)", () => {
     // A seat is a VIEW: no upload row, and its detail offers only the pin.
     expect(within(dialog).queryByText(/Add an image/)).toBeNull();
   });
+
+  // ── the BUILT-IN DEFAULT (S6) ───────────────────────────────────────────────────────────────────
+  //
+  // `banner.webp` — the picture the fleet backdrop and the hero slide bottom out on — appeared in no
+  // gallery at all: it belongs to no role folder, so no library held it, and an unpinned seat said
+  // "none pinned" beside an empty preview box. The owner's ruling is that nothing shipped is left
+  // behind, so the seat SHOWS it. It is a display channel, not a tier: no tile, no In-use, no order.
+
+  it("an unpinned seat SHOWS its built-in default, on the card and in the gallery", async () => {
+    renderGallery();
+    const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
+    expect(card.textContent).toContain("none pinned");
+    expect(card.textContent).toContain("built-in");
+    expect(card.querySelector(".mgal-card-art img")).toBeTruthy();
+    const dialog = await openSection("Fleet backdrop");
+    expect(within(dialog).getByText("Built-in default")).toBeTruthy();
+    // Not a library row: it is not a tile, so it has no detail panel, no switch and no order.
+    expect(within(dialog).queryByRole("button", { name: /banner/i })).toBeNull();
+  });
+
+  it("…and stops showing it once the seat IS pinned — it is what the ladder ENDS on", async () => {
+    renderGallery(
+      index({
+        roles: {
+          characters: [file("kira", "characters")],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+        slots: { wallpaper: "kira" },
+      }),
+    );
+    const dialog = await openSection("Fleet backdrop");
+    expect(within(dialog).queryByText("Built-in default")).toBeNull();
+  });
+
+  it("BOTH backdrop seats show it, and each is still pinned on its own", async () => {
+    // The owner asked for it in both places and asked them to stay independently customizable — they
+    // hold separate pins, so surfacing the shared default is not merging the two surfaces.
+    renderGallery(index({ slots: { hero: "a" } }));
+    const fleet = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
+    const hero = await screen.findByRole("button", { name: "Open the Hero slide gallery" });
+    expect(fleet.textContent).toContain("built-in"); // unpinned → its ladder's end
+    expect(hero.textContent).toContain("a in use"); // pinned on its own → the pin
+    // The operator backdrop has no built-in of its own: its ladder ends in the `oracle` ROLE, whose
+    // section holds that picture as a real library entry since S6.
+    const oracle = await screen.findByRole("button", {
+      name: "Open the Operator backdrop gallery",
+    });
+    expect(oracle.textContent).not.toContain("built-in");
+  });
 });
 
 describe("the H5 role-family card (kit's derived keys)", () => {

@@ -229,6 +229,20 @@ export function GalleryModal({
               </button>
             </p>
           )}
+          {/* A SEAT's built-in default (S6). It is not a library row — it belongs to no role folder and
+              has no config identity — so it sits ABOVE the grid rather than in it, with no tile
+              actions: the way back to it is the unpin the detail panel already offers. Shown only
+              while nothing is pinned, which is exactly when it is the answer. */}
+          {section.builtin !== undefined && (view.pinned == null || view.pinned === "") && (
+            <p className="mgal-builtin">
+              <img src={section.builtin.url} alt="" loading="lazy" decoding="async" />
+              <span>
+                <b>Built-in default</b>
+                Nothing is pinned here, so this is what the ladder ends on. Choose an image below to
+                use it instead — clearing that pin brings this back.
+              </span>
+            </p>
+          )}
           {items.length === 0 ? (
             <p className="mgal-empty">
               Empty — use <b>Add an image</b> above, or copy .png/.jpg/.webp files into the folder.

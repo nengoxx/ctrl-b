@@ -46,16 +46,34 @@ const BRAND_ROLE = "brand";
 const BACKGROUND_SLOT = "background";
 const BRAND_SLOT = "brand";
 
-/** A role's RESOLVABLE rows out of a payload, defensively. Wire data: a stub or partial response (an
+/** A role's RESOLVABLE FILES out of a payload, defensively. Wire data: a stub or partial response (an
  *  e2e mock, a proxy answering `{}`) must degrade to "no art" rather than throw inside a render — the
  *  `frontierArtFromIndex` / `rosterFromIndex` precedent.
  *
  *  `shown` drops the entries the owner switched OFF (§2.2's `hidden` — resolution skips them
- *  everywhere), and `ownTier` states the tier rule uniformly even though this namespace has no
- *  fallback tier to skip: the kit ships NO bundled art (§3), so every row here is a file on disk. */
+ *  everywhere), and `ownTier` states the tier rule. BUNDLED rows are dropped outright on top of that,
+ *  and since S6 that is load-bearing rather than decorative: `service-banners` carries cosmos's twelve
+ *  banners as a bundled ROTATION set (`bundledSetFrom` below is what reads it), and an order write in
+ *  that section LISTS them — which would otherwise walk them into `ownTier` and let a banner id shadow
+ *  a service whose key happened to match. Every binding this file resolves is a file on disk. */
 function roleFiles(index: MediaIndex | undefined, role: string): MediaFile[] {
   const files = index?.roles?.[role];
-  return Array.isArray(files) ? ownTier(shown(files)) : [];
+  return Array.isArray(files) ? ownTier(shown(files)).filter((f) => f.bundled == null) : [];
+}
+
+/** A role's BUNDLED tier as the library orders it — the ids a theme layering a dealt SET on a kit role
+ *  needs (cosmos's service-banner rotation, S6). Hidden entries drop out and the order is the owner's.
+ *
+ *  `undefined` is the STUB answer, and the distinction is `offersBundled`'s everywhere else: a payload
+ *  carrying no bundled row for this role never described the tier — a mock, a proxy answering `{}`, an
+ *  unreachable backend — and the consumer degrades to its whole shipped set. An empty ARRAY is the
+ *  owner's own answer: they switched every banner off, and the rows paint none. */
+function bundledSetFrom(index: MediaIndex | undefined, role: string): string[] | undefined {
+  const files = index?.roles?.[role];
+  if (!Array.isArray(files) || !files.some((f) => f.bundled != null)) return undefined;
+  return shown(files)
+    .filter((f) => f.bundled != null)
+    .map((f) => f.bundled as string);
 }
 
 /** One key's file in a NAMED role. Binding goes through `lib/media.ts#stemIndex` rather than through a
@@ -124,11 +142,14 @@ export function brandArtFrom(index: MediaIndex | undefined): MediaFile | undefin
 // the same rows. They take the ROLE's rows (not the whole index) because a section IS a role, and the
 // wire's `slots` for the two pools that carry a pin.
 
-/** ONE key of a `named` role (a service, a machine): the file bound to it, or nothing. The kit ships
- *  no bundled art, so "nothing" is the ordinary answer and the surface renders as it does without it. */
+/** ONE key of a `named` role (a service, a machine): the FILE bound to it, or nothing. "Nothing" is the
+ *  ordinary answer — the kit ships no per-key fallback art — and the surface then renders as it does
+ *  without it. Bundled rows are not candidates here for the reason `roleFiles` states: the one role
+ *  that carries any is `service-banners`, whose bundled tier is a dealt SET and not a per-key entry. */
 export function activeNamedKey(key: string) {
   return (rows: readonly LibraryRow[]): ActiveArt => {
-    const file = stemIndex(ownTier(shown(rows))).get(normalizeMediaKey(key));
+    const files = ownTier(shown(rows)).filter((f) => f.bundled == null);
+    const file = stemIndex(files).get(normalizeMediaKey(key));
     return { ids: file ? [rowId(file)] : [], mode: "first" };
   };
 }
@@ -202,6 +223,15 @@ export function useServiceIcons(): (service: ServiceIdentity) => MediaFile | und
 /** An adopting surface's read of the service BANNERS. */
 export function useServiceBanners(): (service: ServiceIdentity) => MediaFile | undefined {
   return useNamedArt(BANNER_ROLE, keyFor);
+}
+
+/** An adopting surface's read of the service-banner ROTATION — the role's bundled ids in library
+ *  order, or `undefined` while the payload has not described the tier. The URLs are the THEME's
+ *  (`themes/cosmos/serviceBanners.ts#bannerPool` maps them): this module answers "which entries",
+ *  never "which pictures", exactly as it does for every other role (§A5). */
+export function useServiceBannerSet(): string[] | undefined {
+  const data = useKitMedia();
+  return useMemo(() => bundledSetFrom(data, BANNER_ROLE), [data]);
 }
 
 /** An adopting host-detail surface's read of the machine pictures. */

@@ -165,13 +165,35 @@ FRONTIER_SLOTS: tuple[str, ...] = ("hero",)
 #: identity its stem matches — which is why there is no key list here: those live in `config.yaml`, not
 #: in this registry. They get no pin for the same reason the frontier stack has none: the filename IS the
 #: binding. Only the pools need one.
-#: **No kit role carries a bundled id**, and that is the namespace's design rather than an omission
-#: (§3): the kit ships no fallback art — a service with no dropped file keeps its icon-less row, and
-#: the shared background/brand layers simply do not mount. There is nothing for a gallery to list as
-#: a bundled entry, so every list here is empty and stays empty.
+#: **The KIT ITSELF ships no fallback art** (§3): a service with no dropped file keeps its icon-less
+#: row, and the shared background/brand layers simply do not mount. What that does NOT mean is that
+#: every list here is empty — `service-banners` carries cosmos's twelve-banner ROTATION, which the
+#: theme deals across a host's service rows (S6). The set belongs to cosmos and the ROLE belongs to
+#: the kit, and it is listed here because a role is where the owner manages the art it paints: before
+#: this, those twelve pictures lived in a private front-end array outside the media system, visible in
+#: no gallery and impossible to reorder or retire. Per-service owner files are unaffected — they bind
+#: by stem and still win their own row, whatever the rotation says.
 KIT_ROLES: dict[str, MediaRole] = {
     "services": MediaRole(),
-    "service-banners": MediaRole(),
+    # Spelled out rather than generated, because this table is PARSED by the cross-language drift
+    # guard (frontend/tests/theme-engine/mediaRegistry.test.ts) and a comprehension would read to it
+    # as "no bundled ids" — the one thing a mirror guard must never be able to be talked out of.
+    "service-banners": MediaRole(
+        bundled=(
+            "banner-01",
+            "banner-02",
+            "banner-03",
+            "banner-04",
+            "banner-05",
+            "banner-06",
+            "banner-07",
+            "banner-08",
+            "banner-09",
+            "banner-10",
+            "banner-11",
+            "banner-12",
+        )
+    ),
     "hosts": MediaRole(),
     "background": MediaRole(),
     "brand": MediaRole(),

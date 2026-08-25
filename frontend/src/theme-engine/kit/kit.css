@@ -6184,6 +6184,55 @@ body[data-perf="lite"] .kit .navmenu-pop {
   text-align: center;
   color: var(--text-3);
 }
+/* The BUILT-IN caption on a seat's preview (S6): the picture a seat's ladder ends on is shown, and the
+ * one thing the owner must not read into it is "this is in use" — a rung in between may be answering.
+ * A corner tag rather than a line under the title, because the card's body is already the status line's
+ * and the claim belongs ON the picture it is about. The `mgal-card-art` box is the positioning context
+ * (it is `overflow: hidden`, so the tag is clipped to the preview like the image is). */
+.kit .mgal-card-art {
+  position: relative;
+}
+/* The seat gallery's BUILT-IN DEFAULT row (S6) — the picture the ladder ends on, above the grid it is
+ * not part of. Shaped like `.mgal-dangling`, which is the other notice this panel carries, so the two
+ * read as one class of thing: a statement about the section rather than about a tile. */
+.kit .mgal-builtin {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 0 0 10px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.kit .mgal-builtin img {
+  flex: none;
+  width: 72px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+.kit .mgal-builtin span {
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.kit .mgal-builtin b {
+  display: block;
+  font-size: 12px;
+  color: var(--text);
+}
+.kit .mgal-card-tag {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 1px 3px;
+  font-size: 9px;
+  line-height: 1.4;
+  text-align: center;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
 .kit .mgal-card-body {
   flex: 1;
   min-width: 0;

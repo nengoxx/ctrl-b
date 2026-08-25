@@ -37,6 +37,7 @@ import {
   STACK_ART,
   STACK_KEYS,
 } from "../themes/frontier/ownerArt";
+import { ART as GACHA_ART } from "../themes/gacha/art";
 import {
   activeCast,
   activeOraclePool,
@@ -45,6 +46,7 @@ import {
   activeSeat,
   defaultRoster,
 } from "../themes/gacha/roster";
+import { activeBannerSet, SERVICE_BANNER_SET } from "../themes/cosmos/serviceBanners";
 import { activeNamedKey, activePool as activeKitPool } from "./kit/ownerArt";
 import type { ThemeDef } from "./types";
 
@@ -198,6 +200,23 @@ export interface MediaPreviewDef {
   aspect: number;
 }
 
+/** A `named` role whose BUNDLED tier is a dealt SET rather than one entry per key — a theme layering a
+ *  ROTATION on a kit role (cosmos's twelve service banners, S6).
+ *
+ *  DECLARED, never inferred, for the reason `keySource` is: "are these bundled ids keys or a set" is
+ *  knowledge about the theme that paints them, and a generic gallery that guessed would be right for
+ *  frontier's stack (whose ids ARE its keys) and wrong here. Its presence is what makes the gallery
+ *  emit a rotation SECTION beside the role-family card — one destination, one card, the H5 shape.
+ *
+ *  The three fields are the section's own: what it is called, what the owner needs told about it, and
+ *  the §2.4 ladder that says which of its entries are live (supplied by the theme module that owns the
+ *  rotation, imported here — the H1 arrow, never back). */
+export interface MediaRotationDef {
+  title: string;
+  hint: string;
+  active: ActiveResolver;
+}
+
 /** One role folder under `media/<ns>/`. The server's index is the authority on which roles EXIST; this
  *  supplies the words and the policy for them, because "what does `reel/` mean" is knowledge no generic
  *  gallery could invent. */
@@ -272,6 +291,9 @@ export interface MediaRoleDef {
   active?: ActiveResolver;
   /** §2.4 for a `named` role: the resolver for ONE key. */
   activeForKey?: (key: string) => ActiveResolver;
+  /** The role's bundled tier as a dealt SET — see `MediaRotationDef`. Absent for every role whose
+   *  bundled ids are keys or pool members, which is every other one. */
+  rotation?: MediaRotationDef;
 }
 
 /** A `slots` pin the gallery offers: binding one named file INTO a role, overriding that role folder's own
@@ -305,6 +327,20 @@ export interface MediaSlotDef {
   /** §2.4 — a SEAT's own ladder (what the pin resolves to, and what it falls through to). Pins that
    *  are not seats need none: their role's `active` resolver already reads them. */
   active?: ActiveResolver;
+  /** The BUILT-IN picture this seat's ladder bottoms out on — shown on the card and in the seat's
+   *  gallery so the owner can SEE what "none pinned" looks like (the S6 owner ruling: no shipped art
+   *  is left behind).
+   *
+   *  It is a DISPLAY channel and deliberately not a library entry (`MediaBundledDef` is reused for the
+   *  shape, not for the tier): a seat is a view over ANOTHER role's library, and this picture belongs
+   *  to no role folder at all — gacha's `banner.webp` is scene art the backdrop ladder ends on. So it
+   *  has no config identity: it cannot be hidden, ordered or deleted, and "restore the default" is the
+   *  unpin the seat already offers.
+   *
+   *  It says what the ladder ENDS on, never what is painted right now: a rung in between (the shared
+   *  kit background, for gacha's two backdrop seats) may be answering instead, which is why the card
+   *  captions it `built-in` rather than "in use" and the slot's own `hint` names the middle rung. */
+  builtin?: MediaBundledDef;
 }
 
 export interface MediaNsDef {
@@ -469,24 +505,34 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         key: "wallpaper",
         label: "Fleet backdrop",
         from: "characters",
-        hint: "Unpinned, the fleet uses your Shared art background — then the bundled scene.",
+        hint: "Unpinned, the fleet uses your Shared art background — then the bundled scene below.",
         seat: true,
         active: activeSeat("wallpaper"),
+        // The bundled scene the backdrop ladder ends on. Both backdrop seats show it and each is
+        // customized on its own (they hold independent pins) — surfacing the shared default is not the
+        // same as merging the two surfaces.
+        builtin: { id: "banner", url: GACHA_ART.banner },
       },
       {
         key: "hero",
         label: "Hero slide",
         from: "characters",
+        hint: "Unpinned, the hero slide follows the fleet backdrop — then the bundled scene below.",
         seat: true,
         // Its own pin, else the WALLPAPER's (`heroArt` falls through to the whole backdrop ladder):
         // the hero slide and the fleet backdrop resolving to two different pictures is the
         // disagreement §5.3's one-resolver ruling exists to prevent, so the seat says so too.
         active: activeSeat("hero", "wallpaper"),
+        builtin: { id: "banner", url: GACHA_ART.banner },
       },
       {
         key: "oracle",
         label: "Operator backdrop",
         from: "characters",
+        // NO `builtin`: this seat's ladder falls through to the `oracle` ROLE, whose own section holds
+        // the bundled backdrop as an ordinary library entry since S6 — and a second, uneditable copy of
+        // a picture that has a real home would be the duplicate the card's `overriddenBy` pointer
+        // exists to avoid.
         seat: true,
         active: activeSeat("oracle"),
       },
@@ -587,6 +633,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
   // owner can learn what to name a file — while three of those five themes painted icons from it (the
   // draft bug, Opus H2).
   //
+  // The kit ITSELF ships no art (§3) — an absent file means the surface renders exactly as it does
+  // without one — with one exception that is not the kit's own: `service-banners` carries cosmos's
+  // twelve-banner ROTATION as its bundled tier (S6), because that is the role those pictures are about
+  // and a theme's set has to live in the library the owner manages it from.
+  //
   // Three of the five roles are NAMED with DATA-derived keys and therefore carry no pin: the keys are the
   // FLEET's own identities (a service's `kind`-else-`name`, a machine's name), so they live in
   // `config.yaml` and the gallery derives them from the live lists. The two POOLS — the shared background
@@ -615,16 +666,30 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         bounds: ICON_ART,
       },
       "service-banners": {
-        // The kit ships NO fallback art (§3): absent = the surface renders exactly as it does
-        // without it. Empty, and stated rather than omitted — "nothing bundled" is a real answer.
-        bundled: [],
+        // The ONE kit role that carries bundled art, and it is not the kit's: cosmos layers a
+        // twelve-banner ROTATION on this role, dealt across a host's service rows (S6 — before it,
+        // those twelve pictures lived in a private array outside the media system entirely, so no
+        // gallery could show them and nothing could reorder or retire one). Derived from the theme's
+        // own set, like every other list here.
+        bundled: bundle(
+          SERVICE_BANNER_SET,
+          (b) => b.id,
+          (b) => b.url,
+        ),
+        // …and it is a SET, not one entry per key — which is why the role declares a rotation rather
+        // than letting the per-key machinery try to bind `banner-01` to a service called that.
+        rotation: {
+          title: "Built-in rotation",
+          hint: "The banner set cosmos deals across a machine's service rows — a different one per service, in this order. Switch one off to take it out of the rotation. A service you drop your own banner for above uses that instead, whatever the rotation says.",
+          active: activeBannerSet,
+        },
         kind: "named",
         keySource: "services",
         asset: "banner",
         aspect: 1000 / 300,
         activeForKey: activeNamedKey,
         // Same keys as the icons above, deliberately: one identity per service, two pictures of it.
-        hint: "The wide art behind a service's row, named exactly like its icon above (KIND, else NAME). Wide and short — it is cropped to the row and dimmed under the text. A service you drop nothing for keeps whatever that theme already paints behind it.",
+        hint: "The wide art behind a service's row, named exactly like its icon above (KIND, else NAME). Wide and short — it is cropped to the row and dimmed under the text. A service you drop nothing for keeps whatever that theme already paints behind it — under cosmos, one of the built-in rotation below.",
         bounds: BANNER_ART,
       },
       hosts: {
@@ -743,7 +808,7 @@ export interface MediaSection {
   ns: string;
   /** The role folder this section's LIBRARY is (a seat's is its `from` role). */
   role: string;
-  kind: "pool" | "key" | "family" | "seat" | "unassigned";
+  kind: "pool" | "key" | "family" | "rotation" | "seat" | "unassigned";
   /** The card's heading. Role sections keep the FOLDER's own name (the owner-facing contract of a
    *  namespace, spelled out beside it); a key section is titled by its key; a seat by its label. */
   title: string;
@@ -765,6 +830,8 @@ export interface MediaSection {
   bounds: MediaBounds;
   caps: MediaCaps;
   active?: ActiveResolver;
+  /** A SEAT's built-in fallback picture — see `MediaSlotDef.builtin`. Never a library row. */
+  builtin?: MediaBundledDef;
 }
 
 /** A role the SERVER lists and this registry does not describe. It still gets a gallery — the server
@@ -863,6 +930,29 @@ export function mediaSections(
         keySource: row.keySource,
         caps: { ...LIBRARY_CAPS, reorder: false, frame: row.framable === true },
       });
+      // The role's bundled tier as a dealt SET, where a theme declared one (`MediaRotationDef`). Its
+      // own card, because it is its own destination: the family card above is about per-service files
+      // and this is about the set behind the ones nobody dropped a file for. ORDER is the rotation
+      // order and the In-use switch is what takes a banner out of it, so it reorders and hides — but
+      // it neither uploads nor deletes: a file dropped here binds to a SERVICE, never to the set.
+      if (row.rotation !== undefined) {
+        out.push({
+          ...common,
+          id: `${ns}:${role}@`,
+          kind: "rotation",
+          title: row.rotation.title,
+          hint: row.rotation.hint,
+          caps: {
+            reorder: true,
+            activate: "order",
+            hidden: true,
+            remove: false,
+            upload: false,
+            frame: false,
+          },
+          active: row.rotation.active,
+        });
+      }
       out.push(unassigned(ns, role, common, { keySource: row.keySource }));
       continue;
     }
@@ -906,6 +996,7 @@ export function mediaSections(
         frame: false,
       },
       active: slot.active,
+      builtin: slot.builtin,
     });
   }
   return out;

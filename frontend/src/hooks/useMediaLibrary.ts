@@ -72,10 +72,13 @@ export interface SectionView {
   pinned?: string;
 }
 
-/** What a gallery is SCOPED to — the whole role, one key of it, or the files that bound nothing. */
+/** What a gallery is SCOPED to — the whole role, one key of it, the files that bound nothing, or a
+ *  role's bundled ROTATION set. */
 export interface GalleryScope {
   key?: string;
   unassigned?: boolean;
+  /** The role's bundled tier, as a dealt set (`MediaRotationDef` — cosmos's service banners). */
+  rotation?: boolean;
   /** The declared keys, for the unassigned filter: static ones come from the registry, derived ones
    *  from the live list the family card already holds. */
   keys?: readonly string[];
@@ -84,6 +87,10 @@ export interface GalleryScope {
 /** The rows one scope shows. A KEY scope holds the file that bound it, every file SHADOWED by it (the
  *  duplicates — visible at last, defect #4) and the bundled entry carrying the same id. */
 export function scopedRows(rows: readonly MediaFile[], scope: GalleryScope): MediaFile[] {
+  // The ROTATION scope is the role's bundled tier and nothing else: the owner's own files in this
+  // folder bind to SERVICES and are the family card's business, so putting them here would offer a
+  // reorder that decides nothing about them.
+  if (scope.rotation === true) return rows.filter((r) => r.bundled != null);
   if (scope.unassigned === true) {
     const declared = new Set(scope.keys ?? []);
     return rows.filter((r) => r.bundled == null && !declared.has(bindingKey(r)));

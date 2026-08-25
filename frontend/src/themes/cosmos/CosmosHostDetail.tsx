@@ -7,11 +7,12 @@ import {
   serviceBannerProps,
   useHostArt,
   useServiceBanners,
+  useServiceBannerSet,
 } from "../../theme-engine/kit/ownerArt";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
 import { useThemeSetting } from "../../theme-engine/settings";
 import type { Host, Service } from "../../types";
-import { assignBanners } from "./serviceBanners";
+import { assignBanners, bannerPool } from "./serviceBanners";
 
 // Cosmos host-detail sheet content (C3b) — rendered inside the shared <BottomSheet> (C3a). The host NAME is
 // the dotted-glass hero (replaces the prototype's ping line-graph, owner directive), then a COMPACT meta grid
@@ -91,8 +92,6 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
 
   // Online → "alive" (uptime, deferred → "—"); offline → last seen. Shown next to the status, no caption.
   const aliveOrSeen = online ? ALIVE_PLACEHOLDER : lastSeen;
-  // Distinct decorative banner per service (de-duped within this host so it never repeats — see assignBanners).
-  const banners = assignBanners(services.map((s) => s.id));
   // …and the owner's own banners (the Kit Art System), DEAL THEN OVERRIDE: the bundled pool is dealt
   // exactly as before, then any service the owner has dropped a file for takes that file instead. The
   // order matters — excluding owner-bound services from the deal would re-deal every OTHER row, so one
@@ -100,6 +99,17 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
   // row, which is the dormancy rule extended (§A5's banner surface: owner file → the theme's own default
   // for that same surface → nothing).
   const ownerBanner = useServiceBanners();
+  // The POOL the deal walks is the library's since S6, not a private array: the twelve banners are the
+  // `service-banners` role's bundled tier, so a banner the owner switched off drops out of the rotation
+  // and the order they arranged is the order dealt. `undefined` — a payload that never described the
+  // tier — is the whole shipped set, the same stub degrade every theme adapter runs on. One request:
+  // this hook reads the same kit index `useServiceBanners` above already observes.
+  const pool = bannerPool(useServiceBannerSet());
+  // Distinct decorative banner per service (de-duped within this host so it never repeats — see assignBanners).
+  const banners = assignBanners(
+    services.map((s) => s.id),
+    pool,
+  );
   // ISS-2 — the whole banner layer (dealt pool + owner override alike) behind one theme-setting;
   // default ON keeps the pre-toggle look. Hooks above still run unconditionally (rules of hooks).
   const bannersOn = useThemeSetting<boolean>("cosmos", "banners") ?? true;
