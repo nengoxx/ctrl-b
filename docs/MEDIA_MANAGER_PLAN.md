@@ -873,7 +873,7 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 >   pool had no member to be honest with). `offersBundled` guards the stub degrade as everywhere
 >   else; both surfaces degrade cleanly with no art (the operator block keeps its plate and scrim,
 >   the map its scrim and label).
-> · **W3 — the built-in defaults the gallery never showed** (`84bee6a`). `banner.webp` belongs to no
+> · **W3 — the built-in defaults the gallery never showed** (`c195211`). `banner.webp` belongs to no
 >   role folder, so both backdrop SEATS said "none pinned" beside an empty box; they show it now
 >   through `MediaSlotDef.builtin` (§6.6). And the twelve cosmos service banners, which lived in a
 >   private FE array outside the media system entirely, became the `kit/service-banners` bundled tier
@@ -906,6 +906,15 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 >   its exact capability set under test; its card and grid are the generic ones every pool section
 >   already exercises, and a kit-namespace render test would have had to stand up the fleet key
 >   source to reach it.
+>
+> **Review close-out (2026-08-26).** Main-seat audit over the whole diff, then the Emma-lane blind
+> round (sol high, `--ignore-rules`): **zero new findings, "RESOLVED — READY"** — all seven seeded
+> areas judged sound at mechanism level, FE + focused BE suites re-run by the reviewer herself. The
+> one audit wart worth code closed in `533de17`: a refused order intent (row gone by send time) no
+> longer writes `sweep: true` — all three refusal arms share `moveBy`'s states-no-order rule, pinned
+> in one test; confirm round RESOLVED. Recorded, NOT fixed by ruling: the post-drag click guard's
+> 50 ms cross-disarm race between two completed drags — two real gestures cannot fit the window, and
+> each guard also self-disarms on its first click, so the worst case is one swallowed tap.
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 

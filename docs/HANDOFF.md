@@ -12,7 +12,46 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-25 — THE MEDIA-MANAGER BUILD SESSION: S0→S5 ALL BUILT + REVIEW-CLOSED; supersedes everything below where it speaks)
+## Current state (2026-08-26 — THE S6 OWNER-ROUND FIX WAVE: W1–W4 BUILT + review-CLOSED; supersedes everything below where it speaks)
+
+- **The owner's round landed and drove the wave.** Their three findings — drag doesn't reorder ·
+  gacha's first banner + oracle missing from the library · cosmos service banners missing — were
+  triaged to TWO causes and ONE omission: the §2.3 ③ tier rule made all-defaults sections
+  non-arrangeable (down-drags clamped to a no-op, up-drags mis-landed) AND silently shrank the deal
+  on any partial listing; and three classes of shipped default art had no library identity. The
+  owner ruled in prose (recorded in MEDIA_MANAGER_PLAN §2.3/§6.6/§12): reorders sweep the whole
+  section's order · every shipped picture is a first-class entry, "none left behind" · the hero and
+  fleet-backdrop defaults show in BOTH seats, independently overridable · cosmos's 12 banners = a
+  dealt "Built-in rotation" · a per-section Restore defaults.
+- **The wave: 5 commits, `bee042e`…`533de17`** (Opus-built W1–W4 from a pinned brief + the
+  main-seat audit fix). W1 sweep-on-order (+ `lastExpressible` and the drag clamp DELETED) · W2
+  bundled ids for gacha `oracle`, frontier `hero`, and `rook` (a found orphan; cast tail, deal
+  unchanged ≤5 hosts) — both ladders' hard-coded last rungs now honor the In-use switch · W3
+  `MediaSlotDef.builtin` (display-only) + `MediaRotationDef` + CosmosHostDetail dealing from the
+  library + a latent click-guard unmount crash fixed · W4 `restoreDefaults`/`defaultsRestorable`.
+  **Review-CLOSED:** main-seat audit → Emma-lane blind round **"RESOLVED — READY", zero new
+  findings** → `533de17` (refusal arms don't sweep) → confirm RESOLVED. Full gate green per commit;
+  full e2e 305 green; FE units 2,518 → **2,544+1**. The plan's §12 wave block = the whole record,
+  incl. the recorded-not-fixed 50 ms click-guard race and the flagged sweep consequence (first
+  reorder in a MIXED section promotes defaults into the deal — the owner should eyeball that once).
+- **Origin unchanged (`fef36aa`) — 48 commits unpushed with the docs commit carrying this block.**
+  Prod untouched (v1.7.6 @ `6a2ccaa`).
+  Dev units RUNNING; the dev backend was restarted onto the new registry (FE rides Vite HMR); the
+  owner's dev config/media untouched by the wave.
+
+## ▶▶ NEXT (2026-08-26): the owner re-pokes → the push ruling → S6 proper → release
+
+1. **Owner re-poke on dev (:5173):** drag anywhere lands where dropped (all-defaults sections
+   included, both directions) · gacha library now shows oracle + rook, both backdrop seats show the
+   built-in banner · cosmos service-banners "Built-in rotation" · Restore defaults · and the one
+   flagged consequence to feel out: first reorder in a section holding BOTH uploads and defaults
+   promotes the defaults into the deal. The set-active-feels-confusing note stays parked for a feel
+   talk after this round (recorded 2026-08-25).
+2. **The PUSH ruling** (owner's word) — 48 commits, origin `fef36aa`.
+3. **S6 proper** (plan §16) and **4. Release** — unchanged from the block below (1.7.x · rollback
+   v1.7.6 · config_version 1→2 rides the batch · LOCAL e2e before the tag).
+
+## Prior state (2026-08-25 — THE MEDIA-MANAGER BUILD SESSION: S0→S5 ALL BUILT + REVIEW-CLOSED; superseded above where it speaks)
 
 - **THE WHOLE BUILD LADDER RAN IN ONE SESSION — Phase 21 S0 through S5, all six slices
   Emma-lane-closed at an explicit final RESOLVED.** 40 commits on local `main` on top of
@@ -58,7 +97,7 @@
   (~1-in-5 desktop) → Phase 19's H-E2E slice · the two-devices lost-update residual stands
   (accepted at council).
 
-## ▶▶ NEXT (session-close 2026-08-25): the OWNER ROUND IS LIVE on dev — the next session TRIAGES it
+## ▶▶ PRIOR (session-close 2026-08-25): the owner round — ✅ RAN, triaged + fix-waved (the 2026-08-26 block above is the record; superseded)
 
 **The owner is checking the build on the dev units as of session close** (uploading real
 images, poking the gallery/crop/framing/drag). **Dev units are deliberately LEFT RUNNING**
