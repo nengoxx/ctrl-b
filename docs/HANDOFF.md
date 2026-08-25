@@ -58,16 +58,46 @@
   (~1-in-5 desktop) → Phase 19's H-E2E slice · the two-devices lost-update residual stands
   (accepted at council).
 
-## ▶▶ NEXT: ① the PUSH ruling (40 commits) · ② S6 — THE OWNER DEVICE ROUND (plan §16 = the probe list)
+## ▶▶ NEXT (session-close 2026-08-25): the OWNER ROUND IS LIVE on dev — the next session TRIAGES it
 
-**S6 is the owner gate and the phase's acceptance.** The §16 probe list (grown by every
-slice): the parked 2026-08-12 round folds in · EXIF portrait end-to-end (✅ already proven
-live via a real Orientation=6 upload, re-confirm on the phone) · 413-mid-body over Tailscale
-HTTPS · the Honor 20 HEIC refusal copy · PWA-standalone picker survival · q0.85 eyeball ·
-crop/framing/drag FEEL (long-press · drag-vs-scroll · one-handed autoscroll reach · reticle
-feel · preview honesty) · the 48 MP double-decode datapoint · Fennec expected-partials.
-Version on release: **1.7.x** (1.8 stays RESERVED). After S6 + release, the 2026-08-22 menu
-below still governs (Phase 19 court · A13 talk).
+**The owner is checking the build on the dev units as of session close** (uploading real
+images, poking the gallery/crop/framing/drag). **Dev units are deliberately LEFT RUNNING**
+(:5434 + :5173) — do not stop them at session start; the owner may be mid-round. The dev
+config is on `config_version` 2 (backup in `~/.ctrl-b-dev/backups/`).
+
+**The next session, in order:**
+1. **Collect the owner's round** — their findings/feel verdicts rule. Triage anything they
+   hit: bug → fix wave on the owning slice's modules (the standing cadence: Opus fix from a
+   pinned brief → main-seat audit → Emma-lane round when non-trivial); feel/design →
+   converse in prose first, no build until ruled. ⚠ Note for triage: the owner pokes
+   `:5173` (Vite dev) — the StrictMode guard fix (`8202768`) made that profile honest, but
+   any NEW dev-only weirdness should be re-checked against the BUILT app before diagnosis
+   (the S4 rider proved dev/prod can genuinely diverge — dist presence changed route
+   matching).
+2. **The PUSH ruling** (owner's word) — 41 commits local (`6c01e4d`…`bfcda2d`), origin
+   still `fef36aa`. Push carries the whole phase + this handoff.
+3. **S6 proper** (plan **§16** = the probe list; the owner's ad-hoc round may cover much of
+   it — tick what their round already proved): the parked 2026-08-12 round · EXIF portrait
+   (✅ pre-proven live, re-confirm on the phone) · 413-mid-body over Tailscale HTTPS · the
+   Honor 20 HEIC refusal copy · PWA-standalone picker survival · q0.85 eyeball ·
+   crop/framing/drag FEEL (long-press · drag-vs-scroll · one-handed autoscroll reach ·
+   reticle feel · preview honesty) · the 48 MP double-decode datapoint · Fennec
+   expected-partials.
+4. **Release** once S6 satisfies: version **1.7.x** (1.8 stays RESERVED for the final
+   ROADMAP/ISSUES wave); runbook `deploy/linux/README.md` §Release, Opus-operated; the
+   batch carries the `config_version` 1→2 migration (config-pure, proven on dev) — NO DB
+   migration; **rollback = v1.7.6**. Pre-tag: the LOCAL e2e run is mandatory (the
+   stale-pin class burned three tags; this phase's S2 caught a stale spec the same way).
+5. **After the phase:** the 2026-08-22 menu below still governs — Phase 19 (D58) owner
+   court (spec-complete + the §7b delta register; this phase's †-items fold in) · the A13
+   design talk · the standing parked ledger.
+
+**† Backlog items this phase minted (recorded, not absorbed — fold into their owners):**
+frontier/kit framability = future per-theme seam work (plan §12) · the fleet backdrop's
+proportional degrade (§5's named case) · `SectionRefEditor` single-pointer alternative
+(R58 §6 ② — the real SC 2.5.7 gap; ISS-candidate) · the `layout.spec.ts` scroll-restoration
+flake → Phase 19 H-E2E · autoscroll feel = unit-tested only, S6 probes it · the
+two-devices lost-update residual (council-accepted).
 
 ## Prior state (2026-08-24, SECOND session — the media-manager DECISION + COUNCIL session; superseded above)
 
