@@ -629,6 +629,11 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
       index({
         roles: {
           characters: [],
+    const broken = screen.getByRole("button", { name: "bad.webp" });
+    expect(broken.className).not.toContain(" on");
+    expect(
+      document.getElementById(broken.getAttribute("aria-describedby") ?? "")?.textContent,
+    ).toBe("in use · will not paint");
           banner: [],
           reel: [file("cut", "reel"), file("cut2", "reel")],
           oracle: [],

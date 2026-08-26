@@ -223,6 +223,12 @@ export function GalleryModal({
               media/{section.ns}/{section.role}/
             </span>
             {section.hint != null && <span className="mgal-hint">{section.hint}</span>}
+            {/* What the In-use switches BUY here, in the gallery's own vocabulary — beside the role's
+                own hint, never instead of it (the hint says what the pictures are for; this says how
+                many of them are on screen at once). */}
+            {reading(view, scope) !== undefined && (
+              <span className="mgal-hint">{reading(view, scope)}</span>
+            )}
           </p>
           {/* The header count is what keeps the tiles free of diagnostics text — and a live region,
               because a delete changes it while the owner is looking somewhere else (#12). */}
@@ -347,6 +353,31 @@ export function GalleryModal({
 
 /** The restore confirm (§6.5 — `requestConfirm`, the house pattern the delete uses). The sentence says
  *  what moves and what does not: the shipped art goes back to the order and the visibility it came
+/** THE SECTION'S READING (the W8 council's F4) — one sentence saying how this destination uses the
+ *  images that are in use, DERIVED from the resolver's own mode word rather than hand-written per role.
+ *
+ *  It is the sentence the gallery was missing: the tiles say which entries are in use and which one is
+ *  active, and nothing on the screen said whether that meant one picture, a rotation or a whole set.
+ *  Hand-writing it into each role's hint would have been the same claim in twenty places, drifting from
+ *  the ladders the moment one changed — so it reads `active.mode`, which IS the resolver's answer.
+ *
+ *  `undefined` where there is nothing honest to say: a SEAT has no In-use and no order (its reading is
+ *  the pin, and its own hint states the ladder), the UNASSIGNED bucket paints nowhere, and a role the
+ *  registry never described has no ladder to speak for. */
+function reading(view: SectionView, scope: GalleryScope): string | undefined {
+  const { section } = view;
+  if (section.kind === "seat" || section.kind === "unassigned") return undefined;
+  // Only where a resolver actually answers for what is ON SCREEN: a key gallery is answered by the
+  // role's per-key ladder, everything else by the section's own.
+  const answers =
+    scope.key !== undefined ? view.activeForKey !== undefined : section.active !== undefined;
+  if (!answers) return undefined;
+  if (view.active.mode === "deal")
+    return "In-use images are dealt across the machines in this order.";
+  if (view.active.mode === "all") return "Every in-use image is shown, in this order.";
+  return "The first in-use image is the one shown.";
+}
+
  *  with, and nothing the owner put there is touched. */
 async function confirmRestore(
   section: SectionView["section"],
