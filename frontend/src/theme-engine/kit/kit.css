@@ -6262,6 +6262,13 @@ body[data-perf="lite"] .kit .navmenu-pop {
   color: var(--text);
   overflow-wrap: anywhere;
 }
+/* The FOLDER, under the label that replaced it as the heading (owner ruling 2026-08-26). Quieter than
+ * the status line beside it: it is a reference the owner reaches for when copying a file in over SSH,
+ * not something to read on every visit. Inherits `.mgal .path`'s size and colour; this only owns the
+ * spacing, so the two cannot say different things about what a path looks like. */
+.kit .mgal-card-path {
+  margin-top: -1px;
+}
 .kit .mgal-card-status {
   font-size: 10px;
   color: var(--text-3);
@@ -6360,6 +6367,9 @@ body[data-perf="lite"] .kit .navmenu-pop {
   z-index: 45;
 }
 .kit .mgal-body {
+  /* The body's SIDE padding, declared here beside the padding itself so the detail stage's
+   * edge-to-edge cancel cannot drift from it (`.mgal-stage` negates exactly this). */
+  --mgal-body-pad: 14px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -6414,7 +6424,10 @@ body[data-perf="lite"] .kit .navmenu-pop {
   color: var(--text-2);
 }
 
-/* THE GRID — three columns, tiles at the role's aspect, two corners with two fixed meanings. */
+/* THE GRID — three columns, tiles at the role's aspect, and corners with fixed meanings: bottom-end is
+ * the IN-USE toggle (a real button, a SIBLING of the tile — HTML forbids nesting one inside it), top-end
+ * a problem, bottom-start the "Default" chip. The ACTIVE entry — what the destination paints right now —
+ * wears the accent ring on the tile itself. */
 .kit .mgal-grid {
   list-style: none;
   margin: 0;
@@ -6453,9 +6466,16 @@ body[data-perf="lite"] .kit .navmenu-pop {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* THE ACTIVE ENTRY (owner ask 2026-08-26: "an outline on the image to make it clear it's the one
+ * selected"). A 1px border tinted accent was there before and read as a slightly different edge; this is
+ * a 2px inset ring plus an outer halo, which survives a busy photograph under it. In a first-wins
+ * section exactly one tile wears it — the resolver's own answer — and in a dealt/all section every
+ * member does, which is the truth about those. */
 .kit .mgal-tile.on {
   border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent);
 }
 .kit .mgal-tile.sel {
   outline: 2px solid var(--accent);
@@ -6466,6 +6486,11 @@ body[data-perf="lite"] .kit .navmenu-pop {
  * moves. 1.02 is enough to read as picked-up at 110px; 1.05 (dnd-kit's overlay demo) is not, because
  * ours is an in-flow tile rather than a portal overlay. */
 .kit .mgal-cell {
+  /* The positioning context for the In-use corner, which is the tile's SIBLING rather than its child:
+   * a button inside a button is invalid HTML, and the tile has to stay the plain detail-opening button
+   * the a11y contract pins (Emma #9). Anchoring the corner here also keeps it OUT of the drag: the
+   * gesture is bound to the tile's own `onPointerDown`. */
+  position: relative;
   transition: transform var(--dur-slow) var(--ease-std);
 }
 .kit .mgal-cell[data-dragging] .mgal-tile,
@@ -6499,58 +6524,218 @@ body[data-perf="lite"] .kit .navmenu-pop {
   font-size: 12px;
   line-height: 1;
 }
-.kit .mgal-corner.end {
-  right: 6px;
-  bottom: 6px;
-  background: var(--accent);
-  color: var(--bg);
-}
 .kit .mgal-corner.top {
   right: 6px;
   top: 6px;
   background: var(--danger);
   color: var(--bg);
 }
+/* THE "DEFAULT" CHIP (owner ruling 2026-08-26) — a WORD, not the old ◆ glyph, which said nothing to
+ * anyone who had not been told what it meant. Sized to stay legible on a 110px tile and given the kit's
+ * badge fill, so it reads as the same class of thing as the chips in the detail panel below. */
 .kit .mgal-corner.start {
-  left: 6px;
-  bottom: 6px;
-  background: var(--surface-2);
-  color: var(--text-3);
+  left: 5px;
+  bottom: 5px;
+  width: auto;
+  height: auto;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--surface-2) 88%, transparent);
+  color: var(--text-2);
   font-size: 10px;
+  letter-spacing: 0.02em;
+}
+/* THE IN-USE TOGGLE — one tap, `aria-pressed`, and a 30px target that clears the 24px the old passive
+ * check disc occupied. OFF is a hollow ring on a dimmed plate, never nothing: a corner that vanishes
+ * when switched off is indistinguishable from a tile that never had the control. */
+.kit .mgal-use {
+  all: unset;
+  box-sizing: border-box;
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  cursor: pointer;
+  background: color-mix(in oklch, var(--surface-2) 88%, transparent);
+  color: var(--text-3);
+  transition:
+    background var(--dur-fast) var(--ease-std),
+    color var(--dur-fast) var(--ease-std);
+}
+.kit .mgal-use.on {
+  background: var(--accent);
+  color: var(--bg);
+}
+.kit .mgal-use:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .mgal-use[disabled] {
+  opacity: 0.4;
+  cursor: default;
 }
 
-/* THE DETAIL PANEL — where every word and every action about one entry lives. */
+/* THE DETAIL PANEL — where every word and every action about one entry lives.
+ *
+ * IMAGE-FORWARD (owner ruling 2026-08-26). The picture runs edge to edge at the top of the panel and
+ * takes most of its height; the way back floats over it on a scrim; the verbs sit in ONE pill that
+ * overlaps its bottom edge; everything that is text lives below. The old shape — a letterboxed 40vh
+ * band over a stack of eight full-width text buttons — gave a third of the screen to the picture the
+ * panel is about and read as a settings form. */
 .kit .mgal-detail {
   display: grid;
   gap: 8px;
 }
+/* Edge to edge: the panel body has its own padding, and this cancels it so the stage meets the modal's
+ * sides. `--mgal-body-pad` is declared beside that padding so the two cannot drift. */
+.kit .mgal-stage {
+  position: relative;
+  /* Sideways only: the stage sits below the panel's own scope/count lines, not at the top of the
+   * scroller, so cancelling the vertical padding would only pull it into them. */
+  margin-inline: calc(var(--mgal-body-pad) * -1);
+  /* Most of the panel, and phone-first: 52vh leaves the name, the chips and the In-use row in view at
+   * 390x844 without a scroll, while the pill overlaps the bottom edge rather than sitting under it. */
+  height: 52vh;
+  min-height: 220px;
+  background:
+    repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0 / 12px 12px;
+}
+.kit .mgal-stage img {
+  width: 100%;
+  height: 100%;
+  /* `contain`, like the tiles and for the same reason: this view is about the whole picture, and a
+   * cutout or a mask silhouette must not be cropped by the box it is being inspected in. */
+  object-fit: contain;
+  display: block;
+}
+/* The way BACK, floating over the image on a soft scrim so it reads on a light photograph and a dark
+ * one alike. It is the first focusable control in the panel, which is what the modal's focus landing
+ * expects. */
 .kit .mgal-back {
   all: unset;
-  align-self: start;
-  padding: 8px 2px;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  box-sizing: border-box;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
   font-size: 12px;
-  color: var(--accent);
+  color: var(--text);
+  background: color-mix(in oklch, var(--bg) 62%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   cursor: pointer;
 }
 .kit .mgal-back:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.kit .mgal-detail-art {
-  width: 100%;
-  /* A fixed BAND rather than the destination's aspect: this view is about the picture itself — the
-   * whole of it, `contain`ed — and the destination's shape is what the framing previews will show at
-   * S4. A phone-friendly two-fifths of the viewport, so the filename and the actions stay in view. */
-  height: 40vh;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  background:
-    repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 0 0 / 12px 12px;
+body[data-perf="lite"] .kit .mgal-back {
+  background: var(--bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
-.kit .mgal-detail-art img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+/* THE FLOATING ACTION PILL — the kit's OVERLAY vocabulary (§14.16's four PANEL slots, the mini-player's
+ * own set) with this surface's literals as fallbacks, so a theme that reskins its floating panels
+ * reskins this one. It overlaps the image's bottom edge, which is what makes it read as belonging to
+ * the picture rather than to the text below. */
+.kit .mgal-pill {
+  position: absolute;
+  left: 50%;
+  bottom: -22px;
+  transform: translateX(-50%);
+  z-index: 1;
+  max-width: calc(100% - 20px);
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--skin-fill, color-mix(in oklch, var(--surface) 92%, transparent));
+  -webkit-backdrop-filter: var(--skin-frost, blur(8px));
+  backdrop-filter: var(--skin-frost, blur(8px));
+  border: 1px solid var(--skin-border, var(--line-2));
+  box-shadow: var(--skin-elev, 0 10px 30px rgba(0, 0, 0, 0.35));
+  /* Wide libraries and narrow phones: the pill scrolls inside itself rather than pushing the panel
+   * sideways. The scrollbar is the platform's; the row never wraps, because a two-row pill stops
+   * reading as one control strip. */
+  overflow-x: auto;
+}
+body[data-mode="light"] .kit .mgal-pill {
+  box-shadow: var(--skin-elev, 0 10px 30px rgba(0, 0, 0, 0.12));
+}
+body[data-perf="lite"] .kit .mgal-pill {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* The two CLUSTERS, with the divider that separates arranging from acting. `:not(:first-child)` rather
+ * than a rendered separator element: which clusters exist is capability-gated, so a hard divider would
+ * be a stray line whenever the first one is absent. */
+.kit .mgal-pill-group {
+  display: flex;
+  gap: 2px;
+}
+.kit .mgal-pill-group:not(:first-child) {
+  padding-left: 5px;
+  margin-left: 1px;
+  border-left: 1px solid var(--line);
+}
+.kit .mgal-pill-btn {
+  all: unset;
+  box-sizing: border-box;
+  /* The WCAG target floor the ↑/↓ pair has always been held to — this pill IS that pair. */
+  min-width: 44px;
+  min-height: 44px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-std),
+    color var(--dur-fast) var(--ease-std);
+}
+.kit .mgal-pill-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.kit .mgal-pill-btn:not([disabled]):active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.kit .mgal-pill-btn[disabled] {
+  opacity: 0.32;
+  cursor: default;
+}
+.kit .mgal-pill-btn.danger {
+  color: var(--danger);
+}
+/* The framing button's set/not-set readout — a third line under the word, at the smallest size the kit
+ * uses, because it is a readout rather than a label. */
+.kit .mgal-pill-note {
+  font-size: 9px;
+  color: var(--text-3);
+}
+/* The text half of the panel. The top gap clears the pill's overhang. */
+.kit .mgal-detail-info {
+  display: grid;
+  gap: 8px;
+  margin-top: 26px;
 }
 .kit .mgal-detail-name {
   margin: 0;
@@ -6575,11 +6760,6 @@ body[data-perf="lite"] .kit .navmenu-pop {
   font-size: 11px;
   line-height: 1.45;
   color: var(--text-3);
-}
-.kit .mgal-actions {
-  display: grid;
-  gap: 8px;
-  margin-top: 4px;
 }
 .kit .mgal-act {
   all: unset;
@@ -6622,13 +6802,6 @@ body[data-perf="lite"] .kit .navmenu-pop {
   min-height: 44px;
   font-size: 12px;
   color: var(--text-2);
-}
-/* The ↑/↓ pair plus move-to-edge — two columns on a phone, every target ≥44px (the WCAG floor S5's
- * drag never replaces). */
-.kit .mgal-act-move {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
 }
 
 /* THE UPLOAD (D65 / MEDIA_MANAGER_PLAN §4) — the Add row is live from S3b, and it is the ONE

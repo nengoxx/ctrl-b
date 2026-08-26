@@ -548,8 +548,11 @@ export const ADVISORIES: Record<string, { text: string; bad?: boolean }> = {
   // hunting for a corruption that was never there; the truthful sentence names both causes.
   unreadable: { text: "unreadable or unsupported format", bad: true },
   "format-mismatch": { text: "wrong extension", bad: true },
-  oversize: { text: "large file" },
-  dimensions: { text: "very large image" },
+  // The two ADVISORIES state their CONSEQUENCE (owner ruling 2026-08-26): "large file" is a
+  // measurement the owner already has — the meta line above says how large — and says nothing about
+  // why it is on screen. The picture still paints; what it costs is time.
+  oversize: { text: "large file — slower to load" },
+  dimensions: { text: "very large image — slower to load" },
 };
 
 /** The advisory codes for one file, in severity order: what makes it unusable first, then the size

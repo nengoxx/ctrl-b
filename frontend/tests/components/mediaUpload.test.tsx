@@ -173,7 +173,7 @@ afterEach(async () => {
 describe("the round trip", () => {
   it("pick → crop → export → PUT the BYTES → register through the settings queue", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile());
     await confirmCrop();
 
@@ -198,7 +198,7 @@ describe("the round trip", () => {
 
   it("exports against the ROLE's own bounds and its export override", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile());
     await confirmCrop();
     await waitFor(() => expect(exporter.exportImage).toHaveBeenCalled());
@@ -217,14 +217,14 @@ describe("the round trip", () => {
     // `change` fires only when the SELECTION changes: without the reset, re-picking the same file
     // fires `cancel` instead and the button is dead (R54 §5.4).
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile());
     expect(picker(dialog).value).toBe("");
   });
 
   it("takes ONE file per pick, whatever the drop carried (owner ruling ⑨)", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile("one.png"), pickFile("two.png"));
     await confirmCrop();
     await waitFor(() => expect(api.putBytes).toHaveBeenCalledTimes(1));
@@ -235,7 +235,7 @@ describe("the round trip", () => {
 describe("the ONE admission latch (§4, Opus M8)", () => {
   it("refuses a second job while one is running — synchronously, in the same frame", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     // Two picks with no await between them: rendered state would still read `false` for the second.
     await act(async () => {
       fireEvent.change(picker(dialog), { target: { files: [pickFile("one.png")] } });
@@ -250,7 +250,7 @@ describe("the ONE admission latch (§4, Opus M8)", () => {
 
   it("releases the latch when the crop is cancelled, and writes nothing", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile());
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Use as is" })).toBeNull());
@@ -282,7 +282,7 @@ describe("names (§2.5)", () => {
         ],
       }),
     );
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile("photo.png"));
     await confirmCrop();
     await waitFor(() => expect(api.putBytes).toHaveBeenCalled());
@@ -294,7 +294,7 @@ describe("names (§2.5)", () => {
     api.putBytes
       .mockRejectedValueOnce(new api.ApiError("name exists", 409))
       .mockResolvedValueOnce({});
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile("photo.png"));
     await confirmCrop();
     await waitFor(() => expect(api.putBytes).toHaveBeenCalledTimes(2));
@@ -309,7 +309,7 @@ describe("names (§2.5)", () => {
 describe("failure rows, per phase (§4)", () => {
   it("a refused PICK says why and offers no retry — the answer is another picture", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     // A HEIC, which no browser can decode. Refused BY NAME, before any decoder sees it.
     await pick(dialog, new File([fixture("heic-header.heic")], "IMG_0001.heic"));
     const row = await within(dialog).findByText(/HEIC/);
@@ -321,7 +321,7 @@ describe("failure rows, per phase (§4)", () => {
   it("a failed EXPORT keeps the crop and offers a retry", async () => {
     renderGallery();
     exporter.exportImage.mockRejectedValueOnce(new Error("the cropped image came back empty"));
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile());
     await confirmCrop();
     const retry = await within(dialog).findByRole("button", { name: "Try again" });
@@ -340,7 +340,7 @@ describe("failure rows, per phase (§4)", () => {
     // gone from disk — so the write refuses rather than resurrecting a tree the owner deleted.
     renderGallery();
     api.putBytes.mockRejectedValue(new api.ApiError("Internal Server Error", 500));
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile());
     await confirmCrop();
     const row = await within(dialog).findByText(/media folder/);
@@ -352,7 +352,7 @@ describe("the two-phase job (§4, Emma #4)", () => {
   it("a retry after a 201 NEVER re-uploads — it retries only the registration", async () => {
     renderGallery();
     api.putJSON.mockRejectedValueOnce(new Error("save failed"));
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile("photo.png"));
     await confirmCrop();
 
@@ -423,7 +423,7 @@ describe("the job's own CONTEXT (Emma #1)", () => {
         release = resolve;
       }),
     );
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile("mid-flight.png"));
     await confirmCrop();
 
@@ -450,7 +450,7 @@ describe("the job's own CONTEXT (Emma #1)", () => {
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
 
     // THE claim: the latch is free, so the next pick is admitted.
-    const again = await openSection("banner");
+    const again = await openSection("Banner slides");
     await pick(again, pickFile("after.png"));
     expect(await screen.findByRole("button", { name: "Use as is" })).toBeTruthy();
   });
@@ -475,7 +475,7 @@ describe("the unknown-outcome reconcile (Emma #2)", () => {
     renderGallery();
     // Phase one: the bytes reach the server, the response does not.
     api.putBytes.mockRejectedValueOnce(new Error("network error"));
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile("photo.png"));
     await confirmCrop();
     const firstRow = await within(dialog).findByText(/did not reach the server/);
@@ -523,7 +523,7 @@ describe("the unknown-outcome reconcile (Emma #2)", () => {
     api.putBytes
       .mockRejectedValueOnce(new Error("network error"))
       .mockRejectedValueOnce(new api.ApiError("name exists", 409));
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile("photo.png"));
     await confirmCrop();
     await within(dialog).findByText(/did not reach the server/);
@@ -557,7 +557,7 @@ describe("the 64 MP cap after the PROOF decode (Emma #4)", () => {
     // there, a 108 MP file went on to be decoded a SECOND time in the worker.
     renderGallery();
     decoded = { width: 12_000, height: 9_000 }; // 108 MP
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile("huge.png"));
     const row = await within(dialog).findByText(/12000×9000/);
     expect(row.textContent).toContain("108 megapixels");
@@ -570,7 +570,7 @@ describe("the 64 MP cap after the PROOF decode (Emma #4)", () => {
 
   it("admits one that fits, and releases the proof bitmap either way", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await pick(dialog, pickFile("ok.png"));
     expect(await screen.findByRole("button", { name: "Use as is" })).toBeTruthy();
     expect(closeBitmap).toHaveBeenCalled();

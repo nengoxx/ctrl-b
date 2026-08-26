@@ -177,10 +177,10 @@ test("the framing point MOVES the paint, on every window that crops (the S4 visu
 
   // ── ② SET a framing point, far off-centre, through the real sheet.
   await page.locator("#tabbtn-conf").click();
-  await page.getByRole("button", { name: "Open the characters gallery" }).click();
+  await page.getByRole("button", { name: "Open the Characters gallery" }).click();
   const gallery = page.getByRole("dialog");
   await gallery.getByRole("button", { name: "hero.png", exact: true }).click();
-  await gallery.getByRole("button", { name: /Set framing/ }).click();
+  await gallery.getByRole("button", { name: "Framing", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Set framing" });
   await expect(sheet).toBeVisible();
   // …and the previews are there, honestly captioned (council M4).
@@ -271,12 +271,12 @@ test("an already-framed image OPENS on its framing, and an untouched Save keeps 
   const painted = await positionOf(page, card);
 
   await page.locator("#tabbtn-conf").click();
-  await page.getByRole("button", { name: "Open the characters gallery" }).click();
+  await page.getByRole("button", { name: "Open the Characters gallery" }).click();
   const gallery = page.getByRole("dialog");
   await gallery.getByRole("button", { name: "hero.png", exact: true }).click();
   // The affordance already says a point is set, before the sheet is even open.
-  await expect(gallery.getByRole("button", { name: /Set framing/ })).toContainText("set");
-  await gallery.getByRole("button", { name: /Set framing/ }).click();
+  await expect(gallery.getByRole("button", { name: "Framing", exact: true })).toContainText("set");
+  await gallery.getByRole("button", { name: "Framing", exact: true }).click();
   const sheet = page.getByRole("dialog", { name: "Set framing" });
   await expect(sheet.locator(".mgal-frame-stage img")).toBeVisible();
   // THE RETICLE IS ON THE STORED POINT, read off the library's own transform rather than off anything

@@ -169,6 +169,48 @@ describe("the kit row (D53 M3 + the Kit Art System)", () => {
     expect(icons.pixels).toBe(512 * 512);
   });
 
+  it("every role the app SHIPS is titled in the owner's words, and the folder stays reachable", () => {
+    // The 2026-08-26 owner ruling: role cards were headed by their FOLDER name — `reel`, `oracle`,
+    // `rigs`, `stack` — which is filesystem jargon, and in one case two cards read alike ("Operator
+    // backdrop" for both the `oracle` role and the `oracle` seat). `label` is what the card says now.
+    //
+    // Required of every DECLARED role, not merely allowed: a role that shipped without one would be
+    // the only card in the list still headed by a path fragment. (An UNDESCRIBED role — one the server
+    // lists and this registry has never heard of — is a different thing and is still titled by its
+    // folder; there is nothing else to call it.)
+    for (const [nsName, ns] of Object.entries(MEDIA_NS)) {
+      for (const [roleName, role] of Object.entries(ns.roles)) {
+        const where = `${nsName}/${roleName}`;
+        expect(role.label, where).toBeTruthy();
+        // A LABEL, not a sentence: it is a card heading, and it must not be the folder name again.
+        expect((role.label ?? "").length, where).toBeLessThan(24);
+        expect(role.label, where).not.toBe(roleName);
+      }
+    }
+    // …and the two that named the wrong thing outright are fixed by name.
+    expect(MEDIA_NS.kit.roles.brand.label).toBe("Logo"); // NOT "App icon" — that is the PWA icon
+    expect(MEDIA_NS.gacha.roles.oracle.label).toBe("Operator backdrop");
+    // The section takes it; `mediaSections` is where the card's heading is decided.
+    const out = mediaSections("gacha", MEDIA_NS.gacha, ["reel", "mystery"]);
+    expect(out.find((s) => s.role === "reel")?.title).toBe("Transition figure");
+    expect(out.find((s) => s.role === "mystery")?.title).toBe("mystery");
+  });
+
+  it("no hint carries backtick jargon or a retired pin's promise", () => {
+    // The copy round's other half: hints led with mechanics ("Unpinned, the fleet uses…"), quoted a
+    // config key in backticks, and two of them offered a "pin one below" that the "W6" ruling deleted.
+    for (const [nsName, ns] of Object.entries(MEDIA_NS)) {
+      for (const [roleName, role] of Object.entries(ns.roles)) {
+        const where = `${nsName}/${roleName}`;
+        expect(role.hint ?? "", where).not.toMatch(/`/);
+        expect(role.hint ?? "", where).not.toMatch(/\bpin\b/i);
+      }
+      for (const slot of ns.slots ?? []) {
+        expect(slot.hint ?? "", `${nsName}:${slot.key}`).not.toMatch(/\bunpinned\b/i);
+      }
+    }
+  });
+
   it("a role declares EITHER a static key list or a key source, never both and never on a pool", () => {
     for (const [nsName, ns] of Object.entries(MEDIA_NS)) {
       for (const [roleName, role] of Object.entries(ns.roles)) {
@@ -217,14 +259,24 @@ describe("the gacha row", () => {
     for (const slot of slots) expect(slot.from).toBe("characters");
   });
 
-  it("the BACKDROP seat carries a hint naming the rung between the pin and the built-in", () => {
-    // With no `wallpaper/` role there is nowhere else in the gallery to learn where the fleet backdrop
-    // comes from, and the pins section's generic copy ("overriding that folder's own first pick") is no
-    // longer the whole truth for it. It is the ONE pin that needs the sentence — the hero slide used to
-    // need it too, and that seat died with the 2026-08-26 ruling.
+  it("both SEATS say what they bind, and the backdrop names the rung between it and the default", () => {
+    // Each seat's hint leads with the ACTION (owner ruling 2026-08-26 — the copy round): what the
+    // owner does here is bind one character into a surface the cast does not own. The backdrop's then
+    // carries the sentence only it needs: with no `wallpaper/` role there is nowhere else in the
+    // gallery to learn that the SHARED background sits between the binding and the shipped scene.
     const hint = (key: string) => MEDIA_NS.gacha.slots?.find((s) => s.key === key)?.hint ?? "";
-    expect(hint("wallpaper")).toMatch(/shared/i);
-    expect(MEDIA_NS.gacha.slots?.filter((s) => s.hint !== undefined)).toHaveLength(1);
+    for (const seat of MEDIA_NS.gacha.slots ?? []) expect(hint(seat.key)).toMatch(/^Bind one/);
+    expect(hint("wallpaper")).toMatch(/shared art background/i);
+  });
+
+  it("the two seats and the oracle ROLE are three DIFFERENT names for three destinations", () => {
+    // The collision the 2026-08-26 relabel closed: the `oracle` ROLE card and the `oracle` SEAT were
+    // both headed "Operator backdrop" — one chooses the picture behind the operator, the other chooses
+    // WHO stands there — so the owner met the same words twice, two rows apart, meaning two things.
+    const titles = mediaSections("gacha", MEDIA_NS.gacha, rolesOf("gacha")).map((s) => s.title);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(titles).toContain("Operator backdrop"); // the role's own card
+    expect(titles).toContain("Operator character"); // the seat over the cast
   });
 
   it("the backdrop seat shows the built-in default, and the banner ROLE holds the same picture", () => {

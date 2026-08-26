@@ -235,9 +235,9 @@ export function GalleryModal({
               it — there is no tile to select. So the notice carries its own way out. */}
           {danglingPin !== undefined && (
             <p className="mgal-dangling">
-              The pinned image <b>{danglingPin}</b> is missing.
+              The bound image <b>{danglingPin}</b> is missing.
               <button type="button" className="mgal-act" onClick={() => write.unpin(section)}>
-                Clear the pin
+                Clear it
               </button>
             </p>
           )}
@@ -249,9 +249,9 @@ export function GalleryModal({
             <p className="mgal-builtin">
               <img src={section.builtin.url} alt="" loading="lazy" decoding="async" />
               <span>
-                <b>Built-in default</b>
-                Nothing is pinned here, so this is what the ladder ends on. Choose an image below to
-                use it instead — clearing that pin brings this back.
+                <b>Default</b>
+                Nothing is bound here, so this is the picture the ladder ends on. Choose an image
+                below to use that instead — clearing it brings this back.
               </span>
             </p>
           )}
@@ -273,7 +273,7 @@ export function GalleryModal({
               >
                 Restore defaults
               </button>
-              <small>Puts the built-in art back in order. Your own images stay.</small>
+              <small>Puts the default images back in order. Your own images stay.</small>
             </p>
           )}
           {items.length === 0 ? (
@@ -307,6 +307,16 @@ export function GalleryModal({
             <LibraryGrid
               section={section}
               items={items}
+              ready={ready}
+              // ONE TAP on the tile's corner, through the very intent the detail panel's switch
+              // enqueues (§6.5) — the queue is the one write chokepoint, and a second path to
+              // `hidden` would be a second place for the tier rule to be got wrong. Absent where the
+              // section has no In-use to give: a seat is a view.
+              onToggleUse={
+                section.caps.hidden
+                  ? (item, hidden) => write.setHidden(section, item, hidden)
+                  : undefined
+              }
               // The SAME fact that shows the ↑/↓ pair in the detail panel (§7: both affordances, one
               // condition) — plus `ready`, because a drag whose write the queue would refuse is a drag
               // that snaps back for a reason the owner cannot see.
@@ -319,7 +329,7 @@ export function GalleryModal({
               // at send, one write path.
               onReorder={(item, from, to) => write.move(section, item, to - from)}
               onSelect={(item) => {
-                cameFrom.current = item.bundled ? `${item.row.name} (bundled)` : item.row.file;
+                cameFrom.current = item.bundled ? `${item.row.name} (default)` : item.row.file;
                 setSelectedId(item.id);
               }}
             />
@@ -338,8 +348,8 @@ async function confirmRestore(
   onRestore: () => void,
 ): Promise<void> {
   const ok = await requestConfirm({
-    title: `Restore the built-in art for ${section.title}?`,
-    body: "The images that came with the app go back to their original order, and anything switched off here is switched back on. Your own images, their order and their framing are not touched.",
+    title: `Restore the default images for ${section.title}?`,
+    body: "The images that came with the app go back to their original order, and anything switched off here goes back in use. Your own images, their order and their framing are not touched.",
     confirmLabel: "Restore",
   });
   if (ok) onRestore();

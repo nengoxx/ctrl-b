@@ -166,17 +166,30 @@ afterEach(async () => {
 describe("the entry cards (§6.1)", () => {
   it("one card per DECLARED destination — role folders, then the pin-backed seats", async () => {
     renderGallery();
-    await screen.findByRole("button", { name: "Open the characters gallery" });
-    for (const name of ["characters", "banner", "reel", "oracle"]) {
-      expect(screen.getByRole("button", { name: `Open the ${name} gallery` })).toBeTruthy();
+    await screen.findByRole("button", { name: "Open the Characters gallery" });
+    // TITLED IN THE OWNER'S WORDS since 2026-08-26 — the raw folder names read as jargon — with the
+    // FOLDER itself kept on the card, because an SSH drop is addressed by folder and nothing else.
+    for (const [title, folder] of [
+      ["Characters", "media/gacha/characters/"],
+      ["Banner slides", "media/gacha/banner/"],
+      ["Transition figure", "media/gacha/reel/"],
+      ["Operator backdrop", "media/gacha/oracle/"],
+    ] as const) {
+      const card = screen.getByRole("button", { name: `Open the ${title} gallery` });
+      expect(card.textContent, title).toContain(folder);
     }
     // The two gacha SEATS: a character bound into a surface the cast does not own — and since "W6"
     // (owner ruling 2026-08-26) the ONLY pins anywhere. `reel_figure` was the last override of a
     // pool's own first pick, and order replaced it.
-    for (const label of ["Fleet backdrop", "Operator backdrop"]) {
+    for (const label of ["Fleet backdrop", "Operator character"]) {
       expect(screen.getByRole("button", { name: `Open the ${label} gallery` })).toBeTruthy();
     }
-    expect(screen.queryByRole("button", { name: /Transition figure/ })).toBeNull();
+    // …and NO seat over the reel: `reel_figure` was an override of that pool's own first pick, not a
+    // destination of its own, and it died with the "W6" ruling.
+    expect(
+      screen.queryByRole("button", { name: "Open the Transition figure gallery" }),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /Transition figure/ })).toHaveLength(1);
     // …and NOT a "Hero slide" seat: the carousel's first slide deals the `banner` pool's first member
     // since the 2026-08-26 ruling, so its destination is that role's own card (owner ruling "W5").
     expect(screen.queryByRole("button", { name: /Hero slide/ })).toBeNull();
@@ -184,8 +197,8 @@ describe("the entry cards (§6.1)", () => {
 
   it("paints the ACTIVE art the resolver names, with its mode word — a collage for a dealt set", async () => {
     const { container } = renderGallery();
-    await screen.findByRole("button", { name: "Open the characters gallery" });
-    const card = screen.getByRole("button", { name: "Open the characters gallery" });
+    await screen.findByRole("button", { name: "Open the Characters gallery" });
+    const card = screen.getByRole("button", { name: "Open the Characters gallery" });
     // The cast is DEALT: every owner file is in use, the bundled tier is not, and the word says how.
     expect(card.textContent).toContain("dealt to machines in this order");
     const art = [...card.querySelectorAll("img")].map((i) => i.getAttribute("src"));
@@ -203,7 +216,7 @@ describe("the entry cards (§6.1)", () => {
         roles: { characters: cast, banner: [], reel: [], oracle: [] },
       }),
     );
-    const card = await screen.findByRole("button", { name: "Open the characters gallery" });
+    const card = await screen.findByRole("button", { name: "Open the Characters gallery" });
     // The fallback tier IS what the theme deals when the owner has dropped nothing — the gallery says
     // exactly that rather than "nothing in use", because the fleet is not blank.
     expect(card.textContent).toContain("5 images");
@@ -211,11 +224,14 @@ describe("the entry cards (§6.1)", () => {
     expect(card.querySelectorAll("img")).toHaveLength(4); // the collage caps at four
   });
 
-  it("a first-wins role names ONE in use; an empty one offers to add", async () => {
+  it("a first-wins role names ONE ACTIVE; an empty one offers to add", async () => {
+    // ONE WORD, ONE MEANING (owner ruling 2026-08-26): ACTIVE is what the destination paints right
+    // now, and "in use" is membership. A first-wins card says how many entries it holds and that one
+    // of them is the answer.
     renderGallery();
-    const reel = await screen.findByRole("button", { name: "Open the reel gallery" });
-    expect(reel.textContent).toContain("1 in use");
-    const oracle = screen.getByRole("button", { name: "Open the oracle gallery" });
+    const reel = await screen.findByRole("button", { name: "Open the Transition figure gallery" });
+    expect(reel.textContent).toContain("1 active");
+    const oracle = screen.getByRole("button", { name: "Open the Operator backdrop gallery" });
     expect(oracle.textContent).toContain("Add an image");
   });
 
@@ -233,7 +249,7 @@ describe("the entry cards (§6.1)", () => {
         },
       }),
     );
-    const card = await screen.findByRole("button", { name: "Open the characters gallery" });
+    const card = await screen.findByRole("button", { name: "Open the Characters gallery" });
     expect(card.textContent).toContain("1 will not paint");
   });
 
@@ -251,10 +267,12 @@ describe("the entry cards (§6.1)", () => {
         slots: { oracle: "kira" },
       }),
     );
-    const card = await screen.findByRole("button", { name: "Open the oracle gallery" });
+    const card = await screen.findByRole("button", { name: "Open the Operator backdrop gallery" });
     expect(card.textContent).toContain("overridden");
     expect(card.querySelectorAll("img")).toHaveLength(0); // no phantom
-    expect(screen.getByRole("button", { name: /Currently set by Operator backdrop/ })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /Currently set by Operator character/ }),
+    ).toBeTruthy();
   });
 
   it("a SEAT offers only what its source LADDER can resolve — never a pick that falls through", async () => {
@@ -263,7 +281,7 @@ describe("the entry cards (§6.1)", () => {
     // bundled names beside it would let them pick one the render silently ignores.
     renderGallery(index({ roles: { characters: cast, banner: [], reel: [], oracle: [] } }));
     let dialog = await openSection("Fleet backdrop");
-    expect(within(dialog).getByRole("button", { name: "pegasus (bundled)" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "pegasus (default)" })).toBeTruthy();
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     cleanup();
@@ -271,7 +289,7 @@ describe("the entry cards (§6.1)", () => {
     renderGallery();
     dialog = await openSection("Fleet backdrop");
     expect(within(dialog).getByRole("button", { name: "a.webp" })).toBeTruthy();
-    expect(within(dialog).queryByRole("button", { name: "pegasus (bundled)" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "pegasus (default)" })).toBeNull();
   });
 
   it("a SEAT card says what is pinned, and offers the source role's library", async () => {
@@ -287,7 +305,7 @@ describe("the entry cards (§6.1)", () => {
       }),
     );
     const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
-    expect(card.textContent).toContain("nova in use");
+    expect(card.textContent).toContain("nova is bound here");
     const dialog = await openSection("Fleet backdrop");
     expect(within(dialog).getByRole("button", { name: "kira.webp" })).toBeTruthy();
     // A seat is a VIEW: no upload row, and its detail offers only the pin.
@@ -297,18 +315,18 @@ describe("the entry cards (§6.1)", () => {
   // ── the BUILT-IN DEFAULT (S6) ───────────────────────────────────────────────────────────────────
   //
   // `banner.webp` — the picture the fleet backdrop and the hero slide bottom out on — appeared in no
-  // gallery at all: it belongs to no role folder, so no library held it, and an unpinned seat said
-  // "none pinned" beside an empty preview box. The owner's ruling is that nothing shipped is left
+  // gallery at all: it belongs to no role folder, so no library held it, and an unbound seat said
+  // "none bound" beside an empty preview box. The owner's ruling is that nothing shipped is left
   // behind, so the seat SHOWS it. It is a display channel, not a tier: no tile, no In-use, no order.
 
   it("an unpinned seat SHOWS its built-in default, on the card and in the gallery", async () => {
     renderGallery();
     const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
-    expect(card.textContent).toContain("none pinned");
-    expect(card.textContent).toContain("built-in");
+    expect(card.textContent).toContain("none bound");
+    expect(card.textContent).toContain("default");
     expect(card.querySelector(".mgal-card-art img")).toBeTruthy();
     const dialog = await openSection("Fleet backdrop");
-    expect(within(dialog).getByText("Built-in default")).toBeTruthy();
+    expect(within(dialog).getByText("Default")).toBeTruthy();
     // Not a library row: it is not a tile, so it has no detail panel, no switch and no order.
     expect(within(dialog).queryByRole("button", { name: /banner/i })).toBeNull();
   });
@@ -326,7 +344,7 @@ describe("the entry cards (§6.1)", () => {
       }),
     );
     const dialog = await openSection("Fleet backdrop");
-    expect(within(dialog).queryByText("Built-in default")).toBeNull();
+    expect(within(dialog).queryByText("Default")).toBeNull();
   });
 
   it("ONE seat shows it now, and the same picture is a library row in the banner role", async () => {
@@ -336,14 +354,14 @@ describe("the entry cards (§6.1)", () => {
     // carousel slide the owner can reorder or switch off.
     renderGallery();
     const fleet = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
-    expect(fleet.textContent).toContain("built-in"); // unpinned → its ladder's end
+    expect(fleet.textContent).toContain("default"); // nothing bound → its ladder's end
     expect(screen.queryByRole("button", { name: "Open the Hero slide gallery" })).toBeNull();
     // The operator backdrop has no built-in of its own: its ladder ends in the `oracle` ROLE, whose
     // section holds that picture as a real library entry since S6.
     const oracle = await screen.findByRole("button", {
-      name: "Open the Operator backdrop gallery",
+      name: "Open the Operator character gallery",
     });
-    expect(oracle.textContent).not.toContain("built-in");
+    expect(oracle.textContent).not.toContain("default");
   });
 });
 
@@ -434,9 +452,9 @@ describe("the H5 role-family card (kit's derived keys)", () => {
 describe("the gallery modal (§6.2)", () => {
   it("is the house dialog: labelled, trapped, and Escape closes it", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     expect(dialog.getAttribute("aria-modal")).toBe("true");
-    expect(within(dialog).getByRole("heading", { name: "characters" })).toBeTruthy();
+    expect(within(dialog).getByRole("heading", { name: "Characters" })).toBeTruthy();
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
@@ -446,7 +464,7 @@ describe("the gallery modal (§6.2)", () => {
     // would leave one behind on every open, and the owner would press Back five times to leave the app.
     renderGallery();
     const before = history.length;
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     await waitFor(() =>
       expect((history.state as { ctrlbOverlay?: boolean } | null)?.ctrlbOverlay).toBe(true),
     );
@@ -460,7 +478,7 @@ describe("the gallery modal (§6.2)", () => {
 
   it("the owner's BACK gesture closes it too", async () => {
     renderGallery();
-    await openSection("characters");
+    await openSection("Characters");
     await waitFor(() =>
       expect((history.state as { ctrlbOverlay?: boolean } | null)?.ctrlbOverlay).toBe(true),
     );
@@ -470,7 +488,7 @@ describe("the gallery modal (§6.2)", () => {
 
   it("carries the Add row — the ONE admission path, with its hidden picker beside it (S3b)", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     const add = within(dialog)
       .getByText(/Add an image/)
       .closest("button");
@@ -492,7 +510,7 @@ describe("the gallery modal (§6.2)", () => {
 
   it("counts the library in a live region, so a delete is announced", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     expect(within(dialog).getByRole("status").textContent).toContain("8 images");
   });
 });
@@ -513,12 +531,19 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
         },
       }),
     );
-    await openSection("characters");
+    await openSection("Characters");
     const tile = (name: string) =>
       screen.getByRole("button", { name }).parentElement as HTMLElement;
-    expect(container.querySelectorAll(".mgal-corner.end")).toHaveLength(2); // a + bad: both dealt
+    // The IN-USE corner is a real toggle now (owner ruling 2026-08-26) and it is on EVERY tile of a
+    // section that has In-use to give — it is a control, not a mark, so a tile without one would be a
+    // tile the owner cannot switch off.
+    expect(container.querySelectorAll(".mgal-use")).toHaveLength(3);
+    expect(container.querySelectorAll(".mgal-use.on")).toHaveLength(3); // none is switched off
     expect(container.querySelectorAll(".mgal-corner.top")).toHaveLength(1); // only the broken one
-    expect(container.querySelectorAll(".mgal-corner.start")).toHaveLength(1); // only the bundled one
+    expect(container.querySelectorAll(".mgal-corner.start")).toHaveLength(1); // only the default one
+    expect(container.querySelector(".mgal-corner.start")?.textContent).toBe("Default");
+    // …and the ACTIVE entries — what the fleet paints right now — wear the ring on the tile itself.
+    expect(container.querySelectorAll(".mgal-tile.on")).toHaveLength(2); // a + bad: both dealt
     expect(tile("a.webp")).toBeTruthy();
   });
 
@@ -526,11 +551,13 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
     // Emma #9: `aria-checked` on a tile would claim a state a tile does not own, and a screen reader
     // cannot check it. Membership is said in words; the switch in the detail panel is the real control.
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     const tile = within(dialog).getByRole("button", { name: "a.webp" });
     expect(tile.getAttribute("aria-checked")).toBeNull();
     const described = document.getElementById(tile.getAttribute("aria-describedby") ?? "");
-    expect(described?.textContent).toContain("in use");
+    // The gallery's ONE vocabulary (owner ruling 2026-08-26): a dealt member the fleet is painting is
+    // ACTIVE. "in use" is membership, and it is what an entry that is not being painted says.
+    expect(described?.textContent).toContain("active");
     // A DEALT pool has no single current member, so nothing claims to be one.
     expect(dialog.querySelector("[aria-current]")).toBeNull();
   });
@@ -546,7 +573,7 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
         },
       }),
     );
-    const dialog = await openSection("reel");
+    const dialog = await openSection("Transition figure");
     expect(
       within(dialog).getByRole("button", { name: "cut.webp" }).getAttribute("aria-current"),
     ).toBe("true");
@@ -560,11 +587,106 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
     const { container } = renderGallery(
       index({ roles: { characters: many, banner: [], reel: [], oracle: [] } }),
     );
-    await openSection("characters");
+    await openSection("Characters");
     const imgs = [...container.querySelectorAll(".mgal-grid img")];
     expect(imgs.filter((i) => i.getAttribute("loading") === "eager")).toHaveLength(9);
     expect(imgs.filter((i) => i.getAttribute("loading") === "lazy")).toHaveLength(3);
     for (const img of imgs) expect(img.getAttribute("decoding")).toBe("async");
+  });
+});
+
+// ── THE CORNER IN-USE TOGGLE (owner ruling 2026-08-26) ──────────────────────────────────────────
+//
+// The bottom-end corner used to be a passive ✓ meaning "this one is being painted". It is a real
+// BUTTON now, and it means something else: membership. One tap, `aria-pressed`, and the same queued
+// `setHidden` intent the detail panel's switch enqueues — one write path, one tier rule.
+
+describe("the tile's In-use toggle", () => {
+  const withOne = () =>
+    renderGallery(
+      index({
+        roles: {
+          characters: [file("a", "characters"), file("b", "characters")],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
+    );
+
+  it("says its own state with aria-pressed, and one tap writes `hidden` for that entry", async () => {
+    withOne();
+    const dialog = await openSection("Characters");
+    const corner = within(dialog).getByRole("button", { name: "In use — b.webp" });
+    expect(corner.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(corner);
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(filesOf(savedBlock())).toEqual([{ name: "a.webp" }, { name: "b.webp", hidden: true }]);
+  });
+
+  it("…and switching one back on is the same control, the other way", async () => {
+    renderGallery(
+      index({
+        roles: {
+          characters: [file("a", "characters"), file("off", "characters", { hidden: true })],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
+    );
+    const dialog = await openSection("Characters");
+    const corner = within(dialog).getByRole("button", { name: "In use — off.webp" });
+    expect(corner.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(corner);
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(filesOf(savedBlock())).toEqual([{ name: "a.webp" }, { name: "off.webp" }]);
+  });
+
+  it("A PRESS ON THE CORNER NEVER LIFTS THE TILE — the drag is bound to the tile alone", async () => {
+    // The gesture reason the corner is a SIBLING of the tile rather than a child (HTML forbids the
+    // nesting anyway): `useDragReorder`'s press activation is `handleProps.onPointerDown`, which is on
+    // the TILE. A pointer that goes down on the corner reaches no drag handler, so the long press that
+    // would pick a tile up cannot start under a finger aiming at the switch.
+    vi.useFakeTimers();
+    try {
+      withOne();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Open the Characters gallery" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      const dialog = screen.getByRole("dialog");
+      const corner = within(dialog).getByRole("button", { name: "In use — b.webp" });
+      const cell = corner.parentElement as HTMLElement;
+      fireEvent.pointerDown(corner, { pointerId: 1, clientX: 10, clientY: 10, button: 0 });
+      // …past the long-press threshold, which is what would have lifted a tile.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(800);
+      });
+      expect(cell.getAttribute("data-dragging")).toBeNull();
+      fireEvent.pointerUp(corner, { pointerId: 1, clientX: 10, clientY: 10 });
+      expect(cell.getAttribute("data-drag-held")).toBeNull();
+      // …and the same press on the TILE does lift it, so the arm is about the corner and not about a
+      // gesture that never works in jsdom.
+      const tile = within(dialog).getByRole("button", { name: "b.webp" });
+      fireEvent.pointerDown(tile, { pointerId: 2, clientX: 10, clientY: 10, button: 0 });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(800);
+      });
+      expect(cell.getAttribute("data-dragging")).toBe("");
+      fireEvent.pointerUp(tile, { pointerId: 2, clientX: 10, clientY: 10 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is ABSENT where the section has no In-use to give — a SEAT is a view", async () => {
+    renderGallery();
+    const dialog = await openSection("Fleet backdrop");
+    expect(within(dialog).queryByRole("button", { name: /^In use — / })).toBeNull();
   });
 });
 
@@ -573,9 +695,9 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     // "W6" (owner ruling 2026-08-26): there is no second "set active" system. The library's ORDER is
     // the priority, everywhere, so the way to say "use this one" is to put it at the top.
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     openItem(dialog, "c.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     // The amended tier rule in one assertion (§2.3 ③, owner 2026-08-25): an ORDER intent names the
     // WHOLE section — the disk rows and the five bundled defaults alike, in the resulting order. The
@@ -616,9 +738,9 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
         },
       }),
     );
-    const dialog = await openSection("reel");
+    const dialog = await openSection("Transition figure");
     openItem(dialog, "cut2.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(savedBlock()).not.toHaveProperty("slots");
     expect(filesOf(savedBlock(), "reel")).toEqual([{ name: "cut2.webp" }, { name: "cut.webp" }]);
@@ -629,7 +751,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     const dialog = await openSection("Fleet backdrop");
     openItem(dialog, "b.webp");
     expect(within(dialog).queryByRole("button", { name: "Use here" })).toBeNull();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Clear this pin" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     // NULL, never an empty string — the shape the backend reads as "unpinned".
     expect(savedBlock()).toEqual({ slots: { wallpaper: null } });
@@ -639,16 +761,16 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     renderGallery(index({ slots: { wallpaper: "deleted" } }));
     const dialog = await openSection("Fleet backdrop");
     expect(within(dialog).getByText(/is missing/).textContent).toContain("deleted");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Clear the pin" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear it" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(savedBlock()).toEqual({ slots: { wallpaper: null } });
   });
 
   it("the ↑/↓ pair moves one entry, and is HIDDEN where order decides nothing (#11)", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     openItem(dialog, "b.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "↑ Move up" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Up" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     // An ORDER intent, so the section is named whole — the ↑/↓ pair and the drag are one transform.
     expect(filesOf(savedBlock())).toEqual([
@@ -667,15 +789,15 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     renderGallery();
     const dialog = await openSection("Fleet backdrop");
     openItem(dialog, "b.webp");
-    expect(within(dialog).queryByRole("button", { name: /Move up/ })).toBeNull();
-    expect(within(dialog).queryByRole("button", { name: /Move to top/ })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Up" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "To top" })).toBeNull();
   });
 
   it("RESTORE DEFAULTS is absent on a section still exactly as it shipped, and present once it is not", async () => {
     // The affordance is the owner's way back (S6) — and a control offering to undo nothing is worse
     // than none, so it appears only once `files` says something about the shipped art.
     renderGallery();
-    let dialog = await openSection("characters");
+    let dialog = await openSection("Characters");
     expect(within(dialog).queryByRole("button", { name: "Restore defaults" })).toBeNull();
     cleanup();
 
@@ -692,7 +814,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
         },
       }),
     );
-    dialog = await openSection("characters");
+    dialog = await openSection("Characters");
     expect(within(dialog).getByRole("button", { name: "Restore defaults" })).toBeTruthy();
   });
 
@@ -718,7 +840,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
         <ConfirmDialog />
       </QueryClientProvider>,
     );
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     fireEvent.click(within(dialog).getByRole("button", { name: "Restore defaults" }));
     const confirm = await screen.findByRole("alertdialog");
     fireEvent.click(within(confirm).getByRole("button", { name: "Restore" }));
@@ -736,7 +858,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
 
   it("the In-use switch writes `hidden`, and the tile dims + leaves the deal", async () => {
     const { container } = renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     openItem(dialog, "b.webp");
     const sw = within(dialog).getByRole("switch", { name: /In use — b.webp/ });
     expect(sw.getAttribute("aria-checked")).toBe("true");
@@ -762,9 +884,9 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
         },
       }),
     );
-    const card = await screen.findByRole("button", { name: "Open the characters gallery" });
+    const card = await screen.findByRole("button", { name: "Open the Characters gallery" });
     expect(card.querySelectorAll("img")).toHaveLength(1); // only `a` is dealt
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     expect(within(dialog).getByRole("button", { name: "off.webp" })).toBeTruthy();
     expect(container.querySelectorAll(".mgal-tile-img.dim")).toHaveLength(1);
   });
@@ -772,7 +894,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
   it("DELETE removes the bytes first, then writes ONE config that promotes the next entry", async () => {
     const confirm = await import("../../src/store/confirm");
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     openItem(dialog, "a.webp");
     const asked = new Promise<void>((resolve) => setTimeout(resolve, 0));
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -788,10 +910,10 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
 
   it("a BUNDLED entry has no Delete at all — absent, not disabled (§6.6)", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
-    openItem(dialog, "lyra (bundled)");
+    const dialog = await openSection("Characters");
+    openItem(dialog, "lyra (default)");
     expect(within(dialog).queryByRole("button", { name: "Delete" })).toBeNull();
-    expect(within(dialog).getByText(/Bundled with the app/)).toBeTruthy();
+    expect(within(dialog).getByText(/Default — ships with the app/)).toBeTruthy();
     // …and no framing action either: the focal point lands at S4, and a stub would be a promise.
     expect(within(dialog).queryByRole("button", { name: /framing/i })).toBeNull();
   });
@@ -825,21 +947,100 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open the jellyfin icon gallery" }));
     const dialog = await screen.findByRole("dialog");
     openItem(dialog, "odd-name.png");
-    expect(within(dialog).getByText(/bound by its key/).textContent).toContain("jellyfin");
+    expect(within(dialog).getByText(/used for/).textContent).toContain("jellyfin");
     // …and the file that bound by its stem is a DUPLICATE here, which used to be invisible (#4).
     fireEvent.click(within(dialog).getByRole("button", { name: "‹ All images" }));
     openItem(dialog, "jellyfin.png");
     expect(within(dialog).getByText("duplicate name")).toBeTruthy();
-    expect(within(dialog).getByText(/bound by its filename/)).toBeTruthy();
+    expect(within(dialog).getByText(/matched by its filename/)).toBeTruthy();
+  });
+});
+
+// ── THE FLOATING ACTION PILL (owner ruling 2026-08-26) ──────────────────────────────────────────
+//
+// The detail panel is image-forward now: the picture fills the top of the panel and the verbs sit in
+// ONE pill over its bottom edge. What each section may DO is unchanged — the pill is capability-gated
+// exactly as the old button stack was — so these arms are about which controls exist per kind, and
+// about the two that must never be there at all (a "set active" of any spelling, and a delete on a
+// default).
+
+describe("the item detail's action pill, per section kind", () => {
+  const pill = (dialog: HTMLElement) => dialog.querySelector(".mgal-pill") as HTMLElement;
+  const labels = (dialog: HTMLElement) =>
+    [...pill(dialog).querySelectorAll("button")].map((b) => b.getAttribute("aria-label"));
+
+  it("a POOL gets the position cluster, then framing and delete — destructive LAST", async () => {
+    renderGallery();
+    const dialog = await openSection("Characters");
+    openItem(dialog, "b.webp");
+    expect(labels(dialog)).toEqual(["To top", "Up", "Down", "To bottom", "Framing", "Delete"]);
+    // The ↑/↓ pair is the WCAG single-pointer alternative to the drag: it stays focusable and live.
+    const up = within(dialog).getByRole("button", { name: "Up" });
+    expect(up).toHaveProperty("disabled", false);
+    // …and there is no "set as active" of any spelling. Order IS activation ("W6").
+    expect(within(dialog).queryByRole("button", { name: /set as active/i })).toBeNull();
+  });
+
+  it("a DEFAULT entry keeps its position controls and loses delete and framing (§6.6)", async () => {
+    renderGallery();
+    const dialog = await openSection("Characters");
+    openItem(dialog, "lyra (default)");
+    expect(labels(dialog)).toEqual(["To top", "Up", "Down", "To bottom"]);
+  });
+
+  it("a SEAT's pill is its ONE control — the binding, and nothing that writes the source library", async () => {
+    renderGallery();
+    let dialog = await openSection("Fleet backdrop");
+    openItem(dialog, "b.webp");
+    expect(labels(dialog)).toEqual(["Use here"]);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    cleanup();
+    // …and on the entry it already names, that one control is the way back out.
+    renderGallery(index({ slots: { wallpaper: "b" } }));
+    dialog = await openSection("Fleet backdrop");
+    openItem(dialog, "b.webp");
+    expect(labels(dialog)).toEqual(["Clear"]);
+  });
+
+  it("the UNASSIGNED bucket can look and delete, and states no priority at all", async () => {
+    api.getJSON.mockImplementation((url: string) => {
+      if (url === "/api/services") return Promise.resolve([{ name: "Media", kind: "jellyfin" }]);
+      if (url === "/api/hosts") return Promise.resolve([]);
+      return Promise.resolve({
+        ns: "kit",
+        collation: "library-v1",
+        roles: {
+          services: [{ ...file("orphan", "services"), file: "orphan.png" }],
+          "service-banners": [],
+          hosts: [],
+          background: [],
+          brand: [],
+        },
+        slots: {},
+      });
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="kit" def={MEDIA_NS.kit} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Open the Unassigned gallery" }));
+    const dialog = await screen.findByRole("dialog");
+    openItem(dialog, "orphan.png");
+    // A file bound to no key paints nowhere, so ordering it decides nothing — and framing it would be
+    // an edit with no destination.
+    expect(labels(dialog)).toEqual(["Delete"]);
   });
 });
 
 describe("the write queue (§4 — serialized, recomputed at send, quiet)", () => {
   it("QUIET: a gesture does not stack a 'Settings saved' toast (#10)", async () => {
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     openItem(dialog, "c.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(toast.pushToast).not.toHaveBeenCalled();
   });
@@ -858,9 +1059,9 @@ describe("the write queue (§4 — serialized, recomputed at send, quiet)", () =
         <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
       </QueryClientProvider>,
     );
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     openItem(dialog, "c.webp");
-    const up = within(dialog).getByRole("button", { name: "↑ Move up" });
+    const up = within(dialog).getByRole("button", { name: "Up" });
     fireEvent.click(up);
     fireEvent.click(up);
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
@@ -899,9 +1100,9 @@ describe("the write queue (§4 — serialized, recomputed at send, quiet)", () =
     // write bare `{name}` rows, destroying every per-item field the owner set (`key`/`hidden`/`focal`).
     api.getJSONWithHeader.mockReturnValue(new Promise(() => undefined)); // never resolves
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     openItem(dialog, "c.webp");
-    const act = within(dialog).getByRole("button", { name: "Move to top" });
+    const act = within(dialog).getByRole("button", { name: "To top" });
     expect(act).toHaveProperty("disabled", true);
     fireEvent.click(act);
     await waitFor(() => expect(within(dialog).getByText("c.webp")).toBeTruthy());
@@ -914,7 +1115,7 @@ describe("the index read (defect #3)", () => {
     // Every tab body in this app stays MOUNTED once visited, so the old always-on observer re-read the
     // directory on every window focus for the rest of the session, from whatever tab the owner was on.
     renderGallery();
-    await screen.findByRole("button", { name: "Open the characters gallery" });
+    await screen.findByRole("button", { name: "Open the Characters gallery" });
     expect(api.getJSON).toHaveBeenCalledTimes(1);
 
     setUI({ tab: "fleet" });
@@ -989,9 +1190,9 @@ describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W
         },
       }),
     );
-    return openSection("characters").then(async (dialog) => {
+    return openSection("Characters").then(async (dialog) => {
       openItem(dialog, "off.webp");
-      fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
       await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
       expect(filesOf(savedBlock())).toEqual([
         { name: "off.webp", hidden: true },
@@ -1014,9 +1215,9 @@ describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W
         },
       }),
     );
-    const dialog = await openSection("reel");
-    openItem(dialog, "lyra (bundled)");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
+    const dialog = await openSection("Transition figure");
+    openItem(dialog, "lyra (default)");
+    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(savedBlock()).toEqual({
       roles: { reel: { files: [{ bundled: "lyra" }, { name: "cut.webp" }] } },
@@ -1029,7 +1230,7 @@ describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W
     // that single entry — a five-character fleet becoming a one-character fleet on a pin.
     renderGallery(index({ roles: { characters: cast, banner: [], reel: [], oracle: [] } }));
     const dialog = await openSection("Fleet backdrop");
-    openItem(dialog, "atlas (bundled)");
+    openItem(dialog, "atlas (default)");
     fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(savedBlock()).toEqual({ slots: { wallpaper: "atlas" } });
@@ -1043,9 +1244,9 @@ describe("what the card CLAIMS is what the resolver answers (review #3)", () => 
     // warning chip saying that same picture is missing.
     renderGallery(index({ slots: { wallpaper: "deleted" } }));
     const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
-    expect(card.textContent).not.toContain("deleted in use");
-    expect(card.textContent).toContain("the pinned image is gone — a fallback is in use");
-    expect(card.textContent).toContain("pinned image is missing"); // the chip still points at the fix
+    expect(card.textContent).not.toContain("deleted is bound here");
+    expect(card.textContent).toContain("the bound image is gone — a fallback is used");
+    expect(card.textContent).toContain("bound image is missing"); // the chip still points at the fix
   });
 
   it("…and a resolved seat names the row the RESOLVER picked", async () => {
@@ -1053,7 +1254,7 @@ describe("what the card CLAIMS is what the resolver answers (review #3)", () => 
     // it never restates the raw pin value, which is what let a dangling one read as "in use".
     renderGallery(index({ slots: { wallpaper: "b" } }));
     const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
-    expect(card.textContent).toContain("b in use");
+    expect(card.textContent).toContain("b is bound here");
   });
 });
 
@@ -1082,10 +1283,10 @@ describe("the stem/id pin collision note (review #6, §2.3's owed sentence)", ()
     const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
     expect(card.textContent).toContain("duplicate names");
     const dialog = await openSection("Fleet backdrop");
-    openItem(dialog, "lyra (bundled)");
+    openItem(dialog, "lyra (default)");
     expect(within(dialog).getByText("duplicate name")).toBeTruthy();
-    expect(within(dialog).getByText(/answers to the name/).textContent).toContain(
-      "The one the library lists FIRST is the one that answers",
+    expect(within(dialog).getByText(/answer to/).textContent).toContain(
+      "The one higher in the list wins — move this one to the top to use it.",
     );
   });
 
@@ -1103,7 +1304,7 @@ describe("the stem/id pin collision note (review #6, §2.3's owed sentence)", ()
         },
       }),
     );
-    const card = await screen.findByRole("button", { name: "Open the characters gallery" });
+    const card = await screen.findByRole("button", { name: "Open the Characters gallery" });
     expect(card.textContent).not.toContain("duplicate names");
   });
 });
@@ -1133,11 +1334,11 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
         </QueryClientProvider>,
       );
       await flush();
-      fireEvent.click(screen.getByRole("button", { name: "Open the characters gallery" }));
+      fireEvent.click(screen.getByRole("button", { name: "Open the Characters gallery" }));
       await flush();
       const dialog = screen.getByRole("dialog");
       openItem(dialog, "c.webp");
-      const up = within(dialog).getByRole("button", { name: "↑ Move up" });
+      const up = within(dialog).getByRole("button", { name: "Up" });
       fireEvent.click(up);
       fireEvent.click(up);
       await flush();
@@ -1191,7 +1392,7 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
       </QueryClientProvider>,
     );
     // ① switch a DISK entry off, in the source role — the only section that may.
-    let dialog = await openSection("characters");
+    let dialog = await openSection("Characters");
     openItem(dialog, "b.webp");
     fireEvent.click(within(dialog).getByRole("switch", { name: /In use — b.webp/ }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
@@ -1248,15 +1449,15 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
         <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
       </QueryClientProvider>,
     );
-    let dialog = await openSection("characters");
-    openItem(dialog, "atlas (bundled)");
+    let dialog = await openSection("Characters");
+    openItem(dialog, "atlas (default)");
     fireEvent.click(within(dialog).getByRole("switch", { name: /In use — atlas/ }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     dialog = await openSection("Fleet backdrop");
-    openItem(dialog, "atlas (bundled)");
+    openItem(dialog, "atlas (default)");
     fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
 
     landed(
@@ -1321,7 +1522,7 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     const confirm = await import("../../src/store/confirm");
     api.putJSON.mockRejectedValue(new Error("config write refused"));
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     openItem(dialog, "a.webp");
     const asked = new Promise<void>((resolve) => setTimeout(resolve, 0));
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -1338,9 +1539,9 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
   it("a failed write drains the queue and RELEASES busy — the gallery is usable again", async () => {
     api.putJSON.mockRejectedValueOnce(new Error("nope"));
     renderGallery();
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     openItem(dialog, "c.webp");
-    const up = within(dialog).getByRole("button", { name: "↑ Move up" });
+    const up = within(dialog).getByRole("button", { name: "Up" });
     fireEvent.click(up);
     fireEvent.click(up);
     await waitFor(() => expect(toast.pushToast).toHaveBeenCalledWith("nope", "err"));
@@ -1366,15 +1567,15 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
         },
       }),
     );
-    let dialog = await openSection("characters");
+    let dialog = await openSection("Characters");
     openItem(dialog, "b.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
-    dialog = await openSection("reel");
+    dialog = await openSection("Transition figure");
     openItem(dialog, "cut2.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
     expect(filesOf(savedBlock(0))).toEqual([{ name: "b.webp" }, { name: "a.webp" }]);
     expect(filesOf(savedBlock(1), "reel")).toEqual([{ name: "cut2.webp" }, { name: "cut.webp" }]);
@@ -1394,7 +1595,7 @@ describe("the overlay STACK: a confirm over the gallery (review #5)", () => {
         <ConfirmDialog />
       </QueryClientProvider>,
     );
-    const dialog = await openSection("characters");
+    const dialog = await openSection("Characters");
     openItem(dialog, "a.webp");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await screen.findByRole("alertdialog");

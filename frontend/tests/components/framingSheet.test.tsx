@@ -289,8 +289,8 @@ afterEach(async () => {
 describe("the framing affordance is capability-gated (§5)", () => {
   it("appears on an owner file in a FRAMABLE role, and says whether one is set", async () => {
     renderGallery(index([file("a", "characters"), ...cast]));
-    const dialog = await openItem("characters", "a.webp");
-    expect(within(dialog).getByRole("button", { name: /Set framing/ }).textContent).toContain(
+    const dialog = await openItem("Characters", "a.webp");
+    expect(within(dialog).getByRole("button", { name: "Framing" }).textContent).toContain(
       "not set",
     );
   });
@@ -299,10 +299,8 @@ describe("the framing affordance is capability-gated (§5)", () => {
     renderGallery(
       index([file("a", "characters", { focal: { x: 0.4, y: 0.2, rev: "1:88000" } }), ...cast]),
     );
-    const dialog = await openItem("characters", "a.webp");
-    expect(within(dialog).getByRole("button", { name: /Set framing/ }).textContent).toContain(
-      "set",
-    );
+    const dialog = await openItem("Characters", "a.webp");
+    expect(within(dialog).getByRole("button", { name: "Framing" }).textContent).toContain("set");
   });
 
   it("is ABSENT on a BUNDLED entry — not disabled (Emma #6)", async () => {
@@ -310,8 +308,8 @@ describe("the framing affordance is capability-gated (§5)", () => {
     // this reticle means CENTRED. Saving a point the owner never moved would jump the picture on
     // every surface at once. A per-entry focus-mode edit path is the recorded future.
     renderGallery(index([file("a", "characters"), ...cast]));
-    const dialog = await openItem("characters", "pegasus (bundled)");
-    expect(within(dialog).queryByRole("button", { name: /Set framing/ })).toBeNull();
+    const dialog = await openItem("Characters", "pegasus (default)");
+    expect(within(dialog).queryByRole("button", { name: "Framing" })).toBeNull();
   });
 
   it("is ABSENT on a role the registry does not declare framable", async () => {
@@ -323,8 +321,8 @@ describe("the framing affordance is capability-gated (§5)", () => {
       roles: { characters: [], banner: [], reel: [file("cut", "reel")], oracle: [] },
       slots: {},
     });
-    const dialog = await openItem("reel", "cut.webp");
-    expect(within(dialog).queryByRole("button", { name: /Set framing/ })).toBeNull();
+    const dialog = await openItem("Transition figure", "cut.webp");
+    expect(within(dialog).queryByRole("button", { name: "Framing" })).toBeNull();
   });
 
   it("is ABSENT on a file whose bytes cannot be read — there is nothing to frame", async () => {
@@ -334,8 +332,8 @@ describe("the framing affordance is capability-gated (§5)", () => {
         ...cast,
       ]),
     );
-    const dialog = await openItem("characters", "bad.webp");
-    expect(within(dialog).queryByRole("button", { name: /Set framing/ })).toBeNull();
+    const dialog = await openItem("Characters", "bad.webp");
+    expect(within(dialog).queryByRole("button", { name: "Framing" })).toBeNull();
     // …and the panel still SAYS why, which is the part the owner has to act on.
     expect(within(dialog).getByText(/unreadable or unsupported format/)).toBeTruthy();
   });
@@ -344,8 +342,8 @@ describe("the framing affordance is capability-gated (§5)", () => {
 describe("the sheet itself", () => {
   it("opens as its OWN dialog with the previews the registry declares, captioned as examples", async () => {
     renderGallery(index([file("a", "characters"), ...cast]));
-    const gallery = await openItem("characters", "a.webp");
-    fireEvent.click(within(gallery).getByRole("button", { name: /Set framing/ }));
+    const gallery = await openItem("Characters", "a.webp");
+    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
     const sheet = await screen.findByRole("dialog", { name: "Set framing" });
     // One window per registry row, labelled in the owner's words…
     for (const label of ["capsule card", "promo slide", "magazine cover"])
@@ -362,12 +360,12 @@ describe("the sheet itself", () => {
     renderGallery(
       index([file("a", "characters", { focal: { x: 0.4, y: 0.2, rev: "0:1" } }), ...cast]),
     );
-    const gallery = await openItem("characters", "a.webp");
+    const gallery = await openItem("Characters", "a.webp");
     // …and the affordance already reads "not set", because a stale point IS unset everywhere.
-    expect(within(gallery).getByRole("button", { name: /Set framing/ }).textContent).toContain(
+    expect(within(gallery).getByRole("button", { name: "Framing" }).textContent).toContain(
       "not set",
     );
-    fireEvent.click(within(gallery).getByRole("button", { name: /Set framing/ }));
+    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
     const sheet = await screen.findByRole("dialog", { name: "Set framing" });
     expect(within(sheet).getByText("Framing was reset — the file changed.")).toBeTruthy();
   });
@@ -384,8 +382,8 @@ describe("the sheet itself", () => {
     renderGallery(
       index([file("a", "characters", { focal: { x: 0.18, y: 0.82, rev: "1:88000" } }), ...cast]),
     );
-    const gallery = await openItem("characters", "a.webp");
-    fireEvent.click(within(gallery).getByRole("button", { name: /Set framing/ }));
+    const gallery = await openItem("Characters", "a.webp");
+    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
     const sheet = await screen.findByRole("dialog", { name: "Set framing" });
     // The previews paint the STORED framing on open — the sheet's own visible proof of the seed.
     const preview = sheet.querySelector<HTMLImageElement>(".mgal-frame-win img");
@@ -402,8 +400,8 @@ describe("the sheet itself", () => {
     const { qc } = renderGallery(
       index([file("a", "characters", { focal: { x: 0.18, y: 0.82, rev: "1:88000" } }), ...cast]),
     );
-    const gallery = await openItem("characters", "a.webp");
-    fireEvent.click(within(gallery).getByRole("button", { name: /Set framing/ }));
+    const gallery = await openItem("Characters", "a.webp");
+    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
     const sheet = await screen.findByRole("dialog", { name: "Set framing" });
 
     // …and now an SSH overwrite lands and the authoritative refetch publishes it.
@@ -424,8 +422,8 @@ describe("the sheet itself", () => {
     const { qc } = renderGallery(
       index([file("a", "characters", { focal: { x: 0.18, y: 0.82, rev: "1:88000" } }), ...cast]),
     );
-    const gallery = await openItem("characters", "a.webp");
-    fireEvent.click(within(gallery).getByRole("button", { name: /Set framing/ }));
+    const gallery = await openItem("Characters", "a.webp");
+    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
     const sheet = await screen.findByRole("dialog", { name: "Set framing" });
     act(() => {
       qc.setQueryData(
@@ -443,8 +441,8 @@ describe("the sheet itself", () => {
     renderGallery(
       index([file("a", "characters", { focal: { x: 0.4, y: 0.2, rev: "1:88000" } }), ...cast]),
     );
-    const gallery = await openItem("characters", "a.webp");
-    fireEvent.click(within(gallery).getByRole("button", { name: /Set framing/ }));
+    const gallery = await openItem("Characters", "a.webp");
+    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
     const sheet = await screen.findByRole("dialog", { name: "Set framing" });
     fireEvent.click(within(sheet).getByRole("button", { name: "Clear framing" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));

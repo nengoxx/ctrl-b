@@ -222,6 +222,17 @@ export interface MediaRotationDef {
  *  gallery could invent. */
 export interface MediaRoleDef {
   kind: MediaKind;
+  /** What this destination is called ON SCREEN (owner ruling 2026-08-26 — the section cards read as
+   *  jargon). Role FOLDERS are named for the filesystem: `reel`, `oracle`, `rigs`, `stack`. Those are a
+   *  real owner-facing contract — an SSH drop into `media/gacha/reel/` is how art arrives without the
+   *  app — but they are not what the picture IS, and two of them collided outright (the `oracle` role
+   *  card and the `oracle` seat were both "Operator backdrop").
+   *
+   *  So the card is titled by this and the FOLDER stays visible beside it, small and mono: one name to
+   *  read, one name to type. Absent ⇒ the card is titled by the folder, which is what every role did
+   *  before and what an UNDESCRIBED role (one the server lists and this registry has never heard of)
+   *  still does. Seats carry their own `MediaSlotDef.label` and always did. */
+  label?: string;
   /** The ids of the BUNDLED art this role ships — the entries a theme paints with no owner file present,
    *  each addressable by a stable name. D65 makes them first-class library entries: they appear in the
    *  role's gallery, they can be listed and ordered among the owner's own files, and the client maps an id
@@ -399,7 +410,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
     roles: {
       characters: {
         kind: "pool",
-        hint: "Capsule cards + the dossier portrait, dealt to machines in this order.",
+        label: "Characters",
+        hint: "The cast, in deal order — machine cards, portraits and promo slides all draw from it.",
         bounds: FULL_ART,
         // A 3/4 portrait: the capsule card's own shape, and the crop every other consumer takes it
         // through (the dossier portrait, the wide promo band).
@@ -429,6 +441,7 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
       },
       banner: {
         kind: "pool",
+        label: "Banner slides",
         // Re-worded 2026-08-26 ("W5"): the pool is no longer "extra" slides beside a fixed one. Its FIRST
         // member opens the carousel wearing the frozen PICKUP copy and the rest follow, so the order is
         // the deal — and the sentence has to say so, because the owner's only way to choose which picture
@@ -463,7 +476,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
       // Gecko — the §10.1 rider), and nothing bakes one for a drop-in. See gacha/art.ts for the recipe.
       reel: {
         kind: "pool",
-        hint: "The cutout that rides the tab transition. Dropped-in cutouts are painted as-is: the bundled one has its glow baked into the file, so a plain transparent PNG will look flatter.",
+        label: "Transition figure",
+        hint: "The character cutout that sweeps across during tab changes. The first image is used. Transparent PNG — the default has its glow built into the file, so a plain cutout looks flatter.",
         bounds: FULL_ART,
         aspect: 3 / 4,
         // ORDER decides, like everywhere else since 2026-08-26 ("W6"): the first usable member of this
@@ -479,7 +493,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
       },
       oracle: {
         kind: "pool",
-        hint: "The agent operator's backdrop. The first image wins.",
+        label: "Operator backdrop",
+        hint: "The picture behind the agent operator block. The first image is used — unless a character is bound below.",
         bounds: FULL_ART,
         aspect: 16 / 9,
         // The 300px operator block (`--gc-oracle-h`), which covers — and which a `characters` entry can
@@ -521,7 +536,7 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         key: "wallpaper",
         label: "Fleet backdrop",
         from: "characters",
-        hint: "Unpinned, the fleet uses your Shared art background — then the bundled scene below.",
+        hint: "Bind one character as the fleet's backdrop. With none bound, your Shared art background is used — then the default scene.",
         seat: true,
         active: activeSeat("wallpaper"),
         // The bundled scene this ladder ends on, shown so the owner can SEE what "nothing bound" looks
@@ -533,7 +548,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
       },
       {
         key: "oracle",
-        label: "Operator backdrop",
+        // RELABELLED 2026-08-26: it read "Operator backdrop" — the same words as the `oracle` ROLE's own
+        // card, two rows above it, for two different destinations. What this seat chooses is WHO stands
+        // there; what that card chooses is the picture behind them.
+        label: "Operator character",
+        hint: "Bind one character behind the operator block, replacing the images above.",
         from: "characters",
         // NO `builtin`: this seat's ladder falls through to the `oracle` ROLE, whose own section holds
         // the bundled backdrop as an ordinary library entry since S6 — and a second, uneditable copy of
@@ -554,7 +573,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
     roles: {
       rigs: {
         kind: "pool",
-        hint: "The rig cards and the host sheet, dealt to machines in this order — your own rig first.",
+        label: "Rig cards",
+        hint: "Rig art, dealt to machines in this order — your own rig first.",
         bounds: FULL_ART,
         aspect: 1.18,
         active: activeRigs,
@@ -568,7 +588,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
       },
       hero: {
         kind: "pool",
-        hint: "The badlands map cover. The first image wins.",
+        label: "Map cover",
+        hint: "The badlands map cover. The first image is used.",
         bounds: FULL_ART,
         aspect: 16 / 9,
         active: activeHero,
@@ -582,9 +603,10 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
       },
       stack: {
         kind: "named",
+        label: "Comms stack",
         // Named files, owner-ruled (§10.1). The extension is free — `cube.png`, `cube.webp` and
         // `Cube.PNG` all reach the same layer; only the stem is read.
-        hint: "The floating stack on Comms — one file per LAYER, named for it. Transparent PNGs; each is fitted into its box, so a wrong shape letterboxes rather than stretches. A layer you drop nothing for keeps its bundled art.",
+        hint: "The floating stack on Comms — one file per LAYER, named for it. Transparent PNGs; each is fitted into its box, so a wrong shape letterboxes rather than stretches. A layer you drop nothing for keeps its default art.",
         bounds: LAYER_ART,
         // FORCED PNG. Three transparent layers are composited over each other at small sizes, where a
         // lossy encoder's ringing shows up as a halo along every edge — and the layers are tiny (the
@@ -661,11 +683,12 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // without it. Empty, and stated rather than omitted — "nothing bundled" is a real answer.
         bundled: [],
         kind: "named",
+        label: "Service icons",
         keySource: "services",
         asset: "icon",
         aspect: 1,
         activeForKey: activeNamedKey,
-        hint: "One file per service, named after its KIND (the `kind:` field of a machine's service) — or after its NAME when it declares no kind. Services that share a kind share one icon. A service you drop nothing for keeps today's icon-less row.",
+        hint: "One icon per service, named after its kind — or its name when it has no kind. Services sharing a kind share one icon. A service with no file keeps its icon-less row.",
         bounds: ICON_ART,
       },
       "service-banners": {
@@ -687,15 +710,17 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
           active: activeBannerSet,
         },
         kind: "named",
+        label: "Service banners",
         keySource: "services",
         asset: "banner",
         aspect: 1000 / 300,
         activeForKey: activeNamedKey,
         // Same keys as the icons above, deliberately: one identity per service, two pictures of it.
-        hint: "The wide art behind a service's row, named exactly like its icon above (KIND, else NAME). Wide and short — it is cropped to the row and dimmed under the text. A service you drop nothing for keeps whatever that theme already paints behind it — under cosmos, one of the built-in rotation below.",
+        hint: "The wide art behind a service's row, named exactly like its icon above (kind, else name). Wide and short — it is cropped to the row and dimmed under the text. A service with no file keeps whatever that theme paints behind it — under cosmos, one of the built-in rotation below.",
         bounds: BANNER_ART,
       },
       hosts: {
+        label: "Machine pictures",
         // The kit ships NO fallback art (§3): absent = the surface renders exactly as it does
         // without it. Empty, and stated rather than omitted — "nothing bundled" is a real answer.
         bundled: [],
@@ -704,7 +729,7 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         asset: "picture",
         aspect: 16 / 9,
         activeForKey: activeNamedKey,
-        hint: "One picture per MACHINE, named after it. Themes that adopt it paint it faded behind that machine's detail sheet. Renaming a machine leaves its old file unmatched here — rename the file to match.",
+        hint: "One picture per machine, named after it. Themes that adopt it paint it faded behind that machine's detail sheet. Renaming a machine leaves its old file unmatched here — rename the file to match.",
         bounds: FULL_ART,
       },
       background: {
@@ -718,9 +743,10 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // the copy as a promise the app was breaking. The truth now has two halves and the hint says
         // both: the shared LAYER is what a scenery theme declines to mount, and that theme may still use
         // the picture on its own backdrop, under its own switch.
+        label: "Background",
         aspect: 9 / 16,
         active: activeKitPool,
-        hint: "A shared background for the whole app. The first image wins, and the Appearance switch turns off the shared layer. A theme with scenery of its own paints this picture on its own backdrop instead, under its own switch.",
+        hint: "A shared background for the whole app. The first image is used, and the Appearance switch turns the layer off. Themes with scenery of their own paint this picture on their own backdrop, under their own switch.",
         bounds: FULL_ART,
       },
       brand: {
@@ -732,9 +758,12 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // transparency is read and every theme tints the result with its own accent. Said plainly in the
         // hint because it is the one thing an owner cannot discover by looking at the file — a fully
         // opaque photo drops in happily and paints a solid accent-coloured rectangle.
+        // "App icon" until 2026-08-26, and it named the wrong thing entirely: the PWA icon is what an
+        // owner reads that as, and this is the mark beside the app title.
+        label: "Logo",
         aspect: 1,
         active: activeKitPool,
-        hint: "Your own mark beside the app title. A transparent PNG or WebP — only the SHAPE is used, and each theme colours it with its own accent, so a flat silhouette works best. The first image wins.",
+        hint: "Your own logo beside the app title. Transparent PNG or WebP — only the shape is used, and each theme colours it with its accent. The first image is used.",
         bounds: ICON_ART,
         // FORCED PNG, and here it is not a quality preference but a correctness one: the file is
         // painted as a CSS MASK, so only its ALPHA is ever read. A lossy encode blurs the alpha edge
@@ -819,8 +848,10 @@ export interface MediaSection {
   /** The role folder this section's LIBRARY is (a seat's is its `from` role). */
   role: string;
   kind: "pool" | "key" | "family" | "rotation" | "seat" | "unassigned";
-  /** The card's heading. Role sections keep the FOLDER's own name (the owner-facing contract of a
-   *  namespace, spelled out beside it); a key section is titled by its key; a seat by its label. */
+  /** The card's heading. A role section takes the role's `label` when it declares one and the FOLDER's
+   *  own name otherwise (the owner ruling of 2026-08-26 — see `MediaRoleDef.label`; the folder stays on
+   *  the card as a second line either way, because an SSH drop is addressed by folder). A key section
+   *  is titled by its key — that is the name the FILE has to be given — and a seat by its label. */
   title: string;
   hint?: string;
   /** The named-role key this section is scoped to (`kind: "key"`). */
@@ -937,7 +968,7 @@ export function mediaSections(
         ...common,
         id: `${ns}:${role}`,
         kind: "family",
-        title: role,
+        title: row.label ?? role,
         keySource: row.keySource,
         caps: { ...LIBRARY_CAPS, reorder: false, frame: row.framable === true },
       });
@@ -974,7 +1005,7 @@ export function mediaSections(
       ...common,
       id: `${ns}:${role}`,
       kind: "pool",
-      title: role,
+      title: row.label ?? role,
       caps: { ...LIBRARY_CAPS, frame: row.framable === true },
       active: row.active,
     });

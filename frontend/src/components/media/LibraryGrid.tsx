@@ -1,5 +1,6 @@
 import { useId, useRef } from "react";
 
+import { UseIcon } from "./icons";
 import type { LibraryItem } from "../../hooks/useMediaLibrary";
 import { tileUrl } from "../../lib/mediaLibrary";
 import type { MediaSection } from "../../theme-engine/mediaRegistry";
@@ -10,12 +11,25 @@ import { useDragReorder } from "../useDragReorder";
 //
 // Everything a tile can say, it says in a CORNER, and each corner means one thing (R59's explicit
 // anti-recommendation: never share a corner without a priority rule):
-//   · bottom-end   = IN USE — a check disc plus a 2px accent ring on the tile;
+//   · bottom-end   = the IN-USE toggle — a real button, one tap, tick on / hollow ring off;
 //   · top-end      = a PROBLEM — the file will not paint, or another file already took its name;
-//   · bottom-start = ORIGIN — the bundled glyph, so "why can I not delete this one" is answered
+//   · bottom-start = ORIGIN — the "Default" chip, so "why can I not delete this one" is answered
 //                    before the owner asks.
-// Diagnostics TEXT never rides a 110px tile (R59 §11.6 ⑤): the count is in the header, the rest is in
-// the detail panel a tap away.
+// The ACTIVE entry — the one the section's §2.4 resolver says is painted right now — wears an accent
+// RING on the tile itself rather than a corner, because it is a fact about the whole picture and
+// because the corners were full. Diagnostics TEXT never rides a 110px tile (R59 §11.6 ⑤): the count is
+// in the header, the rest is in the detail panel a tap away.
+//
+// **THE TWO WORDS ARE DIFFERENT THINGS, and this is where the owner meets them** (owner ruling
+// 2026-08-26): *in use* is MEMBERSHIP — the entry is part of what this destination may paint, which is
+// what the corner toggles — and *active* is what is on screen right now, which order decides. A
+// first-wins section has one active entry among however many are in use; a dealt one has several.
+//
+// **The corner is a SIBLING of the tile, never a child** (HTML forbids a button inside a button, and
+// the tile is a plain detail-opening button by the Emma #9 ruling — `aria-checked` stays off it). That
+// also settles the gesture: `useDragReorder`'s press activation is bound to the TILE's own
+// `onPointerDown`, so a press that starts on the corner reaches no drag handler at all and can never
+// lift a tile the owner meant to switch off.
 //
 // **Decode budget** (Opus M3). The grid paints ORIGINALS — there are no server-side thumbnails by
 // ruling — and a library only grows, so the cost of arriving at a section has to be bounded by
@@ -33,17 +47,26 @@ export function LibraryGrid({
   section,
   items,
   selectedId,
+  ready,
   canReorder = false,
   onSelect,
+  onToggleUse,
   onReorder,
 }: {
   section: MediaSection;
   items: LibraryItem[];
   selectedId?: string;
+  /** The write path can compute a patch (the settings snapshot has landed). The corner toggle is
+   *  disabled without it, for the reason every other affordance is: a write with nothing authoritative
+   *  to recompute from is refused, and a control that silently does nothing is worse than a dim one. */
+  ready: boolean;
   /** Order MEANS something here, and there is more than one entry to order (§7 — the drag and the ↑/↓
    *  pair are hidden by the same fact, in the same breath). */
   canReorder?: boolean;
   onSelect: (item: LibraryItem) => void;
+  /** One tap on the corner — membership, through the same queued `setHidden` intent the detail panel's
+   *  switch enqueues. Absent where the section has no In-use to give (a seat). */
+  onToggleUse?: (item: LibraryItem, hidden: boolean) => void;
   /** Commit a drag. The subject arrives as the ITEM that was picked up, not as an index to look up
    *  again — an index is only a name for a row while the order holds still (Emma's S5 review #1). The
    *  returned promise is what the HELD commit waits on: the tile stays where the owner dropped it until
@@ -89,6 +112,7 @@ export function LibraryGrid({
         {items.map((item, i) => {
           const url = tileUrl(item.row, section);
           const problem = item.row.unusable || item.duplicate;
+          const name = item.bundled ? item.row.name : item.row.file;
           return (
             <li key={item.id} className="mgal-cell" {...drag.rowProps(i)}>
               <button
@@ -103,7 +127,7 @@ export function LibraryGrid({
                   (item.hidden ? " off" : "") +
                   (item.id === selectedId ? " sel" : "")
                 }
-                aria-label={item.bundled ? `${item.row.name} (bundled)` : item.row.file}
+                aria-label={item.bundled ? `${item.row.name} (default)` : item.row.file}
                 aria-describedby={`${descId}-${i}`}
                 // Only where ONE entry genuinely wins. A dealt pool has no current member.
                 aria-current={item.current ? "true" : undefined}
@@ -123,25 +147,31 @@ export function LibraryGrid({
                     className={"mgal-tile-img" + (item.hidden ? " dim" : "")}
                   />
                 )}
-                {item.active && (
-                  <span className="mgal-corner end" aria-hidden>
-                    ✓
-                  </span>
-                )}
                 {problem && (
                   <span className="mgal-corner top" aria-hidden>
                     !
                   </span>
                 )}
-                {item.bundled && (
-                  <span className="mgal-corner start" aria-hidden>
-                    ◆
-                  </span>
-                )}
+                {item.bundled && <span className="mgal-corner start">Default</span>}
                 <span className="mgal-sr" id={`${descId}-${i}`}>
                   {describe(item)}
                 </span>
               </button>
+              {/* THE IN-USE TOGGLE, outside the tile button. `aria-pressed` rather than `aria-checked`:
+                  the one `checked` control in this gallery is the detail panel's real Switch (Emma #9),
+                  and a pressed-state button is what a two-state icon control IS. */}
+              {onToggleUse !== undefined && (
+                <button
+                  type="button"
+                  className={"mgal-use" + (item.hidden ? "" : " on")}
+                  aria-pressed={!item.hidden}
+                  aria-label={`In use — ${name}`}
+                  disabled={!ready}
+                  onClick={() => onToggleUse(item, !item.hidden)}
+                >
+                  <UseIcon on={!item.hidden} />
+                </button>
+              )}
             </li>
           );
         })}
@@ -159,11 +189,15 @@ export function LibraryGrid({
   );
 }
 
-/** What a tile SAYS to a screen reader, and the only place membership is stated (Emma #9). */
+/** What a tile SAYS to a screen reader, on the gallery's one vocabulary (owner ruling 2026-08-26):
+ *  **active** = what this destination is painting right now · **in use** = a member of what it may
+ *  paint · **not in use** = switched off. The old middle state read "in the library, not in use",
+ *  which was the same words as the OFF state plus a preamble — the two that most needed telling apart
+ *  were the two that sounded alike. */
 function describe(item: LibraryItem): string {
   const parts: string[] = [];
-  parts.push(item.active ? "in use" : item.hidden ? "not in use" : "in the library, not in use");
-  if (item.bundled) parts.push("bundled");
+  parts.push(item.active ? "active" : item.hidden ? "not in use" : "in use");
+  if (item.bundled) parts.push("default");
   if (item.row.unusable) parts.push("will not paint");
   if (item.duplicate) parts.push("another file already took this name");
   return parts.join(" · ");

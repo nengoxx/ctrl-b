@@ -15,6 +15,13 @@ import { useMediaKeySource } from "../../theme-engine/mediaKeySources";
 // whatever the section's §2.4 resolver says is live, and carrying the status line the old accordion
 // header used to hold. No accordion, no hover-revealed actions (there is no hover on a phone).
 //
+// TITLED IN THE OWNER'S WORDS, ADDRESSED BY FOLDER (owner ruling 2026-08-26). A role card used to be
+// headed by its FOLDER name — `reel`, `oracle`, `rigs`, `stack` — which is jargon at best and was an
+// outright collision at worst (the `oracle` ROLE card and the `oracle` SEAT were both "Operator
+// backdrop"). The heading is `MediaRoleDef.label` now, and the folder stays under it in mono, because
+// an SSH drop into `media/<ns>/<role>/` is the other half of how art arrives and the owner has to be
+// able to read the path from the screen.
+//
 // Four card BODIES, one shape — the H5 refinement, owner-ratified:
 //   · a POOL / KEY / SEAT card paints its active art and opens its gallery;
 //   · a FAMILY card (kit's services, service banners, machines — keys derived from the fleet itself)
@@ -75,6 +82,14 @@ export function SectionCard({
   }
 
   const scope: GalleryScope = { key: section.key, rotation: section.kind === "rotation" };
+  // The FOLDER, under the label that replaced it. Shown only where a label actually renamed something
+  // (an UNDESCRIBED role is still headed by its own folder, so a second copy would be noise) and only
+  // where this section IS that folder: a SEAT views another role's library, and a ROTATION is a theme's
+  // bundled set rather than anything an owner can drop a file into.
+  const folder =
+    section.def.label !== undefined && (section.kind === "pool" || section.kind === "key")
+      ? `media/${section.ns}/${section.role}/`
+      : undefined;
   const items = libraryItems(scopedRows(view.rows, scope), view.active, section.pin !== undefined);
   const active = items.filter((i) => i.active);
   const art = active
@@ -97,10 +112,10 @@ export function SectionCard({
           {art.length === 0 && section.builtin !== undefined ? (
             // The seat's BUILT-IN default (S6). It is what the ladder ends on rather than what is
             // painted this instant — a rung in between may be answering, and the hint under the card
-            // is where that is spelled out — so it is captioned `built-in` and never marked in use.
+            // is where that is spelled out — so it is captioned `default` and never called active.
             <>
               <img src={section.builtin.url} alt="" loading="lazy" decoding="async" />
-              <span className="mgal-card-tag">built-in</span>
+              <span className="mgal-card-tag">default</span>
             </>
           ) : art.length === 0 ? (
             <span className="mgal-card-none">
@@ -116,6 +131,14 @@ export function SectionCard({
         </span>
         <span className="mgal-card-body">
           <span className="mgal-card-title">{section.title}</span>
+          {folder !== undefined && (
+            <span className="mgal-card-path path">
+              {/* A key section's own folder is shared with its siblings, so it says which GROUP the
+                  key belongs to as well as where the file goes. */}
+              {section.kind === "key" && `${section.def.label} · `}
+              {folder}
+            </span>
+          )}
           <span className="mgal-card-status" id={descId}>
             {status(view, items, active)}
           </span>
@@ -226,8 +249,7 @@ function FamilyCard({
  *  Every claim here comes from the section's §2.4 RESOLVER, never from the config value (Emma's S2
  *  review #3). The two differ exactly where it matters: a seat whose pin names an entry the library no
  *  longer holds resolves to NOTHING, the surface has already fallen through to its own next rung, and
- *  saying "deleted in use" would name a picture nobody can see — beside a warning chip saying that
- *  same picture is missing. */
+ *  naming that picture would name one nobody can see — beside a warning chip saying it is missing. */
 function status(
   view: SectionView,
   items: ReturnType<typeof libraryItems>,
@@ -235,22 +257,24 @@ function status(
 ): string {
   const n = `${items.length} ${items.length === 1 ? "image" : "images"}`;
   if (view.section.kind === "seat") {
-    // The resolver's own row — the pin's, or whatever the seat's ladder fell through to (the hero
-    // slide reads the fleet backdrop's pin when it has none of its own).
-    if (active.length > 0) return `${active[0].row.name} in use`;
-    const pinned = view.pinned != null && view.pinned !== "";
-    if (pinned) return `${n} to choose from · the pinned image is gone — a fallback is in use`;
-    // "none pinned" alone said nothing about what the surface actually shows, which is what left the
+    // The resolver's own row — whatever this seat's own pin resolved to.
+    if (active.length > 0) return `${active[0].row.name} is bound here`;
+    const bound = view.pinned != null && view.pinned !== "";
+    if (bound) return `${n} to choose from · the bound image is gone — a fallback is used`;
+    // "none bound" alone said nothing about what the surface actually shows, which is what left the
     // built-in default invisible (S6). Named only where there IS one to name.
     return view.section.builtin === undefined
-      ? `${n} to choose from · none pinned`
-      : `${n} to choose from · none pinned — the built-in default`;
+      ? `${n} to choose from · none bound`
+      : `${n} to choose from · none bound — the default`;
   }
   if (view.overriddenBy != null) return `${n} · overridden`;
+  // ONE WORD, ONE MEANING (owner ruling 2026-08-26): ACTIVE is what this destination paints right now.
+  // "nothing in use" is the other word and is the truthful one here — in a first-wins section nothing
+  // can be active unless something is in use, so an empty answer means the owner switched them all off.
   if (active.length === 0) return `${n} · nothing in use`;
   if (view.active.mode === "deal") return `${n} · dealt to machines in this order`;
   if (view.active.mode === "all") return `${n} · all ${active.length} shown`;
-  return `${n} · 1 in use`;
+  return `${n} · 1 active`;
 }
 
 /** The one chip, in severity order — the thing the owner has to act on, never a list of them. */
@@ -258,7 +282,7 @@ function warning(view: SectionView, items: ReturnType<typeof libraryItems>): str
   const broken = items.filter((i) => i.row.unusable).length;
   if (broken > 0) return `${broken} will not paint`;
   if (view.pinned != null && view.pinned !== "" && !view.rows.some((r) => r.name === view.pinned)) {
-    return "pinned image is missing";
+    return "bound image is missing";
   }
   if (items.some((i) => i.duplicate)) return "duplicate names";
   return null;

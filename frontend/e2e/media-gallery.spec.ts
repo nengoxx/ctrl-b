@@ -213,7 +213,7 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
 
   await page.goto("/");
   const group = page.locator("#media-gacha");
-  const card = group.getByRole("button", { name: "Open the characters gallery", exact: true });
+  const card = group.getByRole("button", { name: "Open the Characters gallery", exact: true });
 
   // ① the ENTRY CARD paints what the §2.4 resolver says is live — the owner's two files, dealt — and
   //    the five bundled entries sit in the library rather than in the deal.
@@ -229,7 +229,7 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
   //    an ORDER intent, so the write names the WHOLE section — the two files and the five bundled
   //    defaults, in the order they now sit (§2.3 ③ as amended).
   await dialog.getByRole("button", { name: "b.webp", exact: true }).click();
-  await dialog.getByRole("button", { name: "Move to top", exact: true }).click();
+  await dialog.getByRole("button", { name: "To top", exact: true }).click();
   await expect.poll(() => puts.length).toBe(1);
   expect(puts[0]).toEqual({
     media: {
@@ -251,7 +251,7 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
 
   // ③ the ↑/↓ pair — the WCAG floor S5's drag never replaces.
   await dialog.getByRole("button", { name: "a.webp", exact: true }).click();
-  await dialog.getByRole("button", { name: "↑ Move up", exact: true }).click();
+  await dialog.getByRole("button", { name: "Up", exact: true }).click();
   await expect.poll(() => puts.length).toBe(2);
   expect(puts[1]).toMatchObject({
     media: {
@@ -356,7 +356,7 @@ test("Conf · Theme art — a DRAG reorders, holds through the commit, and the o
   });
 
   await page.goto("/");
-  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  const card = page.getByRole("button", { name: "Open the Characters gallery", exact: true });
   await card.click();
   const dialog = page.getByRole("dialog");
   const tiles = dialog.locator(".mgal-tile");
@@ -410,7 +410,7 @@ test("Conf · Theme art — a DRAG reorders, holds through the commit, and the o
     },
   });
   await expect(tiles.nth(BUNDLED.length + 2)).toHaveAttribute("aria-label", "c.webp");
-  await expect(tiles.nth(2)).toHaveAttribute("aria-label", "pegasus (bundled)");
+  await expect(tiles.nth(2)).toHaveAttribute("aria-label", "pegasus (default)");
   await expect(dialog.locator('[style*="translate"]')).toHaveCount(0);
 
   // ④ …and it is PERSISTED, not just painted.
@@ -442,12 +442,12 @@ test("Conf · Theme art — a section of nothing but DEFAULTS drags, downwards i
   const { st, puts } = await statefulMedia(page, { onDisk: [], files: [] });
 
   await page.goto("/");
-  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  const card = page.getByRole("button", { name: "Open the Characters gallery", exact: true });
   await card.click();
   const dialog = page.getByRole("dialog");
   const tiles = dialog.locator(".mgal-tile");
   await expect(tiles).toHaveCount(BUNDLED.length);
-  await expect(tiles.first()).toHaveAttribute("aria-label", "pegasus (bundled)");
+  await expect(tiles.first()).toHaveAttribute("aria-label", "pegasus (default)");
 
   // DOWN two slots — the direction that used to refuse itself. The drop lands on the LEADING half of
   // the second row's first tile, which is the insertion slot after `atlas` and `3` (reading order).
@@ -459,7 +459,7 @@ test("Conf · Theme art — a section of nothing but DEFAULTS drags, downwards i
     ...BUNDLED.slice(3),
   ]);
   // The SERVER's collation is what repaints, so this is the order the owner keeps.
-  await expect(tiles.nth(2)).toHaveAttribute("aria-label", "pegasus (bundled)");
+  await expect(tiles.nth(2)).toHaveAttribute("aria-label", "pegasus (default)");
   await expect(dialog.locator("[data-drag-held]")).toHaveCount(0);
 
   // …and the cast is still five, not the two rows the swap touched (the deal-shrinking half).
@@ -483,7 +483,7 @@ test("Conf · Theme art — Restore defaults puts the shipped art back and keeps
   });
 
   await page.goto("/");
-  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  const card = page.getByRole("button", { name: "Open the Characters gallery", exact: true });
   await card.click();
   const dialog = page.getByRole("dialog");
   const restore = dialog.getByRole("button", { name: "Restore defaults", exact: true });
@@ -523,7 +523,7 @@ test("Conf · Theme art — a REFUSED drag snaps back, says so, and the next dra
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Open the characters gallery", exact: true }).click();
+  await page.getByRole("button", { name: "Open the Characters gallery", exact: true }).click();
   const dialog = page.getByRole("dialog");
   const tiles = dialog.locator(".mgal-tile");
   await expect(tiles).toHaveCount(BUNDLED.length + 3);
@@ -551,7 +551,7 @@ test("Conf · Theme art — what the gallery says is in use is what the FLEET pa
   await bootConf(page);
   const { st } = await statefulMedia(page, { onDisk: ["a.webp", "b.webp"], files: [] });
   await page.goto("/");
-  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  const card = page.getByRole("button", { name: "Open the Characters gallery", exact: true });
   const dealt = page.locator(".gc-card img").first();
 
   // ① the fleet deals the collation's first entry — the owner's, and STAMPED (defect #1).
@@ -563,7 +563,7 @@ test("Conf · Theme art — what the gallery says is in use is what the FLEET pa
   await card.click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "b.webp", exact: true }).click();
-  await dialog.getByRole("button", { name: "Move to top", exact: true }).click();
+  await dialog.getByRole("button", { name: "To top", exact: true }).click();
   await expect
     .poll(() => st.files)
     .toEqual([{ name: "b.webp" }, { name: "a.webp" }, ...castEntries()]);
@@ -589,7 +589,7 @@ test("Conf · Theme art — a library switched entirely OFF leaves the fleet emp
     ],
   });
   await page.goto("/");
-  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  const card = page.getByRole("button", { name: "Open the Characters gallery", exact: true });
   await expect(card).toContainText("nothing in use");
 
   await page.locator("#tabbtn-fleet").click();
@@ -607,7 +607,7 @@ test("Conf · Theme art — the phone's BACK gesture closes the gallery, not the
   // `popstate` handler is the only closer. Without it Back would leave the PWA outright.
   await bootConf(page);
   await page.goto("/");
-  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  const card = page.getByRole("button", { name: "Open the Characters gallery", exact: true });
   await card.click();
   await expect(page.getByRole("dialog")).toHaveCount(1);
 
@@ -635,13 +635,13 @@ test("Conf · Theme art — the gallery + its detail panel pass the a11y gate", 
     }),
   );
   await page.goto("/");
-  await page.getByRole("button", { name: "Open the characters gallery", exact: true }).click();
+  await page.getByRole("button", { name: "Open the Characters gallery", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expectNoViolations(page);
 
   await dialog
-    .getByRole("button", { name: /bundled/ })
+    .getByRole("button", { name: /\(default\)/ })
     .first()
     .click();
   await expect(dialog.getByRole("switch")).toBeVisible();
@@ -673,7 +673,7 @@ test("Conf · Theme art — the UPLOAD round trip: Add → pick → crop → til
   const { st, puts, uploads, deletes } = await statefulMedia(page, { onDisk: [], files: [] });
 
   await page.goto("/");
-  const card = page.getByRole("button", { name: "Open the characters gallery", exact: true });
+  const card = page.getByRole("button", { name: "Open the Characters gallery", exact: true });
   await card.click();
   const dialog = page.getByRole("dialog");
   // The role is empty of OWNER files; its bundled tier is what the grid holds until now.
@@ -705,16 +705,19 @@ test("Conf · Theme art — the UPLOAD round trip: Add → pick → crop → til
   await expect(tile).toBeVisible();
   await expect(dialog.getByRole("status")).toContainText(`${BUNDLED.length + 1} images`); // the upload + the bundled tier
 
-  // ⑤ it is an ordinary library entry from here on: move it to the top, then delete it.
+  // ⑤ it is an ordinary library entry from here on: arrange it, then delete it. "To top" is DISABLED
+  //    here and that is the honest state — an upload lands at the head of the collation, so it is
+  //    already the active image and there is nowhere to promote it to.
   await tile.click();
-  await dialog.getByRole("button", { name: "Move to top", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "To top", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "To bottom", exact: true }).click();
   await expect.poll(() => puts.length).toBe(2);
   await dialog.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).last().click();
   await expect.poll(() => deletes.length).toBe(1);
   expect(deletes[0]).toBe("/api/media/gacha/files/characters/photo-320x240.webp");
-  // The upload's entry is gone; the cast stays listed, because ⑤'s "Move to top" was an order
-  // intent and named it. A DELETE is not one, so it removes exactly the one entry it was about.
+  // The upload's entry is gone; the cast stays listed, because ⑤'s "To bottom" was an order intent
+  // and named the whole section. A DELETE is not one, so it removes exactly the entry it was about.
   await expect.poll(() => st.files).toEqual(castEntries());
 });
 
@@ -728,7 +731,7 @@ test("Conf · Theme art — the export strips EXIF, and the picked extension dec
   await bootConf(page);
   const { uploads } = await statefulMedia(page, { onDisk: [], files: [] });
   await page.goto("/");
-  await page.getByRole("button", { name: "Open the characters gallery", exact: true }).click();
+  await page.getByRole("button", { name: "Open the Characters gallery", exact: true }).click();
   const dialog = page.getByRole("dialog");
 
   const chooser = page.waitForEvent("filechooser");
@@ -793,7 +796,7 @@ test("Conf · Theme art — an empty-MIME transparent picture keeps its alpha, a
   await bootConf(page);
   const { uploads } = await statefulMedia(page, { onDisk: [], files: [] });
   await page.goto("/");
-  await page.getByRole("button", { name: "Open the characters gallery", exact: true }).click();
+  await page.getByRole("button", { name: "Open the Characters gallery", exact: true }).click();
   const dialog = page.getByRole("dialog");
 
   const chooser = page.waitForEvent("filechooser");
