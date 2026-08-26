@@ -90,6 +90,14 @@ windows) is ONE library; the focal point (§5) handles per-window crops.
 a pin naming an entry the library no longer holds resolves to nothing, so the card reads
 *"the pinned image is gone — a fallback is in use"* rather than naming the missing value as active.
 
+> **W9 AS-BUILT — a pin NAMES the config identity union (owner ruling 2026-08-26).** The pin is
+> still "exactly one write", and what it writes is now
+> `slots.<key>: {name: <filename>} | {bundled: <id>} | null` — the very union a `files` entry
+> persists, parsed by the very parser (`entryId`). A seat therefore resolves by IDENTITY: the row of
+> the dealt tier whose `f:`/`b:` id the pin names, and nothing when that row cannot paint. The
+> "first name-match" wording above and in §2.4 is retired everywhere it appeared, along with the
+> send-time name-re-resolution the write needed to be safe. See §12's **W9** block.
+
 ### 2.2 Config shape — the clean fold, `config_version` 1 → 2 (owner-ruled)
 
 > **Numbering correction (S0 audit, 2026-08-25):** this fold was recorded in-session as
@@ -113,13 +121,23 @@ media:
             - bundled: pegasus              #   identities unique per role; council E10)
             - name: my-drop.png
               hidden: true                  # excluded from use, still in the library (§2.3)
-      slots: {wallpaper: lyra-2, ...}       # pins: unchanged shape and meaning
+      slots:                                # pins — the SAME identity union (W9, owner 2026-08-26)
+        wallpaper: {name: lyra-2.png}       #   one of the owner's files, BY FILENAME
+        oracle:    {bundled: lyra}          #   a shipped entry, by registry id
+        # (null / absent = unpinned; the gallery's "Clear" writes null)
 ```
 
 - **`files` is the unified per-item object list** (the 2026-06-24 extend-don't-migrate directive;
   Sanity/Umbraco's shape, R57 §6.1). List position = priority. Additive growth (`key`, `hidden`,
   `focal`, future `z`) — never a sibling map. **Item identity is a discriminated union**: exactly
   one of `name` (disk file) | `bundled` (registry id); `(kind, id)` unique per role (Emma #10).
+- **A `slots` PIN is that same union** (W9, owner-ruled 2026-08-26 — see §12). It held a bare STEM
+  until then, and a stem is ambiguous by construction: a file's stem and a bundled id are two
+  identity spaces that both answer to `lyra`, and two files can share a stem inside one of them, so
+  one pin value could mean two pictures with the collation deciding. One identity idiom config-wide
+  now, one parser (`entryId` / `MediaIdentity`), and both arms validated exactly as a `files`
+  entry's are — the `bundled` arm against the ids the seat's **source role** ships
+  (`MediaSlot.source`, the backend registry's new per-slot object).
 - **`hidden: true`** — the exclusion mechanism (council-renamed from `disabled`, which already
   means two other things in this subsystem — Opus sweep ②): a hidden entry stays in the gallery
   (dimmed) but is skipped by resolution everywhere. It is how a bundled default (or any entry) is
@@ -140,11 +158,23 @@ media:
   Uploads always set `key`. On-disk layout UNCHANGED (no media-tree migration; the road not
   taken: per-key subfolders).
 - **Migration `config_version` 1→2** (UPDATE_PLAN rules, no-legacy-seams): `media.<ns>` → `media.namespaces.<ns>`;
-  `order: [n1, n2]` → `files: [{name: n1}, {name: n2}]`; `media.write` added; old keys deleted in
-  the write-back. The migration is **config-pure** (steps never touch the filesystem — its own
-  contract) and **writes no bundled entries**: paint parity holds by construction via §2.3's
-  fallback-tier rule. The addressable-name predicate is kept verbatim **and loosened by one
-  character** (§3, defect #8 re-ruled). Idempotency + round-trip collation tests (§11).
+  `order: [n1, n2]` → `files: [{name: n1}, {name: n2}]`; **`slots.<key>: <stem>` → the typed union**
+  (W9); `media.write` added; old keys deleted in the write-back. The migration is **config-pure**
+  (steps never touch the filesystem — its own contract) and **lists no bundled `files` entry**:
+  paint parity holds by construction via §2.3's fallback-tier rule. The addressable-name predicate
+  is kept verbatim **and loosened by one character** (§3, defect #8 re-ruled). Idempotency +
+  round-trip collation tests (§11).
+  - **The pin half is where purity bit, and the contract won.** `Context` carries parsed documents
+    and no `$CTRLB_HOME`, so a legacy STEM cannot be turned into the FILENAME the `{name}` arm
+    holds. A stem that is a **bundled id of the seat's source role** is typed `{bundled: <id>}` —
+    the registry is code, so that reads nothing on disk and is the exact complement of the
+    bundled-free rule above (a pin names one picture and changes no tier). Anything else is
+    **DROPPED**, and the drop is declared in `Plan.consumes`, so `--check`/`--apply` name it in the
+    legacy-key list. Dropping beats both alternatives: an invented `{name: "lyra"}` would be a pin
+    that can never resolve, persisted forever under a "verified" stamp, while an unpinned seat is a
+    true statement that falls to its own ladder and is one tap to fix. A stem under an **unknown**
+    slot key is left exactly where it was written — the config model refuses it by name, and folding
+    it would turn the "W6" retirements' loud refusal into a silent deletion.
 
 ### 2.3 Collation — ONE chokepoint, server-side (council H2)
 
@@ -390,7 +420,11 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
   binding source (key vs stem, §2.2), and the capability-gated actions: Set as active / Use here
   · Set framing · In use · Delete (absent on bundled). Tap = open detail, never tap = apply.
 - **6.5 Selection & state:** `files` order stays the storage; **Set as active = move-to-front**;
-  seat sections write the pin ("Use here"). In-use marks from the §2.4 resolver: first-wins →
+  seat sections write the pin ("Use here") — **as the identity union, derived from the tapped row**
+  (W9): `{bundled: <id>}` for a shipped entry, `{name: <filename>}` for one of the owner's files.
+  The send-time check is then the whole of the rule — *is this row in the tier the seat deals, and
+  can it paint* — with no name to re-resolve, and the detail panel's "In use here" / dangling-pin
+  comparisons are by id (the notice still prints the human half). In-use marks from the §2.4 resolver: first-wins →
   the active tile; roster/pool → check per used member, `hidden` entries dimmed, rotation said
   in words (no live "currently painted" tile for dealt pools — the field's honest form).
   **A `hidden` entry dims WHERE IT IS** ("W7", owner 2026-08-26): membership never moves a picture,
@@ -1186,7 +1220,8 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > frontier's per-card fallback ids in `ActiveArt` — the ring is about THIS library, and a card's own
 > bundled rung is not a row of it; and any change to `heroRow`'s foreign-id check, which is unreachable
 > by construction (the collation emits only registry-known bundled ids). **Still owner-pending and
-> untouched: typed `RowId` pins.**
+> untouched: typed `RowId` pins.** *(RULED at W9 below, 2026-08-26 — and ruled as the config's own
+> union rather than as the internal `RowId` spelling.)*
 >
 > Verification: full gate green (BE 1,992 · FE 2,580, +11). New pins, one per fix: the queue's
 > role-refusal (silent, and NOT the stale-refetch discard) · two namespaces' drains sharing one lane ·
@@ -1200,6 +1235,60 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > re-ruled restore (registry order on top and un-hidden, the owner's files below and switched off with
 > their fields whole, the key scope touching only its layer, and the untick round trip after it).
 > Stash-verified: ten of the new pins fail without their fix.
+
+> **W9 — a pin names the config's own IDENTITY UNION (owner ruling 2026-08-26, main-seat-final).**
+> The one item W8 left owner-pending, ruled — and ruled one notch better than it was asked. The
+> question was "should a pin persist the internal `RowId` (`f:lyra.webp` / `b:lyra`)"; the answer is
+> that config already HAS an identity idiom and the pin should simply be it:
+>
+> ```yaml
+> slots:
+>   oracle:    {bundled: lyra}       # a shipped entry, by registry id
+>   wallpaper: {name: lyra.webp}     # an owner file, by FILENAME (not stem — stem collisions die too)
+> ```
+>
+> **Union object over prefixed string, for less future debt.** A `RowId` string would have been the
+> smaller diff and a worse config: it is a SPELLING (`f:`/`b:` is an internal comparison key that the
+> front end mints and no owner would guess), it needs its own parser and its own escaping question the
+> moment a filename contains a colon, and it is closed — the day a pin grows a second dimension there
+> is nowhere to put it but a sibling map keyed by the same slot name, which is the shape the
+> 2026-06-24 extend-don't-migrate directive bans. The union object is the thing the owner already
+> reads three lines above it in the same file, it is parsed by the parser `files` entries already
+> have (`entryId` / the shared `MediaIdentity` base), and the next dimension is an optional field
+> with a default. It also validates the way `files` does — the `bundled` arm against the ids the
+> seat's SOURCE role ships, which is what taught the backend registry `MediaSlot.source` (the same
+> bare-tuple → object upgrade `MediaRole` got at D65, done while it was two entries).
+>
+> **What it deletes.** The ambiguity was never merely a UX wart: a pin held a STEM, and two identity
+> spaces answered to one (`lyra.webp`'s stem and the bundled id `lyra`) while two files could share a
+> stem inside one of them. Everything built to cope with that is gone — `libraryItems`' `pinnable`
+> arm and its `pinned` set, the seat's half of `duplicateNote`, the "first name-match" wording in all
+> three readers of the paint rule, and the send-time *resolve-the-name-then-compare-it-back* dance in
+> `write.pin` (which is now "is this row dealt, and can it paint"). The state is unrepresentable
+> rather than detectable, so the detector went with it. `libraryItems`' **key-shadow** duplicate is a
+> different mechanism (defect #4 — two files claiming one named-role KEY) and is untouched.
+>
+> **The migration arm the purity contract forced: BUNDLED-TYPE-OR-DROP.** A step is pure by contract
+> and `Context` carries no `$CTRLB_HOME`, so a legacy stem cannot be resolved to the FILENAME the
+> `{name}` arm holds. Registry-known ids are typed (`{bundled: <id>}` — the registry is code); every
+> other legacy pin is DROPPED and DECLARED in `Plan.consumes`, which is the migration's own warning
+> channel (`--check`/`--apply` list it as a consumed legacy key). Persisting a
+> forever-dangling `{name: "lyra"}` under a "verified" stamp would be an owner-visible lie in a file
+> they may open; an unpinned seat falls to its own ladder and is one tap to fix. A stem under an
+> UNKNOWN slot key is left where it was — folding it would convert the "W6" retirements' loud refusal
+> into a silent deletion. Both arms are golden-tested, under the pre-fold AND the already-folded
+> shape, with the standing re-run-is-a-no-op postcondition on each. **Step 2 is unreleased**
+> (`v1.7.6` ships `VERSION` 1), so this is an amendment, not a new step.
+>
+> Verification: full gate green (BE 1,996 · FE 2,582). New pins: the pin validator (both arms, null,
+> and six refusals incl. the retired bare stem and a `bundled` the source role does not ship) · the
+> registry invariant that every slot binds from a role of its own namespace · both migration arms
+> under both shapes + idempotency + the consumed-key report · `activeSeat` binding the EXACT row where
+> a file `lyra.webp` and the bundled id `lyra` coexist (named for what it is: the ambiguity is now
+> unrepresentable) · a cleared/malformed pin marking nothing · both write shapes end-to-end. Retargeted
+> rather than deleted: the "duplicate name" collision note (now: no note, and both entries separately
+> pinnable) and the send-time namesake REFUSAL (now: the tap lands, and the refusals that remain are
+> the tier ones). Stash-verified: the seat-resolution and write-shape pins fail without the change.
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 

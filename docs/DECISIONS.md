@@ -4742,6 +4742,26 @@ steps never touch the filesystem — and writes no bundled entries: **paint pari
 construction** via the fallback-tier rule, which is what let Emma's server-manifest fix be
 re-derived away. Old keys are deleted in the write-back (no-legacy-seams).
 
+> **AMENDMENT — a `slots` PIN is that same union (owner-ruled 2026-08-26, "W9"; plan §2.1/§2.2 +
+> its §12 W9 block).** `slots.<key>` held a bare STEM, and a stem was ambiguous by construction: a
+> file's stem and a bundled id are two identity spaces that both answer to `lyra`, and two files can
+> share a stem inside one of them — so one pin value could mean two pictures and the collation
+> decided which. It now persists **`{name: <filename>} | {bundled: <id>} | null`** — the very
+> discriminated union a `files` entry carries, validated the same way (the `bundled` arm against the
+> ids the seat's SOURCE role ships, which is why the backend slot registry became
+> `MediaSlot(source=…)` — the same bare-tuple→object upgrade `MediaRole` took at D65). The ruling
+> chose the union OBJECT over the cheaper prefixed `RowId` string on future-debt grounds: a `f:`/`b:`
+> string is an internal spelling no owner would guess, needs its own parser and escaping rule, and is
+> closed to the next dimension, where the object takes it as an optional field. **One identity idiom
+> config-wide, one parser** — and the whole name-collision apparatus (the gallery's duplicate-pin
+> note, the send-time re-resolve-and-compare in the pin write, "first name-match" in every reader)
+> was DELETED, because the state it detected is now unrepresentable. Migration step 2 is unreleased,
+> so this is an amendment to the fold rather than a new step: a legacy stem matching a registry
+> bundled id of the seat's source role is typed `{bundled: …}`; **any other legacy pin is DROPPED and
+> declared consumed** (the step is config-pure and cannot list a role folder to recover a filename —
+> and a pin that cannot be typed truthfully becomes an unpinned seat that falls to its own ladder,
+> which is a true statement rather than a forever-dangling one under a "verified" stamp).
+
 **Client-side, in headlines:** input guard 15 MB → **64 MP** (the owner's Honor 20 is 48 MP,
 ruling ④) → HEIC/TIFF/SVG refused by name → `createImageBitmap` proof; crop = **react-easy-crop**
 free-ratio (ruling ⑤), whose crop centre seeds the **focal point — IN v1** (ruling ⑥), stored
