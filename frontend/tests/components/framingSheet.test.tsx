@@ -14,9 +14,9 @@ import { MEDIA_NS } from "../../src/theme-engine/mediaRegistry";
 // assertions are on the WIRE — what the config patch says, which is what the backend validates.
 //
 // The load-bearing claims:
-//  · framing is CAPABILITY-GATED on the role and ABSENT on a bundled entry (Emma #6) — a bundled
-//    entry's value is proportional, so saving a point "unmoved" through a centred reticle would
-//    re-crop the shipped theme everywhere;
+//  · framing is CAPABILITY-GATED on the ROLE (the registry decides), and offered on a BUNDLED entry
+//    too since "W10" — Emma #6's exclusion is gone, because a stored point is centred by construction
+//    and the shipped proportional string answers only where there is no stored point;
 //  · the point is `{x, y}` at two decimals with the rev read at SEND time, never from the tapped tile;
 //  · a rev that no longer matches reads as unset AND says so;
 //  · the previews say they are examples.
@@ -208,7 +208,7 @@ const file = (name: string, role: string, over: Partial<MediaFile> = {}): MediaF
   ...over,
 });
 
-const bundledRow = (id: string): MediaFile => ({
+const bundledRow = (id: string, over: Partial<MediaFile> = {}): MediaFile => ({
   name: id,
   file: "",
   url: "",
@@ -222,9 +222,10 @@ const bundledRow = (id: string): MediaFile => ({
   unusable_reason: null,
   listed: false,
   hidden: false,
+  ...over,
 });
 
-const cast = ["pegasus", "atlas", "3", "4", "lyra"].map(bundledRow);
+const cast = ["pegasus", "atlas", "3", "4", "lyra"].map((id) => bundledRow(id));
 
 function index(characters: MediaFile[]): MediaIndex {
   return {
@@ -303,13 +304,18 @@ describe("the framing affordance is capability-gated (§5)", () => {
     expect(within(dialog).getByRole("button", { name: "Framing" }).textContent).toContain("set");
   });
 
-  it("is ABSENT on a BUNDLED entry — not disabled (Emma #6)", async () => {
-    // The reason is not tidiness: a bundled entry's value is a hand-tuned PROPORTIONAL string, and
-    // this reticle means CENTRED. Saving a point the owner never moved would jump the picture on
-    // every surface at once. A per-entry focus-mode edit path is the recorded future.
+  it("is OFFERED on a BUNDLED entry too ('W10' — the recorded H3 seam, built)", async () => {
+    // It was absent at S4 on Emma #6: a bundled entry's shipped value is a hand-tuned PROPORTIONAL
+    // string, and this reticle means CENTRED, so saving a point the owner never moved would have
+    // jumped the picture on every surface. The item-mode design closed that — a STORED point is
+    // centred by construction and the shipped string answers only where there is no stored point — and
+    // the owner's round forced it: `characters/` is empty on a fresh install, so every entry in it is
+    // bundled and the exclusion bit at 100%.
     renderGallery(index([file("a", "characters"), ...cast]));
     const dialog = await openItem("Characters", "pegasus (default)");
-    expect(within(dialog).queryByRole("button", { name: "Framing" })).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Framing" }).textContent).toContain(
+      "not set",
+    );
   });
 
   it("is ABSENT on a role the registry does not declare framable", async () => {
@@ -391,6 +397,32 @@ describe("the sheet itself", () => {
     fireEvent.click(within(sheet).getByRole("button", { name: "Save framing" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(savedFiles()).toEqual([{ name: "a.webp", focal: { x: 0.18, y: 0.82, rev: "1:88000" } }]);
+  });
+
+  it("frames a DEFAULT end to end ('W10'), and stores the point with an empty rev", async () => {
+    // The whole bundled arm, on the wire: the sheet opens on the theme's own hashed asset (the server
+    // sends no url for one), the save passes the row's revision — which is `""` for a bundled row —
+    // and the guard lets it through because the two agree. The stored `rev: ""` is what `focalState`
+    // reads as LIVE on a bundled row: build-hashed bytes have nothing to go stale against.
+    const framed = bundledRow("pegasus", { focal: { x: 0.3, y: 0.7, rev: "" } });
+    renderGallery(index([framed, ...cast.slice(1)]));
+    const gallery = await openItem("Characters", "pegasus (default)");
+    // The control says SET, which is the whole bundled rule in one word: `rev: ""` would read as
+    // stale on a file, and reads as live here because there is no revision to disagree with.
+    expect(within(gallery).getByRole("button", { name: "Framing" }).textContent).toContain("set");
+    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
+    // …so the sheet SEEDS from it (the previews are the visible proof), and an untouched Save writes
+    // the same point back rather than the centre.
+    expect(sheet.querySelector<HTMLImageElement>(".mgal-frame-win img")?.style.objectPosition).toBe(
+      "30% 70%",
+    );
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save framing" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    // An order intent it is NOT: the write lists the one entry it acted on, and the rest of the
+    // bundled tier stays in the fallback tier where a framing write may not move it.
+    expect(savedFiles()).toEqual([{ bundled: "pegasus", focal: { x: 0.3, y: 0.7, rev: "" } }]);
+    expect(toast.pushToast).not.toHaveBeenCalled();
   });
 
   it("REFUSES when the file was replaced while the owner was framing it (Emma #2)", async () => {

@@ -43,11 +43,16 @@ import type { MediaSection } from "../../theme-engine/mediaRegistry";
 // 2026-08-26 ruling the library's ORDER is the only priority system, so **move to top IS activation**.
 //
 // FRAMING ("Set framing") is capability-gated the same way (§5): it appears only where the ROLE's
-// destinations actually cover — `section.caps.frame`, which the registry decides — and it is ABSENT on a
-// BUNDLED entry rather than disabled (Emma #6). That last one is not a UI preference: a bundled entry's
-// hand-tuned value is PROPORTIONAL, so putting it through this reticle, which means CENTRED, would move
-// the picture on every surface the moment the owner saved a point they had not moved. A per-entry
-// focus-mode edit path is the recorded future; offering the control and refusing the edit is not.
+// destinations actually cover — `section.caps.frame`, which the registry decides.
+//
+// **On a BUNDLED entry too, since "W10"** (the recorded H3 seam, built). It was excluded at S4 on
+// Emma #6 — a bundled entry's hand-tuned value is PROPORTIONAL, and putting it through this reticle,
+// which means CENTRED, would have moved the picture on every surface the moment the owner saved a point
+// they had not touched. The item-mode design closed that: a STORED point is centred by construction and
+// the shipped string answers only where there is no stored point, so the two never meet. The owner's
+// round is what forced it — the Characters and Banner folders are empty on a fresh install, so every
+// entry in them is bundled and the exclusion bit at 100%: the one feature for arranging shipped art
+// could not be used on any of it. "Clear framing" puts the shipped look back, byte-identically.
 
 /** One control in the floating pill: an icon with its word under it, and the word repeated as the
  *  accessible NAME so the two can never disagree. 44px minimum on both axes (the WCAG target floor the
@@ -135,8 +140,9 @@ export function ItemDetail({
   const badges = advisoriesOf(item.row, section.bounds);
   const name = item.bundled ? item.row.name : item.row.file;
   // A file with no readable bytes has nothing to frame: the sheet would open on a broken image and the
-  // previews would be three empty boxes. The chips below already say why.
-  const canFrame = section.caps.frame && !item.bundled && item.row.unusable !== true;
+  // previews would be three empty boxes. The chips below already say why. (A BUNDLED entry is framable
+  // since "W10" — see the note above; only the unusable rung survives, and it cannot fire on one.)
+  const canFrame = section.caps.frame && item.row.unusable !== true;
   // The entry this section's PIN names — the only one that can clear it, and the reason "Use here"
   // disappears there (it is already the answer). By IDENTITY since "W9": the pin names one entry, so
   // the tile that offers Clear is that entry and no namesake of it.

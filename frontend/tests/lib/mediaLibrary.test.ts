@@ -721,8 +721,24 @@ describe("focalState — rev-keying, the three-valued predicate", () => {
     expect(focalState(disk("a.webp", { focal: { x: 0.4, y: 0.2, rev: "2:200" } }))).toBe("stale");
     // An EMPTY rev matches no revision, which is what makes the field safely additive.
     expect(focalState(disk("a.webp", { focal: { x: 0.4, y: 0.2, rev: "" } }))).toBe("stale");
-    // …and it stays stale even against a row the server could not `stat` (revision "").
-    expect(focalState(bundled("pegasus", { focal: { x: 0.4, y: 0.2, rev: "" } }))).toBe("stale");
+  });
+
+  it("a BUNDLED row is keyed to NOTHING, so a point on one is live ('W10')", () => {
+    // Rev-keying exists because owner media changes under a stable name. A bundled entry's bytes are
+    // content-hashed by the build and cannot change under a running app — the server sends no
+    // revision for one at all — so there is nothing for a point to go stale against. Without this the
+    // whole affordance was dead on arrival: every point written on a default would read `stale`
+    // immediately and the shipped crop would come straight back.
+    expect(focalState(bundled("pegasus", { focal: { x: 0.4, y: 0.2, rev: "" } }))).toBe("set");
+    expect(rowFocal(bundled("pegasus", { focal: { x: 0.4, y: 0.2, rev: "" } }))).toEqual({
+      x: 0.4,
+      y: 0.2,
+    });
+    // …and the three-valued predicate keeps its first rung: no point is still no point.
+    expect(focalState(bundled("pegasus"))).toBe("unset");
+    expect(focalState(bundled("pegasus", { focal: { x: Number.NaN, y: 0.2, rev: "" } }))).toBe(
+      "unset",
+    );
   });
 
   it("STALE reads as UNSET everywhere a surface asks — one fold, one place", () => {
@@ -792,6 +808,28 @@ describe("setFocal — the framing write (§5)", () => {
       hidden: true,
       focal: { x: 0.5, y: 0.1, rev: "1:100" },
     });
+  });
+
+  it("frames a BUNDLED id ('W10') — the entry it needs is LISTED, and only it", () => {
+    // The tier rule's `touched` arm carries it: a bundled row a write acted on may be listed, and this
+    // write acted on exactly one. The whole disk tier rides along as it does for every focal write
+    // (listing one entry into an empty list would move it to the front of the collation), and the
+    // OTHER bundled rows stay in the fallback tier where a framing write has no business moving them.
+    //
+    // `rev: ""` is not an oversight: a bundled row has no revision, and `focalState` reads a point on
+    // one as live precisely because build-hashed bytes cannot change under a running app.
+    const out = setFocal([{ name: "a.webp" }], rows, "b:pegasus", { x: 0.5, y: 0.12, rev: "" });
+    expect(out).toEqual([
+      { name: "a.webp" },
+      { name: "b.webp" },
+      { bundled: "pegasus", focal: { x: 0.5, y: 0.12, rev: "" } },
+    ]);
+    // …and clearing it drops the field, leaving the bare listing the sweep would have written anyway.
+    expect(setFocal(out, rows, "b:pegasus", null)).toEqual([
+      { name: "a.webp" },
+      { name: "b.webp" },
+      { bundled: "pegasus" },
+    ]);
   });
 });
 

@@ -428,14 +428,23 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
        *  owner is told, and framing the new bytes is a new look at a new picture. CLEARING is
        *  revision-independent — "no framing" is true of whatever is there now.
        *
-       *  A row GONE by send time is the same honest refusal: no authoritative row, no write. */
+       *  A row GONE by send time is the same honest refusal: no authoritative row, no write.
+       *
+       *  **A BUNDLED entry is framable too since "W10"**, and it needs no arm of its own: its row
+       *  carries `revision: ""` and the sheet hands back the same `""`, so the guard below passes and
+       *  the point is stored with `rev: ""` — which `focalState` reads as LIVE for a bundled row,
+       *  because build-hashed bytes have no revision to go stale against. The refusal that used to sit
+       *  here was Emma #6's, and it was about the MAPPING MODE rather than about the write: putting a
+       *  hand-tuned proportional string through a centred reticle would have moved the shipped art. The
+       *  item-mode design (council H3) is what made that unrepresentable — a stored point is centred by
+       *  construction and the shipped string only answers where there is no point. */
       setFocal: (
         section: MediaSection,
         item: LibraryItem,
         point: FocalPoint | null,
         expectedRev: string,
       ) => {
-        if (!section.caps.frame || item.bundled) return;
+        if (!section.caps.frame) return;
         enqueue({
           patch: (settings, index) => {
             const rows = index?.roles?.[section.role];

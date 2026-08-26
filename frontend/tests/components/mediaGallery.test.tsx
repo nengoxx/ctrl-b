@@ -1269,8 +1269,9 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     openItem(dialog, "lyra (default)");
     expect(within(dialog).queryByRole("button", { name: "Delete" })).toBeNull();
     expect(within(dialog).getByText(/Default — ships with the app/)).toBeTruthy();
-    // …and no framing action either: the focal point lands at S4, and a stub would be a promise.
-    expect(within(dialog).queryByRole("button", { name: /framing/i })).toBeNull();
+    // …but it DOES frame since "W10": there is nothing on disk to delete, and everything to re-aim —
+    // on a fresh install the shipped cast is the whole of what the owner has to frame.
+    expect(within(dialog).getByRole("button", { name: /framing/i })).toBeTruthy();
   });
 
   it("names the BINDING SOURCE in a named role — the key field, or the filename (§2.2)", async () => {
@@ -1336,11 +1337,14 @@ describe("the item detail's action pill, per section kind", () => {
     expect(within(dialog).queryByRole("button", { name: /set as active/i })).toBeNull();
   });
 
-  it("a DEFAULT entry keeps its position controls and loses delete and framing (§6.6)", async () => {
+  it("a DEFAULT entry keeps its position controls and its framing, and loses only delete (§6.6)", async () => {
+    // Delete is absent because there is no file on disk to remove; framing joined it at "W10", when
+    // the bundled exclusion dropped (the point is the owner's and centred, the shipped string is the
+    // theme's and proportional — the item's own mode keeps them apart).
     renderGallery();
     const dialog = await openSection("Characters");
     openItem(dialog, "lyra (default)");
-    expect(labels(dialog)).toEqual(["To top", "Up", "Down", "To bottom"]);
+    expect(labels(dialog)).toEqual(["To top", "Up", "Down", "To bottom", "Framing"]);
   });
 
   it("a SEAT's pill is its ONE control — the binding, and nothing that writes the source library", async () => {

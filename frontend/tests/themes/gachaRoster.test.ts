@@ -372,6 +372,43 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
   });
 
+  // ── FRAMING A DEFAULT ("W10" — the recorded H3 seam, built) ────────────────────────────────────
+
+  it("an owner point on a BUNDLED entry wins, mapped CENTRED through the asset's own pixels", () => {
+    // The seam the item-mode design was built for: one FUNCTION everywhere, and the ITEM says which
+    // rule it is under. A stored point means centred, and the dimensions it needs are the shipped
+    // asset's own — recorded on the entry, because the server has never seen that file.
+    const framed = castTier.map((r) =>
+      r.bundled === "pegasus" ? { ...r, focal: { x: 0.5, y: 0.2, rev: "" } } : r,
+    );
+    const [pegasus] = rosterFromIndex(index({ characters: framed })).entries;
+    expect(pegasus.focus).toEqual({
+      mode: "centred",
+      point: { x: 0.5, y: 0.2 },
+      width: 640,
+      height: 854,
+    });
+    // …and everything else about the entry is the shipped one, untouched.
+    expect(pegasus).toMatchObject({ id: "b:pegasus", name: "pegasus", image: ART.characters[0] });
+  });
+
+  it("…and with NO point the shipped hand-tuned string passes through BYTE-IDENTICALLY", () => {
+    // The paint-parity line for the whole arm: a fresh install is the theme that always shipped, and
+    // "Clear framing" is the way back to exactly this.
+    const [pegasus] = rosterFromIndex(index({ characters: castTier })).entries;
+    expect(pegasus.focus).toEqual({ mode: "proportional", value: "50% 12%" });
+  });
+
+  it("a bundled POOL member takes an owner point the same way, through its own record", () => {
+    const framed = [{ ...bundled("oracle"), focal: { x: 0.25, y: 0.75, rev: "" } }];
+    const [backdrop] = rosterFromIndex(index({ oracle: framed })).pools.oracle;
+    expect(backdrop).toEqual({
+      name: "oracle",
+      url: ART.oracle,
+      focus: { mode: "centred", point: { x: 0.25, y: 0.75 }, width: 1240, height: 700 },
+    });
+  });
+
   // ── the ORACLE backdrop as a LIBRARY ENTRY (S6) ────────────────────────────────────────────────
   //
   // It used to live on `oracleArt`'s last rung as a bare URL no id addressed, so the one picture that
@@ -796,7 +833,10 @@ describe("bannerScenes — the first slide is dealt, and the rest are the scenes
     // decoupling is the MECHANISM (owner clarification, same day), not a demand that the shipped
     // pictures differ. Slide 1's art moved into the pool; neither the look nor the slide COUNT did.
     const { lead, rest } = bannerScenes(defaultRoster());
-    expect(lead).toEqual({ name: "banner", url: ART.banner });
+    // `toMatchObject`, because a bundled member is an ASSET RECORD since "W10" and carries the
+    // shipped file's own pixel size beside its url (`RosterEntry.width`). What this arm is about is
+    // WHICH picture leads and in what order the rest follow.
+    expect(lead).toMatchObject({ name: "banner", url: ART.banner });
     expect(rest.map((s) => s.name)).toEqual(["b2", "b3"]);
     expect(wallpaperArt(defaultRoster())).toEqual({ url: ART.banner });
   });

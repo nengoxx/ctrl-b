@@ -93,13 +93,16 @@ export interface StoredFocal extends FocalPoint {
   rev: string;
 }
 
-/** A row carrying enough to answer "is its framing still about THIS picture" — the wire's `focal` and
- *  the `revision` it is keyed to. */
+/** A row carrying enough to answer "is its framing still about THIS picture" — the wire's `focal`, the
+ *  `revision` it is keyed to, and whether the row is BUNDLED (which is what decides whether the keying
+ *  applies at all — see `focalState`). */
 export interface FocalRow {
   focal?: StoredFocal | null;
   revision?: string;
   width?: number | null;
   height?: number | null;
+  /** The registry id when this row is one of the role's bundled entries. */
+  bundled?: string | null;
 }
 
 /** One `files` entry, structurally — `hooks/useSettings.ts#MediaFileEntry` without the import. Open,
@@ -268,12 +271,22 @@ export function usableLadderRows<T extends LibraryRow>(rows: readonly T[]): T[] 
  *   · `stale` — stored against a DIFFERENT `revision`. Owner media is mutable in place under a stable
  *     name (an SSH overwrite is the ordinary repair), so a point set on the old picture describes a
  *     spot in a picture that is gone. It reads as UNSET everywhere, and the framing sheet says
- *     "framing was reset — the file changed" rather than silently cropping to a stranger's shoulder. */
+ *     "framing was reset — the file changed" rather than silently cropping to a stranger's shoulder.
+ *
+ *  **A BUNDLED row is keyed to nothing, and that is not a special case but the absence of the one this
+ *  is for** ("W10"). Rev-keying exists because owner media CHANGES under a stable name; a bundled
+ *  entry's bytes are content-hashed by the build and cannot change under a running app, so there is no
+ *  revision for a point to go stale against — the server sends none (`bundled_row` has no file to
+ *  stat), and a point stored on one reads `set` for as long as that asset ships. The residual is
+ *  recorded rather than guarded: a future release that re-arts a bundled id under the same name
+ *  inherits the owner's point un-warned, which is exactly the acceptance the hand-tuned focal strings
+ *  in the themes' own ladders have always carried. */
 export type FocalState = "unset" | "set" | "stale";
 
 export function focalState(row: FocalRow): FocalState {
   const focal = row.focal;
   if (focal == null || !Number.isFinite(focal.x) || !Number.isFinite(focal.y)) return "unset";
+  if (row.bundled != null) return "set";
   // An empty `rev` matches no revision, which is what makes the field safely additive: a point
   // written by anything that did not know about the keying degrades rather than lying.
   return focal.rev !== "" && focal.rev === (row.revision ?? "") ? "set" : "stale";
@@ -285,10 +298,13 @@ export function rowFocal(row: FocalRow): FocalPoint | undefined {
   return focal != null && focalState(row) === "set" ? { x: focal.x, y: focal.y } : undefined;
 }
 
-/** The row as a paint-site input (§5's council H3): an owner file with a live point is CENTRED, and
- *  carries the source pixels the centred mapping needs. Everything else has no framing of its own and
- *  leaves the surface on its own default crop. Bundled rows never come through here — their
- *  proportional strings live in the theme's own ladder module. */
+/** The row as a paint-site input (§5's council H3): a row with a live point is CENTRED, and carries the
+ *  source pixels the centred mapping needs. Everything else has no framing of its own and leaves the
+ *  surface on its own default crop.
+ *
+ *  A BUNDLED row's dimensions are not on the wire — the server has never seen that asset — so a theme
+ *  composes `rowFocal` with its own asset record's `width`/`height` instead of calling this (see
+ *  `themes/gacha/roster.ts`). The FOLD is still only here: `rowFocal` is what both paths ask. */
 export function artFocal(row: FocalRow): FocalArt | undefined {
   const point = rowFocal(row);
   return point === undefined ? undefined : centredFocal(point, row.width, row.height);

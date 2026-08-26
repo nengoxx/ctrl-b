@@ -25,7 +25,7 @@
 // actually supplied is replaced.
 
 import type { MediaFile, MediaIndex } from "../../hooks/useMedia";
-import { proportionalFocal, type FocalArt } from "../../lib/focalPosition";
+import { centredFocal, proportionalFocal, type FocalArt } from "../../lib/focalPosition";
 import { cycleAssign, cycleAt, firstUsable, orderedUsable, revUrl } from "../../lib/media";
 import {
   activeIds,
@@ -33,6 +33,7 @@ import {
   bundledRowId,
   ladderRows,
   offersBundled,
+  rowFocal,
   rowId,
   slotPin,
   usableLadderRows,
@@ -73,6 +74,22 @@ export interface RosterEntry {
    *  site. The mode is a property of the ITEM and never of the surface, which is what stops a rewrite
    *  of this module's consumers from silently re-cropping the theme that ships. */
   focus?: FocalArt;
+  /** The BUNDLED asset's own pixel size, on the entries of FRAMABLE roles ("W10"). Present only on the
+   *  shipped entries — an owner file's dimensions are on the wire, measured by the server.
+   *
+   *  It is here because the centred mapping needs the SOURCE size and the server has never seen this
+   *  asset: it is the client's, hashed by its own build. The ASSET-RECORD convention is the field's
+   *  own (R57's survey is unanimous — Sanity, Craft, Umbraco, Kirby all store bare focal fractions and
+   *  keep dimensions with the asset record), and our wire rows already follow it, so a bundled entry
+   *  keeping its numbers beside its URL is the same shape one rung earlier. The rejected alternatives,
+   *  recorded: dimensions inside the stored focal (asset metadata smuggled into a user choice, and two
+   *  dimension sources by row type), and measuring the natural size at runtime (a paint jump, and
+   *  complexity in the one mapping hook).
+   *
+   *  Pinned by `tests/themes/gachaArtDims.test.ts`, which reads the real files: a wrong pair here is a
+   *  silently mis-framed picture, so it is a failing test instead. */
+  width?: number;
+  height?: number;
   /** The entry exists in the roster but its file cannot be used — missing on disk, an unreadable or
    *  disallowed format, a zero-byte upload (the G5 index endpoint's magic-byte reader decides).
    *
@@ -158,12 +175,32 @@ export interface NamedArt extends ResolvedArt {
   name: string;
 }
 
+/** One BUNDLED pool member as an ASSET RECORD ("W10") — the shipped picture, plus its own pixel size
+ *  where the role is FRAMABLE. Same reasoning as `RosterEntry.width`: the centred mapping needs the
+ *  source size, the server has never seen this asset, and the field's convention is to keep dimensions
+ *  with the asset rather than inside the owner's stored point.
+ *
+ *  Not `NamedArt` itself: a RESOLVED pool member is what a paint site consumes, and its framing already
+ *  carries whatever size the mapping needs (`FocalArt`). These numbers are about the file. */
+interface BundledPoolArt extends NamedArt {
+  width?: number;
+  height?: number;
+}
+
 /** The bundled default roster (§5.5) — the prototype's own four characters, in its own order, so a fresh
  *  install looks right before any owner art exists. `lyra` carries the cutout, which is what makes it the
  *  default reel figure without a pin. The scene art (banner/oracle) is deliberately NOT an entry: it would
  *  otherwise enter the per-host cycle and be dealt to a machine as its capsule portrait (the frontier
  *  partition rule, art.ts). Slots left empty on purpose — the fallbacks below are the intended defaults, so
  *  shipping pins would only be a second place to change them. */
+/** The pixel size `art.ts`'s export recipe targets for the CAST (`640×854`, `fit: cover`) and for every
+ *  landscape SCENE asset (`1240×700`). Named because they are shared by most of the entries below, and
+ *  stated per-entry where the real file differs — `withoutEnlargement: true` means a source smaller than
+ *  the target came through at its own size, which is exactly the drift the honesty test exists to catch
+ *  (`tests/themes/gachaArtDims.test.ts` reads the real files; it caught two). */
+const CAST_SIZE = { width: 640, height: 854 };
+const SCENE_SIZE = { width: 1240, height: 700 };
+
 const BUNDLED_ENTRIES: RosterEntry[] = (
   [
     // Focal points (owner, 2026-08-08 — "frame at face height, like the other two"): pegasus's and 3's
@@ -174,22 +211,29 @@ const BUNDLED_ENTRIES: RosterEntry[] = (
     // against these exact pictures in these exact windows under the browser's own percentage rule, so
     // re-reading them as the owner's CENTRED points would re-crop the shipped theme on every surface.
     // The S4 rewrite passes them through byte-identically; `tests/lib/focalPosition.test.ts` pins that.
-    { name: "pegasus", image: ART.characters[0], focus: proportionalFocal("50% 12%") },
-    { name: "atlas", image: ART.characters[1] },
+    {
+      name: "pegasus",
+      image: ART.characters[0],
+      ...CAST_SIZE,
+      focus: proportionalFocal("50% 12%"),
+    },
+    { name: "atlas", image: ART.characters[1], ...CAST_SIZE },
     // The owner's own drops (G1 eyeball round 3): dealt to display positions 2 and 3 — vault and g5 on
     // the owner's fleet. `rook` left the deal for them; the file stays bundled for the G5 gallery.
-    { name: "3", image: ART.characters[2], focus: proportionalFocal("50% 14%") },
+    { name: "3", image: ART.characters[2], ...CAST_SIZE, focus: proportionalFocal("50% 14%") },
     // Focal point (owner round 3): a full-body seated composition with the face ~18% from the top — the
     // wide CARD's default crop (50% 46%, tuned for lyra's art) landed on the shirt. One per-entry value
     // re-aims every surface (card shapes + promo); measured against simulated 16:9 and banner bands.
-    { name: "4", image: ART.characters[3], focus: proportionalFocal("50% 8%") },
+    { name: "4", image: ART.characters[3], ...CAST_SIZE, focus: proportionalFocal("50% 8%") },
     // The TAIL entry: never dealt on a four-host fleet, but still the one CUTOUT-bearing entry — the G4
     // reel figure's bundled option is derived from exactly this field.
-    { name: "lyra", image: ART.characters[4], cutout: ART.cutout },
+    // NOT `CAST_SIZE`: `withoutEnlargement` in the export recipe left these two at their sources' own
+    // sizes, which are smaller than the 640×854 target. The honesty test is what caught it.
+    { name: "lyra", image: ART.characters[4], width: 535, height: 740, cutout: ART.cutout },
     // The other tail entry (S6): `rook` lost its place in the deal to the owner's `3`/`4` and kept its
     // file. It is dealt only on a fleet of six or more — and it is HERE so that the gallery can show it
     // at all, which is the whole of the owner's "nothing shipped is left behind" ruling.
-    { name: "rook", image: ART.characters[5] },
+    { name: "rook", image: ART.characters[5], width: 640, height: 740 },
   ] as Omit<RosterEntry, "id">[]
 )
   // Their `id` is DERIVED, not restated: these entries ARE the `characters` role's bundled tier — the
@@ -206,7 +250,7 @@ const BUNDLED_ENTRIES: RosterEntry[] = (
  *  Being a pool member makes it an ordinary entry — the fallback tier deals it while `oracle/` is
  *  empty, an owner drop replaces it, and switching it off means the operator block paints no backdrop
  *  (which `GachaAgent` already renders: the block keeps its own gradient). */
-const BUNDLED_ORACLE: NamedArt[] = [{ name: "oracle", url: ART.oracle }];
+const BUNDLED_ORACLE: BundledPoolArt[] = [{ name: "oracle", url: ART.oracle, ...SCENE_SIZE }];
 
 /** The BANNER pool's bundled members, in the order the carousel deals them — and the ONE list both
  *  `defaultRoster()` and `sceneUrl` read, so a bundled id the gallery offers can never be one this
@@ -221,10 +265,25 @@ const BUNDLED_ORACLE: NamedArt[] = [{ name: "oracle", url: ART.oracle }];
  *  (banner opens, b2/b3 follow; the fence snapshot says so). The BACKDROP still ends on it
  *  independently (`wallpaperArt`), which is a different surface with a different ladder — switching
  *  this entry off takes its SLIDE out of the carousel and leaves the backdrop alone. */
-const BUNDLED_SCENES: NamedArt[] = [
-  { name: "banner", url: ART.banner },
-  ...ART.scenes.map((s) => ({ name: s.name, url: s.url })),
+const BUNDLED_SCENES: BundledPoolArt[] = [
+  { name: "banner", url: ART.banner, ...SCENE_SIZE },
+  ...ART.scenes.map((s) => ({ name: s.name, url: s.url, ...SCENE_SIZE })),
 ];
+
+/** Every bundled asset's RECORDED pixel size, by id — DERIVED from the records above rather than
+ *  restated, so the honesty test reads what the theme actually maps with.
+ *
+ *  Exported for `tests/themes/gachaArtDims.test.ts`, which reads the real files with the app's own
+ *  header parser and fails on a pair that drifts. That is the only guard there can be: a wrong pair is
+ *  neither a type error nor a runtime error, just a picture framed against the wrong geometry on every
+ *  surface at once. (It caught two on the day it was written — see `lyra` and `rook` above.) */
+export const BUNDLED_SIZES: Record<string, { width: number; height: number }> = Object.fromEntries(
+  [...BUNDLED_ENTRIES, ...BUNDLED_SCENES, ...BUNDLED_ORACLE].flatMap((a) =>
+    a.width === undefined || a.height === undefined
+      ? []
+      : [[a.name, { width: a.width, height: a.height }] as const],
+  ),
+);
 
 export function defaultRoster(): Roster {
   return {
@@ -391,8 +450,8 @@ export function rosterFromIndex(index: MediaIndex | undefined): Roster {
   const reelFiles = role("reel");
   const oracleFiles = role("oracle");
   const cast = castRows(characters).map(toEntry);
-  const scenes = sceneRows(banner).map((f) => toNamed(f, sceneUrl(f.bundled)));
-  const reel = poolRows(reelFiles).map((f) => toNamed(f, cutoutUrl(f.bundled)));
+  const scenes = sceneRows(banner).map((f) => toNamed(f, sceneAsset(f.bundled)));
+  const reel = poolRows(reelFiles).map((f) => toNamed(f, cutoutAsset(f.bundled)));
   // The last DEGRADE rung, and only that (Emma's S2 review #2). A role that resolved to nothing may
   // fall back to the shipped set ONLY while this payload never described the bundled tier — a stub, a
   // partial mock, a proxy answering `{}` — because the real server emits every role's bundled ids and
@@ -408,7 +467,7 @@ export function rosterFromIndex(index: MediaIndex | undefined): Roster {
     pools: {
       reel: shipped(reel, reelFiles, bundled.pools.reel),
       oracle: shipped(
-        poolRows(oracleFiles).map((f) => toNamed(f, oracleUrl(f.bundled))),
+        poolRows(oracleFiles).map((f) => toNamed(f, oracleAsset(f.bundled))),
         oracleFiles,
         bundled.pools.oracle,
       ),
@@ -427,12 +486,22 @@ const BUNDLED_BY_ID = new Map(BUNDLED_ENTRIES.map((e) => [e.name, e]));
  *
  *  Its FRAMING is its own, though (§5): `artFocal` is the one predicate that folds "no point set" and
  *  "set against bytes that have since been replaced" into the same answer, so a stale point can never
- *  reach a surface. */
+ *  reach a surface.
+ *
+ *  **A BUNDLED entry's framing is now the owner's if they set one** ("W10"): a live point wins over the
+ *  shipped hand-tuned string, mapped CENTRED through the asset's own recorded pixels — which is what
+ *  the item-mode design (council H3) was built for. With no point the shipped `focus` passes through
+ *  BYTE-IDENTICALLY, so a fresh install is the theme that always shipped, and "Clear framing" returns
+ *  to it. `rowFocal` is the same one fold the owner-file branch below asks. */
 function toEntry(f: MediaFile): RosterEntry {
-  if (f.bundled != null)
-    return (
-      BUNDLED_BY_ID.get(f.bundled) ?? { id: rowId(f), name: f.bundled, image: "", unusable: true }
-    );
+  if (f.bundled != null) {
+    const shipped = BUNDLED_BY_ID.get(f.bundled);
+    if (shipped === undefined) return { id: rowId(f), name: f.bundled, image: "", unusable: true };
+    const point = rowFocal(f);
+    return point === undefined
+      ? shipped
+      : { ...shipped, focus: centredFocal(point, shipped.width, shipped.height) };
+  }
   const focus = artFocal(f);
   return {
     id: rowId(f),
@@ -443,9 +512,16 @@ function toEntry(f: MediaFile): RosterEntry {
   };
 }
 
-/** One library row as a POOL member. `bundledUrl` is the theme asset that id stands for, per role. */
-function toNamed(f: MediaFile, bundledUrl: string | undefined): NamedArt {
-  if (f.bundled != null) return { name: f.bundled, url: bundledUrl ?? "" };
+/** One library row as a POOL member. `bundled` is the ASSET RECORD that id stands for, per role — its
+ *  url, and its pixels where the role is framable. A live owner point wins over the shipped picture's
+ *  own framing exactly as it does for an entry above; absent one, this is what it always was. */
+function toNamed(f: MediaFile, bundled: BundledPoolArt | undefined): NamedArt {
+  if (f.bundled != null) {
+    const point = rowFocal(f);
+    const focus =
+      point === undefined ? undefined : centredFocal(point, bundled?.width, bundled?.height);
+    return { name: f.bundled, url: bundled?.url ?? "", ...(focus !== undefined && { focus }) };
+  }
   const focus = artFocal(f);
   return {
     name: f.name,
@@ -455,12 +531,17 @@ function toNamed(f: MediaFile, bundledUrl: string | undefined): NamedArt {
   };
 }
 
-const sceneUrl = (id: string | null | undefined): string | undefined =>
-  BUNDLED_SCENES.find((s) => s.name === id)?.url;
-const cutoutUrl = (id: string | null | undefined): string | undefined =>
-  id == null ? undefined : BUNDLED_BY_ID.get(id)?.cutout;
-const oracleUrl = (id: string | null | undefined): string | undefined =>
-  BUNDLED_ORACLE.find((a) => a.name === id)?.url;
+const sceneAsset = (id: string | null | undefined): BundledPoolArt | undefined =>
+  BUNDLED_SCENES.find((s) => s.name === id);
+/** The reel pool's bundled option is DERIVED from the entry carrying a `cutout`, and carries no
+ *  dimensions: `reel` is not a framable role (the figure is painted whole, never cropped), so there is
+ *  no centred mapping to feed. */
+const cutoutAsset = (id: string | null | undefined): BundledPoolArt | undefined => {
+  const cutout = id == null ? undefined : BUNDLED_BY_ID.get(id)?.cutout;
+  return cutout === undefined || id == null ? undefined : { name: id, url: cutout };
+};
+const oracleAsset = (id: string | null | undefined): BundledPoolArt | undefined =>
+  BUNDLED_ORACLE.find((a) => a.name === id);
 
 /** The entry a host at `index` (its position in the fleet's DISPLAY order) is assigned.
  *
