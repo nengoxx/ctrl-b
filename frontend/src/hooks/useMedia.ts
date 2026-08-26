@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getJSON } from "../api/client";
+import type { PinRef } from "../lib/mediaLibrary";
 import { useScopedQuery } from "./useScopedQuery";
 
 // The owner MEDIA index (D52/G5, GACHA_PLAN §5.4 + §10.4) — `GET /api/media/{ns}`: what the owner has
@@ -27,8 +28,9 @@ import { useScopedQuery } from "./useScopedQuery";
  *  wire data that may arrive partial (an e2e mock, a proxy answering `{}`) and degrades rather than
  *  throwing — the same posture `rosterFromIndex` states. The server always sends them. */
 export interface MediaFile {
-  /** The filename STEM: the entry name the resolver deals, and what a `slots` pin names. On a BUNDLED
-   *  row this is the bundled ID — one identity space, so a pin addresses either the same way. */
+  /** The filename STEM: the entry name the resolver deals, and the name a HUMAN reads. On a BUNDLED row
+   *  this is the bundled ID. A `slots` pin does NOT address it since the 2026-08-26 ruling ("W9") — a
+   *  stem stood for two identity spaces at once, so a pin names the identity union instead. */
   name: string;
   /** The filename inside the role folder — the identity a config `files` entry's `name` holds. Empty
    *  on a bundled row. */
@@ -83,8 +85,15 @@ export interface MediaIndex {
   collation: string;
   /** role → its whole library, already in that ruled order. */
   roles: Record<string, MediaFile[]>;
-  /** The `slots` pins as configured (§5.2). A pin naming nothing on disk degrades in the resolver. */
-  slots: Record<string, string>;
+  /** The `slots` pins as configured (§5.2), each the identity UNION config persists since "W9" —
+   *  `{name: "lyra.webp"}` for one of the owner's files, `{bundled: "lyra"}` for a shipped entry. A
+   *  cleared pin is not on the wire at all; a pin naming nothing the library holds degrades in the
+   *  resolver. `lib/mediaLibrary.ts#slotPin` is the one parser.
+   *
+   *  `PinRef` rather than a wire mirror of its own, and that is the shape's whole point: the server
+   *  echoes the pin VERBATIM from config, so the config union and the wire pin are one object. A
+   *  second declaration here would be the same shape twice, free to drift. */
+  slots: Record<string, PinRef>;
   /** The namespace's tree is not servable and is NOT MOUNTED: a symlink on its spine, a file where a
    *  role folder belongs, or a mkdir that failed. `roles` is empty, so the theme falls back to its
    *  bundled art on its own — but the GALLERY must say `reason` rather than show an empty grid, which

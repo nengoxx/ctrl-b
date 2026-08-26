@@ -112,6 +112,20 @@ export interface LibraryEntry {
   [k: string]: unknown;
 }
 
+/** A `slots` PIN as persisted — the SAME identity union a `files` entry carries (the 2026-08-26 owner
+ *  ruling, "W9"), which is the whole point of the shape: ONE identity idiom config-wide, read by ONE
+ *  parser. `null`/absent is unpinned.
+ *
+ *  A type alias rather than a second interface: a pin and a `files` entry are structurally the same
+ *  reference, and duplicating the shape would invite the two to drift into two parsers — which is
+ *  exactly the bug the ruling closed. It has its own NAME because it is its own concept (a binding,
+ *  not a list member) and because the two will grow different optional fields; the day one does, this
+ *  alias splits into an interface and nothing else moves. */
+export type PinRef = LibraryEntry;
+
+/** The wire's `slots` map, structurally: pin key -> the entry it binds. Absent or `null` = unpinned. */
+export type SlotPins = Readonly<Record<string, PinRef | null | undefined>>;
+
 /** A row's IDENTITY as one comparable string — `f:<filename>` for a file on disk, `b:<id>` for a
  *  bundled entry. The two spaces are kept apart on purpose (the config identity is a discriminated
  *  union, §2.2): a role may hold a file called `lyra.webp` AND the bundled id `lyra`, and they are two
@@ -120,6 +134,13 @@ export type RowId = string;
 
 export function rowId(row: LibraryRow): RowId {
   return row.bundled != null ? `b:${row.bundled}` : `f:${row.file}`;
+}
+
+/** The row as a PIN — what "use this one here" persists (§2.1). The inverse of `entryId` over the same
+ *  union, and here rather than at the write site so the two spellings can never disagree about which
+ *  field a bundled row goes in. */
+export function pinRef(row: LibraryRow): PinRef {
+  return row.bundled != null ? { bundled: row.bundled } : { name: row.file };
 }
 
 /** The same identity for a BUNDLED id the registry names — the one caller is the restore, which has to
@@ -141,6 +162,29 @@ export function entryId(entry: LibraryEntry): RowId | null {
 /** Whether an id names a BUNDLED entry (the tier that is never swept). */
 export function isBundledId(id: RowId): boolean {
   return id.startsWith("b:");
+}
+
+/** The identity one `slots` PIN names, or `null` for unpinned/cleared/malformed — the ONE place a pin
+ *  is read, through the very parser a `files` entry is read by ("W9").
+ *
+ *  It replaced a `slotEntryName` that answered with a NAME, and the difference is the whole ruling: a
+ *  name had to be matched against `MediaFile.name`, which is one string standing for two identity
+ *  spaces (a file's stem and a bundled id), so `lyra` reached whichever the collation listed first. An
+ *  id names one entry, so a pin either resolves to that entry or resolves to nothing. */
+export function slotPin(slots: SlotPins, key: string): RowId | null {
+  const pin = slots?.[key];
+  return pin == null ? null : entryId(pin);
+}
+
+/** The HUMAN half of a pin — the filename, or the bundled id — for a sentence the owner reads. The
+ *  `f:`/`b:` spelling is an internal identity and never leaves the code (`""` for a pin holding
+ *  neither, which only a hand-edited config can produce). */
+export function pinLabel(pin: PinRef): string {
+  return typeof pin.name === "string"
+    ? pin.name
+    : typeof pin.bundled === "string"
+      ? pin.bundled
+      : "";
 }
 
 // ── the tiers a resolver reads (§2.3 ④ — every fact is on the wire) ──────────────────────────────
@@ -273,10 +317,7 @@ export interface ActiveArt {
 
 /** A section's `active` resolver: PURE in the index rows + the wire's `slots`, never in config
  *  (§2.4 — the wire carries `listed`/`hidden`/`key` precisely so this is sufficient). */
-export type ActiveResolver = (
-  rows: readonly LibraryRow[],
-  slots: Readonly<Record<string, string>>,
-) => ActiveArt;
+export type ActiveResolver = (rows: readonly LibraryRow[], slots: SlotPins) => ActiveArt;
 
 /** `ids` for however many rows a ladder resolved — the adapter every resolver ends in. */
 export function activeIds(rows: readonly LibraryRow[]): RowId[] {

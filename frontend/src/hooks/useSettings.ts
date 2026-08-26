@@ -187,7 +187,10 @@ export interface SettingsDoc {
       string,
       {
         roles?: Record<string, { files?: MediaFileEntry[] }>;
-        slots?: Record<string, string | null>;
+        /** A SEAT's binding — the SAME identity union a `files` entry carries since "W9", `null` to
+         *  clear. `MediaFileEntry` IS that union, so it is the declared shape here rather than a
+         *  parallel one: one idiom, one parser (`lib/mediaLibrary.ts#entryId`). */
+        slots?: Record<string, MediaFileEntry | null>;
       }
     >;
   };

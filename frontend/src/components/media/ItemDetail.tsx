@@ -11,7 +11,7 @@ import {
   UpIcon,
 } from "./icons";
 import { Switch } from "../Switch";
-import type { LibraryItem } from "../../hooks/useMediaLibrary";
+import type { LibraryItem, PinView } from "../../hooks/useMediaLibrary";
 import { ADVISORIES, advisoriesOf, focalState, metaText, tileUrl } from "../../lib/mediaLibrary";
 import { requestConfirm } from "../../store/confirm";
 import type { MediaSection } from "../../theme-engine/mediaRegistry";
@@ -98,9 +98,9 @@ export function ItemDetail({
 }: {
   section: MediaSection;
   item: LibraryItem;
-  /** The section's current pin value, when it writes one — what makes "Clear this pin" appear on the
-   *  entry that holds it. Only a SEAT writes one since the 2026-08-26 ruling. */
-  pinned?: string;
+  /** The section's current pin, when it writes one — what makes "Clear" appear on the entry that holds
+   *  it instead of "Use here". Only a SEAT writes one since the 2026-08-26 ruling. */
+  pinned?: PinView;
   busy: boolean;
   ready: boolean;
   /** A whole ARRANGEMENT means something here AND this scope holds more than one entry to arrange. */
@@ -126,8 +126,9 @@ export function ItemDetail({
   // previews would be three empty boxes. The chips below already say why.
   const canFrame = section.caps.frame && !item.bundled && item.row.unusable !== true;
   // The entry this section's PIN names — the only one that can clear it, and the reason "Use here"
-  // disappears there (it is already the answer).
-  const pinnedHere = section.pin !== undefined && pinned === item.row.name;
+  // disappears there (it is already the answer). By IDENTITY since "W9": the pin names one entry, so
+  // the tile that offers Clear is that entry and no namesake of it.
+  const pinnedHere = section.pin !== undefined && pinned?.id === item.id;
   // A SEAT's pill is its ONE control (§2.1) — it neither arranges the source library nor deletes out of
   // it, so the position cluster is replaced rather than joined.
   const seat = section.pin !== undefined;
@@ -253,7 +254,7 @@ export function ItemDetail({
             alone says there is a clash; what the owner needs is which entry answers to the name and
             how to change that — and the answer is the same one rule everywhere here: the library's own
             order decides, so moving this entry to the top is the fix. */}
-        {item.duplicate && <p className="mgal-detail-note">{duplicateNote(section, item)}</p>}
+        {item.duplicate && <p className="mgal-detail-note">{duplicateNote(item)}</p>}
         {section.caps.hidden && (
           <label className="mgal-act-row">
             <span>In use</span>
@@ -293,20 +294,15 @@ async function confirmDelete(item: LibraryItem, onDelete: () => void): Promise<v
   if (ok) onDelete();
 }
 
-/** What the duplicate MEANS here, in the section's own terms. Two shapes share one note because they
- *  share one tie-break: a `named` role where two files claim one key, and a PIN-capable SEAT where a
- *  file stem and a bundled id answer to the same name (§2.3's stem/id note — the `f:`/`b:` identities
- *  stay separate, but one pin VALUE can only reach one of them).
+/** What the duplicate MEANS here: two files claim ONE BINDING KEY, and the library's order is the
+ *  tie-break — so the fix, in the owner's own vocabulary, is to move this entry to the top.
  *
- *  Plain words, and the fix in the owner's own vocabulary: the library's order decides, so the way to
- *  win the name is to move this entry to the top. */
-function duplicateNote(section: MediaSection, item: LibraryItem): string {
-  const pinned = section.pin !== undefined;
-  const name = pinned || item.bundled ? item.row.name : (item.key ?? item.row.name);
-  const what = pinned
-    ? `Two entries answer to “${name}”, so only one of them can be bound here.`
-    : `Two files answer to “${name}”.`;
-  return `${what} The one higher in the list wins — move this one to the top to use it.`;
+ *  It used to carry a second sentence for a PIN-capable seat, where a file stem and a bundled id both
+ *  answered to one bare pin value. That ambiguity died with the shape: a pin names the identity union
+ *  since "W9", so a seat has nothing left to disambiguate and only the key-shadow case remains. */
+function duplicateNote(item: LibraryItem): string {
+  const name = item.key ?? item.row.name;
+  return `Two files answer to “${name}”. The one higher in the list wins — move this one to the top to use it.`;
 }
 
 /** How this file found its destination — the wire's `key` field, or its own filename stem. Only said

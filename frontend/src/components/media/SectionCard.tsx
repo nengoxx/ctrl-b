@@ -91,7 +91,7 @@ export function SectionCard({
     section.def.label !== undefined && (section.kind === "pool" || section.kind === "key")
       ? `media/${section.ns}/${section.role}/`
       : undefined;
-  const items = libraryItems(scopedRows(view.rows, scope), view.active, section.pin !== undefined);
+  const items = libraryItems(scopedRows(view.rows, scope), view.active);
   const active = items.filter((i) => i.active);
   const art = active
     .map((i) => tileUrl(i.row, section))
@@ -272,8 +272,8 @@ function status(
   if (view.section.kind === "seat") {
     // The resolver's own row — whatever this seat's own pin resolved to.
     if (active.length > 0) return `${active[0].row.name} is bound here`;
-    const bound = view.pinned != null && view.pinned !== "";
-    if (bound) return `${n} to choose from · the bound image is gone — a fallback is used`;
+    if (view.pinned !== undefined)
+      return `${n} to choose from · the bound image is gone — a fallback is used`;
     // "none bound" alone said nothing about what the surface actually shows, which is what left the
     // built-in default invisible (S6). Named only where there IS one to name.
     return view.section.builtin === undefined
@@ -294,7 +294,8 @@ function status(
 function warning(view: SectionView, items: ReturnType<typeof libraryItems>): string | null {
   const broken = items.filter((i) => i.row.unusable).length;
   if (broken > 0) return `${broken} will not paint`;
-  if (view.pinned != null && view.pinned !== "" && !view.rows.some((r) => r.name === view.pinned)) {
+  // DANGLING by identity ("W9") — the same comparison the gallery's own notice makes.
+  if (view.pinned !== undefined && !view.rows.some((r) => rowId(r) === view.pinned?.id)) {
     return "bound image is missing";
   }
   if (items.some((i) => i.duplicate)) return "duplicate names";

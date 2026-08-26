@@ -9,9 +9,12 @@ import { bindingKey, boundByKey } from "../lib/media";
 import {
   appendItem,
   bundledRowId,
+  entryId,
   ladderRows,
   moveBy,
   moveToEdge,
+  pinLabel,
+  pinRef,
   removeItem,
   restoreDefaults,
   rowId,
@@ -19,6 +22,7 @@ import {
   toggleHidden,
   type ActiveArt,
   type LibraryEntry,
+  type PinRef,
   type RowId,
 } from "../lib/mediaLibrary";
 import { pushToast } from "../store/toast";
@@ -80,8 +84,23 @@ export interface SectionView {
   activeForKey?: (key: string) => ActiveArt;
   /** The seat whose pin is currently beating this section's own pick (§2.4). */
   overriddenBy?: { sectionId: string; label: string };
-  /** The pin's current value, for a section that writes one. */
-  pinned?: string;
+  /** The pin this section currently holds, for a section that writes one — ABSENT when nothing is
+   *  pinned, which is what the seat's built-in default is shown for. See `PinView`. */
+  pinned?: PinView;
+}
+
+/** One held pin, as everything on the gallery screen needs it: the IDENTITY to compare a row against,
+ *  and the human half to print. Both, because they answer different questions and neither can be
+ *  derived from the other at the point of use — `f:lyra.webp` must never reach a sentence, and
+ *  `lyra.webp` must never be compared against a row.
+ *
+ *  `id` is `null` for a pin the parser cannot read (a hand-edited config naming both fields, or
+ *  neither — the server refuses to write one). That is deliberately still a PRESENT pin: it resolves
+ *  to no row, so the gallery says "the bound image is missing" and offers the Clear that removes it,
+ *  which is the only way the owner could act on it at all. */
+export interface PinView {
+  id: RowId | null;
+  label: string;
 }
 
 /** What a gallery is SCOPED to — the whole role, one key of it, the files that bound nothing, or a
@@ -250,7 +269,7 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
         // minted here, and only when that seat is actually a section on screen — a claim the owner
         // cannot follow is worse than none.
         overriddenBy: seat && { sectionId: seat.id, label: seat.title },
-        pinned: section.pin === undefined ? undefined : (data.slots?.[section.pin] ?? undefined),
+        pinned: section.pin === undefined ? undefined : pinView(data.slots?.[section.pin]),
       };
     });
   }, [data, def, ns]);
@@ -365,16 +384,15 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
             // No authoritative index ⇒ no write. Whether this pin can RESOLVE is a fact about the
             // library, and writing one that cannot is the claim §2.4 exists to prevent.
             if (rows === undefined) return null;
-            // RESOLVE the name, don't just find the row (the W6 review's fix #1): the pin persists a
-            // bare NAME, and the seat resolves it as "first name-match in the dealt tier, usable". A
-            // presence check alone let "Use here" succeed while the pin resolved to an EARLIER
-            // namesake (the §2.3 stem/id collision) or to nothing (the row turned unusable) — a write
-            // that binds a different picture than the one tapped. Refused unless the name resolves
-            // back to exactly the tapped row.
-            const resolved = ladderRows(rows).find((r) => r.name === item.row.name);
-            if (resolved === undefined || rowId(resolved) !== item.id || resolved.unusable === true)
-              return null;
-            return { slots: { [pin]: item.row.name } };
+            // The whole send-time check, and since "W9" it is the whole truth: is this ROW in the tier
+            // the seat deals, and can it paint? The pin persists the row's IDENTITY, so there is
+            // nothing to resolve back — no earlier namesake to lose the binding to, no second identity
+            // space answering to the same word. (It used to re-resolve the bare NAME the pin held and
+            // refuse unless the answer came back as the tapped row; that dance was the collision's
+            // cost, and the collision is gone.)
+            const row = ladderRows(rows).find((r) => rowId(r) === item.id);
+            if (row === undefined || row.unusable === true) return null;
+            return { slots: { [pin]: pinRef(row) } };
           },
         });
       },
@@ -552,6 +570,13 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
   };
 }
 
+/** One wire pin as the screen reads it, or `undefined` for "nothing is pinned" — which is both the key
+ *  being absent and the value being `null` (the server does not send a cleared pin, but this is wire
+ *  data and degrading is the posture everywhere it is read). */
+function pinView(pin: PinRef | null | undefined): PinView | undefined {
+  return pin == null ? undefined : { id: entryId(pin), label: pinLabel(pin) };
+}
+
 /** The `roles.<role>.files` block one intent produces against the freshest state — `null` when either
  *  half of the authoritative state is missing, which is the queue's one invariant applied to a list
  *  write:
@@ -585,35 +610,27 @@ function filesBlock(
 
 /** The per-row view model one grid renders (§6.3/§6.5).
  *
- *  DUPLICATES are computed here for BOTH role kinds through the one binding rule (defect #4): a row is
- *  a duplicate when an earlier usable row already claimed its key — which in a `named` role is the
- *  shadowed loser `classifyNamed` names, and in a POOL is the `a.png` / `a.webp` pair whose second half
- *  no `slots` pin could ever address. It used to be invisible in both.
+ *  DUPLICATES are computed here through the one BINDING rule (defect #4): a row is a duplicate when an
+ *  earlier usable row already claimed its key — the shadowed loser `classifyNamed` names in a `named`
+ *  role, and the `a.png` / `a.webp` stem clash in a pool. It used to be invisible in both.
  *
- *  `pinnable` adds the STEM/ID collision §2.3 owes the owner (Emma's S2 review #6). Where a section
- *  writes a PIN, the value is a bare name and BOTH identity spaces answer to it: a file called
- *  `lyra.webp` and the bundled id `lyra` are two different library entries (`f:` / `b:` — that split is
- *  right and stays), but one pin value reaches whichever the collation lists FIRST. That ambiguity is
- *  invisible from the grid, so it is surfaced as the same duplicate note the shadowed-key case uses;
- *  the pin name is `MediaFile.name` for both kinds, which is exactly what `firstUsable` compares. */
+ *  It used to carry a second, unrelated arm: a `pinnable` flag that flagged the STEM/ID collision a
+ *  bare-name pin created (a file `lyra.webp` and the bundled id `lyra` both answering to `lyra`, with
+ *  the collation deciding which the pin reached). The 2026-08-26 ruling ("W9") made a pin name the
+ *  identity union, so there is no such collision to report — the ambiguity is unrepresentable rather
+ *  than merely visible — and the arm went with the shape it was compensating for. */
 export function libraryItems(
   rows: readonly MediaFile[],
   active: ActiveArt,
-  pinnable = false,
   ids: ReadonlySet<RowId> = new Set(active.ids),
 ): LibraryItem[] {
   const claimed = new Set<string>();
-  const pinned = new Set<string>();
   return rows.map((row) => {
     const id = rowId(row);
     const key = bindingKey(row);
     const claims = row.bundled == null && row.unusable !== true;
-    let duplicate = claims && claimed.has(key);
+    const duplicate = claims && claimed.has(key);
     if (claims) claimed.add(key);
-    if (pinnable && row.unusable !== true) {
-      if (pinned.has(row.name)) duplicate = true;
-      pinned.add(row.name);
-    }
     return {
       id,
       row,

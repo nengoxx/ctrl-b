@@ -12,7 +12,7 @@ import {
 import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
 import type { MediaUpload } from "../../hooks/useMediaUpload";
 import { modalKeyDown } from "../../lib/focusTrap";
-import { defaultsRestorable, type ActiveArt } from "../../lib/mediaLibrary";
+import { defaultsRestorable, rowId, type ActiveArt } from "../../lib/mediaLibrary";
 import { requestConfirm } from "../../store/confirm";
 import { UPLOAD_ACCEPT } from "../../theme-engine/mediaRegistry";
 
@@ -129,15 +129,17 @@ export function GalleryModal({
   // `activeForKey(key)` already, so this resolves the same answer through the same function.
   const active =
     scope.key !== undefined ? (view.activeForKey?.(scope.key) ?? view.active) : view.active;
-  const items = libraryItems(rows, active, section.pin !== undefined);
+  const items = libraryItems(rows, active);
   const selected = items.find((i) => i.id === selectedId);
   const problems = items.filter((i) => i.row.unusable).length;
+  // A pin naming nothing this seat's tier holds. By IDENTITY since "W9" — the pin says `{name}` or
+  // `{bundled}`, so "is it here" is one comparison against the same ids the grid keys on. What the
+  // NOTICE prints is the human half (`pinLabel`), never the `f:`/`b:` spelling.
   const danglingPin =
     section.pin !== undefined &&
-    view.pinned != null &&
-    view.pinned !== "" &&
-    !view.rows.some((r) => r.name === view.pinned)
-      ? view.pinned
+    view.pinned !== undefined &&
+    !view.rows.some((r) => rowId(r) === view.pinned?.id)
+      ? view.pinned.label
       : undefined;
   const count = `${items.length} ${items.length === 1 ? "image" : "images"}${
     problems > 0 ? ` · ${problems} will not paint` : ""
@@ -263,7 +265,7 @@ export function GalleryModal({
               has no config identity — so it sits ABOVE the grid rather than in it, with no tile
               actions: the way back to it is the unpin the detail panel already offers. Shown only
               while nothing is pinned, which is exactly when it is the answer. */}
-          {section.builtin !== undefined && (view.pinned == null || view.pinned === "") && (
+          {section.builtin !== undefined && view.pinned === undefined && (
             <p className="mgal-builtin">
               <img src={section.builtin.url} alt="" loading="lazy" decoding="async" />
               <span>

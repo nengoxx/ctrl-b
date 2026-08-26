@@ -30,12 +30,17 @@ import { cycleAssign, cycleAt, firstUsable, orderedUsable, revUrl } from "../../
 import {
   activeIds,
   artFocal,
+  bundledRowId,
   ladderRows,
   offersBundled,
   rowId,
+  slotPin,
   usableLadderRows,
   type ActiveArt,
   type LibraryRow,
+  type PinRef,
+  type RowId,
+  type SlotPins,
 } from "../../lib/mediaLibrary";
 import { ART } from "./art";
 
@@ -44,7 +49,16 @@ import { ART } from "./art";
  *  the time they reach here: bundled assets are hashed build URLs, owner files are `/api/media/gacha/files/…`
  *  URLs the G5 adapter fills in. */
 export interface RosterEntry {
-  /** Display + reference name — what a `slots` pin points at. */
+  /** The library IDENTITY this entry came from (`f:<filename>` / `b:<id>`) — what a `slots` pin names
+   *  since the 2026-08-26 owner ruling ("W9"), and the ONLY thing `slotEntry` matches on.
+   *
+   *  Additive, and the minimal carrier the seats need: the pin used to be matched against `name`
+   *  below, which is one string standing for two identity spaces (a file's stem and a bundled id), so
+   *  a role holding `lyra.webp` beside the bundled id `lyra` gave one pin two meanings. Carrying the
+   *  id costs one field and makes that unrepresentable; the alternative — re-deriving it here from
+   *  `image`/`cutout` URLs — would be a second identity rule in the one module that must not have one. */
+  id: RowId;
+  /** Display + reference name. A file's stem, or the bundled id. */
   name: string;
   /** The main art (capsule cards, dossier portrait). */
   image: string;
@@ -71,7 +85,8 @@ export interface RosterEntry {
 }
 
 /** The theme's two SEATS (§2.1) — a cast portrait bound into a surface the cast does not own. Each
- *  names an ENTRY; an unpinned (or dangling) seat falls back — never a hole.
+ *  names an ENTRY *by its config identity* (`{name}` / `{bundled}`, "W9"); an unpinned — or dangling —
+ *  seat falls back, never a hole.
  *
  *  These two are ALL that is left, and that is the 2026-08-26 owner ruling ("W6"): **order is the only
  *  priority system, app-wide.** A pool's own first-wins pick is decided by the library order the owner
@@ -84,10 +99,10 @@ export interface RosterEntry {
  *  media v2 has never shipped to prod, so there is no owner data to migrate (the no-legacy-seams rule).
  *  A hand-authored `reel_figure:` pin is now an unknown slot key, which the config validator refuses out
  *  loud rather than honouring silently (`Settings._known_media_namespaces_roles_and_slots`). */
-export interface RosterSlots {
-  oracle?: string;
-  wallpaper?: string;
-}
+export type RosterSlots = {
+  oracle?: PinRef | null;
+  wallpaper?: PinRef | null;
+};
 
 /** The single-pick role pools the owner's `media/gacha/<role>/` folders feed (§5.4's re-rule:
  *  drop-in = assignment). FIRST WINS in each — the owner reorders in the Conf gallery, and the index
@@ -137,7 +152,8 @@ export interface ResolvedArt {
   rev?: string;
 }
 
-/** A pool member: art that also carries the NAME a `slots` pin can address it by. */
+/** A pool member: art that also carries a stable NAME for its key. (No pool has been pin-addressable
+ *  since "W6" — the name is the React key and the display label.) */
 export interface NamedArt extends ResolvedArt {
   name: string;
 }
@@ -148,32 +164,38 @@ export interface NamedArt extends ResolvedArt {
  *  otherwise enter the per-host cycle and be dealt to a machine as its capsule portrait (the frontier
  *  partition rule, art.ts). Slots left empty on purpose — the fallbacks below are the intended defaults, so
  *  shipping pins would only be a second place to change them. */
-const BUNDLED_ENTRIES: RosterEntry[] = [
-  // Focal points (owner, 2026-08-08 — "frame at face height, like the other two"): pegasus's and 3's
-  // faces sit high in their art (eyes ~17% / ~20% from the top), so the poster band's default crop
-  // (50% 26%) landed on the chest and hood. Same one-value-re-aims-every-surface contract as `4` below.
-  //
-  // PROPORTIONAL, and stated rather than assumed (§5's council H3): these three strings were hand-tuned
-  // against these exact pictures in these exact windows under the browser's own percentage rule, so
-  // re-reading them as the owner's CENTRED points would re-crop the shipped theme on every surface.
-  // The S4 rewrite passes them through byte-identically; `tests/lib/focalPosition.test.ts` pins that.
-  { name: "pegasus", image: ART.characters[0], focus: proportionalFocal("50% 12%") },
-  { name: "atlas", image: ART.characters[1] },
-  // The owner's own drops (G1 eyeball round 3): dealt to display positions 2 and 3 — vault and g5 on
-  // the owner's fleet. `rook` left the deal for them; the file stays bundled for the G5 gallery.
-  { name: "3", image: ART.characters[2], focus: proportionalFocal("50% 14%") },
-  // Focal point (owner round 3): a full-body seated composition with the face ~18% from the top — the
-  // wide CARD's default crop (50% 46%, tuned for lyra's art) landed on the shirt. One per-entry value
-  // re-aims every surface (card shapes + promo); measured against simulated 16:9 and banner bands.
-  { name: "4", image: ART.characters[3], focus: proportionalFocal("50% 8%") },
-  // The TAIL entry: never dealt on a four-host fleet, but still the one CUTOUT-bearing entry — the G4
-  // reel figure's bundled option is derived from exactly this field.
-  { name: "lyra", image: ART.characters[4], cutout: ART.cutout },
-  // The other tail entry (S6): `rook` lost its place in the deal to the owner's `3`/`4` and kept its
-  // file. It is dealt only on a fleet of six or more — and it is HERE so that the gallery can show it
-  // at all, which is the whole of the owner's "nothing shipped is left behind" ruling.
-  { name: "rook", image: ART.characters[5] },
-];
+const BUNDLED_ENTRIES: RosterEntry[] = (
+  [
+    // Focal points (owner, 2026-08-08 — "frame at face height, like the other two"): pegasus's and 3's
+    // faces sit high in their art (eyes ~17% / ~20% from the top), so the poster band's default crop
+    // (50% 26%) landed on the chest and hood. Same one-value-re-aims-every-surface contract as `4` below.
+    //
+    // PROPORTIONAL, and stated rather than assumed (§5's council H3): these three strings were hand-tuned
+    // against these exact pictures in these exact windows under the browser's own percentage rule, so
+    // re-reading them as the owner's CENTRED points would re-crop the shipped theme on every surface.
+    // The S4 rewrite passes them through byte-identically; `tests/lib/focalPosition.test.ts` pins that.
+    { name: "pegasus", image: ART.characters[0], focus: proportionalFocal("50% 12%") },
+    { name: "atlas", image: ART.characters[1] },
+    // The owner's own drops (G1 eyeball round 3): dealt to display positions 2 and 3 — vault and g5 on
+    // the owner's fleet. `rook` left the deal for them; the file stays bundled for the G5 gallery.
+    { name: "3", image: ART.characters[2], focus: proportionalFocal("50% 14%") },
+    // Focal point (owner round 3): a full-body seated composition with the face ~18% from the top — the
+    // wide CARD's default crop (50% 46%, tuned for lyra's art) landed on the shirt. One per-entry value
+    // re-aims every surface (card shapes + promo); measured against simulated 16:9 and banner bands.
+    { name: "4", image: ART.characters[3], focus: proportionalFocal("50% 8%") },
+    // The TAIL entry: never dealt on a four-host fleet, but still the one CUTOUT-bearing entry — the G4
+    // reel figure's bundled option is derived from exactly this field.
+    { name: "lyra", image: ART.characters[4], cutout: ART.cutout },
+    // The other tail entry (S6): `rook` lost its place in the deal to the owner's `3`/`4` and kept its
+    // file. It is dealt only on a fleet of six or more — and it is HERE so that the gallery can show it
+    // at all, which is the whole of the owner's "nothing shipped is left behind" ruling.
+    { name: "rook", image: ART.characters[5] },
+  ] as Omit<RosterEntry, "id">[]
+)
+  // Their `id` is DERIVED, not restated: these entries ARE the `characters` role's bundled tier — the
+  // media registry derives `roles.characters.bundled` from this very list — so `b:<name>` is what the
+  // index will call each of them, and hand-typing it beside the name would be the same fact twice.
+  .map((e) => ({ id: bundledRowId(e.name), ...e }));
 
 /** The ORACLE pool's bundled member — the operator backdrop, addressed by the stem its file already
  *  has. It used to be deliberately empty: the backdrop was scene art no pin named, so it lived on the
@@ -306,12 +328,9 @@ export function activePool(rows: readonly LibraryRow[]): ActiveArt {
  *  hid the pool's real active image behind a claim the surface does not make. The WIRING
  *  (`useMediaLibrary`), the one place holding both roles, resolves the seat and either blanks these
  *  ids behind the pointer or drops the claim. */
-export function activeOraclePool(
-  rows: readonly LibraryRow[],
-  slots: Readonly<Record<string, string>>,
-): ActiveArt {
+export function activeOraclePool(rows: readonly LibraryRow[], slots: SlotPins): ActiveArt {
   const pool = activePool(rows);
-  if (slotEntryName(slots, "oracle") !== undefined) {
+  if (slotPin(slots, "oracle") !== null) {
     return { ...pool, overriddenBySlot: "oracle" };
   }
   return pool;
@@ -322,29 +341,26 @@ export function activeOraclePool(
  *  nothing, exactly as the ladder falls through.
  *
  *  **The rule is the PAINT's rule, verbatim** (the W6 confirm round's catch): what a pin paints is
- *  `slotEntry` → `toWideArt` — the first name-match in the DEALT tier, and nothing when that match is
- *  unusable. This resolver used to skip unusable namesakes and search the raw rows, which told two
- *  lies the paint never told: it marked a LATER usable namesake active while the surface fell through
- *  the ladder on the first one, and it marked a HIDDEN row's pin active while the dealt tier — which
- *  is what `rosterFromIndex` builds `entries` from — excluded it entirely. One rule now, three
+ *  `slotEntry` → `toWideArt` — the pinned IDENTITY looked up in the DEALT tier, and nothing when what
+ *  it finds is unusable. This resolver used to skip unusable namesakes and search the raw rows, which
+ *  told two lies the paint never told: it marked a LATER usable namesake active while the surface fell
+ *  through the ladder on the first one, and it marked a HIDDEN row's pin active while the dealt tier —
+ *  which is what `rosterFromIndex` builds `entries` from — excluded it entirely. One rule now, three
  *  readers: this resolver, the paint ladder, and the send-time pin check (`useMediaLibrary`), which
  *  is why "Use here" can only write what BOTH the gallery and the surface will honour.
+ *
+ *  Since "W9" that rule is an IDENTITY match rather than a first-name-match: the pin persists
+ *  `{name}`/`{bundled}`, so there is exactly one row it can mean and no namesake to lose to. The
+ *  "first match" wording is gone from all three readers with it.
  *
  *  (It also took a chain of FALLBACK pin keys until 2026-08-26 — the hero slide following the fleet
  *  backdrop's pin. That seat died with the W5 ruling and the parameter went with it.) */
 export function activeSeat(slot: string) {
-  return (rows: readonly LibraryRow[], slots: Readonly<Record<string, string>>): ActiveArt => {
-    const name = slotEntryName(slots, slot);
-    const row = name === undefined ? undefined : ladderRows(rows).find((r) => r.name === name);
+  return (rows: readonly LibraryRow[], slots: SlotPins): ActiveArt => {
+    const id = slotPin(slots, slot);
+    const row = id === null ? undefined : ladderRows(rows).find((r) => rowId(r) === id);
     return { ids: row === undefined || row.unusable ? [] : [rowId(row)], mode: "first" };
   };
-}
-
-/** A pin's value, or `undefined` for unset/blank — the one place the empty-string case is handled, so
- *  a cleared pin can never read as a pin on an entry called "". */
-function slotEntryName(slots: Readonly<Record<string, string>>, key: string): string | undefined {
-  const value = slots?.[key];
-  return typeof value === "string" && value !== "" ? value : undefined;
 }
 
 /** Build the live roster from the media index (§5.4) — the ONE adapter between the endpoint and the
@@ -414,9 +430,12 @@ const BUNDLED_BY_ID = new Map(BUNDLED_ENTRIES.map((e) => [e.name, e]));
  *  reach a surface. */
 function toEntry(f: MediaFile): RosterEntry {
   if (f.bundled != null)
-    return BUNDLED_BY_ID.get(f.bundled) ?? { name: f.bundled, image: "", unusable: true };
+    return (
+      BUNDLED_BY_ID.get(f.bundled) ?? { id: rowId(f), name: f.bundled, image: "", unusable: true }
+    );
   const focus = artFocal(f);
   return {
+    id: rowId(f),
     name: f.name,
     image: revUrl(f.url, f.revision),
     ...(focus !== undefined && { focus }),
@@ -476,11 +495,14 @@ export function wideArtForHost(roster: Roster, index: number): ResolvedArt | nul
 
 /** The entry a `slots` pin names, or `undefined` when the slot is unpinned OR names an entry that no longer
  *  exists (a deleted/renamed character). A dangling pin must degrade to the slot's default, never crash and
- *  never blank the surface (§5.3). */
+ *  never blank the surface (§5.3).
+ *
+ *  By IDENTITY since "W9" — `entries` is built from the dealt tier and each entry carries the id it came
+ *  from, so this is the same lookup `activeSeat` makes over the same tier. That is what keeps the
+ *  gallery's ring and the surface's paint one answer. */
 export function slotEntry(roster: Roster, slot: keyof RosterSlots): RosterEntry | undefined {
-  const name = roster.slots[slot];
-  if (name === undefined) return undefined;
-  return roster.entries.find((e) => e.name === name);
+  const id = slotPin(roster.slots, slot);
+  return id === null ? undefined : roster.entries.find((e) => e.id === id);
 }
 
 /** Landscape art for a wide-consuming slot: the entry's `wide` variant when it has one, else its `image`
