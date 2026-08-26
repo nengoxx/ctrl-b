@@ -46,27 +46,74 @@
   PASSING: scene slides dropped their focal points entirely. Review: main-seat audit clean →
   Emma-lane blind round **SHIP, ZERO findings**. Gate green (BE 1,991 · FE 2,552). Full record =
   MEDIA_MANAGER_PLAN §12 W5. Dev backend restarted onto the new registry; :5173 serves it.
-- **Origin unchanged (`fef36aa`) — 53 commits unpushed with the docs commit carrying this block**
-  (the 48 below + `15b769f` + W5's docs + the `cf2e05f` order correction + `ac0a07d` tracking the
-  gacha prototypes + this count fix). Prod untouched (v1.7.6 @ `6a2ccaa`).
-  Dev units RUNNING; the dev backend was restarted onto the new registry (FE rides Vite HMR); the
-  owner's dev config/media untouched by the wave.
+- **W6 FOLLOWED THE SAME AFTERNOON (owner feel-talk rulings, prose; D66 = the D-entry): ORDER IS
+  THE ONLY PRIORITY SYSTEM, APP-WIDE + the gallery redesign.** The owner: "we don't need two
+  systems to do one thing" · one-tap activation on the tile · the ◆ marker → "Default" · "icons
+  on top of the image" for the detail · the section CARDS' titles/hints confusing. Built as two
+  Opus commits from a pinned brief (`bf0dc41` the sweep · `a5b7816` the redesign + BOTH copy
+  passes): every POOL pin deleted (gacha `reel_figure` · frontier `hero` · kit
+  `background`/`brand`; no config ever held one — verified), `MediaCaps.activate` → `promote`
+  (move-to-top for scoped key/family sections), the two gacha character SEATS = the sole
+  survivors ("Use here"; the oracle seat relabelled **"Operator character"**); the tile corner ✓
+  = a real In-use toggle (sibling button, aria-pressed, drag-proof), ◆ → a **"Default"** chip,
+  winner keeps the accent outline; ItemDetail rebuilt IMAGE-FORWARD with the floating action pill
+  ([To top · Up · Down · To bottom | Framing | Delete] — To top IS activation); **every section
+  card got an owner-facing label** (`MediaRoleDef.label`: Characters · Banner slides · Transition
+  figure · Operator backdrop · Rig cards · Map cover · Comms stack · Service icons · Machine
+  pictures · Background · **Logo**, was "App icon") with the role folder as a mono subtitle; the
+  one-word-one-meaning copy system (In use = membership · Active = painted · Default = ships;
+  `used for "X"`; consequences on advisories). Main-seat audit ACCEPTED the builder's two
+  judgment calls (promote; seats refuse-not-repair) + a live 390px screenshot round on dev
+  verified the two unverified layout spots. **Review: three rounds to an explicit RESOLVED** —
+  blind SHIP WITH FIXES (2 MED: pin resolution vs presence · captured-state double-tap) → fixed
+  `4eaaea4` (send-time name resolution; `toggleHidden` composes) → confirm chained 1 MED and the
+  main seat OVERRULED her prescription with the PAINT rule (`activeSeat` was the liar; aligned
+  `74872ed`) → her check CONFIRMED the overrule + chained `activeOraclePool` (override honoured
+  on pin PRESENCE) → closed `b241d33` (override = a CLAIM the wiring honours only when the seat
+  resolves) → **final RESOLVED, zero new**. Gate green per commit (tip BE 1,990 · FE 2,559; the
+  whole e2e 305 re-run green at the build). Doc truth riders: lucide-react is NOT a dep
+  (CLAUDE/AGENTS corrected) · the prototypes are TRACKED (`ac0a07d`, owner reversal) · Phase 19
+  §7b now carries the owner-requested WHOLE-SYSTEM design verdict on the media manager
+  (`6f5fe52`). Full record = MEDIA_MANAGER_PLAN §12 W6.
+- **Origin unchanged (`fef36aa`) — 60 commits unpushed with the docs commit carrying this block**
+  (the 53 through the W5 close + W6's `bf0dc41`/`a5b7816` + `6f5fe52` + the three review-fix
+  commits + this one). Prod untouched (v1.7.6 @ `6a2ccaa`).
+  Dev units RUNNING; the dev backend was restarted onto the W6 registry (FE rides Vite HMR); the
+  owner's dev config/media untouched by the waves.
 
-## ▶▶ NEXT (2026-08-26): the owner re-pokes → the push ruling → S6 proper → release
+## ▶▶ NEXT (2026-08-26, post-W6): the owner re-pokes → the push ruling → S6 proper (THE ONE SLICE LEFT) → release
 
-1. **Owner re-poke on dev (:5173):** drag anywhere lands where dropped (all-defaults sections
-   included, both directions) · gacha library now shows oracle + rook · cosmos service-banners
-   "Built-in rotation" · Restore defaults · **the W5 behavior**: the carousel opens on the banner
-   pool's FIRST image wearing the PICKUP copy (`banner.webp` on defaults — the shipped look is
-   unchanged; drag any image to the top to change the opener), `banner.webp` sits in the Pickup
-   banner gallery as an ordinary entry, the "Hero slide" seat is gone,
-   hiding banner images leaves slide 1 on the backdrop image, and a kit background moves ONLY the
-   backdrop · and the one flagged consequence to feel out: first reorder in a section holding BOTH
-   uploads and defaults promotes the defaults into the deal. The set-active-feels-confusing note
-   stays parked for a feel talk after this round (recorded 2026-08-25).
-2. **The PUSH ruling** (owner's word) — 53 commits, origin `fef36aa`.
-3. **S6 proper** (plan §16) and **4. Release** — unchanged from the block below (1.7.x · rollback
-   v1.7.6 · config_version 1→2 rides the batch · LOCAL e2e before the tag).
+1. **Owner re-poke on dev (:5173)** — everything below is live there now:
+   - **The W1–W4 wave**: drag lands where dropped (all-defaults sections, both directions) · gacha
+     library shows oracle + rook · cosmos "Built-in rotation" · Restore defaults · the flagged
+     consequence: first reorder in a MIXED section promotes defaults into the deal.
+   - **W5**: the carousel opens on the banner pool's FIRST image wearing the PICKUP copy
+     (`banner.webp` on defaults — the shipped look unchanged); `banner.webp` is an ordinary Pickup
+     banner entry; hiding all banner images leaves slide 1 on the backdrop image; a kit background
+     moves ONLY the backdrop.
+   - **W6 (the owner's own feel-talk, built)**: section cards wear the new names + folder
+     subtitles ("Operator character" vs "Operator backdrop"; "Logo") · the tile corner ✓ is the
+     one-tap In-use toggle, the "Default" chip marks shipped art, the accent outline marks the
+     ACTIVE winner · tapping an image opens the image-forward detail with the floating pill —
+     "To top" is how you make something the active one, there is NO "Set as active" anywhere ·
+     the kit Background/Logo and gacha Transition-figure galleries have no pin: top image wins.
+     (The set-active-feels-confusing note of 2026-08-25 is thereby CLOSED — W6 was that talk.)
+2. **The PUSH ruling** (owner's word) — 60 commits, origin `fef36aa`.
+3. **S6 proper — THE ONE REMAINING SLICE of Phase 21** (plan **§16** = the probe list; the owner's
+   words 2026-08-26: "we still have one slice left to do, the eyeball and everything"): the
+   phone-in-hand device round over Tailscale HTTPS — EXIF portrait on the phone's own photo · the
+   48 MP double-decode timing · HEIC refusal copy · 413-mid-body · PWA-standalone picker survival ·
+   q0.85 eyeball · crop/framing/drag FEEL (long-press · drag-vs-scroll · one-handed autoscroll ·
+   reticle · preview honesty · per-window framing on the real cast) · Fennec expected-partials ·
+   Back-gesture close — PLUS the W6 surfaces on a real thumb (the corner toggle's 28px target
+   beside the long-press drag · the pill's reach one-handed · the new section names reading right).
+   Tick off whatever the owner's ad-hoc rounds already proved.
+4. **Release** once S6 satisfies — 1.7.x (1.8 stays RESERVED) · runbook §Release, Opus-operated ·
+   the batch carries config_version 1→2 (config-pure, proven on dev), NO DB migration · rollback =
+   v1.7.6 · the LOCAL e2e run before the tag is MANDATORY (the stale-pin class burned three tags).
+5. **After the phase**: the 2026-08-22 menu below still governs (Phase 19 court — §7b now carries
+   the owner-requested whole-system media-manager design verdict — · the A13 talk · the parked
+   ledger).
 
 ## Prior state (2026-08-25 — THE MEDIA-MANAGER BUILD SESSION: S0→S5 ALL BUILT + REVIEW-CLOSED; superseded above where it speaks)
 

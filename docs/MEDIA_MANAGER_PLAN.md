@@ -951,6 +951,67 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > (sol high, `--ignore-rules`) SHIP, ZERO findings, open sweep empty.** Gate green per commit
 > (BE 1,991 · FE 2,552). Docs amended with this ruling: D54 · MEDIA_PLAN §12 · GACHA_PLAN
 > (roster example + §6.4).
+>
+> **W6 — order is the only priority + the gallery redesign (owner rulings 2026-08-26, prose;
+> D66 = the D-entry; built same day, `bf0dc41` + `a5b7816`).** The owner's feel talk on the
+> gallery's controls, run to its end: "the active toggle and the active button are confusing…
+> we don't need two systems to do one thing" · order decides app-wide · one-tap activation on
+> the tile · the ◆ marker "should be more explicit — let's go with Default" · the detail's
+> controls "look generic — icons on top of the image" · the section descriptions confusing
+> (a second clarification: the CARDS' titles/hints, not just per-image text).
+>
+> Commit 1, the sweep: `MediaCaps.activate` dies; every POOL pin deleted (gacha `reel_figure` ·
+> frontier `hero` · kit `background`/`brand` — four ladder spots in `themes/frontier/ownerArt`,
+> `theme-engine/kit/ownerArt` ×2 constants + 2 resolvers) with `firstUsable`'s pin parameter and
+> the S2 three-valued eligibility machinery; seats REFUSE what their source tier cannot honour
+> rather than repairing it. Backend `FRONTIER_SLOTS`/`KIT_SLOTS` = (), `GACHA_SLOTS` =
+> (wallpaper, oracle). Builder judgment calls, main-seat-ACCEPTED: **`MediaCaps.promote`**
+> (move-to-top alone) for the scoped KEY/FAMILY sections that deliberately cannot reorder — the
+> duplicate tie-break stays settleable and promote is an order write, not a second system · the
+> seat-refuses reading (the lost un-hide-on-pin repair was reachable only through a stale cache).
+>
+> Commit 2, the redesign + the words: the tile corner ✓ is a real In-use toggle (a SIBLING of
+> the tile button — no nested buttons; `aria-pressed`; a press on it can never lift the tile,
+> pinned by test) · ◆ → a "Default" text chip · the winner keeps the accent outline · ItemDetail
+> rebuilt image-forward (R59's AOSP/Signal preview pattern + the field's floating-toolbar shape):
+> the picture is the panel, back floats on a scrim, and a floating pill carries [To top · Up ·
+> Down · To bottom | Framing | Delete] — "To top" IS activation now, so the verb and the reorder
+> are one button; seats show "Use here"/"Clear" instead of the position cluster; icons are
+> hand-inlined lucide geometry per the house pattern (lucide-react is NOT a dep — the CLAUDE.md
+> claim is wrong). The copy system: In use = membership · Active = painted (chip + outline) ·
+> Default = ships with the app; `used for "X"`/`matched by its filename` replace "bound by";
+> advisories state consequences; the SR line and every "Set as active" sentence rewritten.
+> **Section cards get owner-facing labels** (`MediaRoleDef.label`, additive) with the role
+> folder as a mono subtitle: Characters · Banner slides · Transition figure · Operator backdrop ·
+> Rig cards · Map cover · Comms stack · Service icons · Service banners · Machine pictures ·
+> Background · Logo (was the misleading "App icon") — and the operator name-clash is resolved
+> (the SEAT is now "Operator character"). Hints rewritten to lead with what the thing is.
+>
+> Verification: full gate green per commit (BE 1,990 · FE 2,553 · the whole Playwright suite
+> re-run, 305) · main-seat audit of both judgment calls + a live 390px screenshot round on the
+> dev stack (grid, chips, corners, the pill's overhang — the two layout spots the builder could
+> not eyeball, both sound).
+>
+> **W6 review close-out (2026-08-26, three rounds to an explicit RESOLVED).** Emma-lane blind
+> round (sol high, `--ignore-rules`): **SHIP WITH FIXES, 2 MED**, everything else sound at
+> mechanism level (scoped promote · corner/drag isolation · resolver parity · e2e honesty; 335
+> tests run by the reviewer). ① the seat's send-time check proved presence, not RESOLUTION — the
+> §2.3 stem/id collision let "Use here" write a pin that bound the EARLIER namesake; ② both
+> In-use controls captured the RENDERED hidden, so a rapid double-tap enqueued the same absolute
+> write twice. Fixed `4eaaea4` (main-seat, small): the pin check resolves the name through the
+> dealt tier's own rule and refuses on mismatch or unusable (stash-verified arm); `toggleHidden`
+> derives the target at SEND so queued toggles COMPOSE — one intent, both controls. **Confirm
+> round: both RESOLVED + 1 chained MED**, and the main seat OVERRULED her prescription with the
+> paint rule: she read the check as stricter than `activeSeat` (which skipped unusable
+> namesakes), but the truth of a seat is what `slotEntry`→`toWideArt` PAINTS — first name-match
+> of the dealt tier, nothing if unusable — so it was `activeSeat` lying (hidden-row pins too);
+> aligned to the paint rule in `74872ed`, two paint-parity arms. **Her check of the overrule
+> CONFIRMED it correct** and chained one deeper (the same class in `activeOraclePool`: overridden
+> on the pin's mere PRESENCE while the paint falls through an unresolvable pin to the pool) —
+> closed `b241d33` at the honest layer: the pure resolver emits the override as a CLAIM beside
+> the pool's own pick, and the WIRING — the one place holding both roles — resolves the seat and
+> honours or drops it. **Final round: RESOLVED, (a)(b) verified, ZERO new findings** (181 tests
+> run by the reviewer). Gate green per commit; tip = BE 1,990 · FE 2,559.
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 

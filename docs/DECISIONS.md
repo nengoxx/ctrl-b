@@ -4290,7 +4290,8 @@ backdrop and not the carousel. The PIN survives on
 purpose: binding a character to the backdrop is theme-specific and the kit has no equivalent, while
 "a big picture behind the app" is one idea that deserves one folder. `GACHA_SLOTS` keeps `wallpaper`
 with its role folder gone, which is an ordinary shape — a pin key is validated against `row.slots`
-and never against `row.roles`, and `reel_figure` has always sourced from a different role. A CLEAN
+and never against `row.roles`, and `reel_figure` (retired at D66 with every other pool pin — order
+is the only priority now) always sourced from a different role. A CLEAN
 removal: no compat rung, no migration, no legacy branch (media v2 never shipped to prod, so there is
 no owner data on disk — the no-legacy-seams rule).
 
@@ -4771,3 +4772,34 @@ or re-encode · server thumbnails · multipart or POST uploads · server revisio
 writes (client serialization at the chokepoint instead; the two-devices-at-once lost update is an
 **accepted residual**) · a server manifest for migration parity · per-destination crop overrides ·
 region hotspots · v1 Replace/overwrite machinery · dnd-kit.
+
+## D66 — Order is the ONLY priority: every pool pin retired; the two character seats are the sole survivors ✏️ RULED 2026-08-26 (owner, in conversation — "the order should be the only thing that sets which is in use and which is active… we don't need two systems to do one thing"; build record = MEDIA_MANAGER_PLAN §12 "W6"; the same session's earlier "W5" retired the gacha hero seat)
+
+**The ruling.** A media destination's winner is decided by its LIBRARY ORDER and nothing else:
+the first in-use, usable entry is the one painted. The explicit "Set as active" verb and every
+POOL pin — an override sitting above a first-wins order — are retired app-wide: gacha
+`reel_figure`, frontier `hero`, kit `background` and `brand`. "Make this the active one" IS
+"move it to the top", one system, one mental model. The gallery says it with one vocabulary:
+**In use** = membership (the tile-corner toggle + the detail switch), **Active** = the painted
+winner (accent outline + chip), **Default** = ships with the app.
+
+**The exception, and why it is one.** gacha's two SEATS (`wallpaper` — the fleet backdrop —
+and `oracle`, relabelled "Operator character") bind an entry of ANOTHER role's library into a
+surface; no order anywhere can express that, so each keeps its single "Use here" pin. Seats are
+views: they REFUSE a pin their source role's tier cannot honour rather than silently editing
+that role's library (the S2 eligibility-repair machinery is deleted with the pins).
+
+**What made the pins removable now:** they predate the library model. `reel_figure`'s lock-time
+justification (D52/Codex F4 — "the bundled option needs a name that survives cast replacement")
+died when D65 made bundled entries first-class, orderable library rows; the kit and frontier
+pins were pure first-wins overrides from birth. No config on disk ever held any of them
+(verified on both real configs); a hand-authored leftover is an unknown slot key the validator
+refuses at load, loudly (the W5/G6.3 clean-removal precedent — no compat rung).
+
+**Riders:** `MediaCaps.activate` is replaced by `promote` (move-to-top alone) for the scoped
+KEY/FAMILY sections that deliberately cannot reorder — the duplicate tie-break must stay
+settleable, and promote is an order write, not a second system. `MediaRoleDef.label` gives
+section cards owner-facing names with the role folder as a mono subtitle (the SSH contract
+stays visible). Amends: D65 (the gallery's selection model) · D54 (kit pins) · D53 M2
+(frontier hero pin) · D52 §5.2 (reel pin). Phase 19's §7b carries the owner-requested
+whole-system design verdict over the result.

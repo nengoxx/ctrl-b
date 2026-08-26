@@ -139,8 +139,9 @@ two don't drift — when project facts change, **update `AGENTS.md`, not this fi
 ## When asked to improve the dashboard
 
 Default to this repo and follow the doc map above — `HANDOFF` → `ROADMAP` → `DECISIONS` →
-`DESIGN`/`ARCHITECTURE` → `TODO`. The shape: mobile-first React + TS + Vite **PWA** (TanStack Query,
-lucide-react), themed via the theme engine (`VAPOR_PATTERNS.md` governs net-new UI); **FastAPI +
+`DESIGN`/`ARCHITECTURE` → `TODO`. The shape: mobile-first React + TS + Vite **PWA** (TanStack Query;
+icons = hand-inlined lucide geometry, the package is NOT a dep — AGENTS.md), themed via the theme
+engine (`VAPOR_PATTERNS.md` governs net-new UI); **FastAPI +
 Uvicorn** backend; **typed-action registry** as the primary execution path plus a guarded `!`
 local-shell escape hatch (Phase 5, **built**; both `shell.*_exec_enabled` toggles default **OFF** —
 the user `!` path and the agent's `run_shell` alike, enable via Conf; open-terminal provides *remote*

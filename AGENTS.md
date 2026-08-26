@@ -134,7 +134,9 @@ per-OS shell · `core/fsutil._fsync_dir` no-op · `tools/check.py`), pinned by `
 ## 5. Frontend architecture
 
 Mobile-first **React + TS + Vite** PWA. TanStack Query for fleet polling + action mutations;
-lucide-react icons; a token-driven **theme-engine** (Swappable Surfaces, DECISIONS D31 —
+icons are hand-inlined lucide GEOMETRY (`lucide-react` was removed as a dead dep — UI_AUDIT F7;
+copy paths from lucide.dev into a local `icons.tsx`, never re-add the package); a token-driven
+**theme-engine** (Swappable Surfaces, DECISIONS D31 —
 `docs/THEME_ENGINE.md`; cosmos default, per-theme fidelity D7, theme build records in their plan
 docs). Layers: `store/` (dep-free createStore) · `hooks/` ·
 `components/`/`tabs/` · `lib/`. Bottom-tab nav (Fleet/Agent/Utils/Conf), per-host service rows, a shared
