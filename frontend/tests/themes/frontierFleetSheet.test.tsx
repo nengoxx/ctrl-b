@@ -77,7 +77,7 @@ const painted = (name: string) => `${ownerFile(name).url}?rev=1%3A10`;
 
 const mediaIndex = (
   roles: Record<string, MediaFile[]>,
-  slots: Record<string, string> = {},
+  slots: MediaIndex["slots"] = {},
 ): MediaIndex => ({
   ns: "frontier",
   collation: "library-v1",

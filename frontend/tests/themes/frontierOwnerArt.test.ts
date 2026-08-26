@@ -50,7 +50,7 @@ const painted = (name: string, over: Partial<MediaFile> = {}) => {
   return `${f.url}?rev=${encodeURIComponent(f.revision)}`;
 };
 
-const index = (roles: Partial<Record<string, MediaFile[]>>, slots: Record<string, string> = {}) =>
+const index = (roles: Partial<Record<string, MediaFile[]>>, slots: MediaIndex["slots"] = {}) =>
   ({
     ns: "frontier",
     collation: "library-v1",
@@ -141,7 +141,9 @@ describe("hero — a first-wins pool (the kit-background shape)", () => {
     // whichever image the owner moved to the top of that gallery. `FRONTIER_SLOTS` is empty on the
     // server side, so such a value is refused at LOAD rather than honoured here — this arm pins that
     // the resolver would ignore it even if one arrived.
-    const art = frontierArtFromIndex(index({ hero: [file("one"), file("two")] }, { hero: "two" }));
+    const art = frontierArtFromIndex(
+      index({ hero: [file("one"), file("two")] }, { hero: { name: "two.webp" } }),
+    );
     expect(art.hero).toBe(painted("one"));
     const moved = frontierArtFromIndex(index({ hero: [file("two"), file("one")] }));
     expect(moved.hero).toBe(painted("two"));

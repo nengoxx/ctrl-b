@@ -692,7 +692,7 @@ describe("the §2.4 active resolvers are PURE in the index (§11's purity arm)",
       (s) => s.id === "gacha:oracle",
     );
     expect(pool?.active?.([row("eye.webp")], {})?.ids).toEqual(["f:eye.webp"]);
-    const beaten = pool?.active?.([row("eye.webp")], { oracle: "kira" });
+    const beaten = pool?.active?.([row("eye.webp")], { oracle: { name: "kira.webp" } });
     expect(beaten?.ids).toEqual(["f:eye.webp"]);
     expect(beaten?.overriddenBySlot).toBe("oracle");
   });

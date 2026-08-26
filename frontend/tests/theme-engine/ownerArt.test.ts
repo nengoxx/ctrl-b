@@ -74,7 +74,7 @@ const file = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
   ...over,
 });
 
-const index = (roles: Partial<Record<string, MediaFile[]>>, slots: Record<string, string> = {}) =>
+const index = (roles: Partial<Record<string, MediaFile[]>>, slots: MediaIndex["slots"] = {}) =>
   ({
     ns: "kit",
     collation: "library-v1",
@@ -185,7 +185,8 @@ describe("backgroundArtFrom — the shared background's first-wins pool", () => 
     const b = file("b");
     expect(backgroundArtFrom(index({ background: [b, file("a")] }))).toBe(b);
     expect(
-      backgroundArtFrom(index({ background: [file("a"), b] }, { background: "b" }))?.name,
+      backgroundArtFrom(index({ background: [file("a"), b] }, { background: { name: "b.png" } }))
+        ?.name,
     ).toBe("a");
   });
 
@@ -223,7 +224,10 @@ describe("brandArtFrom — the app bar's mark, on the SAME first-wins pool (G6.3
   it("is INDEPENDENT of the background — two pools, two pins, no leakage either way", () => {
     const bg = file("wall");
     const mark = file("logo");
-    const idx = index({ background: [bg], brand: [mark] }, { background: "wall", brand: "logo" });
+    const idx = index(
+      { background: [bg], brand: [mark] },
+      { background: { name: "wall.png" }, brand: { name: "logo.png" } },
+    );
     expect(backgroundArtFrom(idx)).toBe(bg);
     expect(brandArtFrom(idx)).toBe(mark);
   });

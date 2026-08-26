@@ -264,7 +264,7 @@ describe("the entry cards (§6.1)", () => {
           reel: [],
           oracle: [file("eye", "oracle")],
         },
-        slots: { oracle: "kira" },
+        slots: { oracle: { name: "kira.webp" } },
       }),
     );
     const card = await screen.findByRole("button", { name: "Open the Operator backdrop gallery" });
@@ -288,7 +288,7 @@ describe("the entry cards (§6.1)", () => {
           reel: [],
           oracle: [file("eye", "oracle")],
         },
-        slots: { oracle: "ghost" }, // dangling — no such character
+        slots: { oracle: { name: "ghost.webp" } }, // dangling — no such character
       }),
     );
     const card = await screen.findByRole("button", { name: "Open the Operator backdrop gallery" });
@@ -325,7 +325,7 @@ describe("the entry cards (§6.1)", () => {
           reel: [],
           oracle: [],
         },
-        slots: { wallpaper: "nova" },
+        slots: { wallpaper: { name: "nova.webp" } },
       }),
     );
     const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
@@ -364,7 +364,7 @@ describe("the entry cards (§6.1)", () => {
           reel: [],
           oracle: [],
         },
-        slots: { wallpaper: "kira" },
+        slots: { wallpaper: { name: "kira.webp" } },
       }),
     );
     const dialog = await openSection("Fleet backdrop");
@@ -975,7 +975,8 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     openItem(dialog, "b.webp");
     fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
-    expect(savedBlock()).toEqual({ slots: { wallpaper: "b" } });
+    // The IDENTITY, not the display name ("W9"): the owner's own file goes in by FILENAME.
+    expect(savedBlock()).toEqual({ slots: { wallpaper: { name: "b.webp" } } });
   });
 
   it("…and on the reel — which used to write a PIN instead — it is an ordinary order write", async () => {
@@ -1001,7 +1002,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
   });
 
   it("a pinned entry offers to CLEAR the pin instead of setting it again", async () => {
-    renderGallery(index({ slots: { wallpaper: "b" } }));
+    renderGallery(index({ slots: { wallpaper: { name: "b.webp" } } }));
     const dialog = await openSection("Fleet backdrop");
     openItem(dialog, "b.webp");
     expect(within(dialog).queryByRole("button", { name: "Use here" })).toBeNull();
@@ -1012,7 +1013,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
   });
 
   it("a DANGLING pin can be cleared even though no tile holds it", async () => {
-    renderGallery(index({ slots: { wallpaper: "deleted" } }));
+    renderGallery(index({ slots: { wallpaper: { name: "deleted.webp" } } }));
     const dialog = await openSection("Fleet backdrop");
     expect(within(dialog).getByText(/is missing/).textContent).toContain("deleted");
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear it" }));
@@ -1116,7 +1117,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
   });
 
   it("a SEAT offers no restore — clearing its pin IS the restore", async () => {
-    renderGallery(index({ slots: { wallpaper: "a" } }));
+    renderGallery(index({ slots: { wallpaper: { name: "a.webp" } } }));
     const dialog = await openSection("Fleet backdrop");
     expect(within(dialog).queryByRole("button", { name: "Restore defaults" })).toBeNull();
   });
@@ -1270,7 +1271,7 @@ describe("the item detail's action pill, per section kind", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     cleanup();
     // …and on the entry it already names, that one control is the way back out.
-    renderGallery(index({ slots: { wallpaper: "b" } }));
+    renderGallery(index({ slots: { wallpaper: { name: "b.webp" } } }));
     dialog = await openSection("Fleet backdrop");
     openItem(dialog, "b.webp");
     expect(labels(dialog)).toEqual(["Clear"]);
@@ -1595,7 +1596,8 @@ describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W
     openItem(dialog, "atlas (default)");
     fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
-    expect(savedBlock()).toEqual({ slots: { wallpaper: "atlas" } });
+    // …and a BUNDLED row goes in by its registry id — the other arm of the same union.
+    expect(savedBlock()).toEqual({ slots: { wallpaper: { bundled: "atlas" } } });
   });
 });
 
@@ -1604,7 +1606,7 @@ describe("what the card CLAIMS is what the resolver answers (review #3)", () => 
     // `wallpaper: deleted` resolves to nothing: the backdrop has already fallen through to the kit
     // picture or the bundled scene. Saying "deleted in use" named a picture nobody can see, beside a
     // warning chip saying that same picture is missing.
-    renderGallery(index({ slots: { wallpaper: "deleted" } }));
+    renderGallery(index({ slots: { wallpaper: { name: "deleted.webp" } } }));
     const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
     expect(card.textContent).not.toContain("deleted is bound here");
     expect(card.textContent).toContain("the bound image is gone — a fallback is used");
@@ -1614,20 +1616,21 @@ describe("what the card CLAIMS is what the resolver answers (review #3)", () => 
   it("…and a resolved seat names the row the RESOLVER picked", async () => {
     // The other half of the same rule: with the pin resolving, the card names the row it resolved TO —
     // it never restates the raw pin value, which is what let a dangling one read as "in use".
-    renderGallery(index({ slots: { wallpaper: "b" } }));
+    renderGallery(index({ slots: { wallpaper: { name: "b.webp" } } }));
     const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
     expect(card.textContent).toContain("b is bound here");
   });
 });
 
-describe("the stem/id pin collision note (review #6, §2.3's owed sentence)", () => {
-  it("a file stem and a bundled id that answer to ONE pin value are called out, with the tie-break", async () => {
-    // The `f:`/`b:` identities stay separate — they are two library entries — but a pin VALUE is a bare
-    // name and reaches whichever the collation lists first. That ambiguity is invisible from the grid.
+describe('the stem/id pin collision, DELETED (the 2026-08-26 owner ruling, "W9")', () => {
+  it("a file and a bundled id of the same name are two pins — no ambiguity to warn about", async () => {
+    // It used to be a "duplicate name" note with a tie-break sentence: the `f:`/`b:` identities were
+    // already two library entries, but a pin VALUE was a bare name and reached whichever the collation
+    // listed first, so the gallery owed the owner a warning it could only answer by reordering.
     //
-    // A SEAT is where it lives since "W6": seats are the only sections that write a pin at all. A seat
-    // shows the tier its source ladder DEALS, so both entries are on screen together exactly when the
-    // owner has LISTED the bundled one beside their own file.
+    // A pin names the identity union now, so each entry is reachable in its own right and neither can
+    // shadow the other. The note is gone because the collision is — the apparatus that made an
+    // unrepresentable state merely VISIBLE goes with the state.
     renderGallery(
       index({
         roles: {
@@ -1643,13 +1646,34 @@ describe("the stem/id pin collision note (review #6, §2.3's owed sentence)", ()
       }),
     );
     const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
-    expect(card.textContent).toContain("duplicate names");
-    const dialog = await openSection("Fleet backdrop");
+    expect(card.textContent).not.toContain("duplicate names");
+    let dialog = await openSection("Fleet backdrop");
     openItem(dialog, "lyra (default)");
-    expect(within(dialog).getByText("duplicate name")).toBeTruthy();
-    expect(within(dialog).getByText(/answer to/).textContent).toContain(
-      "The one higher in the list wins — move this one to the top to use it.",
+    expect(within(dialog).queryByText("duplicate name")).toBeNull();
+    // …and it binds by its ID, while the owner's own file of the same name binds by its FILENAME.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedBlock()).toEqual({ slots: { wallpaper: { bundled: "lyra" } } });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    cleanup();
+    api.putJSON.mockClear();
+
+    renderGallery(
+      index({
+        roles: {
+          characters: [file("lyra", "characters"), bundledRow("lyra", { listed: true })],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
     );
+    dialog = await openSection("Fleet backdrop");
+    openItem(dialog, "lyra.webp");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedBlock()).toEqual({ slots: { wallpaper: { name: "lyra.webp" } } });
   });
 
   it("…and a role with no pin never invents one — its files bind by KEY, not by pin value", async () => {
@@ -1889,12 +1913,14 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     }
   });
 
-  it("a pin whose NAME resolves to an EARLIER namesake is REFUSED — presence is not resolution (W6 review #1)", async () => {
-    // The §2.3 stem/id collision, on the write path: a file `lyra.webp` (stem `lyra`) and the LISTED
-    // bundled id `lyra` are two library entries, but the pin persists a bare NAME and the seat's
-    // resolver takes the FIRST name-match in the dealt tier. Tapping "Use here" on the SECOND
-    // namesake used to write a pin that bound the first one — a different picture than the tap. The
-    // send-time check now resolves the name and refuses unless it lands on exactly the tapped row.
+  it('a pin on a namesake binds THAT namesake — the write no longer has to refuse it ("W9")', async () => {
+    // This arm used to pin a REFUSAL. A file `lyra.webp` (stem `lyra`) and the LISTED bundled id
+    // `lyra` are two library entries; the pin persisted a bare NAME and the seat resolved the FIRST
+    // name-match in the dealt tier, so tapping "Use here" on the second namesake would have written a
+    // pin that bound the first one. The send-time check resolved the name back and refused when it
+    // landed elsewhere — a correct answer to a question the shape should never have asked.
+    //
+    // The pin persists the identity now, so the tap has exactly one meaning and lands.
     const collided = index({
       roles: {
         characters: [
@@ -1911,9 +1937,14 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     const dialog = await openSection("Fleet backdrop");
     openItem(dialog, "lyra (default)"); // the BUNDLED namesake — the one the pin could NOT reach
     fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
-    await new Promise((r) => setTimeout(r, 20));
-    expect(api.putJSON).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    expect(savedBlock()).toEqual({ slots: { wallpaper: { bundled: "lyra" } } });
   });
+
+  // (The send-time refusal itself keeps its own arms above: a row the queue HID between the tap and
+  // the send, and a bundled row that left the dealt tier the same way. Those are what recompute-at-send
+  // is for, and they are untouched by "W9" — what went is the extra name-resolution the bare-stem pin
+  // needed on top of them.)
 
   it("a DELETE whose config cleanup fails reads as a partial success, not as a failed delete", async () => {
     // The bytes are already gone. "Save failed" here sends the owner looking for a file the server no

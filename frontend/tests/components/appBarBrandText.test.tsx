@@ -155,7 +155,7 @@ const brandFile = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
   ...over,
 });
 
-const brandIndex = (files: MediaFile[], slots: Record<string, string> = {}) =>
+const brandIndex = (files: MediaFile[], slots: MediaIndex["slots"] = {}) =>
   ({ ns: "kit", collation: "library-v1", roles: { brand: files }, slots }) as MediaIndex;
 
 const mark = (c: HTMLElement) => c.querySelector<HTMLElement>(".kit-brand-mark");
@@ -198,7 +198,7 @@ describe("KitAppBar brand MARK precedence (G6.3)", () => {
   it("takes the folder's FIRST file, and an UNUSABLE-only folder falls back to the old rungs", () => {
     // "W6" (owner ruling 2026-08-26): the `brand` pin is gone with every other pool pin, so the mark is
     // whichever image the owner put at the top of the Logo gallery.
-    media.data = brandIndex([brandFile("b"), brandFile("a")], { brand: "a" });
+    media.data = brandIndex([brandFile("b"), brandFile("a")], { brand: { name: "a.png" } });
     const first = render(<KitAppBar appbarMode="visible" />);
     expect(mark(first.container)!.style.getPropertyValue("--kit-brand-mask")).toContain(
       "/brand/b.png",

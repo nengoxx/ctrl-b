@@ -44,9 +44,15 @@ import {
 //        only priority system), and the fence they existed for is stronger without it: the pool IS
 //        `reel/`, so nothing outside that folder can reach the figure at all.
 
+/** A synthetic roster entry. Its `id` is the library identity it would have come from ("W9" — a pin
+ *  names that, never the display name), spelled to match the `file()` helper further down so an entry
+ *  built here and a row built there are the same picture. */
 function entry(name: string, extra: Partial<RosterEntry> = {}): RosterEntry {
-  return { name, image: `${name}.webp`, ...extra };
+  return { id: `f:${name}.webp`, name, image: `${name}.webp`, ...extra };
 }
+
+/** The PIN that names `entry(name)` / `file(name)` — the identity union, by filename ("W9"). */
+const pin = (name: string) => ({ name: `${name}.webp` });
 
 /** A roster with NO owner media (G5) — the state a fresh install is in and the state every ladder below
  *  must degrade to. The owner-supplied cases pass `over`.
@@ -154,8 +160,8 @@ describe("unusable entries hold their position", () => {
 
   it("an unusable entry cannot serve a slot — the slot falls back instead", () => {
     const r = roster([entry("a", { wide: "a-wide.webp", unusable: true }), entry("b")], {
-      wallpaper: "a",
-      oracle: "a",
+      wallpaper: pin("a"),
+      oracle: pin("a"),
     });
     expect(slotEntry(r, "wallpaper")?.name).toBe("a"); // it is still FOUND…
     expect(wallpaperArt(r)).toEqual({ url: ART.banner }); // …but not painted
@@ -212,18 +218,20 @@ describe("wideArtForHost — the promo crop of the SAME assignment", () => {
 
 describe("slots — pins, and what happens when a pin dangles", () => {
   it("resolves a pin to its entry", () => {
-    const r = roster([entry("a"), entry("b", { wide: "b-wide.webp" })], { wallpaper: "b" });
+    const r = roster([entry("a"), entry("b", { wide: "b-wide.webp" })], { wallpaper: pin("b") });
     expect(slotEntry(r, "wallpaper")?.name).toBe("b");
     expect(wallpaperArt(r)).toEqual({ url: "b-wide.webp" });
   });
 
   it("a wide-consuming slot on an entry WITHOUT a wide variant falls back to its image — never a hole", () => {
-    const r = roster([entry("a", { focus: proportionalFocal("50% 10%") })], { wallpaper: "a" });
+    const r = roster([entry("a", { focus: proportionalFocal("50% 10%") })], {
+      wallpaper: pin("a"),
+    });
     expect(wallpaperArt(r)).toEqual({ url: "a.webp", focus: proportionalFocal("50% 10%") });
   });
 
   it("a pin naming a MISSING entry (deleted/renamed) degrades to the default — never crashes", () => {
-    const r = roster([entry("a")], { wallpaper: "ghost", oracle: "ghost" });
+    const r = roster([entry("a")], { wallpaper: pin("ghost"), oracle: pin("ghost") });
     expect(slotEntry(r, "wallpaper")).toBeUndefined();
     expect(wallpaperArt(r)).toEqual({ url: ART.banner }); // the bundled scene art
     expect(oracleArt(r)).toMatchObject({ url: ART.oracle });
@@ -317,7 +325,7 @@ const painted = (name: string, over: Partial<MediaFile> = {}) => {
 
 const index = (
   roles: Record<string, MediaFile[]>,
-  slots: Record<string, string> = {},
+  slots: MediaIndex["slots"] = {},
 ): MediaIndex => ({
   ns: "gacha",
   collation: "library-v1",
@@ -545,19 +553,22 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
   it("a slots PIN still outranks the role folder (the owner binding a character into a role)", () => {
     // Read on the ORACLE ladder since G6.3: it is the surviving pin-over-folder pair (the backdrop's
     // folder is gone, and its own three rungs are pinned at the bottom of this file).
-    const withWide = index({ characters: [file("kira")], oracle: [file("w")] }, { oracle: "kira" });
+    const withWide = index(
+      { characters: [file("kira")], oracle: [file("w")] },
+      { oracle: pin("kira") },
+    );
     expect(oracleArt(rosterFromIndex(withWide))).toMatchObject({ url: painted("kira") });
     // …and a pin naming nothing on disk degrades to the folder rather than blanking the surface.
     const dangling = index(
       { characters: [file("kira")], oracle: [file("w")] },
-      { oracle: "ghost" },
+      { oracle: pin("ghost") },
     );
     expect(oracleArt(rosterFromIndex(dangling))).toMatchObject({ url: painted("w") });
   });
 
   it("owner characters carry no wide/cutout/focus — under the role rule the FOLDER is the assignment", () => {
     const r = rosterFromIndex(index({ characters: [file("kira")] }));
-    expect(r.entries[0]).toEqual({ name: "kira", image: painted("kira") });
+    expect(r.entries[0]).toEqual({ id: "f:kira.webp", name: "kira", image: painted("kira") });
     // …so a character can never become the reel figure just by existing — and replacing the CAST must
     // not cost the transition its figure either (the reel role falls back on its own).
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
@@ -670,12 +681,12 @@ describe("wallpaperArt — the three-rung fleet backdrop (G6.3)", () => {
 
   it("loses to the gacha PIN — binding a cast portrait is the half the theme kept", () => {
     const kit = kitFile("shared");
-    const pinned = roster([entry("a", { wide: "a-wide.webp" })], { wallpaper: "a" });
+    const pinned = roster([entry("a", { wide: "a-wide.webp" })], { wallpaper: pin("a") });
     expect(wallpaperArt(pinned, kit)).toEqual({ url: "a-wide.webp" });
     // …and the pin goes through the WIDE ladder, so a portrait with no landscape variant still crops
     // rather than being skipped.
     const noWide = roster([entry("a", { focus: proportionalFocal("50% 10%") })], {
-      wallpaper: "a",
+      wallpaper: pin("a"),
     });
     expect(wallpaperArt(noWide, kit)).toEqual({
       url: "a.webp",
@@ -700,13 +711,15 @@ describe("wallpaperArt — the three-rung fleet backdrop (G6.3)", () => {
 
   it("a DANGLING pin falls through to the kit picture, never to a hole", () => {
     const kit = kitFile("shared");
-    const r = roster([entry("a")], { wallpaper: "ghost" });
+    const r = roster([entry("a")], { wallpaper: pin("ghost") });
     expect(wallpaperArt(r, kit)).toEqual(kitRung(kit));
   });
 
   it("an UNUSABLE pinned entry falls through too (the pin is found, but not painted)", () => {
     const kit = kitFile("shared");
-    const r = roster([entry("a", { wide: "a-wide.webp", unusable: true })], { wallpaper: "a" });
+    const r = roster([entry("a", { wide: "a-wide.webp", unusable: true })], {
+      wallpaper: pin("a"),
+    });
     expect(wallpaperArt(r, kit)).toEqual(kitRung(kit));
   });
 
@@ -767,7 +780,11 @@ describe("bannerScenes — the first slide is dealt, and the rest are the scenes
   it("an EMPTY pool keeps the slide and paints the fleet BACKDROP's own pick (the ruled fallback)", () => {
     // Every entry switched off is the owner's own answer for the banner LIBRARY, and it must not cost
     // the carousel its first slide — so the one other picture this screen is certain to have stands in.
-    const r = roster([entry("a", { wide: "a-wide.webp" })], { wallpaper: "a" }, { scenes: [] });
+    const r = roster(
+      [entry("a", { wide: "a-wide.webp" })],
+      { wallpaper: pin("a") },
+      { scenes: [] },
+    );
     expect(bannerScenes(r)).toEqual({ lead: { url: "a-wide.webp" }, rest: [] });
     // …and with nothing pinned either, the ladder's own end.
     expect(bannerScenes(roster([entry("a")]))).toEqual({ lead: { url: ART.banner }, rest: [] });
@@ -787,32 +804,83 @@ describe("bannerScenes — the first slide is dealt, and the rest are the scenes
 
 // ── activeSeat — the PAINT's rule, verbatim (the W6 confirm round's catch) ─────────────────────────
 //
-// What a pin paints is `slotEntry` → `toWideArt`: the first name-match in the DEALT tier, nothing when
-// that match is unusable. The gallery's marking must tell the same story — a ✓ on a row the surface
-// will not paint is the §2.4 lie the resolver seam exists to prevent.
+// What a pin paints is `slotEntry` → `toWideArt`: the row the pinned IDENTITY names, inside the DEALT
+// tier, and nothing when that row is unusable. The gallery's marking must tell the same story — a ✓ on
+// a row the surface will not paint is the §2.4 lie the resolver seam exists to prevent.
+//
+// The rule USED to be "the first name-match", because a pin held a bare stem. That is what "W9" ended.
 
 describe("activeSeat — gallery marking agrees with the paint ladder", () => {
   const seat = activeSeat("wallpaper");
+  /** A row of the role's BUNDLED tier — no file, no url, its identity is the registry id. */
+  const bundled = (id: string): MediaFile => ({
+    ...file(id),
+    bundled: id,
+    name: id,
+    file: "",
+    url: "",
+    revision: "",
+  });
 
-  it("marks the first name-match of the dealt tier — and NOTHING when that match is unusable", () => {
-    // An unusable namesake FIRST: the paint side resolves it, gets no art, and falls through the
-    // ladder — so the gallery must not mark the later usable namesake active (the old skip-unusable
-    // find did, and the send-time pin check now refuses the same tap for the same reason).
+  it("marks the row the pin NAMES — and nothing when that row is unusable", () => {
+    // The unusable row is the pinned one: the paint side resolves it, gets no art and falls through
+    // the ladder, so the gallery must mark nothing (the send-time pin check refuses the same tap for
+    // the same reason).
     const rows = [
       file("lyra", { unusable: true, unusable_reason: "unreadable" }),
       { ...file("lyra"), file: "lyra.png", url: "/api/media/gacha/files/x/lyra.png" },
     ];
-    expect(seat(rows, { wallpaper: "lyra" })).toEqual({ ids: [], mode: "first" });
-    // …the paint agrees: the roster deals the unusable entry first, and the slot resolves to a hole.
-    const r = rosterFromIndex(index({ characters: rows }, { wallpaper: "lyra" }));
+    expect(seat(rows, { wallpaper: pin("lyra") })).toEqual({ ids: [], mode: "first" });
+    // …the paint agrees: the pinned entry is the broken one, and the slot resolves to a hole.
+    const r = rosterFromIndex(index({ characters: rows }, { wallpaper: pin("lyra") }));
     expect(wallpaperArt(r).url).not.toContain("lyra.png");
+    // …while the OTHER file of the same stem is now nameable in its own right — it was unreachable
+    // while a pin held a stem, because the collation answered `lyra` with the broken row first.
+    expect(seat(rows, { wallpaper: { name: "lyra.png" } })).toEqual({
+      ids: ["f:lyra.png"],
+      mode: "first",
+    });
+  });
+
+  it("a file and a BUNDLED id sharing one name are two pins — the ambiguity is unrepresentable", () => {
+    // THE collision "W9" deleted. A role holding a file called `lyra.webp` beside the bundled id
+    // `lyra` used to give one pin value (`lyra`) two possible meanings, and the collation decided
+    // which — detectable from the grid as a "duplicate name" note and fixable only by reordering.
+    // The union names one of them, so each is reachable and neither can shadow the other.
+    // Both LISTED, so both are in the tier the seat deals (the fallback tier is not).
+    const rows = [file("lyra", { listed: true }), { ...bundled("lyra"), listed: true }];
+    expect(seat(rows, { wallpaper: { name: "lyra.webp" } })).toEqual({
+      ids: ["f:lyra.webp"],
+      mode: "first",
+    });
+    expect(seat(rows, { wallpaper: { bundled: "lyra" } })).toEqual({
+      ids: ["b:lyra"],
+      mode: "first",
+    });
+    // …and the PAINT resolves the same two, which is the one-rule-three-readers contract.
+    const own = rosterFromIndex(index({ characters: rows }, { wallpaper: { name: "lyra.webp" } }));
+    expect(slotEntry(own, "wallpaper")?.id).toBe("f:lyra.webp");
+    const ship = rosterFromIndex(index({ characters: rows }, { wallpaper: { bundled: "lyra" } }));
+    expect(slotEntry(ship, "wallpaper")?.id).toBe("b:lyra");
   });
 
   it("a pin naming a HIDDEN row marks nothing — the dealt tier is the tier that paints", () => {
     // The old resolver searched the RAW rows, so a hidden row's pin read as active while
     // `rosterFromIndex` built the entries from `ladderRows`, which excludes it.
     const rows = [file("a"), { ...file("b"), hidden: true }];
-    expect(seat(rows, { wallpaper: "b" })).toEqual({ ids: [], mode: "first" });
-    expect(seat(rows, { wallpaper: "a" })).toEqual({ ids: ["f:a.webp"], mode: "first" });
+    expect(seat(rows, { wallpaper: pin("b") })).toEqual({ ids: [], mode: "first" });
+    expect(seat(rows, { wallpaper: pin("a") })).toEqual({ ids: ["f:a.webp"], mode: "first" });
+  });
+
+  it("an unreadable pin — cleared, or naming both halves of the union — marks nothing", () => {
+    const rows = [file("a")];
+    expect(seat(rows, {})).toEqual({ ids: [], mode: "first" });
+    expect(seat(rows, { wallpaper: null })).toEqual({ ids: [], mode: "first" });
+    // Both fields at once is a 422 on every write path; only a hand-edited config can produce one,
+    // and it must degrade rather than pick a half.
+    expect(seat(rows, { wallpaper: { name: "a.webp", bundled: "lyra" } })).toEqual({
+      ids: [],
+      mode: "first",
+    });
   });
 });
