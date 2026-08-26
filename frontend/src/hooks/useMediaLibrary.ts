@@ -40,6 +40,7 @@ import { mediaSections, type MediaNsDef, type MediaSection } from "../theme-engi
 //    The queue is per NAMESPACE and the send step is exclusive APP-WIDE (`exclusive` below), because
 //    the hazard has two scopes: a role's list is one namespace's, and the settings snapshot every
 //    intent recomputes from is shared by all of them.
+//  ③ Invalidation, which is `useSaveSettings`'s already (it awaits the media refetch) — this hook only
 //    has to not fight it.
 //
 // The two-devices-at-once lost update stays an accepted residual (single owner; server revision tokens
@@ -135,16 +136,6 @@ interface Job {
  *  state, or the refetch-bound discard) · `failed` — the save was refused. */
 export type JobOutcome = "written" | "skipped" | "failed";
 
-export function useMediaLibrary(ns: string, def: MediaNsDef) {
-  const { data, isLoading, error } = useMediaGalleryIndex(ns);
-  // The CONFIG side of every write. A `files` entry carries per-item state the gallery does not
-  // interpret (`focal`, `key`, anything a later slice adds), so a write is a read-modify-write against
-  // what is persisted — rebuilding from the index would silently drop all of it. Conf-scoped and
-  // already fetched by the tab this renders in: the same shared query, not a second request.
-  const { data: settings } = useSettings();
-  const qc = useQueryClient();
-  const [busy, setBusy] = useState(false);
-  const queue = useRef<Job[]>([]);
 /** The media write LANE — ONE settings PUT (and the refetch it awaits) in flight across every mounted
  *  namespace, module-scoped because that is the scope the hazard has.
  *
@@ -175,6 +166,16 @@ function exclusive(run: () => Promise<void>): Promise<void> {
   const save = useSaveSettings({
     quiet: true,
     onMediaStale: () => {
+export function useMediaLibrary(ns: string, def: MediaNsDef) {
+  const { data, isLoading, error } = useMediaGalleryIndex(ns);
+  // The CONFIG side of every write. A `files` entry carries per-item state the gallery does not
+  // interpret (`focal`, `key`, anything a later slice adds), so a write is a read-modify-write against
+  // what is persisted — rebuilding from the index would silently drop all of it. Conf-scoped and
+  // already fetched by the tab this renders in: the same shared query, not a second request.
+  const { data: settings } = useSettings();
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const queue = useRef<Job[]>([]);
       stale.current = true;
     },
     // The queue words its own failures: a config write that follows an already-successful DELETE is a

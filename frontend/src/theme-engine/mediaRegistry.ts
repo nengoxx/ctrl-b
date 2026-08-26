@@ -320,6 +320,11 @@ export interface MediaRoleDef {
  *  `from` names the role whose files are the OPTIONS — never the role being pinned, now that only seats
  *  exist. Both shipped seats source from `characters`: a portrait crops fine as a backdrop.
  *
+ *  There is no `seat: true` FLAG to say any of that. It survived the ruling as a compat rung — every
+ *  shipped slot set it and `mediaSections` skipped the rows that did not — which made it a field with
+ *  one value guarding a case the type system already forbids. A pin IS a seat now; the row is the
+ *  claim (the no-legacy-seams rule).
+ *
  *  There is no per-slot `bundled` list (**RETIRED at D65**, the M4 rider): the names a pin may offer while
  *  `from` is still empty are the SOURCE ROLE's own bundled ids, so keeping a second hand-typed copy on the
  *  slot was one list in two places — and the copy was the one that could go stale. The pin reads
@@ -332,12 +337,6 @@ export interface MediaSlotDef {
   label: string;
   from: string;
   hint?: string;
-  /** Marks this pin as **its own destination** (§2.1). It is `true` on every shipped slot since "W6" —
-   *  a pin that was NOT a seat was an override of a pool's first pick, and those died with the ruling.
-   *  The field stays because it is what `mediaSections` reads to emit a seat card, and because "a pin
-   *  that is a destination" is the claim the section machinery is built on rather than an assumption
-   *  it may quietly make about every row. */
-  seat?: boolean;
   /** §2.4 — a SEAT's own ladder (what the pin resolves to, and what it falls through to). */
   active?: ActiveResolver;
   /** The BUILT-IN picture this seat's ladder bottoms out on — shown on the card and in the seat's
@@ -537,7 +536,6 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         label: "Fleet backdrop",
         from: "characters",
         hint: "Bind one character as the fleet's backdrop. With none bound, your Shared art background is used — then the default scene.",
-        seat: true,
         active: activeSeat("wallpaper"),
         // The bundled scene this ladder ends on, shown so the owner can SEE what "nothing bound" looks
         // like (S6). It stays a DISPLAY channel here even though the same picture is now a real library
@@ -558,7 +556,6 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // the bundled backdrop as an ordinary library entry since S6 — and a second, uneditable copy of
         // a picture that has a real home would be the duplicate the card's `overriddenBy` pointer
         // exists to avoid.
-        seat: true,
         active: activeSeat("oracle"),
       },
     ],
@@ -1011,7 +1008,6 @@ export function mediaSections(
     });
   }
   for (const slot of def.slots ?? []) {
-    if (slot.seat !== true) continue;
     const row = def.roles[slot.from];
     // A seat over a role the server does not list has no library to view — skip it rather than open
     // an empty gallery on a folder that is not there.

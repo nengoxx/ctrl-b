@@ -433,6 +433,40 @@ describe("the H5 role-family card (kit's derived keys)", () => {
     expect(within(dialog).getByRole("button", { name: "jellyfin.png" })).toBeTruthy();
   });
 
+  it("a KEY's live file is the SECTION's own resolver's answer, never a second derivation", async () => {
+    // The W8 council's F5. The card used to re-derive "which file answers this key" with the generic
+    // name classifier over the visible rows, while the ladder — the one the surface paints through —
+    // excludes the bundled tier, because the one kit role carrying any holds a dealt SET and not
+    // per-key art. The two agreed only while no bundled id matched a service key, and `banner-03` is
+    // both a shipped rotation id and a perfectly ordinary service kind.
+    api.getJSON.mockImplementation((url: string) => {
+      if (url === "/api/services") return Promise.resolve([{ name: "Boards", kind: "banner-03" }]);
+      if (url === "/api/hosts") return Promise.resolve([]);
+      return Promise.resolve({
+        ns: "kit",
+        collation: "library-v1",
+        roles: {
+          services: [],
+          "service-banners": [bundledRow("banner-03")],
+          hosts: [],
+          background: [],
+          brand: [],
+        },
+        slots: {},
+      });
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="kit" def={MEDIA_NS.kit} />
+      </QueryClientProvider>,
+    );
+    const row = await screen.findByRole("button", { name: "Open the banner-03 banner gallery" });
+    // The rotation member is NOT this service's banner: it is one of the set dealt behind the services
+    // nobody dropped a file for, and saying otherwise would offer a picture the row will not paint.
+    expect(row.textContent).toContain("no banner");
+  });
+
   it("the UNASSIGNED bucket appears only when files bound nothing — and is their only way out", async () => {
     // A rename's aftermath. Per-key galleries would make the orphan invisible and undeletable, which
     // is the one state a manager must not be able to produce.

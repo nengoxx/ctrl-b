@@ -6,8 +6,9 @@ import {
   type GalleryScope,
   type SectionView,
 } from "../../hooks/useMediaLibrary";
+import type { MediaFile } from "../../hooks/useMedia";
 import { deriveKeyBindings } from "../../lib/media";
-import { shown, tileUrl } from "../../lib/mediaLibrary";
+import { rowId, tileUrl } from "../../lib/mediaLibrary";
 import { useMediaKeySource } from "../../theme-engine/mediaKeySources";
 
 // The ENTRY CARD (MEDIA_MANAGER_PLAN §6.1, R59 §11.1) — one card per art DESTINATION, and the card IS
@@ -175,8 +176,20 @@ function FamilyCard({
 }) {
   const { section } = view;
   const asset = section.asset ?? "file";
+  // The KEYS are the source's — `deriveKeyBindings` is what collapses two consumers onto one key and
+  // says which keys a file could even be named after, so it is asked about the CONSUMERS and nothing
+  // else. WHICH FILE answers a key is the role's own §2.4 ladder, asked through the section (the W8
+  // council's F5): this card used to re-derive it with the generic classifier over the visible rows,
+  // which is the same question with a second implementation — and the two disagree the moment a
+  // bundled id matches a service key, because the ladder excludes the bundled tier and the classifier
+  // does not. One question, one answer, and it is the answer the surface paints with.
+  const byId = new Map(view.rows.map((r) => [rowId(r), r]));
   const derived =
-    source?.consumers !== undefined ? deriveKeyBindings(source.consumers, shown(view.rows)) : null;
+    source?.consumers === undefined ? null : deriveKeyBindings<MediaFile>(source.consumers, []);
+  const rows = derived?.rows.map((row) => {
+    const id = view.activeForKey?.(row.key).ids[0];
+    return { ...row, file: id === undefined ? undefined : byId.get(id) };
+  });
   return (
     <section className="mgal-sec">
       <div className="mgal-head">
@@ -191,12 +204,12 @@ function FamilyCard({
       {source != null && source.consumers === undefined && (
         <p className="mgal-empty">{source.failed ? source.def.failed : source.def.loading}</p>
       )}
-      {derived != null &&
-        (derived.rows.length === 0 ? (
+      {rows != null &&
+        (rows.length === 0 ? (
           <p className="mgal-empty">{source?.def.none}</p>
         ) : (
           <ul className="mgal-keys">
-            {derived.rows.map((row) => (
+            {rows.map((row) => (
               <li key={row.key}>
                 <button
                   type="button"

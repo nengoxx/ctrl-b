@@ -251,9 +251,14 @@ describe("the gacha row", () => {
     for (const slot of slots) expect(MEDIA_NS.gacha.roles[slot.from]).toBeDefined();
     // EVERY surviving pin is a SEAT — a binding into a surface the source role does not own, which is
     // precisely what no order can express. That is the invariant the ruling leaves behind, and it holds
-    // across the whole registry, not just here.
+    // across the whole registry, not just here: a pin IS a seat, so every slot row emits a seat card
+    // and there is no `seat:` flag left to carry the claim (the W8 council's F7 — a field with one
+    // value guarding a case the ruling forbids is a compat rung, and this project keeps none).
     for (const [ns, row] of Object.entries(MEDIA_NS)) {
-      for (const slot of row.slots ?? []) expect(slot.seat, `${ns}:${slot.key}`).toBe(true);
+      const sections = mediaSections(ns, row, rolesOf(ns));
+      for (const slot of row.slots ?? []) {
+        expect(sections.find((s) => s.pin === slot.key)?.kind, `${ns}:${slot.key}`).toBe("seat");
+      }
     }
     // Both of gacha's source from the CAST: a portrait crops fine as a backdrop.
     for (const slot of slots) expect(slot.from).toBe("characters");
