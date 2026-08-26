@@ -239,6 +239,56 @@ describe("the machine (§4 rules ① and ②)", () => {
     expect(job.failure).toBe(null);
   });
 
+  it("ABANDON fires on dismiss — never on the failure's own retry (Emma W10 #1)", async () => {
+    const abandon = vi.fn();
+    let attempts = 0;
+    const deliver: JobDelivery = async (_out, _ctx, control) => {
+      attempts++;
+      control.begin();
+      await Promise.resolve();
+      control.fail({
+        phase: "upload",
+        message: "the upload did not finish.",
+        retry: control.retryable(() => void deliver(_out, _ctx, control)),
+        abandon,
+      });
+    };
+    render(<Harness />);
+    await offer(spec(deliver));
+    await confirm();
+    // ① the retry is the SAME JOB resuming: what abandon releases is what the retry needs.
+    await act(async () => {
+      job.failure?.retry?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(attempts).toBe(2);
+    expect(abandon).not.toHaveBeenCalled();
+    // ② a dismissed row is an abandoned job — the way back went down with it.
+    act(() => job.dismiss());
+    expect(abandon).toHaveBeenCalledTimes(1);
+    expect(job.failure).toBe(null);
+  });
+
+  it("…and on a REPLACING admission: a new job takes the row down, retry and all", async () => {
+    const abandon = vi.fn();
+    const failing: JobDelivery = async (_out, _ctx, control) => {
+      control.begin();
+      await Promise.resolve();
+      control.fail({ phase: "upload", message: "the upload did not finish.", abandon });
+    };
+    const { deliver } = tail((c) => c.finish());
+    render(<Harness />);
+    await offer(spec(failing));
+    await confirm();
+    expect(job.failure).not.toBe(null);
+    // The owner moves on — an edit, another pick, either way a NEW admission. The failed job's held
+    // state must not outlive its only way back in.
+    await offer(spec(deliver));
+    expect(abandon).toHaveBeenCalledTimes(1);
+    expect(job.failure).toBe(null);
+  });
+
   it("CANCELLING the crop unwinds the whole job — nothing exported, latch free", async () => {
     const { calls, deliver } = tail((c) => c.finish());
     render(<Harness />);

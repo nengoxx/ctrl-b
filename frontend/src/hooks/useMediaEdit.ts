@@ -81,7 +81,10 @@ export function useMediaEdit(args: {
     (row: { url: string; file: string; revision: string }): JobDelivery =>
     async (output, _job, control: JobControl) => {
       control.begin();
-      control.setPhase("upload");
+      // Its OWN phase word (Emma W10 #2): this job replaces a picture that is already on the server,
+      // and calling it an upload earned upload copy on its failures — "the upload did not finish" for
+      // an owner who uploaded nothing.
+      control.setPhase("replace");
       try {
         await putBytes(row.url, output.blob, { "X-Expected-Revision": row.revision });
       } catch (error) {
@@ -90,7 +93,7 @@ export function useMediaEdit(args: {
         // server's own sentence says the only thing that helps — reopen it.
         const stale = error instanceof ApiError && error.status === 412;
         control.fail({
-          phase: "upload",
+          phase: "replace",
           message: stale
             ? error.message
             : error instanceof ApiError

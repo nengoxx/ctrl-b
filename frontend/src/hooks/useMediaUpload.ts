@@ -112,6 +112,15 @@ export function useMediaUpload(args: {
     control.finish();
   }
 
+  /** What every delivery failure hands the machine as its `abandon` (Emma W10 #1): when the row is
+   *  dismissed — or replaced by a NEW admission, which removes the row's retry with the row — the
+   *  two-phase record and the multi-megabyte Blob it holds are unreachable and must not outlive it.
+   *  Never called on the failure's own retry (the machine's contract), which is what keeps rule ②'s
+   *  resume intact. */
+  const abandon = () => {
+    pending.current = null;
+  };
+
   /** Is `filename` in the role's folder RIGHT NOW? A rejection means "could not find out", never
    *  "no" — the whole point of the reconcile (Emma #2). Throws; the caller keeps the job retryable.
    *
@@ -185,6 +194,7 @@ export function useMediaUpload(args: {
           message: `${job.filename} may or may not have reached the server — the library could not be re-read to find out. Try again when the connection is back.`,
           filename: job.filename,
           retry: control.retryable(() => void deliver(control, true)),
+          abandon,
         });
         return;
       }
@@ -200,6 +210,7 @@ export function useMediaUpload(args: {
           message: uploadMessage(error),
           filename: job.uploaded ? job.filename : undefined,
           retry: control.retryable(() => void deliver(control, true)),
+          abandon,
         });
         return;
       }
@@ -219,6 +230,7 @@ export function useMediaUpload(args: {
       message: `${job.filename} was uploaded, but the library list could not be saved. The image is in the folder and will still appear — try again to give it its place in the order.`,
       filename: job.filename,
       retry: control.retryable(() => void deliver(control, true)),
+      abandon,
     });
   }
 
@@ -271,10 +283,9 @@ export function useMediaUpload(args: {
       offer(file);
     },
     offer,
-    dismiss: () => {
-      job.dismiss();
-      pending.current = null;
-    },
+    // The machine's dismiss ABANDONS the failure, and the failure's own `abandon` is what drops the
+    // pending record — one home for that cleanup, whichever path clears the row.
+    dismiss: job.dismiss,
   };
 }
 

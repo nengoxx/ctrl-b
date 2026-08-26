@@ -233,8 +233,11 @@ export function GalleryModal({
               description: a job that failed, a pin naming nothing, a seat painting its built-in. Every
               sentence that was merely TRUE — the path, the hint, the reading — moved out of the way of
               the pictures (the header line above, the card underneath, the folder line below). */}
+          {/* An ALERT, not a second status (Emma W10 #4): the header line above is the section's ONE
+              `role="status"`, and a failure is the assertive kind of news anyway — it interrupts a job
+              the owner started, rather than describing the list they are looking at. */}
           {upload.failure !== null && (
-            <p className="mgal-fail" role="status">
+            <p className="mgal-fail" role="alert">
               <b>{failureTitle(upload.failure.phase)}</b> {upload.failure.message}
               {upload.failure.retry !== undefined && (
                 <button type="button" className="mgal-act" onClick={upload.failure.retry}>
@@ -275,7 +278,15 @@ export function GalleryModal({
               The pictures are what this screen is, and they are the first thing in it. */}
           {items.length === 0 ? (
             <p className="mgal-empty">
-              Empty — use <b>Add an image</b> below.
+              {/* Promise only what is rendered (Emma W10 #3): a section with no Add row must not point
+                  at one. The folder line below is the way in it can still name. */}
+              {section.caps.upload ? (
+                <>
+                  Empty — use <b>Add an image</b> below.
+                </>
+              ) : (
+                "Empty."
+              )}
             </p>
           ) : selected !== undefined ? (
             <ItemDetail
@@ -372,13 +383,19 @@ export function GalleryModal({
               the work of two ("W10"): the standalone path paragraph said where the files live without
               saying why the owner would care, and the empty state repeated the same instruction in
               words. An SSH drop is addressed by folder and nothing else, so the path itself stays
-              verbatim; what changed is that it now reads as the sentence it always was. */}
-          <p className="mgal-scope">
-            <span className="path">
-              {section.caps.upload ? "or copy" : "Copy"} .png/.jpg/.webp files into media/
-              {section.ns}/{section.role}/
-            </span>
-          </p>
+              verbatim; what changed is that it now reads as the sentence it always was.
+
+              NOT on a ROTATION scope (Emma W10 #3): that gallery shows only the theme's bundled set —
+              a file copied into the role folder binds by its own name and never joins this screen, so
+              the instruction would be false exactly where the owner followed it. */}
+          {scope.rotation !== true && (
+            <p className="mgal-scope">
+              <span className="path">
+                {section.caps.upload ? "or copy" : "Copy"} .png/.jpg/.webp files into media/
+                {section.ns}/{section.role}/
+              </span>
+            </p>
+          )}
           {/* RESTORE DEFAULTS (S6) — shown only where this section HAS shipped art and the owner has
               said something about it (`defaultsRestorable`), so a section still exactly as it came
               carries no control at all. Scoped to what is on screen: a key gallery restores its own
@@ -466,16 +483,19 @@ function working(phase: MediaUpload["phase"]): string {
   if (phase === "guard") return "Opening the picture…";
   if (phase === "export") return "Preparing the image…";
   if (phase === "upload") return "Uploading…";
+  if (phase === "replace") return "Saving the change…";
   return "Saving…";
 }
 
 /** The failure row's own heading — WHICH step failed, because the answer differs completely: a
- *  refused pick means choose another file, a failed upload means try again, and a failed
- *  registration means the picture is already on the server. */
+ *  refused pick means choose another file, a failed upload means try again, a failed REPLACE means the
+ *  stored picture is untouched (Emma W10 #2 — an edit is not an upload and must not borrow its copy),
+ *  and a failed registration means the picture is already on the server. */
 function failureTitle(phase: MediaUpload["phase"]): string {
   if (phase === "guard") return "That picture cannot be used —";
   if (phase === "export") return "The image could not be prepared —";
   if (phase === "upload") return "The upload did not finish —";
+  if (phase === "replace") return "The change was not saved —";
   return "Uploaded, but not saved to the list —";
 }
 

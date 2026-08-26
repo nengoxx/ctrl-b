@@ -104,8 +104,10 @@ export interface JobControl {
 }
 
 /** Which step failed. Each one means something different to the owner, and the copy says which. The
- *  first two are the machine's own; the rest belong to a delivery. */
-export type JobPhase = "guard" | "export" | "upload" | "register";
+ *  first two are the machine's own; the rest belong to a delivery — `upload`/`register` to the upload
+ *  tail, `replace` to the edit's conditional PUT (Emma W10 #2: an edit that reported itself as an
+ *  "upload" earned upload copy on its 412, and the owner had uploaded nothing). */
+export type JobPhase = "guard" | "export" | "upload" | "register" | "replace";
 
 export interface JobFailure {
   phase: JobPhase;
@@ -117,6 +119,11 @@ export interface JobFailure {
   filename?: string;
   /** Absent where there is nothing to retry (a refused pick — the answer is to pick something else). */
   retry?: () => void;
+  /** Called when this failure is ABANDONED — dismissed, or replaced by a NEW admission — so a delivery
+   *  holding state for the retry can let it go (Emma W10 #1: the upload's pending Blob outlived its
+   *  only way back in). NEVER called on the failure's own retry: the retry is the same job resuming,
+   *  and what `abandon` releases is exactly what the retry needs. */
+  abandon?: () => void;
 }
 
 /** The machine's whole surface. `useMediaUpload` and the edit consumer wrap it; nothing else touches
@@ -151,6 +158,10 @@ export function useImageJob(): ImageJob {
   const [phase, setPhase] = useState<JobPhase | null>(null);
   /** RULE ① — the latch. Synchronous, so two taps in one frame cannot both pass it. */
   const running = useRef(false);
+  /** The rendered failure's synchronous twin, held so the paths that CLEAR a failure can tell the two
+   *  clears apart: a replacing admission and a dismiss ABANDON it (`failure.abandon`), while a retry's
+   *  own `begin` merely takes the row down — same job, its state must live. */
+  const failureRef = useRef<JobFailure | null>(null);
 
   // The one LIVE fact a running job reads: the server's byte cap, which must be as fresh as possible.
   // Through a ref because a job outlives the render it started in. Written in an EFFECT, never during
@@ -174,11 +185,20 @@ export function useImageJob(): ImageJob {
   };
 
   function fail(sectionId: string, next: Omit<JobFailure, "sectionId">): void {
-    setFailure({ ...next, sectionId });
+    failureRef.current = { ...next, sectionId };
+    setFailure(failureRef.current);
     // The latch RELEASES on a failure: the row is on screen, and the owner must be able to pick
     // something else without first dismissing it. The delivery's own pending job survives for the retry.
     running.current = false;
     setPhase(null);
+  }
+
+  /** The two ways a failure ends without its retry: the owner dismissed it, or a NEW job replaced it.
+   *  Both abandon whatever the delivery was holding for the way back (Emma W10 #1). */
+  function abandonFailure(): void {
+    failureRef.current?.abandon?.();
+    failureRef.current = null;
+    setFailure(null);
   }
 
   /** The control ONE job's delivery drives the machine through — bound to that job, like everything
@@ -187,6 +207,9 @@ export function useImageJob(): ImageJob {
     return {
       begin: () => {
         running.current = true;
+        // The row comes down but nothing is ABANDONED: begin is how a retry resumes the same job, and
+        // what `abandon` would release is exactly the state that retry is about to use.
+        failureRef.current = null;
         setFailure(null);
       },
       setPhase,
@@ -237,7 +260,9 @@ export function useImageJob(): ImageJob {
     if (source == null) return;
     if (running.current) return; // the latch, taken synchronously
     running.current = true;
-    setFailure(null);
+    // A replacing admission ABANDONS the failed job whose row it takes down — the owner has moved on,
+    // and the only way back (the row's retry) is gone with the row.
+    abandonFailure();
     setPhase("guard");
     const sec = spec.section;
     void (async () => {
@@ -347,6 +372,6 @@ export function useImageJob(): ImageJob {
       running.current = false;
       setPhase(null);
     },
-    dismiss: () => setFailure(null),
+    dismiss: abandonFailure,
   };
 }

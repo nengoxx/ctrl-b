@@ -647,7 +647,12 @@ describe("editing in place (the 'W10' arm — the OTHER tail on the same machine
     await startEdit(dialog);
     await confirmCrop();
     const row = await within(dialog).findByText(/reopen it and try again/);
-    expect(row.textContent).toContain("The upload did not finish");
+    // The edit's OWN copy (Emma W10 #2): the owner uploaded nothing, so "the upload did not finish"
+    // was the wrong sentence — and the row is an ALERT, not a second `role="status"` beside the
+    // header's one (Emma W10 #4).
+    expect(row.textContent).toContain("The change was not saved");
+    expect(within(dialog).getAllByRole("alert")).toHaveLength(1);
+    expect(within(dialog).getAllByRole("status")).toHaveLength(1);
     expect(within(dialog).queryByRole("button", { name: "Try again" })).toBeNull();
     expect(api.putJSON).not.toHaveBeenCalled();
   });

@@ -551,6 +551,10 @@ describe("the H5 role-family card (kit's derived keys)", () => {
     );
     dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("button", { name: "Restore defaults" })).toBeTruthy();
+    // …and NO folder instruction (Emma W10 #3): a file copied into the role folder binds by its own
+    // name and never joins the rotation's bundled-only screen, so the line would be false exactly
+    // where the owner followed it.
+    expect(within(dialog).queryByText(/copy .*files into/)).toBeNull();
   });
 
   it("the UNASSIGNED bucket appears only when files bound nothing — and is their only way out", async () => {
