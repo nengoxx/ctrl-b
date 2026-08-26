@@ -4280,8 +4280,13 @@ duplicated systems"* — so the gacha `wallpaper` ROLE was removed outright. Two
 picture were the confusion itself.
 
 The fleet backdrop's ladder is now exactly **the gacha `wallpaper` PIN (a CAST portrait, wide-cropped)
-→ the shared `kit/background` → the bundled scene**, with `heroArt` reading the same one (§5.3
-forbids the backdrop and the hero slide resolving to different pictures). The PIN survives on
+→ the shared `kit/background` → the bundled scene** — and `heroArt` read the same one at lock time
+(§5.3's "the backdrop and the hero slide must not resolve to different pictures" reading of the
+fleet screen). **AMENDED 2026-08-26 (the W5 owner ruling; record = MEDIA_MANAGER_PLAN §12):** the
+hero seat/pin are RETIRED and that coupling is REVERSED — the carousel's first slide DEALS the
+`banner` pool's first member (`banner.webp` joined that pool as its last bundled entry) and reads
+this ladder only as its empty-pool fallback, so a kit background moves the backdrop and not the
+carousel. The PIN survives on
 purpose: binding a character to the backdrop is theme-specific and the kit has no equivalent, while
 "a big picture behind the app" is one idea that deserves one folder. `GACHA_SLOTS` keeps `wallpaper`
 with its role folder gone, which is an ordinary shape — a pin key is validated against `row.slots`

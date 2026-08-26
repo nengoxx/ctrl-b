@@ -558,9 +558,10 @@ themes:
       reel_figure: lyra       # must resolve to an entry WITH a cutout
       oracle: ...
       wallpaper: ...
-      hero: lyra              # the fixed hero slide's art (defaults to the wallpaper pick when
-                              # absent; RULED Q8.7 — the OTHER slides are live per-host promos
-                              # derived from each host's §5.3 assignment, so no slide-set slot)
+      # NO `hero:` slot — RETIRED 2026-08-26 (the W5 ruling, MEDIA_MANAGER_PLAN §12): the first
+      # slide DEALS the banner pool's first member, so a pin would be a second answer to which
+      # picture opens the carousel. (Q8.7's other half stands: promo slides derive per host, so
+      # there is no slide-set slot either. An unknown `hero:` key is refused by Settings, loudly.)
 ```
 
 *(NO `stars:` key — the star MODE's single home is the `starMode` ThemeDef setting, §6.1;
@@ -696,6 +697,14 @@ semantics:** while the hosts query is unresolved the pill must not read "0.0%" (
 for the "04 / 04" counter.
 
 **6.4 Banner slides — the Q8.7 ruling (fixed hero + live promos + swipe), the design:**
+
+- **✅ AMENDED 2026-08-26 (the W5 owner ruling; record = MEDIA_MANAGER_PLAN §12):** slide 1's ART is
+  no longer the wallpaper pick and there is no `hero` seat/pin. The first slide keeps the frozen
+  PICKUP copy and its fixed key and DEALS the `banner` pool's first usable member (`bannerScenes`);
+  the rest of the pool follows as the scenes; `banner.webp` is the pool's LAST bundled member
+  (b2 · b3 · banner). The wallpaper ladder is only the empty-pool fallback — the carousel never
+  loses its opener — and the backdrop is DECOUPLED: a kit background moves it, not the carousel.
+  Where the bullets below say "roster wallpaper/banner art" for slide 1, this ruling supersedes.
 
 - **Slide set.** Slide 1 = the FIXED "NETWORK PRIZE POOL" hero — frozen prototype copy, roster
   wallpaper/banner art, zero data dependency. Slides 2..N = **one live promo per host — ALL

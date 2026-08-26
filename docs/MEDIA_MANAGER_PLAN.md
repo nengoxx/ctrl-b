@@ -915,6 +915,38 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > in one test; confirm round RESOLVED. Recorded, NOT fixed by ruling: the post-drag click guard's
 > 50 ms cross-disarm race between two completed drags — two real gestures cannot fit the window, and
 > each guard also self-disarms on its first click, so the worst case is one swallowed tap.
+>
+> **W5 — the hero seat dies; the carousel deals its own opener (owner prose ruling 2026-08-26,
+> built same day, `15b769f`).** The owner read the gallery's map against the screen and named the
+> seam: "Hero slide" and "Fleet backdrop" were two sections showing one picture, the picture itself
+> was in no library, and gacha has no hero surface outside the banner. The rulings: the backdrop and
+> the first slide are DIFFERENT images · gacha does not need the hero image · hiding banner images
+> removes only their slides, and slide 1 stays on the backdrop image.
+>
+> As built: `banner.webp` joins the `banner` pool as its LAST bundled member (b2 · b3 · banner) — an
+> ordinary, orderable, retirable entry, the W2/W3 class closed for the one picture those waves had
+> left inside a seat. The first slide keeps the frozen PICKUP copy and its fixed key and DEALS the
+> pool's first usable member (`bannerScenes` — the one split, whole members riding down); the rest
+> are the scenes, titled by position over the rest; the wallpaper ladder is only the EMPTY-POOL
+> fallback, so the carousel never loses its opener. The `hero` seat/pin die everywhere
+> (`RosterSlots.hero` · `heroArt` · the registry seat row · `GACHA_SLOTS`), `activeSeat`'s
+> fallback-key chain went with them, and D54/§5.3's "both surfaces show one picture" coupling is
+> REVERSED: a kit background now moves the backdrop and not the carousel. FIXED IN PASSING: scene
+> slides dropped their member's `focus`/`rev` (`art: { url: scene.url }`) — a framing point set on a
+> banner image did nothing at all; the member now rides down whole, pinned by a two-object-positions
+> fleet arm.
+>
+> Judgment calls, recorded: a hand-authored legacy `hero:` pin now fails Settings validation at
+> LOAD (refuses boot, not merely the write) — the ruled loud unknown-key class, both real configs
+> verified to hold no such pin · the backdrop seat's builtin display row and the pool's `banner`
+> entry stay INDEPENDENT switches over one asset (the seat's last rung is the ASSET, not the pool —
+> hiding the pool entry retires the slide and leaves the backdrop default standing, per the owner's
+> "slide one stays the backdrop image") · the E0 equality fence was re-taken for the FIRST time —
+> for a ruled behaviour change, not a refactor; the delta is exactly three `src` attributes
+> rotating, recorded in the fence header. **Review: main-seat audit clean → Emma-lane blind round
+> (sol high, `--ignore-rules`) SHIP, ZERO findings, open sweep empty.** Gate green per commit
+> (BE 1,991 · FE 2,552). Docs amended with this ruling: D54 · MEDIA_PLAN §12 · GACHA_PLAN
+> (roster example + §6.4).
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 

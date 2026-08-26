@@ -340,8 +340,11 @@ idea the kit has no equivalent of, whereas "a big picture behind the app" is one
 one folder. `GACHA_SLOTS` therefore still holds `wallpaper` with its role folder gone —
 `Settings._known_media_namespaces_roles_and_slots` validates a pin against `row.slots` and never
 against `row.roles`, so a pin sourced from another role is an ordinary shape here (`reel_figure`
-has always been one). `heroArt` reads the same ladder, since §5.3 forbids the backdrop and the hero
-slide resolving to different pictures.
+has always been one). `heroArt` read the same ladder at the time, under §5.3's "the backdrop and
+the hero slide must not resolve to different pictures" — **superseded 2026-08-26 (the W5 owner
+ruling, MEDIA_MANAGER_PLAN §12): the hero seat/pin are retired; the carousel's first slide deals
+the `banner` pool's first member (`bannerScenes`) and reads this ladder only as its empty-pool
+fallback, so the two surfaces are decoupled.**
 
 *The copy.* The `background` hint now states both halves — the **Appearance switch turns off the
 shared layer**, and **a theme with its own scenery paints the picture on its own backdrop, under
