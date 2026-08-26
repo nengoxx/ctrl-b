@@ -320,7 +320,10 @@ media:
       reel:
         order: [cut.png]
     slots:
-      wallpaper: kira
+      # a legacy bare-stem pin naming a BUNDLED id — typeable from the registry alone…
+      wallpaper: lyra
+      # …and one naming a FILE, which no config-pure step can turn into a filename.
+      oracle: kira
   kit:
     roles:
       background:
@@ -357,7 +360,14 @@ def test_the_fold_moves_the_namespaces_and_rewrites_every_order_list(tmp_path, m
     ]
     assert "order" not in gacha["roles"]["characters"]
     assert gacha["roles"]["reel"]["files"] == [{"name": "cut.png"}]
-    assert gacha["slots"] == {"wallpaper": "kira"}
+    # THE PIN HALF ("W9"): a stem that is a bundled id of the seat's SOURCE role is typed from the
+    # registry, which is code — so the fold stays config-pure. A stem that named one of the owner's own
+    # FILES cannot be: the typed `name` arm holds a FILENAME (`kira.png`), and recovering it means
+    # listing the role folder, which a step may not do. It is dropped rather than guessed, and the drop
+    # is DECLARED — `--check`/`--apply` name it in the legacy-key list rather than losing it silently.
+    assert gacha["slots"] == {"wallpaper": {"bundled": "lyra"}}
+    assert "oracle" not in gacha["slots"]
+    assert "media.namespaces.gacha.slots.oracle" in status.legacy_keys
     assert doc["media"]["namespaces"]["kit"]["roles"]["background"]["files"] == [{"name": "neb.png"}]
     # COMMENT SURVIVAL, stated exactly (UPDATE_PLAN's promise is about keys the plan does not
     # touch): everything outside the moved subtree keeps its prose, while a comment INSIDE
@@ -405,19 +415,94 @@ def test_a_v1_config_holding_a_RETIRED_pin_refuses_LOUDLY_rather_than_folding_it
     monkeypatch.delenv("CTRLB_CONFIG", raising=False)
     with pytest.raises(cm.MigrationRefused) as exc:
         cm.apply(cm.context_from_env())
+    # The refusal NAMES THE KEY, which is the whole of what the owner has to act on. It arrives from
+    # the config model rather than from the step, and that is the deliberate half: the step types the
+    # pins under keys this build KNOWS and leaves the rest exactly where they were written, so a
+    # retired knob stays a loud unknown-slot-key error instead of becoming a silent deletion.
+    assert "media.namespaces.gacha.slots.reel_figure" in str(exc.value)
+
+
+def test_a_TYPED_pin_under_a_retired_key_is_refused_with_the_keys_that_are_real() -> None:
+    """The other half of the same refusal, at the shape the app writes today: an unknown slot key is a
+    registry question, so the message names the keys that ARE accepted."""
+    with pytest.raises(ValueError) as exc:
+        Settings.model_validate(
+            {"media": {"namespaces": {"gacha": {"slots": {"reel_figure": {"bundled": "lyra"}}}}}}
+        )
     assert "reel_figure" in str(exc.value)
     assert "wallpaper" in str(exc.value)  # …and it names what IS accepted
 
 
-def test_the_migration_writes_no_bundled_entries(tmp_path, monkeypatch) -> None:
-    """Config-pure BY CONTRACT (a step never touches the filesystem) and bundled-free BY DESIGN: paint
-    parity comes from the collation's fallback tier instead, which is what let the server-manifest fix
-    be re-derived away (§2.3/§13). A migration that listed bundled ids would need to know what is on
-    disk — and would promote five bundled characters into the owner's fleet deal."""
+def test_a_pin_is_the_same_identity_UNION_a_files_entry_is(tmp_path) -> None:
+    """ "W9" (owner ruling 2026-08-26): `slots.<key>` persists exactly one of `{name: <filename>}` or
+    `{bundled: <id>}`, or `null` for unpinned — the union a `files` entry already carried.
+
+    Both arms are checked the way a `files` entry's are, and against the seat's SOURCE role: a `name`
+    must be a bare filename, a `bundled` must be an id that role actually ships. Anything else is a
+    load/PUT error rather than a binding nothing can honour."""
+    ok = Settings.model_validate(
+        {
+            "media": {
+                "namespaces": {
+                    "gacha": {
+                        "slots": {
+                            "wallpaper": {"bundled": "lyra"},
+                            "oracle": {"name": "kira.webp"},
+                        }
+                    }
+                }
+            }
+        }
+    )
+    files, slots = ok.media_overrides("gacha")
+    assert files == {}
+    assert slots["wallpaper"].identity == ("bundled", "lyra")
+    assert slots["oracle"].identity == ("name", "kira.webp")
+
+    # `null` is UNPINNED — the shape the gallery's Clear writes — and it does not ride the wire.
+    cleared = Settings.model_validate({"media": {"namespaces": {"gacha": {"slots": {"wallpaper": None}}}}})
+    assert cleared.media_overrides("gacha")[1] == {}
+
+    for bad in (
+        "lyra",  # the pre-"W9" bare stem: ambiguous by construction, so no longer a shape
+        {},  # neither half of the union
+        {"name": "kira.webp", "bundled": "lyra"},  # both — "which picture" would have two answers
+        {"name": "   "},  # not an addressable filename
+        {"name": "../../config.yaml"},  # …nor a bare one
+        {"bundled": "nope"},  # not an id the SOURCE role (`characters`) ships
+        {"bundled": ""},
+    ):
+        with pytest.raises(ValueError):
+            Settings.model_validate({"media": {"namespaces": {"gacha": {"slots": {"wallpaper": bad}}}}})
+
+
+def test_every_slot_binds_from_a_role_of_its_own_namespace() -> None:
+    """The registry invariant `MediaSlot.source` is only meaningful under: a seat is a read-only VIEW
+    over another destination's library, so the role it names has to be one this namespace has. Without
+    this, a typo'd `source` would silently make the pin's `bundled` arm unvalidatable."""
+    for ns, row in MEDIA_NAMESPACES.items():
+        for key, slot in row.slots.items():
+            assert slot.source in row.roles, f"{ns}:{key} binds from {slot.source!r}, not a role here"
+
+
+def test_the_migration_lists_no_bundled_FILES_entry(tmp_path, monkeypatch) -> None:
+    """Config-pure BY CONTRACT (a step never touches the filesystem) and, in the `files` lists,
+    bundled-free BY DESIGN: paint parity comes from the collation's fallback tier instead, which is
+    what let the server-manifest fix be re-derived away (§2.3/§13). A migration that LISTED bundled ids
+    would need to know what is on disk — and would promote five bundled characters into the owner's
+    fleet deal.
+
+    A PIN is the one place `{bundled: …}` is written ("W9"), and it is the exact complement of that
+    rule rather than an exception to it: a pin names ONE picture and changes no tier, and resolving a
+    stem against `MediaRole.bundled` reads the registry, which is code. Scoped by structure rather than
+    by a text scan, so the two claims cannot be confused for one another again."""
     home = _v1_workspace(tmp_path, monkeypatch)
     cm.apply(cm.context_from_env())
-    text = (home / "config.yaml").read_text(encoding="utf-8")
-    assert "bundled" not in text
+    doc = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    for ns, block in doc["media"]["namespaces"].items():
+        for role_name, cfg in (block.get("roles") or {}).items():
+            for item in cfg.get("files") or []:
+                assert "bundled" not in item, f"{ns}.{role_name}"
     assert not (home / "media").exists()  # the step never created, read or walked a media tree
 
 
@@ -428,6 +513,46 @@ def test_the_migration_is_idempotent_and_stamps_the_marker(tmp_path, monkeypatch
     fresh = cm.context_from_env()
     assert cm.needs_migration(fresh) is False
     assert cm.read_marker(fresh.config) == cm.CONFIG_VERSION == 2
+    assert cm.apply(cm.context_from_env()).wrote is False
+    assert (home / "config.yaml").read_bytes() == before
+
+
+def test_a_legacy_PIN_alone_triggers_the_step_under_the_already_FOLDED_shape(tmp_path, monkeypatch) -> None:
+    """The pin half stands on its own ("W9"): a document already at the folded shape, with no `order:`
+    left anywhere, still applies while a known slot holds a bare stem — and stops applying afterwards,
+    which is the step's standing postcondition (`applies` is False over what actually landed).
+
+    A stem under an UNKNOWN slot key is deliberately left where it was: that key is a knob this build
+    does not have, and the config model refuses it by name. Folding it would turn a loud refusal into a
+    silent deletion, which is what the "W6" removals were ruled against."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "server:\n  port: 5433\nconfig_version: 2\n"
+        "media:\n"
+        "  namespaces:\n"
+        "    gacha:\n"
+        "      roles:\n"
+        "        characters:\n"
+        "          files:\n"
+        "          - name: a.png\n"
+        "      slots:\n"
+        "        wallpaper: rook\n"
+        "        oracle: kira\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CTRLB_HOME", str(home))
+    monkeypatch.delenv("CTRLB_CONFIG", raising=False)
+    status = cm.detect(cm.context_from_env())
+    assert 2 in status.pending
+    assert status.legacy_keys == ("media.namespaces.gacha.slots.oracle",)
+    assert cm.apply(cm.context_from_env()).wrote is True
+
+    doc = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    assert doc["media"]["namespaces"]["gacha"]["slots"] == {"wallpaper": {"bundled": "rook"}}
+    # …and the whole document is untouched by a second run.
+    before = (home / "config.yaml").read_bytes()
+    assert cm.needs_migration(cm.context_from_env()) is False
     assert cm.apply(cm.context_from_env()).wrote is False
     assert (home / "config.yaml").read_bytes() == before
 

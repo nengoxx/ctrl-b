@@ -536,13 +536,24 @@ A11 = Step(version=1, applies=a11_applies, apply=a11_apply, retires=A11_RETIRED_
 #   2. `…roles.<role>.order: [n1, n2]` → `…roles.<role>.files: [{name: n1}, {name: n2}]`. The same
 #      list, grown from bare names into per-item objects so an entry can carry its own `hidden`,
 #      `focal` and `key` (the extend-don't-migrate directive).
+#   3. `…slots.<key>: lyra` → `…slots.<key>: {bundled: lyra}`. The same pin, grown from a bare STEM
+#      into the identity UNION a `files` entry already carries (the 2026-08-26 owner ruling, "W9").
+#      See `_typed_pin` below for what the fold can and cannot say.
 #
-# **Config-pure and BUNDLED-FREE.** A step never touches the filesystem (its own contract), and this
-# one writes no `{bundled: …}` entries even though bundled art is now listable: paint parity is
-# achieved by the COLLATION instead (`list_role`'s fallback tier), which is exactly what makes the
+# **Config-pure and BUNDLED-FREE.** A step never touches the filesystem (its own contract), and the
+# `files` half writes no `{bundled: …}` entries even though bundled art is now listable: paint parity
+# is achieved by the COLLATION instead (`list_role`'s fallback tier), which is exactly what makes the
 # migration implementable without reading the owner's media tree (§2.3/§2.4, Emma #2 re-derived).
 # A migrated config therefore looks like the config the owner had, and the index looks like the index
 # they had — with the bundled ids appended as the unlisted tier they already behaved as.
+#
+# The PIN half is where purity actually bites, and the contract won (MEDIA_MANAGER_PLAN §12, "W9"):
+# `Context` carries the parsed documents and nothing else — no `$CTRLB_HOME`, no path to resolve —
+# so a legacy stem cannot be turned into the FILENAME the typed `{name: …}` arm needs. It writes
+# `{bundled: …}` here and only here, and that is not a violation of the bundled-free rule above but
+# its exact complement: a bundled id is REGISTRY knowledge (`MediaSlot.source` → `MediaRole.bundled`),
+# which is code, so resolving one reads nothing on disk. A stem that is not a bundled id is DROPPED —
+# see `_typed_pin`.
 
 
 def _media_namespace_keys(media: Mapping[str, Any]) -> list[str]:
@@ -565,6 +576,53 @@ def _roles_with_order(namespaces: Mapping[str, Any]) -> list[tuple[str, str]]:
     return out
 
 
+def _legacy_pins(namespaces: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """`(ns, slot)` for every pin still holding a bare pre-"W9" value — a stem instead of the identity
+    union — under a slot key THIS BUILD KNOWS, in the folded shape.
+
+    A pin under an unknown key is deliberately not in this list: it is a knob that does not exist (a
+    retired pool pin, a typo), and the config model refuses it out loud by name. Folding it would
+    convert that refusal into a silent deletion, which is the one outcome the "W6" removals were ruled
+    against.
+    """
+    out: list[tuple[str, str]] = []
+    for ns, block in namespaces.items():
+        row = MEDIA_NAMESPACES.get(ns)
+        if row is None or not isinstance(block, dict):
+            continue
+        slots = block.get("slots")
+        if not isinstance(slots, dict):
+            continue
+        out += [
+            (ns, k) for k, v in slots.items() if k in row.slots and v is not None and not isinstance(v, dict)
+        ]
+    return out
+
+
+def _typed_pin(ns: str, slot: str, value: Any) -> dict[str, str] | None:
+    """One legacy pin as the identity union, or `None` for "this pin cannot be typed truthfully".
+
+    The value WAS a stem, and a stem answered to two identity spaces at once — the whole reason the
+    shape changed. Only one of those two is reachable from here:
+
+    * a stem that IS a bundled id of the seat's SOURCE role becomes `{bundled: <id>}`. The registry is
+      code, so this reads nothing on disk and the fold stays pure.
+    * anything else was naming a FILE, and the typed `name` arm holds a FILENAME (`lyra.webp`), not a
+      stem. Recovering the filename means listing the role folder, which a step may not do. So the pin
+      is DROPPED, and the seat falls back to its own ladder exactly as a dangling pin already did.
+
+    Dropping beats guessing and beats keeping. A `{name: "lyra"}` invented from a stem would be a pin
+    that can never resolve, persisted forever under a "verified" stamp — an owner-visible lie in the
+    file they may open. An unpinned seat is a true statement the owner can fix in one tap, and the
+    dropped key is REPORTED: the step declares it consumed, so `--check`/`--apply` name it in the
+    legacy-key list.
+    """
+    row = MEDIA_NAMESPACES[ns]
+    source = row.slots[slot].source
+    ships = row.roles[source].bundled if source in row.roles else ()
+    return {"bundled": value} if isinstance(value, str) and value in ships else None
+
+
 def _media_view(config: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """`(media, namespaces)` as plain dicts — the two nodes both halves of this step read. Either can
     be absent or the wrong shape in a hand-authored file; both come back `{}` then, and `applies`
@@ -577,13 +635,17 @@ def _media_view(config: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, An
 
 
 def media_v2_applies(ctx: Context) -> bool:
-    """True while a namespace block sits at `media.<ns>`, or any role still carries `order:`."""
+    """True while a namespace block sits at `media.<ns>`, any role still carries `order:`, or any known
+    slot still holds a bare pre-"W9" pin value."""
     media, namespaces = _media_view(ctx.config)
     if not media:
         return False
-    return bool(_media_namespace_keys(media)) or bool(
-        _roles_with_order({**namespaces, **{k: media[k] for k in _media_namespace_keys(media)}})
-    )
+    # A namespace still sitting at the old level settles it on its own — and once that is out of the
+    # way the only blocks left to inspect are the folded ones, so the two remaining questions read
+    # `namespaces` directly rather than a merged view of both shapes.
+    if _media_namespace_keys(media):
+        return True
+    return bool(_roles_with_order(namespaces)) or bool(_legacy_pins(namespaces))
 
 
 def media_v2_apply(ctx: Context) -> Plan:
@@ -637,6 +699,19 @@ def media_v2_apply(ctx: Context) -> Plan:
         consumed.append(("media", "namespaces", ns, "roles", role, "order"))
         if "files" not in cfg:
             cfg["files"] = [{"name": n} for n in order]
+
+    # The PIN half ("W9"). No REFUSAL arm here, unlike `order:` above, and the asymmetry is the data's:
+    # an `order:` that is not a list is a LIBRARY — the owner's whole arrangement, which this build must
+    # not throw away on a guess — while a pin is one binding of one picture that every ladder already
+    # degrades from. Whatever a pin holds, the honest outcomes are "type it" or "unpin it".
+    for ns, slot in _legacy_pins(namespaces):
+        slots = namespaces[ns]["slots"]
+        typed = _typed_pin(ns, slot, slots[slot])
+        if typed is None:
+            del slots[slot]
+            consumed.append(("media", "namespaces", ns, "slots", slot))
+        else:
+            slots[slot] = typed
 
     return Plan(config=raw, consumes=list(consumed))
 
