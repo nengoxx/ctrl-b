@@ -36,8 +36,10 @@ import {
 //        case (`firstUsable` as the ladder's middle rung). The wallpaper half of this arm was RETIRED at
 //        G6.3 with the gacha `wallpaper/` role itself (owner ruling — one shared background home); the
 //        backdrop's own ladder is pinned in its describe at the bottom of this file;
-//      ④ reel bundled replacement — "reel/ outranks the bundled cutout" + the legacy-pin cases
-//        (`firstUsable` with its pin).
+//      ④ reel bundled replacement — "reel/ outranks the bundled cutout" (`firstUsable`). Its legacy-pin
+//        cases went with the `reel_figure` pin itself at "W6" (owner ruling 2026-08-26 — order is the
+//        only priority system), and the fence they existed for is stronger without it: the pool IS
+//        `reel/`, so nothing outside that folder can reach the figure at all.
 
 function entry(name: string, extra: Partial<RosterEntry> = {}): RosterEntry {
   return { name, image: `${name}.webp`, ...extra };
@@ -432,19 +434,19 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(reelFigureArt(reel)).toBeNull();
   });
 
-  it("a PIN can only name what the ladder deals — which is why the pin write LISTS its entry", () => {
-    // Emma's S2 review #1 ②, at the resolver. With an owner cutout present the ladder never offers the
-    // fallback tier, so a pin naming a bundled id resolves to nothing and the pool's own first pick
-    // keeps painting — the card claiming one picture while the transition shows another.
+  it("the TIER rule decides, and ORDER decides inside it — the gallery and the paint site agree", () => {
+    // "W6" (owner ruling 2026-08-26): there is no `reel_figure` pin to outrank the list any more, so
+    // both readers ask the same two questions in the same order. With an owner cutout present the
+    // ladder never offers the fallback tier, so the bundled entry does not resolve at all…
     const owner = file("cut");
     const lyra = bundled("lyra");
-    const pin = { reel_figure: "lyra" };
-    expect(activePool("reel_figure")([owner, lyra], pin).ids).toEqual(["f:cut.webp"]);
-    // LISTED — which is exactly what the gallery now writes in the same patch — it is a full citizen.
+    expect(activePool([owner, lyra]).ids).toEqual(["f:cut.webp"]);
+    // …until the owner LISTS it — an order write sweeps the whole section — at which point it is a
+    // full citizen and its position is the whole of its priority.
     const listed = { ...lyra, listed: true };
-    expect(activePool("reel_figure")([owner, listed], pin).ids).toEqual(["b:lyra"]);
+    expect(activePool([listed, owner]).ids).toEqual(["b:lyra"]);
     // …and the theme's own paint site agrees, because it is the same rule read twice.
-    expect(reelFigureArt(rosterFromIndex(index({ reel: [owner, listed] }, pin)))).toMatchObject({
+    expect(reelFigureArt(rosterFromIndex(index({ reel: [listed, owner] })))).toMatchObject({
       url: ART.cutout,
     });
   });
@@ -546,39 +548,37 @@ describe("rosterFromIndex — a malformed payload degrades, never throws inside 
   });
 });
 
-// ── G5 · the reel_figure pin addresses the REEL POOL (ruled, Codex F4). A character portrait is a
-//    rectangle; pinned as the figure it would sweep across the screen as one, so it must not resolve —
-//    and the gallery must not even offer it (see the MediaGallery suite). ──
-describe("reelFigureArt — the pin selects a CUTOUT, never a portrait", () => {
-  it("a pin naming a reel/ file wins over that folder's first entry", () => {
-    const r = rosterFromIndex(index({ reel: [file("a"), file("b")] }, { reel_figure: "b" }));
+// ── G5 · the reel figure reads the REEL POOL and nothing else (ruled, Codex F4). A character portrait
+//    is a rectangle; as the figure it would sweep across the screen as one, so it must not be
+//    reachable — and since "W6" (2026-08-26) that is true by construction rather than by a pin's
+//    resolution rule: the `reel_figure` pin is gone and ORDER inside `reel/` is the whole answer. ──
+describe("reelFigureArt — the first CUTOUT in the folder, never a portrait", () => {
+  it("the folder's FIRST usable entry is the figure — order is the whole choice", () => {
+    const r = rosterFromIndex(index({ reel: [file("b"), file("a")] }));
     expect(reelFigureArt(r)).toMatchObject({ url: painted("b") });
   });
 
-  it("a pin naming the BUNDLED cutout entry still resolves (the fresh-install case)", () => {
-    const r = rosterFromIndex(index({ characters: [] }, { reel_figure: "lyra" }));
+  it("with reel/ empty the bundled cutout stands (the fresh-install case)", () => {
+    const r = rosterFromIndex(index({ characters: [] }));
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
   });
 
-  it("a LEGACY pin naming a character without a cutout degrades to the default, never a rectangle", () => {
+  it("a CHARACTER can never reach this surface, whatever the cast holds", () => {
+    // The F4 fence, restated without the pin: the ladder reads `reel/`, so a portrait in `characters/`
+    // is not a candidate — it is not even in the list.
     const r = rosterFromIndex(
-      index(
-        { characters: [file("kira"), file("nova")], reel: [file("cut")] },
-        { reel_figure: "kira" },
-      ),
+      index({ characters: [file("kira"), file("nova")], reel: [file("cut")] }),
     );
-    // NOT kira's portrait: the pin resolves to nothing and the ladder falls through (§5.3)
     expect(reelFigureArt(r)).toMatchObject({ url: painted("cut") });
-  });
-
-  it("…and with no reel/ files either, the same legacy pin lands on the bundled cutout", () => {
-    const r = rosterFromIndex(index({ characters: [file("kira")] }, { reel_figure: "kira" }));
-    expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
+    // …and with no reel/ files either, the bundled cutout stands rather than a rectangle.
+    expect(reelFigureArt(rosterFromIndex(index({ characters: [file("kira")] })))).toMatchObject({
+      url: ART.cutout,
+    });
   });
 
   it("the REEL ROLE's bundled ids ARE the bundled cutout-bearing entries", () => {
-    // The gallery offers these while reel/ is empty; if they drift, the owner is offered a name the
-    // resolver would refuse. Since **D65** the ids live on the ROLE (`MediaSlotDef.bundled` retired) and
+    // The gallery shows these while reel/ is empty; if they drift, the owner is shown a tile the
+    // resolver cannot paint. Since **D65** the ids live on the ROLE (`MediaSlotDef.bundled` retired) and
     // are DERIVED from this pool — the registry imports `defaultRoster()`, never the reverse — so the
     // meaningful assertion is that the derivation still lands on the names this file's own schema rule
     // produces, and on the literal one the theme ships.
@@ -590,12 +590,9 @@ describe("reelFigureArt — the pin selects a CUTOUT, never a portrait", () => {
     // The literal, so a roster edit that changes WHICH entry carries the cutout is visible here rather
     // than quietly agreeing with itself on both sides of a derivation.
     expect(declared).toEqual(["lyra"]);
-    // …and the pin no longer carries a copy of it.
-    expect(MEDIA_NS.gacha.slots?.find((s) => s.key === "reel_figure")).toEqual({
-      key: "reel_figure",
-      label: "Transition figure",
-      from: "reel",
-    });
+    // …and no `slots` row addresses this role any more: the `reel_figure` pin died at "W6", so the
+    // ONLY thing that can choose the figure is the order of this list.
+    expect(MEDIA_NS.gacha.slots?.some((s) => s.from === "reel")).toBe(false);
   });
 });
 

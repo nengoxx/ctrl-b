@@ -53,7 +53,7 @@ import {
 //
 //  · the binding itself (kind over name for a service, the NAME for a machine, casefolded stem,
 //    unusable never binds) — one rule, reused, so the four roles cannot diverge;
-//  · the pool + pin ladder on the shared background (a dangling pin falls THROUGH, never blanks);
+//  · the first-wins pool ladder on the shared background (ORDER is the whole rule since "W6");
 //  · the PARENT-prop primitives: props when there is art, NOTHING when there is not, which is what makes
 //    dormancy a property of absence rather than of a conditional in five surfaces.
 //
@@ -172,20 +172,21 @@ describe("hostArtFrom — one machine's picture", () => {
   });
 });
 
-describe("backgroundArtFrom — the shared background's pool + pin ladder", () => {
-  it("takes the folder's FIRST usable file when nothing is pinned", () => {
+describe("backgroundArtFrom — the shared background's first-wins pool", () => {
+  it("takes the folder's FIRST usable file — ORDER is the whole ladder", () => {
     const first = file("a");
     expect(backgroundArtFrom(index({ background: [first, file("b")] }))).toBe(first);
   });
 
-  it("a PIN overrides the first-wins pick, by stem", () => {
+  it("the owner's own pick is the entry they moved to the TOP, and nothing else says otherwise", () => {
+    // "W6" (owner ruling 2026-08-26): the `background` PIN is gone with every other pool pin. A leftover
+    // `slots` value cannot reach this resolver at all — and the config validator refuses it at load,
+    // since `KIT_SLOTS` is empty — so a stale pin can never quietly outrank the list.
     const b = file("b");
-    expect(backgroundArtFrom(index({ background: [file("a"), b] }, { background: "b" }))).toBe(b);
-  });
-
-  it("a DANGLING pin falls through to the first usable file — never a blank layer", () => {
-    const a = file("a");
-    expect(backgroundArtFrom(index({ background: [a] }, { background: "deleted" }))).toBe(a);
+    expect(backgroundArtFrom(index({ background: [b, file("a")] }))).toBe(b);
+    expect(
+      backgroundArtFrom(index({ background: [file("a"), b] }, { background: "b" }))?.name,
+    ).toBe("a");
   });
 
   it("skips an unusable file, and is undefined for an empty folder (no layer at all)", () => {
@@ -198,19 +199,15 @@ describe("backgroundArtFrom — the shared background's pool + pin ladder", () =
   });
 });
 
-describe("brandArtFrom — the app bar's mark, on the SAME pool + pin ladder (G6.3)", () => {
+describe("brandArtFrom — the app bar's mark, on the SAME first-wins pool (G6.3)", () => {
   // Deliberately the background's shape, rung for rung: a second pool role must not invent a second
-  // resolution rule, or "first wins unless you pin one" would mean two things in one namespace.
-  it("takes the folder's first usable file, and a PIN overrides it by stem", () => {
+  // resolution rule, or "the first image wins" would mean two things in one namespace.
+  it("takes the folder's first usable file", () => {
     const first = file("a");
     expect(brandArtFrom(index({ brand: [first, file("b")] }))).toBe(first);
-    const b = file("b");
-    expect(brandArtFrom(index({ brand: [file("a"), b] }, { brand: "b" }))).toBe(b);
   });
 
-  it("a DANGLING pin falls through, an UNUSABLE file is skipped — never a broken mark", () => {
-    const a = file("a");
-    expect(brandArtFrom(index({ brand: [a] }, { brand: "deleted" }))).toBe(a);
+  it("an UNUSABLE file is skipped — never a broken mark", () => {
     const good = file("b");
     expect(brandArtFrom(index({ brand: [file("a", { unusable: true }), good] }))).toBe(good);
   });
@@ -399,11 +396,10 @@ describe("the D65 wire facts", () => {
     const rows = [file("jellyfin"), file("emby")];
     expect(activeNamedKey("jellyfin")(rows).ids).toEqual(["f:jellyfin.png"]);
     expect(activeNamedKey("plex")(rows).ids).toEqual([]); // nothing bundled to fall back to
-    // …and the pool's, pin included.
-    expect(activePool("background")(rows, {}).ids).toEqual(["f:jellyfin.png"]);
-    expect(activePool("background")(rows, { background: "emby" }).ids).toEqual(["f:emby.png"]);
-    // A dangling pin falls THROUGH rather than marking nothing — the ladder the layer itself paints.
-    expect(activePool("background")(rows, { background: "gone" }).ids).toEqual(["f:jellyfin.png"]);
+    // …and the pool's, which since "W6" (2026-08-26) is ORDER and nothing else: the kit's two pins
+    // died with every other pool pin, so the layer paints whatever the owner put at the top.
+    expect(activePool(rows).ids).toEqual(["f:jellyfin.png"]);
+    expect(activePool([rows[1], rows[0]]).ids).toEqual(["f:emby.png"]);
   });
 
   it("hiding everything resolves to NOTHING — there is no shipped rung here to resurrect", () => {
@@ -411,7 +407,7 @@ describe("the D65 wire facts", () => {
     // bundled art at all (§3), so "resolved to nothing" already IS what the surfaces paint. Pinned so a
     // later bundled-art row cannot quietly grow the resurrection the other two themes had.
     const off = [file("jellyfin", { hidden: true }), file("emby", { hidden: true })];
-    expect(activePool("background")(off, {}).ids).toEqual([]);
+    expect(activePool(off).ids).toEqual([]);
     expect(activeNamedKey("jellyfin")(off).ids).toEqual([]);
     expect(backgroundArtFrom(index({ background: off }))).toBeUndefined();
   });

@@ -16,18 +16,26 @@
 // TIER. A write therefore has to express an order over rows that are not all listed, and what it may
 // list is decided by the INTENT, not by the tier (§2.3 ③ as AMENDED by the owner 2026-08-25):
 //
-//   · an ORDER intent — `moveBy`, `moveToEdge`, `setActive`, and therefore the drag — SWEEPS THE WHOLE
-//     SECTION into `files` in the resulting display order, unlisted disk rows and unlisted bundled rows
-//     alike. The section's order becomes explicit, which is the only shape that can say it: a partial
+//   · an ORDER intent — `moveBy` and `moveToEdge`, and therefore the drag — SWEEPS THE WHOLE SECTION
+//     into `files` in the resulting display order, unlisted disk rows and unlisted bundled rows alike.
+//     The section's order becomes explicit, which is the only shape that can say it: a partial
 //     listing cannot express a mid-list position at all (a downward drag inside an all-bundled section
 //     had no expressible target and snapped home), and listing only the two rows of a swap SHRANK the
 //     deal — `ladderRows`' own-tier-replaces-fallback rule then dealt those two portraits across the
 //     whole fleet. A full sweep is THE SAME ART IN THE NEW ORDER: zero paint surprise, and the fleet
 //     the owner was looking at is the fleet they keep.
-//   · every OTHER intent — `setHidden`, `setFocal`, `makeEligible`, `appendItem`, `removeItem` — still
-//     lists only the entry it acted on (plus the disk tier, which is free: those rows already sit in
-//     the resolution prefix, so listing them changes nothing but their order). None of them is a claim
-//     about the section's ORDER, so none of them may make one.
+//   · every OTHER intent — `setHidden`, `setFocal`, `appendItem`, `removeItem` — still lists only the
+//     entry it acted on (plus the disk tier, which is free: those rows already sit in the resolution
+//     prefix, so listing them changes nothing but their order). None of them is a claim about the
+//     section's ORDER, so none of them may make one.
+//
+// **THERE IS NO `setActive` AND NO `makeEligible`** (owner ruling 2026-08-26, "W6"): order is the only
+// priority system, so "use this one" is `moveToEdge(…, "top")` — an ordinary order intent, with no
+// membership side effect. The two used to exist because activation was a second, parallel system:
+// `setActive` was move-to-front *plus* an un-hide, and `makeEligible` was the `files` half a POOL PIN
+// needed to make its target resolvable. Every pool pin is gone, and the two SEATS that remain refuse a
+// target their source ladder does not already deal rather than repairing the source library from a
+// read-only view of it (§2.1).
 //
 // The rule this amends said no write may ever list a bundled row it was not pointed at, so that "the
 // owner's first drag must not enlist five bundled characters into the fleet". The owner overruled it:
@@ -332,62 +340,6 @@ function reordered(order: readonly RowId[], from: number, to: number): RowId[] {
   const [moved] = next.splice(from, 1);
   next.splice(to, 0, moved);
   return next;
-}
-
-/** **Set as active** = move-to-front (§6.5). The list order IS the priority, so the explicit intent
- *  the owner expresses in the detail panel is stored as the thing every ladder already reads.
- *
- *  ACTIVATION GUARANTEES ELIGIBILITY, in the same write (Emma's S2 review #1). Moving a `hidden`
- *  entry to the front changes nothing an owner can see: resolution skips hidden rows everywhere, so
- *  the tile would sit first and stay excluded while the card kept painting someone else. "Set as
- *  active" therefore switches it back on too — one gesture, one write, one outcome the owner asked
- *  for.
- *
- *  It is an ORDER intent, so it SWEEPS: picking one of five bundled defaults writes all five, that one
- *  first. Listing only the pick would have made it the owner's entire tier and retired the other four
- *  — the deal-shrinking half of the 2026-08-25 amendment, in its most literal form. */
-export function setActive(
-  entries: readonly LibraryEntry[] | undefined,
-  rows: readonly LibraryRow[],
-  id: RowId,
-): LibraryEntry[] {
-  const order = displayOrder(rows);
-  const from = order.indexOf(id);
-  // Gone by send time: refused, and a refusal states no new order (`moveBy`'s rule — sweeping here
-  // would promote the fallback tier as the side effect of a gesture that activated nothing).
-  if (from < 0) return writeFiles(entries, rows, { order, touched: [] });
-  return writeFiles(entries, rows, {
-    order: reordered(order, from, 0),
-    touched: [id],
-    sweep: true,
-    edit: { id, fields: { hidden: undefined } },
-  });
-}
-
-/** Make ONE entry eligible WHERE IT STANDS — the `files` half of a PIN write (Emma's S2 review #1 ②).
- *
- *  A pin resolves against the list its own ladder deals, so pinning an entry that ladder does not
- *  offer writes a value nothing can honour: the card would claim the pick while the render kept
- *  painting the previous winner, and the detail panel would offer to "clear a pin" for an entry that
- *  was never active. Two states need repairing, and both are repaired here rather than by a second
- *  queued write, so the pin and its eligibility land in one patch or not at all:
- *
- *   · a `hidden` entry — resolution skips it, so it is switched back on;
- *   · a FALLBACK-TIER bundled entry — the ladder falls through to that tier only while the owner's
- *     own tier is empty, so the entry is LISTED. That is the tier rule's own escape (§2.3 ③): only
- *     the entry the owner explicitly ACTED ON becomes listed, and a pin is as explicit as it gets.
- *
- *  The ORDER is untouched: the pin is what this gesture means, not the priority. */
-export function makeEligible(
-  entries: readonly LibraryEntry[] | undefined,
-  rows: readonly LibraryRow[],
-  id: RowId,
-): LibraryEntry[] {
-  return writeFiles(entries, rows, {
-    order: displayOrder(rows),
-    touched: [id],
-    edit: { id, fields: { hidden: undefined } },
-  });
 }
 
 /** Move one entry by `delta` positions (the ↑/↓ buttons — the WCAG floor, and S5's drag lands on the

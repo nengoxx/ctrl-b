@@ -128,19 +128,25 @@ GACHA_ROLES: dict[str, MediaRole] = {
     "oracle": MediaRole(bundled=("oracle",)),
 }
 
-#: The gacha `slots` pin keys (§5.2) — the cross-role bindings the Conf gallery offers. `wallpaper` is
-#: still here with its folder gone, and the two are deliberately independent: a pin key names a SLOT the
-#: client resolver fills, and `Settings._known_media_namespaces_roles_and_slots` validates it against
-#: this tuple alone (never against `roles`), so a pin whose options come from another role is an
-#: ordinary shape here — `reel_figure` has always been one.
+#: The gacha `slots` pin keys (§5.2) — and since 2026-08-26 ("W6") the only pin keys anywhere. Both are
+#: SEATS: a cross-role binding of one CHARACTER into a surface the cast does not own. `wallpaper` is here
+#: with its folder gone, and the two are deliberately independent: a pin key names a SLOT the client
+#: resolver fills, and `Settings._known_media_namespaces_roles_and_slots` validates it against this tuple
+#: alone (never against `roles`).
 #:
-#: **`hero` was REMOVED 2026-08-26** (owner ruling, "W5"): the pickup carousel's first slide no longer has
-#: art of its own to bind — it deals the `banner` role's first member — so a seat pinning a character into
-#: it would be a second, contradictory answer to which picture opens the banner. A clean removal on the
-#: `wallpaper`-role precedent above: media v2 has never shipped to prod, so no config on disk holds the
-#: pin. A hand-authored leftover is an unknown slot key, which is a load/PUT error rather than a knob that
-#: silently does nothing — the same treatment the deleted `wallpaper` ROLE gets, and deliberately loud.
-GACHA_SLOTS: tuple[str, ...] = ("wallpaper", "oracle", "reel_figure")
+#: **`reel_figure` was REMOVED 2026-08-26** (owner ruling, "W6" — *order is the only priority system,
+#: app-wide*). It was not a seat but an OVERRIDE of the `reel` folder's own first-wins pick, i.e. a second
+#: way to say what the library order already said, in a second place. The transition cutout is now simply
+#: the first image in that folder's gallery. Same wave took frontier's `hero` and the kit's
+#: `background`/`brand` (`FRONTIER_SLOTS`/`KIT_SLOTS` below, both empty now).
+#:
+#: (**`hero` went one ruling earlier**, at "W5": the pickup carousel's first slide has no art of its own to
+#: bind — it deals the `banner` role's first member.)
+#:
+#: Clean removals on the `wallpaper`-role precedent above: media v2 has never shipped to prod, so no config
+#: on disk holds any of these pins (both live configs verified). A hand-authored leftover is an unknown slot
+#: key, which is a load/PUT error rather than a knob that silently does nothing — deliberately loud.
+GACHA_SLOTS: tuple[str, ...] = ("wallpaper", "oracle")
 
 #: The frontier role folders (D53 / MEDIA_PLAN §3). `rigs` and `hero` are POOLS (the badlands cards and
 #: the map cover); `stack` is the NAMED role — its three layers bind by filename STEM
@@ -159,9 +165,12 @@ FRONTIER_ROLES: dict[str, MediaRole] = {
     "stack": MediaRole(bundled=("cube", "platform-mid", "platform-base")),
 }
 
-#: The frontier `slots` pin keys. Only `hero`: a pool with a first-wins default that the owner may
-#: override by name (the kit pins are the same shape). The named role gets none.
-FRONTIER_SLOTS: tuple[str, ...] = ("hero",)
+#: The frontier `slots` pin keys — NONE since 2026-08-26 ("W6"). It carried exactly one, `hero`, an
+#: override of the map-cover pool's own first-wins pick; the owner ruled ORDER the only priority system,
+#: so the cover is whichever image sits first in that folder's gallery. The named role never had one (its
+#: stems ARE its bindings). Empty rather than absent: "this namespace offers no pin" is a real answer the
+#: config validator states, and an omitted field would read as a forgotten one.
+FRONTIER_SLOTS: tuple[str, ...] = ()
 
 #: The kit role folders (D53 M3, extended by the Kit Art System). They belong to no theme: every theme's
 #: service rows read them, so the namespace is the kit's rather than any theme's.
@@ -211,9 +220,10 @@ KIT_ROLES: dict[str, MediaRole] = {
     "brand": MediaRole(),
 }
 
-#: The kit `slots` pin keys — one per POOL, and each is the same shape as the frontier hero pin: a
-#: first-wins default the owner may override by name.
-KIT_SLOTS: tuple[str, ...] = ("background", "brand")
+#: The kit `slots` pin keys — NONE since 2026-08-26 ("W6"). The two POOLS carried one each
+#: (`background`, `brand`); both were overrides of a first-wins pick the library order already expresses,
+#: and the owner ruled that order is the only priority system. Empty for the reason `FRONTIER_SLOTS` is.
+KIT_SLOTS: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@
 //
 // SPLIT the same way gacha's is, and for the same reason: `frontierArtFromIndex` is PURE (a wire payload
 // in, resolved art out), so the acceptance rows — the 8 partial-stack combinations, the empty folder, a
-// dangling pin — are ordinary unit tests, and `useFrontierArt` is the two-line React wrapper. The query
+// retired bundled entry — are ordinary unit tests, and `useFrontierArt` is the two-line React wrapper. The query
 // NEVER gates a render: `frontierArtFromIndex(undefined)` is the bundled art, so the first paint and a
 // backend that is briefly unreachable both show the shipped theme rather than a hole.
 //
@@ -62,8 +62,10 @@ export interface FrontierArt {
    *  The bundled fallback for a position is INDEXED (`present()` names it `RIG_KEYS[i % 6]`), which is
    *  why the last rung stays at the consumer rather than being copied here. */
   rigUrlFor: (i: number) => string | null | undefined;
-  /** The map cover: the `hero` pin, else that folder's first usable member — which since S6 includes
-   *  the bundled vista, an ordinary library entry under `HERO_KEY` rather than a URL no id addressed.
+  /** The map cover: that folder's first usable member — which since S6 includes the bundled vista, an
+   *  ordinary library entry under `HERO_KEY` rather than a URL no id addressed. (A `hero` PIN sat above
+   *  that rung until 2026-08-26, "W6": order is the only priority system now, so the cover is whichever
+   *  image the owner put at the top of the Map cover gallery.)
    *
    *  `undefined` = nothing to paint, and it means here exactly what `null` means for a rig: the role
    *  RESOLVED to nothing although the payload described it, i.e. the owner switched the vista off. A
@@ -106,8 +108,7 @@ export function frontierArtFromIndex(index: MediaIndex | undefined): FrontierArt
     },
     // The same degrade rule as the rigs, one rung shorter: the shipped vista stands while this payload
     // never described the role's bundled tier, and is the owner's own answer once it did.
-    hero:
-      heroRow(heroRowsIn, index?.slots ?? {}) ?? (offersBundled(heroRowsIn) ? undefined : ART.hero),
+    hero: heroRow(heroRowsIn) ?? (offersBundled(heroRowsIn) ? undefined : ART.hero),
     stack: {
       cube: stackLayerUrl(stack, "cube"),
       mid: stackLayerUrl(stack, "platform-mid"),
@@ -138,11 +139,15 @@ function rigUrl(f: MediaFile): string | undefined {
   return at < 0 ? undefined : ART.rigs[at];
 }
 
-/** The map cover: the `hero` pin, else the folder's first usable member. `undefined` = the ladder
- *  resolved nothing at all, which the caller reads against `offersBundled` to tell "the owner switched
- *  the vista off" from "this payload never described the role". */
-function heroRow(rows: readonly MediaFile[], slots: Record<string, string>): string | undefined {
-  const pick = firstUsable(usableLadderRows(rows), slots.hero || undefined);
+/** The map cover: the folder's first usable member. `undefined` = the ladder resolved nothing at all,
+ *  which the caller reads against `offersBundled` to tell "the owner switched the vista off" from "this
+ *  payload never described the role".
+ *
+ *  ONE rung since 2026-08-26 ("W6"). The `hero` pin above it is gone with every other pool pin — the
+ *  owner ruled that order is the only priority system, so this reads the library's own order and
+ *  nothing else. */
+function heroRow(rows: readonly MediaFile[]): string | undefined {
+  const pick = firstUsable(usableLadderRows(rows));
   if (pick === undefined) return undefined;
   // A bundled row resolves to this theme's own asset — the server emits the id and never a url. An id
   // the theme no longer ships resolves to nothing, exactly as a rig's does.
@@ -187,15 +192,10 @@ export function activeRigs(rows: readonly LibraryRow[]): ActiveArt {
   return { ids: activeIds(rigRows(rows as readonly MediaFile[])), mode: "deal" };
 }
 
-/** The gallery's reading of the map cover: pin, else first usable — one winner. */
-export function activeHero(
-  rows: readonly LibraryRow[],
-  slots: Readonly<Record<string, string>>,
-): ActiveArt {
-  const pick = firstUsable(
-    usableLadderRows(rows as readonly MediaFile[]),
-    slots?.hero || undefined,
-  );
+/** The gallery's reading of the map cover: the first usable member — one winner, chosen by ORDER
+ *  ("W6", 2026-08-26). It reads no `slots`, which is why it declares none. */
+export function activeHero(rows: readonly LibraryRow[]): ActiveArt {
+  const pick = firstUsable(usableLadderRows(rows as readonly MediaFile[]));
   return { ids: pick ? [rowId(pick)] : [], mode: "first" };
 }
 

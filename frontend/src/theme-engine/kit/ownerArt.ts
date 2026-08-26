@@ -35,16 +35,19 @@ import type { ServiceIdentity } from "../../lib/media";
 import { ownTier, rowId, shown, type ActiveArt, type LibraryRow } from "../../lib/mediaLibrary";
 
 /** The namespace and its role folders — named once so the hooks, the gallery and the tests cannot drift
- *  from `core/media.py`'s `KIT_ROLES`/`KIT_SLOTS`. */
+ *  from `core/media.py`'s `KIT_ROLES`. */
 export const KIT_NS = "kit";
 const ICON_ROLE = "services";
 const BANNER_ROLE = "service-banners";
 const HOST_ROLE = "hosts";
 const BACKGROUND_ROLE = "background";
 const BRAND_ROLE = "brand";
-/** Each pool's pin (`media.kit.slots.<key>`) — the owner overriding that folder's first-wins pick. */
-const BACKGROUND_SLOT = "background";
-const BRAND_SLOT = "brand";
+// NO `slots` PINS. The kit's two pools each carried one (`media.kit.slots.background`/`.brand`) until
+// 2026-08-26 ("W6"), when the owner ruled that ORDER is the only priority system app-wide: the picture
+// that wins is the one at the top of that role's gallery, and a second way to say the same thing was a
+// second place to look when the answer surprised you. Removed cleanly, with no compat rung — media v2
+// has never shipped to prod, so a hand-authored `slots:` block here is an unknown key the config
+// validator refuses out loud (`KIT_SLOTS` is empty on the server side too).
 
 /** A role's RESOLVABLE FILES out of a payload, defensively. Wire data: a stub or partial response (an
  *  e2e mock, a proxy answering `{}`) must degrade to "no art" rather than throw inside a render — the
@@ -117,30 +120,30 @@ export function hostArtFrom(
   return namedFile(index, HOST_ROLE, hostKeyFor(host));
 }
 
-/** The shared whole-app background: the `background` PIN, else that folder's first usable file, else
- *  nothing. The frontier-hero pin shape, through the same `firstUsable` rung — a pin naming a file the
- *  folder no longer holds falls through rather than blanking the layer. */
+/** The shared whole-app background: that folder's first usable file, else nothing. ONE rung since
+ *  "W6" (2026-08-26) — the `background` pin above it is gone with every other pool pin, so the layer
+ *  paints whatever the owner put at the top of the Background gallery. */
 export function backgroundArtFrom(index: MediaIndex | undefined): MediaFile | undefined {
-  return firstUsable(roleFiles(index, BACKGROUND_ROLE), index?.slots?.[BACKGROUND_SLOT]);
+  return firstUsable(roleFiles(index, BACKGROUND_ROLE));
 }
 
 /** The owner's BRAND MARK — the silhouette the app bar shows instead of the kit's accent dot (G6.3). The
- *  same pool+pin ladder as the background above, and the same degrade: no folder, no usable file or a
- *  dangling pin ⇒ `undefined` ⇒ the bar renders exactly what it rendered before this slice.
+ *  same first-wins pool ladder as the background above, and the same degrade: no folder or no usable
+ *  file ⇒ `undefined` ⇒ the bar renders exactly what it rendered before this slice.
  *
  *  Only the file's ALPHA is used — `KitAppBar` paints it as a CSS mask over the accent fill — but that is
  *  the SURFACE's business, not this resolver's (the §A5 split: this module answers "which file", never
  *  "how it is painted"). */
 export function brandArtFrom(index: MediaIndex | undefined): MediaFile | undefined {
-  return firstUsable(roleFiles(index, BRAND_ROLE), index?.slots?.[BRAND_SLOT]);
+  return firstUsable(roleFiles(index, BRAND_ROLE));
 }
 
 // ── the §2.4 ACTIVE RESOLVERS (D65, council H1) ──────────────────────────────────────────────────
 //
 // The gallery resolves through the SAME rule the surfaces paint through — for the kit that is
 // `stemIndex` for a keyed role and `firstUsable` for a pool, i.e. exactly the functions above, over
-// the same rows. They take the ROLE's rows (not the whole index) because a section IS a role, and the
-// wire's `slots` for the two pools that carry a pin.
+// the same rows. They take the ROLE's rows (not the whole index) because a section IS a role, and they
+// read no `slots` at all: the kit has no pins left ("W6", 2026-08-26).
 
 /** ONE key of a `named` role (a service, a machine): the FILE bound to it, or nothing. "Nothing" is the
  *  ordinary answer — the kit ships no per-key fallback art — and the surface then renders as it does
@@ -154,13 +157,12 @@ export function activeNamedKey(key: string) {
   };
 }
 
-/** A kit POOL (`background`, `brand`): its pin, else the first usable file — `firstUsable`'s ladder,
- *  the one the layer itself paints through. */
-export function activePool(slot: string) {
-  return (rows: readonly LibraryRow[], slots: Readonly<Record<string, string>>): ActiveArt => {
-    const pick = firstUsable(ownTier(shown(rows)), slots?.[slot] || undefined);
-    return { ids: pick ? [rowId(pick)] : [], mode: "first" };
-  };
+/** A kit POOL (`background`, `brand`): the first usable file — `firstUsable`'s ladder, the one the
+ *  layer itself paints through. It was a FACTORY taking the pool's pin key until "W6" (2026-08-26);
+ *  with the pins gone there is one rung, so the resolver is that rung and reads no `slots`. */
+export function activePool(rows: readonly LibraryRow[]): ActiveArt {
+  const pick = firstUsable(ownTier(shown(rows)));
+  return { ids: pick ? [rowId(pick)] : [], mode: "first" };
 }
 
 // ── the hooks: ONE query, one policy, four readings of it ────────────────────────────────────────

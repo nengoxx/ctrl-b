@@ -75,24 +75,18 @@ describe("firstUsable — the ladder rung", () => {
     expect(firstUsable([f("bad", true), f("good")])?.name).toBe("good");
   });
 
-  it("a PIN naming a member wins over the first", () => {
-    expect(firstUsable([f("a"), f("b")], "b")?.name).toBe("b");
-  });
-
-  it("a pin naming nothing in THIS list falls through to the first — never a hole", () => {
-    // The reel-figure ruling (Codex F4): a legacy pin naming a character finds no member of the reel
-    // pool, and the surface degrades to that pool's own pick rather than blanking.
-    expect(firstUsable([f("a"), f("b")], "ghost")?.name).toBe("a");
-    expect(firstUsable([f("a"), f("b")], "bad")?.name).toBe("a");
-  });
-
-  it("a pin naming an UNUSABLE member falls through too", () => {
-    expect(firstUsable([f("a"), f("b", true)], "b")?.name).toBe("a");
+  // It took an optional PIN naming a member of this same list until 2026-08-26 ("W6"), when the owner
+  // ruled ORDER the only priority system app-wide and every POOL pin died. The rung reads the list's
+  // own order and nothing else, so "the owner's own pick" is simply the entry they moved to the top —
+  // one system, one place to look.
+  it("ORDER is the whole rule — the first usable entry wins, whatever else the config says", () => {
+    expect(firstUsable([f("a"), f("b")])?.name).toBe("a");
+    expect(firstUsable([f("a", true), f("b"), f("c")])?.name).toBe("b");
   });
 
   it("`undefined` on an empty list, so it composes with `??` into the next rung", () => {
     expect(firstUsable([])).toBeUndefined();
-    expect(firstUsable([f("a", true)], "a")).toBeUndefined();
+    expect(firstUsable([f("a", true)])).toBeUndefined();
   });
 });
 

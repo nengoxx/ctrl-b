@@ -225,10 +225,11 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("status")).toContainText(`${BUNDLED.length + 2} images`);
 
-  // ② SET AS ACTIVE = move-to-front, and it is an ORDER intent, so the write names the WHOLE section
-  //    — the two files and the five bundled defaults, in the order they now sit (§2.3 ③ as amended).
+  // ② MOVE TO TOP is activation ("W6" — the library's ORDER is the only priority system), and it is
+  //    an ORDER intent, so the write names the WHOLE section — the two files and the five bundled
+  //    defaults, in the order they now sit (§2.3 ③ as amended).
   await dialog.getByRole("button", { name: "b.webp", exact: true }).click();
-  await dialog.getByRole("button", { name: "Set as active", exact: true }).click();
+  await dialog.getByRole("button", { name: "Move to top", exact: true }).click();
   await expect.poll(() => puts.length).toBe(1);
   expect(puts[0]).toEqual({
     media: {
@@ -557,12 +558,12 @@ test("Conf · Theme art — what the gallery says is in use is what the FLEET pa
   await page.locator("#tabbtn-fleet").click();
   await expect(dealt).toHaveAttribute("src", painted("a.webp"));
 
-  // ② "Set as active" in the gallery moves the fleet with it — one resolver, two readers.
+  // ② "Move to top" in the gallery moves the fleet with it — one resolver, two readers.
   await page.locator("#tabbtn-conf").click();
   await card.click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "b.webp", exact: true }).click();
-  await dialog.getByRole("button", { name: "Set as active", exact: true }).click();
+  await dialog.getByRole("button", { name: "Move to top", exact: true }).click();
   await expect
     .poll(() => st.files)
     .toEqual([{ name: "b.webp" }, { name: "a.webp" }, ...castEntries()]);
@@ -704,15 +705,15 @@ test("Conf · Theme art — the UPLOAD round trip: Add → pick → crop → til
   await expect(tile).toBeVisible();
   await expect(dialog.getByRole("status")).toContainText(`${BUNDLED.length + 1} images`); // the upload + the bundled tier
 
-  // ⑤ it is an ordinary library entry from here on: activate it, then delete it.
+  // ⑤ it is an ordinary library entry from here on: move it to the top, then delete it.
   await tile.click();
-  await dialog.getByRole("button", { name: "Set as active", exact: true }).click();
+  await dialog.getByRole("button", { name: "Move to top", exact: true }).click();
   await expect.poll(() => puts.length).toBe(2);
   await dialog.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).last().click();
   await expect.poll(() => deletes.length).toBe(1);
   expect(deletes[0]).toBe("/api/media/gacha/files/characters/photo-320x240.webp");
-  // The upload's entry is gone; the cast stays listed, because ⑤'s "Set as active" was an order
+  // The upload's entry is gone; the cast stays listed, because ⑤'s "Move to top" was an order
   // intent and named it. A DELETE is not one, so it removes exactly the one entry it was about.
   await expect.poll(() => st.files).toEqual(castEntries());
 });

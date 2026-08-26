@@ -13,8 +13,9 @@ import type { MediaNsDef } from "../theme-engine/mediaRegistry";
 //
 // **What it is now**: one CARD per art destination (a role folder, one key of a named role, a pin-backed
 // seat), and behind each card a full-screen gallery of that destination's LIBRARY — the owner's files
-// and the app's bundled art in one grid, ordered by priority, with set-active / In use / delete on the
-// item detail panel. Uploading lands at S3b; the Add row is present and inert until then.
+// and the app's bundled art in one grid, where the ORDER is the priority (owner ruling 2026-08-26,
+// "W6" — there is no second "set active" system), with In use on the tile corner and arranging,
+// framing and delete on the item detail panel.
 //
 // It hosts the modal itself (council H4's acceptance line: `ConfTab` gains ZERO net lines for all of
 // this). Everything it knows about a namespace still arrives as a `MediaNsDef` row from

@@ -102,17 +102,13 @@ describe("the kit row (D53 M3 + the Kit Art System)", () => {
     expect(MEDIA_NS.kit.roles["service-banners"].asset).not.toBe(MEDIA_NS.kit.roles.services.asset);
   });
 
-  it("the two POOLS each carry a pin, and only they do — the wallpaper/hero shape, twice", () => {
+  it('the two POOLS carry NO pin — order is the only priority system (owner ruling, "W6")', () => {
     expect(MEDIA_NS.kit.roles.background.kind).toBe("pool");
     expect(MEDIA_NS.kit.roles.brand.kind).toBe("pool");
-    const slots = MEDIA_NS.kit.slots ?? [];
-    expect(slots.map((s) => s.key)).toEqual(["background", "brand"]);
-    // A pin's options come from a real role, and a NAMED role never offers one (its stems ARE its
-    // bindings) — the same two invariants the gacha and frontier rows are held to.
-    for (const slot of slots) expect(MEDIA_NS.kit.roles[slot.from].kind).toBe("pool");
-    // Each pin reads its OWN folder. Crossing them would let the owner pin a wallpaper as the app icon —
-    // the same class of mistake the gacha reel pin is fenced against (Codex F4).
-    for (const slot of slots) expect(slot.from).toBe(slot.key);
+    // Each carried one until 2026-08-26 (`background`, `brand`), and each was an override of a
+    // first-wins pick the library order already expresses. The whole namespace offers none now, so the
+    // picture that wins is the one at the top of that role's gallery and there is nowhere else to look.
+    expect(MEDIA_NS.kit.slots ?? []).toEqual([]);
   });
 
   it("prices the BRAND mark as an icon, not as full-bleed art (G6.3)", () => {
@@ -199,20 +195,26 @@ describe("the gacha row", () => {
     }
   });
 
-  it("offers every pin the backend registry accepts, each sourced from a real role", () => {
+  it("offers every pin the backend registry accepts — two SEATS, and nothing else anywhere", () => {
     const slots = MEDIA_NS.gacha.slots ?? [];
     // `wallpaper` was UNCHANGED by G6.3's role removal: a pin key and a role folder are validated
     // independently on both ends (`GACHA_SLOTS` vs `GACHA_ROLES`), and it survives because the
     // theme-specific half — bind a CAST portrait to the backdrop — has no kit equivalent.
     //
-    // `hero` is GONE (owner ruling 2026-08-26, "W5"): the carousel's first slide deals the `banner`
-    // pool's first member, so it has no art of its own to bind and a seat over the cast would be a
-    // second, contradictory answer to which picture opens the banner.
-    expect(slots.map((s) => s.key)).toEqual(["wallpaper", "oracle", "reel_figure"]);
+    // `reel_figure` is GONE (owner ruling 2026-08-26, "W6" — ORDER is the only priority system,
+    // app-wide). It was not a seat but an OVERRIDE of the `reel` folder's own first-wins pick: a second
+    // way to say what the library order already said, and a second place to look when the answer
+    // surprised you. `hero` went one ruling earlier ("W5") for its own reason.
+    expect(slots.map((s) => s.key)).toEqual(["wallpaper", "oracle"]);
     for (const slot of slots) expect(MEDIA_NS.gacha.roles[slot.from]).toBeDefined();
-    expect(slots.find((s) => s.key === "wallpaper")?.from).toBe("characters");
-    // The ruled shape (Codex F4): the figure's options come from the REEL role, never the cast.
-    expect(slots.find((s) => s.key === "reel_figure")?.from).toBe("reel");
+    // EVERY surviving pin is a SEAT — a binding into a surface the source role does not own, which is
+    // precisely what no order can express. That is the invariant the ruling leaves behind, and it holds
+    // across the whole registry, not just here.
+    for (const [ns, row] of Object.entries(MEDIA_NS)) {
+      for (const slot of row.slots ?? []) expect(slot.seat, `${ns}:${slot.key}`).toBe(true);
+    }
+    // Both of gacha's source from the CAST: a portrait crops fine as a backdrop.
+    for (const slot of slots) expect(slot.from).toBe("characters");
   });
 
   it("the BACKDROP seat carries a hint naming the rung between the pin and the built-in", () => {
@@ -269,10 +271,10 @@ describe("the frontier row (D53 M2)", () => {
     for (const k of stack.keys ?? []) expect(k.hint.length).toBeGreaterThan(0);
   });
 
-  it("only the POOL roles offer a pin — a named role's stems ARE its bindings", () => {
-    const slots = MEDIA_NS.frontier.slots ?? [];
-    expect(slots.map((s) => s.key)).toEqual(["hero"]);
-    for (const slot of slots) expect(MEDIA_NS.frontier.roles[slot.from].kind).toBe("pool");
+  it('offers NO pin at all — the map cover is chosen by ORDER like everything else ("W6")', () => {
+    // It carried exactly one, `hero`, an override of the map-cover pool's own first pick. The named
+    // role never had one (its stems ARE its bindings), so this namespace's `slots` list is empty.
+    expect(MEDIA_NS.frontier.slots ?? []).toEqual([]);
   });
 
   it("no role declares static keys unless it is named (and vice versa where keys exist)", () => {
@@ -419,7 +421,7 @@ describe("bundled ids — derived front-end-side, mirrored on the backend", () =
     expect(rotation?.role).toBe("service-banners");
     expect(rotation?.caps).toEqual({
       reorder: true,
-      activate: "order",
+      promote: true,
       hidden: true,
       remove: false,
       upload: false,
@@ -505,13 +507,13 @@ describe("mediaSections — the destinations the Conf tab shows", () => {
       "gacha:@wallpaper",
       "gacha:@oracle",
     ]);
-    // `reel_figure` is NOT a seat: it pins the reel role's own first-wins pick, so it is that role's
-    // ladder rather than a destination of its own — one destination, one card.
-    const reel = out.find((s) => s.id === "gacha:reel");
-    expect(reel?.pin).toBe("reel_figure");
-    expect(reel?.caps.activate).toBe("pin");
-    // …while a pool with no pin above it activates by ORDER (move-to-front).
-    expect(out.find((s) => s.id === "gacha:characters")?.caps.activate).toBe("order");
+    // NO POOL CARRIES A PIN any more ("W6"): `reel` used to, and its section therefore wrote the pin
+    // instead of a position. Every pool now says "this one, please" the same way — move it to the top.
+    for (const s of out.filter((s) => s.kind === "pool")) {
+      expect(s.pin, s.id).toBeUndefined();
+      expect(s.caps.promote, s.id).toBe(true);
+      expect(s.caps.reorder, s.id).toBe(true);
+    }
   });
 
   it("a SEAT is a read-only view: pin only, and nothing that would write the source library", () => {
@@ -519,12 +521,15 @@ describe("mediaSections — the destinations the Conf tab shows", () => {
       (s) => s.id === "gacha:@wallpaper",
     );
     expect(seat?.role).toBe("characters"); // it VIEWS the cast
+    expect(seat?.pin).toBe("wallpaper"); // …and its ONE write is that pin
     expect(seat?.caps).toEqual({
       reorder: false,
+      // Nor may it state a priority in the source library: a seat binds ONE entry and says nothing
+      // about the order the cast is dealt in.
+      promote: false,
       // A seat is a VIEW: framing edits the item, which belongs to the source role's own gallery
       // (§5) — offering it here would write into a library this section is read-only over.
       frame: false,
-      activate: "pin",
       hidden: false,
       remove: false,
       upload: false,
@@ -536,9 +541,11 @@ describe("mediaSections — the destinations the Conf tab shows", () => {
     expect(out.filter((s) => s.kind === "key").map((s) => s.key)).toEqual([...STACK_KEYS]);
     const cube = out.find((s) => s.key === "cube");
     expect(cube?.aspect).toBeCloseTo(353 / 364, 5);
-    // Order buys nothing but the duplicate tie-break in a named role, so the ↑/↓ pair is hidden (#11).
+    // Order buys nothing but the duplicate tie-break in a named role, so the ↑/↓ pair is hidden (#11)
+    // — a RELATIVE move here would step through neighbours that are not in this scoped grid.
     expect(cube?.caps.reorder).toBe(false);
-    expect(cube?.caps.activate).toBe("order"); // move-to-front IS how a duplicate wins its key
+    // …but MOVE TO TOP stays, because it is the only thing that settles that tie-break ("W6").
+    expect(cube?.caps.promote).toBe(true);
   });
 
   it("kit: ONE family card per data-derived role, plus its Unassigned bucket (H5)", () => {
@@ -557,9 +564,10 @@ describe("mediaSections — the destinations the Conf tab shows", () => {
     ]);
     expect(out.find((s) => s.kind === "unassigned")?.caps).toEqual({
       reorder: false,
-      // …and a file bound to no key paints in no window, so there is nothing to frame it for.
+      // A file bound to no key paints nowhere, so it has no priority to state…
+      promote: false,
+      // …and no window to be framed for.
       frame: false,
-      activate: "none", // a file bound to no key paints nowhere; there is nothing to activate
       hidden: true,
       remove: true,
       upload: false,

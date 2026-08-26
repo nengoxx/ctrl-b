@@ -22,8 +22,12 @@ export interface MediaUsable {
   unusable?: boolean;
 }
 
-/** …plus the NAME a pin addresses a member by (the config's `slots` values are filename stems), and
- *  the explicit BINDING key an upload (or the owner) set on the entry.
+/** …plus the NAME a SEAT's pin addresses a member by (the config's `slots` values are filename stems),
+ *  and the explicit BINDING key an upload (or the owner) set on the entry.
+ *
+ *  Seats are the only pins left since 2026-08-26 ("W6" — order is the only priority system): a seat
+ *  binds one entry of another role's library into a surface that library does not own, which no order
+ *  can express. Every POOL pin is gone.
  *
  *  `key` is the per-item override of the stem rule (D65 / MEDIA_MANAGER_PLAN §2.2): an item binds by
  *  its `key` when it has one, else by its stem — and the stem fallback is PERMANENT, not a legacy
@@ -76,21 +80,19 @@ export function cycleAssign<T>(files: readonly T[], count: number): (T | null)[]
   return Array.from({ length: Math.max(0, count) }, (_, i) => cycleAt(files, i));
 }
 
-/** First-wins on a role, with an optional PIN naming a member of this same list.
+/** First-wins on a role: the first member of the list that can actually paint.
  *
- *  The pin addresses THIS list and nothing else (the ruled reel-figure shape, GACHA_PLAN §5.2 / Codex F4):
- *  a pin naming something the role does not hold — a deleted file, or a legacy value from before a role's
- *  options changed — falls through to the first usable member rather than blanking the surface.
+ *  It took an optional PIN naming a member of this same list until 2026-08-26 ("W6"). The owner ruled
+ *  that **order is the only priority system, app-wide** — every POOL pin is gone (gacha's `reel_figure`,
+ *  frontier's `hero`, the kit's `background`/`brand`), so "the owner's own pick" is simply the entry they
+ *  moved to the top. There is nothing left for a second rung to say, and a parameter no caller passes is
+ *  a seam pretending to be a feature (the no-legacy-seams rule).
  *
  *  `undefined` rather than `null` on purpose: this is a LADDER rung, so it composes with `??` into the
- *  consumer's next fallback (a pinned entry from another role, then the theme's bundled art). */
-export function firstUsable<T extends MediaNamed>(
-  files: readonly T[],
-  pin?: string,
-): T | undefined {
+ *  consumer's next fallback (a SEAT's pinned entry from another role, then the theme's bundled art). */
+export function firstUsable<T extends MediaNamed>(files: readonly T[]): T | undefined {
   const usable = orderedUsable(files);
-  const pinned = pin === undefined ? undefined : usable.find((f) => f.name === pin);
-  return pinned ?? (usable.length > 0 ? usable[0] : undefined);
+  return usable.length > 0 ? usable[0] : undefined;
 }
 
 /** The ONE normalization every stem↔key comparison goes through (MEDIA_PLAN §5, pinned at the confirm

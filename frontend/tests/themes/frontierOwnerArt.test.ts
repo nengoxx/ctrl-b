@@ -120,20 +120,21 @@ describe("rigs — the pool dealt over the fleet's display order", () => {
   });
 });
 
-describe("hero — a pool with a pin (the kit-background shape)", () => {
-  it("first usable wins with no pin", () => {
+describe("hero — a first-wins pool (the kit-background shape)", () => {
+  it("first usable wins", () => {
     const art = frontierArtFromIndex(index({ hero: [file("one"), file("two")] }));
     expect(art.hero).toBe(painted("one"));
   });
 
-  it("the pin names a member of its OWN role and wins", () => {
+  it("ORDER is the only way to choose it — a leftover `hero:` value cannot reach the ladder", () => {
+    // "W6" (owner ruling 2026-08-26): the `hero` PIN died with every other pool pin, so the cover is
+    // whichever image the owner moved to the top of that gallery. `FRONTIER_SLOTS` is empty on the
+    // server side, so such a value is refused at LOAD rather than honoured here — this arm pins that
+    // the resolver would ignore it even if one arrived.
     const art = frontierArtFromIndex(index({ hero: [file("one"), file("two")] }, { hero: "two" }));
-    expect(art.hero).toBe(painted("two"));
-  });
-
-  it("a DANGLING pin falls through to the first usable — never a blank cover", () => {
-    const art = frontierArtFromIndex(index({ hero: [file("one")] }, { hero: "deleted" }));
     expect(art.hero).toBe(painted("one"));
+    const moved = frontierArtFromIndex(index({ hero: [file("two"), file("one")] }));
+    expect(moved.hero).toBe(painted("two"));
   });
 
   it("an all-unusable folder falls all the way through to the bundled vista", () => {

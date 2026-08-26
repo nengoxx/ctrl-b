@@ -90,11 +90,22 @@ describe("KitBackground — what makes the layer exist", () => {
     expect(container.querySelector(".kit-bg")!.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("honours the PIN over the folder's first-wins pick", () => {
+  it('ORDER is the only way to choose it — a leftover pin cannot outrank the list ("W6")', () => {
+    // The kit's `background` PIN died with every other pool pin at the 2026-08-26 owner ruling: the
+    // layer paints whatever sits at the top of that gallery. `KIT_SLOTS` is empty on the server side,
+    // so a hand-authored value is refused at LOAD — this pins that the layer would ignore it anyway.
     seedIndex([file("nebula"), file("dunes")], { background: "dunes" });
-    const { container } = draw(<KitBackground />);
     expect(
-      container.querySelector<HTMLElement>(".kit-bg")!.style.getPropertyValue("--kit-bg-img"),
+      draw(<KitBackground />)
+        .container.querySelector<HTMLElement>(".kit-bg")!
+        .style.getPropertyValue("--kit-bg-img"),
+    ).toBe(painted("nebula"));
+    cleanup();
+    seedIndex([file("dunes"), file("nebula")]);
+    expect(
+      draw(<KitBackground />)
+        .container.querySelector<HTMLElement>(".kit-bg")!
+        .style.getPropertyValue("--kit-bg-img"),
     ).toBe(painted("dunes"));
   });
 

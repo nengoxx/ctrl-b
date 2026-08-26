@@ -170,8 +170,9 @@ describe("the entry cards (§6.1)", () => {
     for (const name of ["characters", "banner", "reel", "oracle"]) {
       expect(screen.getByRole("button", { name: `Open the ${name} gallery` })).toBeTruthy();
     }
-    // The two gacha SEATS: a character bound into a surface the cast does not own. `reel_figure` is
-    // NOT one — it pins the reel role's own first pick, so it belongs to that role's card.
+    // The two gacha SEATS: a character bound into a surface the cast does not own — and since "W6"
+    // (owner ruling 2026-08-26) the ONLY pins anywhere. `reel_figure` was the last override of a
+    // pool's own first pick, and order replaced it.
     for (const label of ["Fleet backdrop", "Operator backdrop"]) {
       expect(screen.getByRole("button", { name: `Open the ${label} gallery` })).toBeTruthy();
     }
@@ -568,11 +569,13 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
 });
 
 describe("the item detail panel (§6.4) and what its actions write", () => {
-  it("SET AS ACTIVE moves the entry to the front of `files`", async () => {
+  it("MOVE TO TOP is activation — it moves the entry to the front of `files`", async () => {
+    // "W6" (owner ruling 2026-08-26): there is no second "set active" system. The library's ORDER is
+    // the priority, everywhere, so the way to say "use this one" is to put it at the top.
     renderGallery();
     const dialog = await openSection("characters");
     openItem(dialog, "c.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     // The amended tier rule in one assertion (§2.3 ③, owner 2026-08-25): an ORDER intent names the
     // WHOLE section — the disk rows and the five bundled defaults alike, in the resulting order. The
@@ -599,9 +602,10 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     expect(savedBlock()).toEqual({ slots: { wallpaper: "b" } });
   });
 
-  it("…and on a pool whose ladder HAS a pin, activation writes that pin", async () => {
-    // `reel_figure` sits above the reel folder's own first-wins pick, so move-to-front would leave the
-    // pin silently winning — the gallery would be claiming a binding the render will not honour.
+  it("…and on the reel — which used to write a PIN instead — it is an ordinary order write", async () => {
+    // The `reel_figure` pin sat above this folder's own first-wins pick until "W6", so activation here
+    // wrote a scalar into `slots` and the owner had two ways to choose one cutout. There is one now,
+    // and it is the same one every other pool uses.
     renderGallery(
       index({
         roles: {
@@ -614,9 +618,10 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     );
     const dialog = await openSection("reel");
     openItem(dialog, "cut2.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
-    expect(savedBlock()).toEqual({ slots: { reel_figure: "cut2" } });
+    expect(savedBlock()).not.toHaveProperty("slots");
+    expect(filesOf(savedBlock(), "reel")).toEqual([{ name: "cut2.webp" }, { name: "cut.webp" }]);
   });
 
   it("a pinned entry offers to CLEAR the pin instead of setting it again", async () => {
@@ -834,7 +839,7 @@ describe("the write queue (§4 — serialized, recomputed at send, quiet)", () =
     renderGallery();
     const dialog = await openSection("characters");
     openItem(dialog, "c.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(toast.pushToast).not.toHaveBeenCalled();
   });
@@ -896,7 +901,7 @@ describe("the write queue (§4 — serialized, recomputed at send, quiet)", () =
     renderGallery();
     const dialog = await openSection("characters");
     openItem(dialog, "c.webp");
-    const act = within(dialog).getByRole("button", { name: "Set as active" });
+    const act = within(dialog).getByRole("button", { name: "Move to top" });
     expect(act).toHaveProperty("disabled", true);
     fireEvent.click(act);
     await waitFor(() => expect(within(dialog).getByText("c.webp")).toBeTruthy());
@@ -954,11 +959,26 @@ describe("the namespace-level states", () => {
 //    cannot resolve, a queue replayed against a listing that is no longer the server's, a delete whose
 //    cleanup failed reported as a delete that failed.
 
-describe("activation guarantees ELIGIBILITY (review #1)", () => {
-  it("SET AS ACTIVE switches a hidden entry back on, in the same write", () => {
-    // Moving a hidden entry to the front changes nothing the owner can see: resolution skips hidden
-    // rows everywhere, so the tile would sit first and stay excluded while the card painted somebody
-    // else — the gallery claiming a binding the render ignores.
+describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W6")', () => {
+  it("MOVE TO TOP says nothing about In use — a hidden entry stays hidden at the front", () => {
+    // `setActive` used to un-hide in the same write, because a hidden entry at the front is skipped
+    // everywhere and "set as active" that did not activate would have been a lie. The vocabulary is
+    // split now — "In use" is membership, "Active" is what the resolver paints — so a position write
+    // that quietly switched an entry back on would put the two-priorities confusion back in one tap.
+    // The `hidden` flag lives in CONFIG and rides the wire; the persisted entry is what a write
+    // read-modify-writes, so the settings snapshot has to carry it for this claim to mean anything.
+    api.getJSONWithHeader.mockResolvedValue({
+      data: {
+        media: {
+          namespaces: {
+            gacha: {
+              roles: { characters: { files: [{ name: "off.webp", hidden: true }] } },
+            },
+          },
+        },
+      },
+      header: "r1",
+    });
     renderGallery(
       index({
         roles: {
@@ -971,17 +991,19 @@ describe("activation guarantees ELIGIBILITY (review #1)", () => {
     );
     return openSection("characters").then(async (dialog) => {
       openItem(dialog, "off.webp");
-      fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
       await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
-      expect(filesOf(savedBlock())).toEqual([{ name: "off.webp" }, { name: "a.webp" }]);
+      expect(filesOf(savedBlock())).toEqual([
+        { name: "off.webp", hidden: true },
+        { name: "a.webp" },
+      ]);
     });
   });
 
-  it("an IN-ROLE pin of a fallback bundled entry writes the pin AND lists it — one patch", async () => {
-    // The reel's `reel_figure` pin resolves inside the list `poolRows` deals, and the fallback tier is
-    // offered only while the owner's own tier is empty. With an owner cutout present, pinning bundled
-    // `lyra` used to write a value the ladder could never find: the card claimed lyra, the transition
-    // kept painting the owner's file, and the detail offered to "clear a pin" that was never active.
+  it("promoting a fallback BUNDLED entry sweeps the whole section into the new order", async () => {
+    // The tier rule's own arm at the surface (§2.3 ③ as amended): an order intent states the WHOLE
+    // section's order, so listing only the pick would make it the owner's entire tier and retire the
+    // rest of the shipped cutouts.
     renderGallery(
       index({
         roles: {
@@ -994,16 +1016,14 @@ describe("activation guarantees ELIGIBILITY (review #1)", () => {
     );
     const dialog = await openSection("reel");
     openItem(dialog, "lyra (bundled)");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
-    // ONE write, both halves — a pin whose eligibility landed separately could fail on its own.
     expect(savedBlock()).toEqual({
-      slots: { reel_figure: "lyra" },
-      roles: { reel: { files: [{ name: "cut.webp" }, { bundled: "lyra" }] } },
+      roles: { reel: { files: [{ bundled: "lyra" }, { name: "cut.webp" }] } },
     });
   });
 
-  it("…and a SEAT still writes only its pin — it is a VIEW over someone else's library", async () => {
+  it("…and a SEAT writes only its pin — it is a VIEW over someone else's library", async () => {
     // The exception, and it is the tier rule protecting the source: a seat shows bundled rows only
     // because the source's own tier is empty, so listing one would collapse the whole bundled cast to
     // that single entry — a five-character fleet becoming a one-character fleet on a pin.
@@ -1041,19 +1061,27 @@ describe("the stem/id pin collision note (review #6, §2.3's owed sentence)", ()
   it("a file stem and a bundled id that answer to ONE pin value are called out, with the tie-break", async () => {
     // The `f:`/`b:` identities stay separate — they are two library entries — but a pin VALUE is a bare
     // name and reaches whichever the collation lists first. That ambiguity is invisible from the grid.
+    //
+    // A SEAT is where it lives since "W6": seats are the only sections that write a pin at all. A seat
+    // shows the tier its source ladder DEALS, so both entries are on screen together exactly when the
+    // owner has LISTED the bundled one beside their own file.
     renderGallery(
       index({
         roles: {
-          characters: [],
+          characters: [
+            file("lyra", "characters"),
+            bundledRow("lyra", { listed: true }),
+            ...cast.filter((r) => r.bundled !== "lyra"),
+          ],
           banner: [],
-          reel: [file("lyra", "reel"), bundledRow("lyra")],
+          reel: [],
           oracle: [],
         },
       }),
     );
-    const card = await screen.findByRole("button", { name: "Open the reel gallery" });
+    const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
     expect(card.textContent).toContain("duplicate names");
-    const dialog = await openSection("reel");
+    const dialog = await openSection("Fleet backdrop");
     openItem(dialog, "lyra (bundled)");
     expect(within(dialog).getByText("duplicate name")).toBeTruthy();
     expect(within(dialog).getByText(/answers to the name/).textContent).toContain(
@@ -1062,8 +1090,9 @@ describe("the stem/id pin collision note (review #6, §2.3's owed sentence)", ()
   });
 
   it("…and a role with no pin never invents one — its files bind by KEY, not by pin value", async () => {
-    // The same two names in a POOL that writes no pin are two ordinary entries: nothing addresses them
-    // by name there, so calling them a duplicate would be a warning about nothing.
+    // The same two names in a POOL are two ordinary entries — and since "W6" NO pool writes a pin, so
+    // nothing addresses them by name there and calling them a duplicate would be a warning about
+    // nothing. Position is the whole of what a pool entry is.
     renderGallery(
       index({
         roles: {
@@ -1125,17 +1154,6 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     }
   });
 
-  /** A pin-capable role (`reel` ← the `reel_figure` pin) holding two owner files. */
-  const reelIndex = (over: Partial<MediaFile> = {}) =>
-    index({
-      roles: {
-        characters: [],
-        banner: [],
-        reel: [file("cut", "reel", over), file("other", "reel")],
-        oracle: [],
-      },
-    });
-
   /** A PUT that echoes the patch back as the settings doc, the way the real endpoint does — so the
    *  next queued job's read-modify-write reads what the last one actually persisted. */
   const echoingPut = () =>
@@ -1148,48 +1166,20 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
       }),
     );
 
-  it("a PIN decides its ELIGIBILITY at SEND, not from the item that was on screen", async () => {
-    // Emma's confirm-round scenario, minus the timeout. On a pin-capable role: toggle A's In-use OFF,
-    // then press Set as active before the refetch has updated the rendered detail. Minted from that
-    // stale item the pin was "already eligible" and went out SCALAR-ONLY — written onto the entry the
-    // job ahead of it had just hidden, where no ladder can resolve it. Eligibility is a fact about the
-    // index, so it is recomputed from the index at send like every other part of a write.
-    echoingPut();
-    api.getJSON.mockResolvedValueOnce(reelIndex()).mockResolvedValue(reelIndex({ hidden: true }));
-    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(
-      <QueryClientProvider client={qc}>
-        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
-      </QueryClientProvider>,
-    );
-    const dialog = await openSection("reel");
-    openItem(dialog, "cut.webp");
-    // Both gestures land before the first write's refetch does — the second is queued off the state
-    // the first one is in the middle of changing.
-    fireEvent.click(within(dialog).getByRole("switch", { name: /In use — cut.webp/ }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+  // A SEAT is the only section that writes a pin since "W6" (owner ruling 2026-08-26 — order is the
+  // only priority system), so these three arms all drive one: the fleet backdrop, a view over the cast.
 
-    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
-    expect(filesOf(savedBlock(0), "reel")).toEqual([
-      { name: "cut.webp", hidden: true },
-      { name: "other.webp" },
-    ]);
-    // The pin AND the `hidden` clear that makes it resolvable, in the one patch.
-    expect(savedBlock(1)).toEqual({
-      slots: { reel_figure: "cut" },
-      roles: { reel: { files: [{ name: "cut.webp" }, { name: "other.webp" }] } },
-    });
-  });
-
-  it("a SEAT REFUSES a pin it cannot make resolve, rather than writing one that never will", async () => {
-    // Emma's final-confirm sequence. "No files half needed" and "cannot be made eligible" were the
-    // same value, and the caller read both as pin-only-safe: hide a bundled SOURCE row, then use its
-    // still-rendered seat tile before the refetch lands, and the seat wrote a pin onto an entry that
-    // is hidden — while the one repair that would fix it (putting that bundled row into the source
-    // role's own tier) is the write a seat must never make, because it collapses the source's whole
-    // bundled deal to that single entry.
+  it("a SEAT's pin decides at SEND whether it can RESOLVE — not from the item that was on screen", async () => {
+    // Emma's confirm-round scenario. The question is asked of `ladderRows` over the AUTHORITATIVE
+    // index, because the rendered tile is a snapshot: retire an entry in the source role's own gallery,
+    // then use its still-rendered seat tile before the refetch lands, and a pin minted off that tile
+    // would be written onto something no ladder can find.
+    //
+    // It REFUSES rather than repairs, and that is the ruling's own shape: a seat is a read-only VIEW
+    // over another destination's library (§2.1), so the un-hide that would fix this is a write it
+    // cannot make — `caps.hidden` is false here. The owner switches the entry back on where it lives.
     let landed: (v: MediaIndex) => void = () => undefined;
-    const fresh = index({ roles: { characters: cast, banner: [], reel: [], oracle: [] } });
+    const fresh = index();
     api.getJSON
       .mockResolvedValueOnce(fresh)
       .mockImplementationOnce(() => new Promise<MediaIndex>((r) => (landed = r)))
@@ -1200,7 +1190,64 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
         <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
       </QueryClientProvider>,
     );
-    // ① retire a bundled entry from the SOURCE role — the only section that may.
+    // ① switch a DISK entry off, in the source role — the only section that may.
+    let dialog = await openSection("characters");
+    openItem(dialog, "b.webp");
+    fireEvent.click(within(dialog).getByRole("switch", { name: /In use — b.webp/ }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // ② the seat is still showing the pre-hide library, so the tile is there to tap.
+    dialog = await openSection("Fleet backdrop");
+    openItem(dialog, "b.webp");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
+
+    // ③ the authoritative listing lands with b retired…
+    landed(
+      index({
+        roles: {
+          characters: [
+            file("a", "characters"),
+            file("b", "characters", { hidden: true }),
+            file("c", "characters"),
+            ...cast,
+          ],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
+    );
+    // …and the queued pin is refused outright rather than written onto a retired entry.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.putJSON).toHaveBeenCalledTimes(1);
+    expect(filesOf(savedBlock(0))).toEqual([
+      { name: "a.webp" },
+      { name: "b.webp", hidden: true },
+      { name: "c.webp" },
+    ]);
+  });
+
+  it("…and it refuses a BUNDLED row, because listing it would collapse the source's whole deal", async () => {
+    // The tier rule protecting the source: a seat shows bundled rows only because the source's own
+    // tier is empty, so listing one would make it the owner's entire tier — a five-character fleet
+    // becoming a one-character fleet on a pin (judgment A). And a row GONE by send time is the same
+    // answer for the plainest reason of all: there is nothing to bind to.
+    const bundledOnly = index({
+      roles: { characters: cast, banner: [], reel: [], oracle: [] },
+    });
+    let landed: (v: MediaIndex) => void = () => undefined;
+    api.getJSON
+      .mockResolvedValueOnce(bundledOnly)
+      .mockImplementationOnce(() => new Promise<MediaIndex>((r) => (landed = r)))
+      .mockResolvedValue(bundledOnly);
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+      </QueryClientProvider>,
+    );
     let dialog = await openSection("characters");
     openItem(dialog, "atlas (bundled)");
     fireEvent.click(within(dialog).getByRole("switch", { name: /In use — atlas/ }));
@@ -1208,12 +1255,10 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
-    // ② the seat is still showing the pre-hide library, so the tile is there to tap.
     dialog = await openSection("Fleet backdrop");
     openItem(dialog, "atlas (bundled)");
     fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
 
-    // ③ the authoritative listing lands, with atlas retired…
     landed(
       index({
         roles: {
@@ -1226,46 +1271,20 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
         },
       }),
     );
-    // …and the queued pin is refused outright rather than written onto a retired entry.
     await new Promise((r) => setTimeout(r, 20));
     expect(api.putJSON).toHaveBeenCalledTimes(1);
     expect(filesOf(savedBlock(0))).toEqual([{ bundled: "atlas", hidden: true }]);
   });
 
-  it("…and so does a pin whose target is GONE from the library by the time it sends", async () => {
-    // The other half of the same conflation: the row was deleted out of band (or dropped by a
-    // collation that self-healed) between the tap and the send. There is nothing to repair, and the
-    // pin would be dangling by construction.
-    echoingPut();
-    api.getJSON.mockResolvedValueOnce(reelIndex()).mockResolvedValue(
-      index({
-        roles: { characters: [], banner: [], reel: [file("other", "reel")], oracle: [] },
-      }),
-    );
-    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(
-      <QueryClientProvider client={qc}>
-        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
-      </QueryClientProvider>,
-    );
-    const dialog = await openSection("reel");
-    openItem(dialog, "cut.webp");
-    fireEvent.click(within(dialog).getByRole("switch", { name: /In use — cut.webp/ }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
-    await new Promise((r) => setTimeout(r, 20));
-    expect(api.putJSON).toHaveBeenCalledTimes(1); // the hide; the pin refused
-    expect(api.putJSON.mock.calls[0][1]).not.toHaveProperty("media.namespaces.gacha.slots");
-  });
-
-  it("…and on a refetch timeout the pin is DISCARDED with everything else, carve-out and all", async () => {
-    // The same scenario with step 5: the hide lands but its authoritative refetch does not. A scalar
-    // pin looks safe to keep — it recomputes from nothing — and is not: whether it can RESOLVE is a
-    // fact about the index we no longer have. So the queue drops everything.
+  it("…and on a refetch timeout a queued pin is DISCARDED with everything else, carve-out and all", async () => {
+    // The first pin lands but its authoritative refetch does not. A scalar pin looks safe to keep — it
+    // recomputes from nothing — and is not: whether it can RESOLVE is a fact about the index we no
+    // longer have. So the queue drops everything.
     vi.useFakeTimers();
     try {
       echoingPut();
       api.getJSON
-        .mockResolvedValueOnce(reelIndex())
+        .mockResolvedValueOnce(index())
         .mockImplementation(() => new Promise<MediaIndex>(() => undefined));
       const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
       render(
@@ -1274,17 +1293,19 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
         </QueryClientProvider>,
       );
       await flush();
-      fireEvent.click(screen.getByRole("button", { name: "Open the reel gallery" }));
+      fireEvent.click(screen.getByRole("button", { name: "Open the Fleet backdrop gallery" }));
       await flush();
       const dialog = screen.getByRole("dialog");
-      openItem(dialog, "cut.webp");
-      fireEvent.click(within(dialog).getByRole("switch", { name: /In use — cut.webp/ }));
-      fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+      openItem(dialog, "a.webp");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "‹ All images" }));
+      openItem(dialog, "b.webp");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
       await flush();
-      expect(api.putJSON).toHaveBeenCalledTimes(1); // the hide
+      expect(api.putJSON).toHaveBeenCalledTimes(1); // the first pin
 
       await flush(5_000);
-      expect(api.putJSON).toHaveBeenCalledTimes(1); // …and the pin never went out onto a hidden entry
+      expect(api.putJSON).toHaveBeenCalledTimes(1); // …and the second never went out
       expect(toast.pushToast).toHaveBeenCalledWith(
         expect.stringContaining("did not come back in time"),
         "err",
@@ -1347,16 +1368,16 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     );
     let dialog = await openSection("characters");
     openItem(dialog, "b.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     dialog = await openSection("reel");
     openItem(dialog, "cut2.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Set as active" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move to top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
     expect(filesOf(savedBlock(0))).toEqual([{ name: "b.webp" }, { name: "a.webp" }]);
-    expect(savedBlock(1)).toEqual({ slots: { reel_figure: "cut2" } });
+    expect(filesOf(savedBlock(1), "reel")).toEqual([{ name: "cut2.webp" }, { name: "cut.webp" }]);
   });
 });
 

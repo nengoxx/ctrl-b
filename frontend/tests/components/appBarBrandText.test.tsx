@@ -195,10 +195,12 @@ describe("KitAppBar brand MARK precedence (G6.3)", () => {
     expect(brand(container).textContent).toBe("ctrl·b");
   });
 
-  it("honours the pin, and an UNUSABLE-only folder falls back to the old rungs", () => {
-    media.data = brandIndex([brandFile("a"), brandFile("b")], { brand: "b" });
-    const pinned = render(<KitAppBar appbarMode="visible" />);
-    expect(mark(pinned.container)!.style.getPropertyValue("--kit-brand-mask")).toContain(
+  it("takes the folder's FIRST file, and an UNUSABLE-only folder falls back to the old rungs", () => {
+    // "W6" (owner ruling 2026-08-26): the `brand` pin is gone with every other pool pin, so the mark is
+    // whichever image the owner put at the top of the Logo gallery.
+    media.data = brandIndex([brandFile("b"), brandFile("a")], { brand: "a" });
+    const first = render(<KitAppBar appbarMode="visible" />);
+    expect(mark(first.container)!.style.getPropertyValue("--kit-brand-mask")).toContain(
       "/brand/b.png",
     );
     cleanup();

@@ -9,7 +9,7 @@ import type { MediaSection } from "../../theme-engine/mediaRegistry";
 // (R59 §11.6 ⑤): the grid keeps two corners and a count, and the words live here.
 //
 // The actions are CAPABILITY-GATED, never label-swapped: a seat can only pin ("Use here"), a library
-// section can activate/reorder/hide/delete, the Unassigned bucket can only hide and delete. A bundled
+// section can arrange/hide/delete, the Unassigned bucket can only hide and delete. A bundled
 // entry has NO delete at all — absent, not disabled, which is GNOME's rule and the honest one (a
 // disabled control invites the owner to look for the way to enable it).
 //
@@ -27,10 +27,11 @@ export function ItemDetail({
   busy,
   ready,
   canReorder,
+  canPromote,
   first,
   last,
   onBack,
-  onActivate,
+  onPin,
   onUnpin,
   onMove,
   onMoveToEdge,
@@ -45,12 +46,15 @@ export function ItemDetail({
   pinned?: string;
   busy: boolean;
   ready: boolean;
-  /** Order means something here AND this scope holds more than one entry to order. */
+  /** A whole ARRANGEMENT means something here AND this scope holds more than one entry to arrange. */
   canReorder: boolean;
+  /** **Move to top** is meaningful here — the one order statement a key gallery can make (§6.5's
+   *  duplicate tie-break). Implied by `canReorder`, and true on its own where a relative move is not. */
+  canPromote: boolean;
   first: boolean;
   last: boolean;
   onBack: () => void;
-  onActivate: () => void;
+  onPin: () => void;
   onUnpin: () => void;
   onMove: (delta: number) => void;
   onMoveToEdge: (edge: "top" | "bottom") => void;
@@ -60,12 +64,11 @@ export function ItemDetail({
 }) {
   const url = tileUrl(item.row, section);
   const badges = advisoriesOf(item.row, section.bounds);
-  const seat = section.kind === "seat";
   // A file with no readable bytes has nothing to frame: the sheet would open on a broken image and the
   // previews would be three empty boxes. The badges above already say why.
   const canFrame = section.caps.frame && !item.bundled && item.row.unusable !== true;
-  // The entry this section's PIN names — the only one that can clear it, and the reason "Set as
-  // active" disappears there (it is already the answer).
+  // The entry this section's PIN names — the only one that can clear it, and the reason "Use here"
+  // disappears there (it is already the answer).
   const pinnedHere = section.pin !== undefined && pinned === item.row.name;
   return (
     <div className="mgal-detail">
@@ -99,13 +102,13 @@ export function ItemDetail({
       {/* The duplicate's own sentence, with the TIE-BREAK in it (§2.3, Emma's S2 review #6). A badge
           alone says there is a clash; what the owner needs is which entry answers to the name and how
           to change that — and the answer is the same one rule everywhere here: the library's own
-          order decides, so "Set as active" is the fix. */}
+          order decides, so moving this entry to the top is the fix. */}
       {item.duplicate && <p className="mgal-detail-note">{duplicateNote(section, item)}</p>}
 
       <div className="mgal-actions">
-        {section.caps.activate !== "none" && !pinnedHere && (
-          <button type="button" className="mgal-act primary" disabled={!ready} onClick={onActivate}>
-            {seat ? "Use here" : "Set as active"}
+        {section.pin !== undefined && !pinnedHere && (
+          <button type="button" className="mgal-act primary" disabled={!ready} onClick={onPin}>
+            Use here
           </button>
         )}
         {pinnedHere && (
@@ -134,40 +137,50 @@ export function ItemDetail({
             <small>{focalState(item.row) === "set" ? "set" : "not set"}</small>
           </button>
         )}
-        {canReorder && (
+        {(canReorder || canPromote) && (
           <div className="mgal-act-move">
-            <button
-              type="button"
-              className="mgal-act"
-              disabled={!ready || first}
-              onClick={() => onMove(-1)}
-            >
-              ↑ Move up
-            </button>
-            <button
-              type="button"
-              className="mgal-act"
-              disabled={!ready || last}
-              onClick={() => onMove(1)}
-            >
-              ↓ Move down
-            </button>
-            <button
-              type="button"
-              className="mgal-act"
-              disabled={!ready || first}
-              onClick={() => onMoveToEdge("top")}
-            >
-              Move to top
-            </button>
-            <button
-              type="button"
-              className="mgal-act"
-              disabled={!ready || last}
-              onClick={() => onMoveToEdge("bottom")}
-            >
-              Move to bottom
-            </button>
+            {/* MOVE TO TOP is activation now (owner ruling 2026-08-26, "W6"): the library's order is
+                the priority, so "use this one" is a position. It is offered wherever a priority can
+                be stated at all — including a KEY gallery, where a relative move would step through
+                neighbours that are not on screen but the duplicate tie-break still needs settling. */}
+            {canPromote && (
+              <button
+                type="button"
+                className="mgal-act"
+                disabled={!ready || first}
+                onClick={() => onMoveToEdge("top")}
+              >
+                Move to top
+              </button>
+            )}
+            {canReorder && (
+              <>
+                <button
+                  type="button"
+                  className="mgal-act"
+                  disabled={!ready || first}
+                  onClick={() => onMove(-1)}
+                >
+                  ↑ Move up
+                </button>
+                <button
+                  type="button"
+                  className="mgal-act"
+                  disabled={!ready || last}
+                  onClick={() => onMove(1)}
+                >
+                  ↓ Move down
+                </button>
+                <button
+                  type="button"
+                  className="mgal-act"
+                  disabled={!ready || last}
+                  onClick={() => onMoveToEdge("bottom")}
+                >
+                  Move to bottom
+                </button>
+              </>
+            )}
           </div>
         )}
         {/* Absent on a bundled entry rather than disabled (§6.6) — there is nothing on disk to delete. */}
@@ -213,7 +226,7 @@ function duplicateNote(section: MediaSection, item: LibraryItem): string {
   const what = pinned
     ? `Another entry here answers to the name “${name}”, so the pin can only reach one of them.`
     : `Another file here binds to “${name}” too.`;
-  return `${what} The one the library lists FIRST is the one that answers — use “Set as active” on this entry to make it that one.`;
+  return `${what} The one the library lists FIRST is the one that answers — move this one to the top to make it that one.`;
 }
 
 /** How this file found its destination — the wire's `key` field, or its own filename stem. Only said

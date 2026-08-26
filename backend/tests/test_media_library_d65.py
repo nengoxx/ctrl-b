@@ -320,7 +320,7 @@ media:
       reel:
         order: [cut.png]
     slots:
-      reel_figure: cut
+      wallpaper: kira
   kit:
     roles:
       background:
@@ -357,7 +357,7 @@ def test_the_fold_moves_the_namespaces_and_rewrites_every_order_list(tmp_path, m
     ]
     assert "order" not in gacha["roles"]["characters"]
     assert gacha["roles"]["reel"]["files"] == [{"name": "cut.png"}]
-    assert gacha["slots"] == {"reel_figure": "cut"}
+    assert gacha["slots"] == {"wallpaper": "kira"}
     assert doc["media"]["namespaces"]["kit"]["roles"]["background"]["files"] == [{"name": "neb.png"}]
     # COMMENT SURVIVAL, stated exactly (UPDATE_PLAN's promise is about keys the plan does not
     # touch): everything outside the moved subtree keeps its prose, while a comment INSIDE
@@ -374,6 +374,39 @@ def test_the_fold_moves_the_namespaces_and_rewrites_every_order_list(tmp_path, m
         "gone.png",
         "a.png",
     ]
+
+
+RETIRED_PIN_YAML = """server:
+  port: 5433
+media:
+  gacha:
+    slots:
+      reel_figure: cut
+"""
+
+
+def test_a_v1_config_holding_a_RETIRED_pin_refuses_LOUDLY_rather_than_folding_it(
+    tmp_path, monkeypatch
+) -> None:
+    """The 2026-08-26 owner ruling ("W6") retired every POOL pin — gacha's `reel_figure`, frontier's
+    `hero`, the kit's `background`/`brand` — because ORDER is the only priority system and each of them
+    was a second way to say what the library order already said.
+
+    Removed CLEAN, with no compat rung: media v2 has never shipped to prod, and neither live config on
+    disk holds any `slots:` block at all (both verified before the sweep). So a hand-authored leftover
+    is an unknown slot key, and the migration REFUSES rather than folding a knob forward that would
+    silently do nothing — the same treatment the deleted `wallpaper` ROLE and the retired `hero` seat
+    get. The refusal names the key and the keys that are real, which is the whole of what the owner has
+    to act on."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.yaml").write_text(RETIRED_PIN_YAML, encoding="utf-8")
+    monkeypatch.setenv("CTRLB_HOME", str(home))
+    monkeypatch.delenv("CTRLB_CONFIG", raising=False)
+    with pytest.raises(cm.MigrationRefused) as exc:
+        cm.apply(cm.context_from_env())
+    assert "reel_figure" in str(exc.value)
+    assert "wallpaper" in str(exc.value)  # …and it names what IS accepted
 
 
 def test_the_migration_writes_no_bundled_entries(tmp_path, monkeypatch) -> None:

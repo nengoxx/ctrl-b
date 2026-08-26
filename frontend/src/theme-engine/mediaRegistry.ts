@@ -296,36 +296,38 @@ export interface MediaRoleDef {
   rotation?: MediaRotationDef;
 }
 
-/** A `slots` pin the gallery offers: binding one named file INTO a role, overriding that role folder's own
- *  first-wins pick.
+/** A `slots` pin the gallery offers — and since the 2026-08-26 owner ruling ("W6") **every one of them is
+ *  a SEAT**: a surface fed FROM another role's library, whose only write is the pin.
  *
- *  `from` names the role whose files are the OPTIONS — which is not always the role being pinned, and the
- *  difference is load-bearing (ruled, Codex F4): the gacha reel figure needs a transparent CUTOUT, so its
- *  options come from `reel/`, never from the cast. Offering a character portrait there would let the owner
- *  pick something that sweeps across the screen as a rectangle.
+ *  The ruling is that ORDER is the only priority system, app-wide. A pin that merely OVERRODE a pool's own
+ *  first-wins pick (gacha's `reel_figure`, frontier's `hero`, the kit's `background`/`brand`) said the same
+ *  thing the library order already said, in a second place — so the owner had two ways to choose one
+ *  picture and two places to look when the answer surprised them. Those are gone. A seat survives because
+ *  no order can express it: the destination is not the source role's own surface, so "which of the cast
+ *  stands behind the operator block" is not a question about the cast's order.
  *
- *  There is no per-slot `bundled` list any more (**RETIRED at D65**, the M4 rider): the names a pin may
- *  offer while `from` is still empty are the SOURCE ROLE's own bundled ids, so keeping a second hand-typed
- *  copy on the slot was one list in two places — and the copy was the one that could go stale. The pin
- *  reads `roles[slot.from].bundled` instead.
+ *  `from` names the role whose files are the OPTIONS — never the role being pinned, now that only seats
+ *  exist. Both shipped seats source from `characters`: a portrait crops fine as a backdrop.
  *
- *  `hint` is the per-pin line under the select, on exactly the terms `MediaRoleDef.hint` is (G6.3): the
- *  section's own copy describes what a pin GENERALLY is, and a pin whose ladder differs from that needs a
- *  sentence of its own or the owner reads the generic one as the whole truth. Optional — a pin without one
- *  renders as it always has. */
+ *  There is no per-slot `bundled` list (**RETIRED at D65**, the M4 rider): the names a pin may offer while
+ *  `from` is still empty are the SOURCE ROLE's own bundled ids, so keeping a second hand-typed copy on the
+ *  slot was one list in two places — and the copy was the one that could go stale. The pin reads
+ *  `roles[slot.from].bundled` instead.
+ *
+ *  `hint` is the seat card's own line, on exactly the terms `MediaRoleDef.hint` is (G6.3): a seat whose
+ *  ladder has a rung the generic copy does not mention needs a sentence of its own. Optional. */
 export interface MediaSlotDef {
   key: string;
   label: string;
   from: string;
   hint?: string;
-  /** True when this pin is **its own destination** — a SEAT (§2.1): a surface fed FROM another role's
-   *  library, whose only write is the pin. gacha's two character-bound pins are seats (a portrait
-   *  bound into the fleet backdrop, and into the operator's backdrop); every other shipped pin
-   *  is the source role's own first-wins OVERRIDE and therefore belongs to that role's section rather
-   *  than to a section of its own — one destination, one card. */
+  /** Marks this pin as **its own destination** (§2.1). It is `true` on every shipped slot since "W6" —
+   *  a pin that was NOT a seat was an override of a pool's first pick, and those died with the ruling.
+   *  The field stays because it is what `mediaSections` reads to emit a seat card, and because "a pin
+   *  that is a destination" is the claim the section machinery is built on rather than an assumption
+   *  it may quietly make about every row. */
   seat?: boolean;
-  /** §2.4 — a SEAT's own ladder (what the pin resolves to, and what it falls through to). Pins that
-   *  are not seats need none: their role's `active` resolver already reads them. */
+  /** §2.4 — a SEAT's own ladder (what the pin resolves to, and what it falls through to). */
   active?: ActiveResolver;
   /** The BUILT-IN picture this seat's ladder bottoms out on — shown on the card and in the seat's
    *  gallery so the owner can SEE what "none pinned" looks like (the S6 owner ruling: no shipped art
@@ -464,12 +466,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         hint: "The cutout that rides the tab transition. Dropped-in cutouts are painted as-is: the bundled one has its glow baked into the file, so a plain transparent PNG will look flatter.",
         bounds: FULL_ART,
         aspect: 3 / 4,
-        // The `reel_figure` pin is this pool's OWN first-wins override (not a seat), so the pool's
-        // ladder is the one that reads it — which is why "Set as active" here writes the pin.
-        active: activePool("reel_figure"),
+        // ORDER decides, like everywhere else since 2026-08-26 ("W6"): the first usable member of this
+        // pool rides the transition. The `reel_figure` PIN that used to sit above it is gone.
+        active: activePool,
         // The bundled reel POOL, which the roster derives from the entries carrying a `cutout` — today
-        // exactly `lyra`. This is the list the `reel_figure` pin offers while `reel/` is empty; it used to
-        // be hand-typed on the slot (`MediaSlotDef.bundled`, retired at D65).
+        // exactly `lyra`. It is the fallback tier while `reel/` is empty.
         bundled: bundle(
           BUNDLED_ROSTER.pools.reel,
           (a) => a.name,
@@ -501,19 +502,20 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         ),
       },
     },
-    // The §5.2 pins that survived the role re-rule. Two of them bind a CHARACTER into a role — a
-    // portrait crops fine as a backdrop. The FIGURE does not (Codex F4, above). Each one's bundled
-    // fallback options are its SOURCE ROLE's `bundled` ids (D65 — no per-slot copy).
+    // The two SEATS, and they are all that is left (owner ruling 2026-08-26, "W6" — order is the only
+    // priority system app-wide). Each binds a CHARACTER into a surface the cast does not own — a
+    // portrait crops fine as a backdrop — which is precisely what no order can express, and why these
+    // two survived while every POOL pin died. `reel_figure` was the last of those: it sat above the
+    // `reel` folder's own first pick, so the owner had two ways to say which cutout rides the
+    // transition and two places to look when the answer surprised them. Now it is the top of the list.
     //
-    // There is no "Hero slide" seat any more (owner ruling 2026-08-26, "W5"): the carousel's first slide
-    // deals the `banner` pool's first member, so its destination is that role's own card and a seat over
-    // the cast would be a second, contradictory answer to which picture opens the banner.
+    // (There is no "Hero slide" seat either, since the 2026-08-26 "W5" ruling one wave earlier: the
+    // carousel's first slide deals the `banner` pool's first member, so its destination is that role's
+    // own card.)
     //
-    // `wallpaper` is the one whose ROLE FOLDER no longer exists (G6.3), and it is therefore the one pin
-    // that is not merely an override of a folder's first pick: it is now the TOP of gacha's backdrop
-    // ladder, above the shared kit background. Its hint says so, because the pins section's own copy
-    // ("bind one image into a role, overriding that folder's own first pick") is no longer the whole
-    // truth for it and the owner has nowhere else to read where their backdrop comes from.
+    // `wallpaper` is the one whose ROLE FOLDER no longer exists (G6.3): it is the TOP of gacha's
+    // backdrop ladder, above the shared kit background, and its hint says so because the owner has
+    // nowhere else to read where their backdrop comes from.
     slots: [
       {
         key: "wallpaper",
@@ -522,7 +524,7 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         hint: "Unpinned, the fleet uses your Shared art background — then the bundled scene below.",
         seat: true,
         active: activeSeat("wallpaper"),
-        // The bundled scene this ladder ends on, shown so the owner can SEE what "none pinned" looks
+        // The bundled scene this ladder ends on, shown so the owner can SEE what "nothing bound" looks
         // like (S6). It stays a DISPLAY channel here even though the same picture is now a real library
         // entry in the `banner` role (2026-08-26): this seat's ladder ends on the ASSET, not on that
         // pool, so hiding the banner entry takes its carousel slide away and leaves this default
@@ -540,10 +542,6 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         seat: true,
         active: activeSeat("oracle"),
       },
-      // `bundled` mirrors the cutout-bearing entries of `defaultRoster()` (themes/gacha/roster.ts) — a
-      // roster test fails if the two ever drift.
-      // Its bundled option is the `reel` ROLE's own list above (D65 retired the per-slot copy).
-      { key: "reel_figure", label: "Transition figure", from: "reel" },
     ],
   },
   // frontier (D53 M2): the badlands theme's three art surfaces. Two POOLS and the first NAMED role —
@@ -627,9 +625,10 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         ],
       },
     },
-    // The one pin: a pool with a first-wins default the owner may override by name (the kit background
-    // pin is the same shape). The stack needs none — its stems ARE its bindings (§4).
-    slots: [{ key: "hero", label: "Map cover", from: "hero" }],
+    // NO PINS. frontier had exactly one — `hero`, an override of the map-cover pool's own first pick —
+    // and it died with every other pool pin at the 2026-08-26 ruling ("W6"): the cover is whichever
+    // image sits at the top of that role's gallery. The stack never had one: its stems ARE its
+    // bindings (§4). Nothing here is a SEAT, so this namespace offers no `slots` at all.
   },
   // kit (D53 M3, extended by the Kit Art System): the art that belongs to no theme, which is exactly why
   // this row is ALWAYS-ON. All five service-row surfaces read the icons (kit Fleet, vapor, cosmos,
@@ -720,8 +719,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // both: the shared LAYER is what a scenery theme declines to mount, and that theme may still use
         // the picture on its own backdrop, under its own switch.
         aspect: 9 / 16,
-        active: activeKitPool("background"),
-        hint: "A shared background for the whole app. The first image wins (or pin one below), and the Appearance switch turns off the shared layer. A theme with scenery of its own paints this picture on its own backdrop instead, under its own switch.",
+        active: activeKitPool,
+        hint: "A shared background for the whole app. The first image wins, and the Appearance switch turns off the shared layer. A theme with scenery of its own paints this picture on its own backdrop instead, under its own switch.",
         bounds: FULL_ART,
       },
       brand: {
@@ -734,8 +733,8 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         // hint because it is the one thing an owner cannot discover by looking at the file — a fully
         // opaque photo drops in happily and paints a solid accent-coloured rectangle.
         aspect: 1,
-        active: activeKitPool("brand"),
-        hint: "Your own mark beside the app title. A transparent PNG or WebP — only the SHAPE is used, and each theme colours it with its own accent, so a flat silhouette works best. The first image wins (or pin one below).",
+        active: activeKitPool,
+        hint: "Your own mark beside the app title. A transparent PNG or WebP — only the SHAPE is used, and each theme colours it with its own accent, so a flat silhouette works best. The first image wins.",
         bounds: ICON_ART,
         // FORCED PNG, and here it is not a quality preference but a correctness one: the file is
         // painted as a CSS MASK, so only its ALPHA is ever read. A lossy encode blurs the alpha edge
@@ -744,12 +743,9 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         export: { type: "image/png" },
       },
     },
-    // One pin per POOL, each the same shape as the frontier map cover's: a first-wins default the owner
-    // may override by name. The three NAMED roles need none — their stems ARE their bindings.
-    slots: [
-      { key: "background", label: "Background", from: "background" },
-      { key: "brand", label: "App icon", from: "brand" },
-    ],
+    // NO PINS. The two pools carried one each (`background`, `brand`) until the 2026-08-26 ruling
+    // ("W6"): the first image in the gallery wins, and a pin was a second way to say the same thing.
+    // The three NAMED roles never had one — their stems ARE their bindings.
   },
 };
 
@@ -777,10 +773,11 @@ export function applicableNs(
 // kinds the plan names are ONE UI driven by a capability descriptor (council M1 — the difference is
 // data, never an implicit branch):
 //
-//   · LIBRARY-BACKED  — a role folder (or one KEY of a named role). Upload · reorder · set-active ·
-//     In-use · delete.
+//   · LIBRARY-BACKED  — a role folder (or one KEY of a named role). Upload · arrange · In-use ·
+//     delete. There is no separate "set active": since the 2026-08-26 ruling ("W6") the library's
+//     ORDER is the priority, so *move it to the top* is how the owner says "this one, please".
 //   · PIN-BACKED SEAT — a read-only VIEW over another role's library whose one write is the pin. The
-//     tile action reads "Use here"; there is no upload, no reorder, no delete, no In-use.
+//     action reads "Use here"; there is no upload, no arranging, no delete, no In-use.
 //
 // The card count is the H5 refinement, OWNER-RATIFIED: pool roles and STATIC named keys get their own
 // card; a role whose keys come from live DATA (kit's services/machines) gets ONE role-family card
@@ -789,13 +786,22 @@ export function applicableNs(
 /** What ONE section can DO — the capability descriptor the generic gallery reads instead of asking
  *  which kind of section it is rendering. */
 export interface MediaCaps {
-  /** ↑/↓ and move-to-top/bottom. FALSE where order decides nothing (defect #11): a named key is
-   *  answered by ONE file, and a seat is a view. */
+  /** The FULL arrangement: the drag, ↑/↓ and both edge moves. FALSE where a whole order decides
+   *  nothing — a seat is a view, an unassigned file paints nowhere, and a gallery scoped to ONE KEY
+   *  shows a handful of rows out of a folder, where a RELATIVE move would step through neighbours that
+   *  are not on screen (defect #11's original reading, kept). */
   reorder: boolean;
-  /** How "this one, please" is written: `order` = move-to-front (the list order IS the priority);
-   *  `pin` = write `slots[pin]` ("Use here", and the same for a pool whose own first pick has a pin
-   *  above it); `none` = nothing to activate (the Unassigned bucket paints nowhere). */
-  activate: "order" | "pin" | "none";
+  /** **Move to top** — the one order statement that is meaningful even where a full arrangement is not:
+   *  *this entry, please*. It is what a KEY gallery needs and all it needs (order buys nothing there but
+   *  the duplicate tie-break, and the tie-break is decided by whichever entry the folder lists first),
+   *  and it is implied by `reorder` wherever that is set.
+   *
+   *  It replaces the retired `activate: "order" | "pin" | "none"` mode word (owner ruling 2026-08-26,
+   *  "W6"). The question that field answered — HOW is "this one, please" written — dissolved with the
+   *  ruling that ORDER is the only priority system: a library section writes it as a position, and the
+   *  only section that writes anything else is a SEAT, which is identified by carrying a `pin` (a fact,
+   *  not a mode). A section that can state no priority at all is exactly one with neither flag nor pin. */
+  promote: boolean;
   hidden: boolean;
   remove: boolean;
   upload: boolean;
@@ -826,7 +832,8 @@ export interface MediaSection {
   keys?: readonly string[];
   /** What ONE file of this role IS, as a bare noun — the word the copy composes with. */
   asset?: string;
-  /** The `slots` key this section's activation writes (a seat, or a pool with an in-role pin). */
+  /** The `slots` key this section writes — a SEAT's, and only a seat's since "W6". Its presence IS the
+   *  "this section binds rather than orders" capability. */
   pin?: string;
   /** The role's registry row — bounds, bundled ids, the static key list. */
   def: MediaRoleDef;
@@ -844,7 +851,7 @@ const UNDESCRIBED: MediaRoleDef = { kind: "pool", bundled: [], bounds: FULL_ART 
 
 const LIBRARY_CAPS: MediaCaps = {
   reorder: true,
-  activate: "order",
+  promote: true,
   hidden: true,
   remove: true,
   upload: true,
@@ -857,7 +864,7 @@ const LIBRARY_CAPS: MediaCaps = {
  *  therefore undeletable, which is the one state a manager must not be able to produce.
  *
  *  Emitted for BOTH key sources (a static-key role has typos too) and shown only when it holds
- *  something — an empty bucket is a card about nothing. Nothing here is ACTIVATABLE: a file bound to no
+ *  something — an empty bucket is a card about nothing. Nothing here has a PRIORITY: a file bound to no
  *  key paints nowhere, so the honest capability set is "look, hide, delete". */
 function unassigned(
   ns: string,
@@ -874,7 +881,7 @@ function unassigned(
     hint: "Files here match no name this role uses, so nothing paints them. Rename one to a key above — or delete it.",
     caps: {
       reorder: false,
-      activate: "none",
+      promote: false,
       hidden: true,
       remove: true,
       upload: false,
@@ -916,8 +923,8 @@ export function mediaSections(
           hint: k.hint,
           key: k.key,
           aspect: k.aspect ?? row.aspect,
-          // Order buys nothing here but the duplicate tie-break, so the ↑/↓ pair is hidden (#11) —
-          // "Set as active" is how a shadowed duplicate wins its key, and that is move-to-front.
+          // Order buys nothing here but the duplicate tie-break, so the full arrangement is hidden
+          // (#11) — and MOVE TO TOP is what settles that tie-break, which is why `promote` stays.
           caps: { ...LIBRARY_CAPS, reorder: false, frame: row.framable === true },
           active: row.activeForKey?.(k.key),
         });
@@ -948,7 +955,7 @@ export function mediaSections(
           hint: row.rotation.hint,
           caps: {
             reorder: true,
-            activate: "order",
+            promote: true,
             hidden: true,
             remove: false,
             upload: false,
@@ -960,16 +967,15 @@ export function mediaSections(
       out.push(unassigned(ns, role, common, { keySource: row.keySource }));
       continue;
     }
-    // A POOL. Its own `slots` pin (one that is not a seat) is the top rung of its ladder, so "this
-    // one, please" is written as the PIN — move-to-front would leave a pin above it silently winning.
-    const pin = def.slots?.find((s) => s.from === role && s.seat !== true);
+    // A POOL — the plain case since "W6": no pin can sit above its own first pick any more, so "this
+    // one, please" is *move it to the top* and nothing else. (A `slots` row whose `from` is this role
+    // is a SEAT, which gets its own card in the loop below.)
     out.push({
       ...common,
       id: `${ns}:${role}`,
       kind: "pool",
       title: role,
-      pin: pin?.key,
-      caps: { ...LIBRARY_CAPS, activate: pin ? "pin" : "order", frame: row.framable === true },
+      caps: { ...LIBRARY_CAPS, frame: row.framable === true },
       active: row.active,
     });
   }
@@ -993,7 +999,7 @@ export function mediaSections(
       pin: slot.key,
       caps: {
         reorder: false,
-        activate: "pin",
+        promote: false,
         hidden: false,
         remove: false,
         upload: false,

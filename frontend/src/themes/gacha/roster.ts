@@ -70,19 +70,23 @@ export interface RosterEntry {
   unusable?: boolean;
 }
 
-/** Optional pinned bindings. Each names an ENTRY; an unpinned (or dangling) slot falls back — never a hole. */
+/** The theme's two SEATS (§2.1) — a cast portrait bound into a surface the cast does not own. Each
+ *  names an ENTRY; an unpinned (or dangling) seat falls back — never a hole.
+ *
+ *  These two are ALL that is left, and that is the 2026-08-26 owner ruling ("W6"): **order is the only
+ *  priority system, app-wide.** A pool's own first-wins pick is decided by the library order the owner
+ *  arranges in the gallery, so `reel_figure` — a pin that sat above the `reel/` folder's own first
+ *  member — is gone with frontier's `hero` and the kit's `background`/`brand`. A seat survives because
+ *  no order can express it: it binds an entry of ANOTHER role's library into this surface.
+ *
+ *  (`hero` went one ruling earlier, at "W5": the carousel's first slide deals the banner pool's first
+ *  usable member, so it has no art of its own to bind.) A clean removal in both cases, no compat rung —
+ *  media v2 has never shipped to prod, so there is no owner data to migrate (the no-legacy-seams rule).
+ *  A hand-authored `reel_figure:` pin is now an unknown slot key, which the config validator refuses out
+ *  loud rather than honouring silently (`Settings._known_media_namespaces_roles_and_slots`). */
 export interface RosterSlots {
-  /** Must resolve to an entry WITH a cutout, else the fallback applies. */
-  reel_figure?: string;
   oracle?: string;
   wallpaper?: string;
-  // NO `hero` PIN — RETIRED by the owner ruling of 2026-08-26 ("W5"). The carousel's first slide no
-  // longer has art of its own to bind: it DEALS the banner pool's first usable member (`bannerScenes`
-  // below), so a seat over the cast would be a second, contradictory answer to "which picture opens the
-  // carousel". A clean removal, no compat rung — media v2 has never shipped to prod, so there is no
-  // owner data to migrate (the no-legacy-seams rule; the `wallpaper/` role's removal at G6.3 is the
-  // precedent). A hand-authored `hero:` pin is now an unknown slot key, which the config validator
-  // refuses out loud rather than honouring silently (`Settings._known_media_namespaces_roles_and_slots`).
 }
 
 /** The single-pick role pools the owner's `media/gacha/<role>/` folders feed (§5.4's re-rule:
@@ -265,16 +269,15 @@ export function activeScenes(rows: readonly LibraryRow[]): ActiveArt {
   return { ids: activeIds(sceneRows(rows as readonly MediaFile[])), mode: "all" };
 }
 
-/** A first-wins pool with an in-role PIN (`reel` ← `reel_figure`): the pin, else the pool's first
- *  usable member. `slot` is the pin's key, so the one function serves every pool of this shape. */
-export function activePool(slot?: string) {
-  return (rows: readonly LibraryRow[], slots: Readonly<Record<string, string>>): ActiveArt => {
-    const pick = firstUsable(
-      poolRows(rows as readonly MediaFile[]),
-      slot ? slots[slot] : undefined,
-    );
-    return { ids: pick ? [rowId(pick)] : [], mode: "first" };
-  };
+/** A first-wins POOL (`reel`, `oracle`): the pool's first usable member, full stop.
+ *
+ *  It used to be a FACTORY taking a pin key, because `reel` carried an in-role `reel_figure` pin above
+ *  its own first pick. That pin died with the 2026-08-26 ruling ("W6" — order is the only priority
+ *  system), so there is one rung left and the resolver is that rung. It reads no `slots`, which is why
+ *  it declares none. */
+export function activePool(rows: readonly LibraryRow[]): ActiveArt {
+  const pick = firstUsable(poolRows(rows as readonly MediaFile[]));
+  return { ids: pick ? [rowId(pick)] : [], mode: "first" };
 }
 
 /** The ORACLE pool, whose winner may live in ANOTHER section: `oracleArt` reads the `oracle` SEAT pin
@@ -288,7 +291,7 @@ export function activeOraclePool(
   if (slotEntryName(slots, "oracle") !== undefined) {
     return { ids: [], mode: "first", overriddenBySlot: "oracle" };
   }
-  return activePool()(rows, slots);
+  return activePool(rows);
 }
 
 /** A SEAT (§2.1's pin-backed section): a read-only view over the source role where the ONE write is
@@ -560,21 +563,19 @@ export function oracleArt(roster: Roster): ResolvedArt | null {
 }
 
 /** The reel figure (G4) — a CUTOUT, not a crop, and therefore the ONE ladder that reads a single pool:
- *  the pin, else that pool's first member, else `null` (no figure — the reel must be complete without
- *  one, the slats carry the transition alone).
+ *  that pool's first usable member, else `null` (no figure — the reel must be complete without one, the
+ *  slats carry the transition alone).
  *
- *  **The pin addresses the REEL POOL, not the cast** (ruled, Codex F4). A character portrait is a
- *  rectangle: pinned here it would sweep across the screen as a rectangle mid-transition, so it must not
- *  even be resolvable — and the Conf gallery correspondingly offers `reel/` files and nothing else. A
- *  LEGACY config pin naming a plain character finds no pool member and falls through to the default,
- *  per §5.3: never a hole, never a crash.
+ *  It had a `reel_figure` PIN above that rung until 2026-08-26 ("W6"): the owner ruled order the only
+ *  priority system, so the figure is simply whichever cutout sits at the top of the `reel` gallery. The
+ *  cutout-only fence the pin was ruled for (Codex F4 — a character portrait pinned here would sweep
+ *  across the screen as a rectangle) is unaffected and stronger for it: the pool IS `reel/`, so nothing
+ *  outside that folder can reach this surface at all.
  *
  *  The pool holds the owner's `reel/` drops when there are any, else the bundled cutout (see
  *  `defaultRoster`) — so dropping a cutout in wins over art that ships in the binary, and NOT dropping
  *  one still leaves a figure. Owner cutouts have NO baked glow: see the `reel/` gallery hint
  *  (index.tsx) and the bake recipe in art.ts. */
 export function reelFigureArt(roster: Roster): ResolvedArt | null {
-  // `firstUsable`'s pin resolves within THIS pool and nothing else, which is exactly the F4 ruling: a
-  // legacy pin naming a plain character finds no member here and falls through to the pool's own first.
-  return firstUsable(roster.pools.reel, roster.slots.reel_figure) ?? null;
+  return firstUsable(roster.pools.reel) ?? null;
 }

@@ -9,13 +9,11 @@ import { bindingKey, boundByKey } from "../lib/media";
 import {
   appendItem,
   ladderRows,
-  makeEligible,
   moveBy,
   moveToEdge,
   removeItem,
   restoreDefaults,
   rowId,
-  setActive,
   setFocal,
   setHidden,
   type ActiveArt,
@@ -110,13 +108,13 @@ type NsBlock = Record<string, unknown>;
  *  > **every write is computed from AUTHORITATIVE state at SEND time; no authoritative state, no
  *  > write.**
  *
- *  It used to be stated only of the `files` half, and the carve-out was where the hole was: a PIN's
- *  eligibility — whether its target is `hidden`, whether it is a fallback-tier bundled row that has to
- *  be listed — was decided when the owner TAPPED, off the rendered item. Toggle an entry off and
- *  activate it before the refetch lands and the pin was minted "already eligible", so it wrote onto a
- *  hidden entry and could never resolve. A scalar is simple; whether it may RESOLVE is not, and that
- *  is a fact about the index. So there is one rule and no kinds: a job is a function of the freshest
- *  cached settings + index, and `null` is its honest refusal. */
+ *  It used to be stated only of the `files` half, and the carve-out was where the hole was: whether a
+ *  SEAT's pin can RESOLVE — is its target in the tier that seat's ladder deals? — was decided when the
+ *  owner TAPPED, off the rendered item. Toggle an entry off and pin it before the refetch lands and the
+ *  pin was minted "already eligible", so it wrote onto a hidden entry and could never resolve. A scalar
+ *  is simple; whether it may RESOLVE is not, and that is a fact about the index. So there is one rule
+ *  and no kinds: a job is a function of the freshest cached settings + index, and `null` is its honest
+ *  refusal. */
 interface Job {
   patch: (settings: SettingsDoc | undefined, index: MediaIndex | undefined) => NsBlock | null;
   /** What to tell the owner if THIS write fails — for a job whose other half already happened and
@@ -277,43 +275,34 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
       failNote,
     });
     return {
-      /** "Set as active" — move-to-front, or the PIN where the section's ladder has one above it.
+      /** **"Use here"** — a SEAT's one write (§2.1), and the only pin left anywhere since the
+       *  2026-08-26 ruling ("W6" — order is the only priority system). Every POOL's answer to "this
+       *  one, please" is `moveToEdge(…, "top")` now, so there is no second spelling to branch on and
+       *  this function no longer has an order half.
        *
-       *  Either way the write GUARANTEES the entry is eligible (Emma's S2 review #1): move-to-front
-       *  switches a hidden entry back on inside `setActive`, and a pin carries whatever `files` half
-       *  makes its target resolvable — otherwise the card claims a pick the render walks past.
-       *
-       *  The pin's half is decided INSIDE the patch, i.e. at SEND, against the authoritative index —
-       *  never here, off the rendered item (her confirm round). The tap only records the INTENT:
-       *  "activate this identity in this section". Between the tap and the send the queue may have
-       *  hidden that very entry, and a job minted "already eligible" would then pin something nothing
-       *  can resolve. */
-      activate: (section: MediaSection, item: LibraryItem) => {
-        if (section.caps.activate === "none") return;
-        if (section.caps.activate !== "pin" || section.pin === undefined) {
-          enqueue(listJob(section.role, (e, r) => setActive(e, r, item.id)));
-          return;
-        }
+       *  It REFUSES rather than repairs, and that is the ruling's own shape rather than a lost
+       *  guarantee. The pin is looked up in the list its ladder DEALS, so `ladderRows` — the shared
+       *  §2.3 tier rule every resolver reads — IS the question, asked at SEND against the authoritative
+       *  index (Emma's S2 confirm round: the rendered item is a snapshot, and between the tap and the
+       *  send the queue may have hidden the very entry being pinned). A target that is not in that tier
+       *  cannot be put there from HERE: a seat is a read-only VIEW over another destination's library
+       *  (§2.1), and both repairs the old three-valued `Eligibility` offered — un-hiding an entry, and
+       *  LISTING a fallback-tier bundled row — write into the SOURCE role's own tier, which is a write
+       *  this section's capability set says it cannot make (`caps.hidden` is false on a seat) and which
+       *  for a bundled row collapses that role's whole bundled deal to one entry (judgment A). So the
+       *  answer is `null`: nothing is written, and the owner fixes it in the source role's own gallery.
+       *  Writing a binding the render walks past is the one thing §2.4 exists to prevent. */
+      pin: (section: MediaSection, item: LibraryItem) => {
+        if (section.pin === undefined) return;
         const pin = section.pin;
         enqueue({
-          patch: (settings, index) => {
+          patch: (_settings, index) => {
             const rows = index?.roles?.[section.role];
             // No authoritative index ⇒ no write. Whether this pin can RESOLVE is a fact about the
             // library, and writing one that cannot is the claim §2.4 exists to prevent.
             if (rows === undefined) return null;
-            const repair = eligibility(section, item.id, rows);
-            // The target cannot be MADE resolvable from here. Write nothing at all: a pin is a claim
-            // about what paints, and the one thing worse than not honouring the tap is honouring it
-            // with a binding the render walks past.
-            if (repair === "refuse") return null;
-            const block: NsBlock = { slots: { [pin]: item.row.name } };
-            if (repair !== "ready") {
-              const roles = filesBlock(ns, section.role, repair, settings, index);
-              // Half of a pin-plus-eligibility write is the very thing it was written to prevent.
-              if (roles === null) return null;
-              block.roles = roles;
-            }
-            return block;
+            if (!ladderRows(rows).some((r) => rowId(r) === item.id)) return null;
+            return { slots: { [pin]: item.row.name } };
           },
         });
       },
@@ -466,42 +455,6 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
     ready: settings !== undefined,
     write,
   };
-}
-
-/** What a PIN write has to do about its target's ELIGIBILITY — THREE answers, because "no `files`
- *  half" was two opposite facts wearing one value (Emma's final confirm):
- *
- *   · `"ready"`  — the target already resolves; the pin alone is the whole write;
- *   · a TRANSFORM — it can be made to resolve, and this is the `files` half that does it;
- *   · `"refuse"` — it cannot be made to resolve FROM HERE. The two states used to return the same
- *     `undefined` the ready case does, and the caller read that as "pin-only is safe" — writing a
- *     binding nothing can honour, which is the one thing §2.4 exists to prevent. */
-type Eligibility =
-  "ready" | "refuse" | ((entries: LibraryEntry[], rows: MediaFile[]) => LibraryEntry[]);
-
-/** Decide it, from the AUTHORITATIVE `rows`, at send (her confirm round — the rendered item is a
- *  snapshot, and between the tap and the send the queue may have hidden the very entry being pinned).
- *
- *  A pin is looked up in the list its ladder DEALS, so `ladderRows` — the shared §2.3 tier rule every
- *  resolver reads — IS the question: is the target in the tier this section actually deals? It cannot
- *  drift from what the pin will be looked up in, because it is the same function.
- *
- *  Two repairs exist for a target that is not: switch a `hidden` entry back on, and LIST a
- *  fallback-tier bundled id. **A SEAT may make neither on a BUNDLED row** — it is a read-only VIEW
- *  over ANOTHER destination's library (§2.1), and both repairs put that row into the SOURCE role's own
- *  tier, which collapses that role's whole bundled deal to the single entry (judgment A, Emma-grounded
- *  — and un-hiding an already-listed bundled row collapses it exactly as listing an unlisted one
- *  does). So a seat refuses there rather than writing a pin it knows will not resolve. A `hidden` DISK
- *  row is a different write and stays available to it: that is the only thing that makes such a pin
- *  honest, and it is the truthful consequence of "use this here". */
-function eligibility(section: MediaSection, id: RowId, rows: readonly MediaFile[]): Eligibility {
-  const row = rows.find((r) => rowId(r) === id);
-  // Gone from the library between the tap and the send (deleted out of band, dropped by a collation
-  // that self-healed). A pin naming it is dangling by construction and there is nothing to repair.
-  if (row === undefined) return "refuse";
-  if (ladderRows(rows).some((r) => rowId(r) === id)) return "ready";
-  if (section.kind === "seat" && row.bundled != null) return "refuse";
-  return (e, r) => makeEligible(e, r, id);
 }
 
 /** The `roles.<role>.files` block one intent produces against the freshest state — `null` when the

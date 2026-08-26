@@ -387,37 +387,45 @@ def test_one_disabled_namespace_leaves_the_others_healthy(home: Path, tmp_path) 
 
 
 def test_the_frontier_namespace_serves_its_three_roles(home: Path) -> None:
-    """D53 M2's registry row, end to end: the pool roles list and serve, the NAMED role's files are
-    reported by STEM (the client binds `cube.png` to the `cube` layer on that name alone), and the one
-    pin is echoed for the client resolver."""
+    """D53 M2's registry row, end to end: the pool roles list and serve, and the NAMED role's files are
+    reported by STEM (the client binds `cube.png` to the `cube` layer on that name alone).
+
+    It offers NO pin. `hero` was one until the 2026-08-26 owner ruling ("W6" — order is the only
+    priority system, app-wide): it overrode the map-cover pool's own first-wins pick, which the library
+    order already expresses, so a hand-authored leftover is now an unknown slot key and is refused out
+    loud rather than accepted as a knob that silently does nothing."""
     with make_client() as c:
         (ns_dir(home, "frontier") / "rigs" / "01-rig.png").write_bytes(png_bytes())
         (ns_dir(home, "frontier") / "hero" / "vista.webp").write_bytes(webp_bytes())
         (ns_dir(home, "frontier") / "stack" / "cube.png").write_bytes(png_bytes())
+        assert MEDIA_NAMESPACES["frontier"].slots == ()
         r = c.put(
             "/api/settings",
             json={"media": {"namespaces": {"frontier": {"slots": {"hero": "vista"}}}}},
         )
-        assert r.status_code == 200, r.text
+        assert r.status_code == 422, r.text
 
         body = c.get("/api/media/frontier").json()
         assert disk(body["roles"]["rigs"]) == ["01-rig.png"]
         assert stems(body["roles"]["hero"]) == ["vista"]
         assert stems(body["roles"]["stack"]) == ["cube"]
-        assert body["slots"] == {"hero": "vista"}
+        assert body["slots"] == {}
         assert c.get(body["roles"]["stack"][0]["url"]).status_code == 200
 
 
-def test_the_kit_namespace_serves_its_five_roles_and_its_two_pool_pins(home: Path) -> None:
+def test_the_kit_namespace_serves_its_five_roles_and_no_pin_at_all(home: Path) -> None:
     """D53 M3's registry row, as the Kit Art System extended it and G6.3 extended it again. `kit/` is the
     namespace no THEME owns — every theme's service rows read it — and three of its five roles have
     DATA-DERIVED keys: the server reports stems and knows nothing about what a service or a machine is
     called, because the binding (`normalizeMediaKey(stem) == keyFor(service)` / `hostKeyFor(host)`) is
     computed client-side only. So the server-side contract is: the five roles list, the stems are
-    reported, the files serve — including out of the HYPHENATED role folder, which is the one shape none
-    of the earlier roles exercised — and the only pins that exist are the two POOLS' (`background` and
-    G6.3's `brand`, the app bar's owner-dropped mark). The brand role is the background's shape exactly:
-    nothing here knows it is painted as a mask."""
+    reported, and the files serve — including out of the HYPHENATED role folder, which is the one shape
+    none of the earlier roles exercised.
+
+    It offers NO pin. The two POOLS carried one each (`background` and G6.3's `brand`, the app bar's
+    owner-dropped mark) until the 2026-08-26 owner ruling ("W6"): both were overrides of a first-wins
+    pick the library ORDER already expresses, so the picture that wins is the one at the top of that
+    role's gallery and there is nowhere else to look."""
     with make_client() as c:
         (ns_dir(home, "kit") / "services" / "Jellyfin.png").write_bytes(png_bytes())
         (ns_dir(home, "kit") / "service-banners" / "Jellyfin.webp").write_bytes(webp_bytes())
@@ -437,31 +445,24 @@ def test_the_kit_namespace_serves_its_five_roles_and_its_two_pool_pins(home: Pat
         assert stems(body["roles"]["hosts"]) == ["corsair"]
         assert stems(body["roles"]["brand"]) == ["sigil"]
         assert body["slots"] == {}
+        assert MEDIA_NAMESPACES["kit"].slots == ()
         for role in ("services", "service-banners", "hosts", "background", "brand"):
             assert c.get(body["roles"][role][0]["url"]).status_code == 200, role
 
         # An empty `media.kit` block is valid config (there may be nothing to persist: no order worth
-        # keeping for a role where the FILENAME is the assignment, and no pin chosen)…
+        # keeping for a role where the FILENAME is the assignment)…
         assert c.put("/api/settings", json={"media": {"namespaces": {"kit": {}}}}).status_code == 200
-        # …both declared pins are accepted and echoed for the client resolver, independently…
-        r = c.put(
-            "/api/settings",
-            json={"media": {"namespaces": {"kit": {"slots": {"background": "nebula", "brand": "sigil"}}}}},
-        )
-        assert r.status_code == 200, r.text
-        assert c.get("/api/media/kit").json()["slots"] == {
-            "background": "nebula",
-            "brand": "sigil",
-        }
-        # …and a pin naming a NAMED role is refused, like every other slot typo: those bind by filename,
-        # so a pin for one would be a knob that silently did nothing.
-        assert (
-            c.put(
-                "/api/settings",
-                json={"media": {"namespaces": {"kit": {"slots": {"services": "x"}}}}},
-            ).status_code
-            == 422
-        )
+        # …and EVERY slot key is refused now, the two retired pool pins included: an empty `slots`
+        # tuple means the namespace binds nothing, so a leftover `background:`/`brand:` is a load/PUT
+        # error rather than a knob that silently does nothing.
+        for key in ("background", "brand", "services"):
+            assert (
+                c.put(
+                    "/api/settings",
+                    json={"media": {"namespaces": {"kit": {"slots": {key: "x"}}}}},
+                ).status_code
+                == 422
+            ), key
         # The owner's ORDER is persistable per role, including the hyphenated one (it is the tie-break
         # for two files reaching one key — the one thing order still buys on a named role).
         assert (
@@ -1015,7 +1016,7 @@ def test_namespace_role_and_slot_typos_are_refused() -> None:
 def test_configured_order_and_slots_drive_the_index(home: Path) -> None:
     """The gallery's override, end to end through the ordinary settings PUT: named files come first in
     the owner's order, everything else follows in the collation, a name whose file is gone is ignored,
-    and the slot pins are echoed for the client resolver."""
+    and the surviving SEAT pins are echoed for the client resolver."""
     with make_client() as c:
         for name in ("a.png", "b.png", "c.png"):
             (role(home, "characters") / name).write_bytes(png_bytes())
@@ -1034,7 +1035,7 @@ def test_configured_order_and_slots_drive_the_index(home: Path) -> None:
                                     ]
                                 }
                             },
-                            "slots": {"reel_figure": "lyra", "wallpaper": ""},
+                            "slots": {"oracle": "kira", "wallpaper": ""},
                         }
                     }
                 }
@@ -1044,7 +1045,7 @@ def test_configured_order_and_slots_drive_the_index(home: Path) -> None:
         body = c.get("/api/media/gacha").json()
         assert disk(body["roles"]["characters"]) == ["c.png", "a.png", "b.png"]
         # blank pins are not pins — only the real one reaches the client
-        assert body["slots"] == {"reel_figure": "lyra"}
+        assert body["slots"] == {"oracle": "kira"}
         # …and it survives a reload from disk — the DANGLING entry included: a name whose file is
         # gone is ignored by the listing but kept in config (the owner may put the file back).
         reloaded = c.get("/api/settings").json()["media"]["namespaces"]["gacha"]
@@ -1072,7 +1073,7 @@ def test_the_gacha_wallpaper_PIN_outlives_its_deleted_role_folder(home: Path) ->
 
     The two tuples are validated independently (`Settings._known_media_namespaces_roles_and_slots` checks
     a slot against `row.slots` and never against `row.roles`), which is what makes a pin sourced from
-    another role an ordinary shape here — `reel_figure` has always been one. So: the folder is gone from
+    another role an ordinary shape here — every surviving pin is one. So: the folder is gone from
     the index and un-configurable, and the pin is still accepted and still echoed."""
     with make_client() as c:
         assert "wallpaper" not in c.get("/api/media/gacha").json()["roles"]
@@ -1105,30 +1106,43 @@ def test_the_gacha_wallpaper_PIN_outlives_its_deleted_role_folder(home: Path) ->
         assert c.get("/api/media/gacha").json()["slots"] == {"wallpaper": "kira"}
 
 
-def test_the_retired_hero_PIN_is_refused_rather_than_silently_inert(home: Path) -> None:
-    """The 2026-08-26 owner ruling ("W5") retired the `hero` pin: the pickup carousel's first slide now
-    DEALS the `banner` role's first member, so there is no art of its own to bind and a seat over the cast
-    would be a second, contradictory answer to which picture opens the banner.
+def test_every_retired_PIN_is_refused_rather_than_silently_inert(home: Path) -> None:
+    """Two owner rulings, one contract. "W5" (2026-08-26) retired gacha's `hero`: the pickup carousel's
+    first slide DEALS the `banner` role's first member, so it has no art of its own to bind. **"W6" (the
+    same day) retired every POOL PIN app-wide** — gacha's `reel_figure`, frontier's `hero` and the kit's
+    `background`/`brand` — on the ruling that ORDER is the only priority system: each of them merely
+    overrode a first-wins pick the library order already expresses, so the owner had two ways to choose
+    one picture and two places to look when the answer surprised them.
 
-    A clean removal on the `wallpaper`-ROLE precedent above — media v2 has never shipped to prod, so no
-    config on disk holds the pin and there is nothing to migrate (the no-legacy-seams rule). What this
-    arm pins is what a hand-authored leftover DOES: `hero` is now an unknown slot key, and the registry
-    validator refuses it out loud rather than accepting a knob that would silently do nothing. That is
-    the same treatment the deleted `wallpaper` role gets, and it is a 422 rather than a crash: the write
-    path answers, the running server is untouched, and the message names the keys that are real.
+    Clean removals on the `wallpaper`-ROLE precedent above — media v2 has never shipped to prod, so no
+    config on disk holds any of these pins (both live configs verified) and there is nothing to migrate
+    (the no-legacy-seams rule). What this arm pins is what a hand-authored leftover DOES: each is now an
+    unknown slot key, and the registry validator refuses it out loud rather than accepting a knob that
+    would silently do nothing. It is a 422 rather than a crash: the write path answers, the running
+    server is untouched, and the message names the keys that are real.
 
-    The three that survive are the ones with a destination: `wallpaper` and `oracle` bind a CHARACTER into
-    a backdrop, and `reel_figure` overrides the reel pool's own first pick."""
-    assert MEDIA_NAMESPACES["gacha"].slots == ("wallpaper", "oracle", "reel_figure")
+    What survives is what has a DESTINATION of its own — the two SEATS, which bind a CHARACTER into a
+    surface the cast does not own. No order can express that, which is exactly why they are not pins in
+    the retired sense."""
+    assert MEDIA_NAMESPACES["gacha"].slots == ("wallpaper", "oracle")
+    assert MEDIA_NAMESPACES["frontier"].slots == ()
+    assert MEDIA_NAMESPACES["kit"].slots == ()
     with make_client() as c:
         (role(home, "characters") / "kira.png").write_bytes(png_bytes())
-        r = c.put(
-            "/api/settings",
-            json={"media": {"namespaces": {"gacha": {"slots": {"hero": "kira"}}}}},
-        )
-        assert r.status_code == 422, r.text
-        assert "hero" in r.text
-        # …and nothing was persisted on the way to the refusal.
+        for ns, key in (
+            ("gacha", "hero"),
+            ("gacha", "reel_figure"),
+            ("frontier", "hero"),
+            ("kit", "background"),
+            ("kit", "brand"),
+        ):
+            r = c.put(
+                "/api/settings",
+                json={"media": {"namespaces": {ns: {"slots": {key: "kira"}}}}},
+            )
+            assert r.status_code == 422, (ns, key, r.text)
+            assert key in r.text
+        # …and nothing was persisted on the way to any of the refusals.
         assert c.get("/api/media/gacha").json()["slots"] == {}
 
 

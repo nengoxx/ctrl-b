@@ -9,7 +9,6 @@ import {
   entryId,
   fallbackTier,
   ladderRows,
-  makeEligible,
   metaText,
   moveBy,
   moveToEdge,
@@ -20,7 +19,6 @@ import {
   restoreDefaults,
   rowId,
   rowFocal,
-  setActive,
   setFocal,
   setHidden,
   shown,
@@ -36,7 +34,7 @@ import {
 // `lib/media.ts`'s. The gallery suite then only has to prove it calls these.
 //
 // The two load-bearing rules, and the ones §11 pins by name (§2.3 ③ as AMENDED, owner 2026-08-25):
-//  · an ORDER intent — `moveBy`, `moveToEdge`, `setActive`, and so the drag — SWEEPS the whole section
+//  · an ORDER intent — `moveBy` and `moveToEdge`, and so the drag — SWEEPS the whole section
 //    into `files` in the resulting order, bundled rows included. It is the only shape that can SAY the
 //    order: partial listing could not express a mid-list position at all, and listing only the rows of
 //    a swap made those rows the owner's entire tier, shrinking the deal to two portraits;
@@ -248,69 +246,21 @@ describe("the tier-preserving write rule (§2.3 ③)", () => {
 
   it("a config entry naming a file that is gone falls out — the collation drops it anyway", () => {
     const entries: LibraryEntry[] = [{ name: "ghost.webp" }, { name: "a.webp" }];
-    expect(setActive(entries, [disk("a.webp")], "f:a.webp")).toEqual([{ name: "a.webp" }]);
+    expect(moveToEdge(entries, [disk("a.webp")], "f:a.webp", "top")).toEqual([{ name: "a.webp" }]);
   });
 });
 
-describe("set as active — move-to-front (§6.5)", () => {
-  const rows = [disk("a.webp"), disk("b.webp"), disk("c.webp")];
-
-  it("moves the chosen entry to the front, keeping everything else in order", () => {
-    expect(setActive(undefined, rows, "f:c.webp")).toEqual([
-      { name: "c.webp" },
-      { name: "a.webp" },
-      { name: "b.webp" },
-    ]);
-  });
-
-  it("a BUNDLED entry can be chosen too — and listing it is exactly what that means", () => {
-    const withBundled = [...rows, bundled("lyra")];
-    expect(setActive(undefined, withBundled, "b:lyra")).toEqual([
-      { bundled: "lyra" },
-      { name: "a.webp" },
-      { name: "b.webp" },
-      { name: "c.webp" },
-    ]);
-  });
-
-  it("SWITCHES THE ENTRY BACK ON — activation has to make it eligible, in the same write", () => {
-    // Emma's S2 review #1. Moving a hidden entry to the front changes nothing the owner can see:
-    // resolution skips hidden rows everywhere, so the tile would sit first and stay excluded while the
-    // card kept painting somebody else — and the gallery would be claiming a binding the render ignores.
-    const held: LibraryEntry[] = [{ name: "a.webp" }, { name: "c.webp", hidden: true, focal: {} }];
-    const rowsOff = [disk("a.webp"), disk("c.webp", { hidden: true })];
-    expect(setActive(held, rowsOff, "f:c.webp")).toEqual([
-      { name: "c.webp", focal: {} }, // `hidden` gone; every other persisted field kept
-      { name: "a.webp" },
-    ]);
-  });
-});
-
-describe("makeEligible — the `files` half of a PIN write (Emma's S2 review #1 ②)", () => {
-  it("LISTS a fallback-tier bundled entry, leaving every priority where it was", () => {
-    // A pin is resolved inside the list its ladder deals, and the fallback tier is offered only while
-    // the owner's own tier is empty. Pinning a bundled entry beside owner files therefore has to list
-    // it — one entry, the one the owner acted on, exactly as §2.3 ③ allows.
-    const rows = [disk("cut.webp"), bundled("lyra")];
-    expect(makeEligible(undefined, rows, "b:lyra")).toEqual([
-      { name: "cut.webp" }, // order untouched: the PIN is what this gesture means
-      { bundled: "lyra" },
-    ]);
-  });
-
-  it("…and switches a hidden entry back on, for the same reason", () => {
-    const rows = [disk("cut.webp", { hidden: true }), disk("other.webp")];
-    expect(makeEligible([{ name: "cut.webp", hidden: true }], rows, "f:cut.webp")).toEqual([
-      { name: "cut.webp" },
-      { name: "other.webp" },
-    ]);
-  });
-
-  it("never sweeps the REST of the fallback tier in behind it", () => {
-    const rows = [bundled("lyra"), bundled("pegasus"), bundled("atlas")];
-    expect(makeEligible(undefined, rows, "b:lyra")).toEqual([{ bundled: "lyra" }]);
-  });
-});
+// THERE IS NO `setActive` AND NO `makeEligible` (owner ruling 2026-08-26, "W6" — order is the only
+// priority system). "Use this one" is `moveToEdge(…, "top")`, an ordinary order intent with no
+// membership side effect, and the arms for it live in the reorder-edges block below. What went with
+// them:
+//   · `setActive`'s un-hide. Activation used to guarantee eligibility in the same write (Emma's S2
+//     review #1) because a hidden entry at the front is still skipped everywhere. Order and MEMBERSHIP
+//     are separate systems now and the copy says so — "In use" means membership, "Active" means
+//     painted — so moving an entry to the top of a list it is not in must not silently switch it on.
+//   · `makeEligible`, the `files` half a POOL PIN needed. Every pool pin is gone; the two SEATS that
+//     remain refuse a target their source ladder does not already deal rather than repairing the
+//     source library from a read-only view of it (`hooks/useMediaLibrary.ts#pin`).
 
 describe("offersBundled — degrade vs resolved-empty (Emma's S2 review #2)", () => {
   it("is TRUE the moment the payload describes the tier, hidden rows included", () => {
@@ -354,8 +304,33 @@ describe("reorder edges", () => {
     // decides what a later upload replaces, and a gesture that moved nothing may not change it.
     const refused = [{ name: "a.webp" }, { name: "b.webp" }];
     expect(moveBy(undefined, rows, "f:gone.webp", 1)).toEqual(refused);
+    expect(moveToEdge(undefined, rows, "f:gone.webp", "top")).toEqual(refused);
     expect(moveToEdge(undefined, rows, "f:gone.webp", "bottom")).toEqual(refused);
-    expect(setActive(undefined, rows, "f:gone.webp")).toEqual(refused);
+  });
+
+  it("MOVE TO TOP is activation, and it says nothing about membership ('W6')", () => {
+    // What `setActive` used to be, minus its un-hide. The two systems are separate now: order decides
+    // which entry is ACTIVE among the ones in use, and the In-use switch decides which are in use at
+    // all. A move that quietly switched an entry back on would put the old two-priorities confusion
+    // back in one gesture.
+    const held: LibraryEntry[] = [{ name: "a.webp" }, { name: "c.webp", hidden: true, focal: {} }];
+    const rowsOff = [disk("a.webp"), disk("c.webp", { hidden: true })];
+    expect(moveToEdge(held, rowsOff, "f:c.webp", "top")).toEqual([
+      { name: "c.webp", hidden: true, focal: {} },
+      { name: "a.webp" },
+    ]);
+  });
+
+  it("a BUNDLED entry can be moved to the top too — and the sweep lists the whole section", () => {
+    // The order intent states the WHOLE section's order (§2.3 ③ as amended), so promoting one of the
+    // shipped defaults writes all of them, that one first — never just the pick, which would make it
+    // the owner's entire tier and retire the rest.
+    const all = [bundled("pegasus"), bundled("atlas"), bundled("lyra")];
+    expect(moveToEdge(undefined, all, "b:lyra", "top")).toEqual([
+      { bundled: "lyra" },
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+    ]);
   });
 });
 

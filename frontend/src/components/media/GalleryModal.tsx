@@ -48,7 +48,8 @@ export function GalleryModal({
   busy: boolean;
   ready: boolean;
   write: {
-    activate: (section: SectionView["section"], item: LibraryItem) => void;
+    /** A SEAT's one write ("Use here") — the only pin left since "W6". */
+    pin: (section: SectionView["section"], item: LibraryItem) => void;
     unpin: (section: SectionView["section"]) => void;
     /** Returns when the write has SETTLED — what the drag's held commit waits on (§7). The ↑/↓ buttons
      *  ignore it: their affordance is the disabled state `busy` already drives. */
@@ -287,10 +288,11 @@ export function GalleryModal({
               busy={busy}
               ready={ready}
               canReorder={section.caps.reorder && items.length > 1}
+              canPromote={section.caps.promote && items.length > 1}
               first={items[0]?.id === selected.id}
               last={items[items.length - 1]?.id === selected.id}
               onBack={() => setSelectedId(null)}
-              onActivate={() => write.activate(section, selected)}
+              onPin={() => write.pin(section, selected)}
               onUnpin={() => write.unpin(section)}
               onMove={(delta) => void write.move(section, selected, delta)}
               onMoveToEdge={(edge) => write.moveToEdge(section, selected, edge)}

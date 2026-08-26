@@ -125,11 +125,13 @@ describe("FrontierFleet owner art (D53 M2)", () => {
     ]);
   });
 
-  it("the map cover takes the hero pool's first file, and its pin overrides that", () => {
+  it("the map cover takes the hero pool's FIRST file, and only its order changes that", () => {
+    // "W6" (owner ruling 2026-08-26): the `hero` pin is gone, so the cover is whatever the owner moved
+    // to the top of that gallery — one priority system, on this surface as on every other.
     media.data = mediaIndex({ hero: [ownerFile("one"), ownerFile("two")] });
     const { container, rerender } = render(<FrontierFleet active />);
     expect(bgUrl(container.querySelector(".frontier-map .pic"))).toBe(painted("one"));
-    media.data = mediaIndex({ hero: [ownerFile("one"), ownerFile("two")] }, { hero: "two" });
+    media.data = mediaIndex({ hero: [ownerFile("two"), ownerFile("one")] });
     rerender(<FrontierFleet active />);
     expect(bgUrl(container.querySelector(".frontier-map .pic"))).toBe(painted("two"));
   });
