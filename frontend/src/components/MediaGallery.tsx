@@ -4,6 +4,7 @@ import { CropModal } from "./media/CropModal";
 import { FramingSheet } from "./media/FramingSheet";
 import { GalleryModal } from "./media/GalleryModal";
 import { SectionCard } from "./media/SectionCard";
+import { useImageJob } from "../hooks/useImageJob";
 import { useMediaLibrary, type GalleryScope, type LibraryItem } from "../hooks/useMediaLibrary";
 import { useMediaUpload } from "../hooks/useMediaUpload";
 import type { MediaNsDef } from "../theme-engine/mediaRegistry";
@@ -34,11 +35,18 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
   // screen underneath it (the same rule the crop step states above).
   const [framing, setFraming] = useState<LibraryItem | null>(null);
   const opened = open === null ? undefined : lib.sections.find((v) => v.section.id === open.id);
-  // The UPLOAD job lives HERE, one level above the gallery modal, for two reasons that are really
+  // The IMAGE JOB lives HERE, one level above the gallery modal, for two reasons that are really
   // one: the crop step must be a SIBLING of the gallery rather than a child (a nested dialog would
   // ride the gallery's own keydown trap, so Escape in the crop would close the gallery underneath
   // it), and a job outliving the modal it was started from must not be unmounted with it.
+  //
+  // ONE machine, however many consumers ("W10"): the upload is one tail on it, and editing a picture
+  // already in the library is another. One latch, one phase word, one failure row — which is what
+  // "exactly one section is on screen, so one job at a time" means once there are two ways to start
+  // one (§4's rule ①).
+  const job = useImageJob();
   const upload = useMediaUpload({
+    job,
     section: opened?.section,
     scope: open?.scope ?? {},
     rows: opened?.rows ?? [],
@@ -95,12 +103,15 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
           onCancel={() => setFraming(null)}
         />
       )}
-      {upload.crop !== null && (
+      {job.crop !== null && (
         <CropModal
-          job={upload.crop}
-          aspect={opened?.section.aspect}
-          onConfirm={upload.confirm}
-          onCancel={upload.cancel}
+          job={job.crop}
+          // The JOB's own destination, not the open gallery's (Emma #1): the owner can close the
+          // gallery while the crop step is up, and the shape offered has to be the one the picture is
+          // going into.
+          aspect={job.crop.section.aspect}
+          onConfirm={job.confirm}
+          onCancel={job.cancel}
         />
       )}
     </div>

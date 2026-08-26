@@ -1,26 +1,26 @@
-import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
+import { useEffect, useRef, type ChangeEvent, type RefObject } from "react";
 
+import type { CropJob, ImageJob, JobControl, JobFailure, JobPhase } from "./useImageJob";
 import { readMediaIndex, type MediaFile } from "./useMedia";
-import { useSettings } from "./useSettings";
 import type { GalleryScope, JobOutcome } from "./useMediaLibrary";
 import { ApiError, putBytes } from "../api/client";
-import { exportImage, type CropRect } from "../lib/imageExport";
-import { guardPick, pixelRefusal, readHead, type ImageFormat } from "../lib/imageProbe";
+import type { ExportOutput } from "../lib/imageExport";
 import { mediaFileUrl } from "../lib/media";
 import type { LibraryEntry } from "../lib/mediaLibrary";
 import { mintName } from "../lib/uploadName";
 import { UPLOAD_LIMITS, type MediaSection } from "../theme-engine/mediaRegistry";
 
-// THE UPLOAD (D65 / MEDIA_MANAGER_PLAN §4) — pick → guard → crop → export → PUT → register, as ONE
-// job with a latch and an idempotent retry.
+// THE UPLOAD (D65 / MEDIA_MANAGER_PLAN §4) — a NEW file in the library: mint a name → PUT the bytes →
+// register the entry.
 //
-// The three rules that shape every line of it:
+// It is one CONSUMER of `useImageJob` since the owner's 2026-08-26 directive ("W10"): everything up to
+// and including the export — the admission latch, the guard ladder, the crop step, the worker — is that
+// machine's, and what lives here is the tail it is handed, plus the surface the gallery renders. The
+// edit consumer is the other tail, and it is why the split exists: editing a picture already in the
+// library is a capability of its own, not an appendage of adding one.
 //
-// ① **ONE ADMISSION PATH, ONE LATCH** (Opus M8). Exactly one section is ever on screen — the entry
-//    card opens the gallery, the gallery's labelled Add row is the only way in — so there is one
-//    job at a time and the latch that enforces it is a SYNCHRONOUS ref, never rendered state: two
-//    taps in one frame both read the same pre-render `false` and both start a job. The v1 design's
-//    second per-section flag was accordion residue and is not rebuilt here.
+// The two rules that shape every line of the tail below (the third — one admission, one latch — moved
+// with the machine):
 //
 // ② **TWO PHASES, AND A RETRY THAT NEVER RE-UPLOADS** (Emma #4). Once the server answers `201` the
 //    bytes exist under a name, and the only thing left is the config write. A retry that re-ran the
@@ -39,63 +39,16 @@ import { UPLOAD_LIMITS, type MediaSection } from "../theme-engine/mediaRegistry"
 // writer took the name between our listing and our PUT, and the answer is the next suffix (§2.5 —
 // "never a dialog").
 
-/** The picked file, waiting for the crop step. The object URL is NOT here on purpose: it belongs to
- *  the modal that renders it, created and revoked in one effect (R54 §6.1 — revoking in the same task
- *  as the `src` assignment errors in Chromium, and a URL outliving its consumer pins the whole blob
- *  in memory). The FILE is the source of truth; the export decodes it again in the worker.
- *
- *  It also carries its own CONTEXT — see `JobContext`. */
-export interface CropJob extends JobContext {
-  file: File;
-  /** The decoded size, from the `createImageBitmap` proof — already EXIF-oriented, which is the same
-   *  space `react-easy-crop` reports its rect in. */
-  width: number;
-  height: number;
-  /** What the header reader PROVED the bytes are, carried through so the export's alpha decision is
-   *  never made from `File.type` (Emma #3). `null` = unnamed by the reader ⇒ treated as alpha-capable. */
-  format: ImageFormat | null;
-}
-
-/** WHERE a job is going, captured when it was ADMITTED and never re-read (Emma #1).
- *
- *  A job outlives the gallery that started it — the owner can close it while the worker is exporting,
- *  and the write queue lives a level above — so reading `state.current.section` mid-flight meant a job
- *  could find itself with no destination and return without releasing the latch. The Add row then
- *  looked live in every gallery and silently refused every pick for the rest of the session.
- *
- *  Binding the destination makes that unrepresentable: the job knows where it is going from the moment
- *  it starts, and closing the gallery is exactly what it sounds like — the owner stops watching, not
- *  the upload stops happening. */
-interface JobContext {
-  section: MediaSection;
-  scope: GalleryScope;
-}
-
-/** Which step failed. Each one means something different to the owner, and the copy says which. */
-export type UploadPhase = "guard" | "export" | "upload" | "register";
-
-export interface UploadFailure {
-  phase: UploadPhase;
-  message: string;
-  /** The section this happened in, so a failure cannot be shown under a gallery it is not about. */
-  sectionId: string;
-  /** The minted name, once there is one — shown, because after a `201` the FILE EXISTS and the owner
-   *  needs to know what to look for. */
-  filename?: string;
-  /** Absent where there is nothing to retry (a refused pick — the answer is to pick something else). */
-  retry?: () => void;
-}
-
+/** What the gallery renders of a job: the Add row's own state, and the failure row. The crop step is
+ *  the MACHINE's and is rendered by `MediaGallery` beside this surface's gallery. */
 export interface MediaUpload {
-  /** The file waiting to be cropped, or `null`. */
-  crop: CropJob | null;
-  failure: UploadFailure | null;
+  failure: JobFailure | null;
   /** A job is running — the latch is taken and the Add row must not look otherwise. TRUE through the
    *  crop step too, which has no `phase` of its own because nothing is happening: the app is waiting
    *  for the owner. */
   busy: boolean;
   /** What it is doing, for the row's own words. */
-  phase: UploadPhase | null;
+  phase: JobPhase | null;
   /** True once this section can accept an upload at all. */
   ready: boolean;
   pick: () => void;
@@ -103,15 +56,15 @@ export interface MediaUpload {
   onInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
   /** The drag-drop and paste entrance — the same admission path as the Add row. */
   offer: (file: File | null | undefined) => void;
-  confirm: (rect: CropRect) => void;
-  cancel: () => void;
   dismiss: () => void;
 }
 
 /** The job between its two phases: what to store, under what name, and whether the bytes are already
  *  there. Held in a REF rather than in state — it carries a Blob, and it must survive a re-render
  *  without one being scheduled for it. */
-interface Pending extends JobContext {
+interface Pending {
+  section: MediaSection;
+  scope: GalleryScope;
   blob: Blob;
   filename: string;
   fields: LibraryEntry;
@@ -119,6 +72,8 @@ interface Pending extends JobContext {
 }
 
 export function useMediaUpload(args: {
+  /** The one image-job machine, mounted by `MediaGallery` and shared with the edit consumer. */
+  job: ImageJob;
   /** The section the open gallery is showing, or `undefined` when none is. */
   section: MediaSection | undefined;
   scope: GalleryScope;
@@ -127,21 +82,15 @@ export function useMediaUpload(args: {
   /** `useMediaLibrary`'s register write, answering how it ended. */
   append: (section: MediaSection, filename: string, fields: LibraryEntry) => Promise<JobOutcome>;
 }): MediaUpload {
-  const { section, scope, rows, append } = args;
-  const { data: settings } = useSettings();
+  const { job, section, scope, rows, append } = args;
   const inputRef = useRef<HTMLInputElement>(null);
-  const [crop, setCrop] = useState<CropJob | null>(null);
-  const [failure, setFailure] = useState<UploadFailure | null>(null);
-  const [phase, setPhase] = useState<UploadPhase | null>(null);
-  /** RULE ① — the latch. Synchronous, so two taps in one frame cannot both pass it. */
-  const running = useRef(false);
   const pending = useRef<Pending | null>(null);
   /** Names the SERVER has refused with a 409 this session — our listing did not know about them. */
   const raced = useRef(new Set<string>());
 
   // The LIVE facts a running job reads — and only these two. Where the job is going is bound into the
-  // job itself (`JobContext`); what is left here is the folder listing a NAME is minted against (which
-  // must be as fresh as possible) and the write queue (which belongs to the tab, not to the gallery).
+  // job itself (Emma #1); what is left here is the folder listing a NAME is minted against (which must
+  // be as fresh as possible) and the write queue (which belongs to the tab, not to the gallery).
   //
   // Through a ref because a job outlives the render it started in, and because recreating every
   // function below on each new `rows` array would re-arm the hook on every poll. Written in an EFFECT,
@@ -152,33 +101,15 @@ export function useMediaUpload(args: {
     state.current = { rows, append };
   });
 
-  // ── the job, as PLAIN functions ────────────────────────────────────────────────────────────────
+  // ── the tail, as PLAIN functions ───────────────────────────────────────────────────────────────
   //
-  // Not `useCallback`s, deliberately. Two of them are RECURSIVE — a failure row's "Try again" re-enters
-  // the very step that produced it — and a memoized closure cannot name itself (the React Compiler
-  // lint says so outright). Nothing here needs a stable identity either: none of these is an effect
-  // dependency, and the component that renders them re-renders with its data anyway. Everything a
-  // running job reads comes from `state.current`, so a fresh closure per render is not a stale one.
+  // Not `useCallback`s, for the machine's own reason: `deliver` is RECURSIVE — a failure row's "Try
+  // again" re-enters it — and a memoized closure cannot name itself.
 
-  /** A "Try again" is an ADMISSION too, and takes the same latch: a double-tapped retry would
-   *  otherwise run two exports, or two registrations, of the same job. */
-  const retryable = (again: () => void) => () => {
-    if (running.current) return;
-    again();
-  };
-
-  function finish(): void {
+  /** The machine's `finish`, plus this tail's own book-keeping: the two-phase record is done with. */
+  function finish(control: JobControl): void {
     pending.current = null;
-    running.current = false;
-    setPhase(null);
-  }
-
-  function fail(sectionId: string, next: Omit<UploadFailure, "sectionId">): void {
-    setFailure({ ...next, sectionId });
-    // The latch RELEASES on a failure: the row is on screen, and the owner must be able to pick
-    // something else without first dismissing it. The pending job survives for the retry.
-    running.current = false;
-    setPhase(null);
+    control.finish();
   }
 
   /** Is `filename` in the role's folder RIGHT NOW? A rejection means "could not find out", never
@@ -188,9 +119,9 @@ export function useMediaUpload(args: {
    *  a cache that PREDATES the upload, and a cache-WRITING read publishes a transient failure to the
    *  gallery that is waiting to show the failure row.
    */
-  async function landed(ctx: JobContext, filename: string): Promise<boolean> {
-    const index = await readMediaIndex(ctx.section.ns);
-    return (index.roles?.[ctx.section.role] ?? []).some((row) => row.file === filename);
+  async function landed(job: Pending, filename: string): Promise<boolean> {
+    const index = await readMediaIndex(job.section.ns);
+    return (index.roles?.[job.section.role] ?? []).some((row) => row.file === filename);
   }
 
   /** The bytes → the server, walking suffixes past the race guard. Returns the name that stuck.
@@ -233,16 +164,14 @@ export function useMediaUpload(args: {
    *
    *  Everything it needs about WHERE it is going comes off the job (Emma #1), so closing the gallery
    *  mid-flight cannot strand it — and every exit from here releases the latch. */
-  async function deliver(resumed: boolean): Promise<void> {
+  async function deliver(control: JobControl, resumed: boolean): Promise<void> {
     const job = pending.current;
     // No job at all: nothing to deliver, and the latch must not be left holding the door.
     if (job === null) {
-      finish();
+      finish(control);
       return;
     }
-    const sec = job.section;
-    running.current = true;
-    setFailure(null);
+    control.begin();
     if (!job.uploaded && resumed) {
       try {
         if (await landed(job, job.filename)) job.uploaded = true;
@@ -251,81 +180,56 @@ export function useMediaUpload(args: {
         // must never fall through into a PUT. Stay exactly where we were: same job, same name, still
         // retryable. One more tap when the connection is back costs nothing; a duplicate upload costs
         // the owner a file they cannot see.
-        fail(sec.id, {
+        control.fail({
           phase: "upload",
           message: `${job.filename} may or may not have reached the server — the library could not be re-read to find out. Try again when the connection is back.`,
           filename: job.filename,
-          retry: retryable(() => void deliver(true)),
+          retry: control.retryable(() => void deliver(control, true)),
         });
         return;
       }
     }
     if (!job.uploaded) {
-      setPhase("upload");
+      control.setPhase("upload");
       try {
         job.filename = await upload(job, resumed);
         job.uploaded = true;
       } catch (error) {
-        fail(sec.id, {
+        control.fail({
           phase: "upload",
           message: uploadMessage(error),
           filename: job.uploaded ? job.filename : undefined,
-          retry: retryable(() => void deliver(true)),
+          retry: control.retryable(() => void deliver(control, true)),
         });
         return;
       }
     }
-    setPhase("register");
-    const outcome = await state.current.append(sec, job.filename, job.fields);
+    control.setPhase("register");
+    const outcome = await state.current.append(job.section, job.filename, job.fields);
     if (outcome === "written") {
-      finish();
+      finish(control);
       return;
     }
     // The bytes ARE on the server — this is a partial success, and the sentence has to say so or
     // the owner goes looking for a file that is already there. It is also the least damaging
     // failure in the pipeline: an unlisted file still appears in this gallery and still paints,
     // because the collation appends what is on disk (§2.3 ②).
-    fail(sec.id, {
+    control.fail({
       phase: "register",
       message: `${job.filename} was uploaded, but the library list could not be saved. The image is in the folder and will still appear — try again to give it its place in the order.`,
       filename: job.filename,
-      retry: retryable(() => void deliver(true)),
+      retry: control.retryable(() => void deliver(control, true)),
     });
   }
 
-  /** Phase one: the crop rect becomes bytes, and the bytes get a name.
-   *
-   *  Takes its DESTINATION from the crop job rather than from the live gallery (Emma #1): the owner
-   *  may close the gallery while the worker is exporting, and an upload they already committed to
-   *  should land, not vanish with the latch still held. */
-  async function run(ctx: CropJob, rect: CropRect): Promise<void> {
-    const sec = ctx.section;
-    running.current = true;
-    setPhase("export");
-    let output;
-    try {
-      output = await exportImage({
-        file: ctx.file,
-        // The BYTES' own format, from the guard's header reader — never `File.type`, which an Android
-        // content URI leaves empty and which decided a transparent picture's fate (Emma #3).
-        sourceFormat: ctx.format,
-        rect,
-        bounds: sec.bounds,
-        override: sec.def.export,
-      });
-    } catch (error) {
-      fail(sec.id, {
-        phase: "export",
-        message: error instanceof Error ? error.message : "the image could not be prepared.",
-        retry: retryable(() => void run(ctx, rect)),
-      });
-      return;
-    }
+  /** THE DELIVERY the machine calls with the exported bytes: give them a name, then run the two-phase
+   *  job above. */
+  const delivery = async (output: ExportOutput, ctx: CropJob, control: JobControl) => {
     // The stored name is minted from the OUTPUT's own extension (`blob.type`, never the request)
     // and from what the folder already holds — so it cannot collide and cannot be refused.
     const filename = mint(state.current.rows, raced.current, ctx.file.name, output.ext);
     pending.current = {
-      section: sec,
+      section: ctx.section,
       scope: ctx.scope,
       blob: output.blob,
       filename,
@@ -337,97 +241,26 @@ export function useMediaUpload(args: {
       fields: ctx.scope.key === undefined ? {} : { key: ctx.scope.key },
       uploaded: false,
     };
-    await deliver(false);
-  }
+    await deliver(control, false);
+  };
 
-  /** The ONE admission path (rule ①) — the Add row, a drop and a paste all arrive here. The
-   *  destination is captured HERE, once, and travels with the job from this point on (Emma #1). */
+  /** The ONE admission this surface makes — the Add row, a drop and a paste all arrive here, and the
+   *  destination plus the delivery are bound into the job from this point on (Emma #1). */
   function offer(file: File | null | undefined): void {
-    const sec = section;
-    const ctx: JobContext | null = sec === undefined ? null : { section: sec, scope };
-    if (file == null || sec === undefined || ctx === null || !sec.caps.upload) return;
-    if (running.current) return; // the latch, taken synchronously
-    running.current = true;
-    setFailure(null);
-    setPhase("guard");
-    void (async () => {
-      const limits = {
-        ...UPLOAD_LIMITS,
-        // The SERVER's cap, so the client refuses before it spends an upload on a 413 — and the
-        // two ends can never disagree about what the number is.
-        maxBytes: settings?.media?.write?.max_bytes ?? UPLOAD_LIMITS.maxBytesFallback,
-      };
-      // READING the file can fail on its own, and on Android it is not exotic: a picked file is a
-      // content URI whose grant the system can revoke while the app is backgrounded, and the read
-      // then throws `NotReadableError`. Unhandled, that would leave the latch taken with no row on
-      // screen — one dead Add button for the rest of the session.
-      let head: Uint8Array;
-      try {
-        head = await readHead(file, limits);
-      } catch {
-        fail(sec.id, {
-          phase: "guard",
-          message:
-            "that file could not be read — if it came from the photo picker, the app may have lost access to it. Pick it again.",
-        });
-        return;
-      }
-      const verdict = guardPick(file.size, head, limits);
-      if (!verdict.ok) {
-        // No retry: the answer to a refused pick is a different picture, not the same one again.
-        fail(sec.id, { phase: "guard", message: verdict.reason });
-        return;
-      }
-      // The PROOF rung, and the guard's catch-all: everything the header reader cannot see (an
-      // AVIF, a GIF, a HEIC that slipped past the sniff, a file that is not an image at all)
-      // rejects HERE. It costs a full decode of a file that is about to be decoded again in the
-      // worker — bought deliberately (§4's ladder), because the alternative is a crop UI opening
-      // on a picture that cannot be shown and an owner discovering it after framing it.
-      let size: { width: number; height: number };
-      try {
-        const bitmap = await createImageBitmap(file);
-        try {
-          size = { width: bitmap.width, height: bitmap.height };
-        } finally {
-          // 48 MB of RGBA for a 12 MP photo, handed straight back — and in a `finally` because the
-          // refusal below returns without ever reaching the crop step.
-          bitmap.close();
-        }
-      } catch {
-        fail(sec.id, {
-          phase: "guard",
-          message:
-            "that file could not be opened as an image on this device. If it came from a phone camera, try sharing it (which converts it) or saving it as JPEG first.",
-        });
-        return;
-      }
-      // THE CAP, ENFORCED WHERE THE SIZE FIRST EXISTS (Emma #4). The header reader admits files it
-      // cannot measure — a JPEG whose frame header sits past the 64 KB head, and every format it
-      // deliberately does not dimension (AVIF, GIF) — so without this rung the 64 MP contract was only
-      // true of the files we happened to be able to parse, and a 108 MP one would go on to be decoded a
-      // SECOND time in the worker. The proof decode's own cost is unavoidable for those formats; the
-      // second one is not, and neither is opening a crop UI on a picture we will refuse anyway.
-      const oversize = pixelRefusal(size.width, size.height, limits.maxPixels);
-      if (oversize !== null) {
-        fail(sec.id, { phase: "guard", message: oversize });
-        return;
-      }
-      setPhase(null);
-      setCrop({ ...ctx, file, ...size, format: verdict.header.format });
-    })();
+    if (section === undefined || !section.caps.upload) return;
+    job.offer(file, { section, scope, deliver: delivery });
   }
 
   return {
-    crop,
     // A failure belongs to the section it happened in: the gallery may have been closed and another
     // one opened while the job ran, and a row about a picture that is not on screen is worse than none.
-    failure: failure !== null && failure.sectionId === section?.id ? failure : null,
-    busy: phase !== null || crop !== null,
-    phase,
-    ready: section?.caps.upload === true && settings !== undefined,
+    failure: job.failure !== null && job.failure.sectionId === section?.id ? job.failure : null,
+    busy: job.busy,
+    phase: job.phase,
+    ready: section?.caps.upload === true && job.ready,
     inputRef,
     pick: () => {
-      if (running.current) return;
+      if (job.busy) return;
       inputRef.current?.click();
     },
     onInputChange: (event: ChangeEvent<HTMLInputElement>) => {
@@ -438,20 +271,8 @@ export function useMediaUpload(args: {
       offer(file);
     },
     offer,
-    confirm: (rect: CropRect) => {
-      const job = crop;
-      setCrop(null);
-      // The JOB is what carries the destination onward — never the live gallery (Emma #1).
-      if (job !== null) void run(job, rect);
-    },
-    cancel: () => {
-      // Unwinds fully (§4): the file is dropped, the latch releases, nothing was written anywhere.
-      setCrop(null);
-      running.current = false;
-      setPhase(null);
-    },
     dismiss: () => {
-      setFailure(null);
+      job.dismiss();
       pending.current = null;
     },
   };

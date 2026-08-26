@@ -4,7 +4,7 @@ import "react-easy-crop/react-easy-crop.css";
 
 import { XIcon } from "../icons";
 import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
-import type { CropJob } from "../../hooks/useMediaUpload";
+import type { CropJob } from "../../hooks/useImageJob";
 import type { CropRect } from "../../lib/imageExport";
 import { modalKeyDown } from "../../lib/focusTrap";
 
