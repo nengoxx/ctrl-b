@@ -537,12 +537,22 @@ test("Conf · Theme art — Restore defaults puts the shipped art back and keeps
   await restore.click();
   await page.getByRole("button", { name: "Restore", exact: true }).last().click();
   await expect.poll(() => puts.length).toBe(1);
-  // The bundled ids leave `files` — which is what puts them back in the REGISTRY's order — and the
-  // owner's file keeps its entry, switched back on with it.
-  expect(st.files).toEqual([{ name: "a.webp" }]);
-  // …and the control goes with it: there is nothing left to restore.
-  await expect(restore).toHaveCount(0);
-  await expect(dialog.locator(".mgal-tile").first()).toHaveAttribute("aria-label", "a.webp");
+  // **THE DEFAULTS BECOME THE SELECTION** (the owner ruling of 2026-08-26, "W8"): the shipped ids go to
+  // the TOP of `files` in the REGISTRY's order, in use, and the owner's own file stays in the library
+  // below them, switched OFF — exactly as if it had just been uploaded into a section already showing
+  // its defaults. Nothing is deleted.
+  //
+  // This pin used to say the opposite (the bundled ids LEAVING `files` and the fallback tier answering),
+  // which was the mechanism before that ruling — and it could not express the ruling at all: with one
+  // owner file present, the restore left that file painting.
+  expect(st.files).toEqual([...castEntries(), { name: "a.webp", hidden: true }]);
+  // …and the control STAYS: a restored section is one whose defaults are listed and whose own file is
+  // hidden, which is a difference from what it shipped — so there is still something to put back.
+  await expect(restore).toHaveCount(1);
+  await expect(dialog.locator(".mgal-tile").first()).toHaveAttribute(
+    "aria-label",
+    "pegasus (default)",
+  );
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 
