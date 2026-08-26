@@ -457,11 +457,23 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
   bundled tier with a **rotation** section of its own. The only art that is NOT a library entry is
   art belonging to no role: a SEAT's built-in fallback (gacha's `banner.webp`), shown read-only on
   the seat card and in its gallery through `MediaSlotDef.builtin` — no hide, no order, and the
-  unpin is its restore. **Restore defaults** (per role section, `requestConfirm`): one write that
-  drops every `bundled:` entry from `files` and strips `hidden` from what remains — the shipped art
-  goes back to the registry's order and nothing stays switched off, while the owner's uploads keep
-  their entries, order, framing and key. Offered only where the section ships art AND `files` says
-  something about it, and scoped to what is on screen (a key gallery restores its own layer).
+  unpin is its restore. **Restore defaults** (per role section, `requestConfirm`) — **RE-RULED
+  2026-08-26 ("W8"), the owner's words: *"put them first and activate them and you deactivate the
+  other ones — as if the defaults are the one selected, and I just uploaded the other images that are
+  there."*** So it is an **ORDER INTENT**: the section's bundled entries go to the TOP in the
+  REGISTRY's shipped order, listed and in use, and the owner's own files keep their relative order
+  BELOW them and are switched OFF — still in the library, with their framing, their `key` and
+  everything else untouched. Nothing is deleted; deleting uploads is what Delete is for. Under the one
+  priority system that IS "the defaults are the selection" in every mode at once (first-wins paints the
+  first default, a dealt role deals the default set, an `all` role shows the default slides). The S6
+  mechanism — drop every `bundled:` entry so the FALLBACK tier answers — is superseded: it could not
+  express the ruling at all, because the owner's tier outranks the fallback tier whole, so with one
+  upload present the restore left that upload painting. The registry's id order is theme knowledge the
+  pure transform cannot see, so the HOOK passes it down (`section.def.bundled` → `b:<id>`), the same
+  split `toggleHidden`'s `ordered` flag runs on. Offered where the section ships art and shows anything
+  other than its defaults — a listed default, a hidden entry, or a file of the owner's own (a
+  DIFFERENCE test, not an equality one; a spurious button that rewrites what is already there costs
+  nothing) — and scoped to what is on screen (a key gallery restores its own layer).
 - **6.7 Rider fixes** (defect register §8): the `?rev=` freshness class closed at every paint
   site; SW cache single-keyed + re-based bound; the media index query scoped to the Conf
   surface.
@@ -540,9 +552,11 @@ holds; **as AMENDED 2026-08-26 ("W7"): switching off in an order-priority sectio
 the order VERBATIM — the untick → re-tick round trip leaves the same list in the same order with
 nothing hidden and the whole tier dealt, a per-key section keeps the minimal write, and the
 bare-entry guard drops an entry left saying nothing in a role that was never swept while keeping a
-non-bare one and keeping a bare one in a swept role**) + **restore defaults** (offered only where `files` says something about the shipped art ·
-bundled entries dropped, `hidden` stripped, the owner's files and their per-item fields whole ·
-scoped to the rows on screen) + **`overriddenBy`** (pin
+non-bare one and keeping a bare one in a swept role**) + **restore defaults** (**as RE-RULED
+2026-08-26, "W8"**: offered wherever the section shows anything other than its defaults · the bundled
+entries lifted to the TOP in registry order and un-hidden, the owner's files below them switched off
+with their per-item fields whole · scoped to the rows on screen · the round trip back through the
+In-use switch) + **`overriddenBy`** (pin
 beats pool → the pool card carries the seat pointer, no phantom active) + **the
 `hidden`-vs-`unusable` pair arm** (unusable holds position · hidden filtered out — asserted
 side by side so neither predicate absorbs the other). FE: entry
@@ -1090,6 +1104,87 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > hollow corner + unchanged position, checked against the written order) and the ring-means-active
 > triple (active / in use / off, three looks); and the browser proof through the server's own
 > collation. Stash-verified: 4 of the new unit pins fail without the transform change.
+
+> **W8 — the whole-feature council's accepted findings + the Restore re-rule (2026-08-26).** The round
+> was a WHOLE-FEATURE one, not a slice review: the Emma blind lane over the built feature (4 MED, all
+> accepted as fixed) and an adversarial DESIGN lens over the same surface, reconciled by the main seat
+> into one brief. What it found is one family of defect — *a claim made from state that is not
+> authoritative, or from a second implementation of a question that already has an answer* — in eight
+> places.
+>
+> **The queue's two holes.** `filesBlock` turned a MISSING role into an authoritative EMPTY list, so a
+> queued intent draining after a refetch that no longer describes the role (the namespace flipped
+> disabled, the folder was replaced out of band) computed against `[]` and could persist `files: []` —
+> wiping the order, the switched-off entries, the framing points and the binding keys in one save. It
+> refuses now, on KEY PRESENCE rather than non-emptiness, because an empty-but-present role is a real
+> writable state (the first upload's register phase writes into exactly that). The server side was
+> verified rather than assumed: `build_index` emits a key for EVERY registry role whatever the folder
+> holds, and `test_role_dirs_are_created_at_app_construction` already pins it across all three
+> namespaces including the one that ships no bundled art. And each namespace's queue was serialized
+> only against ITSELF while every save adopts the PUT's whole-document echo into the SHARED
+> `["settings"]` cache — with a Conf tab mounting all three namespaces, an older echo could land after
+> a newer one and the next recompute-at-send read superseded per-item fields. One module-scoped LANE
+> now holds the recompute-and-send step exclusive app-wide; the per-namespace queues are unchanged.
+>
+> **Two claims the ring made that the paint did not.** A drag encodes its drop as a RELATIVE delta and
+> the queue replays it at SEND, so admitting a gesture while an earlier move is in flight lands the tile
+> beside a neighbour the gesture never saw — the grid's drag admission takes `&& !busy` (the ↑/↓ pair
+> is untouched: a ±1 step composes with whatever moved under it, which is what the recompute is for).
+> And the DEALT resolvers (gacha `activeCast`, frontier `activeRigs`) ringed rows that cannot paint: a
+> broken file keeps its deal POSITION — dropping it would re-deal every host after it, and that rule is
+> untouched — but the host it was dealt to paints the placeholder, so the tile now reads "in use · will
+> not paint" with the problem badge and no ring. Verified rather than assumed for the third dealt
+> resolver: cosmos's `activeBannerSet` holds only bundled rows, and `bundled_row` never sets `unusable`.
+>
+> **The design lens's four.** gacha's single-pick `poolRows` read the DEALT half of the §2.3 tier pair,
+> so a `reel/` folder of nothing but broken files BLANKED the transition figure while frontier's
+> identically-worded map cover fell back to shipped art — it takes `usableLadderRows` now, the same
+> first-wins rule, changing paint and gallery together in that edge (the accepted semantic). The FAMILY
+> card re-derived "which file answers this key" with the generic name classifier while the ladder
+> excludes the bundled tier: the two agreed only until a bundled id matched a service key
+> (`banner-03` is both a shipped rotation id and an ordinary service kind), so the card asks the
+> SECTION's own resolver now — the keys stay the source's, the file is the ladder's answer, bound to
+> the wire's `slots` in the wiring where `active` is already resolved (`SectionView.activeForKey`). The
+> kit's pool resolver gained the `.filter((f) => f.bundled == null)` its paint twin `roleFiles` has
+> (latent today, pinned so it stays impossible). And `MediaSlotDef.seat` is DELETED: every shipped slot
+> set it and a non-seat pin has been forbidden since D66, so the field and its `if (slot.seat !== true)
+> continue;` guard were a compat rung — a pin IS a seat, and the row is the claim (the no-legacy-seams
+> rule).
+>
+> **F4 — the sentence the gallery was missing.** The tiles say which entries are in use and which one
+> is active; nothing said whether that meant ONE picture, a rotation or a whole set, and the answer
+> differs per role. One line in the scope block, DERIVED from `active.mode` rather than hand-written
+> twenty times: *"The first in-use image is the one shown." · "In-use images are dealt across the
+> machines in this order." · "Every in-use image is shown, in this order."* A seat gets none (it has no
+> In-use and no order — its reading is the pin, and its own hint states the ladder), nor does the
+> unassigned bucket or a role the registry never described.
+>
+> **The owner rulings that arrived mid-wave.**
+> · **Restore defaults is re-ruled** — "put them first and activate them and you deactivate the other
+>   ones — as if the defaults are the one selected, and I just uploaded the other images that are
+>   there." It is an ORDER intent now; §6.6 carries the whole rule and why the S6 drop-to-fallback
+>   mechanism could not express it. Copy re-written in the gallery's one language, both sentences.
+> · **The DEALT ring is CLOSED as-is**, no code change: the ring means *in the deal* — not necessarily
+>   on a machine when there are not enough machines to go round.
+>
+> **REJECTED, with reasons** (recorded so they are not re-proposed): switching the untick-sweep
+> discriminator from `caps.reorder` to `caps.promote` — it would sweep a whole named role from a
+> key-scope untick, which is the very listing §2.3 ③ refuses for a role that binds by NAME; exposing
+> frontier's per-card fallback ids in `ActiveArt` — the ring is about THIS library, and a card's own
+> bundled rung is not a row of it; and any change to `heroRow`'s foreign-id check, which is unreachable
+> by construction (the collation emits only registry-known bundled ids). **Still owner-pending and
+> untouched: typed `RowId` pins.**
+>
+> Verification: full gate green (BE 1,992 · FE 2,579, +10). New pins, one per fix: the queue's
+> role-refusal (silent, and NOT the stale-refetch discard) · two namespaces' drains sharing one lane ·
+> no drag admission while a write is in flight, and the same press lifting the tile once it settles ·
+> the dealt ring on gacha and frontier (with the deal itself asserted unchanged beside it) · the
+> all-broken pool falling back on both gacha pools · the kit pool's bundled exclusion · the family
+> card's key row against a bundled id that matches a service key · the reading line per mode and its
+> absence on a seat · the seat-flag deletion re-stated as "every slot emits a seat SECTION" · and the
+> re-ruled restore (registry order on top and un-hidden, the owner's files below and switched off with
+> their fields whole, the key scope touching only its layer, and the untick round trip after it).
+> Stash-verified: nine of the new pins fail without their fix.
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 
