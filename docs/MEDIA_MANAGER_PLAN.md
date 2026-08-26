@@ -1423,6 +1423,31 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > · roster override assembly (live point → centred with dims · none → shipped proportional,
 > byte-identical) · the dims honesty test · e2e media specs re-run locally (the layout reorder moves
 > selectors).
+>
+> **W10 AS-BUILT + REVIEW RECORD (2026-08-26, review-CLOSED).** Opus-built from the block above as
+> six commits `b2d40a5`…`d6a08fc` (a pre-fix first: the Restore-defaults e2e was still pinned to the
+> PRE-W8 write — a stale-pin burn only the release-tag CI run would have caught; then the ✕ + layout ·
+> the machine split, upload tail moved verbatim with its own suite passing unmodified · the replace
+> arm + `useMediaEdit` + the Edit glyph · bundled framing + `BUNDLED_SIZES` + the dims honesty test —
+> **which caught the recipe's own numbers wrong on day one**: `lyra.webp` is 535×740 and `rook.webp`
+> 640×740, `withoutEnlargement` passed both sources through). Builder judgment calls all
+> main-seat-ACCEPTED (the shared `Glyph` frame's move to `components/icons.tsx` · the `mgal-title`
+> header stack · the loader `FileSource` admission form · `jobBusy` as its own prop · CropModal's
+> aspect off the job). Main-seat audit riders `b951827`: `.path` genuinely monospace (the card
+> comments claimed mono; no rule ever set the face) + the art.ts recipe comment corrected to point at
+> the roster's authoritative records. Live 390px screenshot round on dev delivered (✕ centred · the
+> ruled layout · Framing on a bundled default · the Edit pencil on an owner file).
+> **The Emma-lane blind round (sol high, `--ignore-rules`): SHIP WITH FIXES — 4 MED, zero HIGH**, and
+> the load-bearing areas explicitly cleared (the replace arm · bundled framing incl. the seat path
+> through `slotEntry()`/`toWideArt()` · the edit byte chain · focus/trap; open sweep "none"). All four
+> accepted, fixed as `dcec78c`: ① `JobFailure.abandon` — dismissed-or-replaced failures release the
+> upload's pending Blob, the failure's own retry never does (the `failureRef` sync twin tells the two
+> clears apart) ② the edit's own `replace` phase + copy ③ the folder line absent on rotation scope +
+> the empty state promises only a rendered Add row ④ the failure row is `role=alert`, the header line
+> stays the one `status`. **Confirm round (resumed session): all four RESOLVED with line-proof, NEW
+> defects "none"** — she re-checked the risky orderings (retry-vs-abandon, replacing-admission latch
+> order, cancel-during-crop, double-fail) unprompted. Full gate green at tip (BE 2,002 · FE 2,619/157).
+> W10 residuals stand as recorded in the block above.
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 

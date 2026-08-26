@@ -12,7 +12,60 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-26, SECOND session — the owner re-poke → W7–W9 + the WHOLE-FEATURE COUNCIL; supersedes everything below where it speaks)
+## Current state (2026-08-26, THIRD session — the owner's post-sign-off round → **W10, review-CLOSED**; supersedes everything below where it speaks)
+
+- **The owner signed off W7–W9 ("the fixes are fine") and asked for a SECOND PASS in the same
+  breath:** the modal ✕ rides low in its circle · no way to re-crop/re-frame AFTER upload (and no
+  Framing button anywhere in Characters/Banner slides — their folders are empty, so the bundled
+  exclusion bit at 100%) · the gallery body stacks redundant text · make the gallery image-forward
+  like the W6 detail panel. Mid-design the owner added a directive: **edit is a standalone
+  capability, not an upload appendage** — plus the standing least-future-debt bar ("research the
+  approaches").
+- **The design was researched, written and committed first** (`a5cb47e`, the plan's §12 **W10
+  block**): the standalone `useImageJob` machine (admit→guard→crop→export, delivery INJECTED; upload
+  = one tail, edit = the other) · the backend replace arm on **`X-Expected-Revision`** (NOT
+  `If-Match` — the mount's GET already serves Starlette's ETag, a different validator; 412 never 409,
+  which is the create path's suffix-walk trigger) · **framing on bundled entries** via the item-mode
+  seam (an owner point wins CENTRED; absent one the shipped proportional string passes through
+  byte-identical) · dims as ASSET-RECORD data on the roster (R57's unanimous field convention),
+  pinned by an honesty test over the real files · the ruled layout (grid leads · one header status
+  line · Add/folder/Restore at the bottom · redundancies deleted).
+- **Opus-built as `b2d40a5`…`d6a08fc`** + main-seat audit riders `b951827`. Two REAL catches en
+  route: the Restore-defaults e2e was still pinned to the pre-W8 mechanism (a fourth stale-pin burn
+  waiting for the next release tag), and the art.ts recipe's recorded dims were WRONG for two files
+  (lyra 535×740 · rook 640×740 — the new honesty test caught it on day one). A live 390px screenshot
+  round on dev went to the owner: ✕ dead-centred (all five `.pm` modals — it was a text glyph
+  centring its line box, now a drawn SVG in the new shared `components/icons.tsx`) · the layout as
+  ruled · Framing offered on a bundled default · the Edit pencil floating top-right on owner files.
+- **Emma-lane blind round: SHIP WITH FIXES — 4 MED, zero HIGH**, load-bearing areas explicitly
+  cleared (replace arm · bundled framing incl. the seat path · the edit byte chain; open sweep
+  "none"). All four accepted + fixed (`dcec78c`): the `JobFailure.abandon` hook (a dismissed-or-
+  replaced failure releases the upload's pending Blob; its own retry never does) · the edit's own
+  `replace` phase + copy · rotation scope drops the folder line, empty non-upload sections stop
+  promising an absent Add row · the failure row is `role=alert`. **Confirm round: all four RESOLVED
+  with line-proof, new defects "none".** Full record = plan §12's W10 as-built block.
+- **Gate green at tip (BE 2,002 · FE 2,619/157 · e2e media specs green). 89 commits UNPUSHED**
+  (origin `fef36aa`). Prod untouched (v1.7.6 @ `6a2ccaa`). Dev units RUNNING — the dev backend was
+  restarted onto the replace arm; :5173 serves everything.
+
+## ▶▶ NEXT (2026-08-26, post-W10 — supersedes the list below)
+
+1. **Owner eyeball on dev (:5173) — the W10 surfaces:** the gallery's new shape (grid first, one
+   status line, the bottom cluster) · the ✕ · tap a CHARACTER default → **Framing** (set a point,
+   watch every window re-aim; **Clear framing** returns the shipped look) · tap an own file →
+   the **Edit pencil** (re-crop lands under the same name; order/In-use/binding survive; the old
+   framing correctly reads "not set" afterwards).
+2. **The PUSH ruling** (owner's word) — **89 commits** with this block's docs commit, origin
+   `fef36aa`.
+3. **S6 proper** — unchanged, THE one slice left (plan §16 + the W6 note), now also covering the
+   W10 surfaces on a real thumb (the 36px Edit/back pills one-handed · the bottom Add row's reach ·
+   framing a default on the phone); then **release** (1.7.x · runbook §Release Opus-operated ·
+   config_version 1→2 rides it · LOCAL e2e before the tag · rollback v1.7.6).
+4. **Recorded follow-ups (not owed now):** everything the previous block lists, plus W10's own
+   residuals (re-crop generation loss · the 412-on-lost-response class · bundled re-art inherits a
+   stored point · the delivery-never-throws contract).
+
+## Prior state (2026-08-26, SECOND session — the owner re-poke → W7–W9 + the WHOLE-FEATURE COUNCIL; superseded above where it speaks)
 
 - **The owner's re-poke found three gallery bugs with ONE root:** `toggleHidden` on a bundled row
   LISTED it to carry `hidden` — a listed entry collates first (untick jumped the image to the top)
