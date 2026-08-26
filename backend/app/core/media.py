@@ -48,9 +48,9 @@ import struct
 import tempfile
 import unicodedata
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Literal
+from typing import IO, ClassVar, Literal
 from urllib.parse import quote
 
 from pydantic import BaseModel, Field, computed_field, model_validator
@@ -128,6 +128,26 @@ GACHA_ROLES: dict[str, MediaRole] = {
     "oracle": MediaRole(bundled=("oracle",)),
 }
 
+
+@dataclass(frozen=True)
+class MediaSlot:
+    """One `slots` pin KEY's registry facts — today the ROLE whose library its options come from.
+
+    An OBJECT rather than a bare name in a tuple, on exactly the `MediaRole` precedent above (D65) and
+    for a reason the 2026-08-26 owner ruling ("W9") made concrete: a pin now persists the same
+    `{name}`/`{bundled}` identity union a `files` entry does, so validating its `bundled` arm needs to
+    know WHICH role ships that id. `source` was front-end-only knowledge (`MediaSlotDef.from`) while a
+    pin was an uncheckable bare stem; with a typed pin the server holds the same rule for a pin that it
+    already holds for a `files` entry. Migrated while it was still cheap (two entries, one namespace),
+    which is the directive's own timing rule.
+
+    `source` is always a role of the SAME namespace — that is what makes a seat a read-only view over
+    another destination's library rather than a second library of its own.
+    """
+
+    source: str
+
+
 #: The gacha `slots` pin keys (§5.2) — and since 2026-08-26 ("W6") the only pin keys anywhere. Both are
 #: SEATS: a cross-role binding of one CHARACTER into a surface the cast does not own. `wallpaper` is here
 #: with its folder gone, and the two are deliberately independent: a pin key names a SLOT the client
@@ -146,7 +166,13 @@ GACHA_ROLES: dict[str, MediaRole] = {
 #: Clean removals on the `wallpaper`-role precedent above: media v2 has never shipped to prod, so no config
 #: on disk holds any of these pins (both live configs verified). A hand-authored leftover is an unknown slot
 #: key, which is a load/PUT error rather than a knob that silently does nothing — deliberately loud.
-GACHA_SLOTS: tuple[str, ...] = ("wallpaper", "oracle")
+#:
+#: Both source from `characters` — a cast portrait crops fine as a backdrop — which is the fact the pin's
+#: `bundled` arm is validated against and the fact the migration types a legacy bare name with.
+GACHA_SLOTS: dict[str, MediaSlot] = {
+    "wallpaper": MediaSlot(source="characters"),
+    "oracle": MediaSlot(source="characters"),
+}
 
 #: The frontier role folders (D53 / MEDIA_PLAN §3). `rigs` and `hero` are POOLS (the badlands cards and
 #: the map cover); `stack` is the NAMED role — its three layers bind by filename STEM
@@ -170,7 +196,7 @@ FRONTIER_ROLES: dict[str, MediaRole] = {
 #: so the cover is whichever image sits first in that folder's gallery. The named role never had one (its
 #: stems ARE its bindings). Empty rather than absent: "this namespace offers no pin" is a real answer the
 #: config validator states, and an omitted field would read as a forgotten one.
-FRONTIER_SLOTS: tuple[str, ...] = ()
+FRONTIER_SLOTS: dict[str, MediaSlot] = {}
 
 #: The kit role folders (D53 M3, extended by the Kit Art System). They belong to no theme: every theme's
 #: service rows read them, so the namespace is the kit's rather than any theme's.
@@ -223,7 +249,7 @@ KIT_ROLES: dict[str, MediaRole] = {
 #: The kit `slots` pin keys — NONE since 2026-08-26 ("W6"). The two POOLS carried one each
 #: (`background`, `brand`); both were overrides of a first-wins pick the library order already expresses,
 #: and the owner ruled that order is the only priority system. Empty for the reason `FRONTIER_SLOTS` is.
-KIT_SLOTS: tuple[str, ...] = ()
+KIT_SLOTS: dict[str, MediaSlot] = {}
 
 
 @dataclass(frozen=True)
@@ -233,13 +259,14 @@ class MediaNamespace:
     validates against (MEDIA_PLAN §4) — a slot key typed on a per-namespace pydantic class would be the
     banned sibling shape, and a typo in either is only visible if this registry is the authority.
 
-    `roles` is an ORDER-PRESERVING map (D65): iteration yields the role names in declaration order —
-    which is what the ensure-dir walk, the mount and the gallery's section order all read — while the
-    VALUE carries that role's own facts (`MediaRole`). Every consumer that only wants names keeps
-    iterating this exactly as it iterated the old tuple."""
+    `roles` and `slots` are both ORDER-PRESERVING maps (D65 for the first, "W9" for the second):
+    iteration yields the names in declaration order — which is what the ensure-dir walk, the mount and
+    the gallery's section order all read — while the VALUE carries that entry's own facts
+    (`MediaRole` / `MediaSlot`). Every consumer that only wants names keeps iterating this exactly as
+    it iterated the old tuple."""
 
     roles: dict[str, MediaRole]
-    slots: tuple[str, ...] = ()
+    slots: dict[str, MediaSlot] = field(default_factory=dict)
 
 
 #: ns -> its row. The single registry the ensure-dir, the mounts, the index and the config all read.
@@ -298,7 +325,48 @@ class MediaFocal(BaseModel):
     rev: str = ""
 
 
-class MediaItem(BaseModel):
+class MediaIdentity(BaseModel):
+    """**The one way config names a library entry** — a discriminated union of exactly one of `name`
+    (a file in the role folder, addressed by its FILENAME) or `bundled` (a registry id from
+    `MediaRole.bundled`). Both, or neither, is a 422.
+
+    It is a base class rather than a shape restated twice because there are two persisted references
+    to a library entry and they must not answer to two different rules: a `files` entry
+    (`MediaItem`) and a `slots` pin (`MediaPin`). Before the 2026-08-26 owner ruling ("W9") the pin
+    was a bare STEM, and the stem was ambiguous by construction — a file's stem and a bundled id are
+    two identity spaces that both answer to `lyra`, so `lyra` reached whichever the collation listed
+    first (see `MediaFile.name` below, which is where that foot-gun was documented). Typing the pin
+    with this same union makes the ambiguity unrepresentable rather than merely detectable, and it
+    leaves ONE identity idiom config-wide for every future reference to grow from.
+
+    `extra="allow"` on purpose: the union is the object a later dimension is added to (the
+    extend-don't-migrate directive), never a sibling map keyed by the same name.
+    """
+
+    model_config = {"extra": "allow"}
+
+    #: What this reference IS, for the refusal sentence — the only thing the two subclasses differ by.
+    _WHAT: ClassVar[str] = "a media reference"
+
+    name: str | None = None
+    bundled: str | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_identity(self) -> "MediaIdentity":
+        if (self.name is None) == (self.bundled is None):
+            raise ValueError(
+                f"{self._WHAT} needs exactly one of `name` (a file in the role folder) or "
+                "`bundled` (an id from that role's bundled art)"
+            )
+        return self
+
+    @property
+    def identity(self) -> tuple[str, str]:
+        """`(kind, id)` — the uniqueness key a role's list is checked against."""
+        return ("bundled", self.bundled) if self.bundled is not None else ("name", self.name or "")
+
+
+class MediaItem(MediaIdentity):
     """ONE entry in a role's `files` list — the library's unit of PRIORITY (D65 §2.2).
 
     `files` replaced the old `order: [names]` because the list grew dimensions: the entry carries its
@@ -306,8 +374,7 @@ class MediaItem(BaseModel):
     `hidden: {name: bool}` map beside an `order:` list beside a `focal: {name: …}` map — is the
     sibling shape the 2026-06-24 extend-don't-migrate directive bans.
 
-    **Identity is a discriminated union** (Emma #10): exactly one of `name` (a file in the role
-    folder) or `bundled` (a registry id from `MediaRole.bundled`). Both, or neither, is a 422 — a
+    **Identity is a discriminated union** (Emma #10) — `MediaIdentity` above, shared with the pin. A
     listed entry that named two things would make "which picture is this" a question with two
     answers, and one that named nothing would occupy a priority slot for no picture. Uniqueness of
     `(kind, id)` within a role is checked one level up, in `Settings`, which is where the role's
@@ -318,10 +385,8 @@ class MediaItem(BaseModel):
     working forever for SSH drops while an upload can bind explicitly.
     """
 
-    model_config = {"extra": "allow"}
+    _WHAT: ClassVar[str] = "a media `files` entry"
 
-    name: str | None = None
-    bundled: str | None = None
     key: str | None = None
     #: Excluded from RESOLUTION everywhere, still in the library (dimmed in the gallery, "In use" off).
     #: The mechanism for retiring one entry of an all-entries role, where order cannot exclude.
@@ -332,19 +397,22 @@ class MediaItem(BaseModel):
     hidden: bool = False
     focal: MediaFocal | None = None
 
-    @model_validator(mode="after")
-    def _exactly_one_identity(self) -> "MediaItem":
-        if (self.name is None) == (self.bundled is None):
-            raise ValueError(
-                "a media `files` entry needs exactly one of `name` (a file in the role folder) or "
-                "`bundled` (an id from that role's bundled art)"
-            )
-        return self
 
-    @property
-    def identity(self) -> tuple[str, str]:
-        """`(kind, id)` — the uniqueness key a role's list is checked against."""
-        return ("bundled", self.bundled) if self.bundled is not None else ("name", self.name or "")
+class MediaPin(MediaIdentity):
+    """One `media.namespaces.<ns>.slots.<key>` PIN — a SEAT's binding of one entry of another role's
+    library into a surface that library does not own (§2.1).
+
+    Nothing but the identity, deliberately: a pin says WHICH entry and no more, and everything else
+    about that entry is the entry's own business (`hidden`, `focal`, `key` all live on the `files`
+    row). `null`/absent = unpinned, which is what the gallery's "Clear" writes and what makes the
+    seat fall to its own ladder.
+
+    The `bundled` arm is checked against the SOURCE role's shipped ids and the `name` arm against
+    `is_addressable_name`, both in `Settings` — the same two rules a `files` entry gets, in the same
+    place, because that is where the registry row is in scope.
+    """
+
+    _WHAT: ClassVar[str] = "a media `slots` pin"
 
 
 # ── the index's wire models ───────────────────────────────────────────────────────────────────────
@@ -360,10 +428,17 @@ class MediaFile(BaseModel):
     `revision`, `format`, the dimensions) — the server has never seen that asset and must not invent
     a URL for it."""
 
-    #: The filename STEM — what a `slots` pin names, and the entry name the client resolver deals.
-    #: Two files sharing a stem (`lyra.png` + `lyra.webp`) are a foot-gun the owner can see in the
-    #: gallery; a pin then resolves to whichever comes first in this role's order. On a BUNDLED row
-    #: this is the bundled ID, for exactly that reason: a pin addresses one identity space.
+    #: The filename STEM — the DISPLAY name, and the entry name the client resolver deals. On a BUNDLED
+    #: row it is the bundled ID.
+    #:
+    #: **A pin no longer addresses this** (the 2026-08-26 owner ruling, "W9"). It used to: a `slots`
+    #: value was a bare stem, and two identity spaces answered to it — a file's stem and a bundled id —
+    #: so a role holding `lyra.webp` beside the bundled id `lyra` gave one pin value two possible
+    #: meanings and the collation order silently picked one. Two files sharing a stem (`lyra.png` +
+    #: `lyra.webp`) had the same problem inside one space. A pin now persists the identity UNION
+    #: (`MediaPin`) — `{name: lyra.webp}` by filename, `{bundled: lyra}` by id — so the ambiguity is
+    #: unrepresentable rather than detectable. What stays true here is what this field was always for:
+    #: it is the name a HUMAN reads and the key a named role's stem-binding rule matches on.
     name: str
     #: The filename inside the role folder (what a config `files` entry's `name` holds). Empty on a
     #: bundled row — there is no file.
@@ -455,7 +530,10 @@ class MediaIndex(BaseModel):
     roles: dict[str, list[MediaFile]] = Field(default_factory=dict)
     #: The §5.2 `slots` pins as configured, echoed verbatim — a dangling pin is the client resolver's
     #: problem to degrade from, not something to silently drop here (it would hide the owner's typo).
-    slots: dict[str, str] = Field(default_factory=dict)
+    #: Each value is the identity UNION config persists since "W9" (`MediaPin`), so the client parses a
+    #: pin with the same one parser it parses a `files` entry with. Cleared pins (`null`) do not ride:
+    #: "no pin" is the absence of the key, which is what every resolver already treats as unpinned.
+    slots: dict[str, MediaPin] = Field(default_factory=dict)
 
 
 # ── paths ─────────────────────────────────────────────────────────────────────────────────────────
@@ -1020,7 +1098,7 @@ def build_index(
     ns: str,
     *,
     files: dict[str, list[MediaItem]] | None = None,
-    slots: dict[str, str] | None = None,
+    slots: dict[str, MediaPin] | None = None,
 ) -> MediaIndex:
     """The whole `GET /api/media/{ns}` payload. `files`/`slots` come from the owner's config
     (`media.namespaces.<ns>`, projected by `Settings.media_overrides`) — this module never reads

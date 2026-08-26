@@ -37,7 +37,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.error import CommentMark
 from ruamel.yaml.tokens import CommentToken
 
-from app.core.media import MEDIA_NAMESPACES, MediaItem, is_addressable_name
+from app.core.media import MEDIA_NAMESPACES, MediaItem, MediaPin, is_addressable_name
 from app.core.pwa import PWA_ICON_VARIANTS
 from app.domain.agent import AgentDef, CompactionCfg, ModelRef
 from app.domain.enums import OSType, Risk
@@ -1205,15 +1205,22 @@ class MediaNsCfg(BaseModel):
     a registry row and never a pydantic class of its own. `slots` is therefore a MAP whose keys the
     registry validates (`Settings._known_media_namespaces_roles_and_slots`) rather than typed fields —
     typed per-namespace slot fields would force an `isinstance` branch one layer up, which is the
-    banned sibling shape (§4). Each slot value is a media file's stem (`lyra`); a pin that names
-    nothing on disk degrades to the role's default in the client resolver — never a hole, never a
-    crash (§5.3), and never silently dropped here, which would hide the owner's typo.
+    banned sibling shape (§4).
+
+    Each slot value is a `MediaPin`: **the same `{name}`/`{bundled}` identity union a `files` entry
+    carries** (the 2026-08-26 owner ruling, "W9"), with `null`/absent meaning unpinned. It used to be a
+    bare STEM, and a stem is ambiguous by construction — a file's stem and a bundled id are two
+    identity spaces that both answer to `lyra`, and two files can share a stem inside one of them — so
+    one pin value could mean two pictures and the collation order picked. The union names ONE entry:
+    `{name: lyra.webp}` is that file, `{bundled: lyra}` is the shipped art. A pin that names nothing
+    the library holds still degrades to the role's own ladder in the client resolver — never a hole,
+    never a crash (§5.3), and never silently dropped here, which would hide the owner's typo.
     """
 
     model_config = {"extra": "allow"}
 
     roles: dict[str, MediaRoleCfg] = Field(default_factory=dict)
-    slots: dict[str, str | None] = Field(default_factory=dict)
+    slots: dict[str, MediaPin | None] = Field(default_factory=dict)
 
 
 class MediaWriteCfg(BaseModel):
@@ -1393,6 +1400,13 @@ class Settings(BaseModel):
           for a picture no client could map;
         * `(kind, id)` is unique within a role (Emma #10) — a list naming one entry twice has no
           single answer to "where does it sit".
+
+        …and since "W9" the SAME two rules reach inside a `slots` PIN, because a pin persists the same
+        identity union. It is checked against the pin's SOURCE role (`MediaSlot.source`) — a seat binds
+        an entry of *another* role's library, so "is this a real bundled id" is a question about that
+        role and about no other. Anything a pin can be checked for, it is checked for here rather than
+        in `MediaPin` itself, for the reason the `files` rules live here: this is where the registry
+        row is in scope.
         """
         for ns, block in v.namespaces.items():
             row = MEDIA_NAMESPACES.get(ns)
@@ -1416,23 +1430,40 @@ class Settings(BaseModel):
                     if item.identity in seen:
                         raise ValueError(f"{where}: {item.identity[1]!r} is listed twice")
                     seen.add(item.identity)
-            for slot in block.slots:
-                if slot not in row.slots:
+            for slot, pin in block.slots.items():
+                srow = row.slots.get(slot)
+                if srow is None:
                     raise ValueError(
                         f"unknown media slot {slot!r} in namespace {ns!r} (expected one of {list(row.slots)})"
                     )
+                if pin is None:  # `null` IS the shape for "unpinned" — the gallery's own Clear write.
+                    continue
+                where = f"media.namespaces.{ns}.slots.{slot}"
+                ships = row.roles[srow.source].bundled
+                if pin.name is not None and not is_addressable_name(pin.name):
+                    raise ValueError(f"{where}: {pin.name!r} is not a bare filename")
+                if pin.bundled is not None and pin.bundled not in ships:
+                    raise ValueError(
+                        f"{where}: {pin.bundled!r} is not a bundled id of the {srow.source!r} role "
+                        f"this seat binds from (expected one of {list(ships)})"
+                    )
         return v
 
-    def media_overrides(self, ns: str) -> tuple[dict[str, list[MediaItem]], dict[str, str]]:
+    def media_overrides(self, ns: str) -> tuple[dict[str, list[MediaItem]], dict[str, MediaPin]]:
         """`(files-by-role, slots)` for one media namespace — the projection the namespace-generic media
         index consumes, so the API layer never branches on a namespace. Empty for a namespace the owner
-        has never touched, which is exactly what "no owner overrides" looks like. A blank pin is not a
-        pin: the gallery clears with `null`, and a hand-authored `""` must not reach the resolver."""
+        has never touched, which is exactly what "no owner overrides" looks like.
+
+        A CLEARED pin does not ride: `null` is what the gallery's Clear writes, and "unpinned" is the
+        absence of the key — which is what every resolver already reads as unset. Nothing else is
+        filtered here: since "W9" a pin is a typed object, so the shapes this used to quietly swallow
+        (a blank string, a stem naming nothing) are load errors one level up instead of values that
+        reach the resolver looking like intent."""
         block = self.media.namespaces.get(ns)
         if block is None:
             return {}, {}
         files = {role: list(cfg.files) for role, cfg in block.roles.items() if cfg.files}
-        slots = {k: v for k, v in block.slots.items() if isinstance(v, str) and v.strip()}
+        slots = {k: v for k, v in block.slots.items() if v is not None}
         return files, slots
 
     def hosts(self) -> list[Host]:

@@ -403,10 +403,10 @@ def test_the_frontier_namespace_serves_its_three_roles(home: Path) -> None:
         (ns_dir(home, "frontier") / "rigs" / "01-rig.png").write_bytes(png_bytes())
         (ns_dir(home, "frontier") / "hero" / "vista.webp").write_bytes(webp_bytes())
         (ns_dir(home, "frontier") / "stack" / "cube.png").write_bytes(png_bytes())
-        assert MEDIA_NAMESPACES["frontier"].slots == ()
+        assert MEDIA_NAMESPACES["frontier"].slots == {}
         r = c.put(
             "/api/settings",
-            json={"media": {"namespaces": {"frontier": {"slots": {"hero": "vista"}}}}},
+            json={"media": {"namespaces": {"frontier": {"slots": {"hero": {"name": "vista.webp"}}}}}},
         )
         assert r.status_code == 422, r.text
 
@@ -450,7 +450,7 @@ def test_the_kit_namespace_serves_its_five_roles_and_no_pin_at_all(home: Path) -
         assert stems(body["roles"]["hosts"]) == ["corsair"]
         assert stems(body["roles"]["brand"]) == ["sigil"]
         assert body["slots"] == {}
-        assert MEDIA_NAMESPACES["kit"].slots == ()
+        assert MEDIA_NAMESPACES["kit"].slots == {}
         for role in ("services", "service-banners", "hosts", "background", "brand"):
             assert c.get(body["roles"][role][0]["url"]).status_code == 200, role
 
@@ -458,13 +458,13 @@ def test_the_kit_namespace_serves_its_five_roles_and_no_pin_at_all(home: Path) -
         # keeping for a role where the FILENAME is the assignment)…
         assert c.put("/api/settings", json={"media": {"namespaces": {"kit": {}}}}).status_code == 200
         # …and EVERY slot key is refused now, the two retired pool pins included: an empty `slots`
-        # tuple means the namespace binds nothing, so a leftover `background:`/`brand:` is a load/PUT
+        # map means the namespace binds nothing, so a leftover `background:`/`brand:` is a load/PUT
         # error rather than a knob that silently does nothing.
         for key in ("background", "brand", "services"):
             assert (
                 c.put(
                     "/api/settings",
-                    json={"media": {"namespaces": {"kit": {"slots": {key: "x"}}}}},
+                    json={"media": {"namespaces": {"kit": {"slots": {key: {"name": "x.png"}}}}}},
                 ).status_code
                 == 422
             ), key
@@ -995,10 +995,10 @@ def test_namespace_role_and_slot_typos_are_refused() -> None:
     for bad in (
         {"cosmos": {"roles": {"planets": {"files": [{"name": "a.png"}]}}}},  # not a namespace
         {"gacha": {"roles": {"charcters": {"files": [{"name": "a.png"}]}}}},
-        {"gacha": {"slots": {"reel_figur": "lyra"}}},
+        {"gacha": {"slots": {"reel_figur": {"bundled": "lyra"}}}},
         # frontier is a namespace since D53 M2 — but `stack` is a ROLE, not a pin. Its layers bind by
         # filename stem, so a config trying to pin one is a mistake the owner must be shown.
-        {"frontier": {"slots": {"stack": "cube"}}},
+        {"frontier": {"slots": {"stack": {"name": "cube.png"}}}},
         {"frontier": {"roles": {"rig": {"files": [{"name": "a.png"}]}}}},
         {"gacha": {"roles": {"characters": {"files": [{"name": "../../config.yaml"}]}}}},
         {"gacha": {"roles": {"characters": {"files": [{"name": ".."}]}}}},
@@ -1012,7 +1012,7 @@ def test_namespace_role_and_slot_typos_are_refused() -> None:
     for ns, row in MEDIA_NAMESPACES.items():
         block = {
             "roles": {r: {"files": [{"name": "a.png"}]} for r in row.roles},
-            "slots": {s: "a" for s in row.slots},
+            "slots": {s: {"name": "a.png"} for s in row.slots},
         }
         files = Settings.model_validate({"media": {"namespaces": {ns: block}}}).media_overrides(ns)[0]
         assert {r: [i.name for i in items] for r, items in files.items()} == {r: ["a.png"] for r in row.roles}
@@ -1040,7 +1040,7 @@ def test_configured_order_and_slots_drive_the_index(home: Path) -> None:
                                     ]
                                 }
                             },
-                            "slots": {"oracle": "kira", "wallpaper": ""},
+                            "slots": {"oracle": {"name": "kira.webp"}, "wallpaper": None},
                         }
                     }
                 }
@@ -1049,8 +1049,9 @@ def test_configured_order_and_slots_drive_the_index(home: Path) -> None:
         assert r.status_code == 200, r.text
         body = c.get("/api/media/gacha").json()
         assert disk(body["roles"]["characters"]) == ["c.png", "a.png", "b.png"]
-        # blank pins are not pins — only the real one reaches the client
-        assert body["slots"] == {"oracle": "kira"}
+        # a CLEARED pin (`null`) is not a pin — only the real one reaches the client, and it rides as
+        # the identity union it is persisted as ("W9").
+        assert body["slots"] == {"oracle": {"name": "kira.webp", "bundled": None}}
         # …and it survives a reload from disk — the DANGLING entry included: a name whose file is
         # gone is ignored by the listing but kept in config (the owner may put the file back).
         reloaded = c.get("/api/settings").json()["media"]["namespaces"]["gacha"]
@@ -1105,10 +1106,12 @@ def test_the_gacha_wallpaper_PIN_outlives_its_deleted_role_folder(home: Path) ->
         (role(home, "characters") / "kira.png").write_bytes(png_bytes())
         r = c.put(
             "/api/settings",
-            json={"media": {"namespaces": {"gacha": {"slots": {"wallpaper": "kira"}}}}},
+            json={"media": {"namespaces": {"gacha": {"slots": {"wallpaper": {"name": "kira.png"}}}}}},
         )
         assert r.status_code == 200, r.text
-        assert c.get("/api/media/gacha").json()["slots"] == {"wallpaper": "kira"}
+        assert c.get("/api/media/gacha").json()["slots"] == {
+            "wallpaper": {"name": "kira.png", "bundled": None}
+        }
 
 
 def test_every_retired_PIN_is_refused_rather_than_silently_inert(home: Path) -> None:
@@ -1129,9 +1132,9 @@ def test_every_retired_PIN_is_refused_rather_than_silently_inert(home: Path) -> 
     What survives is what has a DESTINATION of its own — the two SEATS, which bind a CHARACTER into a
     surface the cast does not own. No order can express that, which is exactly why they are not pins in
     the retired sense."""
-    assert MEDIA_NAMESPACES["gacha"].slots == ("wallpaper", "oracle")
-    assert MEDIA_NAMESPACES["frontier"].slots == ()
-    assert MEDIA_NAMESPACES["kit"].slots == ()
+    assert list(MEDIA_NAMESPACES["gacha"].slots) == ["wallpaper", "oracle"]
+    assert MEDIA_NAMESPACES["frontier"].slots == {}
+    assert MEDIA_NAMESPACES["kit"].slots == {}
     with make_client() as c:
         (role(home, "characters") / "kira.png").write_bytes(png_bytes())
         for ns, key in (
@@ -1143,7 +1146,7 @@ def test_every_retired_PIN_is_refused_rather_than_silently_inert(home: Path) -> 
         ):
             r = c.put(
                 "/api/settings",
-                json={"media": {"namespaces": {ns: {"slots": {key: "kira"}}}}},
+                json={"media": {"namespaces": {ns: {"slots": {key: {"name": "kira.png"}}}}}},
             )
             assert r.status_code == 422, (ns, key, r.text)
             assert key in r.text

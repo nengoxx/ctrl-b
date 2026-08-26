@@ -54,6 +54,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/events.py", "EventService.record"),
     ),
     "config + migration refusals and their remedies — CLI/startup text for the owner": (
+        ("app/config.py", "Settings._known_media_namespaces_roles_and_slots"),
         ("app/config.py", "Settings._monitor_interval_covers_the_fleet_cache"),
         ("app/config.py", "WakeCfg._normalize_device_ips"),
         ("app/config.py", "_apply_env_overrides"),
@@ -77,7 +78,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/api/agent.py", "_agent_folder"),
         ("app/api/agent.py", "_resume_skills"),
         ("app/api/agent.py", "apply_proposal_endpoint"),
-        ("app/core/media.py", "MediaItem._exactly_one_identity"),
+        ("app/core/media.py", "MediaIdentity._exactly_one_identity"),
         ("app/core/media.py", "_require_real_scratch_dir"),
         ("app/core/media.py", "admission_reason"),
         ("app/core/media.py", "ensure_media_dirs"),
