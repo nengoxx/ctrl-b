@@ -255,14 +255,28 @@ export function sceneRows(rows: readonly MediaFile[]): MediaFile[] {
   return usableLadderRows(rows);
 }
 
-/** A single-pick POOL (`reel`, `oracle`): presence-based tier, then first-wins at the call site. */
+/** A single-pick POOL (`reel`, `oracle`): the FIRST-WINS half of the §2.3 tier pair
+ *  (`usableLadderRows`), then first-wins at the call site.
+ *
+ *  It read the DEALT half (`ladderRows`, then a usable filter) until the whole-feature council caught
+ *  the difference: presence alone promoted the owner's tier, so a `reel/` folder holding nothing but
+ *  broken files blanked the transition figure while frontier's identically-worded map cover fell back
+ *  to its shipped art. In a role whose position buys only ONE surface, a broken file buys nothing at
+ *  all — which is exactly the case the pair's usable half exists for, and the same rule `sceneRows`
+ *  above already reads. */
 export function poolRows(rows: readonly MediaFile[]): MediaFile[] {
-  return orderedUsable(ladderRows(rows));
+  return usableLadderRows(rows);
 }
 
-/** The gallery's reading of a dealt role — every member is in use, and the mode word says how. */
+/** The gallery's reading of a dealt role — every member that can PAINT is in use, and the mode word
+ *  says how.
+ *
+ *  A broken file holds its deal POSITION (`castRows` above, and that rule is the fleet's: dropping it
+ *  would re-deal every host after it) — but its host paints the PLACEHOLDER, and the ring means
+ *  ACTIVE. So the tier keeps it and the marking does not: the tile reads "in use · will not paint",
+ *  with the problem badge and no ring. */
 export function activeCast(rows: readonly LibraryRow[]): ActiveArt {
-  return { ids: activeIds(castRows(rows as readonly MediaFile[])), mode: "deal" };
+  return { ids: activeIds(orderedUsable(castRows(rows as readonly MediaFile[]))), mode: "deal" };
 }
 
 export function activeScenes(rows: readonly LibraryRow[]): ActiveArt {

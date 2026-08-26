@@ -402,6 +402,17 @@ describe("the D65 wire facts", () => {
     expect(activePool([rows[1], rows[0]]).ids).toEqual(["f:emby.png"]);
   });
 
+  it("a BUNDLED row in a kit pool is neither painted nor marked — every binding here is a file", () => {
+    // The W8 council's kit rider. `roleFiles` — the rule every kit SURFACE paints through — drops
+    // bundled rows outright, because the one role that carries any (`service-banners`) holds a dealt
+    // SET and not per-key art. The pool RESOLVER did not, so an order write that swept a bundled row
+    // into the owner's tier would have had the gallery ring a picture the layer walks straight past.
+    // Latent today (no kit pool ships bundled art) and pinned so it stays impossible.
+    const listed = { ...file("banner-01"), file: "", url: "", bundled: "banner-01", listed: true };
+    expect(activePool([listed, file("wall")]).ids).toEqual(["f:wall.png"]);
+    expect(backgroundArtFrom(index({ background: [listed, file("wall")] }))?.name).toBe("wall");
+  });
+
   it("hiding everything resolves to NOTHING — there is no shipped rung here to resurrect", () => {
     // The kit's half of Emma's S2 review #2, and the reason it needed no fix: this namespace ships no
     // bundled art at all (§3), so "resolved to nothing" already IS what the surfaces paint. Pinned so a

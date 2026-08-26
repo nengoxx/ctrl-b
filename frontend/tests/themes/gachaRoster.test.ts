@@ -5,9 +5,11 @@ import { proportionalFocal } from "../../src/lib/focalPosition";
 import { MEDIA_NS } from "../../src/theme-engine/mediaRegistry";
 import { ART } from "../../src/themes/gacha/art";
 import {
+  activeCast,
   activePool,
   activeSeat,
   artForHost,
+  castRows,
   assignArt,
   bannerScenes,
   defaultRoster,
@@ -450,6 +452,31 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(reelFigureArt(rosterFromIndex(index({ reel: [listed, owner] })))).toMatchObject({
       url: ART.cutout,
     });
+  });
+
+  it("a POOL of nothing but BROKEN files falls back to the shipped art, like every other first-wins role", () => {
+    // The W8 council's F2. `poolRows` read the DEALT half of the §2.3 tier pair — presence promoted the
+    // owner's tier — so a `reel/` folder holding one unreadable file blanked the transition figure,
+    // while frontier's identically-worded map cover fell back. In a role whose position buys ONE
+    // surface, a broken file buys nothing at all: the usable half of the pair is the right rule, and
+    // the gallery marks what the surface paints because it is the same call.
+    const broken = file("cut", { unusable: true });
+    expect(activePool([broken, bundled("lyra")]).ids).toEqual(["b:lyra"]);
+    const reel = rosterFromIndex(index({ reel: [broken, bundled("lyra")] }));
+    expect(reelFigureArt(reel)).toMatchObject({ url: ART.cutout });
+    const oracle = rosterFromIndex(
+      index({ oracle: [file("night", { unusable: true }), bundled("oracle")] }),
+    );
+    expect(oracleArt(oracle)).toMatchObject({ url: ART.oracle });
+  });
+
+  it("the ACTIVE ring never marks a dealt row that cannot paint — it holds its place, not the claim", () => {
+    // The W8 council's E4. A broken file keeps its DEAL POSITION (dropping it would re-deal every host
+    // after it, `castRows` is untouched) and its host paints the placeholder — so the row is in use and
+    // is not what anything is painting. The tile says both; the ring says only the second.
+    const rows = [file("kira", { unusable: true }), file("nova")];
+    expect(activeCast(rows).ids).toEqual(["f:nova.webp"]);
+    expect(castRows(rows).map((r) => r.name)).toEqual(["kira", "nova"]); // the deal is unchanged
   });
 
   it("…while a payload that never described the tier still degrades to the shipped art", () => {

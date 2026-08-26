@@ -161,7 +161,11 @@ export function activeNamedKey(key: string) {
  *  layer itself paints through. It was a FACTORY taking the pool's pin key until "W6" (2026-08-26);
  *  with the pins gone there is one rung, so the resolver is that rung and reads no `slots`. */
 export function activePool(rows: readonly LibraryRow[]): ActiveArt {
-  const pick = firstUsable(ownTier(shown(rows)));
+  // The same three filters `roleFiles` paints through, bundled rows included: every binding this
+  // namespace resolves is a file on disk (see its note), so a bundled row listed into a kit pool is
+  // one the layer would walk straight past — and marking it would be the claim §2.4 forbids. No kit
+  // role ships bundled art today; the rule is the paint site's and is stated once, in both places.
+  const pick = firstUsable(ownTier(shown(rows)).filter((f) => f.bundled == null));
   return { ids: pick ? [rowId(pick)] : [], mode: "first" };
 }
 

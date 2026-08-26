@@ -567,7 +567,11 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
     expect(container.querySelectorAll(".mgal-corner.start")).toHaveLength(1); // only the default one
     expect(container.querySelector(".mgal-corner.start")?.textContent).toBe("Default");
     // …and the ACTIVE entries — what the fleet paints right now — wear the ring on the tile itself.
-    expect(container.querySelectorAll(".mgal-tile.on")).toHaveLength(2); // a + bad: both dealt
+    // ONLY `a`: the broken file holds its DEAL POSITION (dropping it would re-deal every host after
+    // it), but the host it was dealt to paints the placeholder, so it is not what any surface is
+    // painting and the ring must not say it is (the W8 council's E4). The tile says the honest pair —
+    // a member of the deal, and a picture that cannot paint.
+    expect(container.querySelectorAll(".mgal-tile.on")).toHaveLength(1);
     expect(tile("a.webp")).toBeTruthy();
   });
 
@@ -625,6 +629,11 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
 // BUTTON now, and it means something else: membership. One tap, `aria-pressed`, and the same queued
 // `setHidden` intent the detail panel's switch enqueues — one write path, one tier rule.
 
+    const broken = screen.getByRole("button", { name: "bad.webp" });
+    expect(broken.className).not.toContain(" on");
+    expect(
+      document.getElementById(broken.getAttribute("aria-describedby") ?? "")?.textContent,
+    ).toBe("in use · will not paint");
 describe("the tile's In-use toggle", () => {
   const withOne = () =>
     renderGallery(

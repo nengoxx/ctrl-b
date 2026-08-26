@@ -16,7 +16,7 @@
 import { useMemo } from "react";
 
 import { useMediaIndex, type MediaFile, type MediaIndex } from "../../hooks/useMedia";
-import { cycleAt, firstUsable, resolveNamed, revUrl } from "../../lib/media";
+import { cycleAt, firstUsable, orderedUsable, resolveNamed, revUrl } from "../../lib/media";
 import {
   activeIds,
   ladderRows,
@@ -187,9 +187,14 @@ function stackLayerUrl(rows: readonly MediaFile[], key: StackKey): string | unde
   return rows.some((f) => f.bundled === key) ? undefined : STACK_ART[key];
 }
 
-/** The gallery's reading of the rig pool — every member is dealt, in this order. */
+/** The gallery's reading of the rig pool — every member that can PAINT is dealt, in this order.
+ *
+ *  A broken file keeps its deal POSITION (that is `rigRows`' own rule, and `rigUrlFor` is where the
+ *  card falls back for it) — but the ring means ACTIVE, and a card painting its own fallback is not
+ *  painting this row. So the tier rule is untouched and only the marking drops it: the tile reads "in
+ *  use · will not paint", which is the honest pair. */
 export function activeRigs(rows: readonly LibraryRow[]): ActiveArt {
-  return { ids: activeIds(rigRows(rows as readonly MediaFile[])), mode: "deal" };
+  return { ids: activeIds(orderedUsable(rigRows(rows as readonly MediaFile[]))), mode: "deal" };
 }
 
 /** The gallery's reading of the map cover: the first usable member — one winner, chosen by ORDER

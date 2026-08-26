@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
 import { ART, HERO_KEY, RIG_KEYS, assets } from "../../src/themes/frontier/art";
-import { frontierArtFromIndex, STACK_KEYS } from "../../src/themes/frontier/ownerArt";
+import { activeRigs, frontierArtFromIndex, STACK_KEYS } from "../../src/themes/frontier/ownerArt";
 import { present } from "../../src/themes/frontier/present";
 
 // The frontier owner-art adapter (D53 M2 / MEDIA_PLAN §9's frontier arms). PURE — a wire payload in,
@@ -111,6 +111,16 @@ describe("rigs — the pool dealt over the fleet's display order", () => {
     expect(art.rigUrlFor(1)).toBeUndefined(); // → the consumer's bundled rig for position 1
     expect(art.rigUrlFor(2)).toBe(painted("c"));
     expect(art.rigUrlFor(3)).toBe(painted("a")); // the cycle is unchanged
+  });
+
+  it("…and the gallery does not ring it: it is IN the deal and it is not what any card paints", () => {
+    // The W8 council's E4, frontier's half. The tier rule above is untouched — the broken row keeps its
+    // position — and `activeRigs` is the GALLERY's reading, where "active" means "painting right now".
+    // The card whose position it holds paints the bundled rig, so ringing the row would claim a picture
+    // no surface shows.
+    const rows = [file("a"), file("bad", { unusable: true }), file("c")];
+    expect(activeRigs(rows).ids).toEqual(["f:a.png", "f:c.png"]);
+    expect(activeRigs(rows).mode).toBe("deal");
   });
 
   it("a nonsense position is unassigned rather than a throw (it is on a render path)", () => {
