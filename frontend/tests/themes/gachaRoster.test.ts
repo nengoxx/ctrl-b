@@ -6,6 +6,7 @@ import { MEDIA_NS } from "../../src/theme-engine/mediaRegistry";
 import { ART } from "../../src/themes/gacha/art";
 import {
   activePool,
+  activeSeat,
   artForHost,
   assignArt,
   bannerScenes,
@@ -754,5 +755,37 @@ describe("bannerScenes — the first slide is dealt, and the rest are the scenes
     expect(lead).toEqual({ name: "banner", url: ART.banner });
     expect(rest.map((s) => s.name)).toEqual(["b2", "b3"]);
     expect(wallpaperArt(defaultRoster())).toEqual({ url: ART.banner });
+  });
+});
+
+// ── activeSeat — the PAINT's rule, verbatim (the W6 confirm round's catch) ─────────────────────────
+//
+// What a pin paints is `slotEntry` → `toWideArt`: the first name-match in the DEALT tier, nothing when
+// that match is unusable. The gallery's marking must tell the same story — a ✓ on a row the surface
+// will not paint is the §2.4 lie the resolver seam exists to prevent.
+
+describe("activeSeat — gallery marking agrees with the paint ladder", () => {
+  const seat = activeSeat("wallpaper");
+
+  it("marks the first name-match of the dealt tier — and NOTHING when that match is unusable", () => {
+    // An unusable namesake FIRST: the paint side resolves it, gets no art, and falls through the
+    // ladder — so the gallery must not mark the later usable namesake active (the old skip-unusable
+    // find did, and the send-time pin check now refuses the same tap for the same reason).
+    const rows = [
+      file("lyra", { unusable: true, unusable_reason: "unreadable" }),
+      { ...file("lyra"), file: "lyra.png", url: "/api/media/gacha/files/x/lyra.png" },
+    ];
+    expect(seat(rows, { wallpaper: "lyra" })).toEqual({ ids: [], mode: "first" });
+    // …the paint agrees: the roster deals the unusable entry first, and the slot resolves to a hole.
+    const r = rosterFromIndex(index({ characters: rows }, { wallpaper: "lyra" }));
+    expect(wallpaperArt(r).url).not.toContain("lyra.png");
+  });
+
+  it("a pin naming a HIDDEN row marks nothing — the dealt tier is the tier that paints", () => {
+    // The old resolver searched the RAW rows, so a hidden row's pin read as active while
+    // `rosterFromIndex` built the entries from `ladderRows`, which excludes it.
+    const rows = [file("a"), { ...file("b"), hidden: true }];
+    expect(seat(rows, { wallpaper: "b" })).toEqual({ ids: [], mode: "first" });
+    expect(seat(rows, { wallpaper: "a" })).toEqual({ ids: ["f:a.webp"], mode: "first" });
   });
 });

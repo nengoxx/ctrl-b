@@ -298,14 +298,22 @@ export function activeOraclePool(
  *  the pin. Active = the row the pin names, resolved against this same list — a dangling pin marks
  *  nothing, exactly as the ladder falls through.
  *
- *  It took a chain of FALLBACK pin keys until 2026-08-26, for the one seat that read another's pin (the
- *  hero slide followed the fleet backdrop's). That seat is gone with the ruling that retired it, and the
- *  parameter went with it rather than sitting unused — every remaining seat reads its own pin alone. */
+ *  **The rule is the PAINT's rule, verbatim** (the W6 confirm round's catch): what a pin paints is
+ *  `slotEntry` → `toWideArt` — the first name-match in the DEALT tier, and nothing when that match is
+ *  unusable. This resolver used to skip unusable namesakes and search the raw rows, which told two
+ *  lies the paint never told: it marked a LATER usable namesake active while the surface fell through
+ *  the ladder on the first one, and it marked a HIDDEN row's pin active while the dealt tier — which
+ *  is what `rosterFromIndex` builds `entries` from — excluded it entirely. One rule now, three
+ *  readers: this resolver, the paint ladder, and the send-time pin check (`useMediaLibrary`), which
+ *  is why "Use here" can only write what BOTH the gallery and the surface will honour.
+ *
+ *  (It also took a chain of FALLBACK pin keys until 2026-08-26 — the hero slide following the fleet
+ *  backdrop's pin. That seat died with the W5 ruling and the parameter went with it.) */
 export function activeSeat(slot: string) {
   return (rows: readonly LibraryRow[], slots: Readonly<Record<string, string>>): ActiveArt => {
     const name = slotEntryName(slots, slot);
-    const row = name === undefined ? undefined : rows.find((r) => r.name === name && !r.unusable);
-    return { ids: row === undefined ? [] : [rowId(row)], mode: "first" };
+    const row = name === undefined ? undefined : ladderRows(rows).find((r) => r.name === name);
+    return { ids: row === undefined || row.unusable ? [] : [rowId(row)], mode: "first" };
   };
 }
 
