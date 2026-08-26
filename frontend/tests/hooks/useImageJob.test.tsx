@@ -260,6 +260,49 @@ describe("the machine (§4 rules ① and ②)", () => {
     });
   });
 
+  it("a LOADED source is admitted inside the latch — one download, whatever the taps", async () => {
+    // The edit consumer's admission: its bytes come off the server, so there is an await in front of
+    // the job. The latch is taken BEFORE the loader runs, which is the whole reason the loader is a
+    // function rather than a promise — a refused admission must start no download at all.
+    const { deliver } = tail((c) => c.finish());
+    let loads = 0;
+    const load = () => {
+      loads++;
+      return Promise.resolve(pickFile("stored.webp"));
+    };
+    render(<Harness />);
+    await act(async () => {
+      job.offer(load, spec(deliver));
+      job.offer(load, spec(deliver));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(loads).toBe(1);
+    expect(job.crop?.file.name).toBe("stored.webp");
+  });
+
+  it("…and a loader that CANNOT read its bytes fails at the guard, in its own words", async () => {
+    const { deliver } = tail((c) => c.finish());
+    render(<Harness />);
+    await offer(spec(deliver), null);
+    await act(async () => {
+      job.offer(
+        () => Promise.reject(new Error("the stored image could not be read.")),
+        spec(deliver),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(job.failure).toMatchObject({
+      phase: "guard",
+      message: "the stored image could not be read.",
+      sectionId: SECTION.id,
+    });
+    expect(job.busy).toBe(false);
+  });
+
   it("no settings snapshot ⇒ not READY: the server's byte cap is not a number to guess", () => {
     settings.useSettings.mockReturnValue({ data: undefined });
     render(<Harness />);

@@ -118,13 +118,23 @@ export function putJSON<T>(path: string, body: unknown): Promise<T> {
  *  answers 415 if they disagree with the extension in the URL.
  *
  *  Errors keep their STATUS (`ApiError.status`), because the media write's callers branch on it: a
- *  `409` is the name-race guard and is retried with the next suffix rather than shown to anyone. */
-export async function putBytes<T>(path: string, body: Blob): Promise<T> {
+ *  `409` is the name-race guard and is retried with the next suffix rather than shown to anyone, and
+ *  a `412` is the edit path's stale precondition.
+ *
+ *  `headers` carries the PRECONDITION an edit states (`X-Expected-Revision`, "W10") — the one header
+ *  a caller adds, and the reason it is a parameter rather than an option object: a custom header keeps
+ *  the request non-safelisted, which is the very property the paragraph above rests on. */
+export async function putBytes<T>(
+  path: string,
+  body: Blob,
+  headers: Record<string, string> = {},
+): Promise<T> {
   const res = await fetch(path, {
     method: "PUT",
     headers: {
       "Content-Type": body.type || "application/octet-stream",
       Accept: "application/json",
+      ...headers,
     },
     body,
   });

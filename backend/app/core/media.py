@@ -974,6 +974,22 @@ def _probe_webp(head: bytes, size: int) -> Probe:
 # ── the listing ───────────────────────────────────────────────────────────────────────────────────
 
 
+def file_revision(st: os.stat_result) -> str:
+    """The opaque change token for one file's BYTES — **one spelling, and now two readers.**
+
+    It rides every index row (`MediaFile.revision`), and since the edit-in-place arm ("W10") it is also
+    the PRECONDITION a conditional `PUT` is checked against (`UploadPart.finish`). Two hand-written
+    copies of this f-string would be a token that means one thing to the listing and another to the
+    write, which is the one way a precondition can be silently wrong: it would refuse every edit, or —
+    worse — accept one against bytes it was not describing.
+
+    Four fields because none of them is enough alone: `mtime_ns` can repeat within a filesystem's
+    timestamp granularity, `size` is unchanged by an in-place edit of the same length, and the inode +
+    ctime pair catches a replace-by-rename that reused both.
+    """
+    return f"{st.st_mtime_ns}:{st.st_size}:{st.st_ino}:{st.st_ctime_ns}"
+
+
 def describe_file(
     path: Path,
     ns: str,
@@ -998,7 +1014,7 @@ def describe_file(
     probe = probe_image(path)
     try:
         st = path.stat()
-        size, revision = st.st_size, f"{st.st_mtime_ns}:{st.st_size}:{st.st_ino}:{st.st_ctime_ns}"
+        size, revision = st.st_size, file_revision(st)
     except OSError:
         size, revision = 0, ""
     reason: Literal["unreadable", "format-mismatch"] | None = None
@@ -1184,6 +1200,12 @@ def admission_reason(filename: str) -> str | None:
     return None
 
 
+#: The `412` sentence, in the owner's own terms: the bytes under this name are not the ones the client
+#: was editing, so what it is holding is a crop of a picture that is gone. It is the ONE thing they can
+#: do about it, stated as an instruction rather than as a verdict.
+STALE_TARGET = "the picture changed on the server — reopen it and try again"
+
+
 class MediaWriteError(Exception):
     """A refused write, carrying the STATUS the route answers with and the sentence it says.
 
@@ -1261,7 +1283,12 @@ class UploadPart:
     The order is the security control (D65 / R55 §4.4), not an implementation detail:
 
         mkstemp `.part` in the role's `.parts/` → chmod 0644 → stream + COUNT (413) → fsync → probe
-        the BYTES (415) → `os.link` no-clobber (409) → unlink the temp → `fsync_dir`
+        the BYTES (415) → LAND → unlink the temp → `fsync_dir`
+
+    …where LAND is `os.link` no-clobber (409) for a CREATE, and — since the edit-in-place arm ("W10")
+    — a revision-checked `os.replace` (412) when the caller says which bytes it expects to overwrite.
+    Both are same-filesystem operations on a temp inside the destination directory, and both keep the
+    property the order is for: the bytes are validated before the file has its final name.
 
     Every property that matters falls out of that order. The bytes are validated **before the file
     has its final name**, so a rejected upload leaves ZERO bytes and never a half-file in the roster.
@@ -1319,8 +1346,26 @@ class UploadPart:
             )
         self._file.write(chunk)
 
-    def finish(self, target: Path, ns: str, role: str) -> MediaFile:
-        """Durably link the streamed bytes to their final name and describe the result."""
+    def finish(self, target: Path, ns: str, role: str, expected_revision: str | None = None) -> MediaFile:
+        """Durably put the streamed bytes at their final name and describe the result.
+
+        Two landings, and the CALLER's `expected_revision` is what chooses between them (D65 / the
+        edit-in-place arm, "W10"):
+
+          * **None — CREATE.** `os.link` no-clobber: the name is either created or the link raises
+            `FileExistsError`, which is the whole concurrency story (no lock, no check-then-act window)
+            and the `409` the client walks to its next suffix.
+          * **a token — REPLACE.** The caller says which BYTES it believes are there; only if the file
+            still answers to that revision is it replaced, atomically, by `os.replace`. A mismatch, or
+            no file at all, is a **412** — never a 409, because 409 already means "that name is taken,
+            mint another" on the create path above and the two meanings must not share a code.
+
+        The 412 window is as small as a filesystem allows but is not zero (the stat and the replace are
+        two syscalls). That is the accepted residual: this app has ONE owner, and the hazard the
+        precondition exists for is the owner's own two devices, not a racing writer — a lost race here
+        costs the newer of two edits, which is exactly what the precondition promises to catch when it
+        can and what the 412 copy tells the owner to redo.
+        """
         file = self._file
         if file is None:  # pragma: no cover — same
             raise RuntimeError("upload part is closed")
@@ -1334,16 +1379,28 @@ class UploadPart:
         if expected is None or probe.fmt != expected[1]:
             # The mount serves the Content-Type the EXTENSION claims under `nosniff`, so a mismatch
             # is a guaranteed broken image — refused at the door rather than listed as `unusable`
-            # (an SSH drop has no door; an upload does).
+            # (an SSH drop has no door; an upload does). It is checked BEFORE either landing, so the
+            # ladder reads the same whichever one follows.
             raise MediaWriteError(
                 415,
                 f"the bytes are {probe.fmt or 'not an accepted image format'}, which does not match "
                 f"the {target.suffix.lower()} extension",
             )
-        try:
-            os.link(self.path, target)
-        except FileExistsError:
-            raise MediaWriteError(409, f"{target.name} already exists") from None
+        if expected_revision is None:
+            try:
+                os.link(self.path, target)
+            except FileExistsError:
+                raise MediaWriteError(409, f"{target.name} already exists") from None
+        else:
+            try:
+                current = file_revision(target.stat())
+            except OSError:
+                current = None
+            if current != expected_revision:
+                raise MediaWriteError(412, STALE_TARGET)
+            os.replace(self.path, target)
+            # `os.replace` MOVED the temp, so there is nothing left to discard — and `discard()` is
+            # idempotent and never raises, so the shared tail below is still correct.
         self.discard()
         fsync_dir(target.parent)
         return describe_file(target, ns, role)

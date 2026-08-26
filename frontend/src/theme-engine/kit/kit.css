@@ -6655,11 +6655,38 @@ body[data-perf="lite"] .kit .navmenu-pop {
   backdrop-filter: blur(6px);
   cursor: pointer;
 }
-.kit .mgal-back:focus-visible {
+/* EDIT IN PLACE ("W10") — the MIRROR of the way back, at the opposite corner: same scrim, same pill,
+ * square because its label is a glyph. Both float over the stage because both are about the picture
+ * rather than about the entry, which is what the pill along the bottom edge is for. */
+.kit .mgal-edit {
+  all: unset;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--text);
+  background: color-mix(in oklch, var(--bg) 62%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+.kit .mgal-edit[disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+.kit .mgal-back:focus-visible,
+.kit .mgal-edit:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-body[data-perf="lite"] .kit .mgal-back {
+body[data-perf="lite"] .kit .mgal-back,
+body[data-perf="lite"] .kit .mgal-edit {
   background: var(--bg);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;

@@ -42,6 +42,7 @@ export function GalleryModal({
   write,
   upload,
   onFrame,
+  onEdit,
   onClose,
 }: {
   view: SectionView;
@@ -69,6 +70,9 @@ export function GalleryModal({
    *  rather than a child (`MediaGallery` renders both) — a nested dialog would ride this one's keydown
    *  trap, so its Escape would close the gallery underneath it. Hence a callback rather than state. */
   onFrame: (item: LibraryItem) => void;
+  /** Re-crop ONE entry's stored bytes ("W10"). Like the framing sheet and the crop step, the job lives
+   *  a level above this dialog — it outlives the modal, and its crop step is a SIBLING of it. */
+  onEdit: (item: LibraryItem) => void;
   onClose: () => void;
 }) {
   const { section } = view;
@@ -291,6 +295,8 @@ export function GalleryModal({
               onMoveToEdge={(edge) => write.moveToEdge(section, selected, edge)}
               onToggleHidden={() => write.toggleHidden(section, selected)}
               onFrame={() => onFrame(selected)}
+              onEdit={() => onEdit(selected)}
+              jobBusy={upload.busy}
               onDelete={() => {
                 void write.remove(section, selected);
                 setSelectedId(null);

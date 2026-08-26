@@ -5,6 +5,7 @@ import { FramingSheet } from "./media/FramingSheet";
 import { GalleryModal } from "./media/GalleryModal";
 import { SectionCard } from "./media/SectionCard";
 import { useImageJob } from "../hooks/useImageJob";
+import { useMediaEdit } from "../hooks/useMediaEdit";
 import { useMediaLibrary, type GalleryScope, type LibraryItem } from "../hooks/useMediaLibrary";
 import { useMediaUpload } from "../hooks/useMediaUpload";
 import type { MediaNsDef } from "../theme-engine/mediaRegistry";
@@ -52,6 +53,11 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
     rows: opened?.rows ?? [],
     append: lib.write.append,
   });
+  // The OTHER tail on the same machine ("W10"): the same guard, crop step and export, delivered as a
+  // conditional PUT over the file's own bytes instead of as a new file. No config write at all — the
+  // entry keeps its place, its In-use state and its binding key, which is the whole point of editing
+  // in place rather than deleting and re-adding.
+  const edit = useMediaEdit({ job, section: opened?.section, scope: open?.scope ?? {} });
 
   if (lib.error)
     return <div className="conf-card mgal-msg">media index unreachable: {lib.error.message}</div>;
@@ -86,6 +92,7 @@ export function MediaGallery({ ns, def }: { ns: string; def: MediaNsDef }) {
           write={lib.write}
           upload={upload}
           onFrame={setFraming}
+          onEdit={edit.start}
           onClose={() => {
             setFraming(null);
             setOpen(null);

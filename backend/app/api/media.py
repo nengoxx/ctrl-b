@@ -260,14 +260,33 @@ def _admit(filename: str) -> None:
 
 
 @router.put("/media/{ns}/files/{role}/{filename:path}", status_code=201)
-async def media_upload(ns: str, role: str, filename: str, request: Request) -> MediaFile:
-    """Store one owner image. **Raw body — never multipart, never POST** (D65; the verb IS the CORS
-    control, SECURITY_MODEL §2.7).
+async def media_upload(ns: str, role: str, filename: str, request: Request, response: Response) -> MediaFile:
+    """Store one owner image — a NEW file, or a REPLACEMENT of one the client says it is holding.
+    **Raw body — never multipart, never POST** (D65; the verb IS the CORS control, SECURITY_MODEL §2.7).
 
-    `201` with the new file's index row · `404` unknown ns/role or a path-shaped name · `409` the name
-    already exists (the client's race guard: it retries with its next suffix, never a dialog) · `413`
-    past `media.write.max_bytes` · `415` bytes and extension disagree · `422` a name this surface may
-    not create, or an empty body.
+    `201` with the new file's index row · `200` with the fresh row when it REPLACED one · `404` unknown
+    ns/role or a path-shaped name · `409` the name already exists (the client's race guard: it retries
+    with its next suffix, never a dialog) · `412` a conditional replace whose target is gone or has
+    changed · `413` past `media.write.max_bytes` · `415` bytes and extension disagree · `422` a name
+    this surface may not create, or an empty body.
+
+    **`X-Expected-Revision` is what makes it a REPLACE** (the edit-in-place arm, "W10"). Its value is
+    the `revision` the client read off the index row it is editing; the write lands only if the file
+    still answers to it. Three decisions are pinned here:
+
+    · **A REQUEST HEADER, not `If-Match`.** The media MOUNT already serves Starlette's own `ETag` on
+      GETs of this same URL space, and that is a DIFFERENT validator (a content hash of a static file,
+      not this index token). Reusing `If-Match` would promise HTTP semantics we do not implement —
+      a client, a proxy or a future `HEAD` reader would be entitled to compare our token against
+      Starlette's. A private header makes the two validators visibly different things. Precedent:
+      `X-Providers-Rev` (D48), the app's other precondition.
+    · **412, not 409.** A `409` on this route already means "that NAME is taken" and the client answers
+      it by minting the next suffix — silently, by design (§2.5). A stale precondition answered 409
+      would therefore be walked into a SECOND COPY of the picture under a new name, which is precisely
+      the outcome the precondition exists to prevent.
+    · **No header ⇒ byte-identical create.** The absent case is not "replace whatever is there": it is
+      today's create-only PUT, unchanged, because a client that did not state a precondition has not
+      told us which bytes it believes it is overwriting.
 
     The ladder lives in `core.media.UploadPart` — this route only feeds it the stream and translates
     its refusals. The `finally` is the zero-bytes guarantee: whatever happened, the `.part` is gone
@@ -284,6 +303,10 @@ async def media_upload(ns: str, role: str, filename: str, request: Request) -> M
     """
     directory = _role_directory(request, ns, role)
     _admit(filename)
+    # Case-insensitive by Starlette's own header mapping. An EMPTY value is a present precondition
+    # that matches nothing — a 412 — rather than an absent one: a client that sent the header meant to
+    # state a precondition, and guessing it meant "create" is how a replace becomes a second copy.
+    expected_revision = request.headers.get("x-expected-revision")
     max_bytes = request.app.state.settings.media.write.max_bytes
     # `UploadPart.open` is INSIDE the try: it refuses a `.parts` that is a symlink or a file (a tree
     # only an operator can repair), and that refusal has to reach the client as the same translated
@@ -295,7 +318,13 @@ async def media_upload(ns: str, role: str, filename: str, request: Request) -> M
             part.write(chunk)
         if part.received == 0:
             raise MediaWriteError(422, "the request body is empty")
-        return await asyncio.to_thread(part.finish, directory / filename, ns, role)
+        row = await asyncio.to_thread(part.finish, directory / filename, ns, role, expected_revision)
+        # The route's declared status is the CREATE's. A replace reached here only by satisfying its
+        # precondition, so nothing was created and `201` would be a lie about a name that already
+        # existed — 200 with the fresh row, whose new `revision` is what the client edits next.
+        if expected_revision is not None:
+            response.status_code = 200
+        return row
     except MediaWriteError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
     finally:

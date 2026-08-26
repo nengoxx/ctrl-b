@@ -576,3 +576,127 @@ describe("the 64 MP cap after the PROOF decode (Emma #4)", () => {
     expect(closeBitmap).toHaveBeenCalled();
   });
 });
+
+describe("editing in place (the 'W10' arm — the OTHER tail on the same machine)", () => {
+  /** One stored file, as the index reports it — the row the edit is admitted from. */
+  const stored = (over: Partial<MediaIndex["roles"][string][number]> = {}) => ({
+    name: "a",
+    file: "a.webp",
+    url: "/api/media/gacha/files/characters/a.webp",
+    format: "webp" as const,
+    size_bytes: 88_000,
+    revision: "r1",
+    width: 640,
+    height: 854,
+    unusable: false,
+    unusable_reason: null,
+    listed: true,
+    hidden: false,
+    ...over,
+  });
+
+  /** What the stored bytes come back as. The loader turns this into a `File` named for the row. */
+  const served = (ok = true) =>
+    vi.fn().mockResolvedValue({
+      ok,
+      blob: () => Promise.resolve(new Blob([fixture("photo-64x48.png")], { type: "image/webp" })),
+    });
+
+  /** Open the entry's detail panel and press Edit. */
+  async function startEdit(dialog: HTMLElement): Promise<void> {
+    fireEvent.click(within(dialog).getByRole("button", { name: "a.webp" }));
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Edit image" }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  it("re-crops the STORED bytes and PUTs them back under the same name, conditionally", async () => {
+    globalThis.fetch = served();
+    renderGallery(emptyIndex({ characters: [stored()] }));
+    const dialog = await openSection("Characters");
+    await startEdit(dialog);
+
+    // ① the SOURCE is the file's own `?rev=` URL — the bytes the gallery is showing, not a cache's.
+    expect((globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(
+      "/api/media/gacha/files/characters/a.webp?rev=r1",
+    );
+    // ② the export is FORCED to the stored file's own type, so the extension stays truthful.
+    await confirmCrop();
+    await waitFor(() => expect(exporter.exportImage).toHaveBeenCalled());
+    expect(exporter.exportImage.mock.calls[0][0]).toMatchObject({
+      override: { type: "image/webp" },
+    });
+    // ③ …and the write is a conditional PUT to the SAME url, carrying the revision read at admission.
+    await waitFor(() => expect(api.putBytes).toHaveBeenCalledTimes(1));
+    expect(api.putBytes.mock.calls[0][0]).toBe("/api/media/gacha/files/characters/a.webp");
+    expect(api.putBytes.mock.calls[0][2]).toEqual({ "X-Expected-Revision": "r1" });
+    // ④ NO config write at all: the entry keeps its place, its In-use state and its binding key.
+    expect(api.putJSON).not.toHaveBeenCalled();
+  });
+
+  it("a 412 says to reopen it, and offers NO retry — the crop is about bytes that are gone", async () => {
+    globalThis.fetch = served();
+    api.putBytes.mockRejectedValueOnce(
+      new api.ApiError("the picture changed on the server — reopen it and try again", 412),
+    );
+    renderGallery(emptyIndex({ characters: [stored()] }));
+    const dialog = await openSection("Characters");
+    await startEdit(dialog);
+    await confirmCrop();
+    const row = await within(dialog).findByText(/reopen it and try again/);
+    expect(row.textContent).toContain("The upload did not finish");
+    expect(within(dialog).queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(api.putJSON).not.toHaveBeenCalled();
+  });
+
+  it("bytes that cannot be READ fail at the guard, before any crop step opens", async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("offline"));
+    renderGallery(emptyIndex({ characters: [stored()] }));
+    const dialog = await openSection("Characters");
+    await startEdit(dialog);
+    expect(
+      (await within(dialog).findByText(/stored image could not be read/)).textContent,
+    ).toContain("That picture cannot be used");
+    expect(screen.queryByRole("button", { name: "Use as is" })).toBeNull();
+    // …and the latch released: the Add row is live again.
+    expect(
+      within(dialog).getByRole<HTMLButtonElement>("button", { name: /Add an image/ }).disabled,
+    ).toBe(false);
+  });
+
+  it("is ABSENT where there is nothing to edit — a bundled entry, an unusable file, a seat", async () => {
+    renderGallery(
+      emptyIndex({
+        characters: [
+          stored(),
+          stored({ name: "b", file: "b.webp", unusable: true }),
+          stored({
+            name: "pegasus",
+            file: "",
+            url: "",
+            bundled: "pegasus",
+            format: null,
+            revision: "",
+            width: null,
+            height: null,
+          }),
+        ],
+      }),
+    );
+    const dialog = await openSection("Characters");
+    // The owner's own usable file has it…
+    fireEvent.click(within(dialog).getByRole("button", { name: "a.webp" }));
+    expect(within(dialog).getByRole("button", { name: "Edit image" })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "‹ All images" }));
+    // …a file the mount would serve broken does not: there is nothing to open a crop step on.
+    fireEvent.click(within(dialog).getByRole("button", { name: "b.webp" }));
+    expect(within(dialog).queryByRole("button", { name: "Edit image" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "‹ All images" }));
+    // …and neither does a BUNDLED entry: the asset belongs to the build, not to the media folder.
+    fireEvent.click(within(dialog).getByRole("button", { name: "pegasus (default)" }));
+    expect(within(dialog).queryByRole("button", { name: "Edit image" })).toBeNull();
+  });
+});

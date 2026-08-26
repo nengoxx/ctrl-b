@@ -256,6 +256,111 @@ def test_a_disabled_namespace_refuses_writes(home: Path, tmp_path) -> None:
         assert list(elsewhere.iterdir()) == []
 
 
+# ── the conditional REPLACE (the edit-in-place arm, "W10") ────────────────────────────────────────
+#
+# One header turns the create-only PUT into an edit of a file the client is already holding:
+# `X-Expected-Revision` names the BYTES it believes are there, and the write lands only if they still
+# are. The arms below are the whole contract — the two landings, the two refusals, and the ladder that
+# is the same on both paths.
+
+
+def test_a_matching_revision_REPLACES_the_file_under_its_own_name(home: Path) -> None:
+    """200 (not 201 — nothing was created), the same filename, the new bytes, and a FRESH revision.
+
+    The fresh revision is the half that makes the next edit possible: the client edits from the row it
+    is handed, so a row echoing the old token would 412 its own follow-up."""
+    with make_client() as c:
+        first = c.put(f"{URL}/a.png", content=png_bytes(4, 3))
+        assert first.status_code == 201
+        was = first.json()["revision"]
+
+        r = c.put(f"{URL}/a.png", content=png_bytes(8, 6), headers={"X-Expected-Revision": was})
+        assert r.status_code == 200, r.text
+        row = r.json()
+        assert (row["file"], row["width"], row["height"]) == ("a.png", 8, 6)
+        assert row["revision"] and row["revision"] != was
+        assert (role(home, "characters") / "a.png").read_bytes() == png_bytes(8, 6)
+        # ONE file, no suffix walk, and no temp left behind.
+        assert leftovers(home) == ["a.png"]
+        # …and the index agrees, which is where the client reads its next revision from.
+        listed = c.get("/api/media/gacha").json()["roles"]["characters"]
+        assert [(f["file"], f["revision"]) for f in listed if f["file"]] == [("a.png", row["revision"])]
+
+
+def test_a_STALE_revision_is_412_and_the_stored_file_is_untouched(home: Path) -> None:
+    """The picture changed under the name the client is editing — the whole reason the header exists.
+
+    **412, never 409**: a 409 on this route means "that NAME is taken" and the client answers it by
+    minting the next suffix, so a stale precondition answered 409 would be walked into a SECOND COPY
+    of the picture — exactly the outcome the precondition prevents."""
+    with make_client() as c:
+        assert c.put(f"{URL}/a.png", content=png_bytes(4, 3)).status_code == 201
+        r = c.put(
+            f"{URL}/a.png",
+            content=png_bytes(8, 6),
+            headers={"X-Expected-Revision": "1:2:3:4"},
+        )
+        assert r.status_code == 412, r.text
+        assert "reopen it" in r.json()["detail"]
+        assert (role(home, "characters") / "a.png").read_bytes() == png_bytes(4, 3)
+        assert leftovers(home) == ["a.png"]
+
+
+def test_a_conditional_write_at_a_name_that_is_GONE_is_412_and_creates_nothing(home: Path) -> None:
+    """A replace is an edit of something. The file was deleted while the owner was cropping it, so
+    there is nothing to replace — and creating it here would resurrect an entry they retired."""
+    with make_client() as c:
+        r = c.put(f"{URL}/ghost.png", content=png_bytes(), headers={"X-Expected-Revision": "1:2:3:4"})
+        assert r.status_code == 412, r.text
+        assert leftovers(home) == []
+
+
+def test_an_EMPTY_expected_revision_is_a_precondition_that_matches_nothing(home: Path) -> None:
+    """Present-but-empty is a stated precondition, not an absent one: a client that sent the header
+    meant to state one, and reading it as "create" is how a replace becomes a second copy."""
+    with make_client() as c:
+        assert c.put(f"{URL}/a.png", content=png_bytes(4, 3)).status_code == 201
+        r = c.put(f"{URL}/a.png", content=png_bytes(8, 6), headers={"X-Expected-Revision": ""})
+        assert r.status_code == 412, r.text
+        assert (role(home, "characters") / "a.png").read_bytes() == png_bytes(4, 3)
+
+
+def test_NO_header_is_the_create_only_PUT_byte_for_byte(home: Path) -> None:
+    """The absent case is not "replace whatever is there" — it is today's 409, unchanged. This is the
+    regression that matters most: every upload in the app takes this path."""
+    with make_client() as c:
+        first = png_bytes(4, 3)
+        assert c.put(f"{URL}/a.png", content=first).status_code == 201
+        r = c.put(f"{URL}/a.png", content=png_bytes(8, 6))
+        assert r.status_code == 409, r.text
+        assert (role(home, "characters") / "a.png").read_bytes() == first
+
+
+def test_the_LADDER_still_fires_on_the_replace_path(home: Path) -> None:
+    """The precondition is the LAST rung, not the first: a conditional write is admitted, capped and
+    format-checked exactly like a create, so an edit can never store bytes an upload could not."""
+    with make_client() as c:
+        r = c.put(f"{URL}/a.png", content=png_bytes(4, 3))
+        rev = r.json()["revision"]
+        head = {"X-Expected-Revision": rev}
+
+        # 415 — the bytes disagree with the extension the mount will serve them as.
+        bad = c.put(f"{URL}/a.png", content=jpeg_bytes(4, 3), headers=head)
+        assert bad.status_code == 415, bad.text
+
+        # 422 — a name this surface may not mint is refused before any of it.
+        assert c.put(f"{URL}/CON.png", content=png_bytes(), headers=head).status_code == 422
+
+        # 413 — the server's own cap, counted as the body streams. Last, because it moves the tunable.
+        _tiny_cap(c, 10)
+        big = c.put(f"{URL}/a.png", content=png_bytes(8, 6), headers=head)
+        assert big.status_code == 413, big.text
+
+        # …and through all of it the stored picture is the one that was there.
+        assert (role(home, "characters") / "a.png").read_bytes() == png_bytes(4, 3)
+        assert leftovers(home) == ["a.png"]
+
+
 # ── DELETE ────────────────────────────────────────────────────────────────────────────────────────
 
 

@@ -64,6 +64,21 @@ export function FrameIcon({ size }: { size?: number } = {}) {
   );
 }
 
+/** lucide `pencil` — EDIT the stored picture: open the crop step on the bytes that are already there
+ *  and replace them under the same name ("W10").
+ *
+ *  Deliberately NOT `crop`, which this surface already spends on FRAMING: the two are different verbs
+ *  on the same picture (framing chooses what a window keeps; editing changes the stored file), and a
+ *  shared glyph would say they are one. */
+export function EditIcon({ size }: { size?: number } = {}) {
+  return (
+    <Glyph size={size}>
+      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+      <path d="m15 5 4 4" />
+    </Glyph>
+  );
+}
+
 /** lucide `trash-2` — delete the file from the server. */
 export function DeleteIcon({ size }: { size?: number } = {}) {
   return (

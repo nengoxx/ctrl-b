@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   DeleteIcon,
   DownIcon,
+  EditIcon,
   FrameIcon,
   PinIcon,
   ToBottomIcon,
@@ -11,6 +12,7 @@ import {
   UpIcon,
 } from "./icons";
 import { Switch } from "../Switch";
+import { editable } from "../../hooks/useMediaEdit";
 import type { LibraryItem, PinView } from "../../hooks/useMediaLibrary";
 import { ADVISORIES, advisoriesOf, focalState, metaText, tileUrl } from "../../lib/mediaLibrary";
 import { requestConfirm } from "../../store/confirm";
@@ -94,6 +96,8 @@ export function ItemDetail({
   onMoveToEdge,
   onToggleHidden,
   onFrame,
+  onEdit,
+  jobBusy,
   onDelete,
 }: {
   section: MediaSection;
@@ -117,6 +121,14 @@ export function ItemDetail({
   onMoveToEdge: (edge: "top" | "bottom") => void;
   onToggleHidden: () => void;
   onFrame: () => void;
+  /** Re-crop the STORED bytes ("W10") — a job, not a config write, so it is the machine's own `busy`
+   *  that gates it and the gallery's failure row that reports it. */
+  onEdit: () => void;
+  /** An image JOB is running (`useImageJob`'s latch), which is a different fact from `busy` above: that
+   *  one is a config write in flight, and the two gate different controls. Its own prop rather than a
+   *  widened `busy` because folding them would disable Delete and the position cluster during an
+   *  upload the owner started somewhere else in the same section. */
+  jobBusy: boolean;
   onDelete: () => void;
 }) {
   const url = tileUrl(item.row, section);
@@ -142,6 +154,23 @@ export function ItemDetail({
         <button type="button" className="mgal-back" onClick={onBack}>
           ‹ All images
         </button>
+        {/* EDIT IN PLACE ("W10") — the way back into the crop step for a picture that is already
+            stored. It mirrors the way OUT (`mgal-back`): the same floating scrim treatment at the
+            opposite corner, because both are about the STAGE rather than about the entry, which is
+            what the pill below is for. Absent — not disabled — where there is nothing to edit
+            (`editable`: a seat writes no bytes, a bundled entry has no file, an unusable row cannot be
+            decoded), the same GNOME rule the Delete verb follows. */}
+        {editable(section, item) && (
+          <button
+            type="button"
+            className="mgal-edit"
+            aria-label="Edit image"
+            disabled={!ready || jobBusy}
+            onClick={onEdit}
+          >
+            <EditIcon size={16} />
+          </button>
+        )}
         <div className="mgal-pill">
           {seat ? (
             pinnedHere ? (

@@ -57,6 +57,11 @@ export interface CropJob extends JobSpec {
   format: ImageFormat | null;
 }
 
+/** Where a job's bytes come from: a file the owner picked, or a LOADER for bytes that have to be
+ *  fetched first (the edit consumer's — the stored file, off the mount). The loader runs INSIDE the
+ *  latch, so a refused admission never starts a download. */
+export type FileSource = File | (() => Promise<File>);
+
 /** ONE ADMISSION, stated whole: where the bytes are going, how they are encoded, and what happens to
  *  them when they exist. Captured when the file is offered and never re-read (rule ②). */
 export interface JobSpec {
@@ -128,8 +133,12 @@ export interface ImageJob {
   /** The machine can accept a file at all (the settings snapshot the server's byte cap comes from has
    *  landed). A consumer ANDs its own capability onto this. */
   ready: boolean;
-  /** THE ONE ADMISSION PATH (rule ①). Ignored while a job is running, and while there is no file. */
-  offer: (file: File | null | undefined, spec: JobSpec) => void;
+  /** THE ONE ADMISSION PATH (rule ①). Ignored while a job is running, and while there is no source.
+   *
+   *  A LOADER is admitted the same way — the edit consumer's bytes come off the server — and the latch
+   *  is taken BEFORE it is called, so the two entrances share one latch and a refused admission starts
+   *  no download at all. */
+  offer: (source: FileSource | null | undefined, spec: JobSpec) => void;
   confirm: (rect: CropRect) => void;
   cancel: () => void;
   dismiss: () => void;
@@ -224,14 +233,35 @@ export function useImageJob(): ImageJob {
   }
 
   /** THE ONE ADMISSION PATH (rule ①) — every entrance arrives here, and the job is bound HERE, once. */
-  function offer(file: File | null | undefined, spec: JobSpec): void {
-    if (file == null) return;
+  function offer(source: FileSource | null | undefined, spec: JobSpec): void {
+    if (source == null) return;
     if (running.current) return; // the latch, taken synchronously
     running.current = true;
     setFailure(null);
     setPhase("guard");
     const sec = spec.section;
     void (async () => {
+      // A LOADED file is admitted exactly like a picked one, and that is what keeps rule ① true with
+      // two entrances: the edit's bytes come off the server, so its admission has an await in front of
+      // it. The latch is taken BEFORE the loader runs — otherwise two taps would start two downloads,
+      // and the Add row would look free through both of them — and the wait IS the guard phase
+      // ("Opening the picture…"), which is what it looks like to the owner either way.
+      //
+      // A rejection is the loader's own sentence: the machine cannot know what a source failed at, so
+      // the consumer throws copy the owner can act on and this passes it through.
+      let file: File;
+      try {
+        file = typeof source === "function" ? await source() : source;
+      } catch (error) {
+        fail(sec.id, {
+          phase: "guard",
+          message:
+            error instanceof Error && error.message !== ""
+              ? error.message
+              : "that picture could not be read.",
+        });
+        return;
+      }
       const limits = {
         ...UPLOAD_LIMITS,
         // The SERVER's cap, so the client refuses before it spends an upload on a 413 — and the
