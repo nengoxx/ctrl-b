@@ -6115,6 +6115,9 @@ body[data-perf="lite"] .kit .navmenu-pop {
   color: var(--text);
 }
 .kit .mgal .path {
+  /* A literal folder path, and it reads as one ("W10" audit): the card comments always SAID mono, but
+   * no rule ever set the face — the same stack every other literal-value surface here uses. */
+  font-family: ui-monospace, "JetBrains Mono", monospace;
   font-size: 10px;
   color: var(--text-3);
   overflow-wrap: anywhere;

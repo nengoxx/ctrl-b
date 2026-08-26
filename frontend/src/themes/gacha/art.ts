@@ -31,6 +31,12 @@
 //     await sharp(`${S}/${s}`).resize(w,h,{fit,withoutEnlargement:true})
 //       .webp(alpha?{quality:q,alphaQuality:90}:{quality:q}).toFile(`${O}/${o}`);'
 //
+// ⚠ The w/h above are TARGETS, not the shipped files' sizes: `withoutEnlargement: true` passes a
+// smaller source through at its own size, and it did — `lyra.webp` is 535×740 and `rook.webp` is
+// 640×740. The AUTHORITATIVE per-file numbers live on `roster.ts`'s bundled asset records ("W10",
+// where the centred focal mapping reads them), pinned against the real bytes by
+// `tests/themes/gachaArtDims.test.ts` — re-run that test after re-exporting any of these.
+//
 // ── AND THE CUTOUT, which is a different job (G4) ─────────────────────────────────────────────────────────
 // `lyra-cutout.webp` is not a resize: it is the reel FIGURE, and its glow is baked in at export time
 // because the §10.1 rider bans the prototype's runtime `filter: drop-shadow(0 10px 30px #0009)
