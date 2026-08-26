@@ -12,7 +12,81 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-26 — THE S6 OWNER-ROUND FIX WAVE: W1–W4 BUILT + review-CLOSED; supersedes everything below where it speaks)
+## Current state (2026-08-26, SECOND session — the owner re-poke → W7–W9 + the WHOLE-FEATURE COUNCIL; supersedes everything below where it speaks)
+
+- **The owner's re-poke found three gallery bugs with ONE root:** `toggleHidden` on a bundled row
+  LISTED it to carry `hidden` — a listed entry collates first (untick jumped the image to the top)
+  and survived re-tick as a bare `{bundled}` sole own-tier member (the whole deal collapsed to one
+  picture on every host). Owner rulings in prose (D66 amended): **untick switches an image off IN
+  PLACE — membership never moves a picture** (an order intent stating the order unchanged, sweep, in
+  `caps.reorder` sections; minimal write + the bare-entry guard elsewhere) · **one accent ring =
+  ACTIVE only** (the inset+halo stack deleted) · **24px tick** (~34px target). **W7 built**
+  (`65c715b`/`bfeb710`/`48ec972`), visually verified (390px screenshot rounds delivered) plus a
+  **claim-vs-paint LIVE PROOF**: the fleet's painted set tracked the gallery's ringed set through an
+  untick, and every §2.4 resolver PAIR was statically verified to share one ladder.
+- **R60 bought + committed** (`30ae379`, main-seat-verified against Picard upstream): order-as-
+  priority is the config-first MAINSTREAM (R59's "no precedent" was scoped to wallpaper pickers;
+  Picard ships our exact ordered-list-with-in-place-enabled storage); our order+membership
+  composition OVER IMAGES is novel; both order-over-images products (Shopify/Etsy) bought back a
+  phone "choose" verb; marking the live winner in the ranking list = ahead of the field (0/4).
+- **THE WHOLE-FEATURE COUNCIL RAN (owner ask: "audit the whole feature… maybe we don't have the
+  best approach")** — Emma blind lane (4 MED · open sweep "none" · backend/write core + W7 tier work
+  declared sound) + an adversarial design lens (F1–F7, SHIP WITH CHANGES; the MODEL itself endorsed:
+  a flat list would LOSE upload-replaces-defaults, the seams are in the right places). **W8 = the 8
+  accepted fixes** (7 commits `8a8567e`…`2fcd9e4`): missing-role refusal guard (was a `files: []`
+  config-wipe hole) · the app-wide media write LANE (out-of-order echo adoption) · drag admission
+  `&& !busy` · unusable rows out of DEALT active ids · gacha pools → `usableLadderRows` (blank-vs-
+  fallback drift) · family cards + key galleries resolve through `activeForKey` (+ key galleries
+  now RING the bound file — builder-found hole, main-seat accepted) · the modal's derived
+  mode sentence · the dead `seat` flag deleted. **Rejected + recorded:** the `promote`
+  discriminator (a key-scope untick would sweep the named role) · frontier fallback-id exposure.
+- **Owner rulings (live, prose):** ① **Restore defaults = "the defaults are the selection"** —
+  bundled entries to the TOP in registry order, in use; the owner's files stay, switched OFF in
+  place (`79fc184`, scope-corrected in the tail; supersedes the S6 drop-to-fallback mechanism) ·
+  ② **TYPED PINS adopted** ("make sure it's the least-debt option") · ③ the dealt-section ring
+  means **"in the deal"** — CLOSED as-is · ④ a STANDING DIRECTIVE minted: the least-future-debt
+  check on every design choice (memory `least-future-debt-check`).
+- **W9 = typed pins** (7 commits `7c712d4`…`898ad73`): a `slots` pin persists the config's own
+  **`{name}|{bundled}` identity union** (union-object over a prefixed string — the extend-not-
+  migrate directive decided it); backend `MediaPin` + the registry's `slots` upgraded to
+  `dict[str, MediaSlot(source=…)]`; the UNRELEASED fold step **types-or-drops** legacy bare-name
+  pins (the purity contract forced DROP for file-named ones, surfaced via `consumes`/
+  `legacy_keys`); seats resolve by IDENTITY everywhere (`RosterEntry.id`); **the whole name-
+  collision apparatus DELETED** (the ambiguity is unrepresentable now, not detected); the
+  `duplicate` badge scoped to roles that BIND BY NAME; QUALITY's eslint accounting re-measured
+  honestly (78; growth predates W9).
+- **CONFIRM ROUNDS closed:** Emma **"RESOLVED WITH NEW FINDINGS"** — all closed in the tail
+  (`898ad73`: scoped restore keeps its scope — BOTH lenses converged on it verbatim — + the
+  restore gate asks the SCOPE + the F5 husk) **except her MED lane-stall** (a hung settings PUT
+  holds the app-wide lane; pre-W8 it held one namespace's queue) — RULED RECORDED-NOT-FIXED →
+  **Phase 19's reliability packet** owns it via the kit-wide request-timeout gap `useSettings.ts`
+  already records twice (one idiom, one home). Design lens: **F1–F7 all CONFIRMED-RESOLVED, the
+  F6 overrule CONCEDED** (the minimal write lists the disk tier ahead of a touched bundled row —
+  no key-grid jump exists), "SHIP once NC1/NC2 land" — they landed.
+- **Gate green per commit; tip BE 1,996 · FE 2,584; e2e media specs re-run green.** **79 commits
+  UNPUSHED** (origin `fef36aa`). Prod untouched (v1.7.6 @ `6a2ccaa`). Dev units RUNNING — :5173
+  serves everything through the tail. Full records: MEDIA_MANAGER_PLAN §12 W7/W8/W9 blocks.
+
+## ▶▶ NEXT (2026-08-26, post-council — a clean session; supersedes the list below)
+
+1. **Owner eyeball on dev (:5173)** — the W7–W9 surfaces: untick dims IN PLACE (no jump, deal
+   re-forms correctly) · the single active ring + 24px tick · **Restore defaults on a section
+   holding their own uploads** (the NEW verb: defaults take over on top, uploads stay switched
+   off) · per-key galleries now ring the bound file · the modal's one-line mode sentences ·
+   **re-pin any seat**: a pre-W9 pin naming a FILE was dropped by the typed migration (one
+   "Use here" re-tap rebinds; bundled-named pins were typed automatically). Their dev config's
+   collapsed state from the original bug self-heals with one untick+re-tick of that image (or
+   Restore defaults).
+2. **The PUSH ruling** (owner's word) — **79 commits with the handoff commit carrying this block**, origin `fef36aa`.
+3. **S6 proper** — unchanged, THE one slice left (plan §16 probe list + the W6 note); then
+   **release** (1.7.x · runbook §Release Opus-operated · config_version 1→2 rides it, now incl.
+   typed pins · LOCAL e2e before the tag · rollback v1.7.6).
+4. **Recorded follow-ups (not owed now):** Emma's lane-stall → Phase 19 · `classifyNamed`/
+   `NamedBinding` freshly orphaned (test-only consumers) — lean-pass candidate, ruled kept at
+   session close · the design lens's declared-tier/mode shared-resolver idea (plan §12 W8) ·
+   QUALITY §warning-accounting refreshed, F13 still trigger-gated.
+
+## Prior state (2026-08-26, FIRST session — THE S6 OWNER-ROUND FIX WAVE: W1–W4 BUILT + review-CLOSED; superseded above where it speaks)
 
 - **The owner's round landed and drove the wave.** Their three findings — drag doesn't reorder ·
   gacha's first banner + oracle missing from the library · cosmos service banners missing — were
@@ -81,7 +155,7 @@
   Dev units RUNNING; the dev backend was restarted onto the W6 registry (FE rides Vite HMR); the
   owner's dev config/media untouched by the waves.
 
-## ▶▶ NEXT (2026-08-26, post-W6): the owner re-pokes → the push ruling → S6 proper (THE ONE SLICE LEFT) → release
+## ▶▶ PRIOR (2026-08-26, post-W6): the owner re-poke — ✅ RAN same day (the SECOND-session block above is the record; superseded)
 
 1. **Owner re-poke on dev (:5173)** — everything below is live there now:
    - **The W1–W4 wave**: drag lands where dropped (all-defaults sections, both directions) · gacha
