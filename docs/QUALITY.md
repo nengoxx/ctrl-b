@@ -43,7 +43,7 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | **FE e2e / a11y** | **Playwright** + `@axe-core/playwright` (D24) | broken user paths, a11y | ✅ (Phase 9 wires the suite) |
 | **BE lint + format** | **ruff** (`E,F,I,ASYNC,B` — `backend/pyproject.toml:87`; formatter) | style, imports, dead code, async footguns, bugbear | ✅ |
 | **BE type check** | **`pyright[nodejs]`** (pinned `==1.1.409`; `basic` → ratchet `strict`) | type errors across the FastAPI service | ✅ (1c) |
-| **BE tests** | **pytest** (1,996 collected 2026-08-26, temp-config safe — `conftest.py`: a module-level env guard that runs before any test module imports, plus the per-test autouse fixture; QH-10 + UPDATE_PLAN §3.7) | backend logic | ✅ |
+| **BE tests** | **pytest** (2,002 collected 2026-08-26, temp-config safe — `conftest.py`: a module-level env guard that runs before any test module imports, plus the per-test autouse fixture; QH-10 + UPDATE_PLAN §3.7) | backend logic | ✅ |
 | **CSS contracts** | **stylelint** (keyframe-prefix · anim budget · the two accent correctness rules) | theme CSS invariants | ✅ shipped 2026-07-10 (warn-first; `lint:css` in `check-all`) |
 | **Runner** | one **`tools/check.py`** (stdlib chokepoint) + `npm run check-all` (FE) | "is the repo green?" in one command | ✅ (1a) |
 | **Enforcement** | native **`core.hooksPath=.githooks/`** → `check.py` (fast pre-commit · full pre-push) | stops a bad commit/push at the source | ✅ (1d) |
@@ -178,25 +178,31 @@ Two **react-hooks v7** rules are set to **`warn` (not `error`, not `off`)** in `
 dodge** (an earlier read wrongly called them false positives; the React docs confirm they flag *real*
 Rules-of-React patterns).
 
-**The full warning accounting (re-measured 2026-08-26, mid-Phase-21):** the gate's `78 warnings / 0
-errors` spans **four** warn-level rules, not just the two above — `react-hooks/refs` **38** +
+**The full warning accounting (re-measured 2026-08-26, mid-Phase-21):** the gate's `72 warnings / 0
+errors` spans **four** warn-level rules, not just the two above — `react-hooks/refs` **32** +
 `set-state-in-effect` **16** (the deferred pair) + `react-refresh/only-export-components` **23** (preset
 default) + `react-hooks/exhaustive-deps` **1** (preset default). All four are part of the same F13
 checklist; `rules-of-hooks` and `static-components` stay `error`. **The backlog keeps growing** — 27 at
 the 2026-07-07 QH deep pass (`11`/`8`/`2`/`6`), 29 at the 2026-07-16 re-count (`12`/`8`/`2`/`7`), 43 at
-the 2026-08-17 re-count, 49 at the 2026-08-20 one (`22`/`14`/`12`/`1`), **78** now. The deferral is a
-*growing* debt, not a frozen one, and the growth is concentrated in the media manager's own surfaces:
-`GalleryModal.tsx` alone carries **14** `refs` (its focus-trap and drag latches), and the two modal
-surfaces `FramingSheet.tsx` (**7**) + `CropModal.tsx` (**4**) are most of the
-`only-export-components` rise — each exports its pure helpers beside its component, deliberately,
+the 2026-08-17 re-count, 49 at the 2026-08-20 one (`22`/`14`/`12`/`1`), 78 at the W9 one, **72** now.
+The deferral is a *growing* debt, not a frozen one, and the growth is concentrated in the media
+manager's own surfaces: `GalleryModal.tsx` alone carries **8** `refs` (its focus-trap and drag
+latches), and the two modal surfaces `FramingSheet.tsx` (**7**) + `CropModal.tsx` (**4**) are most of
+the `only-export-components` rise — each exports its pure helpers beside its component, deliberately,
 because those helpers are unit-tested on their own.
 
 > **Re-measurement note (2026-08-26, "W9"):** the 49 above had been stale since 2026-08-20 — the jump to
 > 78 accumulated across the Phase 21 waves and **predates W9**, which was verified to add none (78
 > before and after the change). Recorded so the delta is attributed rather than silently absorbed into
 > whichever wave happened to re-measure. **No warning was fixed** — F13 stays trigger-gated.
+>
+> **And down six at "W10" (same day), all in `GalleryModal.tsx`** (14 `refs` → 8): its BODY was
+> reordered — the picker input and the Add row moved below the grid — and the compiler stopped
+> flagging that subtree. **Incidental, not a fix**: no warning was addressed, no rule was touched, and
+> the wave's three new modules (`useImageJob`, `useMediaEdit`, `components/icons.tsx`) added none.
+> Recorded on the same principle as the note above — the delta is attributed, in both directions.
 
-Deferral status unchanged: all 78 stay in the F13 backlog. **This paragraph is the ONLY home for the
+Deferral status unchanged: all 72 stay in the F13 backlog. **This paragraph is the ONLY home for the
 count** (doc-truth ruling 2026-08-17) — other docs point here, no numbers.
 
 **Why deferred (assessed thoroughly 2026-07-02, all ~19 sites reviewed):**
