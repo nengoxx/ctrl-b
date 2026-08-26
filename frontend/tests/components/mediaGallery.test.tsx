@@ -1516,6 +1516,32 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     }
   });
 
+  it("a pin whose NAME resolves to an EARLIER namesake is REFUSED — presence is not resolution (W6 review #1)", async () => {
+    // The §2.3 stem/id collision, on the write path: a file `lyra.webp` (stem `lyra`) and the LISTED
+    // bundled id `lyra` are two library entries, but the pin persists a bare NAME and the seat's
+    // resolver takes the FIRST name-match in the dealt tier. Tapping "Use here" on the SECOND
+    // namesake used to write a pin that bound the first one — a different picture than the tap. The
+    // send-time check now resolves the name and refuses unless it lands on exactly the tapped row.
+    const collided = index({
+      roles: {
+        characters: [
+          file("lyra", "characters", { listed: true }),
+          ...cast.map((r) => (r.bundled === "lyra" ? { ...r, listed: true } : r)),
+        ],
+        banner: [],
+        reel: [],
+        oracle: [],
+      },
+    });
+    api.getJSON.mockResolvedValue(collided);
+    renderGallery(collided);
+    const dialog = await openSection("Fleet backdrop");
+    openItem(dialog, "lyra (default)"); // the BUNDLED namesake — the one the pin could NOT reach
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use here" }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.putJSON).not.toHaveBeenCalled();
+  });
+
   it("a DELETE whose config cleanup fails reads as a partial success, not as a failed delete", async () => {
     // The bytes are already gone. "Save failed" here sends the owner looking for a file the server no
     // longer has — and the dangling entry it leaves drops on its own at the next collation.

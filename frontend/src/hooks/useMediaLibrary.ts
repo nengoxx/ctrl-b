@@ -15,7 +15,7 @@ import {
   restoreDefaults,
   rowId,
   setFocal,
-  setHidden,
+  toggleHidden,
   type ActiveArt,
   type LibraryEntry,
   type RowId,
@@ -301,7 +301,15 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
             // No authoritative index ⇒ no write. Whether this pin can RESOLVE is a fact about the
             // library, and writing one that cannot is the claim §2.4 exists to prevent.
             if (rows === undefined) return null;
-            if (!ladderRows(rows).some((r) => rowId(r) === item.id)) return null;
+            // RESOLVE the name, don't just find the row (the W6 review's fix #1): the pin persists a
+            // bare NAME, and the seat resolves it as "first name-match in the dealt tier, usable". A
+            // presence check alone let "Use here" succeed while the pin resolved to an EARLIER
+            // namesake (the §2.3 stem/id collision) or to nothing (the row turned unusable) — a write
+            // that binds a different picture than the one tapped. Refused unless the name resolves
+            // back to exactly the tapped row.
+            const resolved = ladderRows(rows).find((r) => r.name === item.row.name);
+            if (resolved === undefined || rowId(resolved) !== item.id || resolved.unusable === true)
+              return null;
             return { slots: { [pin]: item.row.name } };
           },
         });
@@ -411,8 +419,12 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
         }),
       moveToEdge: (section: MediaSection, item: LibraryItem, edge: "top" | "bottom") =>
         enqueue(listJob(section.role, (e, r) => moveToEdge(e, r, item.id, edge))),
-      setHidden: (section: MediaSection, item: LibraryItem, hidden: boolean) =>
-        enqueue(listJob(section.role, (e, r) => setHidden(e, r, item.id, hidden))),
+      /** A TOGGLE, not an absolute write (the W6 review's fix #2): the target state is derived at
+       *  SEND from the authoritative rows, so rapid taps compose instead of repeating the state the
+       *  first tap rendered. Both In-use controls (the tile corner and the detail switch) enqueue
+       *  exactly this — one intent, one derivation. */
+      toggleHidden: (section: MediaSection, item: LibraryItem) =>
+        enqueue(listJob(section.role, (e, r) => toggleHidden(e, r, item.id))),
       /** DELETE-first, then ONE config write that also promotes whatever was next (§3/§6.4).
        *
        *  The order is the ruled one: the bytes go first, and a failure between the two steps leaves a

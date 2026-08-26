@@ -385,7 +385,24 @@ export function moveToEdge(
   return writeFiles(entries, rows, { order: reordered(order, from, to), touched: [], sweep: true });
 }
 
-/** The **In use** switch (§2.2's `hidden`). The order is untouched — but every disk row is still
+/** The **In-use TOGGLE** (§6.5; the W6 review's fix #2). The target state is derived HERE, from the
+ *  authoritative send-time rows — never from the boolean a control rendered. Two rapid taps are two
+ *  queued toggles that COMPOSE (on→off→on nets on), where two captured-state writes were the same
+ *  write twice and left the switch where the second tap did not mean it. A row gone by send time
+ *  toggles nothing and states no change — `moveBy`'s own refusal shape. */
+export function toggleHidden(
+  entries: readonly LibraryEntry[] | undefined,
+  rows: readonly LibraryRow[],
+  id: RowId,
+): LibraryEntry[] {
+  const row = rows.find((r) => rowId(r) === id);
+  if (row === undefined)
+    return writeFiles(entries, rows, { order: displayOrder(rows), touched: [] });
+  return setHidden(entries, rows, id, row.hidden !== true);
+}
+
+/** The **In use** write (§2.2's `hidden`), the absolute half `toggleHidden` derives its target for.
+ *  The order is untouched — but every disk row is still
  *  written, because listing ONE entry into an otherwise-empty `files` list would move it to the front
  *  of the collation and silently re-prioritise the role. */
 export function setHidden(

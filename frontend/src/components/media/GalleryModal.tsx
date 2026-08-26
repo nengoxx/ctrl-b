@@ -59,7 +59,7 @@ export function GalleryModal({
       item: LibraryItem,
       edge: "top" | "bottom",
     ) => void;
-    setHidden: (section: SectionView["section"], item: LibraryItem, hidden: boolean) => void;
+    toggleHidden: (section: SectionView["section"], item: LibraryItem) => void;
     remove: (section: SectionView["section"], item: LibraryItem) => Promise<void>;
     restoreDefaults: (section: SectionView["section"], ids: ReadonlySet<string>) => void;
   };
@@ -296,7 +296,7 @@ export function GalleryModal({
               onUnpin={() => write.unpin(section)}
               onMove={(delta) => void write.move(section, selected, delta)}
               onMoveToEdge={(edge) => write.moveToEdge(section, selected, edge)}
-              onHidden={(hidden) => write.setHidden(section, selected, hidden)}
+              onToggleHidden={() => write.toggleHidden(section, selected)}
               onFrame={() => onFrame(selected)}
               onDelete={() => {
                 void write.remove(section, selected);
@@ -313,9 +313,7 @@ export function GalleryModal({
               // `hidden` would be a second place for the tier rule to be got wrong. Absent where the
               // section has no In-use to give: a seat is a view.
               onToggleUse={
-                section.caps.hidden
-                  ? (item, hidden) => write.setHidden(section, item, hidden)
-                  : undefined
+                section.caps.hidden ? (item) => write.toggleHidden(section, item) : undefined
               }
               // The SAME fact that shows the ↑/↓ pair in the detail panel (§7: both affordances, one
               // condition) — plus `ready`, because a drag whose write the queue would refuse is a drag

@@ -92,7 +92,7 @@ export function ItemDetail({
   onUnpin,
   onMove,
   onMoveToEdge,
-  onHidden,
+  onToggleHidden,
   onFrame,
   onDelete,
 }: {
@@ -115,7 +115,7 @@ export function ItemDetail({
   onUnpin: () => void;
   onMove: (delta: number) => void;
   onMoveToEdge: (edge: "top" | "bottom") => void;
-  onHidden: (hidden: boolean) => void;
+  onToggleHidden: () => void;
   onFrame: () => void;
   onDelete: () => void;
 }) {
@@ -263,7 +263,7 @@ export function ItemDetail({
             <Switch
               on={!item.hidden}
               disabled={!ready}
-              onToggle={() => onHidden(!item.hidden)}
+              onToggle={onToggleHidden}
               label={`In use — ${name}`}
             />
           </label>

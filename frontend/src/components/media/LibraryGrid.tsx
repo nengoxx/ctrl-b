@@ -66,7 +66,7 @@ export function LibraryGrid({
   onSelect: (item: LibraryItem) => void;
   /** One tap on the corner — membership, through the same queued `setHidden` intent the detail panel's
    *  switch enqueues. Absent where the section has no In-use to give (a seat). */
-  onToggleUse?: (item: LibraryItem, hidden: boolean) => void;
+  onToggleUse?: (item: LibraryItem) => void;
   /** Commit a drag. The subject arrives as the ITEM that was picked up, not as an index to look up
    *  again — an index is only a name for a row while the order holds still (Emma's S5 review #1). The
    *  returned promise is what the HELD commit waits on: the tile stays where the owner dropped it until
@@ -167,7 +167,7 @@ export function LibraryGrid({
                   aria-pressed={!item.hidden}
                   aria-label={`In use — ${name}`}
                   disabled={!ready}
-                  onClick={() => onToggleUse(item, !item.hidden)}
+                  onClick={() => onToggleUse(item)}
                 >
                   <UseIcon on={!item.hidden} />
                 </button>

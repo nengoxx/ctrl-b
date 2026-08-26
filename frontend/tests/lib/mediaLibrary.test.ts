@@ -21,6 +21,7 @@ import {
   rowFocal,
   setFocal,
   setHidden,
+  toggleHidden,
   shown,
   tileUrl,
   usableLadderRows,
@@ -358,6 +359,27 @@ describe("the In-use switch (§2.2's `hidden`)", () => {
     expect(setHidden(undefined, withBundled, "b:pegasus", true)).toEqual([
       { name: "a.webp" },
       { bundled: "pegasus", hidden: true },
+    ]);
+  });
+
+  it("the TOGGLE derives its target at send — two queued toggles COMPOSE (the W6 review's #2)", () => {
+    // The failure this pins: both taps of a rapid double-tap read the same RENDERED state, so both
+    // wrote the same absolute value and on→off→on landed off. The toggle asks the send-time rows.
+    const first = toggleHidden(undefined, rows, "f:b.webp");
+    expect(first).toEqual([{ name: "a.webp" }, { name: "b.webp", hidden: true }]);
+    // The second toggle sees the FIRST one's outcome (the queue refetches between sends) and inverts
+    // it again — net: back on, exactly what two taps mean.
+    const rowsAfter = [disk("a.webp"), { ...disk("b.webp"), hidden: true }];
+    expect(toggleHidden(first, rowsAfter, "f:b.webp")).toEqual([
+      { name: "a.webp" },
+      { name: "b.webp" },
+    ]);
+  });
+
+  it("a toggle whose row is GONE by send time states no change — `moveBy`'s refusal shape", () => {
+    expect(toggleHidden(undefined, rows, "f:gone.webp")).toEqual([
+      { name: "a.webp" },
+      { name: "b.webp" },
     ]);
   });
 });
