@@ -151,9 +151,15 @@ export function GalleryModal({
   // A section can only "restore" what it SHIPS, and only while the owner has said something about it.
   // A SEAT is excluded by the same fact that makes it a view: its one write is the pin, and clearing
   // that pin is the restore it already offers.
+  //
+  // "What it ships" is asked of THIS SCOPE, not of the role (design-lens NC1). The role's registry list
+  // is the wrong question wherever a scope narrows it: the kit's `service-banners` role carries cosmos's
+  // twelve-banner rotation, so every per-service KEY gallery of it passed a role-level test while
+  // holding no bundled row of its own — offering a "Restore defaults" whose only reachable effect was
+  // to switch the owner's banner off and put nothing back. The rows on screen answer it exactly.
   const restorable =
     section.caps.hidden &&
-    section.def.bundled.length > 0 &&
+    rows.some((r) => r.bundled != null) &&
     scope.unassigned !== true &&
     defaultsRestorable(rows);
 

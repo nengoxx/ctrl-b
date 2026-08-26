@@ -612,7 +612,17 @@ export function defaultsRestorable(rows: readonly LibraryRow[]): boolean {
  *
  *  `within` scopes it to the ids the affordance was shown for — a KEY gallery restores its own layer,
  *  not the whole role — and the entries outside it keep their fields and their relative order. Absent =
- *  the whole section, which is what a pool's own gallery means. */
+ *  the whole section, which is what a pool's own gallery means.
+ *
+ *  **A SCOPED restore does not SWEEP** (both confirm lenses, independently, on the same prescription).
+ *  The sweep is what makes an order intent's stated order the whole SECTION's, and a scoped restore
+ *  states no such thing: it speaks for one key's layer. Sweeping anyway listed every OTHER key's
+ *  bundled row into the owner's own tier as a side effect — a tier change is what decides what a later
+ *  upload replaces, so restoring `cube` quietly re-tiered `platform-mid` and `platform-base`. Listing
+ *  the covered defaults is `touched`'s job instead, which is exactly what it is for: the ids this write
+ *  explicitly acted on. Out-of-scope bundled rows that were ALREADY listed survive untouched — they
+ *  are held entries, and `writeFiles` only skips the ones with nothing persisted. The unscoped restore
+ *  still sweeps, because there the stated order genuinely is the whole section's. */
 export function restoreDefaults(
   entries: readonly LibraryEntry[] | undefined,
   rows: readonly LibraryRow[],
@@ -628,8 +638,8 @@ export function restoreDefaults(
   const lifted = new Set(first);
   return writeFiles(entries, rows, {
     order: [...first, ...order.filter((id) => !lifted.has(id))],
-    touched: [],
-    sweep: true,
+    touched: first,
+    sweep: within === undefined,
     bulk: (id) =>
       !covers(id) ? undefined : isBundledId(id) ? { hidden: undefined } : { hidden: true },
   });

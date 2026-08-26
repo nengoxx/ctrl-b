@@ -314,85 +314,55 @@ describe("resolveNamed — stem binds to key (the `named` kind)", () => {
 // renders are built ONCE from `{key,label}` pairs rather than per source. Everything the M3 service-only
 // model had to get right is the same here, and none of it mentions a service:
 //
-//  · one row per KEY, in source order, carrying the file that answers it;
+//  · one row per KEY, in source order;
 //  · consumer/consumer collisions — no winner exists (consumers are not in the media index), so BOTH
-//    share the winning file and the row lists both;
-//  · file/file collisions and unmatched files come from the SHARED classifier, so a derived-key role and
-//    a static-key one diagnose a drop identically;
+//    labels land on ONE row and share whatever answers it;
 //  · a key no file could ever be named is flagged rather than left to be discovered.
+//
+// WHICH FILE answers a key is deliberately NOT one of them (the W8 council's F5, and the W9 tail's
+// deletion of the husk it left): that is the role's own §2.4 ladder, asked through the section, and
+// `deriveKeyBindings` stopped answering it — it took a `files` list and returned a `binding` beside the
+// rows, and the family card fed it `[]` from the moment F5 landed. The file-side rules themselves are
+// unchanged and keep their own coverage: `classifyNamed`'s describe block above, and `resolveNamed`'s.
 
-const mf = (name: string, unusable?: boolean) => ({ name, ...(unusable === true && { unusable }) });
 const consumer = (key: string, label: string) => ({ key, label });
 
 describe("deriveKeyBindings — the source-agnostic key rows", () => {
-  it("one row per key, in source order, each carrying the file that answers it", () => {
-    const jelly = mf("jellyfin");
-    const out = deriveKeyBindings(
-      [consumer("jellyfin", "Media"), consumer("grafana", "Grafana")],
-      [jelly],
-    );
-    expect(out.rows.map((r) => r.key)).toEqual(["jellyfin", "grafana"]);
-    expect(out.rows[0].file).toBe(jelly);
-    expect(out.rows[1].file).toBeUndefined();
-    expect(out.binding.keyOf.get(jelly)).toBe("jellyfin");
+  it("one row per key, in source order", () => {
+    const rows = deriveKeyBindings([consumer("jellyfin", "Media"), consumer("grafana", "Grafana")]);
+    expect(rows.map((r) => r.key)).toEqual(["jellyfin", "grafana"]);
   });
 
-  it("consumer/consumer collision: BOTH labels on ONE row, sharing the winning file", () => {
+  it("consumer/consumer collision: BOTH labels on ONE row", () => {
     // Two hosts each running a `jellyfin` service collapse to one key — and so would two machines named
-    // the same way. There is no index order over CONSUMERS to break the tie with, so there is no tie.
-    const jelly = mf("jellyfin");
-    const out = deriveKeyBindings(
-      [consumer("jellyfin", "media-a"), consumer("jellyfin", "media-b")],
-      [jelly],
-    );
-    expect(out.rows).toHaveLength(1);
-    expect(out.rows[0].consumers).toEqual(["media-a", "media-b"]);
-    expect(out.rows[0].file).toBe(jelly);
+    // the same way. There is no index order over CONSUMERS to break the tie with, so there is no tie:
+    // they share the one row, and therefore the one picture.
+    const rows = deriveKeyBindings([
+      consumer("jellyfin", "media-a"),
+      consumer("jellyfin", "media-b"),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].consumers).toEqual(["media-a", "media-b"]);
   });
 
-  it("file/file collision: the FIRST in the server's index order wins, and the loser is SHADOWED", () => {
-    const png = mf("jellyfin");
-    const webp = mf("Jellyfin");
-    const keys = [consumer("jellyfin", "media")];
-
-    const first = deriveKeyBindings(keys, [png, webp]);
-    expect(first.rows[0].file).toBe(png);
-    expect(first.binding.shadowed.has(webp)).toBe(true);
-    expect(first.binding.unmatched.size).toBe(0);
-
-    // …and in the other order the other file wins — the tie-break IS the listing the owner can reorder.
-    const second = deriveKeyBindings(keys, [webp, png]);
-    expect(second.rows[0].file).toBe(webp);
-    expect(second.binding.shadowed.has(png)).toBe(true);
+  it("flags a key that can never be a filename", () => {
+    const rows = deriveKeyBindings([
+      consumer(keyFor({ name: "media/plex" }), "media/plex"),
+      consumer("plex", "plex"),
+    ]);
+    expect(rows[0].representable).toBe(false);
+    expect(rows[1].representable).toBe(true);
   });
 
-  it("a file no key wants is UNMATCHED — the state a renamed machine's old picture lands in (A7)", () => {
-    const stray = mf("corsair");
-    const out = deriveKeyBindings([consumer("corsair-2", "corsair-2")], [stray]);
-    expect(out.binding.unmatched.has(stray)).toBe(true);
-    expect(out.binding.shadowed.size).toBe(0);
-    expect(out.rows[0].file).toBeUndefined();
+  it("no consumers is an empty list, never a throw", () => {
+    expect(deriveKeyBindings([])).toEqual([]);
   });
 
-  it("an UNUSABLE file is neither: the server's verdict is the reason, and it already carries it", () => {
-    const broken = mf("plex", true);
-    const out = deriveKeyBindings([consumer("plex", "plex")], [broken]);
-    expect(out.rows[0].file).toBeUndefined();
-    expect(out.binding.shadowed.size + out.binding.unmatched.size).toBe(0);
-  });
-
-  it("flags a key that can never be a filename, and offers it no file", () => {
-    const out = deriveKeyBindings(
-      [consumer(keyFor({ name: "media/plex" }), "media/plex"), consumer("plex", "plex")],
-      [mf("plex")],
-    );
-    expect(out.rows[0].representable).toBe(false);
-    expect(out.rows[0].file).toBeUndefined();
-    expect(out.rows[1].representable).toBe(true);
-  });
-
-  it("no consumers and no files are both empty, never a throw", () => {
-    expect(deriveKeyBindings([], [mf("plex")]).binding.unmatched.size).toBe(1);
-    expect(deriveKeyBindings([consumer("plex", "plex")], []).rows[0].file).toBeUndefined();
+  it("says NOTHING about which file answers — that is the role's own ladder (F5)", () => {
+    // The husk this tail deleted, pinned as an absence: a row carries the consumers' side and only
+    // that. It used to carry a `file` the caller then overwrote with the ladder's answer, and a
+    // `binding` computed over the empty list the caller passed.
+    const rows = deriveKeyBindings([consumer("plex", "plex")]);
+    expect(Object.keys(rows[0]).sort()).toEqual(["consumers", "key", "representable"]);
   });
 });

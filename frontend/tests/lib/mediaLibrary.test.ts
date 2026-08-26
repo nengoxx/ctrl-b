@@ -614,6 +614,51 @@ describe("restore defaults (the S6 affordance, on the owner ruling of 2026-08-26
     ]);
   });
 
+  it("a SCOPED restore does not SWEEP — the other layers keep their TIER, not just their order", () => {
+    // Both confirm lenses landed on this independently. The sweep is what makes a stated order the
+    // whole SECTION's, and a scoped restore speaks for one key's layer — so sweeping listed every
+    // OTHER key's bundled row into the owner's own tier as a side effect. Tier membership is what
+    // decides what a later upload replaces, so restoring `cube` quietly re-tiered the two platform
+    // layers: a subsequent drop into `stack/` would have found them already in the owner's tier and
+    // composited over them instead of replacing the fallback.
+    //
+    // Here the two out-of-scope defaults are UNLISTED (the ordinary state of a role nobody has
+    // arranged), which is exactly the case the all-listed arm above cannot see.
+    const rows = [
+      disk("cube.webp", { listed: true }),
+      bundled("cube", { listed: true, hidden: true }),
+      bundled("platform-mid"),
+      bundled("platform-base"),
+    ];
+    const held: LibraryEntry[] = [{ name: "cube.webp" }, { bundled: "cube", hidden: true }];
+    expect(
+      restoreDefaults(
+        held,
+        rows,
+        ["b:cube", "b:platform-mid", "b:platform-base"],
+        new Set(["b:cube", "f:cube.webp"]),
+      ),
+    ).toEqual([
+      // The covered default is LISTED — `touched` is what does that now, and it is precisely what
+      // `touched` is for: the ids this write explicitly acted on.
+      { bundled: "cube" },
+      { name: "cube.webp", hidden: true },
+      // …and nothing else. `platform-mid`/`platform-base` stay in the fallback tier, at their registry
+      // positions, untouched by a restore that was never about them.
+    ]);
+  });
+
+  it("…while the UNSCOPED restore still sweeps — there the order IS the whole section's", () => {
+    // The other half of the same rule, so the fix cannot silently disarm the pool restore: with no
+    // scope, every bundled row is the write's business and the stated order speaks for all of them.
+    const rows = [disk("mine.webp", { listed: true }), bundled("pegasus"), bundled("atlas")];
+    expect(restoreDefaults([{ name: "mine.webp" }], rows, SHIPPED)).toEqual([
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      { name: "mine.webp", hidden: true },
+    ]);
+  });
+
   it("…and what it writes SURVIVES the round trip: re-ticking an own file moves nothing", () => {
     // The state the restore leaves behind is an ordinary swept section, so the W7 rule applies to it
     // unchanged: membership never moves a picture. Re-ticking `mine` puts it back in use where it

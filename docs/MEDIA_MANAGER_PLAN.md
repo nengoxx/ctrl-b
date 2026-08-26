@@ -1303,6 +1303,45 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > ladder, where a shadowed file genuinely paints nowhere. Pinned as an ABSENCE (a pool's stem clash
 > shows no note and both entries stay ordinary, switchable, arrangeable members), stash-verified.
 >
+> **W9 CONFIRM ROUNDS — both lenses closed, and the tail they converged on.** Emma's lane returned
+> **"RESOLVED WITH NEW FINDINGS"** (four, two chained); the design lens returned **F1–F7 all
+> CONFIRMED-RESOLVED**, conceded F6, and said **"SHIP once NC1/NC2 land"**. The two arrived
+> *independently at the same prescription* for the scoped restore, which is the tail's first fix:
+>
+> · **A SCOPED restore must not SWEEP** (`restoreDefaults` → `touched: first, sweep: within ===
+>   undefined`). The sweep is what makes a stated order the whole SECTION's, and a scoped restore
+>   speaks for one key's layer — so sweeping listed every OTHER key's bundled row into the owner's own
+>   tier as a side effect. That is not cosmetic: tier membership decides what a later upload replaces,
+>   so restoring frontier's `cube` re-tiered `platform-mid`/`platform-base` and a subsequent drop into
+>   `stack/` would have composited over them instead of replacing the fallback. Listing the covered
+>   defaults is `touched`'s own job — the ids the write explicitly acted on — and out-of-scope rows
+>   that were ALREADY listed survive as held entries. The unscoped restore still sweeps, because there
+>   the stated order genuinely is the whole section's; both arms are pinned.
+> · **NC1 — the restore affordance gates on the SCOPE's defaults, not the ROLE's**
+>   (`rows.some((r) => r.bundled != null)`). The kit's `service-banners` role carries cosmos's
+>   twelve-banner ROTATION, so every per-service KEY gallery passed a role-level `def.bundled.length >
+>   0` while holding no bundled row of its own — offering a "Restore defaults" whose only reachable
+>   effect was to switch the owner's banner off and put nothing back. The rows on screen answer it
+>   exactly. Pinned both ways (the key scope has none, the rotation scope still does).
+> · **F5 minor — the dead shape deleted.** `deriveKeyBindings` returned a generic file classification
+>   (`binding`) beside its key rows and filled each row's `file` from it; F5 moved the family card onto
+>   the role's own §2.4 ladder, and the sole caller has passed `[]` ever since. Computed over nothing,
+>   read by nobody, and still shaped like load-bearing code. The field, the `files` parameter that only
+>   fed it and the never-set `file` field are gone. **`classifyNamed`/`NamedBinding` are NOT** — that is
+>   the answer's implementation rather than the husk, it keeps its own describe block, and every
+>   file-side assertion the derive tests carried is already covered there verbatim. *(Residual for the
+>   main seat: with `binding` gone, `classifyNamed` has no production caller left — a separate ruling,
+>   not this tail's to make.)*
+>
+> **Emma's MED lane-stall finding is RULED RECORDED-NOT-FIXED.** A hung settings PUT now holds the
+> app-wide media lane, where pre-W8 it held one namespace's queue — a real widening. The fix is not a
+> timeout at this call site: `useSettings.ts` already records the standing gap in two places ("the kit
+> grows a global request timeout"), and a per-call timer here would be the second idiom for a question
+> that must have one home. **Owned by Phase 19's reliability packet.** Her other three findings are
+> closed by this tail. The design lens's **F6 overrule is CONCEDED** on the stronger mechanism
+> argument: the minimal write lists the disk tier ahead of a touched bundled row, so the key-grid jump
+> it feared cannot occur.
+>
 > **W9 RIDER — the ESLint accounting is honest again** (QUALITY.md, the count's only home): `49` had
 > been stale since 2026-08-20; the real figure is **78** (`refs` 38 · `only-export-components` 23 ·
 > `set-state-in-effect` 16 · `exhaustive-deps` 1), and the growth is Phase 21's own surfaces — 14 of

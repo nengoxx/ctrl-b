@@ -6,7 +6,6 @@ import {
   type GalleryScope,
   type SectionView,
 } from "../../hooks/useMediaLibrary";
-import type { MediaFile } from "../../hooks/useMedia";
 import { deriveKeyBindings } from "../../lib/media";
 import { rowId, tileUrl } from "../../lib/mediaLibrary";
 import { useMediaKeySource } from "../../theme-engine/mediaKeySources";
@@ -186,11 +185,12 @@ function FamilyCard({
   // council's F5): this card used to re-derive it with the generic classifier over the visible rows,
   // which is the same question with a second implementation — and the two disagree the moment a
   // bundled id matches a service key, because the ladder excludes the bundled tier and the classifier
-  // does not. One question, one answer, and it is the answer the surface paints with.
+  // does not. One question, one answer, and it is the answer the surface paints with. (The classifier
+  // half of `deriveKeyBindings` is GONE with this tail, rather than left being fed an empty file list
+  // from here — a computation over nothing that still read as load-bearing.)
   const byId = new Map(view.rows.map((r) => [rowId(r), r]));
-  const derived =
-    source?.consumers === undefined ? null : deriveKeyBindings<MediaFile>(source.consumers, []);
-  const rows = derived?.rows.map((row) => {
+  const derived = source?.consumers === undefined ? null : deriveKeyBindings(source.consumers);
+  const rows = derived?.map((row) => {
     const id = view.activeForKey?.(row.key).ids[0];
     return { ...row, file: id === undefined ? undefined : byId.get(id) };
   });

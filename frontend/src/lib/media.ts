@@ -295,9 +295,8 @@ function wantedKeys(keys: readonly string[]): Map<string, string> {
  *  The gallery has to be able to say why a drop did nothing, and "it bound" is only one of four
  *  answers — the other three are what the owner actually needs when the icon or the layer does not
  *  appear. GENERIC rather than service-specific (Codex M3 MED-1): both `named` key sources have
- *  collisions and typos, so the static-key roles (the frontier stack) and the data-derived one (kit's
- *  services) classify through this one function instead of one of them shipping the diagnostics and the
- *  other only its winners. */
+ *  collisions and typos, so a static-key role and a data-derived one classify through this one function
+ *  instead of one of them shipping the diagnostics and the other only its winners. */
 export interface NamedBinding<T> {
   /** key -> the file that took it (`resolveNamed`). */
   byKey: Map<string, T>;
@@ -318,37 +317,39 @@ export interface KeyedConsumer {
   label: string;
 }
 
-/** One derived KEY row: what the owner would name a file, who uses it, and what currently answers. */
-export interface DerivedKeyRow<T> {
+/** One derived KEY row: what the owner would name a file, and who uses it.
+ *
+ *  WHICH FILE answers the key is deliberately NOT here (the W8 council's F5): that is the role's own
+ *  §2.4 ladder, and the family card asks the section for it. This shape is the CONSUMERS' side alone —
+ *  the question only the key source can answer. */
+export interface DerivedKeyRow {
   /** The normalized key — what the file's stem has to match. */
   key: string;
   /** Every consumer collapsing to this key, in source order. More than one is a consumer/consumer
    *  collision: consumers are not in the media index, so there is no winner to pick — they SHARE the
    *  file (§5), and the gallery says so. */
   consumers: string[];
-  /** The file that took it, if any. */
-  file?: T;
   /** False when no file could ever be named this (a path separator in the key, or an empty one). */
   representable: boolean;
 }
 
-export interface DerivedKeyBinding<T> {
-  rows: DerivedKeyRow<T>[];
-  /** The files' side of the same answer — bound / shadowed / unmatched, from the SHARED classifier, so
-   *  a derived-key role and a static-key one diagnose a drop identically (Codex M3 MED-1). */
-  binding: NamedBinding<T>;
-}
-
-/** Everything the gallery says about a DATA-derived `named` role: the KEY rows (which the static-key
- *  roles get from the registry instead) plus the generic file classification.
+/** The KEY ROWS of a DATA-derived `named` role — which the static-key roles get from the registry
+ *  instead. It collapses two consumers of one identity onto one row, and says which keys a file could
+ *  even be named after.
  *
  *  SOURCE-AGNOSTIC by construction (Codex A1): it takes `{key,label}` pairs, so services and machines —
- *  and whatever the next dynamic source is — share one view model rather than growing a branch each. */
-export function deriveKeyBindings<T extends MediaNamed>(
-  consumers: readonly KeyedConsumer[],
-  files: readonly T[],
-): DerivedKeyBinding<T> {
-  const byKey = new Map<string, DerivedKeyRow<T>>();
+ *  and whatever the next dynamic source is — share one view model rather than growing a branch each.
+ *
+ *  It used to ALSO return a generic file classification (`binding`, from `classifyNamed`) and to fill
+ *  each row's `file` from it, and the family card rendered off both. **F5 replaced that with the role's
+ *  own §2.4 ladder** on the ground that it was the same question with a second implementation — and the
+ *  two disagreed the moment a bundled id matched a service key, because the ladder excludes the bundled
+ *  tier and the classifier does not. The sole caller has passed an empty file list ever since, so the
+ *  classification was computed over nothing and read by nobody: a husk that still looked load-bearing.
+ *  Both it and the `files` parameter that only fed it are gone. `classifyNamed` below is untouched —
+ *  it is the answer's implementation, not the husk. */
+export function deriveKeyBindings(consumers: readonly KeyedConsumer[]): DerivedKeyRow[] {
+  const byKey = new Map<string, DerivedKeyRow>();
   for (const consumer of consumers) {
     const row = byKey.get(consumer.key);
     if (row) row.consumers.push(consumer.label);
@@ -359,14 +360,7 @@ export function deriveKeyBindings<T extends MediaNamed>(
         representable: isStemRepresentable(consumer.key),
       });
   }
-  const binding = classifyNamed(files, [...byKey.keys()]);
-  for (const [key, file] of binding.byKey) {
-    // The row is present by construction (the keys came from it) — the classifier returns only keys it
-    // was given. Both directions are recorded because the gallery asks the question both ways.
-    const row = byKey.get(key);
-    if (row) row.file = file;
-  }
-  return { rows: [...byKey.values()], binding };
+  return [...byKey.values()];
 }
 
 export function classifyNamed<T extends MediaNamed>(

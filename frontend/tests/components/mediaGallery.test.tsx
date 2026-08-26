@@ -503,6 +503,56 @@ describe("the H5 role-family card (kit's derived keys)", () => {
     expect(row.textContent).toContain("no banner");
   });
 
+  it("a per-service KEY gallery of the rotation role offers NO restore — the rotation's own does", async () => {
+    // The design lens's NC1. "What does this section ship" was asked of the ROLE's registry list, and
+    // the kit's `service-banners` role carries cosmos's twelve-banner ROTATION — a dealt set that
+    // belongs to the services nobody dropped a file for, not to any one key. So every per-service key
+    // gallery passed a role-level test while holding no bundled row of its own, and offered a "Restore
+    // defaults" whose only reachable effect was to switch the owner's banner off and put nothing back.
+    // The question is about the rows ON SCREEN, and now it is asked of them.
+    api.getJSON.mockImplementation((url: string) => {
+      if (url === "/api/services") return Promise.resolve([{ name: "Media", kind: "jellyfin" }]);
+      if (url === "/api/hosts") return Promise.resolve([]);
+      return Promise.resolve({
+        ns: "kit",
+        collation: "library-v1",
+        roles: {
+          services: [],
+          "service-banners": [
+            { ...svcFile("jellyfin"), url: "/api/media/kit/files/service-banners/jellyfin.png" },
+            bundledRow("banner-01", { hidden: true }),
+          ],
+          hosts: [],
+          background: [],
+          brand: [],
+        },
+        slots: {},
+      });
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="kit" def={MEDIA_NS.kit} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open the jellyfin banner gallery" }),
+    );
+    let dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByRole("button", { name: "Restore defaults" })).toBeNull();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // …and the ROTATION's own gallery — whose rows ARE the shipped set — still offers it. (`hidden`
+    // on the one bundled row is what gives it something to restore; a set still exactly as it came
+    // carries no control either way, which `defaultsRestorable` has always decided.)
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open the Built-in rotation gallery" }),
+    );
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Restore defaults" })).toBeTruthy();
+  });
+
   it("the UNASSIGNED bucket appears only when files bound nothing — and is their only way out", async () => {
     // A rename's aftermath. Per-key galleries would make the orphan invisible and undeletable, which
     // is the one state a manager must not be able to produce.
