@@ -16,7 +16,8 @@
 // TIER. A write therefore has to express an order over rows that are not all listed, and what it may
 // list is decided by the INTENT, not by the tier (§2.3 ③ as AMENDED by the owner 2026-08-25):
 //
-//   · an ORDER intent — `moveBy` and `moveToEdge`, and therefore the drag — SWEEPS THE WHOLE SECTION
+//   · an ORDER intent — `moveBy` and `moveToEdge`, therefore the drag, and since the 2026-08-26 ruling
+//     `restoreDefaults` (which states "the defaults are the selection" as a position) — SWEEPS THE WHOLE SECTION
 //     into `files` in the resulting display order, unlisted disk rows and unlisted bundled rows alike.
 //     The section's order becomes explicit, which is the only shape that can say it: a partial
 //     listing cannot express a mid-list position at all (a downward drag inside an all-bundled section
@@ -119,6 +120,13 @@ export type RowId = string;
 
 export function rowId(row: LibraryRow): RowId {
   return row.bundled != null ? `b:${row.bundled}` : `f:${row.file}`;
+}
+
+/** The same identity for a BUNDLED id the registry names — the one caller is the restore, which has to
+ *  state the shipped order and only the registry knows it. Here because the `b:` spelling lives in this
+ *  module and nowhere else. */
+export function bundledRowId(id: string): RowId {
+  return `b:${id}`;
 }
 
 /** The same identity for a CONFIG entry — `null` for a malformed one (neither field, or both), which
@@ -294,13 +302,15 @@ interface WriteSpec {
   bare?: RowId;
   /** Per-entry field edits, for a write about ONE item (the In-use switch writes `hidden` here). */
   edit?: { id: RowId; fields: LibraryEntry };
-  /** Which entries this write drops from the list entirely — a delete's config half (one id), or a
-   *  restore's whole bundled listing. A PREDICATE rather than an id because the two callers differ
-   *  only in how many entries they mean. */
+  /** Which entries this write drops from the list entirely — a delete's config half. A PREDICATE
+   *  rather than an id so a write that means several entries needs no second field. */
   drop?: (id: RowId) => boolean;
-  /** Fields to unset on every entry the predicate covers — the shape a write about the SECTION needs,
-   *  where `edit` is the shape a write about one item needs. */
-  clear?: { fields: readonly string[]; on: (id: RowId) => boolean };
+  /** Field edits over MANY entries — the shape a write about the SECTION needs, where `edit` is the
+   *  shape a write about ONE item needs. It answers per id with the fields to merge, or `undefined`
+   *  for "this entry is not this write's business"; a field set to `undefined` is UNSET (`prune`),
+   *  which is how the restore both switches its own files off and clears `hidden` off the defaults in
+   *  one pass. */
+  bulk?: (id: RowId) => LibraryEntry | undefined;
 }
 
 /** The next `files` list for a role, under the tier-preserving rule.
@@ -340,11 +350,9 @@ function writeFiles(
     if (spec.sweep !== true && isBundledId(id) && held === undefined && !touched.has(id)) continue;
     const base: LibraryEntry =
       held ?? (isBundledId(id) ? { bundled: id.slice(2) } : { name: id.slice(2) });
-    const cleared =
-      spec.clear !== undefined && spec.clear.on(id)
-        ? prune({ ...base, ...Object.fromEntries(spec.clear.fields.map((f) => [f, undefined])) })
-        : base;
-    const entry = spec.edit?.id === id ? prune({ ...cleared, ...spec.edit.fields }) : cleared;
+    const fields = spec.bulk?.(id);
+    const bulked = fields === undefined ? base : prune({ ...base, ...fields });
+    const entry = spec.edit?.id === id ? prune({ ...bulked, ...spec.edit.fields }) : bulked;
     // THE BARE-ENTRY GUARD. `{bundled: id}` says exactly one thing — "this default is in the owner's
     // own tier" — and that is a claim only an ORDER write is entitled to make. Left behind by an
     // un-hide in a role whose other defaults are still unlisted, it made the un-hidden entry the sole
@@ -519,41 +527,70 @@ export function removeItem(
 
 // ── restore defaults (the S6 owner ruling) ───────────────────────────────────────────────────────
 
-/** Whether this section has anything to restore — i.e. whether the owner has said ANYTHING about its
- *  shipped art. Two states qualify, and they are the two ways `files` can differ from silence:
+/** Whether this section has anything to restore — i.e. whether what it shows differs from what it
+ *  shipped. Three states qualify under the 2026-08-26 ruling (see `restoreDefaults`), and they are the
+ *  three ways the section can be showing something other than its defaults:
  *
  *   · a bundled entry is LISTED (an order write swept the section, §2.3 ③ as amended) — the defaults
  *     are in the owner's own tier at the order they gave them;
- *   · any entry is HIDDEN — switched out of the deal.
+ *   · any entry is HIDDEN — switched out of the deal;
+ *   · the library holds a file of the OWNER's own — the restore would switch it off (and if it is
+ *     already off, the arm above has it), so there is a difference to put back.
  *
- *  Decidable from the INDEX alone, like every other question the gallery asks (§2.3 ④), which is what
- *  keeps the affordance from appearing on a section that is already exactly as it shipped. */
+ *  Decidable from the INDEX alone, like every other question the gallery asks (§2.3 ④). It is a
+ *  DIFFERENCE test, not an equality one: comparing the exact order would make the affordance vanish on
+ *  a section restored a moment ago and re-arranged into the same order, and a spurious control that
+ *  writes what is already there costs nothing. */
 export function defaultsRestorable(rows: readonly LibraryRow[]): boolean {
-  return rows.some((r) => (r.bundled != null && r.listed === true) || r.hidden === true);
+  // A file of the owner's own qualifies whichever way it stands, which is why the third arm needs no
+  // visibility test: in use, the restore switches it off; already off, it is the `hidden` arm.
+  return rows.some((r) => r.bundled == null || r.listed === true || r.hidden === true);
 }
 
-/** Put a section's shipped art back the way it came: every `bundled:` entry leaves `files` — dropping
- *  the defaults back into the fallback tier, in the registry's own order — and `hidden` is stripped
- *  from whatever remains, so nothing is left switched off.
+/** **Restore defaults** — put the section back on its shipped art, in the owner's own words (ruling of
+ *  2026-08-26): *"put them first and activate them and you deactivate the other ones — as if the
+ *  defaults are the one selected, and I just uploaded the other images that are there."*
  *
- *  The owner's OWN files survive it whole: their entries, their relative order, their `focal`, their
- *  `key`. That is the line the action draws, and it is the only one it could honestly draw — deleting
- *  uploads is what Delete is for, and a "restore" that removed pictures would be a different word.
+ *  So it is an ORDER INTENT, and the order it states is the whole point: the section's own bundled
+ *  entries go to the TOP in the REGISTRY's shipped order, listed and in use — which under the one
+ *  priority system (order, "W6") is what "these are the selection" means in every mode at once: a
+ *  first-wins section paints the first default, a dealt one deals the default set, an `all` one shows
+ *  the default slides. The owner's own files keep their relative order BELOW them and are switched
+ *  OFF — they stay in the library exactly as if they had just been uploaded into a section already
+ *  showing its defaults, with their framing, their `key` and everything else untouched. Nothing is
+ *  deleted; deleting uploads is what Delete is for.
+ *
+ *  It used to DROP the bundled entries out of `files` instead, letting the fallback tier answer — which
+ *  put the defaults back in the registry's order only for as long as the owner had no files of their
+ *  own, because the owner's tier outranks the fallback one whole. That mechanism could not express the
+ *  ruling at all: with one upload present the restore left the upload painting.
+ *
+ *  `shipped` is the registry's own id order (`MediaRoleDef.bundled`), handed down by the caller for the
+ *  reason `toggleHidden`'s `ordered` flag is: this module holds only what is true of every namespace,
+ *  and which ids a role ships — and in what order — is registry knowledge.
  *
  *  `within` scopes it to the ids the affordance was shown for — a KEY gallery restores its own layer,
- *  not the whole role — and the entries outside it are written back untouched. Absent = the whole
- *  section, which is what a pool's own gallery means. */
+ *  not the whole role — and the entries outside it keep their fields and their relative order. Absent =
+ *  the whole section, which is what a pool's own gallery means. */
 export function restoreDefaults(
   entries: readonly LibraryEntry[] | undefined,
   rows: readonly LibraryRow[],
+  shipped: readonly RowId[],
   within?: ReadonlySet<RowId>,
 ): LibraryEntry[] {
   const covers = (id: RowId) => within === undefined || within.has(id);
+  const order = displayOrder(rows);
+  const present = new Set(order);
+  // The defaults this restore is about, in the REGISTRY's order — an id the library no longer holds
+  // simply falls out, exactly as it does in every other transform here.
+  const first = shipped.filter((id) => present.has(id) && covers(id));
+  const lifted = new Set(first);
   return writeFiles(entries, rows, {
-    order: displayOrder(rows),
+    order: [...first, ...order.filter((id) => !lifted.has(id))],
     touched: [],
-    drop: (id) => covers(id) && isBundledId(id),
-    clear: { fields: ["hidden"], on: covers },
+    sweep: true,
+    bulk: (id) =>
+      !covers(id) ? undefined : isBundledId(id) ? { hidden: undefined } : { hidden: true },
   });
 }
 

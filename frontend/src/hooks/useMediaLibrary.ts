@@ -8,6 +8,7 @@ import type { FocalPoint } from "../lib/focalPosition";
 import { bindingKey, boundByKey } from "../lib/media";
 import {
   appendItem,
+  bundledRowId,
   ladderRows,
   moveBy,
   moveToEdge,
@@ -36,7 +37,6 @@ import { mediaSections, type MediaNsDef, type MediaSection } from "../theme-engi
 //    INTENT ("move this entry up one"), queued, and recomputed from the latest cached state at SEND
 //    time — so two taps in the same second compose instead of the second one clobbering the first with
 //    an order computed off a stale list, and two SECTIONS' writes can never replace each other's list.
-//  ③ Invalidation, which is `useSaveSettings`'s already (it awaits the media refetch) — this hook only
 //    The queue is per NAMESPACE and the send step is exclusive APP-WIDE (`exclusive` below), because
 //    the hazard has two scopes: a role's list is one namespace's, and the settings snapshot every
 //    intent recomputes from is shared by all of them.
@@ -69,6 +69,15 @@ export interface SectionView {
   /** Every row of the section's role, in collation order — the modal narrows it by scope. */
   rows: MediaFile[];
   active: ActiveArt;
+  /** §2.4 for ONE KEY of a `named` role — the role's own per-key resolver, already bound to these rows
+   *  and the wire's `slots`.
+   *
+   *  It exists because a FAMILY card (kit's services, machines) is a list of keys and has to say what
+   *  answers each one. It used to re-derive that with the generic binding classifier over the visible
+   *  rows, which is a second implementation of a ladder question — and the two agreed only while no
+   *  bundled id happened to match a service key (`activeNamedKey` excludes the bundled tier; the
+   *  classifier does not). Absent for every role that is not `named`. */
+  activeForKey?: (key: string) => ActiveArt;
   /** The seat whose pin is currently beating this section's own pick (§2.4). */
   overriddenBy?: { sectionId: string; label: string };
   /** The pin's current value, for a section that writes one. */
@@ -157,15 +166,6 @@ function exclusive(run: () => Promise<void>): Promise<void> {
   return next;
 }
 
-  const draining = useRef(false);
-  /** The last save's media refetch did not land inside its bound — the cached index is no longer
-   *  known-authoritative (§4's recompute-at-send has nothing trustworthy to recompute from). */
-  const stale = useRef(false);
-  /** The job being sent, so its own wording reaches the error toast. */
-  const sending = useRef<Job | null>(null);
-  const save = useSaveSettings({
-    quiet: true,
-    onMediaStale: () => {
 export function useMediaLibrary(ns: string, def: MediaNsDef) {
   const { data, isLoading, error } = useMediaGalleryIndex(ns);
   // The CONFIG side of every write. A `files` entry carries per-item state the gallery does not
@@ -176,6 +176,15 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const queue = useRef<Job[]>([]);
+  const draining = useRef(false);
+  /** The last save's media refetch did not land inside its bound — the cached index is no longer
+   *  known-authoritative (§4's recompute-at-send has nothing trustworthy to recompute from). */
+  const stale = useRef(false);
+  /** The job being sent, so its own wording reaches the error toast. */
+  const sending = useRef<Job | null>(null);
+  const save = useSaveSettings({
+    quiet: true,
+    onMediaStale: () => {
       stale.current = true;
     },
     // The queue words its own failures: a config write that follows an already-successful DELETE is a
@@ -228,10 +237,15 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
           seat = undefined;
         }
       }
+      // The per-key resolver, bound HERE for the reason `active` is resolved here: the wire's `slots`
+      // are the wiring's to hold, and a component passing an empty map in their place would be a
+      // second, quieter answer to the same question.
+      const forKey = section.def.activeForKey;
       return {
         section,
         rows,
         active,
+        activeForKey: forKey && ((key: string) => forKey(key)(rows, data.slots ?? {})),
         // A resolver may only name a SLOT (a theme module never knows section ids); the pointer is
         // minted here, and only when that seat is actually a section on screen — a claim the owner
         // cannot follow is worse than none.
@@ -432,10 +446,14 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
           },
         });
       },
-      /** **Restore defaults** (the S6 owner ruling) — put a section's shipped art back the way it
-       *  came: the bundled entries leave `files` for the fallback tier, in the registry's own order,
-       *  and nothing is left switched off. The owner's own files, their order and their per-item
-       *  fields survive it: deleting uploads is what Delete is for.
+      /** **Restore defaults** (the S6 affordance, on the 2026-08-26 owner ruling) — the section's
+       *  shipped art goes to the TOP, in use and in the registry's own order, and the owner's own files
+       *  stay in the library below it, switched off. Nothing is deleted; deleting uploads is what
+       *  Delete is for. The whole rule is `lib/mediaLibrary.ts#restoreDefaults`.
+       *
+       *  The REGISTRY ORDER is passed down from here because that is where the registry is: the
+       *  transform is namespace-agnostic and cannot know which ids a role ships, let alone in what
+       *  order (the same split `toggleHidden`'s `ordered` flag runs on).
        *
        *  `ids` scopes it to the rows the affordance was offered for, so a KEY gallery restores its own
        *  layer rather than the whole role — computed at the TAP because it is a fact about the scope
@@ -443,7 +461,16 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
        *  recomputes). The transform still runs against the authoritative rows, so an id that has since
        *  left the library simply falls out. */
       restoreDefaults: (section: MediaSection, ids: ReadonlySet<RowId>) =>
-        enqueue(listJob(section.role, (e, r) => restoreDefaults(e, r, ids))),
+        enqueue(
+          listJob(section.role, (e, r) =>
+            restoreDefaults(
+              e,
+              r,
+              section.def.bundled.map((b) => bundledRowId(b.id)),
+              ids,
+            ),
+          ),
+        ),
       /** Clear a pin — the section falls back to its own ladder. The one write that genuinely needs
        *  no state: removing a binding cannot produce an unresolvable one. */
       unpin: (section: MediaSection) => {

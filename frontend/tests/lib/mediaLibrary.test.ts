@@ -528,7 +528,13 @@ describe("delete — the config half (§6.4)", () => {
   });
 });
 
-describe("restore defaults (the S6 owner ruling)", () => {
+describe("restore defaults (the S6 affordance, on the owner ruling of 2026-08-26)", () => {
+  // The ruling, in the owner's words: *"put them first and activate them and you deactivate the other
+  // ones — as if the defaults are the one selected, and I just uploaded the other images that are
+  // there."* So it is an ORDER intent: the shipped art goes to the top, in the REGISTRY's order and in
+  // use, and the owner's own files stay in the library below it, switched off. It used to DROP the
+  // bundled entries back to the fallback tier — a mechanism that could not express this at all, since
+  // one owner file outranks that whole tier and would have gone on painting.
   const swept = [
     disk("mine.webp", { listed: true }),
     bundled("pegasus", { listed: true }),
@@ -539,44 +545,94 @@ describe("restore defaults (the S6 owner ruling)", () => {
     { bundled: "pegasus" },
     { bundled: "atlas", hidden: true },
   ];
+  /** The registry's own id order for the role — what only the caller knows (`MediaRoleDef.bundled`). */
+  const SHIPPED = ["b:pegasus", "b:atlas"];
 
-  it("is OFFERED only where the owner has said something about the shipped art", () => {
+  it("is OFFERED wherever the section is showing something other than its defaults", () => {
     // A section still exactly as it came carries no control at all — there is nothing to put back.
-    expect(defaultsRestorable([disk("a.webp"), bundled("pegasus")])).toBe(false);
-    // …a listed bundled entry (an order write swept the section) and a hidden one both qualify.
+    expect(defaultsRestorable([bundled("pegasus"), bundled("atlas")])).toBe(false);
+    // …a listed bundled entry (an order write swept the section) and a hidden one both qualify…
     expect(defaultsRestorable([bundled("pegasus", { listed: true })])).toBe(true);
+    expect(defaultsRestorable([bundled("pegasus", { hidden: true })])).toBe(true);
+    // …and so does one of the owner's OWN files being in use, which is the arm the ruling adds: the
+    // restore would switch it off, so there is a difference to put back.
+    expect(defaultsRestorable([disk("a.webp"), bundled("pegasus")])).toBe(true);
+    // It is a DIFFERENCE test rather than an equality one, so a section that already looks restored
+    // still offers the control (its own file is switched off, which is the `hidden` arm) — a spurious
+    // button that writes what is already there costs nothing, and a missing one would strand the owner.
     expect(defaultsRestorable([disk("a.webp", { hidden: true }), bundled("pegasus")])).toBe(true);
   });
 
-  it("drops every bundled entry back to the fallback tier and switches everything back on", () => {
-    // The bundled ids leave `files` entirely, which is what puts them back in the REGISTRY's order
-    // rather than in whatever order the owner had dragged them into.
-    expect(restoreDefaults(entries, swept)).toEqual([
-      { name: "mine.webp", focal: { x: 0.4, y: 0.2, rev: "r9" }, key: "hero" },
+  it("puts the defaults FIRST in the registry's order, in use, and switches the owner's files off", () => {
+    expect(restoreDefaults(entries, swept, SHIPPED)).toEqual([
+      // The registry's order, not the one the owner dragged them into — and `atlas` loses the `hidden`
+      // it was switched off with.
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      // The owner's own file: still here, still framed, still keyed — a library member that is simply
+      // not in use, exactly as it would be if it had been uploaded into a section showing its defaults.
+      { name: "mine.webp", focal: { x: 0.4, y: 0.2, rev: "r9" }, key: "hero", hidden: true },
     ]);
   });
 
-  it("keeps the owner's own files whole — their order, their framing, their key", () => {
-    const rows = [disk("b.webp", { listed: true }), disk("a.webp", { listed: true, hidden: true })];
+  it("keeps the owner's own files whole and in their own relative order, below the defaults", () => {
+    const rows = [
+      disk("b.webp", { listed: true }),
+      disk("a.webp", { listed: true, hidden: true }),
+      bundled("pegasus"),
+    ];
     const held: LibraryEntry[] = [
       { name: "b.webp", focal: { x: 0.1, y: 0.9, rev: "r1" } },
       { name: "a.webp", hidden: true, key: "jellyfin" },
     ];
-    expect(restoreDefaults(held, rows)).toEqual([
-      { name: "b.webp", focal: { x: 0.1, y: 0.9, rev: "r1" } }, // order kept: `b` was first
-      { name: "a.webp", key: "jellyfin" }, // `hidden` gone, everything else untouched
+    expect(restoreDefaults(held, rows, SHIPPED)).toEqual([
+      { bundled: "pegasus" }, // the only default this library holds, lifted out of the fallback tier
+      { name: "b.webp", focal: { x: 0.1, y: 0.9, rev: "r1" }, hidden: true }, // `b` was first, still is
+      { name: "a.webp", key: "jellyfin", hidden: true },
     ]);
   });
 
   it("SCOPES to the rows it was offered for — a key gallery restores its own layer", () => {
     // The frontier stack is three destinations under one role, so restoring `cube` must leave the
-    // other two layers exactly as the owner arranged them.
+    // other layers exactly as the owner arranged them — neither reordered nor switched off.
     const rows = [
+      disk("cube.webp", { listed: true }),
       bundled("cube", { listed: true, hidden: true }),
       bundled("platform-mid", { listed: true }),
     ];
-    const held: LibraryEntry[] = [{ bundled: "cube", hidden: true }, { bundled: "platform-mid" }];
-    expect(restoreDefaults(held, rows, new Set(["b:cube"]))).toEqual([{ bundled: "platform-mid" }]);
+    const held: LibraryEntry[] = [
+      { name: "cube.webp" },
+      { bundled: "cube", hidden: true },
+      { bundled: "platform-mid" },
+    ];
+    expect(
+      restoreDefaults(held, rows, ["b:cube", "b:platform-mid"], new Set(["b:cube", "f:cube.webp"])),
+    ).toEqual([
+      { bundled: "cube" },
+      { name: "cube.webp", hidden: true },
+      { bundled: "platform-mid" },
+    ]);
+  });
+
+  it("…and what it writes SURVIVES the round trip: re-ticking an own file moves nothing", () => {
+    // The state the restore leaves behind is an ordinary swept section, so the W7 rule applies to it
+    // unchanged: membership never moves a picture. Re-ticking `mine` puts it back in use where it
+    // stands — under the defaults — and switching a default off leaves the order alone too.
+    const after = [
+      bundled("pegasus", { listed: true }),
+      bundled("atlas", { listed: true }),
+      disk("mine.webp", { listed: true, hidden: true }),
+    ];
+    const held: LibraryEntry[] = [
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      { name: "mine.webp", hidden: true },
+    ];
+    expect(toggleHidden(held, after, "f:mine.webp", true)).toEqual([
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      { name: "mine.webp" },
+    ]);
   });
 });
 

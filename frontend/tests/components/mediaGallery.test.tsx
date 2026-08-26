@@ -566,6 +566,28 @@ describe("the gallery modal (§6.2)", () => {
     expect(dialog.querySelector("input[type=file]")).toBeNull();
   });
 
+  it("STATES how this destination uses the images that are in use — derived from the resolver", async () => {
+    // The W8 council's F4. The tiles say which entries are in use and which one is active; nothing on
+    // the screen said whether that meant ONE picture, a rotation or a whole set — and the answer differs
+    // per role. It reads `active.mode`, so it is the resolver's own answer rather than twenty hand-
+    // written sentences drifting from their ladders.
+    const hints = async (name: string) => {
+      renderGallery();
+      const dialog = await openSection(name);
+      const out = [...dialog.querySelectorAll(".mgal-hint")].map((n) => n.textContent);
+      cleanup();
+      return out;
+    };
+    expect(await hints("Characters")).toContain(
+      "In-use images are dealt across the machines in this order.",
+    );
+    expect(await hints("Banner slides")).toContain("Every in-use image is shown, in this order.");
+    expect(await hints("Transition figure")).toContain("The first in-use image is the one shown.");
+    // A SEAT gets none: it has no In-use and no order, its reading IS the pin, and its own hint is
+    // where the ladder is spelled out.
+    expect((await hints("Fleet backdrop")).join(" ")).not.toMatch(/in-use image/i);
+  });
+
   it("counts the library in a live region, so a delete is announced", async () => {
     renderGallery();
     const dialog = await openSection("Characters");
@@ -607,6 +629,11 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
     // a member of the deal, and a picture that cannot paint.
     expect(container.querySelectorAll(".mgal-tile.on")).toHaveLength(1);
     expect(tile("a.webp")).toBeTruthy();
+    const broken = screen.getByRole("button", { name: "bad.webp" });
+    expect(broken.className).not.toContain(" on");
+    expect(
+      document.getElementById(broken.getAttribute("aria-describedby") ?? "")?.textContent,
+    ).toBe("in use · will not paint");
   });
 
   it("a tile is a plain button whose DESCRIPTION carries membership — never a fake toggle", async () => {
@@ -629,11 +656,6 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
       index({
         roles: {
           characters: [],
-    const broken = screen.getByRole("button", { name: "bad.webp" });
-    expect(broken.className).not.toContain(" on");
-    expect(
-      document.getElementById(broken.getAttribute("aria-describedby") ?? "")?.textContent,
-    ).toBe("in use · will not paint");
           banner: [],
           reel: [file("cut", "reel"), file("cut2", "reel")],
           oracle: [],
@@ -668,11 +690,6 @@ describe("the grid (§6.3) and its a11y shape (§6.5)", () => {
 // BUTTON now, and it means something else: membership. One tap, `aria-pressed`, and the same queued
 // `setHidden` intent the detail panel's switch enqueues — one write path, one tier rule.
 
-    const broken = screen.getByRole("button", { name: "bad.webp" });
-    expect(broken.className).not.toContain(" on");
-    expect(
-      document.getElementById(broken.getAttribute("aria-describedby") ?? "")?.textContent,
-    ).toBe("in use · will not paint");
 describe("the tile's In-use toggle", () => {
   const withOne = () =>
     renderGallery(
@@ -755,6 +772,64 @@ describe("the tile's In-use toggle", () => {
     }
   });
 
+  it("A DRAG IS NOT ADMITTED WHILE A WRITE IS IN FLIGHT — the delta would replay from a list that moved", async () => {
+    // The W8 council's E3. A drag encodes its drop as a RELATIVE delta against the order it was picked
+    // up in (§7 — an index is only a name for a row while the order holds still), and the queue replays
+    // that delta at SEND. Admit a second gesture while the first move is still going and it lands
+    // beside a neighbour the gesture never saw. The ↑/↓ pair keeps its own behaviour: a ±1 step
+    // composes with whatever moved under it, which is what the recompute is for.
+    vi.useFakeTimers();
+    let release: (v: unknown) => void = () => undefined;
+    api.putJSON.mockImplementation(
+      () =>
+        new Promise((r) => {
+          release = r;
+        }),
+    );
+    const flush = async () => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    };
+    try {
+      withOne();
+      await flush();
+      fireEvent.click(screen.getByRole("button", { name: "Open the Characters gallery" }));
+      await flush();
+      const dialog = screen.getByRole("dialog");
+      // …one write in flight, and nothing has come back yet.
+      fireEvent.click(within(dialog).getByRole("button", { name: "In use — b.webp" }));
+      await flush();
+      const tile = within(dialog).getByRole("button", { name: "b.webp" });
+      const cell = tile.parentElement as HTMLElement;
+      fireEvent.pointerDown(tile, { pointerId: 1, clientX: 10, clientY: 10, button: 0 });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(800);
+      });
+      expect(cell.getAttribute("data-dragging")).toBeNull();
+      fireEvent.pointerUp(tile, { pointerId: 1, clientX: 10, clientY: 10 });
+
+      // …and once the write has settled, the very same press lifts the tile — so the arm is about the
+      // in-flight write and not about a gesture that never works in jsdom.
+      release({
+        settings: { notifications: {} },
+        restart_required: [],
+        warnings: [],
+        providers_rev: "r1",
+      });
+      await flush();
+      await flush();
+      fireEvent.pointerDown(tile, { pointerId: 2, clientX: 10, clientY: 10, button: 0 });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(800);
+      });
+      expect(cell.getAttribute("data-dragging")).toBe("");
+      fireEvent.pointerUp(tile, { pointerId: 2, clientX: 10, clientY: 10 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("is ABSENT where the section has no In-use to give — a SEAT is a view", async () => {
     renderGallery();
     const dialog = await openSection("Fleet backdrop");
@@ -820,64 +895,6 @@ describe("the tile's In-use toggle", () => {
     expect(ring("a.webp")).toBe(true);
     expect(ring("c.webp")).toBe(true);
     // …the switched-off one does not (it is not painted, and it is not in use either)…
-  it("A DRAG IS NOT ADMITTED WHILE A WRITE IS IN FLIGHT — the delta would replay from a list that moved", async () => {
-    // The W8 council's E3. A drag encodes its drop as a RELATIVE delta against the order it was picked
-    // up in (§7 — an index is only a name for a row while the order holds still), and the queue replays
-    // that delta at SEND. Admit a second gesture while the first move is still going and it lands
-    // beside a neighbour the gesture never saw. The ↑/↓ pair keeps its own behaviour: a ±1 step
-    // composes with whatever moved under it, which is what the recompute is for.
-    vi.useFakeTimers();
-    let release: (v: unknown) => void = () => undefined;
-    api.putJSON.mockImplementation(
-      () =>
-        new Promise((r) => {
-          release = r;
-        }),
-    );
-    const flush = async () => {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(0);
-      });
-    };
-    try {
-      withOne();
-      await flush();
-      fireEvent.click(screen.getByRole("button", { name: "Open the Characters gallery" }));
-      await flush();
-      const dialog = screen.getByRole("dialog");
-      // …one write in flight, and nothing has come back yet.
-      fireEvent.click(within(dialog).getByRole("button", { name: "In use — b.webp" }));
-      await flush();
-      const tile = within(dialog).getByRole("button", { name: "b.webp" });
-      const cell = tile.parentElement as HTMLElement;
-      fireEvent.pointerDown(tile, { pointerId: 1, clientX: 10, clientY: 10, button: 0 });
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(800);
-      });
-      expect(cell.getAttribute("data-dragging")).toBeNull();
-      fireEvent.pointerUp(tile, { pointerId: 1, clientX: 10, clientY: 10 });
-
-      // …and once the write has settled, the very same press lifts the tile — so the arm is about the
-      // in-flight write and not about a gesture that never works in jsdom.
-      release({
-        settings: { notifications: {} },
-        restart_required: [],
-        warnings: [],
-        providers_rev: "r1",
-      });
-      await flush();
-      await flush();
-      fireEvent.pointerDown(tile, { pointerId: 2, clientX: 10, clientY: 10, button: 0 });
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(800);
-      });
-      expect(cell.getAttribute("data-dragging")).toBe("");
-      fireEvent.pointerUp(tile, { pointerId: 2, clientX: 10, clientY: 10 });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
     expect(ring("b.webp")).toBe(false);
     // …and neither does a default: it is IN USE — the corner says so — but the owner's own tier is
     // what the fleet is painting, so no ring and no dim. Three states, three distinct looks.
@@ -996,9 +1013,11 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
 
   it("RESTORE DEFAULTS is absent on a section still exactly as it shipped, and present once it is not", async () => {
     // The affordance is the owner's way back (S6) — and a control offering to undo nothing is worse
-    // than none, so it appears only once `files` says something about the shipped art.
+    // than none, so it appears only once the section is showing something other than its defaults.
+    // The banner role of this fixture is untouched shipped art: nothing listed, nothing hidden, no
+    // file of the owner's own in use.
     renderGallery();
-    let dialog = await openSection("Characters");
+    let dialog = await openSection("Banner slides");
     expect(within(dialog).queryByRole("button", { name: "Restore defaults" })).toBeNull();
     cleanup();
 
@@ -1019,13 +1038,17 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     expect(within(dialog).getByRole("button", { name: "Restore defaults" })).toBeTruthy();
   });
 
-  it("…and confirming it writes the owner's files ALONE, in their order", async () => {
+  it("…and confirming it makes the DEFAULTS the selection and the owner's files switched-off members", async () => {
+    // The owner ruling of 2026-08-26, end to end: "put them first and activate them and you deactivate
+    // the other ones". The fixture is the state that ruling is about — an owner file in use, above a
+    // shipped cast the owner had dragged out of its own order, with one default switched off.
     api.getJSON.mockResolvedValue(
       index({
         roles: {
           characters: [
-            ...cast.map((b) => ({ ...b, listed: true })),
-            file("a", "characters", { listed: true, hidden: true }),
+            file("a", "characters", { listed: true }),
+            bundledRow("atlas", { listed: true }),
+            bundledRow("pegasus", { listed: true, hidden: true }),
           ],
           banner: [],
           reel: [],
@@ -1046,9 +1069,14 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     const confirm = await screen.findByRole("alertdialog");
     fireEvent.click(within(confirm).getByRole("button", { name: "Restore" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
-    // The bundled ids leave `files` for the fallback tier — which is what puts them back in the
-    // registry's own order — and the owner's file keeps its place, switched back on.
-    expect(filesOf(savedBlock())).toEqual([{ name: "a.webp" }]);
+    // The shipped ids go FIRST, in the REGISTRY's order (pegasus before atlas, whatever the owner had
+    // dragged) and in use; the owner's own file stays in the library below them, switched off. Nothing
+    // is deleted — a restore that removed pictures would be a different word.
+    expect(filesOf(savedBlock())).toEqual([
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      { name: "a.webp", hidden: true },
+    ]);
   });
 
   it("a SEAT offers no restore — clearing its pin IS the restore", async () => {
@@ -1304,82 +1332,6 @@ describe("the write queue (§4 — serialized, recomputed at send, quiet)", () =
     ]);
   });
 
-  it("refuses to write until the SETTINGS snapshot is here — a lossy write is worse than a wait", async () => {
-    // The write is a read-modify-write over the persisted `files` list; without it a gesture could only
-    // write bare `{name}` rows, destroying every per-item field the owner set (`key`/`hidden`/`focal`).
-    api.getJSONWithHeader.mockReturnValue(new Promise(() => undefined)); // never resolves
-    renderGallery();
-    const dialog = await openSection("Characters");
-    openItem(dialog, "c.webp");
-    const act = within(dialog).getByRole("button", { name: "To top" });
-    expect(act).toHaveProperty("disabled", true);
-    fireEvent.click(act);
-    await waitFor(() => expect(within(dialog).getByText("c.webp")).toBeTruthy());
-    expect(api.putJSON).not.toHaveBeenCalled();
-  });
-});
-
-describe("the index read (defect #3)", () => {
-  it("is scoped to Conf: leaving the tab stops the gallery re-reading every namespace on focus", async () => {
-    // Every tab body in this app stays MOUNTED once visited, so the old always-on observer re-read the
-    // directory on every window focus for the rest of the session, from whatever tab the owner was on.
-    renderGallery();
-    await screen.findByRole("button", { name: "Open the Characters gallery" });
-    expect(api.getJSON).toHaveBeenCalledTimes(1);
-
-    setUI({ tab: "fleet" });
-    window.dispatchEvent(new Event("focus"));
-    await new Promise((r) => setTimeout(r, 10));
-    expect(api.getJSON).toHaveBeenCalledTimes(1);
-
-    // …and coming BACK re-reads, because files arrive out of band (Codex F7).
-    setUI({ tab: "conf" });
-    await waitFor(() => expect(api.getJSON).toHaveBeenCalledTimes(2));
-  });
-});
-
-describe("the namespace-level states", () => {
-  it("says WHY when the namespace is disabled, instead of showing an empty grid", async () => {
-    renderGallery({
-      ns: "gacha",
-      collation: "library-v1",
-      roles: {},
-      slots: {},
-      disabled: true,
-      reason: "'/home/x/.ctrl-b/media/gacha/reel' is a file, but a directory is needed there.",
-    });
-    expect(await screen.findByText(/media disabled/)).toBeTruthy();
-    expect(screen.getByText(/is a file, but a directory is needed there/)).toBeTruthy();
-  });
-
-  it("reports an unreachable index instead of rendering an empty gallery", async () => {
-    api.getJSON.mockRejectedValue(new Error("boom"));
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={qc}>
-        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
-      </QueryClientProvider>,
-    );
-    expect(await screen.findByText(/media index unreachable: boom/)).toBeTruthy();
-  });
-});
-
-// ── the S2 REVIEW arms (Emma's blind pass, all main-seat ACCEPTed). Each one is a state the gallery
-//    could reach on its own and describe wrongly: an activation the render ignores, a pin the ladder
-//    cannot resolve, a queue replayed against a listing that is no longer the server's, a delete whose
-//    cleanup failed reported as a delete that failed.
-
-describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W6")', () => {
-  it("MOVE TO TOP says nothing about In use — a hidden entry stays hidden at the front", () => {
-    // `setActive` used to un-hide in the same write, because a hidden entry at the front is skipped
-    // everywhere and "set as active" that did not activate would have been a lie. The vocabulary is
-    // split now — "In use" is membership, "Active" is what the resolver paints — so a position write
-    // that quietly switched an entry back on would put the two-priorities confusion back in one tap.
-    // The `hidden` flag lives in CONFIG and rides the wire; the persisted entry is what a write
-    // read-modify-writes, so the settings snapshot has to carry it for this claim to mean anything.
-    api.getJSONWithHeader.mockResolvedValue({
-      data: {
-        media: {
   it("refuses a queued write once the index stops describing the ROLE — never an empty `files`", async () => {
     // The W8 council's E1. A `files` write is computed from the index ROWS, so an absent role used to
     // read as an EMPTY one — and the queued intent would then persist `files: []`, wiping the order,
@@ -1469,6 +1421,82 @@ describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
   });
 
+  it("refuses to write until the SETTINGS snapshot is here — a lossy write is worse than a wait", async () => {
+    // The write is a read-modify-write over the persisted `files` list; without it a gesture could only
+    // write bare `{name}` rows, destroying every per-item field the owner set (`key`/`hidden`/`focal`).
+    api.getJSONWithHeader.mockReturnValue(new Promise(() => undefined)); // never resolves
+    renderGallery();
+    const dialog = await openSection("Characters");
+    openItem(dialog, "c.webp");
+    const act = within(dialog).getByRole("button", { name: "To top" });
+    expect(act).toHaveProperty("disabled", true);
+    fireEvent.click(act);
+    await waitFor(() => expect(within(dialog).getByText("c.webp")).toBeTruthy());
+    expect(api.putJSON).not.toHaveBeenCalled();
+  });
+});
+
+describe("the index read (defect #3)", () => {
+  it("is scoped to Conf: leaving the tab stops the gallery re-reading every namespace on focus", async () => {
+    // Every tab body in this app stays MOUNTED once visited, so the old always-on observer re-read the
+    // directory on every window focus for the rest of the session, from whatever tab the owner was on.
+    renderGallery();
+    await screen.findByRole("button", { name: "Open the Characters gallery" });
+    expect(api.getJSON).toHaveBeenCalledTimes(1);
+
+    setUI({ tab: "fleet" });
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(api.getJSON).toHaveBeenCalledTimes(1);
+
+    // …and coming BACK re-reads, because files arrive out of band (Codex F7).
+    setUI({ tab: "conf" });
+    await waitFor(() => expect(api.getJSON).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("the namespace-level states", () => {
+  it("says WHY when the namespace is disabled, instead of showing an empty grid", async () => {
+    renderGallery({
+      ns: "gacha",
+      collation: "library-v1",
+      roles: {},
+      slots: {},
+      disabled: true,
+      reason: "'/home/x/.ctrl-b/media/gacha/reel' is a file, but a directory is needed there.",
+    });
+    expect(await screen.findByText(/media disabled/)).toBeTruthy();
+    expect(screen.getByText(/is a file, but a directory is needed there/)).toBeTruthy();
+  });
+
+  it("reports an unreachable index instead of rendering an empty gallery", async () => {
+    api.getJSON.mockRejectedValue(new Error("boom"));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText(/media index unreachable: boom/)).toBeTruthy();
+  });
+});
+
+// ── the S2 REVIEW arms (Emma's blind pass, all main-seat ACCEPTed). Each one is a state the gallery
+//    could reach on its own and describe wrongly: an activation the render ignores, a pin the ladder
+//    cannot resolve, a queue replayed against a listing that is no longer the server's, a delete whose
+//    cleanup failed reported as a delete that failed.
+
+describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W6")', () => {
+  it("MOVE TO TOP says nothing about In use — a hidden entry stays hidden at the front", () => {
+    // `setActive` used to un-hide in the same write, because a hidden entry at the front is skipped
+    // everywhere and "set as active" that did not activate would have been a lie. The vocabulary is
+    // split now — "In use" is membership, "Active" is what the resolver paints — so a position write
+    // that quietly switched an entry back on would put the two-priorities confusion back in one tap.
+    // The `hidden` flag lives in CONFIG and rides the wire; the persisted entry is what a write
+    // read-modify-writes, so the settings snapshot has to carry it for this claim to mean anything.
+    api.getJSONWithHeader.mockResolvedValue({
+      data: {
+        media: {
           namespaces: {
             gacha: {
               roles: { characters: { files: [{ name: "off.webp", hidden: true }] } },

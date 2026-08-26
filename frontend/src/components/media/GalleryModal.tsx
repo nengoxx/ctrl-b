@@ -279,7 +279,9 @@ export function GalleryModal({
               >
                 Restore defaults
               </button>
-              <small>Puts the default images back in order. Your own images stay.</small>
+              <small>
+                Puts the default images on top and back in use. Your own images stay, switched off.
+              </small>
             </p>
           )}
           {items.length === 0 ? (
@@ -351,8 +353,6 @@ export function GalleryModal({
   );
 }
 
-/** The restore confirm (§6.5 — `requestConfirm`, the house pattern the delete uses). The sentence says
- *  what moves and what does not: the shipped art goes back to the order and the visibility it came
 /** THE SECTION'S READING (the W8 council's F4) — one sentence saying how this destination uses the
  *  images that are in use, DERIVED from the resolver's own mode word rather than hand-written per role.
  *
@@ -378,14 +378,17 @@ function reading(view: SectionView, scope: GalleryScope): string | undefined {
   return "The first in-use image is the one shown.";
 }
 
- *  with, and nothing the owner put there is touched. */
+/** The restore confirm (§6.5 — `requestConfirm`, the house pattern the delete uses). The sentence says
+ *  the owner ruling of 2026-08-26 in the gallery's own words: the defaults become the selection, and
+ *  the owner's own pictures go back to being what they were before they chose them — library members,
+ *  switched off. Nothing is deleted, which is the half a "restore" most needs to promise. */
 async function confirmRestore(
   section: SectionView["section"],
   onRestore: () => void,
 ): Promise<void> {
   const ok = await requestConfirm({
     title: `Restore the default images for ${section.title}?`,
-    body: "The images that came with the app go back to their original order, and anything switched off here goes back in use. Your own images, their order and their framing are not touched.",
+    body: "The images that came with the app go back on top, in their original order and in use. Your own images stay in the library, switched off — nothing is deleted, and their framing is untouched.",
     confirmLabel: "Restore",
   });
   if (ok) onRestore();
