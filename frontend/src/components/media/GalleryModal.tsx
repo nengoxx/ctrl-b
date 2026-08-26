@@ -318,7 +318,14 @@ export function GalleryModal({
               // The SAME fact that shows the ↑/↓ pair in the detail panel (§7: both affordances, one
               // condition) — plus `ready`, because a drag whose write the queue would refuse is a drag
               // that snaps back for a reason the owner cannot see.
-              canReorder={section.caps.reorder && items.length > 1 && ready}
+              //
+              // …and NOT WHILE A WRITE IS IN FLIGHT. A drag encodes its drop as a RELATIVE delta
+              // against the order it was picked up in, and the queue replays that delta at SEND: admit
+              // a second gesture while the first move is still going and the tile lands beside a
+              // neighbour the gesture never saw. The ↑/↓ pair is different by construction and keeps
+              // its own behaviour — a ±1 step composes with whatever moved under it, which is exactly
+              // what the queue's recompute is for.
+              canReorder={section.caps.reorder && items.length > 1 && ready && !busy}
               // The subject is the item the GESTURE picked up, handed over rather than looked up again:
               // resolving `items[from]` here would read the order as it is at DROP time, and a write
               // that landed in between would make that a different row than the one under the finger

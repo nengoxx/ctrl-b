@@ -161,6 +161,11 @@ def test_role_dirs_are_created_at_app_construction(home: Path, ns: str) -> None:
         # Nothing on disk — so every role's library is exactly its BUNDLED ids, in the registry's
         # order, as the unlisted fallback tier (D65 §2.3 ③). That is what makes a fresh install's
         # gallery non-empty and the pins offerable without a single owner file.
+        #
+        # The KEY SET is load-bearing beyond this test, and the client depends on it: a role's key is
+        # present whatever the folder holds (the kit ships nothing bundled and still lists all five),
+        # so the gallery's write path reads a MISSING key as "this payload does not describe the role"
+        # and refuses rather than computing a list against `[]` (`useMediaLibrary.ts#filesBlock`).
         assert {r: disk(rows) for r, rows in body["roles"].items()} == {r: [] for r in roles}
         assert {r: [f["bundled"] for f in rows] for r, rows in body["roles"].items()} == {
             r: list(cfg.bundled) for r, cfg in roles.items()

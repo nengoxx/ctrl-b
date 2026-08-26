@@ -772,6 +772,64 @@ describe("the tile's In-use toggle", () => {
     expect(ring("a.webp")).toBe(true);
     expect(ring("c.webp")).toBe(true);
     // …the switched-off one does not (it is not painted, and it is not in use either)…
+  it("A DRAG IS NOT ADMITTED WHILE A WRITE IS IN FLIGHT — the delta would replay from a list that moved", async () => {
+    // The W8 council's E3. A drag encodes its drop as a RELATIVE delta against the order it was picked
+    // up in (§7 — an index is only a name for a row while the order holds still), and the queue replays
+    // that delta at SEND. Admit a second gesture while the first move is still going and it lands
+    // beside a neighbour the gesture never saw. The ↑/↓ pair keeps its own behaviour: a ±1 step
+    // composes with whatever moved under it, which is what the recompute is for.
+    vi.useFakeTimers();
+    let release: (v: unknown) => void = () => undefined;
+    api.putJSON.mockImplementation(
+      () =>
+        new Promise((r) => {
+          release = r;
+        }),
+    );
+    const flush = async () => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    };
+    try {
+      withOne();
+      await flush();
+      fireEvent.click(screen.getByRole("button", { name: "Open the Characters gallery" }));
+      await flush();
+      const dialog = screen.getByRole("dialog");
+      // …one write in flight, and nothing has come back yet.
+      fireEvent.click(within(dialog).getByRole("button", { name: "In use — b.webp" }));
+      await flush();
+      const tile = within(dialog).getByRole("button", { name: "b.webp" });
+      const cell = tile.parentElement as HTMLElement;
+      fireEvent.pointerDown(tile, { pointerId: 1, clientX: 10, clientY: 10, button: 0 });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(800);
+      });
+      expect(cell.getAttribute("data-dragging")).toBeNull();
+      fireEvent.pointerUp(tile, { pointerId: 1, clientX: 10, clientY: 10 });
+
+      // …and once the write has settled, the very same press lifts the tile — so the arm is about the
+      // in-flight write and not about a gesture that never works in jsdom.
+      release({
+        settings: { notifications: {} },
+        restart_required: [],
+        warnings: [],
+        providers_rev: "r1",
+      });
+      await flush();
+      await flush();
+      fireEvent.pointerDown(tile, { pointerId: 2, clientX: 10, clientY: 10, button: 0 });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(800);
+      });
+      expect(cell.getAttribute("data-dragging")).toBe("");
+      fireEvent.pointerUp(tile, { pointerId: 2, clientX: 10, clientY: 10 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
     expect(ring("b.webp")).toBe(false);
     // …and neither does a default: it is IN USE — the corner says so — but the owner's own tier is
     // what the fleet is painting, so no ring and no dim. Three states, three distinct looks.
@@ -1274,6 +1332,95 @@ describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W
     api.getJSONWithHeader.mockResolvedValue({
       data: {
         media: {
+  it("refuses a queued write once the index stops describing the ROLE — never an empty `files`", async () => {
+    // The W8 council's E1. A `files` write is computed from the index ROWS, so an absent role used to
+    // read as an EMPTY one — and the queued intent would then persist `files: []`, wiping the order,
+    // the switched-off entries, the framing points and the binding keys in one save. The role can
+    // genuinely leave between the tap and the send: the namespace flips disabled, or the folder is
+    // replaced out of band. Key PRESENCE is the test, and a missing key is the queue's honest refusal.
+    api.getJSON.mockResolvedValueOnce(index()).mockResolvedValue(
+      index({
+        // …the same namespace, one role short. The server emits every registry role's key whatever the
+        // folder holds, so this shape means "this payload does not describe `characters`".
+        roles: { banner: [], reel: [], oracle: [] },
+      }),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+      </QueryClientProvider>,
+    );
+    const dialog = await openSection("Characters");
+    openItem(dialog, "c.webp");
+    const up = within(dialog).getByRole("button", { name: "Up" });
+    fireEvent.click(up); // …lands: the index still describes the role
+    fireEvent.click(up); // …queued behind it, and recomputed after the refetch
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Open the Characters gallery" })).toBeNull(),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(api.putJSON).toHaveBeenCalledTimes(1);
+    // …and refused SILENTLY: this is not the stale-refetch discard, which words itself to the owner.
+    expect(toast.pushToast).not.toHaveBeenCalled();
+  });
+
+  it("ONE media save is in flight app-wide — two namespaces' queues share the lane", async () => {
+    // The W8 council's E2. Each namespace owns its own queue, which is right — their `files` lists
+    // cannot collide — but every save adopts the PUT's whole-document echo into the SHARED
+    // `["settings"]` cache, and a Conf tab mounts all three namespaces at once. Overlapping drains
+    // therefore had a window: the later echo landing first left the snapshot describing an older
+    // document, and the next intent — recomputed at SEND from exactly that snapshot — read per-item
+    // fields that had already been superseded.
+    let release: (v: unknown) => void = () => undefined;
+    const held = new Promise((r) => (release = r));
+    api.putJSON.mockImplementation(async () => {
+      await held;
+      return {
+        settings: { notifications: {} },
+        restart_required: [],
+        warnings: [],
+        providers_rev: "r1",
+      };
+    });
+    api.getJSON.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === "/api/media/frontier"
+          ? {
+              ns: "frontier",
+              collation: "library-v1",
+              roles: { rigs: [file("r1", "rigs"), file("r2", "rigs")], hero: [], stack: [] },
+              slots: {},
+            }
+          : index(),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MediaGallery ns="gacha" def={MEDIA_NS.gacha} />
+        <MediaGallery ns="frontier" def={MEDIA_NS.frontier} />
+      </QueryClientProvider>,
+    );
+    // One gesture in each namespace, back to back — two queues, two drains, one lane.
+    const gacha = await openSection("Characters");
+    openItem(gacha, "c.webp");
+    fireEvent.click(within(gacha).getByRole("button", { name: "To top" }));
+    // …and away from the first gallery, so the second one is the only dialog on screen. The queued
+    // write does not live in the modal (it is the hook's), which is exactly why the lane has to be.
+    fireEvent.click(within(gacha).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const frontier = await openSection("Rig cards");
+    openItem(frontier, "r2.webp");
+    fireEvent.click(within(frontier).getByRole("button", { name: "To top" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(api.putJSON).toHaveBeenCalledTimes(1); // the second is HELD, not lost
+    release(undefined);
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
+  });
+
           namespaces: {
             gacha: {
               roles: { characters: { files: [{ name: "off.webp", hidden: true }] } },

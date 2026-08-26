@@ -37,6 +37,9 @@ import { mediaSections, type MediaNsDef, type MediaSection } from "../theme-engi
 //    time — so two taps in the same second compose instead of the second one clobbering the first with
 //    an order computed off a stale list, and two SECTIONS' writes can never replace each other's list.
 //  ③ Invalidation, which is `useSaveSettings`'s already (it awaits the media refetch) — this hook only
+//    The queue is per NAMESPACE and the send step is exclusive APP-WIDE (`exclusive` below), because
+//    the hazard has two scopes: a role's list is one namespace's, and the settings snapshot every
+//    intent recomputes from is shared by all of them.
 //    has to not fight it.
 //
 // The two-devices-at-once lost update stays an accepted residual (single owner; server revision tokens
@@ -142,6 +145,27 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const queue = useRef<Job[]>([]);
+/** The media write LANE — ONE settings PUT (and the refetch it awaits) in flight across every mounted
+ *  namespace, module-scoped because that is the scope the hazard has.
+ *
+ *  Each namespace owns its own queue, which is right: a `gacha` intent and a `kit` one touch different
+ *  blocks and neither can clobber the other's list. What they DO share is the `["settings"]` cache the
+ *  PUT's whole-doc echo is adopted into, and a Conf tab mounts all three namespaces at once. Two drains
+ *  overlapping therefore had a window the per-queue serialization could not see: the later PUT's echo
+ *  landing BEFORE the earlier one's left the shared snapshot describing an older document, and the next
+ *  intent — which is recomputed at SEND, from exactly that snapshot — read per-item fields (`hidden`,
+ *  `focal`, `key`) that had already been superseded.
+ *
+ *  So the recompute-and-send step is exclusive app-wide. A rejected job must not stall the lane, hence
+ *  the swallow: the queue words its own failures, and this only decides WHEN the next send may compute. */
+let lane: Promise<unknown> = Promise.resolve();
+
+function exclusive(run: () => Promise<void>): Promise<void> {
+  const next = lane.then(run);
+  lane = next.catch(() => undefined);
+  return next;
+}
+
   const draining = useRef(false);
   /** The last save's media refetch did not land inside its bound — the cached index is no longer
    *  known-authoritative (§4's recompute-at-send has nothing trustworthy to recompute from). */
@@ -223,49 +247,54 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
     try {
       while (queue.current.length > 0) {
         const job = queue.current.shift() as Job;
-        // RECOMPUTE AT SEND (Emma #3). The cache is the truth the previous job left behind —
-        // `useSaveSettings` adopts the PUT's echo and awaits the media refetch — so a queued intent is
-        // applied to the list as it is NOW, never to the snapshot the tap was made against.
-        const block = job.patch(
-          qc.getQueryData<SettingsDoc>(["settings"]),
-          qc.getQueryData<MediaIndex>(["media", ns]),
-        );
-        // The honest refusal: without the state this write needs, the only safe patch is none.
-        if (block === null) {
-          job.settle?.("skipped");
-          continue;
-        }
-        try {
-          sending.current = job;
-          await save.mutateAsync({ media: { namespaces: { [ns]: block } } });
-          job.settle?.("written");
-        } catch {
-          // The reason is already toasted (`onError` above). Drop the rest of the queue rather than
-          // replaying intents against a list the server refused — the owner can see what happened.
-          job.settle?.("failed");
-          for (const dropped of queue.current) dropped.settle?.("skipped");
-          queue.current.length = 0;
-        } finally {
-          sending.current = null;
-        }
-        // The authoritative refetch did not land inside its bound, so the cached index is no longer
-        // known to be the server's (Emma's S2 review #4) — and the invariant above says: no
-        // authoritative state, no write. EVERY remaining job goes, with no carve-out for the scalar
-        // ones (her confirm round). The carve-out looked safe because a pin value needs no
-        // recomputation, and it was not: whether that pin can RESOLVE is a fact about the index, so a
-        // retained pin could be written onto an entry the queue had just hidden. A dropped write costs
-        // the owner one re-tap; a retained one writes a binding nothing honours.
-        if (stale.current) {
-          stale.current = false;
-          if (queue.current.length > 0) {
+        // THE LANE (see `exclusive`): the recompute and the send it feeds are one indivisible step,
+        // app-wide. Computing outside it would read a `["settings"]` snapshot another namespace's PUT
+        // is in the middle of replacing, which is the very staleness the recompute exists to avoid.
+        await exclusive(async () => {
+          // RECOMPUTE AT SEND (Emma #3). The cache is the truth the previous job left behind —
+          // `useSaveSettings` adopts the PUT's echo and awaits the media refetch — so a queued intent
+          // is applied to the list as it is NOW, never to the snapshot the tap was made against.
+          const block = job.patch(
+            qc.getQueryData<SettingsDoc>(["settings"]),
+            qc.getQueryData<MediaIndex>(["media", ns]),
+          );
+          // The honest refusal: without the state this write needs, the only safe patch is none.
+          if (block === null) {
+            job.settle?.("skipped");
+            return;
+          }
+          try {
+            sending.current = job;
+            await save.mutateAsync({ media: { namespaces: { [ns]: block } } });
+            job.settle?.("written");
+          } catch {
+            // The reason is already toasted (`onError` above). Drop the rest of the queue rather than
+            // replaying intents against a list the server refused — the owner can see what happened.
+            job.settle?.("failed");
             for (const dropped of queue.current) dropped.settle?.("skipped");
             queue.current.length = 0;
-            pushToast(
-              "The art list did not come back in time — the rest of your changes were not saved. Try again.",
-              "err",
-            );
+          } finally {
+            sending.current = null;
           }
-        }
+          // The authoritative refetch did not land inside its bound, so the cached index is no longer
+          // known to be the server's (Emma's S2 review #4) — and the invariant above says: no
+          // authoritative state, no write. EVERY remaining job goes, with no carve-out for the scalar
+          // ones (her confirm round). The carve-out looked safe because a pin value needs no
+          // recomputation, and it was not: whether that pin can RESOLVE is a fact about the index, so
+          // a retained pin could be written onto an entry the queue had just hidden. A dropped write
+          // costs the owner one re-tap; a retained one writes a binding nothing honours.
+          if (stale.current) {
+            stale.current = false;
+            if (queue.current.length > 0) {
+              for (const dropped of queue.current) dropped.settle?.("skipped");
+              queue.current.length = 0;
+              pushToast(
+                "The art list did not come back in time — the rest of your changes were not saved. Try again.",
+                "err",
+              );
+            }
+          }
+        });
       }
     } finally {
       draining.current = false;
@@ -495,9 +524,23 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
   };
 }
 
-/** The `roles.<role>.files` block one intent produces against the freshest state — `null` when the
- *  settings snapshot is missing, which is the honest refusal: a list rebuilt without the persisted
- *  entries would drop every per-item field the owner set. */
+/** The `roles.<role>.files` block one intent produces against the freshest state — `null` when either
+ *  half of the authoritative state is missing, which is the queue's one invariant applied to a list
+ *  write:
+ *
+ *   · no SETTINGS snapshot — a list rebuilt without the persisted entries would drop every per-item
+ *     field the owner set;
+ *   · no ROLE on the wire — the transforms compute the whole list from the index rows, so an absent
+ *     role would compute against `[]` and persist `files: []`, wiping the order, the switched-off
+ *     entries, the framing points and the binding keys in one save. The index can genuinely stop
+ *     carrying a role between the tap and the send: the namespace flips DISABLED (`disabled_index`
+ *     answers with no roles at all) or the registry row shrank under a config that named it.
+ *
+ *  The test is KEY PRESENCE, never non-emptiness. An empty-but-present role is a real, writable state —
+ *  it is what the first upload's register phase writes into — and the server emits every registry
+ *  role's key whatever the folder holds (`core/media.py#build_index`, pinned by
+ *  `test_role_dirs_are_created_at_app_construction`), so "the key is missing" means exactly "this
+ *  payload does not describe the role". */
 function filesBlock(
   ns: string,
   role: string,
@@ -507,7 +550,8 @@ function filesBlock(
 ): Record<string, { files: MediaFileEntry[] }> | null {
   if (settings === undefined) return null;
   const entries = settings.media?.namespaces?.[ns]?.roles?.[role]?.files ?? [];
-  const rows = index?.roles?.[role] ?? [];
+  const rows = index?.roles?.[role];
+  if (rows === undefined) return null;
   return { [role]: { files: apply(entries, rows) } };
 }
 
