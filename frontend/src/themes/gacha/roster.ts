@@ -281,17 +281,26 @@ export function activePool(rows: readonly LibraryRow[]): ActiveArt {
 }
 
 /** The ORACLE pool, whose winner may live in ANOTHER section: `oracleArt` reads the `oracle` SEAT pin
- *  (a character bound into the backdrop) before it ever looks here. When that pin is set, this pool
- *  paints nothing — and the card must say so with a pointer to the seat rather than marking a tile
- *  that is not on screen (Opus confirm ②, the pin-beats-pool phantom). */
+ *  (a character bound into the backdrop) before it ever looks here — when that pin RESOLVES, this pool
+ *  paints nothing, and the card must say so with a pointer to the seat rather than marking a tile that
+ *  is not on screen (Opus confirm ②, the pin-beats-pool phantom).
+ *
+ *  The override is emitted as a CLAIM beside the pool's own pick, never as the verdict (the W6
+ *  confirm-2 catch): whether the pin resolves is a fact about the CHARACTERS ladder, which this
+ *  resolver — pure in its own role's rows — cannot see. A dangling, hidden or unusable-first pin
+ *  falls through `oracleArt`'s ladder to this pool, so a pointer honoured on the pin's mere presence
+ *  hid the pool's real active image behind a claim the surface does not make. The WIRING
+ *  (`useMediaLibrary`), the one place holding both roles, resolves the seat and either blanks these
+ *  ids behind the pointer or drops the claim. */
 export function activeOraclePool(
   rows: readonly LibraryRow[],
   slots: Readonly<Record<string, string>>,
 ): ActiveArt {
+  const pool = activePool(rows);
   if (slotEntryName(slots, "oracle") !== undefined) {
-    return { ids: [], mode: "first", overriddenBySlot: "oracle" };
+    return { ...pool, overriddenBySlot: "oracle" };
   }
-  return activePool(rows);
+  return pool;
 }
 
 /** A SEAT (§2.1's pin-backed section): a read-only view over the source role where the ONE write is

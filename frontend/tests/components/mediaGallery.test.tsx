@@ -275,6 +275,30 @@ describe("the entry cards (§6.1)", () => {
     ).toBeTruthy();
   });
 
+  it("…but a pin that does NOT resolve overrides nothing — the pool answers for itself (W6 confirm-2)", async () => {
+    // The paint ladder falls through a dangling pin to the pool below, so a pointer honoured on the
+    // pin's mere PRESENCE hid the pool's real active image and claimed "set by Operator character"
+    // about a seat painting nothing. The override is a claim; the wiring honours it only when the
+    // seat's own resolver lands on a row.
+    renderGallery(
+      index({
+        roles: {
+          characters: [file("kira", "characters")],
+          banner: [],
+          reel: [],
+          oracle: [file("eye", "oracle")],
+        },
+        slots: { oracle: "ghost" }, // dangling — no such character
+      }),
+    );
+    const card = await screen.findByRole("button", { name: "Open the Operator backdrop gallery" });
+    expect(card.textContent).not.toContain("overridden");
+    expect(card.querySelectorAll("img").length).toBeGreaterThan(0); // the pool's own active shows
+    expect(
+      screen.queryByRole("button", { name: /Currently set by Operator character/ }),
+    ).toBeNull();
+  });
+
   it("a SEAT offers only what its source LADDER can resolve — never a pick that falls through", async () => {
     // The pin names an entry the theme looks up in the list it DEALS. On a fresh install that is the
     // bundled cast; the moment the owner drops one file in, the cast is theirs — and offering the

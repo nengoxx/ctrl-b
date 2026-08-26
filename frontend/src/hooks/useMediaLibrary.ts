@@ -177,12 +177,32 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
       // owner's own files would let the owner pick one the render then falls straight through — the
       // gallery claiming a binding it cannot honour, which is the one thing §2.4 exists to prevent.
       const rows = section.kind === "seat" ? ladderRows(all) : all;
-      const active = section.active?.(rows, data.slots ?? {}) ?? {
+      let active = section.active?.(rows, data.slots ?? {}) ?? {
         ids: [],
         mode: "first" as const,
       };
-      const seat =
+      let seat =
         active.overriddenBySlot === undefined ? undefined : seats.get(active.overriddenBySlot);
+      // An override is a CLAIM until the seat RESOLVES (the W6 confirm-2 catch): the paint ladder
+      // falls through a dangling/hidden/unusable pin to the pool below, so a pointer honoured on the
+      // pin's mere presence hid the pool's real active image and said "set by the seat" about a seat
+      // painting nothing. This is the one place holding BOTH roles, so the judgment lands here: the
+      // seat's own resolver over its own dealt tier — the same call its own card makes — says whether
+      // the claim is real. Real ⇒ this section marks nothing and points; void ⇒ the pool answers for
+      // itself and the pointer is dropped.
+      if (seat !== undefined) {
+        const resolved = seat.active?.(
+          ladderRows(data.roles?.[seat.role] ?? []),
+          data.slots ?? {},
+        ) ?? {
+          ids: [],
+        };
+        if (resolved.ids.length > 0) active = { ...active, ids: [] };
+        else {
+          active = { ...active, overriddenBySlot: undefined };
+          seat = undefined;
+        }
+      }
       return {
         section,
         rows,

@@ -678,13 +678,17 @@ describe("the §2.4 active resolvers are PURE in the index (§11's purity arm)",
     }
   });
 
-  it("the oracle POOL reports the SEAT that overrides it, rather than a phantom of its own", () => {
+  it("the oracle POOL emits the seat override as a CLAIM beside its own pick (W6 confirm-2)", () => {
+    // The resolver is pure in ITS OWN role's rows and cannot see the characters ladder, so it cannot
+    // know whether the pin resolves — the WIRING (`useMediaLibrary`) honours or drops the claim. The
+    // pool's own pick therefore rides along: a claim judged void must leave the pool answering for
+    // itself, not re-resolving.
     const pool = mediaSections("gacha", MEDIA_NS.gacha, rolesOf("gacha")).find(
       (s) => s.id === "gacha:oracle",
     );
     expect(pool?.active?.([row("eye.webp")], {})?.ids).toEqual(["f:eye.webp"]);
     const beaten = pool?.active?.([row("eye.webp")], { oracle: "kira" });
-    expect(beaten?.ids).toEqual([]);
+    expect(beaten?.ids).toEqual(["f:eye.webp"]);
     expect(beaten?.overriddenBySlot).toBe("oracle");
   });
 });
