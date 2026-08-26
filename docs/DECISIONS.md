@@ -4803,3 +4803,22 @@ section cards owner-facing names with the role folder as a mono subtitle (the SS
 stays visible). Amends: D65 (the gallery's selection model) · D54 (kit pins) · D53 M2
 (frontier hero pin) · D52 §5.2 (reel pin). Phase 19's §7b carries the owner-requested
 whole-system design verdict over the result.
+
+**AMENDMENT 2026-08-26 (owner, same day — the re-poke; build record = MEDIA_MANAGER_PLAN §12
+"W7"): membership NEVER moves a picture.** Switching an entry out of use is expressed WITH the
+section's order, not against it: where order is the priority system, the write states the display
+order EXACTLY as it stands and marks its one entry `hidden`. **An unticked image dims in place and
+stays there; re-ticking it puts it back in use from the same place; arranging is the drag's job and
+no other gesture's.** The rule is the direct consequence of this D-entry — if order is the only
+priority system, then a membership tap that reshuffled the library would be a second one, writing
+priority through the back door. It also closes the two owner-round defects the half-written form
+produced: listing only the bundled row a tap acted on collated that row to the FRONT of the grid (a
+listed entry precedes the whole fallback tier), and left a bare `{bundled: id}` behind on un-hide —
+the section's sole own-tier member, which `ladderRows` then dealt to every host while the other
+defaults vanished. Hence the **bare-entry guard**: un-hiding drops an entry that would be left
+saying nothing, in a role whose bundled tier is not fully listed, so the row returns to the fallback
+tier at its registry position. Sections where order decides nothing (a named role's per-key gallery)
+keep the minimal write — sweeping a role that binds by NAME would list other keys' rows for no
+reason. Two cosmetics ruled in the same breath: the ACTIVE mark is ONE accent ring, on active tiles
+only (the three-edge stack read as a fuzzy triple line), and the tile's In-use toggle is drawn at
+24 px — the WCAG 2.5.8 floor — with its hit area extended past the disc.

@@ -166,6 +166,21 @@ The **server is the collator**; `list_role` stays the one implementation. The ru
    `appendItem`, `removeItem` — lists only the entry it acted on, plus the disk tier (free: those
    rows already sit in the resolution prefix, so listing them changes nothing but their order).
    The `lib/mediaLibrary` transforms own this rule; §11 pins every arm.
+   **AMENDED AGAIN 2026-08-26 (owner, the re-poke — "W7"; D66's amendment is the D-entry):
+   switching an entry OUT OF USE is an order intent too, wherever order is the section's priority
+   system (`caps.reorder`) — and the order it states is the one already on screen.** The write is
+   `sweep` + `displayOrder(rows)` UNCHANGED + `hidden: true` on its one entry: **an unticked image
+   dims in place and does not move**, and re-ticking it puts it back in use from the same place.
+   Membership never moves a picture; arranging is the drag's job. The sweep is what BUYS that
+   stillness — listing only the bundled row the tap acted on collated it to the FRONT of the grid,
+   because a listed entry precedes the whole fallback tier. Its other half is the **bare-entry
+   guard** on the un-hide: clearing `hidden` off a bundled entry that would be left as bare
+   `{bundled: id}` DROPS the entry instead, in any role whose bundled tier is not fully listed —
+   otherwise that entry becomes the section's sole own-tier member and `ladderRows` deals one
+   picture to the whole fleet. A fully-listed (swept) role keeps the entry: there it is one member
+   of a stated order and dropping it would move the picture. Sections where order decides nothing —
+   a named role's per-key gallery — keep the minimal write, because sweeping a role that binds by
+   NAME would list other keys' bundled rows for no reason.
 
 > **THE §2.3 ③ AMENDMENT (owner-ruled 2026-08-25, S6 triage). The rule this replaces read: a write
 > may sweep unlisted DISK rows but NEVER unlisted BUNDLED ones — "only the bundled entry the owner
@@ -378,6 +393,9 @@ DELETE /api/media/{ns}/files/{role}/{filename}      -> 204 | 404
   seat sections write the pin ("Use here"). In-use marks from the §2.4 resolver: first-wins →
   the active tile; roster/pool → check per used member, `hidden` entries dimmed, rotation said
   in words (no live "currently painted" tile for dealt pools — the field's honest form).
+  **A `hidden` entry dims WHERE IT IS** ("W7", owner 2026-08-26): membership never moves a picture,
+  so the off state is carried entirely by the tile's own look — dimmed + desaturated art under the
+  hollow corner ring — and the accent ring means ACTIVE, on active tiles alone.
   **a11y (Emma #9):** tiles stay plain dialog-opening buttons — membership lives in the
   accessible description; `aria-checked` only on the detail panel's real "In use" switch;
   `aria-current="true"` on a genuinely current item. Delete-active promotes the next entry in
@@ -518,7 +536,11 @@ no url; a fallback bundled row vs a listed one distinguishable from the wire alo
 — the EXACT-EXPRESSION property arm, for any from/to over any mix of tiers, plus the
 all-defaults section in both directions and a browser drag downwards inside one — while every
 other intent lists only what it acted on; the drag-past-an-SSH-dropped-file arm still commits and
-holds) + **restore defaults** (offered only where `files` says something about the shipped art ·
+holds; **as AMENDED 2026-08-26 ("W7"): switching off in an order-priority section sweeps and states
+the order VERBATIM — the untick → re-tick round trip leaves the same list in the same order with
+nothing hidden and the whole tier dealt, a per-key section keeps the minimal write, and the
+bare-entry guard drops an entry left saying nothing in a role that was never swept while keeping a
+non-bare one and keeping a bare one in a swept role**) + **restore defaults** (offered only where `files` says something about the shipped art ·
 bundled entries dropped, `hidden` stripped, the owner's files and their per-item fields whole ·
 scoped to the rows on screen) + **`overriddenBy`** (pin
 beats pool → the pool card carries the seat pointer, no phantom active) + **the
@@ -529,7 +551,9 @@ card + key rows + Unassigned bucket · gallery modal (focus trap · Escape-via-h
 popstate single-closer — the orphan-entry regression arm) · grid corners + a11y (description-
 carried membership · `aria-checked` on the switch only · `aria-current`) · set-active both kinds
 (move-to-front · pin write; seat sections read-only otherwise) · delete-active-promotes-next
-single write · hidden toggle dims + excludes · bundled undeletable/non-framable · auto-unique
+single write · hidden toggle dims + excludes **IN PLACE (the "W7" grid arms: dim + hollow corner +
+unchanged position checked against the written order; the ring means ACTIVE and only that)** ·
+bundled undeletable/non-framable · auto-unique
 naming (byte-budget truncation · suffix cap · timestamp fallback · 409-race retry) · the ONE
 admission latch (sync ref) · two-phase upload retry (never re-uploads after 201) · serialized
 `patch` queue (recompute-at-send; interleaved sections) · crop modal state machine · export
@@ -1012,6 +1036,60 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > the pool's own pick, and the WIRING — the one place holding both roles — resolves the seat and
 > honours or drops it. **Final round: RESOLVED, (a)(b) verified, ZERO new findings** (181 tests
 > run by the reviewer). Gate green per commit; tip = BE 1,990 · FE 2,559.
+>
+> **W7 — membership never moves a picture (owner rulings 2026-08-26, prose, the re-poke of the W6
+> gallery; D66's amendment is the D-entry).** Three bugs, one root: `toggleHidden` on a BUNDLED row
+> in an unswept section listed that row to carry `hidden: true`, and a listed entry (a) collates
+> FIRST — so the unticked image jumped to the top of the grid — and (b) survived the un-hide as a
+> bare `{bundled: id}`, the section's sole own-tier member, so `ladderRows`' own-replaces-fallback
+> rule collapsed the whole deal to that one picture (every fleet host painted it; only it wore the
+> active outline).
+>
+> The rulings, in the owner's own terms: **"an unticked image must not jump or vanish"** — it dims
+> where it stands, in place, and re-ticking puts it back in use from the same place *(first stated as
+> a sink to the bottom, then amended the same hour to no movement at all: order is entirely the
+> owner's to arrange through the drag / ↑↓ / To top, and no membership tap may touch it)*; the active
+> outline should be **ONE clean ring, on active images only**; the corner tick is **too big**; and
+> since the off image no longer moves, its **off state must be unmistakable in place** at 110 px over
+> busy art.
+>
+> Built: switching OFF where order is the priority system (`caps.reorder` — pools and the rotation,
+> i.e. exactly the sections whose drag already sweeps) is an ORDER INTENT that states the order
+> UNCHANGED — one write, `sweep` + `displayOrder(rows)` verbatim + `hidden: true` on its one entry,
+> through the existing `writeFiles` spec machinery (§2.3 ③'s second amendment, above). A per-key
+> gallery keeps the minimal write. Un-hiding keeps its minimal write plus the **bare-entry guard**,
+> implemented in the transform layer where the tier rule already lives (`WriteSpec.bare`): an entry
+> that would be left as bare `{bundled: id}` is DROPPED in any role whose bundled tier is not fully
+> listed, so a legacy or hand-edited config cannot collapse a deal either. Cosmetics: `.mgal-tile.on`
+> is one ~3px accent band (border + contiguous outer ring) instead of the three-edge stack;
+> `.mgal-tile.sel` and the `selectedId` prop are DELETED as dead code (`GalleryModal` never passed
+> one — the grid and the detail panel are never on screen together); `.mgal-use` is 24 px drawn (WCAG
+> 2.5.8) with an `::after` inset extending the target to ~34 px, glyph at 12; the off image takes the
+> app's own "not running" vocabulary — a deeper dim plus the grayscale every theme paints a sleeping
+> machine with — rather than a third marker.
+>
+> **Resolver verification (read, not assumed).** `listed` is read in exactly three places
+> (`ownTier` · `fallbackTier` · `defaultsRestorable`), so the whole sweep surface is
+> `ladderRows`/`usableLadderRows`: gacha `activeCast`/`activeScenes`/`activePool`/`activeOraclePool`
+> + `activeSeat`, frontier `activeRigs`/`activeHero` (`activeStackLayer` is per-key and tier-blind),
+> cosmos `activeBannerSet` and its consumer `bundledSetFrom` (both `shown`-only — sweep-neutral), kit
+> `activePool`/`activeNamedKey` + `roleFiles` (bundled rows filtered out by construction). A
+> fully-listed bundled tier resolves to the SAME deal the fallback tier did, in the same order,
+> wherever the owner's tier is otherwise empty — i.e. every virgin section, which is the state the
+> defect lived in. **The one residual is the amendment's own documented cost, unchanged from W1 and
+> now reachable by one more gesture**: in a MIXED section (owner files beside unlisted defaults) any
+> order write puts the defaults into the owner's tier, so the deal grows — a drag did that already,
+> and an untick now does too. Restore defaults is the way back.
+>
+> Verification: full gate green (BE 1,992 · FE 2,569, +10) · the media e2e specs re-run locally on
+> the built artifact, 19/19 mobile. New pins: the untick sweeps + states the order verbatim; the
+> round trip (untick → re-tick) leaves everything listed in the ORIGINAL order, nothing hidden, the
+> whole cast dealt; a disk row takes the same rule; a non-order section keeps the minimal write; the
+> guard drops a bare entry in an unswept role, keeps a non-bare one, keeps a bare one in a SWEPT role
+> (dropping it would move the picture), and never touches a disk entry; the grid's off state (dim +
+> hollow corner + unchanged position, checked against the written order) and the ring-means-active
+> triple (active / in use / off, three looks); and the browser proof through the server's own
+> collation. Stash-verified: 4 of the new unit pins fail without the transform change.
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 
