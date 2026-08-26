@@ -162,8 +162,9 @@ describe("the slide set (§6.4)", () => {
   });
 
   it("opens the carousel on the banner pool's FIRST member, wearing the frozen hero copy", () => {
-    // The 2026-08-26 ruling ("W5"): slide 1's DRESSING is fixed and its ART is dealt, so a fresh install
-    // opens on `b2` while the fleet BACKDROP still ends on `banner.webp`. Two pictures, on purpose.
+    // The 2026-08-26 ruling ("W5"): slide 1's DRESSING is fixed and its ART is dealt. The pool leads
+    // with `banner.webp` (order corrected same day — the decoupling is the MECHANISM, not a demand
+    // that the shipped pictures differ), so a fresh install opens on the same picture it always did.
     const { container } = render(<GachaFleet active />);
     const lead = slides(container)[0];
     expect(lead.querySelector("img")!.getAttribute("src")).toBe(defaultRoster().scenes[0].url);

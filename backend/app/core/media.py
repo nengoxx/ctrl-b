@@ -111,11 +111,12 @@ GACHA_ROLES: dict[str, MediaRole] = {
     # the mirror — so it appeared in no gallery and could not be reached, reordered or retired.
     "characters": MediaRole(bundled=("pegasus", "atlas", "3", "4", "lyra", "rook")),
     # The pickup-carousel slides: `defaultRoster().scenes` (themes/gacha/roster.ts), in the order the
-    # carousel deals them — the FIRST member opens the banner. `banner` is the tail one and joined at the
+    # carousel deals them — the FIRST member opens the banner. `banner` leads and joined at the
     # 2026-08-26 owner ruling: the file is what the fleet BACKDROP's ladder ends on, and until then it
     # reached the carousel only as a fixed slide's fallback, so it was in no role's list and therefore in
-    # no gallery — the same defect `rook` and the oracle backdrop were fixed for at S6.
-    "banner": MediaRole(bundled=("b2", "b3", "banner")),
+    # no gallery — the same defect `rook` and the oracle backdrop were fixed for at S6. First keeps a
+    # fresh install's carousel identical to what always shipped (banner opens, b2/b3 follow).
+    "banner": MediaRole(bundled=("banner", "b2", "b3")),
     # The transition cutout: `defaultRoster().pools.reel`, DERIVED from the entries carrying a
     # `cutout` field — today exactly `lyra`, which is why she stays last in the cast.
     "reel": MediaRole(bundled=("lyra",)),

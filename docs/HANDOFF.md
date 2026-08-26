@@ -37,15 +37,18 @@
 - **W5 RODE THE SAME DAY (owner prose ruling in-session, 2026-08-26): the gacha HERO SEAT IS
   DEAD.** The owner ruled the hero slide was never a separate thing from the banner — so the
   carousel's first slide now DEALS the banner pool's first member (frozen PICKUP copy kept),
-  `banner.webp` is that pool's LAST bundled entry (b2 · b3 · banner — orderable, retirable), an
+  `banner.webp` is that pool's FIRST bundled entry (banner · b2 · b3 — orderable, retirable; the
+  owner clarified "differ" meant the MECHANISM, so the shipped look keeps one picture on both
+  surfaces and the fence is byte-identical to pre-W5), an
   empty pool falls back to the backdrop image ("slide one stays the backdrop image"), and the
   backdrop is DECOUPLED (a kit background no longer moves the carousel; §5.3's coupling reversed —
   D54 amended). One build commit `15b769f` (Opus from a pinned brief) + the docs commit. FIXED IN
   PASSING: scene slides dropped their focal points entirely. Review: main-seat audit clean →
   Emma-lane blind round **SHIP, ZERO findings**. Gate green (BE 1,991 · FE 2,552). Full record =
   MEDIA_MANAGER_PLAN §12 W5. Dev backend restarted onto the new registry; :5173 serves it.
-- **Origin unchanged (`fef36aa`) — 50 commits unpushed with the docs commit carrying this block**
-  (the 48 below + `15b769f` + W5's docs). Prod untouched (v1.7.6 @ `6a2ccaa`).
+- **Origin unchanged (`fef36aa`) — 51 commits unpushed with the docs commit carrying this block**
+  (the 48 below + `15b769f` + W5's docs + the same-day order correction). Prod untouched
+  (v1.7.6 @ `6a2ccaa`).
   Dev units RUNNING; the dev backend was restarted onto the new registry (FE rides Vite HMR); the
   owner's dev config/media untouched by the wave.
 
@@ -54,13 +57,14 @@
 1. **Owner re-poke on dev (:5173):** drag anywhere lands where dropped (all-defaults sections
    included, both directions) · gacha library now shows oracle + rook · cosmos service-banners
    "Built-in rotation" · Restore defaults · **the W5 behavior**: the carousel opens on the banner
-   pool's FIRST image (b2 on defaults) wearing the PICKUP copy, `banner.webp` sits in the Pickup
-   banner gallery (drag it to the top to make it the opener again), the "Hero slide" seat is gone,
+   pool's FIRST image wearing the PICKUP copy (`banner.webp` on defaults — the shipped look is
+   unchanged; drag any image to the top to change the opener), `banner.webp` sits in the Pickup
+   banner gallery as an ordinary entry, the "Hero slide" seat is gone,
    hiding banner images leaves slide 1 on the backdrop image, and a kit background moves ONLY the
    backdrop · and the one flagged consequence to feel out: first reorder in a section holding BOTH
    uploads and defaults promotes the defaults into the deal. The set-active-feels-confusing note
    stays parked for a feel talk after this round (recorded 2026-08-25).
-2. **The PUSH ruling** (owner's word) — 50 commits, origin `fef36aa`.
+2. **The PUSH ruling** (owner's word) — 51 commits, origin `fef36aa`.
 3. **S6 proper** (plan §16) and **4. Release** — unchanged from the block below (1.7.x · rollback
    v1.7.6 · config_version 1→2 rides the batch · LOCAL e2e before the tag).
 

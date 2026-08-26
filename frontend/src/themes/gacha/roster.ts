@@ -186,16 +186,18 @@ const BUNDLED_ORACLE: NamedArt[] = [{ name: "oracle", url: ART.oracle }];
  *  `defaultRoster()` and `sceneUrl` read, so a bundled id the gallery offers can never be one this
  *  module fails to map back to an asset.
  *
- *  `banner` is the TAIL member (owner ruling 2026-08-26, "W5"). It is the picture the fleet backdrop's
- *  ladder ends on, and until that ruling it reached the carousel only as the fixed first slide's last
- *  fallback — art in no pool, therefore in no gallery, unorderable and un-retirable. It is an ordinary
- *  library entry now, on exactly the terms `rook` and the oracle backdrop became ones at S6. The
- *  BACKDROP still ends on it independently (`wallpaperArt`), which is a different surface with a
- *  different ladder — switching this entry off takes its SLIDE out of the carousel and leaves the
- *  backdrop alone. */
+ *  `banner` is the FIRST member (owner ruling 2026-08-26, "W5"; order corrected same day — the owner's
+ *  "backdrop and first slide differ" was about the MECHANISM, not the shipped pictures). It is the
+ *  picture the fleet backdrop's ladder ends on, and until W5 it reached the carousel only as the fixed
+ *  first slide's last fallback — art in no pool, therefore in no gallery, unorderable and un-retirable.
+ *  It is an ordinary library entry now, on exactly the terms `rook` and the oracle backdrop became ones
+ *  at S6 — and putting it FIRST keeps a fresh install's carousel byte-identical to what always shipped
+ *  (banner opens, b2/b3 follow; the fence snapshot says so). The BACKDROP still ends on it
+ *  independently (`wallpaperArt`), which is a different surface with a different ladder — switching
+ *  this entry off takes its SLIDE out of the carousel and leaves the backdrop alone. */
 const BUNDLED_SCENES: NamedArt[] = [
-  ...ART.scenes.map((s) => ({ name: s.name, url: s.url })),
   { name: "banner", url: ART.banner },
+  ...ART.scenes.map((s) => ({ name: s.name, url: s.url })),
 ];
 
 export function defaultRoster(): Roster {

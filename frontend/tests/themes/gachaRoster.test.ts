@@ -265,11 +265,12 @@ describe("defaultRoster — the bundled fallback set (§5.5)", () => {
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
   });
 
-  it("ships `banner.webp` as the banner pool's TAIL member (the 2026-08-26 ruling)", () => {
+  it("ships `banner.webp` as the banner pool's FIRST member (the 2026-08-26 ruling)", () => {
     // It is the picture the backdrop ladder ends on, and it used to be reachable ONLY there — art in no
     // pool is art in no gallery, exactly the defect `rook` and the oracle backdrop were fixed for at S6.
-    expect(r.scenes.map((s) => s.name)).toEqual(["b2", "b3", "banner"]);
-    expect(r.scenes.at(-1)!.url).toBe(ART.banner);
+    // FIRST, so a fresh install's carousel opens on the same picture it always did.
+    expect(r.scenes.map((s) => s.name)).toEqual(["banner", "b2", "b3"]);
+    expect(r.scenes[0].url).toBe(ART.banner);
   });
 
   it("keeps the SCENE art out of the per-host cycle (the frontier partition rule)", () => {
@@ -747,13 +748,14 @@ describe("bannerScenes — the first slide is dealt, and the rest are the scenes
     expect(bannerScenes(roster([entry("a")]))).toEqual({ lead: { url: ART.banner }, rest: [] });
   });
 
-  it("the BUNDLED deal is b2 · b3 · banner — the shipped carousel, in the registry's order", () => {
-    // The fresh-install contract after the ruling: `banner.webp` is the pool's tail member, so the
-    // carousel opens on b2 and the backdrop still ends on `banner.webp` — different pictures, on
-    // purpose. Slide 1's art moved here; the slide COUNT did not.
+  it("the BUNDLED deal is banner · b2 · b3 — the shipped carousel, in the registry's order", () => {
+    // The fresh-install contract after the ruling: `banner.webp` leads the pool, so the carousel
+    // opens on the SAME picture it always shipped with and the backdrop still ends on it too — the
+    // decoupling is the MECHANISM (owner clarification, same day), not a demand that the shipped
+    // pictures differ. Slide 1's art moved into the pool; neither the look nor the slide COUNT did.
     const { lead, rest } = bannerScenes(defaultRoster());
-    expect(lead).toEqual({ name: "b2", url: ART.scenes[0].url });
-    expect(rest.map((s) => s.name)).toEqual(["b3", "banner"]);
+    expect(lead).toEqual({ name: "banner", url: ART.banner });
+    expect(rest.map((s) => s.name)).toEqual(["b2", "b3"]);
     expect(wallpaperArt(defaultRoster())).toEqual({ url: ART.banner });
   });
 });

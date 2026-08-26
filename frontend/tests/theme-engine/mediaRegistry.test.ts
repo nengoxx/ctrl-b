@@ -379,9 +379,10 @@ describe("bundled ids — derived front-end-side, mirrored on the backend", () =
       "lyra",
       "rook",
     ]);
-    // `banner` is the TAIL member (2026-08-26): the picture the fleet backdrop ends on, which used to be
-    // reachable only through a seat's built-in channel and is an ordinary carousel slide now.
-    expect(ids(MEDIA_NS.gacha.roles.banner)).toEqual(["b2", "b3", "banner"]);
+    // `banner` LEADS (2026-08-26): the picture the fleet backdrop ends on, which used to be reachable
+    // only through a seat's built-in channel and is an ordinary carousel slide now — first, so the
+    // shipped carousel still opens on it.
+    expect(ids(MEDIA_NS.gacha.roles.banner)).toEqual(["banner", "b2", "b3"]);
     expect(ids(MEDIA_NS.gacha.roles.reel)).toEqual(["lyra"]);
     expect(ids(MEDIA_NS.gacha.roles.oracle)).toEqual(["oracle"]);
   });

@@ -213,10 +213,11 @@ def test_the_bundled_ids_are_the_ones_the_front_end_derives() -> None:
     bundled = {ns: {r: c.bundled for r, c in row.roles.items()} for ns, row in MEDIA_NAMESPACES.items()}
     assert bundled["gacha"] == {
         "characters": ("pegasus", "atlas", "3", "4", "lyra", "rook"),
-        # `banner` is the TAIL member (the 2026-08-26 owner ruling, "W5"): the picture the fleet
-        # BACKDROP's ladder ends on, which until then reached the carousel only as a fixed slide's
-        # fallback — so it was in no role's list and therefore in no gallery. Same defect, same fix.
-        "banner": ("b2", "b3", "banner"),
+        # `banner` LEADS (the 2026-08-26 owner ruling, "W5"): the picture the fleet BACKDROP's ladder
+        # ends on, which until then reached the carousel only as a fixed slide's fallback — so it was
+        # in no role's list and therefore in no gallery. Same defect, same fix — and FIRST, so the
+        # shipped carousel still opens on it.
+        "banner": ("banner", "b2", "b3"),
         "reel": ("lyra",),
         "oracle": ("oracle",),
     }

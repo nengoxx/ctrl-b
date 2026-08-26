@@ -923,9 +923,13 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > the first slide are DIFFERENT images · gacha does not need the hero image · hiding banner images
 > removes only their slides, and slide 1 stays on the backdrop image.
 >
-> As built: `banner.webp` joins the `banner` pool as its LAST bundled member (b2 · b3 · banner) — an
+> As built: `banner.webp` joins the `banner` pool as its FIRST bundled member (banner · b2 · b3) — an
 > ordinary, orderable, retirable entry, the W2/W3 class closed for the one picture those waves had
-> left inside a seat. The first slide keeps the frozen PICKUP copy and its fixed key and DEALS the
+> left inside a seat. *(Order corrected same day: the build first put it LAST, over-reading
+> "backdrop and first slide differ" as a demand that the shipped DEFAULTS differ — the owner
+> clarified it meant the MECHANISM: the default look keeps ONE picture on both surfaces, each
+> independently changeable. Leading, the fence snapshot is byte-identical to the pre-W5 record — a
+> fresh install renders exactly what always shipped.)* The first slide keeps the frozen PICKUP copy and its fixed key and DEALS the
 > pool's first usable member (`bannerScenes` — the one split, whole members riding down); the rest
 > are the scenes, titled by position over the rest; the wallpaper ladder is only the EMPTY-POOL
 > fallback, so the carousel never loses its opener. The `hero` seat/pin die everywhere

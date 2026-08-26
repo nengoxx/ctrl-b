@@ -11,12 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // If a snapshot needs regenerating after the extraction, the extraction is wrong. Fix the extraction, never
 // the snapshot (the E0 brief's law).
 //
-// It has been re-taken ONCE since, on 2026-08-26, for an owner-ruled BEHAVIOUR change rather than a
-// refactor ("W5": the carousel's first slide deals the banner pool's first member instead of pinning its
-// own art, and `banner.webp` joined that pool as its tail entry). The delta is exactly three `src`
-// attributes rotating across the three scenery slides — b2 · b3 · banner where it was banner · b2 · b3 —
-// with the DOM shape, the slide COUNT and the whole a11y tree byte-identical. That is what a fence is for:
-// the diff is the record of what the ruling actually moved.
+// It was re-taken ONCE, mid-day 2026-08-26, when W5 first put `banner.webp` at the pool's TAIL (three
+// `src` attributes rotated) — and then RESTORED the same day when the owner clarified the ruling: the
+// backdrop/carousel decoupling is the MECHANISM, not a demand that the shipped pictures differ, so
+// `banner.webp` LEADS the pool and the snapshot is byte-identical to the pre-W5 record again. Which is
+// the fence doing its job twice: the rotation was the record of what the first order moved, and the
+// restoration is the proof that a fresh install now renders exactly what always shipped.
 //
 // The fixture idiom is `gachaFleet.test.tsx`'s: `useFleet` is mocked to a fixed FleetView and the media index
 // to the fresh-install state (no owner files ⇒ the bundled art), so the record is of the BODY's own markup and

@@ -701,8 +701,8 @@ for the "04 / 04" counter.
 - **✅ AMENDED 2026-08-26 (the W5 owner ruling; record = MEDIA_MANAGER_PLAN §12):** slide 1's ART is
   no longer the wallpaper pick and there is no `hero` seat/pin. The first slide keeps the frozen
   PICKUP copy and its fixed key and DEALS the `banner` pool's first usable member (`bannerScenes`);
-  the rest of the pool follows as the scenes; `banner.webp` is the pool's LAST bundled member
-  (b2 · b3 · banner). The wallpaper ladder is only the empty-pool fallback — the carousel never
+  the rest of the pool follows as the scenes; `banner.webp` is the pool's FIRST bundled member
+  (banner · b2 · b3 — the shipped look is unchanged). The wallpaper ladder is only the empty-pool fallback — the carousel never
   loses its opener — and the backdrop is DECOUPLED: a kit background moves it, not the carousel.
   Where the bullets below say "roster wallpaper/banner art" for slide 1, this ruling supersedes.
 
