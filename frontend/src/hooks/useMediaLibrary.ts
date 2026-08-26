@@ -63,7 +63,9 @@ export interface LibraryItem {
   /** The key this file binds to in a `named` role, and whether its own `key` field did the binding. */
   key?: string;
   keyBound: boolean;
-  /** Another row already took this row's key/stem (defect #4 — the duplicate the owner cannot see). */
+  /** An earlier usable row already claimed this row's BINDING KEY, so this one paints nowhere
+   *  (defect #4 — the duplicate the owner cannot see). Only ever true in a role that binds by name;
+   *  a pool has no such question to ask. */
   duplicate: boolean;
 }
 
@@ -610,25 +612,36 @@ function filesBlock(
 
 /** The per-row view model one grid renders (§6.3/§6.5).
  *
- *  DUPLICATES are computed here through the one BINDING rule (defect #4): a row is a duplicate when an
- *  earlier usable row already claimed its key — the shadowed loser `classifyNamed` names in a `named`
- *  role, and the `a.png` / `a.webp` stem clash in a pool. It used to be invisible in both.
+ *  DUPLICATES are the shadowed-KEY case and only that (defect #4): in a role that BINDS BY NAME, a row
+ *  whose binding key an earlier usable row already claimed paints nowhere at all — the loser
+ *  `classifyNamed` names — and nothing on the grid said so. `named` is that precondition, handed down
+ *  from the section descriptor (`MediaRoleDef.kind`) for the reason every other theme fact is: this
+ *  module holds no registry import, and "does this role bind by name" is registry knowledge.
  *
- *  It used to carry a second, unrelated arm: a `pinnable` flag that flagged the STEM/ID collision a
- *  bare-name pin created (a file `lyra.webp` and the bundled id `lyra` both answering to `lyra`, with
- *  the collation deciding which the pin reached). The 2026-08-26 ruling ("W9") made a pin name the
- *  identity union, so there is no such collision to report — the ambiguity is unrepresentable rather
- *  than merely visible — and the arm went with the shape it was compensating for. */
+ *  **It is a precondition rather than a detail, and the W9 rider is what proved it.** The arm used to
+ *  run for every section, so a POOL holding `a.png` and `a.webp` was told its two entries "answer to
+ *  the same name" and that "the one higher in the list wins". Both sentences were about a MECHANISM: a
+ *  bare-stem `slots` pin, which reached whichever of them the collation listed first. Typed pins
+ *  ("W9") removed that mechanism — a pool binds by POSITION and nothing addresses its entries by name
+ *  — leaving a warning about a collision no reader consumes, which is noise wearing a warning's
+ *  clothes. Where the mechanism survives (a `named` role's per-key ladder) the behaviour here is
+ *  byte-identical.
+ *
+ *  The same wave deleted the arm's other half outright: a `pinnable` flag that reported the STEM/ID
+ *  collision a bare-name pin created (a file `lyra.webp` and the bundled id `lyra` both answering to
+ *  `lyra`). That state is unrepresentable now rather than merely visible, so its detector went with
+ *  it. */
 export function libraryItems(
   rows: readonly MediaFile[],
   active: ActiveArt,
+  named = false,
   ids: ReadonlySet<RowId> = new Set(active.ids),
 ): LibraryItem[] {
   const claimed = new Set<string>();
   return rows.map((row) => {
     const id = rowId(row);
     const key = bindingKey(row);
-    const claims = row.bundled == null && row.unusable !== true;
+    const claims = named && row.bundled == null && row.unusable !== true;
     const duplicate = claims && claimed.has(key);
     if (claims) claimed.add(key);
     return {

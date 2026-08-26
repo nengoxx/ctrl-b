@@ -1693,6 +1693,44 @@ describe('the stem/id pin collision, DELETED (the 2026-08-26 owner ruling, "W9")
     const card = await screen.findByRole("button", { name: "Open the Characters gallery" });
     expect(card.textContent).not.toContain("duplicate names");
   });
+
+  it("a POOL's stem clash is not a duplicate at all — two files, two ordinary members", async () => {
+    // The W9 RIDER, and the same deletion one level down. `a.png` and `a.webp` share a stem, and the
+    // grid used to call the second one a duplicate: *"Two files answer to 'a'. The one higher in the
+    // list wins — move this one to the top to use it."* Both sentences described a MECHANISM — a
+    // bare-stem `slots` pin, which reached whichever the collation listed first — and typed pins
+    // removed it. A pool binds by POSITION; nothing addresses its entries by name, so there is no
+    // winner to name and no tie to break. The warning outlived what it was warning about.
+    //
+    // (`kind` is what carries this: the arm runs only for a role that BINDS BY NAME. The kit gallery
+    // above still shows the shadowed-key duplicate, byte-identically — that mechanism is alive.)
+    renderGallery(
+      index({
+        roles: {
+          characters: [
+            file("a", "characters"),
+            {
+              ...file("a", "characters"),
+              file: "a.png",
+              url: "/api/media/gacha/files/characters/a.png",
+            },
+          ],
+          banner: [],
+          reel: [],
+          oracle: [],
+        },
+      }),
+    );
+    const card = await screen.findByRole("button", { name: "Open the Characters gallery" });
+    expect(card.textContent).not.toContain("duplicate names");
+    const dialog = await openSection("Characters");
+    openItem(dialog, "a.png");
+    expect(within(dialog).queryByText("duplicate name")).toBeNull();
+    expect(within(dialog).queryByText(/answer to/)).toBeNull();
+    // …and it is an ordinary member: in use, and arrangeable like any other.
+    expect(within(dialog).getByRole("switch", { name: /In use — a.png/ })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "To top" })).toBeTruthy();
+  });
 });
 
 describe("the queue past its failure and staleness bounds (reviews #4 and #7)", () => {

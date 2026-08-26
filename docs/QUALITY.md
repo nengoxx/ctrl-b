@@ -39,7 +39,7 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | **FE type safety** | `tsc` **strict** (already on) | type errors, unused locals/params | ✅ |
 | **FE lint** | **ESLint** flat + **typescript-eslint `recommended-type-checked`** + `eslint-plugin-react-hooks` + `-react-refresh` | floating promises, misused async/await, unsafe `any`, hook-deps, rules-of-hooks, React-Compiler diags | ✅ (1b) |
 | **FE format** | **Prettier** + `eslint-config-prettier` | style drift (deterministic) | ✅ (1b) |
-| **FE unit tests** | **Vitest** (D21 — 2,582 across 155 files, 2026-08-26) | logic regressions | ✅ |
+| **FE unit tests** | **Vitest** (D21 — 2,583 across 155 files, 2026-08-26) | logic regressions | ✅ |
 | **FE e2e / a11y** | **Playwright** + `@axe-core/playwright` (D24) | broken user paths, a11y | ✅ (Phase 9 wires the suite) |
 | **BE lint + format** | **ruff** (`E,F,I,ASYNC,B` — `backend/pyproject.toml:87`; formatter) | style, imports, dead code, async footguns, bugbear | ✅ |
 | **BE type check** | **`pyright[nodejs]`** (pinned `==1.1.409`; `basic` → ratchet `strict`) | type errors across the FastAPI service | ✅ (1c) |
@@ -178,16 +178,25 @@ Two **react-hooks v7** rules are set to **`warn` (not `error`, not `off`)** in `
 dodge** (an earlier read wrongly called them false positives; the React docs confirm they flag *real*
 Rules-of-React patterns).
 
-**The full warning accounting (re-measured 2026-08-20, post-v1.7.4):** the gate's `49 warnings / 0 errors`
-spans **four** warn-level rules, not just the two above — `react-hooks/refs` **22** +
-`set-state-in-effect` **14** (the deferred pair) + `react-refresh/only-export-components` **12** (preset
-default; the 2026-08-20 jump 7 → 12 is D62's `chatAttribution.tsx` exporting its pure formatters beside
-the component — deliberate, they're unit-tested pure functions) + `react-hooks/exhaustive-deps` **1**
-(preset default). All four are part of the same F13 checklist; `rules-of-hooks` and `static-components`
-stay `error`. **The backlog has grown** — 27 at the 2026-07-07 QH deep pass (`11`/`8`/`2`/`6`), 29 at the
-2026-07-16 re-count (`12`/`8`/`2`/`7`), 43 at the 2026-08-17 re-count, **49** now: the latest-ref idiom
-spread with the phases since (`refs` 8 → 22), so the deferral is a *growing* debt, not a frozen one.
-Deferral status unchanged: all 49 stay in the F13 backlog. **This paragraph is the ONLY home for the
+**The full warning accounting (re-measured 2026-08-26, mid-Phase-21):** the gate's `78 warnings / 0
+errors` spans **four** warn-level rules, not just the two above — `react-hooks/refs` **38** +
+`set-state-in-effect` **16** (the deferred pair) + `react-refresh/only-export-components` **23** (preset
+default) + `react-hooks/exhaustive-deps` **1** (preset default). All four are part of the same F13
+checklist; `rules-of-hooks` and `static-components` stay `error`. **The backlog keeps growing** — 27 at
+the 2026-07-07 QH deep pass (`11`/`8`/`2`/`6`), 29 at the 2026-07-16 re-count (`12`/`8`/`2`/`7`), 43 at
+the 2026-08-17 re-count, 49 at the 2026-08-20 one (`22`/`14`/`12`/`1`), **78** now. The deferral is a
+*growing* debt, not a frozen one, and the growth is concentrated in the media manager's own surfaces:
+`GalleryModal.tsx` alone carries **14** `refs` (its focus-trap and drag latches), and the two modal
+surfaces `FramingSheet.tsx` (**7**) + `CropModal.tsx` (**4**) are most of the
+`only-export-components` rise — each exports its pure helpers beside its component, deliberately,
+because those helpers are unit-tested on their own.
+
+> **Re-measurement note (2026-08-26, "W9"):** the 49 above had been stale since 2026-08-20 — the jump to
+> 78 accumulated across the Phase 21 waves and **predates W9**, which was verified to add none (78
+> before and after the change). Recorded so the delta is attributed rather than silently absorbed into
+> whichever wave happened to re-measure. **No warning was fixed** — F13 stays trigger-gated.
+
+Deferral status unchanged: all 78 stay in the F13 backlog. **This paragraph is the ONLY home for the
 count** (doc-truth ruling 2026-08-17) — other docs point here, no numbers.
 
 **Why deferred (assessed thoroughly 2026-07-02, all ~19 sites reviewed):**
@@ -197,7 +206,7 @@ count** (doc-truth ruling 2026-08-17) — other docs point here, no numbers.
   rAF/effects, never for render output). **No correctness bug, no tearing, no user-visible flicker** — verified.
 - The *only* real cost is **React Compiler** coverage: per React's docs a violating component is **skipped for
   optimization** (never broken), and the Compiler is itself deferred (**[UI_AUDIT](./UI_AUDIT.md) F13**). So
-  fixing these ~19 now is **high-churn / near-zero benefit** — the payoff only lands *with* Compiler adoption,
+  fixing them now is **high-churn / near-zero benefit** — the payoff only lands *with* Compiler adoption,
   which also deletes our ~50 manual `useMemo`/`useCallback`/`memo` sites in the same pass.
 
 **The mitigation that makes this safe:** keep them at **`warn`** so the warnings **ARE the checklist** — when F13

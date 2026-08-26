@@ -91,7 +91,11 @@ export function SectionCard({
     section.def.label !== undefined && (section.kind === "pool" || section.kind === "key")
       ? `media/${section.ns}/${section.role}/`
       : undefined;
-  const items = libraryItems(scopedRows(view.rows, scope), view.active);
+  const items = libraryItems(
+    scopedRows(view.rows, scope),
+    view.active,
+    section.def.kind === "named",
+  );
   const active = items.filter((i) => i.active);
   const art = active
     .map((i) => tileUrl(i.row, section))

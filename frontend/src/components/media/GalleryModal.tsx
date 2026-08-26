@@ -129,7 +129,11 @@ export function GalleryModal({
   // `activeForKey(key)` already, so this resolves the same answer through the same function.
   const active =
     scope.key !== undefined ? (view.activeForKey?.(scope.key) ?? view.active) : view.active;
-  const items = libraryItems(rows, active);
+  // `def.kind` is the ROLE's own fact, which is the one the duplicate arm needs: every section over a
+  // `named` role — a key gallery, the family card, the unassigned bucket — asks "who claimed this
+  // key", and no section over a pool does (a seat's `def` is its SOURCE role's, so it inherits the
+  // right answer for free).
+  const items = libraryItems(rows, active, section.def.kind === "named");
   const selected = items.find((i) => i.id === selectedId);
   const problems = items.filter((i) => i.row.unusable).length;
   // A pin naming nothing this seat's tier holds. By IDENTITY since "W9" — the pin says `{name}` or

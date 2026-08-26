@@ -1289,6 +1289,26 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > rather than deleted: the "duplicate name" collision note (now: no note, and both entries separately
 > pinnable) and the send-time namesake REFUSAL (now: the tap lands, and the refusals that remain are
 > the tier ones). Stash-verified: the seat-resolution and write-shape pins fail without the change.
+>
+> **W9 RIDER — the duplicate badge is scoped to roles that BIND BY NAME (main-seat ACCEPTED,
+> builder-found).** The same deletion, one level down. `libraryItems`' key-shadow arm ran for every
+> section, so a POOL holding `a.png` beside `a.webp` was told *"Two files answer to 'a'. The one higher
+> in the list wins — move this one to the top to use it."* Both sentences described a MECHANISM — the
+> bare-stem pin, which reached whichever of them the collation listed first — and typed pins removed
+> it: a pool binds by POSITION, nothing addresses its entries by name, so there was no winner to name
+> and no tie to break. A warning that outlived what it warned about is noise wearing a warning's
+> clothes. The precondition is now one fact from the section descriptor (`MediaRoleDef.kind ===
+> "named"`, passed down for the reason every theme fact is — this module holds no registry import), so
+> defect #4's real case is **byte-identical** wherever the mechanism is alive: a `named` role's per-key
+> ladder, where a shadowed file genuinely paints nowhere. Pinned as an ABSENCE (a pool's stem clash
+> shows no note and both entries stay ordinary, switchable, arrangeable members), stash-verified.
+>
+> **W9 RIDER — the ESLint accounting is honest again** (QUALITY.md, the count's only home): `49` had
+> been stale since 2026-08-20; the real figure is **78** (`refs` 38 · `only-export-components` 23 ·
+> `set-state-in-effect` 16 · `exhaustive-deps` 1), and the growth is Phase 21's own surfaces — 14 of
+> the `refs` are `GalleryModal.tsx`'s focus-trap and drag latches. **It predates W9** (measured 78 with
+> and without the change) and is recorded as such so the delta is attributed rather than absorbed. **No
+> warning was fixed** — F13 stays trigger-gated.
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 
