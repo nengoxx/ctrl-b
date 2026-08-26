@@ -1,0 +1,1217 @@
+/* =====================================================================
+   CTRL/B — ALT FLEET LAB · THE FINALISTS
+   Three full-viewport concept screens.  Sections 0–4 are lab v2's harness
+   (trimmed to what three screens need); 5–7 are the finalists.
+
+     0  fonts
+     1  motion grammar (R24 §B.1 tokens, verbatim)
+     2  reset · stage · switcher
+     3  shared dossier
+     4  shared effect kit (grain · flash · shake · tone · barcode · stars)
+     5  A · THE POSTER
+     6  B · THE COVER
+     7  C · THE CLUB PAGE
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   0 · FONTS — all self-hosted latin subsets, font-display: swap
+   ------------------------------------------------------------------ */
+@font-face{font-family:"Bungee";src:url("./assets/bungee-400-latin.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Zen Kaku";src:url("./assets/zen-kaku-gothic-new-700-latin.woff2") format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Zen Kaku";src:url("./assets/zen-kaku-gothic-new-900-latin.woff2") format("woff2");font-weight:900;font-display:swap}
+@font-face{font-family:"Archivo Black";src:url("./assets/archivo-black-400.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Rubik Mono One";src:url("./assets/rubik-mono-one-400.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Silkscreen";src:url("./assets/silkscreen-400.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Dela Gothic One";src:url("./assets/dela-gothic-one-400.woff2") format("woff2");font-weight:400;font-display:swap}
+
+/* ---------------------------------------------------------------------
+   1 · MOTION GRAMMAR — R24 §B.1 tokens, adopted verbatim
+   ------------------------------------------------------------------ */
+:root{
+  /* durations */
+  --t-instant : 90ms;    /* press-down, flash on                */
+  --t-tap     : 140ms;   /* release, toggle, chevron nudge      */
+  --t-ui      : 220ms;   /* card select, panel swap, slam       */
+  --t-panel   : 320ms;   /* sheet, drawer, screen change        */
+  --t-ceremony: 900ms;   /* a pull/reveal, budgeted across beats*/
+
+  /* easings — never ease-in on UI */
+  --e-out       : cubic-bezier(.23, 1, .32, 1);      /* default in/out    */
+  --e-inout     : cubic-bezier(.77, 0, .175, 1);     /* on-screen travel  */
+  --e-sheet     : cubic-bezier(.32, .72, 0, 1);      /* drawers           */
+  --e-overshoot : cubic-bezier(.34, 1.56, .64, 1);   /* ~+12%, needs >=200ms */
+  --e-slam      : cubic-bezier(.16, 1, .3, 1);       /* hard landing      */
+  --e-anticipate: cubic-bezier(.68, -.4, .32, 1.4);  /* pull back then over; >=320ms */
+
+  --stagger: 40ms;  --stagger-max: 240ms;
+  --press-scale: .97;  --shake-amp: 4px;
+
+  /* --- THE RARITY -> HUE LADDER (owner ruling 2026-08-08) -------------
+     Declared here so the whole lab shares one source; every screen reads
+     it through the per-machine `--rar` set by app.js from `stars`.
+     Production's source is `frontend/src/themes/gacha/stars.ts`. */
+  --rar-1: #cdd2e0;   /* silver floor */
+  --rar-2: #5fe0a0;   /* green        */
+  --rar-3: #4dd7ff;   /* cyan         */
+  --rar-4: #b07cff;   /* purple       */
+  --rar-5: #ffd464;   /* gold — matches production --gc-star */
+
+  /* production star grammar, independent of the slice hue */
+  --star:    #ffd464;
+  --star-hi: #ff8fa8;
+
+  /* lab plumbing (not part of the R24 spec) */
+  --stage-w: 520px;
+  --u: min(100vw, 520px);   /* the drawn column width — type scales off it */
+  /* the PICKUP BANNER's height.  Production's `.gc-banner` is a FIXED 232px
+     at any width (gacha.css), which at the 390px design column is .595 of
+     the column — so the mock keeps that ratio downwards and caps at the
+     production number upwards, and a 430px phone gets production's banner,
+     not a taller one. */
+  --bn-h: clamp(150px, calc(var(--u) * .595), 232px);
+  --bn-h-strip: 88px;       /* B's cover strapline: a strip, not a hero */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* R24 §B.4 — reduce, don't delete */
+@media (prefers-reduced-motion: reduce){
+  :root{
+    --t-ui: 120ms; --t-panel: 150ms; --t-ceremony: 200ms;
+    --e-overshoot: var(--e-out); --e-anticipate: var(--e-out);
+    --stagger: 0ms; --press-scale: 1; --shake-amp: 0px;
+  }
+  .slam, .echo, .shake{ animation-name: fade-in; animation-duration: 120ms; }
+  .idle, [class*="idle-"]{ animation: none !important; }
+  .po-slice img, .cl-zzz span{ animation: none !important; }
+}
+@keyframes fade-in{ from{opacity:0} to{opacity:1} }
+
+/* the ceremony skip switch — tap anywhere collapses to the final frame */
+.skip, .skip *{
+  animation-duration: 1ms !important; animation-delay: 0ms !important;
+  transition-duration: 1ms !important; transition-delay: 0ms !important;
+}
+
+/* ---------------------------------------------------------------------
+   2 · RESET · STAGE · SWITCHER
+   ------------------------------------------------------------------ */
+*,*::before,*::after{ box-sizing:border-box }
+html,body{ height:100% }
+body{
+  margin:0; background:#0a0a0d; color:#fff;
+  font-family:"Zen Kaku","Segoe UI",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased; overscroll-behavior:none;
+}
+img{ display:block; max-width:100% }
+button{ font:inherit; color:inherit; background:none; border:0; margin:0; padding:0; cursor:pointer; -webkit-tap-highlight-color:transparent }
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap; border:0;
+}
+
+/* desktop just centres a phone-ish column over a dim field */
+@media (min-width: 560px){
+  body{
+    background:
+      radial-gradient(1200px 700px at 50% -10%, #17171f 0%, #0a0a0d 60%),
+      repeating-linear-gradient(45deg, rgba(255,255,255,.012) 0 2px, transparent 2px 9px);
+  }
+}
+
+.stage{
+  position:relative; width:min(100vw, var(--stage-w)); height:100dvh;
+  margin:0 auto; overflow:hidden; background:#000; isolation:isolate;
+}
+@media (min-width:560px){
+  .stage{ box-shadow:0 0 0 1px rgba(255,255,255,.08), 0 40px 120px rgba(0,0,0,.7) }
+}
+.screens{ position:absolute; inset:0 }
+
+/* hide via :not() so each concept keeps its own display value (grid/block) */
+.screen{ position:absolute; inset:0; overflow:hidden }
+.screen:not(.is-active){ display:none }
+
+/* switcher — small, floating, never inside a concept's container root */
+.switcher{
+  position:absolute; z-index:60; left:50%; bottom:calc(10px + env(safe-area-inset-bottom,0px));
+  transform:translateX(-50%);
+  display:flex; align-items:center; gap:5px;
+  padding:4px; border-radius:999px;
+  background:rgba(9,9,12,.62); border:1px solid rgba(255,255,255,.14);
+  backdrop-filter:none; /* deliberately not used: dies in capture contexts */
+}
+.sw-chip{
+  width:34px; height:30px; display:grid; place-items:center; border-radius:999px;
+  font-size:17px; line-height:1; color:rgba(255,255,255,.85);
+  transition:transform var(--t-tap) var(--e-out);
+}
+.sw-chip:active{ transform:scale(var(--press-scale)) }
+.sw-chip:focus-visible{ outline:2px solid #fff; outline-offset:2px }
+.sw-reset{ font-size:13px; opacity:.6 }
+/* THE GLOBAL BANNER SWITCH — one chip, THREE values, all three screens
+   (WALK 3, then the tri-state ruling).  It is a CYCLE, so it reads its
+   value out loud rather than looking pressed or unpressed: `BN ON` ->
+   `BN MIN` -> `BN OFF`.  `min-width` keeps the switcher from re-flowing as
+   the word changes length, and OFF is dimmed AND struck so the state never
+   rides on one signal alone.  Same face grammar as C's GEO chip. */
+.sw-banner{
+  width:auto; min-width:56px; padding:0 8px; gap:4px;
+  display:flex; align-items:center; justify-content:center;
+  font-family:"Silkscreen",monospace; letter-spacing:.12em;
+}
+.sw-banner i{ font-style:normal; font-size:6px; color:rgba(255,255,255,.42) }
+.sw-banner b{ font-weight:400; font-size:8px }
+.sw-banner[data-mode="off"]{ opacity:.45 }
+.sw-banner[data-mode="off"] b{ text-decoration:line-through }
+.sw-index{
+  min-width:44px; text-align:center;
+  font-family:"Silkscreen",monospace; font-size:9px; letter-spacing:.16em;
+  color:rgba(255,255,255,.7);
+}
+@media (hover:hover) and (pointer:fine){
+  .sw-chip:hover{ color:#fff; background:rgba(255,255,255,.1) }
+}
+.sw-name{
+  position:absolute; z-index:59; left:50%; transform:translateX(-50%);
+  bottom:calc(50px + env(safe-area-inset-bottom,0px)); margin:0;
+  font-family:"Silkscreen",monospace; font-size:9px; letter-spacing:.28em;
+  color:rgba(255,255,255,.9); text-shadow:0 2px 10px rgba(0,0,0,.9);
+  opacity:0; pointer-events:none; white-space:nowrap;
+}
+.sw-name.show{ animation:sw-name-flash 1900ms var(--e-out) both }
+@keyframes sw-name-flash{
+  0%{ opacity:0; transform:translateX(-50%) translateY(6px) }
+  12%{ opacity:1; transform:translateX(-50%) translateY(0) }
+  72%{ opacity:1 }
+  100%{ opacity:0 }
+}
+/* the invisible tap-to-skip catcher (R24 B.3 — mandatory) */
+.skip-catcher{ position:absolute; inset:0; z-index:55; background:transparent }
+
+/* ---------------------------------------------------------------------
+   3 · SHARED DOSSIER
+   ------------------------------------------------------------------ */
+.dossier-layer{
+  position:fixed; inset:0; z-index:200; display:flex; align-items:flex-end;
+  justify-content:center; --dsr-accent:#fff;
+}
+.dossier-layer[hidden]{ display:none }
+.dsr-backdrop{
+  position:absolute; inset:0; background:rgba(4,4,7,.74);
+  animation:fade-in var(--t-panel) var(--e-out) both;
+}
+.dsr{
+  position:relative; z-index:2; width:min(100vw, var(--stage-w)); max-height:88dvh;
+  overflow:auto; background:#101016; border-top:3px solid var(--dsr-accent);
+  border-radius:16px 16px 0 0; transform:translateY(20px); opacity:0;
+  animation:dsr-in var(--t-panel) var(--e-sheet) both;
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@keyframes dsr-in{ to{ transform:none; opacity:1 } }
+.dsr:focus{ outline:none }
+.dsr-close{
+  position:absolute; z-index:3; right:8px; top:8px; width:36px; height:36px;
+  display:grid; place-items:center; border-radius:999px; font-size:20px;
+  background:rgba(0,0,0,.5); color:#fff;
+}
+.dsr-close:focus-visible{ outline:2px solid var(--dsr-accent); outline-offset:2px }
+.dsr-art{ position:relative; height:210px; overflow:hidden; background:#07070a }
+.dsr-art img{ width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 25%) }
+.dsr-art-scrim{
+  position:absolute; inset:0;
+  background:linear-gradient(180deg, transparent 40%, rgba(16,16,22,.5) 72%, #101016 100%);
+}
+.dsr-serial{
+  position:absolute; left:14px; bottom:8px;
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.18em; color:rgba(255,255,255,.75);
+}
+.dsr-body{ padding:12px 16px 4px }
+.dsr-eyebrow{
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.2em;
+  color:rgba(255,255,255,.45);
+}
+.dsr h2{
+  margin:4px 0 2px; font-family:"Archivo Black",sans-serif; font-size:28px; letter-spacing:-.01em;
+}
+.dsr-epithet{ margin:0 0 10px; font-size:12.5px; letter-spacing:.14em; color:var(--dsr-accent); text-transform:uppercase }
+.dsr-meta{ display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap }
+.dsr-role{
+  font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.16em;
+  padding:4px 8px; border:1px solid rgba(255,255,255,.28); color:rgba(255,255,255,.8);
+}
+.dsr-stars{ display:inline-flex }
+.dsr-rows{ margin:0 0 14px; display:grid; grid-template-columns:auto 1fr; gap:0 12px }
+.dsr-rows dt{
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.14em;
+  color:rgba(255,255,255,.42); padding:6px 0; border-bottom:1px solid rgba(255,255,255,.08);
+}
+.dsr-rows dd{
+  margin:0; font-size:12.5px; color:rgba(255,255,255,.9); padding:6px 0;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.dsr-actions{ display:flex; align-items:center; gap:12px; padding-bottom:12px; flex-wrap:wrap }
+.dsr-go{
+  min-height:44px; padding:10px 16px; background:var(--dsr-accent); color:#0b0b10;
+  font-family:"Silkscreen",monospace; font-size:9px; letter-spacing:.16em;
+  transition:transform var(--t-tap) var(--e-out);
+}
+.dsr-go:active{ transform:scale(var(--press-scale)) }
+.dsr-go:focus-visible{ outline:2px solid #fff; outline-offset:2px }
+.dsr-status{ font-family:"Silkscreen",monospace; font-size:9px; letter-spacing:.14em; color:rgba(255,255,255,.55) }
+.dossier-layer[data-skin="hard"] .dsr{ border-radius:0; background:#0b0b0f; border-top-width:4px }
+.dossier-layer[data-skin="hard"] .dsr h2{ font-family:"Rubik Mono One",monospace; font-size:26px }
+
+/* ---------------------------------------------------------------------
+   4 · SHARED EFFECT KIT
+   ------------------------------------------------------------------ */
+/* A18 — baked grain tile, never a live filter */
+.grain{
+  position:absolute; inset:0; pointer-events:none; z-index:8;
+  background-image:var(--grain); background-size:160px 160px; opacity:.05;
+}
+/* A9 — one-frame flash: a pre-existing node, opacity only */
+.flash{ position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:40 }
+.flash.fire{ animation:flash 200ms linear both }
+@keyframes flash{ 0%{opacity:0} 20%{opacity:.55} 100%{opacity:0} }
+/* A10 — shake root (never <body>; fixed children stay outside) */
+.shake.fire{ animation:shake 130ms var(--e-inout) both }
+@keyframes shake{
+  0%{transform:translate3d(0,0,0)}
+  25%{transform:translate3d(var(--shake-amp),-1px,0)}
+  50%{transform:translate3d(calc(var(--shake-amp) * -1),1px,0)}
+  75%{transform:translate3d(calc(var(--shake-amp) * .6),0,0)}
+  100%{transform:translate3d(0,0,0)}
+}
+/* A2 — halftone ramp: constant dots, masked opacity (no blend modes).
+   Parameterised rather than forked (round 3): the dot size, the pitch, the
+   ramp angle and an OPTIONAL punch-out layer are custom properties, so a
+   screen that wants a finer tone or a hole over a face sets variables
+   instead of re-declaring the whole effect.  `--tone-hole` defaults to a
+   fully-opaque gradient, which makes the intersect a no-op. */
+.tone-ramp{
+  position:absolute; inset:0; pointer-events:none;
+  background-image:radial-gradient(circle, currentColor var(--tone-dot,1.7px),
+                                   transparent calc(var(--tone-dot,1.7px) + .5px));
+  background-size:var(--tone-pitch,6px) var(--tone-pitch,6px);
+  /* two mask layers, INTERSECTED.  `mask-composite: intersect` is the
+     standard property (Gecko); `-webkit-mask-composite: source-in` is the
+     legacy keyword beside it (Blink).  A UA with neither falls back to the
+     default `add` — the hole is ignored and the tone is merely uniform,
+     which is a degradation, not a break. */
+  -webkit-mask-image:var(--tone-hole, linear-gradient(#000,#000)),
+                     linear-gradient(var(--ramp-angle,150deg), #000 6%, transparent 72%);
+          mask-image:var(--tone-hole, linear-gradient(#000,#000)),
+                     linear-gradient(var(--ramp-angle,150deg), #000 6%, transparent 72%);
+  -webkit-mask-composite:source-in;
+          mask-composite:intersect;
+}
+/* A16 — barcode; three coprime layers */
+.barcode{
+  background-image:
+    repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px calc(2px + var(--b1,3px))),
+    repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px calc(3px + var(--b2,7px))),
+    repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px calc(2px + var(--b3,11px)));
+}
+/* inset focus ring — the UA ring is clipped away inside clip-path shapes (R18 §1.4) */
+.ring:focus-visible{ outline:none }
+.ring:focus-visible::after{
+  content:""; position:absolute; inset:3px; pointer-events:none; z-index:30;
+  box-shadow:inset 0 0 0 2px #fff, inset 0 0 0 4px rgba(0,0,0,.55);
+}
+.ring{ position:relative }
+
+/* the PRODUCTION star grammar — gold, rose-gold for the top two rungs.
+   Never tinted by the rarity hue: two signals must not wear one colour. */
+.stars{ display:inline-flex; align-items:center; gap:2px; line-height:1 }
+.stars .st{ font-style:normal; font-size:11px; color:var(--star); text-shadow:0 1px 3px rgba(0,0,0,.65) }
+.stars .st.hi{ color:var(--star-hi) }
+.stars .st.off{ color:rgba(255,255,255,.2); text-shadow:none }
+
+/* sleeping treatment — the lab-wide contract */
+.asleep img, img.asleep{ filter:saturate(0) brightness(.55) }
+
+/* ---------------------------------------------------------------------
+   4b · THE SHARED PICKUP BANNER MOCK
+   Every screen keeps a slot for the app's sliding banner (the faithfulness
+   directive): in the shipped theme the banner ALWAYS rides above the fleet
+   body, and the alt layouts replace only the capsule track under it.
+
+   Proportions and furniture are read off the shipped component
+   (`GachaBanner.tsx` + gacha.css §"THE PICKUP BANNER"):
+     height 232 @ 390 · a flex strip translated by -i*100% · 620ms snap ·
+     5200ms cadence · copy block left/bottom (tag pill, 27px display line,
+     caption) · rate+pity pills cut off by the right edge · a 20x7 dot rail
+     morphed by scaleX (NEVER an animated `width` — §14.11).
+
+   It is a MOCK: no drag machine, no dots-as-buttons, no promo button.  The
+   lab contract is one real <button> per machine, so the whole thing is
+   `aria-hidden` and inert.  Screens skin it through `--bn-*` + `data-size`,
+   the same custom-property pattern the shared dossier uses.
+   ------------------------------------------------------------------ */
+.bn{
+  position:relative; height:var(--bn-h); overflow:hidden;
+  background:#07070c; box-shadow:var(--bn-shadow, 0 20px 50px rgba(0,0,0,.6));
+  -webkit-user-select:none; user-select:none;
+}
+.bn[data-size="strip"]{ height:var(--bn-h-strip) }
+.bn-track{
+  display:flex; height:100%; will-change:transform;
+  transition:transform 620ms var(--e-out);   /* == carousel.ts SNAP_MS */
+}
+.bn-slide{ position:relative; flex:0 0 100%; height:100% }
+.bn-slide img{
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; object-position:var(--focus, 50% 12%);
+}
+/* a SLEEPING host's promo wears the shipped slide's own sleep treatment
+   (`.gc-slide.sleep img`), not the lab's harsher card filter */
+.bn-slide.sleep img{ filter:grayscale(.75) brightness(.72) }
+.bn-slide::after{
+  content:""; position:absolute; inset:0;
+  background:
+    linear-gradient(95deg, rgba(10,11,25,.55) 4%, rgba(10,11,25,.3) 32%, transparent 60%),
+    linear-gradient(0deg, rgba(6,6,12,.92), rgba(6,6,12,.28) 36%, transparent 62%);
+}
+.bn-copy{ position:absolute; z-index:2; left:16px; right:16px; bottom:22px }
+.bn-copy .tag{
+  display:inline-block; padding:4px 10px; border-radius:99px;
+  background:var(--bn-tag-bg, #ff6cae); color:var(--bn-tag-ink, #161329);
+  font-family:"Silkscreen",monospace; font-size:7px; letter-spacing:.16em;
+}
+.bn-copy b{
+  display:block; margin-top:8px;
+  font-family:"Archivo Black",sans-serif; font-size:calc(var(--u) * .069);
+  line-height:.94; letter-spacing:-.01em;
+  text-shadow:0 3px 0 #1b1030, 0 10px 24px #000;
+  overflow-wrap:anywhere;
+}
+.bn-copy small{
+  display:block; margin-top:7px;
+  font-family:"Silkscreen",monospace; font-size:7px; letter-spacing:.14em;
+  color:var(--bn-caption, #9ff0ff);
+}
+/* the shipped `--gc-banner-glow`, minus the blend mode and the breathe —
+   §14.11 says pay for a blended layer only when it earns it, and on a mock
+   it does not */
+.bn-glow{
+  position:absolute; inset:0; pointer-events:none;
+  background:var(--bn-glow, radial-gradient(60% 40% at 15% 25%, rgba(255,108,174,.26), transparent 70%));
+}
+/* the rate + pity pair, cut off by the right edge — the app's own grammar
+   (`fleet.ts` rateText / pityText) with mock numbers */
+.bn-rate{
+  position:absolute; right:0; top:12px; z-index:3;
+  display:grid; gap:4px; justify-items:end; pointer-events:none;
+}
+.bn-rate span{
+  padding:4px 10px 4px 12px; border:1px solid rgba(255,255,255,.15); border-right:0;
+  border-radius:99px 0 0 99px; background:var(--bn-pill-bg, rgba(10,11,25,.8));
+  color:rgba(255,255,255,.78);
+  font-family:"Silkscreen",monospace; font-size:7px; letter-spacing:.14em;
+}
+.bn-dots{ position:absolute; right:14px; bottom:14px; z-index:3; display:flex; gap:6px }
+.bn-dots i{
+  display:block; width:20px; height:7px; border-radius:99px;
+  background:rgba(255,255,255,.3); transform:scaleX(.35);
+  transition:transform 300ms var(--e-out), background 300ms ease;
+}
+.bn-dots i.on{ transform:scaleX(1); background:var(--bn-dot-on, #fff) }
+/* R24 §B.4 — the cadence is already held by the JS gate; kill the travel */
+@media (prefers-reduced-motion: reduce){
+  .bn-track{ transition-duration:0ms }
+  .bn-dots i{ transition:none }
+}
+/* the STRIP variant — the same component at cover-strapline scale */
+.bn[data-size="strip"] .bn-copy{ left:11px; right:11px; bottom:9px }
+.bn[data-size="strip"] .bn-copy .tag{ font-size:6px; padding:3px 8px }
+.bn[data-size="strip"] .bn-copy b{ margin-top:5px; font-size:calc(var(--u) * .042) }
+.bn[data-size="strip"] .bn-copy small{ display:none }
+.bn[data-size="strip"] .bn-rate{ top:6px; gap:3px }
+.bn[data-size="strip"] .bn-rate span{ font-size:6px; padding:3px 8px 3px 10px }
+.bn[data-size="strip"] .bn-dots{ right:10px; bottom:8px; gap:5px }
+.bn[data-size="strip"] .bn-dots i{ width:14px; height:5px }
+.bn[data-size="strip"] .bn-slide::after{
+  background:
+    linear-gradient(95deg, rgba(10,11,25,.72) 4%, rgba(10,11,25,.4) 40%, transparent 74%),
+    linear-gradient(0deg, rgba(6,6,12,.78), transparent 70%);
+}
+
+/* --- BANNER OFF (owner ruling, WALK 3) ------------------------------
+   ONE switch on the stage, so all three screens walk both ways together —
+   which is the shape of the production setting it stands in for (a gacha
+   ThemeDef setting toggling GachaBanner for the WHOLE theme, the
+   `starMode` pattern), not a per-layout option.
+
+   The rule is: each screen must RE-FLOW, not just lose a strip.  Every
+   offset below was raised in round 3 to open the banner's slot, so every
+   one of them relaxes here — the three screens are collected in one block
+   because "what the banner costs each layout" is one design fact.
+     A  the slot is the first child of the SCROLLING body, so removing it
+        gives the height straight back and the poster stops scrolling at
+        all (`.po-body`'s min-height:100% does the rest).  Nothing to undo.
+     B  the hero copy floor (116 -> 212) and the cut-in stack floor
+        (126 -> 202) both come back down.
+     C  `.cl-page` — the space all three geometries are authored in —
+        starts at the top again, and the geometry chip comes with it.
+   ------------------------------------------------------------------ */
+[data-banner="off"] .po-bannerslot,
+[data-banner="off"] .cv-strap,
+[data-banner="off"] .cl-bannerslot{ display:none }
+[data-banner="off"] .cv-herocopy{ bottom:116px }
+[data-banner="off"] .cv-side{ bottom:126px }
+
+/* --- BANNER MIN ------------------------------------------------------
+   MIN is not a third component: it is every banner borrowing the STRIP
+   form B's strapline already ships (`data-size="strip"`, driven from the
+   stage by `applyBanner()`), so the slim banner is an authored variant
+   that is already walked rather than a new one to maintain.  A and C
+   therefore need nothing here at all — A's slot is in the scroll flow and
+   simply gets shorter, and C reads its page origin from `--bn-slot` below.
+   B is a strip in every state, so MIN leaves it exactly as it is.
+   ------------------------------------------------------------------ */
+
+/* =====================================================================
+   5 · A · THE POSTER
+   v2-02's composition (black field · one parallelogram of four equal
+   sheared slices · giant vertical wordmark · registry fine print)
+   carrying v1-1's colour grammar, now RARITY-DERIVED.
+
+   THE HARD OFFSET DROP (owner ruling, round 2).  The shipped theme's
+   "sits ON the surface" motif — `--gc-ind-shadow: 5px 5px 0 <hue>` on the
+   nav indicator, `--gc-bubble-user-shadow` on the user bubble — applied to
+   every slice in its own rarity hue.  v1-1 SIGNAL BANDS is the reference
+   look and it is also the structural precedent: its `.band-drop` was the
+   SAME polygon translated 5px/5px, not a box-shadow.
+
+   Why not a box-shadow: a slice is a `clip-path` polygon, and a clip-path
+   erases an offset shadow (the shipped capsule card hit exactly this and
+   needed a wrapper — gacha.css "THE SLOT, and the ARCADE DROP").  So the
+   drop is a DUPLICATED POLYGON underlay: `.po-drop` wears the slice's
+   polygon, is translated by `--drop`, and is painted the hue.
+
+   Three boxes per slice, therefore:
+     .po-slice  the BUTTON — no paint, and its clip-path is the UNION of
+                the slice and its drop, so the hit area still follows the
+                shear (the clipped-off triangle falls through to the
+                neighbour, R18) *and* the drop is not clipped away.
+     .po-drop   the offset underlay — the polygon, translated, in the hue.
+     .po-plate  the slice itself — the keyline is its BACKGROUND and the art
+                sits 1px inside the SAME polygon (R18).  An inset
+                box-shadow would be laid on the border-box rectangle and
+                then clipped away by the polygon, leaving two stray bars.
+
+   The keyline went 2px -> 1px when the drop landed: the underlay is the
+   primary hue carrier now (v1-1 carries NO keyline at all), and 2px + 5px
+   of the same hue on the same edge read as double chrome.
+   ===================================================================== */
+/* ROUND 3 — the real Fleet tab's row order: header · PICKUP BANNER · the
+   body that replaces the capsule track · the selected machine's registry.
+
+   ROUND 4/5 — NOTHING BELOW THE HEADER IS PINNED (faithfulness
+   correction, then the owner's ruling that finished it).
+
+   Round 3 pinned the banner as chrome and the data footer as a readout.
+   Production pins neither: in `GachaFleet.tsx` the banner is simply the
+   FIRST CHILD of the fleet tab's scrolling body (`#app-scroll` scrolls the
+   whole tab, nothing inside it is sticky), and the bottom of the screen
+   belongs to the tab switcher and the composer floating over the cards —
+   so nothing else may pin there.  Round 5 therefore put the data block
+   back into the SCROLL FLOW as the last element after the fourth slice,
+   which is where the SERIES 2026 registry sat before it went live.
+
+   A's scroll body is now, top to bottom:
+       PICKUP BANNER  ->  the four-slice poster  ->  the selected
+       machine's registry
+   and only the `Fleet` header is pinned.  Selecting does NOT scroll: the
+   grow + nudge IS the feedback, and the data is there when you scroll.
+
+   `.po-body { min-height:100% }` — the poster plus its registry, as one
+   box, is at least a viewport tall — is what makes the banner scroll ALL
+   the way off rather than most of the way, at every width.  With the
+   banner off the same rule gives the other half of the ruling: the whole
+   thing fits one frame and does not scroll at all. */
+.c-poster{ background:#000; color:#fff; display:grid; grid-template-rows:auto 1fr }
+/* the header and the footer align to the poster's LEADING edge (`--lead`),
+   which round 5 moved in from 104px to 40px when the rail was cut */
+.po-top{
+  position:relative; z-index:6; padding:20px 12px 12px 40px;
+  display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+}
+.po-kicker{ font-family:"Archivo Black",sans-serif; font-size:22px; letter-spacing:-.01em }
+/* the scroller IS the grid row (min-height:0 lets a 1fr row shrink); the
+   scrollbar is hidden so the composition is not cut by a UA gutter (the
+   `.cv-stack` precedent) */
+.po-scroll{
+  position:relative; z-index:2; min-height:0; overflow-y:auto; overflow-x:hidden;
+  overscroll-behavior:contain; scrollbar-width:none;
+}
+.po-scroll::-webkit-scrollbar{ display:none }
+.po-bannerslot{ position:relative; z-index:5 }
+/* the poster's own space: the stack AND the registry under it, one box, at
+   least a viewport tall (see above) */
+.po-body{ position:relative; z-index:2; min-height:100% }
+
+/* the A-only name-treatment chip: PLATE <-> BLADE, walked live */
+.po-toggle{
+  display:flex; align-items:center; gap:6px; min-height:32px; padding:8px 11px;
+  border:1px solid rgba(255,255,255,.26); border-radius:999px;
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.14em;
+  transition:transform var(--t-tap) var(--e-out);
+}
+.po-toggle b{ font-weight:400; color:#fff }
+.po-toggle i{ font-style:normal; color:rgba(255,255,255,.34) }
+.po-toggle span{ color:rgba(255,255,255,.34) }
+.po-toggle:active{ transform:scale(var(--press-scale)) }
+.po-toggle:focus-visible{ outline:2px solid #fff; outline-offset:2px }
+
+/* ROUND 5 — THE LEFT RAIL IS GONE (owner ruling, WALK 3 addendum: it
+   "makes the PC cards a little bit too small").  Rounds 3-4 spent a 104px
+   left gutter on a vertical name — first the static CTRL/B wordmark, then
+   the selected machine's — and the four slices paid for it in width.  The
+   gutter is now a modest `--lead` inset, the slices took the ~58px back,
+   and the SELECTED machine's identity lives in the pinned data footer
+   alone (which grew a display-scale hostname line to carry it).
+
+   Three numbers changed together, and they are one decision:
+     --lead / --trail  40 / 20 — still off-centre RIGHT (owner likes it),
+                       but the asymmetry is now the point rather than a
+                       rail's leftover.  Poster width 272 -> 330 at the 390
+                       column, +21%.
+     --gut             9 -> 22 — the slices used to interlock at the shear
+                       almost edge-to-edge, so a size difference between
+                       two bands could not read.  Open gutters make the
+                       stack a set of separate objects, which is what a
+                       selected band has to stand out FROM.
+     --pick-grow       the selected slice is BIGGER, not just nudged.
+   ------------------------------------------------------------------ */
+.po-poster{
+  container-type:inline-size; position:relative; z-index:2;
+  --a:10deg; --run:calc(tan(var(--a)) * 100cqw); --gut:22px;
+  /* the hard offset, production's `5px 5px 0` */
+  --drop:5px;
+  /* one polygon, declared once: the slice, its drop and the focus ring all
+     wear it (the drop is this shape translated, never a box-shadow) */
+  --poly:polygon(0 var(--run), 100% 0, 100% calc(100% - var(--run)), 0 100%);
+  /* the BUTTON's hit shape = slice ∪ drop.  The extra band is 5px wide and
+     lives inside the 9px gutter, so it can never steal a tap from the
+     neighbouring slice — measured, not assumed (see the README). */
+  --poly-hit:polygon(
+    0 var(--run), 100% 0,
+    calc(100% + var(--drop)) var(--drop),
+    calc(100% + var(--drop)) calc(100% - var(--run) + var(--drop)),
+    var(--drop) calc(100% + var(--drop)), 0 100%);
+  /* the stack keeps its slightly-off-centre-right seat (owner: "cards stay
+     slightly off-center right"), now as a deliberate 40/20 asymmetry
+     rather than as the leftover of a 104px rail gutter */
+  --lead:40px; --trail:20px;
+  width:calc(100% - var(--lead) - var(--trail)); margin-left:var(--lead);
+  /* the selected slice grows about its own centre, so the top and bottom
+     padding also carry half its overshoot (~4.5px) on top of the 5px drop.
+     Kept tight on purpose: with the round-5 gutters the four slices only
+     just fit the frame at 430, and `banner off = the poster reads whole,
+     no scroll at all` is the property being protected. */
+  padding:12px 0 16px;
+}
+.po-slice{
+  --hue: var(--rar);
+  position:relative; display:block; width:100%;
+  height:clamp(148px, calc(var(--u) * .44), 180px);
+  clip-path:var(--poly-hit);
+  transition:transform var(--t-ui) var(--e-out);
+}
+/* the hard offset underlay — the SAME polygon, translated, in the hue.
+   A SLEEPING slice's drop follows the suppressed treatment (`--hue` is
+   grey while asleep) and floods back with the keyline on wake. */
+.po-drop{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:var(--hue); clip-path:var(--poly);
+  transform:translate(var(--drop), var(--drop));
+}
+.po-plate{
+  position:absolute; inset:0; z-index:1;
+  background:var(--hue);                       /* == the 1px keyline */
+  clip-path:var(--poly);
+  /* `clip-path` hides paint but does NOT contain SCROLLABLE OVERFLOW: the
+     ceremony's `.po-flashline` runs -4%/-4% past the plate and the blade's
+     nowrap name runs past the trailing edge, and once the stack lives in a
+     scroll container (round 3) both showed up as real scrollWidth on the
+     scroller even though nothing was visible.  `clip` contains them without
+     making the plate a scroll container of its own. */
+  overflow:clip;
+}
+.po-slice.asleep{ --hue:#6b6f7d }
+.po-slice + .po-slice{ margin-top:calc((var(--run) - var(--gut)) * -1) }
+.po-art{
+  position:absolute; inset:1px; overflow:hidden; background:#000;
+  clip-path:var(--poly);
+}
+/* the focus ring traces the SHEAR, not the footprint rectangle — the
+   generic `.ring` pseudo is a child of the (union-clipped) button */
+.po-slice.ring:focus-visible::after{ clip-path:var(--poly) }
+.po-art img{
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; object-position:var(--focus,50% 26%); transform-origin:60% 40%;
+}
+.is-active .po-slice img{ animation:po-breathe 24s ease-in-out infinite alternate }
+.po-slice:nth-child(2) img{ animation-delay:-6s }
+.po-slice:nth-child(3) img{ animation-delay:-12s }
+.po-slice:nth-child(4) img{ animation-delay:-18s }
+@keyframes po-breathe{ from{ transform:scale(1) } to{ transform:scale(1.04) } }
+.po-slice.asleep img{ animation:none }
+
+/* the hue pools at the bottom-leading corner — where the name lives */
+.po-glow{
+  position:absolute; inset:0; z-index:1; pointer-events:none;
+  background:linear-gradient(196deg, transparent 44%, color-mix(in srgb, var(--hue) 30%, transparent) 100%);
+}
+/* legibility scrim: bottom-leading for the name, trailing for the chip */
+.po-veil{
+  position:absolute; inset:0; z-index:2; pointer-events:none;
+  background:
+    linear-gradient(to top right, rgba(0,0,0,.9) 0%, rgba(0,0,0,.5) 32%, transparent 62%),
+    linear-gradient(to left, rgba(0,0,0,.55), transparent 40%);
+}
+/* SELECTION READS AS SIZE (owner ruling, ROUND 5).  With the rail gone the
+   footer is the only place the selected machine is named, so the stack
+   itself has to say which band is selected — and the strongest thing a
+   band can do is BE BIGGER.  `.picked` therefore carries both affordances:
+   the round-3 push out of the stack (dialled 9px -> 4px, since size now
+   leads) and a 5% grow about the slice's own centre.
+
+   It is a TRANSFORM, not a height (§14.11): one compositor property, no
+   layout, no height tweening — the existing `transition: transform` on
+   `.po-slice` carries it for free, and the neighbours do not reflow, they
+   just get overlapped a little inside the 22px gutters that round 5 opened.
+   The trailing inset (20px) is sized so the grown slice's own 5px drop,
+   scaled and nudged, still lands inside the viewport at 320 / 390 / 430 —
+   asserted, not assumed. */
+.po-slice.picked{
+  transform:translate3d(var(--pick-nudge,4px),0,0) scale(var(--pick-grow,1.05));
+  z-index:3;
+}
+
+/* --- the in-band furniture (v1-1's grammar) ----------------------- */
+/* NAME + STARS anchor at the BOTTOM-LEADING edge, inside the safe zone.
+   Never the top edge: a top-anchored name reads as the band ABOVE's
+   caption — the ruled v2-01 defect (GACHA_PLAN §12.5, 2026-08-08).
+   The lower-left SAFE ZONE is bounded by the rising bottom diagonal, so the
+   block clears it by `--run * .6` — anchoring at a flat 10px puts the role
+   line under the shear and chops it.
+
+   ROTATED TO THE SHEAR (owner ruling, round 2; GACHA_PLAN §12.2 "name
+   rotated to the shear angle", v1-1's and v1-2's language).  The whole
+   block — stars, name, role — turns by `-1 × --a`, so its baselines run
+   PARALLEL to the slice's own edges.  Two consequences worth knowing:
+     · the ANCHOR is unchanged.  `transform-origin: 0 100%` is the block's
+       bottom-leading corner, which is the point the safe zone was tuned
+       around, so the geometric guarantee (bottom half, leading side, above
+       the rising diagonal) survives the rotation untouched.
+     · clearance from the bottom edge becomes CONSTANT along the slice
+       instead of shrinking towards the trailing end — which is exactly why
+       the blade can now ride the diagonal without being chopped by it.
+
+   The leading offset paid for the rotation.  The slice's LEADING edge is
+   vertical, and rotating about the block's bottom-leading corner drags
+   everything above that corner leftwards by `blockHeight × sin(--a)` — at
+   10° that is ~9px for the plate block and ~11px for the blade's, which is
+   enough to chop the first letter of the role line off against the edge
+   (caught in the first render round of this change).  So `left` carries
+   that drift plus the margin, per treatment. */
+.po-zone{
+  position:absolute; z-index:6; left:20px; bottom:calc(var(--run) * .6 + 4px);
+  display:flex; flex-direction:column; align-items:flex-start; gap:5px;
+  transform:rotate(calc(var(--a) * -1)); transform-origin:0 100%;
+  pointer-events:none;
+}
+/* the sticker shadow: HARD and unblurred, same family as the drop under the
+   slice (v1-1's `.band-copy` used the same 3px 3px 0).  One layer only — a
+   soft halo underneath it turns into mud on busy art. */
+.po-name b{
+  display:block; font-family:"Archivo Black",sans-serif; font-size:20px; line-height:1;
+  letter-spacing:.005em; color:var(--hue); text-shadow:3px 3px 0 #07050a;
+}
+.po-role{
+  display:block; font-family:"Silkscreen",monospace; font-size:7px; letter-spacing:.2em;
+  color:rgba(255,255,255,.62); text-shadow:0 1px 5px rgba(0,0,0,.9);
+}
+/* BLADE — THE NAME'S POSITION, AND NOTHING ELSE (owner ruling, WALK 3 as
+   amended: the blade-scale name "looks way too big", and it takes the
+   plate's typography AND the plate's SIZE).
+
+   The treatment therefore collapsed to one variable — WHERE the name sits:
+     PLATE  mid-slice, with the role line beneath it.
+     BLADE  down on the LOWER DIAGONAL, with the role line lifted above it
+            (under the name, the shear would slice the role away).
+   Everything else is now literally the same declaration for both: the same
+   `--u * .118`->20px Archivo Black, the same rarity fill, the same hard
+   `3px 3px 0` offset shadow, the same 20px leading offset, the same 5px
+   gap, the same `.po-zone` rotation onto the shear.
+
+   Two whole mechanisms DISSOLVED when the size came down, and that is the
+   point of the ruling:
+     · the ~5.6px black CONTOUR (`-webkit-text-stroke` + `paint-order`) that
+       the oversized blade needed to hold any hue over any art — gone; at
+       plate size the hard offset alone carries it, exactly as it does for
+       the plate.
+     · the STATUS-CHIP LIFT.  A 46px blade arrived at the trailing edge
+       ~90px up and ran under the chip, so the chip had to move (§12.3 ④:
+       status may never be buried).  A 20px name at the leading edge never
+       reaches it, so the chip sits in its one authored place in both
+       treatments.
+   The blade's own clearance from the rising bottom edge is `--run * .18`,
+   and because the block is rotated to the shear that clearance is CONSTANT
+   along the slice — which is what lets the name ride the diagonal at all. */
+[data-name="blade"] .po-zone{ bottom:calc(var(--run) * .18) }
+[data-name="blade"] .po-stars{ order:-2 }
+[data-name="blade"] .po-role{ order:-1 }
+
+/* STATUS never rides on decoration alone — the chip stays (§12.3 ④) */
+.po-chip{
+  position:absolute; z-index:6; right:10px; bottom:calc(var(--run) + 10px);
+  padding:4px 7px; background:#5fe0a0; color:#062015;
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.18em;
+  pointer-events:none;
+}
+.po-slice.asleep .po-chip{
+  background:rgba(140,128,186,.2); color:#cfc6ea;
+  box-shadow:inset 0 0 0 1px rgba(186,172,238,.45);
+}
+/* right-edge JP glyph tag (v2-02) */
+.po-jp{
+  position:absolute; z-index:5; right:9px; top:9px; writing-mode:vertical-rl;
+  font-family:"Zen Kaku",sans-serif; font-weight:900; font-size:13px; letter-spacing:.12em;
+  color:var(--hue); opacity:.6; pointer-events:none;
+}
+/* wake ceremony */
+.po-flashline{
+  position:absolute; left:-4%; right:-4%; height:2px; background:#fff; z-index:7;
+  opacity:0; pointer-events:none; top:50%;
+}
+.po-slice.waking .po-flashline{ animation:po-line 520ms var(--e-inout) both }
+@keyframes po-line{
+  0%{ opacity:0; transform:translate3d(-70%,0,0) scaleX(.4) }
+  20%{ opacity:1 }
+  100%{ opacity:0; transform:translate3d(70%,0,0) scaleX(1) }
+}
+.po-poster.parting .po-slice:nth-child(1){ transform:translate3d(0,-14px,0) }
+.po-poster.parting .po-slice:nth-child(2){ transform:translate3d(0,-6px,0) }
+.po-poster.parting .po-slice:nth-child(4){ transform:translate3d(0,14px,0) }
+
+/* THE FOOTER — the SELECTED machine's data (owner ruling, round 3),
+   replacing the static SERIES 2026 registry.  No buttons: it is a readout,
+   and the poster already owns exactly one control per machine.
+
+   ROUND 5 — it is now the ONLY place the selected machine is named (the
+   rail is gone), so the hostname was promoted out of the fine print into a
+   display line: Archivo Black at `--u * .052` (~20px at the 390 column) in
+   the rarity hue, over the same Silkscreen registry rows.  It is the
+   footer's headline now, not a bold word inside a sentence.
+
+   ROUND 5 — and it is IN THE FLOW, the last thing after the fourth slice.
+   The bottom reserve is the lab's own switcher chrome (production's tab
+   bar + composer), so the last registry line is never under it. */
+.po-foot{ position:relative; z-index:4; padding:12px 20px 64px 40px }
+.po-data{
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.14em;
+  color:rgba(255,255,255,.34); line-height:1.95;
+}
+.po-fname{
+  display:block; font-family:"Archivo Black",sans-serif;
+  font-size:clamp(16px, calc(var(--u) * .052), 22px); line-height:1.15;
+  letter-spacing:-.005em; color:var(--rar, #fff); text-shadow:2px 2px 0 #07050a;
+}
+.po-data b{ font-weight:400; color:var(--rar, #fff) }
+.po-data .po-fsvc{ color:rgba(255,255,255,.26); overflow-wrap:anywhere }
+.po-data.swap{ animation:fade-in 200ms var(--e-out) both }
+
+/* A's banner skin: hard-edged, gold-accented in its own furniture.  It used
+   to sit on a `0 5px 0` gold hard offset — the poster's own motif — and the
+   owner CUT it (round 5): the banner should end cleanly against the black
+   field, with nothing drawn under it.  Nothing replaces it; the depth shadow
+   stays because it is depth, not a line. */
+.c-poster .bn{
+  --bn-tag-bg:var(--rar-5); --bn-tag-ink:#1a1405;
+  --bn-caption:rgba(255,255,255,.66); --bn-dot-on:var(--rar-5);
+  --bn-glow:radial-gradient(70% 50% at 12% 22%, rgba(255,212,100,.15), transparent 70%);
+  --bn-shadow:0 20px 44px rgba(0,0,0,.75);
+}
+.c-poster .bn-copy .tag{ border-radius:0 }
+
+/* =====================================================================
+   6 · B · THE COVER
+   v1-7 COVER STORY taken full-screen.  One hero fills the frame; the
+   other three are cut-outs stacked down the leading edge.  Promoting a
+   cut-in is a page turn; waking the hero DEVELOPS the cover.
+   ===================================================================== */
+.c-cover{ background:#0b0910; color:#fff; --cover-rar:var(--rar-5) }
+.cv-shake{ position:absolute; inset:0; overflow:hidden }
+.cv-page{
+  position:absolute; inset:0; overflow:hidden;
+  transition:transform var(--t-panel) var(--e-out), opacity var(--t-panel) var(--e-out);
+}
+.cv-page.turning{ transform:scale(.962); opacity:.3 }
+.cv-heroslot{ position:absolute; inset:0; z-index:1 }
+.cv-heroslot.enter{ animation:cv-enter 380ms var(--e-out) both }
+@keyframes cv-enter{ from{ transform:scale(1.05); opacity:0 } to{ transform:none; opacity:1 } }
+
+.cv-card{ display:block; overflow:hidden; background:#0b0910 }
+.cv-card.is-hero{ position:absolute; inset:0 }
+.cv-shot{ position:absolute; inset:0 }
+.cv-shot img{ width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 22%) }
+/* THE HERO CROP IS THE COVER'S OWN (owner ruling, round 5).  Raising the
+   cut-in column put paper over the leading edge of the frame, so the hero
+   art shifts its focal point RIGHT — a LOWER object-position X shows more
+   of the image's left, which slides the subject rightwards on screen, out
+   from under the stack.  Same override pattern C already uses for its
+   panels: the slot owns the crop, the roster keeps the default. */
+.cv-card.is-hero .cv-shot img{ object-position:var(--hero-focus, var(--focus, 50% 22%)) }
+.cv-scrim{ position:absolute; inset:0; z-index:2; pointer-events:none }
+.cv-card.is-hero .cv-scrim{
+  background:
+    linear-gradient(0deg,  rgba(8,7,12,.96) 0 8%, rgba(8,7,12,.55) 26%, transparent 52%),
+    linear-gradient(90deg, rgba(8,7,12,.88), rgba(8,7,12,.24) 36%, transparent 58%),
+    linear-gradient(180deg,rgba(8,7,12,.82) 0 11%, transparent 33%);
+}
+.cv-card.is-cut .cv-scrim{ background:linear-gradient(0deg, rgba(8,7,12,.6), transparent 58%) }
+/* the develop wash — opacity + transform only */
+.cv-dev{
+  position:absolute; inset:0; z-index:2; pointer-events:none; opacity:0;
+  background:radial-gradient(120% 78% at 50% 58%, var(--rar), transparent 70%);
+}
+.developing .cv-card.is-hero .cv-dev{ animation:cv-dev 720ms var(--e-out) both }
+@keyframes cv-dev{
+  0%{ opacity:0; transform:scale(1.18) } 34%{ opacity:.5 } 100%{ opacity:0; transform:none }
+}
+
+/* --- hero copy: the bottom-trailing block ------------------------- */
+.cv-herocopy{
+  /* lifted 116 -> 212 to open the strapline slot beneath it (round 3).
+     The block itself is untouched — B is SETTLED apart from the slot. */
+  position:absolute; z-index:3; left:8px; right:14px; bottom:212px;
+  display:flex; flex-direction:column; align-items:flex-end; text-align:right; gap:6px;
+  pointer-events:none;
+}
+.cv-herocopy small{
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.2em; color:var(--rar);
+}
+.cv-herocopy b{
+  font-family:"Archivo Black",sans-serif; font-size:calc(var(--u) * .115); line-height:.86;
+  letter-spacing:-.025em; text-shadow:4px 4px 0 #08070c;
+}
+.cv-herocopy i{
+  font-style:normal; font-family:"Zen Kaku",sans-serif; font-weight:700;
+  font-size:12px; letter-spacing:.1em; color:rgba(255,255,255,.86);
+}
+.cv-line{ display:flex; align-items:center; gap:9px }
+.cv-chip{
+  padding:4px 8px; background:#5fe0a0; color:#062015;
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.18em;
+}
+.cv-card.asleep .cv-chip{
+  background:rgba(140,128,186,.22); color:#cfc6ea;
+  box-shadow:inset 0 0 0 1px rgba(186,172,238,.45);
+}
+.cv-card.is-cut .cv-herocopy{ display:none }
+.cv-card.is-hero .cv-cutcopy{ display:none }
+
+/* --- the cut-in stack down the leading edge ----------------------- */
+.cv-side{
+  /* ROUND 5 (owner ruling): the stack starts JUST UNDER THE MASTHEAD —
+     "all the way up, with some offset to look good".  A flat 190px left a
+     growing hole above it, because the masthead is not a fixed height: its
+     two display lines scale with the column (`--u * .108`, line-height .8),
+     so at 320 it ends 60px higher than at 430 and the dead space was
+     whatever was left over.  The top is therefore DERIVED from the same
+     numbers the masthead is built from —
+        70px   = its fixed rows: 16 top + the CTRL/B kicker + the ISSUE
+                 line + their margins + the ~3.5px the -2deg rotation drops
+                 the block's leading corner
+        .173u  = its two display lines (2 x .108u x .8 line-height)
+     — which leaves a CONSTANT ~15px of air under the masthead at every
+     width instead of 30 / 17 / 10.  The floor stays at 202 for the
+     strapline; the extra column the raise buys shows up as slack BELOW
+     the CHANGE COVER hint, which is where it is useful. */
+  position:absolute; z-index:4; left:9px; top:calc(70px + var(--u) * .173); bottom:202px; width:118px;
+  display:flex; flex-direction:column; gap:8px;
+}
+.cv-stack{
+  min-height:0; flex:0 1 auto; overflow-y:auto; overscroll-behavior:contain;
+  scrollbar-width:none; display:flex; flex-direction:column; gap:10px; padding:2px 6px 2px 2px;
+}
+.cv-stack::-webkit-scrollbar{ display:none }
+.cv-card.is-cut{
+  position:relative; flex:0 0 auto; width:100%; height:112px;
+  border:4px solid #f7f1ea; clip-path:polygon(4% 0, 100% 5%, 96% 100%, 0 94%);
+  transition:transform var(--t-ui) var(--e-out);
+}
+.cv-stack .cv-card:nth-child(odd){ transform:rotate(-2deg) }
+.cv-stack .cv-card:nth-child(even){ transform:translate3d(9px,0,0) rotate(1.8deg) }
+.cv-card.is-cut:active{ transform:scale(var(--press-scale)) }
+/* name on its own row: at 110px of card the status word and a full hostname
+   cannot share a line without one of them ellipsing away */
+.cv-cutcopy{
+  position:absolute; z-index:3; left:4px; right:4px; bottom:4px;
+  display:flex; flex-direction:column; align-items:flex-start; gap:2px;
+  padding:3px 5px 4px 6px; background:#fff8f2; color:#141118;
+  border-left:4px solid var(--rar);
+}
+.cv-cutcopy b{
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-family:"Archivo Black",sans-serif; font-size:12px; line-height:1; letter-spacing:-.02em;
+}
+.cv-cchip{
+  flex:0 0 auto; padding:2px 5px; background:#1d8a5c; color:#fff;
+  font-family:"Silkscreen",monospace; font-size:6px; letter-spacing:.12em;
+}
+.cv-card.asleep .cv-cchip{ background:#5b5474; color:#e9e5f6 }
+.cv-hint{
+  flex:0 0 auto; margin:0; padding-top:6px; border-top:1px solid rgba(255,255,255,.22);
+  font-family:"Silkscreen",monospace; font-size:6px; letter-spacing:.14em;
+  color:rgba(255,255,255,.44); line-height:1.9;
+}
+
+/* --- masthead + fine print ---------------------------------------- */
+/* (the rarity SPINE STRIPE that ran across the very top of the cover was
+   CUT by the owner in round 5 — nothing replaces it.  The hue still reads
+   first through the masthead kicker, the cut-in bars and the tag pill.) */
+.cv-mast{
+  position:absolute; z-index:5; left:14px; top:16px; pointer-events:none;
+  transform:rotate(-2deg);
+}
+.cv-mast > span{
+  display:block; font-family:"Silkscreen",monospace; font-size:8.5px; letter-spacing:.3em;
+  color:var(--cover-rar);
+}
+.cv-mast b{
+  display:block; margin-top:3px; font-family:"Archivo Black",sans-serif;
+  font-size:calc(var(--u) * .108); line-height:.8; letter-spacing:-.035em;
+  text-shadow:4px 4px 0 #08070c;
+}
+.cv-issue{
+  margin:9px 0 0; font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.16em;
+  color:rgba(255,255,255,.65);
+}
+.cv-mast.beat{ animation:cv-beat 280ms var(--e-out) both }
+@keyframes cv-beat{
+  0%{ transform:rotate(-2deg) scale(1) }
+  38%{ transform:rotate(-2deg) scale(1.055) }
+  100%{ transform:rotate(-2deg) scale(1) }
+}
+.cv-foot{
+  position:absolute; z-index:5; left:14px; right:14px; bottom:70px;
+  display:flex; align-items:flex-end; justify-content:space-between; gap:10px;
+  pointer-events:none;
+}
+.cv-barcode{ width:76px; height:28px; color:#fff; opacity:.78; --b1:4px; --b2:7px; --b3:11px }
+.cv-fine{
+  font-family:"Silkscreen",monospace; font-size:6px; letter-spacing:.14em;
+  color:rgba(255,255,255,.4); line-height:2; text-align:center;
+}
+.cv-price{ font-family:"Archivo Black",sans-serif; font-size:15px; color:#fff; line-height:1 }
+/* the stamped confirmation the develop ceremony lands */
+.cv-stamp{
+  position:absolute; z-index:6; right:18px; top:168px; opacity:0; pointer-events:none;
+  padding:5px 12px; border:4px solid #ff5470; color:#ff5470;
+  font-family:"Bungee",sans-serif; font-size:24px; letter-spacing:.05em;
+  transform:rotate(9deg);
+}
+.cv-card.stamped .cv-stamp{ animation:cv-thud 320ms var(--e-slam) both }
+@keyframes cv-thud{
+  0%{ opacity:0; transform:rotate(16deg) scale(2.2) }
+  60%{ opacity:1; transform:rotate(8deg) scale(.94) }
+  100%{ opacity:.92; transform:rotate(9deg) scale(1) }
+}
+.cv-card.is-cut .cv-stamp{ display:none }
+
+/* --- THE STRAPLINE SLOT (round 3) --------------------------------- */
+/* The pickup banner as a cover strapline: inset to the cover's own
+   margins, a paper keyline around it, and the issue hue on its tag — the
+   banner reads as a printed strip on the cover rather than as app chrome
+   dropped on top of it. */
+.cv-strap{
+  position:absolute; z-index:5; left:14px; right:14px; bottom:102px;
+  pointer-events:none;
+}
+.c-cover .bn{
+  --bn-tag-bg:var(--cover-rar); --bn-tag-ink:#120b18;
+  --bn-caption:rgba(255,255,255,.62); --bn-dot-on:#fff8f2;
+  --bn-glow:radial-gradient(70% 60% at 12% 30%, rgba(255,108,174,.2), transparent 72%);
+  --bn-shadow:0 10px 26px rgba(0,0,0,.62);
+  box-shadow:var(--bn-shadow), inset 0 0 0 2px #f7f1ea;
+}
+
+/* =====================================================================
+   7 · C · THE CLUB PAGE
+   v2-09 MANGA COLLAGE, refined.  The polygon clips the BUTTON, so the hit
+   area IS the panel and the clipped-off triangle falls through to the
+   panel beneath (R18).  Paper-white keyline, then a thin rarity-hue line,
+   then the art — three nested layers on the same polygon.
+   ===================================================================== */
+.c-club{ background:#111014; color:#111 }
+.cl-shake{ position:absolute; inset:0; overflow:hidden }
+/* the banner takes the top of the screen (faithfulness directive) and the
+   PAGE — the coordinate space every panel / tape / sticker is authored in —
+   starts beneath it and stops above the CLUB masthead band.  All three
+   geometries are authored against THIS box, not nudged into it. */
+.cl-bannerslot{ position:absolute; z-index:2; left:0; right:0; top:0 }
+/* the page origin is ONE variable across all three banner states, so every
+   geometry (which is authored in percentages of this box) scales into
+   whatever the banner leaves rather than being nudged three times */
+.c-club{ --bn-slot:var(--bn-h) }
+[data-banner="min"] .c-club{ --bn-slot:var(--bn-h-strip) }
+[data-banner="off"] .c-club{ --bn-slot:0px }
+.cl-page{
+  position:absolute; left:0; right:0; top:var(--bn-slot); bottom:126px;
+  background:#17151c; overflow:hidden;
+}
+/* the geometry chip: TILT / CUT / SPREAD.  Styled as one of the page's own
+   stickers so it belongs to the fiction rather than floating over it. */
+.cl-geo{
+  position:absolute; z-index:20; right:9px; top:max(9px, calc(var(--bn-slot) - 15px));
+  display:flex; align-items:center; gap:6px; min-height:30px; padding:6px 9px;
+  background:#ffe14d; color:#141118; border:3px solid #111;
+  transform:rotate(-3deg); transition:transform var(--t-tap) var(--e-out);
+}
+.cl-geo i{ font-style:normal; font-family:"Silkscreen",monospace; font-size:6px; letter-spacing:.16em; color:#4a4553 }
+.cl-geo b{ font-family:"Bungee",sans-serif; font-weight:400; font-size:11px; letter-spacing:.02em }
+.cl-geo:active{ transform:rotate(-3deg) scale(var(--press-scale)) }
+.cl-geo:focus-visible{ outline:3px solid #fff; outline-offset:2px }
+.cl-panel{
+  position:absolute; background:#f6f2e8; clip-path:var(--poly);
+  transform:rotate(calc(var(--rot,0) * 1deg));
+  transition:transform var(--t-ui) var(--e-out);
+}
+.cl-panel:active{ transform:rotate(calc(var(--rot,0) * 1deg)) scale(.985) }
+.cl-keyline{ position:absolute; inset:5px; clip-path:var(--poly); background:var(--rar) }
+.cl-panel.asleep .cl-keyline{ background:#787f8d }
+.cl-clip{
+  position:absolute; inset:7px; overflow:hidden; clip-path:var(--poly); background:var(--field);
+}
+.cl-clip img{
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; object-position:var(--focus,50% 18%);
+}
+.cl-panel.asleep .cl-clip{ background:#2b2833 }
+/* THE SCREENTONE, THINNED (owner ruling, walk 2: "too heavy").
+   Three cuts, none of them a live filter — all of them parameters on the
+   shared `.tone-ramp` primitive:
+     · a smaller dot on the same pitch (1.7px -> 1.15px), so the field
+       reads as a finer tone rather than as a grid of holes;
+     · lighter ink (.28 -> .15);
+     · and it is pulled back HARDEST over the face: the panel already
+       carries its face-safe crop as `--focus`, so the same point drives
+       `--tone-hole`, a punch-out intersected with the ramp.
+   The coarse ramp still runs over backgrounds and clothing — the half of
+   the effect the ruling explicitly kept. */
+.cl-tone{
+  position:absolute; inset:7px; z-index:1; pointer-events:none;
+  color:#0b0b10; opacity:.15; clip-path:var(--poly);
+  --ramp-angle:210deg; --tone-dot:1.15px;
+  --tone-hole:radial-gradient(46% 34% at var(--focus, 50% 18%), transparent 0 44%, #000 100%);
+}
+/* Rook's panel keeps its heavier read (ruled fine as-is) — but the tone
+   comes down with everything else; the weight there is the mono art. */
+.cl-panel.asleep .cl-tone{ opacity:.24 }
+.cl-speed{
+  position:absolute; inset:7px; z-index:1; pointer-events:none; clip-path:var(--poly);
+  background:repeating-conic-gradient(from 0deg at 50% 50%, rgba(255,255,255,.22) 0 .6deg, transparent .6deg 4deg);
+  -webkit-mask-image:radial-gradient(circle at 50% 50%, transparent 32%, #000 78%);
+          mask-image:radial-gradient(circle at 50% 50%, transparent 32%, #000 78%);
+  opacity:.5;
+}
+
+/* --- the yellow-tape name plates (page space, so they cross gutters) */
+.cl-tape{
+  position:absolute; z-index:5; pointer-events:none; white-space:nowrap;
+  display:flex; align-items:stretch; gap:7px;
+  padding:5px 15px 5px 5px; background:#ffe14d; color:#141118;
+  border:3px solid #111;
+  clip-path:polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%, 7px 50%);
+  transform:rotate(calc(var(--trot,-3) * 1deg));
+}
+.cl-cap{ width:7px; background:var(--rar); border-right:2px solid #111 }
+.cl-tape.dim .cl-cap{ background:#787f8d }
+.cl-tape.dim .cl-tape-txt b{ color:#4a4553 }
+.cl-tape-txt{ display:flex; flex-direction:column; justify-content:center }
+.cl-tape-txt b{
+  display:block; font-family:"Dela Gothic One",sans-serif;
+  font-size:calc(var(--u) * .044); line-height:1; letter-spacing:.005em;
+}
+.cl-tape-txt em{
+  display:block; margin-top:3px; font-style:normal;
+  font-family:"Silkscreen",monospace; font-size:6px; letter-spacing:.14em; color:#3b3244;
+}
+/* THE TAPE STARS, STEPPED UP (owner ruling, walk 2: "way too little").
+   8px was a footnote on a plate whose name runs at ~17px; the production
+   card's star read is the reference, so the pill now carries a ~14px star
+   at the 390px column and scales with it.  The tapes themselves are
+   untouched — the owner likes them. */
+.cl-pill{ display:flex; align-items:center; align-self:center; padding:3px 6px; background:#141118 }
+.cl-pill .st{ font-size:clamp(11px, calc(var(--u) * .036), 15px); text-shadow:none }
+.cl-pill .stars{ gap:1px }
+
+/* --- stickers, ZZZ, burst, masthead ------------------------------- */
+.cl-sticker{
+  position:absolute; z-index:6; pointer-events:none;
+  font-family:"Bungee",sans-serif; font-size:11px; letter-spacing:.02em;
+  background:#ffe14d; color:#111; padding:4px 7px; border:3px solid #111;
+  transform:rotate(calc(var(--srot,-8) * 1deg));
+}
+.cl-sticker.pink{ background:#ff4f9a; color:#fff8ec }
+.cl-sticker.cyan{ background:#3fe0e8 }
+.cl-zzz{ position:absolute; z-index:8; pointer-events:none; right:52px; top:26px }
+.cl-zzz span{
+  position:absolute; font-family:"Bungee",sans-serif; color:#cfe4ff;
+  -webkit-text-stroke:4px #111; paint-order:stroke fill;
+}
+.cl-zzz span:nth-child(1){ left:0;  top:22px; font-size:13px }
+.cl-zzz span:nth-child(2){ left:14px; top:8px; font-size:17px }
+.cl-zzz span:nth-child(3){ left:32px; top:-6px; font-size:21px }
+.is-active .cl-zzz span{ animation:cl-float 3.2s ease-in-out infinite }
+.cl-zzz span:nth-child(2){ animation-delay:-1s } .cl-zzz span:nth-child(3){ animation-delay:-2s }
+@keyframes cl-float{ 0%,100%{ transform:translate3d(0,0,0) } 50%{ transform:translate3d(3px,-7px,0) } }
+.cl-bang{
+  position:absolute; left:50%; top:44%; z-index:9; pointer-events:none;
+  font-family:"Bungee",sans-serif; font-size:34px; color:#ffe14d;
+  -webkit-text-stroke:6px #111; paint-order:stroke fill;
+  transform:translate(-50%,-50%) scale(2.4) rotate(-10deg); opacity:0;
+}
+.cl-panel.waking .cl-bang{ animation:cl-slam 420ms var(--e-slam) 120ms both }
+@keyframes cl-slam{
+  0%{ opacity:0; transform:translate(-50%,-50%) scale(2.4) rotate(-10deg) }
+  55%{ opacity:1; transform:translate(-50%,-50%) scale(.92) rotate(-10deg) }
+  80%{ opacity:1; transform:translate(-50%,-50%) scale(1.04) rotate(-10deg) }
+  100%{ opacity:0; transform:translate(-50%,-50%) scale(1) rotate(-10deg) }
+}
+.cl-title{
+  position:absolute; z-index:9; left:0; right:0; bottom:58px; padding:9px 14px 10px;
+  background:#0d0c11; border-top:3px solid #f6f2e8; text-align:center;
+}
+.cl-title h2{
+  margin:0; font-family:"Bungee",sans-serif; font-size:24px; letter-spacing:.02em; color:#f6f2e8;
+}
+.cl-title h2 em{ font-style:normal; color:#ff4f9a }
+.cl-title p{
+  margin:5px 0 0; font-family:"Silkscreen",monospace; font-size:6px; letter-spacing:.14em;
+  color:rgba(246,242,232,.5); line-height:1.9;
+}
+
+/* C's banner skin: print chrome.  Paper edge under it, ink border, Bungee
+   display line with the page's own black stroke — the banner is printed on
+   the club page rather than laid over it. */
+.c-club .bn{
+  --bn-tag-bg:#ffe14d; --bn-tag-ink:#141118; --bn-dot-on:#ffe14d;
+  --bn-caption:rgba(255,248,236,.72);
+  --bn-glow:radial-gradient(70% 55% at 14% 25%, rgba(255,225,77,.14), transparent 72%);
+  --bn-shadow:0 4px 0 #f6f2e8, 0 14px 30px rgba(0,0,0,.6);
+  border-bottom:3px solid #111;
+}
+.c-club .bn-copy .tag{
+  border-radius:0; border:2px solid #111;
+  font-family:"Bungee",sans-serif; font-size:8px; letter-spacing:.04em;
+}
+.c-club .bn-copy b{
+  font-family:"Bungee",sans-serif; font-size:calc(var(--u) * .055); line-height:1.02;
+  color:#fff8ec; text-shadow:none; -webkit-text-stroke:5px #111; paint-order:stroke fill;
+}
+.c-club .bn-copy small{ font-family:"Silkscreen",monospace }

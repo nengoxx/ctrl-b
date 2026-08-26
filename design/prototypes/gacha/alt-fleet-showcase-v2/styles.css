@@ -1,0 +1,1328 @@
+/* =====================================================================
+   CTRL/B — ALT FLEET LAB v2
+   Ten immersive concept screens on one 4-machine mock roster.
+   Standalone prototype: no app code, no build step.
+
+   Sections
+     0  fonts
+     1  tokens (R24 §B.1, verbatim)
+     2  reset + stage + switcher chrome
+     3  shared dossier
+     4  shared effect kit (grain, flash, halftone, barcode, marks, rings)
+     5  concept 01 SIGNAL BANDS   .. concept 10 CAPSULE DOME
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   0 · FONTS — all self-hosted latin subsets, font-display: swap
+   ------------------------------------------------------------------ */
+@font-face{font-family:"Bungee";src:url("./assets/bungee-400-latin.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Zen Kaku";src:url("./assets/zen-kaku-gothic-new-700-latin.woff2") format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Zen Kaku";src:url("./assets/zen-kaku-gothic-new-900-latin.woff2") format("woff2");font-weight:900;font-display:swap}
+@font-face{font-family:"Archivo Black";src:url("./assets/archivo-black-400.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Rubik Mono One";src:url("./assets/rubik-mono-one-400.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"DotGothic16";src:url("./assets/dotgothic16-400.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Silkscreen";src:url("./assets/silkscreen-400.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Dela Gothic One";src:url("./assets/dela-gothic-one-400.woff2") format("woff2");font-weight:400;font-display:swap}
+
+/* ---------------------------------------------------------------------
+   1 · MOTION GRAMMAR — R24 §B.1 tokens, adopted verbatim
+   ------------------------------------------------------------------ */
+:root{
+  /* durations */
+  --t-instant : 90ms;    /* press-down, flash on                */
+  --t-tap     : 140ms;   /* release, toggle, chevron nudge      */
+  --t-ui      : 220ms;   /* card select, panel swap, slam       */
+  --t-panel   : 320ms;   /* sheet, drawer, screen change        */
+  --t-ceremony: 900ms;   /* a pull/reveal, budgeted across beats*/
+
+  /* easings — never ease-in on UI */
+  --e-out       : cubic-bezier(.23, 1, .32, 1);      /* default in/out    */
+  --e-inout     : cubic-bezier(.77, 0, .175, 1);     /* on-screen travel  */
+  --e-sheet     : cubic-bezier(.32, .72, 0, 1);      /* drawers           */
+  --e-overshoot : cubic-bezier(.34, 1.56, .64, 1);   /* ~+12%, needs >=200ms */
+  --e-slam      : cubic-bezier(.16, 1, .3, 1);       /* hard landing      */
+  --e-anticipate: cubic-bezier(.68, -.4, .32, 1.4);  /* pull back then over; >=320ms */
+
+  --stagger: 40ms;  --stagger-max: 240ms;
+  --press-scale: .97;  --shake-amp: 4px;
+
+  /* lab plumbing (not part of the R24 spec) */
+  --stage-w: 520px;
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* R24 §B.4 — reduce, don't delete */
+@media (prefers-reduced-motion: reduce){
+  :root{
+    --t-ui: 120ms; --t-panel: 150ms; --t-ceremony: 200ms;
+    --e-overshoot: var(--e-out); --e-anticipate: var(--e-out);
+    --stagger: 0ms; --press-scale: 1; --shake-amp: 0px;
+  }
+  .slam, .echo, .shake{ animation-name: fade-in; animation-duration: 120ms; }
+  .idle, [class*="idle-"]{ animation: none !important; }
+  .parallax-layer{ transform: none !important; }
+}
+@keyframes fade-in{ from{opacity:0} to{opacity:1} }
+
+/* the ceremony skip switch — tap anywhere collapses to the final frame */
+.skip, .skip *{
+  animation-duration: 1ms !important; animation-delay: 0ms !important;
+  transition-duration: 1ms !important; transition-delay: 0ms !important;
+}
+
+/* ---------------------------------------------------------------------
+   2 · RESET · STAGE · SWITCHER
+   ------------------------------------------------------------------ */
+*,*::before,*::after{ box-sizing:border-box }
+html,body{ height:100% }
+body{
+  margin:0; background:#0a0a0d; color:#fff;
+  font-family:"Zen Kaku","Segoe UI",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased; overscroll-behavior:none;
+}
+img{ display:block; max-width:100% }
+button{ font:inherit; color:inherit; background:none; border:0; margin:0; padding:0; cursor:pointer; -webkit-tap-highlight-color:transparent }
+.svg-defs{ position:absolute; width:0; height:0; overflow:hidden }
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap; border:0;
+}
+
+/* desktop just centres a phone-ish column over a dim field */
+@media (min-width: 560px){
+  body{
+    background:
+      radial-gradient(1200px 700px at 50% -10%, #17171f 0%, #0a0a0d 60%),
+      repeating-linear-gradient(45deg, rgba(255,255,255,.012) 0 2px, transparent 2px 9px);
+  }
+}
+
+.stage{
+  position:relative; width:min(100vw, var(--stage-w)); height:100dvh;
+  margin:0 auto; overflow:hidden; background:#000; isolation:isolate;
+}
+@media (min-width:560px){
+  .stage{ box-shadow:0 0 0 1px rgba(255,255,255,.08), 0 40px 120px rgba(0,0,0,.7) }
+}
+.screens{ position:absolute; inset:0 }
+
+/* hide via :not() so each concept keeps its own display value (grid/block) */
+.screen{ position:absolute; inset:0; overflow:hidden }
+.screen:not(.is-active){ display:none }
+
+/* switcher — small, floating, never inside a concept's container root */
+.switcher{
+  position:absolute; z-index:60; left:50%; bottom:calc(10px + env(safe-area-inset-bottom,0px));
+  transform:translateX(-50%);
+  display:flex; align-items:center; gap:5px;
+  padding:4px; border-radius:999px;
+  background:rgba(9,9,12,.62); border:1px solid rgba(255,255,255,.14);
+  backdrop-filter:none; /* deliberately not used: dies in capture contexts */
+}
+.sw-chip{
+  width:30px; height:26px; border-radius:999px; display:grid; place-items:center;
+  font-size:15px; line-height:1; color:rgba(255,255,255,.82);
+  transition:transform var(--t-tap) var(--e-out), opacity var(--t-tap) ease;
+}
+.sw-chip:active{ transform:scale(var(--press-scale)) }
+.sw-chip:focus-visible{ outline:2px solid #fff; outline-offset:2px }
+.sw-reset{ font-size:13px; opacity:.6 }
+.sw-index{
+  font-family:"Silkscreen",monospace; font-size:10px; letter-spacing:.12em;
+  color:rgba(255,255,255,.7); padding:0 2px; min-width:44px; text-align:center;
+}
+@media (hover:hover) and (pointer:fine){
+  .sw-chip:hover{ color:#fff; transform:scale(1.08) }
+}
+
+.sw-name{
+  position:absolute; z-index:59; left:50%; bottom:calc(46px + env(safe-area-inset-bottom,0px));
+  transform:translateX(-50%); margin:0; white-space:nowrap;
+  font-family:"Silkscreen",monospace; font-size:10px; letter-spacing:.24em;
+  color:rgba(255,255,255,.9); text-shadow:0 1px 6px rgba(0,0,0,.9);
+  opacity:0; pointer-events:none;
+}
+.sw-name.show{ animation:sw-name-flash 1900ms var(--e-out) both }
+@keyframes sw-name-flash{
+  0%{opacity:0; transform:translateX(-50%) translateY(4px)}
+  12%{opacity:1; transform:translateX(-50%) translateY(0)}
+  70%{opacity:1}
+  100%{opacity:0}
+}
+
+/* the invisible skip catcher raised during a ceremony */
+.skip-catcher{ position:absolute; inset:0; z-index:55; background:transparent }
+
+/* ---------------------------------------------------------------------
+   3 · SHARED DOSSIER (one component, re-skinned per concept via --dsr-accent)
+   ------------------------------------------------------------------ */
+.dossier-layer{
+  position:fixed; inset:0; z-index:200; display:grid; place-items:end center;
+  --dsr-accent:#ff4f9a;
+}
+.dossier-layer[hidden]{ display:none }
+.dsr-backdrop{
+  position:absolute; inset:0; background:rgba(4,4,6,.78);
+  opacity:0; animation:fade-in var(--t-panel) var(--e-out) forwards;
+}
+.dsr{
+  position:relative; width:min(100vw, var(--stage-w)); max-height:88dvh; overflow:auto;
+  background:#111117; border-top:2px solid var(--dsr-accent);
+  border-radius:18px 18px 0 0; padding-bottom:calc(14px + env(safe-area-inset-bottom,0px));
+  transform:translateY(18px); opacity:0;
+  animation:dsr-in var(--t-panel) var(--e-sheet) forwards;
+}
+@keyframes dsr-in{ to{ transform:none; opacity:1 } }
+.dsr:focus{ outline:none }
+.dsr-close{
+  position:absolute; top:8px; right:8px; z-index:3; width:40px; height:40px; border-radius:999px;
+  display:grid; place-items:center; font-size:24px; line-height:1;
+  background:rgba(8,8,10,.66); color:#fff;
+}
+.dsr-close:focus-visible{ outline:2px solid var(--dsr-accent); outline-offset:2px }
+.dsr-art{ position:relative; height:210px; overflow:hidden; background:#07070a }
+.dsr-art img{ width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 25%) }
+.dsr-art-scrim{
+  position:absolute; inset:0;
+  background:linear-gradient(180deg, transparent 30%, rgba(17,17,23,.2) 65%, #111117 100%);
+}
+.dsr-serial{
+  position:absolute; left:12px; bottom:8px; font-family:"Silkscreen",monospace;
+  font-size:9px; letter-spacing:.2em; color:rgba(255,255,255,.62);
+}
+.dsr-body{ padding:12px 16px 4px }
+.dsr-eyebrow{
+  font-family:"Silkscreen",monospace; font-size:9px; letter-spacing:.22em;
+  color:var(--dsr-accent); display:block;
+}
+.dsr h2{
+  margin:6px 0 2px; font-family:"Archivo Black",sans-serif; font-size:34px;
+  line-height:.94; letter-spacing:-.01em; text-transform:uppercase;
+}
+.dsr-epithet{ margin:0 0 10px; font-size:12.5px; letter-spacing:.14em; color:var(--dsr-accent); text-transform:uppercase }
+.dsr-meta{ display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap }
+.dsr-role{
+  font-family:"Silkscreen",monospace; font-size:9px; letter-spacing:.16em;
+  padding:5px 8px; border:1px solid rgba(255,255,255,.2); color:rgba(255,255,255,.8);
+}
+.dsr-stars{ color:var(--dsr-accent); letter-spacing:.12em; font-size:14px }
+.dsr-rows{ margin:0 0 14px; display:grid; grid-template-columns:auto 1fr; gap:0 12px }
+.dsr-rows dt{
+  font-family:"Silkscreen",monospace; font-size:9px; letter-spacing:.14em;
+  color:rgba(255,255,255,.42); padding:6px 0; border-bottom:1px solid rgba(255,255,255,.07);
+}
+.dsr-rows dd{
+  margin:0; font-size:12.5px; text-align:right; padding:6px 0;
+  border-bottom:1px solid rgba(255,255,255,.07); color:rgba(255,255,255,.92);
+}
+.dsr-actions{ display:flex; align-items:center; gap:12px; padding-bottom:12px; flex-wrap:wrap }
+.dsr-go{
+  flex:1 1 auto; min-height:46px; padding:0 18px;
+  background:var(--dsr-accent); color:#0a0a0d;
+  font-family:"Archivo Black",sans-serif; font-size:13px; letter-spacing:.1em;
+  transition:transform var(--t-instant) var(--e-out);
+}
+.dsr-go:active{ transform:scale(var(--press-scale)) }
+.dsr-go:focus-visible{ outline:2px solid #fff; outline-offset:2px }
+.dsr-status{ font-family:"Silkscreen",monospace; font-size:9px; letter-spacing:.14em; color:rgba(255,255,255,.55) }
+
+/* per-concept dossier skins — the same component, three finishes */
+.dossier-layer[data-skin="print"] .dsr{ background:#f3efe6; color:#16161a; border-radius:0 }
+.dossier-layer[data-skin="print"] .dsr-art-scrim{ background:linear-gradient(180deg,transparent 40%,rgba(243,239,230,.25) 70%,#f3efe6 100%) }
+.dossier-layer[data-skin="print"] .dsr-rows dt{ color:rgba(20,20,24,.5); border-bottom-color:rgba(0,0,0,.12) }
+.dossier-layer[data-skin="print"] .dsr-rows dd{ color:#16161a; border-bottom-color:rgba(0,0,0,.12) }
+.dossier-layer[data-skin="print"] .dsr-role{ border-color:rgba(0,0,0,.3); color:rgba(20,20,24,.75) }
+.dossier-layer[data-skin="print"] .dsr-close{ background:rgba(20,20,24,.1); color:#16161a }
+.dossier-layer[data-skin="print"] .dsr-serial{ color:rgba(255,255,255,.8) }
+.dossier-layer[data-skin="hard"] .dsr{ border-radius:0; background:#0b0b0f; border-top-width:4px }
+.dossier-layer[data-skin="hard"] .dsr h2{ font-family:"Rubik Mono One",monospace; font-size:26px }
+
+/* ---------------------------------------------------------------------
+   4 · SHARED EFFECT KIT
+   ------------------------------------------------------------------ */
+/* A18 — baked grain tile, never a live filter */
+.grain{
+  position:absolute; inset:0; pointer-events:none; z-index:8;
+  background-image:var(--grain); background-size:160px 160px; opacity:.05;
+}
+/* A9 — one-frame flash: a pre-existing node, opacity only */
+.flash{ position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:40 }
+.flash.fire{ animation:flash 200ms linear both }
+@keyframes flash{ 0%{opacity:0} 20%{opacity:.55} 100%{opacity:0} }
+/* A10 — shake root (never <body>; fixed children stay outside) */
+.shake.fire{ animation:shake 130ms var(--e-inout) both }
+@keyframes shake{
+  0%{transform:translate3d(0,0,0)}
+  25%{transform:translate3d(var(--shake-amp),-1px,0)}
+  50%{transform:translate3d(calc(var(--shake-amp) * -1),1px,0)}
+  75%{transform:translate3d(calc(var(--shake-amp) * .6),0,0)}
+  100%{transform:translate3d(0,0,0)}
+}
+/* A1 — halftone dot field, >=5px pitch */
+.halftone{
+  --dot:6px; --r:1.6px;
+  background-image:radial-gradient(circle at 50% 50%, currentColor var(--r), transparent calc(var(--r) + .5px));
+  background-size:var(--dot) var(--dot);
+}
+/* A2 — halftone ramp: constant dots, masked opacity (no blend modes) */
+.tone-ramp{
+  position:absolute; inset:0; pointer-events:none;
+  background-image:radial-gradient(circle, currentColor 1.7px, transparent 2.2px);
+  background-size:6px 6px;
+  -webkit-mask-image:linear-gradient(var(--ramp-angle,150deg), #000 6%, transparent 72%);
+          mask-image:linear-gradient(var(--ramp-angle,150deg), #000 6%, transparent 72%);
+}
+/* A16 — barcode; per-host variety from three coprime layers */
+.barcode{
+  background-image:
+    repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px calc(2px + var(--b1,3px))),
+    repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px calc(3px + var(--b2,7px))),
+    repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px calc(2px + var(--b3,11px)));
+}
+/* A15 — registration / crop marks */
+.reg-mark{
+  position:absolute; width:14px; height:14px; opacity:.35; pointer-events:none;
+  background:
+    linear-gradient(currentColor,currentColor) 50% 0/1px 100% no-repeat,
+    linear-gradient(currentColor,currentColor) 0 50%/100% 1px no-repeat;
+}
+/* A17 — static scanlines, >=3px period */
+.scanlines{
+  position:absolute; inset:0; pointer-events:none;
+  background:repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0,0,0,.16) 2px 3px);
+}
+/* inset focus ring — the UA ring is clipped away inside clip-path shapes (R18 §1.4) */
+.ring:focus-visible{ outline:none }
+.ring:focus-visible::after{
+  content:""; position:absolute; inset:3px; pointer-events:none; z-index:30;
+  box-shadow:inset 0 0 0 2px #fff, inset 0 0 0 4px rgba(0,0,0,.55);
+}
+.ring{ position:relative }
+
+/* sleeping treatment — the lab-wide contract */
+.asleep img, img.asleep{ filter:saturate(0) brightness(.55) }
+/* =====================================================================
+   01 · SIGNAL BANDS — the ZZZ diagonal roster poster
+   Interlocking clip-path parallelograms ON the real buttons (R18: the
+   clipped-off triangle falls through to the band beneath, so tiling
+   bands have zero dead taps). One shear angle, one direction.
+   ===================================================================== */
+.c-signal{
+  background:
+    radial-gradient(120% 60% at 50% -10%, #1b1b24 0%, #0d0d12 60%),
+    repeating-linear-gradient(97deg, rgba(255,255,255,.022) 0 1px, transparent 1px 26px);
+  color:#fff;
+}
+.sb-head{ position:relative; z-index:3; padding:14px 16px 8px; display:flex; justify-content:space-between; align-items:flex-end }
+.sb-mark{ font-family:"Bungee",sans-serif; font-size:20px; letter-spacing:.02em; line-height:1 }
+.sb-mark em{ font-style:normal; color:#ffd23f }
+.sb-sub{ font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.2em; color:rgba(255,255,255,.5); text-align:right; line-height:1.7 }
+
+.sb-ticker{
+  position:relative; z-index:3; height:26px; overflow:hidden;
+  border-block:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.04);
+  display:flex; align-items:center;
+}
+.sb-ticker-in{
+  display:flex; flex:none; white-space:nowrap; will-change:transform;
+  font-family:"Silkscreen",monospace; font-size:9px; letter-spacing:.18em; color:rgba(255,255,255,.72);
+}
+.is-active .sb-ticker-in{ animation:sb-marquee 26s linear infinite }
+.sb-ticker-in span{ padding-right:26px }
+@keyframes sb-marquee{ from{ transform:translate3d(0,0,0) } to{ transform:translate3d(-50%,0,0) } }
+
+.sb-track{
+  container-type:inline-size; position:relative; z-index:2;
+  --a:7deg; --run:calc(tan(var(--a)) * 100cqw); --gut:7px;
+  padding:0 0 4px;
+}
+.sb-band{
+  position:relative; display:block; width:100%; height:208px;
+  clip-path:polygon(0 var(--run), 100% 0, 100% calc(100% - var(--run)), 0 100%);
+  background:#0b0b10; overflow:hidden; isolation:isolate;
+  transition:transform var(--t-tap) var(--e-out);
+}
+.sb-band + .sb-band{ margin-top:calc((var(--run) - var(--gut)) * -1) }
+.sb-band:active{ transform:translate3d(4px,0,0) }
+.sb-band img{
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; object-position:var(--focus,50% 26%);
+}
+.sb-plate{
+  position:absolute; inset:0; z-index:1;
+  background:linear-gradient(96deg, var(--accent) 0%, transparent 62%);
+  opacity:.5;
+}
+.sb-veil{
+  position:absolute; inset:0; z-index:1;
+  background:linear-gradient(180deg, rgba(6,6,10,.78) 0%, transparent 38%, transparent 62%, rgba(6,6,10,.8) 100%);
+}
+.sb-edge{
+  position:absolute; left:0; right:0; top:0; height:100%; z-index:2; pointer-events:none;
+  background:linear-gradient(96deg, var(--accent) 0 4px, transparent 4px);
+}
+/* the safe zone: the inscribed rectangle between the two diagonals */
+.sb-zone{
+  position:absolute; z-index:3; left:14px; right:14px;
+  top:calc(var(--run) + 6px); bottom:calc(var(--run) + 6px);
+  display:flex; flex-direction:column; justify-content:space-between; align-items:flex-start;
+  pointer-events:none;
+}
+.sb-stars{ font-size:12px; letter-spacing:.1em; color:var(--accent); text-shadow:0 1px 4px rgba(0,0,0,.9) }
+.sb-foot{ display:flex; align-items:center; gap:8px }
+.sb-chip{
+  font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.16em;
+  padding:4px 7px; background:rgba(6,6,10,.72); border:1px solid var(--accent); color:#fff;
+}
+.sb-role{ font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.16em; color:rgba(255,255,255,.62) }
+.sb-band.asleep img{ filter:saturate(0) brightness(.5) }
+.sb-band.asleep .sb-plate{ opacity:.16 }
+
+/* rotated outline names, allowed to cross the gutters */
+.sb-names{ position:absolute; inset:0; z-index:4; pointer-events:none }
+.sb-name{
+  position:absolute; left:var(--nx,10px); top:var(--ny,0px);
+  font-family:"Archivo Black",sans-serif; font-size:34px; line-height:1;
+  text-transform:uppercase; letter-spacing:-.015em;
+  color:transparent; -webkit-text-stroke:1.5px var(--accent);
+  transform:rotate(-7deg); transform-origin:0 50%;
+  text-shadow:0 2px 10px rgba(0,0,0,.55);
+}
+.sb-name.solid{ color:var(--accent); -webkit-text-stroke:0 }
+.sb-jp{
+  position:absolute; right:12px; top:var(--ny,0px);
+  font-family:"Zen Kaku",sans-serif; font-weight:900; font-size:15px;
+  writing-mode:vertical-rl; color:rgba(255,255,255,.9); letter-spacing:.12em;
+  text-shadow:0 1px 6px rgba(0,0,0,.85);
+}
+
+/* wake ceremony: a colour sweep along the band's own axis */
+.sb-sweep{
+  position:absolute; inset:-2px -60% -2px -60%; z-index:5; pointer-events:none;
+  background:linear-gradient(96deg, transparent 40%, var(--accent) 48%, #fff 52%, var(--accent) 56%, transparent 64%);
+  opacity:0; transform:translate3d(-60%,0,0);
+}
+.sb-band.waking .sb-sweep{ animation:sb-sweep 520ms var(--e-inout) both }
+@keyframes sb-sweep{
+  0%{ opacity:0; transform:translate3d(-60%,0,0) }
+  18%{ opacity:.95 }
+  100%{ opacity:0; transform:translate3d(60%,0,0) }
+}
+.sb-burst{
+  position:absolute; left:50%; top:50%; z-index:6; pointer-events:none;
+  font-family:"Bungee",sans-serif; font-size:36px; color:#fff;
+  -webkit-text-stroke:3px #0b0b10; paint-order:stroke fill;
+  transform:translate(-50%,-50%) scale(2.4) rotate(-8deg); opacity:0;
+}
+.sb-band.waking .sb-burst{ animation:slam 380ms var(--e-slam) 140ms both }
+@keyframes slam{
+  0%{ opacity:0; transform:translate(-50%,-50%) scale(2.4) rotate(-8deg) }
+  55%{ opacity:1; transform:translate(-50%,-50%) scale(.94) rotate(-6deg) }
+  100%{ opacity:0; transform:translate(-50%,-50%) scale(1) rotate(-6deg) }
+}
+
+/* =====================================================================
+   02 · SLICE STACK — the True Damage premium poster
+   Restraint is the concept: one black field, one parallelogram of four
+   equal slices, one giant vertical wordmark. Least chrome of the ten.
+   ===================================================================== */
+.c-slice{ background:#000; color:#fff; display:grid; grid-template-rows:auto 1fr auto }
+.sl-top{ padding:26px 20px 0 108px }
+.sl-kicker{ font-family:"Archivo Black",sans-serif; font-size:22px; letter-spacing:-.01em }
+.sl-word{
+  position:absolute; left:16px; top:50%; transform:translateY(-50%);
+  writing-mode:vertical-rl; rotate:180deg;
+  font-family:"Archivo Black",sans-serif; font-size:52px; line-height:1;
+  letter-spacing:.02em; color:#fff; z-index:3; pointer-events:none;
+}
+.sl-poster{
+  container-type:inline-size; position:relative; z-index:2;
+  --a:10deg; --run:calc(tan(var(--a)) * 100cqw); --gut:9px;
+  width:calc(100% - 118px); margin-left:104px; align-self:center;
+}
+.sl-slice{
+  position:relative; display:block; width:100%; height:172px; overflow:hidden;
+  clip-path:polygon(0 var(--run), 100% 0, 100% calc(100% - var(--run)), 0 100%);
+  background:#000; transition:transform var(--t-ui) var(--e-out);
+}
+.sl-slice + .sl-slice{ margin-top:calc((var(--run) - var(--gut)) * -1) }
+.sl-slice img{
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; object-position:var(--focus,50% 26%);
+  transform-origin:60% 40%;
+}
+.is-active .sl-slice img{ animation:sl-breathe 24s ease-in-out infinite alternate }
+.sl-slice:nth-child(2) img{ animation-delay:-6s }
+.sl-slice:nth-child(3) img{ animation-delay:-12s }
+.sl-slice:nth-child(4) img{ animation-delay:-18s }
+@keyframes sl-breathe{ from{ transform:scale(1) } to{ transform:scale(1.04) } }
+.sl-slice.picked{ transform:translate3d(9px,0,0) }
+.sl-slice.picked .sl-key{ opacity:1 }
+.sl-key{
+  position:absolute; inset:0; z-index:3; pointer-events:none; opacity:0;
+  box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.92);
+  transition:opacity var(--t-ui) var(--e-out);
+}
+.sl-slice.asleep img{ filter:saturate(0) brightness(.42); animation:none }
+.sl-tag{
+  position:absolute; right:10px; z-index:4; bottom:calc(var(--run) * .5);
+  font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.18em;
+  color:rgba(255,255,255,.85); text-shadow:0 1px 5px rgba(0,0,0,.9);
+}
+.sl-foot{ padding:0 20px 74px 108px }
+.sl-serials{ font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.16em; color:rgba(255,255,255,.34); line-height:2 }
+.sl-flashline{
+  position:absolute; left:-4%; right:-4%; height:2px; background:#fff; z-index:5;
+  opacity:0; pointer-events:none; top:50%;
+}
+.sl-slice.waking .sl-flashline{ animation:sl-line 520ms var(--e-inout) both }
+@keyframes sl-line{
+  0%{ opacity:0; transform:translate3d(-70%,0,0) scaleX(.4) }
+  20%{ opacity:1 }
+  100%{ opacity:0; transform:translate3d(70%,0,0) scaleX(1) }
+}
+.sl-poster.parting .sl-slice:nth-child(1){ transform:translate3d(0,-14px,0) }
+.sl-poster.parting .sl-slice:nth-child(2){ transform:translate3d(0,-6px,0) }
+.sl-poster.parting .sl-slice:nth-child(4){ transform:translate3d(0,14px,0) }
+
+/* =====================================================================
+   03 · CHARACTER SELECT — the fighting-game slab (Strive x SF6)
+   Hero ~58vh bleeding off-edge + a four-tile rail. Nameplate slam:
+   the portrait arrives 80ms before the name (R22 C1).
+   ===================================================================== */
+.c-select{ background:#0a0a0e; color:#fff; --accent:#ff4f9a }
+.cs-plate{
+  position:absolute; inset:0 0 auto; height:73dvh; overflow:hidden;
+  background:linear-gradient(155deg, color-mix(in srgb, var(--accent) 34%, #101018) 0%, #0a0a0e 72%);
+  transition:background var(--t-panel) ease;
+}
+.cs-plate::after{
+  content:""; position:absolute; inset:0;
+  clip-path:polygon(0 46%, 100% 8%, 100% 30%, 0 76%);
+  background:color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.cs-plate .grain{ opacity:.07 }
+.cs-hero{
+  position:absolute; z-index:2; top:7dvh; right:-14%; width:96%; height:65dvh;
+  overflow:hidden; transform-origin:70% 50%;
+}
+.cs-hero img{
+  width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 22%);
+  -webkit-mask-image:linear-gradient(90deg, transparent 0%, #000 12%, #000 100%);
+          mask-image:linear-gradient(90deg, transparent 0%, #000 12%, #000 100%);
+}
+.cs-hero.enter{ animation:cs-hero-in 280ms var(--e-out) both }
+@keyframes cs-hero-in{
+  from{ opacity:0; transform:translate3d(26px,0,0) scale(1.04) }
+  to{ opacity:1; transform:none }
+}
+.cs-hero.asleep img{ filter:saturate(0) brightness(.55) }
+
+.cs-head{ position:absolute; z-index:5; top:0; left:0; right:0; padding:14px 16px; display:flex; justify-content:space-between; align-items:flex-start }
+.cs-title{
+  font-family:"Archivo Black",sans-serif; font-size:13px; letter-spacing:.28em;
+  line-height:1.5; text-transform:uppercase; text-shadow:0 2px 10px rgba(0,0,0,.85);
+}
+.cs-title small{ display:block; font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.2em; color:var(--accent); text-shadow:0 1px 6px rgba(0,0,0,.9) }
+.cs-p1{
+  font-family:"Rubik Mono One",monospace; font-size:11px; letter-spacing:.06em;
+  padding:4px 8px; background:var(--accent); color:#0a0a0e;
+}
+
+.cs-plate-copy{
+  position:absolute; z-index:6; left:0; right:0; top:calc(73dvh - 156px);
+  padding:34px 0 12px 16px;
+  background:linear-gradient(180deg, transparent 0%, rgba(10,10,14,.72) 46%, rgba(10,10,14,.94) 100%);
+}
+.cs-name{
+  font-family:"Archivo Black",sans-serif; font-size:54px; line-height:.84;
+  letter-spacing:-.03em; text-transform:uppercase; white-space:nowrap;
+  margin:0 0 4px; margin-right:-40px;
+  text-shadow:0 6px 24px rgba(0,0,0,.7);
+}
+.cs-name.slam{ animation:cs-slam 240ms var(--e-slam) 80ms both }
+@keyframes cs-slam{
+  0%{ opacity:0; transform:scale(1.9) translate3d(-10px,0,0) }
+  58%{ opacity:1; transform:scale(.95) }
+  100%{ opacity:1; transform:scale(1) }
+}
+.cs-epithet{
+  margin:0 0 8px; font-size:12px; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--accent); text-shadow:0 2px 10px rgba(0,0,0,.8);
+}
+.cs-meta{ display:flex; gap:12px; font-family:"Silkscreen",monospace; font-size:8.5px; letter-spacing:.16em; color:rgba(255,255,255,.62) }
+.cs-stars{ color:var(--accent); letter-spacing:.1em; font-size:12px }
+
+.cs-cue{
+  position:absolute; z-index:7; left:0; right:0; bottom:172px; padding:0 16px;
+  display:flex; justify-content:space-between; align-items:center;
+  border-block:1px solid rgba(255,255,255,.12); height:26px;
+  font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.18em;
+  color:rgba(255,255,255,.5);
+}
+.cs-cue b{ color:var(--accent); font-weight:400 }
+.cs-rail{
+  position:absolute; z-index:7; left:0; right:0; bottom:74px;
+  display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:0 12px;
+}
+.cs-tile{
+  position:relative; aspect-ratio:1; overflow:hidden; background:#111116;
+  border:1px solid rgba(255,255,255,.14);
+  transition:transform var(--t-ui) var(--e-overshoot), border-color var(--t-tap) ease;
+}
+.cs-tile img{ width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 18%) }
+.cs-tile.asleep img{ filter:saturate(0) brightness(.5) }
+.cs-tile.on{ transform:translate3d(0,-8px,0) scale(1.13); border-color:var(--tile-accent); z-index:2 }
+.cs-tile.on::before{
+  content:""; position:absolute; inset:auto 0 0 0; height:3px; background:var(--tile-accent); z-index:3;
+}
+.cs-tile:active{ transform:scale(var(--press-scale)) }
+.cs-tile-no{
+  position:absolute; top:2px; left:3px; z-index:3;
+  font-family:"Silkscreen",monospace; font-size:7px; color:rgba(255,255,255,.8);
+  text-shadow:0 1px 3px #000;
+}
+.cs-tile-z{
+  position:absolute; right:3px; bottom:2px; z-index:3;
+  font-family:"Silkscreen",monospace; font-size:8px; color:#9f8bff; text-shadow:0 1px 3px #000;
+}
+.cs-ring{
+  position:absolute; z-index:8; left:50%; top:38dvh; width:180px; height:180px; margin:-90px 0 0 -90px;
+  border:2px solid #fff; border-radius:999px; opacity:0; pointer-events:none;
+}
+.cs-ring.fire{ animation:cs-ring 420ms var(--e-out) both }
+@keyframes cs-ring{
+  0%{ opacity:.85; transform:scale(.3) }
+  100%{ opacity:0; transform:scale(1.6) }
+}
+/* =====================================================================
+   04 · THE DOCK — berth and launch (Azur Lane x R22 Quadrant)
+   All four visible with zero scroll. Rarity frame colour = spec tier.
+   The ceremony IS the progress indicator: a real elapsed timer runs.
+   ===================================================================== */
+.c-dock{
+  background:
+    linear-gradient(180deg,#0e1117 0%,#0a0c11 100%),
+    repeating-linear-gradient(180deg, rgba(255,255,255,.02) 0 1px, transparent 1px 5px);
+  color:#dfe6f0; display:grid; grid-template-rows:auto 1fr auto;
+}
+.dk-head{
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+  padding:12px 14px 10px; border-bottom:1px solid rgba(255,255,255,.1);
+}
+.dk-mark{ font-family:"Rubik Mono One",monospace; font-size:14px; letter-spacing:.02em; color:#e8eef7 }
+.dk-mark span{ color:#5fd0ff }
+.dk-tot{ display:flex; gap:12px; font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.14em; color:rgba(223,230,240,.55) }
+.dk-tot b{ display:block; font-family:"Rubik Mono One",monospace; font-size:12px; color:#e8eef7; letter-spacing:0 }
+.dk-grid{ display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:6px; padding:6px; min-height:0 }
+.dk-berth{
+  position:relative; overflow:hidden; background:#0b0e14;
+  border:2px solid var(--rarity,#5a6472);
+  transition:transform var(--t-ui) var(--e-out);
+}
+.dk-berth:active{ transform:scale(.985) }
+.dk-berth img{
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; object-position:var(--focus,50% 22%); opacity:.92;
+}
+.dk-berth.asleep img{ filter:saturate(0) brightness(.42) }
+.dk-panel{
+  position:absolute; inset:0; z-index:2; pointer-events:none;
+  background:
+    linear-gradient(180deg, rgba(6,9,14,.86) 0 34px, transparent 34px),
+    linear-gradient(0deg, rgba(6,9,14,.92) 0 46px, transparent 46px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 1px, transparent 1px 22px);
+}
+.dk-rivets{
+  position:absolute; inset:5px; z-index:3; pointer-events:none;
+  background:
+    radial-gradient(circle, rgba(255,255,255,.34) 1px, transparent 1.4px) 0 0/100% 100% no-repeat,
+    radial-gradient(circle, rgba(255,255,255,.34) 1px, transparent 1.4px) 100% 0/100% 100% no-repeat,
+    radial-gradient(circle, rgba(255,255,255,.34) 1px, transparent 1.4px) 0 100%/100% 100% no-repeat,
+    radial-gradient(circle, rgba(255,255,255,.34) 1px, transparent 1.4px) 100% 100%/100% 100% no-repeat;
+}
+.dk-no{
+  position:absolute; top:8px; left:9px; z-index:4;
+  font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.18em; color:var(--rarity);
+}
+.dk-glyph{ position:absolute; top:6px; right:8px; z-index:4; font-size:13px; color:rgba(255,255,255,.72) }
+.dk-lock{
+  position:absolute; top:26px; right:8px; z-index:4; font-size:11px; color:#ffcf5a;
+}
+.dk-foot{
+  position:absolute; left:0; right:0; bottom:0; z-index:4; padding:6px 9px 8px;
+  display:flex; flex-direction:column; gap:2px;
+}
+.dk-name{ font-family:"Rubik Mono One",monospace; font-size:15px; letter-spacing:.01em; color:#fff; line-height:1 }
+.dk-line{ display:flex; justify-content:space-between; align-items:baseline; gap:6px }
+.dk-up{ font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.14em; color:rgba(223,230,240,.66) }
+.dk-stars{ font-size:9px; color:var(--rarity); letter-spacing:.06em }
+.dk-seam{
+  position:absolute; left:0; right:0; height:2px; z-index:5; background:var(--rarity);
+  opacity:0; pointer-events:none;
+}
+.dk-seam.t{ top:34px } .dk-seam.b{ bottom:46px }
+.dk-berth.waking .dk-seam{ animation:dk-seam 900ms var(--e-inout) both }
+.dk-berth.waking .dk-seam.b{ animation-name:dk-seam-b }
+@keyframes dk-seam{
+  0%{opacity:0; transform:translate3d(0,0,0)} 20%{opacity:1}
+  55%{opacity:1; transform:translate3d(0,-16px,0)} 100%{opacity:0; transform:translate3d(0,0,0)}
+}
+@keyframes dk-seam-b{
+  0%{opacity:0; transform:translate3d(0,0,0)} 20%{opacity:1}
+  55%{opacity:1; transform:translate3d(0,16px,0)} 100%{opacity:0; transform:translate3d(0,0,0)}
+}
+.dk-column{
+  position:absolute; left:50%; bottom:0; width:44%; height:100%; z-index:5;
+  margin-left:-22%; pointer-events:none; opacity:0;
+  background:linear-gradient(0deg, var(--rarity) 0%, transparent 82%);
+  transform:translate3d(0,60%,0);
+}
+.dk-berth.waking .dk-column{ animation:dk-col 760ms var(--e-out) 120ms both }
+@keyframes dk-col{
+  0%{ opacity:0; transform:translate3d(0,60%,0) }
+  30%{ opacity:.85 } 70%{ opacity:.7; transform:translate3d(0,0,0) }
+  100%{ opacity:0; transform:translate3d(0,-14%,0) }
+}
+.dk-timer{
+  position:absolute; left:50%; top:50%; z-index:6; transform:translate(-50%,-50%);
+  font-family:"DotGothic16",monospace; font-size:20px; letter-spacing:.08em;
+  color:#fff; text-shadow:0 0 12px rgba(0,0,0,.9); opacity:0;
+}
+.dk-berth.waking .dk-timer{ opacity:1 }
+.dk-berth.sealed{ animation:dk-seal 220ms var(--e-overshoot) both }
+@keyframes dk-seal{ 0%{transform:scale(1.035)} 100%{transform:scale(1)} }
+.dk-bar{
+  padding:8px 14px calc(58px + env(safe-area-inset-bottom,0px));
+  font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.16em;
+  color:rgba(223,230,240,.42); display:flex; justify-content:space-between;
+}
+
+/* =====================================================================
+   05 · OPERATOR FILE — the personnel dossier (Arknights x the print kit)
+   Chamfered cards, hazard rules, letter-graded exam block, barcodes.
+   Tap once to open the file in place; tap again for the full dossier.
+   ===================================================================== */
+.c-file{ background:#e9e4d8; color:#17171b; overflow-y:auto; --ink:#17171b }
+.of-sheet{ position:relative; min-height:100%; padding:0 0 84px }
+.of-watermark{
+  position:absolute; inset:0; pointer-events:none; z-index:0; opacity:.06;
+  display:grid; place-items:center; font-family:"Archivo Black",sans-serif;
+  font-size:120px; transform:rotate(-16deg); color:#17171b; overflow:hidden;
+}
+.of-head{ position:relative; z-index:2; padding:14px 14px 8px; display:flex; justify-content:space-between; align-items:flex-start }
+.of-org{ font-family:"Archivo Black",sans-serif; font-size:16px; letter-spacing:-.01em; text-transform:uppercase }
+.of-org small{ display:block; font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.18em; color:rgba(23,23,27,.55); margin-top:3px }
+.of-fileno{ font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.14em; text-align:right; line-height:1.9; color:rgba(23,23,27,.7) }
+.of-hazard{ height:9px; background:repeating-linear-gradient(45deg,#17171b 0 7px,#f0c73f 7px 14px); position:relative; z-index:2 }
+.of-list{ position:relative; z-index:2; padding:11px 12px; display:flex; flex-direction:column; gap:11px }
+.of-card{
+  position:relative; display:block; width:100%; text-align:left; background:#faf7f0; color:#17171b;
+  clip-path:polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 22px 100%, 0 calc(100% - 22px));
+  box-shadow:none; transition:transform var(--t-ui) var(--e-out);
+  overflow:hidden;
+}
+.of-card:active{ transform:scale(.99) }
+.of-card::before{
+  content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:var(--accent); z-index:2;
+}
+.of-row{ display:flex; gap:10px; padding:10px 12px 10px 14px; align-items:flex-start }
+.of-thumb{ position:relative; width:84px; height:104px; flex:none; overflow:hidden; background:#ddd7c8 }
+.of-thumb img{ width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 20%) }
+.of-card.asleep .of-thumb img{ filter:saturate(0) brightness(.62) }
+.of-id{ flex:1; min-width:0 }
+.of-name{ font-family:"Archivo Black",sans-serif; font-size:21px; line-height:1; text-transform:uppercase; letter-spacing:-.01em }
+.of-name em{ font-style:normal; font-family:"Zen Kaku",sans-serif; font-weight:900; font-size:12px; margin-left:6px; letter-spacing:.1em }
+.of-sub{ font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.14em; color:rgba(23,23,27,.62); margin-top:4px; line-height:1.9 }
+.of-barcode{ height:16px; width:62%; margin-top:8px; color:#17171b; opacity:.85 }
+.of-tab{
+  position:absolute; top:0; right:26px; z-index:3; padding:3px 8px 4px;
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.16em;
+  background:var(--accent); color:#faf7f0;
+}
+.of-card.asleep .of-tab{ background:#8b8b93 }
+.of-stamp{
+  position:absolute; right:16px; top:38px; z-index:4;
+  font-family:"Archivo Black",sans-serif; font-size:13px; letter-spacing:.06em;
+  color:#b6303a; border:3px solid #b6303a; padding:2px 6px; transform:rotate(-8deg); opacity:.85;
+}
+.of-stamp.online{ color:#1f7a4d; border-color:#1f7a4d }
+.of-stamp.thud{ animation:of-thud 300ms var(--e-slam) both }
+@keyframes of-thud{
+  0%{ opacity:0; transform:rotate(-14deg) scale(2.2) }
+  60%{ opacity:.9; transform:rotate(-7deg) scale(.94) }
+  100%{ opacity:.82; transform:rotate(-8deg) scale(1) }
+}
+.of-exam{
+  display:none; padding:0 12px 12px 14px;
+}
+.of-card.open .of-exam{ display:block }
+.of-exam-h{
+  display:flex; justify-content:space-between; align-items:center;
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.16em;
+  color:rgba(23,23,27,.55); border-top:1px dashed rgba(23,23,27,.3); padding-top:7px; margin-bottom:6px;
+}
+.of-grades{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px }
+.of-grade{
+  border:1px solid rgba(23,23,27,.22); padding:5px 4px 4px; text-align:center;
+  animation:of-rise 220ms var(--e-out) both;
+  animation-delay:min(calc(var(--i) * var(--stagger)), var(--stagger-max));
+}
+@keyframes of-rise{ from{ opacity:0; transform:translate3d(0,7px,0) } to{ opacity:1; transform:none } }
+.of-grade b{ display:block; font-family:"Archivo Black",sans-serif; font-size:22px; line-height:1; color:var(--accent) }
+.of-grade span{ font-family:"Silkscreen",monospace; font-size:7px; letter-spacing:.14em; color:rgba(23,23,27,.6) }
+.of-note{
+  margin-top:8px; font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.1em;
+  color:rgba(23,23,27,.62); display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+}
+.of-redact{ display:inline-block; height:9px; background:#17171b; flex:1 1 90px; min-width:60px }
+.of-more{
+  margin-top:9px; font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.18em;
+  color:var(--accent);
+}
+.of-dispatch{
+  position:absolute; left:14px; bottom:12px; z-index:4;
+  font-family:"DotGothic16",monospace; font-size:13px; letter-spacing:.1em; color:#17171b;
+  opacity:0;
+}
+.of-card.waking .of-dispatch{ animation:of-blink 640ms steps(1,end) 3 both }
+@keyframes of-blink{ 0%{opacity:1} 50%{opacity:.25} 100%{opacity:1} }
+.of-scan{
+  position:absolute; left:0; right:0; top:0; height:34%; z-index:5; pointer-events:none; opacity:0;
+  background:linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent) 45%, transparent));
+}
+.of-card.waking .of-scan{ animation:of-scan 760ms var(--e-inout) both }
+@keyframes of-scan{
+  0%{ opacity:0; transform:translate3d(0,-40%,0) } 15%{ opacity:.9 }
+  85%{ opacity:.9; transform:translate3d(0,300%,0) } 100%{ opacity:0; transform:translate3d(0,320%,0) }
+}
+.of-wipe{
+  position:absolute; inset:0; z-index:6; pointer-events:none; opacity:0;
+  background:radial-gradient(circle at 100% 0%, #fff 0%, color-mix(in srgb, var(--accent) 60%, transparent) 45%, transparent 70%);
+  transform-origin:100% 0%; transform:scale(.1);
+}
+.of-card.waking .of-wipe{ animation:of-wipe 560ms var(--e-out) 220ms both }
+@keyframes of-wipe{
+  0%{ opacity:0; transform:scale(.1) } 25%{ opacity:.9 }
+  100%{ opacity:0; transform:scale(2.4) }
+}
+.of-summary{
+  position:relative; z-index:2; margin:12px 12px 0; padding:10px 12px;
+  border:1px solid rgba(23,23,27,.25); display:flex; justify-content:space-between; gap:10px;
+}
+.of-summary div{ font-family:"Silkscreen",monospace; font-size:7px; letter-spacing:.14em; color:rgba(23,23,27,.55); line-height:2 }
+.of-summary b{ display:block; font-family:"Archivo Black",sans-serif; font-size:19px; color:#17171b; letter-spacing:-.01em }
+.of-foot{ position:relative; z-index:2; padding:10px 14px; display:flex; justify-content:space-between; font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.14em; color:rgba(23,23,27,.5) }
+
+/* =====================================================================
+   06 · FLEET/4 — the group poster (K/DA x True Damage x FGO's flip)
+   Four members, four colours, one featured forward. Pure transform
+   choreography: every card sits at 0,0 and is placed by transform.
+   ===================================================================== */
+.c-fleet4{ background:#12102a; color:#fff; overflow:hidden }
+.f4-field{
+  position:absolute; inset:0;
+  background:
+    radial-gradient(90% 60% at 50% 78%, rgba(255,255,255,.12) 0%, transparent 60%),
+    linear-gradient(200deg,#1b1440 0%,#0d0b20 62%,#08071a 100%);
+}
+.f4-pattern{
+  position:absolute; inset:-10% -30%; opacity:.08; pointer-events:none;
+  font-family:"Archivo Black",sans-serif; font-size:46px; line-height:.9; letter-spacing:-.02em;
+  color:#fff; white-space:pre-wrap; word-break:break-all; transform:rotate(-8deg);
+}
+.f4-word{
+  position:absolute; z-index:3; left:-6px; top:6px; margin:0;
+  font-family:"Archivo Black",sans-serif; font-size:76px; line-height:.82;
+  letter-spacing:-.045em; color:#fff; pointer-events:none;
+}
+.f4-word span{ display:block; font-size:15px; letter-spacing:.32em; margin-top:4px; color:#ffd23f }
+.f4-arc{
+  container-type:inline-size;
+  position:absolute; z-index:4; left:0; right:0; top:244px; height:400px;
+}
+.f4-card{
+  position:absolute; left:0; top:0; width:27cqw; height:232px;
+  transform:
+    translate3d(calc(var(--tx,0) * 1cqw), calc(var(--ty,0) * 1px), 0)
+    rotate(calc(var(--rot,0) * 1deg)) scale(var(--sc,1));
+  transform-origin:50% 100%;
+  transition:transform 420ms var(--e-inout);
+  z-index:var(--z,1);
+}
+.f4-inner{ position:absolute; inset:0; transform-style:preserve-3d; transition:transform 620ms var(--e-inout) }
+.f4-card.flip .f4-inner{ transform:rotateY(180deg) }
+.f4-face{
+  position:absolute; inset:0; overflow:hidden; backface-visibility:hidden;
+  box-shadow:0 0 0 2px var(--accent), 0 0 0 4px rgba(0,0,0,.5), 0 16px 30px rgba(0,0,0,.45);
+  background:#0b0a1a;
+}
+.f4-face.back{ transform:rotateY(180deg) }
+.f4-face img{ width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 18%) }
+.f4-rim{
+  position:absolute; inset:0; z-index:2; pointer-events:none;
+  background:
+    linear-gradient(255deg, color-mix(in srgb, var(--accent) 62%, transparent) 0 4px, transparent 12%),
+    linear-gradient(180deg, transparent 55%, rgba(6,5,18,.86) 100%);
+}
+.f4-face.front.silhouette img{ filter:saturate(0) brightness(.28) }
+.f4-face.front.silhouette .f4-sil{ opacity:.3 }
+.f4-sil{ position:absolute; inset:0; z-index:3; background:var(--accent); opacity:0; pointer-events:none }
+.f4-tag{
+  position:absolute; left:6px; bottom:5px; z-index:4;
+  font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.14em; color:#fff;
+  text-shadow:0 1px 4px #000;
+}
+.f4-card.lead .f4-face{ box-shadow:0 0 0 3px var(--accent), 0 0 0 6px rgba(0,0,0,.55), 0 26px 44px rgba(0,0,0,.55) }
+.f4-strip{
+  position:absolute; z-index:6; left:0; right:0; bottom:140px; padding:0 14px;
+  display:flex; justify-content:space-between; gap:6px;
+  border-top:1px solid rgba(255,255,255,.22); padding-top:9px;
+}
+.f4-strip span{
+  font-family:"Zen Kaku",sans-serif; font-weight:700; font-size:11px; letter-spacing:.16em;
+  text-transform:uppercase; color:rgba(255,255,255,.55);
+}
+.f4-strip span.on{ color:#fff; border-bottom:2px solid var(--accent); padding-bottom:2px }
+.f4-credits{
+  position:absolute; z-index:6; left:0; right:0; bottom:118px; padding:0 14px;
+  font-family:"Silkscreen",monospace; font-size:7px; letter-spacing:.2em; color:rgba(255,255,255,.34);
+}
+.f4-pattern.pulse{ animation:f4-pulse 620ms var(--e-out) both }
+@keyframes f4-pulse{ 0%{opacity:.08} 30%{opacity:.34} 100%{opacity:.08} }
+/* =====================================================================
+   07 · THE CUT-IN — the Persona two-tone diagonal (R22 C5)
+   Near-black + one hot hue; a -12deg band; selection is ALIEN cyan
+   (P8: the selection colour lives outside the base palette).
+   ===================================================================== */
+.c-cutin{
+  background:#0b0b0d; color:#fff;
+  --hot:#e4002b; --alien:#22e6ff;
+}
+.ci-split{
+  position:absolute; inset:0;
+  background:var(--hot);
+  clip-path:polygon(0 26%, 100% 6%, 100% 100%, 0 100%);
+}
+.ci-split::after{
+  content:""; position:absolute; inset:0;
+  background:repeating-linear-gradient(-12deg, rgba(0,0,0,.16) 0 2px, transparent 2px 12px);
+}
+.ci-rule{
+  position:absolute; left:-6%; right:-6%; top:24%; height:3px; background:#fff;
+  transform:rotate(-11.4deg); transform-origin:0 50%; z-index:3;
+}
+.ci-head{ position:absolute; z-index:6; top:0; left:0; right:0; padding:14px 16px }
+.ci-kicker{
+  font-family:"Dela Gothic One",sans-serif; font-size:15px; letter-spacing:.02em; line-height:1.1;
+  text-transform:uppercase;
+}
+.ci-kicker b{ color:var(--hot) }
+.ci-sub{ font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.2em; color:rgba(255,255,255,.55); margin-top:5px }
+
+.ci-band{
+  position:absolute; z-index:4; left:-8%; right:-8%; top:25%; height:42%;
+  background:#0b0b0d; transform:rotate(-12deg);
+  box-shadow:0 0 0 3px #fff;
+  overflow:hidden;
+}
+.ci-bandfill{
+  position:absolute; inset:0; background:linear-gradient(90deg, var(--alien), transparent 60%);
+  opacity:0; transform:translate3d(-100%,0,0);
+}
+.ci-band.sweep .ci-bandfill{ animation:ci-sweep 620ms var(--e-inout) both }
+@keyframes ci-sweep{
+  0%{ opacity:0; transform:translate3d(-100%,0,0) } 20%{ opacity:.85 }
+  100%{ opacity:0; transform:translate3d(100%,0,0) }
+}
+.ci-bandtext{
+  position:absolute; left:0; top:50%; transform:translateY(-50%);
+  white-space:nowrap; font-family:"Archivo Black",sans-serif; font-size:26px;
+  letter-spacing:.1em; color:rgba(255,255,255,.1); text-transform:uppercase;
+}
+.ci-figure{
+  position:absolute; z-index:5; left:50%; top:17%; width:70%; height:54%;
+  margin-left:-35%; transform-origin:50% 60%;
+}
+.ci-keyplate{
+  position:absolute; inset:-8px -8px -8px -8px; background:#fff; transform:rotate(-3deg);
+}
+.ci-keyplate.two{ background:var(--alien); transform:rotate(2.5deg) translate3d(6px,6px,0) }
+.ci-crop{ position:absolute; inset:0; overflow:hidden; background:#000 }
+.ci-crop img{ width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 20%) }
+.ci-figure.replace{ animation:ci-replace 300ms var(--e-out) both }
+@keyframes ci-replace{
+  0%{ opacity:0; transform:translate3d(46px,0,0) scale(1.1) }
+  60%{ opacity:1; transform:translate3d(-6px,0,0) scale(1.02) }
+  100%{ opacity:1; transform:none }
+}
+.ci-figure.asleep .ci-crop img{ filter:url(#cut-silhouette) }
+.ci-silflash{ position:absolute; inset:0; z-index:3; background:#0b0b0d; opacity:0; pointer-events:none }
+.ci-figure.replace .ci-silflash{ animation:ci-sil 300ms steps(2,end) both }
+@keyframes ci-sil{ 0%{opacity:1} 40%{opacity:1} 41%{opacity:0} 100%{opacity:0} }
+
+.ci-name{
+  position:absolute; z-index:7; left:12px; bottom:212px; margin:0;
+  font-family:"Archivo Black",sans-serif; font-size:44px; line-height:.86;
+  letter-spacing:-.03em; text-transform:uppercase;
+  -webkit-text-stroke:2px #0b0b0d; paint-order:stroke fill; color:#fff;
+}
+.ci-ghost{
+  position:absolute; z-index:6; left:12px; bottom:212px; margin:0;
+  font-family:"Archivo Black",sans-serif; font-size:44px; line-height:.86;
+  letter-spacing:-.03em; text-transform:uppercase; color:var(--alien);
+  opacity:0; pointer-events:none;
+}
+.ci-ghost.g2{ color:#fff }
+.ci-ghost.g3{ color:var(--hot) }
+/* the delays must ride the SAME compound selector — the `animation`
+   shorthand in the rule below would otherwise reset animation-delay to 0 */
+.ci-name.collapse ~ .ci-ghost{ animation:ci-ghost 300ms var(--e-out) both }
+.ci-name.collapse ~ .ci-ghost.g2{ animation-delay:-40ms }
+.ci-name.collapse ~ .ci-ghost.g3{ animation-delay:-80ms }
+@keyframes ci-ghost{
+  from{ opacity:.85; transform:translate3d(34px,0,0) }
+  to{ opacity:0; transform:none }
+}
+.ci-epi{
+  position:absolute; z-index:7; left:12px; bottom:190px;
+  font-family:"Silkscreen",monospace; font-size:8.5px; letter-spacing:.2em; color:var(--alien);
+}
+.ci-chips{
+  position:absolute; z-index:8; left:0; right:0; bottom:70px; height:96px;
+  container-type:inline-size;
+}
+.ci-chip{
+  position:absolute; top:calc(var(--i) * 6px); left:calc(var(--i) * 23cqw + 3cqw);
+  width:21cqw; height:76px; overflow:hidden; background:#111;
+  clip-path:polygon(16% 0, 100% 0, 84% 100%, 0 100%);
+  transition:transform var(--t-tap) var(--e-out);
+}
+.ci-chip img{ width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 16%) }
+.ci-chip.asleep img{ filter:saturate(0) brightness(.45) }
+.ci-chip::after{
+  content:""; position:absolute; inset:0; box-shadow:inset 0 0 0 2px rgba(255,255,255,.28);
+}
+.ci-chip.on{ transform:translate3d(0,-9px,0) scale(1.06) }
+.ci-chip.on::after{ box-shadow:inset 0 0 0 3px var(--alien) }
+.ci-chip:active{ transform:scale(var(--press-scale)) }
+.ci-chip-no{
+  position:absolute; left:4px; bottom:2px; z-index:3;
+  font-family:"Silkscreen",monospace; font-size:7px; color:#fff; text-shadow:0 1px 3px #000;
+}
+
+/* =====================================================================
+   08 · GIG FLYER — the VIEWTRADE riso one-man live
+   ONE pinned SVG duotone filter presses all four portraits into the same
+   two inks. Halftone ramps, hand-stamped footer, LOADING NOW!! energy.
+   ===================================================================== */
+.c-flyer{ background:#08060c; color:#fff; overflow:hidden }
+.gf-paper{ position:absolute; inset:0; background:#08060c }
+.gf-panels{ position:absolute; left:0; right:0; top:46px; height:540px }
+.gf-panel{
+  position:absolute; overflow:hidden; background:#12061a;
+  box-shadow:0 0 0 2px rgba(255,255,255,.1);
+  transition:transform var(--t-ui) var(--e-out);
+}
+.gf-panel:active{ transform:scale(.985) }
+.gf-panel img{ width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 20%); filter:url(#duo-riso) }
+.gf-panel.asleep img{ filter:url(#duo-standby) }
+.gf-panel .tone-ramp{ color:#ff2e93; opacity:.5; z-index:2 }
+.gf-mis{
+  position:absolute; inset:0; z-index:3; pointer-events:none; opacity:0;
+  background:linear-gradient(120deg, rgba(0,224,255,.5), transparent 55%);
+}
+.gf-panel.waking .gf-mis{ animation:gf-mis 620ms var(--e-out) both }
+@keyframes gf-mis{
+  0%{ opacity:.75; transform:translate3d(9px,-6px,0) }
+  70%{ opacity:.5; transform:translate3d(-3px,2px,0) }
+  100%{ opacity:0; transform:none }
+}
+.gf-label{
+  position:absolute; z-index:6; white-space:nowrap;
+  font-family:"Zen Kaku",sans-serif; font-weight:900; font-size:15px; letter-spacing:.02em;
+  color:#fff; -webkit-text-stroke:3px #08060c; paint-order:stroke fill;
+}
+.gf-label b{ font-weight:900; color:#ff2e93 }
+.gf-burst{
+  position:absolute; z-index:5; width:64px; height:64px; pointer-events:none;
+  background:conic-gradient(from 0deg, #ffd7ea 0 6%, transparent 6% 12.5%);
+  border-radius:50%;
+}
+.gf-type{ position:absolute; z-index:7; left:0; right:0; bottom:74px; padding:0 14px; text-align:center }
+.gf-word{
+  margin:0; font-family:"Archivo Black",sans-serif; font-size:54px; line-height:.84;
+  letter-spacing:-.035em; color:#ff2e93; text-transform:uppercase;
+}
+.gf-oneman{ font-family:"Silkscreen",monospace; font-size:9px; letter-spacing:.34em; color:rgba(255,255,255,.72); margin:8px 0 4px }
+.gf-loading{
+  font-family:"Dela Gothic One",sans-serif; font-size:23px; letter-spacing:.01em;
+  color:#f0e6d2; margin:0 0 8px;
+}
+.gf-date{ font-family:"Zen Kaku",sans-serif; font-weight:700; font-size:12.5px; letter-spacing:.04em; color:#fff }
+.gf-times{ font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.16em; color:rgba(255,255,255,.7); margin-top:5px }
+.gf-price{ font-family:"Zen Kaku",sans-serif; font-weight:700; font-size:10px; color:rgba(255,255,255,.55); margin-top:5px }
+.gf-stub{
+  position:absolute; z-index:8; left:10px; top:8px; width:74px;
+  background:#efe7d8; color:#1a0b1f; padding:5px 6px 6px;
+}
+.gf-stub .gf-qr{
+  height:44px; margin-top:5px;
+  background-image:
+    repeating-linear-gradient(90deg,#1a0b1f 0 4px, transparent 4px 8px),
+    repeating-linear-gradient(0deg,#1a0b1f 0 4px, transparent 4px 9px);
+  background-blend-mode:normal; opacity:.9;
+}
+.gf-stub-t{ font-family:"Silkscreen",monospace; font-size:7px; letter-spacing:.1em; line-height:1.8 }
+.gf-stamp{
+  position:absolute; z-index:9; right:12px; top:14px;
+  font-family:"Archivo Black",sans-serif; font-size:13px; color:#ff2e93;
+  border:3px solid #ff2e93; padding:3px 6px; transform:rotate(9deg); opacity:.9;
+}
+.gf-tickets{
+  position:absolute; z-index:8; left:12px; top:126px;
+  font-family:"Silkscreen",monospace; font-size:8px; letter-spacing:.14em;
+  color:#ff2e93; writing-mode:vertical-rl; letter-spacing:.3em;
+}
+
+/* =====================================================================
+   09 · MANGA COLLAGE — the Double Dragon comic page
+   Hand-authored panel polygons, N=4 fixed (this form has no generator).
+   The loudest of the ten.
+   ===================================================================== */
+.c-manga{ background:#111014; color:#111 }
+.mg-page{ position:absolute; inset:0; background:#17151c; overflow:hidden }
+/* the panel itself IS the die-cut: one polygon clips the BUTTON (so the
+   hit area follows the panel, R18) over a paper-white fill; the artwork
+   sits 4px inside the same polygon, which leaves the white keyline. */
+.mg-panel{
+  position:absolute; background:#f6f2e8; clip-path:var(--poly);
+  transform:rotate(calc(var(--rot,0) * 1deg));
+  transition:transform var(--t-ui) var(--e-out);
+}
+.mg-panel:active{ transform:rotate(calc(var(--rot,0) * 1deg)) scale(.985) }
+.mg-clip{
+  position:absolute; inset:4px; overflow:hidden;
+  clip-path:var(--poly);
+  background:var(--field);
+}
+.mg-clip img{
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; object-position:var(--focus,50% 18%);
+}
+.mg-panel.asleep img{ filter:saturate(0) brightness(.55) }
+.mg-tone{
+  position:absolute; inset:4px; z-index:1; pointer-events:none; color:#0b0b10; opacity:.28;
+  clip-path:var(--poly); --ramp-angle:210deg;
+}
+.mg-speed{
+  position:absolute; inset:4px; z-index:1; pointer-events:none; clip-path:var(--poly);
+  background:repeating-conic-gradient(from 0deg at 50% 50%, rgba(255,255,255,.22) 0 .6deg, transparent .6deg 4deg);
+  -webkit-mask-image:radial-gradient(circle at 50% 50%, transparent 32%, #000 78%);
+          mask-image:radial-gradient(circle at 50% 50%, transparent 32%, #000 78%);
+  opacity:.5;
+}
+.mg-name{
+  position:absolute; z-index:5; pointer-events:none; white-space:nowrap;
+  font-family:"Dela Gothic One",sans-serif; font-size:19px; line-height:1;
+  color:#fff8ec; -webkit-text-stroke:5px #111; paint-order:stroke fill;
+  transform:rotate(calc(var(--nrot,-3) * 1deg));
+}
+.mg-name em{ font-style:normal; display:block; font-size:9px; letter-spacing:.2em; color:#ffe14d; margin-top:3px }
+.mg-sticker{
+  position:absolute; z-index:6; pointer-events:none;
+  font-family:"Bungee",sans-serif; font-size:11px; letter-spacing:.02em;
+  background:#ffe14d; color:#111; padding:4px 7px; border:3px solid #111;
+  transform:rotate(calc(var(--srot,-8) * 1deg));
+}
+.mg-sticker.pink{ background:#ff4f9a; color:#fff8ec }
+.mg-sticker.cyan{ background:#3fe0e8 }
+.mg-zzz{ position:absolute; z-index:8; pointer-events:none; left:auto; right:64px; top:40px }
+.mg-zzz span{
+  position:absolute; font-family:"Bungee",sans-serif; font-size:16px; color:#cfe4ff;
+  -webkit-text-stroke:4px #111; paint-order:stroke fill;
+}
+.mg-zzz span:nth-child(1){ left:0; top:22px; font-size:13px }
+.mg-zzz span:nth-child(2){ left:14px; top:8px; font-size:17px }
+.mg-zzz span:nth-child(3){ left:32px; top:-6px; font-size:21px }
+.is-active .mg-zzz span{ animation:mg-float 3.2s ease-in-out infinite }
+.mg-zzz span:nth-child(2){ animation-delay:-1s } .mg-zzz span:nth-child(3){ animation-delay:-2s }
+@keyframes mg-float{ 0%,100%{ transform:translate3d(0,0,0) } 50%{ transform:translate3d(3px,-7px,0) } }
+.mg-bang{
+  position:absolute; left:50%; top:46%; z-index:8; pointer-events:none;
+  font-family:"Bungee",sans-serif; font-size:34px; color:#ffe14d;
+  -webkit-text-stroke:6px #111; paint-order:stroke fill;
+  transform:translate(-50%,-50%) scale(2.4) rotate(-10deg); opacity:0;
+}
+.mg-panel.waking .mg-bang{ animation:slam 420ms var(--e-slam) 120ms both }
+.gf-stamp.thud{ animation:gf-thud 300ms var(--e-slam) both }
+@keyframes gf-thud{
+  0%{ opacity:0; transform:rotate(16deg) scale(2.2) }
+  60%{ opacity:1; transform:rotate(8deg) scale(.94) }
+  100%{ opacity:.9; transform:rotate(9deg) scale(1) }
+}
+.mg-title{
+  position:absolute; z-index:9; left:0; right:0; bottom:58px; padding:9px 14px 10px;
+  background:#0d0c11; border-top:3px solid #f6f2e8; text-align:center;
+}
+.mg-title h2{
+  margin:0; font-family:"Bungee",sans-serif; font-size:24px; letter-spacing:.02em; color:#f6f2e8;
+}
+.mg-title h2 em{ font-style:normal; color:#ff4f9a }
+.mg-title p{ margin:5px 0 0; font-family:"Silkscreen",monospace; font-size:6.5px; letter-spacing:.14em; color:rgba(246,242,232,.5); line-height:1.9 }
+
+/* =====================================================================
+   10 · CAPSULE DOME — the gashapon machine itself (R24 C-①)
+   The theme's own fiction made literal: the crank IS the wake control.
+   ===================================================================== */
+.c-dome{
+  background:
+    radial-gradient(120% 70% at 50% 8%, #2a1c3d 0%, #150e22 55%, #0b0713 100%);
+  color:#fff; display:grid; grid-template-rows:auto 1fr auto; overflow:hidden;
+}
+.cd-head{ position:relative; z-index:5; padding:12px 16px 0; text-align:center }
+.cd-mark{ font-family:"Bungee",sans-serif; font-size:19px; letter-spacing:.02em; color:#ffd9ef }
+.cd-mark em{ font-style:normal; color:#ffd23f }
+.cd-sub{ font-family:"Silkscreen",monospace; font-size:7.5px; letter-spacing:.24em; color:rgba(255,255,255,.45); margin-top:5px }
+.cd-stagewrap{ position:relative; display:grid; place-items:center }
+.cd-machine{ position:relative; width:min(344px, 92vw); }
+.cd-dome{
+  position:relative; z-index:1; height:270px; border-radius:52% 52% 14% 14% / 62% 62% 10% 10%;
+  background:
+    radial-gradient(58% 44% at 30% 22%, rgba(255,255,255,.34) 0%, transparent 62%),
+    radial-gradient(130% 96% at 50% 46%, rgba(150,210,255,.20) 0%, rgba(16,10,28,.62) 76%);
+  box-shadow:
+    inset 0 0 0 5px rgba(220,240,255,.42), inset 0 0 22px rgba(160,210,255,.22),
+    inset 0 -22px 44px rgba(0,0,0,.55), 0 16px 38px rgba(0,0,0,.55);
+  overflow:hidden;
+}
+.cd-topper{
+  position:relative; z-index:2; margin:0 auto -18px; width:74%;
+  background:linear-gradient(180deg,#ffd23f 0%,#f0a92c 100%); color:#3a1120;
+  border-radius:10px 10px 4px 4px; padding:6px 10px 10px; text-align:center;
+  box-shadow:0 8px 18px rgba(0,0,0,.45);
+  font-family:"Bungee",sans-serif; font-size:11px; letter-spacing:.06em;
+}
+.cd-topper span{
+  position:absolute; top:5px; width:6px; height:6px; border-radius:50%;
+  background:rgba(255,255,255,.85);
+}
+.cd-topper span:first-of-type{ left:8px } .cd-topper span:last-of-type{ right:8px }
+.cd-dome .halftone{
+  position:absolute; inset:0; color:rgba(255,255,255,.14); opacity:.5; pointer-events:none;
+  -webkit-mask-image:radial-gradient(60% 50% at 30% 22%, #000 0%, transparent 70%);
+          mask-image:radial-gradient(60% 50% at 30% 22%, #000 0%, transparent 70%);
+}
+/* the capsules ride ABOVE the dome, not inside it — the dome clips its
+   own glass highlight, and a capsule has to be able to fall out */
+.cd-glass{ position:relative; z-index:1 }
+.cd-caps{ position:absolute; inset:0; z-index:5; pointer-events:none }
+.cd-cap{
+  position:absolute; width:82px; height:82px; border-radius:50%;
+  left:var(--cx); top:var(--cy); overflow:visible; pointer-events:auto;
+  transition:transform var(--t-ui) var(--e-out);
+}
+.is-active .cd-cap{ animation:cd-bob 5.5s ease-in-out infinite }
+.cd-cap:nth-of-type(2){ animation-delay:-1.4s }
+.cd-cap:nth-of-type(3){ animation-delay:-2.8s }
+.cd-cap:nth-of-type(4){ animation-delay:-4.1s }
+@keyframes cd-bob{ 0%,100%{ transform:translate3d(0,0,0) rotate(0deg) } 50%{ transform:translate3d(1px,-4px,0) rotate(1.6deg) } }
+.cd-cap:active{ transform:scale(var(--press-scale)) }
+.cd-shellwrap{ position:absolute; inset:0; border-radius:50%; overflow:hidden; box-shadow:0 6px 14px rgba(0,0,0,.5) }
+.cd-art{ position:absolute; inset:6px; border-radius:50%; overflow:hidden; background:#0d0a16 }
+.cd-art img{ width:100%; height:100%; object-fit:cover; object-position:var(--focus,50% 16%) }
+.cd-cap.asleep .cd-art img{ filter:saturate(0) brightness(.5) }
+.cd-half{
+  position:absolute; left:0; right:0; height:50%; pointer-events:none; z-index:3;
+  transition:transform 380ms var(--e-out);
+}
+.cd-half.top{
+  top:0; border-radius:82px 82px 0 0;
+  background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, #fff 4%) 0%, color-mix(in srgb, var(--accent) 70%, #000 10%) 100%);
+  box-shadow:inset 0 6px 10px rgba(255,255,255,.35);
+}
+.cd-half.bot{
+  bottom:0; border-radius:0 0 82px 82px;
+  background:linear-gradient(180deg, rgba(240,246,255,.34) 0%, rgba(210,226,246,.22) 100%);
+  box-shadow:inset 0 -6px 12px rgba(255,255,255,.28);
+}
+.cd-cap.open .cd-half.top{ transform:translate3d(-16px,-30px,0) rotate(-26deg) }
+.cd-cap.open .cd-half.bot{ transform:translate3d(16px,30px,0) rotate(26deg) }
+.cd-seam{
+  position:absolute; left:0; right:0; top:50%; height:3px; z-index:4; margin-top:-1.5px;
+  background:rgba(255,255,255,.55); pointer-events:none;
+}
+.cd-cap.open .cd-seam{ opacity:0 }
+.cd-serial{
+  position:absolute; left:50%; bottom:8px; transform:translateX(-50%); z-index:5;
+  font-family:"Silkscreen",monospace; font-size:6.5px; letter-spacing:.1em; color:rgba(20,14,32,.8);
+}
+.cd-cap.dropping{ animation:cd-drop 420ms cubic-bezier(.5,0,.75,1) both; z-index:9 }
+@keyframes cd-drop{
+  0%{ transform:translate3d(0,0,0) rotate(0deg) }
+  55%{ transform:translate3d(calc(var(--dx) * .55), calc(var(--dy) * .5), 0) rotate(180deg) }
+  78%{ transform:translate3d(var(--dx), var(--dy), 0) rotate(300deg) }
+  88%{ transform:translate3d(var(--dx), calc(var(--dy) - 8px), 0) rotate(330deg) }
+  100%{ transform:translate3d(var(--dx), var(--dy), 0) rotate(346deg) }
+}
+.cd-cap.popped{ animation:cd-pop 320ms var(--e-overshoot) both }
+@keyframes cd-pop{
+  0%{ transform:translate3d(var(--dx), var(--dy), 0) scale(1) rotate(346deg) }
+  100%{ transform:translate3d(var(--dx), var(--dy), 0) scale(1.16) rotate(346deg) }
+}
+.cd-body{
+  position:relative; z-index:3; margin-top:-14px; height:198px; border-radius:14px 14px 18px 18px;
+  background:linear-gradient(180deg,#e94f8f 0%,#c3306e 52%,#8e1f4f 100%);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.4), inset 0 -12px 24px rgba(0,0,0,.35), 0 18px 34px rgba(0,0,0,.5);
+  overflow:hidden;
+}
+.cd-plate{
+  position:absolute; left:12px; top:14px; width:174px; padding:7px 9px;
+  background:#f4ecdc; color:#1b1024;
+}
+.cd-plate b{ display:block; font-family:"Bungee",sans-serif; font-size:12px; letter-spacing:.02em }
+.cd-plate span{ display:block; font-family:"Silkscreen",monospace; font-size:6.5px; letter-spacing:.12em; margin-top:3px; color:rgba(27,16,36,.7) }
+.cd-slot{
+  position:absolute; right:26px; top:20px; width:52px; height:9px; border-radius:3px;
+  background:#2a1030; box-shadow:inset 0 2px 3px rgba(0,0,0,.7), 0 1px 0 rgba(255,255,255,.3);
+}
+.cd-crank{
+  position:absolute; right:22px; top:44px; width:62px; height:62px; border-radius:50%;
+  background:radial-gradient(circle at 38% 32%, #fdf6e8 0%, #cbbda6 55%, #8d7f6b 100%);
+  box-shadow:0 4px 10px rgba(0,0,0,.5), inset 0 0 0 3px rgba(60,40,20,.35);
+  transition:transform var(--t-tap) var(--e-out);
+}
+.cd-crank::after{
+  content:""; position:absolute; left:50%; top:7px; width:9px; height:22px; margin-left:-4.5px;
+  border-radius:5px; background:#3a2a1c;
+  box-shadow:0 -3px 0 2px #6b4a2c, 0 -6px 0 3px rgba(0,0,0,.25);
+}
+.cd-crank::before{
+  content:""; position:absolute; left:50%; top:50%; width:12px; height:12px; margin:-6px 0 0 -6px;
+  border-radius:50%; background:#3a2a1c;
+}
+.cd-crank:active{ transform:rotate(-10deg) }
+.cd-crank.turning{ animation:cd-turn 520ms var(--e-anticipate) both }
+@keyframes cd-turn{
+  0%{ transform:rotate(0deg) } 22%{ transform:rotate(-16deg) }
+  100%{ transform:rotate(392deg) }
+}
+.cd-chute{
+  position:absolute; left:16px; bottom:14px; width:124px; height:60px; border-radius:6px;
+  background:linear-gradient(180deg,#2a1030 0%,#150818 100%);
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.25);
+}
+.cd-chute span{
+  position:absolute; left:50%; bottom:5px; transform:translateX(-50%);
+  font-family:"Silkscreen",monospace; font-size:6.5px; letter-spacing:.16em; color:rgba(255,255,255,.42);
+}
+.cd-hint{
+  position:relative; z-index:5; padding:8px 16px calc(60px + env(safe-area-inset-bottom,0px));
+  text-align:center; font-family:"Silkscreen",monospace; font-size:7.5px;
+  letter-spacing:.18em; color:rgba(255,255,255,.42);
+}
+.cd-rail{
+  position:absolute; left:2px; top:50%; transform:translateY(-50%); z-index:2;
+  writing-mode:vertical-rl; font-family:"Bungee",sans-serif; font-size:15px;
+  letter-spacing:.16em; color:rgba(255,255,255,.1); pointer-events:none;
+}

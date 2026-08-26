@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07070a">
+  <title>CTRL/B · Alt Fleet Lab v2 — ten screens</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!--
+    PINNED SVG FILTER DEFS.
+    These live in the document permanently and are NEVER conditionally unmounted:
+    a dangling `filter: url(#id)` UNPAINTS the element on Gecko (R24 A3-trap ②).
+  -->
+  <svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <!-- 08 GIG FLYER — riso duotone: violet-black shadow → hot pink highlight -->
+      <filter id="duo-riso" color-interpolation-filters="sRGB">
+        <feColorMatrix type="matrix" values=".33 .33 .33 0 0  .33 .33 .33 0 0  .33 .33 .33 0 0  0 0 0 1 0"/>
+        <feComponentTransfer>
+          <feFuncR type="table" tableValues="0.10 1.00"/>
+          <feFuncG type="table" tableValues="0.03 0.20"/>
+          <feFuncB type="table" tableValues="0.21 0.60"/>
+        </feComponentTransfer>
+      </filter>
+      <!-- 08 GIG FLYER — the sleeping plate: same press, ink pulled to cold grey -->
+      <filter id="duo-standby" color-interpolation-filters="sRGB">
+        <feColorMatrix type="matrix" values=".33 .33 .33 0 0  .33 .33 .33 0 0  .33 .33 .33 0 0  0 0 0 1 0"/>
+        <feComponentTransfer>
+          <feFuncR type="table" tableValues="0.06 0.42"/>
+          <feFuncG type="table" tableValues="0.06 0.44"/>
+          <feFuncB type="table" tableValues="0.09 0.50"/>
+        </feComponentTransfer>
+      </filter>
+      <!-- 07 THE CUT-IN — the one-frame silhouette beat (flat ink, alpha kept) -->
+      <filter id="cut-silhouette" color-interpolation-filters="sRGB">
+        <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <div class="stage" id="stage">
+    <div class="screens" id="screens"><!-- concept screens are built by app.js --></div>
+
+    <!-- switcher chrome: deliberately small, deliberately outside every concept's fiction -->
+    <nav class="switcher" id="switcher" aria-label="Concept switcher">
+      <button class="sw-chip" type="button" id="sw-prev" aria-label="Previous concept">&#8249;</button>
+      <span class="sw-index" id="sw-index" aria-hidden="true">01/10</span>
+      <button class="sw-chip" type="button" id="sw-next" aria-label="Next concept">&#8250;</button>
+      <button class="sw-chip sw-reset" type="button" id="sw-reset" aria-label="Reset every concept's wake state">&#8635;</button>
+    </nav>
+
+    <p class="sw-name" id="sw-name" aria-hidden="true"></p>
+    <p class="sr-only" id="live" role="status" aria-live="polite"></p>
+  </div>
+
+  <!-- shared simulated dossier — OUTSIDE any container-query / transform root -->
+  <div class="dossier-layer" id="dossier-layer" hidden>
+    <div class="dsr-backdrop" id="dsr-backdrop"></div>
+    <article class="dsr" role="dialog" aria-modal="true" aria-labelledby="dsr-name" id="dsr">
+      <button class="dsr-close" type="button" id="dsr-close" aria-label="Close dossier">&#215;</button>
+      <div class="dsr-art">
+        <img id="dsr-img" alt="" decoding="async">
+        <div class="dsr-art-scrim"></div>
+        <span class="dsr-serial" id="dsr-serial"></span>
+      </div>
+      <div class="dsr-body">
+        <span class="dsr-eyebrow">UNIT DOSSIER · 個体情報</span>
+        <h2 id="dsr-name"></h2>
+        <p class="dsr-epithet" id="dsr-epithet"></p>
+        <div class="dsr-meta">
+          <span class="dsr-role" id="dsr-role"></span>
+          <span class="dsr-stars" id="dsr-stars" aria-hidden="true"></span>
+        </div>
+        <dl class="dsr-rows" id="dsr-rows"></dl>
+        <div class="dsr-actions">
+          <button class="dsr-go" type="button" id="dsr-go">OPEN TERMINAL</button>
+          <span class="dsr-status" id="dsr-status" aria-live="polite"></span>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

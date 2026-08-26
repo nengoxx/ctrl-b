@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0912">
+  <title>CTRL/B · Alt Fleet Selector Lab</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="prototype-shell">
+    <header class="lab-header">
+      <div class="lab-brand">
+        <span class="lab-index">CTRL/B · GACHA LAB</span>
+        <h1>Fleet Selector<br><em>Composition Trials</em></h1>
+      </div>
+      <div class="lab-status" aria-label="Prototype scope">
+        <span>08 approaches</span>
+        <span>04 current units</span>
+        <span>prototype only</span>
+      </div>
+    </header>
+
+    <nav class="variant-tabs" aria-label="Fleet layout variants" id="variant-tabs"></nav>
+
+    <main>
+      <section class="stage-shell" aria-labelledby="variant-title">
+        <header class="stage-head">
+          <div>
+            <span class="variant-number" id="variant-number">01 / 08</span>
+            <h2 id="variant-title">Signal Bands</h2>
+            <p id="variant-kicker">Generated diagonal roster</p>
+          </div>
+          <span class="fit-badge" id="fit-badge">strong-fit</span>
+        </header>
+
+        <div class="fleet-viewport" id="fleet-stage"></div>
+        <p class="sr-only" id="selection-status" aria-live="polite"></p>
+
+        <footer class="stage-notes">
+          <div>
+            <span>WHY IT WORKS</span>
+            <p id="variant-strength"></p>
+          </div>
+          <div>
+            <span>WATCH</span>
+            <p id="variant-risk"></p>
+          </div>
+        </footer>
+      </section>
+
+      <section class="comparison" aria-labelledby="comparison-title">
+        <div class="section-mark">DESIGN READOUT</div>
+        <h2 id="comparison-title">Same machines. Different selection grammar.</h2>
+        <div class="comparison-grid">
+          <article>
+            <span>Best production bet</span>
+            <h3>01 · Signal Bands</h3>
+            <p>It gets the “one ensemble poster” feeling without requiring bespoke cutouts or hand-drawn polygons.</p>
+          </article>
+          <article>
+            <span>Best familiar interaction</span>
+            <h3>05 · Selector Rail</h3>
+            <p>Lowest learning cost: choose a portrait, inspect it large, then open the dossier.</p>
+          </article>
+          <article>
+            <span>Best manga energy</span>
+            <h3>04 · Manga Grid</h3>
+            <p>Controlled asymmetry gives comic rhythm while keeping every machine a predictable button.</p>
+          </article>
+          <article>
+            <span>Most art-sensitive</span>
+            <h3>07 · Cover Story</h3>
+            <p>Beautiful with these four images, but hierarchy becomes editorial: one machine is visibly the lead.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="crop-audit" aria-labelledby="crop-title">
+        <div class="section-mark">CURRENT ART AUDIT</div>
+        <h2 id="crop-title">What the default images tolerate</h2>
+        <div class="crop-grid" id="crop-grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="dossier-layer" id="dossier-layer" hidden>
+    <button class="dossier-backdrop" type="button" tabindex="-1" data-close-dossier aria-label="Close unit dossier"></button>
+    <article class="dossier" role="dialog" aria-modal="true" aria-labelledby="dossier-name" tabindex="-1">
+      <button class="dossier-close" type="button" data-close-dossier aria-label="Close unit dossier"></button>
+      <div class="dossier-art">
+        <img id="dossier-image" alt="">
+        <div class="dossier-stars" id="dossier-stars" aria-hidden="true"></div>
+      </div>
+      <div class="dossier-copy">
+        <span class="dossier-eyebrow">UNIT DOSSIER · 個体情報</span>
+        <h2 id="dossier-name"></h2>
+        <p id="dossier-role"></p>
+        <div class="dossier-metrics" id="dossier-metrics"></div>
+        <div class="dossier-services" id="dossier-services"></div>
+        <div class="dossier-actions">
+          <button type="button" id="primary-action" aria-describedby="dossier-feedback">Wake</button>
+          <button type="button" class="quiet">Close demo</button>
+        </div>
+        <p class="dossier-feedback" id="dossier-feedback" aria-live="polite"></p>
+      </div>
+    </article>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -337,7 +337,9 @@ install** (standing since v1.7.4) — install fresh from Chrome, the chosen back
 **D · Parked / ruled (never re-propose; §P discipline):** web-push (closed-app delivery only) ·
 vault/wiki spec (owner designing elsewhere; their Maia specs = decisive D64 evidence — check
 before researching adjacent ground) · arcade (owner 2026-08-22: fine as-is, DROPPED from lists —
-they'll ask) · color-theory palette session · gacha originals stay untracked · ISS-10 ② glyph
+they'll ask) · color-theory palette session · ~~gacha originals stay untracked~~ **REVERSED
+2026-08-26: the four alt-fleet prototype folders are TRACKED now** (owner: "track the prototypes
+too so we don't have to handle that anymore") · ISS-10 ② glyph
 swaps (revive on wish) · eslint/F13 Compiler-prep backlog (trigger-gated, count in QUALITY.md) ·
 the §17.4 / D63-§8 accepted residuals · ROADMAP §P (QR-to-phone · picker disclosure).
 

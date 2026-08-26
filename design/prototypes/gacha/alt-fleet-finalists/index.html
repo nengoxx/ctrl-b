@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>CTRL/B · Alt Fleet Lab — the three finalists</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!--
+    NO SVG FILTER DEFS IN THIS LAB — deliberately.
+    The lab contract pins the sleeping treatment to `saturate(0) brightness(.55)`, a plain CSS
+    filter, so nothing here needs `filter: url(#id)`.  Zero references means the Gecko
+    dangling-reference trap (a removed def UNPAINTS its element, R24 A3-trap ②) cannot arise.
+    If a future round adds one — a duotone press, a silhouette matrix — it goes HERE, in a
+    permanently-mounted <svg class="svg-defs"><defs> block, and is switched by CLASS, never by
+    unmounting the def.
+  -->
+
+  <div class="stage" id="stage">
+    <div class="screens" id="screens"><!-- the three finalist screens are built by app.js --></div>
+
+    <!-- switcher chrome: deliberately small, deliberately outside every concept's fiction -->
+    <nav class="switcher" id="switcher" aria-label="Concept switcher">
+      <button class="sw-chip" type="button" id="sw-prev" aria-label="Previous concept">&#8249;</button>
+      <span class="sw-index" id="sw-index" aria-hidden="true">A/3</span>
+      <button class="sw-chip" type="button" id="sw-next" aria-label="Next concept">&#8250;</button>
+      <button class="sw-chip sw-reset" type="button" id="sw-reset" aria-label="Reset every concept's wake state">&#8635;</button>
+      <!--
+        THE GLOBAL BANNER SWITCH (owner ruling, WALK 3 -> tri-state).  It is
+        deliberately NOT per-concept: in production this is one gacha
+        ThemeDef setting toggling GachaBanner for the whole theme (the
+        `starMode` pattern, which is likewise a small enum), so the lab
+        walks it the same way — one chip, three values, all three screens.
+        Tri-state means it is a CYCLE, not a toggle: no `aria-pressed`, the
+        label carries the current value and the face shows it.
+      -->
+      <button class="sw-chip sw-banner" type="button" id="sw-banner"></button>
+    </nav>
+
+    <p class="sw-name" id="sw-name" aria-hidden="true"></p>
+    <p class="sr-only" id="live" role="status" aria-live="polite"></p>
+  </div>
+
+  <!-- shared simulated dossier — OUTSIDE any container-query / transform root -->
+  <div class="dossier-layer" id="dossier-layer" hidden>
+    <div class="dsr-backdrop" id="dsr-backdrop"></div>
+    <article class="dsr" role="dialog" aria-modal="true" aria-labelledby="dsr-name" id="dsr">
+      <button class="dsr-close" type="button" id="dsr-close" aria-label="Close dossier">&#215;</button>
+      <div class="dsr-art">
+        <img id="dsr-img" alt="" decoding="async">
+        <div class="dsr-art-scrim"></div>
+        <span class="dsr-serial" id="dsr-serial"></span>
+      </div>
+      <div class="dsr-body">
+        <span class="dsr-eyebrow">UNIT DOSSIER · 個体情報</span>
+        <h2 id="dsr-name"></h2>
+        <p class="dsr-epithet" id="dsr-epithet"></p>
+        <div class="dsr-meta">
+          <span class="dsr-role" id="dsr-role"></span>
+          <span class="dsr-stars" id="dsr-stars" aria-hidden="true"></span>
+        </div>
+        <dl class="dsr-rows" id="dsr-rows"></dl>
+        <div class="dsr-actions">
+          <button class="dsr-go" type="button" id="dsr-go">OPEN TERMINAL</button>
+          <span class="dsr-status" id="dsr-status" aria-live="polite"></span>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
