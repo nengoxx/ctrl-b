@@ -46,7 +46,6 @@ const EAGER_TILES = 9;
 export function LibraryGrid({
   section,
   items,
-  selectedId,
   ready,
   canReorder = false,
   onSelect,
@@ -55,7 +54,6 @@ export function LibraryGrid({
 }: {
   section: MediaSection;
   items: LibraryItem[];
-  selectedId?: string;
   /** The write path can compute a patch (the settings snapshot has landed). The corner toggle is
    *  disabled without it, for the reason every other affordance is: a write with nothing authoritative
    *  to recompute from is refused, and a control that silently does nothing is worse than a dim one. */
@@ -121,12 +119,7 @@ export function LibraryGrid({
                 // The tile is a plain button that opens this item's detail — never a toggle (Emma #9):
                 // `aria-checked` belongs to the real In-use SWITCH in that panel, and membership is
                 // something the description says rather than something a role pretends to model.
-                className={
-                  "mgal-tile" +
-                  (item.active ? " on" : "") +
-                  (item.hidden ? " off" : "") +
-                  (item.id === selectedId ? " sel" : "")
-                }
+                className={"mgal-tile" + (item.active ? " on" : "") + (item.hidden ? " off" : "")}
                 aria-label={item.bundled ? `${item.row.name} (default)` : item.row.file}
                 aria-describedby={`${descId}-${i}`}
                 // Only where ONE entry genuinely wins. A dealt pool has no current member.
@@ -169,7 +162,9 @@ export function LibraryGrid({
                   disabled={!ready}
                   onClick={() => onToggleUse(item)}
                 >
-                  <UseIcon on={!item.hidden} />
+                  {/* Sized to the 24px disc "W7" trimmed it to — the glyph keeps the same air around
+                      it that it had at 30px, and the disc's `::after` is what keeps the TARGET big. */}
+                  <UseIcon on={!item.hidden} size={12} />
                 </button>
               )}
             </li>

@@ -6466,19 +6466,16 @@ body[data-perf="lite"] .kit .navmenu-pop {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-/* THE ACTIVE ENTRY (owner ask 2026-08-26: "an outline on the image to make it clear it's the one
- * selected"). A 1px border tinted accent was there before and read as a slightly different edge; this is
- * a 2px inset ring plus an outer halo, which survives a busy photograph under it. In a first-wins
- * section exactly one tile wears it — the resolver's own answer — and in a dealt/all section every
- * member does, which is the truth about those. */
+/* THE ACTIVE ENTRY — ONE RING, and it means ACTIVE: this destination is painting this picture right
+ * now. Nothing else in the grid wears it (owner ruling 2026-08-26, "W7"). The first version stacked
+ * three edges — a tinted border, a 2px INSET ring eating into the picture, and an outer halo — which
+ * read as a fuzzy triple line rather than as one deliberate mark. The border and a contiguous 2px outer
+ * ring are one ~3px band instead, outside the art. In a first-wins section exactly one tile wears it —
+ * the resolver's own answer — and in a dealt/all section every member does, which is the truth about
+ * those. */
 .kit .mgal-tile.on {
   border-color: var(--accent);
-  box-shadow:
-    inset 0 0 0 2px var(--accent),
-    0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent);
-}
-.kit .mgal-tile.sel {
-  outline: 2px solid var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
 }
 /* THE DRAG, in the grid (R58 G1/G2 · §7) — the generic half is up beside `.drag-handle`; this is what
  * a TILE does. The cell travels (its transform comes from the hook's displacement math); the tile
@@ -6506,8 +6503,15 @@ body[data-perf="lite"] .kit .navmenu-pop {
    * and the checkerboard behind it is what says "transparent" rather than "missing". */
   object-fit: contain;
 }
+/* SWITCHED OFF, IN PLACE. Since "W7" an unticked image does not move (owner ruling 2026-08-26) — it
+ * stays exactly where the owner put it — so its own look carries the whole signal, on a 110px tile,
+ * under whatever art the owner dropped. The dim alone was carrying it at 0.4 and a bright photograph
+ * still read as a live one, so the OFF state borrows the vocabulary this app already uses for
+ * "this thing is not running": every theme paints a sleeping machine `grayscale(…) brightness(…)`. No
+ * third marker — the corner's hollow ring is the control, this is the picture agreeing with it. */
 .kit .mgal-tile-img.dim {
-  opacity: 0.4;
+  opacity: 0.34;
+  filter: grayscale(0.85);
 }
 .kit .mgal-tile-none {
   display: block;
@@ -6545,17 +6549,22 @@ body[data-perf="lite"] .kit .navmenu-pop {
   font-size: 10px;
   letter-spacing: 0.02em;
 }
-/* THE IN-USE TOGGLE — one tap, `aria-pressed`, and a 30px target that clears the 24px the old passive
- * check disc occupied. OFF is a hollow ring on a dimmed plate, never nothing: a corner that vanishes
- * when switched off is indistinguishable from a tile that never had the control. */
+/* THE IN-USE TOGGLE — one tap, `aria-pressed`. OFF is a hollow ring on a dimmed plate, never nothing:
+ * a corner that vanishes when switched off is indistinguishable from a tile that never had the control.
+ *
+ * 24px DRAWN, ~34px TOUCHED (owner ruling 2026-08-26, "W7": the disc was too big for the tile it sits
+ * on). 24px is the WCAG 2.5.8 floor and the size every other corner in this grid is; the `::after`
+ * inset then extends the hit area past the disc's edge, which is the house answer for a control that
+ * must look small and press large. The extension is invisible and hits nothing else: the tile behind it
+ * only opens the detail panel, and a press that lands here is a press that meant this. */
 .kit .mgal-use {
   all: unset;
   box-sizing: border-box;
   position: absolute;
   right: 5px;
   bottom: 5px;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   border-radius: 999px;
@@ -6565,6 +6574,11 @@ body[data-perf="lite"] .kit .navmenu-pop {
   transition:
     background var(--dur-fast) var(--ease-std),
     color var(--dur-fast) var(--ease-std);
+}
+.kit .mgal-use::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
 }
 .kit .mgal-use.on {
   background: var(--accent);
