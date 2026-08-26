@@ -1348,12 +1348,87 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > the `refs` are `GalleryModal.tsx`'s focus-trap and drag latches. **It predates W9** (measured 78 with
 > and without the change) and is recorded as such so the delta is attributed rather than absorbed. **No
 > warning was fixed** — F13 stays trigger-gated.
+>
+> **W10 — the gallery second pass: edit-in-place, framing on defaults, the layout cleanup (owner
+> rulings 2026-08-26, prose; design researched to the least-future-debt bar, main-seat-final).**
+> The owner's round after the W7–W9 sign-off: ① the modal ✕ sits below the circle's centre ② no way
+> to re-frame/re-crop after upload — and no Framing on ANY image in Characters/Banner slides (their
+> folders are empty, so every entry is bundled and the bundled exclusion bit at 100%) ③ the gallery
+> body stacks five text blocks above the grid, three of them redundant ④ the owner's standing bar:
+> maximal reuse, no over-engineering — and, mid-design, an explicit directive that **edit must be a
+> standalone capability, not an upload appendage**.
+>
+> **⑴ The ✕.** `.pm-x` renders a literal `✕` character; a text glyph centres its LINE BOX, not its
+> ink, so it rides the baseline low in all five `.pm` modals. Fix: a hand-inlined SVG X (lucide `x`
+> geometry, the house icon pattern) in a new shared `components/icons.tsx`, used by all five call
+> sites. Verified visually on dev after the build (the owner's ask).
+>
+> **⑵ The gallery layout** (approved in prose): the GRID LEADS. Header keeps title + ✕ and gains ONE
+> status line folding the count and the mode sentence (`8 images · dealt to machines in this order` —
+> stays the section's one `role="status"` live region). Exceptional notices only above the grid
+> (failure row · dangling pin · seat built-in). Bottom cluster, in order: the dashed **Add an image**
+> row → one mono line merging the path with its purpose (`or copy files into media/gacha/reel/`) →
+> **Restore defaults** as a quiet text button, its `<small>` explainer DELETED (the confirm dialog
+> already says it). DELETED as redundant: the role hint (verbatim on the section card underneath) and
+> the standalone `mgal-scope`/`mgal-count` paragraphs. The empty-state copy flips "above" → "below".
+>
+> **⑶ Edit-in-place — the standalone job machine.** `useMediaUpload`'s front half (guard ladder →
+> crop step → export) MOVES into a shared `useImageJob` machine: *source File in → guard → CropModal
+> → export worker → bytes out*, owning the one latch, the phase words and the failure row. DELIVERY
+> is the pluggable tail (plain strategy injection, not a framework): the **upload** consumer keeps
+> its exact semantics (mint → PUT walking suffixes on 409 → register through the write queue,
+> two-phase resume/reconcile — code transfers verbatim); the **edit** consumer is new and smaller:
+> fetch the stored bytes (`revUrl`) → the same front half → **conditional PUT to the SAME filename**
+> → invalidate `["media", ns]`. No register (the entry keeps its config identity), so order/in-use/
+> key survive untouched, and the revision change auto-stales any stored focal — the framing sheet's
+> existing "Framing was reset" path absorbs the consequence with zero new code.
+> **The backend arm:** the PUT accepts an **`X-Expected-Revision`** request header (house precedent:
+> `X-Providers-Rev`; deliberately NOT `If-Match` — the media mount's GETs already serve Starlette's
+> own ETag, a DIFFERENT validator, and a second meaning for the same header on one URL space is a
+> false HTTP promise). Header present + target exists + index revision matches → `os.replace` instead
+> of `os.link`, fsync, **200** with the fresh row (create stays 201); mismatch or no target → **412**
+> ("the picture changed on the server — reopen it and try again"). 412, not 409, ON PURPOSE: 409 is
+> the create-path's suffix-walk trigger and the two meanings must never share a code. No header →
+> today's create-only 409, byte-identical. This REVIVES the council-1 "revision-preconditioned
+> overwrite" in library-model form (§13 row added).
+> **Entry point:** an edit (crop) icon floating top-right of the detail stage, mirroring `mgal-back`,
+> gated like Delete (owner files only, not unusable, `caps.upload`). **Recorded residuals:** each
+> re-crop re-encodes the stored bytes (q0.85 generation loss; crop-of-the-crop — the original is not
+> kept, by the additive-library ruling); a lost-response retry reads as 412 and the copy says reopen
+> (the accepted two-devices class).
+>
+> **⑷ Framing on bundled entries — the recorded H3 seam, built.** The config already carries `focal`
+> on every bundled entry; the mode-is-a-property-of-the-item design was built for this. Changes:
+> `focalState` learns a bundled row's point is keyed to nothing (bundled bytes are content-hashed by
+> the build and immutable under a running app) — a valid point reads `set`, stored `rev: ""`; the
+> `item.bundled` refusals in `setFocal` and `canFrame` drop; roster `toEntry`/`toNamed` prefer a LIVE
+> owner point (centred) over the shipped hand-tuned string (proportional) — absent a point the
+> shipped look stays BYTE-IDENTICAL, and "Clear framing" restores it. The FramingSheet works as-is
+> (it resolves bundled URLs via `tileUrl` and measures natural size itself).
+> **Dims for the centred math** (bundled rows carry none on the wire): the ASSET-RECORD convention —
+> R57's field survey is unanimous that focal values store bare fractions and dimensions live with the
+> asset record (Sanity/Craft/Umbraco/Kirby), and our wire rows already follow it. So the roster's
+> bundled entries/scenes gain `width`/`height` — numbers `art.ts`'s own export recipe ALREADY records
+> (640×854 characters · 1240×700 scenes) — promoted to fields and pinned by an HONESTY TEST that
+> reads the real asset files with `readImageHeader` (fs + the existing pure parser; drift becomes a
+> failing test, not a silent mis-frame). The rejected shapes, recorded: dims inside the stored focal
+> (mixes asset metadata into a user choice, two dim sources by row type, against the field
+> convention) · runtime natural-size measurement (paint jump, complexity in the one mapping hook).
+> **Recorded residual:** a future release that re-arts a bundled id under the same name inherits the
+> owner's point un-warned — the same acceptance the hand-tuned strings have always had.
+>
+> **Test obligations (§11 discipline):** the job machine's latch/phase/failure states with both
+> deliveries · backend replace arm (match replaces + re-describes · mismatch 412 · headerless-exists
+> 409 unchanged · revision moves) · `focalState` bundled cases · `setFocal` transform on a bundled id
+> · roster override assembly (live point → centred with dims · none → shipped proportional,
+> byte-identical) · the dims honesty test · e2e media specs re-run locally (the layout reorder moves
+> selectors).
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 
 | finding | source | ruling |
 |---|---|---|
-| v1 Replace/Cancel · `?overwrite` · revision cleanup · order-patch rider · `write_enabled` | R55/R56 + council 1 | SUPERSEDED (library model) |
+| v1 Replace/Cancel · `?overwrite` · revision cleanup · order-patch rider · `write_enabled` | R55/R56 + council 1 | SUPERSEDED (library model) — **the revision-preconditioned overwrite REVIVED by W10** as the edit-in-place `X-Expected-Revision` arm (create-only PUT unchanged) |
 | v1 focal deferred · accordion disclosures | R56 | SUPERSEDED (owner; R59) |
 | clamped-centred math + the s≤1 guard as contract | R57 §5 + Emma #1 | ACCEPTED |
 | reticle control · editable-later · previews · `{x,y}` storage · rev-keying | R57 §9 | ACCEPTED (rev-key restored by Opus M2) |
