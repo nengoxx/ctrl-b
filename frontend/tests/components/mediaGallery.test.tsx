@@ -433,6 +433,42 @@ describe("the H5 role-family card (kit's derived keys)", () => {
     expect(within(dialog).getByRole("button", { name: "jellyfin.png" })).toBeTruthy();
   });
 
+  it("a KEY gallery RINGS the file bound to that key — and rings nothing when none is", async () => {
+    // W8+ (builder-found, main-seat accepted). A family role has ONE section for the whole family —
+    // its keys come from the live fleet, so a section-level `active` would have to mean all of them at
+    // once and there is none. The grid read that empty answer and drew no ring at all, which broke the
+    // owner's standing "the ring shows what is used" contract in exactly the galleries where a file's
+    // binding is least obvious. The modal resolves per SCOPE now, through the same per-key ladder the
+    // family card reads and the service row paints with.
+    renderKit(
+      [
+        svcFile("jellyfin"),
+        svcFile("shadow", { key: "jellyfin" }),
+        svcFile("plex", { unusable: true, unusable_reason: "unreadable" }),
+      ],
+      [{ name: "Media", kind: "jellyfin" }, { name: "Plex" }],
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Open the jellyfin icon gallery" }));
+    let dialog = await screen.findByRole("dialog");
+    // Both files claim the key; the ladder's answer is the first, and only it wears the ring.
+    expect(within(dialog).getByRole("button", { name: "jellyfin.png" }).className).toContain(" on");
+    expect(within(dialog).getByRole("button", { name: "shadow.png" }).className).not.toContain(
+      " on",
+    );
+    // …and it is the genuinely CURRENT one, because exactly one entry wins a key.
+    expect(dialog.querySelectorAll("[aria-current]")).toHaveLength(1);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Open the plex icon gallery" }));
+    dialog = await screen.findByRole("dialog");
+    // A key whose only candidate cannot paint: the file IS in this scope — it is named for the key and
+    // the owner has to be able to reach it — but an unusable file binds nothing, so the row keeps its
+    // problem badge and no ring. "Nothing is painting this service" is the truthful answer.
+    expect(within(dialog).getByRole("button", { name: "plex.png" }).className).not.toContain(" on");
+    expect(dialog.querySelectorAll(".mgal-tile.on")).toHaveLength(0);
+  });
+
   it("a KEY's live file is the SECTION's own resolver's answer, never a second derivation", async () => {
     // The W8 council's F5. The card used to re-derive "which file answers this key" with the generic
     // name classifier over the visible rows, while the ladder — the one the surface paints through —

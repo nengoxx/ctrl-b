@@ -12,7 +12,7 @@ import {
 import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
 import type { MediaUpload } from "../../hooks/useMediaUpload";
 import { modalKeyDown } from "../../lib/focusTrap";
-import { defaultsRestorable } from "../../lib/mediaLibrary";
+import { defaultsRestorable, type ActiveArt } from "../../lib/mediaLibrary";
 import { requestConfirm } from "../../store/confirm";
 import { UPLOAD_ACCEPT } from "../../theme-engine/mediaRegistry";
 
@@ -117,7 +117,19 @@ export function GalleryModal({
   });
 
   const rows = scopedRows(view.rows, scope);
-  const items = libraryItems(rows, view.active, section.pin !== undefined);
+  // WHAT IS LIVE IN THIS SCOPE, derived ONCE for everything on this screen — the grid's rings, the
+  // detail panel's switch, and the reading line below (W8+).
+  //
+  // A KEY gallery is answered by the role's own per-key ladder, and a FAMILY role's section has no
+  // resolver of its own to fall back on: its keys come from the live fleet, so there is one section
+  // for the whole family and `active` on it would have to mean all of them at once. The grid was
+  // therefore reading an empty answer and ringing nothing at all — the owner's "the ring shows what is
+  // used" contract, silently broken in exactly the galleries where a file's binding is the least
+  // obvious. A STATIC-key role (frontier's stack) is unaffected: its section carries
+  // `activeForKey(key)` already, so this resolves the same answer through the same function.
+  const active =
+    scope.key !== undefined ? (view.activeForKey?.(scope.key) ?? view.active) : view.active;
+  const items = libraryItems(rows, active, section.pin !== undefined);
   const selected = items.find((i) => i.id === selectedId);
   const problems = items.filter((i) => i.row.unusable).length;
   const danglingPin =
@@ -226,8 +238,8 @@ export function GalleryModal({
             {/* What the In-use switches BUY here, in the gallery's own vocabulary — beside the role's
                 own hint, never instead of it (the hint says what the pictures are for; this says how
                 many of them are on screen at once). */}
-            {reading(view, scope) !== undefined && (
-              <span className="mgal-hint">{reading(view, scope)}</span>
+            {reading(view, scope, active) !== undefined && (
+              <span className="mgal-hint">{reading(view, scope, active)}</span>
             )}
           </p>
           {/* The header count is what keeps the tiles free of diagnostics text — and a live region,
@@ -364,17 +376,17 @@ export function GalleryModal({
  *  `undefined` where there is nothing honest to say: a SEAT has no In-use and no order (its reading is
  *  the pin, and its own hint states the ladder), the UNASSIGNED bucket paints nowhere, and a role the
  *  registry never described has no ladder to speak for. */
-function reading(view: SectionView, scope: GalleryScope): string | undefined {
+function reading(view: SectionView, scope: GalleryScope, active: ActiveArt): string | undefined {
   const { section } = view;
   if (section.kind === "seat" || section.kind === "unassigned") return undefined;
   // Only where a resolver actually answers for what is ON SCREEN: a key gallery is answered by the
-  // role's per-key ladder, everything else by the section's own.
+  // role's per-key ladder, everything else by the section's own. `active` is that answer, resolved by
+  // the caller — the mode word this sentence reads and the ring the grid draws are one derivation.
   const answers =
     scope.key !== undefined ? view.activeForKey !== undefined : section.active !== undefined;
   if (!answers) return undefined;
-  if (view.active.mode === "deal")
-    return "In-use images are dealt across the machines in this order.";
-  if (view.active.mode === "all") return "Every in-use image is shown, in this order.";
+  if (active.mode === "deal") return "In-use images are dealt across the machines in this order.";
+  if (active.mode === "all") return "Every in-use image is shown, in this order.";
   return "The first in-use image is the one shown.";
 }
 

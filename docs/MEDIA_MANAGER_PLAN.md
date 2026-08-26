@@ -1159,6 +1159,19 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > In-use and no order — its reading is the pin, and its own hint states the ladder), nor does the
 > unassigned bucket or a role the registry never described.
 >
+> **W8+ — a KEY gallery rang nothing** (BUILDER-FOUND during F5, main-seat ACCEPTED into the same
+> wave). A `family` role has ONE section for the whole family — its keys come from the live fleet, so
+> a section-level `active` would have to mean all of them at once, and there is none — so the modal,
+> which read `view.active`, drew no ring in ANY per-key gallery of the kit's three named roles. The
+> owner's standing "the ring shows what is used" contract, silently broken in exactly the galleries
+> where a file's binding is least obvious (a stem match, a `key` override, a shadowed duplicate). F5
+> had just put the per-key resolver on the `SectionView`, which made the fix two lines: the modal
+> resolves ONE `ActiveArt` per SCOPE — the role's per-key ladder for a key scope, the section's own
+> otherwise — and the grid, the detail panel and the reading line all read that one derivation. It is a
+> provable no-op for a STATIC-key section (frontier's stack): that section's `active` IS
+> `activeForKey(key)` over the same rows and slots, and no per-key resolver ever sets
+> `overriddenBySlot`, which is the only thing the wiring rewrites.
+>
 > **The owner rulings that arrived mid-wave.**
 > · **Restore defaults is re-ruled** — "put them first and activate them and you deactivate the other
 >   ones — as if the defaults are the one selected, and I just uploaded the other images that are
@@ -1175,16 +1188,18 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > by construction (the collation emits only registry-known bundled ids). **Still owner-pending and
 > untouched: typed `RowId` pins.**
 >
-> Verification: full gate green (BE 1,992 · FE 2,579, +10). New pins, one per fix: the queue's
+> Verification: full gate green (BE 1,992 · FE 2,580, +11). New pins, one per fix: the queue's
 > role-refusal (silent, and NOT the stale-refetch discard) · two namespaces' drains sharing one lane ·
 > no drag admission while a write is in flight, and the same press lifting the tile once it settles ·
 > the dealt ring on gacha and frontier (with the deal itself asserted unchanged beside it) · the
 > all-broken pool falling back on both gacha pools · the kit pool's bundled exclusion · the family
-> card's key row against a bundled id that matches a service key · the reading line per mode and its
+> card's key row against a bundled id that matches a service key · a kit key gallery ringing the file
+> the ladder bound and only it (a shadowed duplicate beside it, one `aria-current`), and ringing
+> nothing where the key's only candidate cannot paint · the reading line per mode and its
 > absence on a seat · the seat-flag deletion re-stated as "every slot emits a seat SECTION" · and the
 > re-ruled restore (registry order on top and un-hidden, the owner's files below and switched off with
 > their fields whole, the key scope touching only its layer, and the untick round trip after it).
-> Stash-verified: nine of the new pins fail without their fix.
+> Stash-verified: ten of the new pins fail without their fix.
 
 ## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
 
