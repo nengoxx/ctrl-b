@@ -8,9 +8,9 @@ import {
   activePool,
   artForHost,
   assignArt,
+  bannerScenes,
   defaultRoster,
   entryForHost,
-  heroArt,
   oracleArt,
   reelFigureArt,
   rosterFromIndex,
@@ -218,16 +218,10 @@ describe("slots — pins, and what happens when a pin dangles", () => {
   });
 
   it("a pin naming a MISSING entry (deleted/renamed) degrades to the default — never crashes", () => {
-    const r = roster([entry("a")], { wallpaper: "ghost", oracle: "ghost", hero: "ghost" });
+    const r = roster([entry("a")], { wallpaper: "ghost", oracle: "ghost" });
     expect(slotEntry(r, "wallpaper")).toBeUndefined();
     expect(wallpaperArt(r)).toEqual({ url: ART.banner }); // the bundled scene art
     expect(oracleArt(r)).toMatchObject({ url: ART.oracle });
-    expect(heroArt(r)).toEqual({ url: ART.banner }); // hero → wallpaper → the default
-  });
-
-  it("an unpinned hero follows the WALLPAPER pick (§5.2's stated default)", () => {
-    const r = roster([entry("a", { wide: "a-wide.webp" })], { wallpaper: "a" });
-    expect(heroArt(r)).toEqual({ url: "a-wide.webp" });
   });
 });
 
@@ -267,9 +261,15 @@ describe("defaultRoster — the bundled fallback set (§5.5)", () => {
 
   it("resolves every slot without configuration: scene art for the wide slots, lyra for the figure", () => {
     expect(wallpaperArt(r)).toEqual({ url: ART.banner });
-    expect(heroArt(r)).toEqual({ url: ART.banner });
     expect(oracleArt(r)).toMatchObject({ url: ART.oracle });
     expect(reelFigureArt(r)).toMatchObject({ url: ART.cutout });
+  });
+
+  it("ships `banner.webp` as the banner pool's TAIL member (the 2026-08-26 ruling)", () => {
+    // It is the picture the backdrop ladder ends on, and it used to be reachable ONLY there — art in no
+    // pool is art in no gallery, exactly the defect `rook` and the oracle backdrop were fixed for at S6.
+    expect(r.scenes.map((s) => s.name)).toEqual(["b2", "b3", "banner"]);
+    expect(r.scenes.at(-1)!.url).toBe(ART.banner);
   });
 
   it("keeps the SCENE art out of the per-host cycle (the frontier partition rule)", () => {
@@ -278,7 +278,7 @@ describe("defaultRoster — the bundled fallback set (§5.5)", () => {
     const dealt = assignArt(r, 12).map((a) => a!.url);
     expect(dealt).not.toContain(ART.banner);
     expect(dealt).not.toContain(ART.oracle);
-    for (const scene of ART.scenes) expect(dealt).not.toContain(scene.url);
+    for (const scene of r.scenes) expect(dealt).not.toContain(scene.url);
     expect(new Set(dealt)).toEqual(new Set(ART.characters));
   });
 });
@@ -422,7 +422,9 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
     expect(r.entries).toEqual([]);
     // …and the same for the two other roles that ship art, each on its own row.
     const scenes = rosterFromIndex(
-      index({ banner: [bundled("b2", { hidden: true }), bundled("b3", { hidden: true })] }),
+      index({
+        banner: defaultRoster().scenes.map((s) => bundled(s.name, { hidden: true })),
+      }),
     );
     expect(scenes.scenes).toEqual([]);
     const reel = rosterFromIndex(index({ reel: [bundled("lyra", { hidden: true })] }));
@@ -484,7 +486,7 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
       }),
     );
     expect(oracleArt(r)).toMatchObject({ url: painted("good") });
-    expect(r.scenes).toEqual(defaultRoster().scenes); // the only scene was broken ⇒ the bundled pair
+    expect(r.scenes).toEqual(defaultRoster().scenes); // the only scene was broken ⇒ the bundled set
   });
 
   it("banner/ becomes the SCENE slides, one per file, keyed by stem", () => {
@@ -611,9 +613,13 @@ describe("reelFigureArt — the pin selects a CUTOUT, never a portrait", () => {
 //
 //     the gacha pin (a cast portrait, wide-cropped) → the SHARED kit background → the bundled scene
 //
-// …plus the two things that could silently go wrong around it: `heroArt` must read the SAME ladder (a
-// backdrop and a hero slide showing different pictures is the §5.3 disagreement), and the kit rung must
-// not leak onto gacha's other surfaces.
+// …plus the two things that could silently go wrong around it: the kit rung must not leak onto gacha's
+// other surfaces, and the ladder must stay the CAROUSEL's fallback for an empty banner pool (the last
+// arm of the `bannerScenes` describe below).
+//
+// It used to have a third obligation — the fixed first slide reading this same ladder, so the backdrop
+// and the slide could never show different pictures. The owner REVERSED that on 2026-08-26 ("W5"): the
+// two are separate destinations with separate libraries, so a kit drop moves the backdrop alone.
 
 const kitFile = (name: string, over: Partial<MediaFile> = {}): MediaFile => ({
   ...file(name),
@@ -678,20 +684,76 @@ describe("wallpaperArt — the three-rung fleet backdrop (G6.3)", () => {
     expect(wallpaperArt(r, kit)).toEqual(kitRung(kit));
   });
 
-  it("the HERO slide reads the SAME ladder — the two must never show different pictures (§5.3)", () => {
-    // `heroArt` defaults to the wallpaper pick, so dropping the argument one call deep would give the
-    // backdrop the shared image and the hero slide the bundled banner.
-    const kit = kitFile("shared");
-    expect(heroArt(roster([entry("a")]), kit)).toEqual(wallpaperArt(roster([entry("a")]), kit));
-    // …and a hero PIN still outranks it, exactly as it outranks the wallpaper pick.
-    const pinned = roster([entry("a", { wide: "a-wide.webp" })], { hero: "a" });
-    expect(heroArt(pinned, kit)).toEqual({ url: "a-wide.webp" });
-  });
-
   it("does NOT reach the oracle backdrop — a rung is added to one ladder, not to the theme", () => {
     // The operator art is its own surface with its own folder and its own bundled default; the owner
     // asked for the fleet backdrop, and a shared picture silently taking over every gacha surface is
     // not that.
     expect(oracleArt(roster([entry("a")]))).toMatchObject({ url: ART.oracle });
+  });
+
+  it("…and it does NOT move the CAROUSEL either (the 2026-08-26 reversal)", () => {
+    // The behaviour change stated as the case it replaces: a kit drop used to re-art the first slide
+    // too, because that slide read this ladder. It deals the banner pool now, so the backdrop moves
+    // and the carousel stands still — two pictures on one screen, which is the ruling.
+    const kit = kitFile("shared");
+    const r = rosterFromIndex(index({ banner: [file("own")] }));
+    expect(wallpaperArt(r, kit)).toEqual(kitRung(kit));
+    expect(bannerScenes(r, kit).lead).toMatchObject({ name: "own" });
+  });
+});
+
+// ── bannerScenes — the carousel's DEAL (owner ruling 2026-08-26, "W5") ──────────────────────────────
+//
+// The first slide's ART used to be its own SEAT (a `hero` pin over the cast, falling through to the whole
+// fleet-backdrop ladder above). The owner reversed that: the slide is dealt out of the banner pool like
+// every other one, and what stays fixed is its DRESSING — the frozen PICKUP copy — and its key.
+
+describe("bannerScenes — the first slide is dealt, and the rest are the scenes", () => {
+  const named = (name: string) => ({ name, url: `${name}.webp` });
+
+  it("deals the FIRST member to the lead slide and the rest to the scenes", () => {
+    const r = roster([entry("a")], {}, { scenes: [named("one"), named("two"), named("three")] });
+    const { lead, rest } = bannerScenes(r);
+    expect(lead).toEqual(named("one"));
+    expect(rest.map((s) => s.name)).toEqual(["two", "three"]);
+  });
+
+  it("passes the member WHOLE, so a framing point and its `?rev=` reach the slide that paints it", () => {
+    // The banner role is `framable` and the slide is the window (§5). Rebuilding a member as `{url}` at
+    // the call site dropped both — an owner's framing point on a banner image did nothing at all.
+    const focus = proportionalFocal("50% 10%");
+    const r = roster(
+      [entry("a")],
+      {},
+      { scenes: [{ name: "x", url: "x.webp", focus, rev: "1:1" }] },
+    );
+    expect(bannerScenes(r).lead).toEqual({ name: "x", url: "x.webp", focus, rev: "1:1" });
+  });
+
+  it("never sees a broken member — the ROLE's tier rule already dropped it (`sceneRows`)", () => {
+    // Where the usability filter lives, stated as a case: a broken drop is gone before the deal, so the
+    // carousel can never open on a blank slide and `bannerScenes` needs no filter of its own.
+    const r = rosterFromIndex(index({ banner: [file("bad", { unusable: true }), file("good")] }));
+    expect(bannerScenes(r).lead).toMatchObject({ name: "good" });
+    expect(bannerScenes(r).rest).toEqual([]);
+  });
+
+  it("an EMPTY pool keeps the slide and paints the fleet BACKDROP's own pick (the ruled fallback)", () => {
+    // Every entry switched off is the owner's own answer for the banner LIBRARY, and it must not cost
+    // the carousel its first slide — so the one other picture this screen is certain to have stands in.
+    const r = roster([entry("a", { wide: "a-wide.webp" })], { wallpaper: "a" }, { scenes: [] });
+    expect(bannerScenes(r)).toEqual({ lead: { url: "a-wide.webp" }, rest: [] });
+    // …and with nothing pinned either, the ladder's own end.
+    expect(bannerScenes(roster([entry("a")]))).toEqual({ lead: { url: ART.banner }, rest: [] });
+  });
+
+  it("the BUNDLED deal is b2 · b3 · banner — the shipped carousel, in the registry's order", () => {
+    // The fresh-install contract after the ruling: `banner.webp` is the pool's tail member, so the
+    // carousel opens on b2 and the backdrop still ends on `banner.webp` — different pictures, on
+    // purpose. Slide 1's art moved here; the slide COUNT did not.
+    const { lead, rest } = bannerScenes(defaultRoster());
+    expect(lead).toEqual({ name: "b2", url: ART.scenes[0].url });
+    expect(rest.map((s) => s.name)).toEqual(["b3", "banner"]);
+    expect(wallpaperArt(defaultRoster())).toEqual({ url: ART.banner });
   });
 });

@@ -35,7 +35,7 @@ import {
   type FleetTap,
 } from "./fleet";
 import { fleetSurface } from "./fleetSurface";
-import { artForHost, heroArt, wideArtForHost } from "./roster";
+import { artForHost, bannerScenes, wideArtForHost } from "./roster";
 import { MAX_STARS, starsFor, toStarMode } from "./stars";
 import { useGachaRoster } from "./useGachaRoster";
 
@@ -88,10 +88,11 @@ export function GachaFleet({ active }: { active: boolean }) {
   // The roster the theme resolves against (§5.2's read path): the owner's media folders when they hold
   // anything, the bundled set otherwise. One query, shared with the Root/reel/Agent by its key.
   const roster = useGachaRoster();
-  // The SHARED kit background, as the hero slide's MIDDLE rung (G6.3) — the same value the Root feeds the
-  // fleet backdrop's ladder. Threaded here too because `heroArt` defaults to the wallpaper pick: without
-  // it, an owner with only a `media/kit/background/` drop would get that image as the backdrop and the
-  // BUNDLED banner on the hero slide, which is precisely the two-pictures disagreement §5.3 rules out.
+  // The SHARED kit background — the same value the Root feeds the fleet backdrop's ladder. It reaches the
+  // carousel for ONE case now (owner ruling 2026-08-26, "W5"): the first slide falls back to the backdrop's
+  // own resolution when the banner pool is empty, and that resolution includes the kit rung. In every other
+  // state the two surfaces are independent — the backdrop moves with a kit drop and the carousel does not,
+  // which REVERSES §5.3's old "both must show one picture" reading of this screen.
   // Its own query is the kit one, deduped by TanStack against every other kit-art consumer.
   const kitBackground = useKitBackgroundArt();
 
@@ -718,23 +719,29 @@ export function GachaFleet({ active }: { active: boolean }) {
   // shared resolver): the enlarged image is by construction the same entry the portrait was cropping.
   const detailArt = detail ? artForHost(roster, detail.index) : null;
 
-  // The §6.4 slide set, in its ruled order: the fixed hero, then the owner's banner SCENES (G1 eyeball
-  // round 3 — art-only slides, the owner's pick over cycling the hero's art), then ONE promo per host —
-  // online AND sleeping (the ruled membership; a sleeping promo renders dimmed, which keeps its click
-  // useful: open the dossier, then wake).
+  // The §6.4 slide set, in its ruled order: the fixed first slide, then the rest of the banner SCENES,
+  // then ONE promo per host — online AND sleeping (the ruled membership; a sleeping promo renders dimmed,
+  // which keeps its click useful: open the dossier, then wake).
+  //
+  // THE FIRST SLIDE IS DEALT, not pinned (owner ruling 2026-08-26, "W5"): it wears the frozen hero copy —
+  // that dressing is fixed and is why its key is the fixed `HERO_KEY` — but its ART is the banner pool's
+  // first usable member, exactly like every slide after it. `bannerScenes` owns that split, and the whole
+  // MEMBER rides down rather than a bare url, so an owner's framing point on a banner image reaches the
+  // slide that paints it (the role is `framable`, and `GachaBanner` hands `art.focus` to `FocalImg`).
   //
   // The body composes the list because it is the one place that knows all three sources. The scenes are
-  // the roster's `scenes` — the owner's `media/gacha/banner/` drops, else the bundled pair — and they are
+  // the roster's `scenes` — the owner's `media/gacha/banner/` drops, else the bundled set — and they are
   // a SEPARATE pool from the entries, which is what keeps a scene from ever being dealt to a machine as
   // its capsule portrait (the art.ts partition rule, now enforced by the role folders themselves).
+  const { lead, rest } = bannerScenes(roster, kitBackground);
   const slides: BannerSlide[] = [
-    { kind: "hero", key: HERO_KEY, art: heroArt(roster, kitBackground) },
-    ...roster.scenes.map((scene, i) => ({
+    { kind: "hero", key: HERO_KEY, art: lead },
+    ...rest.map((scene, i) => ({
       kind: "scene" as const,
       key: SCENE_KEY_PREFIX + scene.name,
       name: scene.name,
       position: i,
-      art: { url: scene.url },
+      art: scene,
     })),
     ...hosts.map((host, i) => ({
       kind: "promo" as const,

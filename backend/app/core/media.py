@@ -110,8 +110,12 @@ GACHA_ROLES: dict[str, MediaRole] = {
     # always claimed it was "bundled for the gallery", and it was in no role's list on either side of
     # the mirror — so it appeared in no gallery and could not be reached, reordered or retired.
     "characters": MediaRole(bundled=("pegasus", "atlas", "3", "4", "lyra", "rook")),
-    # The pickup-carousel scene slides: `defaultRoster().scenes`, named `b2`/`b3` in gacha/art.ts.
-    "banner": MediaRole(bundled=("b2", "b3")),
+    # The pickup-carousel slides: `defaultRoster().scenes` (themes/gacha/roster.ts), in the order the
+    # carousel deals them — the FIRST member opens the banner. `banner` is the tail one and joined at the
+    # 2026-08-26 owner ruling: the file is what the fleet BACKDROP's ladder ends on, and until then it
+    # reached the carousel only as a fixed slide's fallback, so it was in no role's list and therefore in
+    # no gallery — the same defect `rook` and the oracle backdrop were fixed for at S6.
+    "banner": MediaRole(bundled=("b2", "b3", "banner")),
     # The transition cutout: `defaultRoster().pools.reel`, DERIVED from the entries carrying a
     # `cutout` field — today exactly `lyra`, which is why she stays last in the cast.
     "reel": MediaRole(bundled=("lyra",)),
@@ -128,7 +132,14 @@ GACHA_ROLES: dict[str, MediaRole] = {
 #: client resolver fills, and `Settings._known_media_namespaces_roles_and_slots` validates it against
 #: this tuple alone (never against `roles`), so a pin whose options come from another role is an
 #: ordinary shape here — `reel_figure` has always been one.
-GACHA_SLOTS: tuple[str, ...] = ("wallpaper", "hero", "oracle", "reel_figure")
+#:
+#: **`hero` was REMOVED 2026-08-26** (owner ruling, "W5"): the pickup carousel's first slide no longer has
+#: art of its own to bind — it deals the `banner` role's first member — so a seat pinning a character into
+#: it would be a second, contradictory answer to which picture opens the banner. A clean removal on the
+#: `wallpaper`-role precedent above: media v2 has never shipped to prod, so no config on disk holds the
+#: pin. A hand-authored leftover is an unknown slot key, which is a load/PUT error rather than a knob that
+#: silently does nothing — the same treatment the deleted `wallpaper` ROLE gets, and deliberately loud.
+GACHA_SLOTS: tuple[str, ...] = ("wallpaper", "oracle", "reel_figure")
 
 #: The frontier role folders (D53 / MEDIA_PLAN §3). `rigs` and `hero` are POOLS (the badlands cards and
 #: the map cover); `stack` is the NAMED role — its three layers bind by filename STEM

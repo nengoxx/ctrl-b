@@ -201,37 +201,39 @@ describe("the gacha row", () => {
 
   it("offers every pin the backend registry accepts, each sourced from a real role", () => {
     const slots = MEDIA_NS.gacha.slots ?? [];
-    // The pin list is UNCHANGED by G6.3's role removal: a pin key and a role folder are validated
-    // independently on both ends (`GACHA_SLOTS` vs `GACHA_ROLES`), and `wallpaper` survives because the
+    // `wallpaper` was UNCHANGED by G6.3's role removal: a pin key and a role folder are validated
+    // independently on both ends (`GACHA_SLOTS` vs `GACHA_ROLES`), and it survives because the
     // theme-specific half — bind a CAST portrait to the backdrop — has no kit equivalent.
-    expect(slots.map((s) => s.key)).toEqual(["wallpaper", "hero", "oracle", "reel_figure"]);
+    //
+    // `hero` is GONE (owner ruling 2026-08-26, "W5"): the carousel's first slide deals the `banner`
+    // pool's first member, so it has no art of its own to bind and a seat over the cast would be a
+    // second, contradictory answer to which picture opens the banner.
+    expect(slots.map((s) => s.key)).toEqual(["wallpaper", "oracle", "reel_figure"]);
     for (const slot of slots) expect(MEDIA_NS.gacha.roles[slot.from]).toBeDefined();
     expect(slots.find((s) => s.key === "wallpaper")?.from).toBe("characters");
     // The ruled shape (Codex F4): the figure's options come from the REEL role, never the cast.
     expect(slots.find((s) => s.key === "reel_figure")?.from).toBe("reel");
   });
 
-  it("the two BACKDROP seats carry a hint naming the rung between the pin and the built-in", () => {
+  it("the BACKDROP seat carries a hint naming the rung between the pin and the built-in", () => {
     // With no `wallpaper/` role there is nowhere else in the gallery to learn where the fleet backdrop
     // comes from, and the pins section's generic copy ("overriding that folder's own first pick") is no
-    // longer the whole truth for it. The hero slide needs the same sentence for the same reason since
-    // S6: its card SHOWS the built-in default, and what sits between it and the pin (the fleet
-    // backdrop's own ladder) is invisible without a line saying so.
+    // longer the whole truth for it. It is the ONE pin that needs the sentence — the hero slide used to
+    // need it too, and that seat died with the 2026-08-26 ruling.
     const hint = (key: string) => MEDIA_NS.gacha.slots?.find((s) => s.key === key)?.hint ?? "";
     expect(hint("wallpaper")).toMatch(/shared/i);
-    expect(hint("hero")).toMatch(/fleet backdrop/i);
-    expect(MEDIA_NS.gacha.slots?.filter((s) => s.hint !== undefined)).toHaveLength(2);
+    expect(MEDIA_NS.gacha.slots?.filter((s) => s.hint !== undefined)).toHaveLength(1);
   });
 
-  it("the two backdrop seats show the SAME built-in default, and stay independently pinnable", () => {
-    // The owner ruling (S6): `banner.webp` appeared in no gallery at all, and the two seats that end on
-    // it must each show it — they hold their own pins, so surfacing the shared default is not the same
-    // as merging the two surfaces. It is a DISPLAY channel: no role folder holds it, so it can carry no
-    // `hidden`, no order and no delete, and the way back to it is the seat's own unpin.
+  it("the backdrop seat shows the built-in default, and the banner ROLE holds the same picture", () => {
+    // The owner ruling (S6): `banner.webp` appeared in no gallery at all. It has TWO homes now and they
+    // are two destinations, not a duplicate (2026-08-26): here it is what this seat's ladder ENDS on —
+    // a display channel with no `hidden`, no order and no delete, whose way back is the seat's unpin —
+    // and in the `banner` pool it is an ordinary slide the owner can reorder or switch off. Switching
+    // the slide off leaves this default standing, because the rung is the ASSET and not the pool.
     const seat = (key: string) => MEDIA_NS.gacha.slots?.find((s) => s.key === key);
     expect(seat("wallpaper")?.builtin?.url).toBe(GACHA_ART.banner);
-    expect(seat("hero")?.builtin?.url).toBe(GACHA_ART.banner);
-    expect(seat("wallpaper")?.key).not.toBe(seat("hero")?.key);
+    expect(MEDIA_NS.gacha.roles.banner.bundled.map((b) => b.id)).toContain("banner");
     // The operator backdrop gets none: its ladder ends in the `oracle` ROLE, whose own section holds
     // that picture as a real library entry since S6, and a second uneditable copy would be a duplicate.
     expect(seat("oracle")?.builtin).toBeUndefined();
@@ -377,7 +379,9 @@ describe("bundled ids — derived front-end-side, mirrored on the backend", () =
       "lyra",
       "rook",
     ]);
-    expect(ids(MEDIA_NS.gacha.roles.banner)).toEqual(["b2", "b3"]);
+    // `banner` is the TAIL member (2026-08-26): the picture the fleet backdrop ends on, which used to be
+    // reachable only through a seat's built-in channel and is an ordinary carousel slide now.
+    expect(ids(MEDIA_NS.gacha.roles.banner)).toEqual(["b2", "b3", "banner"]);
     expect(ids(MEDIA_NS.gacha.roles.reel)).toEqual(["lyra"]);
     expect(ids(MEDIA_NS.gacha.roles.oracle)).toEqual(["oracle"]);
   });
@@ -488,15 +492,16 @@ describe("bundled ids — derived front-end-side, mirrored on the backend", () =
 const rolesOf = (ns: string) => Object.keys(MEDIA_NS[ns].roles);
 
 describe("mediaSections — the destinations the Conf tab shows", () => {
-  it("gacha: one card per role folder, then the three character-bound SEATS", () => {
+  it("gacha: one card per role folder, then the two character-bound SEATS", () => {
     const out = mediaSections("gacha", MEDIA_NS.gacha, rolesOf("gacha"));
+    // There were three seats until 2026-08-26 ("W5"). The `banner` role's own card is where the first
+    // carousel slide is chosen now — by ORDER, like every other slide — so the Hero slide seat is gone.
     expect(out.map((s) => s.id)).toEqual([
       "gacha:characters",
       "gacha:banner",
       "gacha:reel",
       "gacha:oracle",
       "gacha:@wallpaper",
-      "gacha:@hero",
       "gacha:@oracle",
     ]);
     // `reel_figure` is NOT a seat: it pins the reel role's own first-wins pick, so it is that role's

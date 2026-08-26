@@ -319,8 +319,8 @@ export interface MediaSlotDef {
   from: string;
   hint?: string;
   /** True when this pin is **its own destination** — a SEAT (§2.1): a surface fed FROM another role's
-   *  library, whose only write is the pin. gacha's three character-bound pins are seats (a portrait
-   *  bound into the fleet backdrop, the hero slide, the operator's backdrop); every other shipped pin
+   *  library, whose only write is the pin. gacha's two character-bound pins are seats (a portrait
+   *  bound into the fleet backdrop, and into the operator's backdrop); every other shipped pin
    *  is the source role's own first-wins OVERRIDE and therefore belongs to that role's section rather
    *  than to a section of its own — one destination, one card. */
   seat?: boolean;
@@ -332,13 +332,15 @@ export interface MediaSlotDef {
    *  is left behind).
    *
    *  It is a DISPLAY channel and deliberately not a library entry (`MediaBundledDef` is reused for the
-   *  shape, not for the tier): a seat is a view over ANOTHER role's library, and this picture belongs
-   *  to no role folder at all — gacha's `banner.webp` is scene art the backdrop ladder ends on. So it
-   *  has no config identity: it cannot be hidden, ordered or deleted, and "restore the default" is the
-   *  unpin the seat already offers.
+   *  shape, not for the tier): a seat is a view over ANOTHER role's library, and this picture belongs to
+   *  no role folder the seat can see — gacha's `banner.webp` is the ASSET its backdrop ladder ends on.
+   *  (Since 2026-08-26 that same asset is also a `banner`-pool entry, which changes nothing here: the
+   *  backdrop's last rung is the asset itself, so retiring the pool entry retires its carousel slide and
+   *  not this default.) So it has no config identity in this section: it cannot be hidden, ordered or
+   *  deleted from the seat, and "restore the default" is the unpin the seat already offers.
    *
    *  It says what the ladder ENDS on, never what is painted right now: a rung in between (the shared
-   *  kit background, for gacha's two backdrop seats) may be answering instead, which is why the card
+   *  kit background, for gacha's fleet backdrop) may be answering instead, which is why the card
    *  captions it `built-in` rather than "in use" and the slot's own `hint` names the middle rung. */
   builtin?: MediaBundledDef;
 }
@@ -425,7 +427,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
       },
       banner: {
         kind: "pool",
-        hint: "One extra pickup-banner slide per image.",
+        // Re-worded 2026-08-26 ("W5"): the pool is no longer "extra" slides beside a fixed one. Its FIRST
+        // member opens the carousel wearing the frozen PICKUP copy and the rest follow, so the order is
+        // the deal — and the sentence has to say so, because the owner's only way to choose which picture
+        // opens the banner is to move it to the top of this list.
+        hint: "The pickup-banner slides, in this order — the first one opens the carousel.",
         bounds: FULL_ART,
         aspect: 16 / 9,
         // One destination, one window (`.gc-slide img`, `object-fit: cover`) — but a slide is much wider
@@ -434,7 +440,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         framable: true,
         previews: [{ label: "banner slide", aspect: 390 / 232 }],
         active: activeScenes,
-        // The bundled scene slides (`b2`/`b3`) — named because each slide needs a stable key.
+        // The bundled slides (`b2`/`b3`/`banner`) — named because each slide needs a stable key. `banner`
+        // joined the pool at the 2026-08-26 ruling: it is the picture the fleet BACKDROP's ladder ends on,
+        // and until then it reached the carousel only as a fallback inside a seat — art in no library, so
+        // it could be neither reordered nor switched off. Switching it off here takes its SLIDE out and
+        // leaves the backdrop's own built-in default alone; the two are different destinations.
         bundled: bundle(
           BUNDLED_ROSTER.scenes,
           (s) => s.name,
@@ -491,9 +501,13 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         ),
       },
     },
-    // The §5.2 pins that survived the role re-rule. Three of them bind a CHARACTER into a role — a
+    // The §5.2 pins that survived the role re-rule. Two of them bind a CHARACTER into a role — a
     // portrait crops fine as a backdrop. The FIGURE does not (Codex F4, above). Each one's bundled
     // fallback options are its SOURCE ROLE's `bundled` ids (D65 — no per-slot copy).
+    //
+    // There is no "Hero slide" seat any more (owner ruling 2026-08-26, "W5"): the carousel's first slide
+    // deals the `banner` pool's first member, so its destination is that role's own card and a seat over
+    // the cast would be a second, contradictory answer to which picture opens the banner.
     //
     // `wallpaper` is the one whose ROLE FOLDER no longer exists (G6.3), and it is therefore the one pin
     // that is not merely an override of a folder's first pick: it is now the TOP of gacha's backdrop
@@ -508,21 +522,11 @@ export const MEDIA_NS: Record<string, MediaNsDef> = {
         hint: "Unpinned, the fleet uses your Shared art background — then the bundled scene below.",
         seat: true,
         active: activeSeat("wallpaper"),
-        // The bundled scene the backdrop ladder ends on. Both backdrop seats show it and each is
-        // customized on its own (they hold independent pins) — surfacing the shared default is not the
-        // same as merging the two surfaces.
-        builtin: { id: "banner", url: GACHA_ART.banner },
-      },
-      {
-        key: "hero",
-        label: "Hero slide",
-        from: "characters",
-        hint: "Unpinned, the hero slide follows the fleet backdrop — then the bundled scene below.",
-        seat: true,
-        // Its own pin, else the WALLPAPER's (`heroArt` falls through to the whole backdrop ladder):
-        // the hero slide and the fleet backdrop resolving to two different pictures is the
-        // disagreement §5.3's one-resolver ruling exists to prevent, so the seat says so too.
-        active: activeSeat("hero", "wallpaper"),
+        // The bundled scene this ladder ends on, shown so the owner can SEE what "none pinned" looks
+        // like (S6). It stays a DISPLAY channel here even though the same picture is now a real library
+        // entry in the `banner` role (2026-08-26): this seat's ladder ends on the ASSET, not on that
+        // pool, so hiding the banner entry takes its carousel slide away and leaves this default
+        // standing. One seat shows it now — the hero slide's seat died with the same ruling.
         builtin: { id: "banner", url: GACHA_ART.banner },
       },
       {

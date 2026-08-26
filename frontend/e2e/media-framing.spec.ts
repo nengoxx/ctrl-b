@@ -423,7 +423,9 @@ test("PARITY — the capsule track, the banner and the backdrop paint their pre-
   // ② the WIDE card, painting `atlas` — the DEFAULT path: no framing, so no inline declaration at all
   //    and the shape's own crop stands. This is the assertion a lost CSS default would fail.
   expect(await positionOf(page, ".gc-card.wide img")).toBe(CSS_DEFAULT.cardWide);
-  // ③ the banner's fixed HERO slide is scene art, which declares no focus.
+  // ③ the banner's FIRST slide is scene art, which declares no focus. (Since the 2026-08-26 ruling that
+  //    slide is dealt from the banner pool rather than pinned, so on a bundled install it is `b2` and no
+  //    longer `banner.webp` — both are scene art with no framing, which is what this arm is about.)
   expect(await positionOf(page, ".gc-slide:not(.promo) img")).toBe(CSS_DEFAULT.slideScene);
   // ④ the PROMO slides: the same two entries again, in a window of a completely different shape —
   //    `pegasus` inline, `atlas` on the promo default.

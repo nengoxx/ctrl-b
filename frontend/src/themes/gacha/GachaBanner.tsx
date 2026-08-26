@@ -28,9 +28,10 @@ import { safeRafLoop, type SafeRafLoop } from "../../theme-engine/safeRafLoop";
 import type { ResolvedArt } from "./roster";
 
 // The PICKUP BANNER (D52 / GACHA_PLAN §6.4) — the prototype's `.banner` slideshow, ported onto live data:
-// slide 1 is the fixed NETWORK PRIZE POOL hero (frozen copy, zero data dependency), slides 2..N are one
-// promo per host, ONLINE AND SLEEPING both (the membership is a RULING, not implementer latitude — crowding
-// is solved by the dot/counter presentation below, never by narrowing the set).
+// slide 1 wears the fixed NETWORK PRIZE POOL copy (frozen, zero data dependency — its ART is dealt from the
+// banner pool like every other scene, the 2026-08-26 ruling), then the remaining scenes, then one promo per
+// host, ONLINE AND SLEEPING both (the membership is a RULING, not implementer latitude — crowding is solved
+// by the dot/counter presentation below, never by narrowing the set).
 //
 // Everything genuinely tricky here is delegated to `carousel.ts`, which is pure: the tap-vs-drag machine,
 // where a released drag lands, and where the active slide goes when its host disappears. This component owns
@@ -53,8 +54,10 @@ import type { ResolvedArt } from "./roster";
 /** One banner slide, as a DISCRIMINATED UNION on `kind` — the single mechanism the render, the dot labels
  *  and the interactivity all branch on, so nothing anywhere has to sniff a key to know what it is holding:
  *
- *   · `hero`  the fixed NETWORK PRIZE POOL slide. Frozen copy, no data dependency, nothing to open.
- *   · `scene` an owner banner-art drop (G1 eyeball round 3). Inert like the hero — a picture names no
+ *   · `hero`  the fixed NETWORK PRIZE POOL slide — the FIXED DRESSING (frozen copy, no data dependency,
+ *             nothing to open) over art the Fleet body deals from the banner pool, or the fleet backdrop's
+ *             own pick when that pool is empty. It is the one slide that is always present.
+ *   · `scene` one of the pool's remaining members. Inert like the hero — a picture names no
  *             machine, so there is nothing to open — but it wears the same copy block, filled from a
  *             TEMPLATE: `position` picks its TITLE out of the ruled `SCENE_TITLES` pool, so any future
  *             drop is titled without authoring a line per image; `name` is just the stable per-file key
@@ -440,10 +443,11 @@ export function GachaBanner({ slides, active, rate, pity, onOpenHost }: Props) {
             >
               {s.art && (
                 <FocalImg
-                  // PAINT-READY from the resolver (D65 defect #1 + its S2 review rider #8): the hero and
-                  // the fleet backdrop can resolve to the SAME shared-background file, so the URL has to
-                  // carry the file's `?rev=` — and the ladder is the one place that stamps it. Stamping
-                  // again here gave the same bytes a second cache key on the one screen that shows both.
+                  // PAINT-READY from the resolver (D65 defect #1 + its S2 review rider #8): the first
+                  // slide and the fleet backdrop can still resolve to the SAME shared-background file (the
+                  // empty-pool fallback), so the URL has to carry the file's `?rev=` — and the ladder is
+                  // the one place that stamps it. Stamping again here gave the same bytes a second cache
+                  // key on the one screen that shows both.
                   src={s.art.url}
                   alt=""
                   draggable={false}

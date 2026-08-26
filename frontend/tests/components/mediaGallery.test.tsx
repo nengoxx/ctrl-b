@@ -170,12 +170,15 @@ describe("the entry cards (§6.1)", () => {
     for (const name of ["characters", "banner", "reel", "oracle"]) {
       expect(screen.getByRole("button", { name: `Open the ${name} gallery` })).toBeTruthy();
     }
-    // The three gacha SEATS: a character bound into a surface the cast does not own. `reel_figure` is
+    // The two gacha SEATS: a character bound into a surface the cast does not own. `reel_figure` is
     // NOT one — it pins the reel role's own first pick, so it belongs to that role's card.
-    for (const label of ["Fleet backdrop", "Hero slide", "Operator backdrop"]) {
+    for (const label of ["Fleet backdrop", "Operator backdrop"]) {
       expect(screen.getByRole("button", { name: `Open the ${label} gallery` })).toBeTruthy();
     }
     expect(screen.queryByRole("button", { name: /Transition figure/ })).toBeNull();
+    // …and NOT a "Hero slide" seat: the carousel's first slide deals the `banner` pool's first member
+    // since the 2026-08-26 ruling, so its destination is that role's own card (owner ruling "W5").
+    expect(screen.queryByRole("button", { name: /Hero slide/ })).toBeNull();
   });
 
   it("paints the ACTIVE art the resolver names, with its mode word — a collage for a dealt set", async () => {
@@ -325,14 +328,15 @@ describe("the entry cards (§6.1)", () => {
     expect(within(dialog).queryByText("Built-in default")).toBeNull();
   });
 
-  it("BOTH backdrop seats show it, and each is still pinned on its own", async () => {
-    // The owner asked for it in both places and asked them to stay independently customizable — they
-    // hold separate pins, so surfacing the shared default is not merging the two surfaces.
-    renderGallery(index({ slots: { hero: "a" } }));
+  it("ONE seat shows it now, and the same picture is a library row in the banner role", async () => {
+    // It used to be shown by two seats (the fleet backdrop and the hero slide). The hero seat died with
+    // the 2026-08-26 ruling and `banner.webp` became an ordinary `banner`-pool entry in the same move —
+    // so the picture has two homes that are two DESTINATIONS: the built-in this ladder ends on, and a
+    // carousel slide the owner can reorder or switch off.
+    renderGallery();
     const fleet = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
-    const hero = await screen.findByRole("button", { name: "Open the Hero slide gallery" });
     expect(fleet.textContent).toContain("built-in"); // unpinned → its ladder's end
-    expect(hero.textContent).toContain("a in use"); // pinned on its own → the pin
+    expect(screen.queryByRole("button", { name: "Open the Hero slide gallery" })).toBeNull();
     // The operator backdrop has no built-in of its own: its ladder ends in the `oracle` ROLE, whose
     // section holds that picture as a real library entry since S6.
     const oracle = await screen.findByRole("button", {
@@ -1024,12 +1028,12 @@ describe("what the card CLAIMS is what the resolver answers (review #3)", () => 
     expect(card.textContent).toContain("pinned image is missing"); // the chip still points at the fix
   });
 
-  it("…and a resolved seat names the row the RESOLVER picked, pin or fall-through", async () => {
-    // The hero slide has no pin of its own: its ladder reads the fleet backdrop's. The card says what
-    // that ladder resolved, which is the whole of §2.4's one-resolver rule.
+  it("…and a resolved seat names the row the RESOLVER picked", async () => {
+    // The other half of the same rule: with the pin resolving, the card names the row it resolved TO —
+    // it never restates the raw pin value, which is what let a dangling one read as "in use".
     renderGallery(index({ slots: { wallpaper: "b" } }));
-    const hero = await screen.findByRole("button", { name: "Open the Hero slide gallery" });
-    expect(hero.textContent).toContain("b in use");
+    const card = await screen.findByRole("button", { name: "Open the Fleet backdrop gallery" });
+    expect(card.textContent).toContain("b in use");
   });
 });
 

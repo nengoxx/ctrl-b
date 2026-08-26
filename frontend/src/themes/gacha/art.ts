@@ -123,12 +123,15 @@ function byName(name: string): string {
  *  gallery" untrue for a whole phase: no role listed the id, so no gallery could show it. */
 export const CHARACTER_KEYS = ["pegasus", "atlas", "3", "4", "lyra", "rook"] as const;
 
-/** The owner's banner-art drops (G1 eyeball round 3), which ride the pickup carousel as EXTRA SLIDES
- *  beside the hero and the per-host promos — the owner's pick over cycling the hero's art. NAMED rather
- *  than a bare URL list because each one needs a stable slide KEY; what a scene's dot announces is its
- *  VISIBLE title, picked from the `SCENE_TITLES` pool by position, not this name.
- *  When G5's role-scoped media folders land, its banner folder feeds this same list: a one-line source
- *  swap, exactly like the roster's. */
+/** The owner's banner-art drops (G1 eyeball round 3), which ride the pickup carousel ahead of the
+ *  per-host promos. NAMED rather than a bare URL list because each one needs a stable slide KEY; what a
+ *  scene's dot announces is its VISIBLE title, picked from the `SCENE_TITLES` pool by position, not this
+ *  name.
+ *
+ *  These are the SLIDE assets this manifest holds, not the whole pool: `banner` below is a member too
+ *  (owner ruling 2026-08-26), and the pool's one list — the order the carousel deals, first member
+ *  first — is `BUNDLED_SCENES` in roster.ts, which composes both. The manifest stays split because
+ *  `banner` is also the fleet backdrop's own last rung and is addressed by name for that. */
 export const SCENE_KEYS = ["b2", "b3"] as const;
 
 export const ART = {
@@ -139,7 +142,8 @@ export const ART = {
   /** Landscape scene art: the pickup banner / fleet wallpaper, and the agent oracle's backdrop. */
   banner: byName("banner"),
   oracle: byName("oracle"),
-  /** The banner's extra scene slides. PARTITIONED like `banner`/`oracle` and for the same reason: scene
+  /** The banner's own scene slides — `banner` above joins them in the roster's pool list, so this is the
+   *  manifest's half rather than the whole. PARTITIONED like `banner`/`oracle` and for the same reason: scene
    *  art is never an entry in the per-host cycle, so it can never be dealt to a machine as its capsule
    *  portrait (the frontier partition rule; the roster's own test pins it). */
   scenes: SCENE_KEYS.map((name) => ({ name, url: byName(name) })),

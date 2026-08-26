@@ -76,8 +76,13 @@ export interface RosterSlots {
   reel_figure?: string;
   oracle?: string;
   wallpaper?: string;
-  /** The fixed hero slide's art; defaults to the wallpaper pick (§5.2). */
-  hero?: string;
+  // NO `hero` PIN — RETIRED by the owner ruling of 2026-08-26 ("W5"). The carousel's first slide no
+  // longer has art of its own to bind: it DEALS the banner pool's first usable member (`bannerScenes`
+  // below), so a seat over the cast would be a second, contradictory answer to "which picture opens the
+  // carousel". A clean removal, no compat rung — media v2 has never shipped to prod, so there is no
+  // owner data to migrate (the no-legacy-seams rule; the `wallpaper/` role's removal at G6.3 is the
+  // precedent). A hand-authored `hero:` pin is now an unknown slot key, which the config validator
+  // refuses out loud rather than honouring silently (`Settings._known_media_namespaces_roles_and_slots`).
 }
 
 /** The single-pick role pools the owner's `media/gacha/<role>/` folders feed (§5.4's re-rule:
@@ -98,9 +103,12 @@ export interface RolePools {
 export interface Roster {
   entries: RosterEntry[];
   slots: RosterSlots;
-  /** The banner role's slides (§6.4) — the owner's `banner/` drops, else the bundled pair. Named
+  /** The banner role's members (§6.4) — the owner's `banner/` drops, else the bundled set. Named
    *  because each slide needs a stable KEY; the visible title comes from the `SCENE_TITLES` pool by
-   *  position, never from this name. */
+   *  position, never from this name.
+   *
+   *  The FIRST usable member is the carousel's opening slide and wears the frozen hero copy; the rest
+   *  are the scene slides (`bannerScenes` below is the one split). */
   scenes: NamedArt[];
   /** The owner's other role pools. See `RolePools`. */
   pools: RolePools;
@@ -174,11 +182,27 @@ const BUNDLED_ENTRIES: RosterEntry[] = [
  *  (which `GachaAgent` already renders: the block keeps its own gradient). */
 const BUNDLED_ORACLE: NamedArt[] = [{ name: "oracle", url: ART.oracle }];
 
+/** The BANNER pool's bundled members, in the order the carousel deals them — and the ONE list both
+ *  `defaultRoster()` and `sceneUrl` read, so a bundled id the gallery offers can never be one this
+ *  module fails to map back to an asset.
+ *
+ *  `banner` is the TAIL member (owner ruling 2026-08-26, "W5"). It is the picture the fleet backdrop's
+ *  ladder ends on, and until that ruling it reached the carousel only as the fixed first slide's last
+ *  fallback — art in no pool, therefore in no gallery, unorderable and un-retirable. It is an ordinary
+ *  library entry now, on exactly the terms `rook` and the oracle backdrop became ones at S6. The
+ *  BACKDROP still ends on it independently (`wallpaperArt`), which is a different surface with a
+ *  different ladder — switching this entry off takes its SLIDE out of the carousel and leaves the
+ *  backdrop alone. */
+const BUNDLED_SCENES: NamedArt[] = [
+  ...ART.scenes.map((s) => ({ name: s.name, url: s.url })),
+  { name: "banner", url: ART.banner },
+];
+
 export function defaultRoster(): Roster {
   return {
     entries: BUNDLED_ENTRIES,
     slots: {},
-    scenes: ART.scenes.map((s) => ({ name: s.name, url: s.url })),
+    scenes: BUNDLED_SCENES,
     pools: {
       oracle: BUNDLED_ORACLE,
       // The reel pool is different, and the difference is the PIN (§5.2 / Codex F4): the figure can be
@@ -218,9 +242,9 @@ export function castRows(rows: readonly MediaFile[]): MediaFile[] {
   return ladderRows(rows);
 }
 
-/** The banner's SCENE slides — every usable entry, in order. Usability decides the tier here (the
- *  `usableLadderRows` half of the pair): a folder holding nothing but broken slides falls back to the
- *  bundled pair rather than showing an empty carousel. */
+/** The banner POOL — every usable entry, in order (the first opens the carousel, the rest are scene
+ *  slides). Usability decides the tier here (the `usableLadderRows` half of the pair): a folder holding
+ *  nothing but broken slides falls back to the bundled set rather than showing an empty carousel. */
 export function sceneRows(rows: readonly MediaFile[]): MediaFile[] {
   return usableLadderRows(rows);
 }
@@ -267,15 +291,16 @@ export function activeOraclePool(
 
 /** A SEAT (§2.1's pin-backed section): a read-only view over the source role where the ONE write is
  *  the pin. Active = the row the pin names, resolved against this same list — a dangling pin marks
- *  nothing, exactly as the ladder falls through. */
-export function activeSeat(slot: string, ...fallbacks: string[]) {
+ *  nothing, exactly as the ladder falls through.
+ *
+ *  It took a chain of FALLBACK pin keys until 2026-08-26, for the one seat that read another's pin (the
+ *  hero slide followed the fleet backdrop's). That seat is gone with the ruling that retired it, and the
+ *  parameter went with it rather than sitting unused — every remaining seat reads its own pin alone. */
+export function activeSeat(slot: string) {
   return (rows: readonly LibraryRow[], slots: Readonly<Record<string, string>>): ActiveArt => {
-    for (const key of [slot, ...fallbacks]) {
-      const name = slotEntryName(slots, key);
-      const row = name === undefined ? undefined : rows.find((r) => r.name === name && !r.unusable);
-      if (row !== undefined) return { ids: [rowId(row)], mode: "first" };
-    }
-    return { ids: [], mode: "first" };
+    const name = slotEntryName(slots, slot);
+    const row = name === undefined ? undefined : rows.find((r) => r.name === name && !r.unusable);
+    return { ids: row === undefined ? [] : [rowId(row)], mode: "first" };
   };
 }
 
@@ -376,7 +401,7 @@ function toNamed(f: MediaFile, bundledUrl: string | undefined): NamedArt {
 }
 
 const sceneUrl = (id: string | null | undefined): string | undefined =>
-  ART.scenes.find((s) => s.name === id)?.url;
+  BUNDLED_SCENES.find((s) => s.name === id)?.url;
 const cutoutUrl = (id: string | null | undefined): string | undefined =>
   id == null ? undefined : BUNDLED_BY_ID.get(id)?.cutout;
 const oracleUrl = (id: string | null | undefined): string | undefined =>
@@ -483,19 +508,41 @@ function toKitArt(file: MediaFile | undefined): ResolvedArt | null {
  *
  *  VISIBILITY stays split, deliberately: gacha's own "Banner wallpaper" switch governs this surface (it is
  *  gacha's), and the kit's "Shared background" switch governs the kit LAYER, which gacha does not mount. A
- *  theme's own switch owning its own surface is the same rule §4.4 already runs on. */
+ *  theme's own switch owning its own surface is the same rule §4.4 already runs on.
+ *
+ *  **THIS SURFACE IS THE BACKDROP'S ALONE** (owner ruling 2026-08-26, "W5"). It used to be shared with the
+ *  carousel's first slide — §5.3's "two pictures disagreeing reads as a bug" applied to the fleet screen —
+ *  and the owner REVERSED that: the carousel now deals its own opening slide out of the banner pool
+ *  (`bannerScenes`), so setting a kit background moves the backdrop and leaves the carousel where it is.
+ *  The two are different destinations with different libraries, and showing two pictures at once is what
+ *  the screen is for. */
 export function wallpaperArt(roster: Roster, kitBackground?: MediaFile): ResolvedArt {
   return (
     toWideArt(slotEntry(roster, "wallpaper")) ?? toKitArt(kitBackground) ?? { url: ART.banner }
   );
 }
 
-/** The fixed hero slide's art — its own pin, else the whole wallpaper ladder above (§5.2's stated default),
- *  kit rung included: the hero slide and the fleet backdrop resolving to two different pictures is exactly
- *  the disagreement §5.3's one-resolver ruling exists to prevent, so the argument is threaded rather than
- *  dropped one call deep. */
-export function heroArt(roster: Roster, kitBackground?: MediaFile): ResolvedArt {
-  return toWideArt(slotEntry(roster, "hero")) ?? wallpaperArt(roster, kitBackground);
+/** The pickup carousel's two art sources (§6.4, owner ruling 2026-08-26 "W5") — ONE split, here, because
+ *  "which member opens the carousel" is ladder knowledge and every other ladder lives in this module:
+ *
+ *    · `lead` — the banner pool's FIRST usable member, which wears the frozen PICKUP / NETWORK PRIZE POOL
+ *      copy. An EMPTY pool (every entry switched off, or every file broken) keeps the slide and paints the
+ *      fleet backdrop's own resolution instead: the carousel must never lose its first slide, and the
+ *      backdrop is the only other picture this screen is certain to have.
+ *    · `rest` — the scene slides, titled from the `SCENE_TITLES` pool by their position in THIS list.
+ *
+ *  The members are passed WHOLE rather than as bare urls: a `banner` item is `framable` (§5), so its focal
+ *  point and its `?rev=` identity have to reach the paint site with it.
+ *
+ *  No usability filter here, and that is the schema's doing rather than an omission: `sceneRows` is the
+ *  role's tier rule and it is the `usableLadderRows` half of the pair, so what reaches `Roster.scenes` is
+ *  already only what can paint — which is why a scene member carries no `unusable` flag to re-check. */
+export function bannerScenes(
+  roster: Roster,
+  kitBackground?: MediaFile,
+): { lead: ResolvedArt; rest: NamedArt[] } {
+  const [first, ...rest] = roster.scenes;
+  return { lead: first ?? wallpaperArt(roster, kitBackground), rest };
 }
 
 /** The agent oracle's backdrop — the `oracle` SEAT pin (a character bound into the block), else the

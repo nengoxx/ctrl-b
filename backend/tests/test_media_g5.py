@@ -213,7 +213,10 @@ def test_the_bundled_ids_are_the_ones_the_front_end_derives() -> None:
     bundled = {ns: {r: c.bundled for r, c in row.roles.items()} for ns, row in MEDIA_NAMESPACES.items()}
     assert bundled["gacha"] == {
         "characters": ("pegasus", "atlas", "3", "4", "lyra", "rook"),
-        "banner": ("b2", "b3"),
+        # `banner` is the TAIL member (the 2026-08-26 owner ruling, "W5"): the picture the fleet
+        # BACKDROP's ladder ends on, which until then reached the carousel only as a fixed slide's
+        # fallback — so it was in no role's list and therefore in no gallery. Same defect, same fix.
+        "banner": ("b2", "b3", "banner"),
         "reel": ("lyra",),
         "oracle": ("oracle",),
     }
@@ -1099,6 +1102,33 @@ def test_the_gacha_wallpaper_PIN_outlives_its_deleted_role_folder(home: Path) ->
         )
         assert r.status_code == 200, r.text
         assert c.get("/api/media/gacha").json()["slots"] == {"wallpaper": "kira"}
+
+
+def test_the_retired_hero_PIN_is_refused_rather_than_silently_inert(home: Path) -> None:
+    """The 2026-08-26 owner ruling ("W5") retired the `hero` pin: the pickup carousel's first slide now
+    DEALS the `banner` role's first member, so there is no art of its own to bind and a seat over the cast
+    would be a second, contradictory answer to which picture opens the banner.
+
+    A clean removal on the `wallpaper`-ROLE precedent above — media v2 has never shipped to prod, so no
+    config on disk holds the pin and there is nothing to migrate (the no-legacy-seams rule). What this
+    arm pins is what a hand-authored leftover DOES: `hero` is now an unknown slot key, and the registry
+    validator refuses it out loud rather than accepting a knob that would silently do nothing. That is
+    the same treatment the deleted `wallpaper` role gets, and it is a 422 rather than a crash: the write
+    path answers, the running server is untouched, and the message names the keys that are real.
+
+    The three that survive are the ones with a destination: `wallpaper` and `oracle` bind a CHARACTER into
+    a backdrop, and `reel_figure` overrides the reel pool's own first pick."""
+    assert MEDIA_NAMESPACES["gacha"].slots == ("wallpaper", "oracle", "reel_figure")
+    with make_client() as c:
+        (role(home, "characters") / "kira.png").write_bytes(png_bytes())
+        r = c.put(
+            "/api/settings",
+            json={"media": {"namespaces": {"gacha": {"slots": {"hero": "kira"}}}}},
+        )
+        assert r.status_code == 422, r.text
+        assert "hero" in r.text
+        # …and nothing was persisted on the way to the refusal.
+        assert c.get("/api/media/gacha").json()["slots"] == {}
 
 
 #: The G5 development shape, which never reached a tagged release (prod was pre-media) — so D53 §4

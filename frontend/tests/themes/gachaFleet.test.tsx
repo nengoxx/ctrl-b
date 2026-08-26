@@ -21,7 +21,7 @@ vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
 const media = vi.hoisted(() => ({ data: undefined as MediaIndex | undefined }));
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 
-import type { MediaIndex } from "../../src/hooks/useMedia";
+import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
 import { runViewTransition } from "../../src/lib/viewTransition";
 import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setUI } from "../../src/store/ui";
@@ -76,13 +76,15 @@ function setFleet(over: Record<string, unknown> = {}): void {
 }
 
 const slides = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>(".gc-slide")];
-/** The PROMO slides alone. The set is hero + the bundled scenes + one promo per host, so a promo's index
- *  in the strip shifts with the scene count — queried by kind rather than counted from the hero. */
+/** The PROMO slides alone. The set is the banner pool + one promo per host, so a promo's index in the
+ *  strip shifts with the pool's size — queried by kind rather than counted from the first slide. */
 const promos = (c: HTMLElement): HTMLElement[] => [
   ...c.querySelectorAll<HTMLElement>(".gc-slide.promo"),
 ];
-/** hero + the two bundled banner scenes — every slide that is not a machine. */
-const SCENERY = 1 + ART.scenes.length;
+/** Every slide that is not a machine — one per BANNER-POOL member since the 2026-08-26 ruling, the first
+ *  of them wearing the frozen hero dressing. (Three, as before: the pool gained `banner.webp` in the same
+ *  ruling that stopped the first slide being an extra one, so the count is unchanged.) */
+const SCENERY = defaultRoster().scenes.length;
 const rate = (c: HTMLElement): string => c.querySelector(".gc-banner-rate span")!.textContent ?? "";
 /** the SECOND pill in that row — 天井 + the fleet-wide online-service count */
 const pity = (c: HTMLElement): string =>
@@ -90,7 +92,7 @@ const pity = (c: HTMLElement): string =>
 
 /** G5 — a media index payload. `mediaFile` builds one servable file; the default `media.data` is
  *  `undefined` (no owner files ⇒ the bundled art), which every case above relies on. */
-const mediaFile = (name: string, role: string) => ({
+const mediaFile = (name: string, role: string): MediaFile => ({
   name,
   file: `${name}.webp`,
   url: `/api/media/gacha/files/${role}/${name}.webp`,
@@ -159,12 +161,41 @@ describe("the slide set (§6.4)", () => {
     expect(promos(container)).toHaveLength(2);
   });
 
+  it("opens the carousel on the banner pool's FIRST member, wearing the frozen hero copy", () => {
+    // The 2026-08-26 ruling ("W5"): slide 1's DRESSING is fixed and its ART is dealt, so a fresh install
+    // opens on `b2` while the fleet BACKDROP still ends on `banner.webp`. Two pictures, on purpose.
+    const { container } = render(<GachaFleet active />);
+    const lead = slides(container)[0];
+    expect(lead.querySelector("img")!.getAttribute("src")).toBe(defaultRoster().scenes[0].url);
+    expect(lead.textContent).toContain("PRIZE POOL");
+    expect(lead.querySelector("button")).toBeNull(); // inert, like the scenes after it
+  });
+
+  it("hands each slide its member's FOCAL POINT — the banner role is framable (§5)", () => {
+    // The defect this arm closes: the scene slides were built as `{url: scene.url}`, so an owner's
+    // framing point on a banner image reached nothing at all. The member rides down whole now.
+    media.data = mediaIndex({
+      banner: [
+        { ...mediaFile("wide", "banner"), focal: { x: 0.25, y: 0.75, rev: "1:1" } },
+        { ...mediaFile("tall", "banner"), focal: { x: 0.8, y: 0.1, rev: "1:1" } },
+      ],
+    });
+    const { container } = render(<GachaFleet active />);
+    const pos = [...container.querySelectorAll<HTMLImageElement>(".gc-slide img")]
+      .slice(0, 2)
+      .map((i) => i.style.objectPosition);
+    // jsdom cannot measure a window, which is the recorded proportional degrade — so each point paints
+    // as its own percentage pair. Both the LEAD and the scene after it carry theirs.
+    expect(pos).toEqual(["25% 75%", "80% 10%"]);
+  });
+
   it("renders the SCENES with the TEMPLATED copy block, numbered, and with nothing to open", () => {
     const { container } = render(<GachaFleet active />);
     const scenery = slides(container).slice(1, SCENERY);
-    expect(scenery).toHaveLength(ART.scenes.length);
+    const rest = defaultRoster().scenes.slice(1);
+    expect(scenery).toHaveLength(rest.length);
     for (const [i, el] of scenery.entries()) {
-      expect(el.querySelector("img")!.getAttribute("src")).toBe(ART.scenes[i].url);
+      expect(el.querySelector("img")!.getAttribute("src")).toBe(rest[i].url);
       // The template generalizes: the Nth dropped image takes the Nth pool name, no line authored for it.
       const copy = el.querySelector(".gc-banner-copy")!;
       expect(copy.querySelector(".tag")!.textContent).toBe(GACHA_COPY.sceneTag);
@@ -1793,14 +1824,17 @@ describe("owner media (G5)", () => {
       "/api/media/gacha/files/characters/kira.webp",
     );
 
-    // ONE scene slide (the owner's single drop replaces the bundled pair outright), and no character has
-    // leaked into it — the roles are independent pools. Scenes are the strip between the hero and the
-    // promos, the same way every other case in this file addresses them.
+    // ONE banner member (the owner's single drop replaces the bundled set outright), and no character
+    // has leaked into it — the roles are independent pools. Since the 2026-08-26 ruling that member is
+    // the FIRST slide rather than a slide after a fixed one, so the strip between the lead and the
+    // promos is empty and the lead itself carries the owner's picture.
     const scenery = slides(container).slice(1, slides(container).length - promos(container).length);
-    expect(scenery).toHaveLength(1);
-    expect(scenery[0].querySelector("img")!.src).toContain(
+    expect(scenery).toHaveLength(0);
+    expect(slides(container)[0].querySelector("img")!.src).toContain(
       "/api/media/gacha/files/banner/scene1.webp",
     );
+    // …still wearing the frozen hero dressing: the COPY is fixed, only the art is dealt.
+    expect(slides(container)[0].textContent).toContain("PRIZE POOL");
   });
 
   it("an owner role the fleet does not use leaves the surfaces on the bundled art", () => {
@@ -1809,6 +1843,6 @@ describe("owner media (G5)", () => {
     expect(container.querySelector<HTMLImageElement>(".gc-card img")!.src).toContain(
       ART.characters[0],
     );
-    expect(slides(container).slice(1, SCENERY)).toHaveLength(ART.scenes.length);
+    expect(slides(container).slice(1, SCENERY)).toHaveLength(defaultRoster().scenes.length - 1);
   });
 });
