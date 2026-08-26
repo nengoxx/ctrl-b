@@ -11,6 +11,7 @@ import Cropper, { type Area, type MediaSize } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 
 import { FocalImg } from "../FocalImg";
+import { XIcon } from "../icons";
 import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
 import type { LibraryItem } from "../../hooks/useMediaLibrary";
 import { centredFocal, type FocalPoint } from "../../lib/focalPosition";
@@ -320,7 +321,7 @@ export function FramingSheet({
         <div className="pm-head">
           <h3 id={labelId}>Set framing</h3>
           <button className="pm-x" aria-label="Close" onClick={close}>
-            ✕
+            <XIcon />
           </button>
         </div>
         <p className="mgal-frame-lede">

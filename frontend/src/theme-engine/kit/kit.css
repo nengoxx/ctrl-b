@@ -6222,21 +6222,16 @@ body[data-perf="lite"] .kit .navmenu-pop {
   font-size: 12px;
   color: var(--text);
 }
-/* RESTORE DEFAULTS (S6) — a section-level action, so it sits with the section's own copy above the
- * grid rather than in the per-item detail panel. Its sentence carries the whole of what it does not do
- * (your images stay), because that is the question the word "restore" raises. */
+/* RESTORE DEFAULTS (S6) — a section-level action, so it sits at the END of the body's bottom cluster
+ * ("W10"), under the two ways of putting a picture IN: the last of the three things that change what
+ * the grid shows. Its explainer paragraph is gone — the confirm dialog says the same two sentences,
+ * and the question the word "restore" raises is answered where it is asked. */
 .kit .mgal-restore {
   display: flex;
   gap: 8px;
   align-items: baseline;
   flex-wrap: wrap;
-  margin: 0 0 10px;
-}
-.kit .mgal-restore small {
-  flex: 1;
-  min-width: 140px;
-  font-size: 11px;
-  color: var(--text-3);
+  margin: 0;
 }
 .kit .mgal-card-tag {
   position: absolute;
@@ -6365,6 +6360,18 @@ body[data-perf="lite"] .kit .navmenu-pop {
  * 60: it OPENS the confirm dialog (z 50) for a delete, so it must sit under it. */
 .kit .pm-backdrop.mgal-pm {
   z-index: 45;
+}
+/* THE HEADER carries the section's ONE status line under its title ("W10"), so the body opens on the
+ * pictures instead of on five stacked paragraphs. The head is a two-child flex row like every other
+ * `.pm-head`; what changed is that its first child is a stack, which is why the ✕ aligns to the TOP
+ * rather than to a centre that is now two lines tall. */
+.kit .mgal-modal .pm-head {
+  align-items: flex-start;
+}
+.kit .mgal-title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
 }
 .kit .mgal-body {
   /* The body's SIDE padding, declared here beside the padding itself so the detail stage's
@@ -6608,8 +6615,9 @@ body[data-perf="lite"] .kit .navmenu-pop {
  * sides. `--mgal-body-pad` is declared beside that padding so the two cannot drift. */
 .kit .mgal-stage {
   position: relative;
-  /* Sideways only: the stage sits below the panel's own scope/count lines, not at the top of the
-   * scroller, so cancelling the vertical padding would only pull it into them. */
+  /* Sideways only. Since "W10" the detail panel CAN be the first thing in the scroller (the text
+   * blocks that used to precede it are gone), but the body's top padding stays: the three exceptional
+   * notices still land above it, and a stage flush to the header would leave them nowhere to sit. */
   margin-inline: calc(var(--mgal-body-pad) * -1);
   /* Most of the panel, and phone-first: 52vh leaves the name, the chips and the In-use row in view at
    * 390x844 without a scroll, while the pill overlaps the bottom edge rather than sitting under it. */

@@ -2,6 +2,7 @@ import { useEffect, useId, useReducer, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 
+import { XIcon } from "../icons";
 import { useOverlayBackGuard } from "../../hooks/useOverlayBackGuard";
 import type { CropJob } from "../../hooks/useMediaUpload";
 import type { CropRect } from "../../lib/imageExport";
@@ -186,7 +187,7 @@ export function CropModal({
           {/* "Close", not "Cancel" — the house ✕ label, and it keeps the two controls that both
               unwind this modal from sharing one accessible name. */}
           <button className="pm-x" aria-label="Close" onClick={close}>
-            ✕
+            <XIcon />
           </button>
         </div>
         <div className="mgal-crop-stage">

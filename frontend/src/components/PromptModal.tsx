@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { WarnRow } from "./WarnRow";
+import { XIcon } from "./icons";
 import { modalKeyDown } from "../lib/focusTrap";
 import { resolvePrompt, resolvePromptPair, usePrompt } from "../store/prompt";
 import type { PromptPair } from "../types";
@@ -96,7 +97,7 @@ export function PromptModal() {
         <div className="pm-head">
           <h3 id={labelId}>{req.title}</h3>
           <button className="pm-x" aria-label="Close" onClick={() => resolvePrompt(null)}>
-            ✕
+            <XIcon />
           </button>
         </div>
         {req.kind === "pair" ? (

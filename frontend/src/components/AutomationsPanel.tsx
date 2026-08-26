@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { NumField } from "./NumField";
+import { XIcon } from "./icons";
 import { Seg } from "./Seg";
 import { Switch } from "./Switch";
 import { useAgentList } from "../hooks/useAgents";
@@ -446,7 +447,7 @@ function AutomationSheet({ doc, automation, onClose }: SheetProps) {
         <div className="pm-head">
           <h3 id={labelId}>{automation ? automation.name : "New automation"}</h3>
           <button className="pm-x" aria-label="Close" onClick={() => void tryClose()}>
-            ✕
+            <XIcon />
           </button>
         </div>
         <div className="pm-body pm-scroll">

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { ItemDetail } from "./ItemDetail";
 import { LibraryGrid } from "./LibraryGrid";
+import { XIcon } from "../icons";
 import {
   libraryItems,
   scopedRows,
@@ -148,6 +149,9 @@ export function GalleryModal({
   const count = `${items.length} ${items.length === 1 ? "image" : "images"}${
     problems > 0 ? ` · ${problems} will not paint` : ""
   }`;
+  /** How this destination uses what is in use — the header line's second half, or `undefined` where
+   *  there is nothing honest to say (see `reading`). */
+  const mode = reading(view, scope, active);
   // A section can only "restore" what it SHIPS, and only while the owner has said something about it.
   // A SEAT is excluded by the same fact that makes it a view: its one write is the pin, and clearing
   // that pin is the restore it already offers.
@@ -179,9 +183,27 @@ export function GalleryModal({
         tabIndex={-1}
       >
         <div className="pm-head">
-          <h3 id={labelId}>{title(section, scope)}</h3>
+          {/* THE HEADER SAYS WHAT THIS SECTION IS AND WHAT IS IN IT, and nothing else does ("W10"). The
+              body used to open with five stacked text blocks — the folder path, the role hint (verbatim
+              on the card underneath), the reading sentence, the count and the restore explainer — so the
+              owner scrolled past a paragraph to reach the pictures they came for. What survives is one
+              line: the count, and how this destination uses what is in use.
+
+              It stays the section's ONE `role="status"` live region (#12): a delete changes the count
+              while the owner is looking somewhere else, and a second status would make "the live region"
+              ambiguous to anything that goes looking for it (the grid's drag announcer is a bare
+              `aria-live` for exactly that reason). `· saving…` rides it because it is the same fact
+              about the same list. */}
+          <div className="mgal-title">
+            <h3 id={labelId}>{title(section, scope)}</h3>
+            <p className="mgal-count" role="status">
+              {count}
+              {mode !== undefined && ` · ${mode}`}
+              {busy && " · saving…"}
+            </p>
+          </div>
           <button className="pm-x" aria-label="Close" onClick={close}>
-            ✕
+            <XIcon />
           </button>
         </div>
         {/* The DESKTOP riders (R54 §5.4): `preventDefault` on dragover is what makes an element a drop
@@ -202,33 +224,11 @@ export function GalleryModal({
           }}
           onPaste={(e) => upload.offer(e.clipboardData.files[0])}
         >
-          {section.caps.upload && (
-            <>
-              {/* HIDDEN, `accept`ed by explicit types, and NO `capture` (R54 §5.1/§5.4): both engines
-                  already offer the camera in the chooser for an image accept list, and `capture`
-                  would make the camera the only option. `input.value` is reset in the handler. */}
-              <input
-                ref={upload.inputRef}
-                type="file"
-                accept={UPLOAD_ACCEPT}
-                hidden
-                onChange={upload.onInputChange}
-              />
-              <button
-                type="button"
-                className="mgal-add"
-                disabled={!upload.ready || upload.busy}
-                onClick={upload.pick}
-              >
-                <span aria-hidden>＋</span> {upload.busy ? working(upload.phase) : "Add an image"}
-                <small>
-                  {upload.busy
-                    ? "keep this open until it finishes"
-                    : "a photo or a picture — you can crop it next"}
-                </small>
-              </button>
-            </>
-          )}
+          {/* ── ABOVE THE GRID: only the EXCEPTIONAL ("W10") ────────────────────────────────────────
+              Three notices, and each one is a state the owner has to act on rather than a standing
+              description: a job that failed, a pin naming nothing, a seat painting its built-in. Every
+              sentence that was merely TRUE — the path, the hint, the reading — moved out of the way of
+              the pictures (the header line above, the card underneath, the folder line below). */}
           {upload.failure !== null && (
             <p className="mgal-fail" role="status">
               <b>{failureTitle(upload.failure.phase)}</b> {upload.failure.message}
@@ -242,24 +242,6 @@ export function GalleryModal({
               </button>
             </p>
           )}
-          <p className="mgal-scope">
-            <span className="path">
-              media/{section.ns}/{section.role}/
-            </span>
-            {section.hint != null && <span className="mgal-hint">{section.hint}</span>}
-            {/* What the In-use switches BUY here, in the gallery's own vocabulary — beside the role's
-                own hint, never instead of it (the hint says what the pictures are for; this says how
-                many of them are on screen at once). */}
-            {reading(view, scope, active) !== undefined && (
-              <span className="mgal-hint">{reading(view, scope, active)}</span>
-            )}
-          </p>
-          {/* The header count is what keeps the tiles free of diagnostics text — and a live region,
-              because a delete changes it while the owner is looking somewhere else (#12). */}
-          <p className="mgal-count" role="status">
-            {count}
-            {busy && " · saving…"}
-          </p>
           {/* A pin naming something the library no longer holds. The theme has already degraded to its
               own next rung, but the VALUE is still in config and nothing else on this screen can reach
               it — there is no tile to select. So the notice carries its own way out. */}
@@ -285,32 +267,11 @@ export function GalleryModal({
               </span>
             </p>
           )}
-          {/* RESTORE DEFAULTS (S6) — shown only where this section HAS shipped art and the owner has
-              said something about it (`defaultsRestorable`), so a section still exactly as it came
-              carries no control at all. Scoped to what is on screen: a key gallery restores its own
-              layer. */}
-          {restorable && (
-            <p className="mgal-restore">
-              <button
-                type="button"
-                className="mgal-act"
-                disabled={busy || !ready}
-                onClick={() => {
-                  void confirmRestore(section, () =>
-                    write.restoreDefaults(section, new Set(items.map((i) => i.id))),
-                  );
-                }}
-              >
-                Restore defaults
-              </button>
-              <small>
-                Puts the default images on top and back in use. Your own images stay, switched off.
-              </small>
-            </p>
-          )}
+          {/* ── THE GRID LEADS ("W10") ─────────────────────────────────────────────────────────────
+              The pictures are what this screen is, and they are the first thing in it. */}
           {items.length === 0 ? (
             <p className="mgal-empty">
-              Empty — use <b>Add an image</b> above, or copy .png/.jpg/.webp files into the folder.
+              Empty — use <b>Add an image</b> below.
             </p>
           ) : selected !== undefined ? (
             <ItemDetail
@@ -371,19 +332,91 @@ export function GalleryModal({
               }}
             />
           )}
+          {/* ── BELOW THE GRID: how to PUT SOMETHING IN IT ("W10") ─────────────────────────────────
+              The three ways to change what is above, in the order they are reached for: the picker,
+              the folder (the same library, over SSH), and the way back to what shipped. */}
+          {section.caps.upload && (
+            <>
+              {/* HIDDEN, `accept`ed by explicit types, and NO `capture` (R54 §5.1/§5.4): both engines
+                  already offer the camera in the chooser for an image accept list, and `capture`
+                  would make the camera the only option. `input.value` is reset in the handler. */}
+              <input
+                ref={upload.inputRef}
+                type="file"
+                accept={UPLOAD_ACCEPT}
+                hidden
+                onChange={upload.onInputChange}
+              />
+              <button
+                type="button"
+                className="mgal-add"
+                disabled={!upload.ready || upload.busy}
+                onClick={upload.pick}
+              >
+                <span aria-hidden>＋</span> {upload.busy ? working(upload.phase) : "Add an image"}
+                <small>
+                  {upload.busy
+                    ? "keep this open until it finishes"
+                    : "a photo or a picture — you can crop it next"}
+                </small>
+              </button>
+            </>
+          )}
+          {/* THE FOLDER, as the OTHER way in rather than as a fact about the section — one line doing
+              the work of two ("W10"): the standalone path paragraph said where the files live without
+              saying why the owner would care, and the empty state repeated the same instruction in
+              words. An SSH drop is addressed by folder and nothing else, so the path itself stays
+              verbatim; what changed is that it now reads as the sentence it always was. */}
+          <p className="mgal-scope">
+            <span className="path">
+              {section.caps.upload ? "or copy" : "Copy"} .png/.jpg/.webp files into media/
+              {section.ns}/{section.role}/
+            </span>
+          </p>
+          {/* RESTORE DEFAULTS (S6) — shown only where this section HAS shipped art and the owner has
+              said something about it (`defaultsRestorable`), so a section still exactly as it came
+              carries no control at all. Scoped to what is on screen: a key gallery restores its own
+              layer.
+
+              Its explainer is GONE ("W10"): the confirm dialog this opens says the same two sentences,
+              and saying them twice put a paragraph above the pictures to describe a button the owner
+              had not pressed yet. */}
+          {restorable && (
+            <p className="mgal-restore">
+              <button
+                type="button"
+                className="mgal-act"
+                disabled={busy || !ready}
+                onClick={() => {
+                  void confirmRestore(section, () =>
+                    write.restoreDefaults(section, new Set(items.map((i) => i.id))),
+                  );
+                }}
+              >
+                Restore defaults
+              </button>
+            </p>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-/** THE SECTION'S READING (the W8 council's F4) — one sentence saying how this destination uses the
- *  images that are in use, DERIVED from the resolver's own mode word rather than hand-written per role.
+/** THE SECTION'S READING (the W8 council's F4) — how this destination uses the images that are in use,
+ *  DERIVED from the resolver's own mode word rather than hand-written per role.
  *
  *  It is the sentence the gallery was missing: the tiles say which entries are in use and which one is
  *  active, and nothing on the screen said whether that meant one picture, a rotation or a whole set.
  *  Hand-writing it into each role's hint would have been the same claim in twenty places, drifting from
  *  the ladders the moment one changed — so it reads `active.mode`, which IS the resolver's answer.
+ *
+ *  A PHRASE rather than a sentence since "W10": it is the second half of the header's one status line
+ *  (`8 images · dealt to machines in this order`) rather than a paragraph of its own above the grid.
+ *  It stays this module's, deliberately un-shared with the card's own status line (`SectionCard#status`)
+ *  — the two answer different questions of the same resolver: the card says what is live in the section
+ *  ("all 3 shown", "1 active"), this says how the destination CONSUMES its set, and folding them would
+ *  distort both to save one word.
  *
  *  `undefined` where there is nothing honest to say: a SEAT has no In-use and no order (its reading is
  *  the pin, and its own hint states the ladder), the UNASSIGNED bucket paints nowhere, and a role the
@@ -397,9 +430,9 @@ function reading(view: SectionView, scope: GalleryScope, active: ActiveArt): str
   const answers =
     scope.key !== undefined ? view.activeForKey !== undefined : section.active !== undefined;
   if (!answers) return undefined;
-  if (active.mode === "deal") return "In-use images are dealt across the machines in this order.";
-  if (active.mode === "all") return "Every in-use image is shown, in this order.";
-  return "The first in-use image is the one shown.";
+  if (active.mode === "deal") return "dealt to machines in this order";
+  if (active.mode === "all") return "every in-use image is shown, in this order";
+  return "the first in-use image is the one shown";
 }
 
 /** The restore confirm (§6.5 — `requestConfirm`, the house pattern the delete uses). The sentence says

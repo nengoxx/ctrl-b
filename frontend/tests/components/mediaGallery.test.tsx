@@ -657,27 +657,58 @@ describe("the gallery modal (§6.2)", () => {
     // the screen said whether that meant ONE picture, a rotation or a whole set — and the answer differs
     // per role. It reads `active.mode`, so it is the resolver's own answer rather than twenty hand-
     // written sentences drifting from their ladders.
-    const hints = async (name: string) => {
+    //
+    // Since "W10" it is a PHRASE on the header's one status line rather than a paragraph above the
+    // grid — same derivation, same three answers, read where the count is.
+    const reading = async (name: string) => {
       renderGallery();
       const dialog = await openSection(name);
-      const out = [...dialog.querySelectorAll(".mgal-hint")].map((n) => n.textContent);
+      const out = within(dialog).getByRole("status").textContent ?? "";
       cleanup();
       return out;
     };
-    expect(await hints("Characters")).toContain(
-      "In-use images are dealt across the machines in this order.",
-    );
-    expect(await hints("Banner slides")).toContain("Every in-use image is shown, in this order.");
-    expect(await hints("Transition figure")).toContain("The first in-use image is the one shown.");
+    expect(await reading("Characters")).toContain("dealt to machines in this order");
+    expect(await reading("Banner slides")).toContain("every in-use image is shown, in this order");
+    expect(await reading("Transition figure")).toContain("the first in-use image is the one shown");
     // A SEAT gets none: it has no In-use and no order, its reading IS the pin, and its own hint is
     // where the ladder is spelled out.
-    expect((await hints("Fleet backdrop")).join(" ")).not.toMatch(/in-use image/i);
+    expect(await reading("Fleet backdrop")).not.toMatch(/in-use image/i);
   });
 
-  it("counts the library in a live region, so a delete is announced", async () => {
+  it("counts the library in ONE live region, folded with the reading — so a delete is announced", async () => {
     renderGallery();
     const dialog = await openSection("Characters");
-    expect(within(dialog).getByRole("status").textContent).toContain("8 images");
+    // ONE `role="status"` in the section ("W10"): the grid's drag announcer is a bare `aria-live`
+    // precisely so this stays unambiguous, and the count + the mode phrase are one line.
+    const status = within(dialog).getAllByRole("status");
+    expect(status).toHaveLength(1);
+    expect(status[0].textContent).toContain("8 images");
+  });
+
+  it("the BODY opens on the grid, and the ways to add sit under it (the 'W10' order)", async () => {
+    // The owner's third ruling of 2026-08-26: the gallery used to stack five text blocks above the
+    // pictures — the folder path, the role hint (verbatim on the card underneath), the reading, the
+    // count and the restore explainer. The pictures lead now, and what is left below them is the three
+    // ways to change what is in them.
+    renderGallery();
+    const dialog = await openSection("Characters");
+    const body = dialog.querySelector(".mgal-body") as HTMLElement;
+    const order = [...body.children].map((n) => n.className);
+    expect(order.filter((c) => c.includes("mgal-grid"))).toHaveLength(1);
+    const at = (cls: string) => order.findIndex((c) => c.includes(cls));
+    expect(at("mgal-grid")).toBeLessThan(at("mgal-add"));
+    expect(at("mgal-add")).toBeLessThan(at("mgal-scope"));
+    expect(at("mgal-scope")).toBeLessThan(at("mgal-restore"));
+    // The role HINT is the card's, and only the card's — the same sentence twice was the whole reason
+    // the body was five blocks tall.
+    expect(body.querySelector(".mgal-hint")).toBeNull();
+    // One folder line, doing the work the standalone path paragraph and the empty state's own sentence
+    // used to split between them.
+    expect(body.querySelector(".mgal-scope")?.textContent).toBe(
+      "or copy .png/.jpg/.webp files into media/gacha/characters/",
+    );
+    // …and the restore explainer is gone: the confirm dialog says it.
+    expect(body.querySelector(".mgal-restore small")).toBeNull();
   });
 });
 
