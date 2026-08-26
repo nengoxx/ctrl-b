@@ -55,6 +55,12 @@
   fixed 232px, so a wider viewport makes the real slide shorter than 390/232). Owner weighed it
   minor at preview size; the datapoint + the viewport-true refinement candidate are attached to
   §16's preview-honesty probe — **rule it on the phone in S6, not before**.
+- **The owner's PHONE follow-up landed the framing-sheet polish (`f3ef4a8`, main-seat built +
+  visually verified at 390px AND 1280px):** the action row was the app's one stretched full-width
+  trio — now the `pm-actions` house shape (compact, trailing, primary last) with the short verbs
+  **Cancel · Clear · Save**; the preview row spreads across the full width (even flex split capped
+  at 120px, `space-evenly` once the cap binds) instead of three 76px boxes snapped left in the
+  640px modal. Unit + e2e framing pins renamed with `exact: true`.
 
 ## ▶▶ NEXT (2026-08-26, post-W10-close — a NEW session; supersedes the list below)
 
