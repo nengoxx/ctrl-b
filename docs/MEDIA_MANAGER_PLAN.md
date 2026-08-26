@@ -1548,6 +1548,13 @@ drag feel · Fennec expected-partials · the Back-gesture close on device.
 >   they are not — but whether they are USEFUL: set a point on the phone, then walk the fleet, the dossier,
 >   the poster and the cover and say whether the previews predicted what happened. If one of the three
 >   teaches nothing, it is a row to drop; if a fourth window keeps surprising, it is a row to add.
+>   **First owner datapoint (2026-08-26, the W10 desktop round):** the banner preview reads "a little
+>   more white vertically" than the real slide — the recorded at-390px approximation showing itself
+>   (`.gc-banner` is a FIXED 232px tall, so on a wider viewport the real slide is shorter than
+>   390/232); framing outcomes still judged good, and the owner weighed the gap as minor at preview
+>   size. The refinement candidate if this probe upgrades it: compute height-involved aspects from
+>   the LIVE viewport (`innerWidth/232`) instead of the pinned 390 — still an example, honest per
+>   device. Rule it on the phone, not before.
 > · **PER-WINDOW CORRECTNESS ON THE MULTI-WINDOW CAST.** The claim S4 exists to make: ONE library entry,
 >   framed once, staying framed in eight differently-shaped windows. Drive it on the real cast — a
 >   portrait with a face high in the frame, a landscape with the subject off to one side — across all

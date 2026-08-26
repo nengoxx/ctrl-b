@@ -44,24 +44,26 @@
   `replace` phase + copy · rotation scope drops the folder line, empty non-upload sections stop
   promising an absent Add row · the failure row is `role=alert`. **Confirm round: all four RESOLVED
   with line-proof, new defects "none".** Full record = plan §12's W10 as-built block.
-- **Gate green at tip (BE 2,002 · FE 2,619/157 · e2e media specs green). 89 commits UNPUSHED**
-  (origin `fef36aa`). Prod untouched (v1.7.6 @ `6a2ccaa`). Dev units RUNNING — the dev backend was
-  restarted onto the replace arm; :5173 serves everything.
+- **Gate green at tip (BE 2,002 · FE 2,619/157 · e2e media specs green). PUSHED on the owner's word
+  2026-08-26 — origin = local `main` (the whole Phase 21 build, W1–W10, in one push).** Prod
+  untouched (v1.7.6 @ `6a2ccaa`). Dev units RUNNING — the dev backend was restarted onto the replace
+  arm; :5173 serves everything.
+- **The owner's W10 eyeball RAN (desktop, same day): framing works as intended, the ✕ and the
+  image-forward UI look good, "everything works as intended".** One nuance, recorded not built: the
+  framing sheet's banner preview reads slightly taller than the real slide — the recorded at-390px
+  approximation (previews are EXAMPLES by council M4/R57 §4③ and captioned so; `.gc-banner` is a
+  fixed 232px, so a wider viewport makes the real slide shorter than 390/232). Owner weighed it
+  minor at preview size; the datapoint + the viewport-true refinement candidate are attached to
+  §16's preview-honesty probe — **rule it on the phone in S6, not before**.
 
-## ▶▶ NEXT (2026-08-26, post-W10 — supersedes the list below)
+## ▶▶ NEXT (2026-08-26, post-W10-close — a NEW session; supersedes the list below)
 
-1. **Owner eyeball on dev (:5173) — the W10 surfaces:** the gallery's new shape (grid first, one
-   status line, the bottom cluster) · the ✕ · tap a CHARACTER default → **Framing** (set a point,
-   watch every window re-aim; **Clear framing** returns the shipped look) · tap an own file →
-   the **Edit pencil** (re-crop lands under the same name; order/In-use/binding survive; the old
-   framing correctly reads "not set" afterwards).
-2. **The PUSH ruling** (owner's word) — **89 commits** with this block's docs commit, origin
-   `fef36aa`.
-3. **S6 proper** — unchanged, THE one slice left (plan §16 + the W6 note), now also covering the
-   W10 surfaces on a real thumb (the 36px Edit/back pills one-handed · the bottom Add row's reach ·
-   framing a default on the phone); then **release** (1.7.x · runbook §Release Opus-operated ·
-   config_version 1→2 rides it · LOCAL e2e before the tag · rollback v1.7.6).
-4. **Recorded follow-ups (not owed now):** everything the previous block lists, plus W10's own
+1. **S6 proper — THE one slice left** (plan §16 + the W6 note): the phone-in-hand device round over
+   Tailscale HTTPS, now also covering the W10 surfaces on a real thumb (the 36px Edit/back pills
+   one-handed · the bottom Add row's reach · framing a default on the phone · §16's preview-honesty
+   probe now carrying the owner's first datapoint); then **release** (1.7.x · runbook §Release
+   Opus-operated · config_version 1→2 rides it · LOCAL e2e before the tag · rollback v1.7.6).
+2. **Recorded follow-ups (not owed now):** everything the previous block lists, plus W10's own
    residuals (re-crop generation loss · the 412-on-lost-response class · bundled re-art inherits a
    stored point · the delivery-never-throws contract).
 
