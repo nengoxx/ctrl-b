@@ -394,7 +394,7 @@ describe("rosterFromIndex — the owner's media folders drive the roster (§5.4)
 
   it("…and with NO point the shipped hand-tuned string passes through BYTE-IDENTICALLY", () => {
     // The paint-parity line for the whole arm: a fresh install is the theme that always shipped, and
-    // "Clear framing" is the way back to exactly this.
+    // The sheet's "Clear" is the way back to exactly this.
     const [pegasus] = rosterFromIndex(index({ characters: castTier })).entries;
     expect(pegasus.focus).toEqual({ mode: "proportional", value: "50% 12%" });
   });

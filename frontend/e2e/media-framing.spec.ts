@@ -199,7 +199,7 @@ test("the framing point MOVES the paint, on every window that crops (the S4 visu
   // The transient rule-of-thirds guide is raised by the change (Gutenberg's flash, R57 §8①).
   await expect(sheet.locator(".mgal-frame-thirds.on")).toBeVisible();
 
-  await sheet.getByRole("button", { name: "Save framing" }).click();
+  await sheet.getByRole("button", { name: "Save", exact: true }).click();
   await expect.poll(() => puts.length).toBe(1);
   const saved = (
     puts[0] as {
@@ -298,7 +298,7 @@ test("an already-framed image OPENS on its framing, and an untouched Save keeps 
   ).toBeLessThan(-1);
 
   // …and confirming without moving anything writes exactly what was already there.
-  await sheet.getByRole("button", { name: "Save framing" }).click();
+  await sheet.getByRole("button", { name: "Save", exact: true }).click();
   await expect.poll(() => puts.length).toBe(1);
   const saved = (
     puts[0] as { media: { namespaces: { gacha: { roles: { characters: { files: Entry[] } } } } } }

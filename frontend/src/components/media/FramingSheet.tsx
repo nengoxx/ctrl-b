@@ -413,7 +413,7 @@ export function FramingSheet({
               className="mgal-act"
               onClick={() => onSave(null, item.row.revision)}
             >
-              Clear framing
+              Clear
             </button>
           )}
           <button
@@ -424,7 +424,7 @@ export function FramingSheet({
               state.point !== null && onSave(roundFocal(state.point), item.row.revision)
             }
           >
-            Save framing
+            Save
           </button>
         </div>
       </div>

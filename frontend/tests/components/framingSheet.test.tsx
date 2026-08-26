@@ -394,7 +394,7 @@ describe("the sheet itself", () => {
     // The previews paint the STORED framing on open — the sheet's own visible proof of the seed.
     const preview = sheet.querySelector<HTMLImageElement>(".mgal-frame-win img");
     expect(preview?.style.objectPosition, "the previews show the stored point").toBe("18% 82%");
-    fireEvent.click(within(sheet).getByRole("button", { name: "Save framing" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(savedFiles()).toEqual([{ name: "a.webp", focal: { x: 0.18, y: 0.82, rev: "1:88000" } }]);
   });
@@ -417,7 +417,7 @@ describe("the sheet itself", () => {
     expect(sheet.querySelector<HTMLImageElement>(".mgal-frame-win img")?.style.objectPosition).toBe(
       "30% 70%",
     );
-    fireEvent.click(within(sheet).getByRole("button", { name: "Save framing" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     // An order intent it is NOT: the write lists the one entry it acted on, and the rest of the
     // bundled tier stays in the fallback tier where a framing write may not move it.
@@ -444,7 +444,7 @@ describe("the sheet itself", () => {
       );
     });
 
-    fireEvent.click(within(sheet).getByRole("button", { name: "Save framing" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(toast.pushToast).toHaveBeenCalled());
     expect(String(toast.pushToast.mock.calls[0][0])).toContain("The picture changed");
     expect(api.putJSON, "nothing is written at all").not.toHaveBeenCalled();
@@ -463,7 +463,7 @@ describe("the sheet itself", () => {
         index([file("a", "characters", { revision: "2:99000" }), ...cast]),
       );
     });
-    fireEvent.click(within(sheet).getByRole("button", { name: "Clear framing" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(savedFiles()).toEqual([{ name: "a.webp" }]);
     expect(toast.pushToast).not.toHaveBeenCalled();
@@ -476,7 +476,7 @@ describe("the sheet itself", () => {
     const gallery = await openItem("Characters", "a.webp");
     fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
     const sheet = await screen.findByRole("dialog", { name: "Set framing" });
-    fireEvent.click(within(sheet).getByRole("button", { name: "Clear framing" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     // Cleared by REMOVAL, never by persisting a `{0.5, 0.5}` that means the same thing.
     expect(savedFiles()).toEqual([{ name: "a.webp" }]);

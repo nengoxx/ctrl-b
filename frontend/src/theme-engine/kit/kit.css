@@ -7050,11 +7050,19 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   list-style: none;
   display: flex;
   align-items: flex-end;
+  /* The row OWNS its width (owner round 2026-08-26): the windows grow to an even split of it and,
+   * once the cap below binds on a wide screen, the leftover spreads between them — never a cluster
+   * snapped to the left of a 640px modal. */
+  justify-content: space-evenly;
   gap: 10px;
   overflow-x: auto;
 }
 .kit .mgal-frame-previews li {
-  flex: 0 0 auto;
+  /* An even share each, capped: a third of the phone is a real preview, a third of the desktop modal
+   * would dwarf the stage the owner is aiming in. The stage's own min-height is the other guard. */
+  flex: 1 1 76px;
+  min-width: 0;
+  max-width: 120px;
   display: grid;
   gap: 4px;
   justify-items: center;
@@ -7063,7 +7071,7 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
 }
 .kit .mgal-frame-win {
   display: block;
-  width: 76px;
+  width: 100%;
   height: auto;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -7079,11 +7087,12 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
 .kit .mgal-frame-caption {
   padding: 0;
 }
+/* The house MODAL action row (`.pm-actions`' shape — owner round 2026-08-26): compact, trailing,
+ * dismissive first and the primary last. The stretched full-width thirds this replaces were the one
+ * action row in the app shaped that way. */
 .kit .mgal-frame-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
   padding: 12px 14px 16px;
-}
-.kit .mgal-frame-actions .mgal-act {
-  flex: 1;
 }
