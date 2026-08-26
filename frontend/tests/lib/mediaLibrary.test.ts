@@ -39,6 +39,8 @@ import {
 //    into `files` in the resulting order, bundled rows included. It is the only shape that can SAY the
 //    order: partial listing could not express a mid-list position at all, and listing only the rows of
 //    a swap made those rows the owner's entire tier, shrinking the deal to two portraits;
+//  · SWITCHING AN ENTRY OFF where order is the priority system sweeps too ("W7", owner 2026-08-26) —
+//    and states the order UNCHANGED. Membership moves nothing: an unticked image dims where it is;
 //  · every OTHER intent still lists only what it acted on (plus the disk tier, which is free). None of
 //    them is a claim about order, so none of them may make one.
 
@@ -335,6 +337,27 @@ describe("reorder edges", () => {
   });
 });
 
+/** The server's `library-v1` collation of one write, expressed as ROWS — listed entries in order
+ *  (carrying whatever `hidden` they were written with), then the rows nobody listed, in theirs. It is
+ *  what lets a test ask the real question behind the owner-round defect: after this write, what does
+ *  `ladderRows` DEAL? */
+function collated(entries: readonly LibraryEntry[], rows: readonly ArtRow[]): ArtRow[] {
+  const byId = new Map(rows.map((r) => [rowId(r), r]));
+  const ids = entries.map((e) => entryId(e));
+  return [
+    ...entries.map((e, i) => ({
+      ...(byId.get(ids[i] as RowId) as ArtRow),
+      listed: true,
+      hidden: e.hidden === true,
+    })),
+    // An UNLISTED row is never hidden: `hidden` is a `files` field, so a row no entry names carries
+    // none — which is exactly what makes dropping an entry a restore rather than a silent retirement.
+    ...rows
+      .filter((r) => !ids.includes(rowId(r)))
+      .map((r) => ({ ...r, listed: false, hidden: false })),
+  ];
+}
+
 describe("the In-use switch (§2.2's `hidden`)", () => {
   const rows = [disk("a.webp"), disk("b.webp")];
 
@@ -380,6 +403,111 @@ describe("the In-use switch (§2.2's `hidden`)", () => {
     expect(toggleHidden(undefined, rows, "f:gone.webp")).toEqual([
       { name: "a.webp" },
       { name: "b.webp" },
+    ]);
+  });
+});
+
+// ── UNTICKING MOVES NOTHING (owner ruling 2026-08-26, "W7") ─────────────────────────────────────
+//
+// The owner-round defect and the rule that replaced it. Switching a BUNDLED row off used to list that
+// row and nothing else — and a listed entry precedes the WHOLE fallback tier, so the picture the owner
+// had just excluded jumped to the front of the grid. Switching it back on then left a bare
+// `{bundled: id}` behind: the section's sole own-tier member, which `ladderRows` dealt to every host
+// while the other four defaults vanished. The ruling: **an unticked image dims where it stands and
+// stays there**, and re-ticking it puts it back in use from the same place. Arranging is the drag's
+// job; membership moves nothing.
+
+describe("switching OFF where order is the priority system (`ordered`)", () => {
+  /** The state every theme section is in on a fresh install: five bundled defaults, no `files`. */
+  const cast = ["pegasus", "atlas", "3", "4", "lyra"].map((id) => bundled(id));
+
+  it("SWEEPS the section and states the order UNCHANGED — the picture does not move", () => {
+    const next = toggleHidden(undefined, cast, "b:3", true);
+    expect(next).toEqual([
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      { bundled: "3", hidden: true },
+      { bundled: "4" },
+      { bundled: "lyra" },
+    ]);
+    // The collation of that list is the order the owner was looking at, to the row — the third picture
+    // is exactly where it was, and only its membership changed. (Listing it alone put it FIRST.)
+    expect(collated(next, cast).map(rowId)).toEqual(displayOrder(cast));
+    expect(ladderRows(collated(next, cast)).map(rowId)).toEqual([
+      "b:pegasus",
+      "b:atlas",
+      "b:4",
+      "b:lyra",
+    ]);
+  });
+
+  it("…and the ROUND TRIP is a no-op: back in use, in place, dealt beside the rest", () => {
+    const off = toggleHidden(undefined, cast, "b:3", true);
+    const on = toggleHidden(off, collated(off, cast), "b:3", true);
+    // Everything stays LISTED. The section was swept, so the entry is one member of a stated order and
+    // dropping it would move the picture — which is why the bare-entry guard below asks whether the
+    // role is fully listed rather than firing on the shape of the entry alone.
+    expect(on).toEqual(cast.map((r) => ({ bundled: r.bundled })));
+    expect(collated(on, cast).map(rowId)).toEqual(displayOrder(cast));
+    // …and the whole cast is dealt again — five portraits, not the one the bare entry collapsed it to.
+    expect(ladderRows(collated(on, cast)).map(rowId)).toEqual(displayOrder(cast));
+  });
+
+  it("a DISK row is the same rule — one entry off, the section's order restated as it stands", () => {
+    const mixed = [disk("a.webp"), disk("b.webp"), ...cast];
+    const next = toggleHidden(undefined, mixed, "f:a.webp", true);
+    expect(next.map(entryId)).toEqual(displayOrder(mixed));
+    expect(next[0]).toEqual({ name: "a.webp", hidden: true });
+  });
+
+  it("a section where ORDER decides nothing keeps the minimal write", () => {
+    // A named role's per-key gallery (`caps.reorder` false — a service icon, one frontier stack layer):
+    // its files bind by NAME, so a sweep would list other keys' bundled rows for no reason at all. The
+    // switch there says only what it did, which is what it has always said.
+    expect(toggleHidden(undefined, cast, "b:3")).toEqual([{ bundled: "3", hidden: true }]);
+  });
+});
+
+describe("the bare-entry guard (un-hiding must never enlist a default)", () => {
+  const cast = ["pegasus", "atlas", "3", "4", "lyra"].map((id) => bundled(id));
+
+  it("DROPS an entry left saying nothing, in a role that was never swept", () => {
+    // The hole a hand-edited or legacy config can still be in — and the one the non-sweep path leaves:
+    // one hidden bundled entry beside four unlisted siblings. Clearing `hidden` would leave
+    // `{bundled: "3"}`, the sole own-tier member, and the fleet would be dealt that one portrait.
+    const rows = cast.map((r) => (r.bundled === "3" ? { ...r, listed: true, hidden: true } : r));
+    const next = setHidden([{ bundled: "3", hidden: true }], rows, "b:3", false);
+    expect(next).toEqual([]);
+    // …so the row rejoins the fallback tier at its REGISTRY position and the deal is the whole cast.
+    expect(ladderRows(collated(next, rows)).map(rowId)).toEqual(displayOrder(cast));
+  });
+
+  it("…but keeps one that still carries something of the owner's", () => {
+    // Not bare = not the guard's business. Every transform here is a read-modify-WRITE, so a field this
+    // module does not interpret (whatever a later slice adds) is never dropped to tidy up a tier.
+    const rows = cast.map((r) => (r.bundled === "3" ? { ...r, listed: true, hidden: true } : r));
+    const held: LibraryEntry[] = [
+      { bundled: "3", hidden: true, focal: { x: 0.4, y: 0.2, rev: "" } },
+    ];
+    expect(setHidden(held, rows, "b:3", false)).toEqual([
+      { bundled: "3", focal: { x: 0.4, y: 0.2, rev: "" } },
+    ]);
+  });
+
+  it("…and keeps a bare one in a SWEPT role, where dropping it would MOVE the picture", () => {
+    const swept = cast.map((r) => ({ ...r, listed: true, hidden: r.bundled === "3" }));
+    const held: LibraryEntry[] = cast.map((r) =>
+      r.bundled === "3" ? { bundled: "3", hidden: true } : { bundled: r.bundled as string },
+    );
+    expect(setHidden(held, swept, "b:3", false)).toEqual(
+      cast.map((r) => ({ bundled: r.bundled as string })),
+    );
+  });
+
+  it("never touches a DISK entry — its listing is what holds its position", () => {
+    const rows = [disk("a.webp", { listed: true, hidden: true }), ...cast];
+    expect(setHidden([{ name: "a.webp", hidden: true }], rows, "f:a.webp", false)).toEqual([
+      { name: "a.webp" },
     ]);
   });
 });

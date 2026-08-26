@@ -712,6 +712,77 @@ describe("the tile's In-use toggle", () => {
     const dialog = await openSection("Fleet backdrop");
     expect(within(dialog).queryByRole("button", { name: /^In use — / })).toBeNull();
   });
+
+  // ── THE OFF STATE, IN PLACE (owner ruling 2026-08-26, "W7") ──────────────────────────────────
+  //
+  // Unticking an image no longer moves it — it dims where it stands — so the tile's own look is the
+  // whole signal, and these two pin what that look IS: the off treatment on the switched-off tile, and
+  // the single ACTIVE ring on the tiles the destination is actually painting.
+
+  const offIndex = () =>
+    index({
+      roles: {
+        characters: [
+          file("a", "characters"),
+          file("b", "characters", { hidden: true, listed: true }),
+          file("c", "characters"),
+          ...cast,
+        ],
+        banner: [],
+        reel: [],
+        oracle: [],
+      },
+    });
+
+  it("a switched-off tile is TAGGED IN PLACE — dimmed art, hollow corner, same position", async () => {
+    const { container } = renderGallery(offIndex());
+    const dialog = await openSection("Characters");
+    const labels = () =>
+      [...container.querySelectorAll(".mgal-tile")].map((t) => t.getAttribute("aria-label"));
+    const before = labels();
+    expect(before.slice(0, 3)).toEqual(["a.webp", "b.webp", "c.webp"]);
+    // The off treatment: the tile says so, the picture is dimmed, and the corner is the hollow ring.
+    const tile = within(dialog).getByRole("button", { name: "b.webp" });
+    expect(tile.className).toContain("off");
+    expect(tile.querySelector("img")?.className).toContain("dim");
+    expect(
+      within(dialog).getByRole("button", { name: "In use — b.webp" }).getAttribute("aria-pressed"),
+    ).toBe("false");
+    // …and NOTHING moved to say it. Switching `c` off writes the display order exactly as it stands,
+    // the one entry off — which is the fact the grid is rendering, checked against the grid itself.
+    fireEvent.click(within(dialog).getByRole("button", { name: "In use — c.webp" }));
+    await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    const written = filesOf(savedBlock()) as { name?: string; bundled?: string; hidden?: true }[];
+    expect(written.map((e) => (e.name === undefined ? `${e.bundled} (default)` : e.name))).toEqual(
+      before,
+    );
+    // (`b`'s own `hidden` is not restated here: this fixture's settings carry no `files` at all, so the
+    // write rebuilds each entry from the index — the point of the pin is the ORDER, and the one entry
+    // the tap was about.)
+    expect(written.filter((e) => e.hidden === true).map((e) => e.name)).toEqual(["c.webp"]);
+    expect(labels()).toEqual(before);
+  });
+
+  it("the ring means ACTIVE and only that — an in-use tile that paints nothing wears none", async () => {
+    const { container } = renderGallery(offIndex());
+    const dialog = await openSection("Characters");
+    const ring = (name: string) =>
+      within(dialog).getByRole("button", { name }).className.includes(" on");
+    // The owner's two visible files are the dealt cast, so they wear it…
+    expect(ring("a.webp")).toBe(true);
+    expect(ring("c.webp")).toBe(true);
+    // …the switched-off one does not (it is not painted, and it is not in use either)…
+    expect(ring("b.webp")).toBe(false);
+    // …and neither does a default: it is IN USE — the corner says so — but the owner's own tier is
+    // what the fleet is painting, so no ring and no dim. Three states, three distinct looks.
+    const def = within(dialog).getByRole("button", { name: "pegasus (default)" });
+    expect(def.className).not.toContain(" on");
+    expect(def.className).not.toContain(" off");
+    expect(
+      within(dialog).getByRole("button", { name: "In use — pegasus" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(container.querySelectorAll(".mgal-tile-img.dim")).toHaveLength(1);
+  });
 });
 
 describe("the item detail panel (§6.4) and what its actions write", () => {
@@ -888,10 +959,18 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     expect(sw.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(sw);
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
+    // The list is the section's own display order, unchanged, with the one entry off ("W7", owner
+    // 2026-08-26): switching off where ORDER is the priority system states that order as it stands, so
+    // nothing the owner arranged — the defaults included — can be moved by a membership tap.
     expect(filesOf(savedBlock())).toEqual([
       { name: "a.webp" },
       { name: "b.webp", hidden: true },
       { name: "c.webp" },
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      { bundled: "3" },
+      { bundled: "4" },
+      { bundled: "lyra" },
     ]);
     // …and the SWITCH is the only `aria-checked` in the whole surface (Emma #9).
     expect(container.querySelectorAll("[aria-checked]")).toHaveLength(1);
@@ -1451,6 +1530,11 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
       { name: "a.webp" },
       { name: "b.webp", hidden: true },
       { name: "c.webp" },
+      { bundled: "pegasus" },
+      { bundled: "atlas" },
+      { bundled: "3" },
+      { bundled: "4" },
+      { bundled: "lyra" },
     ]);
   });
 
@@ -1487,9 +1571,9 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     landed(
       index({
         roles: {
-          characters: cast.map((r) =>
-            r.bundled === "atlas" ? { ...r, hidden: true, listed: true } : r,
-          ),
+          // The switch-off above swept the section ("W7"), so every default comes back LISTED — which
+          // is what keeps `atlas` exactly where it was while it is switched off.
+          characters: cast.map((r) => ({ ...r, listed: true, hidden: r.bundled === "atlas" })),
           banner: [],
           reel: [],
           oracle: [],
@@ -1498,7 +1582,13 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     );
     await new Promise((r) => setTimeout(r, 20));
     expect(api.putJSON).toHaveBeenCalledTimes(1);
-    expect(filesOf(savedBlock(0))).toEqual([{ bundled: "atlas", hidden: true }]);
+    expect(filesOf(savedBlock(0))).toEqual([
+      { bundled: "pegasus" },
+      { bundled: "atlas", hidden: true },
+      { bundled: "3" },
+      { bundled: "4" },
+      { bundled: "lyra" },
+    ]);
   });
 
   it("…and on a refetch timeout a queued pin is DISCARDED with everything else, carve-out and all", async () => {

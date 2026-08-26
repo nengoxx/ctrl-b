@@ -24,10 +24,30 @@
 //     deal — `ladderRows`' own-tier-replaces-fallback rule then dealt those two portraits across the
 //     whole fleet. A full sweep is THE SAME ART IN THE NEW ORDER: zero paint surprise, and the fleet
 //     the owner was looking at is the fleet they keep.
-//   · every OTHER intent — `setHidden`, `setFocal`, `appendItem`, `removeItem` — still lists only the
-//     entry it acted on (plus the disk tier, which is free: those rows already sit in the resolution
-//     prefix, so listing them changes nothing but their order). None of them is a claim about the
-//     section's ORDER, so none of them may make one.
+//   · SWITCHING AN ENTRY OFF, where order IS the section's priority system, is the second order intent
+//     (owner ruling 2026-08-26, "W7") — and the only thing it says about order is *nothing moved*: it
+//     writes the display order EXACTLY as it stands and marks its one entry `hidden`. **Membership
+//     never moves a picture.** An unticked image dims where it is and stays there; re-ticking it puts
+//     it back in use from the same place; arranging is the drag's job and no other gesture's. The
+//     sweep is what BUYS that stillness, and the owner round is what proved it necessary: listing the
+//     one bundled row the tap acted on and nothing else collated that row to the FRONT of the grid (a
+//     listed entry precedes the whole fallback tier), and left a bare `{bundled: id}` behind as the
+//     section's SOLE own-tier member — so un-ticking it again collapsed the deal to that one picture
+//     on every host. Where order decides nothing — a named role's per-key gallery — the switch stays
+//     the minimal write below: sweeping a role that binds by NAME would list other keys' bundled rows
+//     for no reason at all.
+//   · every OTHER intent — `setFocal`, `appendItem`, `removeItem`, and the un-hide half of the switch
+//     — lists only the entry it acted on (plus the disk tier, which is free: those rows already sit in
+//     the resolution prefix, so listing them changes nothing but their order). None of them is a claim
+//     about the section's ORDER, so none of them may make one.
+//
+// The un-hide half carries the rule's one DELETION, the **bare-entry guard**: clearing `hidden` off a
+// bundled entry that has nothing else left to say drops the entry from `files` entirely, rather than
+// keeping a `{bundled: id}` whose only effect is to promote that row into the owner's own tier. It
+// fires only where the role is NOT fully listed — i.e. where the entry would be a lone own-tier member
+// beside a fallback tier that is still the live one. After a sweep every bundled row is listed, so the
+// entry stays and the position with it. That is what keeps a legacy or hand-edited config (and the
+// non-sweep path above) from collapsing a whole dealt role to one picture.
 //
 // **THERE IS NO `setActive` AND NO `makeEligible`** (owner ruling 2026-08-26, "W6"): order is the only
 // priority system, so "use this one" is `moveToEdge(…, "top")` — an ordinary order intent, with no
@@ -268,6 +288,10 @@ interface WriteSpec {
    *  bundled row in it is listed too (the 2026-08-25 amendment — see the header). Absent ⇒ the write
    *  says nothing about order and lists only what it acted on. */
   sweep?: boolean;
+  /** The one entry this write may DROP when its edit leaves it with nothing left to say — the
+   *  BARE-ENTRY GUARD (the header's last paragraph). Set by the un-hide half of the switch, and
+   *  honoured only while the role's bundled tier is NOT fully listed. */
+  bare?: RowId;
   /** Per-entry field edits, for a write about ONE item (the In-use switch writes `hidden` here). */
   edit?: { id: RowId; fields: LibraryEntry };
   /** Which entries this write drops from the list entirely — a delete's config half (one id), or a
@@ -300,6 +324,10 @@ function writeFiles(
   }
   const known = new Set(rows.map(rowId));
   const touched = new Set(spec.touched);
+  // Is the role's bundled tier fully listed once this write lands? The bare-entry guard's condition,
+  // computed here because "which tier is live" is this module's own question and asking it anywhere
+  // else would be a second implementation of the rule.
+  const fullyListed = spec.sweep === true || fallbackTier(rows).length === 0;
   const out: LibraryEntry[] = [];
   for (const id of spec.order) {
     if (!known.has(id) || spec.drop?.(id) === true) continue;
@@ -316,7 +344,17 @@ function writeFiles(
       spec.clear !== undefined && spec.clear.on(id)
         ? prune({ ...base, ...Object.fromEntries(spec.clear.fields.map((f) => [f, undefined])) })
         : base;
-    out.push(spec.edit?.id === id ? prune({ ...cleared, ...spec.edit.fields }) : cleared);
+    const entry = spec.edit?.id === id ? prune({ ...cleared, ...spec.edit.fields }) : cleared;
+    // THE BARE-ENTRY GUARD. `{bundled: id}` says exactly one thing — "this default is in the owner's
+    // own tier" — and that is a claim only an ORDER write is entitled to make. Left behind by an
+    // un-hide in a role whose other defaults are still unlisted, it made the un-hidden entry the sole
+    // own-tier member, and `ladderRows`' own-replaces-fallback rule dealt that one picture everywhere.
+    // Dropping it returns the row to the fallback tier at its registry position, which is where it was
+    // before the owner ever touched the switch. A fully-listed role keeps it: there the entry is one
+    // member of the section's stated order, and dropping it would move the picture.
+    if (spec.bare === id && !fullyListed && isBundledId(id) && Object.keys(entry).length === 1)
+      continue;
+    out.push(entry);
   }
   return out;
 }
@@ -389,34 +427,53 @@ export function moveToEdge(
  *  authoritative send-time rows — never from the boolean a control rendered. Two rapid taps are two
  *  queued toggles that COMPOSE (on→off→on nets on), where two captured-state writes were the same
  *  write twice and left the switch where the second tap did not mean it. A row gone by send time
- *  toggles nothing and states no change — `moveBy`'s own refusal shape. */
+ *  toggles nothing and states no change — `moveBy`'s own refusal shape.
+ *
+ *  `ordered` is the SECTION's fact, handed down by the caller (`hooks/useMediaLibrary.ts` passes
+ *  `caps.reorder`): is order this section's priority system? Where it is, switching an entry OFF is
+ *  an order intent that states the order UNCHANGED — see the header's second bullet, and §2.3 ③. This
+ *  module cannot ask that question itself, for the reason it holds no registry import: a section is
+ *  theme knowledge and only what is true of every namespace lives here. */
 export function toggleHidden(
   entries: readonly LibraryEntry[] | undefined,
   rows: readonly LibraryRow[],
   id: RowId,
+  ordered = false,
 ): LibraryEntry[] {
   const row = rows.find((r) => rowId(r) === id);
   if (row === undefined)
     return writeFiles(entries, rows, { order: displayOrder(rows), touched: [] });
-  return setHidden(entries, rows, id, row.hidden !== true);
+  return setHidden(entries, rows, id, row.hidden !== true, ordered);
 }
 
 /** The **In use** write (§2.2's `hidden`), the absolute half `toggleHidden` derives its target for.
- *  The order is untouched — but every disk row is still
- *  written, because listing ONE entry into an otherwise-empty `files` list would move it to the front
- *  of the collation and silently re-prioritise the role. */
+ *
+ *  THE ORDER IS UNTOUCHED, in both directions and whatever `ordered` says — membership moves nothing
+ *  (the owner ruling of 2026-08-26). Every disk row is written regardless, because listing ONE entry
+ *  into an otherwise-empty `files` list would move it to the front of the collation and silently
+ *  re-prioritise the role; and switching OFF in an order-priority section writes the bundled tier with
+ *  them, which is the same stillness bought for the tier that needed it more (a listed bundled row
+ *  precedes every unlisted one, so the half-listing was itself the jump).
+ *
+ *  Switching back ON is the minimal write it always was, plus the bare-entry guard: after a
+ *  switch-off sweep the entry is already listed among the whole section and simply loses its `hidden`,
+ *  and in a role that was never swept a bundled entry left saying nothing is dropped rather than
+ *  promoted. */
 export function setHidden(
   entries: readonly LibraryEntry[] | undefined,
   rows: readonly LibraryRow[],
   id: RowId,
   hidden: boolean,
+  ordered = false,
 ): LibraryEntry[] {
   return writeFiles(entries, rows, {
     order: displayOrder(rows),
     touched: [id],
+    sweep: hidden && ordered,
     // `hidden: false` is the DEFAULT, so switching an entry back on removes the field rather than
     // persisting a redundant `false` — the config stays the shape a human would have written.
     edit: { id, fields: hidden ? { hidden: true } : { hidden: undefined } },
+    bare: hidden ? undefined : id,
   });
 }
 

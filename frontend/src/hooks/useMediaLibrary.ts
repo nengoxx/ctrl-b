@@ -442,9 +442,15 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
       /** A TOGGLE, not an absolute write (the W6 review's fix #2): the target state is derived at
        *  SEND from the authoritative rows, so rapid taps compose instead of repeating the state the
        *  first tap rendered. Both In-use controls (the tile corner and the detail switch) enqueue
-       *  exactly this — one intent, one derivation. */
+       *  exactly this — one intent, one derivation.
+       *
+       *  `caps.reorder` rides along because switching an entry OFF where ORDER is the priority system
+       *  is itself an order intent — one that states the order unchanged (the owner ruling of
+       *  2026-08-26, "W7": an unticked image dims in place and does not move). The transform owns what
+       *  that means; this passes the one fact it cannot see, which is whether this section arranges at
+       *  all. A per-key gallery does not, and keeps the minimal write. */
       toggleHidden: (section: MediaSection, item: LibraryItem) =>
-        enqueue(listJob(section.role, (e, r) => toggleHidden(e, r, item.id))),
+        enqueue(listJob(section.role, (e, r) => toggleHidden(e, r, item.id, section.caps.reorder))),
       /** DELETE-first, then ONE config write that also promotes whatever was next (§3/§6.4).
        *
        *  The order is the ruled one: the bytes go first, and a failure between the two steps leaves a

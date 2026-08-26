@@ -270,8 +270,9 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
   // ④ the In-use switch writes `hidden`, and the entry leaves the deal while staying in the library.
   await dialog.getByRole("switch", { name: /In use — a.webp/ }).click();
   await expect.poll(() => puts.length).toBe(3);
-  // The In-use switch is NOT an order intent, so it adds nothing of its own — the cast is listed
-  //    because the two order writes above already said so.
+  // The In-use switch states the order UNCHANGED ("W7"), so the list it writes is the list that was
+  //    already there — the two order writes above put the cast in it, and a membership tap moves none
+  //    of it.
   expect(st.files).toEqual([
     { name: "a.webp", hidden: true },
     { name: "b.webp" },
@@ -466,6 +467,52 @@ test("Conf · Theme art — a section of nothing but DEFAULTS drags, downwards i
   await page.reload();
   await card.click();
   await expect(page.getByRole("dialog").locator(".mgal-tile")).toHaveCount(BUNDLED.length);
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+test("Conf · Theme art — switching a DEFAULT off leaves it exactly where it is", async ({
+  page,
+  pageErrors,
+}) => {
+  // The owner-round defect of 2026-08-26 ("W7"), in the same fresh-install state: no owner files, an
+  // empty `files` list. Unticking a default used to list that one row — and a listed entry precedes the
+  // whole fallback tier, so the picture the owner had just switched OFF jumped to the FRONT of the
+  // grid. Re-ticking it then left `{bundled: id}` behind as the section's only own-tier member, and the
+  // fleet was dealt that one portrait. The ruling: membership moves nothing. This is the browser proof,
+  // through the server's own collation, in both directions.
+  await bootConf(page);
+  const { st, puts } = await statefulMedia(page, { onDisk: [], files: [] });
+
+  await page.goto("/");
+  const card = page.getByRole("button", { name: "Open the Characters gallery", exact: true });
+  await card.click();
+  const dialog = page.getByRole("dialog");
+  const tiles = dialog.locator(".mgal-tile");
+  await expect(tiles).toHaveCount(BUNDLED.length);
+  const order = () => tiles.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
+  const before = await order();
+  const corner = dialog.getByRole("button", { name: `In use — ${BUNDLED[2]}`, exact: true });
+
+  await corner.click();
+  await expect.poll(() => puts.length).toBe(1);
+  // The write names the WHOLE section in the order it already had, with the one entry off.
+  expect(st.files).toEqual(
+    BUNDLED.map((id) => (id === BUNDLED[2] ? { bundled: id, hidden: true } : { bundled: id })),
+  );
+  // …and the SERVER's repaint keeps it in its own slot, dimmed, with the hollow corner.
+  await expect.poll(order).toEqual(before);
+  await expect(corner).toHaveAttribute("aria-pressed", "false");
+  await expect(tiles.nth(2).locator("img.dim")).toHaveCount(1);
+  await expect(dialog.locator(".mgal-tile-img.dim")).toHaveCount(1);
+
+  // Back in use: same place again, and the whole cast is dealt — not the one entry a bare listing used
+  // to collapse it to.
+  await corner.click();
+  await expect.poll(() => puts.length).toBe(2);
+  expect(st.files).toEqual(castEntries());
+  await expect.poll(order).toEqual(before);
+  await expect(corner).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.locator(".mgal-tile-img.dim")).toHaveCount(0);
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 
