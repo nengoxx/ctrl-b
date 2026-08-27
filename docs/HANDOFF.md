@@ -12,7 +12,43 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-26, THIRD session — the owner's post-sign-off round → **W10, review-CLOSED**; supersedes everything below where it speaks)
+## Current state (2026-08-27 — **S6 RAN AND CLOSED: the phone-in-hand device round**; Phase 21 is feature-COMPLETE, the release is the only step left; supersedes everything below where it speaks)
+
+- **The owner drove the round on the Honor 20 over real HTTPS** — rig: a second Tailscale Serve
+  port (`:8443 → :5434`, the dev backend serving a fresh PRODUCTION build of tip; prod untouched
+  on 443; separate origin keeps the prod PWA's service worker out of the way). **Two catches, both
+  fixed + committed in-round** (main-seat, trivial-leaf fast-path; 360px+390px visual proof, full
+  FE gate + 38 media e2e per commit): ① the six-button pill clipped Delete at the phone's REAL
+  360px viewport (desktop rounds all ran ≥390) — now the pill **wraps between its clusters**
+  (`3d65a69`: width:max-content under the clamp · divider → gap · verbs Top/Bottom); ② **"Framing"
+  → "Focus"** everywhere visible (`9329d7a`, owner-ruled; sheet = "Set focus"; code keeps the
+  mechanism word) — the shorter word lands all six on ONE line at 360px, the wrap stays as the
+  font-scale safety net.
+- **Every probe closed:** reticle · previews (**preview-honesty CLOSED AS-IS** — the viewport-true
+  refinement candidate is NOT bought) · corner toggle · drag-vs-scroll · upload/q0.85 · PWA picker
+  survival · Back-gesture · Fennec · the W10 thumb surfaces. **Closed by SOURCE RULING** (the
+  owner: fleet pictures come from downloads/drawn art, not the camera): HEIC N/A · no 48 MP timing
+  datapoint · EXIF phone-half (desktop half + e2e = the proof of record). **Deferred to ordinary
+  live use** (owner ruling): autoscroll on a long grid · the >15 MB 413 refusal · the explicit
+  multi-window cast walk. Full record = MEDIA_MANAGER_PLAN §12's S6 block; §16 stamped.
+- **Local `main` = origin `2473e09` + 3 commits** (the two fixes + the docs commit carrying this
+  block). Prod untouched (v1.7.6 @ `6a2ccaa`). Dev units RUNNING; the `:8443` serve is live —
+  **teardown owed post-release** (`tailscale serve --https=8443 off` + stop the dev units).
+
+## ▶▶ NEXT (2026-08-27, post-S6 — supersedes the list below)
+
+1. **THE RELEASE** (the owner's word starts it): push the 3 commits → runbook
+   `deploy/linux/README.md` §Release, **Opus-operated** — version **1.7.x** (1.8 stays RESERVED) ·
+   the batch carries **config_version 1→2** (config-pure, proven on dev; NO DB migration) · **the
+   LOCAL e2e run before the tag is MANDATORY** (the stale-pin class burned three tags — and this
+   session renamed pill/sheet labels, exactly that class's trigger) · **rollback = v1.7.6**. Then
+   the rig teardown (above) and the owner's first prod ride.
+2. **Recorded follow-ups (not owed now):** the live-use deferrals above · W10's residuals
+   (re-crop generation loss · the 412-on-lost-response class · bundled re-art inherits a stored
+   point · delivery-never-throws) · Emma's lane-stall MED → Phase 19 · after the phase, the
+   2026-08-22 menu (Phase 19 court · A13 talk · parked ledger).
+
+## Prior state (2026-08-26, THIRD session — the owner's post-sign-off round → **W10, review-CLOSED**; superseded above where it speaks)
 
 - **The owner signed off W7–W9 ("the fixes are fine") and asked for a SECOND PASS in the same
   breath:** the modal ✕ rides low in its circle · no way to re-crop/re-frame AFTER upload (and no

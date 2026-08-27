@@ -1449,7 +1449,52 @@ sections; owns busy, the serialized quiet `patch` queue, invalidation) · `hooks
 > order, cancel-during-crop, double-fail) unprompted. Full gate green at tip (BE 2,002 · FE 2,619/157).
 > W10 residuals stand as recorded in the block above.
 
-## 13. Research reconciliation (v2 rows; v1 rows stand except where struck)
+> **S6 AS-BUILT — THE OWNER DEVICE ROUND (2026-08-27, phone in hand; the phase's LAST slice,
+> CLOSED).** Rig: a second Tailscale Serve port (`:8443 → 127.0.0.1:5434`) put the dev backend —
+> serving a fresh PRODUCTION build of tip — behind real HTTPS, prod untouched on 443; the separate
+> origin (port ≠ 443) kept the phone's prod PWA install and its service worker out of the way. The
+> runbook's own advice (serve a built app, not Vite, for a phone test) held: dev-mode React would
+> have distorted the feel/timing probes.
+>
+> **The round's TWO catches, both fixed + committed in-round (main-seat built, the trivial-leaf
+> fast-path; visual proof at 360px AND 390px, full FE gate + 38 media e2e per commit):**
+> · **The pill clipped Delete mid-word at the phone's real 360px CSS viewport** (1080 phys ÷ 3 DPR —
+>   every desktop round ran ≥390px, where the six-button row fit by ~2px). The shipped answer,
+>   scroll-inside-the-pill, had NO touch affordance; the cut read as broken overflow. Fixed
+>   `3d65a69`: the pill WRAPS between its clusters (the flex children ARE the two clusters, so the
+>   break lands at the arrange/act boundary), wrapped rows centre, `width: max-content` under the
+>   clamp (an abs-positioned wrap container otherwise sizes to MIN-content and wraps even where one
+>   row fits — measured, not guessed), the border-left divider → a wider inter-cluster gap (a drawn
+>   divider is a stray tick at a wrapped row's start), verbs compacted **To top/To bottom →
+>   Top/Bottom** (owner-ruled). `overflow-x` stays as a sub-230px backstop.
+> · **"Framing" was the harder word** — the owner's own name for it was "the focus button". Ruled
+>   rename, one-word-one-meaning, the whole visible family: pill label **Focus** (set/not-set
+>   readout kept) · sheet title **Set focus** · the rev-keyed reset note · the `useMediaLibrary`
+>   race refusal · Restore-defaults body copy. Code names (`FramingSheet`, `caps.frame`, `onFrame`)
+>   keep the mechanism word — label vs mechanism, the `promote` precedent. The shorter label lands
+>   all six buttons back on ONE line at 360px (300px vs the 310px clamp; the cluster wrap stays as
+>   the font-scale safety net). Fixed `9329d7a`; pins renamed across unit + e2e — the sweep also
+>   learned unit tests live in `tests/`, not `src/`.
+>
+> **Probe outcomes (§16 + the W10/W6 thumb additions):** corner ✓ toggle beside the long-press
+> drag ✓ · drag-vs-scroll ✓ (no steals either way; covers the long-press/lift feel) · reticle feel ✓
+> ("works well" — tap-vs-drag clean, corners reachable) · **preview honesty ✓ CLOSED AS-IS** ("the
+> preview is fine" on the phone; the W10 banner-reads-taller datapoint stays recorded as the known
+> at-390px approximation — the viewport-true refinement is NOT bought, candidate dropped) · upload +
+> q0.85 ✓ · PWA-standalone picker survival ✓ · Back-gesture ✓ (closes the overlay layer, app stays) ·
+> Fennec ✓ ("everything looks good") · the W10 layout on a thumb ✓ (Edit/back pills · bottom Add row ·
+> section names).
+> **Closed by SOURCE RULING (owner): the fleet's pictures come from downloads/drawn art, not the
+> phone camera** — HEIC = N/A (the Honor 20 shoots JPEG; the refusal copy stays as backstop, no
+> device proof owed) · the 48 MP double-decode timing = no datapoint bought (uploads felt fine;
+> the guard's 64 MP ceiling stands) · EXIF-portrait phone-half = same ruling (the desktop half +
+> e2e stand as the proof of record).
+> **Deferred to ordinary LIVE USE (owner ruling, "test it live as we use the app"):** autoscroll
+> one-handed on a long grid · the >15 MB / 413-mid-body refusal (no oversize file at hand) · the
+> explicit multi-window cast walk (framing outcomes were already judged good in the W10 round and
+> the reticle/preview probes; the fleet-backdrop proportional degrade stays the recorded weak spot
+> to watch).
+> **Rig teardown owed post-release:** `tailscale serve --https=8443 off` + stop the dev units.
 
 | finding | source | ruling |
 |---|---|---|
@@ -1529,6 +1574,10 @@ bundled).
 **COUNCIL ROUND 2: CLOSED, both lenses at an explicit final RESOLVED (2026-08-24).**
 
 ## 16. Device-round probes (S6)
+
+> **THE ROUND RAN 2026-08-27 — S6 CLOSED.** Outcomes, the two in-round fixes (`3d65a69` pill wrap ·
+> `9329d7a` the Focus rename), the source-ruling closures and the deferred-to-live-use list are all
+> in §12's S6 as-built block. The probe text below stays as written, for provenance.
 
 EXIF portrait end-to-end · 413-mid-body over Tailscale Serve HTTPS · does the Honor 20 produce
 HEIC · PWA-standalone survival across the picker activity · jpeg q0.85 eyeball · crop/framing/
