@@ -42,7 +42,7 @@ import type { MediaSection } from "../../theme-engine/mediaRegistry";
 // invites the owner to look for the way to enable it). There is no "Set as active": since the
 // 2026-08-26 ruling the library's ORDER is the only priority system, so **move to top IS activation**.
 //
-// FRAMING ("Set framing") is capability-gated the same way (§5): it appears only where the ROLE's
+// FRAMING — the "Focus" verb (owner ruling, the S6 round: the plainer word) — is capability-gated the same way (§5): it appears only where the ROLE's
 // destinations actually cover — `section.caps.frame`, which the registry decides.
 //
 // **On a BUNDLED entry too, since "W10"** (the recorded H3 seam, built). It was excluded at S4 on
@@ -52,7 +52,7 @@ import type { MediaSection } from "../../theme-engine/mediaRegistry";
 // the shipped string answers only where there is no stored point, so the two never meet. The owner's
 // round is what forced it — the Characters and Banner folders are empty on a fresh install, so every
 // entry in them is bundled and the exclusion bit at 100%: the one feature for arranging shipped art
-// could not be used on any of it. "Clear framing" puts the shipped look back, byte-identically.
+// could not be used on any of it. The sheet's Clear puts the shipped look back, byte-identically.
 
 /** One control in the floating pill: an icon with its word under it, and the word repeated as the
  *  accessible NAME so the two can never disagree. 44px minimum on both axes (the WCAG target floor the
@@ -231,7 +231,7 @@ export function ItemDetail({
           {(canFrame || (section.caps.remove && !item.bundled)) && (
             <div className="mgal-pill-group">
               {canFrame && (
-                <PillButton label="Framing" disabled={!ready} onClick={onFrame}>
+                <PillButton label="Focus" disabled={!ready} onClick={onFrame}>
                   <FrameIcon />
                   {/* WHETHER one is set, on the control itself: the alternative is a chip the owner
                       has to find, for a setting that is invisible until you compare two crops. */}

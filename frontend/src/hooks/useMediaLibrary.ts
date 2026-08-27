@@ -456,7 +456,7 @@ export function useMediaLibrary(ns: string, def: MediaNsDef) {
               // the only place that knows which of the refusals happened — the queue's other `null`s
               // (no index, no row) are states the owner cannot act on and are rightly silent.
               pushToast(
-                "The picture changed while you were framing it — nothing was saved. Open it again to frame the new one.",
+                "The picture changed while you were setting its focus — nothing was saved. Open it again to set focus on the new one.",
                 "err",
               );
               return null;

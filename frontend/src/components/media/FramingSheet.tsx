@@ -226,7 +226,7 @@ export function FramingSheet({
   onCancel: () => void;
 }) {
   // SEEDED from whatever framing the item already carries — `rowFocal` is the shared predicate, so a
-  // STALE point seeds nothing and the sheet opens centred with its own "framing was reset" note.
+  // STALE point seeds nothing and the sheet opens centred with its own "focus was reset" note.
   const [state, dispatch] = useReducer(framingReducer, rowFocal(item.row), initialFraming);
   const [thirds, setThirds] = useState(false);
   const [stage, setStage] = useState<{ width: number; height: number } | null>(null);
@@ -319,7 +319,7 @@ export function FramingSheet({
         aria-labelledby={labelId}
       >
         <div className="pm-head">
-          <h3 id={labelId}>Set framing</h3>
+          <h3 id={labelId}>Set focus</h3>
           <button className="pm-x" aria-label="Close" onClick={close}>
             <XIcon />
           </button>
@@ -333,7 +333,7 @@ export function FramingSheet({
             a spot that is gone. */}
         {stored === "stale" && (
           <p className="mgal-frame-note" role="status">
-            Framing was reset — the file changed.
+            Focus was reset — the file changed.
           </p>
         )}
         <div

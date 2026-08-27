@@ -180,8 +180,8 @@ test("the framing point MOVES the paint, on every window that crops (the S4 visu
   await page.getByRole("button", { name: "Open the Characters gallery" }).click();
   const gallery = page.getByRole("dialog");
   await gallery.getByRole("button", { name: "hero.png", exact: true }).click();
-  await gallery.getByRole("button", { name: "Framing", exact: true }).click();
-  const sheet = page.getByRole("dialog", { name: "Set framing" });
+  await gallery.getByRole("button", { name: "Focus", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Set focus" });
   await expect(sheet).toBeVisible();
   // …and the previews are there, honestly captioned (council M4).
   await expect(sheet.getByText("Previews are examples.")).toBeVisible();
@@ -275,9 +275,9 @@ test("an already-framed image OPENS on its framing, and an untouched Save keeps 
   const gallery = page.getByRole("dialog");
   await gallery.getByRole("button", { name: "hero.png", exact: true }).click();
   // The affordance already says a point is set, before the sheet is even open.
-  await expect(gallery.getByRole("button", { name: "Framing", exact: true })).toContainText("set");
-  await gallery.getByRole("button", { name: "Framing", exact: true }).click();
-  const sheet = page.getByRole("dialog", { name: "Set framing" });
+  await expect(gallery.getByRole("button", { name: "Focus", exact: true })).toContainText("set");
+  await gallery.getByRole("button", { name: "Focus", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Set focus" });
   await expect(sheet.locator(".mgal-frame-stage img")).toBeVisible();
   // THE RETICLE IS ON THE STORED POINT, read off the library's own transform rather than off anything
   // S4 computes. A point LEFT of and BELOW centre means the picture has to move RIGHT and UP for it to

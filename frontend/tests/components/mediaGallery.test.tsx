@@ -1275,7 +1275,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     expect(within(dialog).getByText(/Default — ships with the app/)).toBeTruthy();
     // …but it DOES frame since "W10": there is nothing on disk to delete, and everything to re-aim —
     // on a fresh install the shipped cast is the whole of what the owner has to frame.
-    expect(within(dialog).getByRole("button", { name: /framing/i })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: /focus/i })).toBeTruthy();
   });
 
   it("names the BINDING SOURCE in a named role — the key field, or the filename (§2.2)", async () => {
@@ -1333,7 +1333,7 @@ describe("the item detail's action pill, per section kind", () => {
     renderGallery();
     const dialog = await openSection("Characters");
     openItem(dialog, "b.webp");
-    expect(labels(dialog)).toEqual(["Top", "Up", "Down", "Bottom", "Framing", "Delete"]);
+    expect(labels(dialog)).toEqual(["Top", "Up", "Down", "Bottom", "Focus", "Delete"]);
     // The ↑/↓ pair is the WCAG single-pointer alternative to the drag: it stays focusable and live.
     const up = within(dialog).getByRole("button", { name: "Up" });
     expect(up).toHaveProperty("disabled", false);
@@ -1348,7 +1348,7 @@ describe("the item detail's action pill, per section kind", () => {
     renderGallery();
     const dialog = await openSection("Characters");
     openItem(dialog, "lyra (default)");
-    expect(labels(dialog)).toEqual(["Top", "Up", "Down", "Bottom", "Framing"]);
+    expect(labels(dialog)).toEqual(["Top", "Up", "Down", "Bottom", "Focus"]);
   });
 
   it("a SEAT's pill is its ONE control — the binding, and nothing that writes the source library", async () => {

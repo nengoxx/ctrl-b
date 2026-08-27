@@ -468,7 +468,7 @@ async function confirmRestore(
 ): Promise<void> {
   const ok = await requestConfirm({
     title: `Restore the default images for ${section.title}?`,
-    body: "The images that came with the app go back on top, in their original order and in use. Your own images stay in the library, switched off — nothing is deleted, and their framing is untouched.",
+    body: "The images that came with the app go back on top, in their original order and in use. Your own images stay in the library, switched off — nothing is deleted, and their focus points are untouched.",
     confirmLabel: "Restore",
   });
   if (ok) onRestore();

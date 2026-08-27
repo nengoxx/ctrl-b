@@ -291,9 +291,7 @@ describe("the framing affordance is capability-gated (§5)", () => {
   it("appears on an owner file in a FRAMABLE role, and says whether one is set", async () => {
     renderGallery(index([file("a", "characters"), ...cast]));
     const dialog = await openItem("Characters", "a.webp");
-    expect(within(dialog).getByRole("button", { name: "Framing" }).textContent).toContain(
-      "not set",
-    );
+    expect(within(dialog).getByRole("button", { name: "Focus" }).textContent).toContain("not set");
   });
 
   it("reads SET once the point is keyed to the file's CURRENT revision", async () => {
@@ -301,7 +299,7 @@ describe("the framing affordance is capability-gated (§5)", () => {
       index([file("a", "characters", { focal: { x: 0.4, y: 0.2, rev: "1:88000" } }), ...cast]),
     );
     const dialog = await openItem("Characters", "a.webp");
-    expect(within(dialog).getByRole("button", { name: "Framing" }).textContent).toContain("set");
+    expect(within(dialog).getByRole("button", { name: "Focus" }).textContent).toContain("set");
   });
 
   it("is OFFERED on a BUNDLED entry too ('W10' — the recorded H3 seam, built)", async () => {
@@ -313,9 +311,7 @@ describe("the framing affordance is capability-gated (§5)", () => {
     // bundled and the exclusion bit at 100%.
     renderGallery(index([file("a", "characters"), ...cast]));
     const dialog = await openItem("Characters", "pegasus (default)");
-    expect(within(dialog).getByRole("button", { name: "Framing" }).textContent).toContain(
-      "not set",
-    );
+    expect(within(dialog).getByRole("button", { name: "Focus" }).textContent).toContain("not set");
   });
 
   it("is ABSENT on a role the registry does not declare framable", async () => {
@@ -328,7 +324,7 @@ describe("the framing affordance is capability-gated (§5)", () => {
       slots: {},
     });
     const dialog = await openItem("Transition figure", "cut.webp");
-    expect(within(dialog).queryByRole("button", { name: "Framing" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Focus" })).toBeNull();
   });
 
   it("is ABSENT on a file whose bytes cannot be read — there is nothing to frame", async () => {
@@ -339,7 +335,7 @@ describe("the framing affordance is capability-gated (§5)", () => {
       ]),
     );
     const dialog = await openItem("Characters", "bad.webp");
-    expect(within(dialog).queryByRole("button", { name: "Framing" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Focus" })).toBeNull();
     // …and the panel still SAYS why, which is the part the owner has to act on.
     expect(within(dialog).getByText(/unreadable or unsupported format/)).toBeTruthy();
   });
@@ -349,8 +345,8 @@ describe("the sheet itself", () => {
   it("opens as its OWN dialog with the previews the registry declares, captioned as examples", async () => {
     renderGallery(index([file("a", "characters"), ...cast]));
     const gallery = await openItem("Characters", "a.webp");
-    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
-    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
+    fireEvent.click(within(gallery).getByRole("button", { name: "Focus" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set focus" });
     // One window per registry row, labelled in the owner's words…
     for (const label of ["capsule card", "promo slide", "magazine cover"])
       expect(within(sheet).getByText(label)).toBeTruthy();
@@ -368,12 +364,10 @@ describe("the sheet itself", () => {
     );
     const gallery = await openItem("Characters", "a.webp");
     // …and the affordance already reads "not set", because a stale point IS unset everywhere.
-    expect(within(gallery).getByRole("button", { name: "Framing" }).textContent).toContain(
-      "not set",
-    );
-    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
-    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
-    expect(within(sheet).getByText("Framing was reset — the file changed.")).toBeTruthy();
+    expect(within(gallery).getByRole("button", { name: "Focus" }).textContent).toContain("not set");
+    fireEvent.click(within(gallery).getByRole("button", { name: "Focus" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set focus" });
+    expect(within(sheet).getByText("Focus was reset — the file changed.")).toBeTruthy();
   });
 
   it("SEEDS from the stored point, so an untouched Save stores the SAME value (Emma #1)", async () => {
@@ -389,8 +383,8 @@ describe("the sheet itself", () => {
       index([file("a", "characters", { focal: { x: 0.18, y: 0.82, rev: "1:88000" } }), ...cast]),
     );
     const gallery = await openItem("Characters", "a.webp");
-    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
-    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
+    fireEvent.click(within(gallery).getByRole("button", { name: "Focus" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set focus" });
     // The previews paint the STORED framing on open — the sheet's own visible proof of the seed.
     const preview = sheet.querySelector<HTMLImageElement>(".mgal-frame-win img");
     expect(preview?.style.objectPosition, "the previews show the stored point").toBe("18% 82%");
@@ -409,9 +403,9 @@ describe("the sheet itself", () => {
     const gallery = await openItem("Characters", "pegasus (default)");
     // The control says SET, which is the whole bundled rule in one word: `rev: ""` would read as
     // stale on a file, and reads as live here because there is no revision to disagree with.
-    expect(within(gallery).getByRole("button", { name: "Framing" }).textContent).toContain("set");
-    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
-    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
+    expect(within(gallery).getByRole("button", { name: "Focus" }).textContent).toContain("set");
+    fireEvent.click(within(gallery).getByRole("button", { name: "Focus" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set focus" });
     // …so the sheet SEEDS from it (the previews are the visible proof), and an untouched Save writes
     // the same point back rather than the centre.
     expect(sheet.querySelector<HTMLImageElement>(".mgal-frame-win img")?.style.objectPosition).toBe(
@@ -433,8 +427,8 @@ describe("the sheet itself", () => {
       index([file("a", "characters", { focal: { x: 0.18, y: 0.82, rev: "1:88000" } }), ...cast]),
     );
     const gallery = await openItem("Characters", "a.webp");
-    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
-    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
+    fireEvent.click(within(gallery).getByRole("button", { name: "Focus" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set focus" });
 
     // …and now an SSH overwrite lands and the authoritative refetch publishes it.
     act(() => {
@@ -455,8 +449,8 @@ describe("the sheet itself", () => {
       index([file("a", "characters", { focal: { x: 0.18, y: 0.82, rev: "1:88000" } }), ...cast]),
     );
     const gallery = await openItem("Characters", "a.webp");
-    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
-    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
+    fireEvent.click(within(gallery).getByRole("button", { name: "Focus" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set focus" });
     act(() => {
       qc.setQueryData(
         ["media", "gacha"],
@@ -474,8 +468,8 @@ describe("the sheet itself", () => {
       index([file("a", "characters", { focal: { x: 0.4, y: 0.2, rev: "1:88000" } }), ...cast]),
     );
     const gallery = await openItem("Characters", "a.webp");
-    fireEvent.click(within(gallery).getByRole("button", { name: "Framing" }));
-    const sheet = await screen.findByRole("dialog", { name: "Set framing" });
+    fireEvent.click(within(gallery).getByRole("button", { name: "Focus" }));
+    const sheet = await screen.findByRole("dialog", { name: "Set focus" });
     fireEvent.click(within(sheet).getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     // Cleared by REMOVAL, never by persisting a `{0.5, 0.5}` that means the same thing.
