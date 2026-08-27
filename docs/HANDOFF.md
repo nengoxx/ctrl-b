@@ -12,7 +12,41 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-27 — **S6 RAN AND CLOSED: the phone-in-hand device round**; Phase 21 is feature-COMPLETE, the release is the only step left; supersedes everything below where it speaks)
+## Current state (2026-08-27, SECOND block — 🏁 **RELEASED + LIVE v1.7.7; PHASE 21 IS DONE**; supersedes everything below where it speaks)
+
+- **PROD = v1.7.7 @ `578ffa7`, RELEASED + LIVE 2026-08-27** (Opus-operated runbook run, main-seat
+  spot-verified): push → CI green (run 33068811160) → **the mandatory pre-tag LOCAL e2e** (first
+  run 306/1 — the ONE fail was the KNOWN `layout.spec.ts` scroll-restoration contention flake
+  (~1-in-5, already → Phase 19 H-E2E; dev units were running alongside), characterized before
+  proceeding: spec-alone pass + a clean FULL re-run **307/0**; NOT the stale-pin class — the
+  renamed labels passed both runs) → tag → release gate green (run 33069680443, 7m55s, e2e ✓) →
+  `update.sh v1.7.6→v1.7.7` → all four verifications green (describe = v1.7.7 · health version
+  1.7.7 · icon-192 content-type png · unit active).
+- **The config_version 1→2 fold LANDED at cutover** (main-seat verified on disk: `config_version:
+  2`). **⚠ ROLLBACK OFF v1.7.7 IS TWO STEPS:** restore
+  `~/.ctrl-b/backups/config.yaml.20260827T120614Z` FIRST, then re-deploy **v1.7.6** (which cannot
+  read shape 2; §Rollback order is the safety property). DB snapshot
+  `ctrlb-20260827-140614.db.gz` (schema 6 untouched). ⚠ v1.7.5/v1.7.3/v1.7.0 stay tagged-never-
+  deployed — not rollback targets.
+- **The rig is torn down**: `:8443` serve removed (443 → prod :5433 alone), dev units STOPPED
+  (on-demand policy). Origin = local `main` = release sha + this docs commit; nothing else open.
+- **Owed to the owner (no session needed):** the first prod ride on the phone — ordinary daily
+  use now carries the deferred live-use probes (autoscroll on a long grid · a >15 MB refusal
+  whenever one occurs · the multi-window walk as they browse). Findings → fix waves as ever.
+
+## ▶▶ NEXT (2026-08-27, post-release — a clean session; supersedes the lists below)
+
+1. **Nothing is owed on Phase 21.** Live-use findings from the owner's daily prod rides get
+   triaged as they land (bug → fix wave · feel → prose first). W10/S6 residuals stay recorded in
+   the plan (§12) — none owed now.
+2. **The 2026-08-22 menu governs again** (the standing order): **Phase 19 (D58) owner court**
+   (spec-complete; at wake the delta council check first, then the §10 rulings — the phase's
+   †-items and Emma's lane-stall MED fold in; the e2e flake register candidate from this
+   release's pre-tag run joins H-E2E's evidence) · the **A13 design talk** · the parked ledger
+   (§P discipline).
+3. **1.8 stays RESERVED** for the final ROADMAP/ISSUES cleanup wave.
+
+## Prior state (2026-08-27, FIRST block — S6 ran and closed; superseded above where it speaks)
 
 - **The owner drove the round on the Honor 20 over real HTTPS** — rig: a second Tailscale Serve
   port (`:8443 → :5434`, the dev backend serving a fresh PRODUCTION build of tip; prod untouched
