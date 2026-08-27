@@ -6704,10 +6704,20 @@ body[data-perf="lite"] .kit .mgal-edit {
   bottom: -22px;
   transform: translateX(-50%);
   z-index: 1;
+  /* `max-content` under the clamp, not shrink-to-fit: an abs-positioned wrap container would
+   * otherwise size to MIN-content and wrap even where one row fits. */
+  width: max-content;
   max-width: calc(100% - 20px);
   display: flex;
+  /* Narrow phones (the S6 device round, 360px CSS viewport): the pill WRAPS between its clusters —
+   * the flex children are the clusters, so the break lands exactly at the arrange/act boundary and
+   * every control stays visible at its full target size. The earlier answer (scroll inside the pill)
+   * clipped Delete mid-word with no affordance that more existed. Wrapped rows centre; a single row
+   * is width-filling, so `center` is inert there. */
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: stretch;
-  gap: 4px;
+  gap: 4px 10px;
   padding: 4px;
   border-radius: var(--radius-sm);
   background: var(--skin-fill, color-mix(in oklch, var(--surface) 92%, transparent));
@@ -6715,9 +6725,8 @@ body[data-perf="lite"] .kit .mgal-edit {
   backdrop-filter: var(--skin-frost, blur(8px));
   border: 1px solid var(--skin-border, var(--line-2));
   box-shadow: var(--skin-elev, 0 10px 30px rgba(0, 0, 0, 0.35));
-  /* Wide libraries and narrow phones: the pill scrolls inside itself rather than pushing the panel
-   * sideways. The scrollbar is the platform's; the row never wraps, because a two-row pill stops
-   * reading as one control strip. */
+  /* Backstop only: a lone cluster wider than the stage (sub-230px viewports) scrolls rather than
+   * pushing the panel sideways. */
   overflow-x: auto;
 }
 body[data-mode="light"] .kit .mgal-pill {
@@ -6728,17 +6737,12 @@ body[data-perf="lite"] .kit .mgal-pill {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-/* The two CLUSTERS, with the divider that separates arranging from acting. `:not(:first-child)` rather
- * than a rendered separator element: which clusters exist is capability-gated, so a hard divider would
- * be a stray line whenever the first one is absent. */
+/* The two CLUSTERS. Arranging and acting are separated by the pill's wider inter-cluster gap rather
+ * than a drawn divider: a border-left divider would render as a stray tick at the start of a wrapped
+ * row, and spacing separates just as well on one row as on two. */
 .kit .mgal-pill-group {
   display: flex;
   gap: 2px;
-}
-.kit .mgal-pill-group:not(:first-child) {
-  padding-left: 5px;
-  margin-left: 1px;
-  border-left: 1px solid var(--line);
 }
 .kit .mgal-pill-btn {
   all: unset;

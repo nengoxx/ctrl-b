@@ -1036,7 +1036,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     renderGallery();
     const dialog = await openSection("Characters");
     openItem(dialog, "c.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     // The amended tier rule in one assertion (§2.3 ③, owner 2026-08-25): an ORDER intent names the
     // WHOLE section — the disk rows and the five bundled defaults alike, in the resulting order. The
@@ -1080,7 +1080,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     );
     const dialog = await openSection("Transition figure");
     openItem(dialog, "cut2.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(savedBlock()).not.toHaveProperty("slots");
     expect(filesOf(savedBlock(), "reel")).toEqual([{ name: "cut2.webp" }, { name: "cut.webp" }]);
@@ -1130,7 +1130,7 @@ describe("the item detail panel (§6.4) and what its actions write", () => {
     const dialog = await openSection("Fleet backdrop");
     openItem(dialog, "b.webp");
     expect(within(dialog).queryByRole("button", { name: "Up" })).toBeNull();
-    expect(within(dialog).queryByRole("button", { name: "To top" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Top" })).toBeNull();
   });
 
   it("RESTORE DEFAULTS is absent on a section still exactly as it shipped, and present once it is not", async () => {
@@ -1333,7 +1333,7 @@ describe("the item detail's action pill, per section kind", () => {
     renderGallery();
     const dialog = await openSection("Characters");
     openItem(dialog, "b.webp");
-    expect(labels(dialog)).toEqual(["To top", "Up", "Down", "To bottom", "Framing", "Delete"]);
+    expect(labels(dialog)).toEqual(["Top", "Up", "Down", "Bottom", "Framing", "Delete"]);
     // The ↑/↓ pair is the WCAG single-pointer alternative to the drag: it stays focusable and live.
     const up = within(dialog).getByRole("button", { name: "Up" });
     expect(up).toHaveProperty("disabled", false);
@@ -1348,7 +1348,7 @@ describe("the item detail's action pill, per section kind", () => {
     renderGallery();
     const dialog = await openSection("Characters");
     openItem(dialog, "lyra (default)");
-    expect(labels(dialog)).toEqual(["To top", "Up", "Down", "To bottom", "Framing"]);
+    expect(labels(dialog)).toEqual(["Top", "Up", "Down", "Bottom", "Framing"]);
   });
 
   it("a SEAT's pill is its ONE control — the binding, and nothing that writes the source library", async () => {
@@ -1403,7 +1403,7 @@ describe("the write queue (§4 — serialized, recomputed at send, quiet)", () =
     renderGallery();
     const dialog = await openSection("Characters");
     openItem(dialog, "c.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(toast.pushToast).not.toHaveBeenCalled();
   });
@@ -1532,14 +1532,14 @@ describe("the write queue (§4 — serialized, recomputed at send, quiet)", () =
     // One gesture in each namespace, back to back — two queues, two drains, one lane.
     const gacha = await openSection("Characters");
     openItem(gacha, "c.webp");
-    fireEvent.click(within(gacha).getByRole("button", { name: "To top" }));
+    fireEvent.click(within(gacha).getByRole("button", { name: "Top" }));
     // …and away from the first gallery, so the second one is the only dialog on screen. The queued
     // write does not live in the modal (it is the hook's), which is exactly why the lane has to be.
     fireEvent.click(within(gacha).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     const frontier = await openSection("Rig cards");
     openItem(frontier, "r2.webp");
-    fireEvent.click(within(frontier).getByRole("button", { name: "To top" }));
+    fireEvent.click(within(frontier).getByRole("button", { name: "Top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     await new Promise((r) => setTimeout(r, 10));
     expect(api.putJSON).toHaveBeenCalledTimes(1); // the second is HELD, not lost
@@ -1554,7 +1554,7 @@ describe("the write queue (§4 — serialized, recomputed at send, quiet)", () =
     renderGallery();
     const dialog = await openSection("Characters");
     openItem(dialog, "c.webp");
-    const act = within(dialog).getByRole("button", { name: "To top" });
+    const act = within(dialog).getByRole("button", { name: "Top" });
     expect(act).toHaveProperty("disabled", true);
     fireEvent.click(act);
     await waitFor(() => expect(within(dialog).getByText("c.webp")).toBeTruthy());
@@ -1644,7 +1644,7 @@ describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W
     );
     return openSection("Characters").then(async (dialog) => {
       openItem(dialog, "off.webp");
-      fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Top" }));
       await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
       expect(filesOf(savedBlock())).toEqual([
         { name: "off.webp", hidden: true },
@@ -1669,7 +1669,7 @@ describe('ORDER and MEMBERSHIP are two systems, and neither writes the other ("W
     );
     const dialog = await openSection("Transition figure");
     openItem(dialog, "lyra (default)");
-    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(1));
     expect(savedBlock()).toEqual({
       roles: { reel: { files: [{ bundled: "lyra" }, { name: "cut.webp" }] } },
@@ -1818,7 +1818,7 @@ describe('the stem/id pin collision, DELETED (the 2026-08-26 owner ruling, "W9")
     expect(within(dialog).queryByText(/answer to/)).toBeNull();
     // …and it is an ordinary member: in use, and arrangeable like any other.
     expect(within(dialog).getByRole("switch", { name: /In use — a.png/ })).toBeTruthy();
-    expect(within(dialog).getByRole("button", { name: "To top" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Top" })).toBeTruthy();
   });
 });
 
@@ -2126,13 +2126,13 @@ describe("the queue past its failure and staleness bounds (reviews #4 and #7)", 
     );
     let dialog = await openSection("Characters");
     openItem(dialog, "b.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Top" }));
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     dialog = await openSection("Transition figure");
     openItem(dialog, "cut2.webp");
-    fireEvent.click(within(dialog).getByRole("button", { name: "To top" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Top" }));
     await waitFor(() => expect(api.putJSON).toHaveBeenCalledTimes(2));
     expect(filesOf(savedBlock(0))).toEqual([{ name: "b.webp" }, { name: "a.webp" }]);
     expect(filesOf(savedBlock(1), "reel")).toEqual([{ name: "cut2.webp" }, { name: "cut.webp" }]);

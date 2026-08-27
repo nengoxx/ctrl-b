@@ -196,10 +196,12 @@ export function ItemDetail({
                     stated at all — including a KEY gallery, where a relative move would step through
                     neighbours that are not on screen but the duplicate tie-break still needs
                     settling. The ↑/↓ pair beside it is the WCAG single-pointer alternative to the
-                    drag and stays focusable and functional whatever the pointer can do. */}
+                    drag and stays focusable and functional whatever the pointer can do. The verbs
+                    are the compact pair Top/Bottom (S6 owner ruling): the "To " prefix was width
+                    the phone didn't have. */}
                 {canPromote && (
                   <PillButton
-                    label="To top"
+                    label="Top"
                     disabled={!ready || first}
                     onClick={() => onMoveToEdge("top")}
                   >
@@ -215,7 +217,7 @@ export function ItemDetail({
                       <DownIcon />
                     </PillButton>
                     <PillButton
-                      label="To bottom"
+                      label="Bottom"
                       disabled={!ready || last}
                       onClick={() => onMoveToEdge("bottom")}
                     >

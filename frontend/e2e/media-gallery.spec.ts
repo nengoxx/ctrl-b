@@ -229,7 +229,7 @@ test("Conf · Theme art — the library round trip: activate · reorder · In us
   //    an ORDER intent, so the write names the WHOLE section — the two files and the five bundled
   //    defaults, in the order they now sit (§2.3 ③ as amended).
   await dialog.getByRole("button", { name: "b.webp", exact: true }).click();
-  await dialog.getByRole("button", { name: "To top", exact: true }).click();
+  await dialog.getByRole("button", { name: "Top", exact: true }).click();
   await expect.poll(() => puts.length).toBe(1);
   expect(puts[0]).toEqual({
     media: {
@@ -620,7 +620,7 @@ test("Conf · Theme art — what the gallery says is in use is what the FLEET pa
   await card.click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "b.webp", exact: true }).click();
-  await dialog.getByRole("button", { name: "To top", exact: true }).click();
+  await dialog.getByRole("button", { name: "Top", exact: true }).click();
   await expect
     .poll(() => st.files)
     .toEqual([{ name: "b.webp" }, { name: "a.webp" }, ...castEntries()]);
@@ -762,18 +762,18 @@ test("Conf · Theme art — the UPLOAD round trip: Add → pick → crop → til
   await expect(tile).toBeVisible();
   await expect(dialog.getByRole("status")).toContainText(`${BUNDLED.length + 1} images`); // the upload + the bundled tier
 
-  // ⑤ it is an ordinary library entry from here on: arrange it, then delete it. "To top" is DISABLED
+  // ⑤ it is an ordinary library entry from here on: arrange it, then delete it. "Top" is DISABLED
   //    here and that is the honest state — an upload lands at the head of the collation, so it is
   //    already the active image and there is nowhere to promote it to.
   await tile.click();
-  await expect(dialog.getByRole("button", { name: "To top", exact: true })).toBeDisabled();
-  await dialog.getByRole("button", { name: "To bottom", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Top", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Bottom", exact: true }).click();
   await expect.poll(() => puts.length).toBe(2);
   await dialog.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).last().click();
   await expect.poll(() => deletes.length).toBe(1);
   expect(deletes[0]).toBe("/api/media/gacha/files/characters/photo-320x240.webp");
-  // The upload's entry is gone; the cast stays listed, because ⑤'s "To bottom" was an order intent
+  // The upload's entry is gone; the cast stays listed, because ⑤'s "Bottom" was an order intent
   // and named the whole section. A DELETE is not one, so it removes exactly the entry it was about.
   await expect.poll(() => st.files).toEqual(castEntries());
 });
