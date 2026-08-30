@@ -179,6 +179,13 @@ export default defineConfig({
     // http://corsair:5190) or the Tailscale Serve *.ts.net FQDN. Safe here: tailnet-only,
     // no public bind (AGENTS.md §6 security model).
     allowedHosts: true,
+    // Phone-rig HMR (design sessions): when Tailscale Serve fronts this server on another port
+    // (e.g. :8443 → :5173), the HMR websocket must dial the SERVE origin or hot reload dies to
+    // mixed content. Env-gated so plain local :5173 use is byte-identical (Vite infers wss from
+    // the https page; only the port needs saying).
+    ...(process.env.VITE_HMR_CLIENT_PORT
+      ? { hmr: { clientPort: Number(process.env.VITE_HMR_CLIENT_PORT) } }
+      : {}),
     proxy: { "/api": process.env.VITE_API_TARGET || "http://127.0.0.1:5433" },
   },
 });
