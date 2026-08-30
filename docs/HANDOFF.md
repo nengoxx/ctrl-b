@@ -12,7 +12,64 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-27, SECOND block — 🏁 **RELEASED + LIVE v1.7.7; PHASE 21 IS DONE**; supersedes everything below where it speaks)
+## Current state (2026-08-30 — THE FLEET WAVE: D67 pending power transitions + the gacha transition redesign, PUSHED; supersedes everything below where it speaks)
+
+- **Origin = local `main` = `7096522`** (+ this docs commit): two commits on top of v1.7.7 —
+  `210c20b` (chore: env-gated Vite HMR `clientPort` for the phone rig) and `7096522` (**D67** +
+  the transition redesign). Full pre-push gate green (BE 2,002 · FE **2,656/160** · tsc/eslint/
+  prettier). **Prod untouched: v1.7.7 @ `578ffa7`. NOTHING RELEASED from this wave yet.**
+- **D67 (DECISIONS, + same-day rider): app-wide pending power transitions.** The owner's live
+  finding — WAKING blinked ~100ms then SLEEPING for the whole boot; shutdowns bounced
+  offline→online→offline — was the assumed-state-vs-poll-truth class (HA core#86735). Now:
+  `store/fleetPending` holds a per-host `{kind, token}` from DISPATCH until poll agreement, the
+  per-direction ceiling (wake 180s · shutdown 90s), or request failure; `useFleet` presents hosts
+  through the overlay and folds pending into `busy`; the optimistic cache flip is DELETED;
+  frontier's brand count reads through the overlay; gacha chips/ceremony/labels carry WAKING
+  truthfully on all three layouts; **the grace window holds ACTIONS never SELECTION** (cover
+  disables only the hero, poster only the picked slice). Council: 4 blind sol rounds (design →
+  diff-confirm → 2 MEDs → final RESOLVED) + an Opus test-rework subagent; every finding folded.
+- **The gacha fleet-tab transitions, owner-ratified:** cover promote = ONE simultaneous hero
+  cross-fade (target-bound inert ghost; the lab's page fold / hero zoom / masthead pulse DELETED) ·
+  poster pick swaps SNAP (wake ceremony keeps its glide under `.staging`) · **the dossier-open
+  96%/104% page zoom is DEAD** — the long-banked E1 "screenshot flicker" item, finally reproduced
+  by the owner; the `detail` page pair is a duration-only fade and only the portrait/cutout flies.
+- **Wake-on-presence (D2-A): LIVE-PROVEN and returned to OFF.** The dev rig test fired for real
+  (2026-08-30 06:49Z, `wake_host → vault`, actor system, on the phone's tailnet arrival). The dev
+  config's vault flag is reverted; prod keeps per-host switches OFF. Enabling for real = one
+  machine-editor toggle, whenever wanted.
+- **The rig is torn down** (`:8443` off, dev units stopped, the HMR drop-in removed). The
+  2026-08-29 owner rounds also drove the whole design live on the phone via that rig — the
+  standing move for feel sessions (the vite seam is now committed).
+
+## ▶▶ NEXT (2026-08-30 — the PRE-RELEASE menu; the owner asked "what else before updating live production")
+
+**The release itself (v1.7.8, on the owner's word):** runbook §Release, Opus-operated · NO config
+or DB migration rides this wave (D67 is config-free) · **rollback = v1.7.7** (one step — both
+sides are config_version 2) · the pre-tag LOCAL e2e is MANDATORY, and this wave is exactly the
+stale-pin trigger class (renamed aria-labels + chips + deleted keyframes — sweep non-exact e2e
+`name:` pins against the new label forms first).
+
+**Polish candidates before (or with) the release — none owed, all recorded:**
+1. **Poster pick-snap feel** (owner: "a little harsh… review later") — likely shape: a quick fade
+   on just the two affected bands, not the old glide.
+2. **The dossier-open page fade's outgoing leg** went 200→300ms — the ONE knob if the owner's
+   "slight sluggishness in the shrink" feeling persists (the 560ms portrait spring is ruled look;
+   the Emma round found no jank mechanism).
+3. **Owed owner device pair on prod, standing since v1.7.6:** ① F1 notifications device test
+   (master ON → background → host transition → tap lands on Fleet) · ② icon-backdrop fresh
+   install. ③ **Edit a prompt for real** (Phase 18's first owner-driving, still owed).
+4. **Phase 21 live-use deferrals** riding daily prod use: autoscroll on a long grid · a >15 MB
+   413 refusal · the multi-window cast walk. Plus W10 residuals (plan §12).
+5. **Reboot as the pending model's third `kind`** (D67 boundary — additive when wanted).
+6. **A13 design talk** (OpenAI-OAuth/Codex provider; owner: "maybe later").
+7. Parked/standing: ISS-10 ② glyph cross-fades (owner-parked) · C3 S2 read-along (build on ask) ·
+   Emma's lane-stall MED → Phase 19 · §P discipline.
+
+**Phase 19 (D58) goes LAST (owner ruling 2026-08-29): it rides the 1.8 endgame — polish first,
+never lead a session menu with the hardening court.** 1.8 stays RESERVED for the final
+ROADMAP/ISSUES cleanup wave; this wave's e2e observations keep feeding H-E2E's register.
+
+## Prior state (2026-08-27, SECOND block — 🏁 **RELEASED + LIVE v1.7.7; PHASE 21 IS DONE**; superseded above where it speaks)
 
 - **PROD = v1.7.7 @ `578ffa7`, RELEASED + LIVE 2026-08-27** (Opus-operated runbook run, main-seat
   spot-verified): push → CI green (run 33068811160) → **the mandatory pre-tag LOCAL e2e** (first
