@@ -39,7 +39,8 @@ import { isHighStar, starsFor } from "./stars";
 //    same hue, same hard shadow as PLATE; it sits lower, on the diagonal, with the role line lifted above
 //    it. Both treatments are one `[data-name]` attribute on the root, exactly as the lab walked them.
 //  · STATUS NEVER RIDES ON DECORATION ALONE (§12.3 ④): the chip stays, in its one authored seat, in both
-//    treatments and both liveness skins. `WAKING` rides it only while the request is genuinely in flight.
+//    treatments and both liveness skins. `WAKING` rides it through the wake's grace window
+//    (store/fleetPending, 2026-08-30) — dispatch until poll agreement, expiry, or failure.
 //  · THE DATA BLOCK IS IN THE FLOW, LAST, and never sticky: production's bottom belongs to the tab bar and
 //    the composer floating over it, so a pinned readout there is the natural WRONG implementation.
 
@@ -109,6 +110,10 @@ export function GachaPoster({
   // whole parting down rather than translating every slice by a bogus distance.
   const stageIndex = stage ? hosts.findIndex((h) => h.id === stage.id) : -1;
   const parting = !!stage?.parting && stageIndex >= 0;
+  // V-POSTER TRIAL (2026-08-30): the wake ceremony's WHOLE span (stage set at beat 0, nulled at 880),
+  // carried as a container class so gacha.css can keep the slice transform transition for the
+  // theatre's part-out AND its 700ms return glide, while an ordinary pick swap — no ceremony — snaps.
+  const staging = !!stage && stageIndex >= 0;
 
   /** One tap on a slice. A tap DURING a ceremony is swallowed into a skip: R24 §B.3's tap-anywhere-skip
    *  already reaches here through the hook's own document listener, and letting the same gesture ALSO
@@ -179,12 +184,21 @@ export function GachaPoster({
           layout must refuse input, exactly as the capsule track's grid does. */}
       {hosts.length > 0 && (
         <div className="po-body" inert={reeling}>
-          <div className={"po-poster" + (parting ? " parting" : "")} data-name={nameMode}>
+          <div
+            className={"po-poster" + (staging ? " staging" : "") + (parting ? " parting" : "")}
+            data-name={nameMode}
+          >
             {hosts.map((host, i) => {
               const online = !!host.status?.online;
               const stars = starsFor((host.services ?? []).length, starMode);
               const isPicked = host.id === picked;
               const isBusy = busy.has(host.id);
+              // HELD = the slice refuses interaction — scoped to the PICKED slice (owner ruling
+              // 2026-08-30, the cover's rule verbatim): only the picked slice's tap is an ACTION
+              // (open / wake); an unpicked slice's tap is pure SELECTION and must stay live through
+              // the wake/shutdown grace window that `busy` now spans (D67). Re-wake safety is the
+              // router's synchronous busy-guard, not this attribute.
+              const held = isPicked && isBusy;
               const slice = art(i);
               return (
                 <button
@@ -194,7 +208,7 @@ export function GachaPoster({
                     "po-slice gc-host-hit" +
                     (online ? "" : " asleep") +
                     (isPicked ? " picked" : "") +
-                    (isBusy ? " busy" : "") +
+                    (held ? " busy" : "") +
                     (stage?.flash && stage.id === host.id ? " waking" : "")
                   }
                   style={
@@ -211,10 +225,10 @@ export function GachaPoster({
                       "--po-part": parting ? partingStep(i, stageIndex) : 0,
                     } as CSSProperties
                   }
-                  aria-label={pickLabel(host, stars, isPicked)}
+                  aria-label={pickLabel(host, stars, isPicked, waking.has(host.id))}
                   aria-pressed={isPicked}
-                  aria-busy={isBusy || undefined}
-                  disabled={isBusy}
+                  aria-busy={held || undefined}
+                  disabled={held}
                   // CAPTURE phase, and it records the ceremony's state RATHER than acting on it — the
                   // hook's own document listener does the skipping. See `skippedGesture`.
                   onPointerDownCapture={() => {
@@ -277,11 +291,11 @@ export function GachaPoster({
                       </span>
                       <span className="po-role">{roleLabel(host)}</span>
                     </span>
-                    {/* STATUS, always literal (§12.3 ④). `WAKING` is licensed by the REQUEST being in flight
-                      and by nothing else — when it settles the chip returns to the server's word, which
-                      stays SLEEPING until a poll says otherwise. */}
+                    {/* STATUS, always literal (§12.3 ④). `WAKING` is licensed by the wake's grace
+                      window (store/fleetPending) and by nothing else — observed-online outranks it,
+                      and the window ends on agreement, expiry, or failure. */}
                     <span className="po-chip">
-                      {waking.has(host.id) ? "WAKING" : online ? "ONLINE" : "SLEEPING"}
+                      {online ? "ONLINE" : waking.has(host.id) ? "WAKING" : "SLEEPING"}
                     </span>
                     {/* THE CORNER TAG (owner, third walk) — the lab's `.po-jp`, revived as FLAVOUR: a
                       frozen pool glyph picked by fleet POSITION, never anything host-derived. It says

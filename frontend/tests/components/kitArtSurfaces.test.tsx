@@ -89,7 +89,9 @@ const painted = (role: string, name: string, revision = `1:90000:${name}`) =>
 const index = (roles: Partial<Record<string, MediaFile[]>>): MediaIndex =>
   ({ ns: "kit", collation: "library-v1", roles, slots: {} }) as MediaIndex;
 
-const run = async () => {};
+/** A `FleetRun` that does nothing and reports ok — `run` resolves an OUTCOME since the pending-transition
+ *  store landed (2026-08-30), and nothing in this file dispatches an action anyway. */
+const run = async () => true;
 const noop = () => {};
 
 const kitFleet = (services: Service[]) => {

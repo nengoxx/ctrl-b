@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { BottomSheet, type SheetDetent } from "../../components/BottomSheet";
 import { useFleet } from "../../hooks/useFleet";
@@ -69,6 +69,7 @@ export function GachaFleet({ active }: { active: boolean }) {
     hosts,
     svcByHost,
     busy,
+    pending,
     run,
     hasData,
     isLoading,
@@ -161,15 +162,18 @@ export function GachaFleet({ active }: { active: boolean }) {
   //    (`resolvedPick` below) and that resolution is never written back, so the first machine is selected
   //    at boot without a state write.
   const [pickedId, setPickedId] = useState<string | null>(null);
-  // Which machines have a WAKE REQUEST in flight. Distinct from `busy`, which is per-HOST and cannot say
-  // WHICH action (R25 §Q1b) — this is the single fact that licenses a `WAKING` chip, and a machine leaves
-  // it the moment its request settles. The card then reads the SERVER's word again: only a hosts poll may
-  // flip it online (ruling 4 — `useActions` gives wake no optimism by design, and this adds none).
-  //
-  // A SET, not one slot (Codex E1 LOW-4). Two wakes can genuinely overlap — wake A, and while its request
-  // is still pending select and wake B — and a single slot made A's chip drop to SLEEPING the instant B
-  // was dispatched, which is a false negative about a request that is still in the air.
-  const [waking, setWaking] = useState<ReadonlySet<string>>(() => new Set());
+  // Which machines are inside a WAKE's grace window — derived from the app-wide pending-transition
+  // store (2026-08-30; supersedes the request-scoped local set). The old set cleared the moment the
+  // HTTP round-trip settled (~100ms), so the WAKING chip blinked and the develop ceremony's devLive
+  // gate killed the theatre mid-flight while the machine booted for a minute wearing SLEEPING. The
+  // store entry begins at dispatch (useActions), survives the settle, and ends on poll AGREEMENT
+  // (observed online) or the 180s window — the HA assumed-state grace pattern (core#86735). Still a
+  // Set at this seam: GachaTrackProps pins the shape, and the R25 §Q1b fact stands — `busy` cannot
+  // say WHICH action, this can. Set-valued derivation is memoized on the store map's stable ref.
+  const waking = useMemo<ReadonlySet<string>>(
+    () => new Set([...pending].filter(([, e]) => e.kind === "wake").map(([id]) => id)),
+    [pending],
+  );
   // The fleet's ONE live region (ruling 3). gacha had none; select-then-act needs one because its only
   // feedback is a transform and a data block below the fold.
   //
@@ -375,11 +379,8 @@ export function GachaFleet({ active }: { active: boolean }) {
     // ceremony went on to announce a machine the state no longer held. The updater reads what the state
     // ACTUALLY holds now and clears only if THAT is the gone one, so a newer commit survives untouched.
     setPickedId((prev) => (prev !== null && !hosts.some((h) => h.id === prev) ? null : prev));
-    setWaking((prev) => {
-      if (prev.size === 0) return prev;
-      const next = new Set([...prev].filter((id) => hosts.some((h) => h.id === id)));
-      return next.size === prev.size ? prev : next; // identity-stable when nothing was pruned
-    });
+    // (`waking` needs no prune here any more — the pending store's reconcile drops entries whose
+    // machine left the config, and the set above is a pure derivation of that store.)
   }, [selected, pickedId, hosts, cleanMorphPrep, dropShowcase]);
 
   // THE RESOLVED PICK — the one value both the render and the router read (ruling 2, hardened at the E1
@@ -480,26 +481,22 @@ export function GachaFleet({ active }: { active: boolean }) {
         return "open";
       }
       // WAKE. A synchronous busy guard, because `busy` is per-host: a second wake fired into an action
-      // already in flight would be a duplicate request, not a retry. (The pre-existing `useFleetActions`
-      // overlap race is a recorded standing item across all five fleets, deliberately not rewritten here.)
+      // already in flight would be a duplicate request, not a retry — and since `useFleet` folds the
+      // pending-transition hosts into `busy` (2026-08-30), this same line is the grace-window
+      // redundant-send filter: a machine already WAKING (or mid-shutdown) refuses another packet
+      // until the polls agree or its window expires. (The pre-existing `useFleetActions` overlap
+      // race is a recorded standing item across all five fleets, deliberately not rewritten here.)
       if (busy.has(hostId)) return null;
-      setWaking((prev) => (prev.has(hostId) ? prev : new Set(prev).add(hostId)));
       // Same split as the select above: the cover's develop ceremony speaks its own sentence at its own
       // first beat (`coverDevelopAnnounce`), so this body stays quiet under that grammar rather than
       // announcing the same request twice in two different wordings.
       if (grammar === "act-first") announce(wakeAnnounce(host.name));
       // The SAME seam the dossier's Wake button calls — no new execution path, no UI confirm (D8: the
-      // registry decides, and `wake_host` is risk=LOW with no `confirm`). Settled either way, so a failed
-      // request cannot leave a machine lit as waking forever; `run` reports its own outcome as a toast.
-      // Only THIS host leaves the set, so an overlapping wake on another machine is untouched.
-      const done = () =>
-        setWaking((prev) => {
-          if (!prev.has(hostId)) return prev;
-          const next = new Set(prev);
-          next.delete(hostId);
-          return next;
-        });
-      void run("wake", host).then(done, done);
+      // registry decides, and `wake_host` is risk=LOW with no `confirm`). No state managed here any
+      // more: `run` begins the pending record at dispatch and clears it itself on failure
+      // (token-guarded), the store's window/reconcile own the rest, and `waking` above is a pure
+      // derivation of that record. `run` reports its own outcome as a toast.
+      void run("wake", host);
       return "wake";
     },
     [hosts, resolvedPick, grammar, starMode, busy, run, openHostDossier, announce],
@@ -535,8 +532,8 @@ export function GachaFleet({ active }: { active: boolean }) {
       setSelected(null);
       // …and the alt layouts' selection with it (ruling 2, the same branch), plus the live region: a
       // sentence left standing would be re-announced by some ATs on return to a tab whose selection has
-      // just been reset. The wake FLIGHT is not cleared here — the request is still in the air, and its
-      // own settle handler owns that flag.
+      // just been reset. Pending wakes are not cleared here — the boot is still in progress off-tab,
+      // and the fleetPending store's window/reconcile own that record.
       setPickedId(null);
       announce("");
     }

@@ -13,7 +13,14 @@ const fleet = vi.hoisted(() => {
   const view: Record<string, unknown> = {};
   return { view };
 });
-vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
+// The static view carries every fact but ONE: `pending` is read from the REAL `store/fleetPending`
+// (2026-08-30), so a tap that dispatches a wake drives the WAKING chip AND the develop ceremony's
+// `devLive` gate through the same store production uses. Merged here rather than frozen into the
+// fixture because the store is what MOVES during a case; everything else is a fixed backdrop.
+vi.mock("../../src/hooks/useFleet", async () => {
+  const { usePendingFleet } = await import("../../src/store/fleetPending");
+  return { useFleet: () => ({ ...fleet.view, pending: usePendingFleet() }) };
+});
 const media = vi.hoisted((): { data: unknown } => ({ data: undefined }));
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 
@@ -23,7 +30,9 @@ vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { WAKE_WINDOW_MS, beginPending, reconcilePending } from "../../src/store/fleetPending";
 import { setGachaReelRunning } from "../../src/store/gachaReel";
+import { dispatchingRun } from "./fleetRunMock";
 import { selectorsMentioning } from "./cssRules";
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import { settingRowVisible } from "../../src/theme-engine/settings";
@@ -62,7 +71,10 @@ function setFleet(over: Record<string, unknown> = {}): void {
   fleet.view = {
     hosts: [host("pegasus", true), host("atlas", false), host("vault", true)],
     svcByHost: new Map(),
-    run: vi.fn(() => Promise.resolve()),
+    // Begins the pending record at dispatch and resolves ok, like the real `run` — see `fleetRunMock`.
+    // `busy` stays the REQUEST-busy set the view is handed; production unions the pending hosts into it
+    // inside `useFleet`, which is that hook's own pin, not this layout's.
+    run: dispatchingRun(),
     busy: new Set<string>(),
     isLoading: false,
     error: null,
@@ -119,6 +131,10 @@ afterEach(() => {
     delete (document as { startViewTransition?: unknown }).startViewTransition;
     setGachaReelRunning(false);
     setUI({ themeSettings: {} });
+    // The pending store is MODULE state with real timers behind it — a wake dispatched by one case
+    // would still be WAKING in the next. Reconciling against an empty fleet is the sanctioned reset:
+    // every entry's host is gone, so every entry clears and every timer is disarmed.
+    reconcilePending([]);
   }
 });
 
@@ -323,28 +339,56 @@ describe("the promote ceremony", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  const page = (c: HTMLElement) => c.querySelector(".cv-page")!;
+  it("a WAKING cut-in stays SELECTABLE — the grace window holds actions, never selection (owner 2026-08-30)", () => {
+    // `busy` spans the whole wake/shutdown window since D67, and a blanket `disabled={isBusy}` froze
+    // a booting machine out of the cover for minutes. Only the HERO is an action control; a cut-in
+    // tap is pure selection, and the router's synchronous busy-guard is what refuses a re-wake.
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false), host("vault", true)] });
+    const { container } = render(<GachaFleet active />);
+    act(() => void beginPending("atlas", "wake"));
+    const atlas = cutCards(container).find((c) => c.dataset.gcHost === "atlas")!;
+    expect(atlas.disabled).toBe(false);
+    expect(atlas.getAttribute("aria-label")).toContain(
+      "waking. Supporting cut-in. Puts it on the cover.",
+    );
+    act(() => void fireEvent.click(atlas)); // …and the promise is real: the promote ceremony starts
+    act(() => void vi.advanceTimersByTime(170));
+    expect(heroName(container)).toBe("ATLAS");
+  });
 
-  it("folds the page, commits the SELECT at beat 170, then lands and beats the masthead", () => {
+  it("cross-fades the hero: the SELECT commits at beat 170 with the outgoing clone mounted (owner 2026-08-30)", () => {
+    // RE-PINNED: the lab's page-turn fold (scale+dim), hero zoom entrance and masthead pulse are
+    // DELETED — a promote is one simultaneous cross-fade of the hero imagery, everything else still.
     const { container } = render(<GachaFleet active />);
     act(() => void fireEvent.click(cutCards(container)[0])); // atlas
     act(() => void vi.advanceTimersByTime(0));
-    expect(page(container).classList.contains("turning")).toBe(true);
-    expect(heroName(container)).toBe("PEGASUS"); // not yet — the swap is INSIDE the fold
+    expect(heroName(container)).toBe("PEGASUS"); // not yet — the swap lands at beat 170
+    expect(container.querySelector(".cv-ghost")).toBeNull();
 
     act(() => void vi.advanceTimersByTime(170));
     expect(heroName(container)).toBe("ATLAS");
+    // …and the outgoing hero's inert clone mounted in the SAME commit, wearing pegasus's visual
+    const ghost = container.querySelector(".cv-ghost")!;
+    expect(ghost).not.toBeNull();
+    expect(ghost.getAttribute("aria-hidden")).toBe("true");
+    expect(ghost.textContent).toContain("PEGASUS");
 
-    act(() => void vi.advanceTimersByTime(130)); // 300
-    expect(page(container).classList.contains("turning")).toBe(false);
-    expect(container.querySelector(".cv-heroslot")!.classList.contains("entering")).toBe(true);
+    act(() => void vi.advanceTimersByTime(710)); // past 880 — the clone leaves with the ceremony
+    expect(container.querySelector(".cv-ghost")).toBeNull();
+  });
 
-    act(() => void vi.advanceTimersByTime(220)); // 520
-    expect(container.querySelector(".cv-mast")!.classList.contains("beating")).toBe(true);
-
-    act(() => void vi.advanceTimersByTime(400)); // past 880
-    expect(container.querySelector(".cv-heroslot")!.classList.contains("entering")).toBe(false);
-    expect(container.querySelector(".cv-mast")!.classList.contains("beating")).toBe(false);
+  it("drops the ghost the moment its TARGET stops being the hero (Emma round MED-1)", () => {
+    // The clone is bound to the machine it REVEALS: if that machine leaves the fleet mid-ceremony,
+    // the resolved hero changes under the slot, and a stale overlay + restarted fade is exactly the
+    // dip this gate prevents — the new hero simply shows, plainly.
+    const { container, rerender } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(cutCards(container)[0])); // promote atlas
+    act(() => void vi.advanceTimersByTime(200)); // ghost up, ceremony mid-flight
+    expect(container.querySelector(".cv-ghost")).not.toBeNull();
+    setFleet({ hosts: [host("pegasus", true), host("vault", true)] }); // atlas leaves the fleet
+    rerender(<GachaFleet active />);
+    expect(heroName(container)).toBe("PEGASUS"); // the resolved fallback hero
+    expect(container.querySelector(".cv-ghost")).toBeNull(); // the fade went with its target
   });
 
   it("SKIPPING still commits the select — a skip completes, it never abandons (R24 §B.3)", () => {
@@ -354,7 +398,7 @@ describe("the promote ceremony", () => {
     expect(heroName(container)).toBe("PEGASUS");
     act(() => void fireEvent.pointerDown(document.body));
     expect(heroName(container)).toBe("ATLAS");
-    expect(page(container).classList.contains("turning")).toBe(false);
+    expect(container.querySelector(".cv-ghost")).toBeNull(); // the skip completed the 860 cleanup
     // completed, not abandoned: advancing past the budget changes nothing further
     act(() => void vi.advanceTimersByTime(2000));
     expect(heroName(container)).toBe("ATLAS");
@@ -371,8 +415,7 @@ describe("the promote ceremony", () => {
     const { container } = render(<GachaFleet active />);
     act(() => void fireEvent.click(cutCards(container)[0]));
     expect(heroName(container)).toBe("ATLAS");
-    expect(page(container).classList.contains("turning")).toBe(false);
-    expect(container.querySelector(".cv-mast")!.classList.contains("beating")).toBe(false);
+    expect(container.querySelector(".cv-ghost")).toBeNull(); // batched set+clear: no clone ever paints
     expect(live(container)).toBe("atlas is on the cover. WORKSTATION, 2 stars, SLEEPING.");
   });
 
@@ -422,7 +465,7 @@ describe("the promote ceremony", () => {
     act(() => void fireEvent.pointerDown(target));
     act(() => void fireEvent.click(target));
     // the ceremony completed …
-    expect(page(container).classList.contains("turning")).toBe(false);
+    expect(container.querySelector(".cv-ghost")).toBeNull();
     // … and the gesture did NOT also promote the machine it landed on
     expect(heroName(container)).toBe("ATLAS");
     expect(dossierName()).toBeNull();
@@ -439,7 +482,7 @@ describe("the promote ceremony", () => {
     act(() => void fireEvent.click(cutCards(container)[0]));
     act(() => void vi.advanceTimersByTime(50));
     act(() => void fireEvent.click(cutCards(container)[1])); // a click with no pointer gesture behind it
-    expect(page(container).classList.contains("turning")).toBe(false);
+    expect(container.querySelector(".cv-ghost")).toBeNull(); // the skip completed the cleanup
     expect(heroName(container)).toBe("ATLAS");
   });
 
@@ -449,7 +492,7 @@ describe("the promote ceremony", () => {
     act(() => void vi.advanceTimersByTime(50));
     // the skip's pointerdown lands on a card, but the gesture never clicks (a drag)
     act(() => void fireEvent.pointerDown(cutCards(container)[1]));
-    expect(page(container).classList.contains("turning")).toBe(false);
+    expect(container.querySelector(".cv-ghost")).toBeNull(); // the skip completed the cleanup
     // the NEXT activation is keyboard: keydown then click, no pointerdown
     const target = cutCards(container)[1];
     act(() => void fireEvent.keyDown(target, { key: "Enter" }));
@@ -650,7 +693,7 @@ describe("the promote ceremony", () => {
     // 1. the held key's FIRST activation: it lands on a live ceremony, so it is a skip and nothing else
     act(() => void fireEvent.keyDown(held, { key: "Enter" }));
     act(() => void fireEvent.click(held));
-    expect(page(container).classList.contains("turning")).toBe(false); // it skipped
+    expect(container.querySelector(".cv-ghost")).toBeNull(); // it skipped (cleanup ran)
     expect(heroName(container)).toBe("ATLAS"); // the skipped promote completed; vault was NOT promoted
 
     // 2. the SAME key, still held: the ceremony is over now, so an unswallowed repeat would route for real
@@ -739,40 +782,99 @@ describe("the develop ceremony", () => {
     expect(container.querySelector(".cv-flash")!.classList.contains("fire")).toBe(false);
   });
 
-  it("is POLL-TRUTHFUL: WAKING while the request flies, then the SERVER's word — never ONLINE", async () => {
-    let settle = () => {};
+  it("is POLL-TRUTHFUL: WAKING through the grace window, and it ends on the SERVER's word", async () => {
+    // RE-PINNED 2026-08-30, with the poster's twin. The chip used to die with the HTTP round-trip, so
+    // WAKING blinked and the machine wore SLEEPING for the whole minute it took to boot. The assumed
+    // state is a bounded grace record now (`store/fleetPending`), and this pins its three endings:
+    // it OUTLIVES the settle, it yields to poll AGREEMENT, and failing that it expires. The honesty
+    // claim is untouched — the lab's 430 ms ONLINE flip is still fiction; only a poll may say ONLINE.
+    let settle = (_ok: boolean) => {};
     setFleet({
       hosts: [host("atlas", false), host("pegasus", true)],
-      run: vi.fn(() => new Promise<void>((r) => (settle = r))),
+      run: dispatchingRun(() => new Promise<boolean>((r) => (settle = r))),
     });
-    const { container } = render(<GachaFleet active />);
+    const { container, rerender } = render(<GachaFleet active />);
     act(() => void fireEvent.click(heroCard(container)));
     expect(heroChip(container)).toBe("WAKING");
+    // …and the ACCESSIBLE NAME agrees (sol confirm MED-2): no "develops the cover and wakes it"
+    // instruction on a hero whose wake is already in progress — the label carries the third liveness.
+    expect(heroCard(container).getAttribute("aria-label")).toContain(
+      "waking. Wake sequence in progress.",
+    );
     act(() => void vi.advanceTimersByTime(1000)); // the whole ceremony runs out
     expect(heroChip(container)).toBe("WAKING"); // the REQUEST is still in the air
 
     // AWAITED, not chained: an assertion inside a trailing `.then` can be flushed after teardown and
     // throws as an UNHANDLED error while the test still reports green (the E1 lesson).
     await act(async () => {
-      settle();
+      settle(true);
       await Promise.resolve();
     });
-    // …and it falls back to SLEEPING. The lab's 430 ms ONLINE flip is fiction: only a hosts poll may
-    // flip a machine up, and nothing here polled.
+    expect(heroChip(container)).toBe("WAKING"); // …and SURVIVES it: the machine is still coming up
+    expect(heroCard(container).classList.contains("asleep")).toBe(true); // still not online, and says so
+
+    // (a) AGREEMENT — the poll says atlas is up, and the server's word takes the chip. It wins even on
+    // the render before the store's reconcile clears the record: `online` outranks `waking`.
+    setFleet({ hosts: [host("atlas", true), host("pegasus", true)], run: fleet.view.run });
+    rerender(<GachaFleet active />);
+    expect(heroChip(container)).toBe("ONLINE");
+
+    // (b) EXPIRY — the other ending, for a machine that never came up: back to SLEEPING, never ONLINE.
+    setFleet({ hosts: [host("atlas", false), host("pegasus", true)], run: fleet.view.run });
+    rerender(<GachaFleet active />);
+    expect(heroChip(container)).toBe("WAKING"); // the record is still live (nothing reconciled it away)
+    act(() => void vi.advanceTimersByTime(WAKE_WINDOW_MS));
     expect(heroChip(container)).toBe("SLEEPING");
     expect(heroCard(container).classList.contains("asleep")).toBe(true);
   });
 
-  it("STRIPS the theatre the moment the request settles — no stamp for a fast wake (Codex E2 MED-2)", async () => {
-    // THE POLL-TRUTH LEAK. The request starts synchronously but the presentation ran on its own 880 ms
-    // clock, so a wake that came back at 40 ms still got a flash, a wash and — at 600 ms — an AWAKE stamp
-    // over a machine whose request had already returned. `aria-hidden` hid that false claim from one
-    // audience only; it was still synthetic liveness on screen, which is exactly what ruling 4 forbids.
-    // Every artifact is licensed by `waking` now, so the settle strips them in the same commit.
-    let settle = () => {};
+  it("KEEPS the theatre through a FAST successful settle — the ceremony runs to its end", async () => {
+    // THE INVERSION of the pin below (2026-08-30). Codex E2 MED-2 read the RESPONSE as the licence: a
+    // wake that came back at 40 ms stripped the flash, the wash and the 600 ms stamp, because the
+    // request was no longer "in flight". That was only ever a proxy for the real question — is this
+    // machine still coming up? — and it answered it wrong, since the WOL round trip says nothing about
+    // the boot. The licence is the PENDING RECORD now, which outlives the settle by the whole grace
+    // window, so an ok'd wake gets the ceremony it was written for, in full.
+    let settle = (_ok: boolean) => {};
     setFleet({
       hosts: [host("atlas", false), host("pegasus", true)],
-      run: vi.fn(() => new Promise<void>((r) => (settle = r))),
+      run: dispatchingRun(() => new Promise<boolean>((r) => (settle = r))),
+    });
+    const { container } = render(<GachaFleet active />);
+    act(() => void fireEvent.click(heroCard(container)));
+    act(() => void vi.advanceTimersByTime(150));
+    expect(container.querySelector(".cv-flash")!.classList.contains("fire")).toBe(true);
+
+    // the request comes back ok, LONG before the stamp's beat
+    await act(async () => {
+      settle(true);
+      await Promise.resolve();
+    });
+    expect(heroCard(container).classList.contains("developing")).toBe(true);
+    expect(container.querySelector(".cv-flash")!.classList.contains("fire")).toBe(true);
+    expect(container.querySelector(".cv-shake")!.classList.contains("shaking")).toBe(true);
+    expect(heroChip(container)).toBe("WAKING"); // …and still no synthetic ONLINE (ruling 4 holds)
+
+    // the stamp lands on its own beat, and the ceremony cleans up on its own clock
+    act(() => void vi.advanceTimersByTime(450)); // 600
+    expect(container.querySelector(".cv-stamp")?.textContent).toBe(GACHA_COPY.coverStamp);
+    act(() => void vi.advanceTimersByTime(400)); // past 880
+    expect(container.querySelector(".cv-stamp")).toBeNull();
+    expect(container.querySelector(".cv-card.developing")).toBeNull();
+  });
+
+  it("STRIPS the theatre the moment the wake FAILS — no stamp for a refused wake (Codex E2 MED-2)", async () => {
+    // THE POLL-TRUTH LEAK, re-aimed. The presentation ran on its own 880 ms clock, so a wake that had
+    // already come back still got a flash, a wash and — at 600 ms — an AWAKE stamp over a machine whose
+    // request was done. `aria-hidden` hid that false claim from one audience only; it was still
+    // synthetic liveness on screen, which is what ruling 4 forbids. Every artifact is licensed by the
+    // pending record (`waking`) and by nothing else, so the LICENSING FACT moved: from "the request is
+    // in flight" to "the pending record is live". A failure hands that record straight back — nothing
+    // is coming up — and the theatre goes with it in the same commit.
+    let settle = (_ok: boolean) => {};
+    setFleet({
+      hosts: [host("atlas", false), host("pegasus", true)],
+      run: dispatchingRun(() => new Promise<boolean>((r) => (settle = r))),
     });
     const { container } = render(<GachaFleet active />);
     act(() => void fireEvent.click(heroCard(container)));
@@ -780,9 +882,9 @@ describe("the develop ceremony", () => {
     expect(heroCard(container).classList.contains("developing")).toBe(true);
     expect(container.querySelector(".cv-flash")!.classList.contains("fire")).toBe(true);
 
-    // the request comes back LONG before the stamp's beat
+    // the request comes back REFUSED, LONG before the stamp's beat
     await act(async () => {
-      settle();
+      settle(false);
       await Promise.resolve();
     });
     expect(heroChip(container)).toBe("SLEEPING"); // the server's word, unchanged by the wake
@@ -800,7 +902,7 @@ describe("the develop ceremony", () => {
     let fail = (_e?: unknown) => {};
     setFleet({
       hosts: [host("atlas", false), host("pegasus", true)],
-      run: vi.fn(() => new Promise<void>((_r, j) => (fail = j))),
+      run: dispatchingRun(() => new Promise<boolean>((_r, j) => (fail = j))),
     });
     const { container } = render(<GachaFleet active />);
     act(() => void fireEvent.click(heroCard(container)));
@@ -811,7 +913,8 @@ describe("the develop ceremony", () => {
       fail(new Error("wake refused"));
       await Promise.resolve();
     });
-    // the request failed, so nothing on screen may still be claiming it is happening
+    // a THROWN request clears the record on the same token a failure would (the `run` contract's catch
+    // arm), so nothing on screen may still be claiming the machine is coming up
     expect(container.querySelector(".cv-stamp")).toBeNull();
     expect(container.querySelector(".cv-card.developing")).toBeNull();
     expect(heroChip(container)).toBe("SLEEPING");
@@ -1290,11 +1393,12 @@ describe("the cover's stylesheet claims", () => {
   });
 
   it("gates every ceremony on the app's own motion axis, with no OS media query", () => {
-    for (const sel of [
-      'body[data-motion="reduced"] .cv-page',
-      'body[data-motion="reduced"] .cv-card.is-cut',
-    ])
+    // (`.cv-page` left this list 2026-08-30: its 320ms fold transition was deleted with the page
+    // turn — a rule with nothing to gate needs no reduced-motion clause. The ghost cross-fade's own
+    // belts are asserted structurally by their selectors below.)
+    for (const sel of ['body[data-motion="reduced"] .cv-card.is-cut'])
       expect(blockFor(sel), `no reduced-motion rule for ${sel}`).toBeTruthy();
+    expect(css).toContain('body[data-motion="reduced"] .cv-heroslot > .cv-ghost');
     expect(css).toContain('body[data-motion="reduced"] .cv-shake.shaking');
     expect(css).toContain('body[data-motion="reduced"] .cv-flash.fire');
     // the repo's named parallel-implementation trap: gacha models the preference itself

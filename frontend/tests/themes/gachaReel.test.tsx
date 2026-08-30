@@ -522,30 +522,25 @@ describe("the M2 tab flight (CSS)", () => {
     expect(ruleFor("\n    .kit .tab.active")).toContain("animation: none");
   });
 
-  it("keeps `gacha-page` + the 96/104 keyframe pair for the DETAIL morph, which is now their only consumer", () => {
-    // The dossier morph still extracts the content region, and for a reason that is specific to it: the
-    // sheet arrives over a page that stays put, and scaling the root would rim the frame. Its bar is NOT
-    // named (it rides inside `gacha-page`) — the probe's case 2, measured glass-good on Chrome.
+  it("keeps `gacha-page` for the DETAIL morph, and its page pair is a PLAIN fade — the zoom pair is dead", () => {
+    // RE-PINNED 2026-08-30 (owner ruling): the prototype's 96%/104% `gacha-root-out`/`gacha-root-in`
+    // pair made every dossier open read as the whole screen zooming out to its natural size. The
+    // extraction SURVIVES (the sheet arrives over a page that stays put, and scaling the root would
+    // rim the frame — its bar is NOT named, the probe's case 2), but the pair is deleted outright:
+    // this pins both the absence and the duration-only fade, because the tempting revert is putting
+    // the prototype's zoom back.
     expect(ruleFor(':scope[data-transition="detail"] .kit-main')).toContain(
       "view-transition-name: gacha-page",
     );
-    expect(ruleFor(':scope[data-transition="detail"]::view-transition-old(gacha-page)')).toContain(
-      "gacha-root-out 200ms",
+    const page = ruleFor(
+      ':scope[data-transition="detail"]::view-transition-old(gacha-page),\n    :scope[data-transition="detail"]::view-transition-new(gacha-page)',
     );
-    expect(ruleFor(':scope[data-transition="detail"]::view-transition-new(gacha-page)')).toContain(
-      "gacha-root-in 300ms",
-    );
-    // …at the prototype's own values, still declared once (theme.css:149-150).
-    expect([...css.matchAll(/@keyframes gacha-root-(in|out)/g)]).toHaveLength(2);
-    const out = atRuleFor("@keyframes gacha-root-out");
-    expect(out).toContain("scale(0.96)");
-    const into = atRuleFor("@keyframes gacha-root-in");
-    expect(into).toContain("scale(1.04)");
-    expect(`${out}${into}`).not.toMatch(/\b(width|height|top|left|margin)\s*:/);
-    // …and no OTHER kind may pick the pair back up (the `tab` flight gave it up at G6.6).
-    for (const m of css.matchAll(/([^{}\n]*)\{\s*animation: gacha-root-(in|out)/g)) {
-      expect(m[1]).toContain('[data-transition="detail"]');
-    }
+    expect(page).toContain("animation-duration: 300ms");
+    expect(page).not.toContain("transform");
+    // The keyframes are GONE, not merely unconsumed (the no-legacy rule). Checked as declarations
+    // and animation shorthands — the RULING comments still name the dead pair in prose.
+    expect(css).not.toContain("@keyframes gacha-root-");
+    expect(css).not.toMatch(/animation:[^;]*gacha-root-/);
   });
 
   it("leaves the detail root pair a plain opacity cross-fade too", () => {

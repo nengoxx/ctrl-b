@@ -26,10 +26,18 @@ const fleet = vi.hoisted(() => {
   const view: Record<string, unknown> = {};
   return { view };
 });
-vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
+// The static view carries every fact but ONE: `pending` is read from the REAL `store/fleetPending`
+// (2026-08-30) — `GachaFleet` derives its WAKING set from it. The record is taken with the store EMPTY
+// (nothing here dispatches), which is the settled-loaded state this fence is a record of.
+vi.mock("../../src/hooks/useFleet", async () => {
+  const { usePendingFleet } = await import("../../src/store/fleetPending");
+  return { useFleet: () => ({ ...fleet.view, pending: usePendingFleet() }) };
+});
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => ({ data: undefined }) }));
 
+import { reconcilePending } from "../../src/store/fleetPending";
 import { setUI } from "../../src/store/ui";
+import { dispatchingRun } from "./fleetRunMock";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
 import type { Host, HostServiceCfg } from "../../src/types";
 
@@ -91,7 +99,8 @@ beforeEach(() => {
   fleet.view = {
     hosts: HOSTS,
     svcByHost: new Map(),
-    run: vi.fn(),
+    // Begins the pending record at dispatch and resolves ok, like the real `run` — see `fleetRunMock`.
+    run: dispatchingRun(),
     busy: new Set<string>(),
     isLoading: false,
     error: null,
@@ -111,6 +120,9 @@ afterEach(() => {
     cleanup();
   } finally {
     vi.restoreAllMocks();
+    // …and the pending store, module state with real timers behind it, goes back to empty the same way
+    // every other gacha fleet suite resets it: a reconcile against an empty fleet.
+    reconcilePending([]);
   }
 });
 

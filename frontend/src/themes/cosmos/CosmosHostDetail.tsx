@@ -1,4 +1,4 @@
-import type { FleetAction } from "../../hooks/useActions";
+import type { FleetRun } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
 import {
@@ -26,7 +26,7 @@ interface Props {
   host: Host;
   services: Service[];
   busy: boolean; // host action in flight (disables the bar)
-  run: (action: FleetAction, host: Host) => Promise<void>;
+  run: FleetRun;
   titleId: string; // aria-labelledby target the sheet points at (the host name)
   // Step to the prev (-1) / next (+1) planet WITHOUT closing the sheet (the same select path a tap-another-
   // planet swap uses). OPTIONAL — omit it (or a single-planet fleet) and the chevrons don't render, keeping
@@ -165,7 +165,8 @@ export function CosmosHostDetail({ host, services, busy, run, titleId, onStep }:
 
       {/* action bar — Wake when offline; Reboot + Shutdown when online; Ping always. The PRIMARY action (Wake /
           Reboot) is the glowing accent pill; Shut down is a danger ghost; Ping a quiet ghost. The typed-action
-          `run` handles the confirm dialog (shutdown/reboot) + optimistic flips + toasts; `busy` disables it. */}
+          `run` handles the confirm dialog (shutdown/reboot) + the pending-transition record + toasts;
+          `busy` disables it (and spans the grace window via useFleet). */}
       <div className="hd-actions">
         {online ? (
           <>

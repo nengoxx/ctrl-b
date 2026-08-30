@@ -708,26 +708,17 @@
     :scope[data-transition="tab"]::view-transition-new(root) {
       animation-duration: 380ms;
     }
-    /* ── …and what stays behind for the DETAIL morph ALONE (both consumed ~900 lines down, in the M3
-     * block): `gacha-page` on the content region, and the `gacha-root-out`/`gacha-root-in` pair. The tab
-     * flight uses neither any more. They are declared here rather than beside their consumer because this
-     * is where the naming idiom is explained — a `view-transition-name` is stamped through a
-     * `[data-transition=…] <selector>` rule, never as a constant: a name left on a node outside its own
-     * flight makes the NEXT transition skip on a duplicate-name error. */
+    /* ── …and what stays behind for the DETAIL morph ALONE (consumed ~900 lines down, in the M3
+     * block): the `gacha-page` name on the content region. Declared here rather than beside its
+     * consumer because this is where the naming idiom is explained — a `view-transition-name` is
+     * stamped through a `[data-transition=…] <selector>` rule, never as a constant: a name left on a
+     * node outside its own flight makes the NEXT transition skip on a duplicate-name error.
+     * (The prototype's `gacha-root-out`/`gacha-root-in` 96%/104% pair is GONE — owner ruling
+     * 2026-08-30: the whole page visibly zoomed out to its natural size on every dossier open, "only
+     * the image should transition". The tab flight had already shed it at G6.6; the detail flight was
+     * its last consumer, and its page pair is a plain complementary fade now.) */
     :scope[data-transition="detail"] .kit-main {
       view-transition-name: gacha-page;
-    }
-    @keyframes gacha-root-out {
-      to {
-        transform: scale(0.96);
-        opacity: 0;
-      }
-    }
-    @keyframes gacha-root-in {
-      from {
-        transform: scale(1.04);
-        opacity: 0;
-      }
     }
 
     /* ── Chat bubbles (§15 chat-hooks reskin) ─────────────────────────────────────────────────────
@@ -1861,6 +1852,14 @@
       /* kills the double-tap-zoom delay: select-then-act means two fast taps are a legitimate gesture */
       touch-action: manipulation;
       clip-path: var(--poly-hit);
+      /* V-POSTER TRIAL (2026-08-30, owner-directed): the 220ms transform transition moved off the base
+       * slice — a pick swap now SNAPS. Mid-transition, the old band shrinking while the new one grew
+       * left a beat where NOTHING was at full size (the owner's "whole page a little bit zoomed out")
+       * and both mid-scale bands overlapped their neighbours ("collide with the PC banners"). The
+       * transition survives only under `.staging` (the wake ceremony's whole span, set by GachaPoster),
+       * so the parting theatre keeps its glide. */
+    }
+    .po-poster.staging .po-slice {
       transition: transform 220ms var(--gc-ease-out);
     }
     .po-slice + .po-slice {
@@ -2185,7 +2184,11 @@
     body[data-motion="reduced"] .po-slice.waking .po-flashline {
       animation: none;
     }
-    body[data-motion="reduced"] .po-slice {
+    /* Both selectors: the bare slice AND the `.staging` one (V-POSTER TRIAL) — the staging rule's
+     * specificity (0,3,0) would otherwise outrank this guard's (0,2,1) and re-arm the transition
+     * under reduced motion. */
+    body[data-motion="reduced"] .po-slice,
+    body[data-motion="reduced"] .po-poster.staging .po-slice {
       transition: none;
     }
 
@@ -2347,31 +2350,43 @@
       position: absolute;
       inset: 0;
       overflow: hidden;
-      transition:
-        transform 320ms var(--gc-ease-out),
-        opacity 320ms var(--gc-ease-out);
     }
-    /* THE PAGE TURN — the fold a promote commits inside. The hero swap lands at beat 170, while the page
-     * is scaled down and dimmed, so the reparent is never seen mid-flight. */
-    .cv-page.turning {
-      transform: scale(0.962);
-      opacity: 0.3;
-    }
+    /* THE PROMOTE CROSS-FADE (owner-RATIFIED 2026-08-30 — this replaced the lab's page-turn fold,
+     * hero zoom entrance and masthead pulse outright; their rules, keyframes and beat states are
+     * deleted, not disabled). GachaCover mounts an inert clone of the OUTGOING hero
+     * (`.cv-ghost`) in the same commit as the reparent, so the old visual fades OUT exactly while the
+     * new card fades IN ("both images at the same time… smoother"); the cut-in stack and every piece
+     * of furniture (masthead, strapline, footer, hint) hold perfectly still. The lab's whole-page
+     * scale(0.962)+dim fold is gone with the trial. */
     .cv-heroslot {
       position: absolute;
       inset: 0;
       z-index: 1;
     }
-    .cv-heroslot.entering {
-      animation: gacha-cv-enter 380ms var(--gc-ease-out) both;
+    .cv-heroslot > .cv-ghost {
+      z-index: 2; /* the outgoing visual fades out ABOVE the incoming card */
+      pointer-events: none;
+      animation: gacha-cv-xfade-out 400ms var(--gc-ease-out) both;
     }
-    @keyframes gacha-cv-enter {
-      from {
-        transform: scale(1.05);
+    .cv-heroslot:has(> .cv-ghost) > .cv-card:not(.cv-ghost) {
+      animation: gacha-cv-xfade-in 400ms var(--gc-ease-out) both;
+    }
+    @keyframes gacha-cv-xfade-out {
+      to {
         opacity: 0;
       }
     }
-
+    @keyframes gacha-cv-xfade-in {
+      from {
+        opacity: 0;
+      }
+    }
+    /* The house rule: the app's motion axis, never the OS media query. The runner collapses the
+     * ceremony there anyway (the ghost never mounts) — this is the belt. */
+    body[data-motion="reduced"] .cv-heroslot > .cv-ghost,
+    body[data-motion="reduced"] .cv-heroslot:has(> .cv-ghost) > .cv-card:not(.cv-ghost) {
+      animation: none;
+    }
     /* ── the card, in both of its seats ───────────────────────────────────────────────────────────────
      * ONE control per machine, and the SAME element whether it is the hero or a cut-in — which is what
      * lets a promote move a node between the two containers instead of trading one component for
@@ -2747,20 +2762,6 @@
       letter-spacing: 0.16em;
       color: var(--text-3);
     }
-    .cv-mast.beating {
-      animation: gacha-cv-beat 280ms var(--gc-ease-out) both;
-    }
-    @keyframes gacha-cv-beat {
-      0% {
-        transform: rotate(-2deg) scale(1);
-      }
-      38% {
-        transform: rotate(-2deg) scale(1.055);
-      }
-      100% {
-        transform: rotate(-2deg) scale(1);
-      }
-    }
     /* The two answered-with-nothing states, seated where the composition would have started. Absolute,
      * because the page's own children all are — a static message would stack under the masthead. */
     .cv-page > .gc-msg {
@@ -2979,15 +2980,10 @@
      * ever committed there and none of these animations can start. The nulls below are the belt: they
      * are what a reader checks, and they cover the two properties that are NOT ceremony-driven — the
      * page's own transition and the cut-in press. */
-    body[data-motion="reduced"] .cv-page {
-      transition: none;
-    }
     body[data-motion="reduced"] .cv-card.is-cut {
       transition: none;
     }
-    body[data-motion="reduced"] .cv-heroslot.entering,
     body[data-motion="reduced"] .cv-card.developing .cv-dev,
-    body[data-motion="reduced"] .cv-mast.beating,
     body[data-motion="reduced"] .cv-stamp,
     body[data-motion="reduced"] .cv-flash.fire,
     body[data-motion="reduced"] .cv-shake.shaking {
@@ -3167,30 +3163,25 @@
     :scope[data-transition="detail"]::view-transition-new(capsule-shell) {
       animation-duration: 280ms;
     }
-    /* …and the page BEHIND it takes the prototype's own detail cross-fade (theme.css:149-150 — the
-     * `gacha-root-out`/`gacha-root-in` pair, re-timed): the old page eases back to 96% as it goes, the new
-     * one — dossier already at rest, portrait extracted into the group above — comes in from 104%.
-     * This is what carries the sheet's ARRIVAL now that the sheet cannot slide under a transition (the
-     * capture is a single frame: a sliding sheet would freeze the morph's destination at its off-screen
-     * start). Shorter than the tab's, exactly as the prototype has it: a panel arriving over a page that
-     * stays put needs less travel than a whole screen being replaced.
+    /* …and the page BEHIND it is a PLAIN complementary cross-fade — the G6.6 tab ruling, extended to
+     * this flight by the owner (2026-08-30): the prototype's 96%/104% zoom pair made every dossier
+     * open read as the whole screen zooming out to its natural size ("it feels like a glitch… just
+     * the image itself, not the whole page"). The UA's own fade keeps identical pixels stable
+     * (plus-lighter in the image pair), and the fade is what carries the sheet's ARRIVAL — the sheet
+     * still cannot slide under a transition (the capture is a single frame: a sliding sheet would
+     * freeze the morph's destination at its off-screen start).
      *
-     * `detail` is the LAST consumer of both — the pair AND the `gacha-page` name (declared up in the M2
-     * block, where the naming idiom is explained). The tab flight gave them up at G6.6: it scales nothing
-     * at all now — neither a snapshot nor the page, see that block for the capture/stamp reason it cannot.
-     * This kind KEEPS the extraction, and its
-     * reason is unchanged and specific to it — scaling the ROOT here would drag gacha's fixed app backdrop
-     * through two misaligned copies and rim the frame (G6.3) — and it pays no glass penalty for it: the
-     * bar is NOT named here, it rides INSIDE `gacha-page`, which is exactly the probe's case 2 (content
-     * region named, bar unnamed within it), measured glass-GOOD on Chrome. The doubling needs the bar
-     * itself to be a group; `capsule-shell` and `dossier-rar` are the only other names in this flight and
-     * neither carries a `backdrop-filter`. The root pair keeps the plain opacity cross-fade at the
-     * incoming leg's own duration. */
-    :scope[data-transition="detail"]::view-transition-old(gacha-page) {
-      animation: gacha-root-out 200ms ease both;
-    }
+     * This kind KEEPS the `gacha-page` extraction (declared in the M2 block, where the naming idiom
+     * is explained), and its reason is unchanged and specific to it: scaling the ROOT would drag
+     * gacha's fixed app backdrop through two misaligned copies and rim the frame (G6.3) — and it pays
+     * no glass penalty for it: the bar is NOT named here, it rides INSIDE `gacha-page`, which is
+     * exactly the probe's case 2 (content region named, bar unnamed within it), measured glass-GOOD
+     * on Chrome. The doubling needs the bar itself to be a group; `capsule-shell` and `dossier-rar`
+     * are the only other names in this flight and neither carries a `backdrop-filter`. The root pair
+     * below keeps the same plain fade at the same duration. */
+    :scope[data-transition="detail"]::view-transition-old(gacha-page),
     :scope[data-transition="detail"]::view-transition-new(gacha-page) {
-      animation: gacha-root-in 300ms ease both;
+      animation-duration: 300ms;
     }
     :scope[data-transition="detail"]::view-transition-old(root),
     :scope[data-transition="detail"]::view-transition-new(root) {

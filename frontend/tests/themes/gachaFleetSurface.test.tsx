@@ -16,12 +16,20 @@ const fleet = vi.hoisted(() => {
   const view: Record<string, unknown> = {};
   return { view };
 });
-vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
+// The static view carries every fact but ONE: `pending` is read from the REAL `store/fleetPending`
+// (2026-08-30) — `GachaFleet` derives its WAKING set from it, so a frozen stand-in would be a second,
+// drifting source for a fact the store owns.
+vi.mock("../../src/hooks/useFleet", async () => {
+  const { usePendingFleet } = await import("../../src/store/fleetPending");
+  return { useFleet: () => ({ ...fleet.view, pending: usePendingFleet() }) };
+});
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => ({ data: undefined }) }));
 
 import type { ComponentType } from "react";
 
+import { reconcilePending } from "../../src/store/fleetPending";
 import { setThemeSetting, setUI } from "../../src/store/ui";
+import { dispatchingRun } from "./fleetRunMock";
 import { registry } from "../../src/theme-engine/registry";
 import type { ThemeSettingField } from "../../src/theme-engine/types";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
@@ -81,7 +89,8 @@ beforeEach(() => {
   fleet.view = {
     hosts: [host("pegasus", true), host("atlas", false)],
     svcByHost: new Map(),
-    run: vi.fn(),
+    // Begins the pending record at dispatch and resolves ok, like the real `run` — see `fleetRunMock`.
+    run: dispatchingRun(),
     busy: new Set<string>(),
     isLoading: false,
     error: null,
@@ -112,6 +121,9 @@ afterEach(() => {
     restore("dummy", priorVariant, fleetSurface.variants);
     restore("fleetLayout", priorSpec, GACHA.settings!);
     setUI({ themeSettings: {} });
+    // …and the pending store, module state with real timers behind it, goes back to empty the same way
+    // every other gacha fleet suite resets it: a reconcile against an empty fleet.
+    reconcilePending([]);
   }
 });
 

@@ -1,4 +1,4 @@
-import type { FleetAction } from "../../hooks/useActions";
+import type { FleetRun } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
@@ -22,7 +22,7 @@ interface Props {
   art?: string;
   plate: string; // the license plate — the SAME as the card
   busy: boolean; // host action in flight (disables the bar)
-  run: (action: FleetAction, host: Host) => Promise<void>;
+  run: FleetRun;
   titleId: string; // aria-labelledby target the sheet points at (the host name in the banner)
 }
 
@@ -135,7 +135,7 @@ export function FrontierHostDetail({ host, services, art, plate, busy, run, titl
       </div>
 
       {/* Action bar — Reboot + Shut down when online, Wake rig when asleep. The typed-action `run` handles the
-          confirm dialog (shutdown/reboot) + optimistic flips + toasts; `busy` disables the bar (the prototype's
+          confirm dialog (shutdown/reboot) + the pending-transition record + toasts; `busy` disables the bar (the prototype's
           `.busy` dim is keyed off :disabled in CSS — the class is carried for prototype parity). */}
       <div className="actbar">
         {online ? (

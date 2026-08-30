@@ -110,7 +110,9 @@ const EMPTY: MediaIndex = {
 };
 
 const noop = () => {};
-const run = async () => {};
+/** A `FleetRun` that does nothing and reports ok — `run` resolves an OUTCOME since the pending-transition
+ *  store landed (2026-08-30), and nothing in this file dispatches an action anyway. */
+const run = async () => true;
 
 fleet.view = {
   hosts: [host],

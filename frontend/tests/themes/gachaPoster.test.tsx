@@ -14,7 +14,14 @@ const fleet = vi.hoisted(() => {
   const view: Record<string, unknown> = {};
   return { view };
 });
-vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
+// The static view carries every fact but ONE: `pending` is read from the REAL `store/fleetPending`
+// (2026-08-30), so a tap that dispatches a wake drives the WAKING presentation through the same store
+// production uses — window, agreement and expiry included. Merged here rather than frozen into the
+// fixture because the store is what MOVES during a case; everything else is a fixed backdrop.
+vi.mock("../../src/hooks/useFleet", async () => {
+  const { usePendingFleet } = await import("../../src/store/fleetPending");
+  return { useFleet: () => ({ ...fleet.view, pending: usePendingFleet() }) };
+});
 const media = vi.hoisted((): { data: unknown } => ({ data: undefined }));
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 
@@ -42,6 +49,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { selectorsMentioning } from "./cssRules";
 
+import { dispatchingRun } from "./fleetRunMock";
+
+import { WAKE_WINDOW_MS, beginPending, reconcilePending } from "../../src/store/fleetPending";
 import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setThemeSetting, setUI } from "../../src/store/ui";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
@@ -79,7 +89,10 @@ function setFleet(over: Record<string, unknown> = {}): void {
   fleet.view = {
     hosts: [host("pegasus", true), host("atlas", false), host("vault", true)],
     svcByHost: new Map(),
-    run: vi.fn(() => Promise.resolve()),
+    // Begins the pending record at dispatch and resolves ok, like the real `run` — see `fleetRunMock`.
+    // `busy` stays the REQUEST-busy set the view is handed; production unions the pending hosts into it
+    // inside `useFleet`, which is that hook's own pin, not this layout's.
+    run: dispatchingRun(),
     busy: new Set<string>(),
     isLoading: false,
     error: null,
@@ -158,6 +171,10 @@ afterEach(() => {
     delete (document as { startViewTransition?: unknown }).startViewTransition;
     setGachaReelRunning(false);
     setUI({ themeSettings: {} });
+    // The pending store is MODULE state with real timers behind it — a wake dispatched by one case
+    // would still be WAKING in the next. Reconciling against an empty fleet is the sanctioned reset:
+    // every entry's host is gone, so every entry clears and every timer is disarmed.
+    reconcilePending([]);
   }
 });
 
@@ -233,6 +250,22 @@ describe("the poster resolves through the fleet Surface", () => {
 
 // ── ⑦ ⑧ ⑨ · SELECT-THEN-ACT ─────────────────────────────────────────────────────────────────────────
 describe("select-then-act", () => {
+  it("a WAKING slice stays SELECTABLE — the grace window holds actions, never selection (owner 2026-08-30)", () => {
+    // `busy` spans the whole wake/shutdown window since D67, and a blanket `disabled={isBusy}` froze
+    // a booting machine out of selection for minutes. Only the PICKED slice is an action control
+    // (open / wake); an unpicked slice's tap is pure selection — the router's synchronous busy-guard
+    // is what refuses a re-wake, not this attribute.
+    const { container } = render(<GachaFleet active />);
+    act(() => void beginPending("atlas", "wake"));
+    const atlas = slices(container)[1]; // atlas, offline + waking, NOT selected
+    expect(atlas.disabled).toBe(false);
+    expect(atlas.getAttribute("aria-label")).toContain(
+      "waking. Tap to select. Wake sequence in progress.",
+    );
+    act(() => void fireEvent.click(atlas));
+    expect(atlas.getAttribute("aria-pressed")).toBe("true"); // …and the selection landed
+  });
+
   it("⑦ an ONLINE machine opens on ONE tap — and that tap SELECTS it, so the registry follows", () => {
     // OWNER AMENDMENT (third walk): "by default I don't want the double tap — only when the PC needs to
     // be woken up." Opening is the act; selecting rides along (the cosmos one-tap select-and-open
@@ -382,15 +415,20 @@ describe("select-then-act", () => {
 
 // ── ⑩ · BUSY ────────────────────────────────────────────────────────────────────────────────────────
 describe("⑩ busy reaches the slice", () => {
-  it("disables it, marks aria-busy and carries a class — for ANY in-flight action on that machine", () => {
-    setFleet({ busy: new Set(["atlas"]) });
+  it("holds the PICKED slice only — a busy UNPICKED machine stays selectable (owner 2026-08-30)", () => {
+    // RE-PINNED with D67: `busy` spans the whole wake/shutdown grace window now, and the old blanket
+    // `disabled={isBusy}` froze a booting machine out of SELECTION for minutes. Only the picked
+    // slice is an action control (open/wake); the router's synchronous guard is what refuses actions
+    // on any busy machine, so an unpicked slice keeps its one power — being selected.
+    setFleet({ busy: new Set(["pegasus", "atlas"]) });
     const { container } = render(<GachaFleet active />);
-    const [, atlas, vault] = slices(container);
-    expect(atlas.disabled).toBe(true);
-    expect(atlas.getAttribute("aria-busy")).toBe("true");
-    expect(atlas.classList.contains("busy")).toBe(true);
-    expect(vault.disabled).toBe(false);
-    expect(vault.hasAttribute("aria-busy")).toBe(false);
+    const [pegasus, atlas] = slices(container);
+    expect(pegasus.disabled).toBe(true); // picked at boot + busy = held
+    expect(pegasus.getAttribute("aria-busy")).toBe("true");
+    expect(pegasus.classList.contains("busy")).toBe(true);
+    expect(atlas.disabled).toBe(false); // busy but unpicked: selection stays live
+    expect(atlas.hasAttribute("aria-busy")).toBe(false);
+    expect(atlas.classList.contains("busy")).toBe(false);
   });
 
   it("refuses a second wake while one is already in flight on that machine", () => {
@@ -433,10 +471,11 @@ describe("a second gesture, after the first ceremony has finished", () => {
   it("keeps WAKING on a machine whose request is still flying while ANOTHER is woken", async () => {
     // One `wakingHost` SLOT could not represent two overlapping requests: dispatching B made A's chip
     // drop straight to SLEEPING while A's own request was still in the air — a false negative about a
-    // request the app had genuinely sent. It is a Set now, and each machine leaves on its OWN settle.
-    let settleA = () => {};
-    const run = vi.fn((_action: string, h: Host) =>
-      h.id === "atlas" ? new Promise<void>((r) => (settleA = r)) : Promise.resolve(),
+    // request the app had genuinely sent. It is a per-host RECORD now (`store/fleetPending`), so the two
+    // machines are tracked apart end to end.
+    let settleA = (_ok: boolean) => {};
+    const run = dispatchingRun((_action, h) =>
+      h.id === "atlas" ? new Promise<boolean>((r) => (settleA = r)) : Promise.resolve(true),
     );
     setFleet({ hosts: [host("pegasus", true), host("atlas", false), host("relay", false)], run });
     const { container } = render(<GachaFleet active />);
@@ -446,6 +485,7 @@ describe("a second gesture, after the first ceremony has finished", () => {
     expect(chip(1)).toBe("WAKING");
     act2(container, 2); // relay — settles immediately
     expect(chip(1)).toBe("WAKING"); // atlas is STILL in flight and still says so
+    expect(chip(2)).toBe("WAKING"); // …and relay holds its own record through its own window
     expect(run).toHaveBeenCalledTimes(2);
 
     // AWAITED, not returned as a `.then` chain (caught by the FULL run, not by the targeted one): an
@@ -453,11 +493,17 @@ describe("a second gesture, after the first ceremony has finished", () => {
     // own teardown has unmounted the tree, and it then throws `container.querySelector of undefined` as
     // an UNHANDLED error while every test still reports green.
     await act(async () => {
-      settleA();
+      settleA(true);
       await Promise.resolve();
     });
-    // …and it leaves on its own settle, back to the SERVER's word — never to ONLINE
+    // …and the SETTLE is no longer the ending (2026-08-30): an ok'd wake holds its assumed state through
+    // the grace window, because the machine is still booting. Only agreement, expiry or failure ends it —
+    // here the window, since nothing polls.
+    expect(chip(1)).toBe("WAKING");
+    act(() => void vi.advanceTimersByTime(WAKE_WINDOW_MS));
+    // back to the SERVER's word — never to ONLINE
     expect(chip(1)).toBe("SLEEPING");
+    expect(chip(2)).toBe("SLEEPING");
   });
 
   it("RE-ANNOUNCES an identical message — a retry of the same failed wake is not silent", () => {
@@ -471,7 +517,10 @@ describe("a second gesture, after the first ceremony has finished", () => {
     const first = spoken();
     expect(first.textContent).toBe("Waking atlas.");
 
-    // the request has settled and the machine is still asleep; the owner taps it again
+    // the request has settled and the machine is still asleep; the owner taps it again. (The FIXTURE's
+    // `busy` is the request-busy set alone, so the tap reaches the handler; production's `useFleet`
+    // unions the pending hosts in and would refuse this one until the window closed. The claim here is
+    // about the live region, and it is the region's own mutation that is under test.)
     act(() => void fireEvent.click(slices(container)[1]));
     const second = spoken();
     expect(second.textContent).toBe("Waking atlas.");
@@ -599,18 +648,49 @@ describe("the wake ceremony", () => {
     expect(container.querySelector(".po-slice.waking")).toBeNull();
   });
 
-  it("is POLL-TRUTHFUL: the chip says WAKING while the request flies, then the SERVER's word", async () => {
-    let settle = () => {};
-    setFleet({ run: vi.fn(() => new Promise<void>((r) => (settle = r))) });
-    const { container } = render(<GachaFleet active />);
+  it("is POLL-TRUTHFUL: WAKING through the grace window, and it ends on the SERVER's word", async () => {
+    // RE-PINNED 2026-08-30. The chip used to die with the HTTP round-trip — ~100 ms — so the owner saw
+    // WAKING blink and then SLEEPING for the whole minute the machine actually took to boot. The
+    // assumed state is held by a bounded grace record now (`store/fleetPending`, the HA #86735 pattern),
+    // so this pins all three of its endings: it OUTLIVES the settle, it yields to poll AGREEMENT, and
+    // failing that it expires. What is unchanged is the honesty claim itself — nothing here may say
+    // ONLINE that a poll did not say first.
+    let settle = (_ok: boolean) => {};
+    setFleet({ run: dispatchingRun(() => new Promise<boolean>((r) => (settle = r))) });
+    const { container, rerender } = render(<GachaFleet active />);
+    const chip = () => slices(container)[1].querySelector(".po-chip")!.textContent;
     wake(container);
-    expect(slices(container)[1].querySelector(".po-chip")!.textContent).toBe("WAKING");
+    expect(chip()).toBe("WAKING"); // dispatched — the record starts here, not at the response
+    // …and the ACCESSIBLE NAME says the same thing (sol confirm MED-2): an aria-label replaces the
+    // chip's text, so without the waking form a screen reader heard "sleeping. Tap to run the wake
+    // sequence" on the very machine whose wake is running.
+    expect(slices(container)[1].getAttribute("aria-label")).toContain(
+      "waking. Selected. Wake sequence in progress.",
+    );
+
+    // AWAITED, not chained: an assertion inside a trailing `.then` can be flushed after teardown and
+    // throws as an UNHANDLED error while the test still reports green (the E1 lesson).
     await act(async () => {
-      settle();
+      settle(true);
       await Promise.resolve();
     });
-    // …and it falls back to SLEEPING, not to ONLINE: only a hosts poll may flip a machine up.
-    expect(slices(container)[1].querySelector(".po-chip")!.textContent).toBe("SLEEPING");
+    expect(chip()).toBe("WAKING"); // …and it SURVIVES the settle: the machine is still booting
+
+    // (a) AGREEMENT — the poll comes back with atlas up, and the server's word takes the chip. It wins
+    // even on the render before the store's reconcile clears the record: `online` outranks `waking`.
+    setFleet({
+      hosts: [host("pegasus", true), host("atlas", true), host("vault", true)],
+      run: fleet.view.run,
+    });
+    rerender(<GachaFleet active />);
+    expect(chip()).toBe("ONLINE");
+
+    // (b) EXPIRY — the other ending, on a machine that never came up: back to SLEEPING, never ONLINE.
+    setFleet({ run: fleet.view.run });
+    rerender(<GachaFleet active />);
+    expect(chip()).toBe("WAKING"); // the record is still live (nothing reconciled it away here)
+    act(() => void vi.advanceTimersByTime(WAKE_WINDOW_MS));
+    expect(chip()).toBe("SLEEPING");
   });
 
   it("TAP-ANYWHERE-SKIP completes every remaining beat at once (R24 §B.3)", () => {

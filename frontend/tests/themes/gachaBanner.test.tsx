@@ -22,7 +22,13 @@ const fleet = vi.hoisted(() => {
   const view: Record<string, unknown> = {};
   return { view };
 });
-vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
+// The static view carries every fact but ONE: `pending` is read from the REAL `store/fleetPending`
+// (2026-08-30) — `GachaFleet` derives its WAKING set from it, so a frozen stand-in would be a second,
+// drifting source for a fact the store owns.
+vi.mock("../../src/hooks/useFleet", async () => {
+  const { usePendingFleet } = await import("../../src/store/fleetPending");
+  return { useFleet: () => ({ ...fleet.view, pending: usePendingFleet() }) };
+});
 const media = vi.hoisted((): { data: unknown } => ({ data: undefined }));
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 
@@ -56,8 +62,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { selectorsMentioning, splitSelectors } from "./cssRules";
 
+import { reconcilePending } from "../../src/store/fleetPending";
 import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setThemeSetting, setUI } from "../../src/store/ui";
+import { dispatchingRun } from "./fleetRunMock";
 import { registry } from "../../src/theme-engine/registry";
 import { settingRowVisible } from "../../src/theme-engine/settings";
 import { GachaFleet } from "../../src/themes/gacha/GachaFleet";
@@ -95,7 +103,8 @@ function setFleet(over: Record<string, unknown> = {}): void {
   fleet.view = {
     hosts: [host("pegasus", true), host("atlas", false)],
     svcByHost: new Map(),
-    run: vi.fn(() => Promise.resolve()),
+    // Begins the pending record at dispatch and resolves ok, like the real `run` — see `fleetRunMock`.
+    run: dispatchingRun(),
     busy: new Set<string>(),
     isLoading: false,
     error: null,
@@ -126,6 +135,9 @@ afterEach(() => {
     vi.restoreAllMocks();
     setGachaReelRunning(false);
     setUI({ themeSettings: {} });
+    // The pending store is MODULE state with real timers behind it; reconciling against an empty fleet
+    // is the sanctioned reset (every entry's host is gone, so every entry and timer goes with it).
+    reconcilePending([]);
   }
 });
 

@@ -12,7 +12,14 @@ const fleet = vi.hoisted(() => {
   const view: Record<string, unknown> = {};
   return { view };
 });
-vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
+// The static view carries every fact but ONE: `pending` is read from the REAL `store/fleetPending`
+// (2026-08-30), so a tap that dispatches a power action drives the assumed-state presentation through
+// the same store production uses. Merged here rather than frozen into the fixture because the store is
+// what MOVES during a case; everything else is a fixed backdrop.
+vi.mock("../../src/hooks/useFleet", async () => {
+  const { usePendingFleet } = await import("../../src/store/fleetPending");
+  return { useFleet: () => ({ ...fleet.view, pending: usePendingFleet() }) };
+});
 
 // G5 — the theme's art now comes from `GET /api/media/gacha`. The index hook is mocked rather than wrapped
 // in a QueryClientProvider (the `useFleet` precedent above): these cases are about the BODY's wiring, and
@@ -21,8 +28,11 @@ vi.mock("../../src/hooks/useFleet", () => ({ useFleet: () => fleet.view }));
 const media = vi.hoisted(() => ({ data: undefined as MediaIndex | undefined }));
 vi.mock("../../src/hooks/useMedia", () => ({ useMediaIndex: () => media }));
 
+import { dispatchingRun } from "./fleetRunMock";
+
 import type { MediaFile, MediaIndex } from "../../src/hooks/useMedia";
 import { runViewTransition } from "../../src/lib/viewTransition";
+import { beginPending, reconcilePending } from "../../src/store/fleetPending";
 import { setGachaReelRunning } from "../../src/store/gachaReel";
 import { setUI } from "../../src/store/ui";
 import { GACHA_COPY } from "../../src/themes/gacha/copy";
@@ -59,7 +69,10 @@ function setFleet(over: Record<string, unknown> = {}): void {
   fleet.view = {
     hosts: [host("pegasus", true), host("atlas", false)],
     svcByHost: new Map(),
-    run: vi.fn(),
+    // Begins the pending record at dispatch and resolves ok, like the real `run` — see `fleetRunMock`.
+    // `busy` stays the REQUEST-busy set the view is handed; production unions the pending hosts into it
+    // inside `useFleet`, which is that hook's own pin, not this body's.
+    run: dispatchingRun(),
     busy: new Set<string>(),
     isLoading: false,
     error: null,
@@ -116,7 +129,16 @@ beforeEach(() => {
   setFleet();
   media.data = undefined;
 });
-afterEach(cleanup);
+afterEach(() => {
+  try {
+    cleanup();
+  } finally {
+    // The pending store is MODULE state with real timers behind it — a power action dispatched by one
+    // case would still be pending in the next. Reconciling against an empty fleet is the sanctioned
+    // reset: every entry's host is gone, so every entry clears and every timer is disarmed.
+    reconcilePending([]);
+  }
+});
 
 describe("the slide set (§6.4)", () => {
   it("is the hero, then the banner SCENES, then ONE promo per host — sleeping ones included", () => {
@@ -786,6 +808,19 @@ describe("the capsule track (§6.1/§6.2)", () => {
       "gc-card gc-host-hit wide",
     ]);
     expect(container.querySelectorAll(".gc-card > .gc-card-face")).toHaveLength(4);
+  });
+
+  it("a card inside a wake's grace window says WAKING — chip and ACCESSIBLE NAME agree (sol MED-2)", () => {
+    // The capsule layout never dispatches a wake itself (its cards open the dossier; the wake lives
+    // there) — the pending record arrives from wherever the wake started, so the store is driven
+    // directly. The aria-label REPLACES the chip's text in the accessible name: without the waking
+    // form a screen reader heard "sleeping" for the whole boot while the chip showed WAKING.
+    setFleet({ hosts: [host("pegasus", true), host("atlas", false)] });
+    const { container } = render(<GachaFleet active />);
+    act(() => void beginPending("atlas", "wake"));
+    const atlas = cards(container)[1];
+    expect(atlas.querySelector(".state")!.textContent).toBe("WAKING");
+    expect(atlas.getAttribute("aria-label")).toBe("open atlas dossier, waking");
   });
 
   it("mounts the carve filter def WITH the track (R19 — a dangling url(#) can vanish the stars)", () => {

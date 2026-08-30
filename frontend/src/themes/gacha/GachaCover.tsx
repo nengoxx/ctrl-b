@@ -92,14 +92,23 @@ export function GachaCover({
   announce,
 }: GachaTrackProps) {
   const [dev, setDev] = useState<DevelopStage | null>(null);
-  /** True while a promote's page turn is folded — beats 0..300. */
-  const [turning, setTurning] = useState(false);
-  /** True while the new hero replays its entrance — beats 300..860. */
-  const [entering, setEntering] = useState(false);
-  /** True while the masthead replays its beat — 520..860. A class the ceremony adds and then REMOVES, so
-   *  the next promote's re-add replays the animation; re-keying the heading itself would rebuild the tab's
-   *  one h1 on every page turn, which is a node an assistive technology is entitled to keep. */
-  const [beating, setBeating] = useState(false);
+  /** The promote CROSS-FADE's outgoing half (owner-RATIFIED 2026-08-30): the old hero's VISUAL,
+   *  kept mounted as an inert clone so a promote is a TRUE cross-fade — old image fading out WHILE
+   *  the new one fades in, simultaneously, with all cover furniture dead still (this replaced the
+   *  lab's whole-page scale+dim fold, the hero zoom entrance and the masthead pulse outright).
+   *  Snapshotted at the tap (the render the user was looking at): host for the copy block, index for
+   *  the hue, the RESOLVED art entry so a poll re-shuffle mid-ceremony cannot swap the ghost's image
+   *  — and `toId`, the machine this fade REVEALS (Emma round MED-1): the ghost renders only while
+   *  that machine actually holds the cover, so a target that leaves the fleet (or a programmatic
+   *  selection reset) mid-ceremony drops the fade instead of overlaying whichever hero replaced it.
+   *  Set at the beat-170 commit, cleared at the 860 close — under reduced motion both land in one
+   *  collapsed commit, so the ghost never renders there. */
+  const [ghost, setGhost] = useState<{
+    host: Host;
+    index: number;
+    entry: ReturnType<GachaTrackProps["art"]>;
+    toId: string;
+  } | null>(null);
   const ceremony = useCeremony();
   // ONE GESTURE, ONE EFFECT — the poster's `skippedGesture`, verbatim and for the identical reason (Codex
   // E1 MED-1 + its confirm-round LOW). A skip and a tap are one finger but TWO browser events: the hook's
@@ -200,6 +209,11 @@ export function GachaCover({
    *  still lands; under reduced motion the runner collapses the sequence and the swap is instant. */
   const promote = (hostId: string) => {
     const tapped = hosts.find((h) => h.id === hostId);
+    // The OUTGOING hero, frozen from THIS render — the one the user is looking at as they tap. The
+    // entry is resolved now for the same reason (see the ghost state note).
+    const prevHost = hero;
+    const prevIndex = heroIndex;
+    const prevEntry = prevHost ? art(prevIndex) : null;
     // ARMED HERE, while the control is still under the finger — see `focusReturn`. A poll can reparent it
     // before the commit beat, and by then there is nothing left to read.
     focusReturn.current =
@@ -207,15 +221,12 @@ export function GachaCover({
     // Whether the commit was accepted, for the beats that speak about a swap. A ref rather than state:
     // nothing renders off it, and it is written and read inside one ceremony's own beats.
     let committed = false;
+    // Three beats now (the fold's 300/520 render beats died with the disabled fold/entrance/pulse —
+    // Emma round LOW-2: they re-rendered the whole cover while painting nothing): announce, commit
+    // + cross-fade, close. The 880 ms budget is unchanged — it is still the skip window's span.
     ceremony.start(
       [
-        [
-          0,
-          () => {
-            setTurning(true);
-            announce(coverPromoteAnnounce(tapped?.name ?? hostId));
-          },
-        ],
+        [0, () => announce(coverPromoteAnnounce(tapped?.name ?? hostId))],
         [
           170,
           () => {
@@ -223,21 +234,16 @@ export function GachaCover({
             // refused ⇒ no swap is coming, so the arm must not sit waiting for one (Codex E2-confirm F3's
             // tail: a later reappearance of the same id could otherwise steal focus on an unrelated turn)
             if (!committed) focusReturn.current = null;
+            // …and the cross-fade's other half mounts in the SAME commit as the swap: the ghost (old
+            // hero) starts fading out exactly as the reparented card starts fading in.
+            if (committed && prevHost && prevHost.id !== hostId)
+              setGhost({ host: prevHost, index: prevIndex, entry: prevEntry, toId: hostId });
           },
         ],
-        [
-          300,
-          () => {
-            setTurning(false);
-            setEntering(true);
-          },
-        ],
-        [520, () => setBeating(true)],
         [
           860,
           () => {
-            setEntering(false);
-            setBeating(false);
+            setGhost(null); // the cross-fade settled at ~570; the clone leaves with the ceremony
             // REFUSED means the machine left mid-turn: there is no cover to report, so the settled
             // sentence is suppressed. (The beat-0 "takes the cover" has already spoken by then — accepted:
             // it described an intent that was true when it was said.)
@@ -268,8 +274,8 @@ export function GachaCover({
    *  was actually sent, so a busy machine — or one that left the fleet between render and click — gets no
    *  theatre. Everything the lab did AFTER the request is prototype fiction and does NOT port (§12.6
    *  ruling 4): its 430 ms ONLINE flip, its persistent stamp, its banner refresh and its settled "is
-   *  online" sentence are all gone. The chip reads `WAKING` from the in-flight set, then the SERVER's
-   *  word, and only a hosts poll may say ONLINE. */
+   *  online" sentence are all gone. The chip reads `WAKING` from the pending-wake grace window
+   *  (store/fleetPending, 2026-08-30), and only a hosts poll may say ONLINE. */
   const develop = (hostId: string) => {
     const host = hosts.find((h) => h.id === hostId);
     if (onTapHost(hostId) !== "wake") return;
@@ -321,9 +327,18 @@ export function GachaCover({
     const online = !!host.status?.online;
     const stars = starsFor((host.services ?? []).length, starMode);
     const isBusy = busy.has(host.id);
+    // HELD = the control refuses interaction. Scoped to the HERO (owner ruling 2026-08-30): only the
+    // hero's tap is an ACTION (open / develop) — a cut-in's tap is pure SELECTION, and a machine must
+    // stay promotable to the cover through its whole wake/shutdown grace window (`busy` spans it since
+    // D67). The re-wake refusal does not live here anyway: GachaFleet's router busy-guard is the
+    // synchronous gate, so an enabled cut-in can never re-fire a packet.
+    const held = isHero && isBusy;
     const stamped = devLive && dev.stamped && dev.id === host.id;
     const entry = art(index);
-    const chip = waking.has(host.id) ? "WAKING" : online ? "ONLINE" : "SLEEPING";
+    // Observed-online OUTRANKS a still-pending WAKING (2026-08-30): the pending store clears on the
+    // same poll that flips `online`, but that clear is a passive effect — for the one render in
+    // between, the server's word wins the chip.
+    const chip = online ? "ONLINE" : waking.has(host.id) ? "WAKING" : "SLEEPING";
     return (
       <button
         key={host.id}
@@ -333,7 +348,7 @@ export function GachaCover({
           "cv-card gc-host-hit" +
           (isHero ? " is-hero" : " is-cut") +
           (online ? "" : " asleep") +
-          (isBusy ? " busy" : "") +
+          (held ? " busy" : "") +
           (devLive && dev.id === host.id ? " developing" : "") +
           (stamped ? " stamped" : "")
         }
@@ -345,11 +360,11 @@ export function GachaCover({
             "--cv-rar": unitHueToken(index),
           } as CSSProperties
         }
-        aria-label={labelCover(host, stars, isHero)}
+        aria-label={labelCover(host, stars, isHero, waking.has(host.id))}
         // The hero IS the selection — `aria-pressed` says so, exactly as a poster slice's does.
         aria-pressed={isHero}
-        aria-busy={isBusy || undefined}
-        disabled={isBusy}
+        aria-busy={held || undefined}
+        disabled={held}
         // CAPTURE phase, recording the ceremony's state rather than acting on it (see `skippedGesture`).
         onPointerDownCapture={() => {
           keyRepeat.current = false; // a new POINTER gesture: no held key can still be in progress
@@ -407,8 +422,9 @@ export function GachaCover({
                 <GachaStar key={s} hi={isHighStar(s, starMode)} />
               ))}
             </span>
-            {/* STATUS, always literal (§12.3 (4)). `WAKING` is licensed by the request being in flight and
-                by nothing else; when it settles the chip returns to the server's word. */}
+            {/* STATUS, always literal (§12.3 (4)). `WAKING` is licensed by the wake's grace window
+                (store/fleetPending — dispatch until poll agreement, expiry, or failure) and by
+                nothing else; observed-online outranks it. */}
             <span className="cv-chip">{chip}</span>
           </span>
         </span>
@@ -441,7 +457,7 @@ export function GachaCover({
       style={{ "--cv-cover": unitHueToken(heroIndex) } as CSSProperties}
     >
       <div className={"cv-shake" + (devLive && dev.flash ? " shaking" : "")}>
-        <div className={"cv-page" + (turning ? " turning" : "")}>
+        <div className="cv-page">
           {/* THE MASTHEAD carries the h1 (ruling 9). It renders in EVERY state — including the one where
               nothing else does — because a magazine with no contents is still a magazine, and the tab
               would otherwise be blank while the first poll is in flight.
@@ -452,7 +468,7 @@ export function GachaCover({
               for exactly that reason — the styling belongs to the position, the text is a ruling that has
               already moved once. The live seat renders only once there is a machine to number, so the
               heading never claims an issue that does not exist. */}
-          <h1 className={"cv-mast" + (beating ? " beating" : "")}>
+          <h1 className="cv-mast">
             {hero && (
               <span className="cv-mast-over">{issueLine(heroIndex, !!hero.status?.online)}</span>
             )}
@@ -474,8 +490,57 @@ export function GachaCover({
 
           {hero && (
             <>
-              <div className={"cv-heroslot" + (entering ? " entering" : "")}>
+              <div className="cv-heroslot">
                 {card(hero, heroIndex, true)}
+                {/* The cross-fade's outgoing half (V3 trial): a NON-interactive clone of the old hero's
+                    visual — shot, scrim, copy — wearing the same classes so its geometry is the hero
+                    card's own. Decorative and inert: aria-hidden, no button, no handlers; gacha.css
+                    fades it out while the real card above fades in. */}
+                {ghost && hero?.id === ghost.toId && (
+                  <span
+                    className={
+                      "cv-card is-hero cv-ghost" + (ghost.host.status?.online ? "" : " asleep")
+                    }
+                    aria-hidden
+                    style={{ "--cv-rar": unitHueToken(ghost.index) } as CSSProperties}
+                  >
+                    <span className="cv-shot">
+                      {ghost.entry ? (
+                        <FocalImg
+                          src={ghost.entry.url}
+                          alt=""
+                          draggable={false}
+                          decoding="async"
+                          art={ghost.entry.focus}
+                          shiftX={-COVER_HERO_SHIFT}
+                        />
+                      ) : (
+                        <span className="cv-shot-blank" aria-hidden />
+                      )}
+                    </span>
+                    <span className="cv-scrim" aria-hidden />
+                    <span className="cv-herocopy">
+                      <small>{GACHA_COPY.coverFeatured}</small>
+                      <b>{ghost.host.name.toUpperCase()}</b>
+                      <i>{roleLabel(ghost.host)}</i>
+                      <span className="cv-line">
+                        <span className="cv-stars" aria-hidden>
+                          {Array.from(
+                            {
+                              length: starsFor((ghost.host.services ?? []).length, starMode),
+                            },
+                            (_, s) => (
+                              <GachaStar key={s} hi={isHighStar(s, starMode)} />
+                            ),
+                          )}
+                        </span>
+                        <span className="cv-chip">
+                          {ghost.host.status?.online ? "ONLINE" : "SLEEPING"}
+                        </span>
+                      </span>
+                    </span>
+                  </span>
+                )}
               </div>
 
               {/* THE CUT-IN COLUMN. At N=1 there is no column and no hint (ruling 9): a cover with one

@@ -4842,3 +4842,43 @@ keep the minimal write — sweeping a role that binds by NAME would list other k
 reason. Two cosmetics ruled in the same breath: the ACTIVE mark is ONE accent ring, on active tiles
 only (the three-edge stack read as a fuzzy triple line), and the tile's In-use toggle is drawn at
 24 px — the WCAG 2.5.8 floor — with its hit area extended past the disc.
+
+## D67 — Pending power transitions: app-wide assumed state with per-direction grace windows ✏️ RULED 2026-08-30 (owner, in conversation — "I want this for the whole application… maybe we could just wait a couple or three minutes in the waking state"; field evidence = Home Assistant core#86735, the assumed-state grace-period pattern; council = blind sol design round BUILD WITH CHANGES [1 HIGH + 3 MED + 1 LOW, all folded] → build → sol diff-confirm RESOLVED WITH NEW FINDINGS [2 MED, both folded] → final confirm; tests reworked to the contract, FE suite green)
+
+**The defect class (owner-observed live, both directions).** Wake-on-LAN is an unacknowledgeable
+UDP broadcast and a woken machine boots for 30–60 s; an SSH shutdown is accepted in ~1–3 s while
+the machine stays pingable for tens of seconds more. Both actions therefore open a window in which
+the freshest poll actively CONTRADICTS what the owner just did — and the app let stale truth win
+instantly: the gacha WAKING chip (and the develop ceremony's `devLive` gate) died with the HTTP
+round-trip at ~100 ms, and a shutdown's optimistic cache flip was overwritten by the settle-time
+`invalidateQueries` refetch, bouncing the card offline→online→offline.
+
+**The model.** One module store, `store/fleetPending.ts` (the `store/fleet.ts` precedent — six
+components call `useFleet()` independently and a minutes-long window must survive a theme switch):
+a per-host `{kind: wake|shutdown, token}` record, begun AT DISPATCH by `useActions.run` (which now
+returns the outcome — `FleetRun`, `Promise<boolean>`) and ended by exactly three things — poll
+AGREEMENT (wake→observed online, shutdown→observed offline; `reconcilePending` from `useFleet`'s
+data effect, guarded on the query having ever answered), the per-direction ceiling
+(`WAKE_WINDOW_MS` 180 s, owner-ruled; `SHUTDOWN_WINDOW_MS` 90 s), or the request FAILING
+(token-guarded clear, so a stale failure can't kill a newer action's record — the `gen`-ticket
+idiom). `useFleet` presents hosts THROUGH `overlayPending` (pending-shutdown ⇒ offline, the
+assumed state), returns `busy` = request-busy ∪ pending (a machine mid-transition refuses further
+power actions — a premature WOL packet is lost before the NIC parks), and the carousel cycle
+excludes pending shutdowns. The old optimistic flip/rollback in `useActions` is DELETED, not
+patched. Presentation precedence everywhere: observed-online > WAKING > SLEEPING, and the three
+gacha label helpers carry the waking form so the accessible name never contradicts the chip.
+
+**Rider (owner, same day — the first live ride):** the busy union holds ACTIONS, never SELECTION.
+gacha's mixed select/action controls scope their `disabled` to the action seat alone — the cover
+disables only the HERO, the poster only the PICKED slice — so a booting machine stays promotable/
+selectable through its window (labels keep the still-true select step; the router's synchronous
+busy-guard is the re-wake gate, not the attribute). And the dossier-open page pair shed the
+prototype's 96%/104% zoom (the E1 "screenshot flicker" ledger item, finally reproduced by the
+owner): the `detail` flight's `gacha-page` pair is a duration-only complementary fade now, the
+`gacha-root-*` keyframes are deleted, and only the cutout/portrait morph moves.
+
+**Boundaries.** Reboot is the model's third direction and extends the `kind` union later
+(extend-not-migrate); server-originated wakes (D2-A/B) have no FE signal and are out of scope;
+pending is session-local like `busy` (the accepted two-devices residual class); the windows are
+constants until the owner asks for a knob. Ruling 4 (poll-truthful) stands amended, not broken:
+the assumed state is bounded, failure clears instantly, and only a poll may ever say ONLINE.

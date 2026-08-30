@@ -24,6 +24,10 @@ interface Props {
   onOpen: (hostId: string, morphImg?: HTMLElement | null) => void;
   /** Wear the `NEW` ribbon (G6's demo — one card in the track; see `pickRibbonHost`). Decoration only. */
   isNew?: boolean;
+  /** This machine is inside a wake's grace window (the fleetPending store, threaded through
+   *  GachaTrack; sol review LOW-5 — the capsule chip said SLEEPING through the whole boot). Chip
+   *  copy only; observed-online outranks it. */
+  waking?: boolean;
 }
 
 /** Re-arm the shine so a TAP sweeps it (§10.3: the prototype's `:hover` sweep never fires on the owner's
@@ -38,7 +42,7 @@ function armShine(e: PointerEvent<HTMLButtonElement>): void {
   shine.classList.add("go");
 }
 
-export function GachaCard({ host, art, shape, mode, onOpen, isNew }: Props) {
+export function GachaCard({ host, art, shape, mode, onOpen, isNew, waking }: Props) {
   const online = !!host.status?.online;
   // The ruled input (§6.1): CONFIGURED services, not live ones — so a card's rarity changes only when the
   // owner edits the machine, never when a service blinks.
@@ -66,7 +70,7 @@ export function GachaCard({ host, art, shape, mode, onOpen, isNew }: Props) {
       // layout's own class, so a new fleet layout's host control is exempt by construction rather than by
       // a remembered edit. Purely semantic — no CSS reads it.
       className={"gc-card gc-host-hit " + shape + (online ? "" : " sleep")}
-      aria-label={openLabel(host.name, online)}
+      aria-label={openLabel(host.name, online, waking)}
       onPointerDown={armShine}
       onClick={(e) => onOpen(host.id, e.currentTarget.querySelector("img"))}
     >
@@ -90,7 +94,9 @@ export function GachaCard({ host, art, shape, mode, onOpen, isNew }: Props) {
             <GachaStar key={i} hi={isHighStar(i, mode)} />
           ))}
         </span>
-        <span className={"state" + (online ? " on" : "")}>{online ? "ONLINE" : "SLEEPING"}</span>
+        <span className={"state" + (online ? " on" : "")}>
+          {online ? "ONLINE" : waking ? "WAKING" : "SLEEPING"}
+        </span>
         {/* The `NEW` ribbon DEMO (G6 item iv). `aria-hidden` because it carries nothing: it is a look the
           owner is being shown, not a fact about the machine — and the button's own label already says the
           machine's name and state. It sits on the OPPOSITE corner from `.state` on purpose (gacha.css):

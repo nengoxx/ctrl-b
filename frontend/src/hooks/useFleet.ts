@@ -12,6 +12,12 @@ import {
   useFeatured,
   useOpenRows,
 } from "../store/fleet";
+import {
+  overlayPending,
+  pendingSnapshot,
+  reconcilePending,
+  usePendingFleet,
+} from "../store/fleetPending";
 import type { Host, Service, ServerInfo } from "../types";
 import { useFleetActions } from "./useActions";
 import { useServices } from "./useServices";
@@ -45,6 +51,8 @@ export function useServerInfo() {
  *  render and hand downstream effects a fresh array identity every time. Copy-before-sort: select must
  *  never mutate the cached data (the cache itself always holds wire order — "config" just reads it raw). */
 export type FleetOrder = "self-first" | "config";
+/** The one stable empty-fleet array — `?? []` inside a memo dep would mint a fresh identity per render. */
+const NO_HOSTS: Host[] = [];
 function selfFirst(hosts: Host[]): Host[] {
   return [...hosts].sort((a, b) => Number(b.self ?? false) - Number(a.self ?? false));
 }
@@ -103,7 +111,13 @@ export function useFleetCycle(): void {
         return;
       }
       const cur = hostsRef.current;
-      const onIdx = cur.map((h, i) => (h.status?.online ? i : -1)).filter((i) => i >= 0);
+      // A host pending SHUTDOWN is presented offline everywhere (fleetPending's assumed state) — the
+      // cycle must not auto-feature what the fleet is showing as down (sol review MED-4). Raw
+      // liveness stays the eligibility source otherwise; pending WAKE hosts are genuinely offline.
+      const pending = pendingSnapshot();
+      const onIdx = cur
+        .map((h, i) => (h.status?.online && pending.get(h.id)?.kind !== "shutdown" ? i : -1))
+        .filter((i) => i >= 0);
       if (onIdx.length) {
         const pos = onIdx.indexOf(fleetState().featured);
         featureAuto(onIdx[(pos + 1) % onIdx.length]);
@@ -142,7 +156,14 @@ export interface FleetView {
   poll: number;
   isLoading: boolean;
   error: Error | null;
+  /** Request-busy ∪ pending-transition hosts (sol review MED-3): a machine inside its wake/shutdown
+   *  grace window stays action-disabled even after the HTTP request settles — offering Wake on a
+   *  still-pingable "offline" machine mid-shutdown would fire a WOL packet the NIC isn't yet parked
+   *  to hear. Cleared by poll agreement or window expiry, like the presentation itself. */
   busy: ReadonlySet<string>;
+  /** Per-host pending power transition ("wake" | "shutdown" via `.kind`) — presentation-grade state
+   *  (gacha's WAKING chip + ceremony gate). `hosts` above is already presented through it. */
+  pending: ReadonlyMap<string, { kind: "wake" | "shutdown" }>;
   run: ReturnType<typeof useFleetActions>["run"];
   feature: (i: number) => void; // user picks a host (now-dots) — holds the carousel
   toggleRow: (id: string, i: number) => void; // user taps a row — features + holds + toggles expand
@@ -159,12 +180,33 @@ export function useFleet(order: FleetOrder = "self-first"): FleetView {
   // The raw query result is kept (rather than destructured to `data`) so the view can distinguish "answered
   // with nothing" from "never answered" — `data === undefined` is the only honest source for that.
   const hostsQ = useHosts(poll, order);
-  const hosts = hostsQ.data ?? [];
   const { isLoading, error } = hostsQ;
+  const pending = usePendingFleet();
+  // Poll agreement clears pending entries (wake→observed online, shutdown→observed offline, host
+  // gone). An EFFECT, not a render-time call: reconciliation writes the store. Idempotent across the
+  // hook's many live instances — only a real deletion emits. GUARDED on the query having ANSWERED
+  // (test-agent report, 2026-08-30): reconcile reads absence-from-the-answer as agreement, so a
+  // no-data instance passing `[]` would wipe every pending record app-wide mid-window — a poller
+  // that has never answered gets no say.
+  useEffect(() => {
+    if (hostsQ.data !== undefined) reconcilePending(hostsQ.data);
+  }, [hostsQ.data]);
+  // The assumed-state presentation (fleetPending's overlay): pending-shutdown hosts read as offline
+  // no matter what the still-catching-up poll says. Referentially stable when nothing overlays, so
+  // downstream memo()s keep bailing exactly as before.
+  const hosts = useMemo(
+    () => overlayPending(hostsQ.data ?? NO_HOSTS, pending),
+    [hostsQ.data, pending],
+  );
   // Kept whole for the same reason the hosts query is: `data === undefined` is the only honest source for
   // "this poller has never answered", and the services poll finishes independently of the fleet's.
   const svcQ = useServices(poll);
-  const { run, busy } = useFleetActions();
+  const { run, busy: requestBusy } = useFleetActions();
+  // Pending hosts count as busy for the whole grace window (MED-3, doc'd on the interface above).
+  const busy = useMemo<ReadonlySet<string>>(
+    () => (pending.size === 0 ? requestBusy : new Set([...requestBusy, ...pending.keys()])),
+    [requestBusy, pending],
+  );
   const featured = useFeatured();
   const open = useOpenRows();
 
@@ -195,6 +237,7 @@ export function useFleet(order: FleetOrder = "self-first"): FleetView {
     isLoading,
     error,
     busy,
+    pending,
     run,
     feature,
     toggleRow,

@@ -261,12 +261,21 @@ export function tapAction(
  *
  *  A NEW function rather than an edit to `openLabel` (R25 §Q1d): that one is shared by the capsule cards AND
  *  the banner promos, and must keep saying what it says byte-for-byte. */
-export function pickLabel(host: Host, stars: number, selected: boolean): string {
+export function pickLabel(host: Host, stars: number, selected: boolean, waking = false): string {
   const online = !!host.status?.online;
+  // WAKING is a third liveness (sol confirm MED-2, 2026-08-30): the chip says it, and an aria-label
+  // REPLACES the chip's text — without this form a screen reader heard "sleeping. Tap to run the
+  // wake sequence" on a machine whose wake is already running (and whose re-tap the busy union
+  // refuses). Online outranks it, exactly as at the chip. Selection still works while waking, so
+  // that step keeps its promise; only the wake instruction goes.
   const head = `${host.name}, ${roleLabel(host).toLowerCase()}, ${stars} stars, ${
-    online ? "online" : "sleeping"
+    online ? "online" : waking ? "waking" : "sleeping"
   }. `;
   if (online) return `${head}Opens the unit dossier.`;
+  if (waking)
+    return selected
+      ? `${head}Selected. Wake sequence in progress.`
+      : `${head}Tap to select. Wake sequence in progress.`;
   return selected
     ? `${head}Selected. Tap to run the wake sequence.`
     : `${head}Tap to select; tap again to run the wake sequence.`;
@@ -280,15 +289,24 @@ export function pickLabel(host: Host, stars: number, selected: boolean): string 
  *  A THIRD builder rather than a mode on `pickLabel`: cover's sentences are not that one's with a word
  *  changed (they name the cover, not a selection), and `openLabel` — the capsule card + banner promo's —
  *  still has to stay byte-identical (R25 §Q1d). */
-export function labelCover(host: Host, stars: number, isHero: boolean): string {
+export function labelCover(host: Host, stars: number, isHero: boolean, waking = false): string {
   const online = !!host.status?.online;
   const head = `${host.name}, ${roleLabel(host).toLowerCase()}, ${stars} stars, `;
+  // The WAKING forms (sol confirm MED-2): no develop/promote promise — the busy union disables the
+  // control for the grace window, and a name instructing a wake on a machine already waking was the
+  // sighted/spoken contradiction the finding quotes. Online outranks waking, as at the chip.
   if (isHero)
     return (
       `${head}on the cover, ` +
-      (online ? "online. Opens the unit dossier." : "sleeping. Develops the cover and wakes it.")
+      (online
+        ? "online. Opens the unit dossier."
+        : waking
+          ? "waking. Wake sequence in progress."
+          : "sleeping. Develops the cover and wakes it.")
     );
-  return `${head}${online ? "online" : "sleeping"}. Supporting cut-in. Puts it on the cover.`;
+  // A waking cut-in KEEPS its promote promise (owner ruling 2026-08-30, second pass): selection is
+  // never held — only the hero's action tap is — so the sentence stays true through the window.
+  return `${head}${online ? "online" : waking ? "waking" : "sleeping"}. Supporting cut-in. Puts it on the cover.`;
 }
 
 /** The cover's ISSUE line — `ISSUE 01 · ONLINE`, the masthead's own read of which machine is on the cover
@@ -407,8 +425,11 @@ export function partingStep(index: number, wakingIndex: number): number {
  *  SLEEPING chip is real text inside the button, and labelling the button "open X dossier" alone would
  *  silently drop it from the accessible name. The frontier fleet's own `name — online/asleep` labels are the
  *  in-repo precedent for spelling the state out. */
-export function openLabel(name: string, online: boolean): string {
-  return `open ${name} dossier, ${online ? "online" : "sleeping"}`;
+export function openLabel(name: string, online: boolean, waking = false): string {
+  // The waking word (sol confirm MED-2) — the action half stays byte-identical in every state
+  // (R25 §Q1d): a capsule card opens the dossier whatever the liveness, so only the status changes.
+  // The banner promo call site passes no third argument and keeps its historical two-state name.
+  return `open ${name} dossier, ${online ? "online" : waking ? "waking" : "sleeping"}`;
 }
 
 /** The dossier's dismiss label. ONE string, two controls: the kit sheet's own sr-only close button and the

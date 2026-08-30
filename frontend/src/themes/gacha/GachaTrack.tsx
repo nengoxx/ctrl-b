@@ -104,13 +104,15 @@ export interface GachaTrackProps {
   /** `useFleet().busy` — per-HOST, not per-action (R25 §Q1b). A slice lights and disables for ANY in-flight
    *  action on its machine, which is the correct read of a shared busy set. */
   busy: ReadonlySet<string>;
-  /** The machines whose WAKE REQUEST is currently in flight. Distinct from `busy` because busy cannot say
-   *  WHICH action: this is the only fact that licenses a `WAKING` presentation, and a machine leaves the
-   *  set when its request settles — the card goes back to the SERVER-REPORTED state, and only a poll may
-   *  flip it online (ruling 4, poll-truthful).
+  /** The machines inside a WAKE's grace window (2026-08-30 — derived from `store/fleetPending`;
+   *  supersedes the request-in-flight set, whose ~100ms lifetime made the chip blink). Distinct from
+   *  `busy` because busy cannot say WHICH action: this is the only fact that licenses a `WAKING`
+   *  presentation. A machine leaves it on poll AGREEMENT (observed online — and observed-online
+   *  outranks it at the chip either way), on the window's expiry, or on the request failing; ruling
+   *  4 stays honored because the window is bounded and a failure clears instantly.
    *
    *  A SET rather than one id: two wakes can genuinely overlap (wake A, then wake B while A is still
-   *  pending), and one slot made A stop saying `WAKING` while its own request was still in the air. */
+   *  pending), and one slot made A stop saying `WAKING` while its own window was still open. */
   waking: ReadonlySet<string>;
   /** Speak into the fleet's ONE live region (ruling 3). The region itself stays `GachaFleet`'s — a layout
    *  never owns an ARIA landmark — but WHO speaks follows the tap grammar: under `act-first` the body
@@ -134,6 +136,7 @@ export function GachaTrack({
   art,
   counter,
   onOpenHost,
+  waking,
 }: GachaTrackProps) {
   return (
     <>
@@ -174,6 +177,7 @@ export function GachaTrack({
               mode={starMode}
               onOpen={onOpenHost}
               isNew={hosts[i].id === ribbonHost}
+              waking={waking.has(hosts[i].id)}
             />
           ))}
         </div>

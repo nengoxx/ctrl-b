@@ -1,5 +1,6 @@
 import { DefaultRoot } from "../../theme-engine/kit/DefaultRoot";
 import { useHosts, useServerInfo } from "../../hooks/useFleet";
+import { overlayPending, usePendingFleet } from "../../store/fleetPending";
 import { useUISlice } from "../../store/ui";
 import { FrontierAgent } from "./FrontierAgent";
 import { FrontierFleet } from "./FrontierFleet";
@@ -42,6 +43,13 @@ export function FrontierRoot() {
 function useFrontierBrandMeta(): string | null {
   const { data: server } = useServerInfo();
   const { data: hosts = [] } = useHosts(server?.poll_seconds ?? 5);
+  // Counted THROUGH the pending overlay (sol confirm round MED-1, 2026-08-30): this is the one raw
+  // `useHosts` consumer that reads LIVENESS, and the old optimistic cache flip it silently relied on
+  // is gone — without the overlay the app bar keeps saying 4/4 while the fleet below already shows a
+  // shutdown-pending rig as offline. Reactive read + the store's own overlay helper, never a second
+  // pending implementation.
+  const pending = usePendingFleet();
   if (hosts.length === 0) return null;
-  return `${hosts.filter((h) => h.status?.online).length}/${hosts.length} rigs · online`;
+  const shown = overlayPending(hosts, pending);
+  return `${shown.filter((h) => h.status?.online).length}/${shown.length} rigs · online`;
 }

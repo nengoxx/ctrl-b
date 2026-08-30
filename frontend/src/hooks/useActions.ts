@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getJSON, postJSON } from "../api/client";
 import { requestConfirm } from "../store/confirm";
+import { beginPending, clearPending } from "../store/fleetPending";
 import { pushToast } from "../store/toast";
 import type { ActionSpec, AgentMode, Host, InvokeResponse } from "../types";
 
@@ -41,18 +42,24 @@ export function useActionSpecs() {
   });
 }
 
-/** Optimistically flip one host's online flag in the ['hosts'] cache. */
-function patchHostOnline(qc: ReturnType<typeof useQueryClient>, id: string, online: boolean): void {
-  qc.setQueryData<Host[]>(["hosts"], (cur) =>
-    cur?.map((h) => (h.id === id && h.status ? { ...h, status: { ...h.status, online } } : h)),
-  );
-}
+/** The one `run` signature, shared with every surface that receives it as a prop. Resolves `true`
+ *  only when the action reported ok — a cancelled confirm, a refusal and a transport error are all
+ *  `false`. Errors are still HANDLED here (toast; never a rejection): the outcome exists for the
+ *  pending-transition bookkeeping, not for callers to re-handle failures. */
+export type FleetRun = (action: FleetAction, host: Host) => Promise<boolean>;
 
 /**
  * Run wake/shutdown/ping against a host with: confirm dialog for the high-risk one, a busy
- * indicator for the duration, optimistic offline-flip + rollback for shutdown, and an outcome
- * toast. `wake` doesn't optimistically show "online" (a woken host takes time to boot — that
- * would be a lie that reverts); its optimism is the busy state, reconciled by the next poll.
+ * indicator for the request, a pending-transition record for the two power actions, and an outcome
+ * toast.
+ *
+ * WAKE and SHUTDOWN mark the host PENDING in `store/fleetPending` at dispatch (cleared again if the
+ * request fails — token-guarded, so a stale failure can't kill a newer action's record). That store
+ * is what holds the assumed state through the boot/shutdown window: `useFleet` presents hosts
+ * through it and keeps pending hosts action-busy, so the old optimistic cache flip — which the
+ * settle-time refetch overwrote while the machine was still pingable, bouncing the card back online
+ * — is gone rather than patched. The refetch below is now harmless to the presentation and still
+ * right for ping.
  */
 export function useFleetActions() {
   const qc = useQueryClient();
@@ -67,8 +74,8 @@ export function useFleetActions() {
     });
   }, []);
 
-  const run = useCallback(
-    async (action: FleetAction, host: Host) => {
+  const run = useCallback<FleetRun>(
+    async (action, host) => {
       const name = ACTION_NAME[action];
       const spec = specs?.find((s) => s.name === name);
       const needsConfirm = spec
@@ -82,11 +89,14 @@ export function useFleetActions() {
           confirmLabel: verb,
           danger: true,
         });
-        if (!ok) return;
+        if (!ok) return false;
       }
 
-      const prev = qc.getQueryData<Host[]>(["hosts"]);
-      if (action === "shutdown") patchHostOnline(qc, host.id, false);
+      // The pending record starts at DISPATCH, not at the response: the WOL/SSH request round-trip
+      // says nothing about the transition, and gacha's wake ceremony gates its theatre on this
+      // record from its very first beat. A failure below hands the token back.
+      const pendingToken =
+        action === "wake" || action === "shutdown" ? beginPending(host.id, action) : null;
 
       setBusyId(host.id, true);
       try {
@@ -102,13 +112,15 @@ export function useFleetActions() {
         const r = res.result;
         if (r && r.state === "ok") {
           pushToast(r.summary, "ok");
-        } else {
-          if (prev) qc.setQueryData(["hosts"], prev); // rollback optimistic flip
-          pushToast(r?.summary || r?.error || "action failed", "err");
+          return true;
         }
+        if (pendingToken !== null) clearPending(host.id, pendingToken);
+        pushToast(r?.summary || r?.error || "action failed", "err");
+        return false;
       } catch (e) {
-        if (prev) qc.setQueryData(["hosts"], prev);
+        if (pendingToken !== null) clearPending(host.id, pendingToken);
         pushToast((e as Error).message, "err");
+        return false;
       } finally {
         setBusyId(host.id, false);
         void qc.invalidateQueries({ queryKey: ["hosts"] }); // reconcile with reality on next sweep

@@ -1,5 +1,5 @@
 import { FocalImg } from "../../components/FocalImg";
-import type { FleetAction } from "../../hooks/useActions";
+import type { FleetRun } from "../../hooks/useActions";
 import { hostDetailFacts } from "../../lib/hostDetail";
 import { rebaseServiceUrl, serviceBase } from "../../lib/serviceBase";
 import { ServiceIcon } from "../../theme-engine/kit/ServiceIcon";
@@ -34,7 +34,7 @@ interface Props {
   mode: StarMode;
   /** A host action is in flight (`useFleet().busy`) — disables the whole bar. */
   busy: boolean;
-  run: (action: FleetAction, host: Host) => Promise<void>;
+  run: FleetRun;
   titleId: string; // aria-labelledby target the sheet points at (the host name)
   /** Dismiss the dossier — the prototype's visible corner close (owner-restored 2026-08-02). Optional so
    *  the content stays renderable standalone (the tests do); with no handler the corner is simply absent. */
