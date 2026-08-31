@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  REBOOT_WINDOW_MS,
   SHUTDOWN_WINDOW_MS,
   WAKE_WINDOW_MS,
   beginPending,
@@ -72,6 +73,17 @@ describe("beginPending — the record, and its per-kind window", () => {
     beginPending("atlas", "shutdown");
     vi.advanceTimersByTime(SHUTDOWN_WINDOW_MS - 1);
     expect(kindOf("atlas")).toBe("shutdown");
+    vi.advanceTimersByTime(1);
+    expect(pendingSnapshot().has("atlas")).toBe(false);
+  });
+
+  it("expires a REBOOT at the five-minute window — the longest of the three", () => {
+    // Reboot is the only kind that has to bound BOTH transitions plus the OS's own restart, so it
+    // inherits neither neighbour's ceiling (owner-ruled 2026-08-31).
+    expect(REBOOT_WINDOW_MS).toBe(300_000);
+    beginPending("atlas", "reboot");
+    vi.advanceTimersByTime(REBOOT_WINDOW_MS - 1);
+    expect(kindOf("atlas")).toBe("reboot");
     vi.advanceTimersByTime(1);
     expect(pendingSnapshot().has("atlas")).toBe(false);
   });
@@ -203,6 +215,84 @@ describe("reconcilePending — the polls agree, or the host is gone", () => {
   });
 });
 
+// ── REBOOT, the two-phase kind (2026-08-31) ─────────────────────────────────────────────────────────
+// The machine is ONLINE at dispatch, so "observed online" is the state a reboot STARTS in and can never
+// be its agreement — which is the whole reason it needs a phase marker at all. Agreement is a SEQUENCE:
+// observed down, and only then observed up again.
+describe("reconcilePending — a REBOOT agrees on down, THEN up", () => {
+  it("does not clear while the machine is still up — the restart has not reached the network yet", () => {
+    beginPending("atlas", "reboot");
+    reconcilePending([host("atlas", true)]);
+    expect(kindOf("atlas")).toBe("reboot");
+    expect(pendingSnapshot().get("atlas")?.sawDown).toBeUndefined();
+  });
+
+  it("records the DOWN observation on the entry rather than ending it", () => {
+    beginPending("atlas", "reboot");
+    reconcilePending([host("atlas", false)]);
+    expect(kindOf("atlas")).toBe("reboot"); // half the transition — the record still stands
+    expect(pendingSnapshot().get("atlas")?.sawDown).toBe(true);
+  });
+
+  it("clears when it comes back UP, and only after the down", () => {
+    beginPending("atlas", "reboot");
+    reconcilePending([host("atlas", true)]); // an online poll BEFORE the down is not agreement…
+    expect(kindOf("atlas")).toBe("reboot");
+    reconcilePending([host("atlas", false)]);
+    reconcilePending([host("atlas", true)]); // …the identical poll after it is
+    expect(pendingSnapshot().has("atlas")).toBe(false);
+  });
+
+  it("expires at its OWN ceiling when the machine never comes back", () => {
+    beginPending("atlas", "reboot");
+    reconcilePending([host("atlas", false)]); // it went down…
+    vi.advanceTimersByTime(REBOOT_WINDOW_MS - 1);
+    expect(kindOf("atlas")).toBe("reboot"); // …and stayed down; the assumption still stands
+    vi.advanceTimersByTime(1);
+    expect(pendingSnapshot().has("atlas")).toBe(false); // it cannot lie forever
+  });
+
+  it("a host that LEFT the fleet takes its reboot with it, phase or no phase", () => {
+    beginPending("atlas", "reboot");
+    reconcilePending([host("atlas", false)]); // the down is recorded…
+    reconcilePending([host("vault", true)]); // …and then the config stops listing the machine
+    expect(pendingSnapshot().size).toBe(0);
+  });
+
+  it("emits only on a real write — the phase change publishes ONCE, and copies", () => {
+    beginPending("atlas", "reboot");
+    const armed = pendingSnapshot();
+    reconcilePending([host("atlas", true)]);
+    expect(pendingSnapshot()).toBe(armed); // still up: nothing to write
+    reconcilePending([host("atlas", false)]);
+    const down = pendingSnapshot();
+    expect(down).not.toBe(armed); // the phase IS a write, so it must publish
+    expect(armed.get("atlas")?.sawDown).toBeUndefined(); // …copy-on-write, not a mutation under the reader
+    reconcilePending([host("atlas", false)]);
+    expect(pendingSnapshot()).toBe(down); // …and repeating the same observation is not a write
+  });
+
+  it("last action wins DROPS the phase — a newer wake starts from nothing", () => {
+    // The token rules are the kind's business only in that a replacement is a whole new entry: a
+    // `sawDown` carried over would let the wake agree on the reboot's half-finished progress.
+    beginPending("atlas", "reboot");
+    reconcilePending([host("atlas", false)]);
+    expect(pendingSnapshot().get("atlas")?.sawDown).toBe(true);
+    beginPending("atlas", "wake"); // it never came back, so the owner wakes it instead
+    expect(kindOf("atlas")).toBe("wake");
+    expect(pendingSnapshot().get("atlas")?.sawDown).toBeUndefined();
+    reconcilePending([host("atlas", true)]); // …and a wake agrees on ONE observation, as it always did
+    expect(pendingSnapshot().has("atlas")).toBe(false);
+  });
+
+  it("a SUPERSEDED dispatcher's clear still no-ops against a reboot", () => {
+    const stale = beginPending("atlas", "wake");
+    beginPending("atlas", "reboot");
+    clearPending("atlas", stale);
+    expect(kindOf("atlas")).toBe("reboot");
+  });
+});
+
 describe("overlayPending — the assumed-state presentation", () => {
   const HOSTS = [host("atlas", true), host("relay", true), host("vault", false)];
 
@@ -231,5 +321,29 @@ describe("overlayPending — the assumed-state presentation", () => {
   it("does not re-mint a host whose shutdown the poll has already caught up with", () => {
     beginPending("vault", "shutdown"); // vault is ALREADY offline
     expect(overlayPending(HOSTS)).toBe(HOSTS);
+  });
+
+  it("presents a pending-REBOOT host as ONLINE — the mirror of the shutdown arm", () => {
+    // The COMMANDED end state: a rebooting machine is meant to come back, so the honest offline the
+    // poll sees mid-restart must not read as a fleet that lost a member for a minute.
+    beginPending("vault", "reboot"); // vault is the offline one
+    const out = overlayPending(HOSTS);
+    expect(out[2].status?.online).toBe(true);
+    expect(out[0]).toBe(HOSTS[0]); // …and every other host is the SAME object
+    expect(out[1]).toBe(HOSTS[1]);
+    expect(HOSTS[2].status?.online).toBe(false); // the input is never mutated…
+    expect(out[2]).not.toBe(HOSTS[2]); // …the overlaid host is a copy, status object included
+  });
+
+  it("does not re-mint a rebooting host the poll already agrees with", () => {
+    beginPending("atlas", "reboot"); // atlas has not gone down yet — nothing to overlay
+    expect(overlayPending(HOSTS)).toBe(HOSTS);
+  });
+
+  it("leaves a host with NO status alone — it presents a poll, it never invents one", () => {
+    const unpolled = [host("ghost", null)];
+    beginPending("ghost", "reboot");
+    expect(overlayPending(unpolled)).toBe(unpolled);
+    expect(unpolled[0].status).toBeNull();
   });
 });

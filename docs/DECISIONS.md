@@ -4882,3 +4882,18 @@ owner): the `detail` flight's `gacha-page` pair is a duration-only complementary
 pending is session-local like `busy` (the accepted two-devices residual class); the windows are
 constants until the owner asks for a knob. Ruling 4 (poll-truthful) stands amended, not broken:
 the assumed state is bounded, failure clears instantly, and only a poll may ever say ONLINE.
+
+**Amendment 2026-08-31 — REBOOT joins as the third kind** (owner-ruled; blind sol design round
+BUILD WITH CHANGES, both accepted findings folded into the test obligations). It is the only
+TWO-PHASE kind: the machine is ONLINE at dispatch, so agreement is a SEQUENCE — observed DOWN
+(recorded as `sawDown` on the entry, copy-on-write like every other write there), then observed UP
+— with a 5-minute ceiling (`REBOOT_WINDOW_MS`, owner-ruled; the windows are a
+`Record<PendingKind, number>` table now). Presentation is the COMMANDED END STATE, mirroring the
+shutdown arm: `overlayPending` shows a pending-reboot host as ONLINE through the restart's dip, so
+REBOOTING outranks online on the gacha chips and in all three label helpers (the raw flag can no
+longer tell the two apart). `useFleetCycle` needs no arm — it reads RAW liveness, so a machine
+that is genuinely away mid-reboot is not auto-featured. The gacha seam MIGRATED rather than grew a
+sibling: `GachaTrackProps.waking: ReadonlySet<string>` became
+`pending: ReadonlyMap<string, {kind}>` (the store's own map, handed down whole) and each use site
+asks `.get(id)?.kind` — a second per-kind Set is exactly the parallel-map shape the
+extend-not-migrate rule forbids. Every pre-existing state's strings are byte-identical.

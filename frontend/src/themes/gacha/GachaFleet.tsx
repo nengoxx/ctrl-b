@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { BottomSheet, type SheetDetent } from "../../components/BottomSheet";
 import { useFleet } from "../../hooks/useFleet";
@@ -162,18 +162,12 @@ export function GachaFleet({ active }: { active: boolean }) {
   //    (`resolvedPick` below) and that resolution is never written back, so the first machine is selected
   //    at boot without a state write.
   const [pickedId, setPickedId] = useState<string | null>(null);
-  // Which machines are inside a WAKE's grace window — derived from the app-wide pending-transition
-  // store (2026-08-30; supersedes the request-scoped local set). The old set cleared the moment the
-  // HTTP round-trip settled (~100ms), so the WAKING chip blinked and the develop ceremony's devLive
-  // gate killed the theatre mid-flight while the machine booted for a minute wearing SLEEPING. The
-  // store entry begins at dispatch (useActions), survives the settle, and ends on poll AGREEMENT
-  // (observed online) or the 180s window — the HA assumed-state grace pattern (core#86735). Still a
-  // Set at this seam: GachaTrackProps pins the shape, and the R25 §Q1b fact stands — `busy` cannot
-  // say WHICH action, this can. Set-valued derivation is memoized on the store map's stable ref.
-  const waking = useMemo<ReadonlySet<string>>(
-    () => new Set([...pending].filter(([, e]) => e.kind === "wake").map(([id]) => id)),
-    [pending],
-  );
+  // (The pending-transition MAP itself is what the layouts read — `useFleet().pending`, handed straight
+  // down as a `GachaTrackProps` field. It used to be narrowed here into a `waking` Set; reboot joining as
+  // a third kind (2026-08-31) made that a per-kind sibling set, which is the shape the extend-not-migrate
+  // rule forbids, so the seam carries the map and each use site asks it `.get(id)?.kind`. The store entry
+  // begins at dispatch (useActions), survives the ~100ms request settle that used to make the chip blink,
+  // and ends on poll AGREEMENT or its window — the HA assumed-state grace pattern, core#86735.)
   // The fleet's ONE live region (ruling 3). gacha had none; select-then-act needs one because its only
   // feedback is a transform and a data block below the fold.
   //
@@ -379,8 +373,8 @@ export function GachaFleet({ active }: { active: boolean }) {
     // ceremony went on to announce a machine the state no longer held. The updater reads what the state
     // ACTUALLY holds now and clears only if THAT is the gone one, so a newer commit survives untouched.
     setPickedId((prev) => (prev !== null && !hosts.some((h) => h.id === prev) ? null : prev));
-    // (`waking` needs no prune here any more — the pending store's reconcile drops entries whose
-    // machine left the config, and the set above is a pure derivation of that store.)
+    // (The pending map needs no prune here — the store's own reconcile drops entries whose machine
+    // left the config, and the layouts read that store's map directly.)
   }, [selected, pickedId, hosts, cleanMorphPrep, dropShowcase]);
 
   // THE RESOLVED PICK — the one value both the render and the router read (ruling 2, hardened at the E1
@@ -494,8 +488,8 @@ export function GachaFleet({ active }: { active: boolean }) {
       // The SAME seam the dossier's Wake button calls — no new execution path, no UI confirm (D8: the
       // registry decides, and `wake_host` is risk=LOW with no `confirm`). No state managed here any
       // more: `run` begins the pending record at dispatch and clears it itself on failure
-      // (token-guarded), the store's window/reconcile own the rest, and `waking` above is a pure
-      // derivation of that record. `run` reports its own outcome as a toast.
+      // (token-guarded), the store's window/reconcile own the rest, and the layouts read that record
+      // straight off `pending`. `run` reports its own outcome as a toast.
       void run("wake", host);
       return "wake";
     },
@@ -810,7 +804,7 @@ export function GachaFleet({ active }: { active: boolean }) {
         onTapHost={onTapHost}
         onCommitSelect={onCommitSelect}
         busy={busy}
-        waking={waking}
+        pending={pending}
         // The fleet's live region stays THIS component's; a layout that dramatizes a request on its own
         // beats borrows the voice (see the prop's contract). Stable identity, so a ceremony beat's closure
         // over it is safe.

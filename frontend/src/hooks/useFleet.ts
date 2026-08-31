@@ -17,6 +17,7 @@ import {
   pendingSnapshot,
   reconcilePending,
   usePendingFleet,
+  type PendingKind,
 } from "../store/fleetPending";
 import type { Host, Service, ServerInfo } from "../types";
 import { useFleetActions } from "./useActions";
@@ -114,6 +115,8 @@ export function useFleetCycle(): void {
       // A host pending SHUTDOWN is presented offline everywhere (fleetPending's assumed state) — the
       // cycle must not auto-feature what the fleet is showing as down (sol review MED-4). Raw
       // liveness stays the eligibility source otherwise; pending WAKE hosts are genuinely offline.
+      // Reboot needs no arm of its own for the same reason: it reads RAW liveness, so a machine that
+      // has actually gone down mid-reboot is naturally not auto-featured while it is away.
       const pending = pendingSnapshot();
       const onIdx = cur
         .map((h, i) => (h.status?.online && pending.get(h.id)?.kind !== "shutdown" ? i : -1))
@@ -161,9 +164,11 @@ export interface FleetView {
    *  still-pingable "offline" machine mid-shutdown would fire a WOL packet the NIC isn't yet parked
    *  to hear. Cleared by poll agreement or window expiry, like the presentation itself. */
   busy: ReadonlySet<string>;
-  /** Per-host pending power transition ("wake" | "shutdown" via `.kind`) — presentation-grade state
-   *  (gacha's WAKING chip + ceremony gate). `hosts` above is already presented through it. */
-  pending: ReadonlyMap<string, { kind: "wake" | "shutdown" }>;
+  /** Per-host pending power transition (the `PendingKind` via `.kind`) — presentation-grade state
+   *  (gacha's WAKING/REBOOTING chips + the wake ceremony's gate). `hosts` above is already presented
+   *  through it. The MAP itself is the seam, not a per-kind set: a consumer that needs to know WHICH
+   *  action asks the entry, and a fourth kind reaches every one of them with no new prop. */
+  pending: ReadonlyMap<string, { kind: PendingKind }>;
   run: ReturnType<typeof useFleetActions>["run"];
   feature: (i: number) => void; // user picks a host (now-dots) — holds the carousel
   toggleRow: (id: string, i: number) => void; // user taps a row — features + holds + toggles expand
@@ -191,9 +196,10 @@ export function useFleet(order: FleetOrder = "self-first"): FleetView {
   useEffect(() => {
     if (hostsQ.data !== undefined) reconcilePending(hostsQ.data);
   }, [hostsQ.data]);
-  // The assumed-state presentation (fleetPending's overlay): pending-shutdown hosts read as offline
-  // no matter what the still-catching-up poll says. Referentially stable when nothing overlays, so
-  // downstream memo()s keep bailing exactly as before.
+  // The assumed-state presentation (fleetPending's overlay) — the COMMANDED end state: pending-shutdown
+  // hosts read as offline and pending-REBOOT hosts read as online, no matter what the still-catching-up
+  // poll says. Referentially stable when nothing overlays, so downstream memo()s keep bailing exactly
+  // as before.
   const hosts = useMemo(
     () => overlayPending(hostsQ.data ?? NO_HOSTS, pending),
     [hostsQ.data, pending],

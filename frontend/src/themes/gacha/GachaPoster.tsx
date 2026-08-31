@@ -82,7 +82,7 @@ export function GachaPoster({
   picked,
   onTapHost,
   busy,
-  waking,
+  pending,
 }: GachaTrackProps) {
   // Read HERE rather than threaded down from `GachaFleet`: `posterName` is meaningless to every other
   // layout (it is `showWhen`-scoped to this one in Conf for exactly that reason), so a prop would put a
@@ -193,6 +193,8 @@ export function GachaPoster({
               const stars = starsFor((host.services ?? []).length, starMode);
               const isPicked = host.id === picked;
               const isBusy = busy.has(host.id);
+              // WHICH transition this machine is inside, if any — the one fact `busy` cannot carry.
+              const kind = pending.get(host.id)?.kind;
               // HELD = the slice refuses interaction — scoped to the PICKED slice (owner ruling
               // 2026-08-30, the cover's rule verbatim): only the picked slice's tap is an ACTION
               // (open / wake); an unpicked slice's tap is pure SELECTION and must stay live through
@@ -225,7 +227,7 @@ export function GachaPoster({
                       "--po-part": parting ? partingStep(i, stageIndex) : 0,
                     } as CSSProperties
                   }
-                  aria-label={pickLabel(host, stars, isPicked, waking.has(host.id))}
+                  aria-label={pickLabel(host, stars, isPicked, kind)}
                   aria-pressed={isPicked}
                   aria-busy={held || undefined}
                   disabled={held}
@@ -291,11 +293,18 @@ export function GachaPoster({
                       </span>
                       <span className="po-role">{roleLabel(host)}</span>
                     </span>
-                    {/* STATUS, always literal (§12.3 ④). `WAKING` is licensed by the wake's grace
-                      window (store/fleetPending) and by nothing else — observed-online outranks it,
-                      and the window ends on agreement, expiry, or failure. */}
+                    {/* STATUS, always literal (§12.3 ④). `WAKING` and `REBOOTING` are licensed by the
+                      grace window (store/fleetPending) and by nothing else, and the window ends on
+                      agreement, expiry, or failure. REBOOTING outranks ONLINE because the overlay
+                      PRESENTS a rebooting machine as online; observed-online outranks WAKING. */}
                     <span className="po-chip">
-                      {online ? "ONLINE" : waking.has(host.id) ? "WAKING" : "SLEEPING"}
+                      {kind === "reboot"
+                        ? "REBOOTING"
+                        : online
+                          ? "ONLINE"
+                          : kind === "wake"
+                            ? "WAKING"
+                            : "SLEEPING"}
                     </span>
                     {/* THE CORNER TAG (owner, third walk) — the lab's `.po-jp`, revived as FLAVOUR: a
                       frozen pool glyph picked by fleet POSITION, never anything host-derived. It says

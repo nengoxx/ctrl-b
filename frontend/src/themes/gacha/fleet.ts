@@ -3,6 +3,7 @@
 // reason `roster.ts` and `stars.ts` are: the §7 acceptance-matrix rows they own (0 / 1 / many hosts, a fleet
 // that has not resolved yet, a host with no role) are then ordinary unit tests rather than render assertions.
 
+import type { PendingKind } from "../../store/fleetPending";
 import type { Host } from "../../types";
 import { GACHA_COPY, SCENE_TITLES, unitTags } from "./copy";
 
@@ -251,6 +252,21 @@ export function tapAction(
   return selected ? "wake" : "select";
 }
 
+/** The LIVENESS WORD every accessible name in this file carries — ONE rule for four states, so the three
+ *  builders below cannot drift about which fact outranks which.
+ *
+ *  REBOOTING outranks online because a pending reboot is PRESENTED as online (`store/fleetPending`'s
+ *  commanded-end-state overlay): the raw flag can no longer tell a rebooting machine from a settled one,
+ *  and the pending record is the only thing that can. ONLINE then outranks WAKING, which is the chip's
+ *  own rule and predates this — the server's word beats an assumption the same poll is about to clear.
+ *
+ *  Lower case because these are sentences; the chips spell the same four states in caps themselves. */
+function livenessWord(online: boolean, pending?: PendingKind): string {
+  if (pending === "reboot") return "rebooting";
+  if (online) return "online";
+  return pending === "wake" ? "waking" : "sleeping";
+}
+
 /** The alt layouts' accessible name, and it says exactly as many steps as the control HAS (the lab's own
  *  two forms, `labelFor` and `labelPoster`, wording verbatim).
  *
@@ -261,18 +277,26 @@ export function tapAction(
  *
  *  A NEW function rather than an edit to `openLabel` (R25 §Q1d): that one is shared by the capsule cards AND
  *  the banner promos, and must keep saying what it says byte-for-byte. */
-export function pickLabel(host: Host, stars: number, selected: boolean, waking = false): string {
+export function pickLabel(
+  host: Host,
+  stars: number,
+  selected: boolean,
+  pending?: PendingKind,
+): string {
   const online = !!host.status?.online;
-  // WAKING is a third liveness (sol confirm MED-2, 2026-08-30): the chip says it, and an aria-label
-  // REPLACES the chip's text — without this form a screen reader heard "sleeping. Tap to run the
-  // wake sequence" on a machine whose wake is already running (and whose re-tap the busy union
-  // refuses). Online outranks it, exactly as at the chip. Selection still works while waking, so
-  // that step keeps its promise; only the wake instruction goes.
-  const head = `${host.name}, ${roleLabel(host).toLowerCase()}, ${stars} stars, ${
-    online ? "online" : waking ? "waking" : "sleeping"
-  }. `;
-  if (online) return `${head}Opens the unit dossier.`;
-  if (waking)
+  // WAKING is a third liveness (sol confirm MED-2, 2026-08-30) and REBOOTING a fourth (2026-08-31):
+  // the chip says both, and an aria-label REPLACES the chip's text — without these forms a screen
+  // reader heard "sleeping. Tap to run the wake sequence" on a machine whose wake is already running
+  // (and whose re-tap the busy union refuses). Selection still works through either window, so that
+  // step keeps its promise; only the wake instruction goes.
+  const head = `${host.name}, ${roleLabel(host).toLowerCase()}, ${stars} stars, ${livenessWord(
+    online,
+    pending,
+  )}. `;
+  // A REBOOTING machine takes the ONLINE arm's body: the pending overlay presents it as online, its
+  // one-tap open still works, and only the ACTIONS on the picked slice are held.
+  if (online || pending === "reboot") return `${head}Opens the unit dossier.`;
+  if (pending === "wake")
     return selected
       ? `${head}Selected. Wake sequence in progress.`
       : `${head}Tap to select. Wake sequence in progress.`;
@@ -289,24 +313,35 @@ export function pickLabel(host: Host, stars: number, selected: boolean, waking =
  *  A THIRD builder rather than a mode on `pickLabel`: cover's sentences are not that one's with a word
  *  changed (they name the cover, not a selection), and `openLabel` — the capsule card + banner promo's —
  *  still has to stay byte-identical (R25 §Q1d). */
-export function labelCover(host: Host, stars: number, isHero: boolean, waking = false): string {
+export function labelCover(
+  host: Host,
+  stars: number,
+  isHero: boolean,
+  pending?: PendingKind,
+): string {
   const online = !!host.status?.online;
   const head = `${host.name}, ${roleLabel(host).toLowerCase()}, ${stars} stars, `;
-  // The WAKING forms (sol confirm MED-2): no develop/promote promise — the busy union disables the
-  // control for the grace window, and a name instructing a wake on a machine already waking was the
-  // sighted/spoken contradiction the finding quotes. Online outranks waking, as at the chip.
-  if (isHero)
-    return (
-      `${head}on the cover, ` +
-      (online
-        ? "online. Opens the unit dossier."
-        : waking
-          ? "waking. Wake sequence in progress."
-          : "sleeping. Develops the cover and wakes it.")
-    );
-  // A waking cut-in KEEPS its promote promise (owner ruling 2026-08-30, second pass): selection is
-  // never held — only the hero's action tap is — so the sentence stays true through the window.
-  return `${head}${online ? "online" : waking ? "waking" : "sleeping"}. Supporting cut-in. Puts it on the cover.`;
+  const word = livenessWord(online, pending);
+  // The WAKING forms (sol confirm MED-2) and the REBOOTING one (2026-08-31) promise no action at all —
+  // the busy union disables the HERO for the whole grace window, and a name instructing a wake on a
+  // machine already waking was the sighted/spoken contradiction the finding quotes. A rebooting hero is
+  // presented online, so it takes the same shape rather than the online arm's open promise: the control
+  // it names is held either way.
+  if (isHero) {
+    const act =
+      pending === "reboot"
+        ? "Restart sequence in progress."
+        : online
+          ? "Opens the unit dossier."
+          : pending === "wake"
+            ? "Wake sequence in progress."
+            : "Develops the cover and wakes it.";
+    return `${head}on the cover, ${word}. ${act}`;
+  }
+  // A waking (or rebooting) cut-in KEEPS its promote promise (owner ruling 2026-08-30, second pass):
+  // selection is never held — only the hero's action tap is — so the sentence stays true through the
+  // window, whichever transition is running.
+  return `${head}${word}. Supporting cut-in. Puts it on the cover.`;
 }
 
 /** The cover's ISSUE line — `ISSUE 01 · ONLINE`, the masthead's own read of which machine is on the cover
@@ -425,11 +460,12 @@ export function partingStep(index: number, wakingIndex: number): number {
  *  SLEEPING chip is real text inside the button, and labelling the button "open X dossier" alone would
  *  silently drop it from the accessible name. The frontier fleet's own `name — online/asleep` labels are the
  *  in-repo precedent for spelling the state out. */
-export function openLabel(name: string, online: boolean, waking = false): string {
-  // The waking word (sol confirm MED-2) — the action half stays byte-identical in every state
-  // (R25 §Q1d): a capsule card opens the dossier whatever the liveness, so only the status changes.
-  // The banner promo call site passes no third argument and keeps its historical two-state name.
-  return `open ${name} dossier, ${online ? "online" : waking ? "waking" : "sleeping"}`;
+export function openLabel(name: string, online: boolean, pending?: PendingKind): string {
+  // The waking word (sol confirm MED-2) and the rebooting one (2026-08-31) — the action half stays
+  // byte-identical in every state (R25 §Q1d): a capsule card opens the dossier whatever the liveness,
+  // including through a reboot (which is presented online), so only the status word changes. The banner
+  // promo call site passes no third argument and keeps its historical two-state name.
+  return `open ${name} dossier, ${livenessWord(online, pending)}`;
 }
 
 /** The dossier's dismiss label. ONE string, two controls: the kit sheet's own sr-only close button and the

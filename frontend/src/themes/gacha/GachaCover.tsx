@@ -88,7 +88,7 @@ export function GachaCover({
   onTapHost,
   onCommitSelect,
   busy,
-  waking,
+  pending,
   announce,
 }: GachaTrackProps) {
   const [dev, setDev] = useState<DevelopStage | null>(null);
@@ -161,10 +161,12 @@ export function GachaCover({
   // lab's timing, but every artifact they raise — the hue wash, the frame flash, the page shake, the AWAKE
   // stamp — RENDERS only while that machine's wake is genuinely in flight. A request that resolves (or
   // fails) at 40 ms used to leave the cover flashing and then stamping a machine whose request had already
-  // come back: synthetic liveness, which is precisely what ruling 4 forbids. `waking` is cleared in the
-  // same commit the request settles, so the theatre goes with it, and the chip is back to the server's
-  // word. `aria-hidden` on the stamp was never enough — it hid the false claim from one audience only.
-  const devLive = dev !== null && waking.has(dev.id);
+  // come back: synthetic liveness, which is precisely what ruling 4 forbids. The pending record is cleared
+  // in the same commit the request settles, so the theatre goes with it, and the chip is back to the
+  // server's word. `aria-hidden` on the stamp was never enough — it hid the false claim from one audience
+  // only. It gates on the WAKE kind specifically (2026-08-31): the develop ceremony is a wake's theatre,
+  // and a reboot — which never sleeps a machine the cover is showing — must not raise any of it.
+  const devLive = dev !== null && pending.get(dev.id)?.kind === "wake";
 
   // `picked` is RESOLVED above (`resolvePick`), so on a non-empty fleet it always names a live machine;
   // the clamp is the render-path belt for the one frame a caller could hand over something else.
@@ -337,8 +339,11 @@ export function GachaCover({
     const entry = art(index);
     // Observed-online OUTRANKS a still-pending WAKING (2026-08-30): the pending store clears on the
     // same poll that flips `online`, but that clear is a passive effect — for the one render in
-    // between, the server's word wins the chip.
-    const chip = online ? "ONLINE" : waking.has(host.id) ? "WAKING" : "SLEEPING";
+    // between, the server's word wins the chip. REBOOTING outranks BOTH (2026-08-31), because the
+    // overlay presents a rebooting machine as online and only this record can tell them apart.
+    const kind = pending.get(host.id)?.kind;
+    const chip =
+      kind === "reboot" ? "REBOOTING" : online ? "ONLINE" : kind === "wake" ? "WAKING" : "SLEEPING";
     return (
       <button
         key={host.id}
@@ -360,7 +365,7 @@ export function GachaCover({
             "--cv-rar": unitHueToken(index),
           } as CSSProperties
         }
-        aria-label={labelCover(host, stars, isHero, waking.has(host.id))}
+        aria-label={labelCover(host, stars, isHero, kind)}
         // The hero IS the selection — `aria-pressed` says so, exactly as a poster slice's does.
         aria-pressed={isHero}
         aria-busy={held || undefined}

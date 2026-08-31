@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import type { PendingKind } from "../../store/fleetPending";
 import type { Host } from "../../types";
 import { GachaCard } from "./GachaCard";
 import { GACHA_COPY } from "./copy";
@@ -104,16 +105,20 @@ export interface GachaTrackProps {
   /** `useFleet().busy` — per-HOST, not per-action (R25 §Q1b). A slice lights and disables for ANY in-flight
    *  action on its machine, which is the correct read of a shared busy set. */
   busy: ReadonlySet<string>;
-  /** The machines inside a WAKE's grace window (2026-08-30 — derived from `store/fleetPending`;
-   *  supersedes the request-in-flight set, whose ~100ms lifetime made the chip blink). Distinct from
-   *  `busy` because busy cannot say WHICH action: this is the only fact that licenses a `WAKING`
-   *  presentation. A machine leaves it on poll AGREEMENT (observed online — and observed-online
-   *  outranks it at the chip either way), on the window's expiry, or on the request failing; ruling
-   *  4 stays honored because the window is bounded and a failure clears instantly.
+  /** The machines inside a power transition's grace window, and WHICH one (`store/fleetPending`'s own
+   *  map, handed down whole; it superseded the request-in-flight set at D67, whose ~100ms lifetime made
+   *  the chip blink). Distinct from `busy` because busy cannot say WHICH action: this is the only fact
+   *  that licenses a `WAKING` or `REBOOTING` presentation. A machine leaves it on poll AGREEMENT (a
+   *  wake observed online, a reboot observed down and then up again), on the window's expiry, or on the
+   *  request failing; ruling 4 stays honored because the window is bounded and a failure clears
+   *  instantly.
    *
-   *  A SET rather than one id: two wakes can genuinely overlap (wake A, then wake B while A is still
-   *  pending), and one slot made A stop saying `WAKING` while its own window was still open. */
-  waking: ReadonlySet<string>;
+   *  THE MAP, not a set per kind (2026-08-31): a second `rebooting` Set beside a `waking` one would be
+   *  exactly the parallel-sibling shape the repo's extend-not-migrate rule forbids — one entry per host
+   *  carrying its kind extends to a fourth transition with no new prop and no new plumbing. A MAP rather
+   *  than one id for the reason the Set was one: two transitions genuinely overlap (wake A, then reboot
+   *  B while A is still pending), and one slot made A stop saying `WAKING` inside its own window. */
+  pending: ReadonlyMap<string, { kind: PendingKind }>;
   /** Speak into the fleet's ONE live region (ruling 3). The region itself stays `GachaFleet`'s — a layout
    *  never owns an ARIA landmark — but WHO speaks follows the tap grammar: under `act-first` the body
    *  narrates at the dispatch (`pickAnnounce` / `wakeAnnounce`) and the layouts say nothing, while the
@@ -136,7 +141,7 @@ export function GachaTrack({
   art,
   counter,
   onOpenHost,
-  waking,
+  pending,
 }: GachaTrackProps) {
   return (
     <>
@@ -177,7 +182,7 @@ export function GachaTrack({
               mode={starMode}
               onOpen={onOpenHost}
               isNew={hosts[i].id === ribbonHost}
-              waking={waking.has(hosts[i].id)}
+              pending={pending.get(hosts[i].id)?.kind}
             />
           ))}
         </div>

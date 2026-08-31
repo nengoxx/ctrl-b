@@ -616,6 +616,59 @@ describe("labelCover — the cover's two accessible names (the lab's wording, ve
   });
 });
 
+// ── THE REBOOTING WORD (2026-08-31 — D67's third pending kind) ──────────────────────────────────────
+// A rebooting machine is PRESENTED online (store/fleetPending's commanded-end-state overlay), so the raw
+// liveness flag can no longer tell it apart from a settled one — the pending KIND is the only fact that
+// can, and it therefore outranks online in all three builders. Every pre-existing state is pinned
+// byte-identical in the describes above; this is the one sentence that is new.
+describe("the three accessible names carry a pending REBOOT", () => {
+  const online = host({ id: "a", name: "pegasus", status: { ...host().status!, online: true } });
+
+  it("openLabel — the capsule card and its promo slide", () => {
+    expect(openLabel("pegasus", true, "reboot")).toBe("open pegasus dossier, rebooting");
+    // …and only the reboot outranks online: a pending WAKE on a machine the poll already calls up
+    // still loses to the server's word, exactly as it did before this kind existed
+    expect(openLabel("pegasus", true, "wake")).toBe("open pegasus dossier, online");
+    expect(openLabel("pegasus", false, "wake")).toBe("open pegasus dossier, waking");
+  });
+
+  it("pickLabel — the poster keeps the ONLINE arm's one-tap open promise", () => {
+    // A rebooting host is presented online and its tap still opens; only the ACTIONS on the picked
+    // slice are held, so the sentence must not lose the open it can still deliver.
+    const want = "pegasus, workstation, 5 stars, rebooting. Opens the unit dossier.";
+    expect(pickLabel(online, 5, false, "reboot")).toBe(want);
+    expect(pickLabel(online, 5, true, "reboot")).toBe(want);
+  });
+
+  it("labelCover — the HERO promises nothing (it is held), a CUT-IN still promotes", () => {
+    expect(labelCover(online, 5, true, "reboot")).toBe(
+      "pegasus, workstation, 5 stars, on the cover, rebooting. Restart sequence in progress.",
+    );
+    expect(labelCover(online, 5, false, "reboot")).toBe(
+      "pegasus, workstation, 5 stars, rebooting. Supporting cut-in. Puts it on the cover.",
+    );
+  });
+
+  it("outranks ONLINE everywhere, and leaves an untouched machine reading exactly as before", () => {
+    for (const said of [
+      openLabel("pegasus", true, "reboot"),
+      pickLabel(online, 5, false, "reboot"),
+      labelCover(online, 5, true, "reboot"),
+      labelCover(online, 5, false, "reboot"),
+    ]) {
+      expect(said).toContain("rebooting");
+      expect(said).not.toContain(", online");
+    }
+    expect(openLabel("pegasus", true)).toBe("open pegasus dossier, online");
+    expect(pickLabel(online, 5, false)).toBe(
+      "pegasus, workstation, 5 stars, online. Opens the unit dossier.",
+    );
+    expect(labelCover(online, 5, true)).toBe(
+      "pegasus, workstation, 5 stars, on the cover, online. Opens the unit dossier.",
+    );
+  });
+});
+
 describe("issueLine — the masthead's own read (why cover ignores the counter)", () => {
   it("numbers the issue from the hero's fleet POSITION, zero-padded", () => {
     expect(issueLine(0, true)).toBe(`ISSUE 01 ${GACHA_COPY.sep} ONLINE`);

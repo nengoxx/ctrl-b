@@ -22,26 +22,44 @@
 // `stampOwner` idiom). The expiry timer carries its own token for the same reason: a replaced entry's
 // old timer must never kill its successor.
 //
-// Reboot is deliberately NOT a kind yet — it is this model's third direction (down, then up) and the
-// `kind` union extends to it later without reshaping anything (the extend-not-migrate rule).
+// REBOOT joined as the third kind (2026-08-31, owner-ruled) on the seam this file reserved for it, and it
+// is the only TWO-PHASE one: the machine is ONLINE at dispatch, so "observed online" is the state a reboot
+// STARTS in and can never be its agreement. Agreement is therefore a sequence — the host observed DOWN, and
+// only then back UP — which is what `sawDown` records. Everything else about it is the wake/shutdown model
+// unchanged: one entry per host, one token, one ceiling.
 
 import type { Host } from "../types";
 import { createStore } from "./createStore";
 
-export type PendingKind = "wake" | "shutdown";
+export type PendingKind = "wake" | "shutdown" | "reboot";
 
 export interface PendingEntry {
   kind: PendingKind;
   token: number;
+  /** REBOOT's two-phase progress marker: set by the first poll that observes the machine DOWN, after
+   *  which an observed-online poll ends the record. Absent on wake/shutdown, which agree on a single
+   *  observation, and absent on a reboot that has not been seen to go down yet. */
+  sawDown?: true;
 }
 
 // The grace ceilings, per direction (HA #86735: "configurable separately for power-on and power-off").
 // Agreement clears earlier in the normal case — these bound the FAILURE path (a packet lost, a machine
 // that never comes up/down), so the assumed state cannot lie forever. Sized by the review's own math:
 // wake = 2.76× the worst stated boot+poll bound (owner-ruled "a couple/three minutes"); shutdown =
-// 1.88× worst accept+shutdown+poll. Constants until the owner asks for a knob.
+// 1.88× worst accept+shutdown+poll; reboot = five minutes, owner-ruled 2026-08-31 — the longest ceiling
+// because it is the only kind that has to bound BOTH transitions plus the OS's own restart in between.
+// Constants until the owner asks for a knob.
 export const WAKE_WINDOW_MS = 180_000;
 export const SHUTDOWN_WINDOW_MS = 90_000;
+export const REBOOT_WINDOW_MS = 300_000;
+
+/** The ceiling each kind's timer is armed with — a table rather than a ternary chain, so a fourth kind is
+ *  a row and the constants stay the single source (the tests read them). */
+const WINDOW_MS: Record<PendingKind, number> = {
+  wake: WAKE_WINDOW_MS,
+  shutdown: SHUTDOWN_WINDOW_MS,
+  reboot: REBOOT_WINDOW_MS,
+};
 
 const { emit, useStore } = createStore();
 
@@ -67,10 +85,7 @@ export function beginPending(id: string, kind: PendingKind): number {
   disarm(id);
   timers.set(
     id,
-    setTimeout(
-      () => clearPending(id, token),
-      kind === "wake" ? WAKE_WINDOW_MS : SHUTDOWN_WINDOW_MS,
-    ),
+    setTimeout(() => clearPending(id, token), WINDOW_MS[kind]),
   );
   emit();
   return token;
@@ -91,16 +106,27 @@ export function clearPending(id: string, token?: number): void {
 }
 
 /** Poll agreement + liveness pruning, called with every hosts answer: a pending wake is DONE when the
- *  host is observed online, a pending shutdown when it is observed offline, and any entry whose host
- *  left the config dies with it. Idempotent — six useFleet instances all call this and only a real
- *  deletion emits. */
+ *  host is observed online, a pending shutdown when it is observed offline, a pending REBOOT when it has
+ *  been observed down and then up again, and any entry whose host left the config dies with it whatever
+ *  its kind. Idempotent — six useFleet instances all call this and only a real write emits. */
 export function reconcilePending(hosts: readonly Host[]): void {
   if (pending.size === 0) return;
   const byId = new Map(hosts.map((h) => [h.id, !!h.status?.online]));
   let next: Map<string, PendingEntry> | null = null;
   for (const [id, entry] of pending) {
     const online = byId.get(id);
-    const agreed = online === undefined || (entry.kind === "wake" ? online : !online);
+    // A REBOOT's first half: the machine is up at dispatch, so an observed-offline poll is PROGRESS,
+    // not agreement — it is recorded on the entry (copy-on-write, like every other write here) and the
+    // record stands. Only once `sawDown` is set does the shared agreement line below apply to it, and
+    // then on the same terms a wake's does: observed online ends it.
+    if (online !== undefined && entry.kind === "reboot" && !entry.sawDown) {
+      if (!online) {
+        next ??= new Map(pending);
+        next.set(id, { ...entry, sawDown: true });
+      }
+      continue;
+    }
+    const agreed = online === undefined || (entry.kind === "shutdown" ? !online : online);
     if (agreed) {
       next ??= new Map(pending);
       next.delete(id);
@@ -113,10 +139,13 @@ export function reconcilePending(hosts: readonly Host[]): void {
   }
 }
 
-/** Present hosts THROUGH the pending assumptions (the HA assumed-state rule): a pending-shutdown host
- *  is offline no matter what the poll says. A pending wake changes nothing here — its host IS offline,
- *  and presentation (chips) ranks observed-online above a stale WAKING. Pure; returns the input array
- *  untouched when nothing overlays, so memoized consumers keep referential stability. */
+/** Present hosts THROUGH the pending assumptions (the HA assumed-state rule) — the COMMANDED END STATE,
+ *  per kind: a pending-shutdown host is offline no matter what the poll says, and a pending-REBOOT host
+ *  is online no matter what it says (the machine is meant to come back, so the dip its restart puts in
+ *  the poll must not read as a fleet that lost a member). A pending wake changes nothing here — its host
+ *  IS offline, and presentation (chips) ranks observed-online above a stale WAKING. A host with no status
+ *  at all is left alone: this presents what a poll said, it never fabricates a poll. Pure; returns the
+ *  input array untouched when nothing overlays, so memoized consumers keep referential stability. */
 export function overlayPending(
   hosts: Host[],
   map: ReadonlyMap<string, PendingEntry> = pending,
@@ -124,9 +153,12 @@ export function overlayPending(
   if (map.size === 0) return hosts;
   let changed = false;
   const out = hosts.map((h) => {
-    if (map.get(h.id)?.kind !== "shutdown" || !h.status?.online) return h;
+    if (!h.status) return h;
+    const kind = map.get(h.id)?.kind;
+    const commanded = kind === "shutdown" ? false : kind === "reboot" ? true : h.status.online;
+    if (commanded === h.status.online) return h;
     changed = true;
-    return { ...h, status: { ...h.status, online: false } };
+    return { ...h, status: { ...h.status, online: commanded } };
   });
   return changed ? out : hosts;
 }

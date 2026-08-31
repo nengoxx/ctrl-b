@@ -49,11 +49,11 @@ export function useActionSpecs() {
 export type FleetRun = (action: FleetAction, host: Host) => Promise<boolean>;
 
 /**
- * Run wake/shutdown/ping against a host with: confirm dialog for the high-risk one, a busy
- * indicator for the request, a pending-transition record for the two power actions, and an outcome
+ * Run wake/shutdown/reboot/ping against a host with: confirm dialog for the high-risk ones, a busy
+ * indicator for the request, a pending-transition record for the three power actions, and an outcome
  * toast.
  *
- * WAKE and SHUTDOWN mark the host PENDING in `store/fleetPending` at dispatch (cleared again if the
+ * WAKE, SHUTDOWN and REBOOT mark the host PENDING in `store/fleetPending` at dispatch (cleared again if the
  * request fails — token-guarded, so a stale failure can't kill a newer action's record). That store
  * is what holds the assumed state through the boot/shutdown window: `useFleet` presents hosts
  * through it and keeps pending hosts action-busy, so the old optimistic cache flip — which the
@@ -95,8 +95,13 @@ export function useFleetActions() {
       // The pending record starts at DISPATCH, not at the response: the WOL/SSH request round-trip
       // says nothing about the transition, and gacha's wake ceremony gates its theatre on this
       // record from its very first beat. A failure below hands the token back.
+      // The three POWER actions, named explicitly rather than as `!== "ping"`: the list is the
+      // `PendingKind` union spelled out, so TS narrows it with no cast — and a future non-power
+      // action added to `FleetAction` cannot silently mint a pending record it has no kind for.
       const pendingToken =
-        action === "wake" || action === "shutdown" ? beginPending(host.id, action) : null;
+        action === "wake" || action === "shutdown" || action === "reboot"
+          ? beginPending(host.id, action)
+          : null;
 
       setBusyId(host.id, true);
       try {
