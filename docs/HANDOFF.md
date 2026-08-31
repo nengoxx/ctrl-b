@@ -12,7 +12,68 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-30 — THE FLEET WAVE: D67 pending power transitions + the gacha transition redesign, PUSHED; supersedes everything below where it speaks)
+## Current state (2026-08-31 — THE PRE-RELEASE POLISH SESSION: the feel pair + REBOOT as the third pending kind, built + review-CLOSED + committed; supersedes everything below where it speaks)
+
+- **Local `main` = origin `a558d43` + 3 commits** (`eed7045` the feel pair · `b7033c3` the reboot
+  kind · the docs commit carrying this block). **NOTHING PUSHED this session — the push ruling is
+  the owner's.** Prod untouched: **v1.7.7 @ `578ffa7`**. **Dev units deliberately LEFT RUNNING**
+  (:5434 + :5173) — the owner said they'll test the new things; do not stop them at session start.
+- **The session ran the 2026-08-30 pre-release menu's quick items, owner-ruled in prose:**
+  - **`eed7045` — the gacha feel pair.** ① The dossier-open morph retimed (the owner: "the first
+    half is just too quick"): flight 560→**500ms**, portrait cross-fade 280→**340ms** — the fade
+    now rides 68% of the arc so the poster's sheared crop un-crops across most of the glide
+    instead of snapping into the full frame early; the rarity-badge hold-back legs rescaled
+    560→500ms so the badge still lands with the frame. ② The pick swap got a subtle **160ms
+    one-way grow** on the newly picked band — an ANIMATION on `.picked`, deliberately not a
+    transition on the base slice: the outgoing band still snaps down, which is what keeps the
+    V-POSTER trial's collide/zoomed-out beat dead. Reduced-motion gated. (Menu item ② — the
+    dossier-open outgoing-leg knob — was CLOSED without build: the owner ruled the dossier fine.)
+  - **`b7033c3` — REBOOT joins the pending power transitions (D67 amendment, in DECISIONS).**
+    The only TWO-PHASE kind: online at dispatch, so agreement = observed DOWN (recorded as
+    `sawDown` on the entry, copy-on-write) then observed UP; ceiling **5 minutes** (owner-ruled,
+    `REBOOT_WINDOW_MS`; the windows are a `Record<PendingKind, number>` table now).
+    `overlayPending` presents the COMMANDED END STATE per kind — shutdown→offline,
+    reboot→**ONLINE** (the restart's dip never reads as a lost member); never fabricates a
+    status. Chips + all three gacha label helpers say **REBOOTING** via one `livenessWord`
+    precedence (rebooting > online > waking > sleeping — reboot outranks online because the
+    overlay presents it AS online); the cover's develop ceremony gates on the WAKE kind
+    specifically. **The gacha seam MIGRATED rather than grew a sibling set**:
+    `GachaTrackProps.waking: ReadonlySet` → `pending: ReadonlyMap<string,{kind}>` (the store map
+    handed down whole; the extend-not-migrate rule decided it). +16 tests → FE **2,672/160**.
+- **The council trail (the standing cadence, whole):** Emma-lane blind design round (sol high,
+  `--ignore-rules`) **BUILD WITH CHANGES** — 2 LOW, both test obligations, both folded (the
+  reboot-overlay store pin · rebooting-outranks-online label asserts); open sweep "none"; the CSS
+  feel pair reviewed in the same round, declared sound → Opus 5 build from a pinned brief →
+  main-seat audit accepted its two deviations (the module-private `livenessWord` dedup · the
+  shared agreement expression flipped to `kind === "shutdown" ? !online : online` so
+  post-`sawDown` reboot rides the wake line) → Emma confirm round **RESOLVED, zero new findings**
+  (she re-ran the full gate herself). Gate green per commit.
+- **Residual recorded, not fixed (builder-found, out of scope):** `REBOOTING` is one character
+  wider than `SLEEPING`, and `layout.spec.ts`'s 5★ pair-card collision breakpoint was measured
+  against `SLEEPING` in the 366–380px band — transient (bounded by the 5-min window), unpinned by
+  any assertion; one owner eyeball if a rebooting card is ever caught at that width.
+
+## ▶▶ NEXT (2026-08-31 — the owner tests, then the release; supersedes the menu below)
+
+1. **Collect the owner's round on dev (:5173)** — they said they'll test the new things: the
+   retimed open morph (the 340ms fade is the knob if it still reads abrupt — feel, not
+   mechanism) · the pick-grow's subtlety (160ms is tunable) · a REAL reboot on a machine they can
+   afford to restart (expect: tile holds steady + REBOOTING chip through the whole restart,
+   actions disabled, clears on the polls seeing it back — or at 5 min if it never returns).
+   ⚠ Dev drives the real fleet — a reboot from :5173 actually reboots the machine.
+2. **The PUSH ruling** (owner's word) — 3 commits, origin `a558d43`.
+3. **THE RELEASE — v1.7.8** (on the owner's word): runbook §Release, Opus-operated · NO config or
+   DB migration (D67 + this session are config-free) · **rollback = v1.7.7** (one step) · the
+   pre-tag LOCAL e2e is MANDATORY and the stale-pin sweep now covers BOTH waves' strings (the
+   fleet wave renamed aria-labels/chips; this session's REBOOTING strings are new and unpinned —
+   verified: no e2e pins `waking`/`WAKING`, and the `sleeping`/`SLEEPING` pins are all
+   unchanged-state strings). Then stop the dev units (on-demand policy).
+4. **The rest of the 2026-08-30 menu stands** (none owed): the owner device pair on prod + edit a
+   prompt for real (easier AFTER the release) · Phase 21 live-use deferrals riding daily use ·
+   A13 design talk · parked ledger. **Phase 19 (D58) goes LAST** (owner ruling 2026-08-29 — it
+   rides the 1.8 endgame; 1.8 stays RESERVED for the final ROADMAP/ISSUES cleanup wave).
+
+## Prior state (2026-08-30 — THE FLEET WAVE: D67 pending power transitions + the gacha transition redesign, PUSHED; superseded above where it speaks)
 
 - **Origin = local `main` = `7096522`** (+ this docs commit): two commits on top of v1.7.7 —
   `210c20b` (chore: env-gated Vite HMR `clientPort` for the phone rig) and `7096522` (**D67** +
@@ -41,7 +102,7 @@
   2026-08-29 owner rounds also drove the whole design live on the phone via that rig — the
   standing move for feel sessions (the vite seam is now committed).
 
-## ▶▶ NEXT (2026-08-30 — the PRE-RELEASE menu; the owner asked "what else before updating live production")
+## ▶▶ PRIOR (2026-08-30 — the PRE-RELEASE menu): ✅ the quick items RAN 2026-08-31 (① built as the feel pair, ② closed without build, ⑤ built as the reboot kind — the block above is the record; superseded where it speaks)
 
 **The release itself (v1.7.8, on the owner's word):** runbook §Release, Opus-operated · NO config
 or DB migration rides this wave (D67 is config-free) · **rollback = v1.7.7** (one step — both
