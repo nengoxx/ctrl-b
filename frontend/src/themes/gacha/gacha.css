@@ -1986,6 +1986,18 @@
     .po-slice.picked {
       z-index: 3;
       transform: translate3d(var(--pick-nudge), 0, 0) scale(var(--pick-grow));
+      /* THE PICK GROW (owner, 2026-08-31: "very slight and fast… just a small growing animation") — an
+       * ANIMATION on the class, deliberately not a transition on the base slice: it fires only on the
+       * INCOMING band's grow leg, while the outgoing band still snaps down instantly. The V-POSTER
+       * trial deleted the old symmetric 220ms transition because BOTH bands mid-scale left a beat with
+       * nothing at full size and overlapped the neighbours; one fast one-way grow has neither problem.
+       * `from` only — the end state is this rule's own transform, so the settled value can't drift. */
+      animation: gacha-po-pick 160ms var(--gc-ease-out);
+    }
+    @keyframes gacha-po-pick {
+      from {
+        transform: none;
+      }
     }
     /* THE INSET FOCUS RING is an A11Y REQUIREMENT, not a nicety (R18): the button is clipped to a polygon,
      * and a clip-path erases the UA ring outright — a keyboard user would otherwise see nothing at all.
@@ -2190,6 +2202,9 @@
     body[data-motion="reduced"] .po-slice,
     body[data-motion="reduced"] .po-poster.staging .po-slice {
       transition: none;
+    }
+    body[data-motion="reduced"] .po-slice.picked {
+      animation: none;
     }
 
     /* ── THE REGISTRY (the selected machine's data) ────────────────────────────────────────────────────
@@ -3146,22 +3161,24 @@
     /* ── M3's IMAGE MORPH, the `detail`-typed transition (owner-pulled from G4 at the G2 eyeball).
      * The scope root IS the html element (`data-skin` lives there), so `:scope` reaches the
      * view-transition pseudos from inside gacha's own fence (verified live — both engines report our
-     * 560/280/200/300 ms on the generated pseudo animations, not the UA's 250 ms default). The
-     * composition is the PROTOTYPE's, exactly (owner ruling 2026-08-02): the tapped portrait morphs
-     * into the sheet avatar at the 560 ms spring feel (CSS-approximated — a true spring isn't
-     * expressible) over a root cross-fade, and the dossier does NOT slide up under a transition (see
+     * authored durations on the generated pseudo animations, not the UA's 250 ms default). The
+     * composition is the PROTOTYPE's (owner ruling 2026-08-02; durations owner-retimed 2026-08-31 to
+     * 500/340): the tapped portrait morphs into the sheet avatar at a 500 ms spring feel
+     * (CSS-approximated — a true spring isn't expressible) over a root cross-fade, and the dossier does NOT slide up under a transition (see
      * BottomSheet's `enterInstant`). A card open, a SWAP and a reopen mid-exit all morph; the sheet's own
      * slide-up survives as the FALLBACK — a promo (no portrait to morph from), an engine without View
      * Transitions, reduced motion. */
     :scope[data-transition="detail"]::view-transition-group(capsule-shell) {
-      animation-duration: 560ms;
+      animation-duration: 500ms;
       animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
     }
-    /* The two portraits cross-fade in HALF the flight (the prototype's own 280 ms, theme.css:152): the
-     * card crop has resolved into the dossier crop by mid-arc, and the rest of the arc lands the frame. */
+    /* The two portraits cross-fade over 68% of the flight (owner retiming 2026-08-31: the prototype's
+     * half-arc 280-of-560 resolved the crop too abruptly — the poster's sheared cutout snapped into the
+     * full frame while the box was still mid-growth. The 60 ms came OFF the settle leg and ONTO the
+     * fade, so the whole open is slightly quicker AND the crop un-crops for most of the glide). */
     :scope[data-transition="detail"]::view-transition-old(capsule-shell),
     :scope[data-transition="detail"]::view-transition-new(capsule-shell) {
-      animation-duration: 280ms;
+      animation-duration: 340ms;
     }
     /* …and the page BEHIND it is a PLAIN complementary cross-fade — the G6.6 tab ruling, extended to
      * this flight by the owner (2026-08-30): the prototype's 96%/104% zoom pair made every dossier
@@ -3196,7 +3213,7 @@
      * finish. The owner saw both halves: a badge that arrives early and a jump at the end.
      *
      * The fix is at the VT layer, not in the component: the badge takes its own name for the flight and
-     * its snapshot is held at zero opacity until the LAST ~150 ms of the 560 ms arc, so it fades up exactly
+     * its snapshot is held at zero opacity until the LAST ~135 ms of the 500 ms arc, so it fades up exactly
      * as the frame lands. Opacity only (§14.11).
      *
      * BOTH LEGS of the pair are written, because `detail` has two shapes: a fresh open (no dossier in the
@@ -3215,10 +3232,10 @@
       view-transition-name: dossier-rar;
     }
     :scope[data-transition="detail"]::view-transition-old(dossier-rar) {
-      animation: gacha-rar-out 560ms both;
+      animation: gacha-rar-out 500ms both;
     }
     :scope[data-transition="detail"]::view-transition-new(dossier-rar) {
-      animation: gacha-rar-in 560ms both;
+      animation: gacha-rar-in 500ms both;
     }
     @keyframes gacha-rar-in {
       0%,
@@ -3246,7 +3263,7 @@
      * is the group's FROM going out and its TO coming back, and the browser interpolates whichever pair a
      * capture happens to hold.
      *
-     * Faster than the dossier's 560 ms: this flight crosses the whole screen with nothing else moving, and
+     * Faster than the dossier's 500 ms: this flight crosses the whole screen with nothing else moving, and
      * at the dossier's pace it reads as slow rather than as weighty. The old/new pair cross-fades in half
      * the flight (the `detail` block's own ratio) — the 104px crop has become the uncropped image by
      * mid-arc, and the rest of the arc lands the frame. */

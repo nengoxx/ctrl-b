@@ -323,7 +323,7 @@ export function GachaFleet({ active }: { active: boolean }) {
       // fresh open (no old copy) and a SWAP (both captures hold it at the SAME rect, so mirroring the
       // hold keeps it lit). A REOPEN DURING THE EXIT is a third shape: the closing sheet stays mounted
       // for its 420 ms slide, so its badge is still in the old capture — but DISPLACED down the screen
-      // with the sheet, and `gacha-rar-out` keeps it opaque for 73% of 560 ms. The group would fly that
+      // with the sheet, and `gacha-rar-out` keeps it opaque for 73% of 500 ms. The group would fly that
       // stale badge across the page toward the new one, ahead of the portrait it belongs to.
       // So the old copy is un-named for exactly that case, on the same ownership terms as the avatar
       // above: `sheetOpen` false + a dossier still in the DOM IS the lingering-exit state (a swap has it

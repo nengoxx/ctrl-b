@@ -1238,7 +1238,7 @@ describe("the image morph (M3)", () => {
     // fresh open (no old copy) and for a SWAP (both captures hold the badge at the same rect, so the
     // mirrored hold in gacha.css keeps it lit). A reopen while the sheet is still EASING OUT is the third
     // shape: that copy is displaced down the screen with the exiting sheet, and `gacha-rar-out` keeps it
-    // opaque for 73% of the 560 ms — so it would fly across the page ahead of the portrait.
+    // opaque for 73% of the 500 ms — so it would fly across the page ahead of the portrait.
     const vt = deferVT();
     const { container } = render(<GachaFleet active />);
     act(() => {
