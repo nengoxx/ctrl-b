@@ -39,11 +39,11 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | **FE type safety** | `tsc` **strict** (already on) | type errors, unused locals/params | ✅ |
 | **FE lint** | **ESLint** flat + **typescript-eslint `recommended-type-checked`** + `eslint-plugin-react-hooks` + `-react-refresh` | floating promises, misused async/await, unsafe `any`, hook-deps, rules-of-hooks, React-Compiler diags | ✅ (1b) |
 | **FE format** | **Prettier** + `eslint-config-prettier` | style drift (deterministic) | ✅ (1b) |
-| **FE unit tests** | **Vitest** (D21 — 2,656 across 160 files, 2026-08-30 post-D67) | logic regressions | ✅ |
+| **FE unit tests** | **Vitest** (D21 — 2,739 across 165 files, 2026-09-01 post-D68 S3) | logic regressions | ✅ |
 | **FE e2e / a11y** | **Playwright** + `@axe-core/playwright` (D24) | broken user paths, a11y | ✅ (Phase 9 wires the suite) |
 | **BE lint + format** | **ruff** (`E,F,I,ASYNC,B` — `backend/pyproject.toml:87`; formatter) | style, imports, dead code, async footguns, bugbear | ✅ |
 | **BE type check** | **`pyright[nodejs]`** (pinned `==1.1.409`; `basic` → ratchet `strict`) | type errors across the FastAPI service | ✅ (1c) |
-| **BE tests** | **pytest** (2,068 collected 2026-09-01, temp-config safe — `conftest.py`: a module-level env guard that runs before any test module imports, plus the per-test autouse fixture; QH-10 + UPDATE_PLAN §3.7) | backend logic | ✅ |
+| **BE tests** | **pytest** (2,126 collected 2026-09-01 post-D68 S3, temp-config safe — `conftest.py`: a module-level env guard that runs before any test module imports, plus the per-test autouse fixture; QH-10 + UPDATE_PLAN §3.7) | backend logic | ✅ |
 | **CSS contracts** | **stylelint** (keyframe-prefix · anim budget · the two accent correctness rules) | theme CSS invariants | ✅ shipped 2026-07-10 (warn-first; `lint:css` in `check-all`) |
 | **Runner** | one **`tools/check.py`** (stdlib chokepoint) + `npm run check-all` (FE) | "is the repo green?" in one command | ✅ (1a) |
 | **Enforcement** | native **`core.hooksPath=.githooks/`** → `check.py` (fast pre-commit · full pre-push) | stops a bad commit/push at the source | ✅ (1d) |

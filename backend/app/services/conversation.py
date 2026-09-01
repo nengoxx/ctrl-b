@@ -22,7 +22,7 @@ from pydantic import TypeAdapter
 
 from app.core.attachments import remove_thread_attachments
 from app.db import Database
-from app.domain.conversation import CallUsage, Message, Part, SourceInfo, Thread
+from app.domain.conversation import AttachmentPart, CallUsage, Message, Part, SourceInfo, Thread
 from app.domain.enums import Actor, RunState
 
 _PARTS = TypeAdapter(list[Part])
@@ -251,6 +251,29 @@ class MessageRepo:
             "WHERE json_extract(value, '$.type') = 'attachment'"
         )
         return {r["path"] for r in rows if r["path"]}
+
+    async def attachment_part(self, thread_id: str, name: str) -> AttachmentPart | None:
+        """The `AttachmentPart` THIS thread persisted under `name`, or `None` (D68 §8 serving).
+
+        The serving route's authority: a stored file is served only because a message in this thread
+        REFERENCES it, and the part is where the Content-Type it is served with comes from (the
+        sniffed `mime`, never the extension and never a guess). A file with no part behind it —
+        the claim's crash-window leftover, a sidecar, anything an operator dropped in by hand — is a
+        404, exactly like a name that is not there at all.
+
+        Same `json_each`/`json_extract` idiom as `attachment_paths` above, scoped to one thread and
+        one name so the scan touches only messages carrying that part. COMPACTED messages are
+        included deliberately: folding a turn into a summary does not delete its file, and the
+        bubble that still renders it must still be able to load it.
+        """
+        rows = await self._db.query(
+            "SELECT value AS part FROM messages, json_each(messages.parts) "
+            "WHERE messages.thread_id = ? "
+            "AND json_extract(value, '$.type') = 'attachment' "
+            "AND json_extract(value, '$.name') = ? LIMIT 1",
+            (thread_id, name),
+        )
+        return AttachmentPart.model_validate_json(rows[0]["part"]) if rows else None
 
     async def count_user_messages(self, thread_id: str) -> int:
         """Count user messages in a thread, **including compacted ones** (D27-C periodic reflection).

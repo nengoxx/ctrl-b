@@ -1,8 +1,10 @@
 import { useRef } from "react";
 
+import { useAttachments } from "../../../hooks/useAttachments";
 import { useComposer } from "../../../hooks/useComposer";
 import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
+import { AttachClip, AttachRail } from "./AttachRail";
 import { MicIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
@@ -21,8 +23,10 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 // The root KEEPS the `.kit-composer` class (edge #5) so DefaultRoot's `querySelector(".kit-composer")`
 // --composer-h measurement still finds it; `.sheet` adds the docked styling in kit.css.
 export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerSlots = {}) {
-  const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
+  const { draft, setDraft, send, isStreaming, mic, sttReady, uploadPending } = useComposer();
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // Attachments (D68 §7) — the shared controller; see KitComposer for the contract.
+  const attach = useAttachments();
   const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
@@ -33,7 +37,15 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
           the bar so, at equal stacking, the docked composer paints over the overlay's tucked bottom edge. */}
       {overlay}
       <SuggestPopover suggest={suggest} />
-      <div className="kit-composer sheet" id="composer">
+      <div
+        className="kit-composer sheet"
+        id="composer"
+        onDragOver={attach.dropProps.onDragOver}
+        onDrop={attach.dropProps.onDrop}
+      >
+        {/* THE RAIL — above `.sheet-row`, at the FULL bar width (the S3 ruling for this layout; the
+            docked bar is a column, so the rail is simply its first row and the dock grows upward). */}
+        <AttachRail attach={attach} />
         <div className="sheet-row">
           <div className="field">
             {/* `controlsStart` slot — EMBEDDED at the field's leading edge, INSIDE the input surface
@@ -55,8 +67,13 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
               onKeyDown={suggest.onKeyDown}
               onFocus={suggest.onFocus}
               onBlur={suggest.onBlur}
+              onPaste={attach.dropProps.onPaste}
               {...suggest.aria}
             />
+            {/* THE CLIP — EMBEDDED inside `.field` at the trailing edge, immediately LEFT of the
+                embedded mic: Telegram Android's own geography (R62 §2.1), and the ruled placement
+                for this layout. The tall send stays outside the field, as it always was. */}
+            <AttachClip attach={attach} size={20} />
             {sttReady && (
               <button
                 type="button"
@@ -91,6 +108,7 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
             id="cmd-send"
             aria-label={isStreaming ? "stop the running turn" : "send message"}
             title={isStreaming ? "stop the running turn" : "send message"}
+            disabled={!isStreaming && uploadPending} // held while a file uploads (D68 §7)
             onClick={isStreaming ? stopTurn : send}
           >
             {/* Streaming → the Stop square (D39, same swap as every composer). Idle → the SHARED

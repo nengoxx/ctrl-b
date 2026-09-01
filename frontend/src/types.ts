@@ -266,11 +266,32 @@ export interface ToolResultPart {
   result: ToolResult;
 }
 
+/** One file the owner attached to a user turn (D68 / ATTACHMENTS_PLAN §2) — the mirror of
+ *  `domain/conversation.py#AttachmentPart`. FACTS ONLY: the bytes live in the store and are fetched
+ *  from `/api/attachments/{thread_id}/{name}`, never inlined here. Built by the SERVER at claim
+ *  (E2), so the client only ever READS one — there is no client-authored attachment part anywhere. */
+export interface AttachmentPart {
+  type: "attachment";
+  /** What the BYTES turned out to be — `image` is the only kind the bubble paints. */
+  kind: "image" | "text" | "pdf";
+  /** The EXACT stored (collision-suffixed) filename — the last segment of its URL. */
+  name: string;
+  mime: string;
+  /** Store-relative (`{thread_id}/{name}`) — informational here; the URL is built from the message's
+   *  own `thread_id` and `name`. */
+  path: string;
+  bytes: number;
+  width?: number | null;
+  height?: number | null;
+  inline_chars?: number | null;
+}
+
 export type Part =
   | { type: "text"; text: string }
   | { type: "reasoning"; text: string }
   | ToolCallPart
   | ToolResultPart
+  | AttachmentPart
   | { type: "error"; message: string; retryable: boolean };
 
 /** WHO served one assistant turn — the per-message ROUTING record (D62), persisted beside `usage`.

@@ -47,6 +47,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/automations/repo.py", "AutomationRepo.runs"),
         ("app/services/automations/repo.py", "AutomationRepo.unread_counts"),
         ("app/services/conversation.py", "MessageRepo.add"),
+        ("app/services/conversation.py", "MessageRepo.attachment_part"),
         ("app/services/conversation.py", "MessageRepo.attachment_paths"),
         ("app/services/conversation.py", "MessageRepo.search"),
         ("app/services/conversation.py", "MessageRepo.with_call_states"),

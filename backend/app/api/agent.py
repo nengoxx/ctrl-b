@@ -1354,12 +1354,21 @@ async def get_providers(request: Request) -> dict[str, Any]:
     chain = registry.inference_chain
 
     def _ref(t: Any) -> dict[str, Any]:
-        return {"provider": t.provider, "model": _clean_model_name(settings, t.provider, t.model)}
+        return {
+            "provider": t.provider,
+            "model": _clean_model_name(settings, t.provider, t.model),
+            # D68 §7 — the ONE reading of `input_modalities` (`ResolvedTarget.accepts_images`),
+            # published so the composer can put a quiet "this model can't see images" hint on an
+            # image chip. Best-effort UX only: the in-band strip (§5) is the real floor, and an
+            # unannotated model reads as text-only here exactly as it does there.
+            "accepts_images": t.accepts_images,
+        }
 
     def _section(ch: tuple[Any, ...]) -> dict[str, Any]:
         return {
             "provider": ch[0].provider if ch else None,
             "model": _clean_model_name(settings, ch[0].provider, ch[0].model) if ch else None,
+            "accepts_images": ch[0].accepts_images if ch else False,
             "fallbacks": [_ref(t) for t in ch[1:]],
         }
 
@@ -1396,6 +1405,17 @@ async def get_providers(request: Request) -> dict[str, Any]:
         },
         "reserved_verbs": list(RESERVED_VERBS),
         "verbs": verbs,
+        # D68 §6 — the composer's attachment knobs. They ride THIS read (rather than a surface of
+        # their own) because it is the one non-secret config surface the composer already loads from
+        # every tab and re-loads on every settings save, and because the vision hint above comes off
+        # the same response: two loaders would mean two round trips and a window where the caps and
+        # the hint disagree. Non-secret and client-behavioural, the `voice/status` precedent.
+        "attachments": {
+            "max_files_per_message": settings.attachments.max_files_per_message,
+            "max_file_mb": settings.attachments.max_file_mb,
+            "image_max_dimension": settings.attachments.image_max_dimension,
+            "image_quality": settings.attachments.image_quality,
+        },
         "warnings": list(warnings)
         + provider_skill_collision_warnings(settings.providers.keys(), skill_names),
     }

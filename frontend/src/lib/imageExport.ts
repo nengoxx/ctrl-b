@@ -73,6 +73,11 @@ export interface ExportOverride {
   type?: OutputType;
   /** The destination NEEDS transparency, whatever the source's own type suggests. */
   alpha?: boolean;
+  /** Encode at THIS quality instead of the type's own default. The one field on this object that is
+   *  a TUNABLE rather than a destination property: composer attachments (D68 §6) carry
+   *  `attachments.image_quality` from the server, because what a photo sent to a model should cost
+   *  is the owner's call, not this module's. Ignored for PNG, which has no quality knob. */
+  quality?: number;
 }
 
 /** What one export encodes as, and whether it may try again smaller. */
@@ -133,11 +138,14 @@ export function exportPolicy(
   override?: ExportOverride,
 ): ExportPolicy {
   const forced = override?.type;
+  // The caller's quality wins over the type's default wherever a type is chosen — one line, both
+  // branches, so a forced type and a derived one cannot end up honouring different policies.
+  const asked = override?.quality;
   if (forced !== undefined)
-    return { type: forced, quality: qualityFor(forced), stepDown: stepDownFor(forced) };
+    return { type: forced, quality: asked ?? qualityFor(forced), stepDown: stepDownFor(forced) };
   const alpha = override?.alpha === true || sourceFormat !== "jpeg";
   const type: OutputType = alpha ? "image/webp" : "image/jpeg";
-  return { type, quality: qualityFor(type), stepDown: stepDownFor(type) };
+  return { type, quality: asked ?? qualityFor(type), stepDown: stepDownFor(type) };
 }
 
 function qualityFor(type: OutputType): number {

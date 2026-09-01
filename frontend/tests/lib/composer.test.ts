@@ -30,6 +30,7 @@ import {
   runComposer,
 } from "../../src/lib/composer";
 import { PRIVILEGE_LEVELS } from "../../src/lib/privilege";
+import { addStaged, clearStaged, stagedIds } from "../../src/store/attachments";
 import * as chat from "../../src/store/chat";
 import { clearDraft, getDraft, setDraft, useDraft } from "../../src/store/composer";
 import {
@@ -178,6 +179,75 @@ describe("runComposer routing", () => {
     runComposer("/stale");
     expect(chat.setSessionMode).toHaveBeenCalledTimes(1); // the stale verb never became known
     expect(chat.pushSystemNote).toHaveBeenCalledWith(expect.stringContaining("unknown command"));
+  });
+});
+
+// D68 §7 — STAGED ATTACHMENTS are consumed in the natural-language branch and NOWHERE else. That one
+// placement is what makes the mic pin hold by construction (`useDictation` calls `runComposer`
+// directly, bypassing `useComposer().send`) and what keeps a file an argument to an agent MESSAGE
+// rather than to a shell command.
+describe("runComposer × staged attachments (D68 §7)", () => {
+  const staged = (attachmentId: string) =>
+    addStaged({
+      localId: attachmentId,
+      name: `${attachmentId}.png`,
+      kind: "image",
+      status: "staged",
+      attachmentId,
+    });
+
+  beforeEach(() => clearStaged());
+  afterEach(() => clearStaged());
+
+  it("a plain NL send carries the staged ids", () => {
+    staged("id-1");
+    staged("id-2");
+    runComposer("what is in these?");
+    expect(chat.sendMessage).toHaveBeenCalledWith("what is in these?", {
+      raw: "what is in these?",
+      attachments: ["id-1", "id-2"],
+    });
+  });
+
+  it("a send with NO staged files is byte-identical to its pre-D68 self", () => {
+    runComposer("hello");
+    expect(chat.sendMessage).toHaveBeenCalledWith("hello", { raw: "hello" }); // no `attachments` key
+  });
+
+  it("only what actually LANDED rides — an uploading or failed chip contributes nothing", () => {
+    staged("id-1");
+    addStaged({ localId: "b", name: "b.png", kind: "image", status: "uploading" });
+    addStaged({ localId: "c", name: "c.png", kind: "image", status: "failed", error: "nope" });
+    runComposer("look");
+    expect(chat.sendMessage).toHaveBeenCalledWith("look", { raw: "look", attachments: ["id-1"] });
+  });
+
+  it("EMPTY text with a staged file is a real send (the attachment-only gesture)", () => {
+    staged("id-1");
+    runComposer("");
+    expect(chat.sendMessage).toHaveBeenCalledWith("", { raw: "", attachments: ["id-1"] });
+  });
+
+  it("empty text with NOTHING staged is still a no-op", () => {
+    runComposer("   ");
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    expect(setUI).not.toHaveBeenCalled();
+  });
+
+  it("RULED: `!shell` does not consume them — the files stay staged", () => {
+    staged("id-1");
+    runComposer("!ls");
+    expect(chat.runShell).toHaveBeenCalledWith("ls");
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    expect(stagedIds()).toEqual(["id-1"]); // still there, rail unchanged
+  });
+
+  it("RULED: a `/verb` send does not consume them either", () => {
+    staged("id-1");
+    runComposer("/compact tidy up");
+    expect(chat.compactThread).toHaveBeenCalled();
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    expect(stagedIds()).toEqual(["id-1"]);
   });
 });
 

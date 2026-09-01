@@ -11,56 +11,11 @@ vi.mock("../../src/lib/composer", () => ({ runComposer: vi.fn() }));
 vi.mock("../../src/store/chat", () => ({ getChatStatus: vi.fn(() => "idle") }));
 
 import { useDictation } from "../../src/hooks/useDictation";
+import { FakeMediaRecorder, mockStt, recordOnce, setMediaDevices } from "./dictationFakes";
 import { runComposer } from "../../src/lib/composer";
 import { getChatStatus } from "../../src/store/chat";
 import { clearDraft, getDraft } from "../../src/store/composer";
 import { pushToast } from "../../src/store/toast";
-
-class FakeMediaRecorder {
-  static isTypeSupported() {
-    return true;
-  }
-  /** The instance the hook is currently driving — the handle the auto-stop suite needs to fire
-   *  `onerror` (a recorder failure is not reachable through the public toggle). */
-  static last: FakeMediaRecorder | null = null;
-  state = "inactive";
-  mimeType: string;
-  ondataavailable: ((e: { data: Blob }) => void) | null = null;
-  onstop: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  constructor(_stream: unknown, opts?: { mimeType?: string }) {
-    this.mimeType = opts?.mimeType ?? "audio/webm";
-    FakeMediaRecorder.last = this;
-  }
-  start() {
-    this.state = "recording";
-  }
-  stop() {
-    this.state = "inactive";
-    this.ondataavailable?.({ data: new Blob(["audio"], { type: this.mimeType }) });
-    this.onstop?.();
-  }
-}
-
-function setMediaDevices(present: boolean) {
-  Object.defineProperty(navigator, "mediaDevices", {
-    configurable: true,
-    value: present
-      ? { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) }
-      : undefined,
-  });
-}
-
-function mockStt(status: number, body: unknown) {
-  globalThis.fetch = vi.fn(
-    async () =>
-      ({
-        status,
-        ok: status >= 200 && status < 300,
-        json: async () => body,
-      }) as unknown as Response,
-  );
-}
 
 const opts = (autoSend = false) => ({ sttReady: true, statusStamp: 1, autoSend });
 
@@ -75,13 +30,6 @@ beforeEach(() => {
 // for the rest of the file — and a case that ends mid-recording would leave its visibility listener
 // on the shared `document`, stopping the NEXT case's recording. Unmount each hook with its case.
 afterEach(cleanup);
-
-/** Tap to start, wait until recording, tap to stop (which kicks off the async upload). */
-async function recordOnce(result: { current: { toggle: () => void; status: string } }) {
-  act(() => result.current.toggle());
-  await waitFor(() => expect(result.current.status).toBe("recording"));
-  act(() => result.current.toggle());
-}
 
 describe("useDictation", () => {
   it("fill mode: records → transcribes → appends to the composer draft", async () => {

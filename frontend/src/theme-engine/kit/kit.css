@@ -676,6 +676,182 @@ body[data-motion="reduced"] .kit-cbtn.mic.sending svg {
 .kit-send svg {
   display: block;
 }
+/* ── composer · ATTACHMENTS (D68 §7) — the staged RAIL + the quiet CLIP ─────────────────────────────
+ * ONE stylesheet for all three layouts (the kit theming pattern: tokens only, no per-theme fork). The
+ * rail is a CHILD of `.kit-composer` in every variant, which is what makes it free: DefaultRoot's
+ * `--composer-h` observer measures the root, so a bar that grows by a rail moves the scroller's bottom
+ * padding exactly as a bar that grew by a second text line does. Layout-specific placement is three
+ * lines at the end of this block; everything above is shared.
+ *
+ * SIZES (R62 §6): 56px chips — open-webui ships 40 (a desktop hover UI), Signal 120 (a media-first
+ * messenger); 56 is a phone tap target that still leaves the draft readable. ONE horizontally
+ * scrolling row (Signal's `overflow-x` rail, not open-webui's wrap): a wrapping row would change the
+ * composer's height per file and walk the whole chat log up the screen. */
+.kit .kit-attach-rail {
+  display: flex;
+  gap: 8px; /* Signal's own 8px gutter */
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px; /* room for the scrollbar Gecko draws inside the box */
+  margin-bottom: 8px;
+  scrollbar-width: thin;
+}
+.kit .kit-attach-chip {
+  position: relative;
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  box-sizing: border-box;
+}
+.kit .kit-attach-chip[data-status="uploading"] {
+  opacity: 0.75;
+}
+.kit .kit-attach-chip[data-status="failed"] {
+  border-color: color-mix(in oklch, var(--danger) 55%, transparent);
+}
+.kit .kit-attach-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* the NON-image face: the kind, then as much of the name as fits (the two facts a text/PDF chip has). */
+.kit .kit-attach-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 100%;
+  padding: 4px;
+  box-sizing: border-box;
+}
+.kit .kit-attach-kind {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+.kit .kit-attach-name {
+  font-size: 9px;
+  line-height: 1.15;
+  color: var(--text-3);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the three status marks — all in the chip's own corners, none of them stealing the picture */
+.kit .kit-attach-busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: color-mix(in oklch, var(--surface) 55%, transparent);
+}
+.kit .kit-attach-busy svg {
+  animation: kit-spin 1s steps(8, end) infinite;
+}
+body[data-motion="reduced"] .kit .kit-attach-busy svg {
+  animation: none; /* §14.11: the swapped-in glyph alone says "uploading" */
+}
+.kit .kit-attach-bad {
+  position: absolute;
+  left: 4px;
+  bottom: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--danger);
+}
+.kit .kit-attach-blind {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  display: block;
+  color: var(--warn);
+}
+/* REMOVE — a ≥24px target in the chip's top-right corner (the glyph is 11px; the box is what the
+ * thumb hits). Scrimmed rather than filled, so it reads over any photograph. */
+.kit .kit-attach-x {
+  all: unset;
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text);
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  border-bottom-left-radius: 10px;
+}
+.kit .kit-attach-x:active {
+  background: var(--surface-2);
+}
+/* the NAMED refusals (R62 §3.2): one line per failed chip, under the rail, inside the bar. */
+.kit .kit-attach-errors {
+  margin-bottom: 8px;
+}
+.kit .kit-attach-error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+/* the hidden picker — `display:none` still clicks (`input.click()`), and keeps it out of every
+ * layout's flex row. */
+.kit .kit-attach-input {
+  display: none;
+}
+/* THE CLIP — quiet by owner ruling ("nothing flashy"), Telegram's gray clip as the reference: the
+ * `.kit-cbtn` chassis with its ring and hover fill dropped, one text step down from the mic. Never
+ * an accent, never a filled circle — it must read as subordinate to the mic/send pair. */
+.kit .kit-cbtn.attach {
+  border-color: transparent;
+  color: var(--text-3);
+}
+.kit .kit-cbtn.attach:active {
+  color: var(--text-2);
+  background: transparent;
+}
+/* SHEET — the clip is EMBEDDED in `.field` beside the mic (Telegram Android's geography, R62 §2.1),
+ * so it takes the embedded mic's borderless 40px lane; the muted colour above stays. */
+.kit-composer.sheet .field .kit-cbtn.attach {
+  border: 0;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+/* LINE — the clip joins the trailing cluster's 36px lane (`.line-btn` sizes the pair; this matches it
+ * without taking their accent circle, which is `.kit-cbtn.mic.line-btn`'s). */
+.kit-composer.line .kit-cbtn.attach {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+}
+/* LINE — the rail rides ABOVE the row. The line composer's root IS the row (a `flex-end` flex line),
+ * so rather than restructure its owner-eyeballed geometry the rail takes a full flex LINE of its own:
+ * `wrap` + `order:-1` + a 100% basis puts it above, and with nothing staged the rail is not rendered
+ * at all — no wrap ever occurs and the collapsed pill is byte-identical to its pre-D68 self. */
+.kit-composer.line {
+  flex-wrap: wrap;
+}
+.kit-composer.line .kit-attach-rail {
+  order: -1;
+  flex: 0 0 100%;
+  margin-bottom: 2px; /* the row `gap` supplies the rest */
+}
+
 /* The STOP square is symmetric — the arrowhead optical nudges (`.tall svg` / `.line-btn svg` /
  * the glass-skin rule, all translate(-1px,1px) for a glyph whose mass leans up-right) must NOT
  * apply to it or it renders visibly off-center (owner device round, v1.3.1). Five classes + type
@@ -3337,6 +3513,78 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 .kit .b.user .steer-chip:active {
   background: var(--accent-soft);
 }
+/* ── attachments IN THE TRANSCRIPT (D68 §7) — what a user turn actually sent ────────────────────────
+ * Images PAINT in the bubble (owner ruling §0b-2); text/PDF are a quiet tappable chip that downloads
+ * through the same route. Right-aligned with the bubble they belong to, and CSS-bounded rather than
+ * laid out from the stored pixel size: the column is fluid and the phone is the target. */
+.kit .chat-attach {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.kit .chat-attach-shot {
+  all: unset;
+  cursor: zoom-in;
+  display: block;
+  max-width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  line-height: 0; /* an inline-image baseline gap would show as a stripe under the picture */
+}
+.kit .chat-attach-shot img {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+.kit .chat-attach-file {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 11px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 12px;
+}
+.kit .chat-attach-kind {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+.kit .chat-attach-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kit .chat-attach-size {
+  color: var(--text-3);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+/* the FULL-SIZE view — the house `.pm` shell, stripped to the picture (no form, no scroller). */
+.kit .pm.chat-shot {
+  height: auto;
+  max-height: calc(var(--app-h, 100dvh) - 28px);
+  width: auto;
+  max-width: min(100%, 960px);
+  background: var(--surface);
+}
+.kit .pm.chat-shot img {
+  display: block;
+  min-height: 0;
+  max-width: 100%;
+  object-fit: contain;
+}
+
 /* assistant — quiet, borderless (inherits `.b .body`); the prose/markdown is the main flow */
 .kit .b.bot {
   max-width: 92%;

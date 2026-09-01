@@ -1,4 +1,4 @@
-"""Composer attachments API — the staging PUT (D68, ATTACHMENTS_PLAN §3).
+"""Composer attachments API — the staging PUT and the read mount (D68, ATTACHMENTS_PLAN §3/§8).
 
 One route, and its SHAPE is the security control, exactly as it is on the media write path (D65 /
 SECURITY_MODEL §2.7): **raw-body `PUT`, never multipart, never POST**. This app has no
@@ -17,8 +17,16 @@ landed BYTES, and answers with an opaque server-minted `attachment_id`. The id i
 credential: `POST /api/agent/chat` names ids and nothing else, and the server builds every
 `AttachmentPart` itself (E2).
 
+**The READ (S3, §8)** is the D65 media mount's discipline as a plain route, because a thread
+directory is minted per conversation and cannot be a `StaticFiles` mount: the file is served only
+when a persisted `AttachmentPart` of THAT thread names it, with the Content-Type the sniff recorded
+(never guessed from the extension), `nosniff` on everything, and `Content-Disposition: attachment`
+on every non-image kind so stored bytes can never be ACTIVE content in this origin. Read-only, and
+every refusal is the same 404 — "not there" is all a prober may learn.
+
 Thin by design — every mechanical piece lives in `app.core.attachments`, which in turn rides
-`app.core.media`'s pipeline rather than re-implementing one (council E9/O-M9).
+`app.core.media`'s pipeline rather than re-implementing one (council E9/O-M9). The route builds NO
+store paths of its own: `stored_file` is the store's own read resolver (the S1 LOW-4 pin).
 """
 
 from __future__ import annotations
@@ -27,14 +35,17 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from starlette.responses import FileResponse
 
 from app.api.media import admit_filename
 from app.core.attachments import (
     ALLOWED_SUFFIXES,
+    IMAGE_MIME,
     StagedFile,
     finish_staging,
     mint_id,
     prepare_staging,
+    stored_file,
 )
 from app.core.media import StoreWriteError, UploadPart
 from app.domain.conversation import AttachmentKind
@@ -121,3 +132,53 @@ async def stage_attachment(filename: str, request: Request) -> StagedAttachment:
     finally:
         if part is not None:
             await asyncio.to_thread(part.discard)
+
+
+#: How a claimed attachment is cached. `immutable` is earned here in a way the media mount's stable
+#: names never earn it (D65 serves `no-cache` for exactly that reason): a stored attachment is
+#: collision-SUFFIXED at claim and is never rewritten, so `{thread_id}/{name}` addresses one
+#: byte-string for the life of the thread. `private` because the tailnet is the boundary and no
+#: shared cache may ever hold the owner's photographs.
+_CACHE_CONTROL = "private, max-age=31536000, immutable"
+
+
+@router.get("/attachments/{thread_id}/{name:path}")
+async def read_attachment_file(thread_id: str, name: str, request: Request) -> FileResponse:
+    """Serve one CLAIMED attachment — the bubble's `<img>` source and the owner's own download (§8).
+
+    `404` for everything that is not exactly a file this thread persisted a part for: a name outside
+    the store's dereference rules, a directory, a symlink, a file the claim landed but no message
+    ever named (the crash-window leftover), a PDF's sidecar, an unknown thread. One answer, so a
+    probe learns nothing about what the store holds.
+
+    **The part is the authority, not the directory listing.** The Content-Type is the `mime` the
+    SNIFF recorded at claim (`AttachmentPart.mime`) — never guessed from the extension, which is how
+    an owner-supplied `notes.png` full of HTML would otherwise be served as same-origin `text/html`
+    to an app with no auth. Images (and only sniffed image kinds — SVG is unreachable by
+    construction, it is admitted nowhere) are served INLINE so a bubble can paint them; every other
+    kind carries `Content-Disposition: attachment`, which makes the response inert whatever the byte
+    content is. `nosniff` rides both, exactly as the media mount sets it.
+
+    `{name:path}` for the D65 reason: a name carrying a separator must REACH this handler and get
+    the 404, rather than falling through to something that answers a different code and thereby says
+    more about what lives here.
+
+    Read-only by construction — nothing here writes, moves or deletes; the claim stays the only
+    writer into a thread dir (§3).
+    """
+    part = await request.app.state.messages.attachment_part(thread_id, name)
+    if part is None:
+        raise HTTPException(status_code=404, detail="not found")
+    home = request.app.state.settings.home_dir()
+    path = await asyncio.to_thread(stored_file, home, thread_id, name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="not found")
+    inline = part.kind == "image" and part.mime in set(IMAGE_MIME.values())
+    return FileResponse(
+        path,
+        media_type=part.mime,
+        # Starlette writes (and escapes) the whole `Content-Disposition` from `filename`; passing it
+        # only for the non-inline kinds is what leaves an image with no disposition header at all.
+        filename=None if inline else part.name,
+        headers={"x-content-type-options": "nosniff", "cache-control": _CACHE_CONTROL},
+    )

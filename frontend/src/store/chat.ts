@@ -21,6 +21,7 @@ import type {
   Thread,
   ToolResult,
 } from "../types";
+import { consumeStaged } from "./attachments";
 import { appendDraft, setDraft } from "./composer";
 import { createStore } from "./createStore";
 import { setConnection } from "./connection";
@@ -429,6 +430,12 @@ export type ChatMode = string;
 let sessionMode: ChatMode | null = null;
 export function setSessionMode(mode: ChatMode | null): void {
   sessionMode = mode;
+}
+/** The sticky pick, non-reactively — the composer's attachment rail needs to know whether a
+ *  `/<provider>` override is in force, because the vision hint it can render (D68 §7) is only true
+ *  of the CONFIGURED chain: a forced provider resolves server-side and is not reported. */
+export function getSessionMode(): ChatMode | null {
+  return sessionMode;
 }
 
 // The inference mode the CURRENT turn was sent with (ACA-16 / S2-D). `sendMessage` stashes its derived
@@ -1209,6 +1216,13 @@ async function streamTurn(
   placeholderId?: string,
   pendingUserId?: string,
   raw?: string,
+  /** Called the moment the server ACCEPTS this POST — a 202 (steer queued) or any non-409 OK — and
+   *  never on a refusal or a failure. The one thing that has to happen at the ACCEPT rather than at
+   *  the end of the stream is releasing the staged attachments (D68 §7): the ids are consumed
+   *  server-side by then, and the rail must clear WITH the send instead of sitting under a
+   *  minute-long turn. A callback rather than a return value for exactly that reason — `streamTurn`
+   *  resolves when the STREAM ends, which is far too late. */
+  onAccepted?: () => void,
 ): Promise<void> {
   const ctx: TurnCtx = { claimed: !placeholderId, placeholderId, settled: false, gen: -1 };
   const handle = makeTurnReducer(ctx);
@@ -1251,6 +1265,7 @@ async function streamTurn(
     // its RAW line for a Stop harvest; the live turn keeps the view, so do NOT touch status/streamingId.
     // A `steer.applied` (drain) later swaps it to a normal bubble; Stop harvests it back to the composer.
     if (res.status === 202) {
+      onAccepted?.(); // ENQUEUED with its attachment ids — the drain claims them (D41 / §3's steer arm)
       const info = (await res.json().catch(() => ({}))) as { entry_id?: string; turn_id?: string };
       if (info.entry_id && pendingUserId) {
         const entryId = info.entry_id;
@@ -1285,6 +1300,9 @@ async function streamTurn(
       return;
     }
     if (!res.ok || !res.body) throw new Error(`${url} → ${res.status}`);
+    // Past the 409 and past `!res.ok`: the turn is RUNNING (or already ran, buffered), so whatever
+    // this POST named is the server's now. Everything below is about rendering it.
+    onAccepted?.();
 
     // D17 — buffered (non-streaming) turn: the server returned one JSON payload instead of an SSE
     // stream (agent.streaming=off, or a non-streaming client). The turn already persisted its
@@ -2047,10 +2065,22 @@ export async function stopTurn(): Promise<void> {
  */
 export async function sendMessage(
   text: string,
-  opts?: { mode?: ChatMode; skills?: string[]; agent?: string | null; raw?: string },
+  opts?: {
+    mode?: ChatMode;
+    skills?: string[];
+    agent?: string | null;
+    raw?: string;
+    /** Staged `attachment_id`s the server claims into this thread (D68 §3). Supplied by
+     *  `runComposer`'s natural-language branch — the ONE place that reads the staging store — so
+     *  every send path carries them without knowing about them. */
+    attachments?: string[];
+  },
 ): Promise<void> {
   const body = text.trim();
-  if (!body) return;
+  const attachments = opts?.attachments ?? [];
+  // Empty text is a legal send WITH files (D68 §7): the server injects `ATTACHMENT_ONLY_TEXT` as the
+  // wire text and titles the thread from the filenames. With neither there is nothing to send.
+  if (!body && !attachments.length) return;
   // D41 — the send-while-streaming guard is LIFTED: a send during a live turn is a STEER (enqueued via a
   // 202, drained into the running turn or spawned at its end). Per-message `/cloud <msg>` wins; else the
   // sticky session mode; else the server default (null). Only a FRESH (non-steer) send stashes
@@ -2093,17 +2123,31 @@ export async function sendMessage(
     agent,
     privilege: state.sessionPrivilege,
     stream: true, // the PWA always prefers streaming; the server's agent.streaming=off can override (D17)
+    // Omitted when empty so the request shape of every pre-D68 send is byte-identical (the field
+    // defaults to `[]` server-side).
+    ...(attachments.length ? { attachments } : {}),
   };
   // The RAW composer line (WITH any `/prefix`) for a Stop harvest — falls back to the body when the
   // caller didn't thread it through (direct sends, retry). Captured before prefix-stripping upstream.
   const raw = opts?.raw ?? body;
+
+  // D68 §7 — the staged chips are released the moment the POST is ACCEPTED (never on a 409: a
+  // refused send keeps them so the owner can act on the server's own sentence, which names
+  // re-attaching as the fix). `claimed` also tells us to re-read the thread below.
+  let claimed = false;
+  const onAccepted = attachments.length
+    ? () => {
+        claimed = true;
+        consumeStaged(attachments);
+      }
+    : undefined;
 
   if (steering) {
     // A STEER: append ONLY the user bubble (no assistant placeholder — the live turn owns the stream),
     // leave status/streamingId untouched, and POST. streamTurn's 202 branch marks the bubble queued; a
     // 409 (cap overflow / a sync holder) rolls it back; a 200 (the turn just ended) adopts it live.
     set({ messages: [...state.messages, tempUser] });
-    await streamTurn("/api/agent/chat", reqBody, undefined, tempUser.id, raw);
+    await streamTurn("/api/agent/chat", reqBody, undefined, tempUser.id, raw, onAccepted);
     return;
   }
 
@@ -2113,7 +2157,14 @@ export async function sendMessage(
     status: "streaming",
     streamingId: placeholderId,
   });
-  await streamTurn("/api/agent/chat", reqBody, placeholderId, tempUser.id, raw);
+  await streamTurn("/api/agent/chat", reqBody, placeholderId, tempUser.id, raw, onAccepted);
+  // …and once the turn has settled, re-read the durable floor so the user bubble shows what it
+  // actually sent. The optimistic bubble carries the TEXT only: `AttachmentPart`s are built by the
+  // SERVER at claim (E2 — it resolves the final collision-suffixed name), so the client cannot
+  // invent them, and the wire has no user-message frame to deliver them on. The same
+  // reload-the-floor idiom `probeAndReattach` uses for the drained-exec gap, and it costs one GET on
+  // attachment sends only. (A STEER returns above: its floor arrives with the next reconcile.)
+  if (claimed) await reloadChat();
 }
 
 /** One-line sys breadcrumb for a compaction event (auto or manual). `rejected` (D42, manual only)

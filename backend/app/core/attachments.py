@@ -541,8 +541,13 @@ def sidecar_name(name: str) -> str:
     return f"{name}{SIDECAR_SUFFIX}"
 
 
-def _stored_file(home: Path, thread_id: str, name: str) -> Path | None:
+def stored_file(home: Path, thread_id: str, name: str) -> Path | None:
     """The path of one stored attachment, or `None` when it is not a file this store may open.
+
+    PUBLIC because the S3 serving route needs the PATH itself rather than the bytes (it streams the
+    file with `FileResponse`), and the route may not build one: every path into a thread dir is this
+    module's (the S1 LOW-4 pin), so the read resolver is the seam a reader asks through — exactly as
+    `read_bytes` and `read_page` do for their own shapes.
 
     The §2 dereference rule in one place, for READS this time: a bare name (no separator, no drive,
     not `.`/`..`), a resolved parent that is EXACTLY the resolved thread directory, and
@@ -588,7 +593,7 @@ def read_bytes(home: Path, thread_id: str, name: str) -> bytes | None:
     outside this module builds a path into a thread dir (the S1 LOW-4 pin). Whole-file by design: the
     caller is base64-encoding it for the wire, and `attachments.max_file_mb` already bounds it.
     """
-    path = _stored_file(home, thread_id, name)
+    path = stored_file(home, thread_id, name)
     if path is None:
         return None
     try:
@@ -670,7 +675,7 @@ def read_page(
     """
     if offset < 1:
         raise StoredReadError(f"`offset` is a 1-based line number — {offset} is not one.")
-    path = _stored_file(home, thread_id, name)
+    path = stored_file(home, thread_id, name)
     if path is None:
         raise StoredReadError(f"no attachment named {name!r} on this conversation.")
     try:

@@ -923,6 +923,116 @@ def test_the_staging_route_writes_nothing_outside_staging(home: Path) -> None:
         assert sorted(p.name for p in attachments_root(home).iterdir()) == ["staging"]
 
 
+# ── the READ mount (S3 §8): what is served, how, and what is 404 ──────────────────────────────────
+
+
+def _claim_one(c, name: str, body: bytes, text: str = "look") -> tuple[str, str]:
+    """Stage one file and SEND it, returning `(thread_id, stored_name)` — the only way bytes ever
+    reach a thread dir, so every read test starts from a real claim."""
+    row = stage(c, name, body)
+    tid = send(c, text=text, attachments=[row["attachment_id"]]).json()["threadId"]
+    return tid, row["name"]
+
+
+def test_a_claimed_image_serves_INLINE_with_the_SNIFFED_type(home: Path) -> None:
+    """The bubble's `<img>` source (§7). The Content-Type is the part's sniffed `mime`, which is why
+    a photo the picker named `.txt` still paints — and why an HTML file named `.png` never could."""
+    with make_client() as c:
+        tid, name = _claim_one(c, "screenshot.txt", png_bytes(9, 9))
+        r = c.get(f"/api/attachments/{tid}/{name}")
+        assert r.status_code == 200, r.text
+        assert r.content == png_bytes(9, 9)
+        assert r.headers["content-type"] == "image/png"  # NOT text/plain from the extension
+        assert r.headers["x-content-type-options"] == "nosniff"
+        assert "immutable" in r.headers["cache-control"]
+        assert "content-disposition" not in {k.lower() for k in r.headers}  # inline: paintable
+
+
+@pytest.mark.parametrize(
+    ("name", "body", "mime"),
+    [("notes.txt", b"private notes", "text/plain"), ("paper.pdf", pdf_bytes(), "application/pdf")],
+)
+def test_a_text_or_pdf_attachment_serves_as_an_INERT_download(
+    home: Path, name: str, body: bytes, mime: str
+) -> None:
+    """§8: stored bytes are never ACTIVE content in this origin. Everything that is not a sniffed
+    image carries `Content-Disposition: attachment` beside `nosniff`, so the browser saves it."""
+    with make_client() as c:
+        tid, stored_name = _claim_one(c, name, body)
+        r = c.get(f"/api/attachments/{tid}/{stored_name}")
+        assert r.status_code == 200, r.text
+        assert r.content == body
+        # `startswith`: Starlette appends `; charset=utf-8` to a `text/*` type, which is exactly
+        # right here — the store admits text only through a STRICT UTF-8 decode (§2).
+        assert r.headers["content-type"].startswith(mime)
+        assert r.headers["x-content-type-options"] == "nosniff"
+        assert r.headers["content-disposition"].startswith("attachment;")
+
+
+def test_the_read_route_serves_only_what_a_PART_of_THAT_THREAD_references(home: Path) -> None:
+    """The part is the authority (§8). Four ways a file can exist and still be 404: no part names it
+    (the claim's crash-window leftover), the part belongs to another thread, the thread is unknown,
+    the name is not there at all."""
+    with make_client() as c:
+        tid, name = _claim_one(c, "kept.png", png_bytes())
+        other = send(c, text="elsewhere").json()["threadId"]
+        orphan = thread_dir(home, tid) / "orphan.png"
+        orphan.write_bytes(png_bytes())
+
+        assert c.get(f"/api/attachments/{tid}/{name}").status_code == 200
+        assert c.get(f"/api/attachments/{tid}/orphan.png").status_code == 404  # unreferenced
+        assert c.get(f"/api/attachments/{other}/{name}").status_code == 404  # another thread's part
+        assert c.get(f"/api/attachments/t-nope/{name}").status_code == 404  # no such thread
+        assert c.get(f"/api/attachments/{tid}/absent.png").status_code == 404
+        assert orphan.exists()  # a 404 is a refusal, never a cleanup
+
+
+def test_a_STAGED_but_unclaimed_file_is_not_readable(home: Path) -> None:
+    """Staging is not a served surface: until a send claims it, a staged file has no thread, no part
+    and therefore no URL (§3 — the id is the whole credential, and it is not an address)."""
+    with make_client() as c:
+        row = stage(c, "secret.png", png_bytes())
+        staged_file = staged_name(row["attachment_id"], "secret.png")
+        assert c.get(f"/api/attachments/{STAGING_DIRNAME}/{staged_file}").status_code == 404
+        assert c.get(f"/api/attachments/{STAGING_DIRNAME}/{row['attachment_id']}").status_code == 404
+        assert staged(home) == [staged_file]
+
+
+@pytest.mark.parametrize("name", ["../../config.yaml", "..%2F..%2Fconfig.yaml", "sub/dir.png", "."])
+def test_the_read_route_refuses_a_name_that_is_not_a_BARE_FILE(home: Path, name: str) -> None:
+    """Traversal and shape, answered with the SAME 404 as "not there" — the store's own dereference
+    rules (`stored_file`), never a second sanitizer here (E9)."""
+    with make_client() as c:
+        tid, _ = _claim_one(c, "kept.png", png_bytes())
+        assert c.get(f"/api/attachments/{tid}/{name}").status_code == 404
+
+
+def test_a_SYMLINK_planted_in_a_thread_dir_is_never_followed_by_the_route(home: Path, tmp_path) -> None:
+    """The per-file half of the read rules, end to end: a part is persisted, and the file under its
+    name is then replaced with a link to somebody else's file. `is_served_file` refuses it."""
+    outside = tmp_path / "elsewhere.txt"
+    outside.write_text("private\n", encoding="utf-8")
+    with make_client() as c:
+        tid, name = _claim_one(c, "notes.txt", b"mine")
+        target = thread_dir(home, tid) / name
+        target.unlink()
+        target.symlink_to(outside)
+        assert c.get(f"/api/attachments/{tid}/{name}").status_code == 404
+        assert outside.read_text(encoding="utf-8") == "private\n"
+
+
+def test_the_read_route_changes_NO_state(home: Path) -> None:
+    """Read-only, pinned as a property rather than asserted by inspection: the store's contents and
+    the thread's persisted parts are byte-identical across a read, a refused read and a HEAD."""
+    with make_client() as c:
+        tid, name = _claim_one(c, "kept.png", png_bytes())
+        before = (stored(home, tid), staged(home), parts_of(c, tid))
+        c.get(f"/api/attachments/{tid}/{name}")
+        c.get(f"/api/attachments/{tid}/absent.png")
+        c.head(f"/api/attachments/{tid}/{name}")
+        assert (stored(home, tid), staged(home), parts_of(c, tid)) == before
+
+
 # ── the part union stayed ADDITIVE ────────────────────────────────────────────────────────────────
 
 
@@ -960,12 +1070,16 @@ def test_the_attachment_surface_accepts_no_post_and_no_multipart(home: Path) -> 
     The OpenAPI schema enumerates every DECLARED method; the LIVE route walk (recursive — the table
     is a tree of include wrappers) sees the `include_in_schema=False` routes the schema cannot, and
     its harvest is asserted NON-EMPTY because a pin matching no routes is the very defect being
-    repaired (S1 LOW-3)."""
+    repaired (S1 LOW-3).
+
+    `get` joins the allowed set at S3 (the read mount, §8) and changes nothing about the property:
+    a `GET` is safelisted and therefore carries no CSRF weight either way — what must never appear
+    is a POST or a multipart body, which is what a cross-origin page can actually send."""
     with make_client() as c:
         paths = c.app.openapi()["paths"]
         for path, ops in paths.items():
             if path.startswith("/api/attachments"):
-                assert set(ops) <= {"put"}, (path, sorted(ops))
+                assert set(ops) <= {"put", "get"}, (path, sorted(ops))
         guarded = [r for r in iter_live_routes(c.app.router) if r[0].startswith("/api/attachments")]
         assert guarded, "the live route walk found NO /api/attachments routes — the pin tests nothing"
         for path, methods, route in guarded:

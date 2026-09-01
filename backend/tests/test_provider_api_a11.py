@@ -407,16 +407,55 @@ def test_reserved_verb_named_provider_422s() -> None:
 def test_get_providers_shape_and_rev_stable() -> None:
     with _client(_BASE) as (c, _cfg):
         body = c.get("/api/providers").json()
-        assert set(body) == {"providers", "rev", "sections", "reserved_verbs", "verbs", "warnings"}
+        # `attachments` joined the read at D68 S3: the composer's caps + the vision hint arrive on
+        # the ONE non-secret surface it already loads (plan §6 / the endpoint's own note).
+        assert set(body) == {
+            "providers",
+            "rev",
+            "sections",
+            "reserved_verbs",
+            "verbs",
+            "attachments",
+            "warnings",
+        }
+        assert body["attachments"] == {
+            "max_files_per_message": 10,
+            "max_file_mb": 10,
+            "image_max_dimension": 2048,
+            "image_quality": 0.85,
+        }
         assert body["providers"]["openrouter"] == {"api_mode": "openrouter", "models": ["qwen3.5", "other"]}
         assert "api_key" not in body["providers"]["openrouter"]  # NAKED — no secrets
         assert body["reserved_verbs"] == ["agent", "privilege", "priv", "clear", "compact", "help"]
+        # `accepts_images` (D68 §5's `input_modalities`, read once) rides every ref: neither model
+        # here declares one, so both read text-only — the conservative default, on the wire.
         assert body["sections"]["inference"] == {
             "provider": "llamacpp",
             "model": "minig+",
-            "fallbacks": [{"provider": "openrouter", "model": "qwen3.5"}],  # clean names, not wire ids
+            "accepts_images": False,
+            # clean names, not wire ids
+            "fallbacks": [{"provider": "openrouter", "model": "qwen3.5", "accepts_images": False}],
         }
         assert body["rev"] == c.get("/api/providers").json()["rev"]  # stable across reads
+
+
+def test_get_providers_reports_a_vision_model_as_accepting_images() -> None:
+    """D68 §7 — the composer's per-chip hint reads THIS field, so the true arm is pinned beside the
+    default one: a model that declares `image` in `input_modalities` reports `accepts_images: true`,
+    per REF (the primary and each fallback answer for themselves — a chain can be mixed)."""
+    cfg_text = (
+        "server:\n  port: 5433\n  poll_seconds: 5\n"
+        "providers:\n"
+        "  openrouter:\n    base_url: https://openrouter.ai/api/v1\n    api_mode: openrouter\n"
+        "    models:\n      seer:\n        input_modalities: [text, image]\n"
+        "  llamacpp:\n    base_url: http://l/v1\n    api_mode: llamacpp\n    models:\n      minig+: {}\n"
+        "inference:\n  provider: openrouter\n  model: seer\n"
+        "  fallbacks:\n    - provider: llamacpp\n      model: minig+\n"
+    )
+    with _client(cfg_text) as (c, _cfg):
+        section = c.get("/api/providers").json()["sections"]["inference"]
+        assert section["accepts_images"] is True
+        assert section["fallbacks"][0]["accepts_images"] is False
 
 
 def test_get_providers_effective_section_after_lenient_promotion() -> None:
@@ -615,15 +654,24 @@ def test_get_providers_voice_sections_and_verb_exclusion() -> None:
     with _client(_VOICE_BASE) as (c, _cfg):
         body = c.get("/api/providers").json()
         assert set(body["sections"]) == {"inference", "stt", "tts", "embeddings"}
+        # `accepts_images` is a property of the RESOLVED TARGET, so every section carries it in the
+        # one shape (D68 §5) — on a voice chain it is simply always false, and no consumer reads it
+        # there. One `_section`/`_ref` pair, no per-section shape.
         assert body["sections"]["stt"] == {
             "provider": "speaches",
             "model": "parakeet",
-            "fallbacks": [{"provider": "vault-whisper", "model": "whisper"}],
+            "accepts_images": False,
+            "fallbacks": [{"provider": "vault-whisper", "model": "whisper", "accepts_images": False}],
         }
         assert (
             body["sections"]["tts"]["provider"] == "speaches" and body["sections"]["tts"]["model"] == "kokoro"
         )
-        assert body["sections"]["embeddings"] == {"provider": "openrouter", "model": "emb", "fallbacks": []}
+        assert body["sections"]["embeddings"] == {
+            "provider": "openrouter",
+            "model": "emb",
+            "accepts_images": False,
+            "fallbacks": [],
+        }
         verbs = set(body["verbs"])
         assert "llamacpp" in verbs  # the chat provider is a verb
         # providers referenced ONLY by voice/embeddings are NOT chat verbs (R9) even when sole-model routable

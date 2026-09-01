@@ -1,10 +1,12 @@
 import { useRef, type ReactNode } from "react";
 
+import { useAttachments } from "../../../hooks/useAttachments";
 import { useComposer } from "../../../hooks/useComposer";
 import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
 import { useUISlice } from "../../../store/ui";
 import { useComposerSkin } from "../axes";
+import { AttachClip, AttachRail } from "./AttachRail";
 import { SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
@@ -37,7 +39,11 @@ export function KitComposer({
   sendIcon,
 }: ComposerSlots & { rootClass?: string; sendIcon?: ReactNode } = {}) {
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
+  const { draft, setDraft, send, isStreaming, mic, sttReady, uploadPending } = useComposer();
+  // Attachments (D68 §7): ONE controller per composer — the rail renders its chips, the clip owns
+  // the picker, and `dropProps` puts paste + drag-drop on the surfaces below. Same three lines in
+  // every variant; only the PLACEMENT differs (the owner-ruled geometry, per layout).
+  const attach = useAttachments();
   // Shared presentational chrome (mic-press toggle, auto-grow, Enter-to-send) — §3.1.
   const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
   // Slash autocomplete (A2) — headless; its `onKeyDown` wraps the chrome's so the popover gets the arrow/
@@ -55,12 +61,21 @@ export function KitComposer({
           the bar so, at equal stacking, the composer paints over the overlay's tucked bottom edge. */}
       {overlay}
       <SuggestPopover suggest={suggest} />
-      <div className={"kit-composer stacked" + (rootClass ? " " + rootClass : "")} id="composer">
+      <div
+        className={"kit-composer stacked" + (rootClass ? " " + rootClass : "")}
+        id="composer"
+        onDragOver={attach.dropProps.onDragOver}
+        onDrop={attach.dropProps.onDrop}
+      >
+        {/* THE RAIL — above `.field` (grammar ②): the bar grows upward exactly as it does for a
+            second line of text, and `--composer-h` picks it up because it is a child of the root. */}
+        <AttachRail attach={attach} />
         <div className="field">
           <textarea
             ref={taRef}
             id="cmd-input"
             rows={1}
+            onPaste={attach.dropProps.onPaste}
             // The theme's `placeholder` slot wins when it fills it; omitted → the Kit's own greeting,
             // byte-identical to what every theme but gacha renders.
             placeholder={placeholder ?? "How can I help you today?"}
@@ -76,6 +91,8 @@ export function KitComposer({
           {/* `controlsStart` slot — opens the controls row (left of mic/send), e.g. the plan pill. */}
           {controlsStart}
           <span className="grow" />
+          {/* THE CLIP — in the controls row, immediately LEFT of the mic (owner-ruled placement). */}
+          <AttachClip attach={attach} />
           {sttReady && (
             <button
               type="button"
@@ -114,6 +131,9 @@ export function KitComposer({
             id="cmd-send"
             aria-label={isStreaming ? "stop the running turn" : "send message"}
             title={isStreaming ? "stop the running turn" : "send message"}
+            // HELD while a staged file is still uploading (D68 §7, the R61 field convention) — never
+            // while streaming, where this button is Stop and must stay live.
+            disabled={!isStreaming && uploadPending}
             onClick={isStreaming ? stopTurn : send}
           >
             {isStreaming ? (

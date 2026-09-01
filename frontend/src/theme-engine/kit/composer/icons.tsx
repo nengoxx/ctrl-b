@@ -107,3 +107,46 @@ export function MicIcon({ size = 26 }: { size?: number }) {
     </svg>
   );
 }
+
+/** The ATTACH clip (D68 §7) — lucide `paperclip`, drawn a notch LIGHTER than the mic/send pair
+ *  (stroke 2 against their 2.2/2.6). The weight is half the owner's "nothing flashy" ruling; the
+ *  other half is the button's dropped ring and muted colour (kit.css `.kit-cbtn.attach`). */
+export function PaperclipIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
+/** The per-chip "this model cannot see images" mark (D68 §7's R62 steal) — lucide `triangle-alert`
+ *  at chip scale. A hint, never a gate: the in-band strip (§5) is what actually tells the model. */
+export function NoVisionIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="m10.29 3.86-8.47 14.14A2 2 0 0 0 3.53 21h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}

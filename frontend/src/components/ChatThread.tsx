@@ -3,8 +3,10 @@ import { memo, type ReactNode, useCallback, useEffect, useRef, useState } from "
 import { useActionSpecs } from "../hooks/useActions";
 import type { AgentChat } from "../hooks/useAgentChat";
 import { AUTOMATIONS_GROUP_ID, fmtWhen } from "../hooks/useAutomations";
+import { useOverlayBackGuard } from "../hooks/useOverlayBackGuard";
 import { toggle as playMessage, usePlayback } from "../lib/audioController";
 import { fillComposer } from "../lib/composer";
+import { modalKeyDown } from "../lib/focusTrap";
 import { Markdown } from "../lib/markdown";
 import { planFrom } from "../lib/plan";
 import {
@@ -16,8 +18,16 @@ import {
   retryLastTurn,
 } from "../store/chat";
 import { openConfGroup } from "../store/groupScroll";
-import type { ChatMessage, Part, ToolCallPart, ToolResult, WebSearchHit } from "../types";
+import type {
+  AttachmentPart,
+  ChatMessage,
+  Part,
+  ToolCallPart,
+  ToolResult,
+  WebSearchHit,
+} from "../types";
 import { BotWhoLine } from "./chatAttribution";
+import { XIcon } from "./icons";
 
 // The agent-chat LOG (F4) — the reusable `.chat-log` transcript, split out of AgentTab so a bespoke theme
 // body can render the same thread without duplicating the bubble tree (D36: the chat class names are a
@@ -48,6 +58,106 @@ function textOf(parts: Part[]): string {
 function errorOf(parts: Part[]): { message: string; retryable: boolean } | null {
   const e = parts.find((p) => p.type === "error");
   return e && e.type === "error" ? { message: e.message, retryable: e.retryable } : null;
+}
+
+// ── attachments in the transcript (D68 §7 — the ONE renderer branch) ─────────────────────────────
+
+function attachmentsOf(parts: Part[]): AttachmentPart[] {
+  return parts.filter((p) => p.type === "attachment");
+}
+
+/** `2.4 MB` / `640 KB` — the units a phone shows a file in (the `imageProbe` house spelling). */
+function sizeText(bytes: number): string {
+  return bytes >= 1_000_000 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.round(bytes / 1000)} KB`;
+}
+
+/** The serving URL (§8). Built from the MESSAGE's thread and the part's exact stored name — the two
+ *  facts the route matches a persisted part on; nothing else about the path is the client's. */
+function attachmentUrl(threadId: string, name: string): string {
+  return `/api/attachments/${encodeURIComponent(threadId)}/${encodeURIComponent(name)}`;
+}
+
+/** What one message actually sent: images PAINTED in the bubble (owner ruling §0b-2 — "I want this
+ *  feature to be complete"), text/PDF as a quiet tappable chip that downloads.
+ *
+ *  The images are CSS-bounded rather than laid out from `width`/`height`: the part carries the stored
+ *  pixel size, but the bubble is a fluid 88%-max column and the phone is the target. Tap opens the
+ *  full-size view. */
+function AttachedFiles({ message }: { message: ChatMessage }) {
+  const files = attachmentsOf(message.parts);
+  const [viewing, setViewing] = useState<AttachmentPart | null>(null);
+  if (files.length === 0) return null;
+  return (
+    <div className="chat-attach">
+      {files.map((file) => {
+        const url = attachmentUrl(message.thread_id, file.name);
+        return file.kind === "image" ? (
+          <button
+            type="button"
+            className="chat-attach-shot"
+            key={file.name}
+            onClick={() => setViewing(file)}
+            aria-label={`view ${file.name}`}
+          >
+            {/* `loading="lazy"`: a long thread can hold dozens of photos, and the log is a scroller. */}
+            <img src={url} alt={file.name} loading="lazy" decoding="async" />
+          </button>
+        ) : (
+          <a className="chat-attach-file" key={file.name} href={url}>
+            <span className="chat-attach-kind">{file.kind === "pdf" ? "PDF" : "TXT"}</span>
+            <span className="chat-attach-label">{file.name}</span>
+            <span className="chat-attach-size">{sizeText(file.bytes)}</span>
+          </a>
+        );
+      })}
+      {viewing !== null && (
+        <FullImage
+          src={attachmentUrl(message.thread_id, viewing.name)}
+          name={viewing.name}
+          onClose={() => setViewing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The full-size view — the house `.pm` overlay primitives (the same shell PromptModal and the media
+ *  gallery use) plus `useOverlayBackGuard`, so the Android BACK gesture closes the picture instead of
+ *  leaving the app. NO new overlay machinery: the guard owns the one close primitive, `modalKeyDown`
+ *  owns Escape + the focus loop, and the shell is `.pm-backdrop`/`.pm` with a `chat-shot` skin. */
+function FullImage({ src, name, onClose }: { src: string; name: string; onClose: () => void }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const close = useOverlayBackGuard(true, onClose);
+  useEffect(() => {
+    const panel = panelRef.current;
+    queueMicrotask(() => panel?.querySelector<HTMLElement>("button")?.focus());
+  }, []);
+  return (
+    <div
+      className="pm-backdrop chat-shot-pm"
+      onKeyDown={(e) => modalKeyDown(e, panelRef.current, close)}
+      // Tap-anywhere-to-close is what a phone expects of a photo view; the panel stops the bubble so
+      // a tap ON the picture (to look closer) never dismisses it.
+      onClick={() => close()}
+    >
+      <div
+        className="pm chat-shot"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={name}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="pm-head">
+          <h3>{name}</h3>
+          <button className="pm-x" aria-label="Close" onClick={close}>
+            <XIcon />
+          </button>
+        </div>
+        <img src={src} alt={name} />
+      </div>
+    </div>
+  );
 }
 
 /** Render a tool call as a command-like line for the `$` pre block (Vapor `.b.cmd`). */
@@ -482,10 +592,18 @@ const Bubbles = memo(function Bubbles({
     // muted with a tappable "queued" chip. A single tap removes it (it's a queued draft, not a
     // destructive action — no confirm); if it already drained the DELETE resolves it to its sent form.
     const entryId = m.queued;
+    const said = textOf(m.parts);
+    // An attachment-only send persists with NO text part (D68 §7 — the model-facing placeholder is
+    // the server's, at the wire), so the caption bubble is dropped rather than rendered empty.
+    const caption = said !== "" || attachmentsOf(m.parts).length === 0;
     return (
       <div className={"b user" + (entryId ? " queued" : "")}>
         <div className="who">you · {hm(m.ts)}</div>
-        <div className="body">{textOf(m.parts)}</div>
+        {/* D68 §7 — what this turn attached, ABOVE its text (the wire order: the files are the
+            subject, the caption is about them). Renders nothing on a message with no attachment
+            part, which is every message before this feature and most after it. */}
+        <AttachedFiles message={m} />
+        {caption && <div className="body">{said}</div>}
         {entryId && (
           <button
             type="button"

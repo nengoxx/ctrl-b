@@ -1,8 +1,10 @@
 import { useRef } from "react";
 
+import { useAttachments } from "../../../hooks/useAttachments";
 import { useComposer } from "../../../hooks/useComposer";
 import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
+import { AttachClip, AttachRail } from "./AttachRail";
 import { MicIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
@@ -21,8 +23,9 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 //     non-empty (empty draft + STT → mic alone, the compact resting look; no STT → send alone). Both share
 //     `.line-btn` (the same accent circle).
 //   • AUTO-GROW — the shared 96px ceiling from `useComposerChrome`; no new knob.
-//   • ATTACH — ABSENT (nothing reserved in the DOM); a placement comment marks where ROADMAP A8 lands it,
-//     capability-gated like the mic.
+//   • ATTACH — PRESENT since D68 S3 (this supersedes the original "ABSENT" ruling): the quiet clip sits in
+//     the trailing cluster, LEFT of the mic, and the staged THUMBNAIL RAIL rides above the pill's row. It is
+//     NOT capability-gated (unlike the mic): there is no "attachments configured" fact to gate on.
 //   • GEOMETRY — a FLOATING ROUNDED-SQUARE PILL: inherits the base `.kit-composer` float (inset ~90% width,
 //     frost/border/shadow — "not baked into the window"), reshaped to `border-radius:24px`, a compact single
 //     row; the pill + mic/send ride the BOTTOM (`align-items:flex-end`) while the field's extra lines stack
@@ -32,8 +35,11 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 // The root KEEPS the `.kit-composer` class (edge #5) so DefaultRoot's `querySelector(".kit-composer")`
 // --composer-h measurement still finds it; `.line` adds the stadium styling in kit.css.
 export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSlots = {}) {
-  const { draft, setDraft, send, isStreaming, mic, sttReady } = useComposer();
+  const { draft, setDraft, send, isStreaming, mic, sttReady, sendable, uploadPending } =
+    useComposer();
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // Attachments (D68 §7) — the shared controller; see KitComposer for the contract.
+  const attach = useAttachments();
   const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
@@ -46,7 +52,11 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   // `isStreaming` keeps the button mounted as the Stop control (D39, Slice-3 audit MED-1): `send()`
   // clears the draft, so without it the STT+empty-draft resting state would hide Stop exactly while
   // a turn runs — the one moment it must exist.
-  const showSend = !sttReady || draft !== "" || isStreaming;
+  //
+  // `sendable` (not `draft !== ""`) since D68 S3: a staged file with NO caption is a legal send
+  // (§7), and the button that sends it has to exist. It reads the draft too, so the pre-attachment
+  // behaviour is unchanged when nothing is staged.
+  const showSend = !sttReady || sendable || isStreaming;
 
   return (
     <>
@@ -54,7 +64,16 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
           the bar so, at equal stacking, the floating composer paints over the overlay's tucked bottom edge. */}
       {overlay}
       <SuggestPopover suggest={suggest} />
-      <div className="kit-composer line" id="composer">
+      <div
+        className="kit-composer line"
+        id="composer"
+        onDragOver={attach.dropProps.onDragOver}
+        onDrop={attach.dropProps.onDrop}
+      >
+        {/* THE RAIL — above the pill's row (the ruled placement for this layout). The row itself is
+            the flex container, so the rail takes a full line of its own (`flex-wrap` + `order:-1` in
+            kit.css) and the pill grows UPWARD exactly as multi-line text already makes it grow. */}
+        <AttachRail attach={attach} />
         {/* `controlsStart` slot — the in-row plan pill FLUSH at the leading edge (owner eyeball: mirror how
             the mic/send hug the trailing edge; this IS A4's `planPill: inline` semantics; with `pinned` the
             slot is empty → `.line-controls:empty` collapses the wrapper, the same trick the sheet uses). */}
@@ -72,10 +91,13 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
           onKeyDown={suggest.onKeyDown}
           onFocus={suggest.onFocus}
           onBlur={suggest.onBlur}
+          onPaste={attach.dropProps.onPaste}
           {...suggest.aria}
         />
-        {/* ROADMAP A8 attach button lands HERE (trailing of the field, leading of the mic/send),
-            capability-gated like the mic. Nothing is reserved in the DOM until then. */}
+        {/* THE CLIP — trailing of the field, LEFT of the mic/send cluster (the ruled placement, and
+            the spot the A8 placeholder comment always marked). Ungated: it is chrome, not a
+            capability. */}
+        <AttachClip attach={attach} size={18} />
         {showMic && (
           <button
             type="button"
@@ -106,6 +128,7 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
             id="cmd-send"
             aria-label={isStreaming ? "stop the running turn" : "send message"}
             title={isStreaming ? "stop the running turn" : "send message"}
+            disabled={!isStreaming && uploadPending} // held while a file uploads (D68 §7)
             onClick={isStreaming ? stopTurn : send}
           >
             {/* Streaming → the Stop square (D39, same swap as every composer). Idle → the SHARED

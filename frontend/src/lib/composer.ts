@@ -16,7 +16,9 @@
 // All paths jump to the Agent tab (the chat log lives there). The shell sigil is `!` by default and
 // will be configurable in Conf (Phase 7) — kept as a single constant so that wiring is one edit.
 
+import { setAttachmentInfo, type AttachmentInfoWire } from "./attachments";
 import { getJSON } from "../api/client";
+import { stagedIds } from "../store/attachments";
 import {
   compactThread,
   pushSystemNote,
@@ -169,10 +171,15 @@ export async function loadProviders(): Promise<void> {
   try {
     const res = await fetch("/api/providers");
     if (!res.ok) return;
-    const data = (await res.json()) as { verbs?: string[] };
+    const data = (await res.json()) as { verbs?: string[] } & AttachmentInfoWire;
     if (gen !== providersGen) return; // a newer load started → it owns the set
     knownProviders.clear();
     for (const v of data.verbs ?? []) knownProviders.add(v);
+    // D68 §6 — the composer's ATTACHMENT knobs and the "can the primary see images" answer ride
+    // THIS response (the endpoint's own note says why). Installed from the same loader, so the caps
+    // and the hint are always one read's worth of truth, and `verbsChanged()` below is the single
+    // re-derive signal for both (`hooks/useAttachments` subscribes through `useVerbsVersion`).
+    setAttachmentInfo(data);
     verbsChanged();
   } catch {
     /* best-effort — leave the set as-is */
@@ -376,7 +383,9 @@ export function fillComposer(text: string): void {
 /** Route + run one composer submission. Returns nothing; all effects go through the chat/ui stores. */
 export function runComposer(raw: string): void {
   const text = raw.trim();
-  if (!text) return;
+  // Empty text is a real send IFF files are staged (D68 §7 — "send a photo with no caption"); the
+  // server injects `ATTACHMENT_ONLY_TEXT` as the wire text. With neither, there is nothing to route.
+  if (!text && !stagedIds().length) return;
   setUI({ tab: "agent" }); // the chat log lives on the Agent tab — every route lands there
 
   if (text.startsWith(SHELL_SIGIL)) {
@@ -394,11 +403,22 @@ export function runComposer(raw: string): void {
   // unchanged when nothing is armed — and the armed agent is forwarded by PRESENCE (`!== undefined`), so
   // an explicit "the configured default" pick reaches `sendMessage` as a real `agent: null` and overrides
   // the sticky `/agent` there, instead of looking like no pick at all.
+  //
+  // D68 §7 — the STAGED ATTACHMENTS are consumed HERE, in the natural-language branch, and nowhere
+  // else. Two consequences, both deliberate:
+  //   · every caller gets them for free — the send button, Enter, a steer, and `useDictation`'s
+  //     auto-send (which bypasses `useComposer().send` and calls this function directly) all carry
+  //     the files with no plumbing of their own, which is what closes the §7 mic pin BY CONSTRUCTION;
+  //   · `!shell` and `/slash` (both routed above, before this line) do NOT consume them — a file is
+  //     an argument to an agent MESSAGE, not to a shell command, so the rail stays exactly as it was.
+  // `sendMessage` clears them when the POST is ACCEPTED; a refusal keeps the chips (store/chat).
   const scope = takeComposerScope();
+  const attachments = stagedIds();
   void sendMessage(text, {
     raw: text,
     ...(scope.agent !== undefined ? { agent: scope.agent } : {}),
     ...(scope.skills.length ? { skills: scope.skills } : {}),
+    ...(attachments.length ? { attachments } : {}),
   });
 }
 

@@ -1287,6 +1287,13 @@ class AttachmentsCfg(BaseModel):
     - `resend` (S2 §4.5): do images from EARLIER turns ride along again? True by default (7/7 of the
       field; dropping them breaks follow-up questions about a photo). Off, only the current turn's
       images are sent and older ones render as stubs.
+    - `image_max_dimension` / `image_quality` (S3 §6): the CLIENT's downscale — the longest edge a
+      staged photo is re-encoded to, and the encoder quality it is re-encoded at. Server-held for the
+      same reason every other client knob is (`voice.stt.auto_send`'s precedent): the browser must
+      not carry its own copy of a tunable the owner edits in Conf. Read by the composer over
+      `GET /api/providers` (the one non-secret surface the composer already loads from every tab);
+      nothing on the server consumes them — the bytes that arrive are already re-encoded, and
+      `max_file_mb` is what actually bounds them.
     """
 
     model_config = {"extra": "allow"}
@@ -1294,6 +1301,8 @@ class AttachmentsCfg(BaseModel):
     max_files_per_message: int = Field(default=10, gt=0)
     max_file_mb: int = Field(default=10, gt=0)
     staging_orphan_hours: int = Field(default=24, gt=0)
+    image_max_dimension: int = Field(default=2048, gt=0)
+    image_quality: float = Field(default=0.85, gt=0, le=1)
     max_inline_chars: int = Field(default=16000, gt=0)
     image_tokens: int = Field(default=1000, ge=0)
     max_images_per_request: int = Field(default=10, ge=0)

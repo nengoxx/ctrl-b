@@ -1,0 +1,171 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// THE COMPOSER'S ATTACHMENT CHROME (D68 S3 / ATTACHMENTS_PLAN §7) — driven through the REAL variants,
+// because the whole subject is PLACEMENT: three layouts, one rail component, and owner-ruled
+// geometry in each.
+//
+// The rulings pinned here (they are rulings, not preferences — re-deriving them is what this file
+// exists to prevent):
+//   · the RAIL is INSIDE the composer root, ABOVE the input row, in every variant (grammar ②) — which
+//     is also what makes `--composer-h` account for it without a second measurement;
+//   · the CLIP is present in ALL THREE (the A8 chrome ruling; LineComposer's old "ATTACH — ABSENT"
+//     comment is superseded) and sits immediately LEFT of the mic;
+//   · the MIC IS NEVER BLOCKED by staged files (owner ruling; R62 fact 4);
+//   · the send is HELD while a file is still uploading, and a FAILED chip holds nothing.
+
+vi.mock("../../src/hooks/useVoiceStatus", () => ({
+  useVoiceStatus: () => ({ data: { stt: true }, dataUpdatedAt: 0 }),
+}));
+vi.mock("../../src/store/chat", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/store/chat")>();
+  return { ...actual, sendMessage: vi.fn(), stopTurn: vi.fn() };
+});
+
+import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
+import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
+import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
+import { addStaged, clearStaged, type AttachStatus } from "../../src/store/attachments";
+import { clearDraft } from "../../src/store/composer";
+
+const VARIANTS = [
+  ["stacked", KitComposer],
+  ["sheet", SheetComposer],
+  ["line", LineComposer],
+] as const;
+
+function stage(status: AttachStatus = "staged", name = "photo.png") {
+  addStaged({
+    localId: name,
+    name,
+    kind: "image",
+    status,
+    attachmentId: status === "staged" ? "id-1" : undefined,
+    error:
+      status === "failed" ? "that file is 21.0 MB — this app accepts up to 10.0 MB." : undefined,
+  });
+}
+
+const clip = () => screen.getByRole("button", { name: "attach files" });
+// The mic's accessible name is its STATUS sentence (`MIC_LABEL`), and jsdom has no `mediaDevices`, so
+// the state under test here is `insecure` ("microphone needs a secure (HTTPS) connection"). Matching
+// both spellings keeps this file about attachments rather than about the mic's own state machine.
+const mic = () => screen.getByRole("button", { name: /dictation|microphone/i });
+const send = () => screen.getByRole("button", { name: "send message" });
+const composer = () => document.querySelector("#composer")!;
+
+/** `jest-dom` is not a dependency here (the repo asserts on the DOM directly), so the button gate is
+ *  read off the element. */
+const disabled = (el: Element): boolean => (el as HTMLButtonElement).disabled;
+
+/** Where two elements sit among their shared parent's children — the placement assertions' currency. */
+function orderOf(...nodes: Element[]): number[] {
+  const kids = [...nodes[0].parentElement!.children];
+  return nodes.map((n) => kids.indexOf(n));
+}
+
+beforeEach(() => {
+  clearStaged();
+  clearDraft();
+});
+afterEach(() => {
+  cleanup();
+  clearStaged();
+  clearDraft();
+});
+
+describe.each(VARIANTS)("%s composer — the attachment chrome", (name, Variant) => {
+  it("renders the quiet clip, immediately LEFT of the mic", () => {
+    render(<Variant />);
+    const [at, micAt] = orderOf(clip(), mic());
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(at).toBeLessThan(micAt); // same row, and the clip comes first
+    // Quiet by ruling: the `.kit-cbtn` chassis with the `attach` modifier that drops its ring — never
+    // the accent-filled `.kit-send` treatment.
+    expect(clip().className).toContain("kit-cbtn attach");
+  });
+
+  it("the rail rides INSIDE the composer root, above the input row", () => {
+    stage();
+    render(<Variant />);
+    const rail = document.querySelector(".kit-attach-rail")!;
+    expect(composer().contains(rail)).toBe(true);
+    // The row the rail must sit above, per layout: the stacked field, the docked row, or — in the
+    // line pill, whose root IS the row — the textarea itself.
+    const row =
+      composer().querySelector(".sheet-row") ??
+      composer().querySelector(".field") ??
+      composer().querySelector("textarea")!;
+    expect(rail.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("one chip per staged file, each with its own remove control", () => {
+    stage("staged", "a.png");
+    stage("staged", "b.png");
+    render(<Variant />);
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "remove a.png" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "remove b.png" })).not.toBeNull();
+  });
+
+  it("removing a chip drops it from the rail", () => {
+    stage("staged", "a.png");
+    render(<Variant />);
+    fireEvent.click(screen.getByRole("button", { name: "remove a.png" }));
+    expect(screen.queryByRole("listitem")).toBeNull();
+    expect(document.querySelector(".kit-attach-rail")).toBeNull(); // nothing staged → no rail at all
+  });
+
+  it("THE MIC IS NEVER BLOCKED by staged files (owner ruling)", () => {
+    stage();
+    render(<Variant />);
+    expect(disabled(mic())).toBe(false);
+  });
+
+  it("the send is HELD while a file is still uploading", () => {
+    stage("uploading");
+    render(<Variant />);
+    expect(disabled(send())).toBe(true);
+  });
+
+  it("…and a FAILED chip holds nothing — it names its refusal and gets out of the way", () => {
+    stage("failed");
+    render(<Variant />);
+    expect(disabled(send())).toBe(false);
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("this app accepts up to 10.0 MB");
+  });
+
+  it("an empty draft with a staged file can still be sent (the attachment-only gesture)", () => {
+    stage();
+    render(<Variant />);
+    // The line variant is the one that HIDES send at rest (mic alone), so this is where the gate
+    // actually changed; the other two always render it, and the pin is that all three agree.
+    expect(disabled(send())).toBe(false);
+  });
+});
+
+describe("the layouts' own geometry", () => {
+  it("the sheet EMBEDS the clip inside the field, beside the embedded mic (R62 §2.1)", () => {
+    render(<SheetComposer />);
+    const field = document.querySelector(".kit-composer.sheet .field")!;
+    expect(field.contains(clip())).toBe(true);
+    expect(field.contains(mic())).toBe(true);
+    expect(field.contains(send())).toBe(false); // the tall send stays outside it, as it always was
+  });
+
+  it("the line pill keeps the clip in the trailing cluster, out of the plan-pill lane", () => {
+    render(<LineComposer controlsStart={<span data-testid="pill" />} />);
+    const controls = document.querySelector(".line-controls")!;
+    expect(controls.contains(clip())).toBe(false);
+    expect(clip().parentElement).toBe(document.querySelector("#composer"));
+  });
+
+  it("the stacked bar puts it in the controls row, after the slack absorber", () => {
+    render(<KitComposer />);
+    const crow = document.querySelector(".crow")!;
+    expect(crow.contains(clip())).toBe(true);
+    const [grow, at] = orderOf(crow.querySelector(".grow")!, clip());
+    expect(grow).toBeLessThan(at);
+  });
+});
