@@ -12,7 +12,36 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-01, THIRD session — THE S1 FIX WAVE: built + Emma-confirm RESOLVED; S1 IS CLOSED; supersedes everything below where it speaks)
+## Current state (2026-09-01, THIRD session, cont. — S2 BUILT + REVIEWED + CLOSED; supersedes everything below where it speaks)
+
+- **The owner ruled (this session): the WHOLE ladder S2→S6 proceeds slice-by-slice under the full
+  council cadence** (pinned Opus build → main-seat audit → blind Emma round → fix wave → her
+  confirm), S6 staying the owner device round. No per-slice owner gate is owed until S6.
+- **S2 (the model feed) is CLOSED:** build `5c827b8` → fix wave `7ea2970` (2 MED · 1 LOW from the
+  blind Emma round, main-seat ruled — headline: the D64 whole-line rule BENDS for foreign files,
+  CUT at `max_inline_chars` over her price-the-facts fix) → confirm RESOLVED WITH NEW FINDINGS →
+  the 1 new LOW folded `b5974f5` (main-seat, `_marker_cost` longest form) → **micro-confirm
+  RESOLVED, "none"**. Gate 6/6, BE **2,114**. Full record = ATTACHMENTS_PLAN §11's S2 blocks —
+  incl. the **dimensions-notice amendment** (Emma-accepted) and the **⚠ S4 sweep/sidecar
+  obligation** (the referenced set must learn sidecars or extraction self-deletes).
+- **Local `main` = origin `a558d43` + 16 commits** (12 prior + `5c827b8` + `7ea2970` + `b5974f5` +
+  this docs commit), **NOTHING PUSHED**. Prod untouched: **v1.7.7 @ `578ffa7`**. Dev units RUNNING.
+
+## ▶▶ NEXT (2026-09-01, post-S2 — in order)
+
+1. **S3 (FE)** under the same cadence — the RAIL + quiet clip + the RULED docked-sheet placement +
+   the mic-auto-send-with-staged-files test + the GET route/bubble images + attachment-only sends
+   + e2e (plan §7/§9-S3).
+2. **S4 (PDF)** — pypdf extraction sidecar; **MUST include the sweep referenced-set arm for
+   sidecars** (the recorded S2 obligation). Then **S5** (expand affordance) → **S6** (owner device
+   round; the owner's word closes the phase).
+3. **The v1.7.8 pipeline still stands (the fleet wave, unchanged):** owner dev test round → PUSH
+   ruling (16 commits and counting) → release v1.7.8 (runbook §Release, Opus-operated · NO
+   migration · rollback v1.7.7 · pre-tag LOCAL e2e + stale-pin sweep) → stop the dev units.
+4. **The standing menu unchanged:** owner device pair on prod + edit-a-prompt · A13 · Phase 19
+   LAST (1.8 RESERVED).
+
+## Prior state (2026-09-01, THIRD session — THE S1 FIX WAVE: built + Emma-confirm RESOLVED; S1 IS CLOSED; superseded above where it speaks)
 
 - **The S1 fix wave RAN the full cadence and CLOSED:** main-seat rulings on all five recorded
   findings (each re-derived to the leanest fix) → ONE Opus build from a pinned brief

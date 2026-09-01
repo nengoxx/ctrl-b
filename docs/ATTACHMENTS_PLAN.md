@@ -451,3 +451,39 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   inline constructions — recorded residual, no drive-by refactor. Builder proved every new pin
   fails with its fix reverted (MED-1's `removed=1` outside-victim repro reproduced pre-fix;
   LOW-3's walk caught a planted `include_in_schema=False` POST and a multipart PUT).
+- **S2 AS-BUILT (2026-09-01, `5c827b8` + fix wave `7ea2970` + `b5974f5`; Opus from the pinned
+  brief; gate 6/6, BE 2,075→2,114, 39 net new tests): the whole §9-S2 scope — assembly branch
+  (multimodal parts list only when real images ride · per-turn wire cache keyed by store path ·
+  `max_images_per_request` oldest-first degrade · `resend:false` → `turn_start_index` · D64-framed
+  §4.2 injection · `ATTACHMENT_ONLY_TEXT` at the wire) · estimator arm (image → `image_tokens`,
+  text → priced inline + rendered-marker cost; `ContextEstimator(attachments)` + Compactor's four
+  call sites) · the per-hop strip (`ModelCfg.input_modalities` → `ResolvedTarget.accepts_images`;
+  `drop_unsupported_modalities` inside `attempt` in BOTH paths, fresh derived list, opencode ERROR
+  verbatim) · `read_attachment` + server-owned fail-closed `InvocationContext.thread_id` ·
+  compaction manifest + summarizer-template instruction (the one deliberate Phase 18 edit) · §6
+  config rows.** **§4.1's "resize notice" AMENDED by the main seat** (recorded here, Emma-ACCEPTED):
+  original dims are unknowable server-side and a client-claimed original would break E2's
+  facts-only property — the notice names the STORED dimensions as a post-turn system line.
+  Builder deviations all audit-ACCEPTED — headline: the private `_ctrlb_name` key on assembled
+  image parts (the stub needs the filename; the strip scrubs it before any provider) ·
+  `SIDECAR_SUFFIX` declared now with the recorded **⚠ S4 MUST teach `sweep_thread_dirs`' referenced
+  set about sidecars** or extraction self-deletes after `staging_orphan_hours` · framing strings
+  live in the seam module, not the prompt registry (framing vs instructions; inference.py has no
+  Settings). Residuals recorded: `_log_context_cost` (DEBUG) inflates on image turns · images
+  priced as-if-sent when the ceiling degrades them (conservative).
+- **S2 EMMA ROUND (blind, fresh session): SHIP WITH FIXES — 2 MED · 1 LOW (her Q7 ruling) · open
+  sweep "none"; assembly/strip/tool/estimator/compaction all explicitly sound; the dimensions
+  amendment ACCEPTED ("truer than placing server metadata in the owner's text").** The fix wave
+  (`7ea2970`): **MED-1** (0.98) an oversized single LINE bypassed `max_inline_chars` (whole into
+  the prompt AND the tool result while the estimator priced the cap) — **her finding taken, her
+  price-the-facts fix REJECTED** (it kept the bomb and priced it); RULED: **the D64 whole-line
+  rule BENDS for foreign files** — `read_page` cuts an oversized first line at the budget,
+  `StoredRead.line_truncated` records it, `complete` requires it off, marker + tool head state the
+  cut honestly, the estimator's `min()` is exact again. **MED-2** (0.99) the PDF marker advertised
+  the unaddressable sidecar name — fixed as she prescribed (`replace(page, name=part.name)`).
+  **LOW-3** read path now gates `_real_root` + thread-dir `is_symlink` (her Q7 = FIX). **Confirm
+  round (resumed): all three RESOLVED with line proof, CUT-over-price explicitly accepted, edge
+  review clean, 1 NEW LOW** (0.99: `_marker_cost` priced the uncut marker form — the estimator
+  lost its conservative bias on cut pages) — **main-seat-fixed in the tail (`b5974f5`, longest
+  co-occurring marker form + the tolerance flipped to price-covers-block); micro-confirm:
+  RESOLVED, "none". S2 CLOSED.**
