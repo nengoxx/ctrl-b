@@ -18,7 +18,10 @@ it produces (a real extracted text · the honest one-liner when there is none ·
 and what retention does with it (an aged sidecar of a referenced PDF survives BOTH sweep arms; a dead
 thread's does not; a thread delete takes it; the read route still 404s it) are properties of this
 module. Its PDFs are REAL ones — `pdf_with_text` builds a minimal, genuinely parseable document,
-because a fixture pypdf cannot read would prove only that the failure path works.
+because a fixture pypdf cannot read would prove only that the failure path works. The S4 fix wave's
+pins live in that same section: a sidecar may never land ON an attachment of that name (both orders
+of the collision, plus the exclusive publish behind them) and a font mapping a LONE SURROGATE still
+claims clean — the two MEDs the S4 Emma round reproduced.
 
 Config/db go to a temp `CTRLB_HOME`/`CTRLB_CONFIG`/`CTRLB_DB` (the shared `home` fixture) — never the
 operator's real config.yaml.
@@ -90,6 +93,23 @@ def pdf_bytes(body: bytes = b"nothing readable") -> bytes:
     return b"%PDF-1.7\n" + body
 
 
+def pdf_document(objs: Sequence[bytes]) -> bytes:
+    """The file wrapper every hand-built PDF here shares: numbered objects (1-based, in order), then
+    the xref table their byte offsets go into, then the trailer. Split out so the hostile fixture
+    below states only what makes it hostile and the two never drift on their plumbing."""
+    out = bytearray(b"%PDF-1.7\n")
+    offsets: list[int] = []
+    for number, obj in enumerate(objs, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % number + obj + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    for offset in offsets:
+        out += b"%010d 00000 n \n" % offset
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF" % (len(objs) + 1, xref)
+    return bytes(out)
+
+
 def pdf_with_text(pages: Sequence[Sequence[str]]) -> bytes:
     """A real, minimal PDF: one page per row, one line of Helvetica text per string (S4).
 
@@ -117,17 +137,51 @@ def pdf_with_text(pages: Sequence[Sequence[str]]) -> bytes:
             b"/Resources << /Font << /F1 3 0 R >> >> /Contents %d 0 R >>" % (pid + 1)
         )
         objs.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
-    out = bytearray(b"%PDF-1.7\n")
-    offsets: list[int] = []
-    for number, obj in enumerate(objs, start=1):
-        offsets.append(len(out))
-        out += b"%d 0 obj\n" % number + obj + b"\nendobj\n"
-    xref = len(out)
-    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
-    for offset in offsets:
-        out += b"%010d 00000 n \n" % offset
-    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF" % (len(objs) + 1, xref)
-    return bytes(out)
+    return pdf_document(objs)
+
+
+#: The `bfchar` mapping that makes `pdf_with_lone_surrogate` hostile: glyph `A` decodes to U+D800,
+#: the first HIGH SURROGATE — a code point that exists only as half of a pair and that no UTF-8
+#: encoder will emit. Two hex digits away from an ordinary CMap, which is why a merely BROKEN subset
+#: font reaches the same place as a malicious one.
+_SURROGATE_CMAP = b"""/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CMapName /Custom def
+/CMapType 2 def
+1 begincodespacerange
+<00> <FF>
+endcodespacerange
+2 beginbfchar
+<41> <D800>
+<42> <0062>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end"""
+
+
+def pdf_with_lone_surrogate() -> bytes:
+    """A real PDF whose font's ToUnicode CMap maps one glyph to a LONE SURROGATE (S4 MED-2).
+
+    The reviewer-reproduced hostile shape: pypdf decodes ToUnicode with `surrogatepass`, so
+    `extract_text()` returns `'\\ud800b'` here — a `str` that `str.encode("utf-8")` refuses, which is
+    how a single glyph used to fail a whole claim from inside the sidecar write. The second glyph is
+    an ordinary `b` so the fixture also proves the document's REAL text survives sanitising.
+    """
+    stream = b"BT /F1 12 Tf 72 720 Td (AB) Tj ET"
+    return pdf_document(
+        [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [4 0 R] /Count 1 >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 6 0 R >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>",
+            b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream",
+            b"<< /Length %d >>\nstream\n" % len(_SURROGATE_CMAP) + _SURROGATE_CMAP + b"\nendstream",
+        ]
+    )
 
 
 def bounds(*, pages: int | None = None, chars: int | None = None) -> PdfBounds:
@@ -910,6 +964,99 @@ def test_a_sidecar_the_WRITE_could_not_land_leaves_the_part_STUB_SHAPED(home: Pa
         tid = send(c, text="see", attachments=[row["attachment_id"]]).json()["threadId"]
         assert stored(home, tid) == ["report.pdf"]
         assert next(p for p in parts_of(c, tid) if p["type"] == "attachment")["inline_chars"] is None
+
+
+def test_a_sidecar_can_never_land_ON_an_attachment_of_that_name(home: Path) -> None:
+    """S4 MED-1, the reviewer's repro: the owner attaches `report.pdf.txt` and later `report.pdf`.
+
+    The claim reserves BOTH names (`_final_name` walks until the candidate AND its sidecar name are
+    free), so the document shifts to `report-1.pdf` and writes `report-1.pdf.txt` — before the fix
+    `report.pdf` was 'free', and the sidecar write REPLACED the owner's stored, part-referenced text
+    file with the PDF's extracted text: silent data loss behind a part that still named it."""
+    with make_client() as c:
+        notes = stage(c, "report.pdf.txt", b"the owner's own notes")
+        doc = stage(c, "report.pdf", pdf_with_text([["real extracted text"]]))
+        r = send(c, text="both", attachments=[notes["attachment_id"], doc["attachment_id"]])
+        assert r.status_code == 200, r.text
+        tid = r.json()["threadId"]
+
+        assert stored(home, tid) == ["report-1.pdf", "report-1.pdf.txt", "report.pdf.txt"]
+        assert (thread_dir(home, tid) / "report.pdf.txt").read_bytes() == b"the owner's own notes"
+        parts = [p for p in parts_of(c, tid) if p["type"] == "attachment"]
+        assert [(p["kind"], p["name"]) for p in parts] == [
+            ("text", "report.pdf.txt"),
+            ("pdf", "report-1.pdf"),
+        ]
+        text = sidecar_of(home, tid, "report-1.pdf").read_text(encoding="utf-8")
+        assert text == "real extracted text\n" and parts[1]["inline_chars"] == len(text)
+
+
+def test_a_TEXT_FILE_named_like_a_SIDECAR_lands_beside_it_and_never_on_it(home: Path) -> None:
+    """The other order of the same collision: the PDF (and its sidecar) are already stored when a
+    `report.pdf.txt` arrives. The landing was already no-clobber this way round — the claim's own
+    `os.link` — so this pins the direction that was correct rather than fixing it, and pins that the
+    text file gets an ordinary suffix instead of a refusal."""
+    with make_client() as c:
+        doc = stage(c, "report.pdf", pdf_with_text([["extracted"]]))
+        tid = send(c, text="one", attachments=[doc["attachment_id"]]).json()["threadId"]
+        notes = stage(c, "report.pdf.txt", b"the owner's own notes")
+        assert send(c, text="two", thread_id=tid, attachments=[notes["attachment_id"]]).status_code == 200
+
+        assert stored(home, tid) == ["report.pdf", "report.pdf-1.txt", "report.pdf.txt"]
+        assert sidecar_of(home, tid, "report.pdf").read_text(encoding="utf-8") == "extracted\n"
+        assert (thread_dir(home, tid) / "report.pdf-1.txt").read_bytes() == b"the owner's own notes"
+        users = [m for m in c.get(f"/api/threads/{tid}/messages").json() if m["role"] == "user"]
+        assert [p["name"] for p in users[1]["parts"] if p["type"] == "attachment"] == ["report.pdf-1.txt"]
+
+
+def test_a_sidecar_NAME_TAKEN_under_the_claim_leaves_the_INTRUDER_untouched(home: Path, monkeypatch) -> None:
+    """The defence-in-depth half of MED-1: publication is `os.link` + `os.unlink`, never `os.replace`.
+
+    `_final_name`'s walk is a check-then-act, so a file can appear at the sidecar's name in the
+    sub-millisecond window before it is written — simulated here by planting one mid-extraction. The
+    ruled outcome is NO sidecar (the §4.5 stub, `inline_chars` None), never a clobbered file, and no
+    temp left behind: the window joins the store's accepted unreferenced-file class."""
+    import app.core.attachments as store
+
+    extract = store._extract_pdf_text
+
+    def racing_extract(path: Path, bounds: PdfBounds) -> str | None:
+        (path.parent / sidecar_name(path.name)).write_bytes(b"not ours")
+        return extract(path, bounds)
+
+    monkeypatch.setattr(store, "_extract_pdf_text", racing_extract)
+    with make_client() as c:
+        row = stage(c, "report.pdf", pdf_with_text([["some text"]]))
+        tid = send(c, text="see", attachments=[row["attachment_id"]]).json()["threadId"]
+
+        assert sidecar_of(home, tid, "report.pdf").read_bytes() == b"not ours"
+        assert stored(home, tid) == ["report.pdf", "report.pdf.txt"]  # …and no temp sibling left
+        assert next(p for p in parts_of(c, tid) if p["type"] == "attachment")["inline_chars"] is None
+
+
+def test_a_PDF_whose_font_maps_a_LONE_SURROGATE_claims_CLEAN(home: Path) -> None:
+    """S4 MED-2, reproduced: pypdf decodes ToUnicode with `surrogatepass`, so one hostile glyph made
+    the sidecar write raise `UnicodeEncodeError` — not an `OSError`, so nothing caught it and the
+    claim failed AFTER consuming the id, leaving the owner a 500 and a file they could not re-send.
+
+    Ruled: sanitise, don't fail. The store AUTHORS this file, so it is made valid at authorship — the
+    unencodable glyph becomes U+FFFD (three of them: one per byte of its `surrogatepass` encoding,
+    the maximal-subpart rule every strict UTF-8 reader applies) and the document's real text `b`
+    rides through untouched. One bad glyph must not discard a document."""
+    with make_client() as c:
+        row = stage(c, "hostile.pdf", pdf_with_lone_surrogate())
+        r = send(c, text="see", attachments=[row["attachment_id"]])
+        assert r.status_code == 200, r.text  # the send path never sees the exception
+        tid = r.json()["threadId"]
+
+        assert staged(home) == [] and stored(home, tid) == ["hostile.pdf", "hostile.pdf.txt"]
+        sane = "\ufffd" * 3 + "b\n"  # one marker per byte of the surrogate (maximal subpart)
+        raw = sidecar_of(home, tid, "hostile.pdf").read_bytes()
+        assert raw.decode("utf-8") == sane  # strictly decodable — the whole of the fix
+        part = next(p for p in parts_of(c, tid) if p["type"] == "attachment")
+        assert part["inline_chars"] == len(sane)
+        # …and the feed's own reader (the strict-UTF-8 one) can page it, which is what the claim owed
+        assert read_page(home, tid, sidecar_name("hostile.pdf"), max_chars=1000).text == sane
 
 
 def test_extraction_happens_ONCE_at_claim_and_a_missing_sidecar_STAYS_missing(home: Path) -> None:

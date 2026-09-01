@@ -411,19 +411,40 @@ def _staged_path(staging: Path, attachment_id: str) -> Path | None:
     return None
 
 
+def _name_is_free(directory: Path, name: str) -> bool:
+    """Is `name` free for a claim — as a stored file AND as the sidecar a stored file would write?
+
+    A claim reserves TWO entries in the thread dir: the file itself, and `sidecar_name(name)`, which
+    is where this file's extracted text goes if it turns out to be a PDF. Checking only the first let
+    a sidecar land on top of an attachment the owner had already sent (S4 MED-1, reviewer-reproduced):
+    `report.pdf.txt` attached, then `report.pdf` — the second claim found `report.pdf` free, and the
+    sidecar write then REPLACED the stored, part-referenced text file beside it.
+    """
+    return not (directory / name).exists() and not (directory / sidecar_name(name)).exists()
+
+
 def _final_name(directory: Path, candidate: str) -> str:
-    """The name this file will be stored under: the candidate, or the first free `-N` suffix.
+    """The name this file will be stored under: the candidate, or the first `-N` suffix free of BOTH
+    that name and its sidecar's.
 
     Resolved HERE, at claim, and not at mint: until the chat POST creates the thread there is no
     directory to collide in (confirm-round NEW 2). The walk is a plain check-then-act, and it does
     not need to be atomic — the LINK below is, and it is what actually decides the name.
+
+    **The sidecar name is reserved UNIFORMLY, for every claim** (MED-1), not just for the PDFs that
+    will actually write one: the kind is not known here. The sniff runs AFTER the move (S1's accepted
+    ordering — the bytes are described where they finally live), so at naming time this file could be
+    anything, and a rule that only applied to PDFs would have to be applied a syscall too late. The
+    cost is an occasional extra collision suffix on a non-PDF whose `.txt` twin happens to be in the
+    thread — ordinary name-mangling, and the same suffix the owner already sees when they attach the
+    same photo twice.
     """
-    if not (directory / candidate).exists():
+    if _name_is_free(directory, candidate):
         return candidate
     stem, suffix = Path(candidate).stem, Path(candidate).suffix
     for n in range(1, _MAX_COLLISION_SUFFIX + 1):
         name = f"{stem}-{n}{suffix}"
-        if not (directory / name).exists():
+        if _name_is_free(directory, name):
             return name
     raise StoreWriteError(409, f"too many files named {candidate!r} in this conversation")
 
@@ -506,11 +527,11 @@ def claim(
         raise StoreWriteError(409, CLAIM_REFUSED) from None
     fsync_dir(directory)
     sniff = sniff_file(target, name)
-    # `chars` is a TEXT fact (the strict decode at sniff); for a PDF the equivalent fact is the
-    # length of what could be extracted, which is what `_write_pdf_sidecar` answers with. Either way
-    # `inline_chars` is the file's own extracted length — never `min(len, max_inline_chars)`, which
-    # is priced at READ (confirm N1) — so the estimator's `priced_inline_chars` starts pricing PDFs
-    # for real with no change of its own.
+    # `chars` is a TEXT fact (the strict decode at sniff); for a PDF the equivalent fact is the length
+    # of the SIDECAR it reads through, which is what `_write_pdf_sidecar` answers with. Either way
+    # `inline_chars` is the whole length of the part's inline source — never
+    # `min(len, max_inline_chars)`, which is priced at READ (confirm N1) — so the estimator's
+    # `priced_inline_chars` starts pricing PDFs for real with no change of its own.
     inline_chars = sniff.chars
     if sniff.kind == "pdf":
         inline_chars = _write_pdf_sidecar(directory, name, pdf_bounds)
@@ -641,7 +662,50 @@ def _extract_pdf_text(path: Path, bounds: PdfBounds) -> str | None:
         # bytes: there is no text. Never `BaseException` — a cancellation is not an extraction result.
         return None
     text = "\n".join(chunks).replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+    # …and the sidecar is a file this store AUTHORS, so it is made VALID here, at authorship (S4
+    # MED-2, reviewer-reproduced). pypdf decodes a font's ToUnicode CMap with `surrogatepass`, so a
+    # hostile — or merely broken — map hands back a LONE SURROGATE, which no UTF-8 writer will encode:
+    # the sidecar write raised `UnicodeEncodeError` (not `OSError`, so `_write_pdf_sidecar`'s handler
+    # never saw it) and failed the whole claim AFTER it had consumed the id. Sanitising rather than
+    # refusing is the ruling — one hostile glyph must not discard a document's real text — and the two
+    # rules do not conflict: the STRICT-decode refusal (§2) governs FOREIGN bytes the owner hands over,
+    # while what this store writes it owes to be valid. The round trip is exactly what a strict reader
+    # downstream would do with these bytes, so the bad glyph becomes U+FFFD and nothing else moves.
+    text = text.encode("utf-8", "surrogatepass").decode("utf-8", "replace")
     return f"{text}\n" if text else None
+
+
+def _publish_text_exclusive(path: Path, text: str) -> bool:
+    """Write `text` durably and publish it at `path` NO-CLOBBER. `False` when the name was taken.
+
+    `atomic_write_text`'s discipline with its LAST syscall swapped, and the swap is the point (MED-1):
+    the house writer ends in `os.replace`, which overwrites whatever holds the name — and a sidecar
+    may never do that, because `report.pdf.txt` can be a file the owner attached. So the durable half
+    is the house writer's, REUSED on a temp sibling rather than restated (one mkstemp/fsync recipe in
+    this codebase, still), and publication is the store's own `os.link` + `os.unlink` idiom — the same
+    three syscalls the claim itself lands bytes with, for the same reason: a link either creates the
+    name or raises, with no check-then-act window between the look and the write.
+
+    Defence in depth rather than the primary guard: `_final_name` has already reserved this name for
+    the file being claimed. Reaching `FileExistsError` therefore means something took it in the
+    sub-millisecond window between that walk and here, and the answer is no sidecar at all (`False` →
+    the §4.5 stub) — the temp goes, so what the window can leave behind is a claim without extracted
+    text, never a clobbered attachment. `OSError` from the WRITE (a full disk, a directory pulled out
+    from under us) still propagates to `_write_pdf_sidecar`'s handler, which is where "the sidecar
+    could not be written" has always been answered.
+    """
+    tmp = path.with_name(f".tmp-{secrets.token_hex(8)}{SIDECAR_SUFFIX}")
+    try:
+        atomic_write_text(tmp, text)
+        try:
+            os.link(tmp, path)
+        except OSError:
+            return False
+    finally:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+    fsync_dir(path.parent)
+    return True
 
 
 def _write_pdf_sidecar(directory: Path, name: str, bounds: PdfBounds) -> int | None:
@@ -651,22 +715,23 @@ def _write_pdf_sidecar(directory: Path, name: str, bounds: PdfBounds) -> int | N
     keeps the §3 "the claim is the only writer into a thread dir" property intact rather than
     bending it: this runs inside the store module, inside the claim, before the part exists.
 
-    Atomic through `atomic_write_text`, the house writer (D26/D57): a temp sibling in the SAME
-    directory, fsync'd, then `os.replace`. Same-dir matters here for the same reason it does there —
-    a cross-volume replace is not atomic — and a torn sidecar would be read as the file's text.
+    Durable through `atomic_write_text`, the house writer (D26/D57) — a temp sibling in the SAME
+    directory, fsync'd — and published no-clobber by `_publish_text_exclusive` above, because a
+    sidecar's name can be an attachment's name (MED-1). Same-dir matters here for the same reason it
+    does there: a cross-volume link is not possible and a torn sidecar would be read as the file's text.
 
     `None` means "no sidecar" and therefore no `inline_chars`: the part then renders as the §4.5
     document stub, which is the honest description of a PDF whose text is not on disk. It is
-    reserved for a WRITE that failed (a full disk, a directory pulled out from under us) — an
-    extraction that found nothing gets the `NO_TEXT_SIDECAR` one-liner instead, because "we looked
-    and there is no text" is a fact worth telling the model, and it is one the estimator prices.
+    reserved for a WRITE that failed (a full disk, a directory pulled out from under us, a name taken
+    under us) — an extraction that found nothing gets the `NO_TEXT_SIDECAR` one-liner instead, because
+    "we looked and there is no text" is a fact worth telling the model, and the estimator prices it.
     """
     text = _extract_pdf_text(directory / name, bounds) or NO_TEXT_SIDECAR
     try:
-        atomic_write_text(directory / sidecar_name(name), text)
+        published = _publish_text_exclusive(directory / sidecar_name(name), text)
     except OSError:
         return None
-    return len(text)
+    return len(text) if published else None
 
 
 def stored_file(home: Path, thread_id: str, name: str) -> Path | None:

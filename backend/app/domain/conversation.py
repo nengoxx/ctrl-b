@@ -90,7 +90,8 @@ class AttachmentPart(BaseModel):
     inlining base64 here would put tens of megabytes into a JSON column every history read has to
     parse (R61's anti-pattern), and persisting a token estimate would bake today's `attachments.*`
     knobs into rows the estimator re-prices at READ (confirm N1). `inline_chars` is therefore the
-    EXTRACTED LENGTH — a property of the file — and never `min(len, max_inline_chars)`.
+    WHOLE length of what the part reads as — a property of the stored file, never
+    `min(len, max_inline_chars)`.
 
     **The server constructs every one of these** (E2), at claim time, from the bytes it just landed:
     the client sends opaque staging ids and nothing else, so no field here is ever client-authored.
@@ -116,8 +117,12 @@ class AttachmentPart(BaseModel):
     #: Pixel dimensions for `image` kinds, from the same header reader the media index uses.
     width: int | None = None
     height: int | None = None
-    #: The decoded character count of a `text` file (and, from S4, of a PDF's extracted sidecar) —
-    #: the FACT the estimator and the injection cap are both derived from, at read.
+    #: The decoded character count of this part's INLINE SOURCE — the FACT the estimator and the
+    #: injection cap are both derived from, at read. For `text` that is the file itself; for a `pdf`
+    #: (from S4) it is the SIDECAR beside it, which is the extracted text when there was any and the
+    #: authored "no text could be extracted" copy when there was not — the model is shown that copy
+    #: through the ordinary frame, so it is priced like any other inline source. `None` means there is
+    #: no inline source at all: an image, or a PDF whose sidecar could not be written (the §4.5 stub).
     inline_chars: int | None = None
 
 
