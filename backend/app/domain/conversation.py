@@ -77,8 +77,52 @@ class ErrorPart(BaseModel):
     retryable: bool = False
 
 
+#: The three attachment kinds (D68 §2). Named here rather than spelled inline on the part, because
+#: the store's sniff produces exactly this union and the two must not be able to drift.
+AttachmentKind = Literal["image", "text", "pdf"]
+
+
+class AttachmentPart(BaseModel):
+    """One file the owner attached to a user turn (D68 / ATTACHMENTS_PLAN §2).
+
+    **FACTS ONLY — never the data, never a price.** The bytes live in the store
+    (`$CTRLB_HOME/attachments/{thread_id}/{name}`) and this part is the durable reference to them:
+    inlining base64 here would put tens of megabytes into a JSON column every history read has to
+    parse (R61's anti-pattern), and persisting a token estimate would bake today's `attachments.*`
+    knobs into rows the estimator re-prices at READ (confirm N1). `inline_chars` is therefore the
+    EXTRACTED LENGTH — a property of the file — and never `min(len, max_inline_chars)`.
+
+    **The server constructs every one of these** (E2), at claim time, from the bytes it just landed:
+    the client sends opaque staging ids and nothing else, so no field here is ever client-authored.
+    `name` is the EXACT stored (collision-suffixed) filename, which is what makes it addressable by
+    `read_attachment`; `path` is store-relative (`{thread_id}/{name}`) so the store can be relocated
+    with `$CTRLB_HOME` and so the sweep's referenced-set arm has one key to compare against.
+
+    Additive: old message rows carry no attachment parts and load untouched (the union is
+    discriminated on `type`, so nothing re-interprets an existing row).
+    """
+
+    type: Literal["attachment"] = "attachment"
+    #: What the BYTES turned out to be (sniffed, never the extension's claim). `text` covers the
+    #: extension-allowlisted text kinds — the one kind bytes cannot authenticate (§2).
+    kind: AttachmentKind
+    name: str
+    #: The Content-Type derived from the sniff (images/pdf) or from the extension table (text).
+    #: Never the request's `Content-Type`, which is a client claim.
+    mime: str
+    #: Store-relative: `{thread_id}/{name}`.
+    path: str
+    bytes: int = 0
+    #: Pixel dimensions for `image` kinds, from the same header reader the media index uses.
+    width: int | None = None
+    height: int | None = None
+    #: The decoded character count of a `text` file (and, from S4, of a PDF's extracted sidecar) —
+    #: the FACT the estimator and the injection cap are both derived from, at read.
+    inline_chars: int | None = None
+
+
 Part = Annotated[
-    TextPart | ReasoningPart | ToolCallPart | ToolResultPart | ErrorPart,
+    TextPart | ReasoningPart | ToolCallPart | ToolResultPart | ErrorPart | AttachmentPart,
     Field(discriminator="type"),
 ]
 
@@ -247,6 +291,11 @@ class Message(BaseModel):
 
     def tool_results(self) -> list[ToolResultPart]:
         return [p for p in self.parts if isinstance(p, ToolResultPart)]
+
+    def attachments(self) -> list[AttachmentPart]:
+        """The files attached to this turn (D68) — the same accessor idiom as the pair above, so a
+        consumer (assembly, the estimator, the retention sweep) never re-writes the isinstance walk."""
+        return [p for p in self.parts if isinstance(p, AttachmentPart)]
 
 
 class Thread(BaseModel):

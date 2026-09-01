@@ -52,6 +52,7 @@ from app.adapters.inference import (
     is_context_overflow,
 )
 from app.config import Settings
+from app.core.media import StoreWriteError
 from app.core.memory import MemoryProvider
 from app.core.permissions import Decision, decide
 from app.core.skills import SkillProvider, SkillSelector
@@ -59,6 +60,7 @@ from app.core.tool import UnknownTool
 from app.domain.agent import AgentDef, ModelRef
 from app.domain.automation import QuestionPolicy
 from app.domain.conversation import (
+    AttachmentPart,
     CallUsage,
     ErrorPart,
     Message,
@@ -76,6 +78,7 @@ from app.domain.provider import ResolvedTarget
 from app.domain.result import ToolResult
 from app.runtime import grant_approval
 from app.services.action_service import ActionService, InvokeOutcome
+from app.services.agent.attachments import claim_attachments
 from app.services.agent.compaction import (
     OUTPUT_CLEARED_PLACEHOLDER,
     ClearingPlan,
@@ -988,18 +991,24 @@ class AgentSession:
         *,
         mode: str | None = None,
         skills: list[str] | None = None,
+        attachments: list[AttachmentPart] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Persist the user message, then drive the loop. Yields SSE events. `mode` (a provider name,
         from the `/<provider>` composer verb, A11/D48) forces the inference backend for this turn;
         `None` uses the section default chain. `skills` are explicit `/skill-name` invocations
-        (4.5); the selector adds model-invoked picks on top."""
+        (4.5); the selector adds model-invoked picks on top.
+
+        `attachments` are the parts the endpoint CLAIMED before the turn started (D68 §3) — already
+        server-built and already on disk. They ride the same user message the text does, because they
+        ARE part of what the owner said; an attachment-only send therefore persists a message with no
+        `TextPart` at all (the model-facing wire text for that case is S2's)."""
         self._activate_skills(user_text, skills)
         # `actor` is the session's `message_actor` (§D-3), not a hardcoded USER: the text is the owner's
         # for every interactive path (the default) and the AUTOMATION's for an unattended run. `role`
         # stays "user" — that is the model's turn-taking slot, not a claim about who wrote it.
-        user_msg = Message(
-            thread_id=thread.id, role="user", actor=self._message_actor, parts=[TextPart(text=user_text)]
-        )
+        parts: list[Part] = [TextPart(text=user_text)] if user_text else []
+        parts += attachments or []
+        user_msg = Message(thread_id=thread.id, role="user", actor=self._message_actor, parts=parts)
         await self._messages.add(user_msg)
         await self._maybe_arm_reflection(thread)  # D27-C — periodic "save anything worth remembering"
         async for ev in self._drive(thread, mode=mode):
@@ -1901,28 +1910,59 @@ class AgentSession:
                 while i < n and entries[i].kind == "message":
                     run.append(entries[i])
                     i += 1
-                msgs = [
-                    Message(
-                        thread_id=thread.id,
-                        role="user",
-                        actor=Actor.USER,
-                        parts=[TextPart(text=e.text)],
-                        # Marks the row as a MID-TURN steer rather than a turn opener (D57). The
-                        # model's context is unaffected — it is a `meta` key, not a part — but
-                        # anything walking back to the start of the logical turn (`_seed_recall`)
-                        # must not mistake a steer for the boundary.
-                        steer=True,
+                # D68 (E7): claim each entry's staged files BEFORE the persist txn — the rename
+                # cannot sit inside it (confirm-round NEW 1), and the same crash window the chat POST
+                # accepts applies here, reclaimed by the boot sweep's referenced-set arm. A refusal
+                # (the id expired while the steer waited, or a Stop/re-send consumed it) must not
+                # cost the owner their TEXT: the message persists without the files and a `notice`
+                # says so, which is the drain's equivalent of the POST's 409 — never a silent drop.
+                claimed: dict[str, list[AttachmentPart]] = {}
+                notices: list[str] = []
+                for e in run:
+                    if not e.attachments:
+                        continue
+                    try:
+                        claimed[e.entry_id] = await claim_attachments(
+                            self._settings, thread.id, e.attachments
+                        )
+                    except StoreWriteError as exc:
+                        notices.append(f"// attachment not sent — {exc.detail}")
+                msgs: list[tuple[SteerEntry, Message]] = []
+                for e in run:
+                    parts: list[Part] = [TextPart(text=e.text)] if e.text else []
+                    parts += claimed.get(e.entry_id, [])
+                    if not parts:
+                        # An attachment-ONLY steer whose files all refused (D68): there is nothing
+                        # left to say, and an empty user row would render an empty bubble and add an
+                        # empty turn to the model's context. The notice above is the whole truth; the
+                        # entry is still committed off the queue below — it is consumed either way.
+                        continue
+                    msgs.append(
+                        (
+                            e,
+                            Message(
+                                thread_id=thread.id,
+                                role="user",
+                                actor=Actor.USER,
+                                parts=parts,
+                                # Marks the row as a MID-TURN steer rather than a turn opener (D57).
+                                # The model's context is unaffected — it is a `meta` key, not a part
+                                # — but anything walking back to the start of the logical turn
+                                # (`_seed_recall`) must not mistake a steer for the boundary.
+                                steer=True,
+                            ),
+                        )
                     )
-                    for e in run
-                ]
                 # persist-before-clear: the queue stays intact until this txn COMMITS. A failed persist
                 # raises out of here (the turn errors cleanly) with `commit()` never reached → the
                 # entries are still queued (retried at the next boundary / harvestable on Stop).
                 async with self._messages.db.transaction():
-                    for m in msgs:
+                    for _, m in msgs:
                         await self._messages.add(m)
                 self._steer_source.commit([e.entry_id for e in run])
-                for e, m in zip(run, msgs, strict=True):
+                for text in notices:
+                    yield AgentEvent("notice", {"text": text})
+                for e, m in msgs:
                     yield AgentEvent(
                         "steer.applied",
                         {"entryId": e.entry_id, "messageId": m.id, "kind": "message", "text": e.text},

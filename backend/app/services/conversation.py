@@ -10,14 +10,17 @@ without touching the schema.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Sequence
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from pydantic import TypeAdapter
 
+from app.core.attachments import remove_thread_attachments
 from app.db import Database
 from app.domain.conversation import CallUsage, Message, Part, SourceInfo, Thread
 from app.domain.enums import Actor, RunState
@@ -38,8 +41,13 @@ def _fts_query(raw: str) -> str:
 
 
 class ThreadRepo:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, home: Path | None = None) -> None:
         self._db = db
+        #: The workspace root, for the D68 attachment-retention hook in `delete` below. Optional
+        #: because a repo built without one (a unit test driving SQLite alone) genuinely has no
+        #: store to clean; `main.lifespan` always passes it, so every deletion the app performs
+        #: takes the bytes with it.
+        self._home = home
 
     async def create(self, thread: Thread) -> Thread:
         await self._db.execute(
@@ -87,11 +95,20 @@ class ThreadRepo:
         deleted messages (which `session_search` would then join into nothing).
 
         Deliberately unconditional on `archived`: the caller decides what it owns. Automations only ever
-        pass a thread they created."""
+        pass a thread they created.
+
+        **The thread's ATTACHMENTS go with it** (D68 §2 retention). Bytes outlive their rows
+        otherwise: the cascade cannot reach the filesystem, so a deleted conversation would leave its
+        photos in `$CTRLB_HOME/attachments/{id}/` forever, referenced by nothing. Done AFTER the row
+        delete and off the event loop, and never fatal to the delete itself — a store that refuses to
+        clean is the boot sweep's problem (the thread row is gone, so its directory is dead to the
+        sweep's first arm), not a reason to leave the conversation standing."""
         rows = await self._db.query("SELECT id FROM threads WHERE id = ?", (thread_id,))
         if not rows:
             return False
         await self._db.execute("DELETE FROM threads WHERE id = ?", (thread_id,))
+        if self._home is not None:
+            await asyncio.to_thread(remove_thread_attachments, self._home, thread_id)
         return True
 
     @staticmethod
@@ -216,6 +233,24 @@ class MessageRepo:
             params.append(thread_id)
         sql += " ORDER BY ts ASC, rowid ASC"
         return [self._row(r) for r in await self._db.query(sql, tuple(params))]
+
+    async def attachment_paths(self) -> set[str]:
+        """Every persisted `AttachmentPart.path`, across every thread (D68 §2 retention).
+
+        The REFERENCED SET the boot sweep reconciles the store against: anything in a thread dir that
+        is not in here is a file the claim landed and no message ever came to name (the
+        rename-then-insert crash window, confirm-round NEW 1). A SQL-level `json_each`/`json_extract`
+        filter — the same idiom `with_call_states` above uses — so the scan touches only messages that
+        actually carry an attachment part, never every message of every thread.
+
+        Store-relative paths, exactly as persisted, so neither side has to reconstruct the other's.
+        """
+        rows = await self._db.query(
+            "SELECT DISTINCT json_extract(value, '$.path') AS path "
+            "FROM messages, json_each(messages.parts) "
+            "WHERE json_extract(value, '$.type') = 'attachment'"
+        )
+        return {r["path"] for r in rows if r["path"]}
 
     async def count_user_messages(self, thread_id: str) -> int:
         """Count user messages in a thread, **including compacted ones** (D27-C periodic reflection).

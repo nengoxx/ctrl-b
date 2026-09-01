@@ -47,7 +47,7 @@ import stat
 import struct
 import tempfile
 import unicodedata
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, ClassVar, Literal
@@ -788,6 +788,29 @@ def probe_image(path: Path) -> Probe:
     return Probe()
 
 
+def probe_gif(path: Path) -> Probe:
+    """The GIF header, as a SIBLING of `probe_image` rather than a branch inside it (D68).
+
+    GIF is an admitted ATTACHMENT image (plan §2 — the phone's screenshots and the odd animation)
+    and is NOT servable on the media surface (it is not in `ALLOWED_TYPES`), so folding it into
+    `probe_image` would quietly re-label every media file whose bytes are a GIF from "unreadable"
+    to "format-mismatch" — copy that would then tell the owner to rename a file into a format this
+    surface still refuses. Two entry points over ONE reader module keeps both truths.
+
+    The header is fixed (GIF89a §17): a 6-byte signature then the logical-screen width and height as
+    little-endian 16-bit. Any I/O or short read degrades to `Probe()`, exactly like its sibling.
+    """
+    try:
+        with path.open("rb") as f:
+            head = f.read(10)
+    except OSError:
+        return Probe()
+    if len(head) < 10 or head[:6] not in (b"GIF87a", b"GIF89a"):
+        return Probe()
+    w, h = struct.unpack("<HH", head[6:10])
+    return Probe("gif", w, h)
+
+
 def _probe_jpeg(f: IO[bytes], head: bytes) -> Probe:
     """Walk the marker chain to the first SOF segment. JPEG is the one format whose size is not at a
     fixed offset — EXIF/ICC segments of arbitrary length sit in front of it.
@@ -1164,13 +1187,21 @@ MAX_NAME_BYTES = 255
 _ADMISSION_FORBIDDEN = frozenset('<>:"|?*') | {"\ufffd"} | frozenset(chr(c) for c in (*range(0x20), 0x7F))
 
 
-def admission_reason(filename: str) -> str | None:
+def admission_reason(filename: str, *, allowed_suffixes: Collection[str] | None = None) -> str | None:
     """Why this filename may not be CREATED, or `None` when it may (MEDIA_MANAGER_PLAN §3).
 
     Every clause returns the sentence the client shows, because "422" alone tells the owner nothing
     about a name their own picker produced. Ordered from structural to cosmetic so the first failure
     is the most explanatory one.
+
+    **ONE admission predicate, two stores** (D68, council E9/O-M9): everything above the last clause
+    is about the NAME — portability, control characters, NFC, the reserved DOS names, the byte
+    budget — and none of that is media's alone, so the attachment store's mint runs this rule rather
+    than a second sanitizer of its own. Only the final EXTENSION clause differs between surfaces,
+    which is why it is the one parameter: `allowed_suffixes` defaults to the media allowlist
+    (`ALLOWED_TYPES`) and the attachment mint passes its own (images + text + pdf).
     """
+    allowed = ALLOWED_TYPES if allowed_suffixes is None else allowed_suffixes
     if not filename:
         return "the filename is empty"
     if "/" in filename or "\\" in filename:
@@ -1195,8 +1226,8 @@ def admission_reason(filename: str) -> str | None:
         return "that name is reserved by Windows"
     if len(filename.encode("utf-8")) > MAX_NAME_BYTES:
         return f"the filename is longer than {MAX_NAME_BYTES} bytes"
-    if Path(filename).suffix.lower() not in ALLOWED_TYPES:
-        return "only " + ", ".join(sorted(ALLOWED_TYPES)) + " files are accepted"
+    if Path(filename).suffix.lower() not in allowed:
+        return "only " + ", ".join(sorted(allowed)) + " files are accepted"
     return None
 
 
@@ -1206,12 +1237,17 @@ def admission_reason(filename: str) -> str | None:
 STALE_TARGET = "the picture changed on the server — reopen it and try again"
 
 
-class MediaWriteError(Exception):
+class StoreWriteError(Exception):
     """A refused write, carrying the STATUS the route answers with and the sentence it says.
 
     The status is decided where the rule lives (here), not re-derived from an exception type in the
     API layer: the ladder below is the contract (`413` cap · `415` bytes/extension · `409` name
     exists), and splitting it across two files is how those three answers drift.
+
+    Named for the STORE rather than for media (D68): the attachment store rides the same ladder
+    (`core/attachments.py`), so one refusal type carries both surfaces' statuses — a second
+    exception class would be the first crack in the "one persist pipeline" the council ruled for
+    (E9/O-M9).
     """
 
     def __init__(self, status: int, detail: str) -> None:
@@ -1242,14 +1278,19 @@ PART_PREFIX = ".ctrlb-upload-"
 PART_SUFFIX = ".part"
 
 
-def _require_real_scratch_dir(parts: Path) -> None:
-    """Refuse to write into a `.parts` that is a SYMLINK or a non-directory (Emma's 0.99 probe).
+def require_real_dir(path: Path) -> None:
+    """Refuse to write into a directory that is a SYMLINK or a non-directory (Emma's 0.99 probe).
 
     `mkdir(exist_ok=True)` accepts an existing symlink, and `mkstemp` then follows it: the temp would
     be created, chmod'd and unlinked wherever the link points — outside the registered tree entirely,
     which is the one thing "writes land only inside registered role dirs" (D65) must mean. The sweep
     already refuses a symlinked `.parts`; this is the same rule at the other end, and both ends need
     it because a guard on the cleanup path protects nothing during the write.
+
+    Directory-GENERIC since D68: the media `.parts/` scratch dir and the attachment store's own
+    directories answer to the same rule, so it is stated once here rather than re-derived per store
+    (council E9/O-M9 — no second store implementation). The wording is therefore about "the store
+    tree" rather than about media, and it always NAMES THE PATH, which is the half an operator acts on.
 
     `lstat`-based (`is_symlink`), and deliberately no more: this is the SAME shape check
     `ensure_media_dirs` runs over the media spine at boot, one level down, and with it the same
@@ -1263,16 +1304,16 @@ def _require_real_scratch_dir(parts: Path) -> None:
     here the namespace is healthy and listing, so "not found" would be a lie.) The message names the
     path in the `ensure_media_dirs` voice, because the whole value of it is being enough to act on.
     """
-    if parts.is_symlink():
-        raise MediaWriteError(
+    if path.is_symlink():
+        raise StoreWriteError(
             500,
-            f"'{parts}' is a symlink; the media tree must be real directories (an upload would "
-            "otherwise be written outside the media folder). Replace it with a directory, then retry.",
+            f"'{path}' is a symlink; the store tree must be real directories (a write would "
+            "otherwise land outside it). Replace it with a directory, then retry.",
         )
-    if parts.exists() and not parts.is_dir():
-        raise MediaWriteError(
+    if path.exists() and not path.is_dir():
+        raise StoreWriteError(
             500,
-            f"'{parts}' is a file, but a directory is needed there for uploads in flight. "
+            f"'{path}' is a file, but a directory is needed there for writes in flight. "
             "Move or rename it, then retry.",
         )
 
@@ -1299,24 +1340,33 @@ class UploadPart:
 
     Not a context manager: the route needs `write()` calls interleaved with `await`s on the request
     stream, and `discard()` is idempotent — it is called in the route's `finally` whatever happened.
+
+    **DIRECTORY-GENERIC since D68** (council E9/O-M9): the attachment store streams its uploads
+    through this same class into `$CTRLB_HOME/attachments/staging/`, so the two store-specific
+    halves are parameters rather than baked constants — `cap_setting` names the config knob the 413
+    quotes, and the media-only probe/describe steps live in `finish` while a caller that validates
+    its own bytes uses the `seal` + `land_new` pair below. Nothing here knows what a namespace is.
     """
 
-    def __init__(self, path: Path, file: IO[bytes], max_bytes: int) -> None:
+    def __init__(self, path: Path, file: IO[bytes], max_bytes: int, cap_setting: str) -> None:
         self.path = path
         self.received = 0
         self._file: IO[bytes] | None = file
         self._max_bytes = max_bytes
+        self._cap_setting = cap_setting
 
     @classmethod
-    def open(cls, directory: Path, *, max_bytes: int) -> "UploadPart":
+    def open(
+        cls, directory: Path, *, max_bytes: int, cap_setting: str = "media.write.max_bytes"
+    ) -> "UploadPart":
         # `parents=False`: the role dir is the registry's to create (`ensure_media_dirs` at boot), and
         # a write must not resurrect a tree the owner deleted or the health check refused — only the
         # scratch dir inside it is this code's to make.
         parts = directory / PARTS_DIRNAME
-        _require_real_scratch_dir(parts)
+        require_real_dir(parts)
         parts.mkdir(parents=False, exist_ok=True)
         fd, name = tempfile.mkstemp(dir=str(parts), prefix=PART_PREFIX, suffix=PART_SUFFIX)
-        part = cls(Path(name), os.fdopen(fd, "wb"), max_bytes)
+        part = cls(Path(name), os.fdopen(fd, "wb"), max_bytes, cap_setting)
         # `mkstemp` creates at 0600 (right for a secret, wrong for art the mount has to read back
         # under whatever user it runs as). Set the mode on the FD where the platform supports it, so
         # nothing can swap the path between the create and the chmod; `os.supports_fd` is a
@@ -1341,10 +1391,44 @@ class UploadPart:
             raise RuntimeError("upload part is closed")
         self.received += len(chunk)
         if self.received > self._max_bytes:
-            raise MediaWriteError(
-                413, f"the upload is larger than media.write.max_bytes ({self._max_bytes} bytes)"
+            raise StoreWriteError(
+                413, f"the upload is larger than {self._cap_setting} ({self._max_bytes} bytes)"
             )
         self._file.write(chunk)
+
+    def seal(self) -> None:
+        """Flush + fsync + close the temp — the DURABLE half of `finish`, with no verdict attached.
+
+        Split out at D68 so a caller whose admission rules are not media's (the attachment store
+        sniffs kinds rather than matching an extension against `ALLOWED_TYPES`) can run the same
+        ladder in the same order — stream + count, THEN durability, THEN validate the bytes, THEN
+        land them under a final name. Idempotent-ish: a second call is a no-op, because `finish`
+        calls it too.
+        """
+        file = self._file
+        if file is None:
+            return
+        file.flush()
+        os.fsync(file.fileno())
+        file.close()
+        self._file = None
+
+    def land_new(self, target: Path) -> None:
+        """Give the sealed bytes their final NAME, no-clobber, and make that name durable.
+
+        `os.link` is the whole concurrency story (see the class note): the name is either created or
+        the link raises `FileExistsError` → `409`. The temp is then unlinked and the destination
+        directory fsync'd, which is what makes the NAME durable rather than its contents.
+
+        The CREATE arm of `finish`, lifted out whole at D68 so the attachment store's staging write
+        lands through the identical three syscalls instead of a second copy of them.
+        """
+        try:
+            os.link(self.path, target)
+        except FileExistsError:
+            raise StoreWriteError(409, f"{target.name} already exists") from None
+        self.discard()
+        fsync_dir(target.parent)
 
     def finish(self, target: Path, ns: str, role: str, expected_revision: str | None = None) -> MediaFile:
         """Durably put the streamed bytes at their final name and describe the result.
@@ -1366,13 +1450,9 @@ class UploadPart:
         costs the newer of two edits, which is exactly what the precondition promises to catch when it
         can and what the 412 copy tells the owner to redo.
         """
-        file = self._file
-        if file is None:  # pragma: no cover — same
+        if self._file is None:  # pragma: no cover — same
             raise RuntimeError("upload part is closed")
-        file.flush()
-        os.fsync(file.fileno())
-        file.close()
-        self._file = None
+        self.seal()
 
         probe = probe_image(self.path)
         expected = ALLOWED_TYPES.get(target.suffix.lower())
@@ -1381,28 +1461,25 @@ class UploadPart:
             # is a guaranteed broken image — refused at the door rather than listed as `unusable`
             # (an SSH drop has no door; an upload does). It is checked BEFORE either landing, so the
             # ladder reads the same whichever one follows.
-            raise MediaWriteError(
+            raise StoreWriteError(
                 415,
                 f"the bytes are {probe.fmt or 'not an accepted image format'}, which does not match "
                 f"the {target.suffix.lower()} extension",
             )
         if expected_revision is None:
-            try:
-                os.link(self.path, target)
-            except FileExistsError:
-                raise MediaWriteError(409, f"{target.name} already exists") from None
+            self.land_new(target)  # link no-clobber (409) + discard + fsync_dir — the shared CREATE
         else:
             try:
                 current = file_revision(target.stat())
             except OSError:
                 current = None
             if current != expected_revision:
-                raise MediaWriteError(412, STALE_TARGET)
+                raise StoreWriteError(412, STALE_TARGET)
             os.replace(self.path, target)
             # `os.replace` MOVED the temp, so there is nothing left to discard — and `discard()` is
-            # idempotent and never raises, so the shared tail below is still correct.
-        self.discard()
-        fsync_dir(target.parent)
+            # idempotent and never raises, so this tail is still correct.
+            self.discard()
+            fsync_dir(target.parent)
         return describe_file(target, ns, role)
 
     def discard(self) -> None:
@@ -1474,8 +1551,11 @@ def sweep_part_files(home: Path, namespaces: Iterable[str]) -> int:
 
     A `.parts` that is a SYMLINK is refused rather than walked (it would relocate the sweep somewhere
     else entirely — the `ensure_media_dirs` reasoning, one level down); the WRITE path refuses the
-    same shape (`_require_real_scratch_dir`), because a guard only on the cleanup path protects
-    nothing while an upload is running. A namespace whose tree failed the boot check is not passed in.
+    same shape (`require_real_dir`), because a guard only on the cleanup path protects nothing while
+    an upload is running. A namespace whose tree failed the boot check is not passed in.
+
+    The per-directory half is `sweep_scratch_dir` below — the attachment store strands the same
+    temps in its own staging dir's `.parts/` and reclaims them with the same call (D68).
     """
     removed = 0
     for ns in namespaces:
@@ -1483,16 +1563,29 @@ def sweep_part_files(home: Path, namespaces: Iterable[str]) -> int:
         if row is None:
             continue
         for role in row.roles:
-            parts = role_dir(home, ns, role) / PARTS_DIRNAME
-            if parts.is_symlink():
-                continue
-            try:
-                entries = list(parts.iterdir())
-            except OSError:  # no `.parts/` yet, or it is not a directory — nothing to sweep
-                continue
-            for p in entries:
-                if p.name.startswith(PART_PREFIX) and p.name.endswith(PART_SUFFIX):
-                    with contextlib.suppress(OSError):
-                        p.unlink()
-                        removed += 1
+            removed += sweep_scratch_dir(role_dir(home, ns, role))
+    return removed
+
+
+def sweep_scratch_dir(directory: Path) -> int:
+    """Empty ONE directory's `.parts/` of stranded temps; return how many went.
+
+    The per-directory half of `sweep_part_files`, extracted at D68 because the attachment store
+    streams through the same `UploadPart` into its own staging dir and therefore strands the same
+    files there. Every rule above holds unchanged: a symlinked `.parts` is refused rather than
+    walked, and only names matching the temp convention EXACTLY are removed.
+    """
+    parts = directory / PARTS_DIRNAME
+    if parts.is_symlink():
+        return 0
+    try:
+        entries = list(parts.iterdir())
+    except OSError:  # no `.parts/` yet, or it is not a directory — nothing to sweep
+        return 0
+    removed = 0
+    for p in entries:
+        if p.name.startswith(PART_PREFIX) and p.name.endswith(PART_SUFFIX):
+            with contextlib.suppress(OSError):
+                p.unlink()
+                removed += 1
     return removed

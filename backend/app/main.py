@@ -47,6 +47,9 @@ from app.api import (
     services,
 )
 from app.api import (
+    attachments as attachments_api,
+)
+from app.api import (
     media as media_api,
 )
 from app.api import (
@@ -71,6 +74,7 @@ from app.config import (
     loggable,
     validation_detail,
 )
+from app.core.attachments import sweep as attachments_sweep
 from app.core.events import EventBus
 from app.core.media import (
     MEDIA_FILES_SEGMENT,
@@ -259,7 +263,9 @@ async def lifespan(app: FastAPI):
     # boot registry that fed voice/embeddings above, so the three can't drift and share the ONE
     # `app.state.endpoint_gates` (D42 Codex FIX 1: the cap is never split across generations).
     set_inference(app, boot_registry)
-    app.state.threads = ThreadRepo(app.state.db)
+    # `home=` is the D68 retention hook: deleting a thread deletes its attachment directory, which is
+    # the only thing that can — the SQLite cascade cannot reach the filesystem.
+    app.state.threads = ThreadRepo(app.state.db, home=app.state.settings.home_dir())
     app.state.messages = MessageRepo(app.state.db)
     # Skills (Phase 4.5): file-discovered SKILL.md bundles + the default selection strategy. Built
     # once; the provider re-scans the dir per call so a dropped-in skill is live without a restart.
@@ -316,6 +322,26 @@ async def lifespan(app: FastAPI):
             logger.info("reconciled %d stale calls from a previous run", n_stale)
     except Exception:
         logger.exception("startup stale-call reconcile failed — continuing")
+
+    # Attachment retention (D68 §2/§3), beside the reconcile above and for the same reasons: it needs
+    # the repos, at boot there is never a live turn to race, and it is BEST-EFFORT — a filesystem or
+    # DB hiccup must not abort startup over housekeeping. Two arms in one call: aged staging files
+    # nothing ever claimed, and files inside live thread dirs that no persisted `AttachmentPart`
+    # references (the claim-renames-then-inserts crash window). Both are age-bounded by
+    # `attachments.staging_orphan_hours` — the same number the claim refuses past, so a file the
+    # sweep takes was never claimable any more.
+    try:
+        n_swept = await asyncio.to_thread(
+            attachments_sweep,
+            app.state.settings.home_dir(),
+            live_thread_ids=[t.id for t in await app.state.threads.list(include_archived=True)],
+            referenced=await app.state.messages.attachment_paths(),
+            max_age_s=app.state.settings.attachments.staging_orphan_s,
+        )
+        if n_swept:
+            logger.info("attachments: reclaimed %d unreferenced file(s) at startup", n_swept)
+    except Exception:
+        logger.exception("startup attachment sweep failed — continuing")
 
     # Scheduled automations (A3/D49). The repo + service are wired first (the API and the agent tools
     # read them off app.state), then the boot ORPHAN SWEEP, and only THEN the poll loop — the ordering is
@@ -549,6 +575,9 @@ def create_app() -> FastAPI:
     app.include_router(access_api.router, prefix="/api")
     app.include_router(automations.router, prefix="/api")
     app.include_router(media_api.router, prefix="/api")
+    # Composer attachments (D68): the staging PUT. Registered beside the media write path it rides —
+    # same raw-body/no-multipart posture, same no-CORS defence (SECURITY_MODEL §2.7).
+    app.include_router(attachments_api.router, prefix="/api")
 
     # Owner media (D52/G5, GACHA_PLAN §10.4): the namespace-generic read-only library over
     # `$CTRLB_HOME/media/<ns>/`. Three orderings are load-bearing here:

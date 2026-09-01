@@ -56,6 +56,17 @@ server:
 #             - bundled: pegasus     # a shipped default, listed as a first-class library entry
 #       slots: {wallpaper: lyra-2}   # a pin: the value is a file STEM (or a bundled id)
 
+# Composer attachments (D68) — files attached to a chat message. The FILES live under
+# $CTRLB_HOME/attachments/ (a flat `staging/` landing plus one directory per thread) and are written
+# only by the app, so this block is knobs alone. `max_file_mb` is the streamed upload cap, counted as
+# the body arrives (never from Content-Length); `max_files_per_message` bounds one send;
+# `staging_orphan_hours` is how long an uploaded-but-never-sent file stays claimable — the same number
+# the boot sweep reclaims by, so the two can never disagree about the same file.
+# attachments:
+#   max_files_per_message: 10
+#   max_file_mb: 10
+#   staging_orphan_hours: 24
+
 # Tailscale Serve (Phase 6c-2, D20) — the in-app HTTPS toggle (Conf → Access). `serve` only, never
 # funnel (tailnet-only by construction). `target_port` = the local port Serve fronts: 5433 (the
 # default) is the backend-served prod SPA; set 5173 to front the dev Vite server instead. Also

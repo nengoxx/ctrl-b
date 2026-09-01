@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -48,7 +48,7 @@ from app.core.media import (
     MEDIA_NAMESPACES,
     MediaFile,
     MediaIndex,
-    MediaWriteError,
+    StoreWriteError,
     UploadPart,
     admission_reason,
     build_index,
@@ -244,17 +244,22 @@ def _role_directory(request: Request, ns: str, role: str) -> Path:
     return role_dir(request.app.state.settings.home_dir(), ns, role)
 
 
-def _admit(filename: str) -> None:
+def admit_filename(filename: str, *, allowed_suffixes: Collection[str] | None = None) -> None:
     """Refuse a filename this surface may not CREATE — with the reason, never a sanitised name (§3).
 
     Two statuses, because they are two different facts: a name carrying a path separator (a traversal
     attempt, or `%2F` after the server decoded it) addresses nothing inside this role, so it is a
     **404** like any other path that is not there; every other refusal is about the NAME the client
     chose, which is a **422** it can act on by minting the next one.
+
+    Public and parameterised since D68: the attachment staging PUT is the same shape of route with
+    the same two answers, and `allowed_suffixes` is the one thing that differs (its own kinds vs the
+    media image allowlist). Sharing the status MAPPING as well as `admission_reason` itself is what
+    keeps "a path-shaped name is a 404 everywhere" a rule rather than a coincidence.
     """
     if "/" in filename or filename in ("", ".", ".."):
         raise HTTPException(status_code=404, detail="not found")
-    reason = admission_reason(filename)
+    reason = admission_reason(filename, allowed_suffixes=allowed_suffixes)
     if reason is not None:
         raise HTTPException(status_code=422, detail=reason)
 
@@ -302,7 +307,7 @@ async def media_upload(ns: str, role: str, filename: str, request: Request, resp
     405 by `StaticFiles` — one URL space, one answer for "there is nothing there".
     """
     directory = _role_directory(request, ns, role)
-    _admit(filename)
+    admit_filename(filename)
     # Case-insensitive by Starlette's own header mapping. An EMPTY value is a present precondition
     # that matches nothing — a 412 — rather than an absent one: a client that sent the header meant to
     # state a precondition, and guessing it meant "create" is how a replace becomes a second copy.
@@ -317,7 +322,7 @@ async def media_upload(ns: str, role: str, filename: str, request: Request, resp
         async for chunk in request.stream():
             part.write(chunk)
         if part.received == 0:
-            raise MediaWriteError(422, "the request body is empty")
+            raise StoreWriteError(422, "the request body is empty")
         row = await asyncio.to_thread(part.finish, directory / filename, ns, role, expected_revision)
         # The route's declared status is the CREATE's. A replace reached here only by satisfying its
         # precondition, so nothing was created and `201` would be a lie about a name that already
@@ -325,7 +330,7 @@ async def media_upload(ns: str, role: str, filename: str, request: Request, resp
         if expected_revision is not None:
             response.status_code = 200
         return row
-    except MediaWriteError as exc:
+    except StoreWriteError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from None
     finally:
         if part is not None:

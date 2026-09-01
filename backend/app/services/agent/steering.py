@@ -54,6 +54,13 @@ class SteerEntry:
     agent: str | None = None
     privilege: str | None = None
     skills: list[str] | None = None
+    #: The staged `attachment_id`s this steer carries (D68 / plan §3, council E7). Sending WHILE
+    #: STREAMING is a supported path, so a steer that names files must carry them — dropping them
+    #: here would silently lose the owner's photo the moment they sent it a second too early. The
+    #: ids stay UNCLAIMED in the queue: the drain claims them into the thread when it persists the
+    #: message, which is the only place a thread id is in scope. One more optional field on the
+    #: unified submission object, never a parallel id-keyed map (the extend-don't-migrate directive).
+    attachments: list[str] = field(default_factory=list)
     entry_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     created_at: datetime = field(default_factory=_now)
 

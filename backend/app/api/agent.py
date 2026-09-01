@@ -27,12 +27,13 @@ from typing import Any, Literal
 import yaml
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import Response
 
 from app.config import Settings, deep_merge, is_provider_slug, providers_rev
 from app.core.fsutil import write_text_eol
+from app.core.media import StoreWriteError
 from app.core.memory import StoreScope, StoreSpec, store_by_key
 from app.domain.agent import AgentDef
 from app.domain.automation import AutomationSnapshot
@@ -42,6 +43,7 @@ from app.domain.event import ORIGIN_USER_CHAT, Event, Origin
 from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import clear_reasoning_demotions, rediscover_integrations
+from app.services.agent.attachments import claim_attachments
 from app.services.agent.compaction import compaction_state_for, prune_compaction_state
 from app.services.agent.exec import run_user_exec
 from app.services.agent.planning import TaskPlanInput
@@ -101,8 +103,16 @@ def _coerce_mode(v: object) -> object:
 
 
 class ChatRequest(BaseModel):
-    text: str = Field(min_length=1)
+    #: **May be empty IFF the send carries attachments** (D68 / plan §7): "send a photo with no
+    #: caption" is an ordinary composer gesture, and the old `min_length=1` made it a 422 at the door.
+    #: The pair is checked in `_text_or_attachments` below rather than by the field, because the rule
+    #: is about the two fields together.
+    text: str = ""
     thread_id: str | None = None
+    #: Staged `attachment_id`s from `PUT /api/attachments/staging/{filename}` (D68 §3). Opaque and
+    #: server-minted: the client never names a path, and the server builds every `AttachmentPart`
+    #: itself at claim (E2). Additive with an empty default, so every existing client is unaffected.
+    attachments: list[str] = Field(default_factory=list)
     mode: str | None = None  # a `/<provider>` name (A11 D48 C7); None → the configured default chain
     skills: list[str] = Field(default_factory=list)  # explicit /skill-name invocations (4.5)
     agent: str | None = None  # `/agent <name>` switch (7d); None → the thread's / configured default
@@ -127,6 +137,15 @@ class ChatRequest(BaseModel):
     @classmethod
     def _known_privilege(cls, v: object) -> object:
         return _coerce_privilege(v)
+
+    @model_validator(mode="after")
+    def _text_or_attachments(self) -> "ChatRequest":
+        """A send must carry SOMETHING (D68 §7). Empty text is legal only with attachments — the
+        model-facing wire text for that case is S2's `ATTACHMENT_ONLY_TEXT`; this rule is just the
+        door, and an empty POST with no files is still the 422 it always was."""
+        if not self.text and not self.attachments:
+            raise ValueError("a message needs text, an attachment, or both")
+        return self
 
 
 class ExecRequest(BaseModel):
@@ -1120,12 +1139,23 @@ async def list_messages(thread_id: str, request: Request) -> list[dict[str, Any]
 async def chat(body: ChatRequest, request: Request) -> Response:
     """Run one chat turn. Body: `{text, thread_id?, mode?, stream?, …}`. Returns SSE (DESIGN §12) or,
     when buffered (D17), one JSON payload `{threadId, title, state, messageId?, permission?, …}`."""
+    # D68: the per-message ceiling is checked HERE, before the steer branch below — a steer is queued
+    # unclaimed and would otherwise be accepted at 202 and refused at drain, where the owner cannot
+    # act on it. 422, because it is a fact about the request the client can fix by sending fewer.
+    cap = request.app.state.settings.attachments.max_files_per_message
+    if len(body.attachments) > cap:
+        raise HTTPException(
+            status_code=422,
+            detail=f"a message may carry at most {cap} attachments (attachments.max_files_per_message)",
+        )
     threads = request.app.state.threads
     thread = await threads.get(body.thread_id) if body.thread_id else None
     if thread is not None:
         await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
     if thread is None:
-        thread = await threads.create(Thread(title=body.text[:60]))
+        # `or None` for the attachment-only send (D68 §7): a title of "" would render as a named
+        # thread with no name. Titling from the attached filenames is S2/S3's, with the wire text.
+        thread = await threads.create(Thread(title=body.text[:60] or None))
 
     # Apply any pending MCP/OpenAPI integration edits at the turn boundary (Phase 7c-b) — before the
     # session reads the toolset, so the registry is rebuilt between turns, never mid-loop. ACA-17
@@ -1156,6 +1186,9 @@ async def chat(body: ChatRequest, request: Request) -> Response:
         agent=body.agent,
         privilege=body.privilege.value if body.privilege is not None else None,
         skills=body.skills,
+        # D68 (E7): the ids ride the entry UNCLAIMED — the drain claims them when it persists the
+        # steer's message, so a send-while-streaming keeps its files instead of dropping them.
+        attachments=body.attachments,
     )
     # CAP-SHADOWS-STEER corner fix (D41 wave-1): check the LIVE holder synchronously BEFORE the reserve
     # — if a chat/resume turn already owns this thread, enqueue directly (never touching
@@ -1179,10 +1212,19 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     try:
         # The marker is held now, so the pre-reserve reads above are stable from here on (wave 2).
         await _revalidate_thread(state, thread.id)
+        # D68 §3: CLAIM the staged files BEFORE the turn starts. The thread exists now, so the final
+        # (collision-suffixed) names can be resolved; a consumed/expired/unknown id refuses the whole
+        # send (409, naming the fix) rather than starting a turn that silently lost a file.
+        try:
+            attachments = await claim_attachments(state.settings, thread.id, body.attachments)
+        except StoreWriteError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.detail) from None
         session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
         handle.mode = body.mode  # the turn's inference mode — the snapshot carries it (D39)
-        events = session.run_turn(thread, body.text, mode=body.mode, skills=body.skills)
+        events = session.run_turn(
+            thread, body.text, mode=body.mode, skills=body.skills, attachments=attachments
+        )
         return await _turn_response(request, thread, events, stream=stream, handle=handle)
     except Exception:
         # Release only PRE-handoff. Once `_turn_response` spawned the drain task (`handle.task` set),

@@ -1251,6 +1251,43 @@ class MediaCfg(BaseModel):
     namespaces: dict[str, MediaNsCfg] = Field(default_factory=dict)
 
 
+class AttachmentsCfg(BaseModel):
+    """`attachments` — composer attachments (D68 / ATTACHMENTS_PLAN §6).
+
+    One block for the whole feature, grown with optional fields as the slices land (the
+    extend-don't-migrate directive): S1 owns the three knobs the STORE needs — how many files one
+    message may carry, how big one file may be, and how long an unclaimed staging file survives —
+    and the model-feed knobs (`max_inline_chars`, `image_tokens`, `resend`, …) join as additive
+    fields with defaults when S2 reads them. `extra="allow"` so a config written by a later slice
+    round-trips through this build instead of being dropped on save.
+
+    - `max_files_per_message`: the per-send ceiling the chat POST refuses past. A ceiling on the
+      CLAIM rather than on the store: staging is id-addressed and has no message to belong to yet.
+    - `max_file_mb`: the streamed upload cap. The mint counts the body as it arrives and answers
+      `413` past this — never from `Content-Length`, which is a claim (R55).
+    - `staging_orphan_hours`: how long a staged file may sit unclaimed. It is BOTH the boot sweep's
+      cutoff and the claim's freshness test, deliberately one number: a file the sweep would reclaim
+      must not still be claimable, or the two rules would disagree about the same file.
+    """
+
+    model_config = {"extra": "allow"}
+
+    max_files_per_message: int = Field(default=10, gt=0)
+    max_file_mb: int = Field(default=10, gt=0)
+    staging_orphan_hours: int = Field(default=24, gt=0)
+
+    @property
+    def max_bytes(self) -> int:
+        """`max_file_mb` in bytes — computed HERE so the route, the ladder's 413 and the tests can
+        never each do their own multiplication."""
+        return self.max_file_mb * 1024 * 1024
+
+    @property
+    def staging_orphan_s(self) -> float:
+        """`staging_orphan_hours` in seconds, for the same reason."""
+        return self.staging_orphan_hours * 3600.0
+
+
 class Settings(BaseModel):
     """Typed view over `config.yaml`.
 
@@ -1291,6 +1328,11 @@ class Settings(BaseModel):
     #: loads the defaults, which is what keeps every consumer on its bundled art until the owner
     #: touches the gallery.
     media: MediaCfg = Field(default_factory=MediaCfg)
+    #: Composer attachments (D68) — the store/transport tunables. A sibling of `media`, not a key
+    #: inside it: the two share a persist PIPELINE (council E9) but not a purpose, and folding
+    #: attachment knobs under `media.write` would make one cap answer for the owner's art library and
+    #: for whatever the phone attaches to a chat.
+    attachments: AttachmentsCfg = Field(default_factory=AttachmentsCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`
