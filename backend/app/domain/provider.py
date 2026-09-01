@@ -54,6 +54,12 @@ class ResolvedTarget(BaseModel):
     model: str = ""  # the WIRE model id sent to the server (the catalog id, or a raw passthrough id)
     context_window: int | None = None  # chat; D42 explicit-window (explicit > probe > None)
     extra_body: dict[str, Any] = Field(default_factory=dict)  # chat-call passthrough (MODEL-level home)
+    #: What this model accepts as INPUT (D68 §5) — the external convention (OpenRouter's
+    #: `architecture.input_modalities`, the opencode/goose catalogs), not a `vision: bool`: a bool
+    #: guarantees a sibling bool the day audio matters, a list grows by one string. `None`/absent =
+    #: TEXT-ONLY, the conservative default — an unannotated endpoint is assumed unable to see images,
+    #: because the failure mode of guessing wrong the other way is a 400 mid-conversation.
+    input_modalities: list[str] | None = None
     # Role fields (schema-complete in Slice 1; consumed by the voice/embeddings adapters in Slice 2).
     language: str | None = None  # STT
     voice: str | None = None  # TTS
@@ -67,6 +73,13 @@ class ResolvedTarget(BaseModel):
     #: Effective same-endpoint retry budget (D43): provider override > section global. None only when the
     #: section has no global (unreachable for chat — InferenceCfg.retry_attempts has a default).
     retry_attempts: int | None = None
+
+    @property
+    def accepts_images(self) -> bool:
+        """May this target be sent image content? (D68 §5.) The ONE reading of `input_modalities`, so
+        the per-hop strip and any later consumer (an FE "this model can't see images" hint) can never
+        answer it differently."""
+        return "image" in (self.input_modalities or ())
 
 
 class SectionPolicy(BaseModel):

@@ -152,6 +152,7 @@ def test_no_secret_looking_field_is_unclassified() -> None:
         "max_tokens",
         "max_tokens_field",
         "reasoning_tokens",
+        "image_tokens",  # D68: what one attached image is PRICED at by the estimator, not a credential
         # D65: `media…files[].key` is the NAMED-role binding key a file answers to (a service kind, a
         # machine name) — owner-facing identity, printed in the gallery, never a credential.
         "key",

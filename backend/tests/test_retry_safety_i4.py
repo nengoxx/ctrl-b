@@ -28,6 +28,7 @@ RETRY_SAFE = {
     "tailscale_serve_disable",
     "task_plan",
     "session_search",
+    "read_attachment",  # D68: opens a stored file, changes nothing
     "dns_trace",
     "ip_info",
     "yt_captions",

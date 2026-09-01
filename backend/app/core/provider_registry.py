@@ -347,6 +347,7 @@ def _build_target(
         wire_id = model_cfg.id or model_name
         ctx = model_cfg.context_window
         extra = dict(model_cfg.extra_body)
+        modalities = list(model_cfg.input_modalities) if model_cfg.input_modalities is not None else None
         mtf = model_cfg.max_tokens_field or pcfg.max_tokens_field or _derive_max_tokens_field(pcfg.api_mode)
         voice, speed, language, fmt, dim = (
             model_cfg.voice,
@@ -359,6 +360,7 @@ def _build_target(
         wire_id = model_name
         ctx = None
         extra = {}
+        modalities = None  # an uncataloged raw id carries no metadata at all — text-only (D68 §5)
         mtf = pcfg.max_tokens_field or _derive_max_tokens_field(pcfg.api_mode)
         voice = speed = language = fmt = dim = None
     gid = canonical_base_url(pcfg.base_url)
@@ -372,6 +374,7 @@ def _build_target(
         model=wire_id,
         context_window=ctx,
         extra_body=extra,
+        input_modalities=modalities,
         language=language,
         voice=voice,
         speed=speed,

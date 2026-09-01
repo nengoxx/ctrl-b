@@ -31,8 +31,9 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from app.adapters.inference import InferenceClient, InferenceError, StreamReport
-from app.config import CompactionCfg, Settings
+from app.config import AttachmentsCfg, CompactionCfg, Settings
 from app.domain.conversation import (
+    AttachmentPart,
     CallUsage,
     Message,
     TextPart,
@@ -41,6 +42,7 @@ from app.domain.conversation import (
     ToolResultPart,
 )
 from app.domain.enums import Actor
+from app.services.agent.attachments import priced_inline_chars
 from app.services.agent.prompts import resolve
 from app.services.agent.turns import _SUSPEND_CALL_STATES
 from app.services.conversation import MessageRepo
@@ -121,14 +123,32 @@ class _SummaryCall:
 #: One constant, one heuristic — not two competing estimators.
 CHARS_PER_TOKEN = 4
 
+#: The attachment prices to use when a caller has no `Settings` in hand (a unit test, a helper that
+#: only prices text). The DEFAULTS OF THE CONFIG CLASS, never numbers restated here: `attachments.*`
+#: has exactly one home (D68 §6), and a second copy of "1000 tokens per image" would be a knob the
+#: owner could turn without moving the estimate. Every production path passes the live config.
+_DEFAULT_ATTACHMENTS = AttachmentsCfg()
 
-def estimate_tokens(messages: list[Message]) -> int:
+
+def estimate_tokens(messages: list[Message], attachments: AttachmentsCfg | None = None) -> int:
     """Rough token estimate for the working context — ~4 chars/token plus per-message overhead.
 
     Reasoning parts are excluded (they're the model's scratchpad, never replayed into context by
     `_assemble`); tool calls/results are counted at the size they round-trip into the OpenAI payload.
-    Deliberately cheap + slightly conservative (overestimating just compacts a little earlier)."""
+    Deliberately cheap + slightly conservative (overestimating just compacts a little earlier).
+
+    **Attachments (D68 §4.1 H3)** are priced at READ, from the persisted facts plus the live
+    `attachments:` knobs (`attachments`, defaulting to the config class's own defaults): an image
+    costs `image_tokens`, and a text file costs what its §4.2 injection will actually carry
+    (`min(inline_chars, max_inline_chars)` plus the marker). Without this arm every attachment is
+    free to the estimator, so a thread of photos silently sails past the compaction trigger and
+    overflows the window instead of folding — which is why it is an explicit slice item and not a
+    later polish. Deliberately price-as-if-sent: an image degraded to a stub by the per-request
+    ceiling still costs `image_tokens` here, which keeps the estimate on the conservative side the
+    rest of this function is on."""
+    cfg = attachments if attachments is not None else _DEFAULT_ATTACHMENTS
     chars = 0
+    tokens = 0  # priced directly in TOKENS (images), not in characters — see the attachment arm
     for m in messages:
         chars += 4  # role + framing overhead per message
         for p in m.parts:
@@ -139,8 +159,13 @@ def estimate_tokens(messages: list[Message]) -> int:
             elif isinstance(p, ToolResultPart):
                 r = p.result
                 chars += len(r.summary) + len(r.output or "") + len(r.error or "")
+            elif isinstance(p, AttachmentPart):
+                if p.kind == "image":
+                    tokens += cfg.image_tokens
+                else:
+                    chars += priced_inline_chars(p, cfg)
             # ReasoningPart intentionally skipped (dropped from context)
-    return chars // CHARS_PER_TOKEN
+    return chars // CHARS_PER_TOKEN + tokens
 
 
 def estimate_payload_tokens(payload: list[dict]) -> int:
@@ -422,7 +447,12 @@ class ContextEstimator:
         `return_progress`/`include_usage` reports no total);
       - the watermark message no longer in history (a defensive backstop to the explicit fold call)."""
 
-    def __init__(self) -> None:
+    def __init__(self, attachments: AttachmentsCfg | None = None) -> None:
+        #: The live `attachments:` prices, handed down by the session (which holds `Settings`) so the
+        #: heuristic arm below prices files from ONE source — the estimator never reads Settings itself
+        #: (D42: the session owns the state, this owns the arithmetic). `None` (a unit test building a
+        #: bare estimator) falls through to the config class's own defaults inside `estimate_tokens`.
+        self._attachments = attachments
         self._anchor: int | None = None
         self._watermark_id: str | None = None
         self._served_key: str | None = None
@@ -466,7 +496,7 @@ class ContextEstimator:
         estimate_tokens(messages after the watermark)` — the anchor already accounts for head+tools, so
         `overhead` is NOT re-added; the anchor-time clearing set rides on `cleared_at_anchor` (R1).
         Otherwise: `estimate_tokens(history) + overhead` with `cleared_at_anchor=None`."""
-        heuristic = ContextEstimate(estimate_tokens(history) + overhead, anchored=False)
+        heuristic = ContextEstimate(estimate_tokens(history, self._attachments) + overhead, anchored=False)
         if self._anchor is None or self._watermark_id is None:
             return heuristic
         if served_key is None or served_key != self._served_key:
@@ -475,7 +505,7 @@ class ContextEstimator:
         if idx is None:
             return heuristic  # watermark folded away — backstop to the explicit fold-invalidation
         return ContextEstimate(
-            self._anchor + estimate_tokens(history[idx:]),
+            self._anchor + estimate_tokens(history[idx:], self._attachments),
             anchored=True,
             cleared_at_anchor=self._cleared_at_anchor,
         )
@@ -606,13 +636,13 @@ class Compactor:
         # outputs are already replaced by the tiny placeholder, so comparing the summary against the
         # untrimmed head would over-accept a summary that only "shrinks" against fat, already-cleared
         # output. Credit only the head's own cleared outputs, at the plan's per-output price (one home).
-        head_net = estimate_tokens(head)
+        head_net = estimate_tokens(head, self._settings.attachments)
         if clearing is not None and not clearing.empty:
             head_cleared = {
                 rp.call_id for m in head for rp in m.tool_results() if rp.call_id in clearing.cleared_call_ids
             }
             head_net -= clearing.gain_over(head_cleared)
-        if estimate_tokens([boundary]) >= head_net:
+        if estimate_tokens([boundary], self._settings.attachments) >= head_net:
             return CompactionResult(summary_id="", removed=0, truncated=truncated, rejected=True)
         # SYS-1: the summary insert + the per-message `compacted` flips are one logical edit — commit
         # them atomically so a crash mid-loop can't leave the summary AND the unfolded originals both
@@ -646,7 +676,11 @@ class Compactor:
         of the free assembly-time trim (see the credit rule below); `None` = no trim credit."""
         if not self._cfg.enabled:
             return False
-        estimate = estimate_tokens(history) if estimated_tokens is None else estimated_tokens
+        estimate = (
+            estimate_tokens(history, self._settings.attachments)
+            if estimated_tokens is None
+            else estimated_tokens
+        )
         # D42 §E / §4-v2 + R1: subtract the free assembly-time clearing trim so the trigger prices the
         # context AS IT WILL BE SENT. The credit depends on the estimator mode: HEURISTIC mode (no
         # `cleared_at_anchor`) still counts every cleared output in the history estimate, so credit the
@@ -737,7 +771,10 @@ class Compactor:
         msg_cut = len(history) - self._cfg.keep_last_messages
         # Token floor: expand the tail (walk `tok_cut` left) until it holds ≥ keep_recent_tokens.
         tok_cut = len(history)
-        while tok_cut > 0 and estimate_tokens(history[tok_cut:]) < self._cfg.keep_recent_tokens:
+        while (
+            tok_cut > 0
+            and estimate_tokens(history[tok_cut:], self._settings.attachments) < self._cfg.keep_recent_tokens
+        ):
             tok_cut -= 1
         cut = min(msg_cut, tok_cut)  # keep whichever floor preserves MORE recent context
         # (1) Suspend-snap: BEFORE the earliest suspended-call message within the head. Uses turns.py's
@@ -839,9 +876,30 @@ class Compactor:
         return SUMMARY_PREFIX + body, False
 
 
+def _attachment_manifest(m: Message) -> str:
+    """The bounded attachment manifest for one folded user turn (D68 §4.5), or `""`.
+
+    `[attached: photo 1.jpg (image), notes.txt (text)]` — the EXACT stored names, which is the whole
+    point: the fold is where a file's identity would otherwise be lost (the bytes never enter the
+    transcript, and `_assemble` reads `include_compacted=False`, so a compacted attachment is simply
+    absent from the next prompt). With the names in the summary the model can still call
+    `read_attachment("notes.txt")` twenty turns later, which is what makes the durable store durable
+    (council O-H2/E6, convergent).
+
+    Bounded by construction rather than by a cap of its own: one message carries at most
+    `attachments.max_files_per_message` files and each name is byte-budgeted at admission, so the line
+    cannot grow with the thread."""
+    parts = m.attachments()
+    if not parts:
+        return ""
+    return " [attached: " + ", ".join(f"{p.name} ({p.kind})" for p in parts) + "]"
+
+
 def _render_transcript(head: list[Message]) -> str:
     """Render the messages to fold into a plain-text transcript for the summarizer. Tool calls +
-    their results are mapped by `call_id` so each action reads as a single line with its outcome."""
+    their results are mapped by `call_id` so each action reads as a single line with its outcome.
+    A user turn that carried files appends its attachment manifest (D68 §4.5) — names + kinds only,
+    never bytes."""
     tool_names: dict[str, str] = {}
     for m in head:
         for cp in m.tool_calls():
@@ -851,8 +909,11 @@ def _render_transcript(head: list[Message]) -> str:
     for m in head:
         text = m.text().strip()
         if m.role == "user":
-            if text:
-                lines.append(f"User: {text}")
+            manifest = _attachment_manifest(m)
+            # An attachment-only send (§7) has NO text part at all, so the old `if text` would have
+            # dropped the whole turn — and with it the only record that a file was ever attached.
+            if text or manifest:
+                lines.append(f"User: {text}{manifest}")
         elif m.role == "system":
             # A prior rolling summary — feed it back so it's carried forward, not lost.
             body = text.removeprefix(SUMMARY_PREFIX).strip()

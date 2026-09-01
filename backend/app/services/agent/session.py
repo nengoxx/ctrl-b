@@ -49,9 +49,11 @@ from app.adapters.inference import (
     InferenceError,
     RetryNotice,
     StreamReport,
+    image_part,
     is_context_overflow,
 )
 from app.config import Settings
+from app.core.attachments import StoredReadError
 from app.core.media import StoreWriteError
 from app.core.memory import MemoryProvider
 from app.core.permissions import Decision, decide
@@ -78,7 +80,17 @@ from app.domain.provider import ResolvedTarget
 from app.domain.result import ToolResult
 from app.runtime import grant_approval
 from app.services.action_service import ActionService, InvokeOutcome
-from app.services.agent.attachments import claim_attachments
+from app.services.agent.attachments import (
+    ATTACHMENT_ONLY_TEXT,
+    claim_attachments,
+    dimensions_notice,
+    document_stub,
+    image_stub,
+    read_data_url,
+    read_pdf_page,
+    read_text_page,
+    render_inline,
+)
 from app.services.agent.compaction import (
     OUTPUT_CLEARED_PLACEHOLDER,
     ClearingPlan,
@@ -88,6 +100,7 @@ from app.services.agent.compaction import (
     ContextEstimator,
     estimate_payload_tokens,
     plan_clearing,
+    turn_start_index,
 )
 from app.services.agent.core_memory import CORE_MEMORY_TOOL, CoreMemoryCorpus, RecallState
 from app.services.agent.core_memory_tool import RECALL_RECEIPT, is_recall_call
@@ -503,7 +516,9 @@ class AgentSession:
         #: holds the telemetry anchor + watermark that price the window-aware trigger, invalidated on a
         #: fold / served-endpoint change / degraded telemetry. Fresh per turn (session is per-turn), so
         #: no anchor leaks across turns; iteration 1 always runs in heuristic+overhead mode.
-        self._estimator = ContextEstimator()
+        #: …and it carries the live `attachments:` prices (D68 §4.1 H3), because the session is where
+        #: `Settings` lives: the estimator does the arithmetic, the session hands it the knobs.
+        self._estimator = ContextEstimator(settings.attachments)
         #: Per-turn skill state (4.5), set by `_activate_skills` at the start of run_turn. The
         #: effective tool allowlist defaults to the agent's; active skills may narrow it.
         self._skills_note: str | None = None
@@ -551,6 +566,12 @@ class AgentSession:
         #:     resumed half, because a resume builds a FRESH session (ACA-15e). The steering text
         #:     itself is in the transcript as a persisted tool result either way.
         self._stamps: dict[str, str] = {}
+        #: Per-turn cache of the WIRE form of each attachment, keyed by its store path (D68 §4.1,
+        #: council E5): an image's `data:` URL, a text file's framed page. `_assemble` runs once per
+        #: loop iteration and would otherwise re-read and re-base64 tens of megabytes on every model
+        #: call. Plain and strong (no revision key) because a claimed attachment is IMMUTABLE — see
+        #: `_attachment_wire` — and per-turn like the caches above, so it needs no eviction.
+        self._attachment_cache: dict[str, str] = {}
 
     def _system_prompt(self) -> str:
         """The agent's own prompt wins; then the global `inference.system_prompt` override; then the
@@ -766,11 +787,21 @@ class AgentSession:
         `call_id` is in `clearing.cleared_call_ids` renders its OUTPUT as the placeholder (assembly-time
         only — the DB row stays verbatim, A12). `None` (the resume/finalize legacy callers) → no trim.
 
+        **Attachments (D68 §4.1/§4.2/§4.5).** A user turn that carried files is the ONE place the
+        content stops being a plain string: images ride as OpenAI `image_url` parts beside the text,
+        text files are injected INTO the text as tool-output-framed pages, and anything not sent this
+        request degrades to a stub naming the file. A turn with no attachments renders exactly as it
+        always did, byte for byte — which is what keeps every existing thread's prompt (and its prefix
+        cache) unchanged.
+
         History is re-read every iteration on purpose: `_compactor.compact` runs before each model call
         and can fold older turns into a summary, so the history (the cache TAIL) legitimately changes —
         only the static head above is held stable."""
         cleared_ids = clearing.cleared_call_ids if clearing is not None else frozenset()
         history = await self._messages.list(thread.id, include_compacted=False)
+        # Decided ONCE for the whole assembled request, before a single byte is read (§4.1): the
+        # per-request image ceiling is a property of the payload, not of any one message.
+        sent_images = self._images_to_send(history)
         results: dict[str, ToolResult] = {}
         for m in history:
             for rp in m.tool_results():
@@ -829,7 +860,19 @@ class AgentSession:
                     out.append({"role": "assistant", "content": text})
             else:  # user / system
                 text = m.text()
-                if text:
+                files = m.attachments() if m.role == "user" else []
+                if files:
+                    content, notice = await self._render_attachments(thread, text, files, sent_images)
+                    out.append({"role": m.role, "content": content})
+                    if notice:
+                        # The dimensions notice (§4.1, main-seat amendment) is its own developer-role
+                        # line rather than words inside the owner's turn: it is the SERVER stating what
+                        # it sent, and putting it in the user's mouth would be a small lie in the one
+                        # place the model is reasoning about pixels. It sits AFTER the turn it
+                        # describes; `normalize_system_messages` re-roles it in place, like any other
+                        # mid-history system line.
+                        out.append({"role": "system", "content": notice})
+                elif text:
                     out.append({"role": m.role, "content": text})
         # Periodic reflection nudge (D27-C) as an EPHEMERAL TAIL layer — appended AFTER history so it
         # never sits inside the cached static head (Hermes ephemeral-layer pattern; volatile content goes
@@ -840,6 +883,100 @@ class AgentSession:
             out.append({"role": "system", "content": self._reflection_nudge()})
             self._reflect_now = False
         return out
+
+    def _images_to_send(self, history: list[Message]) -> set[str]:
+        """The store paths of the image attachments THIS assembled request carries as real bytes
+        (D68 §4.1/§4.5). Everything else degrades to the §4.5 stub.
+
+        Two bounds, applied in this order:
+
+          * `attachments.resend` off → only the CURRENT logical turn's images are eligible. The turn
+            boundary is `turn_start_index` — the same definition the recall budget and Tier-1 immunity
+            use, so "this turn" means one thing in the codebase (a mid-turn steer's photo counts as
+            this turn's, which is what the owner means by attaching it).
+          * `max_images_per_request` → the NEWEST that many survive; the oldest degrade first, which
+            is the accepted prefix-churn residual (§10, O-conf N2): each image-adding turn past the
+            ceiling rewrites the front of the assembled payload, bounded and observable through the
+            per-call `cached_tokens` telemetry D62 already persists. A ceiling of 0 sends none.
+        """
+        cfg = self._settings.attachments
+        if cfg.max_images_per_request <= 0:
+            return set()
+        start = 0 if cfg.resend else turn_start_index(history)
+        eligible = [
+            p.path for m in history[start:] if m.role == "user" for p in m.attachments() if p.kind == "image"
+        ]
+        return set(eligible[-cfg.max_images_per_request :])
+
+    async def _render_attachments(
+        self,
+        thread: Thread,
+        text: str,
+        files: list[AttachmentPart],
+        sent_images: set[str],
+    ) -> tuple[object, str | None]:
+        """One user turn's wire content + its dimensions notice (D68 §4.1/§4.2/§4.5).
+
+        The content is a plain STRING unless real images ride along, in which case it is the OpenAI
+        parts list `[text, image_url…]` (the 7/7 field shape). Text attachments are injected into the
+        text half as D64-framed tool OUTPUT rather than as prose about a call (§4.2, council O-M7);
+        a PDF resolves to its extracted-text sidecar when S4 has written one, and to an honest stub
+        naming `read_attachment` until then.
+
+        Every file read goes through the per-turn cache below — `_assemble` runs once per loop
+        iteration, and re-reading + re-encoding tens of megabytes per call is the exact failure
+        council E5 named."""
+        blocks: list[str] = [text] if text else []
+        images: list[dict] = []
+        sent: list[AttachmentPart] = []
+        for p in files:
+            if p.kind == "image":
+                url = await self._attachment_wire(thread, p) if p.path in sent_images else None
+                if url is None:  # over the ceiling, resend off, or the file is gone from the store
+                    blocks.append(image_stub(p))
+                else:
+                    images.append(image_part(url, p.name))
+                    sent.append(p)
+                continue
+            blocks.append(await self._attachment_wire(thread, p) or document_stub(p))
+        if not blocks:
+            # An attachment-only send (§7) persists no `TextPart` at all, so the WIRE needs a text
+            # part of its own — an empty string would be an empty turn to a strict template. R61's
+            # sentence, said once, here: this is the only place that knows the turn was file-only.
+            blocks.append(ATTACHMENT_ONLY_TEXT)
+        body = "\n\n".join(blocks)
+        content: object = [{"type": "text", "text": body}, *images] if images else body
+        return content, dimensions_notice(sent)
+
+    async def _attachment_wire(self, thread: Thread, part: AttachmentPart) -> str | None:
+        """One attachment's rendered wire text — an image's `data:` URL, or a document's framed page —
+        read at most ONCE per turn (§4.1, council E5).
+
+        A plain dict keyed by the part's store path is sound because a stored attachment is IMMUTABLE
+        once claimed (§2/§7: the claim is the only writer, and it links a fresh name rather than
+        replacing bytes), so there is no revision to key on and nothing to invalidate. The session is
+        per-turn, so the cache dies with the turn — which is also its size bound.
+
+        `None` means "the store could not produce it" (the file is gone, or a PDF has no sidecar yet);
+        the caller renders the honest stub for that, and does not cache the failure — a read that
+        failed is not a fact about the file.
+        """
+        cached = self._attachment_cache.get(part.path)
+        if cached is not None:
+            return cached
+        if part.kind == "image":
+            wire = await read_data_url(self._settings, thread.id, part)
+        elif part.kind == "pdf":
+            page = await read_pdf_page(self._settings, thread.id, part)
+            wire = render_inline(page) if page is not None else None
+        else:
+            try:
+                wire = render_inline(await read_text_page(self._settings, thread.id, part.name))
+            except StoredReadError:
+                wire = None
+        if wire is not None:
+            self._attachment_cache[part.path] = wire
+        return wire
 
     def _overhead_tokens(self) -> int:
         """The A8 invariant-prefix overhead (static head + tool schemas) as an estimated token count —
@@ -2555,6 +2692,7 @@ class AgentSession:
                                 agent=self._agent,
                                 stamps=self._stamps,
                                 recall=self._recall,
+                                thread_id=thread.id,
                             )
                         except asyncio.CancelledError:
                             raise
@@ -2803,6 +2941,7 @@ class AgentSession:
                                 summary_note=note,
                                 stamps=self._stamps,
                                 recall=self._recall,
+                                thread_id=thread.id,
                             )
                         except UnknownTool:
                             result = ToolResult(state=RunState.DENIED, summary=f"unknown tool '{cp.tool}'")

@@ -118,7 +118,14 @@ _GOLDEN: dict[str, tuple[dict[str, str], str]] = {
         + "Fill EVERY section. 'Next Steps' and anything you mark still pending refer ONLY to the "
         "earlier messages shown to you here (the folded-away head) — do NOT speculate about messages "
         "you cannot see. Preserve every load-bearing detail (ids, names, decisions, errors) and omit "
-        "pleasantries. This summary REPLACES the earlier messages in the assistant's working context.",
+        # The ONE deliberate amendment to a migration golden (D68 §4.5): compaction is where an
+        # attached file's identity would otherwise be lost — the bytes never enter the transcript and
+        # `_assemble` skips compacted turns — so the template now asks for the filenames verbatim, and
+        # `_render_transcript` renders the manifest they are read from. Everything else is unchanged,
+        # so the golden still catches an ACCIDENTAL edit; a deliberate one lands here with its reason.
+        "pleasantries. Where a message shows attached files (`[attached: name (kind)]`), keep those "
+        "filenames VERBATIM in the summary — they are how the files can be read again later. "
+        "This summary REPLACES the earlier messages in the assistant's working context.",
     ),
     "m1_tool_blocked": (
         {"tool": "run_shell"},

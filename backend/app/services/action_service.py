@@ -133,6 +133,7 @@ class ActionService:
         summary_note: str | None = None,
         stamps: dict[str, str] | None = None,
         recall: "RecallState | None" = None,
+        thread_id: str | None = None,
     ) -> InvokeOutcome:
         """Run an action. Raises `UnknownTool` (→404) / `ValidationError` (→422) for the API to
         map; every other outcome is data on a ToolResult.
@@ -155,7 +156,13 @@ class ActionService:
         `recall` (D57 §4, D64 §2.2) rides the same way: the calling turn's Core Memory read state, so
         the per-turn cap on recalled characters — and the read coverage a `delete` is minted from —
         are enforced by the tool against one object the TURN owns. `None` (a user-invoked run, a
-        test) means no budget is charged and `delete` refuses: nothing recorded what was read."""
+        test) means no budget is charged and `delete` refuses: nothing recorded what was read.
+
+        `thread_id` (D68 §4.4) rides the same way and for the same reason — it is the CONVERSATION
+        this call belongs to, known only to the caller and never to the model. Call sites that have a
+        thread pass it (the agent loop, the owner's `!exec`); the ones that have none (a Utils card, a
+        host button, the monitor's automatic wake) leave it `None`, and `read_attachment` refuses
+        rather than guessing which conversation's files it may open."""
         tool = self._registry.get(name)  # UnknownTool → API 404
         inp = tool.spec.input_model.model_validate(raw_args)  # ValidationError → API 422
         args_json = inp.model_dump_json()
@@ -214,6 +221,7 @@ class ActionService:
             origin=origin,
             stamps=stamps,
             recall=recall,
+            thread_id=thread_id,
         )
         if rule is not None:  # D44 §6: mandatory audit marker on the approval-fired run's Event summary
             result.summary = f"{result.summary}{_APPROVAL_MARKER.format(detail=_approval_detail(rule))}"
@@ -235,6 +243,7 @@ class ActionService:
         origin: Origin,  # required, like at `invoke` — the context must never default its attribution
         stamps: dict[str, str] | None = None,
         recall: "RecallState | None" = None,
+        thread_id: str | None = None,
     ) -> ToolResult:
         # The context carries the real caller (actor/privilege/depth/agent/origin) so meta-tools like
         # spawn_subagents can enforce limits + clamp child privilege (DESIGN §5.5) and propagate
@@ -250,6 +259,7 @@ class ActionService:
             origin=origin,
             stamps=stamps,
             recall=recall,
+            thread_id=thread_id,
         )
         started = time.monotonic()
         # Per-tool deadline (DESIGN/E0a). `timeout_s=None` (the default) ⇒ NO bound — a tool we

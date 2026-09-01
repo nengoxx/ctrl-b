@@ -23,6 +23,7 @@ def target(
     retry_attempts: int | None = 2,
     context_window: int | None = None,
     extra_body: dict[str, Any] | None = None,
+    input_modalities: list[str] | None = None,
     max_tokens_field: str | None = None,
     language: str | None = None,
     voice: str | None = None,
@@ -40,6 +41,7 @@ def target(
         model=model,
         context_window=context_window,
         extra_body=extra_body or {},
+        input_modalities=input_modalities,  # D68 §5: None = text-only, the conservative default
         language=language,
         voice=voice,
         speed=speed,

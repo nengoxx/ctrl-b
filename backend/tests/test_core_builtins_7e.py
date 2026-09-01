@@ -1,6 +1,7 @@
 """Phase 7e-f-2 — core-builtin reachability (`ToolSpec.core` + `ToolRegistry.for_agent`).
 
-The cognitive builtins (`task_plan`/`memory`/`session_search`) are marked `core=True`, so an agent
+The cognitive builtins (`task_plan`/`memory`/`session_search`/`question`/`read_attachment`) are
+marked `core=True`, so an agent
 with an explicit `tools` allowlist that *omits* them can still reach them — and so can an agent whose
 toolset a skill has narrowed (the narrowed allowlist is fed back through `for_agent`). Non-core tools
 (actions, and the explicit-grant builtins like `skill_manage`/`spawn_subagents`) are only present when
@@ -23,7 +24,10 @@ def _registry():
     return build_registry()
 
 
-_CORE = {"task_plan", "memory", "session_search", "question"}  # `question` joined the core set (A2)
+#: D68: `read_attachment` joins the core set for a REASON of the same kind — the §4.2 injection
+#: marker names the call inside the user turn itself, so a turn where the tool was allowlisted away
+#: would hand the model an instruction it cannot follow.
+_CORE = {"task_plan", "memory", "session_search", "question", "read_attachment"}
 
 
 def test_core_set_is_the_cognitive_set() -> None:

@@ -633,6 +633,80 @@ def _content_text(content: object) -> str:
     return str(content)
 
 
+#: Our own key on an assembled `image_url` part, naming the FILE it was built from (D68 §5). Not an
+#: OpenAI field and never on the wire: every image-bearing payload passes through
+#: `drop_unsupported_modalities` on its way into `create()`, which either replaces the part with the
+#: no-vision stub or re-emits the standard two-key part without this. It exists because the stub has to
+#: NAME the file the model cannot see, and a `data:` URL carries no name.
+IMAGE_PART_NAME_KEY = "_ctrlb_name"
+
+#: opencode's instruction, VERBATIM (D68 §5, council O-M8): the model is told, in band, that a file it
+#: was given cannot be read here and that the OWNER is the one who needs to know. That last sentence is
+#: the whole design — there is no probing, no capability adapter and no composer gate in this feature
+#: (owner ruling §0a-4), so the model telling the owner IS the fallback, and `SourceInfo` stays a
+#: routing record rather than growing a "we dropped your photo" field.
+NO_IMAGE_SUPPORT = 'ERROR: Cannot read "{name}" (this model does not support image input). Inform the user.'
+
+
+def image_part(url: str, name: str) -> dict:
+    """One assembled image content part: the OpenAI shape plus the private name key above."""
+    return {"type": "image_url", "image_url": {"url": url}, IMAGE_PART_NAME_KEY: name}
+
+
+def _image_parts(content: object) -> bool:
+    """Does this message `content` carry image parts? (A list of parts, at least one an image.)"""
+    return isinstance(content, list) and any(
+        isinstance(p, dict) and p.get("type") == "image_url" for p in content
+    )
+
+
+def drop_unsupported_modalities(messages: list[dict], target: ResolvedTarget) -> list[dict]:
+    """Shape one HOP's messages for what that endpoint can actually read (D68 §5).
+
+    Called INSIDE `attempt(entry)` in both `complete` and `stream_chat`, because the serving endpoint
+    is only known there: `normalize_system_messages` runs once per call, BEFORE `_resolve_chain`, so it
+    is the wrong seam for a per-endpoint decision (council O-H1/E4). A chain may mix a vision primary
+    with a text-only fallback in either order, and each hop must see the payload IT can serve.
+
+    **The normalized list is the immutable source.** Each hop DERIVES a fresh list — never a mutation
+    — because the caller's list holds the per-turn cached head dicts reused byte-identically across
+    loop iterations (`normalize_system_messages`' rule, verbatim): a strip that edited in place would
+    blind the *next* hop, and the next iteration, to images the owner did send. The base64 payload
+    itself is shared by reference, so the copy is a handful of small dicts, not the bytes.
+
+    Two things happen to an image part here, and both are why this runs on EVERY image-bearing hop
+    rather than only on a text-only one: a target that `accepts_images` gets the plain two-key OpenAI
+    part (our private name key removed — it must never reach a provider), and one that does not gets
+    `NO_IMAGE_SUPPORT` as an ordinary text part in the image's place. A payload with no images at all
+    returns the SAME list object, so every text-only turn is byte-identical to before this existed.
+
+    Named `drop_unsupported_modalities`, never "strip": in these same two functions `strip` already
+    means the D46 reasoning-parameter re-attempt, and one word for two mechanisms is how a later reader
+    conflates them (council O-conf rider).
+    """
+    if not any(_image_parts(m.get("content")) for m in messages):
+        return messages
+    accepts = target.accepts_images
+    out: list[dict] = []
+    for m in messages:
+        content = m.get("content")
+        if not _image_parts(content):
+            out.append(m)
+            continue
+        parts: list[dict] = []
+        for p in cast("list[dict]", content):
+            if not (isinstance(p, dict) and p.get("type") == "image_url"):
+                parts.append(p)
+                continue
+            if accepts:
+                parts.append({"type": "image_url", "image_url": p.get("image_url")})
+            else:
+                name = str(p.get(IMAGE_PART_NAME_KEY) or "image")
+                parts.append({"type": "text", "text": NO_IMAGE_SUPPORT.format(name=name)})
+        out.append({**m, "content": parts})
+    return out
+
+
 @dataclass(frozen=True)
 class RetryNotice:
     """A wire item `stream_chat` interleaves BEFORE the first `ChatDelta` (D43/A6): the served endpoint
@@ -1400,6 +1474,9 @@ class InferenceClient:
                 sem = self._sem_for(ep)
                 if sem is not None:
                     await sem.acquire()
+                # D68 §5: this hop's OWN view of the payload — the shared normalized list is never
+                # mutated, so a later hop with different capabilities still sees the real images.
+                hop_messages = drop_unsupported_modalities(messages, ep)
 
                 async def _once(strip: bool) -> str:
                     # We carry messages as our own `list[dict]` (OpenAI wire shape, built across the
@@ -1409,7 +1486,7 @@ class InferenceClient:
                     # chat_template_kwargs), so the pin/config never leaks across the failover chain.
                     resp = await self._client(ep).chat.completions.create(
                         model=use_model,
-                        messages=cast("list[ChatCompletionMessageParam]", messages),
+                        messages=cast("list[ChatCompletionMessageParam]", hop_messages),
                         stream=False,
                         **self._call_config(
                             ep,
@@ -1557,6 +1634,8 @@ class InferenceClient:
                 sem = self._sem_for(ep)
                 if sem is not None:
                     await sem.acquire()
+                # D68 §5 — per-hop, derived, never mutated (see `complete.attempt` above).
+                hop_messages = drop_unsupported_modalities(messages, ep)
 
                 async def _open(strip: bool, usage: bool = True) -> tuple[Any, Any]:
                     # `_call_config` merges this endpoint's modeled params (max_tokens field name,
@@ -1565,6 +1644,7 @@ class InferenceClient:
                     # must not leak onto the cloud hop (ACA-18; same discipline as voice.py's extra_body).
                     call_kwargs = {
                         **kwargs,
+                        "messages": hop_messages,
                         **self._call_config(
                             ep,
                             max_tokens=max_tokens,

@@ -203,6 +203,12 @@ class ModelCfg(BaseModel):
     #: Per-model override of the output-cap field spelling (D46/C6 ladder: model > provider > derived).
     #: None inherits the provider's max_tokens_field, which itself derives from api_mode when unset.
     max_tokens_field: Literal["max_tokens", "max_completion_tokens"] | None = None
+    #: What this model accepts as INPUT (D68 §5) — e.g. `[text, image]` for a vision model. The
+    #: external convention (OpenRouter's `architecture.input_modalities`; the opencode/goose catalogs)
+    #: rather than a `vision: bool`, so the next modality is one more string instead of a second flag.
+    #: Omitted/None = TEXT-ONLY: an attachment's images are replaced by an in-band ERROR note for this
+    #: model, which is the safe default for an endpoint nobody has annotated.
+    input_modalities: list[str] | None = None
     dim: int | None = Field(default=None, ge=1)  # embeddings vector dimension (Slice 2)
     voice: str | None = None  # TTS server voice id (Slice 2)
     speed: float | None = Field(default=None, gt=0)  # TTS playback speed (Slice 2)
@@ -1257,8 +1263,7 @@ class AttachmentsCfg(BaseModel):
     One block for the whole feature, grown with optional fields as the slices land (the
     extend-don't-migrate directive): S1 owns the three knobs the STORE needs — how many files one
     message may carry, how big one file may be, and how long an unclaimed staging file survives —
-    and the model-feed knobs (`max_inline_chars`, `image_tokens`, `resend`, …) join as additive
-    fields with defaults when S2 reads them. `extra="allow"` so a config written by a later slice
+    and S2 adds the four the MODEL FEED reads. `extra="allow"` so a config written by a later slice
     round-trips through this build instead of being dropped on save.
 
     - `max_files_per_message`: the per-send ceiling the chat POST refuses past. A ceiling on the
@@ -1268,6 +1273,20 @@ class AttachmentsCfg(BaseModel):
     - `staging_orphan_hours`: how long a staged file may sit unclaimed. It is BOTH the boot sweep's
       cutoff and the claim's freshness test, deliberately one number: a file the sweep would reclaim
       must not still be claimable, or the two rules would disagree about the same file.
+    - `max_inline_chars` (S2 §4.2): how much of a text attachment is injected into the user turn,
+      and equally the page size `read_attachment` reads by — ONE number, so "what one page holds"
+      cannot disagree with "what the turn was given". 16k is ratified (§0b-4) *because* the paged
+      tool can reach the rest of the file.
+    - `image_tokens` (S2 §4.1): what one sent image is PRICED at by the estimator. A per-provider
+      tiling formula is not knowable here (every backend counts differently), so this is the honest
+      single figure the field clusters around — and it is read at estimate time, never baked into a
+      persisted row (confirm N1).
+    - `max_images_per_request` (S2 §4.1): how many images ONE assembled request may carry across the
+      whole history. Past it the OLDEST degrade to a stub, because history accumulation is otherwise
+      unbounded (council E5).
+    - `resend` (S2 §4.5): do images from EARLIER turns ride along again? True by default (7/7 of the
+      field; dropping them breaks follow-up questions about a photo). Off, only the current turn's
+      images are sent and older ones render as stubs.
     """
 
     model_config = {"extra": "allow"}
@@ -1275,6 +1294,10 @@ class AttachmentsCfg(BaseModel):
     max_files_per_message: int = Field(default=10, gt=0)
     max_file_mb: int = Field(default=10, gt=0)
     staging_orphan_hours: int = Field(default=24, gt=0)
+    max_inline_chars: int = Field(default=16000, gt=0)
+    image_tokens: int = Field(default=1000, ge=0)
+    max_images_per_request: int = Field(default=10, ge=0)
+    resend: bool = True
 
     @property
     def max_bytes(self) -> int:

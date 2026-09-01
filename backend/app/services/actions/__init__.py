@@ -7,6 +7,7 @@ Phase 4d: the agent-only `task_plan` builtin (lives under agent/, registered her
 Phase 4f: the `web_search` utility tool (SearXNG-backed, agent-only).
 A3 14d: the `create_automation`/`list_automations` builtins (same one-file-under-agent/ shape).
 Phase 20/D57: the `core_memory` builtin (the tier-2 long-term corpus).
+Phase 22/D68: the `read_attachment` builtin (the paged read of a file the owner attached).
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from app.services.actions import (  # noqa: E402,F401
     web_search,
 )
 from app.services.agent import (
+    attachment_tool,  # noqa: E402,F401  # read_attachment builtin — the D68 paged attachment read
     automation_tools,  # noqa: E402,F401  # create_automation/list_automations builtins (A3 14d)
     core_memory_tool,  # noqa: E402,F401  # core_memory builtin — the tier-2 corpus (D57/S3)
     memory_tool,  # noqa: E402,F401  # memory write tool (7e-d-2)

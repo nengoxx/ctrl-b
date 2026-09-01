@@ -119,6 +119,20 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         # delete guard (`_delete_gate`: no read state, no/partial coverage with the exact next
         # offset, a topic no turn can read) — all facts about THIS call, computed from this turn's
         # own read record, so none of them is a standing instruction the registry could carry.
+        # D68 attachments extend exactly that class, in three places. The store's paging refusals
+        # (`read_page`: an offset past the end / below 1) are `read_topic`'s, verbatim. The tool's
+        # refusals (a name this conversation does not hold, an image kind that is shown rather than
+        # read, a PDF with no extracted text yet) are facts about THIS call. And the two assembly
+        # STUBS (`image_stub`/`document_stub`) describe one file in one request — what was not sent
+        # and the one call that reaches it — the same shape as D64's "continue at offset N".
+        # `NO_IMAGE_SUPPORT` is the same class one layer down: opencode's in-band note, naming the
+        # file this hop could not carry. It also *could not* be a registry text — `adapters/
+        # inference.py` never reads live `Settings` (D48 C10), which is what `resolve()` needs.
+        ("app/adapters/inference.py", "NO_IMAGE_SUPPORT"),
+        ("app/core/attachments.py", "read_page"),
+        ("app/services/agent/attachment_tool.py", "read_attachment"),
+        ("app/services/agent/attachments.py", "document_stub"),
+        ("app/services/agent/attachments.py", "image_stub"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._confine"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._create_blocking"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._delete_blocking"),

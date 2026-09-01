@@ -55,6 +55,7 @@ async def run_user_exec(
         origin=ORIGIN_USER_CHAT,
         actor=Actor.USER,
         privilege=Privilege.FULL,
+        thread_id=thread_id,  # D68 §4.4 — this run belongs to a conversation, so it carries its id
     )
     result = outcome.result or ToolResult(state=RunState.ERROR, summary="run_shell produced no result")
 

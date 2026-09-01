@@ -141,6 +141,7 @@ ADAPTER_BOUNDED: dict[str, str] = {
     "create_automation": "local SQLite write through AutomationService, no external I/O",
     "list_automations": "local SQLite reads (list + latest-runs window), no external I/O",
     "session_search": "local SQLite FTS query, no external I/O",
+    "read_attachment": "local SQLite read + one bounded file read (attachments.max_file_mb), no external I/O",
     "question": "control-flow signal to the loop; returns immediately, no I/O",
     "spawn_subagents": "each child runs under its own asyncio.timeout(agent.subagent_child_timeout_s)",
 }
@@ -180,6 +181,13 @@ class InvocationContext:
     #: session object. Only `core_memory` reads it — and its `delete` FAILS CLOSED without one, since
     #: coverage is what authorizes destroying a topic.
     recall: "RecallState | None" = None
+    #: WHICH CONVERSATION this call belongs to (D68 §4.4), or `None` outside one (a Utils-card run, an
+    #: automation's own action, a test). SERVER-OWNED and threaded exactly like `stamps`/`recall`: the
+    #: session stamps the thread it is driving, and it is NEVER a model-supplied argument — a tool that
+    #: took the thread id from the model would let one conversation read another's files. Its only
+    #: consumer, `read_attachment`, therefore FAILS CLOSED when it is absent rather than guessing at a
+    #: thread (§4.4, council O-M6/E8).
+    thread_id: str | None = None
 
     def require_deps(self) -> "Deps":
         """The world-handle a deps-using tool needs, narrowed to non-`None`. `deps` is optional on

@@ -268,7 +268,9 @@ REGISTRY: dict[str, PromptDef] = {
             "Fill EVERY section. 'Next Steps' and anything you mark still pending refer ONLY to the "
             "earlier messages shown to you here (the folded-away head) — do NOT speculate about "
             "messages you cannot see. Preserve every load-bearing detail (ids, names, decisions, "
-            "errors) and omit pleasantries. This summary REPLACES the earlier messages in the "
+            "errors) and omit pleasantries. Where a message shows attached files "
+            "(`[attached: name (kind)]`), keep those filenames VERBATIM in the summary — they are how "
+            "the files can be read again later. This summary REPLACES the earlier messages in the "
             "assistant's working context.{{focus}}"
         ),
         description=(
@@ -276,7 +278,9 @@ REGISTRY: dict[str, PromptDef] = {
             "folded-away head of the thread. `{{sections}}` is the pinned five-section contract "
             "(supplied by the compactor); `{{focus}}` is the `/compact <instructions>` emphasis block, "
             "empty on an automatic compaction. Coupling: the summary is what every later turn reads "
-            "instead of the original messages, so detail dropped here is lost from the live context."
+            "instead of the original messages, so detail dropped here is lost from the live context — "
+            "including the D68 attachment filenames, which are the only surviving handle on a folded "
+            "turn's files (`read_attachment` is name-addressed)."
         ),
     ),
     "m1_tool_blocked": PromptDef(

@@ -520,6 +520,164 @@ def claim_all(
     return [claim(home, thread_id, aid, max_age_s=max_age_s) for aid in attachment_ids]
 
 
+# ── reading a stored file (S2 — the model feed's only door to the bytes) ──────────────────────────
+
+
+#: What a PDF's extracted-text sidecar is called: the stored name plus this suffix, so `report.pdf`
+#: reads back through `report.pdf.txt`. Declared HERE, with the rest of the store's naming, because S2
+#: READS it (§4.3 — "resolve to the sidecar if present") and S4 WRITES it: two slices, one constant, no
+#: convention to re-agree on. The suffix rides on the FULL name rather than replacing `.pdf` so it can
+#: never collide with a `report.txt` the owner attached beside it.
+#:
+#: ⚠ S4 note: a sidecar is a file inside a live thread dir that NO persisted `AttachmentPart`
+#: references, which is exactly what `sweep_thread_dirs`' second arm reclaims once it ages past
+#: `staging_orphan_hours`. Writing extraction without teaching that sweep about sidecars would ship a
+#: file that deletes itself a day later — the referenced set has to grow a derived entry per PDF part.
+SIDECAR_SUFFIX = ".txt"
+
+
+def sidecar_name(name: str) -> str:
+    """The extracted-text sidecar's stored name for `name` (S4 writes it, S2 reads it)."""
+    return f"{name}{SIDECAR_SUFFIX}"
+
+
+def _stored_file(home: Path, thread_id: str, name: str) -> Path | None:
+    """The path of one stored attachment, or `None` when it is not a file this store may open.
+
+    The §2 dereference rule in one place, for READS this time: a bare name (no separator, no drive,
+    not `.`/`..`), a resolved parent that is EXACTLY the resolved thread directory, and
+    `is_served_file` — the media rule that answers "is this a regular, non-symlink file" — so a link
+    planted inside a thread dir cannot make this read something outside it. Reusing those predicates
+    rather than restating them is the point (E9: no second sanitizer).
+
+    The name always comes from the server's OWN persisted `AttachmentPart`, so this is defence in
+    depth rather than input validation — but the tool's `name` argument is model-authored, and a rule
+    that is only true because of who calls it is exactly the one worth stating once.
+    """
+    if not is_addressable_name(name) or "\\" in name or ntpath.splitdrive(name)[0]:
+        return None
+    try:
+        directory = thread_dir(home, thread_id)
+    except StoreWriteError:
+        return None
+    path = directory / name
+    if not is_served_file(path):
+        return None
+    try:
+        if path.resolve(strict=True).parent != directory.resolve(strict=True):
+            return None
+    except OSError:
+        return None
+    return path
+
+
+def read_bytes(home: Path, thread_id: str, name: str) -> bytes | None:
+    """One stored file's raw bytes, or `None` when it is gone/unreadable/not addressable.
+
+    The assembly's image branch reads through here (§4.1) — the store owns file access, so nothing
+    outside this module builds a path into a thread dir (the S1 LOW-4 pin). Whole-file by design: the
+    caller is base64-encoding it for the wire, and `attachments.max_file_mb` already bounds it.
+    """
+    path = _stored_file(home, thread_id, name)
+    if path is None:
+        return None
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
+@dataclass(frozen=True)
+class StoredRead:
+    """One PAGE of a stored text file — the D64 read contract (§2.1), applied to the attachment store.
+
+    The rules are D64's verbatim, because the model already knows them from `core_memory`: pages break
+    only at LINE boundaries, a single line longer than the budget is emitted WHOLE (a partial line
+    would advertise coverage of characters the model never saw), `first_line`/`last_line` are 1-based
+    inclusive, and `chars`/`lines` describe the WHOLE file so the marker can always say how much is
+    left. One shape serves both consumers: the §4.2 injection at assembly and the `read_attachment`
+    tool, so what the turn was given and what a paged re-read returns cannot describe themselves
+    differently.
+    """
+
+    name: str
+    text: str
+    chars: int  # the full decoded length on disk
+    lines: int  # the file's total line count
+    first_line: int
+    last_line: int  # inclusive; 0 for the empty-file page
+
+    @property
+    def complete(self) -> bool:
+        """Did this ONE page carry the whole file?"""
+        return self.first_line == 1 and self.last_line == self.lines
+
+
+class StoredReadError(Exception):
+    """A read this store refuses, carrying the sentence the MODEL is shown (never a status code).
+
+    Distinct from `StoreWriteError`: nothing here writes, so there is no HTTP status to carry and no
+    ladder to unwind — the caller turns this straight into an ERROR `ToolResult` whose text names the
+    call that would work instead (the D64 refusal discipline).
+    """
+
+
+def read_page(
+    home: Path,
+    thread_id: str,
+    name: str,
+    *,
+    offset: int = 1,
+    limit: int | None = None,
+    max_chars: int,
+) -> StoredRead:
+    """One page of a stored TEXT file, starting at the 1-based line `offset` (D64 §2.1). Read-only.
+
+    Raises `StoredReadError` for the two refusals the model can act on — a file this store cannot
+    read, and an `offset` past the end (which states the real line count) — with the empty-file
+    exception carved out at `offset=1` exactly as `core_memory.read_topic` carves it, so a blank
+    attachment has a complete page rather than a refusal.
+
+    Strict UTF-8: text is admitted only after a strict whole-file decode at claim (§2), so a failure
+    here means the bytes changed underneath us, and guessing at them would show the model a file that
+    is not the one on disk.
+    """
+    if offset < 1:
+        raise StoredReadError(f"`offset` is a 1-based line number — {offset} is not one.")
+    path = _stored_file(home, thread_id, name)
+    if path is None:
+        raise StoredReadError(f"no attachment named {name!r} on this conversation.")
+    try:
+        raw = path.read_bytes().decode("utf-8")
+    except OSError:
+        raise StoredReadError(f"{name} could not be read from the attachment store.") from None
+    except UnicodeDecodeError:
+        raise StoredReadError(f"{name} is no longer readable as UTF-8 text.") from None
+    lines = raw.splitlines(keepends=True)  # endings KEPT: the page is an exact substring of the file
+    if offset > len(lines) and not (offset == 1 and not lines):
+        raise StoredReadError(
+            f"{name} has {len(lines):,} line(s) — `offset` {offset:,} is past the end. "
+            "Read from `offset` 1, or continue at the line the last page's marker named."
+        )
+    page: list[str] = []
+    used = 0
+    for line in lines[offset - 1 :]:
+        if limit is not None and len(page) >= limit:
+            break
+        if page and used + len(line) > max_chars:  # the FIRST line of a page is always emitted whole
+            break
+        page.append(line)
+        used += len(line)
+    return StoredRead(
+        name=name,
+        text="".join(page),
+        chars=len(raw),
+        lines=len(lines),
+        first_line=offset,
+        last_line=offset + len(page) - 1,
+    )
+
+
 # ── retention: the thread-delete hook + the boot sweep ─────────────────────────────────────────────
 
 

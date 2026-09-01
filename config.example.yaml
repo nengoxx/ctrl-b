@@ -62,10 +62,19 @@ server:
 # the body arrives (never from Content-Length); `max_files_per_message` bounds one send;
 # `staging_orphan_hours` is how long an uploaded-but-never-sent file stays claimable — the same number
 # the boot sweep reclaims by, so the two can never disagree about the same file.
+# The model-feed knobs: `max_inline_chars` is how much of a text file rides inside the turn AND the
+# page size `read_attachment` reads by; `image_tokens` is what one sent image is priced at when the
+# context estimate decides to compact; `max_images_per_request` bounds how many images one assembled
+# request may carry (the oldest degrade to a stub past it); `resend: false` sends only the CURRENT
+# turn's images and stubs the older ones.
 # attachments:
 #   max_files_per_message: 10
 #   max_file_mb: 10
 #   staging_orphan_hours: 24
+#   max_inline_chars: 16000
+#   image_tokens: 1000
+#   max_images_per_request: 10
+#   resend: true
 
 # Tailscale Serve (Phase 6c-2, D20) — the in-app HTTPS toggle (Conf → Access). `serve` only, never
 # funnel (tailnet-only by construction). `target_port` = the local port Serve fronts: 5433 (the
