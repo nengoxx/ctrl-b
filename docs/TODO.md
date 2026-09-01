@@ -1500,8 +1500,10 @@ via the new `InvocationContext.thread_id`) · per-hop no-vision strip (`input_mo
 image display via the D65-pattern GET route · no RAG, no OCR. Standing cadence per slice: Opus
 build from a pinned brief → main-seat audit → Emma-lane review; each passes `tools/check.py`.
 
-- [ ] S0 — Docs: D68 · SECURITY_MODEL §2.8 · ROADMAP A8 stanza · this phase block · doc-map row ·
-      the Honor 20 HEIC device check (owner, 2 min — gates the admission copy, not the backend).
+- [x] S0 — Docs: D68 · SECURITY_MODEL §2.8 · ROADMAP A8 stanza · this phase block · doc-map row
+      (`756996b`) · the Honor 20 HEIC device check **RAN 2026-09-01: NOT HEIC** — the owner's
+      camera photo admitted + decoded through the media picker (stored JFIF baseline post-export);
+      camera source = JPEG, HEIC refusal copy stays for foreign files only.
 - [ ] S1 — Backend store + transport: staging mint/PUT (bare-name at mint, streamed cap, sniff,
       text allowlist+decode) · claim-by-rename in the chat POST + steer drain · `AttachmentPart`
       (facts only) · retention (thread-delete hook · boot sweep incl. aged staging + unreferenced-
@@ -1518,9 +1520,12 @@ build from a pinned brief → main-seat audit → Emma-lane review; each passes 
       attachment-only sends · e2e.
 - [ ] S4 — PDFs: pypdf sidecar extraction at claim (`to_thread`, soft bounds model-visible) ·
       scanned-PDF failure copy · sidecar rides the S2 text path.
-- [ ] S5 — Owner device round: phone pick/paste/send/re-read · attachment-only photo send ·
+- [ ] S5 — Composer expand affordance (owner-promoted 2026-09-01): the Telegram-style control once
+      the draft fills a couple of lines — LINE composer first, shared seam or nothing; behavior
+      (fullscreen vs taller) owner-ruled on R62's evidence; quiet trigger per the §7 styling ruling.
+- [ ] S6 — Owner device round: phone pick/paste/send/re-read · attachment-only photo send ·
       vision on OpenRouter · no-vision on qwen (expect the in-band ERROR) · a real PDF · a
-      compacted-thread re-read via the manifest.
+      compacted-thread re-read via the manifest · the expand control on the phone's line composer.
 
 ## Cross-cutting / don't-forget
 

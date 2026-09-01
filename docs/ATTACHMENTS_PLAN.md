@@ -1,9 +1,11 @@
 # ATTACHMENTS_PLAN — composer attachments (ROADMAP A8)
 
-**Status: DESIGN v2.2 (2026-09-01) — COUNCIL-CLOSED + OWNER-RATIFIED. Both lenses
-BUILD-WITH-CHANGES → confirm rounds to close (Opus: BUILD AS DESIGNED · Emma: RESOLVED WITH NEW
-FINDINGS, all folded, micro-confirm CLOSED); transport B unanimous; §0b ratified same day (the
-one overrule: bubble image display is IN v1 — §0b-2). Full record §11. Nothing built. NEXT = S0.**
+**Status: DESIGN v2.3 (2026-09-01) — COUNCIL-CLOSED + OWNER-RATIFIED + the same-day UX
+amendments Emma-checked.** v2.2 = the ratified council close (§11; transport B unanimous; the
+§0b-2 overrule: bubble image display IS v1). v2.3 adds the owner's composer-UX rulings (quiet
+clip · in-composer thumbnails · the S5 expand slice) + the Emma amendment round's fixes (§11
+tail). **BUILD IN PROGRESS: S0 ✅ (`756996b` + the HEIC check: camera = JPEG) · S1 building ·
+R62 (composer grammar) in flight — it pins the §7 layout + S5 behavior before the S3/S5 briefs.**
 
 Evidence: [`research/R61-chat-attachments-field.md`](./research/R61-chat-attachments-field.md) +
 [`R54`](./research/R54-crop-upload-client.md)/[`R55`](./research/R55-media-upload-backend.md) +
@@ -207,6 +209,33 @@ answer to "does attribution record the drop": `SourceInfo` stays untouched (O-M8
   libs, §1); chips with thumbnail (local file) + status + remove; per-file failure rows never block
   the send of healthy files; paste + drag-drop with the `items` fallback; every variant renders
   attach (A8 chrome ruling).
+- **The mic auto-send path is pinned (E-amend b):** `useDictation` bypasses `useComposer().send()`
+  and calls `runComposer` directly, then clears the draft — staged attachment ids MUST ride that
+  auto-sent message (or steer) exactly as they ride a button send, and clear WITH it, never
+  orphaned in staging; an explicit S3 test covers the dictation-auto-send-with-staged-files path.
+- **Docked-sheet geometry is an EXPLICIT S3 ruling, not "parity" (E-amend LEFT-OFF 1):** the sheet
+  variant embeds the mic inside `.field` with the tall send outside it, so "clip beside mic/send"
+  and "thumbnails riding the field" do not uniquely place either there — the S3 brief carries a
+  ruled sheet placement (informed by R62), and the owner eyeballs it in S6.
+- **The owner's UX ruling (2026-09-01, second talk — binds S3's presentation):** the attach
+  affordance is a **clip icon beside the mic/send** (Telegram's placement) — and styled QUIET
+  (owner, third talk): Telegram's gray clip is the reference, "not a full icon like the mic or
+  send is … nothing flashy, just something clean" — a muted/ghost treatment, visually subordinate
+  to the action pair. Staged images show as **thumbnails riding the growing composer** with text
+  entry continuing beneath — the owner keeps typing OR dictating with attachments staged (the mic
+  is never blocked by staged files); send ships caption + attachments as **ONE message**. The
+  exact thumbnail layout (in-field vs a staged rail above the field) is pinned by **R62**
+  (the attach-composer grammar pass — Telegram Web A + Signal source-read; commissioned
+  2026-09-01) before the S3 brief is written; the owner rules on R62's split if the field
+  disagrees with the described feel.
+- **The expand affordance is IN-PHASE (owner, third talk — promoted from the recorded candidate):**
+  the Telegram-style control that appears once the draft fills a couple of lines. **The LINE
+  composer is the primary target** ("the line composer has very little space"); the other variants
+  get it if the seam is genuinely shared — never a per-variant fork. The current grow-upward-
+  keeping-the-buttons-at-the-bottom behavior stays the baseline. What the control actually DOES —
+  Telegram's may be true fullscreen or just a taller field; the owner hasn't tried it — is exactly
+  R62's question 7; the owner rules on the behavior after the evidence lands. Built as its own
+  slice (§9 S5) after the attachment FE.
 - **Attachment-only sends are legal** (both lenses' sweep: today `text` min_length=1 + an FE
   empty-text early return make the send-a-photo flow a 422): with staged ids, empty text is
   allowed; the server injects R61's `ATTACHMENT_ONLY_TEXT` ("Please refer to the attached
@@ -220,15 +249,18 @@ answer to "does attribution record the drop": `SourceInfo` stays untouched (O-M8
   attachments are immutable once claimed, so plain strong caching, no `?rev` needed. Pre-send
   chips keep their local-file previews as before.
 - **Recorded, NOT v1:** Android `share_target` with files (0/7 peers; the staging shape is its
-  ready landing) · HEIC (device check moved to **S0** — if the Honor 20 shares HEIC, v1 refusal
-  copy fails the primary device; O-sweep) · crop-before-send · post-send image previews (§0b-2).
+  ready landing) · crop-before-send. *(Post-send image previews were promoted INTO v1 by the
+  §0b-2 overrule; the old exclusion is superseded.)* **HEIC — S0 check RAN 2026-09-01: the Honor
+  20's camera photos arrive as JPEG** (a camera shot admitted + decoded through the media picker;
+  a HEIC source refuses by name at the R54 probe) — the refusal copy covers foreign files only,
+  the primary device is unaffected (O-sweep closed).
 
 ## §8 Security (SECURITY_MODEL gets a §2.7-sibling entry)
 
 Store confinement per §2 (bare-name predicate · no symlinks · resolved-parent check — the media
 rules reused, no second sanitizer) · server-minted ids only · magic-byte sniff, SVG excluded ·
-text = allowlist + strict decode, never served as active content (no serving at all in v1) · no
-remote-URL fetching by construction · `read_attachment` read-only + thread-confined + fail-closed ·
+text = allowlist + strict decode (serving rules below — stored bytes are never ACTIVE content) ·
+no remote-URL fetching by construction · `read_attachment` read-only + thread-confined + fail-closed ·
 the staging PUT is non-safelisted (§2.7 verbatim) and its no-CORS negatives extend the existing
 D65 test pins (O-M9) · **the GET route serves ONLY sniffed image types inline** (SVG unreachable
 by construction — never admitted as an image); text/PDF serve with `X-Content-Type-Options:
@@ -239,8 +271,8 @@ no-RAG ruling, stated (E-audit).
 
 ## §9 Slices (standing cadence per slice)
 
-- **S0** docs: D-entry · SECURITY_MODEL · ROADMAP/TODO rows · **the HEIC device check** (2 min,
-  gates the ladder).
+- **S0** docs: D-entry · SECURITY_MODEL · ROADMAP/TODO rows · the HEIC device check — **✅ DONE
+  2026-09-01** (`756996b` + the check: NOT HEIC, camera = JPEG).
 - **S1** backend store + staging/claim transport + `AttachmentPart` + retention/sweep + steer-claim.
   Tests: traversal/symlink/oversize/sniff/decode refusals · mint-time name refusal (pre-stream) ·
   claim races (consumed id, expired id, two devices) · claim-is-the-only-writer pin · the
@@ -251,11 +283,18 @@ no-RAG ruling, stated (E-audit).
   + compaction manifest + resize notice.
 - **S3** FE: `useAttachments` + chips + the bubble branch (image display + tap-to-full-size) +
   the GET serving route (+ tests: image inline w/ sniffed type · text/pdf nosniff+disposition ·
-  confinement refusals · 404 on unclaimed/missing) + attachment-only sends + variants parity + e2e.
+  confinement refusals · 404 on unclaimed/missing) + attachment-only sends + variants parity —
+  incl. the RULED docked-sheet placement (§7) and the dictation-auto-send-with-staged-files test
+  (§7's mic pin) — + e2e.
 - **S4** PDF extraction sidecar + failure copy.
-- **S5** owner device round: phone pick/paste/send/re-read · attachment-only photo send · vision on
+- **S5** the composer expand affordance (owner-promoted 2026-09-01): R62-informed + owner-ruled
+  behavior; line composer first, quiet trigger control per the §7 styling ruling. **The seam is
+  already shared (E-amend c):** `useComposerChrome` owns auto-grow for all three variants, so the
+  expansion behavior extends THAT hook while only LineComposer renders the initial affordance —
+  no per-variant fork exists to write.
+- **S6** owner device round: phone pick/paste/send/re-read · attachment-only photo send · vision on
   OpenRouter · no-vision on qwen (expect the in-band ERROR) · a real PDF · a compacted-thread
-  re-read via the manifest.
+  re-read via the manifest · the expand control on the phone's line composer.
 
 ## §10 Recorded residuals (accepted, not machinery)
 
@@ -317,6 +356,13 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
 - **Main-seat close:** all four confirm-round findings folded (this revision); Emma's
   micro-confirm on the NEW 1/NEW 2 folds returned **RESOLVED · RESOLVED · CLOSED**; both lenses'
   verdicts stand.
+- **The UX amendment round (2026-09-01, same day):** the owner's second/third talks added the §7
+  composer rulings + promoted the expand slice (S5). Emma re-checked the deltas against the
+  composer code: **(a) §8 serving contradiction — fixed** (stale "no serving in v1" wording) ·
+  **(b) the mic auto-send bypass** (`useDictation` → `runComposer` directly) **— pinned in §7 +
+  an S3 test** · (c) the expand seam CONFIRMED shared (`useComposerChrome` owns auto-grow for all
+  three variants) · (d) HEIC result consistent · LEFT-OFF 1: docked-sheet clip/thumb geometry —
+  now an explicit S3 ruling, not "parity" · LEFT-OFF 2: stale status header — fixed (v2.3).
 - **Owner ratification (2026-09-01, prose):** all four §0b calls ruled same day — B ratified ·
   **bubble image display IN v1 (overruling the main seat's no-GET-route call**; the route is a
   D65-mount pattern reuse and the §8 serving rules carry the hardening — ruled by the main seat
