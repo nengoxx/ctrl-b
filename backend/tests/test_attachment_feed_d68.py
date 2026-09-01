@@ -9,6 +9,12 @@ the **two-hop test in BOTH capability directions** (§5's pin) · `read_attachme
 `InvocationContext.thread_id` (fail-closed, name-addressed, paged, manifest-on-no-name) · the
 compaction manifest + the summarizer instruction that preserves the names.
 
+S4 turns the PDF arms real: the fixtures here are parseable documents (`pdf_with_text`, borrowed from
+the store suite rather than restated), so "a PDF is injected/paged/priced like a text file" is now
+proven from the CLAIM's own extraction rather than from a hand-planted sidecar — and the two "no
+text" shapes it introduced (a document nothing could be read out of, and a sidecar that is gone) are
+pinned as the honest one-liner and the §4.5 stub respectively.
+
 And the no-regression half, which matters as much: a thread with no attachments assembles to plain
 STRING content with no extra lines, and an image-free payload is handed to the wire as the very same
 list object it arrived as.
@@ -25,11 +31,20 @@ from pathlib import Path
 import pytest
 from _async import run_async
 from _reg import registry, target
+from test_attachments_d68 import bounds, pdf_with_text
 from test_media_g5 import home, make_client, png_bytes
 
 from app.adapters.inference import IMAGE_PART_NAME_KEY, image_part
 from app.config import AttachmentsCfg
-from app.core.attachments import claim, mint_id, prepare_staging, sidecar_name, staged_name
+from app.core.attachments import (
+    NO_TEXT_SIDECAR,
+    claim,
+    mint_id,
+    prepare_staging,
+    sidecar_name,
+    staged_name,
+    thread_dir,
+)
 from app.domain.conversation import AttachmentPart, Message, TextPart, Thread
 from app.domain.event import ORIGIN_USER_CHAT
 from app.services.agent.attachments import ATTACHMENT_ONLY_TEXT, priced_inline_chars
@@ -47,7 +62,7 @@ def _attach(home: Path, thread_id: str, name: str, body: bytes) -> AttachmentPar
     staging = prepare_staging(home)
     aid = mint_id()
     (staging / staged_name(aid, name)).write_bytes(body)
-    return claim(home, thread_id, aid, max_age_s=3600)
+    return claim(home, thread_id, aid, max_age_s=3600, pdf_bounds=bounds())
 
 
 def _thread(c) -> Thread:
@@ -201,29 +216,44 @@ def test_an_oversized_FIRST_line_ENDS_the_page_and_the_continuation_names_LINE_2
 
 
 def test_a_PDF_renders_the_stub_that_names_the_read_call(home: Path) -> None:
-    """S2 has no extraction yet (S4 lands it), so the honest rendering is the file, its size and the
-    one call that opens it — a stub S4 replaces by WRITING the sidecar, not by editing this branch."""
+    """The stub is what a PDF with NO sidecar on disk renders as. Since S4 that is the crash-window
+    shape rather than the ordinary one — the claim writes a sidecar for every PDF, including one it
+    could not read a word of — so the case is reached the way it really happens: the file is gone."""
     with make_client() as c:
         thread = _thread(c)
-        _say(c, thread, "see", _attach(home, thread.id, "report.pdf", b"%PDF-1.7\nnope"))
+        pdf = _attach(home, thread.id, "report.pdf", pdf_with_text([["some text"]]))
+        (thread_dir(home, thread.id) / sidecar_name(pdf.name)).unlink()
+        _say(c, thread, "see", pdf)
         body = _user_turns(_assemble(c, thread))[0]["content"]
         assert 'pdf attachment "report.pdf"' in body
         assert 'call read_attachment("report.pdf") to read it' in body
 
 
-def test_a_PDF_WITH_a_sidecar_is_injected_like_any_text_file(home: Path) -> None:
-    """…and the same branch already reads S4's output: once the sidecar exists it IS a text file.
+def test_a_CLAIMED_pdf_is_INJECTED_with_the_text_the_claim_extracted(home: Path) -> None:
+    """S4 end to end through the feed: the claim extracted the text, and the §4.2 branch that was
+    written for text files inlines it with no PDF arm of its own — once the sidecar exists it IS a
+    text file, which is the whole reason S2 could ship the reader a slice early.
 
     Under the PDF's OWN name (S2 MED-2): the page is READ from `report.pdf.txt` and is ABOUT
     `report.pdf`, and only the latter is a name this conversation holds."""
     with make_client() as c:
         thread = _thread(c)
-        pdf = _attach(home, thread.id, "report.pdf", b"%PDF-1.7\nnope")
-        _attach(home, thread.id, sidecar_name(pdf.name), b"extracted body\n")
+        pdf = _attach(home, thread.id, "report.pdf", pdf_with_text([["extracted body"]]))
         _say(c, thread, "see", pdf)
         body = _user_turns(_assemble(c, thread))[0]["content"]
         assert 'read_attachment("report.pdf") → lines 1–1 of 1:\nextracted body' in body
         assert sidecar_name(pdf.name) not in body
+
+
+def test_a_PDF_WITH_NO_TEXT_says_so_IN_THE_TURN(home: Path) -> None:
+    """§4.3's failure copy is the sidecar's CONTENT, so it rides the ordinary frame: the model is
+    told, in the same shape as any other file's page, that this one has nothing to read."""
+    with make_client() as c:
+        thread = _thread(c)
+        _say(c, thread, "see", _attach(home, thread.id, "scan.pdf", pdf_with_text([[]])))
+        body = _user_turns(_assemble(c, thread))[0]["content"]
+        assert 'read_attachment("scan.pdf") → lines 1–1 of 1:' in body
+        assert NO_TEXT_SIDECAR.strip() in body
 
 
 def test_the_ceiling_degrades_the_OLDEST_images_first(home: Path) -> None:
@@ -340,6 +370,21 @@ def test_a_PDF_with_no_extracted_text_is_priced_at_its_STUB() -> None:
     pdf = AttachmentPart(kind="pdf", name="r.pdf", mime="application/pdf", path="t/r.pdf", bytes=2048)
     priced = estimate_tokens([_msg(pdf)], AttachmentsCfg()) - estimate_tokens([_msg()], AttachmentsCfg())
     assert 0 < priced < 80  # a stub, not a whole document
+
+
+def test_an_EXTRACTED_pdf_is_priced_like_the_text_file_it_now_is(home: Path) -> None:
+    """S4's half of H3, and it took no estimator change: the claim records the sidecar's length as
+    `inline_chars`, and `priced_inline_chars` — written for text files, priced at READ off the live
+    knobs — starts pricing PDFs for real. Pinned against the STUB price so the difference is the
+    document, not a rounding."""
+    with make_client() as c:
+        thread = _thread(c)
+        cfg = c.app.state.settings.attachments
+        pdf = _attach(home, thread.id, "report.pdf", pdf_with_text([["x" * 90] * 20]))
+        stub = pdf.model_copy(update={"inline_chars": None})
+        assert pdf.inline_chars and pdf.inline_chars > 1500
+        assert priced_inline_chars(pdf, cfg) >= pdf.inline_chars
+        assert priced_inline_chars(pdf, cfg) > priced_inline_chars(stub, cfg) + 1000
 
 
 # ── C. the per-hop modality strip (§5) ────────────────────────────────────────────────────────────
@@ -564,21 +609,37 @@ def test_an_IMAGE_refuses_honestly_by_kind(home: Path) -> None:
         assert result.state.value == "error" and "shown to you directly" in (result.error or "")
 
 
-def test_a_PDF_without_a_sidecar_says_SO_rather_than_failing(home: Path) -> None:
+def test_a_PDF_whose_sidecar_is_GONE_says_SO_rather_than_failing(home: Path) -> None:
+    """The tool's counterpart of the stub above: no sidecar on disk is a FACT about the file, not an
+    error — and it stays a fact, because extraction happened once at claim and no read rebuilds it
+    (the §10-class residual: the remedy is re-attaching the file)."""
     with make_client() as c:
         thread = _thread(c)
-        _say(c, thread, "see", _attach(home, thread.id, "report.pdf", b"%PDF-1.7\nnope"))
+        pdf = _attach(home, thread.id, "report.pdf", pdf_with_text([["some text"]]))
+        sidecar = thread_dir(home, thread.id) / sidecar_name(pdf.name)
+        sidecar.unlink()
+        _say(c, thread, "see", pdf)
         result = _invoke(c, thread.id, name="report.pdf")
         assert result.state.value == "ok" and "no text has been extracted" in (result.output or "")
+        assert not sidecar.exists()  # the read did not re-extract
 
 
-def test_a_PDF_WITH_a_sidecar_reads_the_extracted_text(home: Path) -> None:
+def test_a_PDF_the_claim_EXTRACTED_reads_back_through_the_tool(home: Path) -> None:
     with make_client() as c:
         thread = _thread(c)
-        pdf = _attach(home, thread.id, "report.pdf", b"%PDF-1.7\nnope")
-        _attach(home, thread.id, sidecar_name(pdf.name), b"the extracted body\n")
+        pdf = _attach(home, thread.id, "report.pdf", pdf_with_text([["the extracted body"]]))
         _say(c, thread, "see", pdf)
         assert "the extracted body" in (_invoke(c, thread.id, name="report.pdf").output or "")
+
+
+def test_a_PDF_with_NO_TEXT_reads_back_as_the_one_liner(home: Path) -> None:
+    """The §4.3 failure copy through the tool: an OK result carrying the one thing the model can act
+    on, rather than a refusal it would try a second spelling of."""
+    with make_client() as c:
+        thread = _thread(c)
+        _say(c, thread, "see", _attach(home, thread.id, "scan.pdf", pdf_with_text([[]])))
+        result = _invoke(c, thread.id, name="scan.pdf")
+        assert result.state.value == "ok" and NO_TEXT_SIDECAR.strip() in (result.output or "")
 
 
 def test_a_PDF_s_CONTINUATION_names_a_call_that_actually_works(home: Path) -> None:
@@ -588,13 +649,13 @@ def test_a_PDF_s_CONTINUATION_names_a_call_that_actually_works(home: Path) -> No
     with make_client() as c:
         c.app.state.settings.attachments.max_inline_chars = 40
         thread = _thread(c)
-        pdf = _attach(home, thread.id, "report.pdf", b"%PDF-1.7\nnope")
-        _attach(home, thread.id, sidecar_name(pdf.name), TEXT)  # long enough to page
+        # 12 real lines of extracted text — enough to page at a 40-character budget.
+        pdf = _attach(home, thread.id, "report.pdf", pdf_with_text([[f"line {i}" for i in range(1, 13)]]))
         _say(c, thread, "see", pdf)
         out = _invoke(c, thread.id, name="report.pdf").output or ""
-        assert out.startswith("report.pdf (PARTIAL: lines 1-5 of 400")
+        assert out.startswith("report.pdf (PARTIAL: lines 1-5 of 12")
         assert "continue: read_attachment offset=6" in out
-        assert "line 1\n" in out  # …while the bytes still came from the sidecar
+        assert "line 1\n" in out and "line 6" not in out  # …while the bytes came from the sidecar
         assert sidecar_name(pdf.name) not in out
         # and the physical name is exactly what this tool refuses, which is why the head avoids it
         assert _invoke(c, thread.id, name=sidecar_name(pdf.name)).state.value == "error"

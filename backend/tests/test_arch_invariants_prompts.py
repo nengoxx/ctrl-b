@@ -134,7 +134,14 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         # N characters are shown" is a measured fact about the page in hand — the same shape as
         # "continue at offset N" beside it — and an owner rewording it could only make the coverage
         # statement disagree with the bytes.
+        # S4's `NO_TEXT_SIDECAR` is the last of them: the CONTENT of the sidecar written for a PDF
+        # nothing could be read out of — "we looked at this file and there is no text in it" — which
+        # reaches the model through the ordinary §4.2 page frame, exactly like a real extraction. It
+        # is a per-file outcome, not a standing instruction, and it is structurally out of the
+        # registry's reach for `NO_IMAGE_SUPPORT`'s own reason one layer down: `core/attachments.py`
+        # never imports `app.config`, which is what `resolve()` needs.
         ("app/adapters/inference.py", "NO_IMAGE_SUPPORT"),
+        ("app/core/attachments.py", "NO_TEXT_SIDECAR"),
         ("app/core/attachments.py", "read_page"),
         ("app/services/agent/attachment_tool.py", "_page_result"),
         ("app/services/agent/attachment_tool.py", "read_attachment"),

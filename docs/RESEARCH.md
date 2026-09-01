@@ -120,6 +120,7 @@ an untrusted-decoder surface; all crop/resize/re-encode/EXIF-stripping happens i
 | `python-multipart` | audio upload parsing | `/voice/stt` receives a file |
 | `youtube-transcript-api`, `beautifulsoup4` | Utils: YT captions | port as-is |
 | `aiosqlite` *or* stdlib `sqlite3` | persistence | threads/messages/memory/events |
+| `pypdf` | composer attachments: PDF → text at claim | **The one new dep of D68** (ATTACHMENTS_PLAN §4.3 + §10, owner-ratified). Pure Python, no runtime deps, no C decoder — the same "no untrusted decoder on the server" line D65 drew for images (no Pillow). Its bounds are SOFT by ruling (§0b-3): `attachments.max_pdf_pages`/`max_extracted_chars` stop the page loop, they cannot interrupt one `extract_text()` call. No OCR: a scan's sidecar says so in one line. |
 
 - Use `pyproject.toml` with **pinned** versions (the old `requirements.txt` is unpinned — fix
   that). Optionally `uv` for fast, reproducible installs on both OSes.

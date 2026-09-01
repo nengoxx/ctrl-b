@@ -22,6 +22,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from app.core.attachments import (
+    PdfBounds,
     StoredRead,
     StoredReadError,
     claim_all,
@@ -46,15 +47,22 @@ async def claim_attachments(
     what that means for its path (the POST refuses the send; the drain says so in a `notice` and
     persists the text it already holds). Empty in, empty out and no thread hop: the overwhelmingly
     common send carries no files and must cost nothing.
+
+    This is also where the PDF extraction bounds are read off `Settings` (S4 §4.3) — the ONE place,
+    because the store may not import config. They ride the same `to_thread` hop the claim already
+    needed: extraction is `pypdf` on a file the claim just landed, which is exactly the blocking work
+    this seam exists to keep off the event loop.
     """
     if not attachment_ids:
         return []
+    cfg = settings.attachments
     return await asyncio.to_thread(
         claim_all,
         settings.home_dir(),
         thread_id,
         list(attachment_ids),
-        max_age_s=settings.attachments.staging_orphan_s,
+        max_age_s=cfg.staging_orphan_s,
+        pdf_bounds=PdfBounds(max_pages=cfg.max_pdf_pages, max_chars=cfg.max_extracted_chars),
     )
 
 
@@ -188,9 +196,10 @@ def image_stub(part: AttachmentPart) -> str:
 
 
 def document_stub(part: AttachmentPart) -> str:
-    """What a text/PDF attachment renders as when its content is NOT inlined into the turn — a PDF
-    whose text has not been extracted (every PDF until S4 lands the sidecar), or a file the store can
-    no longer read. Names the file, its kind, its size, and the ONE call that opens it.
+    """What a text/PDF attachment renders as when its content is NOT inlined into the turn — a file
+    the store can no longer read, or a PDF with no sidecar on disk (S4 writes one at claim, including
+    for a PDF it could not read a word of, so this is now the crash-window shape rather than the
+    ordinary one). Names the file, its kind, its size, and the ONE call that opens it.
 
     Deliberately one wording for both causes, and deliberately the same string the estimator prices
     (`priced_inline_chars`): a stub that read differently depending on WHY it is a stub would be a
@@ -238,9 +247,12 @@ def priced_inline_chars(part: AttachmentPart, cfg: AttachmentsCfg) -> int:
     is the file's extracted length, and `min(that, max_inline_chars)` is what the injection will
     actually carry — so retuning the knob re-prices old rows instead of leaving stale prices on them.
 
-    A part with no `inline_chars` (every PDF until S4 writes its sidecar) is priced at its STUB, which
-    is what the turn will really carry. The marker is priced by RENDERING it rather than by a constant
-    beside it: one source, and it cannot drift from the frame assembly emits.
+    A part with no `inline_chars` (a PDF whose sidecar write did not land) is priced at its STUB,
+    which is what the turn will really carry. A PDF that HAS one is priced exactly like a text file
+    and needed no arm of its own here: S4 records the sidecar's length as `inline_chars` at claim, so
+    the formula below started pricing PDFs for real without a line changing. The marker is priced by
+    RENDERING it rather than by a constant beside it: one source, and it cannot drift from the frame
+    assembly emits.
 
     The `min(…)` is EXACT because `max_inline_chars` is now a hard bound on a page (MED-1): before the
     cut, one oversized line was emitted whole, so a 10 MiB single-line file priced at the cap and cost

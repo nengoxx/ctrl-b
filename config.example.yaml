@@ -67,6 +67,10 @@ server:
 # context estimate decides to compact; `max_images_per_request` bounds how many images one assembled
 # request may carry (the oldest degrade to a stub past it); `resend: false` sends only the CURRENT
 # turn's images and stubs the older ones.
+# A claimed PDF has its text extracted ONCE, into a sidecar the feed then reads like any text file:
+# `max_pdf_pages` and `max_extracted_chars` are how far that goes. Both are SOFT — they stop the
+# extraction loop, so the page that crosses the character bound is kept whole — and they are the
+# worst-case wait of a send that carries a big document.
 # attachments:
 #   max_files_per_message: 10
 #   max_file_mb: 10
@@ -75,6 +79,8 @@ server:
 #   image_tokens: 1000
 #   max_images_per_request: 10
 #   resend: true
+#   max_pdf_pages: 200
+#   max_extracted_chars: 400000
 
 # Tailscale Serve (Phase 6c-2, D20) — the in-app HTTPS toggle (Conf → Access). `serve` only, never
 # funnel (tailnet-only by construction). `target_port` = the local port Serve fronts: 5433 (the

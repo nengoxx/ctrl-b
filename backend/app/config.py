@@ -1287,6 +1287,13 @@ class AttachmentsCfg(BaseModel):
     - `resend` (S2 §4.5): do images from EARLIER turns ride along again? True by default (7/7 of the
       field; dropping them breaks follow-up questions about a photo). Off, only the current turn's
       images are sent and older ones render as stubs.
+    - `max_pdf_pages` / `max_extracted_chars` (S4 §4.3): how far a claimed PDF's text extraction
+      goes — how many pages it reads, and how many characters it collects before it stops. **Soft
+      bounds** (§0b-3, owner-ratified): they stop the ITERATION, they cannot interrupt one
+      pathological `extract_text()` call, and the page that crosses the character bound rides whole.
+      They are also the send's worst-case wait, because extraction happens once, inside the claim —
+      lower them if a huge document ever makes a send feel slow. Neither is what the MODEL sees:
+      `max_inline_chars` caps the injected page, and `read_attachment` pages the rest.
     - `image_max_dimension` / `image_quality` (S3 §6): the CLIENT's downscale — the longest edge a
       staged photo is re-encoded to, and the encoder quality it is re-encoded at. Server-held for the
       same reason every other client knob is (`voice.stt.auto_send`'s precedent): the browser must
@@ -1307,6 +1314,13 @@ class AttachmentsCfg(BaseModel):
     image_tokens: int = Field(default=1000, ge=0)
     max_images_per_request: int = Field(default=10, ge=0)
     resend: bool = True
+    #: 400 000 characters ≈ LibreChat's `fileTokenLimit: 100_000` — the field's ONE shipped cap on
+    #: extracted document text (R61 §2.2/§9.1-3) — at the `CHARS_PER_TOKEN` ratio this codebase
+    #: already estimates with. 200 pages is derived rather than clustered (no peer in R61 bounds PDF
+    #: pages at all): at the ~2 000 characters a dense prose page carries, the two bounds bite at the
+    #: same document size, so neither silently dominates the other.
+    max_pdf_pages: int = Field(default=200, gt=0)
+    max_extracted_chars: int = Field(default=400_000, gt=0)
 
     @property
     def max_bytes(self) -> int:

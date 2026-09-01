@@ -31,12 +31,15 @@ NEW here is exactly the transport and the kinds:
 **Kinds and admission** (§2): images are magic-byte sniffed (PNG/JPEG/GIF/WebP — **SVG is never an
 image here**, it is active content and is not in the extension tier either); a PDF is its `%PDF-`
 signature; text CANNOT be byte-authenticated, so it is an explicit extension allowlist plus a
-bounded STRICT UTF-8 decode, and a decode failure is a refusal rather than a lossy store.
+bounded STRICT UTF-8 decode, and a decode failure is a refusal rather than a lossy store. A claimed
+PDF also has its text EXTRACTED here, once, into a `.txt` sidecar beside it (§4.3) — after which it
+is a text file to every reader, which is why the model feed needed no PDF branch of its own.
 
 **Retention** (§2): deleting a thread deletes its directory, and the boot sweep reclaims (a) staging
 files older than `attachments.staging_orphan_hours` and (b) files inside live thread dirs that no
 persisted `AttachmentPart` references — the rename-then-insert crash window the confirm round found
-(NEW 1), age-bounded so it can never race a claim in flight.
+(NEW 1), age-bounded so it can never race a claim in flight. Sidecars are referenced by nothing by
+design, so the second arm learns them as DERIVED entries (`_with_sidecars`) instead.
 
 Never imports `app.config` (the `core.media` rule): the workspace root and every tunable arrive as
 arguments, which is what keeps this module testable against a temp dir and keeps the import edge
@@ -56,7 +59,9 @@ from collections.abc import Collection, Container, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.core.fsutil import fsync_dir
+from pypdf import PdfReader
+
+from app.core.fsutil import atomic_write_text, fsync_dir
 from app.core.media import (
     ALLOWED_TYPES,
     StoreWriteError,
@@ -423,7 +428,9 @@ def _final_name(directory: Path, candidate: str) -> str:
     raise StoreWriteError(409, f"too many files named {candidate!r} in this conversation")
 
 
-def claim(home: Path, thread_id: str, attachment_id: str, *, max_age_s: float) -> AttachmentPart:
+def claim(
+    home: Path, thread_id: str, attachment_id: str, *, max_age_s: float, pdf_bounds: PdfBounds
+) -> AttachmentPart:
     """Move one staged file into the thread's directory and describe it. Refuses with `409`.
 
     The whole contract of transport B lives in this function (§3):
@@ -438,7 +445,11 @@ def claim(home: Path, thread_id: str, attachment_id: str, *, max_age_s: float) -
         plan's shorthand — would have clobbered whatever the resolved name already held, which is the
         one thing the collision suffix exists to prevent.)
       * the `AttachmentPart` is built from a FRESH sniff of the landed file, so the persisted facts
-        describe the bytes the store actually holds.
+        describe the bytes the store actually holds;
+      * a PDF has its text EXTRACTED here, once, into the sidecar the feed reads (S4 §4.3) — the
+        claim is the only moment the bytes are new, and the sidecar is then read for the life of the
+        thread. `pdf_bounds` carries the two `attachments:` knobs that bound it (the settings seam
+        passes them in; this module never imports config).
 
     The rename cannot sit inside the message's SQLite transaction (confirm-round NEW 1), so a crash
     between this call and the insert leaves an unreferenced file in a live thread dir — reclaimed by
@@ -495,6 +506,14 @@ def claim(home: Path, thread_id: str, attachment_id: str, *, max_age_s: float) -
         raise StoreWriteError(409, CLAIM_REFUSED) from None
     fsync_dir(directory)
     sniff = sniff_file(target, name)
+    # `chars` is a TEXT fact (the strict decode at sniff); for a PDF the equivalent fact is the
+    # length of what could be extracted, which is what `_write_pdf_sidecar` answers with. Either way
+    # `inline_chars` is the file's own extracted length — never `min(len, max_inline_chars)`, which
+    # is priced at READ (confirm N1) — so the estimator's `priced_inline_chars` starts pricing PDFs
+    # for real with no change of its own.
+    inline_chars = sniff.chars
+    if sniff.kind == "pdf":
+        inline_chars = _write_pdf_sidecar(directory, name, pdf_bounds)
     return AttachmentPart(
         kind=sniff.kind,
         name=name,
@@ -503,12 +522,17 @@ def claim(home: Path, thread_id: str, attachment_id: str, *, max_age_s: float) -
         bytes=target.stat().st_size,
         width=sniff.width,
         height=sniff.height,
-        inline_chars=sniff.chars,
+        inline_chars=inline_chars,
     )
 
 
 def claim_all(
-    home: Path, thread_id: str, attachment_ids: Sequence[str], *, max_age_s: float
+    home: Path,
+    thread_id: str,
+    attachment_ids: Sequence[str],
+    *,
+    max_age_s: float,
+    pdf_bounds: PdfBounds,
 ) -> list[AttachmentPart]:
     """Claim every id of one send, in order. The FIRST refusal aborts the whole send (§3).
 
@@ -517,7 +541,7 @@ def claim_all(
     same crash-window class the plan already accepts (NEW 1) rather than a rollback machine nothing
     else in this codebase carries — and the owner's remedy is the one the copy names: re-attach.
     """
-    return [claim(home, thread_id, aid, max_age_s=max_age_s) for aid in attachment_ids]
+    return [claim(home, thread_id, aid, max_age_s=max_age_s, pdf_bounds=pdf_bounds) for aid in attachment_ids]
 
 
 # ── reading a stored file (S2 — the model feed's only door to the bytes) ──────────────────────────
@@ -529,16 +553,120 @@ def claim_all(
 #: convention to re-agree on. The suffix rides on the FULL name rather than replacing `.pdf` so it can
 #: never collide with a `report.txt` the owner attached beside it.
 #:
-#: ⚠ S4 note: a sidecar is a file inside a live thread dir that NO persisted `AttachmentPart`
-#: references, which is exactly what `sweep_thread_dirs`' second arm reclaims once it ages past
-#: `staging_orphan_hours`. Writing extraction without teaching that sweep about sidecars would ship a
-#: file that deletes itself a day later — the referenced set has to grow a derived entry per PDF part.
+#: A sidecar is a file inside a live thread dir that no persisted `AttachmentPart` references, which
+#: is exactly what `sweep_thread_dirs`' second arm reclaims once it ages past `staging_orphan_hours`
+#: — so S4's obligation was to teach the sweep about it, or ship a file that deletes itself a day
+#: later. `_with_sidecars` below is that: the referenced set grows a DERIVED entry per referenced
+#: file, at the one place the sweep consumes it, so no caller has to remember the rule.
 SIDECAR_SUFFIX = ".txt"
 
 
 def sidecar_name(name: str) -> str:
-    """The extracted-text sidecar's stored name for `name` (S4 writes it, S2 reads it)."""
+    """The extracted-text sidecar's stored name for `name` (S4 writes it, S2 reads it).
+
+    Takes a NAME or a store-relative PATH — the suffix rides on the end either way, which is what
+    lets `_with_sidecars` derive `{thread}/{name}.txt` entries from the persisted `path`s without a
+    second naming rule.
+    """
     return f"{name}{SIDECAR_SUFFIX}"
+
+
+# ── the sidecar's WRITER: PDF text extraction at claim (S4, §4.3) ─────────────────────────────────
+
+
+@dataclass(frozen=True)
+class PdfBounds:
+    """How far one PDF extraction may go — the two `attachments:` knobs, as ONE argument (§4.3/§6).
+
+    An object rather than two loose keywords on `claim`/`claim_all`: extraction is the dimension of
+    this store most likely to grow another knob (a page RANGE, a per-kind opt-out, whatever OCR would
+    need if it ever stops being out of scope), and the extend-don't-migrate directive says the next
+    dimension should be an optional field with a default here rather than a fourth keyword threaded
+    through two functions and the seam. The knobs still arrive as arguments — `core` never imports
+    `app.config`, so `services/agent/attachments.py` is the one place they are read off `Settings`.
+
+    **Both bounds are SOFT, and saying so is the ruling** (§0b-3, owner-ratified): they stop the
+    ITERATION — no further page is extracted once either is reached — and they cannot kill one
+    pathological `extract_text()` call, which is a single library call this code does not get to
+    interrupt. `max_chars` is therefore a stopping rule, not a truncation: the page that crosses it
+    rides WHOLE, because cutting a page mid-word would hand the model a fragment it was told nothing
+    about. The bound the model actually sees is elsewhere and hard — `attachments.max_inline_chars`
+    caps the injected page, and the §4.2 marker names exactly what it left behind.
+    """
+
+    max_pages: int
+    max_chars: int
+
+
+#: What a PDF's sidecar holds when nothing could be read out of it — a scan, an image-only export, or
+#: a file that sniffed as a PDF and then would not parse (§4.3; OCR is out of scope). ONE wording for
+#: every one of those, because the model can act on none of the differences: what it needs is that the
+#: file is here, that its text is not, and that asking the owner is the way forward. It is the
+#: sidecar's CONTENT, so it reaches the model through the ordinary §4.2 frame — a "lines 1–1 of 1"
+#: page — rather than as a second kind of stub the estimator would have to know about.
+NO_TEXT_SIDECAR = (
+    "No text could be extracted from this PDF — it is most likely a scan or an image-only "
+    "document. The file itself is stored unchanged; ask the owner what it contains.\n"
+)
+
+
+def _extract_pdf_text(path: Path, bounds: PdfBounds) -> str | None:
+    """The text of a stored PDF, bounded by `bounds`, or `None` when there is none to be had.
+
+    Page by page with the bound checked BEFORE each one, so the iteration stops rather than running
+    a 900-page document to completion and throwing the tail away. Pages that yield nothing are
+    skipped silently — a mixed document (a scanned cover, then real text) should read as its text.
+
+    Newlines are normalised to LF and the ends trimmed: the sidecar is a TEXT file this store
+    authors, and every reader downstream (`read_page`, the D64 paging, the §4.2 marker's line
+    counts) is line-oriented, so a CR that arrived from a PDF's own layout would otherwise become a
+    phantom line break in what the model is told it read.
+    """
+    try:
+        reader = PdfReader(str(path))
+        chunks: list[str] = []
+        chars = 0
+        for index, page in enumerate(reader.pages):
+            if index >= bounds.max_pages or chars >= bounds.max_chars:
+                break
+            text = page.extract_text() or ""
+            if not text:
+                continue
+            chunks.append(text)
+            chars += len(text)
+    except Exception:
+        # pypdf raises a family of its own errors on a malformed, truncated or encrypted file, and a
+        # hostile one can reach past them (a deep object graph is a RecursionError, a huge one a
+        # MemoryError). Every outcome means the same thing to a claim that has already landed the
+        # bytes: there is no text. Never `BaseException` — a cancellation is not an extraction result.
+        return None
+    text = "\n".join(chunks).replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+    return f"{text}\n" if text else None
+
+
+def _write_pdf_sidecar(directory: Path, name: str, bounds: PdfBounds) -> int | None:
+    """Extract one claimed PDF's text and write its sidecar; return the sidecar's character count.
+
+    The ONE extraction site (`claim` is its only caller), and the ONE writer of a sidecar — which
+    keeps the §3 "the claim is the only writer into a thread dir" property intact rather than
+    bending it: this runs inside the store module, inside the claim, before the part exists.
+
+    Atomic through `atomic_write_text`, the house writer (D26/D57): a temp sibling in the SAME
+    directory, fsync'd, then `os.replace`. Same-dir matters here for the same reason it does there —
+    a cross-volume replace is not atomic — and a torn sidecar would be read as the file's text.
+
+    `None` means "no sidecar" and therefore no `inline_chars`: the part then renders as the §4.5
+    document stub, which is the honest description of a PDF whose text is not on disk. It is
+    reserved for a WRITE that failed (a full disk, a directory pulled out from under us) — an
+    extraction that found nothing gets the `NO_TEXT_SIDECAR` one-liner instead, because "we looked
+    and there is no text" is a fact worth telling the model, and it is one the estimator prices.
+    """
+    text = _extract_pdf_text(directory / name, bounds) or NO_TEXT_SIDECAR
+    try:
+        atomic_write_text(directory / sidecar_name(name), text)
+    except OSError:
+        return None
+    return len(text)
 
 
 def stored_file(home: Path, thread_id: str, name: str) -> Path | None:
@@ -797,6 +925,30 @@ def sweep_staging(home: Path, *, max_age_s: float) -> int:
     return removed
 
 
+def _with_sidecars(referenced: Collection[str]) -> set[str]:
+    """The referenced set, plus the sidecar entry that belongs to each of its files (S4).
+
+    A sidecar is real, live data that NOTHING references — no `AttachmentPart` names it, by design
+    (S2 MED-2: the addressable name is the PDF's) — so without this the second sweep arm reclaims
+    every extracted text a day after it was written, and the model silently loses the contents of a
+    PDF the owner is still asking about.
+
+    Derived for EVERY referenced path rather than only the `.pdf`-suffixed ones, because kind and
+    extension are NOT paired in this store: `sniff_file` binds a PDF by its `%PDF-` signature, so a
+    PDF the owner's picker named `contract.txt` is a `pdf` part with a `.txt` name and a
+    `contract.txt.txt` sidecar. Filtering on the suffix would delete exactly those. The
+    over-approximation costs one derived name per attachment and can only ever protect a file called
+    `<referenced name>.txt`, which for a PDF IS its sidecar and for anything else is a crash-window
+    orphan of that exact name — still reclaimed with the thread when it is deleted.
+
+    Applied where `sweep_thread_dirs` consumes `referenced`, so both entry points (`sweep`, and any
+    direct caller) inherit it: a retention rule callers have to remember is one a future caller
+    forgets.
+    """
+    paths = set(referenced)
+    return paths | {sidecar_name(p) for p in paths}
+
+
 def sweep_thread_dirs(
     home: Path,
     *,
@@ -822,7 +974,11 @@ def sweep_thread_dirs(
     second knob that could disagree with the first.
 
     `referenced` holds store-relative paths (`{thread_id}/{name}`), which is exactly what
-    `AttachmentPart.path` persists — the comparison needs no reconstruction on either side.
+    `AttachmentPart.path` persists — the comparison needs no reconstruction on either side. It is
+    widened by `_with_sidecars` HERE rather than by its callers, so a PDF's extracted text (which no
+    part references, and which the second arm would otherwise reclaim a day after S4 wrote it)
+    survives for every caller. The FIRST arm is deliberately untouched by that: a dead thread's
+    sidecars are as unreachable as the files they describe, and go with them.
 
     Fails CLOSED on a store root that is not a real directory (`_real_root`, MED-1): this walk's first
     arm deletes what it does not recognise, so a symlinked root turns "a dead thread's leftovers" into
@@ -833,7 +989,7 @@ def sweep_thread_dirs(
     if root is None:
         return 0
     cutoff = time.time() - max_age_s
-    referenced_set = set(referenced)
+    referenced_set = _with_sidecars(referenced)
     removed = 0
     try:
         dirs = list(root.iterdir())

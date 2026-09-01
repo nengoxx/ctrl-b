@@ -1,4 +1,4 @@
-"""D68 / ATTACHMENTS_PLAN S1 — the attachment store, the staging transport and the claim.
+"""D68 / ATTACHMENTS_PLAN S1 (+S4) — the attachment store, the staging transport and the claim.
 
 The §9 S1 obligation list, one test each: the traversal/symlink/oversize/sniff/decode refusals · the
 mint-time name refusal (PRE-STREAM — a refusable name never costs a 10 MB write) · the claim races
@@ -13,6 +13,13 @@ The S2 fix wave's READ-path fail-closed pins (LOW-3) live here too rather than b
 they are about `core/attachments.py`'s own store tree, and they reuse the MED-1 relocation helper
 below instead of restating it.
 
+S4 adds the sidecar's WRITE half, for the same reason: extraction happens inside the claim, so what
+it produces (a real extracted text · the honest one-liner when there is none · the two soft bounds)
+and what retention does with it (an aged sidecar of a referenced PDF survives BOTH sweep arms; a dead
+thread's does not; a thread delete takes it; the read route still 404s it) are properties of this
+module. Its PDFs are REAL ones — `pdf_with_text` builds a minimal, genuinely parseable document,
+because a fixture pypdf cannot read would prove only that the failure path works.
+
 Config/db go to a temp `CTRLB_HOME`/`CTRLB_CONFIG`/`CTRLB_DB` (the shared `home` fixture) — never the
 operator's real config.yaml.
 
@@ -26,6 +33,7 @@ import os
 import shutil
 import struct
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import quote
 
@@ -41,10 +49,13 @@ from test_media_g5 import (
     webp_bytes,
 )
 
+from app.config import AttachmentsCfg
 from app.core.attachments import (
     ALLOWED_SUFFIXES,
     CLAIM_REFUSED,
+    NO_TEXT_SIDECAR,
     STAGING_DIRNAME,
+    PdfBounds,
     StoredReadError,
     attachments_root,
     candidate_of,
@@ -53,6 +64,7 @@ from app.core.attachments import (
     read_bytes,
     read_page,
     remove_thread_attachments,
+    sidecar_name,
     staged_name,
     staging_dir,
     sweep,
@@ -74,7 +86,62 @@ def gif_bytes(w: int = 6, h: int = 5) -> bytes:
 
 
 def pdf_bytes(body: bytes = b"nothing readable") -> bytes:
+    """A file that SNIFFS as a PDF and is not one — the signature is all admission looks at."""
     return b"%PDF-1.7\n" + body
+
+
+def pdf_with_text(pages: Sequence[Sequence[str]]) -> bytes:
+    """A real, minimal PDF: one page per row, one line of Helvetica text per string (S4).
+
+    Hand-built rather than authored with pypdf, because the fixture must not be produced by the same
+    library under test — and a PDF is small enough to write honestly: the three shared objects
+    (catalog, page tree, font), then a page + content stream per row, then the xref table their byte
+    offsets go into. `pdf_with_text([[]])` is the scanned-document shape: a real page with no text
+    operators at all, which is what extraction finding nothing actually looks like.
+    """
+    page_ids = [4 + 2 * i for i in range(len(pages))]
+    objs: list[bytes] = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids ["
+        + b" ".join(b"%d 0 R" % i for i in page_ids)
+        + b"] /Count %d >>" % len(pages),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    for pid, lines in zip(page_ids, pages, strict=True):
+        stream = b"BT /F1 12 Tf 72 720 Td"
+        for line in lines:
+            stream += b" (" + line.encode("ascii") + b") Tj 0 -14 Td"
+        stream += b" ET"
+        objs.append(
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 3 0 R >> >> /Contents %d 0 R >>" % (pid + 1)
+        )
+        objs.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
+    out = bytearray(b"%PDF-1.7\n")
+    offsets: list[int] = []
+    for number, obj in enumerate(objs, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % number + obj + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    for offset in offsets:
+        out += b"%010d 00000 n \n" % offset
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF" % (len(objs) + 1, xref)
+    return bytes(out)
+
+
+def bounds(*, pages: int | None = None, chars: int | None = None) -> PdfBounds:
+    """The extraction bounds as the SEAM builds them (§6) — off the shipped `attachments:` defaults
+    unless a test is about one of them, so no number here is a second copy of a shipped one."""
+    cfg = AttachmentsCfg()
+    return PdfBounds(
+        max_pages=cfg.max_pdf_pages if pages is None else pages,
+        max_chars=cfg.max_extracted_chars if chars is None else chars,
+    )
+
+
+def sidecar_of(home: Path, thread_id: str, name: str) -> Path:
+    return thread_dir(home, thread_id) / sidecar_name(name)
 
 
 def stage(c, name: str, body: bytes) -> dict:
@@ -404,7 +471,7 @@ def test_TWO_CLAIMANTS_of_one_id_leave_exactly_one_copy(home: Path, monkeypatch)
 
         monkeypatch.setattr(store.os, "link", racing_link)
         with pytest.raises(StoreWriteError) as exc:
-            claim(home, "t-race", row["attachment_id"], max_age_s=3600)
+            claim(home, "t-race", row["attachment_id"], max_age_s=3600, pdf_bounds=bounds())
         assert exc.value.status == 409 and exc.value.detail == CLAIM_REFUSED
         assert stored(home, "t-race") == []  # the loser removed what it had linked
 
@@ -425,7 +492,7 @@ def test_the_OTHER_ordering_of_that_race_refuses_too(home: Path, monkeypatch) ->
 
         monkeypatch.setattr(store.os, "link", losing_link)
         with pytest.raises(StoreWriteError) as exc:
-            claim(home, "t-race", row["attachment_id"], max_age_s=3600)
+            claim(home, "t-race", row["attachment_id"], max_age_s=3600, pdf_bounds=bounds())
         assert exc.value.status == 409 and exc.value.detail == CLAIM_REFUSED
         assert stored(home, "t-race") == []
 
@@ -727,7 +794,7 @@ def test_the_sweep_cannot_race_a_claim_in_flight(home: Path) -> None:
     candidate — the freshly claimed file below is unreferenced AND untouched."""
     with make_client() as c:
         row = stage(c, "fresh.png", png_bytes())
-        part = claim(home, "t-live", row["attachment_id"], max_age_s=3600)
+        part = claim(home, "t-live", row["attachment_id"], max_age_s=3600, pdf_bounds=bounds())
         assert part.path == "t-live/fresh.png"
         assert sweep(home, live_thread_ids=["t-live"], referenced=set(), max_age_s=24 * 3600) == 0
         assert stored(home, "t-live") == ["fresh.png"]
@@ -737,7 +804,7 @@ def test_the_sweep_removes_a_dead_thread_s_directory(home: Path) -> None:
     """A directory whose thread row is gone holds files nothing can reach (§2 retention arm (a))."""
     with make_client() as c:
         row = stage(c, "gone.png", png_bytes())
-        claim(home, "t-dead", row["attachment_id"], max_age_s=3600)
+        claim(home, "t-dead", row["attachment_id"], max_age_s=3600, pdf_bounds=bounds())
         stamp = time.time() - 48 * 3600
         os.utime(thread_dir(home, "t-dead") / "gone.png", (stamp, stamp))
         assert sweep(home, live_thread_ids=[], referenced=set(), max_age_s=24 * 3600) == 1
@@ -757,6 +824,181 @@ def test_the_boot_sweep_runs_in_the_lifespan(home: Path) -> None:
 
 def test_remove_thread_attachments_is_a_no_op_for_a_thread_with_none(home: Path) -> None:
     assert remove_thread_attachments(home, "never-used") == 0
+
+
+# ── PDF extraction: the sidecar's writer (S4 §4.3) ────────────────────────────────────────────────
+
+
+def test_claiming_a_PDF_writes_its_EXTRACTED_TEXT_beside_it(home: Path) -> None:
+    """The whole of §4.3 in one send: the original is stored, its text is extracted ONCE at claim
+    into the sidecar S2's reader already knows how to find, and the part's `inline_chars` is that
+    sidecar's length — the fact the estimator prices and the injection caps, with no arm of its own
+    for PDFs (`priced_inline_chars` was written for exactly this and did not change)."""
+    with make_client() as c:
+        raw = pdf_with_text([["hello from page one", "second line"], ["page two text"]])
+        row = stage(c, "report.pdf", raw)
+        tid = send(c, text="see", attachments=[row["attachment_id"]]).json()["threadId"]
+
+        assert stored(home, tid) == ["report.pdf", "report.pdf.txt"]
+        assert (thread_dir(home, tid) / "report.pdf").read_bytes() == raw  # the original is KEPT
+        text = sidecar_of(home, tid, "report.pdf").read_text(encoding="utf-8")
+        assert text == "hello from page one\nsecond line\n\npage two text\n"
+        part = next(p for p in parts_of(c, tid) if p["type"] == "attachment")
+        assert (part["kind"], part["mime"]) == ("pdf", "application/pdf")
+        assert part["inline_chars"] == len(text)
+
+
+@pytest.mark.parametrize(
+    ("name", "body"),
+    [
+        ("scan.pdf", pdf_with_text([[]])),  # a real page with no text operators — the scan shape
+        ("broken.pdf", pdf_bytes()),  # sniffs as a PDF, will not parse
+    ],
+)
+def test_a_PDF_WITH_NO_READABLE_TEXT_gets_the_honest_one_liner(home: Path, name: str, body: bytes) -> None:
+    """§4.3: a scan, an image-only export and a file that sniffs as a PDF then refuses to parse are
+    ONE outcome to the model — the file is here, its text is not — so they get one wording. It is the
+    sidecar's CONTENT, which means the ordinary §4.2 frame carries it and `inline_chars` prices it;
+    and the original is kept either way, because OCR being out of scope is not a reason to lose it."""
+    with make_client() as c:
+        row = stage(c, name, body)
+        tid = send(c, text="see", attachments=[row["attachment_id"]]).json()["threadId"]
+        assert sidecar_of(home, tid, name).read_text(encoding="utf-8") == NO_TEXT_SIDECAR
+        assert (thread_dir(home, tid) / name).read_bytes() == body
+        part = next(p for p in parts_of(c, tid) if p["type"] == "attachment")
+        assert part["inline_chars"] == len(NO_TEXT_SIDECAR)
+
+
+def test_the_PAGE_bound_stops_the_extraction(home: Path) -> None:
+    """`max_pdf_pages` stops the LOOP (it is checked before each page), so page 4 of this document is
+    never handed to pypdf at all — which is the only kind of bound this can be (§0b-3)."""
+    with make_client() as c:
+        row = stage(c, "long.pdf", pdf_with_text([[f"page {i}"] for i in range(1, 11)]))
+        part = claim(home, "t-pages", row["attachment_id"], max_age_s=3600, pdf_bounds=bounds(pages=3))
+        text = sidecar_of(home, "t-pages", "long.pdf").read_text(encoding="utf-8")
+        assert text.split("\n\n") == ["page 1", "page 2", "page 3\n"]
+        assert part.inline_chars == len(text)
+
+
+def test_the_CHARACTER_bound_is_SOFT_and_the_crossing_page_rides_WHOLE(home: Path) -> None:
+    """`max_extracted_chars` is a STOPPING RULE, not a truncation (§0b-3, §4.3): the page that takes
+    the total past it is kept entire — cutting it mid-word would hand the model a fragment it was
+    told nothing about — and the next page is not read. So the sidecar is allowed to be a little
+    LONGER than the bound, and the bound the model actually feels is `max_inline_chars`."""
+    with make_client() as c:
+        page = "z" * 99  # 100 characters extracted per page, newline included
+        row = stage(c, "wide.pdf", pdf_with_text([[f"{i}{page}"] for i in range(1, 10)]))
+        claim(home, "t-chars", row["attachment_id"], max_age_s=3600, pdf_bounds=bounds(chars=250))
+        text = sidecar_of(home, "t-chars", "wide.pdf").read_text(encoding="utf-8")
+        assert [line[0] for line in text.split("\n\n")] == ["1", "2", "3"]  # 3 pages, not 2½
+        assert len(text) > 250  # OVER the bound, by design
+        assert {len(chunk.rstrip("\n")) for chunk in text.split("\n\n")} == {100}  # no page was cut
+
+
+def test_a_sidecar_the_WRITE_could_not_land_leaves_the_part_STUB_SHAPED(home: Path, monkeypatch) -> None:
+    """A full disk (or a directory pulled out from under the claim) must not fail the send: the file
+    is stored, the part simply carries no `inline_chars`, and the §4.5 document stub — the honest
+    description of a PDF whose text is not on disk — is what the turn renders."""
+    import app.core.attachments as store
+
+    def failing_write(path, content):
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(store, "atomic_write_text", failing_write)
+    with make_client() as c:
+        row = stage(c, "report.pdf", pdf_with_text([["some text"]]))
+        tid = send(c, text="see", attachments=[row["attachment_id"]]).json()["threadId"]
+        assert stored(home, tid) == ["report.pdf"]
+        assert next(p for p in parts_of(c, tid) if p["type"] == "attachment")["inline_chars"] is None
+
+
+def test_extraction_happens_ONCE_at_claim_and_a_missing_sidecar_STAYS_missing(home: Path) -> None:
+    """The recorded residual (§10 class): extraction is a claim-time act, so a sidecar that is gone —
+    the crash between the write and the message insert, an operator deleting it — is not rebuilt by a
+    later read. The remedy is the one the store always names: re-attach. Pinned so that "no
+    re-extraction" is a decision on the record rather than an omission somebody later 'fixes'."""
+    with make_client() as c:
+        row = stage(c, "report.pdf", pdf_with_text([["some text"]]))
+        tid = send(c, text="see", attachments=[row["attachment_id"]]).json()["threadId"]
+        sidecar_of(home, tid, "report.pdf").unlink()
+
+        assert read_bytes(home, tid, "report.pdf") is not None  # the PDF itself still reads
+        with pytest.raises(StoredReadError):
+            read_page(home, tid, sidecar_name("report.pdf"), max_chars=1000)
+        assert stored(home, tid) == ["report.pdf"]  # …and nothing re-created it
+
+
+def test_an_aged_sidecar_of_a_REFERENCED_pdf_SURVIVES_THE_SWEEP(home: Path) -> None:
+    """The S2 record's ⚠, met: a sidecar is referenced by NOTHING (the addressable name is the PDF's),
+    which is precisely what the second sweep arm reclaims — so without the derived entry the model
+    loses the text of a PDF the owner is still asking about, a day after it was written."""
+    with make_client() as c:
+        row = stage(c, "report.pdf", pdf_with_text([["some text"]]))
+        tid = send(c, text="see", attachments=[row["attachment_id"]]).json()["threadId"]
+        _age(thread_dir(home, tid) / "report.pdf")
+        _age(sidecar_of(home, tid, "report.pdf"))
+        orphan = thread_dir(home, tid) / "orphan.pdf"  # …while a genuine leftover still goes
+        orphan.write_bytes(pdf_bytes())
+        _age(orphan)
+
+        live = [t.id for t in run_async(c.app.state.threads.list(include_archived=True))]
+        referenced = run_async(c.app.state.messages.attachment_paths())
+        assert referenced == {f"{tid}/report.pdf"}  # the sidecar is in NO part — that is the point
+        assert sweep(home, live_thread_ids=live, referenced=referenced, max_age_s=24 * 3600) == 1
+        assert stored(home, tid) == ["report.pdf", "report.pdf.txt"]
+
+
+def test_a_PDF_named_txt_keeps_its_sidecar_too(home: Path) -> None:
+    """Kind and extension are NOT paired in this store — the bytes decide (§2) — so a PDF the owner's
+    picker named `contract.txt` is a `pdf` part with a `contract.txt.txt` sidecar. The derived entry
+    is taken for every referenced file rather than for `.pdf`-suffixed ones precisely so this one
+    survives; filtering on the suffix would delete exactly the sidecars nobody would think to check."""
+    with make_client() as c:
+        row = stage(c, "contract.txt", pdf_with_text([["signed"]]))
+        assert row["kind"] == "pdf"
+        tid = send(c, text="see", attachments=[row["attachment_id"]]).json()["threadId"]
+        assert stored(home, tid) == ["contract.txt", "contract.txt.txt"]
+        _age(thread_dir(home, tid) / "contract.txt")
+        _age(sidecar_of(home, tid, "contract.txt"))
+
+        live = [t.id for t in run_async(c.app.state.threads.list(include_archived=True))]
+        referenced = run_async(c.app.state.messages.attachment_paths())
+        assert sweep(home, live_thread_ids=live, referenced=referenced, max_age_s=24 * 3600) == 0
+        assert stored(home, tid) == ["contract.txt", "contract.txt.txt"]
+
+
+def test_a_DEAD_thread_s_sidecar_goes_WITH_its_pdf(home: Path) -> None:
+    """The first sweep arm is deliberately untouched by the derived entries: a thread row that is
+    gone makes its files unreachable, and an extracted text is exactly as unreachable as the document
+    it describes."""
+    with make_client() as c:
+        row = stage(c, "report.pdf", pdf_with_text([["some text"]]))
+        claim(home, "t-dead", row["attachment_id"], max_age_s=3600, pdf_bounds=bounds())
+        _age(thread_dir(home, "t-dead") / "report.pdf")
+        _age(sidecar_of(home, "t-dead", "report.pdf"))
+        assert sweep(home, live_thread_ids=[], referenced=set(), max_age_s=24 * 3600) == 2
+        assert not thread_dir(home, "t-dead").exists()
+
+
+def test_deleting_a_thread_takes_its_SIDECARS_with_it(home: Path) -> None:
+    """The delete hook removes every regular file in the directory, so it needed no S4 change — pinned
+    anyway, because "the extracted text of a deleted conversation is gone" is a retention promise."""
+    with make_client() as c:
+        row = stage(c, "report.pdf", pdf_with_text([["some text"]]))
+        tid = send(c, text="see", attachments=[row["attachment_id"]]).json()["threadId"]
+        assert run_async(c.app.state.threads.delete(tid)) is True
+        assert not thread_dir(home, tid).exists()
+
+
+def test_the_READ_ROUTE_404s_a_SIDECAR(home: Path) -> None:
+    """The part is the serving authority (§8) and no part names a sidecar — so the extracted text of
+    a PDF is not a URL, even though it sits in a directory the route serves from."""
+    with make_client() as c:
+        row = stage(c, "report.pdf", pdf_with_text([["some text"]]))
+        tid = send(c, text="see", attachments=[row["attachment_id"]]).json()["threadId"]
+        assert c.get(f"/api/attachments/{tid}/report.pdf").status_code == 200
+        assert c.get(f"/api/attachments/{tid}/{sidecar_name('report.pdf')}").status_code == 404
+        assert sidecar_of(home, tid, "report.pdf").exists()  # a 404 is a refusal, never a cleanup
 
 
 # ── housekeeping fails CLOSED on a store root that is not ours (S1 MED-1) ─────────────────────────
