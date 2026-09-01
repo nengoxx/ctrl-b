@@ -128,11 +128,18 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         # `NO_IMAGE_SUPPORT` is the same class one layer down: opencode's in-band note, naming the
         # file this hop could not carry. It also *could not* be a registry text — `adapters/
         # inference.py` never reads live `Settings` (D48 C10), which is what `resolve()` needs.
+        # The S2 fix wave's MED-1 cut extends it once more, into the two PAGE FRAMERS
+        # (`inline_marker`, `_page_result`): "this page's line was longer than one page, so its first
+        # N characters are shown" is a measured fact about the page in hand — the same shape as
+        # "continue at offset N" beside it — and an owner rewording it could only make the coverage
+        # statement disagree with the bytes.
         ("app/adapters/inference.py", "NO_IMAGE_SUPPORT"),
         ("app/core/attachments.py", "read_page"),
+        ("app/services/agent/attachment_tool.py", "_page_result"),
         ("app/services/agent/attachment_tool.py", "read_attachment"),
         ("app/services/agent/attachments.py", "document_stub"),
         ("app/services/agent/attachments.py", "image_stub"),
+        ("app/services/agent/attachments.py", "inline_marker"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._confine"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._create_blocking"),
         ("app/services/agent/core_memory.py", "CoreMemoryCorpus._delete_blocking"),

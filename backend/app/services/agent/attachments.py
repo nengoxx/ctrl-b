@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from app.core.attachments import (
@@ -111,13 +112,21 @@ async def read_pdf_page(
     S2 ships the reader; S4 ships the writer. That order is deliberate: once the sidecar exists it IS
     a text file, so the whole feed — this page, the §4.2 injection, the paged tool — is already the
     one text code path, and S4 adds extraction without touching a consumer.
+
+    The page comes back under the PART's name, never the sidecar's — see the comment on the rewrite.
     """
     try:
-        return await read_text_page(settings, thread_id, sidecar_name(part.name), offset=offset, limit=limit)
+        page = await read_text_page(settings, thread_id, sidecar_name(part.name), offset=offset, limit=limit)
     except StoredReadError:
         # "There is no sidecar" and "the sidecar is unreadable" are the same fact to every caller
         # here: the PDF has no text to show yet. The caller renders the honest stub for both.
         return None
+    # The page was READ from the physical sidecar (`report.pdf.txt`) and is ABOUT the logical
+    # attachment (`report.pdf`) — the split matters because every consumer NAMES the page: the §4.2
+    # marker and the tool's continuation both render `read_attachment("<name>")`, and the sidecar is
+    # not a name this conversation holds, so `read_attachment` would refuse the very call it advertised
+    # (S2 MED-2). The page therefore travels under the addressable name; the physical one stops here.
+    return replace(page, name=part.name)
 
 
 # ── the model-facing framing (§4.2/§4.5) ──────────────────────────────────────────────────────────
@@ -139,9 +148,19 @@ def inline_marker(read: StoredRead) -> str:
     rendered as text learns to imitate the text, and synthetic arguments teach a call shape that 400s
     (council O-M7). This is the OUTPUT half only — the vocabulary the model already knows from every
     real tool result — and the continuation names the exact call that reaches the rest.
+
+    A page whose line was CUT (MED-1) says so in the same voice: coverage is never advertised over
+    characters the model was not shown, so the marker names the cut, and the continuation — when the
+    file has more lines — still points at the NEXT line, because the rest of a cut line is
+    unreachable (no offset starts mid-line) and the wording must not suggest otherwise.
     """
     span = f"lines {read.first_line:,}–{read.last_line:,} of {read.lines:,}"
     head = f'read_attachment("{read.name}") → {span}'
+    if read.line_truncated:
+        head += (
+            f" (line {read.last_line:,} is longer than one page — its first {len(read.text):,} "
+            "characters are shown, the rest cannot be read)"
+        )
     if read.complete or read.last_line >= read.lines:
         return f"{head}:"
     return f"{head}; continue from offset {read.last_line + 1}:"
@@ -222,6 +241,10 @@ def priced_inline_chars(part: AttachmentPart, cfg: AttachmentsCfg) -> int:
     A part with no `inline_chars` (every PDF until S4 writes its sidecar) is priced at its STUB, which
     is what the turn will really carry. The marker is priced by RENDERING it rather than by a constant
     beside it: one source, and it cannot drift from the frame assembly emits.
+
+    The `min(…)` is EXACT because `max_inline_chars` is now a hard bound on a page (MED-1): before the
+    cut, one oversized line was emitted whole, so a 10 MiB single-line file priced at the cap and cost
+    the turn the whole file. The estimator needed no change — the read path did.
     """
     if part.inline_chars is None:
         return len(document_stub(part))

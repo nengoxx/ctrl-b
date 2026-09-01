@@ -553,12 +553,22 @@ def _stored_file(home: Path, thread_id: str, name: str) -> Path | None:
     The name always comes from the server's OWN persisted `AttachmentPart`, so this is defence in
     depth rather than input validation — but the tool's `name` argument is model-authored, and a rule
     that is only true because of who calls it is exactly the one worth stating once.
+
+    The two ANCESTORS are gated first (S2 LOW-3), with the housekeeping arms' own predicates: a
+    symlinked ROOT relocates the whole store (`_real_root`, S1 MED-1), and a symlinked THREAD DIR makes
+    the resolved-parent equality below VACUOUS — both sides resolve through the same link, so the
+    check passes while the file read is outside the workspace entirely. The per-file checks stand
+    unchanged; these guard the directories they hang from, exactly as `remove_thread_attachments` does.
     """
     if not is_addressable_name(name) or "\\" in name or ntpath.splitdrive(name)[0]:
+        return None
+    if _real_root(home) is None:
         return None
     try:
         directory = thread_dir(home, thread_id)
     except StoreWriteError:
+        return None
+    if directory.is_symlink():
         return None
     path = directory / name
     if not is_served_file(path):
@@ -591,13 +601,20 @@ def read_bytes(home: Path, thread_id: str, name: str) -> bytes | None:
 class StoredRead:
     """One PAGE of a stored text file — the D64 read contract (§2.1), applied to the attachment store.
 
-    The rules are D64's verbatim, because the model already knows them from `core_memory`: pages break
-    only at LINE boundaries, a single line longer than the budget is emitted WHOLE (a partial line
-    would advertise coverage of characters the model never saw), `first_line`/`last_line` are 1-based
-    inclusive, and `chars`/`lines` describe the WHOLE file so the marker can always say how much is
-    left. One shape serves both consumers: the §4.2 injection at assembly and the `read_attachment`
-    tool, so what the turn was given and what a paged re-read returns cannot describe themselves
-    differently.
+    The rules are D64's, because the model already knows them from `core_memory`: pages break only at
+    LINE boundaries, `first_line`/`last_line` are 1-based inclusive, and `chars`/`lines` describe the
+    WHOLE file so the marker can always say how much is left. One shape serves both consumers: the
+    §4.2 injection at assembly and the `read_attachment` tool, so what the turn was given and what a
+    paged re-read returns cannot describe themselves differently.
+
+    **One D64 rule BENDS here** (S2 MED-1, main-seat ruling). D64 emits a line longer than the budget
+    WHOLE, because a partial line would advertise coverage of characters the model never saw. That was
+    written for topics the MODEL authored, where a mega-line does not occur; an attachment is FOREIGN —
+    a minified `.json`, a one-line CSV export, a log with no newlines — so the whole-line rule made
+    `max_inline_chars` advisory: one 10 MiB line rode into the prompt entire while the estimator priced
+    the cap. An oversized first line is therefore CUT at the budget and `line_truncated` records it.
+    The honesty D64 was protecting is kept where it belongs — in the MARKER, which states the cut
+    rather than claiming coverage of the rest of the line.
     """
 
     name: str
@@ -606,11 +623,16 @@ class StoredRead:
     lines: int  # the file's total line count
     first_line: int
     last_line: int  # inclusive; 0 for the empty-file page
+    #: Was this page's last line cut at `max_chars` (MED-1)? Facts-only, like every other field here —
+    #: the framing layer (`inline_marker`, the tool's page head) turns it into the sentence the model
+    #: reads, so the store never owns wording.
+    line_truncated: bool = False
 
     @property
     def complete(self) -> bool:
-        """Did this ONE page carry the whole file?"""
-        return self.first_line == 1 and self.last_line == self.lines
+        """Did this ONE page carry the whole file? A CUT line means no, whatever the line span says:
+        the characters past the cut are on disk and the model was never shown them."""
+        return self.first_line == 1 and self.last_line == self.lines and not self.line_truncated
 
 
 class StoredReadError(Exception):
@@ -641,6 +663,10 @@ def read_page(
     Strict UTF-8: text is admitted only after a strict whole-file decode at claim (§2), so a failure
     here means the bytes changed underneath us, and guessing at them would show the model a file that
     is not the one on disk.
+
+    `max_chars` is a HARD bound on the returned text (MED-1): a page's first line is emitted whole
+    unless the line ALONE is over budget, in which case it is cut there and the page ends — see
+    `StoredRead` for why the D64 whole-line rule bends for a foreign file.
     """
     if offset < 1:
         raise StoredReadError(f"`offset` is a 1-based line number — {offset} is not one.")
@@ -661,12 +687,22 @@ def read_page(
         )
     page: list[str] = []
     used = 0
+    cut = False
     for line in lines[offset - 1 :]:
         if limit is not None and len(page) >= limit:
             break
-        if page and used + len(line) > max_chars:  # the FIRST line of a page is always emitted whole
+        if page and used + len(line) > max_chars:  # a LATER line always breaks at its own boundary
             break
-        page.append(line)
+        if not page and len(line) > max_chars:
+            # MED-1: the page's first line is over budget ALL BY ITSELF, so it is cut at the budget
+            # and the page ENDS here — nothing may follow a line the model only half saw, and the
+            # rest of it is unreachable (there is no offset that starts mid-line). This is the one
+            # place `max_chars` stops being "where we break" and becomes a bound.
+            page.append(line[:max_chars])
+            used += max_chars
+            cut = True
+            break
+        page.append(line)  # the first line of a page is otherwise emitted whole (D64)
         used += len(line)
     return StoredRead(
         name=name,
@@ -675,6 +711,7 @@ def read_page(
         lines=len(lines),
         first_line=offset,
         last_line=offset + len(page) - 1,
+        line_truncated=cut,
     )
 
 

@@ -9,6 +9,10 @@ window) · the sweep's age bounds (a YOUNG unclaimed staging file survives) · t
 with the part union grown. Plus the D65 architecture guard extended over the new route: no CORS
 middleware, no POST, no multipart (SECURITY_MODEL §2.7).
 
+The S2 fix wave's READ-path fail-closed pins (LOW-3) live here too rather than beside the feed tests:
+they are about `core/attachments.py`'s own store tree, and they reuse the MED-1 relocation helper
+below instead of restating it.
+
 Config/db go to a temp `CTRLB_HOME`/`CTRLB_CONFIG`/`CTRLB_DB` (the shared `home` fixture) — never the
 operator's real config.yaml.
 
@@ -41,10 +45,13 @@ from app.core.attachments import (
     ALLOWED_SUFFIXES,
     CLAIM_REFUSED,
     STAGING_DIRNAME,
+    StoredReadError,
     attachments_root,
     candidate_of,
     claim,
     mint_id,
+    read_bytes,
+    read_page,
     remove_thread_attachments,
     staged_name,
     staging_dir,
@@ -823,6 +830,44 @@ def test_a_store_root_that_is_a_FILE_fails_every_arm_closed_without_raising(home
     assert sweep_thread_dirs(home, live_thread_ids=set(), referenced=set(), max_age_s=3600) == 0
     assert remove_thread_attachments(home, "t-anything") == 0
     assert root.read_bytes() == b"not a directory"  # and the operator's file is untouched
+
+
+# ── the READ path fails closed on the same shapes (S2 LOW-3) ──────────────────────────────────────
+
+
+def _plant(directory: Path) -> Path:
+    """One outside file laid out exactly as a stored attachment would be — the victim of both reads."""
+    directory.mkdir(parents=True, exist_ok=True)
+    victim = directory / "notes.txt"
+    victim.write_text("private\n", encoding="utf-8")
+    return victim
+
+
+def test_a_SYMLINKED_root_makes_every_stored_READ_answer_nothing(home: Path, tmp_path) -> None:
+    """The read half of the housekeeping rule above: `_stored_file`'s per-file checks all hang off the
+    thread dir, so a relocated ROOT points them at somebody else's directory — where a regular file
+    under the right name passes every one of them."""
+    victim = _plant(tmp_path / "elsewhere" / "t-victim")
+    _relocate_root(home, tmp_path / "elsewhere")
+
+    assert read_bytes(home, "t-victim", "notes.txt") is None
+    with pytest.raises(StoredReadError):
+        read_page(home, "t-victim", "notes.txt", max_chars=1000)
+    assert victim.read_text(encoding="utf-8") == "private\n"  # never opened, never touched
+
+
+def test_a_SYMLINKED_THREAD_DIR_makes_every_stored_READ_answer_nothing(home: Path, tmp_path) -> None:
+    """The subtler shape (LOW-3): the root is ours and ONE thread's directory is a link. The
+    resolved-parent equality cannot catch it — both sides resolve through the same link, so the check
+    compares the outside directory with itself and passes. The link is refused before it is followed."""
+    victim = _plant(tmp_path / "elsewhere")
+    attachments_root(home).mkdir(parents=True, exist_ok=True)
+    thread_dir(home, "t-linked").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+
+    assert read_bytes(home, "t-linked", "notes.txt") is None
+    with pytest.raises(StoredReadError):
+        read_page(home, "t-linked", "notes.txt", max_chars=1000)
+    assert victim.read_text(encoding="utf-8") == "private\n"
 
 
 @pytest.mark.parametrize("bad", ["../elsewhere", "a/b", "", ".", "..", "back\\slash", "C:x"])

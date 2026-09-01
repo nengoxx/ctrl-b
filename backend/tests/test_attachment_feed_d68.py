@@ -32,7 +32,7 @@ from app.config import AttachmentsCfg
 from app.core.attachments import claim, mint_id, prepare_staging, sidecar_name, staged_name
 from app.domain.conversation import AttachmentPart, Message, TextPart, Thread
 from app.domain.event import ORIGIN_USER_CHAT
-from app.services.agent.attachments import ATTACHMENT_ONLY_TEXT
+from app.services.agent.attachments import ATTACHMENT_ONLY_TEXT, priced_inline_chars
 from app.services.agent.compaction import _render_transcript, estimate_tokens
 
 __all__ = ["home"]  # the fixture is imported, not redefined — one temp-workspace recipe
@@ -161,6 +161,42 @@ def test_a_TRUNCATED_text_file_names_the_call_that_continues_it(home: Path) -> N
         assert "line 6" not in body
 
 
+def test_an_OVERSIZED_SINGLE_LINE_is_CUT_at_the_cap_and_priced_as_it_is_sent(home: Path) -> None:
+    """S2 MED-1: D64 emits an over-budget line WHOLE, which made `max_inline_chars` advisory — one
+    minified `.json` put its whole self in the prompt while the estimator priced the cap. The line is
+    cut now, and the two halves of that regression are pinned together: what assembly EMITS is bounded
+    by the cap, and what the estimator PRICES is within the frame's own length of it (before the fix
+    the residual was the entire file)."""
+    cap = 1000
+    with make_client() as c:
+        c.app.state.settings.attachments.max_inline_chars = cap
+        thread = _thread(c)
+        part = _attach(home, thread.id, "min.json", b"x" * 50_000 + b"\n")
+        _say(c, thread, "read this", part)
+        body = _user_turns(_assemble(c, thread))[0]["content"]
+        block = body.split("\n\n", 1)[1]  # the caption, then the file's framed block
+        marker, page = block.split("\n", 1)
+
+        assert len(page) == cap and "x" * (cap + 1) not in page  # the cap is a BOUND, not a hint
+        assert "line 1 is longer than one page" in marker and "first 1,000 characters are shown" in marker
+        priced = priced_inline_chars(part, c.app.state.settings.attachments)
+        assert 0 <= len(block) - priced <= len(marker)  # the only residual is the frame's wording
+
+
+def test_an_oversized_FIRST_line_ENDS_the_page_and_the_continuation_names_LINE_2(home: Path) -> None:
+    """Nothing may follow a line the model only half saw — so the page stops at the cut, and the
+    continuation names the NEXT line, because the rest of the cut line is unreachable (no offset
+    starts mid-line) and the marker must not pretend otherwise."""
+    with make_client() as c:
+        c.app.state.settings.attachments.max_inline_chars = 40
+        thread = _thread(c)
+        _say(c, thread, "read", _attach(home, thread.id, "min.json", b"x" * 100 + b"\nsecond line\n"))
+        body = _user_turns(_assemble(c, thread))[0]["content"]
+        assert "lines 1–1 of 2 (line 1 is longer than one page" in body
+        assert "; continue from offset 2:" in body
+        assert "second line" not in body
+
+
 def test_a_PDF_renders_the_stub_that_names_the_read_call(home: Path) -> None:
     """S2 has no extraction yet (S4 lands it), so the honest rendering is the file, its size and the
     one call that opens it — a stub S4 replaces by WRITING the sidecar, not by editing this branch."""
@@ -173,14 +209,18 @@ def test_a_PDF_renders_the_stub_that_names_the_read_call(home: Path) -> None:
 
 
 def test_a_PDF_WITH_a_sidecar_is_injected_like_any_text_file(home: Path) -> None:
-    """…and the same branch already reads S4's output: once the sidecar exists it IS a text file."""
+    """…and the same branch already reads S4's output: once the sidecar exists it IS a text file.
+
+    Under the PDF's OWN name (S2 MED-2): the page is READ from `report.pdf.txt` and is ABOUT
+    `report.pdf`, and only the latter is a name this conversation holds."""
     with make_client() as c:
         thread = _thread(c)
         pdf = _attach(home, thread.id, "report.pdf", b"%PDF-1.7\nnope")
         _attach(home, thread.id, sidecar_name(pdf.name), b"extracted body\n")
         _say(c, thread, "see", pdf)
         body = _user_turns(_assemble(c, thread))[0]["content"]
-        assert 'read_attachment("report.pdf.txt") → lines 1–1 of 1:\nextracted body' in body
+        assert 'read_attachment("report.pdf") → lines 1–1 of 1:\nextracted body' in body
+        assert sidecar_name(pdf.name) not in body
 
 
 def test_the_ceiling_degrades_the_OLDEST_images_first(home: Path) -> None:
@@ -496,6 +536,21 @@ def test_a_text_file_pages_with_the_D64_CONTRACT(home: Path) -> None:
         assert past.state.value == "error" and "past the end" in (past.error or "")
 
 
+def test_the_TOOL_returns_the_BOUNDED_page_of_an_oversized_line(home: Path) -> None:
+    """MED-1's other consumer: the tool result is capped the same way the injection is (one page
+    rule), and its PARTIAL head states the cut — the model is told exactly what it holds, and is not
+    pointed at an offset that could never reach the rest of that line."""
+    with make_client() as c:
+        c.app.state.settings.attachments.max_inline_chars = 40
+        thread = _thread(c)
+        _say(c, thread, "read", _attach(home, thread.id, "wide.txt", b"x" * 500 + b"\n"))
+        out = _invoke(c, thread.id, name="wide.txt").output or ""
+        assert "wide.txt (PARTIAL: lines 1-1 of 1 — 40 of 501 chars)" in out
+        assert "line 1 is longer than one page: its first 40 characters are shown" in out
+        assert "x" * 40 in out and "x" * 41 not in out
+        assert "continue: read_attachment" not in out  # there is no further line to name
+
+
 def test_an_IMAGE_refuses_honestly_by_kind(home: Path) -> None:
     """Images reach the model through assembly, never as tool output — so this can only ever answer
     "not here", and saying WHY is what stops a second spelling of the same call."""
@@ -521,6 +576,25 @@ def test_a_PDF_WITH_a_sidecar_reads_the_extracted_text(home: Path) -> None:
         _attach(home, thread.id, sidecar_name(pdf.name), b"the extracted body\n")
         _say(c, thread, "see", pdf)
         assert "the extracted body" in (_invoke(c, thread.id, name="report.pdf").output or "")
+
+
+def test_a_PDF_s_CONTINUATION_names_a_call_that_actually_works(home: Path) -> None:
+    """S2 MED-2: the page's physical source is the sidecar, but `read_attachment` addresses a
+    conversation's PARTS — so a head naming `report.pdf.txt` would hand the model a call this very
+    tool refuses. It names the PDF, and the sidecar is never spoken aloud."""
+    with make_client() as c:
+        c.app.state.settings.attachments.max_inline_chars = 40
+        thread = _thread(c)
+        pdf = _attach(home, thread.id, "report.pdf", b"%PDF-1.7\nnope")
+        _attach(home, thread.id, sidecar_name(pdf.name), TEXT)  # long enough to page
+        _say(c, thread, "see", pdf)
+        out = _invoke(c, thread.id, name="report.pdf").output or ""
+        assert out.startswith("report.pdf (PARTIAL: lines 1-5 of 400")
+        assert "continue: read_attachment offset=6" in out
+        assert "line 1\n" in out  # …while the bytes still came from the sidecar
+        assert sidecar_name(pdf.name) not in out
+        # and the physical name is exactly what this tool refuses, which is why the head avoids it
+        assert _invoke(c, thread.id, name=sidecar_name(pdf.name)).state.value == "error"
 
 
 def test_a_name_THIS_conversation_does_not_hold_is_refused(home: Path) -> None:

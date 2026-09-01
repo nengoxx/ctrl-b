@@ -181,9 +181,10 @@ def _page_result(read: StoredRead) -> ToolResult:
     """One page as a `ToolResult` — the D64 shape (`core_memory._read_result`'s, applied here).
 
     A page that carried the whole file gets a plain head. Any other page is marked PARTIAL and states
-    the FACTS — which lines of how many, how many characters of how many, and the exact call that
-    continues it — because the owner's ruling is that the model must always know what it read and
-    where the cap sits (§0b-3)."""
+    the FACTS — which lines of how many, how many characters of how many, whether a line was CUT at
+    the page budget (MED-1: a page's oversized first line stops at the cap, and the rest of that line
+    is unreachable), and the exact call that continues it — because the owner's ruling is that the
+    model must always know what it read and where the cap sits (§0b-3)."""
     span = f"lines {read.first_line:,}-{read.last_line:,} of {read.lines:,}"
     if read.complete:
         return ToolResult(
@@ -192,6 +193,11 @@ def _page_result(read: StoredRead) -> ToolResult:
             output=f"{read.name}\n\n{read.text}",
         )
     head = f"{read.name} (PARTIAL: {span} — {len(read.text):,} of {read.chars:,} chars)"
+    if read.line_truncated:
+        head += (
+            f" · line {read.last_line:,} is longer than one page: its first {len(read.text):,} "
+            "characters are shown and the rest cannot be read"
+        )
     if read.last_line < read.lines:
         head += f" · continue: read_attachment offset={read.last_line + 1}"
     return ToolResult(
