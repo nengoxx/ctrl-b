@@ -19,6 +19,7 @@ whole surface (the `test_media_g5` convention, whose builders this file imports 
 from __future__ import annotations
 
 import os
+import shutil
 import struct
 import time
 from pathlib import Path
@@ -26,11 +27,20 @@ from urllib.parse import quote
 
 import pytest
 from _async import run_async
-from test_media_g5 import home, jpeg_bytes, make_client, png_bytes, webp_bytes
+from test_media_g5 import (
+    declares_multipart,
+    home,
+    iter_live_routes,
+    jpeg_bytes,
+    make_client,
+    png_bytes,
+    webp_bytes,
+)
 
 from app.core.attachments import (
     ALLOWED_SUFFIXES,
     CLAIM_REFUSED,
+    STAGING_DIRNAME,
     attachments_root,
     candidate_of,
     claim,
@@ -39,6 +49,8 @@ from app.core.attachments import (
     staged_name,
     staging_dir,
     sweep,
+    sweep_staging,
+    sweep_thread_dirs,
     thread_dir,
 )
 from app.core.media import PARTS_DIRNAME, StoreWriteError
@@ -318,12 +330,25 @@ def test_a_consumed_id_refuses_the_WHOLE_send_with_the_fix_named(home: Path) -> 
         assert stored(home, tid) == ["photo.png"]
 
 
-def test_an_unknown_id_refuses_the_send(home: Path) -> None:
+def test_an_unknown_id_refuses_the_send_AND_LEAVES_NO_EMPTY_THREAD(home: Path) -> None:
+    """Question-10's ruling (S1 Emma round): a FIRST send creates the thread only because the claim
+    needs somewhere to land. When the claim refuses there is no send, so there is no conversation —
+    an empty shell would sit in the sidebar and the owner's re-attach retry would mint a second one
+    beside it."""
     with make_client() as c:
         r = send(c, text="hi", attachments=[mint_id()])
         assert r.status_code == 409 and r.json()["detail"] == CLAIM_REFUSED
-        assert c.get("/api/threads").json()  # the thread was created; no message was persisted
-        tid = c.get("/api/threads").json()[0]["id"]
+        assert c.get("/api/threads").json() == []
+
+
+def test_an_EXISTING_thread_is_untouched_by_a_refused_claim(home: Path) -> None:
+    """…and only a thread this request minted goes: an existing conversation is the owner's, and a
+    refused attachment on it is a failed message, not a reason to delete their history."""
+    with make_client() as c:
+        tid = c.post("/api/threads").json()["id"]
+        r = send(c, text="hi", thread_id=tid, attachments=[mint_id()])
+        assert r.status_code == 409 and r.json()["detail"] == CLAIM_REFUSED
+        assert [t["id"] for t in c.get("/api/threads").json()] == [tid]
         assert c.get(f"/api/threads/{tid}/messages").json() == []
 
 
@@ -343,14 +368,15 @@ def test_an_EXPIRED_id_refuses_even_though_the_file_is_still_there(home: Path) -
 
 def test_ONE_bad_id_refuses_the_whole_send(home: Path) -> None:
     """All-or-nothing on the refusal (§3): a send that named a file it cannot have must not half-run.
-    The good id's file may already have moved — an accepted residual, reclaimed by the sweep's
-    referenced-set arm — but nothing is persisted and the owner is told to re-attach."""
+    Nothing is persisted, the owner is told to re-attach — and on a FIRST send the thread deletion
+    (Q10) reclaims the good id's already-moved bytes on the spot, through the delete hook, instead of
+    leaving them to the sweep's referenced-set arm."""
     with make_client() as c:
         good = stage(c, "photo.png", png_bytes())
         r = send(c, text="mixed", attachments=[good["attachment_id"], mint_id()])
         assert r.status_code == 409
-        tid = c.get("/api/threads").json()[0]["id"]
-        assert c.get(f"/api/threads/{tid}/messages").json() == []
+        assert c.get("/api/threads").json() == []
+        assert sorted(p.name for p in attachments_root(home).iterdir()) == ["staging"]
 
 
 def test_TWO_CLAIMANTS_of_one_id_leave_exactly_one_copy(home: Path, monkeypatch) -> None:
@@ -552,6 +578,96 @@ def test_a_steer_that_was_ONLY_a_refused_attachment_persists_no_empty_bubble(hom
         assert thread.id not in queues  # committed off, and the emptied queue's key pruned (D41 FIX 5)
 
 
+def _drain_session(c, thread, queues):
+    """An `AgentSession` wired to nothing but the thread's steer queue — the drain's own harness."""
+    from app.services.agent.session import AgentSession
+    from app.services.agent.steering import SteerSource
+
+    return AgentSession(
+        c.app.state.threads,
+        c.app.state.messages,
+        None,
+        c.app.state.settings,
+        None,
+        steer_source=SteerSource(queues, thread.id),
+    )
+
+
+def _drain(session, thread) -> list:
+    async def go():
+        return [(ev.event, ev.data) async for ev in session._drain_steers(thread)]
+
+    return run_async(go())
+
+
+def test_a_steer_DELETED_while_its_files_are_claimed_persists_NOTHING(home: Path, monkeypatch) -> None:
+    """S1 MED-2: the claims are AWAITED — directory scans, an fsync and a strict whole-file decode per
+    file — so an "unsend" (`DELETE …/steer/{id}`) or a Stop-harvest has a real window to land on an
+    entry the drain already peeked. Persisting it anyway would resurrect a message the owner took
+    back, so ownership is re-checked immediately before the transaction.
+
+    The race is made deterministic rather than hoped for: the claim seam removes the entry from the
+    queue itself, exactly as the DELETE endpoint would."""
+    from app.domain.conversation import Thread
+    from app.services.agent import session as session_mod
+    from app.services.agent.steering import SteerEntry, SteerQueue
+
+    with make_client() as c:
+        row = stage(c, "photo.png", png_bytes())
+        thread = run_async(c.app.state.threads.create(Thread()))
+        entry = SteerEntry(kind="message", text="unsent this", attachments=[row["attachment_id"]])
+        queue = SteerQueue()
+        queue.append(entry)
+        queues = {thread.id: queue}
+        real = session_mod.claim_attachments
+
+        async def racing_claim(settings, thread_id, ids):
+            parts = await real(settings, thread_id, ids)
+            queue.remove(entry.entry_id)  # the DELETE lands while the claim is awaited
+            return parts
+
+        monkeypatch.setattr(session_mod, "claim_attachments", racing_claim)
+        assert _drain(_drain_session(c, thread, queues), thread) == []
+        assert c.get(f"/api/threads/{thread.id}/messages").json() == []
+        assert thread.id not in queues  # the run still cleared the queue (and pruned its key)
+        # …and the files it had already claimed stay put: the accepted unreferenced-file class the
+        # sweep's referenced-set arm reclaims (§10), never a rollback machine.
+        assert stored(home, thread.id) == ["photo.png"]
+
+
+def test_only_the_DELETED_entry_of_a_run_is_dropped(home: Path, monkeypatch) -> None:
+    """The re-check is per ENTRY, not per run: a steer the owner unsent must not take its neighbour
+    with it. The first entry persists exactly as it always did."""
+    from app.domain.conversation import Thread
+    from app.services.agent import session as session_mod
+    from app.services.agent.steering import SteerEntry, SteerQueue
+
+    with make_client() as c:
+        kept = stage(c, "kept.png", png_bytes(3, 3))
+        gone = stage(c, "gone.png", png_bytes(4, 4))
+        thread = run_async(c.app.state.threads.create(Thread()))
+        e1 = SteerEntry(kind="message", text="keep me", attachments=[kept["attachment_id"]])
+        e2 = SteerEntry(kind="message", text="unsent", attachments=[gone["attachment_id"]])
+        queue = SteerQueue()
+        queue.append(e1)
+        queue.append(e2)
+        queues = {thread.id: queue}
+        real = session_mod.claim_attachments
+
+        async def racing_claim(settings, thread_id, ids):
+            parts = await real(settings, thread_id, ids)
+            if ids == e2.attachments:
+                queue.remove(e2.entry_id)
+            return parts
+
+        monkeypatch.setattr(session_mod, "claim_attachments", racing_claim)
+        events = _drain(_drain_session(c, thread, queues), thread)
+        assert [(e, d["entryId"]) for e, d in events] == [("steer.applied", e1.entry_id)]
+        parts = parts_of(c, thread.id)
+        assert [p["type"] for p in parts] == ["text", "attachment"]
+        assert parts[1]["name"] == "kept.png"
+
+
 # ── retention: the delete hook + the boot sweep ───────────────────────────────────────────────────
 
 
@@ -636,6 +752,79 @@ def test_remove_thread_attachments_is_a_no_op_for_a_thread_with_none(home: Path)
     assert remove_thread_attachments(home, "never-used") == 0
 
 
+# ── housekeeping fails CLOSED on a store root that is not ours (S1 MED-1) ─────────────────────────
+
+
+def _relocate_root(home: Path, target: Path) -> None:
+    """Replace the store root with a SYMLINK to `target` — the reviewer's MED-1 repro.
+
+    The retention walks below all start at the root, so a link there silently re-points every one of
+    them at someone else's directory: the dead-thread arm then reads its children, recognises none of
+    them as threads, and deletes the aged files it finds (`removed=1` on an outside victim)."""
+    root = attachments_root(home)
+    if root.exists():
+        shutil.rmtree(root)
+    root.symlink_to(target, target_is_directory=True)
+
+
+def _age(path: Path) -> None:
+    stamp = time.time() - 48 * 3600  # past any cap the sweep can be given
+    os.utime(path, (stamp, stamp))
+
+
+def test_a_SYMLINKED_root_makes_the_thread_dir_sweep_a_no_op(home: Path, tmp_path) -> None:
+    """The reproduced case: an unrecognised child directory of the link target holds an aged regular
+    file laid out exactly like a dead thread's leftovers. Nothing outside the workspace is ours."""
+    outside = tmp_path / "elsewhere"
+    (outside / "not-a-thread").mkdir(parents=True)
+    victim = outside / "not-a-thread" / "holiday.png"
+    victim.write_bytes(png_bytes())
+    _age(victim)
+    _relocate_root(home, outside)
+
+    assert sweep_thread_dirs(home, live_thread_ids=set(), referenced=set(), max_age_s=3600) == 0
+    assert victim.read_bytes() == png_bytes()
+
+
+def test_a_SYMLINKED_root_makes_the_staging_sweep_a_no_op(home: Path, tmp_path) -> None:
+    """…and the same for the staging arm: an aged file under a staged-looking name inside the link
+    target is not a staged upload, it is somebody's file that happens to be reachable."""
+    outside = tmp_path / "elsewhere"
+    (outside / STAGING_DIRNAME).mkdir(parents=True)
+    victim = outside / STAGING_DIRNAME / staged_name(mint_id(), "holiday.png")
+    victim.write_bytes(png_bytes())
+    _age(victim)
+    _relocate_root(home, outside)
+
+    assert sweep_staging(home, max_age_s=3600) == 0
+    assert victim.read_bytes() == png_bytes()
+
+
+def test_a_SYMLINKED_root_makes_the_thread_delete_hook_a_no_op(home: Path, tmp_path) -> None:
+    """The delete hook takes a THREAD ID and builds a path from it — so a relocated root turns an
+    ordinary conversation delete into an unlink of whatever answers to that name over there."""
+    outside = tmp_path / "elsewhere"
+    (outside / "t-victim").mkdir(parents=True)
+    victim = outside / "t-victim" / "holiday.png"
+    victim.write_bytes(png_bytes())
+    _relocate_root(home, outside)
+
+    assert remove_thread_attachments(home, "t-victim") == 0
+    assert victim.read_bytes() == png_bytes()
+
+
+def test_a_store_root_that_is_a_FILE_fails_every_arm_closed_without_raising(home: Path) -> None:
+    """The other shape `require_real_dir` rejects. Housekeeping never raises — a boot sweep and a
+    thread delete may not fail over a tree only an operator can fix — so all three answer 0."""
+    root = attachments_root(home)
+    root.write_bytes(b"not a directory")
+
+    assert sweep_staging(home, max_age_s=3600) == 0
+    assert sweep_thread_dirs(home, live_thread_ids=set(), referenced=set(), max_age_s=3600) == 0
+    assert remove_thread_attachments(home, "t-anything") == 0
+    assert root.read_bytes() == b"not a directory"  # and the operator's file is untouched
+
+
 @pytest.mark.parametrize("bad", ["../elsewhere", "a/b", "", ".", "..", "back\\slash", "C:x"])
 def test_a_thread_id_that_is_not_a_BARE_NAME_cannot_address_the_store(home: Path, bad: str) -> None:
     """Defence in depth at the one path builder: the id is server-owned, but confinement is a RULE
@@ -647,20 +836,33 @@ def test_a_thread_id_that_is_not_a_BARE_NAME_cannot_address_the_store(home: Path
 # ── the claim is the ONLY writer into a thread dir (§3) ───────────────────────────────────────────
 
 
+#: Every NAMED seam that yields a path inside the store — the builders and the one directory name
+#: they are all built from. Grepping only `thread_dir(` left the door open (S1 LOW-4):
+#: `attachments_root(home) / thread_id` reaches the same directory without ever naming the builder.
+_PATH_SEAMS = ("thread_dir(", "attachments_root(", "staging_dir(", "ATTACHMENTS_DIRNAME")
+
+
 def test_only_the_store_module_can_address_a_thread_directory() -> None:
     """The source half of the claim-only-writer pin (O-conf rider).
 
     "The claim is the only writer" is a rule about a PATH nobody else may build — claim-time
     confinement is not a property of the directory (§10), so it holds only while exactly one module
-    can name it. `thread_dir` is that one builder; anything that wants a thread's files goes through
-    the functions beside it."""
-    offenders = [
-        p.relative_to(APP_DIR).as_posix()
+    can name it. `core/attachments.py` owns every builder; anything that wants a thread's files goes
+    through the functions beside them.
+
+    The residue is stated rather than hidden: a hand-built `home / "attachments" / tid` literal names
+    no seam at all and no source grep can catch it. What this pin buys is that every path a reader
+    would REACH FOR is a single module's, so an alternate writer has to be written deliberately and
+    unidiomatically — and review owns that last step."""
+    offenders = sorted(
+        (p.relative_to(APP_DIR).as_posix(), seam)
         for p in APP_DIR.rglob("*.py")
-        if p.name != "attachments.py" and "thread_dir(" in p.read_text(encoding="utf-8")
-    ]
+        if p.name != "attachments.py"
+        for seam in _PATH_SEAMS
+        if seam in p.read_text(encoding="utf-8")
+    )
     assert not offenders, (
-        f"a thread attachment directory is addressed outside core/attachments.py in {offenders} — "
+        f"the attachment store's paths are built outside core/attachments.py in {offenders} — "
         "the claim is the only writer into a thread dir (D68 §3)"
     )
 
@@ -708,13 +910,22 @@ def test_an_old_message_row_still_loads_with_the_union_grown(home: Path) -> None
 def test_the_attachment_surface_accepts_no_post_and_no_multipart(home: Path) -> None:
     """The D65 negative, extended (O-M9): a cross-origin form CAN send a safelisted `POST`, and
     `multipart/form-data` is safelisted — so an upload route in either shape would be reachable from
-    any page on the internet. Neither exists here, and the OpenAPI schema is asserted because it is
-    the one view that enumerates every declared method."""
+    any page on the internet. Neither exists here.
+
+    The OpenAPI schema enumerates every DECLARED method; the LIVE route walk (recursive — the table
+    is a tree of include wrappers) sees the `include_in_schema=False` routes the schema cannot, and
+    its harvest is asserted NON-EMPTY because a pin matching no routes is the very defect being
+    repaired (S1 LOW-3)."""
     with make_client() as c:
         paths = c.app.openapi()["paths"]
         for path, ops in paths.items():
             if path.startswith("/api/attachments"):
                 assert set(ops) <= {"put"}, (path, sorted(ops))
+        guarded = [r for r in iter_live_routes(c.app.router) if r[0].startswith("/api/attachments")]
+        assert guarded, "the live route walk found NO /api/attachments routes — the pin tests nothing"
+        for path, methods, route in guarded:
+            assert "POST" not in methods, (path, sorted(methods))
+            assert not declares_multipart(route), path
         assert c.post(f"{URL}/a.png", content=png_bytes()).status_code in (404, 405)
         assert c.post(f"{URL}/a.png", files={"file": ("a.png", png_bytes(), "image/png")}).status_code in (
             404,

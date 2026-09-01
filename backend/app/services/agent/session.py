@@ -1885,7 +1885,9 @@ class AgentSession:
         per-contiguous-message-run, NOT across an interleaved exec, so an exec between two messages
         splits their runs). Each yields `steer.applied {entryId, messageId, kind:"message", text}` — the
         text rides the wire so the accumulator can render the bubble on a snapshot re-attach without a
-        reload.
+        reload. An entry that left the queue while its attachments were being claimed (a DELETE, a
+        Stop-harvest) is dropped just before the txn — the message branch's equivalent of the exec
+        branch's claim-before-run count check (D68 MED-2).
 
         **Exec entries** re-check `shell.user_exec_enabled` LIVE (D41 fail-closed: the enqueue check is
         UX only; disabled at drain → drop the entry [`commit` it away] + a `notice`, and NEVER run it).
@@ -1953,12 +1955,25 @@ class AgentSession:
                             ),
                         )
                     )
+                # D68 MED-2: re-snapshot the queue IMMEDIATELY before the txn and drop any entry that
+                # is no longer queued. The claims above are awaited — directory scans, fsyncs and a
+                # strict whole-file decode of up to 10 MiB each — so a DELETE (`delete_steer`) or a
+                # Stop-harvest has a real window to land on an entry we peeked, and persisting it
+                # would resurrect a message the owner unsent. A dropped entry's already-claimed files
+                # stay where they landed: that is the accepted unreferenced-file class the sweep's
+                # referenced-set arm reclaims (§10), not a rollback worth building. The window
+                # between this re-peek and the txn is the pre-D68 sub-ms race, accepted as before.
+                live = {e.entry_id for e in self._steer_source.peek()}
+                msgs = [(e, m) for e, m in msgs if e.entry_id in live]
                 # persist-before-clear: the queue stays intact until this txn COMMITS. A failed persist
                 # raises out of here (the turn errors cleanly) with `commit()` never reached → the
                 # entries are still queued (retried at the next boundary / harvestable on Stop).
                 async with self._messages.db.transaction():
                     for _, m in msgs:
                         await self._messages.add(m)
+                # The WHOLE run leaves the queue, dropped entries included — committing an id that is
+                # already gone removes nothing (`commit` is by id), and every entry in the run is
+                # consumed either way: persisted, refused into a notice, or unsent by its owner.
                 self._steer_source.commit([e.entry_id for e in run])
                 for text in notices:
                     yield AgentEvent("notice", {"text": text})

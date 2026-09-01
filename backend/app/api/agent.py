@@ -1152,6 +1152,9 @@ async def chat(body: ChatRequest, request: Request) -> Response:
     thread = await threads.get(body.thread_id) if body.thread_id else None
     if thread is not None:
         await _reject_automation_thread(request.app.state, thread.id)  # §D-3 rolling-thread guard
+    # D68 Q10: remember whether THIS request minted the thread — a claim that then refuses must not
+    # leave the empty shell behind (the retry would mint a second one).
+    created_here = thread is None
     if thread is None:
         # `or None` for the attachment-only send (D68 §7): a title of "" would render as a named
         # thread with no name. Titling from the attached filenames is S2/S3's, with the wire text.
@@ -1218,6 +1221,14 @@ async def chat(body: ChatRequest, request: Request) -> Response:
         try:
             attachments = await claim_attachments(state.settings, thread.id, body.attachments)
         except StoreWriteError as exc:
+            if created_here:
+                # D68 Q10: the thread exists only because this send needed somewhere to claim into,
+                # and the send is refused — so it never held a message and never will (the owner's
+                # re-attach retry mints its own). Deleting it also reclaims a PARTIALLY claimed
+                # batch's already-moved files immediately (`ThreadRepo.delete`'s attachment hook),
+                # instead of leaving them to the boot sweep's referenced-set arm. An EXISTING thread
+                # is untouched: it is the owner's, not this request's.
+                await threads.delete(thread.id)
             raise HTTPException(status_code=exc.status, detail=exc.detail) from None
         session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)

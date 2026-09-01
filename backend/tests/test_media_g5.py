@@ -21,6 +21,7 @@ import struct
 import time
 from pathlib import Path
 
+import fastapi.params
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -114,6 +115,47 @@ def make_client(spa_dist: Path | None = None) -> TestClient:
         (spa_dist / "index.html").write_text("<!doctype html><title>ctrl-b</title>", encoding="utf-8")
         main._FRONTEND_DIST = spa_dist  # restored by the monkeypatch in `spa_client`
     return TestClient(main.create_app())
+
+
+def iter_live_routes(node, prefix: str = "") -> list[tuple[str, set[str], object]]:
+    """Every route the LIVE app would actually serve, as `(full_path, methods, route)`.
+
+    The route table is a TREE, not a list: `app.router.routes` holds a `_IncludedRouter` WRAPPER per
+    `include_router` call (verified 2026-09-01 — a flat loop over it matched nothing, which is how a
+    security pin silently stopped testing anything), plus `Mount`s carrying their own sub-tables. So
+    this recurses, and it carries the PREFIX down — an included router's own routes are declared
+    unprefixed (`/health`), the `/api` lives on the include, and only the two together are the path a
+    request is matched against.
+
+    Used by the "no POST, no multipart" pins on the media and attachment write surfaces
+    (SECURITY_MODEL §2.7): the OpenAPI schema enumerates every DECLARED method but is blind to an
+    `include_in_schema=False` route, and the live table is the half that is not.
+    """
+    found: list[tuple[str, set[str], object]] = []
+    for r in getattr(node, "routes", ()) or ():
+        ctx = getattr(r, "include_context", None)
+        if ctx is not None:  # a FastAPI include wrapper: the prefix is here, the routes one level in
+            found += iter_live_routes(ctx.included_router, prefix + (ctx.prefix or ""))
+            continue
+        path = prefix + (getattr(r, "path", "") or "")
+        if getattr(r, "routes", None):  # a Mount / sub-application with a table of its own
+            found += iter_live_routes(r, path)
+        if getattr(r, "methods", None):
+            found.append((path, set(r.methods), r))
+    return found
+
+
+def declares_multipart(route) -> bool:
+    """Whether a route declares a FORM request body — the shape a cross-origin `<form>` can post.
+
+    `body_field.field_info` is what FastAPI itself reads to decide the body's media type: a
+    `params.File` param makes it `multipart/form-data`, a `params.Form` param
+    `application/x-www-form-urlencoded` — and `File` SUBCLASSES `Form`, so the one isinstance covers
+    both. Both are CORS-safelisted content types, so both are reachable from any page on the
+    internet; the pins refuse the pair rather than only the multipart half.
+    """
+    field = getattr(route, "body_field", None)
+    return field is not None and isinstance(field.field_info, fastapi.params.Form)
 
 
 def role(home: Path, name: str) -> Path:

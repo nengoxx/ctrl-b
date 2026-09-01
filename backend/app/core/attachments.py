@@ -175,6 +175,33 @@ def thread_dir(home: Path, thread_id: str) -> Path:
     return attachments_root(home) / thread_id
 
 
+def _real_root(home: Path) -> Path | None:
+    """The store root when it is a REAL directory, else `None` — the housekeeping gate (S1 MED-1).
+
+    Every path the retention functions below touch has the root as its ancestor, so a root that is a
+    symlink relocates the whole walk: `sweep_thread_dirs` would read the link target's children,
+    decide the ones it does not recognise are dead threads, and unlink aged files OUTSIDE
+    `$CTRLB_HOME` entirely (reviewer-reproduced). Checking the root is therefore not one guard among
+    several — it is the ancestor the per-child `is_symlink`/`is_served_file` checks already assume.
+
+    `require_real_dir` is the SAME predicate the write path uses (`prepare_staging`, `claim`), reused
+    rather than restated: one answer to "is this store tree in a shape we may touch". Root-only and
+    one level deep, exactly like `ensure_media_dirs` — walking `$CTRLB_HOME`'s own ancestors would be
+    TOCTOU theatre against someone who already has shell on the box (SECURITY_MODEL §1).
+
+    Returns rather than raises, because housekeeping FAILS CLOSED: the callers are a boot sweep and a
+    thread delete, and neither may fail over a store tree only an operator can fix. A missing root is
+    not a refusal — `require_real_dir` passes on a path that does not exist, and the walks below
+    already answer "nothing there" with 0.
+    """
+    root = attachments_root(home)
+    try:
+        require_real_dir(root)
+    except StoreWriteError:
+        return None
+    return root
+
+
 def prepare_staging(home: Path) -> Path:
     """Create (and shape-check) the staging dir, returning it.
 
@@ -506,8 +533,12 @@ def remove_thread_attachments(home: Path, thread_id: str) -> int:
 
     An id this store cannot address is a plain 0, not a raise: a CLEANUP that finds nothing to clean
     has done its job, and the delete it rides must never fail over housekeeping. The write path
-    (`claim`) keeps the opposite rule — it may never guess where to put bytes.
+    (`claim`) keeps the opposite rule — it may never guess where to put bytes. A store ROOT that is
+    not a real directory is the same 0 (`_real_root`, MED-1): the directory this would remove is only
+    the thread's while the root above it is ours.
     """
+    if _real_root(home) is None:
+        return 0
     try:
         directory = thread_dir(home, thread_id)
     except StoreWriteError:
@@ -536,7 +567,13 @@ def sweep_staging(home: Path, *, max_age_s: float) -> int:
     YOUNG unclaimed staging file must survive this sweep — a client that uploaded three photos and
     then hit send while the app restarted must still be able to send them. Only the aged ones, which
     no send can claim any more (`claim` enforces the same number), are reclaimed.
+
+    Fails CLOSED on a store root that is not a real directory (`_real_root`, MED-1) — a symlinked root
+    would point this walk at someone else's files — and keeps the staging dir's own symlink check
+    below: the root is the ancestor, that is the directory itself.
     """
+    if _real_root(home) is None:
+        return 0
     staging = staging_dir(home)
     if staging.is_symlink():
         return 0
@@ -586,8 +623,15 @@ def sweep_thread_dirs(
 
     `referenced` holds store-relative paths (`{thread_id}/{name}`), which is exactly what
     `AttachmentPart.path` persists — the comparison needs no reconstruction on either side.
+
+    Fails CLOSED on a store root that is not a real directory (`_real_root`, MED-1): this walk's first
+    arm deletes what it does not recognise, so a symlinked root turns "a dead thread's leftovers" into
+    "an aged file in whatever directory the link points at" — reviewer-reproduced. The per-directory
+    `is_symlink` check below stands unchanged; it guards the children, this guards their ancestor.
     """
-    root = attachments_root(home)
+    root = _real_root(home)
+    if root is None:
+        return 0
     cutoff = time.time() - max_age_s
     referenced_set = set(referenced)
     removed = 0

@@ -18,7 +18,17 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pytest
-from test_media_g5 import disk, home, jpeg_bytes, make_client, png_bytes, role, webp_bytes
+from test_media_g5 import (
+    declares_multipart,
+    disk,
+    home,
+    iter_live_routes,
+    jpeg_bytes,
+    make_client,
+    png_bytes,
+    role,
+    webp_bytes,
+)
 
 from app.core.media import (
     PART_PREFIX,
@@ -674,15 +684,24 @@ def test_no_cors_middleware_is_mounted_anywhere(home: Path) -> None:
 def test_the_media_surface_accepts_no_post_and_no_multipart(home: Path) -> None:
     """The other half of the same negative: a cross-origin form CAN send a safelisted `POST` (CORS
     withholds the read-back, not the send), and `multipart/form-data` is safelisted — so an upload
-    route in either shape would be reachable from any page on the internet. Neither exists."""
+    route in either shape would be reachable from any page on the internet. Neither exists.
+
+    Three views, because no single one is the whole property (S1 LOW-3): the OpenAPI schema
+    enumerates every DECLARED method but is blind to `include_in_schema=False`; the LIVE route table
+    sees those but needs a recursive walk to see anything at all; and a live POST proves the router
+    agrees. The walk's harvest is asserted NON-EMPTY — a pin that matches no routes is exactly the
+    defect this repairs, and it has now happened twice."""
     with make_client() as c:
-        # The OpenAPI schema, not `app.routes`: included routers surface as wrapper objects with no
-        # `.path`/`.methods` there (verified 2026-09-01 — the old loop matched NOTHING), while the
-        # schema enumerates every declared method. (The GET mount is schema-invisible; it is the
-        # read-only surface.)
         for path, ops in c.app.openapi()["paths"].items():
             if path.startswith("/api/media"):
                 assert set(ops) <= {"get", "head", "put", "delete"}, (path, sorted(ops))
+        # …and the routes the schema cannot see. (The GET mount declares no methods of its own; it is
+        # StaticFiles, the read-only surface.)
+        guarded = [r for r in iter_live_routes(c.app.router) if r[0].startswith("/api/media")]
+        assert guarded, "the live route walk found NO /api/media routes — the pin tests nothing"
+        for path, methods, route in guarded:
+            assert "POST" not in methods, (path, sorted(methods))
+            assert not declares_multipart(route), path
         assert c.post(f"{URL}/a.png", content=png_bytes()).status_code in (404, 405)
         assert c.post(
             "/api/media/gacha/files/characters",
