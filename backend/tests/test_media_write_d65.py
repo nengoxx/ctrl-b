@@ -676,11 +676,13 @@ def test_the_media_surface_accepts_no_post_and_no_multipart(home: Path) -> None:
     withholds the read-back, not the send), and `multipart/form-data` is safelisted — so an upload
     route in either shape would be reachable from any page on the internet. Neither exists."""
     with make_client() as c:
-        for r in c.app.routes:
-            path = getattr(r, "path", "")
-            methods = getattr(r, "methods", None)  # a Mount has none — it is the read-only surface
-            if path.startswith("/api/media") and methods is not None:
-                assert set(methods) <= {"GET", "HEAD", "PUT", "DELETE"}, (path, methods)
+        # The OpenAPI schema, not `app.routes`: included routers surface as wrapper objects with no
+        # `.path`/`.methods` there (verified 2026-09-01 — the old loop matched NOTHING), while the
+        # schema enumerates every declared method. (The GET mount is schema-invisible; it is the
+        # read-only surface.)
+        for path, ops in c.app.openapi()["paths"].items():
+            if path.startswith("/api/media"):
+                assert set(ops) <= {"get", "head", "put", "delete"}, (path, sorted(ops))
         assert c.post(f"{URL}/a.png", content=png_bytes()).status_code in (404, 405)
         assert c.post(
             "/api/media/gacha/files/characters",

@@ -224,10 +224,12 @@ answer to "does attribution record the drop": `SourceInfo` stays untouched (O-M8
   to the action pair. Staged images show as **thumbnails riding the growing composer** with text
   entry continuing beneath — the owner keeps typing OR dictating with attachments staged (the mic
   is never blocked by staged files); send ships caption + attachments as **ONE message**. The
-  exact thumbnail layout (in-field vs a staged rail above the field) is pinned by **R62**
-  (the attach-composer grammar pass — Telegram Web A + Signal source-read; commissioned
-  2026-09-01) before the S3 brief is written; the owner rules on R62's split if the field
-  disagrees with the described feel.
+  layout is **OWNER-RULED on R62's evidence (2026-09-01): grammar ② — the in-composer
+  horizontally-scrolling thumbnail RAIL** (Signal/LLM-peer shape; the composer grows exactly as it
+  does for multi-line text, the rail rides above the field). The Telegram caption modal is
+  explicitly NOT wanted; Telegram contributes only the clip's quiet icon STYLE and the expand
+  button. R62's steals ride along: named per-file refusals + a per-chip hint when the current
+  model can't see images.
 - **The expand affordance is IN-PHASE (owner, third talk — promoted from the recorded candidate):**
   the Telegram-style control that appears once the draft fills a couple of lines. **The LINE
   composer is the primary target** ("the line composer has very little space"); the other variants
@@ -363,6 +365,21 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   an S3 test** · (c) the expand seam CONFIRMED shared (`useComposerChrome` owns auto-grow for all
   three variants) · (d) HEIC result consistent · LEFT-OFF 1: docked-sheet clip/thumb geometry —
   now an explicit S3 ruling, not "parity" · LEFT-OFF 2: stale status header — fixed (v2.3).
+- **S1 AS-BUILT (2026-09-01, `fce822e` — Opus from the pinned brief; full gate green 6/6, BE
+  2,002→2,068, 66 new tests):** `core/attachments.py` + the staging route + the claim seam +
+  retention/sweeps, with `core/media.py` parameterised (one persist pipeline, `StoreWriteError`,
+  shared `admit_filename`) — the M9/E9 reuse mandate held. **Main-seat audit: all 11 declared
+  deviations ACCEPTED** — headline: the claim lands by `os.link`+`os.unlink` (exclusive-claim; the
+  plan §3's `os.replace` shorthand would have CLOBBERED the collision suffix — §3 stands corrected
+  by this record) · text MIME from the extension table, never the client's header · drain-refused
+  attachment-only steers persist no message · one age rule for claim and both sweep arms. **The
+  builder's weak-pin discovery CONFIRMED by the main seat** (the D65 route-table loop matched 0
+  routes under this FastAPI — `app.routes` holds wrapper objects) and **FIXED in place**
+  (OpenAPI-paths assertion, this commit). **§10 gains two instances of the accepted
+  unreferenced-file class:** a 415-after-move claim sniff, and `claim_all`'s
+  refusal-not-move atomicity. **Recorded for the S1 Emma round (OWED — paused on the owner's
+  budget directive):** a new thread created by a send whose claim then refuses lingers empty (the
+  retry mints a second thread) — LOW, rule fix-or-accept there.
 - **Owner ratification (2026-09-01, prose):** all four §0b calls ruled same day — B ratified ·
   **bubble image display IN v1 (overruling the main seat's no-GET-route call**; the route is a
   D65-mount pattern reuse and the §8 serving rules carry the hardening — ruled by the main seat
