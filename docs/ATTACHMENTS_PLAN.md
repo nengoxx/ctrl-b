@@ -519,3 +519,29 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   removed — leaner than widening ownership); micro-confirm: RESOLVED, "none". S3 CLOSED.**
   Residuals recorded: a STEERED attachment message's durable parts arrive at the next reconcile
   (the snapshot bridges the interim) · the e2e held-POST test pins the accept window.
+- **S4 AS-BUILT (2026-09-02, `e65f02a` + fix wave `6c31c1f`; Opus from the pinned briefs; gate
+  6/6, BE 2,145): §4.3 extraction at claim** — pypdf==6.16.2 (exact pin, hostile input; RESEARCH
+  row) · `PdfBounds` frozen object (extend-don't-migrate) · SOFT bounds per §0b-3
+  (`max_pdf_pages: 200` DERIVED — R61 clusters no page bound; `max_extracted_chars: 400_000` =
+  LibreChat's 100k tokens × CHARS_PER_TOKEN) · `NO_TEXT_SIDECAR` one-liner for every no-text
+  shape · atomic authorship, ONE extraction site inside `claim` · `inline_chars` = the sidecar's
+  length (PDF pricing real with zero estimator change) · **the S2 ⚠ sweep obligation MET**:
+  `_with_sidecars` widens the referenced set where `sweep_thread_dirs` consumes it — derived for
+  EVERY referenced path, because **the brief's pdf⇔`.pdf` premise was FALSE** (bytes decide kind;
+  a `.txt`-named PDF is real — builder-falsified, main-seat confirmed, pinned by test).
+- **S4 EMMA ROUND (blind): SHIP WITH FIXES — 2 MED (both reviewer-REPRODUCED, incl. a hand-built
+  hostile ToUnicode→U+D800 PDF) · 1 LOW · open sweep "none".** The fix wave (`6c31c1f`): **MED-1**
+  (1.0) a sidecar could OVERWRITE an attachment (`report.pdf.txt` then `report.pdf`) → two layers:
+  the final-name walk is **both-names-free UNIFORMLY** (`_name_is_free`; uniform because the sniff
+  runs post-move, kind unknown at naming time) + **exclusive publication**
+  (`_publish_text_exclusive`: the house atomic write on a temp sibling, published by the store's
+  own link+unlink idiom; any link failure → no sidecar, the §4.5 stub) · **MED-2** (0.99) a lone
+  surrogate escaped as `UnicodeEncodeError` after the claim consumed the id → RULED sanitize-not-
+  fail; **the ruled codec line was WRONG about CPython** (`encode(…,"replace")` yields `?`) —
+  builder implemented the stated OUTCOME as `encode("utf-8","surrogatepass").decode("utf-8",
+  "replace")` (U+FFFD, maximal-subpart ×3), main-seat + Emma both ACCEPTED · **LOW-3** the
+  `inline_chars` docstring widened to the inline-source truth. **Confirm round: all three
+  RESOLVED with line proof, the codec deviation explicitly accepted, edge cases ruled (uniform-
+  reservation cost documented · crashed temps join the swept class · broad link-OSError = the
+  §4.5 contract), zero new findings. S4 CLOSED.** Residual recorded: one-shot extraction — a
+  missing sidecar stays missing until re-attach (§10 class, pinned).

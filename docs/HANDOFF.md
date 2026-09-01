@@ -28,18 +28,21 @@
   Dev units RUNNING (⚠ the dev backend predates S1–S3 — restart `ctrl-b-dashboard-dev` before any
   owner poke at attachments).
 
-## ▶▶ NEXT (2026-09-02, post-S3 — in order)
+## ▶▶ NEXT (2026-09-02, post-S4 — in order)
 
-1. **S4 (PDF)** under the same cadence — pypdf extraction sidecar at claim + failure copy + the
-   §6 `max_pdf_pages`/`max_extracted_chars` knobs + **the RECORDED OBLIGATION: `sweep_thread_dirs`'
-   referenced set must learn sidecars** (else extraction self-deletes after `staging_orphan_hours`)
-   + `AttachmentPart.inline_chars` for PDFs = the sidecar's decoded length.
-2. **S5 (the composer expand affordance)** — R62 §5-informed, line composer first, rides
-   `useComposerChrome` (plan §9-S5).
-3. **S6 — the owner device round** (plan §9-S6) closes the phase; the owner's word rules.
-4. **The v1.7.8 pipeline still stands** (owner dev test round → PUSH ruling → release, runbook
+1. **S4 IS CLOSED** (`e65f02a` + `6c31c1f`; blind round 2 MED both reviewer-REPRODUCED + 1 LOW →
+   fix wave → confirm RESOLVED, zero new; the S2 sidecar-sweep obligation MET; BE 2,145; full
+   record = plan §11's S4 blocks). **S5 (the expand affordance) is next** — main-seat ruling on
+   R62 §5's landed evidence (proceeding under the owner's continue directive, S6-overridable):
+   ≥3-line trigger · top-right · quiet per §7 · expansion = a TALLER AUTO-GROW CEILING on the
+   shared `useComposerChrome` seam (Signal's outcome; no modal, no second editor) · mic untouched
+   (peers hide it because their expanded is a mode; ours is a ceiling).
+2. **S6 — the owner device round** (plan §9-S6) closes the phase; the owner's word rules. It now
+   also carries: the S3 rail/clip geometry eyeball · the S5 expand feel/behavior override · the
+   steered-attachment reconcile feel.
+3. **The v1.7.8 pipeline still stands** (owner dev test round → PUSH ruling → release, runbook
    §Release · rollback v1.7.7 · pre-tag LOCAL e2e + stale-pin sweep) → stop the dev units.
-5. **Standing menu unchanged:** device pair + edit-a-prompt · A13 · Phase 19 LAST (1.8 RESERVED).
+4. **Standing menu unchanged:** device pair + edit-a-prompt · A13 · Phase 19 LAST (1.8 RESERVED).
 
 ## Prior state (2026-09-01, THIRD session, cont. — S2 BUILT + REVIEWED + CLOSED; superseded above where it speaks)
 
