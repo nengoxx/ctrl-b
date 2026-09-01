@@ -5,6 +5,7 @@ import { useComposer } from "../../../hooks/useComposer";
 import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
 import { AttachClip, AttachRail } from "./AttachRail";
+import { ExpandToggle } from "./ExpandToggle";
 import { MicIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
@@ -22,7 +23,10 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 //     MIC never disappears while dictation is configured; SEND joins to its right once the draft is
 //     non-empty (empty draft + STT → mic alone, the compact resting look; no STT → send alone). Both share
 //     `.line-btn` (the same accent circle).
-//   • AUTO-GROW — the shared 96px ceiling from `useComposerChrome`; no new knob.
+//   • AUTO-GROW — the shared 96px ceiling from `useComposerChrome`; no new knob. Since D68 S5 that hook
+//     carries a SECOND ceiling (half the viewport) behind the EXPAND toggle, which this layout is the
+//     primary beneficiary of ("the line composer has very little space" — owner). Still no local knob:
+//     the affordance is the shared chrome's, like the ceiling it moves.
 //   • ATTACH — PRESENT since D68 S3 (this supersedes the original "ABSENT" ruling): the quiet clip sits in
 //     the trailing cluster, LEFT of the mic, and the staged THUMBNAIL RAIL rides above the pill's row. It is
 //     NOT capability-gated (unlike the mic): there is no "attachments configured" fact to gate on.
@@ -40,7 +44,11 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   const taRef = useRef<HTMLTextAreaElement>(null);
   // Attachments (D68 §7) — the shared controller; see KitComposer for the contract.
   const attach = useAttachments();
-  const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
+  const { micPressed, pressMic, releaseMic, onKeyDown, expand } = useComposerChrome(
+    taRef,
+    draft,
+    send,
+  );
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
 
@@ -94,6 +102,10 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
           onPaste={attach.dropProps.onPaste}
           {...suggest.aria}
         />
+        {/* THE EXPAND TOGGLE — the field's top-right (R62 §5). This layout has no `.field` wrapper (the
+            row IS the field), so it hangs off the root, absolutely positioned into the pill's top-right
+            corner — which the `flex-end` row leaves empty, since the mic/send ride the bottom. */}
+        <ExpandToggle expand={expand} />
         {/* THE CLIP — trailing of the field, LEFT of the mic/send cluster (the ruled placement, and
             the spot the A8 placeholder comment always marked). Ungated: it is chrome, not a
             capability. */}

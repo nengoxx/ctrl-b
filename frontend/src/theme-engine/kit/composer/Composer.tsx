@@ -7,6 +7,7 @@ import { stopTurn } from "../../../store/chat";
 import { useUISlice } from "../../../store/ui";
 import { useComposerSkin } from "../axes";
 import { AttachClip, AttachRail } from "./AttachRail";
+import { ExpandToggle } from "./ExpandToggle";
 import { SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
@@ -44,8 +45,12 @@ export function KitComposer({
   // the picker, and `dropProps` puts paste + drag-drop on the surfaces below. Same three lines in
   // every variant; only the PLACEMENT differs (the owner-ruled geometry, per layout).
   const attach = useAttachments();
-  // Shared presentational chrome (mic-press toggle, auto-grow, Enter-to-send) — §3.1.
-  const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
+  // Shared presentational chrome (mic-press toggle, auto-grow + its expand ceiling, Enter-to-send) — §3.1.
+  const { micPressed, pressMic, releaseMic, onKeyDown, expand } = useComposerChrome(
+    taRef,
+    draft,
+    send,
+  );
   // Slash autocomplete (A2) — headless; its `onKeyDown` wraps the chrome's so the popover gets the arrow/
   // Enter/Tab/Esc keys first and everything else still sends.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
@@ -86,6 +91,10 @@ export function KitComposer({
             onBlur={suggest.onBlur}
             {...suggest.aria}
           />
+          {/* THE EXPAND TOGGLE — the field's top-right (R62 §5's convergent placement). `.field` here
+              holds nothing but the textarea, so the corner is its own; the textarea gains a matching
+              lead-out in kit.css so no line of text runs under the button. */}
+          <ExpandToggle expand={expand} />
         </div>
         <div className="crow">
           {/* `controlsStart` slot — opens the controls row (left of mic/send), e.g. the plan pill. */}

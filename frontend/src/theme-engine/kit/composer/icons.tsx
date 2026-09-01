@@ -150,3 +150,44 @@ export function NoVisionIcon({ size = 12 }: { size?: number }) {
     </svg>
   );
 }
+
+/** The EXPAND toggle's glyph (D68 S5) — lucide `chevrons-up` / `chevrons-down`, one component with the
+ *  direction as its state because the control is one button that flips.
+ *
+ *  DOUBLE CHEVRONS, not the peers' diagonal `maximize`/`minimize` corner-arrows: those promise a
+ *  full-screen mode in both dimensions, and ours only ever moves the field's ceiling — up, in the
+ *  direction the composer already grows. Drawn at the clip's lighter stroke (2), not the mic/send pair's,
+ *  for the same "nothing flashy" reason. */
+export function ExpandChevronsIcon({
+  size = 16,
+  dir = "up",
+}: {
+  size?: number;
+  dir?: "up" | "down";
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {dir === "up" ? (
+        <>
+          <path d="m17 11-5-5-5 5" />
+          <path d="m17 18-5-5-5 5" />
+        </>
+      ) : (
+        <>
+          <path d="m7 6 5 5 5-5" />
+          <path d="m7 13 5 5 5-5" />
+        </>
+      )}
+    </svg>
+  );
+}

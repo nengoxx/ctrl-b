@@ -556,6 +556,9 @@ body[data-perf="lite"] .kit-composer {
 }
 .kit-composer .field {
   display: block;
+  /* the containing block for the field's absolutely-positioned chrome (the D68 S5 expand toggle, which
+   * takes its top-right corner). The docked layout re-asserts this for its own reasons. */
+  position: relative;
 }
 .kit-composer textarea {
   all: unset;
@@ -816,14 +819,17 @@ body[data-motion="reduced"] .kit .kit-attach-busy svg {
 .kit .kit-attach-input {
   display: none;
 }
-/* THE CLIP — quiet by owner ruling ("nothing flashy"), Telegram's gray clip as the reference: the
- * `.kit-cbtn` chassis with its ring and hover fill dropped, one text step down from the mic. Never
- * an accent, never a filled circle — it must read as subordinate to the mic/send pair. */
-.kit .kit-cbtn.attach {
+/* THE QUIET CONTROLS — the CLIP (D68 §7) and the EXPAND toggle (D68 S5) share one treatment by ruling
+ * ("not a full icon like the mic or send is … nothing flashy" — owner), Telegram's gray clip as the
+ * reference: the `.kit-cbtn` chassis with its ring and hover fill dropped, one text step down from the
+ * mic. Never an accent, never a filled circle — both must read as subordinate to the mic/send pair. */
+.kit .kit-cbtn.attach,
+.kit .kit-cbtn.expand {
   border-color: transparent;
   color: var(--text-3);
 }
-.kit .kit-cbtn.attach:active {
+.kit .kit-cbtn.attach:active,
+.kit .kit-cbtn.expand:active {
   color: var(--text-2);
   background: transparent;
 }
@@ -853,6 +859,63 @@ body[data-motion="reduced"] .kit .kit-attach-busy svg {
   order: -1;
   flex: 0 0 100%;
   margin-bottom: 2px; /* the row `gap` supplies the rest */
+}
+
+/* ── composer · THE EXPAND AFFORDANCE (D68 S5 / ATTACHMENTS_PLAN §7 + §9-S5) ─────────────────────────
+ * R62 §5's convergent shape: a quiet control at the FIELD's TOP-RIGHT, offered once the draft renders at
+ * ≥3 lines (Telegram Web A `position:absolute; top:.4375rem; right:.625rem` inside the field; open-webui
+ * `absolute top-2.5 right-3` — three of four peers agree on trigger AND placement; Signal's hover-
+ * revealed tab centred on the top edge is the outlier and is unusable on touch).
+ *
+ * There is NO expanded-mode chrome to style: expanded is a taller auto-grow ceiling in
+ * `useComposerChrome` and nothing else, so this section is the BUTTON and its three placements. The
+ * height change itself carries NO transition — §14.11 is transform/opacity-only, and animating `height`
+ * would put a layout transition on the auto-grow that runs per keystroke. The button's own APPEAR is
+ * motion-gated instead, reusing the line layout's `kit-btn-pop` (the kit's one appear pop).
+ *
+ * 28px, not the 32px `.kit-cbtn` lane (and Telegram Web A's own 28×28): it rides INSIDE the text field,
+ * where a control the size of the mic would read as a third action. Its quiet colour comes from the
+ * shared `.kit-cbtn.attach, .kit-cbtn.expand` rule above. */
+.kit .kit-cbtn.expand {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  /* above the textarea it overlaps (the stacked/docked layouts pad the text out from under it, but the
+   * caret can still travel there mid-edit). */
+  z-index: 1;
+}
+body[data-motion="full"] .kit .kit-cbtn.expand {
+  animation: kit-btn-pop var(--dur-fast) var(--ease-out);
+}
+/* STACKED — `.field` holds nothing but the textarea (the controls live in the `.crow` below), so the
+ * toggle takes its top-right corner outright, optically centred on the first line (28px over a 21.75px
+ * line box). The `:has()` lead-out only exists while the toggle does — a short draft is untouched. */
+.kit .kit-composer.stacked .field .kit-cbtn.expand {
+  top: -3px;
+  right: -2px;
+}
+.kit .kit-composer.stacked .field:has(.kit-cbtn.expand) textarea {
+  padding-right: 30px;
+}
+/* SHEET — the field is a ROW: the plan pill leads it, the clip + embedded mic close it (40px + 40px
+ * lanes, plus the mic's 2px margin). The toggle takes the TEXT's top-right, clear of that lane —
+ * a tall field vertically CENTRES the mic, and a corner-pinned toggle would land on top of it. */
+.kit .kit-composer.sheet .field .kit-cbtn.expand {
+  top: 2px;
+  right: calc(40px + 40px + 2px);
+}
+.kit .kit-composer.sheet .field:has(.kit-cbtn.expand) textarea {
+  padding-right: 34px; /* the field's own 6px + the button's 28px */
+}
+/* LINE — this layout has no `.field` wrapper (its row IS the field), so the toggle hangs off the root,
+ * which is already positioned. The row bottom-aligns its controls (`align-items:flex-end`), so at ≥3
+ * lines the pill's top-right corner is empty space ABOVE the mic/send cluster and no text reaches it —
+ * no lead-out needed here. 8px clears the 24px corner arc: the button's own corner sits at (8,8), which
+ * is inside the r24 circle centred at (24,24) (√(16²+16²) = 22.6 < 24), so `overflow:hidden` clips
+ * nothing — the same concentric reasoning the trailing buttons use. */
+.kit .kit-composer.line .kit-cbtn.expand {
+  top: 8px;
+  right: 8px;
 }
 
 /* The STOP square is symmetric — the arrowhead optical nudges (`.tall svg` / `.line-btn svg` /

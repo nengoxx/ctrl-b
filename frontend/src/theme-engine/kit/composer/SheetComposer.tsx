@@ -5,6 +5,7 @@ import { useComposer } from "../../../hooks/useComposer";
 import { useComposerSuggest } from "../../../hooks/useComposerSuggest";
 import { stopTurn } from "../../../store/chat";
 import { AttachClip, AttachRail } from "./AttachRail";
+import { ExpandToggle } from "./ExpandToggle";
 import { MicIcon, SendArrowheadIcon, SpinnerIcon, StopSquareIcon } from "./icons";
 import { SuggestPopover } from "./SuggestPopover";
 import type { ComposerSlots } from "./types";
@@ -27,7 +28,11 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
   const taRef = useRef<HTMLTextAreaElement>(null);
   // Attachments (D68 §7) — the shared controller; see KitComposer for the contract.
   const attach = useAttachments();
-  const { micPressed, pressMic, releaseMic, onKeyDown } = useComposerChrome(taRef, draft, send);
+  const { micPressed, pressMic, releaseMic, onKeyDown, expand } = useComposerChrome(
+    taRef,
+    draft,
+    send,
+  );
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
 
@@ -70,6 +75,11 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
               onPaste={attach.dropProps.onPaste}
               {...suggest.aria}
             />
+            {/* THE EXPAND TOGGLE — the field's top-right (R62 §5), but this layout's field is a ROW
+                whose trailing edge is the clip + embedded mic, so kit.css lands it at the TEXT's
+                top-right, clear of that control lane: a tall field centres the mic, and the two would
+                otherwise collide. */}
+            <ExpandToggle expand={expand} />
             {/* THE CLIP — EMBEDDED inside `.field` at the trailing edge, immediately LEFT of the
                 embedded mic: Telegram Android's own geography (R62 §2.1), and the ruled placement
                 for this layout. The tall send stays outside the field, as it always was. */}
