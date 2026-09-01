@@ -180,7 +180,10 @@ def test_an_OVERSIZED_SINGLE_LINE_is_CUT_at_the_cap_and_priced_as_it_is_sent(hom
         assert len(page) == cap and "x" * (cap + 1) not in page  # the cap is a BOUND, not a hint
         assert "line 1 is longer than one page" in marker and "first 1,000 characters are shown" in marker
         priced = priced_inline_chars(part, c.app.state.settings.attachments)
-        assert 0 <= len(block) - priced <= len(marker)  # the only residual is the frame's wording
+        # CONSERVATIVE again (S2 confirm LOW): the price COVERS the emitted block — `_marker_cost`
+        # renders the marker's longest form (cut clause + continuation), so the residual is the
+        # frame's unused clauses plus digit-width noise, on the over side, never the file.
+        assert 0 <= priced - len(block) <= 128
 
 
 def test_an_oversized_FIRST_line_ENDS_the_page_and_the_continuation_names_LINE_2(home: Path) -> None:

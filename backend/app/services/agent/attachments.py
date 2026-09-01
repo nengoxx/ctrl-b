@@ -252,8 +252,15 @@ def priced_inline_chars(part: AttachmentPart, cfg: AttachmentsCfg) -> int:
 
 
 def _marker_cost(name: str) -> int:
-    """The §4.2 frame's own character cost for one file, measured on the real renderer. The numbers
-    fed in are the CONTINUATION shape (the longer of the two), keeping the estimate on the
-    conservative side the way the rest of `estimate_tokens` is — a slight over-estimate compacts a
-    little early, an under-estimate overflows a window."""
-    return len(inline_marker(StoredRead(name=name, text="", chars=0, lines=2, first_line=1, last_line=1)))
+    """The §4.2 frame's own character cost for one file, measured on the real renderer. The shape fed
+    in is the LONGEST the marker takes — a CUT line (`line_truncated`, S2 confirm LOW) plus the
+    continuation clause, which co-occur on a multi-line file whose first line is oversized — keeping
+    the estimate on the conservative side the way the rest of `estimate_tokens` is: a slight
+    over-estimate compacts a little early, an under-estimate overflows a window. The interpolated
+    counts' digit widths differ from a real page's by a few characters — noise beneath the
+    `CHARS_PER_TOKEN` heuristic's own error, and now on the OVER side for every uncut page."""
+    return len(
+        inline_marker(
+            StoredRead(name=name, text="", chars=0, lines=2, first_line=1, last_line=1, line_truncated=True)
+        )
+    )
