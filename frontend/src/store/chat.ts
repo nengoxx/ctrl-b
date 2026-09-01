@@ -2191,9 +2191,27 @@ export async function sendMessage(
     : undefined;
   /** The reservation's other half (MED-1): rows the server never took go back to `staged`, so the
    *  owner can re-send them instead of finding them stuck spoken-for. In a `finally` because a
-   *  reservation that survives a thrown send would be exactly that. */
+   *  reservation that survives a thrown send would be exactly that.
+   *
+   *  The BUBBLE sheds its snapshot too (the confirm round's MED): a never-accepted send's bubble
+   *  must not claim its files were sent — the chips (and their object URLs, which the rail never
+   *  stopped owning) are back in the rail, and a bubble still rendering the same URL would break
+   *  the moment the owner removes the restored chip. A text bubble keeps its text + failure state;
+   *  an attachment-only bubble, empty without the snapshot, is REMOVED — the chips in the rail are
+   *  the whole truth of what remains. (A 409's own rollback already removed the bubble; this map
+   *  then matches nothing, and `sweepPreviews` revokes nothing because ownership never moved.) */
   const releaseUnspent = () => {
-    if (!claimed) releaseStaged(attachments);
+    if (claimed) return;
+    releaseStaged(attachments);
+    if (previews.length) {
+      const messages = state.messages.flatMap((m) => {
+        if (m.id !== tempUser.id) return [m];
+        if (!body) return []; // attachment-only: nothing left to say
+        const { pending_attachments: _dropped, ...rest } = m;
+        return [rest];
+      });
+      set({ messages });
+    }
   };
 
   if (steering) {

@@ -355,4 +355,33 @@ describe("the optimistic snapshot (MED-6)", () => {
     expect(stagedFiles()[0]).toMatchObject({ status: "staged", previewUrl: "blob:id-1" });
     expect(revoke).not.toHaveBeenCalled(); // the rollback dropped the bubble, not the rail's URL
   });
+
+  // The confirm round's MED (0.96): a PRE-ACCEPT failure releases the chips back to the rail, so the
+  // bubble may not keep claiming their files were sent — it sheds the snapshot (or, attachment-only,
+  // goes entirely), and the rail's URL has no second referent to break when the chip is removed.
+  it("a NEVER-ACCEPTED send's bubble sheds its snapshot — the restored chip is the one referent", async () => {
+    calls = [];
+    globalThis.fetch = vi.fn(() => Promise.reject(new TypeError("network")));
+    addStaged(photo("id-1"));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("look", { attachments: reserveStaged() });
+    });
+    const bubble = result.current.messages.find((m) => m.role === "user");
+    expect(bubble).toBeDefined(); // the failed TEXT bubble survives…
+    expect(bubble?.pending_attachments).toBeUndefined(); // …but claims no sent files
+    expect(stagedFiles()[0]).toMatchObject({ status: "staged", previewUrl: "blob:id-1" });
+  });
+
+  it("a NEVER-ACCEPTED attachment-only send removes its bubble — the rail is the whole truth", async () => {
+    calls = [];
+    globalThis.fetch = vi.fn(() => Promise.reject(new TypeError("network")));
+    addStaged(photo("id-1"));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("", { attachments: reserveStaged() });
+    });
+    expect(result.current.messages.filter((m) => m.role === "user")).toEqual([]);
+    expect(stagedFiles()[0]).toMatchObject({ status: "staged", previewUrl: "blob:id-1" });
+  });
 });
