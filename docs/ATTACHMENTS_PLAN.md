@@ -386,3 +386,46 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   as NOT requiring a fresh council round: same reviewed class, additive read-only surface,
   recorded here) · PDF soft bounds with the cap always model-visible · 16k conditional on the
   paged reach (satisfied). Design CLOSED at v2.2.
+- **S1 EMMA-LANE ROUND (2026-09-01, second session — blind sol high, `--ignore-rules`, over
+  `fce822e`+`adfddf6` against §2/§3/§8/§9-S1; R46 brief with the known-findings list, the
+  recorded LOW as an explicit question-10 ruling ask, bounded open sweep): VERDICT — SHIP WITH
+  FIXES.** Recorded verbatim-faithful; **NOTHING ruled or built** (the owner's ~98%-usage
+  directive: no fix wave, hand off — the fix wave is the NEXT session's first move).
+  - **MED-1 (conf 0.99, reviewer-REPRODUCED):** boot retention escapes `$CTRLB_HOME` through a
+    SYMLINKED attachments root — `sweep_thread_dirs()` never rejects the root itself as a
+    symlink, so old regular files under an unrecognized child dir of the link target are deleted
+    as dead-thread data (her repro: `removed=1` on an outside victim). Fix: fail closed in both
+    sweep functions AND thread-delete cleanup when the root or a required ancestor is a
+    symlink/non-directory; ancestor-symlink test. (`core/attachments.py:590-620`)
+  - **MED-2 (conf 0.94):** deleting/harvesting a steer WHILE its attachments are being claimed
+    can still persist the cancelled message + files — `_drain_steers()` snapshots the queue, then
+    awaits multi-file claims (scans/fsyncs/strict decodes of 10 MiB files widen the previously
+    accepted sub-ms persist race); no ownership re-check before the insert, `commit()` count
+    ignored. Fix: immediately before the transaction, revalidate each entry is still owned by the
+    same queue, excluding harvested/deleted entries; already-claimed files stay in the accepted
+    unreferenced-file sweep class. (`services/agent/session.py:1919-1962`, `api/agent.py:1105-1114`)
+  - **LOW-3 (conf 0.96):** the repaired OpenAPI pin is real for schema-visible POSTs but not the
+    whole "no POST/no multipart" property — multipart stays in the allowed-method set on PUT, an
+    `include_in_schema=False` POST is absent from OpenAPI, and the source-token check reads only
+    the two current files. Fix: recursively inspect included router routes; reject POST +
+    multipart request-body declarations under both guarded prefixes.
+    (`test_media_write_d65.py:674-694`, `test_attachments_d68.py:708-732`)
+  - **LOW-4 (conf 0.91):** the claim-is-the-only-writer pin greps other modules for the literal
+    `thread_dir(` — `attachments_root(home) / thread_id` or a re-derived path writes into a
+    thread dir with the pin green; post-claim alternate writers uncovered. Fix: pin ALL
+    attachment-root path construction/imports to the store module. (`test_attachments_d68.py:650-676`)
+  - **Question-10 RULING: FIX (LOW)** — delete the newly created thread when its initial claim
+    refuses: track `created_here`; in the `StoreWriteError` branch call the existing
+    `ThreadRepo.delete()` before returning the 409 (which also immediately reclaims a partially
+    refused batch's already-moved files). Existing-thread lost-response retries untouched.
+  - **Sound checks (explicit):** claim exclusivity correct under BOTH race orderings (one staging
+    unlink wins; the loser removes its own target) · collision landing no-clobber (cross-fs
+    `os.link` = unhandled EXDEV/500 but staging intact, no target created; normal layout is one
+    filesystem) · both boot-sweep data sources correct (all threads incl. archived; paths from
+    persisted parts; DB failure skips + preserves) · PUT admission pre-open, streamed counting,
+    sniff/decode refusal, `finally` cleanup sound; encoded slashes 404, dot/backslash/non-NFC/
+    reserved/absolute names refused · `AttachmentPart` facts-only + additive, old rows round-trip ·
+    steer coalescing preserves ids per entry; a partially refused claim degrades to text+notice ·
+    the media refactor preserves the old create/replace ladder + error semantics; `probe_gif`
+    separate, media adopts no GIF · focused suites 127 green (1 pre-existing Starlette
+    deprecation warning). **Open sweep: none.**

@@ -12,7 +12,48 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-01 — THE A8 SESSION: composer attachments designed → council-closed → S0+S1 BUILT; supersedes everything below where it speaks)
+## Current state (2026-09-01, SECOND session — THE S1 EMMA ROUND: review RAN + RECORDED, NO fix wave; supersedes everything below where it speaks)
+
+- **The owed S1 Emma-lane round RAN and is RECORDED — NOTHING fixed, nothing built** (owner
+  directive at ~98% weekly usage: no fix wave, hand off; the fix wave opens the next session).
+  Blind sol high (`--ignore-rules`, the Hermes emma lane) over `fce822e` + `adfddf6` against plan
+  §2/§3/§8/§9-S1, R46 brief (known-findings exclusion list · the recorded LOW as an explicit
+  question-10 ruling ask · bounded open sweep). **VERDICT: SHIP WITH FIXES — 2 MED · 2 LOW ·
+  Q10 = FIX · open sweep "none"; she ran the focused suites herself (127 green).**
+- **The findings live verbatim in [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) §11's
+  S1-Emma-round block** (the scratchpad copy was tmpfs — the plan block IS the record).
+  Headlines: **MED-1** (conf 0.99, reviewer-REPRODUCED) — the boot sweeps + thread-delete
+  cleanup follow a SYMLINKED attachments root and delete outside `$CTRLB_HOME`; fix = fail-closed
+  root/ancestor check. **MED-2** (0.94) — a steer deleted/harvested DURING its multi-file claim
+  still persists its message; fix = ownership re-check immediately before the transaction.
+  **LOW-3/LOW-4** — both new architecture pins are weaker than their names (schema-hidden
+  POST/multipart escapes the OpenAPI pin · the claim-only-writer pin greps a literal).
+  **Q10** — she rules FIX: `created_here` → the existing `ThreadRepo.delete()` in the
+  `StoreWriteError` branch before the 409. Sound-checks explicitly cleared the load-bearing
+  areas (claim exclusivity both orderings · the admission ladder · part-union additivity ·
+  steer coalescing · the media refactor behavior-preserving).
+- **Local `main` = origin `a558d43` + 9 commits + this docs commit, NOTHING PUSHED.** Prod
+  untouched: **v1.7.7 @ `578ffa7`**. Dev units RUNNING (unchanged this session).
+
+## ▶▶ NEXT (2026-09-01, post-review — in order; supersedes the lists below)
+
+1. **The S1 fix wave (the next session's FIRST move):** main-seat rulings on the recorded round
+   (plan §11 — findings are advisory; re-derive the leanest fix per finding: MED-1/MED-2 look
+   fix-worthy, LOW-3/LOW-4 are pin strengthenings, Q10's FIX is small and she named the seam) →
+   ONE Opus fix wave from a pinned brief → main-seat audit → the Emma confirm round (try
+   `--resume latest --in /home/emma/github/ctrl-b` first — context-intact beats a fresh agent;
+   re-state `--ignore-rules`) → gate green → **the owner's word before S2.**
+2. **S2 → S6 per plan §9**, one slice per session under the budget directive (unchanged): S2
+   model feed → S3 FE → S4 PDF → S5 expand → S6 owner device round.
+3. **The v1.7.8 pipeline still stands (the fleet wave, unchanged):** the owner tests on dev
+   (:5173) — the retimed morph · the pick-grow · a REAL reboot (⚠ dev drives the real fleet) →
+   the PUSH ruling (now 10 commits) → release v1.7.8 (runbook §Release, Opus-operated · NO
+   migration · rollback v1.7.7 · pre-tag LOCAL e2e + the stale-pin sweep over both waves' labels)
+   → stop the dev units.
+4. **The standing menu unchanged:** owner device pair on prod + edit-a-prompt (easier
+   post-release) · A13 design talk · parked ledger · **Phase 19 goes LAST** (1.8 RESERVED).
+
+## Prior state (2026-09-01 — THE A8 SESSION: composer attachments designed → council-closed → S0+S1 BUILT; superseded above where it speaks)
 
 - **Local `main` = origin `a558d43` + 8 commits, NOTHING PUSHED**: the 3 fleet-wave polish commits
   (`eed7045`/`b7033c3`/`223bc5c` — the v1.7.8 material; **the owner's test round on those is
@@ -41,7 +82,7 @@
   **pause between each slice**, no back-to-back council marathons. The S1 Emma round was
   deliberately NOT launched under this directive — it is the next session's first move.
 
-## ▶▶ NEXT (2026-09-01 — in order; supersedes the lists below)
+## ▶▶ PRIOR (2026-09-01 — the A8 session's list): ✅ item 1 RAN in the second session (the block above is the record; superseded)
 
 1. **The S1 Emma-lane review round (OWED — the per-slice gate):** blind sol round over
    `fce822e` + `adfddf6` against plan §2/§3/§9-S1 — include the recorded LOW (a first-send whose
