@@ -358,6 +358,40 @@ any future unauthenticated write path.
 checklist gains one line (§6) because the property that must survive is a **negative**: no CORS
 middleware, and no upload route that a cross-origin form could post to.
 
+### 2.8 Chat attachments — staged raw-body writes, thread-confined reads (D68)
+
+The second owner-file write surface, deliberately the same shape as §2.7 (design:
+[`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md); the §2.7 CORS reasoning applies verbatim):
+
+- **Writes** are raw-body `PUT /api/attachments/staging/{filename}` — non-safelisted, so the
+  preflight-refusal barrier §2.7 establishes holds here too, and the D65 no-CORS/no-multipart
+  test pins EXTEND to this route rather than being re-derived. The filename passes the ONE shared
+  bare-name predicate at mint, before any byte streams; admission is the streamed counter
+  (413 mid-body), then magic-byte sniff — SVG is never admitted as an image; text kinds (which
+  bytes cannot authenticate) take an extension/MIME allowlist + bounded strict UTF-8 decode.
+- **Identity is server-minted**: staging ids are unguessable random hex; the chat POST's claim is
+  the ONLY writer into `$CTRLB_HOME/attachments/{thread_id}/` (test-pinned), constructs every
+  persisted part itself, and refuses consumed/expired ids. The client never names a path.
+- **Reads** are two confined surfaces: `GET /api/attachments/{thread_id}/{name}` (D65-mount
+  serving pattern; only sniffed image types serve inline, text/PDF serve with
+  `X-Content-Type-Options: nosniff` + `Content-Disposition: attachment` — stored bytes are never
+  active browser content) and the `read_attachment` typed tool (read-only, LOW; confined to the
+  CURRENT thread via the server-owned `InvocationContext.thread_id`, fail-closed when absent,
+  never a model-supplied argument).
+- **Dereference discipline** (both surfaces): server-stored refs only, one bare-name predicate,
+  regular files only (`lstat`, no symlinks), resolved-parent-equals-thread-dir check — the §2.7
+  rules reused, not re-implemented.
+- **pypdf parses untrusted bytes** at claim: bounds (`max_pdf_pages`/`max_extracted_chars`) are
+  honest ITERATION stops, not a CPU/memory kill bound (accepted, owner-ruled — single user, the
+  uploader is the owner); failure is a recorded message, never a crash; the original never leaves
+  the store.
+- **Retention is closed-loop**: thread delete removes the thread's directory; the boot sweep
+  reclaims aged unclaimed staging and unreferenced files inside live thread dirs (the
+  rename-vs-commit crash window), so no attachment bytes outlive their referent.
+
+**Safe-defaults fit:** like §2.7, no toggle — the surviving properties are negatives (no CORS
+middleware, no multipart route, no client-named paths) plus the two confinement pins above.
+
 ---
 
 ## 3. Residual & accepted risks + known gaps

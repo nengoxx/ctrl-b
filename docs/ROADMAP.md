@@ -264,7 +264,7 @@ back to the analysis.
   (mirror `narrow_tools` semantics — narrow-only, never widen; design at build time). Selection
   state = a small store beside `store/composer.ts` (draft precedent).
 
-### A8. Composer attachments (files/images to the agent) — **noted 2026-07-11 (owner)**
+### A8. Composer attachments (files/images to the agent) — **✏️ DESIGN RATIFIED 2026-09-01 ([`D68`](./DECISIONS.md)) · spec = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) v2.2 (council-closed §11; build = TODO Phase 22, against the plan NOT this entry)**
 
 - **What:** attach files/images to a chat message from the composer — an **attach button next to the
   mic** — so the agent can read configs/logs/screenshots (multimodal when the model supports it).

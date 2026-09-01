@@ -4897,3 +4897,43 @@ sibling: `GachaTrackProps.waking: ReadonlySet<string>` became
 `pending: ReadonlyMap<string, {kind}>` (the store's own map, handed down whole) and each use site
 asks `.get(id)?.kind` — a second per-kind Set is exactly the parallel-map shape the
 extend-not-migrate rule forbids. Every pre-existing state's strings are byte-identical.
+
+## D68 — Composer attachments: staged raw-body uploads, durable per-thread files, the re-readable injection ✏️ RATIFIED 2026-09-01 (owner design talk + full council; spec of record = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) v2.2 incl. its §11 council record; evidence = R61 + R54/R55/R53; council = Emma blind correctness lens + adversarial Opus architecture lens, both BUILD WITH CHANGES → transport B unanimous → confirm rounds to an explicit close [Opus BUILD AS DESIGNED · Emma RESOLVED, micro-confirm CLOSED])
+
+**What.** Files/images attach to a chat message from the composer (ROADMAP A8). Scope = images +
+text files + PDFs (owner: NOT configs/logs — the agent reads those itself). NO embeddings/RAG:
+whole-content injection, capped and paged.
+
+**The contracts (headline — the plan is normative):**
+1. **Transport B, id-addressed**: `PUT /api/attachments/staging/{filename}` (raw body, streamed
+   413-mid-body admission, bare-name predicate at mint BEFORE bytes stream) mints an opaque
+   server-random `attachment_id`; the chat POST claims ids by `os.replace` into
+   `$CTRLB_HOME/attachments/{thread_id}/` and constructs every `AttachmentPart` itself. No
+   client-named paths anywhere. Inline-base64 (A) was killed on evidence: no pre-parse admission
+   boundary exists for a JSON body in this stack.
+2. **`AttachmentPart`** joins the part union (facts only — name/kind/mime/path/bytes/dims/
+   `inline_chars`; NEVER inline data, NEVER derived token prices). Attachments re-send by default
+   (`attachments.resend`); compaction folds preserve exact filenames via a manifest line; the
+   estimator prices attachment parts from the persisted facts at read.
+3. **`read_attachment`** typed tool (read-only, LOW): D64 paged contract; confined to the current
+   thread via a NEW server-owned `InvocationContext.thread_id` (fail-closed, never model-supplied);
+   no-arg call lists the thread's files. Text/PDF injection is framed as this tool's OUTPUT
+   (D64-marker form, never call-prose) so truncation self-heals into a real call.
+4. **No-vision floor**: inside the failover hop (`attempt(entry)`), a model whose
+   `input_modalities` (new optional list on the model catalog entry; absent = text-only) lacks
+   images gets a fresh derived list with image parts replaced by opencode's in-band ERROR line.
+   Never mutate the shared payload; two-direction two-hop test pinned.
+5. **PDFs**: original + extracted-text sidecar (pypdf, claim-time, `to_thread`); bounds are SOFT
+   and always model-visible. Scanned-PDF extraction failure is an honest sidecar line.
+6. **Serving (owner overrule 2026-09-01 — the feature ships complete in v1)**: bubble image
+   display via `GET /api/attachments/{thread_id}/{name}` reusing the D65 mount pattern; only
+   sniffed image types serve inline (SVG is never an image); text/PDF serve inert
+   (nosniff + attachment disposition).
+7. **Retention**: thread delete removes the dir; the boot sweep reclaims aged staging AND
+   unreferenced files inside live thread dirs (the claim-rename/commit crash window — refused
+   retries stay the accepted W10-class lost-response residual).
+
+**Boundaries.** Android `share_target` with files = the recorded follow-up (the staging shape is
+its landing; its multipart-POST safelisted-class design gets its own moment) · HEIC = S0 device
+check then refusal copy · no OCR · no cross-thread reads (memory's job) · prefix-cache churn when
+the per-request image ceiling binds = accepted residual with the `cached_tokens` telemetry trigger.

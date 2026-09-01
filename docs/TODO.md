@@ -1486,9 +1486,41 @@ owner eyeball; each passes `tools/check.py`.
       and then A's `finally` cleared B), and `axis: "list"` emits `translateY` again — the grid's
       two-dimensional transform had been handed to the fallback chains, where a sideways drift slid a
       settings row out of its panel while its target correctly never moved)
-- [ ] S6 — Owner device round: the parked 2026-08-12 round + EXIF portrait e2e · 413-mid-body over
-      Tailscale HTTPS · Honor 20 HEIC probe · PWA-standalone picker survival · q0.85 eyeball ·
-      crop/framing/drag feel · Fennec expected-partials
+- [x] S6 — Owner device round: **RAN + CLOSED 2026-08-27** (Honor 20 over real HTTPS; two catches
+      fixed in-round — pill cluster-wrap at 360px · "Framing"→"Focus"; HEIC/48MP/EXIF closed by
+      source ruling; autoscroll·413·cast-walk = live-use deferrals). Phase 21 **RELEASED v1.7.7**.
+      *(Box ticked 2026-09-01 — doc-truth; the HANDOFF 2026-08-27 block is the record.)*
+
+## Phase 22 — Composer attachments: staged uploads · durable per-thread files · the re-readable injection — **✏️ DESIGN RATIFIED 2026-09-01 ([`D68`](./DECISIONS.md)) · spec = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) v2.2 (council-closed §11 + owner-ratified §0b; §9 = the slice ladder; build against the plan, NOT this list)**
+
+Attach images/text/PDFs from the composer (ROADMAP A8): id-addressed staging `PUT` + claim-by-
+rename into `$CTRLB_HOME/attachments/{thread_id}/` · `AttachmentPart` joins the part union ·
+whole-content injection framed as `read_attachment` output (paged, D64 contract, thread-confined
+via the new `InvocationContext.thread_id`) · per-hop no-vision strip (`input_modalities`) · bubble
+image display via the D65-pattern GET route · no RAG, no OCR. Standing cadence per slice: Opus
+build from a pinned brief → main-seat audit → Emma-lane review; each passes `tools/check.py`.
+
+- [ ] S0 — Docs: D68 · SECURITY_MODEL §2.8 · ROADMAP A8 stanza · this phase block · doc-map row ·
+      the Honor 20 HEIC device check (owner, 2 min — gates the admission copy, not the backend).
+- [ ] S1 — Backend store + transport: staging mint/PUT (bare-name at mint, streamed cap, sniff,
+      text allowlist+decode) · claim-by-rename in the chat POST + steer drain · `AttachmentPart`
+      (facts only) · retention (thread-delete hook · boot sweep incl. aged staging + unreferenced-
+      in-live-dir reconcile) · tests per plan §9 S1.
+- [ ] S2 — Model feed: `_assemble` array-content branch + per-turn revision-keyed data-URL cache +
+      `max_images_per_request` ceiling · estimator `AttachmentPart` arm (explicit test) · the
+      per-hop `drop_unsupported_modalities` strip (`input_modalities` on the catalog entry →
+      `ResolvedTarget`; two-direction two-hop test) · `read_attachment` + `InvocationContext.
+      thread_id` (fail-closed) + no-arg manifest · compaction manifest lines · resize notice ·
+      `ATTACHMENT_ONLY_TEXT` + filename title/recall surrogates.
+- [ ] S3 — FE: `useAttachments` (reuse imageProbe/imageExport; downscale 2048/q0.85) · attach
+      chrome in every composer variant · chips + paste/drop (`items` fallback) · the bubble branch
+      (image display + tap-to-full-size) + the GET serving route (+ its §9 S3 tests) ·
+      attachment-only sends · e2e.
+- [ ] S4 — PDFs: pypdf sidecar extraction at claim (`to_thread`, soft bounds model-visible) ·
+      scanned-PDF failure copy · sidecar rides the S2 text path.
+- [ ] S5 — Owner device round: phone pick/paste/send/re-read · attachment-only photo send ·
+      vision on OpenRouter · no-vision on qwen (expect the in-band ERROR) · a real PDF · a
+      compacted-thread re-read via the manifest.
 
 ## Cross-cutting / don't-forget
 
