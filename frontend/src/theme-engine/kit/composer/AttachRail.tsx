@@ -97,6 +97,11 @@ function Chip({
 }) {
   const image = file.kind === "image";
   const blind = hint && image && file.status !== "failed";
+  // `sending` = a send in flight has RESERVED this chip (D68 MED-1). It wears the busy face for the
+  // same reason `uploading` does — something is happening to it that the owner did not just start —
+  // and it loses its ✕: the id is already named on a POST, so removing the chip could not un-send it.
+  const busy = file.status === "uploading" || file.status === "sending";
+  const spokenFor = file.status === "sending";
   return (
     <div
       className="kit-attach-chip"
@@ -112,8 +117,8 @@ function Chip({
           <span className="kit-attach-name">{file.name}</span>
         </span>
       )}
-      {file.status === "uploading" && (
-        <span className="kit-attach-busy" title="uploading…">
+      {busy && (
+        <span className="kit-attach-busy" title={spokenFor ? "sending…" : "uploading…"}>
           <SpinnerIcon size={18} />
         </span>
       )}
@@ -127,15 +132,17 @@ function Chip({
           <NoVisionIcon size={12} />
         </span>
       )}
-      <button
-        type="button"
-        className="kit-attach-x"
-        aria-label={`remove ${file.name}`}
-        title="remove"
-        onClick={onRemove}
-      >
-        <XIcon size={11} />
-      </button>
+      {!spokenFor && (
+        <button
+          type="button"
+          className="kit-attach-x"
+          aria-label={`remove ${file.name}`}
+          title="remove"
+          onClick={onRemove}
+        >
+          <XIcon size={11} />
+        </button>
+      )}
     </div>
   );
 }

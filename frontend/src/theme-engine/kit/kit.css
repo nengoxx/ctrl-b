@@ -707,7 +707,10 @@ body[data-motion="reduced"] .kit-cbtn.mic.sending svg {
   border: 1px solid var(--line-2);
   box-sizing: border-box;
 }
-.kit .kit-attach-chip[data-status="uploading"] {
+/* busy = the bytes are moving: on their way UP (uploading) or already named on a send in flight
+   (sending, D68 MED-1). One face for both — the difference is the ✕, which a reserved chip loses. */
+.kit .kit-attach-chip[data-status="uploading"],
+.kit .kit-attach-chip[data-status="sending"] {
   opacity: 0.75;
 }
 .kit .kit-attach-chip[data-status="failed"] {
@@ -3540,6 +3543,11 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
   width: auto;
   height: auto;
   object-fit: contain;
+}
+/* the OPTIMISTIC snapshot (D68 MED-6) wears the same shapes with none of the affordances: until the
+   server has stored the file there is nothing to open and nothing to download. */
+.kit .chat-attach[data-pending] .chat-attach-shot {
+  cursor: default;
 }
 .kit .chat-attach-file {
   display: inline-flex;

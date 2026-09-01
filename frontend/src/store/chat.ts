@@ -21,7 +21,7 @@ import type {
   Thread,
   ToolResult,
 } from "../types";
-import { consumeStaged } from "./attachments";
+import { consumeStaged, releaseStaged, stagedPreviews } from "./attachments";
 import { appendDraft, setDraft } from "./composer";
 import { createStore } from "./createStore";
 import { setConnection } from "./connection";
@@ -470,7 +470,39 @@ export function setSessionPrivilege(p: Privilege | null): void {
   set({ sessionPrivilege: p });
 }
 
+// ── the optimistic bubbles' object URLs (D68 MED-6) ──────────────────────────────────────────────
+// A `pending_attachments` preview is a LIVE object URL handed over by the composer rail the moment a
+// send is accepted (`sendMessage`'s transfer point). From then on the message list owns it, so the
+// message list is where it dies: every wholesale replacement of `messages` — `reloadChat` swapping in
+// the durable bubble, a steer rollback, `/clear`, a thread switch — revokes whatever the new list no
+// longer carries. One rule, at the single chokepoint every message write already goes through.
+
+const livePreviews = new Set<string>();
+
+/** Take ownership of one accepted send's previews (called at the transfer point, nowhere else). */
+function ownPreviews(urls: readonly string[]): void {
+  for (const url of urls) livePreviews.add(url);
+}
+
+/** Revoke every OWNED preview the next message list does not carry. One `size` read on every set
+ *  where nothing is owned — which is every set on a view that has not just sent an attachment, and
+ *  that matters because streamed deltas come through here token by token. While a preview IS owned
+ *  (the accept → the durable swap) it is one scan of the list per set, beside the scan the reducer
+ *  is already doing to build that list. */
+function sweepPreviews(next: readonly ChatMessage[]): void {
+  if (livePreviews.size === 0) return;
+  const kept = new Set<string>();
+  for (const m of next)
+    for (const a of m.pending_attachments ?? []) if (a.previewUrl) kept.add(a.previewUrl);
+  for (const url of livePreviews) {
+    if (kept.has(url)) continue;
+    URL.revokeObjectURL(url);
+    livePreviews.delete(url);
+  }
+}
+
 function set(next: Partial<ChatState>) {
+  if (next.messages !== undefined) sweepPreviews(next.messages);
   state = { ...state, ...next };
   emit();
 }
@@ -2072,7 +2104,9 @@ export async function sendMessage(
     raw?: string;
     /** Staged `attachment_id`s the server claims into this thread (D68 §3). Supplied by
      *  `runComposer`'s natural-language branch — the ONE place that reads the staging store — so
-     *  every send path carries them without knowing about them. */
+     *  every send path carries them without knowing about them. They arrive RESERVED (their rows are
+     *  `sending`): this function is the other end of that reservation and must either consume them
+     *  (the accept) or release them (anything else). */
     attachments?: string[];
   },
 ): Promise<void> {
@@ -2102,6 +2136,12 @@ export async function sendMessage(
     turnSkills = skills;
   }
 
+  // D68 MED-6 — the PRESENTATIONAL snapshot of what this send is carrying, read from the rail before
+  // the chips are consumed. Never a wire field (`reqBody` below names its own fields, and this is not
+  // one of them) and never a fabricated `AttachmentPart` — the server authors those at claim (E2).
+  // What it buys is the half-second-to-a-minute the durable floor takes to arrive: the bubble shows
+  // the photo it sent immediately, and an attachment-only send has a bubble at all.
+  const previews = attachments.length ? stagedPreviews(attachments) : [];
   const tempUser: ChatMessage = {
     // A random suffix (not just `Date.now()`) so back-to-back STEERS queued within the same millisecond
     // get DISTINCT ids — the 202 marks the bubble by this id, and two colliding ids would mark/drop both
@@ -2114,6 +2154,7 @@ export async function sendMessage(
     ts: new Date().toISOString(),
     tokens: null,
     compacted: false,
+    ...(previews.length ? { pending_attachments: previews } : {}),
   };
   const reqBody = {
     text: body,
@@ -2133,21 +2174,38 @@ export async function sendMessage(
 
   // D68 §7 — the staged chips are released the moment the POST is ACCEPTED (never on a 409: a
   // refused send keeps them so the owner can act on the server's own sentence, which names
-  // re-attaching as the fix). `claimed` also tells us to re-read the thread below.
+  // re-attaching as the fix). `claimed` also tells us to re-read the thread below. ONE owner for both
+  // halves of the reservation: what is not consumed here is handed back by `releaseUnspent` below.
   let claimed = false;
   const onAccepted = attachments.length
     ? () => {
         claimed = true;
+        // THE OBJECT-URL HAND-OFF (MED-6). Until this line the rail owns those previews and revokes
+        // them on remove/clear; from this line the optimistic bubble above owns them, `consumeStaged`
+        // drops the rows WITHOUT revoking, and `sweepPreviews` finishes the job when the durable
+        // bubble replaces the optimistic one. A send that is never accepted never gets here, so a
+        // refused send's chips keep both their rows and their thumbnails.
+        ownPreviews(previews.flatMap((p) => (p.previewUrl === undefined ? [] : [p.previewUrl])));
         consumeStaged(attachments);
       }
     : undefined;
+  /** The reservation's other half (MED-1): rows the server never took go back to `staged`, so the
+   *  owner can re-send them instead of finding them stuck spoken-for. In a `finally` because a
+   *  reservation that survives a thrown send would be exactly that. */
+  const releaseUnspent = () => {
+    if (!claimed) releaseStaged(attachments);
+  };
 
   if (steering) {
     // A STEER: append ONLY the user bubble (no assistant placeholder — the live turn owns the stream),
     // leave status/streamingId untouched, and POST. streamTurn's 202 branch marks the bubble queued; a
     // 409 (cap overflow / a sync holder) rolls it back; a 200 (the turn just ended) adopts it live.
     set({ messages: [...state.messages, tempUser] });
-    await streamTurn("/api/agent/chat", reqBody, undefined, tempUser.id, raw, onAccepted);
+    try {
+      await streamTurn("/api/agent/chat", reqBody, undefined, tempUser.id, raw, onAccepted);
+    } finally {
+      releaseUnspent();
+    }
     return;
   }
 
@@ -2157,13 +2215,19 @@ export async function sendMessage(
     status: "streaming",
     streamingId: placeholderId,
   });
-  await streamTurn("/api/agent/chat", reqBody, placeholderId, tempUser.id, raw, onAccepted);
+  try {
+    await streamTurn("/api/agent/chat", reqBody, placeholderId, tempUser.id, raw, onAccepted);
+  } finally {
+    releaseUnspent();
+  }
   // …and once the turn has settled, re-read the durable floor so the user bubble shows what it
-  // actually sent. The optimistic bubble carries the TEXT only: `AttachmentPart`s are built by the
-  // SERVER at claim (E2 — it resolves the final collision-suffixed name), so the client cannot
-  // invent them, and the wire has no user-message frame to deliver them on. The same
-  // reload-the-floor idiom `probeAndReattach` uses for the drained-exec gap, and it costs one GET on
-  // attachment sends only. (A STEER returns above: its floor arrives with the next reconcile.)
+  // actually sent. The optimistic bubble carries the text plus a PRESENTATIONAL snapshot (MED-6);
+  // the real `AttachmentPart`s are built by the SERVER at claim (E2 — it resolves the final
+  // collision-suffixed name), so the client cannot invent them, and the wire has no user-message
+  // frame to deliver them on. This read is therefore what turns the snapshot into the durable
+  // bubble — and what revokes the previews it was rendering. The same reload-the-floor idiom
+  // `probeAndReattach` uses for the drained-exec gap, and it costs one GET on attachment sends only.
+  // (A STEER returns above: its floor arrives with the next reconcile.)
   if (claimed) await reloadChat();
 }
 

@@ -26,7 +26,7 @@ import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
 import { addStaged, clearStaged, type AttachStatus } from "../../src/store/attachments";
-import { clearDraft } from "../../src/store/composer";
+import { clearDraft, setDraft } from "../../src/store/composer";
 
 const VARIANTS = [
   ["stacked", KitComposer],
@@ -124,16 +124,30 @@ describe.each(VARIANTS)("%s composer — the attachment chrome", (name, Variant)
 
   it("the send is HELD while a file is still uploading", () => {
     stage("uploading");
+    // With a caption typed, so all three variants render a send to hold: an upload in flight is not
+    // yet something to send (MED-5), so the line variant shows no button at all without text.
+    setDraft("look at this");
     render(<Variant />);
     expect(disabled(send())).toBe(true);
   });
 
   it("…and a FAILED chip holds nothing — it names its refusal and gets out of the way", () => {
     stage("failed");
+    // With a typed draft, because a failed chip must neither block a send nor be one (MED-5): the
+    // line variant now renders no send at all for a rail that holds only refusals (below).
+    setDraft("send this anyway");
     render(<Variant />);
     expect(disabled(send())).toBe(false);
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("this app accepts up to 10.0 MB");
+  });
+
+  it("a chip a send has RESERVED wears the busy face and cannot be removed (MED-1)", () => {
+    stage("sending");
+    render(<Variant />);
+    // Its id is already named on a POST — removing the chip could not un-send it.
+    expect(screen.queryByRole("button", { name: "remove photo.png" })).toBeNull();
+    expect(document.querySelector(".kit-attach-busy")).not.toBeNull();
   });
 
   it("an empty draft with a staged file can still be sent (the attachment-only gesture)", () => {
@@ -141,6 +155,30 @@ describe.each(VARIANTS)("%s composer — the attachment chrome", (name, Variant)
     render(<Variant />);
     // The line variant is the one that HIDES send at rest (mic alone), so this is where the gate
     // actually changed; the other two always render it, and the pin is that all three agree.
+    expect(disabled(send())).toBe(false);
+  });
+});
+
+// MED-5 — sendability derives from READY rows only. The line variant is where this is VISIBLE (it is
+// the one that hides send at rest), and a send that could only ever post an empty message is worse
+// than no send at all: it is a button that does nothing.
+describe("sendability is ready-only (MED-5)", () => {
+  it("a rail holding only a FAILED chip does not arm the line variant's send", () => {
+    stage("failed");
+    render(<LineComposer />);
+    expect(screen.queryByRole("button", { name: "send message" })).toBeNull();
+  });
+
+  it("…nor does one holding only a chip that is still uploading, or one already reserved", () => {
+    stage("uploading", "a.png");
+    stage("sending", "b.png");
+    render(<LineComposer />);
+    expect(screen.queryByRole("button", { name: "send message" })).toBeNull();
+  });
+
+  it("one READY chip arms it, with no text at all", () => {
+    stage("staged");
+    render(<LineComposer />);
     expect(disabled(send())).toBe(false);
   });
 });

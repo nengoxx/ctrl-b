@@ -286,6 +286,20 @@ export interface AttachmentPart {
   inline_chars?: number | null;
 }
 
+/** OPTIMISTIC ONLY (D68 §7, the S3 MED-6 ruling) — what the composer's rail was holding when a send
+ *  went out, carried on the optimistic user bubble so an attachment send SHOWS what it sent before
+ *  the durable floor lands (an attachment-only send would otherwise be an empty bubble for a whole
+ *  round trip). Presentation, not facts: no id, no size, no path — and deliberately NOT an
+ *  `AttachmentPart`, which only the server may author (E2). Never on the wire: `store/chat`'s request
+ *  body names its fields explicitly, and this is not one of them. */
+export interface PendingAttachment {
+  name: string;
+  kind: "image" | "text" | "pdf";
+  /** The LIVE object URL of the picked file. OWNED BY THE BUBBLE from the moment the send is accepted
+   *  (`store/chat`'s transfer point) and revoked when the durable bubble replaces it. */
+  previewUrl?: string;
+}
+
 export type Part =
   | { type: "text"; text: string }
   | { type: "reasoning"; text: string }
@@ -337,6 +351,10 @@ export interface ChatMessage {
   // chip; cleared (or the bubble dropped) when the entry drains (`steer.applied`), is harvested (Stop),
   // or is removed (DELETE). Never set by the durable messages endpoint — it's optimistic-only.
   queued?: string;
+  // D68 MED-6 — the presentational snapshot of the files this send carried, on the optimistic bubble
+  // only (never on a durable message, which carries real `AttachmentPart`s instead). Same optimistic-
+  // only class as `queued` above.
+  pending_attachments?: PendingAttachment[];
 }
 
 export interface Thread {

@@ -81,13 +81,8 @@ function bytesText(n: number): string {
  *  Every sentence names the NUMBER it failed, because "too big" without the limit is something the
  *  owner cannot act on — they cannot tell whether to crop, re-export or give up. */
 export function guardPick(size: number, head: Uint8Array, limits: GuardLimits): GuardVerdict {
-  if (size <= 0) return { ok: false, reason: "that file is empty." };
-  if (size > limits.maxBytes) {
-    return {
-      ok: false,
-      reason: `that file is ${bytesText(size)} — this app accepts up to ${bytesText(limits.maxBytes)} per image. Export a smaller copy and try again.`,
-    };
-  }
+  const tooBig = sizeRefusal(size, limits.maxBytes);
+  if (tooBig !== null) return { ok: false, reason: tooBig };
   const header = readImageHeader(head, size);
   if (header.refused !== null) return { ok: false, reason: refusalText(header.refused) };
   if (header.truncated) {
@@ -102,6 +97,18 @@ export function guardPick(size: number, head: Uint8Array, limits: GuardLimits): 
     if (refusal !== null) return { ok: false, reason: refusal };
   }
   return { ok: true, header };
+}
+
+/** The BYTE-CAP refusal (the ladder's first rung), or `null` when the file fits — exported for the
+ *  same reason `pixelRefusal` below is: it has a second caller (D68 MED-4). An ATTACHMENT that is not
+ *  an image never runs the image ladder — there is no header worth reading in a `.md` or a PDF, and
+ *  a format/pixel verdict on one is a verdict about the wrong thing — but it still meets this cap,
+ *  and the owner must meet the SAME sentence whichever caller refused them. `subject` is the noun the
+ *  cap is expressed in ("image" here, "file" for an attachment), because the number is per-that. */
+export function sizeRefusal(size: number, maxBytes: number, subject = "image"): string | null {
+  if (size <= 0) return "that file is empty.";
+  if (size <= maxBytes) return null;
+  return `that file is ${bytesText(size)} — this app accepts up to ${bytesText(maxBytes)} per ${subject}. Export a smaller copy and try again.`;
 }
 
 /** The megapixel refusal, or `null` when the size is fine — **one sentence, two callers** (Emma #4).

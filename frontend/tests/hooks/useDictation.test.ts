@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The composer draft store is REAL (so we assert the hand-off); toast/runComposer/chat-status mocked.
 
 vi.mock("../../src/store/toast", () => ({ pushToast: vi.fn() }));
-vi.mock("../../src/lib/composer", () => ({ runComposer: vi.fn() }));
+// `runComposer` answers whether it ROUTED (D68 MED-2): the auto-send clears the draft on `true` and
+// keeps it on `false` (a send held behind an in-flight upload). The routing cases here are all
+// "it routed"; the HELD case rides the real seam in `tests/hooks/attachmentDictation.test.ts`.
+vi.mock("../../src/lib/composer", () => ({ runComposer: vi.fn(() => true) }));
 vi.mock("../../src/store/chat", () => ({ getChatStatus: vi.fn(() => "idle") }));
 
 import { useDictation } from "../../src/hooks/useDictation";

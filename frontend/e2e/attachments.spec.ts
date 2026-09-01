@@ -56,8 +56,15 @@ const message = (text: string) => ({
 });
 
 /** Install the attachment half of the API over the baseline mock (last-registered wins). Returns the
- *  chat POST bodies it saw, so a send can be asserted on the wire. */
-async function mockAttachments(page: import("@playwright/test").Page, caption = "look at this") {
+ *  chat POST bodies it saw, so a send can be asserted on the wire.
+ *
+ *  `hold` (S3 MED-6) keeps the chat POST unanswered until the test releases it — the accept window,
+ *  held open, which is the only way to LOOK at what the composer and the transcript show inside it. */
+async function mockAttachments(
+  page: import("@playwright/test").Page,
+  caption = "look at this",
+  hold?: Promise<void>,
+) {
   const sends: Record<string, unknown>[] = [];
   let sent = false;
   const json = (route: import("@playwright/test").Route, body: unknown, status = 200) =>
@@ -72,6 +79,7 @@ async function mockAttachments(page: import("@playwright/test").Page, caption = 
   );
   await page.route("**/api/agent/chat", async (route) => {
     sends.push(route.request().postDataJSON() as Record<string, unknown>);
+    if (hold) await hold;
     sent = true;
     // A BUFFERED turn (D17): the client re-reads the durable floor, which is where the parts are.
     return json(route, { threadId: "t1", messages: [] });
@@ -153,6 +161,45 @@ test("a photo with NO caption is a legal send", async ({ page, pageErrors }) => 
   await expect.poll(() => sends[0]?.text).toBe("");
   expect(sends[0]?.attachments).toEqual([MINTED.attachment_id]);
   await expect(page.locator(".chat-attach-shot img")).toBeVisible();
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
+// S3 MED-1 + MED-6, in the ONE window neither can be observed outside of: the send is out and the
+// server has not answered. The rail says the file is spoken for; the bubble is already showing it,
+// painted from the object URL the rail handed over; and when the answer lands the durable picture
+// takes its place. jsdom can pin each half — only a browser proves the hand-off does not blink.
+test("the bubble shows the sent photo while the POST is still in flight, then swaps to the stored one", async ({
+  page,
+  pageErrors,
+}) => {
+  let answer!: () => void;
+  const held = new Promise<void>((resolve) => (answer = resolve));
+  await mockAttachments(page, "look at this", held);
+  await page.goto("/");
+  await page.locator("#tabbtn-agent").click();
+  await page.setInputFiles(filePicker, {
+    name: "photo-320x240.png",
+    mimeType: "image/png",
+    buffer: PNG,
+  });
+  await expect(page.locator(`${chip}[data-status="staged"]`)).toHaveCount(1);
+  await page.locator("#cmd-input").fill("look at this");
+  await page.locator("#cmd-send").click();
+
+  // Inside the accept window: the chip is RESERVED (not removable, not re-sendable)…
+  await expect(page.locator(`${chip}[data-status="sending"]`)).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /^remove / })).toHaveCount(0);
+  // …and the bubble already paints the picked file, off the live object URL.
+  const shot = page.locator(".chat-attach img");
+  await expect(shot).toHaveAttribute("src", /^blob:/);
+  await expect
+    .poll(() => shot.evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0);
+
+  // The server answers → the rail clears, the durable part arrives, the preview is replaced.
+  answer();
+  await expect(page.locator(chip)).toHaveCount(0);
+  await expect(shot).toHaveAttribute("src", "/api/attachments/t1/photo.webp");
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 

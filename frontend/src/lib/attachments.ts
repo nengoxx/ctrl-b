@@ -3,9 +3,13 @@
 //
 // One path, whichever gesture started it (the clip, a paste, a drop):
 //
-//   admit (extension tier → `guardPick`'s byte/pixel/format ladder) → CLASSIFY from the bytes →
-//   images only: re-encode through the media manager's export WORKER → `PUT /api/attachments/staging/
-//   {name}` → the server's opaque `attachment_id`.
+//   ADMIT, synchronously (the per-message cap + the extension tier → a chip for every file) →
+//   INSPECT (images only: `guardPick`'s byte/pixel/format ladder + the thumbnail; everything else
+//   takes the byte cap alone) → images only: re-encode through the media manager's export WORKER →
+//   `PUT /api/attachments/staging/{name}` → the server's opaque `attachment_id`.
+//
+// The first phase is synchronous ON PURPOSE (S3 MED-3): the chip IS the app's answer to the gesture,
+// and it is also what holds the send, so neither may wait on reading a header.
 //
 // **Everything here is REUSE.** `lib/imageProbe` is the same guard the media picker runs (the decode
 // cap is a fact about the owner's phone, not about a media role), `lib/imageExport#exportImage` is
@@ -17,16 +21,10 @@
 // Nothing here imports React — the pipeline is drivable from a test with no DOM.
 
 import { exportImage, ExportError, type ExportOutput } from "./imageExport";
-import { guardPick, readHead, type GuardLimits, type ImageHeader } from "./imageProbe";
+import { guardPick, readHead, sizeRefusal, type GuardLimits, type ImageHeader } from "./imageProbe";
 import { mintName } from "./uploadName";
 import { putBytes, ApiError } from "../api/client";
-import {
-  addStaged,
-  stagedFiles,
-  updateStaged,
-  type AttachKind,
-  type StagedAttachment,
-} from "../store/attachments";
+import { addStaged, stagedFiles, updateStaged, type AttachKind } from "../store/attachments";
 import { UPLOAD_LIMITS } from "../theme-engine/mediaRegistry";
 
 // ── the kind tiers ────────────────────────────────────────────────────────────────────────────────
@@ -137,14 +135,18 @@ function extensionOf(name: string): string {
   return dot > 0 ? name.slice(dot).toLowerCase() : "";
 }
 
-/** What this file IS, for the chip and for whether it gets re-encoded. The BYTES win where they can
- *  speak (a photo the picker named `.txt` is an image, exactly as the server sniffs it); the
- *  extension tier answers for everything else — including an image-tier file this reader cannot
- *  measure (a GIF, a JPEG whose frame header sits past the head), which is still an image. */
-function kindOf(ext: string, header: ImageHeader): AttachKind {
-  if (header.format !== null) return "image";
-  if (ext === PDF_EXT) return "pdf";
-  return (TEXT_EXT as readonly string[]).includes(ext) ? "text" : "image";
+/** What this file IS as far as the CLIENT is concerned — the extension TIER, and only that (MED-4).
+ *
+ *  The bytes used to win here, which meant reading a header for every pick: but the image ladder only
+ *  runs on image-tier files now (a format/pixel/SVG verdict on a `.md` is a verdict about the wrong
+ *  thing), so there is no header left to reclassify a text file from. That is not a loss of truth —
+ *  it is the same division of labour the rest of this module keeps: the client refuses what it can
+ *  see cheaply, and the SERVER's sniff is the authority, arriving on the mint's own answer and
+ *  overwriting `kind` on the chip. A photo the picker named `.txt` therefore uploads verbatim and
+ *  comes back an image, named by the server rather than guessed at here. */
+function kindOf(ext: string): AttachKind {
+  if ((TEXT_EXT as readonly string[]).includes(ext)) return "text";
+  return ext === PDF_EXT ? "pdf" : "image";
 }
 
 /** The pixel budget one photo is re-encoded to, expressed as `exportSize`'s own currency.
@@ -206,26 +208,69 @@ interface MintedRow {
   bytes: number;
 }
 
-/** ADMIT one file: the ladder, then a chip. Returns the row to upload, or `null` when the file was
- *  refused (a `failed` chip already carries the sentence) — per-file, so one refusal never touches
- *  the files beside it (§7). */
-async function admit(file: File): Promise<{ file: File; entry: StagedAttachment } | null> {
-  const localId = nextLocalId();
-  const ext = extensionOf(file.name);
-  // A refused chip keeps the FACE of what the owner picked (a photo that was too large still reads
-  // as a photo) — the kind is the extension tier's, since the bytes never got a verdict.
+/** One admitted file on its way to the mint: the row it already owns in the store, plus (images only)
+ *  the export budget its header measured, so `deliver` never re-reads it. */
+interface Pending {
+  file: File;
+  localId: string;
+  kind: AttachKind;
+  pixels?: number;
+  sourceFormat?: ImageHeader["format"];
+}
+
+/** ADMIT the whole batch, SYNCHRONOUSLY (MED-3) — before the first `await`, so that from the owner's
+ *  gesture onward every file the app took responsibility for is VISIBLE and every file it refused has
+ *  said so. That is not only a UX rule: `isUploading()` is the send gate, and a file that exists
+ *  nowhere yet holds nothing, so an Enter pressed straight after a drop used to send text-only and
+ *  lose the picture. The admission window is now inside `uploading`.
+ *
+ *  The two refusals that can be judged with no bytes read live here and are per-file, so one refusal
+ *  never touches the files beside it (§7): the per-message CAP (counted against the rows already in
+ *  the store PLUS the ones this batch has just added — `admittedCount` reads the live set, so the
+ *  overflow of a two-drops-at-once race refuses at admission rather than uploading past the cap) and
+ *  the extension TIER. A refused chip keeps the FACE of what the owner picked. */
+function admitAll(picked: readonly File[]): Pending[] {
+  const pending: Pending[] = [];
+  for (const file of picked) {
+    const localId = nextLocalId();
+    const ext = extensionOf(file.name);
+    const kind = kindOf(ext);
+    const name = file.name || "file";
+    if (admittedCount() >= policy.maxFiles) {
+      addStaged({ localId, name, kind, status: "failed", error: tooMany() });
+      continue;
+    }
+    if (![...IMAGE_EXT, ...TEXT_EXT, PDF_EXT].includes(ext)) {
+      addStaged({ localId, name, kind, status: "failed", error: wrongKind(ext) });
+      continue;
+    }
+    // The PROVISIONAL row: the name and the kind the extension gives us, no preview yet (an object
+    // URL for a file we may be about to refuse is a leak waiting for an exit path). `inspect` fills
+    // in the thumbnail; the mint's answer replaces the name and the kind.
+    addStaged({ localId, name, kind, status: "uploading", bytes: file.size });
+    pending.push({ file, localId, kind });
+  }
+  return pending;
+}
+
+/** The rest of the ladder — the part that needs bytes. Returns the row to upload, or `null` when it
+ *  was refused (its chip already carries the named sentence).
+ *
+ *  MED-4 — the IMAGE ladder runs on image-tier files ONLY. A `.md` or a PDF gets the byte cap (the
+ *  same sentence, from the same function) and nothing else: refusing a text file for "being" an SVG,
+ *  or for a pixel count read out of prose, is a verdict about the wrong thing, and the server already
+ *  refuses dishonest bytes by its own rules (strict UTF-8 / its sniff) with a sentence the chip
+ *  shows. */
+async function inspect(row: Pending): Promise<Pending | null> {
+  const { file, localId, kind } = row;
   const fail = (error: string): null => {
-    const kind: AttachKind = (IMAGE_EXT as readonly string[]).includes(ext)
-      ? "image"
-      : ext === PDF_EXT
-        ? "pdf"
-        : "text";
-    addStaged({ localId, name: file.name || "file", kind, status: "failed", error });
+    updateStaged(localId, { status: "failed", error });
     return null;
   };
-  if (admittedCount() >= policy.maxFiles) return fail(tooMany());
-  if (![...IMAGE_EXT, ...TEXT_EXT, PDF_EXT].includes(ext)) return fail(wrongKind(ext));
-
+  if (kind !== "image") {
+    const refusal = sizeRefusal(file.size, policy.maxFileBytes, "file");
+    return refusal === null ? row : fail(refusal);
+  }
   let header: ImageHeader;
   try {
     const verdict = guardPick(file.size, await readHead(file, guardLimits()), guardLimits());
@@ -234,30 +279,15 @@ async function admit(file: File): Promise<{ file: File; entry: StagedAttachment 
   } catch {
     return fail("that file could not be read from this device. Try picking it again.");
   }
-
-  const kind = kindOf(ext, header);
-  const entry: StagedAttachment = {
-    localId,
-    name: file.name,
-    kind,
-    status: "uploading",
-    bytes: file.size,
-    // The thumbnail is the PICKED file, available now — the re-encode happens after the chip is on
-    // screen, and a 2048px webp would look identical in a 56px square.
-    ...(kind === "image" ? { previewUrl: URL.createObjectURL(file) } : {}),
-  };
-  addStaged(entry);
-  return { file, entry: { ...entry, ...pixelPlan(header) } };
-}
-
-/** The per-file export budget, carried on the entry so `deliver` does not re-read the header. */
-function pixelPlan(header: ImageHeader): { pixels?: number; sourceFormat?: ImageHeader["format"] } {
-  return { pixels: pixelBudget(header), sourceFormat: header.format };
+  // The thumbnail is the PICKED file, available now — the re-encode happens after the chip is on
+  // screen, and a 2048px webp would look identical in a 56px square.
+  updateStaged(localId, { previewUrl: URL.createObjectURL(file) });
+  return { ...row, pixels: pixelBudget(header), sourceFormat: header.format };
 }
 
 /** Re-encode (images only) and PUT. Every exit updates the chip — there is no silent outcome. */
-async function deliver(file: File, entry: StagedAttachment & ReturnType<typeof pixelPlan>) {
-  const { localId, kind } = entry;
+async function deliver(entry: Pending) {
+  const { file, localId, kind } = entry;
   try {
     let blob: Blob = file;
     let ext = extensionOf(file.name);
@@ -295,18 +325,20 @@ async function deliver(file: File, entry: StagedAttachment & ReturnType<typeof p
   }
 }
 
-/** THE ENTRANCE — the clip, a paste and a drop all arrive here (§7). Admits every file first (so
- *  every chip appears at once), then uploads them one at a time: two 12 MP exports in flight is two
- *  decoded bitmaps on a phone, and the chips already say what is happening.
+/** THE ENTRANCE — the clip, a paste and a drop all arrive here (§7). Three phases, in this order for
+ *  three different reasons: ADMIT the batch synchronously (MED-3 — every chip exists before anything
+ *  awaits), INSPECT each file (the guard ladder + the thumbnail: cheap, no decode, so the whole batch
+ *  gets its face before any upload starts), then UPLOAD one at a time — two 12 MP exports in flight
+ *  is two decoded bitmaps on a phone, and the chips already say what is happening.
  *
  *  Never rejects: a per-file failure is a `failed` chip, and the files beside it carry on. */
 export async function offerFiles(picked: readonly File[]): Promise<void> {
-  const admitted: { file: File; entry: StagedAttachment & ReturnType<typeof pixelPlan> }[] = [];
-  for (const file of picked) {
-    const ok = await admit(file);
+  const admitted: Pending[] = [];
+  for (const row of admitAll(picked)) {
+    const ok = await inspect(row);
     if (ok !== null) admitted.push(ok);
   }
-  for (const { file, entry } of admitted) await deliver(file, entry);
+  for (const entry of admitted) await deliver(entry);
 }
 
 /** Files out of a `DataTransfer` — a drop or a paste. The `items` walk is the FALLBACK the plan

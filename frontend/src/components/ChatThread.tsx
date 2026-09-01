@@ -22,6 +22,7 @@ import type {
   AttachmentPart,
   ChatMessage,
   Part,
+  PendingAttachment,
   ToolCallPart,
   ToolResult,
   WebSearchHit,
@@ -86,7 +87,10 @@ function attachmentUrl(threadId: string, name: string): string {
 function AttachedFiles({ message }: { message: ChatMessage }) {
   const files = attachmentsOf(message.parts);
   const [viewing, setViewing] = useState<AttachmentPart | null>(null);
-  if (files.length === 0) return null;
+  // Before the durable parts exist there may still be the OPTIMISTIC snapshot (D68 MED-6) — the same
+  // branch, one message-shape earlier. The durable parts always win: the instant they arrive the
+  // snapshot is stale (and its object URLs are being revoked).
+  if (files.length === 0) return <PendingFiles files={message.pending_attachments ?? []} />;
   return (
     <div className="chat-attach">
       {files.map((file) => {
@@ -116,6 +120,36 @@ function AttachedFiles({ message }: { message: ChatMessage }) {
           name={viewing.name}
           onClose={() => setViewing(null)}
         />
+      )}
+    </div>
+  );
+}
+
+/** The OPTIMISTIC half of the same branch (D68 MED-6): what the composer's rail was holding when this
+ *  bubble was sent, shown the instant the bubble appears and replaced by the durable parts above the
+ *  moment `reloadChat` lands. The same visual language — the picture painted, text/PDF as a quiet
+ *  kind·name chip — off the LIVE object URL the rail handed over (`store/chat` owns the revoke).
+ *
+ *  What it deliberately does NOT have: a size, a link, a tap-to-open. None of those facts exist yet —
+ *  the file has no stored name and no URL until the server claims it — and inventing them would be
+ *  the fabricated `AttachmentPart` this snapshot exists to avoid. */
+function PendingFiles({ files }: { files: readonly PendingAttachment[] }) {
+  if (files.length === 0) return null;
+  return (
+    <div className="chat-attach" data-pending="">
+      {files.map((file, at) =>
+        file.kind === "image" && file.previewUrl !== undefined ? (
+          // Two picked files can share a name, so the key is the position in a list that is written
+          // once and never reordered.
+          <span className="chat-attach-shot" key={at}>
+            <img src={file.previewUrl} alt={file.name} />
+          </span>
+        ) : (
+          <span className="chat-attach-file" key={at}>
+            <span className="chat-attach-kind">{file.kind === "pdf" ? "PDF" : "TXT"}</span>
+            <span className="chat-attach-label">{file.name}</span>
+          </span>
+        ),
       )}
     </div>
   );
@@ -594,8 +628,11 @@ const Bubbles = memo(function Bubbles({
     const entryId = m.queued;
     const said = textOf(m.parts);
     // An attachment-only send persists with NO text part (D68 §7 — the model-facing placeholder is
-    // the server's, at the wire), so the caption bubble is dropped rather than rendered empty.
-    const caption = said !== "" || attachmentsOf(m.parts).length === 0;
+    // the server's, at the wire), so the caption bubble is dropped rather than rendered empty. The
+    // OPTIMISTIC snapshot counts the same way (MED-6): the bubble is showing files either way, and an
+    // empty caption strip under them would flash for exactly as long as the send takes.
+    const attached = attachmentsOf(m.parts).length + (m.pending_attachments?.length ?? 0);
+    const caption = said !== "" || attached === 0;
     return (
       <div className={"b user" + (entryId ? " queued" : "")}>
         <div className="who">you · {hm(m.ts)}</div>

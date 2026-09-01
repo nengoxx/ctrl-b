@@ -187,10 +187,11 @@ export function useDictation({
         if (autoSend) {
           // Reads the just-appended draft imperatively (combines with anything already typed).
           const full = getDraft().trim();
-          if (full) {
-            runComposer(full);
-            clearDraft();
-          }
+          // D68 MED-2 — the draft is cleared ONLY if the seam actually routed. `runComposer` HOLDS a
+          // send while a staged file is still uploading, and this path is exactly why the gate lives
+          // there: a transcript that lands mid-upload must wait for the file rather than send without
+          // it (or, worse, be cleared away). The words stay in the composer; the next send carries both.
+          if (full && runComposer(full)) clearDraft();
         }
       } else {
         pushToast("Didn't catch that — try again", "info");

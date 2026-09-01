@@ -17,11 +17,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addStaged,
   clearStaged,
+  reserveStaged,
   stagedFiles,
   stagedIds,
   type StagedAttachment,
 } from "../../src/store/attachments";
-import { sendMessage, startNewThread, useChat } from "../../src/store/chat";
+import { reloadChat, sendMessage, startNewThread, useChat } from "../../src/store/chat";
 
 type Frame = { event: string; data: unknown };
 
@@ -197,5 +198,161 @@ describe("sendMessage × staged attachments", () => {
       await sendMessage("plain");
     });
     expect(calls.map(([url]) => url)).not.toContain("/api/threads/t1/messages");
+  });
+});
+
+// MED-1 — the RESERVATION's far end. `runComposer` flips the rows it snapshots to `sending`; this
+// function either spends them (the accept) or hands them back. Nothing may stay spoken-for.
+describe("the reservation (MED-1)", () => {
+  it("a REFUSED send (409) hands the rows back — the chips are the owner's again", async () => {
+    mockChat(() => status(409));
+    addStaged(chip("id-1"));
+    const reserved = reserveStaged();
+    expect(stagedFiles()[0].status).toBe("sending");
+    await act(async () => {
+      await sendMessage("busy?", { attachments: reserved });
+    });
+    expect(stagedFiles()[0].status).toBe("staged");
+    expect(stagedIds()).toEqual(["id-1"]); // …and immediately sendable again
+  });
+
+  it("an UNREACHABLE backend hands them back too", async () => {
+    calls = [];
+    globalThis.fetch = vi.fn(() => Promise.reject(new TypeError("network")));
+    addStaged(chip("id-1"));
+    await act(async () => {
+      await sendMessage("look", { attachments: reserveStaged() });
+    });
+    expect(stagedIds()).toEqual(["id-1"]);
+  });
+
+  it("an ACCEPTED send spends them — there is nothing to hand back", async () => {
+    mockChat(() => sseResponse(DONE));
+    addStaged(chip("id-1"));
+    await act(async () => {
+      await sendMessage("look", { attachments: reserveStaged() });
+    });
+    expect(stagedFiles()).toEqual([]);
+  });
+});
+
+// MED-6 — the optimistic bubble carries a PRESENTATIONAL snapshot of the chips it consumed, so an
+// attachment send shows what it sent immediately instead of after the durable floor lands. Not a wire
+// field, not an `AttachmentPart` — and the object URL it renders is OWNED by the bubble from the
+// accept onwards, which is why the rail stops revoking and the durable swap starts.
+describe("the optimistic snapshot (MED-6)", () => {
+  const photo = (attachmentId: string): StagedAttachment => ({
+    ...chip(attachmentId),
+    previewUrl: `blob:${attachmentId}`,
+  });
+
+  /** The durable floor a reload lands on — the SERVER's own `AttachmentPart` (E2). */
+  const durable = (text: string) => [
+    {
+      id: "m9",
+      thread_id: "t1",
+      role: "user",
+      parts: [
+        ...(text ? [{ type: "text", text }] : []),
+        {
+          type: "attachment",
+          kind: "image",
+          name: "photo.webp",
+          mime: "image/webp",
+          path: "t1/photo.webp",
+          bytes: 4096,
+        },
+      ],
+      actor: "user",
+      ts: "2026-09-01T10:00:00Z",
+      tokens: null,
+      compacted: false,
+    },
+  ];
+
+  it("the bubble shows the staged files BEFORE any stream event", async () => {
+    // The POST is held open, so what is asserted is the view in the window a real send lives in —
+    // the whole point of the snapshot (the durable parts are a round trip and a turn away).
+    let answer!: (res: Response) => void;
+    mockChat(() => new Promise<Response>((resolve) => (answer = resolve)) as unknown as Response);
+    addStaged(photo("id-1"));
+    const { result } = renderHook(() => useChat());
+    let sending!: Promise<void>;
+    await act(async () => {
+      sending = sendMessage("look at this", { attachments: reserveStaged() });
+      await Promise.resolve();
+    });
+    const bubble = result.current.messages.find((m) => m.role === "user");
+    expect(bubble?.pending_attachments).toEqual([
+      { name: "id-1.png", kind: "image", previewUrl: "blob:id-1" },
+    ]);
+    // …and it is NOT on the wire: the request body names its own fields, and this is not one.
+    expect("pending_attachments" in bodyOf()).toBe(false);
+    await act(async () => {
+      answer(sseResponse(DONE));
+      await sending;
+    });
+  });
+
+  it("an attachment-only send has a bubble at all (chips, no caption)", async () => {
+    mockChat(() => sseResponse(DONE));
+    addStaged(photo("id-1"));
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      await sendMessage("", { attachments: reserveStaged() });
+    });
+    const bubble = result.current.messages.find((m) => m.role === "user");
+    expect(bubble?.pending_attachments).toHaveLength(1);
+    expect(bubble?.parts).toEqual([{ type: "text", text: "" }]); // the caption the renderer drops
+  });
+
+  it("a QUEUED STEER's bubble carries the snapshot too", async () => {
+    const { result } = renderHook(() => useChat());
+    await act(async () => {
+      globalThis.fetch = vi.fn(() => Promise.resolve(sseResponse([])));
+      void sendMessage("first");
+      await Promise.resolve();
+    });
+    mockChat(accepted202);
+    addStaged(photo("id-2"));
+    await act(async () => {
+      await sendMessage("and this photo", { attachments: reserveStaged() });
+    });
+    const queued = result.current.messages.find((m) => m.queued === "e1");
+    expect(queued?.pending_attachments).toEqual([
+      { name: "id-2.png", kind: "image", previewUrl: "blob:id-2" },
+    ]);
+  });
+
+  it("the URL survives the send and is revoked by the DURABLE swap, not by the rail", async () => {
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    mockChat(() => sseResponse(DONE));
+    addStaged(photo("id-1"));
+    await act(async () => {
+      await sendMessage("look", { attachments: reserveStaged() });
+    });
+    // The chips are gone (consumed) but the URL the bubble is rendering is still alive…
+    expect(stagedFiles()).toEqual([]);
+    expect(revoke).not.toHaveBeenCalled();
+    // …until the durable floor replaces the optimistic bubble. (The harness's reload GET returns a
+    // body `reloadChat` cannot parse, so it is driven here explicitly with the real thing.)
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve({ ok: true, json: async () => durable("look") } as unknown as Response),
+    );
+    await act(async () => {
+      await reloadChat();
+    });
+    expect(revoke).toHaveBeenCalledWith("blob:id-1");
+  });
+
+  it("a REFUSED send never takes ownership — the rail keeps the chip AND its thumbnail", async () => {
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    mockChat(() => status(409));
+    addStaged(photo("id-1"));
+    await act(async () => {
+      await sendMessage("busy?", { attachments: reserveStaged() });
+    });
+    expect(stagedFiles()[0]).toMatchObject({ status: "staged", previewUrl: "blob:id-1" });
+    expect(revoke).not.toHaveBeenCalled(); // the rollback dropped the bubble, not the rail's URL
   });
 });

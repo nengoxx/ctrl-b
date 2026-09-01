@@ -24,8 +24,9 @@ export interface ComposerController {
   mic: ReturnType<typeof useDictation>;
   /** Whether STT is configured — the mic only renders when true. */
   sttReady: boolean;
-  /** There is something to send: a non-empty draft, OR staged attachments (D68 §7). The line
-   *  variant's send button keys its existence off this. */
+  /** There is something to send: a non-empty draft, OR a READY staged attachment (D68 §7). The line
+   *  variant's send button keys its existence off this — and "ready" is what keeps a rail holding
+   *  nothing but a failed chip from arming a send that would carry nothing (MED-5). */
   sendable: boolean;
   /** A staged file's upload is still in flight — every variant's send is HELD (disabled) until it
    *  lands or fails (the R61 field convention; a `failed` chip never holds anything). */
@@ -56,14 +57,15 @@ export function useComposer(): ComposerController {
     const text = getDraft().trim();
     // Read the STAGED SET imperatively too (same no-stale-closure rule as the draft): an
     // attachment-only send is legal, and a send while a PUT is in flight would name an id the
-    // server does not have yet.
+    // server does not have yet. Both are CHEAP PRE-CHECKS — `runComposer` is the authority on them
+    // (MED-2), because the dictation auto-send never comes through this function.
     if (!text && !hasStaged()) return;
     if (isUploading()) return;
-    // The staged ids are NOT passed from here: `runComposer`'s natural-language branch reads them
+    // The staged ids are NOT passed from here: `runComposer`'s natural-language branch reserves them
     // (D68 §7), so the button, Enter, a steer and the dictation auto-send — which bypasses this
-    // function entirely and calls `runComposer` itself — all carry them with no plumbing.
-    runComposer(text); // prefix routing: !shell · /slash · else agent (lib/composer)
-    clearDraft();
+    // function entirely and calls `runComposer` itself — all carry them with no plumbing. The draft
+    // is cleared only if the seam actually ROUTED: a held send keeps what the owner typed.
+    if (runComposer(text)) clearDraft(); // prefix routing: !shell · /slash · else agent (lib/composer)
   }
 
   // Subscribed (not read imperatively) because the BUTTONS render off these: the line variant shows
@@ -76,7 +78,9 @@ export function useComposer(): ComposerController {
     isStreaming,
     mic,
     sttReady,
-    sendable: draft.trim() !== "" || staged.length > 0,
+    // MED-5 — the SAME predicate the send path reads (`hasStaged`), derived from the subscribed set
+    // so the button re-renders with it: only a `staged` row is something to send.
+    sendable: draft.trim() !== "" || staged.some((f) => f.status === "staged"),
     uploadPending: staged.some((f) => f.status === "uploading"),
   };
 }

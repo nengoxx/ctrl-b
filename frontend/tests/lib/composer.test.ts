@@ -30,7 +30,7 @@ import {
   runComposer,
 } from "../../src/lib/composer";
 import { PRIVILEGE_LEVELS } from "../../src/lib/privilege";
-import { addStaged, clearStaged, stagedIds } from "../../src/store/attachments";
+import { addStaged, clearStaged, stagedFiles, stagedIds } from "../../src/store/attachments";
 import * as chat from "../../src/store/chat";
 import { clearDraft, getDraft, setDraft, useDraft } from "../../src/store/composer";
 import {
@@ -214,9 +214,11 @@ describe("runComposer × staged attachments (D68 §7)", () => {
     expect(chat.sendMessage).toHaveBeenCalledWith("hello", { raw: "hello" }); // no `attachments` key
   });
 
-  it("only what actually LANDED rides — an uploading or failed chip contributes nothing", () => {
+  // An UPLOADING row is no longer merely skipped here — as of MED-2 it HOLDS the whole send (below),
+  // because sending without it is how the owner loses the file they just picked. A FAILED one is the
+  // case that still rides along contributing nothing.
+  it("only what actually LANDED rides — a failed chip contributes nothing", () => {
     staged("id-1");
-    addStaged({ localId: "b", name: "b.png", kind: "image", status: "uploading" });
     addStaged({ localId: "c", name: "c.png", kind: "image", status: "failed", error: "nope" });
     runComposer("look");
     expect(chat.sendMessage).toHaveBeenCalledWith("look", { raw: "look", attachments: ["id-1"] });
@@ -248,6 +250,56 @@ describe("runComposer × staged attachments (D68 §7)", () => {
     expect(chat.compactThread).toHaveBeenCalled();
     expect(chat.sendMessage).not.toHaveBeenCalled();
     expect(stagedIds()).toEqual(["id-1"]);
+  });
+
+  // MED-1 — the ids are RESERVED at the send, not merely read, so the accept window (the whole
+  // round trip of the first POST) cannot be used to name them a second time. Two Enters, one file.
+  it("a second send inside the first's accept window carries NO ids — they are spoken for", () => {
+    staged("id-1");
+    runComposer("what is this?");
+    runComposer("and this?"); // the response has not landed; the rail still shows the chip
+    expect(chat.sendMessage).toHaveBeenNthCalledWith(1, "what is this?", {
+      raw: "what is this?",
+      attachments: ["id-1"],
+    });
+    expect(chat.sendMessage).toHaveBeenNthCalledWith(2, "and this?", { raw: "and this?" });
+    expect(stagedFiles()[0].status).toBe("sending"); // …and the chip says so
+    expect(stagedIds()).toEqual([]); // reserved rows are not the next send's to offer
+  });
+
+  // MED-2 — the upload gate lives on the SEAM, not in `useComposer().send`, because the dictation
+  // auto-send calls this function directly. `false` = "did not route", which is what tells every
+  // caller to keep the draft.
+  it("an in-flight upload HOLDS a natural-language send, and says it did not route", () => {
+    addStaged({ localId: "u", name: "photo.png", kind: "image", status: "uploading" });
+    expect(runComposer("what is in this photo")).toBe(false);
+    expect(chat.sendMessage).not.toHaveBeenCalled();
+    expect(setUI).not.toHaveBeenCalled(); // not even the tab jump — nothing happened
+  });
+
+  it("…but never a `!shell` or a `/verb`, which carry no files at all (the routing ruling)", () => {
+    addStaged({ localId: "u", name: "photo.png", kind: "image", status: "uploading" });
+    expect(runComposer("!ls")).toBe(true);
+    expect(chat.runShell).toHaveBeenCalledWith("ls");
+    expect(runComposer("/clear")).toBe(true);
+    expect(chat.startNewThread).toHaveBeenCalled();
+  });
+
+  // MED-5 — sendability is READY-only: a failed chip is neither an argument nor an obstacle.
+  it("a FAILED chip rides nothing and blocks nothing", () => {
+    addStaged({
+      localId: "f",
+      name: "huge.png",
+      kind: "image",
+      status: "failed",
+      error: "too big",
+    });
+    expect(runComposer("send this anyway")).toBe(true);
+    expect(chat.sendMessage).toHaveBeenCalledWith("send this anyway", { raw: "send this anyway" });
+    expect(stagedFiles()).toHaveLength(1); // …and it stays on the rail, still saying why
+    // With NO text there is nothing to send at all — a failed chip must not make an empty send legal.
+    expect(runComposer("")).toBe(false);
+    expect(chat.sendMessage).toHaveBeenCalledTimes(1);
   });
 });
 

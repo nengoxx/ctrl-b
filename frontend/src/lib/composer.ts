@@ -18,7 +18,7 @@
 
 import { setAttachmentInfo, type AttachmentInfoWire } from "./attachments";
 import { getJSON } from "../api/client";
-import { stagedIds } from "../store/attachments";
+import { isUploading, reserveStaged, stagedIds } from "../store/attachments";
 import {
   compactThread,
   pushSystemNote,
@@ -380,21 +380,37 @@ export function fillComposer(text: string): void {
   document.getElementById("cmd-input")?.focus();
 }
 
-/** Route + run one composer submission. Returns nothing; all effects go through the chat/ui stores. */
-export function runComposer(raw: string): void {
+/** Route + run one composer submission. All effects go through the chat/ui stores; what comes back is
+ *  whether this call actually ROUTED — false when there was nothing to send, and false when the send
+ *  is HELD because a staged file is still uploading.
+ *
+ *  D68 MED-2 — the upload gate lives HERE, on the seam every send path crosses, and not in
+ *  `useComposer().send`: the dictation auto-send calls this function directly, so a gate in the hook
+ *  was a gate the owner's primary mobile input walked around (STT completing mid-upload sent the text
+ *  alone and lost the file). Both callers clear the draft on `true` and ONLY on `true`, so a held send
+ *  keeps the owner's words for when the upload lands. */
+export function runComposer(raw: string): boolean {
   const text = raw.trim();
   // Empty text is a real send IFF files are staged (D68 §7 — "send a photo with no caption"); the
   // server injects `ATTACHMENT_ONLY_TEXT` as the wire text. With neither, there is nothing to route.
-  if (!text && !stagedIds().length) return;
+  if (!text && !stagedIds().length) return false;
+
+  // WHICH branch this is has to be known before the gate, because the gate is the natural-language
+  // branch's alone: `!shell` and `/slash` neither carry nor consume files (the S3 routing ruling), so
+  // holding them for an upload they will never name would be an unexplained dead composer.
+  const shell = text.startsWith(SHELL_SIGIL);
+  const slash = !shell && text.startsWith("/");
+  if (!shell && !slash && isUploading()) return false;
+
   setUI({ tab: "agent" }); // the chat log lives on the Agent tab — every route lands there
 
-  if (text.startsWith(SHELL_SIGIL)) {
+  if (shell) {
     routeShell(text.slice(SHELL_SIGIL.length).trim());
-    return;
+    return true;
   }
-  if (text.startsWith("/")) {
+  if (slash) {
     routeSlash(text);
-    return;
+    return true;
   }
   // Plain NL send. `raw` == `text` here (no prefix), but pass it explicitly so a queued steer restores
   // the exact line on Stop (D41 §6) — the raw-line map is keyed uniformly for every send path.
@@ -411,15 +427,22 @@ export function runComposer(raw: string): void {
   //     the files with no plumbing of their own, which is what closes the §7 mic pin BY CONSTRUCTION;
   //   · `!shell` and `/slash` (both routed above, before this line) do NOT consume them — a file is
   //     an argument to an agent MESSAGE, not to a shell command, so the rail stays exactly as it was.
-  // `sendMessage` clears them when the POST is ACCEPTED; a refusal keeps the chips (store/chat).
+  // `sendMessage` clears them when the POST is ACCEPTED; a refusal hands them back (store/chat).
+  //
+  // MED-1 — the ids are RESERVED, not merely read: `reserveStaged` snapshots the ready rows and flips
+  // them to `sending` in the same synchronous step, so a second Enter (or a dictation completion)
+  // arriving inside the first POST's accept window cannot name the same ids twice. The reservation is
+  // released by whoever refused it, which is why it is taken here — one step from the send that owns
+  // it — and never earlier.
   const scope = takeComposerScope();
-  const attachments = stagedIds();
+  const attachments = reserveStaged();
   void sendMessage(text, {
     raw: text,
     ...(scope.agent !== undefined ? { agent: scope.agent } : {}),
     ...(scope.skills.length ? { skills: scope.skills } : {}),
     ...(attachments.length ? { attachments } : {}),
   });
+  return true;
 }
 
 /** `!<cmd>` — the guarded shell escape hatch (Phase 5, built). Runs `run_shell` on the backend host via

@@ -17,7 +17,7 @@ vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: []
 
 import { ChatThread } from "../../src/components/ChatThread";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
-import type { AttachmentPart, ChatMessage, Part } from "../../src/types";
+import type { AttachmentPart, ChatMessage, Part, PendingAttachment } from "../../src/types";
 
 beforeAll(() => {
   class ResizeObserverStub {
@@ -51,7 +51,7 @@ const paper: AttachmentPart = {
   bytes: 88_000,
 };
 
-function userTurn(parts: Part[]): ChatMessage {
+function userTurn(parts: Part[], pending?: PendingAttachment[]): ChatMessage {
   return {
     id: "m1",
     thread_id: "t1",
@@ -61,12 +61,13 @@ function userTurn(parts: Part[]): ChatMessage {
     ts: "2026-09-01T10:00:00Z",
     tokens: null,
     compacted: false,
+    ...(pending ? { pending_attachments: pending } : {}),
   };
 }
 
-function chatWith(parts: Part[]): AgentChat {
+function chatWith(parts: Part[], pending?: PendingAttachment[]): AgentChat {
   return {
-    messages: [userTurn(parts)],
+    messages: [userTurn(parts, pending)],
     status: "idle",
     streamingId: null,
     resultByCall: {},
@@ -125,5 +126,48 @@ describe("attachments in the transcript", () => {
     );
     expect(container.querySelector(".chat-attach")).toBeNull();
     expect(container.querySelector(".b.user .body")?.textContent).toBe("hi");
+  });
+});
+
+// MED-6 — the OPTIMISTIC half of the same branch: what the composer's rail was holding when the send
+// went out, rendered from the live object URL until the durable parts land. The same visual language,
+// minus the affordances that need a stored file (no size, no link, no full-size view).
+describe("the optimistic snapshot in the transcript", () => {
+  const snap: PendingAttachment[] = [
+    { name: "photo.png", kind: "image", previewUrl: "blob:preview-1" },
+  ];
+
+  it("paints the picked photo from the object URL, before any durable part exists", () => {
+    render(<ChatThread active chat={chatWith([{ type: "text", text: "look" }], snap)} />);
+    expect(screen.getByAltText("photo.png").getAttribute("src")).toBe("blob:preview-1");
+    expect(screen.getByText("look")).toBeTruthy();
+  });
+
+  it("an attachment-only send shows its chips with NO empty caption bubble", () => {
+    const { container } = render(
+      <ChatThread active chat={chatWith([{ type: "text", text: "" }], snap)} />,
+    );
+    expect(container.querySelector(".b.user .body")).toBeNull();
+    expect(container.querySelector(".chat-attach")).not.toBeNull();
+  });
+
+  it("a text/PDF snapshot is the kind·name chip, and is not a link (there is nothing to fetch yet)", () => {
+    render(
+      <ChatThread
+        active
+        chat={chatWith([{ type: "text", text: "" }], [{ name: "notes.md", kind: "text" }])}
+      />,
+    );
+    expect(screen.queryByRole("link")).toBeNull();
+    const chip = document.querySelector(".chat-attach-file")!;
+    expect(chip.textContent).toContain("TXT");
+    expect(chip.textContent).toContain("notes.md");
+  });
+
+  it("the DURABLE parts win the moment they arrive — the stale preview is never shown beside them", () => {
+    render(<ChatThread active chat={chatWith([{ type: "text", text: "look" }, image], snap)} />);
+    const shots = document.querySelectorAll(".chat-attach img");
+    expect(shots).toHaveLength(1);
+    expect(shots[0].getAttribute("src")).toBe("/api/attachments/t1/holiday%20snap.webp");
   });
 });

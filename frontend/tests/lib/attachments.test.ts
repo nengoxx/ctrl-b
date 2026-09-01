@@ -31,7 +31,7 @@ import {
   primaryAcceptsImages,
   setAttachmentInfo,
 } from "../../src/lib/attachments";
-import { clearStaged, stagedFiles, stagedIds } from "../../src/store/attachments";
+import { clearStaged, isUploading, stagedFiles, stagedIds } from "../../src/store/attachments";
 
 const IMAGES = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "images");
 const bytes = (name: string): Uint8Array<ArrayBuffer> =>
@@ -174,6 +174,81 @@ describe("admission — every refusal is named, and only its own file fails", ()
     // …and the refused one does not occupy the slot it was denied: one more pick still fails, but a
     // REMOVED healthy chip would free a real slot (the count is of admitted rows, not of chips).
     expect(stagedIds()).toHaveLength(2);
+  });
+});
+
+// MED-3 — ADMISSION IS SYNCHRONOUS. Everything the app took responsibility for is on the rail before
+// the first `await`, which is what makes `isUploading()` (the send gate) true from the gesture
+// onwards: an Enter pressed straight after a drop must be HELD, not sent text-only past the file.
+describe("the admission window (MED-3)", () => {
+  it("every picked file has its chip BEFORE anything awaits", () => {
+    const inFlight = offerFiles([picture("a.png"), note("b.txt")]);
+    expect(stagedFiles().map((f) => [f.name, f.status])).toEqual([
+      ["a.png", "uploading"],
+      ["b.txt", "uploading"],
+    ]);
+    expect(isUploading()).toBe(true); // …so the send is already held
+    return inFlight;
+  });
+
+  it("a file refused at admission is refused synchronously too, on its own chip", () => {
+    const inFlight = offerFiles([new File(["x"], "report.docx"), picture()]);
+    expect(stagedFiles().map((f) => f.status)).toEqual(["failed", "uploading"]);
+    return inFlight;
+  });
+
+  it("two rapid offers cannot both fill the LAST slot — the overflow refuses at admission", async () => {
+    setAttachmentInfo({ attachments: { max_files_per_message: 1 } });
+    // Not awaited between: the second gesture lands while the first file is still uploading, which is
+    // exactly the race a post-await cap check loses (both would upload, both past the cap).
+    const first = offerFiles([picture("a.png")]);
+    const second = offerFiles([picture("b.png")]);
+    await Promise.all([first, second]);
+    expect(stagedFiles().map((f) => f.status)).toEqual(["staged", "failed"]);
+    expect(stagedFiles()[1].error).toContain("up to 1 file");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1); // nothing uploaded past the cap
+  });
+
+  it("the preview is minted with the guard's verdict, never before it", async () => {
+    // The provisional chip carries no object URL: a photo the ladder is about to refuse would leave
+    // one behind with no chip to own it (and no exit path that revokes it).
+    const made = vi.spyOn(URL, "createObjectURL");
+    await offerFiles([new File([bytes("heic-header.heic")], "IMG_0001.jpg")]);
+    expect(stagedFiles()[0].status).toBe("failed");
+    expect(made).not.toHaveBeenCalled();
+    await offerFiles([picture()]);
+    expect(made).toHaveBeenCalledTimes(1);
+  });
+});
+
+// MED-4 — the IMAGE ladder is for IMAGES. A text file or a PDF meets the byte cap and the name tier
+// here, and the SERVER's own rules (strict UTF-8, its sniff) decide the rest — it refuses dishonest
+// bytes with a sentence this chip already knows how to show.
+describe("the guard's scope (MED-4)", () => {
+  it("a `.md` that happens to begin with `<svg` stages clean", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      mintOk({ name: "drawing.md", kind: "text", mime: "text/markdown", bytes: 40 }),
+    );
+    await offerFiles([new File(['<svg width="10"><circle r="4"/></svg>'], "drawing.md")]);
+    expect(stagedFiles()[0]).toMatchObject({ status: "staged", kind: "text" });
+    expect(exporter.exportImage).not.toHaveBeenCalled(); // never re-encoded — it is not a picture
+  });
+
+  it("…and a text file is never refused for the shape of its bytes", async () => {
+    globalThis.fetch = vi.fn(async () =>
+      mintOk({ name: "data.json", kind: "text", mime: "application/json", bytes: 9 }),
+    );
+    // A PNG signature inside a `.json` is the server's business (its sniff), not a client refusal.
+    await offerFiles([new File([bytes("photo-320x240.png")], "data.json")]);
+    expect(stagedFiles()[0].status).toBe("staged");
+  });
+
+  it("but the BYTE cap still refuses it here, by name, before the upload", async () => {
+    setAttachmentInfo({ attachments: { max_file_mb: 1 } });
+    await offerFiles([new File([new Uint8Array(2 * 1024 * 1024)], "log.txt")]);
+    expect(stagedFiles()[0].status).toBe("failed");
+    expect(stagedFiles()[0].error).toContain("this app accepts up to 1.0 MB per file");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
 
