@@ -12,7 +12,55 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-08-31 — THE PRE-RELEASE POLISH SESSION: the feel pair + REBOOT as the third pending kind, built + review-CLOSED + committed; supersedes everything below where it speaks)
+## Current state (2026-09-01 — THE A8 SESSION: composer attachments designed → council-closed → S0+S1 BUILT; supersedes everything below where it speaks)
+
+- **Local `main` = origin `a558d43` + 8 commits, NOTHING PUSHED**: the 3 fleet-wave polish commits
+  (`eed7045`/`b7033c3`/`223bc5c` — the v1.7.8 material; **the owner's test round on those is
+  STILL OWED**, item 3 below) + **5 A8 commits** (`f2e3b98` design docs · `756996b` S0 ·
+  `fce822e` **S1 build** · `0aa7f22` R62+v2.3 · `adfddf6` S1 audit record). Prod untouched:
+  **v1.7.7 @ `578ffa7`**. Dev units RUNNING (the owner used them for the HEIC check).
+- **Phase 22 (ROADMAP A8, composer attachments) OPENED — D68 RATIFIED.** Spec of record =
+  [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) **v2.3**: full council trail in its §11 (Emma
+  blind + adversarial Opus, both to explicit closes; transport B unanimous; the UX amendment
+  round Emma-CLOSED). Evidence = **R61** (chat-attachments field) + **R62** (attach-composer
+  grammar), both indexed. Owner rulings locked: images+text+PDF, NO RAG · durable per-thread
+  files + the `read_attachment` re-read tool · **the in-composer h-scroll thumbnail RAIL** (NO
+  Telegram caption modal — Telegram gives only the quiet clip style + the expand button) · mic
+  never blocked by staged files · the expand affordance = slice S5 (≥3 lines, top-right,
+  fullscreen; rides `useComposerChrome`, line composer renders the trigger) · **bubble image
+  display IS v1** (owner overrule of the no-GET-route call) · minimal no-vision floor (per-hop
+  strip, `input_modalities`).
+- **S0 ✅** (`756996b`; the HEIC device check RAN — the Honor 20's camera photos arrive as
+  JPEG). **S1 ✅ BUILT** (`fce822e`, Opus from the pinned brief; **gate 6/6 green, BE
+  2,002→2,068, 66 new tests**) **+ main-seat audit DONE** (`adfddf6`): all 11 declared
+  deviations ACCEPTED — headline: the claim lands by `os.link`+`os.unlink` exclusive-claim (the
+  plan §3's `os.replace` would have clobbered the collision suffix; §11 records the correction) —
+  and the builder's discovery that the D65 no-POST pin's route-table loop matched NOTHING under
+  this FastAPI was main-seat-confirmed and FIXED in place (OpenAPI-paths assertion).
+- **⚠ BUDGET (owner, 2026-09-01): ~91% of the weekly usage limit.** STANDING until reset:
+  **pause between each slice**, no back-to-back council marathons. The S1 Emma round was
+  deliberately NOT launched under this directive — it is the next session's first move.
+
+## ▶▶ NEXT (2026-09-01 — in order; supersedes the lists below)
+
+1. **The S1 Emma-lane review round (OWED — the per-slice gate):** blind sol round over
+   `fce822e` + `adfddf6` against plan §2/§3/§9-S1 — include the recorded LOW (a first-send whose
+   claim refuses leaves its freshly created thread empty; rule fix-or-accept). Fix wave on
+   findings, then the owner's word before S2.
+2. **S2 → S6 per plan §9**, one slice per session under the budget directive: S2 model feed
+   (assembly branch · estimator arm · the per-hop strip named `drop_unsupported_modalities` ·
+   `read_attachment` + `InvocationContext.thread_id` · compaction manifest) → S3 FE (the RAIL +
+   quiet clip + ruled docked-sheet placement + the mic-auto-send-with-staged-files test + the GET
+   route/bubble images) → S4 PDF → S5 expand → S6 owner device round.
+3. **The v1.7.8 pipeline still stands (the fleet wave, unchanged):** the owner tests on dev
+   (:5173) — the retimed morph · the pick-grow · a REAL reboot (⚠ dev drives the real fleet) →
+   the PUSH ruling (now 8 commits) → release v1.7.8 (runbook §Release, Opus-operated · NO
+   migration · rollback v1.7.7 · pre-tag LOCAL e2e + the stale-pin sweep over both waves' labels)
+   → stop the dev units.
+4. **The standing menu unchanged:** owner device pair on prod + edit-a-prompt (easier
+   post-release) · A13 design talk · parked ledger · **Phase 19 goes LAST** (1.8 RESERVED).
+
+## Prior state (2026-08-31 — THE PRE-RELEASE POLISH SESSION: the feel pair + REBOOT as the third pending kind, built + review-CLOSED + committed; superseded above where it speaks)
 
 - **Local `main` = origin `a558d43` + 3 commits** (`eed7045` the feel pair · `b7033c3` the reboot
   kind · the docs commit carrying this block). **NOTHING PUSHED this session — the push ruling is
@@ -53,7 +101,7 @@
   against `SLEEPING` in the 366–380px band — transient (bounded by the 5-min window), unpinned by
   any assertion; one owner eyeball if a rebooting card is ever caught at that width.
 
-## ▶▶ NEXT (2026-08-31 — the owner tests, then the release; supersedes the menu below)
+## ▶▶ PRIOR (2026-08-31 — the owner tests, then the release): items 1–3 = today’s NEXT item 3; superseded above
 
 1. **Collect the owner's round on dev (:5173)** — they said they'll test the new things: the
    retimed open morph (the 340ms fade is the knob if it still reads abrupt — feel, not
