@@ -487,3 +487,35 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   lost its conservative bias on cut pages) — **main-seat-fixed in the tail (`b5974f5`, longest
   co-occurring marker form + the tolerance flipped to price-covers-block); micro-confirm:
   RESOLVED, "none". S2 CLOSED.**
+- **S3 AS-BUILT (2026-09-01/02, `bb290ca` + fix wave `eb964d2` + `9d151ab`; Opus from the pinned
+  briefs; gate 6/6, BE 2,126 · FE 2,769+2, e2e attachments spec 4 tests both projects): the whole
+  §9-S3 scope on the ruled geometry** — grammar ② rail (ONE shared `AttachRail` inside the
+  composer root per variant: stacked above `.field` · sheet above `.sheet-row` · line a
+  full flex line via `order:-1`; 56px chips, one h-scroll row) · the quiet clip LEFT of the mic in
+  all three (sheet: embedded in `.field`, Telegram Android's geography — **the LEFT-OFF 1 sheet
+  ruling, closed**) · `useAttachments` pipeline reusing `imageProbe`/`imageExport`/`mintName` ·
+  staged ids consumed in `runComposer`'s NL branch ONLY (the §7 mic pin closes BY CONSTRUCTION +
+  the explicit test; `!`/`/` never consume — ruled) · attachment-only sends legal end-to-end ·
+  the GET route on `MessageRepo.attachment_part` authority (§8 verbatim: sniffed mime, inline
+  images only, nosniff + attachment disposition, one 404, immutable caching; `stored_file` = the
+  store's public read resolver, LOW-4 intact) · bubble images + `.pm`/`useOverlayBackGuard`
+  full-size · attachment knobs + `accepts_images` ride `/api/providers` (one loader) with the
+  per-chip no-vision hint (silent under a sticky `/provider`).
+- **S3 EMMA ROUND (blind): SHIP WITH FIXES — 6 MED · open sweep "none"** (GET route/XSS/variants/
+  onAccepted/URL-lifecycle explicitly sound; her Q6 ruling = FIX the optimistic-bubble gap in this
+  wave). **The fix wave (`eb964d2`) — the STATUS LADDER** `uploading → staged → sending →
+  (consumed | released)`, `failed` terminal-but-removable, documented once: MED-1 double-submit →
+  `reserveStaged()` sync snapshot+flip, `sendMessage` owns consume+release (finally, both
+  branches) · MED-2 dictation bypass → the gate moved INTO `runComposer`'s NL branch, returns
+  routed?, callers clear the draft only on true · MED-3 async admission → sync `admitAll`
+  (provisional rows + cap check before any await) · MED-4 image guard scoped to image-tier only
+  (shared `sizeRefusal`; `kindOf` extension-only, the server's sniff is the authority) · MED-5
+  ready-only sendability · MED-6 the presentational `pending_attachments` snapshot on the
+  optimistic bubble (steers included), URL ownership transferring at accept, swept at the ONE
+  message-write chokepoint; the 409-revokes-nothing deviation accepted (ownership never moved).
+  **Confirm round: MED-1..5 RESOLVED with line proof; MED-6 chained 1 MED** (0.96: a pre-accept
+  network failure left the failed bubble referencing the rail's restored URL) — **main-seat-fixed
+  in the tail (`9d151ab`: at release the bubble SHEDS its snapshot; an attachment-only bubble is
+  removed — leaner than widening ownership); micro-confirm: RESOLVED, "none". S3 CLOSED.**
+  Residuals recorded: a STEERED attachment message's durable parts arrive at the next reconcile
+  (the snapshot bridges the interim) · the e2e held-POST test pins the accept window.

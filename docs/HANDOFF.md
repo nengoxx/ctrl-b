@@ -12,7 +12,36 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-01, THIRD session, cont. — S2 BUILT + REVIEWED + CLOSED; supersedes everything below where it speaks)
+## Current state (2026-09-02 — S3 BUILT + REVIEWED + CLOSED; supersedes everything below where it speaks)
+
+- **S3 (the FE slice) is CLOSED:** build `bb290ca` → blind Emma round SHIP WITH FIXES (6 MED,
+  incl. her Q6 ruling: fix the optimistic-bubble gap in-wave) → fix wave `eb964d2` (the status
+  LADDER `uploading→staged→sending→consumed|released`; seam-owned gates; sync admission;
+  image-guard scoped; ready-only sendability; the presentational snapshot) → confirm: 1..5
+  RESOLVED, MED-6 chained one MED → main-seat tail fix `9d151ab` (the bubble sheds its snapshot at
+  release) → **micro-confirm RESOLVED, "none"**. Gate 6/6; BE **2,126** · FE **2,771**; the
+  attachments e2e spec green both projects (+ a held-POST accept-window test). Full record =
+  ATTACHMENTS_PLAN §11's S3 blocks. The rail/clip geometry is built AS RULED (grammar ②; sheet =
+  embedded-field clip left of the mic) — **the owner has NOT yet eyeballed it; S6 carries that.**
+- **Local `main` = origin `a558d43` + 21 commits** (16 prior + `bb290ca` + `eb964d2` + `9d151ab` +
+  the S2-docs + this docs commit), **NOTHING PUSHED**. Prod untouched: **v1.7.7 @ `578ffa7`**.
+  Dev units RUNNING (⚠ the dev backend predates S1–S3 — restart `ctrl-b-dashboard-dev` before any
+  owner poke at attachments).
+
+## ▶▶ NEXT (2026-09-02, post-S3 — in order)
+
+1. **S4 (PDF)** under the same cadence — pypdf extraction sidecar at claim + failure copy + the
+   §6 `max_pdf_pages`/`max_extracted_chars` knobs + **the RECORDED OBLIGATION: `sweep_thread_dirs`'
+   referenced set must learn sidecars** (else extraction self-deletes after `staging_orphan_hours`)
+   + `AttachmentPart.inline_chars` for PDFs = the sidecar's decoded length.
+2. **S5 (the composer expand affordance)** — R62 §5-informed, line composer first, rides
+   `useComposerChrome` (plan §9-S5).
+3. **S6 — the owner device round** (plan §9-S6) closes the phase; the owner's word rules.
+4. **The v1.7.8 pipeline still stands** (owner dev test round → PUSH ruling → release, runbook
+   §Release · rollback v1.7.7 · pre-tag LOCAL e2e + stale-pin sweep) → stop the dev units.
+5. **Standing menu unchanged:** device pair + edit-a-prompt · A13 · Phase 19 LAST (1.8 RESERVED).
+
+## Prior state (2026-09-01, THIRD session, cont. — S2 BUILT + REVIEWED + CLOSED; superseded above where it speaks)
 
 - **The owner ruled (this session): the WHOLE ladder S2→S6 proceeds slice-by-slice under the full
   council cadence** (pinned Opus build → main-seat audit → blind Emma round → fix wave → her
