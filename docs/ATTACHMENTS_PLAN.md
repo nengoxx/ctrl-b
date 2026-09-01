@@ -429,3 +429,25 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
     the media refactor preserves the old create/replace ladder + error semantics; `probe_gif`
     separate, media adopts no GIF · focused suites 127 green (1 pre-existing Starlette
     deprecation warning). **Open sweep: none.**
+- **S1 FIX WAVE (2026-09-01, third session — `eff4bfd`, Opus from the pinned brief; gate 6/6, BE
+  2,068→2,075): ALL FIVE RULED FIXES BUILT; Emma confirm round (resumed session) — RESOLVED, zero
+  new findings, open sweep "none".** Main-seat rulings that shaped the build: **MED-1** = a
+  module-private `_real_root()` REUSING `require_real_dir` (no second predicate) gating all three
+  housekeeping functions, fail-closed `return 0`, deliberately root-only (the root IS the required
+  ancestor; same one-level posture as `ensure_media_dirs` — Emma accepted the scope) · **MED-2** =
+  leaner than prescribed: a re-peek intersection immediately before the persist txn (survivors-only
+  persist/emit; the whole run still commits off the queue; the residual re-peek→txn window = the
+  pre-D68 sub-ms race, recorded) — Emma confirmed `SteerSource.peek()` resolves through the live
+  registry so delete/harvest/pop-recreate are all excluded · **LOW-3** = shared
+  `iter_live_routes`/`declares_multipart` in test_media_g5 (recurses `include_context` — FastAPI's
+  include wrappers expose no `.routes`; `File` subclasses `Form` so one isinstance refuses
+  multipart AND urlencoded); both pins assert a NON-EMPTY harvest (a pin matching nothing is the
+  defect class, twice now) · **LOW-4** = the four named seams (`thread_dir(` · `attachments_root(` ·
+  `staging_dir(` · `ATTACHMENTS_DIRNAME`); the hand-built-literal residue stated in the docstring,
+  review owns it · **Q10** = `created_here` + `threads.delete()` before the 409 (the delete hook
+  reclaims a partially claimed batch's moved bytes on the spot). **Builder deviations, both
+  ACCEPTED at audit:** the two old Q10-behavior pins were REWRITTEN in place (two contradicting
+  pins would be worse) · the new `_drain_session`/`_drain` test helpers duplicate three older
+  inline constructions — recorded residual, no drive-by refactor. Builder proved every new pin
+  fails with its fix reverted (MED-1's `removed=1` outside-victim repro reproduced pre-fix;
+  LOW-3's walk caught a planted `include_in_schema=False` POST and a multipart PUT).

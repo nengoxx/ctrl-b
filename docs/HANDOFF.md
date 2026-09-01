@@ -12,7 +12,36 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-01, SECOND session — THE S1 EMMA ROUND: review RAN + RECORDED, NO fix wave; supersedes everything below where it speaks)
+## Current state (2026-09-01, THIRD session — THE S1 FIX WAVE: built + Emma-confirm RESOLVED; S1 IS CLOSED; supersedes everything below where it speaks)
+
+- **The S1 fix wave RAN the full cadence and CLOSED:** main-seat rulings on all five recorded
+  findings (each re-derived to the leanest fix) → ONE Opus build from a pinned brief
+  (**`eff4bfd`**: MED-1 `_real_root()` fail-closed housekeeping via `require_real_dir` reuse ·
+  MED-2 the pre-txn re-peek in `_drain_steers` · LOW-3 the recursive live-route walker + non-empty
+  harvest in BOTH no-POST pins · LOW-4 the four-seam only-writer grep · Q10 `created_here` +
+  `threads.delete()` before the 409) → main-seat audit (both declared deviations ACCEPTED: the two
+  old Q10 pins rewritten in place; the drain-helper duplication recorded) → **Emma confirm round
+  (resumed session): RESOLVED, all five with line proof, zero new findings, open sweep "none"** —
+  she explicitly accepted the MED-1 root-only and LOW-4 named-seam scope rulings. Gate 6/6 green,
+  BE 2,068→**2,075**. Full record = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) §11's S1-FIX-WAVE
+  block. **S1 is DONE; the owner's word gates S2.**
+- **Local `main` = origin `a558d43` + 12 commits** (the 10 prior + `eff4bfd` + this docs commit),
+  **NOTHING PUSHED**. Prod untouched: **v1.7.7 @ `578ffa7`**. Dev units RUNNING (unchanged).
+
+## ▶▶ NEXT (2026-09-01, post-fix-wave — in order; supersedes the lists below)
+
+1. **The owner's word on S2** (the per-slice gate is satisfied: build + audit + Emma RESOLVED).
+   Then **S2 → S6 per plan §9**, one slice per session under the budget directive: S2 model feed →
+   S3 FE → S4 PDF → S5 expand → S6 owner device round.
+2. **The v1.7.8 pipeline still stands (the fleet wave, unchanged):** the owner tests on dev
+   (:5173) — the retimed morph · the pick-grow · a REAL reboot (⚠ dev drives the real fleet) →
+   the PUSH ruling (now 12 commits) → release v1.7.8 (runbook §Release, Opus-operated · NO
+   migration · rollback v1.7.7 · pre-tag LOCAL e2e + the stale-pin sweep over both waves' labels)
+   → stop the dev units.
+3. **The standing menu unchanged:** owner device pair on prod + edit-a-prompt (easier
+   post-release) · A13 design talk · parked ledger · **Phase 19 goes LAST** (1.8 RESERVED).
+
+## Prior state (2026-09-01, SECOND session — THE S1 EMMA ROUND: review RAN + RECORDED, NO fix wave; superseded above where it speaks)
 
 - **The owed S1 Emma-lane round RAN and is RECORDED — NOTHING fixed, nothing built** (owner
   directive at ~98% weekly usage: no fix wave, hand off; the fix wave opens the next session).
