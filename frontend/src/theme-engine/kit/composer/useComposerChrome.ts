@@ -103,28 +103,57 @@ export function useComposerChrome(
   // the initial render so a restored draft gets the right height as soon as the composer becomes visible.
   // The SAME measurement yields the RENDERED line count the trigger keys on (R62 §5: Telegram's own is
   // ResizeObserver-backed, ours is free — this effect already forces the layout) — no second observer.
+  //
+  // IT RUNS ON VIEWPORT CHANGES TOO (S5 fix wave, MED-2), not only on draft/expanded: both of its inputs
+  // are viewport-dependent. The tall ceiling READS `--app-h`, so the on-screen keyboard opening (or a
+  // rotation) leaves an expanded field sized for the old viewport; and the RENDERED line count changes with
+  // the field's WIDTH, so a rotation can wrap a 2-line draft to 3 and the trigger would not appear until the
+  // next keystroke. One `measure()` covers both — every read inside it is taken fresh per invocation, which
+  // is the whole point. App.tsx's `useAppViewport` only WRITES the CSS var (there is no store to subscribe
+  // to), so a listener scoped to this hook is the lean shape rather than a new reactive publisher. Its
+  // ordering against that writer is safe by construction: this effect re-registers on every draft/expanded
+  // change, and `expanded` — the only state that reads `--app-h` — cannot be reached without one, so our
+  // listener is always the later registration and sees the freshly written value.
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
-    ta.style.height = "";
-    if (ta.value === "") {
-      ta.style.maxHeight = "";
-      setLines(1);
-      return;
+    const measure = () => {
+      ta.style.height = "";
+      if (ta.value === "") {
+        ta.style.maxHeight = "";
+        setLines(1);
+        return;
+      }
+      ta.style.height = "auto";
+      // Rendered lines, not `draft.split("\n")` (open-webui's shortcut, which misses every WRAPPED line —
+      // and a phone composer wraps constantly). `scrollHeight` includes padding under `box-sizing:
+      // border-box`, so the padding comes back off before dividing by the line box.
+      const cs = getComputedStyle(ta);
+      const lineH = parseFloat(cs.lineHeight) || FALLBACK_LINE_PX;
+      const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      setLines(Math.max(1, Math.round((ta.scrollHeight - pad) / lineH)));
+      const ceil = expanded ? expandedCeilPx() : CEIL_PX;
+      // `max-height` is written ONLY while expanded: kit.css's own 96px is the collapsed clamp (and would
+      // otherwise win over this inline height), so the resting path writes exactly what it always did.
+      ta.style.maxHeight = expanded ? ceil + "px" : "";
+      ta.style.height = Math.min(ceil, ta.scrollHeight) + "px";
+    };
+    measure();
+    // `visualViewport` is the surface that reports the KEYBOARD (`window`'s resize does not fire for it on
+    // Android), and its `scroll` fires as the visual viewport offsets under a pinned keyboard — the same
+    // pair `useAppViewport` listens to, for the same reason. `window`'s resize is the fallback for a browser
+    // without it (where `--app-h` is never written either, so the ceiling reads `innerHeight`).
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", measure);
+      vv.addEventListener("scroll", measure);
+      return () => {
+        vv.removeEventListener("resize", measure);
+        vv.removeEventListener("scroll", measure);
+      };
     }
-    ta.style.height = "auto";
-    // Rendered lines, not `draft.split("\n")` (open-webui's shortcut, which misses every WRAPPED line —
-    // and a phone composer wraps constantly). `scrollHeight` includes padding under `box-sizing:
-    // border-box`, so the padding comes back off before dividing by the line box.
-    const cs = getComputedStyle(ta);
-    const lineH = parseFloat(cs.lineHeight) || FALLBACK_LINE_PX;
-    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-    setLines(Math.max(1, Math.round((ta.scrollHeight - pad) / lineH)));
-    const ceil = expanded ? expandedCeilPx() : CEIL_PX;
-    // `max-height` is written ONLY while expanded: kit.css's own 96px is the collapsed clamp (and would
-    // otherwise win over this inline height), so the resting path writes exactly what it always did.
-    ta.style.maxHeight = expanded ? ceil + "px" : "";
-    ta.style.height = Math.min(ceil, ta.scrollHeight) + "px";
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
   }, [draft, taRef, expanded]);
 
   // LEAVABLE + SELF-RESETTING: the draft clearing IS the exit — send, the dictation auto-send (which

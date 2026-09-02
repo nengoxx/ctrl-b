@@ -30,7 +30,7 @@ vi.mock("../../src/store/chat", async (importActual) => {
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
-import { clearStaged } from "../../src/store/attachments";
+import { addStaged, clearStaged } from "../../src/store/attachments";
 import { clearDraft, setDraft } from "../../src/store/composer";
 
 const VARIANTS = [
@@ -171,11 +171,111 @@ describe("the expand affordance's placement (per layout, one component)", () => 
     expect(box.contains(toggle())).toBe(true);
   });
 
-  it("the line pill has no field wrapper, so it hangs off the root (its row IS the field)", () => {
+  // MED-1 (the S5 Emma round, main-seat ruled): the toggle used to hang off the ROOT — whose top-right
+  // corner stops being the field's the moment a rail is staged above it. The line layout's row is now its
+  // own element, and the toggle's POSITIONING CONTEXT is that row (kit.css puts `position:relative`
+  // there), which is what jsdom can pin: the parent chain, not the paint.
+  it("the line pill has no field wrapper — its ROW is the field, and the toggle anchors to THAT", () => {
     mount(LineComposer);
     draftAt(3);
     expect(document.querySelector(".kit-composer.line .field")).toBeNull();
-    expect(toggle()!.parentElement).toBe(document.querySelector("#composer"));
+    const row = document.querySelector(".kit-composer.line .line-row")!;
+    expect(row).not.toBeNull();
+    expect(toggle()!.parentElement).toBe(row);
+    expect(row.parentElement).toBe(document.querySelector("#composer"));
+  });
+
+  it("…and a STAGED RAIL cannot land under it: the rail is the row's SIBLING, above it", () => {
+    addStaged({ localId: "photo.png", name: "photo.png", kind: "image", status: "staged" });
+    mount(LineComposer);
+    draftAt(3);
+    const rail = document.querySelector(".kit-attach-rail")!;
+    const row = document.querySelector(".kit-composer.line .line-row")!;
+    expect(row.contains(rail)).toBe(false);
+    expect(rail.parentElement).toBe(row.parentElement); // ordinary siblings — no flex reordering left
+    expect(rail.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The whole point: the toggle's box is the ROW's, so the rail above it cannot be underneath it.
+    expect(toggle()!.parentElement).toBe(row);
+  });
+});
+
+// MED-2 (the S5 Emma round, main-seat ruled): the measurement ran ONLY on draft/expanded changes, yet both
+// of its outputs are viewport-dependent — the tall ceiling READS `--app-h` (so the on-screen keyboard left
+// an expanded field sized for the old viewport) and the rendered line count follows the field's WIDTH (so a
+// rotation could re-wrap a 2-line draft to 3 with no trigger until the next keystroke). One measure
+// function, now also run from the viewport's own events.
+describe("the measurement REACTS to the viewport (MED-2)", () => {
+  const REAL_VV = Object.getOwnPropertyDescriptor(window, "visualViewport");
+  /** Force the hook down one branch or the other, whatever jsdom does or does not implement. As far as
+   *  this hook is concerned the visual viewport is only an EventTarget — the HEIGHT reaches it through
+   *  `--app-h`, the var App.tsx's `useAppViewport` writes. */
+  function withVisualViewport(vv: EventTarget | undefined) {
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: vv });
+  }
+  /** The keyboard opening / a rotation: App.tsx rewrites the var, the browser fires the event. */
+  function viewportChangeTo(appH: number, fire: () => void) {
+    act(() => {
+      document.documentElement.style.setProperty("--app-h", `${appH}px`);
+      fire();
+    });
+  }
+
+  afterEach(() => {
+    if (REAL_VV) Object.defineProperty(window, "visualViewport", REAL_VV);
+    else Reflect.deleteProperty(window, "visualViewport");
+    document.documentElement.style.removeProperty("--app-h");
+  });
+
+  it("an EXPANDED field re-ceils on a visualViewport resize — no draft change involved", () => {
+    const vv = new EventTarget();
+    withVisualViewport(vv);
+    document.documentElement.style.setProperty("--app-h", "800px");
+    mount(LineComposer);
+    draftAt(20); // far past either ceiling → the ceiling IS the reported height
+    fireEvent.click(toggle()!);
+    expect(field().style.height).toBe("400px"); // half of the 800px viewport
+    expect(field().style.maxHeight).toBe("400px");
+
+    viewportChangeTo(300, () => vv.dispatchEvent(new Event("resize"))); // the keyboard opens
+    expect(field().style.height).toBe("150px");
+    expect(field().style.maxHeight).toBe("150px");
+  });
+
+  it("…and on its SCROLL too (the visual viewport offsets under a pinned keyboard)", () => {
+    const vv = new EventTarget();
+    withVisualViewport(vv);
+    document.documentElement.style.setProperty("--app-h", "800px");
+    mount(LineComposer);
+    draftAt(20);
+    fireEvent.click(toggle()!);
+    viewportChangeTo(1000, () => vv.dispatchEvent(new Event("scroll")));
+    expect(field().style.maxHeight).toBe("500px"); // the ceiling moved with the viewport…
+    expect(field().style.height).toBe(`${20 * LINE_PX}px`); // …and the content now fits under it
+  });
+
+  it("the ≥3-line TRIGGER re-derives on the same event (a rotation re-wraps the draft)", () => {
+    const vv = new EventTarget();
+    withVisualViewport(vv);
+    mount(LineComposer);
+    draftAt(2);
+    expect(toggle()).toBeNull();
+    // The draft is untouched; the FIELD gets narrower, so the same text renders at three lines.
+    act(() => {
+      content = 3 * LINE_PX;
+      vv.dispatchEvent(new Event("resize"));
+    });
+    expect(toggle()).not.toBeNull();
+  });
+
+  it("a browser with NO visualViewport falls back to the window's own resize", () => {
+    withVisualViewport(undefined);
+    document.documentElement.style.setProperty("--app-h", "800px");
+    mount(LineComposer);
+    draftAt(20);
+    fireEvent.click(toggle()!);
+    expect(field().style.height).toBe("400px");
+    viewportChangeTo(300, () => window.dispatchEvent(new Event("resize")));
+    expect(field().style.height).toBe("150px");
   });
 });
 

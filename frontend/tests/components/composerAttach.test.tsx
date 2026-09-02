@@ -90,12 +90,13 @@ describe.each(VARIANTS)("%s composer — the attachment chrome", (name, Variant)
     render(<Variant />);
     const rail = document.querySelector(".kit-attach-rail")!;
     expect(composer().contains(rail)).toBe(true);
-    // The row the rail must sit above, per layout: the stacked field, the docked row, or — in the
-    // line pill, whose root IS the row — the textarea itself.
+    // The row the rail must sit above, per layout: the stacked field, the docked row, or the line
+    // pill's own `.line-row` (since the S5 fix wave that row is an element — MED-1 — rather than the
+    // root itself wrapping the rail onto a flex line of its own).
     const row =
       composer().querySelector(".sheet-row") ??
-      composer().querySelector(".field") ??
-      composer().querySelector("textarea")!;
+      composer().querySelector(".line-row") ??
+      composer().querySelector(".field")!;
     expect(rail.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -196,7 +197,29 @@ describe("the layouts' own geometry", () => {
     render(<LineComposer controlsStart={<span data-testid="pill" />} />);
     const controls = document.querySelector(".line-controls")!;
     expect(controls.contains(clip())).toBe(false);
-    expect(clip().parentElement).toBe(document.querySelector("#composer"));
+    expect(clip().parentElement).toBe(document.querySelector(".line-row"));
+  });
+
+  // The S5 fix wave's row wrapper (MED-1) is PURELY structural: it holds exactly what the single row
+  // always held, in the same order, and the owner-eyeballed flex geometry moved onto it verbatim. jsdom
+  // lays nothing out, so what this pins is the DOM shape that geometry is written against.
+  it("the line pill's ROW holds the whole single row, and the bar holds only the row", () => {
+    render(<LineComposer controlsStart={<span data-testid="pill" />} />);
+    expect([...composer().children].map((el) => el.className)).toEqual(["line-row"]); // nothing staged
+    const kids = [...document.querySelector(".line-row")!.children];
+    // [plan-pill lane] [field] [the clip's hidden picker + clip] [mic] — the resting look with STT up and
+    // an empty draft, exactly the sequence the root used to hold.
+    expect(kids.map((el) => el.tagName.toLowerCase())).toEqual([
+      "div",
+      "textarea",
+      "input",
+      "button",
+      "button",
+    ]);
+    expect(kids[0].className).toBe("line-controls");
+    expect(kids[2].className).toBe("kit-attach-input");
+    expect(kids[3].className).toContain("kit-cbtn attach");
+    expect(kids[4].className).toContain("kit-cbtn mic line-btn");
   });
 
   it("the stacked bar puts it in the controls row, after the slack absorber", () => {

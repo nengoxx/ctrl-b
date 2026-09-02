@@ -848,18 +848,13 @@ body[data-motion="reduced"] .kit .kit-attach-busy svg {
   height: 36px;
   flex-shrink: 0;
 }
-/* LINE — the rail rides ABOVE the row. The line composer's root IS the row (a `flex-end` flex line),
- * so rather than restructure its owner-eyeballed geometry the rail takes a full flex LINE of its own:
- * `wrap` + `order:-1` + a 100% basis puts it above, and with nothing staged the rail is not rendered
- * at all — no wrap ever occurs and the collapsed pill is byte-identical to its pre-D68 self. */
-.kit-composer.line {
-  flex-wrap: wrap;
-}
-.kit-composer.line .kit-attach-rail {
-  order: -1;
-  flex: 0 0 100%;
-  margin-bottom: 2px; /* the row `gap` supplies the rest */
-}
+/* LINE — the rail rides ABOVE the row, and needs NO rule of its own: since the D68 S5 fix wave the line
+ * layout's flex row is `.line-row` (below), so the root is an ordinary block and the rail + its refusal
+ * lines are ordinary block siblings stacked above it — the shared 8px `margin-bottom` is the gap, and with
+ * nothing staged neither element renders at all. (S3 had the ROOT be the row and faked the stack with
+ * `flex-wrap` + `order:-1` + a 100% basis; that reordering is what put the root-anchored expand toggle on
+ * top of the rail — MED-1 — and it died with the wrapper, spacing unchanged: the old 2px override plus the
+ * row's 6px `gap` came to the same 8px.) */
 
 /* ── composer · THE EXPAND AFFORDANCE (D68 S5 / ATTACHMENTS_PLAN §7 + §9-S5) ─────────────────────────
  * R62 §5's convergent shape: a quiet control at the FIELD's TOP-RIGHT, offered once the draft renders at
@@ -907,12 +902,14 @@ body[data-motion="full"] .kit .kit-cbtn.expand {
 .kit .kit-composer.sheet .field:has(.kit-cbtn.expand) textarea {
   padding-right: 34px; /* the field's own 6px + the button's 28px */
 }
-/* LINE — this layout has no `.field` wrapper (its row IS the field), so the toggle hangs off the root,
- * which is already positioned. The row bottom-aligns its controls (`align-items:flex-end`), so at ≥3
- * lines the pill's top-right corner is empty space ABOVE the mic/send cluster and no text reaches it —
- * no lead-out needed here. 8px clears the 24px corner arc: the button's own corner sits at (8,8), which
- * is inside the r24 circle centred at (24,24) (√(16²+16²) = 22.6 < 24), so `overflow:hidden` clips
- * nothing — the same concentric reasoning the trailing buttons use. */
+/* LINE — this layout has no `.field` wrapper (its ROW is the field), so the toggle hangs off `.line-row`,
+ * positioned there (the MED-1 fix: the ROOT also holds the rail, so a root-anchored toggle took the RAIL's
+ * top-right corner whenever a file was staged). The row bottom-aligns its controls (`align-items:flex-end`),
+ * so at ≥3 lines the row's top-right corner is empty space ABOVE the mic/send cluster and no text reaches
+ * it — no lead-out needed here. The 8px inset is unchanged and the 24px corner arc is clearer than ever:
+ * the reference box is now the ROW, itself inset by the bar's 6px side / 5px top padding + the 1px border,
+ * so the button's corner sits at ~(15,14) from the pill's own corner — 13.5px from the r24 arc's centre at
+ * (24,24), where it used to be 22.6px. `overflow:hidden` clips nothing, with more room to spare. */
 .kit .kit-composer.line .kit-cbtn.expand {
   top: 8px;
   right: 8px;
@@ -1321,17 +1318,25 @@ body[data-motion="reduced"] .kit-composer.line .kit-cbtn.mic.line-btn.rec {
    * corner arc and overflow:hidden clips NOTHING (obsoletes the old "bottom-anchored button gets chord-clipped
    * by the semicircle cap" reasoning — that was true only for the 999px stadium). Collapsed (~46px bar: 36px
    * button + 2×5px padding), 24px ≈ half the height so it still reads as a stadium; grown, it's the rounded
-   * square. `flex-end` rides the pill + buttons on the bottom while the textarea's extra lines stack upward
-   * (the float's bottom edge is pinned to the shell, so growth reads as "up"). Symmetric 6px sides; the
-   * textarea carries its own lead-in below so text never starts under the corner. */
+   * square. */
   border-radius: 24px;
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
   /* SYMMETRIC 6px sides (owner eyeball): the plan pill hugs the leading edge exactly like the mic/send hug
    * the trailing one; the TEXTAREA carries its own lead-in below so text never starts under the cap curve. */
   padding: calc(5px * var(--density-pad)) 6px;
   overflow: hidden;
+}
+/* THE ROW (D68 S5 fix wave, MED-1) — the flex line the layout is: `[plan pill] [flex field] [mic/send]`.
+ * These three declarations were the ROOT's until the wrapper existed and are moved here VERBATIM (owner
+ * eyeball round 6): `flex-end` rides the pill + buttons on the bottom while the textarea's extra lines stack
+ * upward (the float's bottom edge is pinned to the shell, so growth reads as "up"), and the 6px gap spaces
+ * the lane. The root is now a plain block whose children stack — rail, refusal lines, then this row.
+ * `position:relative` is the row's OWN job: it is the containing block for the expand toggle, which must
+ * take the ROW's top-right corner and not the root's (where the rail lives). */
+.kit-composer.line .line-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  position: relative;
 }
 /* override the base `.kit-composer textarea` display:block/width:100% → single-line flex child; grows to
  * the shared 96px ceiling (useComposerChrome). The 10px lead replaces the bar's old 16px left padding

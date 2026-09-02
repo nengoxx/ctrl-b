@@ -30,6 +30,9 @@ import { MIC_LABEL, useComposerChrome } from "./useComposerChrome";
 //   • ATTACH — PRESENT since D68 S3 (this supersedes the original "ABSENT" ruling): the quiet clip sits in
 //     the trailing cluster, LEFT of the mic, and the staged THUMBNAIL RAIL rides above the pill's row. It is
 //     NOT capability-gated (unlike the mic): there is no "attachments configured" fact to gate on.
+//   • THE ROW IS ITS OWN ELEMENT since the D68 S5 fix wave (MED-1) — `.line-row`, holding exactly what the
+//     single row always held. The bar's other occupants (the rail, its refusal lines) are ordinary block
+//     siblings ABOVE it, which is what S3's `flex-wrap` + `order:-1` reordering was faking.
 //   • GEOMETRY — a FLOATING ROUNDED-SQUARE PILL: inherits the base `.kit-composer` float (inset ~90% width,
 //     frost/border/shadow — "not baked into the window"), reshaped to `border-radius:24px`, a compact single
 //     row; the pill + mic/send ride the BOTTOM (`align-items:flex-end`) while the field's extra lines stack
@@ -78,79 +81,90 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
         onDragOver={attach.dropProps.onDragOver}
         onDrop={attach.dropProps.onDrop}
       >
-        {/* THE RAIL — above the pill's row (the ruled placement for this layout). The row itself is
-            the flex container, so the rail takes a full line of its own (`flex-wrap` + `order:-1` in
-            kit.css) and the pill grows UPWARD exactly as multi-line text already makes it grow. */}
+        {/* THE RAIL — above the pill's row (the ruled placement for this layout), now as an ordinary
+            block sibling: `.line-row` below is the flex container, so the rail and the refusal lines
+            under it simply stack above it and the pill grows UPWARD exactly as multi-line text already
+            makes it grow. (S3 faked this with `flex-wrap` + `order:-1` on the root while the root WAS
+            the row — which left the absolutely-positioned expand toggle pinned to the root's top-right,
+            i.e. on top of the rail. The wrapper removes the reordering instead of patching the toggle.) */}
         <AttachRail attach={attach} />
-        {/* `controlsStart` slot — the in-row plan pill FLUSH at the leading edge (owner eyeball: mirror how
-            the mic/send hug the trailing edge; this IS A4's `planPill: inline` semantics; with `pinned` the
-            slot is empty → `.line-controls:empty` collapses the wrapper, the same trick the sheet uses). */}
-        {controlsStart && <div className="line-controls">{controlsStart}</div>}
-        <textarea
-          ref={taRef}
-          id="cmd-input"
-          rows={1}
-          // "Message" — the reference's own copy: the compact single-row bar wants a SHORT placeholder (a
-          // deliberate delta from the Kit's long "How can I help you today?"). A theme that fills the
-          // `placeholder` slot overrides it; omitted → exactly this string, as before.
-          placeholder={placeholder ?? "Message"}
-          value={draft}
-          onChange={(e) => suggest.onDraftChange(e.target.value)}
-          onKeyDown={suggest.onKeyDown}
-          onFocus={suggest.onFocus}
-          onBlur={suggest.onBlur}
-          onPaste={attach.dropProps.onPaste}
-          {...suggest.aria}
-        />
-        {/* THE EXPAND TOGGLE — the field's top-right (R62 §5). This layout has no `.field` wrapper (the
-            row IS the field), so it hangs off the root, absolutely positioned into the pill's top-right
-            corner — which the `flex-end` row leaves empty, since the mic/send ride the bottom. */}
-        <ExpandToggle expand={expand} />
-        {/* THE CLIP — trailing of the field, LEFT of the mic/send cluster (the ruled placement, and
-            the spot the A8 placeholder comment always marked). Ungated: it is chrome, not a
-            capability. */}
-        <AttachClip attach={attach} size={18} />
-        {showMic && (
-          <button
-            type="button"
-            className={
-              "kit-cbtn mic line-btn" +
-              (mic.status === "recording" ? " rec" : "") +
-              (mic.status === "sending" ? " sending" : "") +
-              (micPressed ? " press" : "") +
-              (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
-            }
-            aria-label={MIC_LABEL[mic.status]}
-            title={MIC_LABEL[mic.status]}
-            aria-pressed={mic.status === "recording"}
-            disabled={mic.status === "unavailable" || mic.status === "sending"}
-            onPointerDown={pressMic}
-            onPointerUp={releaseMic}
-            onPointerCancel={releaseMic}
-            onPointerLeave={releaseMic}
-            onClick={mic.toggle}
-          >
-            {mic.status === "sending" ? <SpinnerIcon size={22} /> : <MicIcon size={22} />}
-          </button>
-        )}
-        {showSend && (
-          <button
-            type="button"
-            className={"kit-send line-btn" + (isStreaming ? " stop" : "")}
-            id="cmd-send"
-            aria-label={isStreaming ? "stop the running turn" : "send message"}
-            title={isStreaming ? "stop the running turn" : "send message"}
-            disabled={!isStreaming && uploadPending} // held while a file uploads (D68 §7)
-            onClick={isStreaming ? stopTurn : send}
-          >
-            {/* Streaming → the Stop square (D39, same swap as every composer). Idle → the SHARED
-                arrowhead glyph — optically re-centered via the `.kit-send.line-btn svg` nudge in
-                kit.css (the glyph's mass leans up-right, vapor's fix). */}
-            {/* Stop at 20 (not the arrowhead's 20-for-16 split): ~48% of the 36px circle — vapor's
-                stop-to-button ratio (owner device round, v1.3.1). */}
-            {isStreaming ? <StopSquareIcon size={20} /> : <SendArrowheadIcon size={20} />}
-          </button>
-        )}
+        {/* THE FIELD ROW — exactly what the single row always held (the plan-pill lane · the field · the
+            trailing cluster), with the owner-eyeballed flex geometry (`align-items:flex-end` + the 6px
+            gaps) moved onto it from the root VERBATIM. Its reason to exist is the toggle below: an
+            element to be the row's own positioning context. */}
+        <div className="line-row">
+          {/* `controlsStart` slot — the in-row plan pill FLUSH at the leading edge (owner eyeball: mirror how
+              the mic/send hug the trailing edge; this IS A4's `planPill: inline` semantics; with `pinned` the
+              slot is empty → `.line-controls:empty` collapses the wrapper, the same trick the sheet uses). */}
+          {controlsStart && <div className="line-controls">{controlsStart}</div>}
+          <textarea
+            ref={taRef}
+            id="cmd-input"
+            rows={1}
+            // "Message" — the reference's own copy: the compact single-row bar wants a SHORT placeholder (a
+            // deliberate delta from the Kit's long "How can I help you today?"). A theme that fills the
+            // `placeholder` slot overrides it; omitted → exactly this string, as before.
+            placeholder={placeholder ?? "Message"}
+            value={draft}
+            onChange={(e) => suggest.onDraftChange(e.target.value)}
+            onKeyDown={suggest.onKeyDown}
+            onFocus={suggest.onFocus}
+            onBlur={suggest.onBlur}
+            onPaste={attach.dropProps.onPaste}
+            {...suggest.aria}
+          />
+          {/* THE EXPAND TOGGLE — the field's top-right (R62 §5). This layout has no `.field` wrapper (the
+              ROW is the field), so it hangs off `.line-row` and is absolutely positioned into THAT box's
+              top-right corner — which the `flex-end` row leaves empty, since the mic/send ride the bottom.
+              Anchoring it to the row rather than the root is the MED-1 fix: the root also holds the rail,
+              and its top-right corner is the RAIL's corner whenever a file is staged. */}
+          <ExpandToggle expand={expand} />
+          {/* THE CLIP — trailing of the field, LEFT of the mic/send cluster (the ruled placement, and
+              the spot the A8 placeholder comment always marked). Ungated: it is chrome, not a
+              capability. */}
+          <AttachClip attach={attach} size={18} />
+          {showMic && (
+            <button
+              type="button"
+              className={
+                "kit-cbtn mic line-btn" +
+                (mic.status === "recording" ? " rec" : "") +
+                (mic.status === "sending" ? " sending" : "") +
+                (micPressed ? " press" : "") +
+                (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
+              }
+              aria-label={MIC_LABEL[mic.status]}
+              title={MIC_LABEL[mic.status]}
+              aria-pressed={mic.status === "recording"}
+              disabled={mic.status === "unavailable" || mic.status === "sending"}
+              onPointerDown={pressMic}
+              onPointerUp={releaseMic}
+              onPointerCancel={releaseMic}
+              onPointerLeave={releaseMic}
+              onClick={mic.toggle}
+            >
+              {mic.status === "sending" ? <SpinnerIcon size={22} /> : <MicIcon size={22} />}
+            </button>
+          )}
+          {showSend && (
+            <button
+              type="button"
+              className={"kit-send line-btn" + (isStreaming ? " stop" : "")}
+              id="cmd-send"
+              aria-label={isStreaming ? "stop the running turn" : "send message"}
+              title={isStreaming ? "stop the running turn" : "send message"}
+              disabled={!isStreaming && uploadPending} // held while a file uploads (D68 §7)
+              onClick={isStreaming ? stopTurn : send}
+            >
+              {/* Streaming → the Stop square (D39, same swap as every composer). Idle → the SHARED
+                  arrowhead glyph — optically re-centered via the `.kit-send.line-btn svg` nudge in
+                  kit.css (the glyph's mass leans up-right, vapor's fix). */}
+              {/* Stop at 20 (not the arrowhead's 20-for-16 split): ~48% of the 36px circle — vapor's
+                  stop-to-button ratio (owner device round, v1.3.1). */}
+              {isStreaming ? <StopSquareIcon size={20} /> : <SendArrowheadIcon size={20} />}
+            </button>
+          )}
+        </div>
       </div>
     </>
   );
