@@ -12,7 +12,38 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-02 — S3 BUILT + REVIEWED + CLOSED; supersedes everything below where it speaks)
+## Current state (2026-09-02, cont. — S4 + S5 CLOSED: THE PHASE 22 BUILD LADDER IS COMPLETE; supersedes everything below where it speaks)
+
+- **S0–S5 are ALL council-closed** (every slice: pinned Opus build → main-seat audit → blind
+  Emma round → fix wave on main-seat rulings → her explicit RESOLVED close; full records = the
+  per-slice blocks in [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) §11). This session closed:
+  **S4** (`e65f02a`+`6c31c1f` — pypdf extraction, both-names-free claim walk + exclusive sidecar
+  publish, surrogate-safe; 2 MED reviewer-REPRODUCED) and **S5** (`115178e`+`dbc63ad` — the
+  expand affordance as a taller ceiling on the shared chrome seam; the `.line-row` wrapper that
+  retired S3's `order:-1` trick; viewport-reactive measurement).
+- **Gate at tip: 6/6 green — BE 2,145 · FE 2,799 · the attachments e2e spec green both
+  projects.** Local `main` = origin `a558d43` + **27 commits** (this docs commit included),
+  **NOTHING PUSHED**. Prod untouched: **v1.7.7 @ `578ffa7`**.
+- **Dev units RUNNING and the dev backend was RESTARTED onto the ladder tip** — :5173 serves the
+  whole attachments feature for the owner's round.
+
+## ▶▶ NEXT (2026-09-02, post-ladder — the owner's items, in order)
+
+1. **S6 — THE OWNER DEVICE ROUND closes Phase 22** (plan §9-S6): phone pick/paste/send/re-read ·
+   attachment-only photo send · vision on OpenRouter · no-vision on qwen (expect the in-band
+   ERROR) · a real PDF · a compacted-thread re-read via the manifest · the expand control on the
+   line composer — PLUS the S3/S5 feel items now riding it: the rail/clip geometry · the expand
+   behavior (the taller-ceiling ruling is owner-overridable) · the steered-attachment reconcile
+   feel. Findings → fix waves per the standing cadence.
+2. **The PUSH ruling** (owner's word) — 27 commits: the 3 fleet-wave polish + the whole Phase 22
+   ladder. Then **release v1.7.8** (runbook §Release, Opus-operated · NO config/DB migration —
+   every D68 config row is additive with defaults · rollback v1.7.7 · pre-tag LOCAL e2e +
+   the stale-pin sweep over the fleet wave's labels AND the new attachments/expand strings) →
+   stop the dev units.
+3. **Standing menu unchanged:** owner device pair on prod + edit-a-prompt (easier post-release) ·
+   A13 design talk · parked ledger · **Phase 19 goes LAST** (1.8 RESERVED).
+
+## Prior state (2026-09-02 — S3 BUILT + REVIEWED + CLOSED; superseded above where it speaks)
 
 - **S3 (the FE slice) is CLOSED:** build `bb290ca` → blind Emma round SHIP WITH FIXES (6 MED,
   incl. her Q6 ruling: fix the optimistic-bubble gap in-wave) → fix wave `eb964d2` (the status

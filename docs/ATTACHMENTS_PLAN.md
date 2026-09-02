@@ -491,7 +491,8 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   briefs; gate 6/6, BE 2,126 · FE 2,769+2, e2e attachments spec 4 tests both projects): the whole
   §9-S3 scope on the ruled geometry** — grammar ② rail (ONE shared `AttachRail` inside the
   composer root per variant: stacked above `.field` · sheet above `.sheet-row` · line a
-  full flex line via `order:-1`; 56px chips, one h-scroll row) · the quiet clip LEFT of the mic in
+  full flex line via `order:-1` *(superseded by the S5 fix wave: the `.line-row` wrapper made the
+  rail an ordinary sibling and the order trick was deleted)*; 56px chips, one h-scroll row) · the quiet clip LEFT of the mic in
   all three (sheet: embedded in `.field`, Telegram Android's geography — **the LEFT-OFF 1 sheet
   ruling, closed**) · `useAttachments` pipeline reusing `imageProbe`/`imageExport`/`mintName` ·
   staged ids consumed in `runComposer`'s NL branch ONLY (the §7 mic pin closes BY CONSTRUCTION +
@@ -545,3 +546,28 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   reservation cost documented · crashed temps join the swept class · broad link-OSError = the
   §4.5 contract), zero new findings. S4 CLOSED.** Residual recorded: one-shot extraction — a
   missing sidecar stays missing until re-attach (§10 class, pinned).
+- **S5 AS-BUILT (2026-09-02, `115178e` + fix wave `dbc63ad`; Opus from the pinned briefs; gate
+  6/6, FE 2,799): the expand affordance on the MAIN-SEAT BEHAVIOR RULING (R62 §5's landed
+  evidence; owner-overridable at S6)** — the convergent trigger (≥3 RENDERED lines, derived free
+  inside the existing auto-grow measurement, never `split("\n")`) · field top-right, ONE shared
+  quiet `ExpandToggle` in all three variants · **expansion = a TALLER AUTO-GROW CEILING on
+  `useComposerChrome`** (`max(96, --app-h × 0.5)` — the app's own keyboard-aware viewport
+  measurement, not a `dvh`), no modal, no second editor · leavable + self-resetting on
+  `draft === ""` (covers send, `/clear`, and the dictation bypass with one predicate) · **the mic
+  UNTOUCHED** (every peer hides it because their expanded is a mode; ours is a ceiling — R62 §5's
+  mic row cited in code) · no height transition (§14.11; the appear rides `kit-btn-pop` under the
+  UIState motion stamp).
+- **S5 EMMA ROUND (blind): SHIP WITH FIXES — 2 MED · open sweep "none"** (render-loop/a11y/
+  cleanup/`--composer-h` interplay explicitly sound). The fix wave (`dbc63ad`): **MED-1** (0.99)
+  the line toggle collided with the staged rail (root-anchored while `order:-1` made the rail the
+  first row) → her preferred WRAPPER taken further: `.line-row` holds exactly the old single row
+  (flex geometry moved verbatim), the rail + refusal lines are ordinary block siblings above it,
+  and **S3's `flex-wrap`+`order:-1` trick was DELETED outright**; incidental real fix: the
+  refusal-lines block was an `order:0` flex item INSIDE the input row under S3, now stacks where
+  it was meant to · **MED-2** (0.98) the measurement ignored viewport changes → one extracted
+  `measure()` re-run on `visualViewport` resize/scroll + the window-resize fallback; the
+  App-vs-hook listener ordering ANALYZED in code (re-registration puts the reader after the
+  writer) rather than engineered around — **Emma ruled the analysis sound**. **Confirm round:
+  both RESOLVED with line proof, `--composer-h`/overlay/leak checks clean, zero new findings.
+  S5 CLOSED — the build ladder S0–S5 is COMPLETE; S6 (the owner device round) is all that
+  remains of Phase 22.**
