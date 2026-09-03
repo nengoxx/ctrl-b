@@ -252,4 +252,21 @@ describe("the persisted blob's budget (MED-6)", () => {
     // The whole serialised blob stays far below the quota hazard, whatever the count.
     expect((localStorage.getItem(KEY) ?? "").length).toBeLessThan(1_300_000);
   });
+
+  it("the first overflowing thumb CLOSES the window — a later, smaller one is not admitted either", () => {
+    // The micro-confirm's counter-example to a per-thumb first-fit: spend most of the budget, then a
+    // chip whose thumbnail overflows, then a chip with a tiny one. First-fit would picture the tiny
+    // one while its predecessor goes without — a rail the owner reads as broken. The prefix rule says
+    // both go without.
+    const big = `data:image/jpeg;base64,${"A".repeat(200 * 1024)}`;
+    const tiny = `data:image/jpeg;base64,${"A".repeat(1024)}`;
+    for (let at = 0; at < 5; at++) addStaged(staged(`id-big-${at}`, { thumb: big })); // ~1000KB spent
+    addStaged(staged("id-overflow", { thumb: big })); // would pass 1M — closes the window
+    addStaged(staged("id-tiny", { thumb: tiny })); // fits by size, refused by the prefix rule
+    const persisted = rows();
+    expect(persisted).toHaveLength(7); // every row is still restorable
+    expect(persisted[5].thumb).toBeUndefined();
+    expect(persisted[6].thumb).toBeUndefined();
+    expect(persisted.slice(0, 5).every((f) => f.thumb !== undefined)).toBe(true);
+  });
 });

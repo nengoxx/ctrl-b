@@ -116,17 +116,29 @@ const THUMB_BUDGET_CHARS = 1024 * 1024;
 
 function projectAll(rows: readonly StagedAttachment[]): PersistedRow[] {
   let spent = 0;
+  // The first thumbnail that would overflow CLOSES the window — a later, smaller one is not admitted
+  // either (micro-confirm, MED-6 round 3). Per-thumb first-fit would keep more pictures, but a rail
+  // whose later chip is pictured while an earlier one is not reads as a bug; the PREFIX property is
+  // the one the owner can predict, and it is what the budget test pins.
+  let open = true;
   return rows.flatMap((file) => {
     if (file.status !== "staged" || file.attachmentId === undefined) return [];
-    const fits = file.thumb !== undefined && spent + file.thumb.length <= THUMB_BUDGET_CHARS;
-    if (fits && file.thumb !== undefined) spent += file.thumb.length;
+    let thumb: string | undefined;
+    if (file.thumb !== undefined && open) {
+      if (spent + file.thumb.length <= THUMB_BUDGET_CHARS) {
+        spent += file.thumb.length;
+        thumb = file.thumb;
+      } else {
+        open = false;
+      }
+    }
     return [
       {
         attachmentId: file.attachmentId,
         name: file.name,
         kind: file.kind,
         ...(file.bytes === undefined ? {} : { bytes: file.bytes }),
-        ...(fits && file.thumb !== undefined ? { thumb: file.thumb } : {}),
+        ...(thumb === undefined ? {} : { thumb }),
       },
     ];
   });
