@@ -217,7 +217,11 @@ answer to "does attribution record the drop": `SourceInfo` stays untouched (O-M8
   variant embeds the mic inside `.field` with the tall send outside it, so "clip beside mic/send"
   and "thumbnails riding the field" do not uniquely place either there — the S3 brief carries a
   ruled sheet placement (informed by R62), and the owner eyeballs it in S6.
-- **The owner's UX ruling (2026-09-01, second talk — binds S3's presentation):** the attach
+- **The owner's UX ruling (2026-09-01, second talk — binds S3's presentation):** *(S6 rider,
+  2026-09-03 — the owner's device round amended the STAGED-state placements: with a rail up, the
+  clip and the expand toggle live in the rail's control TAIL at its right edge ("right above the
+  send button"; the composer's Telegram corner) and leave the field row entirely; the no-rail
+  placements below are unchanged. Record: the §11 S6-fix-wave block.)* the attach
   affordance is a **clip icon beside the mic/send** (Telegram's placement) — and styled QUIET
   (owner, third talk): Telegram's gray clip is the reference, "not a full icon like the mic or
   send is … nothing flashy, just something clean" — a muted/ghost treatment, visually subordinate
@@ -571,3 +575,46 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   both RESOLVED with line proof, `--composer-h`/overlay/leak checks clean, zero new findings.
   S5 CLOSED — the build ladder S0–S5 is COMPLETE; S6 (the owner device round) is all that
   remains of Phase 22.**
+- **S6 OWNER ROUND → THE FIX WAVE (2026-09-03, `8dce2ca` + `4eb92e4` + `9a8b6d9` + `ee2bf55`;
+  design blind-reviewed BEFORE build, then Opus-built, then confirm-closed).** The owner's Android
+  round landed three findings, ruled in prose: **F1** the clip costs the FIELD width while a rail
+  is up → "right above the send button" · **F2** the expand toggle at the composer's top-right
+  corner, Telegram's design (the taller-ceiling BEHAVIOR explicitly accepted: "that's good
+  enough") · **F3** staged attachments vanish when Android Chrome discards the backgrounded tab.
+  **The Emma-lane design round (blind, sol high): BUILD WITH CHANGES — 6 MED · 1 LOW · open sweep
+  "none"**, load-bearing mechanisms explicitly cleared (the clip's mount-move pick sequence · the
+  scroller/tail split · the 409 stale-id path · mutation coverage). All seven main-seat-ACCEPTED;
+  two lean-substituted (MED-2 shrank the wave — NO no-rail placement moves, the sheet's corner IS
+  the tall send; MED-6's quota math re-derived for JPEG). **Built `8dce2ca`** (Opus, pinned
+  brief): the rail's control TAIL (`.kit-attach-scroll` `flex:1;min-width:0` + `.kit-attach-tail`
+  column — 28px toggle over a 36px clip, chips centred; exactly one clip/toggle mounted, the
+  variants render theirs only while `files.length === 0`) · `railStaged` as `useComposerChrome`'s
+  4th input in the measure deps (MED-3: the clip swap changes the field's rendered width) ·
+  **persistence** `ctrlb.attachments` `{files:[…]}` via `store/persist`, staged-only projection
+  (**`sending` rows DROPPED — MED-1: restoring one whose POST got its 202 would double-send via
+  the steer drain**), sanitizing restore (LOW-7, nothing cast, `att-restored-` ids) · **`thumb`**
+  (JPEG 256px/q0.7, the export worker's additive `thumb` arm on `ExportJob` — attachments-only
+  caller) SEPARATE from `previewUrl` (MED-4: the object-URL lifetime + ownership transfer
+  untouched; reads are `previewUrl ?? thumb`; the glyph face gained the IMG arm) · 64KB per-thumb
+  omission guard. Builder deviations accepted: `ExportJob` naming · chunked `btoa` inside
+  `runExport` (no new `ExportEnv` capability) · persist+emit folded as one `commit()` (no
+  reachable un-persisted exit). Main-seat rider `4eb92e4` (the `PendingAttachment.previewUrl` doc
+  admits the restored data-URL thumb; revoke on it is a spec no-op).
+  **Confirm round: 6/7 RESOLVED with line proof; MED-6 round 2 NOT RESOLVED (0.99, real):**
+  `max_files_per_message` has NO ceiling, so the 10-file arithmetic bounded nothing — 80 files ×
+  64KB pass the origin quota and `savePersisted` swallows the failure silently. **Fix `9a8b6d9`:**
+  the projection carries its OWN total budget (`THUMB_BUDGET_CHARS` = 1M chars, ~2MB UTF-16) —
+  thumbs admitted in rail order, every row past it persists picture-less (restorable, glyph face).
+  **Micro-confirm round 3 caught the fix's own defect:** per-row first-fit admitted a later
+  smaller thumb after an earlier overflow — not the prefix the comment claimed. **Fix `ee2bf55`:**
+  the first overflowing thumb CLOSES the window (`open` flag); the new test is the reviewer's
+  counter-example verbatim. **Final: RESOLVED, zero new findings.** Gate 6/6 green at tip; BE
+  2,145 · FE **2,841/167**; attachments e2e **10/10 both projects** incl. the NEW
+  stage→reload→send scenario (the F3 proof: the chip returns on its persisted thumbnail and still
+  sends). Residuals recorded, not built: keyboard focus drops to body when the row clip unmounts
+  at first staging (phone-first; revisit on an owner desktop complaint) · a discard mid-`sending`
+  forgets those chips BY DESIGN (MED-1's honest answer; the files stay claimable server-side by
+  re-attaching) · the sheet's NO-RAIL toggle stays at the text's top-right (its composer corner is
+  physically the send block — if the owner is on the sheet layout and still wants a corner, that
+  is a geometry conversation, not a bug). **The owner's re-round on dev rules the wave; their word
+  stays the close of Phase 22.**

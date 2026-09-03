@@ -12,7 +12,39 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-02, cont. — S4 + S5 CLOSED: THE PHASE 22 BUILD LADDER IS COMPLETE; supersedes everything below where it speaks)
+## Current state (2026-09-03 — THE S6 FIX WAVE: the owner's device-round findings built + council-CLOSED; supersedes everything below where it speaks)
+
+- **The S6 owner round LANDED (3 findings) and its fix wave ran the whole cadence in one session:**
+  design → blind Emma design round (BUILD WITH CHANGES, 6 MED · 1 LOW, sweep "none") → all seven
+  main-seat-ruled → Opus build **`8dce2ca`** → main-seat audit (+ rider `4eb92e4`) → confirm round
+  (6/7 RESOLVED; MED-6 survived TWO more rounds: `9a8b6d9` the projection's own 1M-char thumb
+  budget, `ee2bf55` the prefix rule) → **final micro-confirm: RESOLVED, zero new findings.** Full
+  record = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) §11's S6-fix-wave block (+ the §7 rider).
+- **What changed for the owner:** with files staged, the clip and the expand toggle live in the
+  rail's control TAIL at the composer's top-right (clip right above the send; Telegram corner for
+  the chevrons) and the field row gets its width back; staged attachments now SURVIVE the Android
+  tab discard (persisted rows + JPEG thumbs, restored on load; a >24h-stale chip refuses at send
+  with the server's own sentence). No-rail placements and the expand BEHAVIOR are unchanged
+  (owner-accepted).
+- **Gate at tip: 6/6 green — BE 2,145 · FE 2,841/167 · attachments e2e 10/10 both projects**
+  (incl. the new stage→reload→send scenario). Local `main` = origin `a558d43` + **32 commits**
+  (this docs commit included), **NOTHING PUSHED**. Prod untouched: **v1.7.7 @ `578ffa7`**.
+- **Dev units RUNNING** (:5434 + :5173); the wave is frontend-only, so :5173 serves it live.
+
+## ▶▶ NEXT (2026-09-03 — in order)
+
+1. **The owner re-rounds the S6 fixes on the phone (dev :5173):** the tail (clip above send ·
+   corner chevrons) · the app-switch survival (stage → camera app → back: the rail returns on
+   thumbnails) · the send after a restore. Their word closes Phase 22 (any new finding → fix wave
+   per the standing cadence).
+2. **The PUSH ruling** (owner's word) — **32 commits**: the 3 fleet-wave polish + the whole Phase
+   22 ladder + this fix wave. Then **release v1.7.8** (runbook §Release, Opus-operated · NO
+   config/DB migration · rollback v1.7.7 · pre-tag LOCAL e2e + the stale-pin sweep over the fleet
+   wave's labels AND the attachments/expand strings) → stop the dev units.
+3. **Standing menu unchanged:** owner device pair on prod + edit-a-prompt (easier post-release) ·
+   A13 design talk · parked ledger · **Phase 19 goes LAST** (1.8 RESERVED).
+
+## Prior state (2026-09-02, cont. — S4 + S5 CLOSED: THE PHASE 22 BUILD LADDER IS COMPLETE; superseded above where it speaks)
 
 - **S0–S5 are ALL council-closed** (every slice: pinned Opus build → main-seat audit → blind
   Emma round → fix wave on main-seat rulings → her explicit RESOLVED close; full records = the
