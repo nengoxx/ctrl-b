@@ -10,7 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 //   · the RAIL is INSIDE the composer root, ABOVE the input row, in every variant (grammar ②) — which
 //     is also what makes `--composer-h` account for it without a second measurement;
 //   · the CLIP is present in ALL THREE (the A8 chrome ruling; LineComposer's old "ATTACH — ABSENT"
-//     comment is superseded) and sits immediately LEFT of the mic;
+//     comment is superseded) and has TWO homes since the S6 fix wave (owner finding F1): immediately
+//     LEFT of the mic while NOTHING is staged, and the rail's TAIL once something is — the empty
+//     composer's placement is unchanged, and the old "always left of the mic" claim is superseded;
 //   · the MIC IS NEVER BLOCKED by staged files (owner ruling; R62 fact 4);
 //   · the send is HELD while a file is still uploading, and a FAILED chip holds nothing.
 
@@ -75,7 +77,7 @@ afterEach(() => {
 });
 
 describe.each(VARIANTS)("%s composer — the attachment chrome", (name, Variant) => {
-  it("renders the quiet clip, immediately LEFT of the mic", () => {
+  it("renders the quiet clip, immediately LEFT of the mic (with an EMPTY rail)", () => {
     render(<Variant />);
     const [at, micAt] = orderOf(clip(), mic());
     expect(at).toBeGreaterThanOrEqual(0);
@@ -159,6 +161,58 @@ describe.each(VARIANTS)("%s composer — the attachment chrome", (name, Variant)
     expect(disabled(send())).toBe(false);
   });
 });
+
+// THE S6 FIX WAVE, owner finding F1 (the phone round): with files staged the clip was costing the TEXT
+// FIELD horizontal space in every layout — worst in the line pill, which has the least to give. It moves
+// onto the rail's right edge, "right above the send button" (owner). The property that makes this safe is
+// the one pinned hardest below: EXACTLY ONE clip and EXACTLY ONE hidden picker are mounted at any moment,
+// so `useAttachments`'s ref can never point at a stale input and a pick can never be lost.
+describe.each(VARIANTS)(
+  "%s composer — the staged CLIP moves to the rail's tail (S6/F1)",
+  (name, Variant) => {
+    const tail = () => document.querySelector(".kit-attach-tail")!;
+
+    it("mounts exactly one clip and one picker, both inside the tail", () => {
+      stage();
+      render(<Variant />);
+      expect(document.querySelectorAll(".kit-cbtn.attach")).toHaveLength(1);
+      expect(document.querySelectorAll("input[type=file]")).toHaveLength(1);
+      expect(tail().contains(clip())).toBe(true);
+      expect(tail().contains(document.querySelector("input[type=file]"))).toBe(true);
+    });
+
+    it("…and it has LEFT the field/controls row it holds when nothing is staged", () => {
+      stage();
+      render(<Variant />);
+      // The layout's own ruled spot: the stacked controls row, the docked field, the line pill's row.
+      const home =
+        document.querySelector(".crow") ??
+        document.querySelector(".kit-composer.sheet .field") ??
+        document.querySelector(".line-row")!;
+      expect(home.contains(clip())).toBe(false);
+      expect(clip().parentElement).toBe(tail());
+    });
+
+    it("the tail rides the RAIL, beside the chips' scroller — never inside it", () => {
+      stage();
+      render(<Variant />);
+      const rail = document.querySelector(".kit-attach-rail")!;
+      const scroll = document.querySelector(".kit-attach-scroll")!;
+      expect(rail.contains(tail())).toBe(true);
+      expect(scroll.contains(tail())).toBe(false);
+      expect(scroll.getAttribute("aria-label")).toBe("attached files");
+    });
+
+    it("removing the last chip hands the clip back to the layout's own spot", () => {
+      stage("staged", "a.png");
+      render(<Variant />);
+      fireEvent.click(screen.getByRole("button", { name: "remove a.png" }));
+      expect(document.querySelector(".kit-attach-tail")).toBeNull();
+      expect(document.querySelectorAll(".kit-cbtn.attach")).toHaveLength(1);
+      expect(document.querySelectorAll("input[type=file]")).toHaveLength(1);
+    });
+  },
+);
 
 // MED-5 — sendability derives from READY rows only. The line variant is where this is VISIBLE (it is
 // the one that hides send at rest), and a send that could only ever post an empty message is worse

@@ -254,6 +254,14 @@ export interface ExportJob {
   rect: CropRect;
   bounds: ExportBounds;
   override?: ExportOverride;
+  /** ALSO produce a tiny JPEG data URL of the finished export (D68 S6 fix wave). OPTIONAL and
+   *  additive on purpose: only the ATTACHMENT pipeline asks for one — it needs a picture small enough
+   *  to sit in localStorage so a staged chip survives Android Chrome discarding the tab — and the
+   *  media manager's callers are untouched rather than charged for a feature they have no use for.
+   *  Produced HERE because this is where the decoded pixels already are: a second decode on the main
+   *  thread to make a 256px square would be exactly the frame-dropping work the worker exists to
+   *  avoid. A thumbnail that cannot be made is simply absent — it never fails the export. */
+  thumb?: { maxDimension: number; quality: number };
 }
 
 export interface ExportOutput {
@@ -266,6 +274,10 @@ export interface ExportOutput {
   /** Over the role's advisory byte bound even after the one step-down. **Delivered anyway** (§4):
    *  the bound is advice the gallery shows as a badge, never a gate that loses the owner's work. */
   overBudget: boolean;
+  /** The `thumb` arm's answer — absent when none was asked for, and absent when one was asked for and
+   *  could not be made (a surface the platform refused, an encoder that threw). A caller that wants a
+   *  thumbnail must therefore handle not getting one; nothing about the export itself changes. */
+  thumbDataUrl?: string;
 }
 
 /** A refusal the caller can put in front of the owner. Its own class so a pipeline failure is
@@ -318,6 +330,10 @@ export async function runExport(env: ExportEnv, job: ExportJob): Promise<ExportO
       if (smaller.size < blob.size) blob = smaller;
     }
     const type = await checkEncoded(blob);
+    // The optional thumbnail rides the SAME surface, before the `finally` frees it — one extra draw
+    // into a ~256px canvas, which is nothing beside the export that just ran.
+    const thumbDataUrl =
+      job.thumb === undefined ? undefined : await thumbnail(env, surface, job.thumb, made);
     return {
       blob,
       type,
@@ -325,12 +341,53 @@ export async function runExport(env: ExportEnv, job: ExportJob): Promise<ExportO
       width: surface.width,
       height: surface.height,
       overBudget: blob.size > job.bounds.bytes,
+      ...(thumbDataUrl === undefined ? {} : { thumbDataUrl }),
     };
   } finally {
     // `close()` is idempotent on an ImageBitmap, so the happy path's early release costs nothing here
     // and a throw before the first draw still frees the decode.
     image.close();
     for (const surface of made) surface.release();
+  }
+}
+
+/** The optional `thumb` arm (D68 S6): the finished export, redrawn small and encoded as a data URL.
+ *
+ *  BEST-EFFORT BY CONSTRUCTION — every failure returns `undefined` rather than throwing, because the
+ *  thumbnail is a convenience (a chip that survives a tab discard) and the export is the owner's file.
+ *  A platform that refuses the small surface, or an encoder that throws on it, must not lose the
+ *  picture that was already produced successfully one line above.
+ *
+ *  Data-URL'd from the BYTES with `btoa`, not through a `FileReader`: this module is pure and env-
+ *  injected, and a reader would be a third platform capability to thread through `ExportEnv` for one
+ *  base64 string. The surface joins `made` so the caller's `finally` releases it on every path. */
+async function thumbnail(
+  env: ExportEnv,
+  source: ExportSurface,
+  want: { maxDimension: number; quality: number },
+  made: ExportSurface[],
+): Promise<string | undefined> {
+  try {
+    // Never scaled UP: a picture already smaller than the ask is thumbnailed at its own size.
+    const scale = Math.min(1, want.maxDimension / Math.max(source.width, source.height));
+    const width = Math.max(1, Math.round(source.width * scale));
+    const height = Math.max(1, Math.round(source.height * scale));
+    const small = env.surface(width, height);
+    made.push(small);
+    if (!small.probe()) return undefined;
+    small.draw(source, { x: 0, y: 0, width: source.width, height: source.height });
+    const blob = await small.encode("image/jpeg", want.quality);
+    if (blob.size === 0) return undefined;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    // Chunked: `String.fromCharCode(...bytes)` blows the argument limit on anything but a tiny blob.
+    for (let at = 0; at < bytes.length; at += 0x8000)
+      binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+    // The encoder's OWN label, for the same reason the export names its file from the produced bytes:
+    // an unsupported `toBlob` type is spec-mandated to become PNG silently.
+    return `data:${blob.type || "image/jpeg"};base64,${btoa(binary)}`;
+  } catch {
+    return undefined;
   }
 }
 

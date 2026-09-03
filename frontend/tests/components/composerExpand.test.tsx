@@ -154,7 +154,12 @@ describe.each(VARIANTS)("%s composer — the expand affordance", (name, Variant)
   });
 });
 
-describe("the expand affordance's placement (per layout, one component)", () => {
+// THE PLACEMENT HAS TWO MODES since the S6 fix wave (owner finding F2, the phone round): the toggle
+// belongs at the COMPOSER's top-right corner, and WHICH element holds that corner depends on whether a
+// rail is staged. With nothing staged it is the field's, exactly as S5 ruled and unchanged here; with a
+// rail up the rail IS the composer's top row, so the toggle moves into the rail's TAIL — where the old
+// field-corner anchor would have rendered it BELOW the chips, which is what the owner saw.
+describe("the expand affordance's placement — NO RAIL (the S5 anchors, unchanged)", () => {
   it("the stacked bar puts it in the field, which holds nothing else", () => {
     mount(KitComposer);
     draftAt(3);
@@ -184,9 +189,57 @@ describe("the expand affordance's placement (per layout, one component)", () => 
     expect(toggle()!.parentElement).toBe(row);
     expect(row.parentElement).toBe(document.querySelector("#composer"));
   });
+});
 
-  it("…and a STAGED RAIL cannot land under it: the rail is the row's SIBLING, above it", () => {
+describe("the expand affordance's placement — STAGED (the S6 tail, F2)", () => {
+  const stageOne = () =>
     addStaged({ localId: "photo.png", name: "photo.png", kind: "image", status: "staged" });
+
+  describe.each(VARIANTS)("%s", (name, Variant) => {
+    it("puts the toggle in the rail's TAIL, and nowhere else", () => {
+      stageOne();
+      mount(Variant);
+      draftAt(3);
+      const tail = document.querySelector(".kit-attach-tail")!;
+      expect(tail).not.toBeNull();
+      expect(toggle()!.parentElement).toBe(tail);
+      expect(document.querySelectorAll(".kit-cbtn.expand")).toHaveLength(1); // still exactly one
+      // …and it is the rail's FIRST tail item, i.e. the composer's top-right corner — the clip sits
+      // under it, in the lane the send button occupies one row down.
+      expect(tail.firstElementChild).toBe(toggle());
+    });
+
+    it("…and no chip can slide under it: the chips scroll in their OWN box", () => {
+      stageOne();
+      mount(Variant);
+      draftAt(3);
+      const scroll = document.querySelector(".kit-attach-scroll")!;
+      const tail = document.querySelector(".kit-attach-tail")!;
+      expect(scroll.contains(tail)).toBe(false);
+      expect(scroll.getAttribute("role")).toBe("list"); // the list moved to the scroller with the chips
+      expect(scroll.contains(screen.getByRole("listitem"))).toBe(true);
+      expect(tail.parentElement).toBe(scroll.parentElement); // the rail row is the two of them
+    });
+
+    it("clearing the rail hands it back to the layout's own anchor — one instance either way", () => {
+      stageOne();
+      mount(Variant);
+      draftAt(3);
+      expect(document.querySelector(".kit-attach-tail")!.contains(toggle())).toBe(true);
+      act(() => clearStaged());
+      expect(document.querySelector(".kit-attach-tail")).toBeNull();
+      expect(document.querySelectorAll(".kit-cbtn.expand")).toHaveLength(1);
+      expect(toggle()!.parentElement).toBe(
+        document.querySelector(".kit-composer .field") ??
+          document.querySelector(".kit-composer.line .line-row"),
+      );
+    });
+  });
+
+  // The S5 MED-1 property, restated for the tail: the rail is still an ordinary block sibling ABOVE the
+  // line layout's row, and the toggle is inside it rather than absolutely positioned over it.
+  it("the line pill's rail stays the row's sibling, and carries the toggle itself", () => {
+    stageOne();
     mount(LineComposer);
     draftAt(3);
     const rail = document.querySelector(".kit-attach-rail")!;
@@ -194,8 +247,37 @@ describe("the expand affordance's placement (per layout, one component)", () => 
     expect(row.contains(rail)).toBe(false);
     expect(rail.parentElement).toBe(row.parentElement); // ordinary siblings — no flex reordering left
     expect(rail.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // The whole point: the toggle's box is the ROW's, so the rail above it cannot be underneath it.
-    expect(toggle()!.parentElement).toBe(row);
+    expect(rail.contains(toggle())).toBe(true);
+    expect(row.contains(toggle())).toBe(false);
+  });
+});
+
+// MED-3 (the S6 blind round, main-seat ruled): the clip leaving/entering the field row changes the
+// TEXTAREA's rendered width, and the measurement used to re-run only on draft/expanded/viewport — so a
+// draft sitting on the 2-line/3-line boundary kept a stale line count, hence a stale trigger, until the
+// next keystroke. `railStaged` is the fourth input to the same `measure()`.
+describe("staging RE-MEASURES the field (MED-3)", () => {
+  it("a 2-line draft that re-wraps to 3 when the clip leaves the row offers the trigger at once", () => {
+    mount(SheetComposer);
+    draftAt(2);
+    expect(toggle()).toBeNull();
+    // No keystroke: the file lands, the clip + toggle leave `.field` for the tail, the field is wider…
+    act(() => {
+      content = 3 * LINE_PX;
+      addStaged({ localId: "photo.png", name: "photo.png", kind: "image", status: "staged" });
+    });
+    expect(toggle()).not.toBeNull();
+  });
+
+  it("…and the HEIGHT follows the same re-measure", () => {
+    mount(SheetComposer);
+    draftAt(2);
+    expect(field().style.height).toBe(`${2 * LINE_PX}px`);
+    act(() => {
+      content = 3 * LINE_PX;
+      addStaged({ localId: "photo.png", name: "photo.png", kind: "image", status: "staged" });
+    });
+    expect(field().style.height).toBe(`${3 * LINE_PX}px`);
   });
 });
 

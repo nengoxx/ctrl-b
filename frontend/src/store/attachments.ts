@@ -4,15 +4,24 @@
 // A module store beside the draft (`store/composer.ts`), on the same dep-free `createStore` binding
 // (D23), and for the same two reasons: the composer is conditionally rendered (switching to
 // Conf/Utils unmounts it), and the SEND path — `lib/composer#runComposer` → `store/chat#sendMessage`
-// — has to read the staged ids from outside React entirely. Deliberately NOT persisted (unlike the
-// draft): a staged file is a server-side object with a lifetime (`staging_orphan_hours`) and an
-// object URL that dies with the page, so restoring a chip after a reload would show a thumbnail for
-// bytes that may no longer be claimable.
+// — has to read the staged ids from outside React entirely.
+//
+// **IT IS PERSISTED, exactly like the draft beside it (the S6 fix wave, owner finding F3 — this
+// OVERRULES the original "deliberately NOT persisted" ruling).** That ruling weighed a staged file's
+// server-side lifetime (`staging_orphan_hours`, 24h) and the object URL that dies with the page, and
+// concluded a restored chip might be showing a thumbnail for bytes nobody can claim. The owner's phone
+// round settled the frequency question the other way: **Android Chrome discards a backgrounded tab**,
+// and switching to the camera app is the ORDINARY way to attach a photo — so losing the rail is the
+// common case and a stale id is the rare one. A stale id is also cheap: it refuses at send with the
+// server's own 409 sentence, which the chat path already surfaces verbatim, and the chips are released
+// (§3's refuse-on-consumed contract, no validation round-trip needed). The dead object URL is answered
+// by `thumb` below — a small data URL the export worker produced, which is what a restored chip wears.
 //
 // STATE ONLY. The pipeline that fills it (admit → downscale → PUT) is `lib/attachments.ts`, and the
 // React surface is `hooks/useAttachments.ts` — same split as draft ↔ composer routing.
 
 import { createStore } from "./createStore";
+import { loadPersisted, savePersisted } from "./persist";
 import type { PendingAttachment } from "../types";
 
 /** What the BYTES turned out to be, in the server's own vocabulary (`AttachmentKind`). Pre-upload it
@@ -48,15 +57,111 @@ export interface StagedAttachment {
   status: AttachStatus;
   /** The claim credential, once the mint answers (§3). Only a `staged` row has one. */
   attachmentId?: string;
-  /** An object URL of the picked file, for an image chip's thumbnail. Revoked when the chip goes. */
+  /** An object URL of the picked file, for an image chip's thumbnail. Revoked when the chip goes.
+   *  LIFETIME UNCHANGED by the S6 wave: this is still the live preview with its existing ownership
+   *  transfer (`consumeStaged`), and `thumb` is a SEPARATE field rather than a replacement — the
+   *  moment the two were folded together, the bubble's object-URL hand-off would have to be re-ruled. */
   previewUrl?: string;
+  /** THE PERSISTED FACE (S6/F3) — a small JPEG data URL of an image row, produced by the export
+   *  worker's optional thumbnail arm. Unlike `previewUrl` it survives the page, which is what makes a
+   *  restored chip a picture instead of a glyph. Absent for text/PDF rows, for a picture the platform
+   *  could not thumbnail, and for one whose data URL came back over the persist budget (MED-6). */
+  thumb?: string;
   /** The NAMED refusal a `failed` chip renders (R62 §3.2's three-toasts lesson: say which rule). */
   error?: string;
   bytes?: number;
 }
 
+// ── the persisted projection (S6/F3) ─────────────────────────────────────────────────────────────
+
+const KEY = "ctrlb.attachments";
+
+/** One persisted row — the FIVE facts a chip can be rebuilt from. Everything else is either live
+ *  (`previewUrl`, `localId`) or meaningless after a reload (`status`, `error`). */
+interface PersistedRow {
+  attachmentId: string;
+  name: string;
+  kind: AttachKind;
+  bytes?: number;
+  thumb?: string;
+}
+
+/** The blob is an OBJECT wrapping the list, not the list itself: `loadPersisted`'s defaults-over-merge
+ *  refuses a top-level array outright (it would spread to junk numeric keys), so a bare array would
+ *  read back as the defaults every time. */
+interface PersistedAttachments {
+  files: PersistedRow[];
+}
+
+const EMPTY: PersistedAttachments = { files: [] };
+
+/** WHAT IS WORTH KEEPING — `staged` rows and only those.
+ *
+ *   · `uploading`/`failed` are not restorable: one has no id yet, the other never will have.
+ *   · **`sending` rows are DELIBERATELY DROPPED (reviewer MED-1).** A row is `sending` while a POST
+ *     naming its id is in flight; restoring one whose POST actually got its 202 would DOUBLE-SEND the
+ *     file — the steer drain claims one copy of the ids server-side while the restored copy's text
+ *     persists here without them. A reservation is a promise made to a request that is no longer in
+ *     this page's memory, so the honest answer after a discard is to forget it. `reserveStaged`
+ *     therefore drops those rows from the projection for free, and `releaseStaged` writes them back. */
+function project(file: StagedAttachment): PersistedRow[] {
+  if (file.status !== "staged" || file.attachmentId === undefined) return [];
+  return [
+    {
+      attachmentId: file.attachmentId,
+      name: file.name,
+      kind: file.kind,
+      ...(file.bytes === undefined ? {} : { bytes: file.bytes }),
+      ...(file.thumb === undefined ? {} : { thumb: file.thumb }),
+    },
+  ];
+}
+
+/** Rebuild one row, or drop it (reviewer LOW-7). Nothing is CAST: a blob written by an older build, a
+ *  half-truncated quota write, or a hand-edited localStorage entry must produce chips that are missing
+ *  rather than chips that are wrong — a row with a non-string `attachmentId` would reach the send path
+ *  and post junk. Its `localId` is minted here with its own prefix: the pipeline's ids are
+ *  `att-<time>-<seq>` and these are never in that sequence. */
+function restoreRow(raw: unknown, at: number): StagedAttachment[] {
+  if (raw === null || typeof raw !== "object") return [];
+  const row = raw as Partial<PersistedRow>;
+  const { attachmentId, name, kind, bytes, thumb } = row;
+  if (typeof attachmentId !== "string" || attachmentId === "") return [];
+  if (typeof name !== "string" || name === "") return [];
+  if (kind !== "image" && kind !== "text" && kind !== "pdf") return [];
+  return [
+    {
+      localId: `att-restored-${at}`,
+      name,
+      kind,
+      status: "staged",
+      attachmentId,
+      // A field that is not what it claims to be is DROPPED, not repaired — the row survives without it.
+      ...(typeof bytes === "number" && Number.isFinite(bytes) ? { bytes } : {}),
+      ...(typeof thumb === "string" && thumb !== "" ? { thumb } : {}),
+    },
+  ];
+}
+
+/** The rail as it was when the tab went away. Runs at module init — before any mutation can reach the
+ *  store, so there is no window in which a write could be lost or a restored row could clobber a live
+ *  one (the pipeline cannot run before the module that holds it exists). */
+function restore(): StagedAttachment[] {
+  const blob = loadPersisted<PersistedAttachments>(KEY, EMPTY);
+  if (!Array.isArray(blob.files)) return [];
+  return blob.files.flatMap(restoreRow);
+}
+
 const { emit, useStore } = createStore();
-let files: StagedAttachment[] = [];
+let files: StagedAttachment[] = restore();
+
+/** WRITE-THROUGH + NOTIFY, as one call — the single exit from every mutation in this file, which is
+ *  what makes "every mutating export persists" a structural property rather than a rule to remember:
+ *  there is no `emit()` left to reach without writing. */
+function commit(): void {
+  savePersisted<PersistedAttachments>(KEY, { files: files.flatMap(project) });
+  emit();
+}
 
 /** The snapshot, for the non-React readers (the send path, the admission cap). */
 export function stagedFiles(): readonly StagedAttachment[] {
@@ -97,7 +202,7 @@ export function reserveStaged(): string[] {
       ? { ...f, status: "sending" as const }
       : f,
   );
-  emit();
+  commit();
   return ids;
 }
 
@@ -115,25 +220,24 @@ export function releaseStaged(ids: readonly string[]): void {
   });
   if (!changed) return;
   files = next;
-  emit();
+  commit();
 }
 
 /** The PRESENTATIONAL snapshot of the rows one send reserved (MED-6): what the optimistic bubble
  *  shows while the durable message is being built. Facts the CHIP already has — no id, no bytes, no
- *  path — because this is a picture of the composer, not a claim about the store. */
+ *  path — because this is a picture of the composer, not a claim about the store.
+ *
+ *  `previewUrl ?? thumb` (S6/F3): a RESTORED row has no object URL — it was minted by a page that no
+ *  longer exists — so its persisted thumbnail is the picture the bubble shows for the round trip until
+ *  the durable part lands. Resolved HERE rather than in the bubble so `PendingAttachment` keeps one
+ *  field and `components/ChatThread` needs no second fallback. */
 export function stagedPreviews(ids: readonly string[]): PendingAttachment[] {
   const wanted = new Set(ids);
-  return files.flatMap((f) =>
-    f.attachmentId !== undefined && wanted.has(f.attachmentId)
-      ? [
-          {
-            name: f.name,
-            kind: f.kind,
-            ...(f.previewUrl !== undefined ? { previewUrl: f.previewUrl } : {}),
-          },
-        ]
-      : [],
-  );
+  return files.flatMap((f) => {
+    if (f.attachmentId === undefined || !wanted.has(f.attachmentId)) return [];
+    const shown = f.previewUrl ?? f.thumb;
+    return [{ name: f.name, kind: f.kind, ...(shown === undefined ? {} : { previewUrl: shown }) }];
+  });
 }
 
 /** Is a PUT still in flight? The send is HELD while one is (the R61 field convention) — a `failed`
@@ -144,7 +248,7 @@ export function isUploading(): boolean {
 
 export function addStaged(file: StagedAttachment): void {
   files = [...files, file];
-  emit();
+  commit();
 }
 
 /** Patch one row by `localId` — a no-op when it is gone (the owner removed the chip mid-upload,
@@ -152,7 +256,7 @@ export function addStaged(file: StagedAttachment): void {
 export function updateStaged(localId: string, patch: Partial<StagedAttachment>): void {
   if (!files.some((f) => f.localId === localId)) return;
   files = files.map((f) => (f.localId === localId ? { ...f, ...patch } : f));
-  emit();
+  commit();
 }
 
 /** Drop one chip and release its thumbnail. The staged file on the server is left for the sweep —
@@ -163,7 +267,7 @@ export function removeStaged(localId: string): void {
   if (gone === undefined) return;
   revoke(gone);
   files = files.filter((f) => f.localId !== localId);
-  emit();
+  commit();
 }
 
 /** Everything goes — the send consumed them, or the owner cleared the composer. */
@@ -171,7 +275,7 @@ export function clearStaged(): void {
   if (files.length === 0) return;
   for (const f of files) revoke(f);
   files = [];
-  emit();
+  commit();
 }
 
 /** Drop exactly the rows whose ids a send CONSUMED (§3: a claimed id can never be claimed again), and
@@ -189,7 +293,7 @@ export function consumeStaged(ids: readonly string[]): void {
   const kept = files.filter((f) => !(f.attachmentId !== undefined && spent.has(f.attachmentId)));
   if (kept.length === files.length) return;
   files = kept;
-  emit();
+  commit();
 }
 
 function revoke(file: StagedAttachment): void {

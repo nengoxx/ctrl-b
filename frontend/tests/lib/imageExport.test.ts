@@ -358,6 +358,62 @@ describe("runExport", () => {
     expect(failing.closed).toBeGreaterThan(0);
     expect(failing.released).toBeGreaterThan(0);
   });
+
+  // The OPTIONAL thumbnail arm (D68's S6 fix wave): composer attachments need a picture small enough to
+  // persist, so a staged chip survives Android discarding the tab. It is an arm rather than a second
+  // pipeline because the decoded pixels are already here — and it is OPTIONAL rather than always-on
+  // because the media manager's callers have no use for one and must not be charged for it.
+  it("makes a small JPEG data URL from the finished export — only when one is asked for", async () => {
+    const rec = recorder();
+    const out = await runExport(rec.env, {
+      file: new Blob([]),
+      sourceFormat: "jpeg",
+      rect: RECT,
+      bounds: BOUNDS,
+      thumb: { maxDimension: 100, quality: 0.5 },
+    });
+    expect(out.thumbDataUrl).toMatch(/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/);
+    // Drawn from the FINISHED 400×300 surface, scaled to the asked longest edge, at the asked quality —
+    // never a second decode of the source.
+    expect(rec.draws.at(-1)).toEqual({
+      width: 100,
+      height: 75,
+      rect: { x: 0, y: 0, width: 400, height: 300 },
+    });
+    expect(rec.encodes.at(-1)).toEqual({ type: "image/jpeg", quality: 0.5 });
+    expect(rec.decoded).toHaveLength(1);
+    // …and the extra surface is released with the rest.
+    expect(rec.released).toBeGreaterThan(1);
+
+    const plain = recorder();
+    const bare = await runExport(plain.env, {
+      file: new Blob([]),
+      sourceFormat: "jpeg",
+      rect: RECT,
+      bounds: BOUNDS,
+    });
+    expect(bare.thumbDataUrl).toBeUndefined();
+    expect("thumbDataUrl" in bare).toBe(false); // absent, not an undefined key on every export
+    expect(plain.encodes).toHaveLength(1);
+  });
+
+  it("a thumbnail the platform refuses is simply absent — the export still lands", async () => {
+    // Best-effort by construction: the picture is the owner's file and the thumbnail is a convenience,
+    // so a surface the platform will not make must never lose an export that already succeeded. The
+    // fake says NO to the small surface only — the export's own rungs are alive.
+    const rec = recorder();
+    const real = rec.env;
+    rec.env = { ...real, surface: (w, h) => ({ ...real.surface(w, h), probe: () => w > 100 }) };
+    const out = await runExport(rec.env, {
+      file: new Blob([]),
+      sourceFormat: "jpeg",
+      rect: RECT,
+      bounds: BOUNDS,
+      thumb: { maxDimension: 100, quality: 0.5 },
+    });
+    expect(out.blob).toBeDefined();
+    expect(out.thumbDataUrl).toBeUndefined();
+  });
 });
 
 describe("canvasSurface — the adapter's own contract", () => {

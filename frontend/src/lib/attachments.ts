@@ -61,6 +61,25 @@ export interface AttachmentPolicy {
   quality: number;
 }
 
+// ── the persisted chip thumbnail (the S6 fix wave, finding F3) ───────────────────────────────────
+//
+// Android Chrome discards a backgrounded tab, and the staged set is a module store: the owner came
+// back from the camera app to an empty rail while the FILES were still sitting in staging for 24h.
+// `store/attachments` now persists the staged rows, and a row is only worth restoring if it can be
+// SEEN — the object URL of the picked file dies with the page, so the persisted picture is a small
+// JPEG data URL produced by the export worker (off the main thread, out of the pixels it already had).
+
+/** The thumbnail's longest edge and its quality. 256 is a 56px chip at any device pixel ratio a phone
+ *  has, with room for the bubble snapshot to reuse it; 0.7 is the export's own `STEP_DOWN_QUALITY` —
+ *  the measured point where a photograph stops paying for its bytes (R54 §3.3). */
+const THUMB_MAX_DIMENSION = 256;
+const THUMB_QUALITY = 0.7;
+/** …and the budget one may occupy in the persisted blob (reviewer MED-6). A restorable row WITHOUT a
+ *  picture beats a persist that silently fails: `savePersisted` swallows a quota error by design, so
+ *  an oversized thumbnail would take the whole rail down with it rather than just itself. At the
+ *  policy maximum of 10 files this bounds the blob well under localStorage's ~5 MB. */
+const THUMB_MAX_CHARS = 64 * 1024;
+
 /** The class defaults from `config.py#AttachmentsCfg`, mirrored for the window BEFORE the first
  *  `/api/providers` read lands — never a second opinion about the numbers, just the same starting
  *  point the server would have. */
@@ -291,6 +310,10 @@ async function deliver(entry: Pending) {
   try {
     let blob: Blob = file;
     let ext = extensionOf(file.name);
+    /** The persisted face of an image chip (F3) — undefined for a text/PDF row (their chip is a glyph
+     *  and a name, both of which the persisted row already carries) and for a picture whose thumbnail
+     *  the platform could not make or that came back over the budget. */
+    let thumb: string | undefined;
     if (kind === "image") {
       const output: ExportOutput = await exportImage({
         file,
@@ -300,9 +323,16 @@ async function deliver(entry: Pending) {
         rect: { x: 0, y: 0, width: Number.MAX_SAFE_INTEGER, height: Number.MAX_SAFE_INTEGER },
         bounds: { bytes: policy.maxFileBytes, pixels: entry.pixels ?? policy.maxDimension ** 2 },
         override: { quality: policy.quality },
+        // The one caller that asks for the optional thumbnail arm (F3). Free here: the worker has the
+        // decoded pixels open anyway, and it is the only place they exist off the main thread.
+        thumb: { maxDimension: THUMB_MAX_DIMENSION, quality: THUMB_QUALITY },
       });
       blob = output.blob;
       ext = output.ext; // the name follows the BYTES the encoder produced, never the request (R54)
+      // MED-6 — an over-budget thumbnail is DROPPED, never truncated and never persisted: the row is
+      // still restorable, it just comes back wearing the kind's glyph instead of the picture.
+      if (output.thumbDataUrl !== undefined && output.thumbDataUrl.length <= THUMB_MAX_CHARS)
+        thumb = output.thumbDataUrl;
     }
     // Minted against an EMPTY taken-set: the server resolves collisions at claim, when the thread
     // finally exists (§3's candidate-name-at-mint). What `mintName` buys here is the rest of its
@@ -312,13 +342,15 @@ async function deliver(entry: Pending) {
       `/api/attachments/staging/${encodeURIComponent(name)}`,
       blob,
     );
-    // The SERVER's answers win: the name it admitted, and the kind/size its own sniff decided.
+    // The SERVER's answers win: the name it admitted, and the kind/size its own sniff decided. The
+    // thumbnail rides the SAME patch, so the row becomes `staged` and persistable in one write.
     updateStaged(localId, {
       status: "staged",
       attachmentId: row.attachment_id,
       name: row.name,
       kind: row.kind,
       bytes: row.bytes,
+      ...(thumb === undefined ? {} : { thumb }),
     });
   } catch (error) {
     updateStaged(localId, { status: "failed", error: uploadRefusal(error) });

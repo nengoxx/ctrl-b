@@ -66,6 +66,9 @@ function mintRefusal(status: number, detail: string) {
   } as unknown as Response;
 }
 
+/** The worker's answer. It carries the OPTIONAL thumbnail arm since the S6 fix wave (owner finding
+ *  F3): the persisted face of a staged chip, made from the pixels the export already had open. */
+const THUMB = "data:image/jpeg;base64,AAAAAAAA";
 const EXPORTED = {
   blob: new Blob([bytes("photo-64x48.png")], { type: "image/webp" }),
   type: "image/webp" as const,
@@ -73,6 +76,7 @@ const EXPORTED = {
   width: 320,
   height: 240,
   overBudget: false,
+  thumbDataUrl: THUMB,
 };
 
 beforeEach(() => {
@@ -290,6 +294,43 @@ describe("the delivery", () => {
       bytes: 4096,
     });
     expect(stagedIds()).toEqual(["a".repeat(32)]);
+  });
+
+  // THE PERSISTED FACE (the S6 fix wave, finding F3): Android Chrome discards a backgrounded tab, so a
+  // staged row has to be restorable — and a restored chip has to be LOOKABLE-AT, which the object URL
+  // cannot do (it dies with the page). The thumbnail rides the export it is made from; the live preview
+  // is untouched beside it (MED-4: two fields, so the bubble's object-URL hand-off is not re-ruled).
+  it("asks the export for a thumbnail, and the staged row keeps BOTH faces", async () => {
+    await offerFiles([picture()]);
+    const job = exporter.exportImage.mock.calls[0][0] as {
+      thumb?: { maxDimension: number; quality: number };
+    };
+    expect(job.thumb).toEqual({ maxDimension: 256, quality: 0.7 });
+    const [chip] = stagedFiles();
+    expect(chip.thumb).toBe(THUMB); // …what survives the page
+    expect(chip.previewUrl).toMatch(/^blob:/); // …and what the chip actually paints right now
+  });
+
+  it("a thumbnail over the persist budget is DROPPED — the row stages regardless (MED-6)", async () => {
+    // `savePersisted` swallows a quota error by design, so an oversized thumbnail would take the whole
+    // rail's persistence down with it silently. A restorable row without a picture beats that.
+    exporter.exportImage.mockResolvedValue({
+      ...EXPORTED,
+      thumbDataUrl: `data:image/jpeg;base64,${"A".repeat(65 * 1024)}`,
+    });
+    await offerFiles([picture()]);
+    const [chip] = stagedFiles();
+    expect(chip.status).toBe("staged");
+    expect(chip.thumb).toBeUndefined();
+    expect(chip.previewUrl).toMatch(/^blob:/); // the live chip is unaffected — only the persist is
+  });
+
+  it("…and an export that produced none simply stages without one", async () => {
+    const { thumbDataUrl: _none, ...noThumb } = EXPORTED;
+    exporter.exportImage.mockResolvedValue(noThumb);
+    await offerFiles([picture()]);
+    expect(stagedFiles()[0]).toMatchObject({ status: "staged" });
+    expect(stagedFiles()[0].thumb).toBeUndefined();
   });
 
   it("a text file is uploaded VERBATIM — no encoder is asked about it", async () => {

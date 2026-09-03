@@ -47,10 +47,14 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   const taRef = useRef<HTMLTextAreaElement>(null);
   // Attachments (D68 §7) — the shared controller; see KitComposer for the contract.
   const attach = useAttachments();
+  // A staged rail moves the clip + the toggle into the rail's TAIL (S6 fix wave, F1/F2) — the flag
+  // also tells the chrome hook the field's rendered width just changed (the clip leaves its row).
+  const staged = attach.files.length > 0;
   const { micPressed, pressMic, releaseMic, onKeyDown, expand } = useComposerChrome(
     taRef,
     draft,
     send,
+    staged,
   );
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
@@ -86,8 +90,10 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
             under it simply stack above it and the pill grows UPWARD exactly as multi-line text already
             makes it grow. (S3 faked this with `flex-wrap` + `order:-1` on the root while the root WAS
             the row — which left the absolutely-positioned expand toggle pinned to the root's top-right,
-            i.e. on top of the rail. The wrapper removes the reordering instead of patching the toggle.) */}
-        <AttachRail attach={attach} />
+            i.e. on top of the rail. The wrapper removes the reordering instead of patching the toggle.)
+            Since S6 the rail also CARRIES the clip + the toggle in its tail while it is up (F1/F2):
+            the row's top-right corner is no longer the composer's when a rail sits above it. */}
+        <AttachRail attach={attach} expand={expand} />
         {/* THE FIELD ROW — exactly what the single row always held (the plan-pill lane · the field · the
             trailing cluster), with the owner-eyeballed flex geometry (`align-items:flex-end` + the 6px
             gaps) moved onto it from the root VERBATIM. Its reason to exist is the toggle below: an
@@ -117,12 +123,15 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
               ROW is the field), so it hangs off `.line-row` and is absolutely positioned into THAT box's
               top-right corner — which the `flex-end` row leaves empty, since the mic/send ride the bottom.
               Anchoring it to the row rather than the root is the MED-1 fix: the root also holds the rail,
-              and its top-right corner is the RAIL's corner whenever a file is staged. */}
-          <ExpandToggle expand={expand} />
+              and its top-right corner is the RAIL's corner whenever a file is staged. WHILE NOTHING IS
+              STAGED only (S6/F2) — that RAIL's corner is precisely where the owner wants the control
+              once there is one, so with a rail up the tail renders it and this does not. */}
+          {!staged && <ExpandToggle expand={expand} />}
           {/* THE CLIP — trailing of the field, LEFT of the mic/send cluster (the ruled placement, and
               the spot the A8 placeholder comment always marked). Ungated: it is chrome, not a
-              capability. */}
-          <AttachClip attach={attach} size={18} />
+              capability — but WHILE NOTHING IS STAGED only (S6/F1): this row has the least width in
+              the app, and with a rail up the tail is a better home for the clip than the field is. */}
+          {!staged && <AttachClip attach={attach} size={18} />}
           {showMic && (
             <button
               type="button"

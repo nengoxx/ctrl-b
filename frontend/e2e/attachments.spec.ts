@@ -203,6 +203,49 @@ test("the bubble shows the sent photo while the POST is still in flight, then sw
   expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
 });
 
+// THE S6 FIX WAVE, owner finding F3: Android Chrome DISCARDS a backgrounded tab, and going to the
+// camera app is the ordinary way to attach a photo — so the owner came back to an empty rail while the
+// files were still sitting in staging for 24h. The staged rows are persisted now, and this is the arm no
+// jsdom test can execute: the REAL export worker has to have produced the thumbnail that a restored chip
+// paints (its object URL died with the page), and the restored id has to still be sendable.
+test("a staged photo survives a full reload — and the restored chip still sends", async ({
+  page,
+  pageErrors,
+}) => {
+  const sends = await mockAttachments(page);
+  await page.goto("/");
+  await page.locator("#tabbtn-agent").click();
+  await page.setInputFiles(filePicker, {
+    name: "photo-320x240.png",
+    mimeType: "image/png",
+    buffer: PNG,
+  });
+  await expect(page.locator(`${chip}[data-status="staged"]`)).toHaveCount(1);
+
+  await page.reload();
+  await page.locator("#tabbtn-agent").click();
+
+  // The chip is back, and it is a PICTURE: the persisted thumbnail the export worker made, not the
+  // object URL (which the discarded page took with it) and not the kind's glyph.
+  await expect(page.locator(`${chip}[data-status="staged"]`)).toHaveCount(1);
+  const face = page.locator(`${chip} img`);
+  await expect(face).toHaveAttribute("src", /^data:image\//);
+  await expect
+    .poll(() => face.evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0);
+
+  // …and the id it carries is the real claim credential, so the send the owner came back to make works.
+  await page.locator("#cmd-input").fill("look at this");
+  await page.locator("#cmd-send").click();
+  await expect.poll(() => sends[0]?.attachments).toEqual([MINTED.attachment_id]);
+  await expect(page.locator(chip)).toHaveCount(0);
+  await expect(page.locator(".chat-attach-shot img")).toHaveAttribute(
+    "src",
+    "/api/attachments/t1/photo.webp",
+  );
+  expect(pageErrors, pageErrors.join("; ")).toHaveLength(0);
+});
+
 test("a file this app does not take is refused BY NAME, and nothing is uploaded", async ({
   page,
   pageErrors,

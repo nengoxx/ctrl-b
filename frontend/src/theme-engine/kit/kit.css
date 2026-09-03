@@ -690,14 +690,39 @@ body[data-motion="reduced"] .kit-cbtn.mic.sending svg {
  * messenger); 56 is a phone tap target that still leaves the draft readable. ONE horizontally
  * scrolling row (Signal's `overflow-x` rail, not open-webui's wrap): a wrapping row would change the
  * composer's height per file and walk the whole chat log up the screen. */
+/* THE RAIL is a two-part flex ROW since the S6 fix wave (the owner's phone round, findings F1+F2): the
+ * scrolling chips, and a pinned control TAIL at the right edge holding the expand toggle over the clip.
+ * The split is the whole safety property — the chips scroll inside their OWN box, so no chip can slide
+ * under the controls however many are staged. Chips CENTRE vertically: with both controls up the tail
+ * is taller than the 56px chips, and a top-aligned row would read as a mistake. */
 .kit .kit-attach-rail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.kit .kit-attach-scroll {
   display: flex;
   gap: 8px; /* Signal's own 8px gutter */
   overflow-x: auto;
   overflow-y: hidden;
   padding-bottom: 2px; /* room for the scrollbar Gecko draws inside the box */
-  margin-bottom: 8px;
   scrollbar-width: thin;
+  /* the flexbox min-content gotcha again (the `.crow .grow` note): without `min-width:0` the scroller
+   * refuses to shrink below its chips and pushes the tail out of the bar. */
+  flex: 1;
+  min-width: 0;
+}
+/* THE TAIL — the composer's top-right corner while a rail is up, which is exactly what the owner
+ * pointed at ("right above the send button" for the clip; the Telegram corner for the toggle). A
+ * COLUMN, not a row: the toggle is the quieter, rarer control and takes the corner proper, the clip
+ * sits under it in the lane the send button occupies one row down. */
+.kit .kit-attach-tail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 .kit .kit-attach-chip {
   position: relative;
@@ -847,6 +872,20 @@ body[data-motion="reduced"] .kit .kit-attach-busy svg {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
+}
+/* THE TAIL's two occupants (S6 fix wave) — the fourth placement, and the only SHARED one: while a rail
+ * is up the clip and the toggle live in it whatever the layout is, so these rules come last and settle
+ * it for all three (the sheet's embedded 40px lane no longer matches — the clip has left `.field` —
+ * and the line's 36px above happens to agree).
+ *   · the toggle is IN-FLOW here, unlike the three absolute field-corner anchors below;
+ *   · the clip keeps a full 36px tap target: it is the frequently used control of the pair and must
+ *     never shrink into the toggle's 28px lane. */
+.kit .kit-attach-tail .kit-cbtn.expand {
+  position: static;
+}
+.kit .kit-attach-tail .kit-cbtn.attach {
+  width: 36px;
+  height: 36px;
 }
 /* LINE — the rail rides ABOVE the row, and needs NO rule of its own: since the D68 S5 fix wave the line
  * layout's flex row is `.line-row` (below), so the root is an ordinary block and the rail + its refusal

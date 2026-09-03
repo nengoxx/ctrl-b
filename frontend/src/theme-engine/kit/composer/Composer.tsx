@@ -45,11 +45,15 @@ export function KitComposer({
   // the picker, and `dropProps` puts paste + drag-drop on the surfaces below. Same three lines in
   // every variant; only the PLACEMENT differs (the owner-ruled geometry, per layout).
   const attach = useAttachments();
+  // A staged rail moves the clip + the expand toggle into the rail's TAIL (the S6 fix wave, F1/F2),
+  // which changes the FIELD's rendered width — hence the same flag reaching the chrome hook below.
+  const staged = attach.files.length > 0;
   // Shared presentational chrome (mic-press toggle, auto-grow + its expand ceiling, Enter-to-send) — §3.1.
   const { micPressed, pressMic, releaseMic, onKeyDown, expand } = useComposerChrome(
     taRef,
     draft,
     send,
+    staged,
   );
   // Slash autocomplete (A2) — headless; its `onKeyDown` wraps the chrome's so the popover gets the arrow/
   // Enter/Tab/Esc keys first and everything else still sends.
@@ -73,8 +77,10 @@ export function KitComposer({
         onDrop={attach.dropProps.onDrop}
       >
         {/* THE RAIL — above `.field` (grammar ②): the bar grows upward exactly as it does for a
-            second line of text, and `--composer-h` picks it up because it is a child of the root. */}
-        <AttachRail attach={attach} />
+            second line of text, and `--composer-h` picks it up because it is a child of the root.
+            It carries the CONTROL TAIL (the clip + the expand toggle) whenever it is up — see
+            AttachRail for the two owner findings that put them there. */}
+        <AttachRail attach={attach} expand={expand} />
         <div className="field">
           <textarea
             ref={taRef}
@@ -93,15 +99,19 @@ export function KitComposer({
           />
           {/* THE EXPAND TOGGLE — the field's top-right (R62 §5's convergent placement). `.field` here
               holds nothing but the textarea, so the corner is its own; the textarea gains a matching
-              lead-out in kit.css so no line of text runs under the button. */}
-          <ExpandToggle expand={expand} />
+              lead-out in kit.css so no line of text runs under the button. WHILE NOTHING IS STAGED
+              only (S6/F2): with a rail up, the composer's top-right corner is the rail's, and the
+              toggle lives in its tail instead — one instance, never two. */}
+          {!staged && <ExpandToggle expand={expand} />}
         </div>
         <div className="crow">
           {/* `controlsStart` slot — opens the controls row (left of mic/send), e.g. the plan pill. */}
           {controlsStart}
           <span className="grow" />
-          {/* THE CLIP — in the controls row, immediately LEFT of the mic (owner-ruled placement). */}
-          <AttachClip attach={attach} />
+          {/* THE CLIP — in the controls row, immediately LEFT of the mic (owner-ruled placement), and
+              WHILE NOTHING IS STAGED only (S6/F1: with a rail up the clip rides its tail, so it never
+              costs the row width beside the mic/send pair). The hidden picker travels with it. */}
+          {!staged && <AttachClip attach={attach} />}
           {sttReady && (
             <button
               type="button"

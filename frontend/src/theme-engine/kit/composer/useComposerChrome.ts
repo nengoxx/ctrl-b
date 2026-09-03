@@ -76,6 +76,13 @@ export function useComposerChrome(
   taRef: RefObject<HTMLTextAreaElement | null>,
   draft: string,
   send: () => void,
+  /** ANYTHING THAT CHANGES THE FIELD'S RENDERED WIDTH, as one boolean (the S6 fix wave, MED-3). Today
+   *  it is exactly "a rail is staged": the clip and the expand toggle move out of the field row into
+   *  the rail's tail when one is, so the textarea gets that lane back and a near-threshold draft
+   *  re-wraps. The measurement below keys on it for the same reason it keys on the viewport — the
+   *  rendered line count is a function of the WIDTH, and a stale count is a stale expand trigger and a
+   *  stale height. A second such input would join this flag rather than add a parameter. */
+  railStaged = false,
 ): ComposerChrome {
   // Mic press feedback as a JS-toggled class (not CSS :active — Fennec leaves :active wedged after a tap).
   const [micPressed, setMicPressed] = useState(false);
@@ -114,6 +121,12 @@ export function useComposerChrome(
   // ordering against that writer is safe by construction: this effect re-registers on every draft/expanded
   // change, and `expanded` — the only state that reads `--app-h` — cannot be reached without one, so our
   // listener is always the later registration and sees the freshly written value.
+  //
+  // IT RUNS ON `railStaged` TOO (S6 fix wave, MED-3), and for the third face of the same fact: staging
+  // the first file (or clearing the last) moves the clip + the toggle between the field row and the
+  // rail's tail, so the textarea's WIDTH changes with no keystroke — and a draft sitting on the
+  // 2-line/3-line boundary would otherwise keep a stale line count, hence a stale trigger and a stale
+  // height, until the next character. Same `measure()`, one more input.
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
@@ -154,7 +167,7 @@ export function useComposerChrome(
     }
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [draft, taRef, expanded]);
+  }, [draft, taRef, expanded, railStaged]);
 
   // LEAVABLE + SELF-RESETTING: the draft clearing IS the exit — send, the dictation auto-send (which
   // bypasses `useComposer().send` and clears the draft itself) and `/clear` all land here, so the next

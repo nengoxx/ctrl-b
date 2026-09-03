@@ -28,10 +28,14 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
   const taRef = useRef<HTMLTextAreaElement>(null);
   // Attachments (D68 §7) — the shared controller; see KitComposer for the contract.
   const attach = useAttachments();
+  // A staged rail moves the clip + the toggle into the rail's TAIL (S6 fix wave, F1/F2) — which in
+  // THIS layout genuinely changes the field's width, since both of them are embedded in `.field`.
+  const staged = attach.files.length > 0;
   const { micPressed, pressMic, releaseMic, onKeyDown, expand } = useComposerChrome(
     taRef,
     draft,
     send,
+    staged,
   );
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
@@ -49,8 +53,11 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
         onDrop={attach.dropProps.onDrop}
       >
         {/* THE RAIL — above `.sheet-row`, at the FULL bar width (the S3 ruling for this layout; the
-            docked bar is a column, so the rail is simply its first row and the dock grows upward). */}
-        <AttachRail attach={attach} />
+            docked bar is a column, so the rail is simply its first row and the dock grows upward),
+            carrying the control TAIL whenever it is up (S6/F1+F2). The bar's own top-right corner is
+            physically the TALL SEND block, which is why the toggle's rail-less anchor stays where it
+            is and only the rail's own corner is claimed here. */}
+        <AttachRail attach={attach} expand={expand} />
         <div className="sheet-row">
           <div className="field">
             {/* `controlsStart` slot — EMBEDDED at the field's leading edge, INSIDE the input surface
@@ -78,12 +85,15 @@ export function SheetComposer({ controlsStart, overlay, placeholder }: ComposerS
             {/* THE EXPAND TOGGLE — the field's top-right (R62 §5), but this layout's field is a ROW
                 whose trailing edge is the clip + embedded mic, so kit.css lands it at the TEXT's
                 top-right, clear of that control lane: a tall field centres the mic, and the two would
-                otherwise collide. */}
-            <ExpandToggle expand={expand} />
+                otherwise collide. WHILE NOTHING IS STAGED only (S6/F2) — with a rail up it is the
+                tail's, and the `:has()` lead-out that pads the text out from under it goes with it. */}
+            {!staged && <ExpandToggle expand={expand} />}
             {/* THE CLIP — EMBEDDED inside `.field` at the trailing edge, immediately LEFT of the
                 embedded mic: Telegram Android's own geography (R62 §2.1), and the ruled placement
-                for this layout. The tall send stays outside the field, as it always was. */}
-            <AttachClip attach={attach} size={20} />
+                for this layout. The tall send stays outside the field, as it always was. WHILE
+                NOTHING IS STAGED only (S6/F1): its 40px lane inside the field is exactly the width
+                the owner wanted back for the text once a rail is carrying the controls. */}
+            {!staged && <AttachClip attach={attach} size={20} />}
             {sttReady && (
               <button
                 type="button"
