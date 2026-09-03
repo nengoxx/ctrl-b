@@ -23,6 +23,13 @@
   112px resting ceiling (= the control column exactly, so the trio stacks at rest from 5 lines)
   **+ the live-height RETARGET** (mid-flight re-measures now retarget the transition instead of
   snapping it — MutationObserver-diagnosed, Chromium-probed green in both geometries).
+- **THE PUSH RULING LANDED (owner, 2026-09-03): the whole batch goes to origin; THE RELEASE IS
+  HELD** — the owner wants more items in before the v1.7.8 candidate ("we had some other things we
+  could do before that"). Re-rounds №4/№4b rode the tail (`9fd66ea`+`2d8f349`: the line field's
+  side paddings, closed on the owner's measured symmetry rule — text↔glyph = glyph↔pill-edge =
+  18/18/18, screenshot-proven). When the release DOES go: runbook §Release, Opus-operated · NO
+  migration · rollback v1.7.7 · pre-tag LOCAL e2e + the stale-pin sweep over the fleet wave's
+  labels AND the attachments/expand strings.
 - **⚠ THE FINAL Emma closing-probe round was STOPPED before a verdict** — every earlier finding is
   explicitly RESOLVED, but MED-1's closure rests on the main-seat's own probes; re-run her round on
   the owner's word if wanted. **The owner's word still closes Phase 22.**
