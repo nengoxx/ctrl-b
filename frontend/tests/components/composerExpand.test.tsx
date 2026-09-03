@@ -481,6 +481,30 @@ describe("the line pill's control stack (S6 re-round)", () => {
     expect(document.querySelector(".line-cluster.stack")).toBeNull();
   });
 
+  it("a needs change the stack SURVIVES re-baselines the band (final-confirm catch)", () => {
+    mount(LineComposer);
+    act(() => {
+      addStaged({ localId: "up", name: "up.png", kind: "image", status: "uploading" });
+    });
+    act(() => {
+      content = 4 * LINE_PX; // 88px — the mic-only column (36) stacks
+      setDraft("\n\n\n\n");
+    });
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull();
+    // The upload lands: needs jump 36 → 78, and 88px SURVIVES the strict re-test — which must also
+    // re-baseline the entry, or every later input keeps re-testing strictly and the hysteresis is
+    // quietly dead for the whole episode (the final confirm round's catch).
+    act(() => {
+      updateStaged("up", { status: "staged", attachmentId: "id-9" });
+    });
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull();
+    act(() => {
+      content = 3 * LINE_PX; // 66px — under the 77 entry, inside the re-baselined 55 exit band
+      setDraft("\n\n\n");
+    });
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull();
+  });
+
   it("THE LATCH: a stack whose own re-wrap breaks the fit PARKS — one flip per input, no loop", () => {
     mount(LineComposer);
     act(() => {

@@ -125,9 +125,13 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
     : stackNeeds !== entryNeeds.current // the column itself changed — strict re-test (MED-5)
       ? fits
       : holds;
+  // Re-baseline whenever the stack STANDS — entering, or SURVIVING a needs change on the strict
+  // re-test (the final confirm's catch: without this, a survived change left `entryNeeds` stale and
+  // every later input re-tested strictly, quietly killing the hysteresis for the whole episode).
+  // Idempotent while nothing changes, so it rides every render.
+  if (nextStacked) entryNeeds.current = stackNeeds;
   if (nextStacked !== stacked && flippedFor.current !== stackCtx) {
     flippedFor.current = stackCtx;
-    if (nextStacked) entryNeeds.current = stackNeeds;
     setStacked(nextStacked);
   }
 
