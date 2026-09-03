@@ -50,12 +50,24 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   // A staged rail moves the clip + the toggle into the rail's TAIL (S6 fix wave, F1/F2) — the flag
   // also tells the chrome hook the field's rendered width just changed (the clip leaves its row).
   const staged = attach.files.length > 0;
-  const { micPressed, pressMic, releaseMic, onKeyDown, expand } = useComposerChrome(
+  const { micPressed, pressMic, releaseMic, onKeyDown, expand, lines } = useComposerChrome(
     taRef,
     draft,
     send,
     staged,
   );
+  // THE CONTROL STACK (the owner's S6 re-round, 2026-09-03): once the field is TALL enough, the
+  // trailing controls turn vertical — mic over send, "same distance and everything" — and the text
+  // gets the freed lane back. "Only when there's space" (owner) is the whole rule, so the thresholds
+  // are ARITHMETIC, not taste: a line box is ~21.75px over 12px field padding and the buttons are
+  // 36px in 6px gaps, so mic+send (78px) fit inside the text's height from 3 rendered lines
+  // (77.25px — the pill gives back the sub-pixel), and expand+mic+send (112px) from 5 (120.75px).
+  // Which sum applies follows the rail: staged, the toggle lives in the rail's TAIL and the row
+  // stacks just the pair; unstaged, the toggle joins the TOP of the column (in-flow, the tail's own
+  // trick) — between 3 and 4 lines the trio does NOT fit, so the row stays horizontal there rather
+  // than growing the pill past the text. LINE layout only: stacked already keeps its controls in a
+  // full-width row below the field, and the sheet's send is a tall block outside it.
+  const stacked = lines >= (staged ? 3 : 5);
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
 
@@ -126,53 +138,69 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
               and its top-right corner is the RAIL's corner whenever a file is staged. WHILE NOTHING IS
               STAGED only (S6/F2) — that RAIL's corner is precisely where the owner wants the control
               once there is one, so with a rail up the tail renders it and this does not. */}
-          {!staged && <ExpandToggle expand={expand} />}
           {/* THE CLIP — trailing of the field, LEFT of the mic/send cluster (the ruled placement, and
               the spot the A8 placeholder comment always marked). Ungated: it is chrome, not a
               capability — but WHILE NOTHING IS STAGED only (S6/F1): this row has the least width in
-              the app, and with a rail up the tail is a better home for the clip than the field is. */}
+              the app, and with a rail up the tail is a better home for the clip than the field is.
+              It stays a ROW child, outside the stack below — the owner's stack is the action pair
+              (+ the toggle), and a four-deep column would push the threshold past six lines. */}
           {!staged && <AttachClip attach={attach} size={18} />}
-          {showMic && (
-            <button
-              type="button"
-              className={
-                "kit-cbtn mic line-btn" +
-                (mic.status === "recording" ? " rec" : "") +
-                (mic.status === "sending" ? " sending" : "") +
-                (micPressed ? " press" : "") +
-                (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
-              }
-              aria-label={MIC_LABEL[mic.status]}
-              title={MIC_LABEL[mic.status]}
-              aria-pressed={mic.status === "recording"}
-              disabled={mic.status === "unavailable" || mic.status === "sending"}
-              onPointerDown={pressMic}
-              onPointerUp={releaseMic}
-              onPointerCancel={releaseMic}
-              onPointerLeave={releaseMic}
-              onClick={mic.toggle}
-            >
-              {mic.status === "sending" ? <SpinnerIcon size={22} /> : <MicIcon size={22} />}
-            </button>
-          )}
-          {showSend && (
-            <button
-              type="button"
-              className={"kit-send line-btn" + (isStreaming ? " stop" : "")}
-              id="cmd-send"
-              aria-label={isStreaming ? "stop the running turn" : "send message"}
-              title={isStreaming ? "stop the running turn" : "send message"}
-              disabled={!isStreaming && uploadPending} // held while a file uploads (D68 §7)
-              onClick={isStreaming ? stopTurn : send}
-            >
-              {/* Streaming → the Stop square (D39, same swap as every composer). Idle → the SHARED
+          {/* THE TRAILING CLUSTER — one wrapper, two shapes (the S6 re-round). Horizontal it is
+              invisible: an unpositioned flex row with the row's own 6px gap, so the mic/send pair
+              lays out exactly as it did as bare row children — and the expand toggle, rendered
+              INSIDE it, still absolutely positions against `.line-row` (the nearest positioned
+              ancestor; the cluster deliberately is not one). Stacked (`.stack`, ≥3/≥5 rendered
+              lines per the arithmetic above) it turns into a bottom-anchored COLUMN — mic over
+              send, the toggle in-flow on top exactly as the rail tail carries it. */}
+          <div className={"line-cluster" + (stacked ? " stack" : "")}>
+            {/* THE EXPAND TOGGLE — the field's top-right (R62 §5). This layout has no `.field`
+                wrapper (the ROW is the field), so it hangs off `.line-row`'s top-right corner —
+                which the `flex-end` row leaves empty — until the stack claims it in-flow. WHILE
+                NOTHING IS STAGED only (S6/F2): with a rail up the tail renders it and this does
+                not. */}
+            {!staged && <ExpandToggle expand={expand} />}
+            {showMic && (
+              <button
+                type="button"
+                className={
+                  "kit-cbtn mic line-btn" +
+                  (mic.status === "recording" ? " rec" : "") +
+                  (mic.status === "sending" ? " sending" : "") +
+                  (micPressed ? " press" : "") +
+                  (mic.status === "unavailable" || mic.status === "insecure" ? " unavail" : "")
+                }
+                aria-label={MIC_LABEL[mic.status]}
+                title={MIC_LABEL[mic.status]}
+                aria-pressed={mic.status === "recording"}
+                disabled={mic.status === "unavailable" || mic.status === "sending"}
+                onPointerDown={pressMic}
+                onPointerUp={releaseMic}
+                onPointerCancel={releaseMic}
+                onPointerLeave={releaseMic}
+                onClick={mic.toggle}
+              >
+                {mic.status === "sending" ? <SpinnerIcon size={22} /> : <MicIcon size={22} />}
+              </button>
+            )}
+            {showSend && (
+              <button
+                type="button"
+                className={"kit-send line-btn" + (isStreaming ? " stop" : "")}
+                id="cmd-send"
+                aria-label={isStreaming ? "stop the running turn" : "send message"}
+                title={isStreaming ? "stop the running turn" : "send message"}
+                disabled={!isStreaming && uploadPending} // held while a file uploads (D68 §7)
+                onClick={isStreaming ? stopTurn : send}
+              >
+                {/* Streaming → the Stop square (D39, same swap as every composer). Idle → the SHARED
                   arrowhead glyph — optically re-centered via the `.kit-send.line-btn svg` nudge in
                   kit.css (the glyph's mass leans up-right, vapor's fix). */}
-              {/* Stop at 20 (not the arrowhead's 20-for-16 split): ~48% of the 36px circle — vapor's
+                {/* Stop at 20 (not the arrowhead's 20-for-16 split): ~48% of the 36px circle — vapor's
                   stop-to-button ratio (owner device round, v1.3.1). */}
-              {isStreaming ? <StopSquareIcon size={20} /> : <SendArrowheadIcon size={20} />}
-            </button>
-          )}
+                {isStreaming ? <StopSquareIcon size={20} /> : <SendArrowheadIcon size={20} />}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </>

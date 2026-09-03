@@ -77,11 +77,12 @@ afterEach(() => {
 });
 
 describe.each(VARIANTS)("%s composer — the attachment chrome", (name, Variant) => {
-  it("renders the quiet clip, immediately LEFT of the mic (with an EMPTY rail)", () => {
+  it("renders the quiet clip, LEFT of (before) the mic (with an EMPTY rail)", () => {
     render(<Variant />);
-    const [at, micAt] = orderOf(clip(), mic());
-    expect(at).toBeGreaterThanOrEqual(0);
-    expect(at).toBeLessThan(micAt); // same row, and the clip comes first
+    // Document order, not shared-parent order: the line pill wraps its mic/send in the `.line-cluster`
+    // (the S6 re-round's stack seam), so the clip and the mic are no longer siblings there — the
+    // ruled property is only that the clip comes FIRST.
+    expect(clip().compareDocumentPosition(mic()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // Quiet by ruling: the `.kit-cbtn` chassis with the `attach` modifier that drops its ring — never
     // the accent-filled `.kit-send` treatment.
     expect(clip().className).toContain("kit-cbtn attach");
@@ -261,19 +262,22 @@ describe("the layouts' own geometry", () => {
     render(<LineComposer controlsStart={<span data-testid="pill" />} />);
     expect([...composer().children].map((el) => el.className)).toEqual(["line-row"]); // nothing staged
     const kids = [...document.querySelector(".line-row")!.children];
-    // [plan-pill lane] [field] [the clip's hidden picker + clip] [mic] — the resting look with STT up and
-    // an empty draft, exactly the sequence the root used to hold.
+    // [plan-pill lane] [field] [the clip's hidden picker + clip] [the trailing cluster] — the resting
+    // look with STT up and an empty draft. Since the S6 re-round the mic/send pair lives inside
+    // `.line-cluster` (the stack seam), which horizontal is layout-invisible: an unpositioned flex row
+    // carrying the row's own gap.
     expect(kids.map((el) => el.tagName.toLowerCase())).toEqual([
       "div",
       "textarea",
       "input",
       "button",
-      "button",
+      "div",
     ]);
     expect(kids[0].className).toBe("line-controls");
     expect(kids[2].className).toBe("kit-attach-input");
     expect(kids[3].className).toContain("kit-cbtn attach");
-    expect(kids[4].className).toContain("kit-cbtn mic line-btn");
+    expect(kids[4].className).toBe("line-cluster");
+    expect(kids[4].querySelector(".kit-cbtn.mic.line-btn")).not.toBeNull();
   });
 
   it("the stacked bar puts it in the controls row, after the slack absorber", () => {

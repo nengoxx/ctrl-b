@@ -186,7 +186,13 @@ describe("the expand affordance's placement — NO RAIL (the S5 anchors, unchang
     expect(document.querySelector(".kit-composer.line .field")).toBeNull();
     const row = document.querySelector(".kit-composer.line .line-row")!;
     expect(row).not.toBeNull();
-    expect(toggle()!.parentElement).toBe(row);
+    // Since the S6 re-round the toggle's PARENT is the trailing `.line-cluster` — but the cluster is
+    // deliberately unpositioned (kit.css), so the positioning CONTEXT is still the row, which is what
+    // this pin has always meant. At 3 lines the cluster is not stacked (the trio doesn't fit), so the
+    // absolute corner rule is the one in force.
+    const cluster = toggle()!.parentElement!;
+    expect(cluster.className).toBe("line-cluster");
+    expect(cluster.parentElement).toBe(row);
     expect(row.parentElement).toBe(document.querySelector("#composer"));
   });
 });
@@ -231,7 +237,9 @@ describe("the expand affordance's placement — STAGED (the S6 tail, F2)", () =>
       expect(document.querySelectorAll(".kit-cbtn.expand")).toHaveLength(1);
       expect(toggle()!.parentElement).toBe(
         document.querySelector(".kit-composer .field") ??
-          document.querySelector(".kit-composer.line .line-row"),
+          // The line pill's own anchor since the S6 re-round: the unpositioned trailing cluster
+          // inside the row (the positioning context stays `.line-row`).
+          document.querySelector(".kit-composer.line .line-cluster"),
       );
     });
   });
@@ -376,5 +384,66 @@ describe("a real SEND leaves the mode (the primary exit)", () => {
     expect(toggle()).toBeNull();
     expect(field().style.height).toBe("");
     expect(field().style.maxHeight).toBe("");
+  });
+});
+
+// THE LINE PILL'S CONTROL STACK (the owner's S6 re-round, 2026-09-03): once the field is tall enough,
+// the trailing controls turn VERTICAL — mic over send, the toggle in-flow on top — and the text keeps
+// the freed lane. "Only when there's space" is the ruling, so the thresholds are the fit arithmetic
+// (LineComposer documents it): mic+send fit the text's height from 3 rendered lines, and the trio —
+// which only rides the row while nothing is staged — from 5. LINE layout only.
+describe("the line pill's control stack (S6 re-round)", () => {
+  const cluster = () => document.querySelector(".line-cluster");
+
+  it("stays horizontal while the trio does not fit, and stacks — toggle, mic, send — once it does", () => {
+    mount(LineComposer);
+    draftAt(4);
+    expect(cluster()!.classList.contains("stack")).toBe(false); // 78+28+gaps > 4 lines — no space yet
+    expect(toggle()).not.toBeNull(); // …the corner toggle is unaffected by the wait
+    draftAt(5);
+    const stack = document.querySelector(".line-cluster.stack")!;
+    expect(stack).not.toBeNull();
+    // The column top-to-bottom mirrors the rail tail: the quiet toggle, then mic, then send — and the
+    // toggle is INSIDE the stack (in-flow), not a second corner instance.
+    const kinds = [...stack.children].map((el) => el.className);
+    expect(kinds[0]).toContain("expand");
+    expect(kinds[1]).toContain("mic");
+    expect(kinds[2]).toContain("kit-send");
+    expect(document.querySelectorAll(".kit-cbtn.expand")).toHaveLength(1);
+  });
+
+  it("with a rail staged the toggle is the TAIL's, so the pair alone stacks — from 3 lines", () => {
+    mount(LineComposer);
+    act(() => {
+      addStaged({ localId: "photo.png", name: "photo.png", kind: "image", status: "staged" });
+    });
+    draftAt(2);
+    expect(cluster()!.classList.contains("stack")).toBe(false);
+    draftAt(3);
+    const stack = document.querySelector(".line-cluster.stack")!;
+    expect(stack).not.toBeNull();
+    const kinds = [...stack.children].map((el) => el.className);
+    expect(kinds[0]).toContain("mic");
+    expect(kinds[1]).toContain("kit-send");
+    // The toggle lives in the rail's tail, never in the stack, and there is still exactly one.
+    expect(stack.querySelector(".kit-cbtn.expand")).toBeNull();
+    expect(document.querySelectorAll(".kit-attach-tail .kit-cbtn.expand")).toHaveLength(1);
+  });
+
+  it("shrinking the draft unstacks — the wrapper stays, only its shape changes", () => {
+    mount(LineComposer);
+    draftAt(5);
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull();
+    draftAt(2);
+    expect(document.querySelector(".line-cluster.stack")).toBeNull();
+    expect(cluster()).not.toBeNull();
+  });
+
+  it("the stacked and sheet layouts have no cluster at all — this is the line pill's geometry", () => {
+    mount(KitComposer);
+    expect(cluster()).toBeNull();
+    cleanup();
+    mount(SheetComposer);
+    expect(cluster()).toBeNull();
   });
 });

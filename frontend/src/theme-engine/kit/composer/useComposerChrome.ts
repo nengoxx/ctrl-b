@@ -70,6 +70,10 @@ export interface ComposerChrome {
   onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
   /** The expand affordance (D68 S5) — hand it straight to `<ExpandToggle/>`. */
   expand: ExpandControl;
+  /** The draft's RENDERED line count — the same number the expand trigger keys on, exposed so a
+   *  layout can make its own has-the-field-grown decisions (the S6 re-round's control stack in
+   *  LineComposer). Read-only fallout of the measurement that already runs; nothing new is observed. */
+  lines: number;
 }
 
 export function useComposerChrome(
@@ -194,5 +198,6 @@ export function useComposerChrome(
       show: lines >= EXPAND_AT_LINES || expanded,
       toggle: () => setExpanded((v) => !v),
     },
+    lines,
   };
 }

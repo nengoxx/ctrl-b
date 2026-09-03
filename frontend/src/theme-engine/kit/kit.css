@@ -953,6 +953,30 @@ body[data-motion="full"] .kit .kit-cbtn.expand {
   top: 8px;
   right: 8px;
 }
+/* LINE — THE TRAILING CLUSTER (the owner's S6 re-round, 2026-09-03): one wrapper, two shapes.
+ * Horizontal it is INVISIBLE — an unpositioned flex row with the row's own 6px gap, so the mic/send
+ * pair lays out exactly as it did as bare row children, and an expand toggle rendered inside it still
+ * absolutely anchors to `.line-row` (the nearest positioned ancestor; the cluster must never gain
+ * `position` or it would capture the corner). Stacked (`.stack` — LineComposer sets it once the
+ * rendered line count says the column FITS inside the text's own height: mic+send from 3 lines,
+ * expand+mic+send from 5; the arithmetic lives with the thresholds) it turns into a bottom-anchored
+ * COLUMN: mic over send at the same 36px targets and 6px distance ("same distance and everything" —
+ * owner), the toggle in-flow on top exactly as the rail tail carries it, and the text keeps the freed
+ * lane. */
+.kit-composer.line .line-cluster {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.kit-composer.line .line-cluster.stack {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+.kit .kit-composer.line .line-cluster.stack .kit-cbtn.expand {
+  position: static;
+}
 
 /* The STOP square is symmetric — the arrowhead optical nudges (`.tall svg` / `.line-btn svg` /
  * the glass-skin rule, all translate(-1px,1px) for a glyph whose mass leans up-right) must NOT
