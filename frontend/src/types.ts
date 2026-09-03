@@ -295,8 +295,11 @@ export interface AttachmentPart {
 export interface PendingAttachment {
   name: string;
   kind: "image" | "text" | "pdf";
-  /** The LIVE object URL of the picked file. OWNED BY THE BUBBLE from the moment the send is accepted
-   *  (`store/chat`'s transfer point) and revoked when the durable bubble replaces it. */
+  /** The LIVE object URL of the picked file — or, for a row RESTORED after a tab discard (S6/F3),
+   *  its persisted data-URL thumbnail: the object URL died with the page that minted it. OWNED BY THE
+   *  BUBBLE either way from the moment the send is accepted (`store/chat`'s transfer point) and
+   *  revoked when the durable bubble replaces it — `URL.revokeObjectURL` on a data URL is a spec
+   *  no-op, so the sweep needs no `blob:` filter. */
   previewUrl?: string;
 }
 
