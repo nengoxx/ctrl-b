@@ -1443,8 +1443,10 @@ body[data-motion="reduced"] .kit-composer.line .kit-cbtn.mic.line-btn.rec {
   position: relative;
 }
 /* override the base `.kit-composer textarea` display:block/width:100% → single-line flex child; grows to
- * the shared 96px ceiling (useComposerChrome). The 10px lead replaces the bar's old 16px left padding
- * (total ≈16px from the edge with no pill; after a pill, the row gap + 10px reads right). */
+ * the shared ceiling (useComposerChrome). The side paddings are 4/2 since the S6 re-round №4 (owner:
+ * the margins to the menu lane and the clip read too wide, "the text could have a little more space") —
+ * with the row's own 6px gap the text sits ~10px off the leading controls and ~8px off the clip,
+ * roughly even, down from 16/10. (The old 10px lead dated from replacing the bar's 16px padding.) */
 .kit-composer.line textarea {
   width: auto;
   flex: 1;
@@ -1453,7 +1455,7 @@ body[data-motion="reduced"] .kit-composer.line .kit-cbtn.mic.line-btn.rec {
    * overflows and the stadium's overflow:hidden CLIPS the trailing mic/send. min-width:0 lets the field shrink;
    * `.line-controls` + `.line-btn` are already flex-shrink:0, so the buttons stay snapped to the trailing cap. */
   min-width: 0;
-  padding: 6px 4px 6px 10px;
+  padding: 6px 2px 6px 4px;
 }
 /* the `controlsStart` container (the in-row plan pill, leading edge). No left padding — the bar leads with
  * its own 16px. Collapses when the theme passes the slot but the pill renders null (pinned placement). NO
