@@ -148,6 +148,8 @@ export function useComposerChrome(
     const ta = taRef.current;
     if (!ta) return;
     const measure = () => {
+      // What this hook wrote LAST time ("" on the first pass) — the height transition's FROM (below).
+      const prev = ta.style.height;
       ta.style.height = "";
       if (ta.value === "") {
         ta.style.maxHeight = "";
@@ -168,6 +170,15 @@ export function useComposerChrome(
       // otherwise win over this inline height), so the resting path writes exactly what it always did.
       ta.style.maxHeight = expanded ? ceil + "px" : "";
       const painted = Math.min(ceil, ta.scrollHeight);
+      // THE GROWTH ANIMATES (owner, S6 re-round №2 — Telegram's smooth grow): kit.css carries a
+      // motion-gated `transition: height` for this write, but the scrollHeight read above forced a
+      // layout AT `auto`, which would become the transition's FROM and erase the animation (auto
+      // resolves to the destination). So the PREVIOUS height is restored and committed with one
+      // more forced layout, and the new value is written against that — the standard
+      // autogrow-with-transition dance. Under reduced motion the transition is off and these two
+      // writes coalesce into exactly the old behaviour.
+      ta.style.height = prev;
+      void ta.offsetHeight;
       ta.style.height = painted + "px";
       setFieldPx(painted);
       setFieldCeilPx(ceil);

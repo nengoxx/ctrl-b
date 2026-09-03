@@ -45,7 +45,9 @@ export function ExpandToggle({ expand }: { expand: ExpandControl }) {
       aria-controls="cmd-input"
       onClick={expand.toggle}
     >
-      <ExpandChevronsIcon size={16} dir={expand.on ? "down" : "up"} />
+      {/* 20 in the 28px chassis, not the original 16 (owner S6 re-round №2: "the icon is a little bit
+          small") — the glyph fills the button the way Telegram's own 28px control does. */}
+      <ExpandChevronsIcon size={20} dir={expand.on ? "down" : "up"} />
     </button>
   );
 }
