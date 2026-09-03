@@ -74,10 +74,11 @@ export interface AttachmentPolicy {
  *  the measured point where a photograph stops paying for its bytes (R54 §3.3). */
 const THUMB_MAX_DIMENSION = 256;
 const THUMB_QUALITY = 0.7;
-/** …and the budget one may occupy in the persisted blob (reviewer MED-6). A restorable row WITHOUT a
- *  picture beats a persist that silently fails: `savePersisted` swallows a quota error by design, so
- *  an oversized thumbnail would take the whole rail down with it rather than just itself. At the
- *  policy maximum of 10 files this bounds the blob well under localStorage's ~5 MB. */
+/** …and the budget ONE thumbnail may occupy (reviewer MED-6). A restorable row WITHOUT a picture
+ *  beats a persist that silently fails: `savePersisted` swallows a quota error by design, so an
+ *  oversized thumbnail would take the whole rail down with it rather than just itself. The per-thumb
+ *  cap alone is NOT the whole bound — `max_files_per_message` has no ceiling — so the persisted
+ *  projection enforces its own TOTAL budget too (`store/attachments`' `THUMB_BUDGET_CHARS`). */
 const THUMB_MAX_CHARS = 64 * 1024;
 
 /** The class defaults from `config.py#AttachmentsCfg`, mirrored for the window BEFORE the first

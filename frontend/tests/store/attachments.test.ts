@@ -219,16 +219,37 @@ describe("the load — nothing is cast (LOW-7)", () => {
 });
 
 // MED-6 — the thumbnails are the only unbounded thing in the blob, and `savePersisted` swallows a quota
-// error BY DESIGN (a failed write must never break the in-memory state). So the budget is pinned by
-// arithmetic here rather than discovered on a phone: a rail at the policy maximum, each chip carrying a
-// thumbnail at the 64KB ceiling `lib/attachments` enforces, must still be a blob localStorage takes.
+// error BY DESIGN (a failed write must never break the in-memory state). `max_files_per_message` is a
+// config knob with NO ceiling (confirm round, MED-6 round 2), so no file count is "the maximum" — the
+// projection enforces its OWN total thumbnail budget, and these tests pin that mechanism rather than
+// any count arithmetic.
 describe("the persisted blob's budget (MED-6)", () => {
   it("ten staged files with 25KB thumbnails serialise well under 1MB", () => {
     const thumb = `data:image/jpeg;base64,${"A".repeat(25 * 1024)}`;
     for (let at = 0; at < 10; at++) addStaged(staged(`id-${at}`, { thumb }));
-    expect(stagedFiles()).toHaveLength(10); // the `max_files_per_message` maximum
+    expect(stagedFiles()).toHaveLength(10); // the `max_files_per_message` DEFAULT — not a ceiling
     const size = (localStorage.getItem(KEY) ?? "").length;
     expect(size).toBeGreaterThan(250_000); // the thumbnails really are in there…
     expect(size).toBeLessThan(1_000_000); // …and ten of them are a fraction of the ~5MB origin quota
+  });
+
+  it("a rail past the thumb budget keeps EVERY row and sheds pictures from the tail, never the head", () => {
+    // 80 chips, each thumbnail at lib/attachments' 64KB per-thumb ceiling — the configuration the
+    // confirm round named: unbounded by count, this would pass the ~5MB origin quota and the whole
+    // write would be silently dropped. The projection's own budget is what closes it.
+    const thumb = `data:image/jpeg;base64,${"A".repeat(64 * 1024)}`;
+    for (let at = 0; at < 80; at++) addStaged(staged(`id-${at}`, { thumb }));
+    const blob = JSON.parse(localStorage.getItem(KEY) ?? "{}") as {
+      files: { attachmentId: string; thumb?: string }[];
+    };
+    // Every row persists — the budget sheds PICTURES, never restorable rows.
+    expect(blob.files).toHaveLength(80);
+    // The kept thumbnails are a PREFIX of the rail (the chips the owner looks for first), and at
+    // least one fit — the budget admits thumbs until it is spent, in order.
+    const lastKept = blob.files.findLastIndex((f) => f.thumb !== undefined);
+    expect(lastKept).toBeGreaterThanOrEqual(0);
+    expect(blob.files.slice(0, lastKept + 1).every((f) => f.thumb !== undefined)).toBe(true);
+    // The whole serialised blob stays far below the quota hazard, whatever the count.
+    expect((localStorage.getItem(KEY) ?? "").length).toBeLessThan(1_300_000);
   });
 });

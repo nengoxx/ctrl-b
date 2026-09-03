@@ -104,17 +104,32 @@ const EMPTY: PersistedAttachments = { files: [] };
  *     persists here without them. A reservation is a promise made to a request that is no longer in
  *     this page's memory, so the honest answer after a discard is to forget it. `reserveStaged`
  *     therefore drops those rows from the projection for free, and `releaseStaged` writes them back. */
-function project(file: StagedAttachment): PersistedRow[] {
-  if (file.status !== "staged" || file.attachmentId === undefined) return [];
-  return [
-    {
-      attachmentId: file.attachmentId,
-      name: file.name,
-      kind: file.kind,
-      ...(file.bytes === undefined ? {} : { bytes: file.bytes }),
-      ...(file.thumb === undefined ? {} : { thumb: file.thumb }),
-    },
-  ];
+/** …and of what IS kept, how much may be PICTURES. The row facts are a couple hundred characters
+ *  each; the thumbnails are the only thing in the blob that GROWS, and `max_files_per_message` is a
+ *  config knob with no ceiling (confirm-round MED-6: a count-based bound is no bound at all — 80
+ *  files at the 64KB per-thumb ceiling reach the ~5MB origin quota, and `savePersisted` swallows the
+ *  quota error BY DESIGN, taking the whole rail down silently). So the projection carries its own
+ *  budget: thumbnails are included IN RAIL ORDER until this many characters are spent, and every row
+ *  past that persists WITHOUT its picture — restorable, wearing the kind's glyph. 1M characters is
+ *  ~2MB of the quota in UTF-16 terms, headroom for every other `ctrlb.*` key at any configuration. */
+const THUMB_BUDGET_CHARS = 1024 * 1024;
+
+function projectAll(rows: readonly StagedAttachment[]): PersistedRow[] {
+  let spent = 0;
+  return rows.flatMap((file) => {
+    if (file.status !== "staged" || file.attachmentId === undefined) return [];
+    const fits = file.thumb !== undefined && spent + file.thumb.length <= THUMB_BUDGET_CHARS;
+    if (fits && file.thumb !== undefined) spent += file.thumb.length;
+    return [
+      {
+        attachmentId: file.attachmentId,
+        name: file.name,
+        kind: file.kind,
+        ...(file.bytes === undefined ? {} : { bytes: file.bytes }),
+        ...(fits && file.thumb !== undefined ? { thumb: file.thumb } : {}),
+      },
+    ];
+  });
 }
 
 /** Rebuild one row, or drop it (reviewer LOW-7). Nothing is CAST: a blob written by an older build, a
@@ -159,7 +174,7 @@ let files: StagedAttachment[] = restore();
  *  what makes "every mutating export persists" a structural property rather than a rule to remember:
  *  there is no `emit()` left to reach without writing. */
 function commit(): void {
-  savePersisted<PersistedAttachments>(KEY, { files: files.flatMap(project) });
+  savePersisted<PersistedAttachments>(KEY, { files: projectAll(files) });
   emit();
 }
 
