@@ -91,26 +91,45 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   //   · the TRIO (the no-rail case adds the 28px toggle: 112px) does NOT fit a resting field at all —
   //     it engages only while the owner has EXPANDED, where the painted height can actually cover it;
   //   · the sum counts what actually RENDERS (re-round MED-3): no STT → no mic lane in the arithmetic.
-  // THE MEMORY (re-round MED-1): stacking frees ~42px of width, the text re-wraps, and the freshly
-  // re-measured painted-px can fall back under the entry bar — a strict predicate would flip per
-  // keystroke at the boundary. So entry is strict (fits, within the 1px grace) while exit gives ONE
-  // LINE of hysteresis, the exact amount a lane's width is worth — GUARDED by the ceiling: the band
-  // exists to absorb the stack's own re-wrap, never to hold a column the CURRENT ceiling cannot
-  // paint, so collapsing the expand mode (or the column's needs growing past the ceiling) lets go
-  // on the next measurement regardless of the band. Written as the React adjust-state-during-render
-  // idiom (never an effect: that is the cascading-render idiom eslint rightly flags — and a ref
-  // would not re-render, so the hook's width key would lag a render and the flip's own re-measure
-  // would never fire; stale-measurement renders resolve themselves one measure later by the same
-  // rule).
+  // THE MEMORY (re-round MED-1, both rounds): stacking frees ~42px of width, the text re-wraps, and
+  // the freshly re-measured painted-px can fall back under the entry bar — a strict predicate would
+  // flip per keystroke, and NO band is provably wide enough (a narrow field can re-wrap more than
+  // one line — the confirm round's residual). So the loop is closed STRUCTURALLY, not by tuning:
+  //   · entry is strict (fits, with 1px grace for the 77.25-vs-78 sub-pixel, accepted);
+  //   · exit gives one 22px line of hysteresis, GUARDED by the ceiling (the band absorbs the
+  //     stack's own re-wrap, never holds a column the CURRENT ceiling cannot paint — which is what
+  //     un-stacks on mode collapse);
+  //   · a NEEDS change while stacked re-tests STRICTLY (confirm MED-5: an upload completing makes
+  //     send appear — a 78px pair must not ride a 36px entry's band on a 55px field);
+  //   · and THE LATCH: the decision may flip at most ONCE per change of its EXTERNAL inputs (the
+  //     draft, the rail, the mode, the column's needs). A flip re-measures at the new width (the
+  //     hook's width key), and whatever that self-induced measurement says, it cannot flip the
+  //     state back — the pathological geometry parks on the first answer until a real input moves.
+  //     Every oscillation dies here by construction, whatever the thresholds miss. (A rotation
+  //     changes no input, so a boundary case can sit one state stale until the next keystroke —
+  //     accepted, recorded.)
+  // Written as the React adjust-state-during-render idiom (never an effect: the cascading-render
+  // idiom eslint rightly flags — and a ref would not re-render, so the hook's width key would lag).
   const GAP = 6; // the row's own gap — "same distance and everything" (owner)
   const stackNeeds =
     [!staged && 28, showMic && 36, showSend && 36]
       .filter((h): h is number => h !== false)
       .reduce((sum, h, at) => sum + h + (at > 0 ? GAP : 0), 0) || Number.MAX_SAFE_INTEGER; // an empty column never stacks
+  const entryNeeds = useRef(0); // what the column needed when the stack ENGAGED
+  const flippedFor = useRef(""); // the input-context the latch already spent its flip on
+  const stackCtx = `${draft}|${staged}|${expand.on}|${stackNeeds}`;
   const fits = fieldPx >= stackNeeds - 1; // the strict entry test (1px grace: 77.25 vs 78)
   const holds = fieldPx >= stackNeeds - 23 && fieldCeilPx >= stackNeeds - 1;
-  const nextStacked = stacked ? holds : fits;
-  if (nextStacked !== stacked) setStacked(nextStacked);
+  const nextStacked = !stacked
+    ? fits
+    : stackNeeds !== entryNeeds.current // the column itself changed — strict re-test (MED-5)
+      ? fits
+      : holds;
+  if (nextStacked !== stacked && flippedFor.current !== stackCtx) {
+    flippedFor.current = stackCtx;
+    if (nextStacked) entryNeeds.current = stackNeeds;
+    setStacked(nextStacked);
+  }
 
   return (
     <>

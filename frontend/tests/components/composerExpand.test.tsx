@@ -30,7 +30,7 @@ vi.mock("../../src/store/chat", async (importActual) => {
 import { KitComposer } from "../../src/theme-engine/kit/composer/Composer";
 import { LineComposer } from "../../src/theme-engine/kit/composer/LineComposer";
 import { SheetComposer } from "../../src/theme-engine/kit/composer/SheetComposer";
-import { addStaged, clearStaged } from "../../src/store/attachments";
+import { addStaged, clearStaged, updateStaged } from "../../src/store/attachments";
 import { clearDraft, setDraft } from "../../src/store/composer";
 
 const VARIANTS = [
@@ -458,6 +458,54 @@ describe("the line pill's control stack (S6 re-round)", () => {
     draftAt(2); // 44 < 55 — a real shrink lets go; the wrapper stays, only its shape changes
     expect(document.querySelector(".line-cluster.stack")).toBeNull();
     expect(cluster()).not.toBeNull();
+  });
+
+  it("a column whose NEEDS grow while stacked re-tests strictly — no band ride-through (MED-5)", () => {
+    mount(LineComposer);
+    // A rail whose one file is still UPLOADING + a whitespace draft: nothing is sendable, so the
+    // column is the mic alone (36px) and a ~3-line field stacks it.
+    act(() => {
+      addStaged({ localId: "up", name: "up.png", kind: "image", status: "uploading" });
+    });
+    act(() => {
+      content = 3 * LINE_PX;
+      setDraft("\n\n\n"); // renders as lines, trims to nothing — `sendable` stays false
+    });
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull();
+    // The upload lands: send joins the column, needs jump 36 → 78 — and 66px of field cannot paint
+    // that. The changed needs re-test STRICTLY (never through the old entry's exit band), so the
+    // stack lets go at once.
+    act(() => {
+      updateStaged("up", { status: "staged", attachmentId: "id-9" });
+    });
+    expect(document.querySelector(".line-cluster.stack")).toBeNull();
+  });
+
+  it("THE LATCH: a stack whose own re-wrap breaks the fit PARKS — one flip per input, no loop", () => {
+    mount(LineComposer);
+    act(() => {
+      addStaged({
+        localId: "p",
+        name: "p.png",
+        kind: "image",
+        status: "staged",
+        attachmentId: "a",
+      });
+    });
+    // Width-aware wrap, the pathological geometry the thresholds cannot bound: unstacked the draft
+    // paints 4 lines (88px ≥ the 77 entry), stacked it re-wraps to 2 (44px < the 55 exit bar — a
+    // TWO-line re-wrap, past the one-line band).
+    Object.defineProperty(field(), "scrollHeight", {
+      configurable: true,
+      get: () => (document.querySelector(".line-cluster.stack") ? 2 * LINE_PX : 4 * LINE_PX),
+    });
+    act(() => setDraft("boundary draft"));
+    // Entry measured unstacked → stacks; the flip's own re-measure says exit — the latch holds it.
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull();
+    // The next REAL input spends a fresh flip: measured at the stacked width the band is broken, so
+    // it unstacks — and the unstacked re-measure's renewed "fits" cannot flip it back (spent again).
+    act(() => setDraft("boundary draft, edited"));
+    expect(document.querySelector(".line-cluster.stack")).toBeNull();
   });
 
   it("the stacked and sheet layouts have no cluster at all — this is the line pill's geometry", () => {
