@@ -186,7 +186,7 @@ describe("useComposerChrome", () => {
     }
   });
 
-  it("auto-grows the textarea (capped at 96px) and clears height for an empty draft", () => {
+  it("auto-grows the textarea (capped at the 112px resting ceiling) and clears height when empty", () => {
     const ta = document.createElement("textarea");
     Object.defineProperty(ta, "scrollHeight", { value: 200, configurable: true });
     const ref = { current: ta };
@@ -194,7 +194,7 @@ describe("useComposerChrome", () => {
     const { rerender } = renderHook(({ draft }) => useComposerChrome(ref, draft, vi.fn()), {
       initialProps: { draft: "multi\nline\ndraft" },
     });
-    expect(ta.style.height).toBe("96px"); // min(96, 200)
+    expect(ta.style.height).toBe("112px"); // min(112, 200) — the S6 №3 ceiling (= the control column)
 
     ta.value = "";
     rerender({ draft: "" });

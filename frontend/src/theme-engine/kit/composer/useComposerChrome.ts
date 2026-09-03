@@ -12,11 +12,14 @@ import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 
 //
 // vapor's `components/Composer.tsx` keeps its own copy (frozen, D7 — not touched here).
 
-/** The COLLAPSED auto-grow ceiling, in px — the resting composer, unchanged. Mirrored by
- *  `.kit-composer textarea { max-height }` in kit.css, which is what actually clamps the paint; the
- *  expanded ceiling below lifts that inline, so the collapsed path writes no `max-height` at all and
- *  stays byte-identical to its pre-S5 self. */
-const CEIL_PX = 96;
+/** The COLLAPSED auto-grow ceiling, in px. 112, not the long-standing 96 (owner S6 re-round №3,
+ *  "extend the minimum… just a little so the mic icon would fit without having to click expand"):
+ *  112 is EXACTLY the line pill's full control column — expand 28 + mic 36 + send 36 + two 6px
+ *  gaps — so the resting field can now paint enough for the stack to engage (at 5 rendered lines)
+ *  without entering the expand mode, and not one pixel more than that ask. Mirrored by
+ *  `.kit-composer textarea { max-height }` in kit.css, which is what actually clamps the paint;
+ *  the expanded ceiling below lifts that inline. */
+const CEIL_PX = 112;
 /** EXPANDED = this share of the app's usable viewport height. Half is Signal's ratio in spirit (72px →
  *  212px on a desktop window) and reads right on a phone: the draft takes the top half, the chat log
  *  keeps the rest. Never smaller than the collapsed ceiling (a very short window). */
@@ -148,8 +151,16 @@ export function useComposerChrome(
     const ta = taRef.current;
     if (!ta) return;
     const measure = () => {
-      // What this hook wrote LAST time ("" on the first pass) — the height transition's FROM (below).
+      // What this hook wrote LAST time ("" on the first pass), and — the truer number — where the
+      // PAINT actually is right now: mid-transition the computed height is the ANIMATED value, and
+      // that, not `prev`, is the honest FROM for the write below. A measure landing while a shrink
+      // is in flight (the stack flipping re-measures through the width key; a viewport event) used
+      // to commit `prev` — the DESTINATION — and clear the cap against it, snapping the animation
+      // dead (the feel round's Chromium-probed collapse). Restoring the live value instead makes
+      // any mid-flight re-measure a smooth RETARGET, whatever triggered it. jsdom computes no
+      // height ("" → 0), so tests fall through to `prev` and see the exact old sequence.
       const prev = ta.style.height;
+      const livePx = parseFloat(getComputedStyle(ta).height) || 0;
       ta.style.height = "";
       if (ta.value === "") {
         ta.style.maxHeight = "";
@@ -177,15 +188,16 @@ export function useComposerChrome(
       //
       // AND THE CAP MUST NOT CLAMP THE FROM (the feel round's reviewer MED, Chromium-probed): a
       // SHRINK — the mode collapsing, the viewport dropping — pulls the ceiling under the
-      // committed `prev`, and `max-height` is not transitioned: it clamps the PAINT instantly,
-      // snapping exactly the two owner-visible shrinks. So the inline cap carries
-      // `max(ceiling, prev)` for the shrink's duration and settles to the true ceiling on the
-      // next measure (`prev` ≤ it by then; an over-wide cap above the inline height is inert).
-      // At rest nothing changes: with `prev` under the stylesheet's own 96px clamp the inline cap
-      // clears, exactly as before.
-      const prevPx = parseFloat(prev) || 0;
-      ta.style.maxHeight = expanded || prevPx > CEIL_PX ? Math.max(ceil, prevPx) + "px" : "";
-      ta.style.height = prev;
+      // committed from-value, and `max-height` is not transitioned: it clamps the PAINT instantly,
+      // snapping exactly the owner-visible shrinks. So the inline cap carries
+      // `max(ceiling, from)` for the shrink's duration — keyed on the LIVE height, so a
+      // mid-flight re-measure keeps carrying rather than clearing against the destination — and
+      // settles to the true ceiling once the paint is back under it (an over-wide cap above the
+      // inline height is inert meanwhile). At rest nothing changes: with the paint under the
+      // stylesheet's own clamp the inline cap clears, exactly as before.
+      const fromPx = Math.max(parseFloat(prev) || 0, livePx);
+      ta.style.maxHeight = expanded || fromPx > CEIL_PX ? Math.max(ceil, fromPx) + "px" : "";
+      ta.style.height = livePx > 0 ? livePx + "px" : prev;
       void ta.offsetHeight;
       ta.style.height = painted + "px";
       setFieldPx(painted);

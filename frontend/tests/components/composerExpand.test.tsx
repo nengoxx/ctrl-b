@@ -41,8 +41,9 @@ const VARIANTS = [
 
 /** The hook's fallback line box (kit.css's 15px × 1.45 ≈ 21.75, rounded) — jsdom computes none. */
 const LINE_PX = 22;
-/** The collapsed ceiling, and the tall one the hook derives from the app's viewport height. */
-const CEIL = 96;
+/** The collapsed ceiling (112 since the S6 re-round №3 owner ruling: exactly the line pill's full
+ *  control column, so the stack fits at rest), and the tall one derived from the viewport height. */
+const CEIL = 112;
 const TALL = Math.max(CEIL, Math.round(window.innerHeight * 0.5));
 
 const toggle = () => screen.queryByRole("button", { name: /the message field$/ });
@@ -413,17 +414,15 @@ describe("the line pill's control stack (S6 re-round)", () => {
   // The sums under test: pair (mic 36 + send 36 + gap 6 = 78, entry ≥77) · trio (+ toggle 28 +
   // gap 6 = 112, entry ≥111) · exit = entry − 22 (one line of hysteresis).
 
-  it("a RESTING field never stacks the trio — the 96px ceiling binds, however long the draft", () => {
+  it("the RESTING trio stacks once the draft paints its height — no expand click needed (№3)", () => {
+    // The re-round №3 owner ruling: the resting ceiling IS the trio's 112px, chosen so the mic fits
+    // over the send without entering the expand mode. (Under the old 96px ceiling this could never
+    // happen — the ceiling starved the trio at any draft length, which is what the owner felt.)
     mount(LineComposer);
-    draftAt(20); // scrollHeight 440 — but the collapsed field PAINTS 96px, and 96 < 111
+    draftAt(4); // paints 88 < 111 — not yet
     expect(cluster()!.classList.contains("stack")).toBe(false);
     expect(toggle()).not.toBeNull(); // …the corner toggle is unaffected by the wait
-  });
-
-  it("EXPANDING is what makes room for the trio — and collapsing re-tests strictly and unstacks", () => {
-    mount(LineComposer);
-    draftAt(20);
-    fireEvent.click(toggle()!); // the tall ceiling: paints min(TALL, 440) ≥ 111
+    draftAt(6); // scrollHeight 132 → the resting field paints the full 112 ≥ 111
     const stack = document.querySelector(".line-cluster.stack")!;
     expect(stack).not.toBeNull();
     // The column top-to-bottom mirrors the rail tail: the quiet toggle, then mic, then send — and
@@ -433,11 +432,19 @@ describe("the line pill's control stack (S6 re-round)", () => {
     expect(kinds[1]).toContain("mic");
     expect(kinds[2]).toContain("kit-send");
     expect(document.querySelectorAll(".kit-cbtn.expand")).toHaveLength(1);
-    // Collapsing moves the BASIS (the ceiling the fit was judged under), so the strict entry test
-    // re-applies: 96 < 111 and the stack lets go at once — hysteresis never holds a column the
-    // resting field cannot cover.
-    fireEvent.click(toggle()!);
-    expect(document.querySelector(".line-cluster.stack")).toBeNull();
+  });
+
+  it("…and the stack survives entering AND leaving the expand mode — the mode owes it nothing", () => {
+    // With the ceiling at exactly the trio's height, no mode change can pull the painted field
+    // under the column: the ceiling-guard on the exit band still stands as a belt (a future taller
+    // column would re-arm it), but collapse no longer unstacks a draft the resting field covers.
+    mount(LineComposer);
+    draftAt(20);
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull(); // resting: 112 ≥ 111
+    fireEvent.click(toggle()!); // expand — paints min(TALL, 440)
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull();
+    fireEvent.click(toggle()!); // collapse — paints 112 again, still ≥ 111
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull();
   });
 
   it("with a rail staged the toggle is the TAIL's, so the pair alone stacks — from ~3 lines", () => {

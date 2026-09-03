@@ -569,7 +569,10 @@ body[data-perf="lite"] .kit-composer {
   font-size: 15px;
   color: var(--text);
   min-height: 24px;
-  max-height: 96px;
+  /* 112 = useComposerChrome's CEIL_PX (keep in lockstep) — raised from 96 by owner ruling (S6
+   * re-round №3): exactly the line pill's full control column, so the resting field can hold the
+   * stacked mic without entering the expand mode. */
+  max-height: 112px;
   resize: none;
   line-height: 1.45;
   overflow-wrap: anywhere; /* long unbreakable strings must wrap, never overflow (§14.11) */
