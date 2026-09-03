@@ -618,3 +618,39 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   physically the send block — if the owner is on the sheet layout and still wants a corner, that
   is a geometry conversation, not a bug). **The owner's re-round on dev rules the wave; their word
   stays the close of Phase 22.**
+- **S6 RE-ROUNDS №1–№3 (2026-09-03, same day — the owner's LIVE feel findings, main-seat-built in
+  conversation, Emma-reviewed per commit):** `be0478e`+`46da767`+`cb242ef`+`bd89f34` (the control
+  stack) · `f1633ca`+`44dc6d7` (the feel round) · `fd72404` (the 112 ceiling + the live retarget).
+  **№1 — THE CONTROL STACK** (owner: mic over send "only when there's space"): the line pill's
+  trailing cluster (`.line-cluster`) turns into a bottom-anchored column once the column FITS —
+  decided in the PAINTED-height currency (`fieldPx`/`fieldCeilPx` now exposed by
+  `useComposerChrome`; her MED-2 conf 1.00: a rendered-line count lies whenever the ceiling
+  binds) · needs summed from what actually RENDERS (no STT → no mic lane) · strict entry (1px
+  grace), one-line exit band GUARDED by the ceiling, strict re-test + re-baseline on a needs
+  change, and **THE LATCH** — one flip per change of external inputs, so no width-feedback
+  oscillation can run whatever the thresholds miss (a basis-reset variant died in test of its own
+  stale-measurement ordering; four review rounds to converge, her Chromium probes reproducing
+  findings live). **№2 — THE FEEL ROUND**: a motion-gated 150ms `height` transition on the
+  composer field — **an owner-ruled scoped exception to §14.11's transform/opacity-only rule** —
+  with the from-value committed before the write; the `kit-stack-hop` mic slide on stack engage
+  (constant −42/+42px; `:has(.kit-send)` so a column that didn't move never animates,
+  `:not(.rec)` so the hop never out-specifies the recording pulse — her conf-1.00 catch);
+  the corner toggle re-inset `right:4px` onto the button lane's centreline (no sideways hop);
+  the chevrons glyph 16→20. **№3 — THE RESTING CEILING IS THE CONTROL COLUMN** (owner: "extend
+  the minimum… just a little so the mic would fit without having to click expand"): CEIL_PX
+  96→**112** = expand 28 + mic 36 + send 36 + 2×6 gaps exactly, so the trio stacks at rest from
+  5 rendered lines. **The retarget** (closes her surviving MED-1 for the CLASS): her
+  still-snapping collapse was a re-measure landing MID-FLIGHT (the stack releasing under the 96
+  ceiling) committing the destination and clearing the cap against it — caught by a
+  MutationObserver probe (the second style write at +14ms); the measure now reads the LIVE
+  computed height first, so the from-commit restores the animated position and the cap carry
+  keys on it — any mid-flight re-measure RETARGETS the transition. Main-seat Chromium probes
+  green in the shipped world (collapse 400→211→136→112) AND a 96-ceiling stress world with
+  mid-flight stack flips both directions. Gate green per commit; FE **2,849/167** at tip.
+  **Council state:** every finding through her rounds explicitly RESOLVED except the FINAL
+  closing probe round, which was STOPPED before yielding a verdict — recorded honestly: MED-1's
+  closure rests on the main-seat's own probes; re-run her round on the owner's word.
+  **Residuals recorded, not built:** the release-direction hop is unanimated (ruled) · a
+  rotation changes no latch input, so a boundary stack can sit one state stale until the next
+  keystroke · the exit band's ceiling guard is presently unreachable (the trio ≤ the ceiling by
+  construction) and kept as belt.

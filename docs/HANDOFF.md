@@ -12,7 +12,26 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-03 — THE S6 FIX WAVE: the owner's device-round findings built + council-CLOSED; supersedes everything below where it speaks)
+## Current state (2026-09-03, cont. — THE S6 RE-ROUNDS №1–№3: the owner's live feel findings, built same-day; supersedes below where it speaks)
+
+- **After the fix wave closed, the owner drove THREE more live rounds in conversation, all built +
+  reviewed same-day** (full record = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) §11's
+  S6-RE-ROUNDS block): **№1** the line pill's CONTROL STACK (mic over send once the column FITS —
+  painted-height currency, controls-aware needs, the one-flip-per-input LATCH; 4 review rounds to
+  converge) · **№2** the FEEL round (the 150ms height transition — an owner-ruled scoped §14.11
+  exception — the mic's stack-hop, the toggle on the lane centreline, the 20px glyph) · **№3** the
+  112px resting ceiling (= the control column exactly, so the trio stacks at rest from 5 lines)
+  **+ the live-height RETARGET** (mid-flight re-measures now retarget the transition instead of
+  snapping it — MutationObserver-diagnosed, Chromium-probed green in both geometries).
+- **⚠ THE FINAL Emma closing-probe round was STOPPED before a verdict** — every earlier finding is
+  explicitly RESOLVED, but MED-1's closure rests on the main-seat's own probes; re-run her round on
+  the owner's word if wanted. **The owner's word still closes Phase 22.**
+- **Gate at tip: FE check-all exit 0 — 2,849/167** (BE untouched since 2,145). Local `main` =
+  origin `a558d43` + **40 commits**, NOTHING PUSHED. Prod untouched: **v1.7.7 @ `578ffa7`**. Dev
+  units RUNNING; :5173 serves everything (the owner's dev config runs the LINE composer — that fact
+  explained a whole review-round divergence).
+
+## Prior state (2026-09-03 — THE S6 FIX WAVE: the owner's device-round findings built + council-CLOSED; superseded above where it speaks)
 
 - **The S6 owner round LANDED (3 findings) and its fix wave ran the whole cadence in one session:**
   design → blind Emma design round (BUILD WITH CHANGES, 6 MED · 1 LOW, sweep "none") → all seven
