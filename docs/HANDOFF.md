@@ -12,7 +12,54 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-03, cont. — THE S6 RE-ROUNDS №1–№3: the owner's live feel findings, built same-day; supersedes below where it speaks)
+## Current state (2026-09-03, FINAL — PUSHED: origin = local `main` = `a478bb6` (+ the menu commit); THE RELEASE IS HELD; supersedes below where it speaks)
+
+- **The batch is on origin** (43 commits over `a558d43`, pre-push full gate green; the fleet-wave
+  polish + the whole Phase 22 ladder + the S6 fix wave + re-rounds №1–№4b). **The v1.7.8 candidate
+  is DELIBERATELY HELD** — the owner: more items go in first. Prod untouched: **v1.7.7 @
+  `578ffa7`**. Dev units RUNNING. ⚠ GitHub flagged **2 HIGH Dependabot alerts** at push — untriaged.
+- **The next session OPENS ON THE MENU BELOW (owner ask: "the whole menu of things to do… so we
+  can decide") — present it, take the pick(s), then work the slice.**
+
+## ▶▶ THE PRE-RELEASE MENU (2026-09-03 — ALL the recorded options; the owner picks, nothing owed)
+
+**A · Owed owner rounds (no build):**
+ A1. Phase 22 CLOSE — the owner's word (all S6 re-rounds live on dev :5173; the stopped Emma
+     closing-probe round re-runs on ask — every earlier finding RESOLVED).
+ A2. The prod device pair, standing since v1.7.6: F1 notifications test (master ON → background →
+     host transition → tap lands on Fleet) · icon-backdrop fresh install.
+ A3. Edit a prompt FOR REAL (Phase 18's first owner-driving; easier post-release, allowed anytime).
+ A4. Phase 21 live-use deferrals (ride daily prod use, no session needed): autoscroll on a long
+     grid · a >15 MB 413 refusal · the multi-window cast walk.
+
+**B · Build candidates (small/medium, greenlit or recorded):**
+ B1. C3 S2 read-along (greenlit 2026-08-20, build on ask).
+ B2. D2-A wake-on-presence PROD enable — live-proven 2026-08-30; one machine-editor toggle.
+ B3. ISS-10 ② composer glyph cross-fades (owner-parked; one-word revival, recipe in R52 §8.2).
+ B4. Phase 22 feel residuals (plan §11): the stack-release direction unanimated · the sheet
+     no-rail corner geometry (a talk, not a bug) · keyboard-focus hand-off at the clip's swap.
+ B5. W10 residuals (MEDIA_MANAGER_PLAN §12): re-crop generation loss · the 412-on-lost-response
+     class · bundled re-art inherits a stored point · delivery-never-throws.
+
+**C · Design talks (no code):**
+ C1. A13 — the OpenAI-OAuth/Codex provider talk (owner: "maybe later", standing).
+ C2. The parked ledger sweep (§P discipline — only on explicit ask; §P items never re-proposed).
+
+**D · Hygiene:**
+ D1. **The 2 HIGH Dependabot alerts (NEW at this push)** — triage first: real dep or archive-class?
+ D2. F13 eslint backlog (73 warnings, trigger-gated; counts live in QUALITY.md).
+ D3. Re-run the stopped Emma closing-probe round on the height-transition retarget (optional).
+
+**E · THE CLOSER — the v1.7.8 release candidate** (when the owner says the menu is done):
+ runbook `deploy/linux/README.md` §Release, Opus-operated · NO config/DB migration · rollback
+ v1.7.7 · **pre-tag LOCAL e2e MANDATORY** + the stale-pin sweep over the fleet wave's labels AND
+ the attachments/expand strings (three tags have burned on this class) · then stop the dev units.
+
+**LAST, never leading a menu: Phase 19 (D58)** — owner ruling 2026-08-29: it rides the 1.8
+endgame (Emma's lane-stall MED, CM-1, H-E2E's flake register all fold in); 1.8 stays RESERVED
+for the final ROADMAP/ISSUES cleanup wave.
+
+## Prior state (2026-09-03, cont. — THE S6 RE-ROUNDS №1–№3: the owner's live feel findings, built same-day; superseded above where it speaks)
 
 - **After the fix wave closed, the owner drove THREE more live rounds in conversation, all built +
   reviewed same-day** (full record = [`ATTACHMENTS_PLAN.md`](./ATTACHMENTS_PLAN.md) §11's
