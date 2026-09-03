@@ -395,31 +395,47 @@ describe("a real SEND leaves the mode (the primary exit)", () => {
 describe("the line pill's control stack (S6 re-round)", () => {
   const cluster = () => document.querySelector(".line-cluster");
 
-  it("stays horizontal while the trio does not fit, and stacks — toggle, mic, send — once it does", () => {
+  // The currency here is the PAINTED field height (`fieldPx` = min(ceiling, scrollHeight)) — the
+  // re-round review's MED-2: a rendered-line count lies whenever the ceiling binds. jsdom computes
+  // no padding and the fallback line box is 22, so `draftAt(n)` paints exactly `min(ceil, n×22)`.
+  // The sums under test: pair (mic 36 + send 36 + gap 6 = 78, entry ≥77) · trio (+ toggle 28 +
+  // gap 6 = 112, entry ≥111) · exit = entry − 22 (one line of hysteresis).
+
+  it("a RESTING field never stacks the trio — the 96px ceiling binds, however long the draft", () => {
     mount(LineComposer);
-    draftAt(4);
-    expect(cluster()!.classList.contains("stack")).toBe(false); // 78+28+gaps > 4 lines — no space yet
+    draftAt(20); // scrollHeight 440 — but the collapsed field PAINTS 96px, and 96 < 111
+    expect(cluster()!.classList.contains("stack")).toBe(false);
     expect(toggle()).not.toBeNull(); // …the corner toggle is unaffected by the wait
-    draftAt(5);
+  });
+
+  it("EXPANDING is what makes room for the trio — and collapsing re-tests strictly and unstacks", () => {
+    mount(LineComposer);
+    draftAt(20);
+    fireEvent.click(toggle()!); // the tall ceiling: paints min(TALL, 440) ≥ 111
     const stack = document.querySelector(".line-cluster.stack")!;
     expect(stack).not.toBeNull();
-    // The column top-to-bottom mirrors the rail tail: the quiet toggle, then mic, then send — and the
-    // toggle is INSIDE the stack (in-flow), not a second corner instance.
+    // The column top-to-bottom mirrors the rail tail: the quiet toggle, then mic, then send — and
+    // the toggle is INSIDE the stack (in-flow), not a second corner instance.
     const kinds = [...stack.children].map((el) => el.className);
     expect(kinds[0]).toContain("expand");
     expect(kinds[1]).toContain("mic");
     expect(kinds[2]).toContain("kit-send");
     expect(document.querySelectorAll(".kit-cbtn.expand")).toHaveLength(1);
+    // Collapsing moves the BASIS (the ceiling the fit was judged under), so the strict entry test
+    // re-applies: 96 < 111 and the stack lets go at once — hysteresis never holds a column the
+    // resting field cannot cover.
+    fireEvent.click(toggle()!);
+    expect(document.querySelector(".line-cluster.stack")).toBeNull();
   });
 
-  it("with a rail staged the toggle is the TAIL's, so the pair alone stacks — from 3 lines", () => {
+  it("with a rail staged the toggle is the TAIL's, so the pair alone stacks — from ~3 lines", () => {
     mount(LineComposer);
     act(() => {
       addStaged({ localId: "photo.png", name: "photo.png", kind: "image", status: "staged" });
     });
-    draftAt(2);
+    draftAt(3); // paints 66 < 77 — not yet
     expect(cluster()!.classList.contains("stack")).toBe(false);
-    draftAt(3);
+    draftAt(4); // paints 88 ≥ 77
     const stack = document.querySelector(".line-cluster.stack")!;
     expect(stack).not.toBeNull();
     const kinds = [...stack.children].map((el) => el.className);
@@ -430,11 +446,16 @@ describe("the line pill's control stack (S6 re-round)", () => {
     expect(document.querySelectorAll(".kit-attach-tail .kit-cbtn.expand")).toHaveLength(1);
   });
 
-  it("shrinking the draft unstacks — the wrapper stays, only its shape changes", () => {
+  it("the exit gives one line of hysteresis — the stack's own re-wrap can never flip it back", () => {
     mount(LineComposer);
-    draftAt(5);
+    act(() => {
+      addStaged({ localId: "photo.png", name: "photo.png", kind: "image", status: "staged" });
+    });
+    draftAt(4); // 88 ≥ 77 — stacked
     expect(document.querySelector(".line-cluster.stack")).not.toBeNull();
-    draftAt(2);
+    draftAt(3); // 66 — under the 77 entry bar but over the 55 exit bar: the band holds it
+    expect(document.querySelector(".line-cluster.stack")).not.toBeNull();
+    draftAt(2); // 44 < 55 — a real shrink lets go; the wrapper stays, only its shape changes
     expect(document.querySelector(".line-cluster.stack")).toBeNull();
     expect(cluster()).not.toBeNull();
   });

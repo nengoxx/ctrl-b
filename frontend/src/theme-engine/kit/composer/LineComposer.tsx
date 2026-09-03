@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import { useAttachments } from "../../../hooks/useAttachments";
 import { useComposer } from "../../../hooks/useComposer";
@@ -50,24 +50,19 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   // A staged rail moves the clip + the toggle into the rail's TAIL (S6 fix wave, F1/F2) — the flag
   // also tells the chrome hook the field's rendered width just changed (the clip leaves its row).
   const staged = attach.files.length > 0;
-  const { micPressed, pressMic, releaseMic, onKeyDown, expand, lines } = useComposerChrome(
-    taRef,
-    draft,
-    send,
-    staged,
-  );
-  // THE CONTROL STACK (the owner's S6 re-round, 2026-09-03): once the field is TALL enough, the
-  // trailing controls turn vertical — mic over send, "same distance and everything" — and the text
-  // gets the freed lane back. "Only when there's space" (owner) is the whole rule, so the thresholds
-  // are ARITHMETIC, not taste: a line box is ~21.75px over 12px field padding and the buttons are
-  // 36px in 6px gaps, so mic+send (78px) fit inside the text's height from 3 rendered lines
-  // (77.25px — the pill gives back the sub-pixel), and expand+mic+send (112px) from 5 (120.75px).
-  // Which sum applies follows the rail: staged, the toggle lives in the rail's TAIL and the row
-  // stacks just the pair; unstaged, the toggle joins the TOP of the column (in-flow, the tail's own
-  // trick) — between 3 and 4 lines the trio does NOT fit, so the row stays horizontal there rather
-  // than growing the pill past the text. LINE layout only: stacked already keeps its controls in a
-  // full-width row below the field, and the sheet's send is a tall block outside it.
-  const stacked = lines >= (staged ? 3 : 5);
+  // THE CONTROL STACK's state (decided below, after the measurement it reads) — declared first
+  // because the chrome hook's width key carries it.
+  const [stacked, setStacked] = useState(false);
+  const { micPressed, pressMic, releaseMic, onKeyDown, expand, fieldPx, fieldCeilPx } =
+    useComposerChrome(
+      taRef,
+      draft,
+      send,
+      // The field's width follows BOTH facts (the hook's `fieldWidthKey`): staging moves the clip +
+      // toggle to the rail, and the stack frees or reclaims a whole button lane. Flipping either
+      // re-measures at once, so the height and the painted-px are never stale (re-round MED-1).
+      `${staged}|${stacked}`,
+    );
   // Slash autocomplete (A2) — same wiring in every variant; see KitComposer.
   const suggest = useComposerSuggest({ draft, setDraft, onKeyDown });
 
@@ -84,6 +79,38 @@ export function LineComposer({ controlsStart, overlay, placeholder }: ComposerSl
   // (§7), and the button that sends it has to exist. It reads the draft too, so the pre-attachment
   // behaviour is unchanged when nothing is staged.
   const showSend = !sttReady || sendable || isStreaming;
+
+  // THE CONTROL STACK (the owner's S6 re-round, 2026-09-03): once the field is TALL enough, the
+  // trailing controls turn vertical — mic over send, "same distance and everything" — and the text
+  // gets the freed lane back. "Only when there's space" (owner) is the whole rule, and the honest
+  // currency for "space" is the PAINTED field height the chrome hook just wrote — never the rendered
+  // line count, which lies whenever the ceiling binds (a 20-line draft still paints 96px at rest —
+  // the re-round review's MED-2, conf 1.00). Consequences that fall out for free:
+  //   · the PAIR (mic+send, 78px) fits under the 96px resting ceiling, so it stacks from ~3 lines
+  //     (77.25px painted — the 1px grace below accepts the sub-pixel, the pill grows ≤0.75px);
+  //   · the TRIO (the no-rail case adds the 28px toggle: 112px) does NOT fit a resting field at all —
+  //     it engages only while the owner has EXPANDED, where the painted height can actually cover it;
+  //   · the sum counts what actually RENDERS (re-round MED-3): no STT → no mic lane in the arithmetic.
+  // THE MEMORY (re-round MED-1): stacking frees ~42px of width, the text re-wraps, and the freshly
+  // re-measured painted-px can fall back under the entry bar — a strict predicate would flip per
+  // keystroke at the boundary. So entry is strict (fits, within the 1px grace) while exit gives ONE
+  // LINE of hysteresis, the exact amount a lane's width is worth — GUARDED by the ceiling: the band
+  // exists to absorb the stack's own re-wrap, never to hold a column the CURRENT ceiling cannot
+  // paint, so collapsing the expand mode (or the column's needs growing past the ceiling) lets go
+  // on the next measurement regardless of the band. Written as the React adjust-state-during-render
+  // idiom (never an effect: that is the cascading-render idiom eslint rightly flags — and a ref
+  // would not re-render, so the hook's width key would lag a render and the flip's own re-measure
+  // would never fire; stale-measurement renders resolve themselves one measure later by the same
+  // rule).
+  const GAP = 6; // the row's own gap — "same distance and everything" (owner)
+  const stackNeeds =
+    [!staged && 28, showMic && 36, showSend && 36]
+      .filter((h): h is number => h !== false)
+      .reduce((sum, h, at) => sum + h + (at > 0 ? GAP : 0), 0) || Number.MAX_SAFE_INTEGER; // an empty column never stacks
+  const fits = fieldPx >= stackNeeds - 1; // the strict entry test (1px grace: 77.25 vs 78)
+  const holds = fieldPx >= stackNeeds - 23 && fieldCeilPx >= stackNeeds - 1;
+  const nextStacked = stacked ? holds : fits;
+  if (nextStacked !== stacked) setStacked(nextStacked);
 
   return (
     <>

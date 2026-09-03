@@ -70,23 +70,32 @@ export interface ComposerChrome {
   onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
   /** The expand affordance (D68 S5) — hand it straight to `<ExpandToggle/>`. */
   expand: ExpandControl;
-  /** The draft's RENDERED line count — the same number the expand trigger keys on, exposed so a
-   *  layout can make its own has-the-field-grown decisions (the S6 re-round's control stack in
-   *  LineComposer). Read-only fallout of the measurement that already runs; nothing new is observed. */
-  lines: number;
+  /** The field's PAINTED height in px — the `Math.min(ceiling, scrollHeight)` this hook just wrote
+   *  as the textarea's height (0 for an empty draft). Exposed so a layout can make its own
+   *  does-it-fit decisions (the S6 re-round's control stack in LineComposer) in the one honest
+   *  currency: the RENDERED line count is a lie about space whenever the ceiling is the binding
+   *  term — a 20-line draft still PAINTS 96px at rest (the re-round review's MED-2). Read-only
+   *  fallout of the measurement that already runs; nothing new is observed. */
+  fieldPx: number;
+  /** The CEILING that measurement ran under (96 at rest, the viewport-derived tall one while
+   *  expanded) — the most the field can ever paint right now. The stack's exit rule needs it: its
+   *  hysteresis band may absorb a width re-wrap, but must never hold a column the current ceiling
+   *  cannot cover (the collapse-while-stacked hole the re-round's tail fix closed). */
+  fieldCeilPx: number;
 }
 
 export function useComposerChrome(
   taRef: RefObject<HTMLTextAreaElement | null>,
   draft: string,
   send: () => void,
-  /** ANYTHING THAT CHANGES THE FIELD'S RENDERED WIDTH, as one boolean (the S6 fix wave, MED-3). Today
-   *  it is exactly "a rail is staged": the clip and the expand toggle move out of the field row into
-   *  the rail's tail when one is, so the textarea gets that lane back and a near-threshold draft
-   *  re-wraps. The measurement below keys on it for the same reason it keys on the viewport — the
-   *  rendered line count is a function of the WIDTH, and a stale count is a stale expand trigger and a
-   *  stale height. A second such input would join this flag rather than add a parameter. */
-  railStaged = false,
+  /** ANYTHING THAT CHANGES THE FIELD'S RENDERED WIDTH, as one value whose IDENTITY changes with it
+   *  (the S6 fix wave MED-3, widened by the re-round): staging a rail moves the clip + toggle out of
+   *  the field row, and the line pill's control stack frees or reclaims a whole button lane — either
+   *  way the textarea re-wraps with no keystroke, and a stale measurement is a stale trigger, a stale
+   *  height and a stale painted-px. The stacked/sheet variants pass their staged boolean; LineComposer
+   *  passes a composite key carrying the stack state too. The measurement below keys on it for the
+   *  same reason it keys on the viewport. */
+  fieldWidthKey: unknown = false,
 ): ComposerChrome {
   // Mic press feedback as a JS-toggled class (not CSS :active — Fennec leaves :active wedged after a tap).
   const [micPressed, setMicPressed] = useState(false);
@@ -109,6 +118,10 @@ export function useComposerChrome(
   // have no rich text and want no second editor, so the ceiling IS the feature.)
   const [expanded, setExpanded] = useState(false);
   const [lines, setLines] = useState(1);
+  // The PAINTED height and its ceiling (see `ComposerChrome.fieldPx`/`fieldCeilPx`) — set beside
+  // `lines` by the same measurement.
+  const [fieldPx, setFieldPx] = useState(0);
+  const [fieldCeilPx, setFieldCeilPx] = useState(CEIL_PX);
 
   // Auto-grow the textarea to fit content (ceiling: 96px, or half the viewport while expanded), including
   // the initial render so a restored draft gets the right height as soon as the composer becomes visible.
@@ -139,6 +152,7 @@ export function useComposerChrome(
       if (ta.value === "") {
         ta.style.maxHeight = "";
         setLines(1);
+        setFieldPx(0);
         return;
       }
       ta.style.height = "auto";
@@ -153,7 +167,10 @@ export function useComposerChrome(
       // `max-height` is written ONLY while expanded: kit.css's own 96px is the collapsed clamp (and would
       // otherwise win over this inline height), so the resting path writes exactly what it always did.
       ta.style.maxHeight = expanded ? ceil + "px" : "";
-      ta.style.height = Math.min(ceil, ta.scrollHeight) + "px";
+      const painted = Math.min(ceil, ta.scrollHeight);
+      ta.style.height = painted + "px";
+      setFieldPx(painted);
+      setFieldCeilPx(ceil);
     };
     measure();
     // `visualViewport` is the surface that reports the KEYBOARD (`window`'s resize does not fire for it on
@@ -171,7 +188,7 @@ export function useComposerChrome(
     }
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [draft, taRef, expanded, railStaged]);
+  }, [draft, taRef, expanded, fieldWidthKey]);
 
   // LEAVABLE + SELF-RESETTING: the draft clearing IS the exit — send, the dictation auto-send (which
   // bypasses `useComposer().send` and clears the draft itself) and `/clear` all land here, so the next
@@ -198,6 +215,7 @@ export function useComposerChrome(
       show: lines >= EXPAND_AT_LINES || expanded,
       toggle: () => setExpanded((v) => !v),
     },
-    lines,
+    fieldPx,
+    fieldCeilPx,
   };
 }
