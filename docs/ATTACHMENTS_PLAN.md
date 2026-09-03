@@ -650,6 +650,8 @@ code before acceptance (strip call sites `inference.py:1381/:1514` pre-chain · 
   **Council state:** every finding through her rounds explicitly RESOLVED except the FINAL
   closing probe round, which was STOPPED before yielding a verdict — recorded honestly: MED-1's
   closure rests on the main-seat's own probes; re-run her round on the owner's word.
+  **№4 (`9fd66ea`)**: the line field's side paddings 10/4 → 4/2 (owner: both margins read too
+  wide; text ~10px off the menu lane, ~8px off the clip now — screenshot-verified at 390px).
   **Residuals recorded, not built:** the release-direction hop is unanimated (ruled) · a
   rotation changes no latch input, so a boundary stack can sit one state stale until the next
   keystroke · the exit band's ceiling guard is presently unreachable (the trio ≤ the ceiling by

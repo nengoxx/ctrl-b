@@ -27,7 +27,8 @@
   explicitly RESOLVED, but MED-1's closure rests on the main-seat's own probes; re-run her round on
   the owner's word if wanted. **The owner's word still closes Phase 22.**
 - **Gate at tip: FE check-all exit 0 — 2,849/167** (BE untouched since 2,145). Local `main` =
-  origin `a558d43` + **40 commits**, NOTHING PUSHED. Prod untouched: **v1.7.7 @ `578ffa7`**. Dev
+  origin `a558d43` + **43 commits** (incl. re-round №4: the line field's side paddings 4/2 — the
+  text hugs the menu lane and the clip, `9fd66ea`), NOTHING PUSHED. Prod untouched: **v1.7.7 @ `578ffa7`**. Dev
   units RUNNING; :5173 serves everything (the owner's dev config runs the LINE composer — that fact
   explained a whole review-round divergence).
 
