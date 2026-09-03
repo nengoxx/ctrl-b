@@ -106,7 +106,15 @@ describe.each(VARIANTS)("%s composer — the expand affordance", (name, Variant)
 
     fireEvent.click(toggle()!);
     expect(field().style.height).toBe(`${CEIL}px`);
-    expect(field().style.maxHeight).toBe("");
+    // The cap CARRIES the pre-collapse height for one beat (the feel round's shrink-clamp fix):
+    // max-height is not transitioned, so clearing it at once would snap the paint to 96 and eat the
+    // collapse animation. It is inert above the inline 96px height and settles on the NEXT measure —
+    // which on the line variant is immediate (the collapse releases the control stack, whose width
+    // key re-measures), while the other variants hold the carry until the next input.
+    expect(["", `${TALL}px`]).toContain(field().style.maxHeight);
+    draftAt(21);
+    expect(field().style.maxHeight).toBe(""); // …settled — the resting path is byte-identical again
+    expect(field().style.height).toBe(`${CEIL}px`);
   });
 
   it("the field still GROWS while expanded — the mode only moves where growth stops", () => {
@@ -328,6 +336,10 @@ describe("the measurement REACTS to the viewport (MED-2)", () => {
 
     viewportChangeTo(300, () => vv.dispatchEvent(new Event("resize"))); // the keyboard opens
     expect(field().style.height).toBe("150px");
+    // The cap carries the pre-shrink 400 for the height transition's benefit (the feel round's
+    // shrink-clamp fix) — inert above the 150px inline height — and settles with the next measure.
+    expect(field().style.maxHeight).toBe("400px");
+    draftAt(21);
     expect(field().style.maxHeight).toBe("150px");
   });
 

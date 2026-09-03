@@ -1004,7 +1004,15 @@ body[data-motion="full"] .kit .kit-composer textarea {
     transform: none;
   }
 }
-body[data-motion="full"] .kit-composer.line .line-cluster.stack .kit-cbtn.mic.line-btn {
+/* `:has(.kit-send)` — the hop only runs when something actually MOVED: a mic-only column stacks in
+ * place (no lane freed), and animating it from an invented offset reads as a glitch (reviewer LOW).
+ * `:not(.rec)` — the shorthand would otherwise beat `.rec`'s kit-tag-pulse and leave a stacked
+ * recording mic breathless for the whole episode (reviewer MED, conf 1.00): a hop is skipped while
+ * recording, and a mic that STARTS recording mid-hop hands the property straight to the pulse. */
+body[data-motion="full"]
+  .kit-composer.line
+  .line-cluster.stack:has(.kit-send)
+  .kit-cbtn.mic.line-btn:not(.rec) {
   animation: kit-stack-hop var(--dur-fast) var(--ease-out);
 }
 

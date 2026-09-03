@@ -166,9 +166,6 @@ export function useComposerChrome(
       const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
       setLines(Math.max(1, Math.round((ta.scrollHeight - pad) / lineH)));
       const ceil = expanded ? expandedCeilPx() : CEIL_PX;
-      // `max-height` is written ONLY while expanded: kit.css's own 96px is the collapsed clamp (and would
-      // otherwise win over this inline height), so the resting path writes exactly what it always did.
-      ta.style.maxHeight = expanded ? ceil + "px" : "";
       const painted = Math.min(ceil, ta.scrollHeight);
       // THE GROWTH ANIMATES (owner, S6 re-round №2 — Telegram's smooth grow): kit.css carries a
       // motion-gated `transition: height` for this write, but the scrollHeight read above forced a
@@ -177,6 +174,17 @@ export function useComposerChrome(
       // more forced layout, and the new value is written against that — the standard
       // autogrow-with-transition dance. Under reduced motion the transition is off and these two
       // writes coalesce into exactly the old behaviour.
+      //
+      // AND THE CAP MUST NOT CLAMP THE FROM (the feel round's reviewer MED, Chromium-probed): a
+      // SHRINK — the mode collapsing, the viewport dropping — pulls the ceiling under the
+      // committed `prev`, and `max-height` is not transitioned: it clamps the PAINT instantly,
+      // snapping exactly the two owner-visible shrinks. So the inline cap carries
+      // `max(ceiling, prev)` for the shrink's duration and settles to the true ceiling on the
+      // next measure (`prev` ≤ it by then; an over-wide cap above the inline height is inert).
+      // At rest nothing changes: with `prev` under the stylesheet's own 96px clamp the inline cap
+      // clears, exactly as before.
+      const prevPx = parseFloat(prev) || 0;
+      ta.style.maxHeight = expanded || prevPx > CEIL_PX ? Math.max(ceil, prevPx) + "px" : "";
       ta.style.height = prev;
       void ta.offsetHeight;
       ta.style.height = painted + "px";
