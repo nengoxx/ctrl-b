@@ -14,6 +14,10 @@ describe("toSpeech", () => {
     );
   });
 
+  it("speaks strikethrough as its inner text (the one-group regex must use $1, not $2)", () => {
+    expect(toSpeech("emma is ~~offline~~ online")).toBe("emma is offline online");
+  });
+
   it("strips block syntax (headings, lists, quotes) and KEEPS their line boundaries", () => {
     const md = "## Heading\n\n- one\n- two\n\n> a quote\n\n1. first";
     expect(toSpeech(md)).toBe("Heading\n\none\ntwo\n\na quote\n\nfirst");

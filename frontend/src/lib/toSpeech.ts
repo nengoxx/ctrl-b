@@ -33,7 +33,7 @@ export function toSpeech(md: string): string {
   s = s.replace(/^[^\S\n]*\|.*\|[^\S\n]*$/gm, " "); // whole table rows (header/separator/body)
   s = s.replace(/(\*\*|__)(.*?)\1/g, "$2"); // bold
   s = s.replace(/(\*|_)(.*?)\1/g, "$2"); // italic
-  s = s.replace(/~~(.*?)~~/g, "$2"); // strikethrough
+  s = s.replace(/~~(.*?)~~/g, "$1"); // strikethrough
   s = s.replace(EMOJI, " "); // emoji — a space, not "", so "hi🎉there" doesn't become one word
   s = s.replace(/[^\S\n]+/g, " "); // collapse HORIZONTAL whitespace only (newlines survive)
   s = s.replace(/ ?\n ?/g, "\n"); // …and drop the spaces left hugging a newline
