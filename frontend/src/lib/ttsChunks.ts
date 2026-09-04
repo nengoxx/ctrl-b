@@ -14,6 +14,10 @@
 //           boundary under the cap (one absurd token), HARD-CUT at the cap so the queue always advances.
 //
 // Deliberately NOT list-aware and deliberately not `Intl.Segmenter` (both probed, neither better).
+//
+// C3 S2 (read-along) — the same rules run INCREMENTALLY over a still-growing reply: `chunkPlanFrom`
+// re-plans the whole prefix and hands back only what the caller has yet to enqueue. That is sound
+// because everything except the trailing merge buffer is prefix-stable (see its doc comment).
 
 /** The chunk policy — the `tts_chunking` object `GET /voice/status` delivers, in client spelling. */
 export interface ChunkCfg {
@@ -98,6 +102,26 @@ export function chunkPlan(text: string, cfg: ChunkCfg): ChunkPlan {
     }
   }
   return { chunks, dropped };
+}
+
+/** The INCREMENTAL plan (C3 S2 read-along): the whole prefix re-planned by `chunkPlan`, sliced down to
+ *  the chunks the caller has not enqueued yet (`already` = how many it already holds).
+ *
+ *  Why re-planning the whole prefix is safe: growth can rewrite exactly ONE chunk — the trailing merge
+ *  buffer flushed above, which keeps accumulating as text arrives. Every earlier chunk cleared both
+ *  floors (or the cap) and is closed for good. So a mid-stream plan WITHHOLDS its last chunk; `final`
+ *  — the turn-end flush, the one call that sees the finished reply — is what finally emits it.
+ *
+ *  `dropped` rides through unchanged: the per-message budget is spent in order, so once a prefix is
+ *  capped every extension of it is capped too (the caller toasts once and stops feeding). */
+export function chunkPlanFrom(
+  text: string,
+  cfg: ChunkCfg,
+  already: number,
+  final = false,
+): ChunkPlan {
+  const { chunks, dropped } = chunkPlan(text, cfg);
+  return { chunks: chunks.slice(already, final ? undefined : -1), dropped };
 }
 
 /** The chunk list alone — the pure `(text, cfg) => string[]` form most callers want. */

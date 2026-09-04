@@ -87,6 +87,7 @@ const OFF: ChunkPolicy = {
   maxTextChars: 4096,
   lookahead: 1,
   format: "opus",
+  readAlong: false,
 };
 /** Floors off so one sentence = one chunk; that keeps the queue cases about the QUEUE. */
 const chunked = (over: Partial<ChunkPolicy> = {}): ChunkPolicy => ({

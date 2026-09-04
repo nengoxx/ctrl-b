@@ -505,7 +505,13 @@ def test_chunk_config_bounds_validate_at_load() -> None:
     from app.config import VoiceCfg
 
     ok = VoiceCfg.model_validate({"tts": {"chunk_min_chars": 400, "chunk_max_chars": 400}}).tts
-    assert (ok.chunking, ok.chunk_format, ok.chunk_lookahead) == ("sentence", "opus", 1)  # shipped defaults
+    # shipped defaults — read-along stays OFF until it has had its device round (C3 S2)
+    assert (ok.chunking, ok.chunk_format, ok.chunk_lookahead, ok.chunk_read_along) == (
+        "sentence",
+        "opus",
+        1,
+        False,
+    )
     for bad in (
         {"tts": {"chunk_min_chars": 401, "chunk_max_chars": 400}},  # floor above the cap
         {"tts": {"chunk_max_chars": 5000}},  # cap above the per-message limit (4096)
@@ -523,7 +529,15 @@ def test_chunk_config_bounds_validate_at_load() -> None:
 
 def test_api_status_carries_the_chunk_policy() -> None:
     """`tts_chunking` rides the always-on probe (D63 HIGH-2) — shape only, no endpoint/key/model."""
-    c = _app(_StubVoice(), tts={"chunking": "paragraph", "chunk_max_chars": 300, "chunk_lookahead": 2})
+    c = _app(
+        _StubVoice(),
+        tts={
+            "chunking": "paragraph",
+            "chunk_max_chars": 300,
+            "chunk_lookahead": 2,
+            "chunk_read_along": True,
+        },
+    )
     policy = c.get("/api/voice/status").json()["tts_chunking"]
     assert policy == {
         "mode": "paragraph",
@@ -533,6 +547,7 @@ def test_api_status_carries_the_chunk_policy() -> None:
         "lookahead": 2,
         "max_text_chars": 4096,
         "format": "opus",
+        "read_along": True,
     }
 
 

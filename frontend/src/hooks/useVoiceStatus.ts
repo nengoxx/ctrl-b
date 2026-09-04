@@ -34,6 +34,8 @@ export interface TtsChunkingWire {
   lookahead: number;
   max_text_chars: number;
   format: string;
+  /** C3 S2 — speak each sentence as it streams instead of waiting for turn end. */
+  read_along: boolean;
 }
 
 export interface VoiceStatus {
@@ -66,6 +68,7 @@ export function useVoiceStatus() {
           maxTextChars: c.max_text_chars,
           lookahead: c.lookahead,
           format: c.format,
+          readAlong: c.read_along,
         });
       }
       return status;

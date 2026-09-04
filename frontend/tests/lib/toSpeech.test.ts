@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toSpeech } from "../../src/lib/toSpeech";
+import { stableMarkdownPrefix, toSpeech } from "../../src/lib/toSpeech";
 
 // lib/toSpeech — strips Markdown to plain prose for TTS (so the synth reads words, not syntax).
 // D63 re-pinned the whitespace pass: it is NEWLINE-PRESERVING now, because its output is the chunker's
@@ -59,5 +59,73 @@ describe("toSpeech", () => {
 
   it("an all-emoji reply speaks nothing (→ the caller never synthesizes)", () => {
     expect(toSpeech("🎉 ✅ 👋")).toBe("");
+  });
+});
+
+// C3 S2 — `stableMarkdownPrefix`: the half of read-along that decides how much of a STILL-STREAMING
+// buffer is safe to speak. Every case below is a construct `toSpeech` rewrites destructively once it
+// closes, so speaking it while open would voice text the finished reply then deletes. Cutting early
+// only delays speech to the turn-end flush; NOT cutting mis-speaks, so the cases are the contract.
+
+describe("stableMarkdownPrefix", () => {
+  it("cuts at the last ``` when the fence count is odd, and is identity when it is even", () => {
+    const closed = "Here is the fix.\n\n```js\nconst x = 1;\n```\n\nRun it.";
+    expect(stableMarkdownPrefix(closed)).toBe(closed);
+    // the second fence has only opened — everything from it on would be spoken and then deleted
+    expect(stableMarkdownPrefix(`${closed}\n\n\`\`\`py\nprint(`)).toBe(`${closed}\n\n`);
+  });
+
+  it("cuts an unclosed image at its `!`, so no stray '!' is left to end a sentence", () => {
+    expect(stableMarkdownPrefix("Look: ![a very long alt describing the ch")).toBe("Look: ");
+    expect(stableMarkdownPrefix("Look: ![alt](/media/a.png) done")).toBe(
+      "Look: ![alt](/media/a.png) done",
+    );
+  });
+
+  it("cuts an unclosed link at its `[` (the label is about to lose its brackets)", () => {
+    expect(stableMarkdownPrefix("See [the runbook")).toBe("See ");
+    expect(stableMarkdownPrefix("See [the runbook](/docs) now")).toBe(
+      "See [the runbook](/docs) now",
+    );
+  });
+
+  it("cuts an unclosed inline-code span at its backtick", () => {
+    expect(stableMarkdownPrefix("Run `systemctl --user sta")).toBe("Run ");
+    expect(stableMarkdownPrefix("Run `systemctl` now")).toBe("Run `systemctl` now");
+  });
+
+  it("cuts an unclosed tag at its `<` — any `<`, since toSpeech drops everything up to the next `>`", () => {
+    expect(stableMarkdownPrefix("hello <b")).toBe("hello ");
+    expect(stableMarkdownPrefix("hello <b>there</b> world")).toBe("hello <b>there</b> world");
+  });
+
+  it("cuts the multi-char emphasis pairs — ** __ ~~ — whose delimiters vanish on close", () => {
+    expect(stableMarkdownPrefix("emma is **up and re")).toBe("emma is ");
+    expect(stableMarkdownPrefix("emma is __up and re")).toBe("emma is ");
+    expect(stableMarkdownPrefix("emma is ~~down~~ and __up and re")).toBe("emma is ~~down~~ and ");
+    const closed = "emma is **up** and ~~not asleep~~";
+    expect(stableMarkdownPrefix(closed)).toBe(closed);
+  });
+
+  it("cuts at the EARLIEST unclosed opener when several constructs are in flight", () => {
+    // the fence opened first, so the `[` inside it is not what decides the cut
+    expect(stableMarkdownPrefix("intro\n\n```\nsee [the doc")).toBe("intro\n\n");
+  });
+
+  it("leaves construct-free prose exactly alone (the common case costs nothing)", () => {
+    const md = "Waking corsair now. It usually takes about a minute, then I'll check the fleet.";
+    expect(stableMarkdownPrefix(md)).toBe(md);
+    expect(stableMarkdownPrefix("")).toBe("");
+  });
+
+  it("does NOT cut single-char `*` / `_` — the accepted residual (owner-ruled)", () => {
+    // Lone asterisks and snake_case pervade ordinary prose, so cutting on them would stall read-along
+    // constantly. The price: an emphasis span that closes across a feed boundary can speak its opening
+    // delimiter once — a few-word glitch at one chunk boundary, in a rare shape. This is the ONE
+    // construct excluded from the pipeline property test in tests/lib/ttsChunks.test.ts.
+    expect(stableMarkdownPrefix("that is *really")).toBe("that is *really");
+    expect(stableMarkdownPrefix("check auto_stop_sil")).toBe("check auto_stop_sil");
+    expect(toSpeech("that is *really")).toBe("that is *really"); // spoken with the delimiter…
+    expect(toSpeech("that is *really* bad")).toBe("that is really bad"); // …and without it at the flush
   });
 });

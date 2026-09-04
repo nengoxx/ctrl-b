@@ -46,6 +46,7 @@ describe("useVoiceStatus · the D63 chunk policy reaches the playback controller
         lookahead: 2,
         max_text_chars: 2048,
         format: "wav",
+        read_along: true,
       },
     });
     const { result } = renderHook(() => useVoiceStatus(), { wrapper });
@@ -58,6 +59,7 @@ describe("useVoiceStatus · the D63 chunk policy reaches the playback controller
       maxTextChars: 2048,
       lookahead: 2,
       format: "wav",
+      readAlong: true,
     });
   });
 

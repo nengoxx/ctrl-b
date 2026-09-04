@@ -59,6 +59,8 @@ export interface ChunkPolicy extends ChunkCfg {
   lookahead: number;
   /** The per-chunk container asked for on the wire (request > model > service, D63/MED-4). */
   format: string;
+  /** C3 S2 — speak each sentence as it streams instead of waiting for turn end (owner's toggle). */
+  readAlong: boolean;
 }
 
 const { emit, useStore } = createStore();
@@ -90,6 +92,7 @@ let policy: ChunkPolicy = {
   maxTextChars: 4096,
   lookahead: 1,
   format: "opus",
+  readAlong: false,
 };
 
 /** Publish the server's chunk policy (called from the `/voice/status` query — no fetch of our own). */

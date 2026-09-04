@@ -41,7 +41,8 @@ async def voice_status(request: Request) -> dict[str, object]:
     silence detector needs a query of its own.
 
     `stt_auto_stop` and `tts_chunking` are shape-only: a toggle + thresholds, and the split mode + size
-    floors/caps + container. No endpoint, no key, no model id — nothing here says whether a secret exists."""
+    floors/caps + container + the read-along flag. No endpoint, no key, no model id — nothing here says
+    whether a secret exists."""
     status: dict[str, object] = dict(_client(request).status())
     stt = request.app.state.settings.voice.stt
     tts = request.app.state.settings.voice.tts
@@ -59,6 +60,7 @@ async def voice_status(request: Request) -> dict[str, object]:
         "lookahead": tts.chunk_lookahead,
         "max_text_chars": tts.max_text_chars,
         "format": tts.chunk_format,
+        "read_along": tts.chunk_read_along,
     }
     return status
 
