@@ -59,6 +59,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/config.py", "Settings._known_media_namespaces_roles_and_slots"),
         ("app/config.py", "Settings._monitor_interval_covers_the_fleet_cache"),
         ("app/config.py", "QuietHoursCfg._hhmm"),
+        ("app/config.py", "WakeCfg._health_address_is_not_a_watched_device"),
         ("app/config.py", "QuietHoursCfg._not_the_whole_day"),
         ("app/config.py", "_apply_env_overrides"),
         ("app/config.py", "_presence_address"),

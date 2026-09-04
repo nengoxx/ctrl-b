@@ -218,6 +218,76 @@ def test_no_lan_addresses_probes_nothing_at_all() -> None:
         assert run_async(read_lan_presence([], count=3, timeout_s=1, health_ip=_ROUTER)) == {}
 
 
+@contextlib.contextmanager
+def _raising_probes(raises: dict[str, BaseException], answers: dict[str, PingResult] | None = None):
+    """A probe fan-out where named addresses RAISE. `ping_addr` is written not to raise, and the point
+    of the isolation is that "written not to" is not a guarantee the loop can lean on."""
+
+    async def fake(ip: str, *, count: int, timeout_s: float) -> PingResult:
+        if ip in raises:
+            raise raises[ip]
+        return (answers or {}).get(ip) or PingResult(online=True)
+
+    real = monitor.ping_addr
+    monitor.ping_addr = fake  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        monitor.ping_addr = real  # type: ignore[assignment]
+
+
+def test_one_probe_that_raises_is_that_address_unknown_and_nothing_else() -> None:
+    """Review MED-1, at the reader: a plain `gather` propagates the FIRST exception and discards every
+    other result, so one `OSError` (a `communicate()` failing outside its `wait_for`, a kill on a pid
+    that is already gone) would take the whole read down. Isolated, a broken address is a broken
+    ADDRESS — UNKNOWN, which disarms — and its neighbour still gets its answer."""
+    other = "192.168.1.144"
+    with _raising_probes({_LAN_IP: OSError("bad file descriptor")}):
+        out = run_async(read_lan_presence([_LAN_IP, other], count=3, timeout_s=1, health_ip=_ROUTER))
+    assert out[_LAN_IP].state == "unknown"
+    assert "OSError" in (out[_LAN_IP].reason or "")
+    assert out[other].state == "online"
+
+
+def test_a_health_probe_that_raises_closes_the_gate_rather_than_opening_it() -> None:
+    """The isolation must not accidentally invert the gate: a health probe we could not MAKE is not
+    evidence that the link is fine, so every miss behind it stays UNKNOWN."""
+    with _raising_probes({_ROUTER: OSError("boom")}, {_LAN_IP: PingResult(online=False)}):
+        out = run_async(read_lan_presence([_LAN_IP], count=3, timeout_s=1, health_ip=_ROUTER))
+    assert out[_LAN_IP].state == "unknown"
+
+
+def test_a_cancelled_probe_is_re_raised_not_reported_as_a_reading() -> None:
+    """Cancellation is the loop shutting down, not a device saying something. Swallowing it would
+    report a reading nobody took and make the task resist the cancel it was handed."""
+
+    async def scenario() -> None:
+        with _raising_probes({_LAN_IP: asyncio.CancelledError()}):
+            await read_lan_presence([_LAN_IP], count=3, timeout_s=1, health_ip=None)
+
+    with pytest.raises(asyncio.CancelledError):
+        run_async(scenario())
+
+
+def test_a_broken_lan_probe_never_costs_the_tailnet_its_edge() -> None:
+    """The regression class the isolation exists for, end to end (review MED-1, REPRODUCED): the LAN
+    and the tailnet share ONE tick, so an exception escaping the LAN read would abort the presence
+    half wholesale — and the casualty is the SHIPPED D50 trigger, which has nothing to do with the
+    LAN. Here the phone's probe raises every tick while the laptop arrives on the tailnet."""
+    svc, actions, _ = _service(
+        [_h("alpha")],
+        devices=[_lan_only("phone"), {"name": "laptop", "tailnet_ip": _IP}],
+    )
+    with (
+        _raising_probes({_LAN_IP: OSError("bad file descriptor")}),
+        _scripted_presence(["offline", "online"]),
+    ):
+        run_async(svc.tick())
+        run_async(svc.tick())
+    assert actions.woken == ["alpha"]  # the tailnet edge landed
+    assert svc.state.devices["phone"].seen[LAN] == "unknown"  # …and the broken probe disarmed, quietly
+
+
 def test_the_devices_and_the_health_address_are_probed_concurrently() -> None:
     """An absent device costs `count × timeout_s` (~3 s at the defaults), so sequential probes would
     spend most of a 30 s tick waiting. Pinned structurally rather than by timing: every probe must
@@ -521,6 +591,47 @@ def test_an_unquoted_clock_time_is_refused_with_the_reason() -> None:
     read that as 00:23 — silently, in the one feature whose failure mode is silence."""
     with pytest.raises(ValueError, match="NUMBER in YAML"):
         Settings.model_validate({"wake": {"quiet_hours": {"start": 1380, "end": "08:00"}}})
+
+
+def test_a_clock_time_must_match_WHOLE_never_just_its_first_two_fields() -> None:
+    """Review LOW-4: the first cut split on ":" and read `parts[0]`/`parts[1]`, so `"23:00:garbage"`
+    was accepted AS `23:00` — a window the owner would read back as the one they typed while it meant
+    something else. `HH:MM:SS` survives with a ZERO seconds field (a browser time input emits it when
+    its step includes seconds); a real seconds value is refused rather than truncated, which is the
+    same bug wearing valid digits."""
+    for bad in ("23:00:garbage", "23:00:30", "23:00 and a half", "2300", "23:0", "", "23:00:00:00"):
+        with pytest.raises(ValueError, match="quiet-hours time"):
+            Settings.model_validate({"wake": {"quiet_hours": {"start": bad, "end": "08:00"}}})
+    ok = Settings.model_validate({"wake": {"quiet_hours": {"start": "23:00:00", "end": "8:05"}}})
+    assert (ok.wake.quiet_hours.start, ok.wake.quiet_hours.end) == ("23:00", "08:05")  # type: ignore[union-attr]
+
+
+def test_the_health_address_may_not_be_one_of_the_watched_devices() -> None:
+    """Review MED-2: pointing the gate at the device it guards makes the two questions one, and the
+    feature stops working in BOTH directions — while the phone is away its own missing reply closes
+    the gate (so its absence is UNKNOWN and never arms), and when it returns it is merely online with
+    nothing armed behind it. Configured, plausible, and it can never fire."""
+    with pytest.raises(ValueError, match="can never arm"):
+        Settings.model_validate(
+            {
+                "wake": {
+                    "presence_devices": [{"name": "phone", "lan_ip": _LAN_IP}],
+                    "lan_health_ip": _LAN_IP,
+                }
+            }
+        )
+    # The router beside the same device is the shape this exists to keep working…
+    ok = Settings.model_validate(
+        {"wake": {"presence_devices": [{"name": "phone", "lan_ip": _LAN_IP}], "lan_health_ip": _ROUTER}}
+    )
+    assert ok.wake.lan_health_ip == _ROUTER
+    # …and a device watched only on the TAILNET does not collide with anything on the LAN.
+    assert (
+        Settings.model_validate(
+            {"wake": {"presence_devices": [{"name": "phone", "tailnet_ip": _IP}], "lan_health_ip": _ROUTER}}
+        ).wake.lan_health_ip
+        == _ROUTER
+    )
 
 
 # ── 6. the `config_version` 2 → 3 fold ──────────────────────────────────────────────────────────

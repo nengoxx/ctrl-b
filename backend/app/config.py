@@ -1150,6 +1150,12 @@ class PresenceDeviceCfg(BaseModel):
         return (self.tailnet_ip, self.lan_ip)
 
 
+#: A whole 24h clock time: `H:MM` / `HH:MM`, optionally with a seconds field the validator then
+#: requires to be zero. Anchored at both ends on purpose — the bug this replaced was a `split(":")`
+#: that read the first two fields of `"23:00:garbage"` and threw the rest away.
+_HHMM_RE = re.compile(r"(\d{1,2}):(\d{2})(?::(\d{2}))?")
+
+
 class QuietHoursCfg(BaseModel):
     """`wake.quiet_hours` — the local-time window in which a LAN arrival wakes nothing (D2-C).
 
@@ -1175,17 +1181,25 @@ class QuietHoursCfg(BaseModel):
     def _hhmm(cls, v: Any) -> str:
         """`"23:00"` → `"23:00"`, anything else → a 422 that says what to write. `mode="before"` so an
         unquoted `23:00` (an int, to YAML) is caught HERE with its own explanation rather than by
-        pydantic's generic "input should be a valid string"."""
+        pydantic's generic "input should be a valid string".
+
+        The match is WHOLE (D2-C review LOW-4). A loose `split(":")` accepted `"23:00:garbage"` and
+        silently kept the first two fields — a window the owner would read back as the one they typed
+        while it meant something else, in the one feature whose failure mode is silence. `HH:MM:SS` is
+        still accepted with a ZERO seconds field, because that is what a browser time input emits when
+        its step includes seconds; a non-zero one is refused rather than truncated, for the same
+        reason. A one-digit hour is fine (`7:05`); minutes and seconds must be two digits, since
+        `7:5` is a guess about what the owner meant.
+        """
         if not isinstance(v, str):
             raise ValueError(
                 f'a quiet-hours time must be a quoted 24h clock time like "23:00" — {v!r} is not a '
                 "string (an unquoted 23:00 is a NUMBER in YAML)"
             )
-        parts = v.strip().split(":")
-        try:
-            hour, minute = int(parts[0]), int(parts[1])
-        except IndexError, ValueError:
-            raise ValueError(f'quiet-hours time {v!r} is not a 24h clock time like "23:00"') from None
+        m = _HHMM_RE.fullmatch(v.strip())
+        if m is None or (m.group(3) or "00") != "00":
+            raise ValueError(f'quiet-hours time {v!r} is not a 24h clock time like "23:00"')
+        hour, minute = int(m.group(1)), int(m.group(2))
         if not (0 <= hour <= 23 and 0 <= minute <= 59):
             raise ValueError(f"quiet-hours time {v!r} is outside 00:00–23:59")
         return f"{hour:02d}:{minute:02d}"
@@ -1244,12 +1258,12 @@ class WakeCfg(BaseModel):
       (HA's `ICMP_TIMEOUT`), deliberately distinct from the fleet sweep's single 2 s echo. Several
       echoes ride out 802.11 DTIM buffering on a dozing phone, which is the difference between a
       damping constant and a coin flip.
-    - `lan_health_ip`: an address on the same LAN — normally the router — probed alongside the
-      devices. `ping` reports an unreachable device and a dead LOCAL link identically, so without a
-      health gate an unplugged server would arm every device and wake the whole fleet on reconnect
-      (the LAN analogue of D50 H2). While this address does not answer, every LAN no-reply that tick
-      is UNKNOWN instead of offline. Unset ⇒ no gate: a documented posture, and setting it is the
-      recommended one.
+    - `lan_health_ip`: an always-on address on the same LAN — normally the router, and never one of
+      the watched devices (refused below) — probed alongside them. `ping` reports an unreachable
+      device and a dead LOCAL link identically, so without a health gate an unplugged server would
+      arm every device and wake the whole fleet on reconnect (the LAN analogue of D50 H2). While this
+      address does not answer, every LAN no-reply that tick is UNKNOWN instead of offline. Unset ⇒ no
+      gate: a documented posture, and setting it is the recommended one.
     - `quiet_hours`: the local-time window in which a LAN arrival wakes nothing. Unset by default.
       **LAN fires only** — a Tailscale connect is a deliberate act ("I want the servers"), and
       silencing that at night would be user-hostile; the LAN arrival is automatic and is exactly what
@@ -1295,6 +1309,29 @@ class WakeCfg(BaseModel):
                     raise ValueError(f"wake.presence_devices: {what} {value!r} is used by two devices")
                 seen.add(value)
         return v
+
+    @model_validator(mode="after")
+    def _health_address_is_not_a_watched_device(self) -> "WakeCfg":
+        """The health address may not BE one of the watched devices (D2-C review MED-2).
+
+        The gate's whole premise is that the health address answers whether the device does — so
+        pointing it at the device itself makes the two questions one, and the feature quietly stops
+        working in both directions: while the phone is away its own missing reply closes the gate, so
+        its absence reads UNKNOWN and never ARMS, and when it comes back it is simply online with
+        nothing armed behind it. Configured, plausible-looking, and it can never fire — the failure
+        mode this feature's every other validation exists to prevent. Refused at the boundary, where
+        the sentence can name the fix, rather than discovered over a week of mornings.
+        """
+        if self.lan_health_ip is None:
+            return self
+        clash = next((d.name for d in self.presence_devices if d.lan_ip == self.lan_health_ip), None)
+        if clash is not None:
+            raise ValueError(
+                f"wake.lan_health_ip {self.lan_health_ip!r} is also device {clash!r}'s lan_ip — the "
+                "health address has to be a DIFFERENT always-on box on the same LAN (the router), or "
+                f"{clash!r} can never arm: its own absence would switch the gate off"
+            )
+        return self
 
 
 class MonitorCfg(BaseModel):

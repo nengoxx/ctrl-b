@@ -63,7 +63,7 @@ from app.services import wake_on_connect
 from app.services.action_service import ActionService
 from app.services.automations.schedule import server_tz_key
 from app.services.events import EventService
-from app.services.fleet import FleetService, ping_addr
+from app.services.fleet import FleetService, PingResult, ping_addr
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -192,6 +192,28 @@ class DeviceState:
     seen: dict[str, PresenceState] = field(default_factory=dict)
 
 
+def _probe_answer(settled: PingResult | BaseException) -> PingResult:
+    """One `gather(return_exceptions=True)` slot as a probe answer (D2-C review MED-1).
+
+    `ping_addr` is written not to raise, and "written not to" is not "cannot": `communicate()` can
+    fail outside its own `wait_for`, and a kill can land on a pid that is already gone. Under a plain
+    `gather` ONE such `OSError` propagates out of the whole presence read — taking down the tick that
+    also carries the shipped TAILNET edge, which has nothing to do with the LAN. Isolating each probe
+    keeps a broken address a broken ADDRESS: an UNKNOWN reading, which disarms, which is what a check
+    we could not make has meant since D50 M1.
+
+    Cancellation is deliberately NOT swallowed. A cancelled probe means the loop is shutting down (or
+    an outer timeout fired); turning that into "the phone is unknown" would report a reading nobody
+    took and, worse, make the task resist the cancel it was handed.
+    """
+    if isinstance(settled, asyncio.CancelledError):
+        raise settled
+    if isinstance(settled, BaseException):
+        detail = f"{type(settled).__name__}: {settled}" if str(settled) else type(settled).__name__
+        return PingResult(online=False, error=f"the probe failed ({detail})")
+    return settled
+
+
 async def read_lan_presence(
     ips: Sequence[str], *, count: int, timeout_s: float, health_ip: str | None
 ) -> dict[str, DeviceReading]:
@@ -211,12 +233,18 @@ async def read_lan_presence(
     disarms rather than arms. Unset ⇒ no gate, which is a documented posture rather than an oversight.
 
     Probes run concurrently for the same reason the fleet sweep does: an absent device costs
-    `count × timeout_s` (~3 s at the defaults), and sequential probes would eat the 30 s tick.
+    `count × timeout_s` (~3 s at the defaults), and sequential probes would eat the 30 s tick — and
+    each one is ISOLATED (`return_exceptions=True`, see `_probe_answer`), because a shared `gather`
+    is exactly where one address's failure becomes the whole tick's.
     """
     if not ips:
         return {}  # nothing to ask about: the LAN half costs literally nothing, health address included
     targets = [*ips, health_ip] if health_ip else list(ips)
-    results = await asyncio.gather(*(ping_addr(ip, count=count, timeout_s=timeout_s) for ip in targets))
+    settled = await asyncio.gather(
+        *(ping_addr(ip, count=count, timeout_s=timeout_s) for ip in targets),
+        return_exceptions=True,
+    )
+    results = [_probe_answer(r) for r in settled]
     healthy = results[-1].online if health_ip else True
     out: dict[str, DeviceReading] = {}
     for ip, result in zip(ips, results[: len(ips)], strict=True):

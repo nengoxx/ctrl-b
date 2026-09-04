@@ -431,6 +431,49 @@ describe("ConfTab · monitor + presence wake (15c / D50)", () => {
     expect(patchOf().wake?.presence_devices).toEqual([]);
   });
 
+  it("a half-filled device row BLOCKS the save, and only for the three rules the seam mirrors", () => {
+    // D2-C review LOW-3 — the three shapes a row reaches by being abandoned mid-edit, each named at
+    // the control that fixes it instead of arriving as a server 422. A row left blank in EVERY field
+    // is deliberately NOT one of them: `parseDevices` drops it, because it is an "+ add device" the
+    // owner opened and walked away from.
+    render(<ConfTab active />);
+    fireEvent.click(addDeviceButton());
+    expect(saveButton().disabled).toBe(false); // an untouched new row is not an error, it is dropped
+
+    // ① an address with no name — the name is how the device is tracked
+    fireEvent.change(field("Device 1 LAN IP"), { target: { value: "192.168.1.143" } });
+    expect(saveButton().disabled).toBe(true);
+    expect(serverGroup().getByText(/device #1 → give it a name/)).toBeTruthy();
+
+    // ② a name with no address — nothing can observe it
+    fireEvent.change(field("Device 1 name"), { target: { value: "phone" } });
+    fireEvent.change(field("Device 1 LAN IP"), { target: { value: "" } });
+    expect(saveButton().disabled).toBe(true);
+    expect(
+      serverGroup().getByText(/device “phone” → needs a tailnet or a LAN address/),
+    ).toBeTruthy();
+
+    // ③ two devices under one name — they would share ONE state entry server-side
+    fireEvent.change(field("Device 1 LAN IP"), { target: { value: "192.168.1.143" } });
+    expect(saveButton().disabled).toBe(false);
+    fireEvent.click(addDeviceButton());
+    fireEvent.change(field("Device 2 name"), { target: { value: "phone" } });
+    fireEvent.change(field("Device 2 tailnet IP"), { target: { value: "100.64.0.5" } });
+    expect(saveButton().disabled).toBe(true);
+    expect(serverGroup().getByText(/two devices cannot share a name/)).toBeTruthy();
+    fireEvent.click(saveButton());
+    expect(h.save).not.toHaveBeenCalled();
+
+    // renaming the second row releases the block, and both rows save
+    fireEvent.change(field("Device 2 name"), { target: { value: "laptop" } });
+    expect(saveButton().disabled).toBe(false);
+    fireEvent.click(saveButton());
+    expect(patchOf().wake?.presence_devices).toEqual([
+      { name: "phone", tailnet_ip: null, lan_ip: "192.168.1.143" },
+      { name: "laptop", tailnet_ip: "100.64.0.5", lan_ip: null },
+    ]);
+  });
+
   it("a bad address is NOT swallowed client-side — it rides to the backend validator verbatim", () => {
     // `PresenceDeviceCfg` is the single source of truth for what an address is (a typo must 422,
     // never become a device that is permanently UNKNOWN). The form must not silently drop it.

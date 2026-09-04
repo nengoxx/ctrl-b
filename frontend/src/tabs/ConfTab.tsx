@@ -1401,6 +1401,29 @@ export function ConfTab({ active }: Props) {
   // one visible field away. Same rule, one source of truth for what it means.
   const quietSame = !!quietStart.trim() && quietStart.trim() === quietEnd.trim();
 
+  // D2-C review LOW-3 — the three device-row rules `PresenceDeviceCfg`/`WakeCfg` refuse, mirrored at
+  // the seam that can name the control. Deliberately only these three: they are the ones a half-filled
+  // ROW produces (the shapes the owner reaches by tabbing away mid-edit), and each names a field on
+  // screen. Address SYNTAX and the numeric bounds stay server-owned — `ipaddress` is the source of
+  // truth for what an address is, and a second parser here would drift from it. A row left blank in
+  // every field is not an error at all: `parseDevices` drops it, because it is an "+ add device" the
+  // owner opened and walked away from.
+  const deviceBlocks: string[] = (() => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    devices.forEach((d, i) => {
+      const name = String(d.name ?? "").trim();
+      const hasAddress = !!String(d.tailnet_ip ?? "").trim() || !!String(d.lan_ip ?? "").trim();
+      const label = name ? `device “${name}”` : `device #${i + 1}`;
+      if (!name && hasAddress)
+        out.push(`${label} → give it a name (it is how the device is tracked)`);
+      else if (name && !hasAddress) out.push(`${label} → needs a tailnet or a LAN address`);
+      if (name && seen.has(name)) out.push(`${label} → two devices cannot share a name`);
+      if (name) seen.add(name);
+    });
+    return out;
+  })();
+
   // A11/D48 B2 + R19 — the reference-guard. Collect every config-held ModelRef (the draft's inference
   // primary/fallbacks + the settings doc's agent.defaults.model / summarizer[s] / routing.lead), resolve
   // its provider through the queued renames, and check it still points at a live provider + model in the
@@ -1589,6 +1612,7 @@ export function ConfTab({ active }: Props) {
             `wake, all day; switch Quiet hours off to disable them`,
         ]
       : []),
+    ...deviceBlocks,
   ];
   const saveDisabled = !dirty || save.isPending || blockReasons.length > 0;
 
