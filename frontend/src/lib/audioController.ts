@@ -20,14 +20,20 @@
 // before that), position = the playing chunk's slot + the element's `currentTime`, and a seek maps a
 // global fraction back to (chunk, offset). No blob concatenation, no reload at the seams.
 //
+// C3 S2 — READ-ALONG. The same queue, fed WHILE the reply streams: `feedReadAlong` appends the chunks
+// the growing buffer has closed and `endTurnSpeak` flushes the tail at turn end. The only structural
+// change is `Session.open` — while it is set, playback catching up to the last-arrived chunk takes the
+// waiting latch instead of finishing. The feeder (hooks/useAutoTts) owns the gates and passes raw
+// markdown; the planning pipeline and its cursor live here, so the queue has exactly one writer.
+//
 // The reactive snapshot (`pb`) mirrors the <audio> element's native events; components subscribe via
 // `usePlayback`. The listener/notify/React-binding plumbing is the shared `createStore` binding (D23) —
 // this singleton is one of its ten consumers; only the snapshot + the DOM logic below are local to it.
 
 import { pushToast } from "../store/toast";
 import { createStore } from "../store/createStore";
-import { toSpeech } from "./toSpeech";
-import { chunkPlan, type ChunkCfg } from "./ttsChunks";
+import { stableMarkdownPrefix, toSpeech } from "./toSpeech";
+import { chunkPlan, chunkPlanFrom, type ChunkCfg } from "./ttsChunks";
 
 export type PlayStatus = "idle" | "loading" | "playing" | "paused";
 
@@ -134,6 +140,23 @@ interface Session {
   // queue (the finish() drop, one landing too late) — parked is what tells that apart from an ordinary
   // mid-play failure, which playback will surface itself. Cleared by any resume/navigation.
   parked: boolean;
+  // ── C3 S2 (read-along) ──
+  /** This queue was fed by the STREAM, not by a tap: it re-plans as the reply grows, parks at finish
+   *  even with holes (ruling 3), and re-requests those holes on replay. */
+  readAlong: boolean;
+  /** The reply is still being written. `playNext` catching up to the last-arrived chunk takes the
+   *  waiting latch instead of `finish()`; the turn-end flush is what clears this. */
+  open: boolean;
+  /** The policy SNAPSHOT this session plans from: the module-level `policy` is replaced by any Conf
+   *  voice save, and a mid-turn re-split would leave the enqueued chunks and the cursor disagreeing. */
+  cfg: ChunkPolicy;
+  /** The stable markdown prefix already planned — the identity, not just its length: a reconnect
+   *  overlays the open message's text WHOLESALE, and a buffer that no longer EXTENDS this one must
+   *  abandon read-along rather than re-speak what was already said. */
+  srcFed: string;
+  /** The per-message budget dropped a tail. Said once, at the flush — the copy assumes a finished
+   *  reply — and feeding stops there (re-planning a capped prefix per boundary buys nothing). */
+  dropped: boolean;
   abort: AbortController;
 }
 let session: Session | null = null;
@@ -407,6 +430,51 @@ async function playWhole(
 
 // ── chunked: split → synth-ahead → src-swap on `ended` ───────────────────────────────────────────
 
+/** A fresh queue over an ordered chunk list — the five index-parallel arrays and the flags that ride
+ *  them, in one place for both entry points (a tap and the read-along feed). `cfg` is the policy as it
+ *  stands right now: only read-along re-plans, and it must not see a Conf save land mid-turn. */
+function newSession(id: string, seq: number, chunks: string[], readAlong: boolean): Session {
+  return {
+    id,
+    seq,
+    texts: chunks,
+    urls: chunks.map(() => null),
+    states: chunks.map((): ChunkState => "pending"),
+    requested: chunks.map(() => false),
+    durations: chunks.map((): number | null => null),
+    tl: { spans: [], total: 0, estimated: false },
+    playIdx: -1,
+    waiting: false,
+    wantPlay: true,
+    seek: null,
+    metaSeek: null,
+    pin: null,
+    pinned: false,
+    errored: false,
+    parked: false,
+    readAlong,
+    open: readAlong, // a fed queue is born open; a tapped one plays a message that is already whole
+    cfg: policy,
+    srcFed: "",
+    dropped: false,
+    abort: new AbortController(),
+  };
+}
+
+/** Take the element + the docked player for `id`, reaping the previous message's queue (D63's
+ *  single-message retention). Returns the generation the new queue owns. */
+function beginMessage(id: string, a: HTMLAudioElement): number {
+  a.pause(); // stop whatever's playing now so it doesn't keep going during the new clip's synth
+  const seq = ++reqSeq;
+  set({ id, status: "loading", current: 0, duration: 0, estimated: false, chunks: null });
+  if (session && session.id !== id) {
+    session.abort.abort();
+    revokeSession(session);
+    session = null;
+  }
+  return seq;
+}
+
 /** Start (or replay) the chunk queue for a message. Returns immediately — the first chunk's synth
  *  releases the latch and starts playback. */
 function startChunked(id: string, markdown: string, seq: number): void {
@@ -420,6 +488,14 @@ function startChunked(id: string, markdown: string, seq: number): void {
     s.wantPlay = true;
     s.parked = false; // a replay is a live queue — a stale flag would let a retried chunk's failure
     // drop the session mid-listen instead of taking the ordinary skip (confirm-round catch)
+    // C3 S2 — only a read-along queue is ever RETAINED with holes in it (ruling 3); this replay is
+    // where they are re-requested rather than skipped for good. A TAP also ends any feeding: a queue
+    // abandoned mid-turn (dismissed, then replayed from the bubble) is never fed again, and replaying
+    // it while still `open` would latch forever at the end instead of finishing.
+    if (s.readAlong) {
+      s.open = false;
+      resetFailedSlots(s);
+    }
     s.seek = null;
     s.metaSeek?.(); // a replay must not inherit a stale armed payout (chunk 0 could re-match it)
     // Re-probe anything that has a blob but no exact duration — a probe launched by the previous play
@@ -436,26 +512,7 @@ function startChunked(id: string, markdown: string, seq: number): void {
       // D63 moved the per-MESSAGE bound here from the per-request 422: the tail is dropped, said once.
       pushToast("Reply too long to read in full — the tail was skipped", "info");
     }
-    s = {
-      id,
-      seq,
-      texts: plan.chunks,
-      urls: plan.chunks.map(() => null),
-      states: plan.chunks.map((): ChunkState => "pending"),
-      requested: plan.chunks.map(() => false),
-      durations: plan.chunks.map((): number | null => null),
-      tl: { spans: [], total: 0, estimated: false },
-      playIdx: -1,
-      waiting: false,
-      wantPlay: true,
-      seek: null,
-      metaSeek: null,
-      pin: null,
-      pinned: false,
-      errored: false,
-      parked: false,
-      abort: new AbortController(),
-    };
+    s = newSession(id, seq, plan.chunks, false);
     session = s;
   }
   publishTimeline(s); // the bar spans the whole reply from the first frame (estimated until it isn't)
@@ -504,7 +561,10 @@ async function synthChunk(s: Session, i: number): Promise<void> {
 
   if (!out.ok) {
     if (stale) return;
-    if (s.parked) {
+    // C3 S2 — a read-along queue is retained WITH its holes (ruling 3) and re-requests them on
+    // replay, so the straggler's failure is an ordinary skip for it: the drop below exists precisely
+    // because an S1 queue could not do that.
+    if (s.parked && !s.readAlong) {
       // The queue already finished and parked for replay; this straggler failing means the retained
       // queue would replay with a permanently skipped chunk — take the finish() drop, one landing
       // too late (the Emma round's catch, 2026-08-22).
@@ -549,6 +609,14 @@ function playNext(s: Session): void {
   let i = s.playIdx + 1;
   while (i < s.texts.length && s.states[i] === "failed") i++; // a failed chunk is skipped, never fatal
   if (i >= s.texts.length) {
+    if (s.open) {
+      // C3 S2 — the reply is still being written: this is the SAME catch-up the latch already models,
+      // not the end of the message. `finish()` here would rewind to chunk 0 and publish "paused"
+      // mid-turn; the flush is the only thing allowed to end an open session.
+      s.waiting = true;
+      pump(s);
+      return;
+    }
     finish(s, a);
     return;
   }
@@ -626,15 +694,18 @@ function dropSession(s: Session): void {
 
 function finish(s: Session, a: HTMLAudioElement): void {
   const first = s.states.indexOf("ok");
-  if (first < 0 || s.states.includes("failed")) {
-    // ANY failed chunk drops the QUEUE, not just the player: a retained session replays with its
-    // failed chunks skipped forever — never re-requesting them long after the TTS server came back
-    // (all-failed, the worst case, would finish instantly on top). Dropping it makes the next tap a
-    // fresh synth of the whole message. The one error toast already went out.
+  // ANY failed chunk drops the QUEUE, not just the player: a retained session replays with its
+  // failed chunks skipped forever — never re-requesting them long after the TTS server came back
+  // (all-failed, the worst case, would finish instantly on top). Dropping it makes the next tap a
+  // fresh synth of the whole message. The one error toast already went out.
+  // C3 S2 (ruling 3) — a READ-ALONG session parks instead: dropping it would delete a reply the user
+  // has been listening to for minutes at the very moment it ends. Its holes are not permanent any
+  // more, because both replay paths re-arm them (`resetFailedSlots`). Nothing OK to keep still drops.
+  if (first < 0 || (s.states.includes("failed") && !s.readAlong)) {
     dropSession(s);
     return;
   }
-  s.parked = true; // retained for replay — a straggler synth failing from here drops the queue too
+  s.parked = true; // retained for replay — a straggler failing from here drops an S1 queue too
   s.playIdx = first;
   s.waiting = false;
   s.seek = null;
@@ -645,6 +716,109 @@ function finish(s: Session, a: HTMLAudioElement): void {
   // forward seek left unsynthesized holes behind the playhead it can be mid-message (accepted residual,
   // D63 amendment §8): the playhead reports where the rewind actually landed rather than lying about 0.
   set({ current: s.tl.spans[first]?.start ?? 0, status: "paused" });
+}
+
+// ── read-along: speak the reply WHILE it is written (C3 S2) ──────────────────────────────────────
+//
+// The feeder (hooks/useAutoTts) owns the gates and hands over RAW MARKDOWN; the pipeline —
+// `stableMarkdownPrefix` (cut the buffer where `toSpeech` can still rewrite it) → `toSpeech` →
+// `chunkPlanFrom` against the session's policy SNAPSHOT — is owned here, so the queue, its cursor and
+// its bookkeeping have exactly one writer. Feeds are idempotent: a re-feed that closes no new chunk is
+// a couple of pure passes over a few KB and appends nothing.
+
+/** Plan the part of `markdown` this queue has not enqueued yet and append it. `final` = the turn-end
+ *  flush: it plans from the FULL buffer (a construct that never closed must still be spoken) and takes
+ *  the tail chunk, which every incremental plan withholds because growth can still rewrite it. */
+function planInto(s: Session, markdown: string, final: boolean): void {
+  const src = final ? markdown : stableMarkdownPrefix(markdown);
+  if (!final && src.length <= s.srcFed.length) return; // no NEW text is safe to speak yet
+  const plan = chunkPlanFrom(toSpeech(src), s.cfg, s.texts.length, final);
+  s.srcFed = src;
+  if (plan.dropped) s.dropped = true;
+  if (!plan.chunks.length) return;
+  for (const text of plan.chunks) {
+    s.texts.push(text);
+    s.urls.push(null);
+    s.states.push("pending");
+    s.requested.push(false);
+    s.durations.push(null);
+  }
+  publishTimeline(s); // the bar grows with the reply — `estimated` stays true while a tail is unknown
+  pump(s); // this may be the chunk the latch is holding for; `synthChunk` releases it on arrival
+}
+
+/** Re-arm every FAILED slot so a replay actually re-requests it (`pump` and `playNext` both walk past
+ *  a "failed" one forever, which is why an S1 queue drops instead of parking). Returns the earliest
+ *  index re-armed, or -1 when there were no holes. */
+function resetFailedSlots(s: Session): number {
+  let first = -1;
+  for (let i = 0; i < s.states.length; i++) {
+    if (s.states[i] !== "failed") continue;
+    if (first < 0) first = i;
+    s.states[i] = "pending";
+    s.requested[i] = false;
+    s.durations[i] = null;
+  }
+  return first;
+}
+
+/**
+ * Start — or extend — the read-along queue for the message currently streaming. Called per boundary
+ * by the feeder; everything about "what is safe to speak yet" is decided here.
+ */
+export function feedReadAlong(id: string, markdown: string): void {
+  const s = liveSession();
+  if (s && s.id === id) {
+    if (!s.open || s.dropped) return; // flushed, abandoned, or capped — this turn has said its piece
+    if (!markdown.startsWith(s.srcFed)) {
+      // A reconnect overlays the open message's text WHOLESALE (`overlaySyncMessage`) and it can be
+      // SHORTER than what was fed. Nothing spoken can be un-spoken and the cursor can no longer be
+      // aligned, so close the session where it stands and let the queue drain what it holds.
+      s.open = false;
+      if (s.waiting || s.playIdx < 0) playNext(s);
+      return;
+    }
+    planInto(s, markdown, false);
+    return;
+  }
+  // Dismissed or muted while open: the generation moved on but the queue is still here. The user
+  // stopped THIS message — a later boundary must not resurrect it from the top.
+  if (session && session.id === id && session.seq !== reqSeq) return;
+  const src = stableMarkdownPrefix(markdown);
+  const plan = chunkPlanFrom(toSpeech(src), policy, 0);
+  if (!plan.chunks.length) return; // nothing has closed yet — no session, no docked player
+  const a = ensureEl();
+  const next = newSession(id, beginMessage(id, a), plan.chunks, true);
+  next.srcFed = src;
+  next.dropped = plan.dropped;
+  session = next;
+  publishTimeline(next); // the bar spans what exists so far (estimated, and growing)
+  playNext(next); // latches on chunk 0 and pumps the synth window
+}
+
+/**
+ * The ONE turn-end entry point (D63 S2/MED-3). An owned read-along session is FLUSHED: the tail every
+ * incremental plan withholds is planned from the finished reply, and with `open` cleared the queue
+ * finishes normally from there. Anything else falls through to `toggle` — which is what a buffered
+ * turn (D17: no deltas were ever fed) needs. The feeder must never call `toggle` itself: for a message
+ * that IS the docked one, `pb.id === id` reads as a tap and PAUSES the reply mid-sentence.
+ */
+export async function endTurnSpeak(id: string, markdown: string): Promise<void> {
+  const s = liveSession();
+  if (s && s.id === id && s.readAlong) {
+    if (!s.open) return; // abandoned mid-turn (a reload rewrote the text) — it keeps what it has
+    s.open = false;
+    planInto(s, markdown, true);
+    if (s.dropped) {
+      // Deferred to here on purpose: the copy assumes a finished reply, and one toast per message.
+      pushToast("Reply too long to read in full — the tail was skipped", "info");
+    }
+    // The queue may be latched at the end of what was fed; nothing else will call back into it now.
+    // With `open` cleared this either plays the tail or ends the message.
+    if (s.waiting || s.playIdx < 0) playNext(s);
+    return;
+  }
+  await toggle(id, markdown);
 }
 
 // ── the public surface ───────────────────────────────────────────────────────────────────────────
@@ -664,8 +838,24 @@ function transport(): void {
   }
   if (pb.status !== "paused") return; // loading → ignore taps until it resolves
   if (s) {
+    const replay = s.parked; // parked = the end-of-queue rewind: this tap replays, not resumes
     s.wantPlay = true;
     s.parked = false; // resuming (a replay included) makes it an ordinary live queue again
+    // C3 S2 (ruling 3's rider) — a read-along queue parks WITH its holes, so the replay is what
+    // re-requests them. `pump` only looks forward of the cursor, so a hole BEHIND the rewind point
+    // (a failed chunk 0) would never reach the wire: re-enter the queue just before the earlier of
+    // the two, through `playNext` rather than a bare `play()` on the already-loaded chunk.
+    const armed = replay && s.readAlong ? resetFailedSlots(s) : -1;
+    if (armed >= 0) {
+      publishTimeline(s); // those slots are un-synthesized again — the waveform hollows them
+      s.playIdx = Math.min(Math.max(s.playIdx, 0), armed) - 1;
+      s.waiting = false;
+      s.seek = null;
+      s.metaSeek?.(); // a replay must not inherit a stale armed payout
+      playNext(s);
+      if (s.waiting) set({ status: "playing" }); // latched on a chunk being re-requested
+      return;
+    }
   }
   if (s?.waiting) {
     set({ status: "playing" }); // nothing loaded to resume — the chunk in flight starts on arrival
@@ -685,15 +875,8 @@ export async function toggle(id: string, markdown: string): Promise<void> {
     transport(); // pause/resume in place (a re-tap while loading is ignored)
     return;
   }
-  a.pause(); // stop whatever's playing now so it doesn't keep going during the new clip's synth
-  const seq = ++reqSeq;
-  set({ id, status: "loading", current: 0, duration: 0, estimated: false, chunks: null });
   // Single-message retention (D63): a different message starting is what reaps the previous queue.
-  if (session && session.id !== id) {
-    session.abort.abort();
-    revokeSession(session);
-    session = null;
-  }
+  const seq = beginMessage(id, a);
   if (policy.mode === "off") {
     await playWhole(id, markdown, seq, a);
     return;

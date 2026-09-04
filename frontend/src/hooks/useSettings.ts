@@ -92,6 +92,10 @@ export interface VoiceTts extends VoiceServiceCommon {
   chunk_min_chars: number;
   chunk_max_chars: number; // split at the last word boundary under this (must be <= max_text_chars)
   chunk_lookahead: number; // synth-ahead depth, 1..4
+  // C3 S2 — read-along: speak each sentence the moment it streams, instead of waiting for turn end.
+  // Meaningless under `chunking: "off"` (the plan is then one whole-message chunk), which is why it
+  // lives in the same object as `chunking` rather than beside it.
+  chunk_read_along: boolean;
 }
 
 /** One entry of `media.namespaces.<ns>.roles.<role>.files` — the library's unit of priority (D65 §2.2).

@@ -7,6 +7,8 @@ vi.mock("../../src/store/toast", () => ({ pushToast: h.toast }));
 import {
   clearAudioCache,
   dismiss,
+  endTurnSpeak,
+  feedReadAlong,
   seekFraction,
   setChunkPolicy,
   toggle,
@@ -23,6 +25,8 @@ import {
 //     the stale-completion revoke, single-message retention, the failover pin and its serve flash.
 //   • the D63-amendment VIRTUAL TIMELINE — the estimator, the whole-message position/duration, and the
 //     global seek's three landings (synthesized / pending / failed).
+//   • C3 S2 READ-ALONG — the same queue fed while the reply streams: the `open` latch, the incremental
+//     plan's cursor, the policy snapshot, the prefix guard, the flush, and the parked replay's re-arm.
 
 let lastAudio: FakeAudio;
 let probes: FakeAudio[] = [];
@@ -1070,5 +1074,256 @@ describe("audioController — the whole-message virtual timeline (D63 amendment)
     expect(result.current.current).toBe(2.5);
     expect(result.current.chunks).toBeNull();
     expect(result.current.estimated).toBe(false);
+  });
+});
+
+describe("audioController — read-along (C3 S2)", () => {
+  // The reply as it is written: "One. Two." closes ONE chunk (the trailing merge buffer is always
+  // withheld), the rest arrives later, and the turn-end flush is what emits the tail.
+  const HALF = "One. Two.";
+  const WHOLE = "One. Two. Three.";
+
+  beforeEach(() => setChunkPolicy(chunked()));
+
+  it("the first feed docks the player and puts chunk 0 alone on the wire", async () => {
+    setChunkPolicy(chunked({ lookahead: 3 })); // even wide open, bootstrap holds it to one
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", WHOLE)); // two chunks closed, the third withheld
+
+    expect(result.current.id).toBe("m1");
+    expect(result.current.status).toBe("loading");
+    expect(calls.map((c) => c.body.text)).toEqual(["One."]);
+
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    expect(result.current.status).toBe("playing");
+    expect(lastAudio.src).toBe("blob:1");
+    expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]); // the window opened on the pin
+  });
+
+  it("feeds nothing until a chunk has actually CLOSED", async () => {
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", "One.")); // the only piece is still the merge buffer
+    expect(calls).toHaveLength(0);
+    const { result } = renderHook(() => usePlayback((p) => p));
+    expect(result.current.id).toBeNull(); // no session, no docked player, nothing to un-dock
+  });
+
+  it("catching up mid-stream takes the LATCH — it never finishes or rewinds the reply", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", HALF));
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    expect(lastAudio.src).toBe("blob:1");
+
+    await act(async () => lastAudio.finish()); // playback reaches the end of what has arrived
+    await flush();
+    expect(result.current.status).toBe("playing"); // NOT paused — the reply is still being written
+    expect(lastAudio.src).toBe("blob:1"); // ...and NOT rewound to the top
+    expect(calls).toHaveLength(1);
+
+    act(() => feedReadAlong("m1", WHOLE)); // the next sentence closes → the latch releases on arrival
+    expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]);
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    expect(lastAudio.src).toBe("blob:2");
+    expect(result.current.status).toBe("playing");
+  });
+
+  it("the timeline GROWS with the reply and stays estimated", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", HALF));
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => metaFor("blob:1", 2)); // "One." = 4 chars in 2 s → 2 chars/s
+    expect(result.current.duration).toBeCloseTo(2, 6);
+    expect(result.current.chunks).toHaveLength(1);
+
+    act(() => feedReadAlong("m1", WHOLE));
+    expect(result.current.duration).toBeCloseTo(4, 6); // + "Two." at the learned rate
+    expect(result.current.chunks).toHaveLength(2);
+    expect(result.current.estimated).toBe(true);
+  });
+
+  it("the flush emits the withheld tail, and the queue then finishes normally", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", HALF));
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish()); // latched at the end of the fed text
+    await flush();
+
+    await act(async () => void endTurnSpeak("m1", WHOLE));
+    expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]); // + the tail, one window deep
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    expect(lastAudio.src).toBe("blob:2"); // the latch released onto "Two."
+    expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two.", "Three."]);
+
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish());
+    await flush();
+    expect(lastAudio.src).toBe("blob:3");
+    await act(async () => lastAudio.finish()); // end of the queue — now that `open` is cleared
+    await flush();
+    expect(result.current.status).toBe("paused");
+    expect(lastAudio.src).toBe("blob:1"); // rewound for a replay, exactly like a tapped message
+  });
+
+  it("a feed after `dismiss()` is inert — the user stopped this message", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", HALF));
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => dismiss());
+
+    act(() => feedReadAlong("m1", WHOLE));
+    expect(calls).toHaveLength(1); // nothing new on the wire...
+    expect(result.current.id).toBeNull(); // ...and the player stays undocked
+  });
+
+  it("replaying a dismissed read-along from the bubble ENDS — the open latch does not outlive it", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", HALF));
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    act(() => dismiss()); // the user stopped it; the turn end then never flushes an abandoned session
+
+    await act(async () => {
+      await toggle("m1", HALF); // ...and later taps the bubble to hear it again
+    });
+    await flush();
+    expect(result.current.status).toBe("playing");
+    await act(async () => lastAudio.finish());
+    await flush();
+    expect(result.current.status).toBe("paused"); // finished + rewound, not latched forever
+  });
+
+  it("a feed for a DIFFERENT message supersedes the previous one and revokes its blobs", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", HALF));
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    revoked = [];
+
+    act(() => feedReadAlong("m2", HALF)); // the turn's next message starts reading
+    expect(result.current.id).toBe("m2");
+    expect(revoked).toContain("blob:1"); // D63 single-message retention, one boundary earlier
+  });
+
+  it("a cap hit mid-stream stops the feed and toasts exactly ONCE, at the flush", async () => {
+    setChunkPolicy(chunked({ maxTextChars: 9 })); // "One." + "Two." fit; "Three." does not
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", HALF));
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    const tooLong = () =>
+      h.toast.mock.calls.filter(([t]) => String(t).startsWith("Reply too long"));
+
+    act(() => feedReadAlong("m1", `${WHOLE} Four.`)); // the budget runs out mid-stream
+    expect(tooLong()).toHaveLength(0); // said nothing yet — the copy assumes a finished reply
+    act(() => feedReadAlong("m1", `${WHOLE} Four. Five.`)); // capped → no further planning
+    expect(tooLong()).toHaveLength(0);
+
+    await act(async () => void endTurnSpeak("m1", `${WHOLE} Four. Five.`));
+    expect(tooLong()).toHaveLength(1);
+    expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]); // the tail never went out
+  });
+
+  it("plans the whole turn from the policy SNAPSHOT — a Conf save mid-reply can't re-split it", async () => {
+    setChunkPolicy(chunked({ lookahead: 3 })); // so every appended chunk reaches the wire at once
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", HALF));
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+
+    // A voice save lands mid-turn: floors that would merge every sentence into one chunk.
+    setChunkPolicy(chunked({ lookahead: 3, minWords: 20, minChars: 200 }));
+    act(() => feedReadAlong("m1", `${WHOLE} Four.`));
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    // Still the snapshot's split (one sentence per chunk); a re-split would have made the cursor lie.
+    expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two.", "Three."]);
+  });
+
+  it("a buffer that no longer EXTENDS what was fed abandons read-along instead of re-speaking", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", WHOLE)); // "One." + "Two." enqueued
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+
+    act(() => feedReadAlong("m1", "Something else entirely.")); // a reconnect overlaid the message
+    expect(calls).toHaveLength(2); // only the lookahead that was already in flight
+    await act(async () => void endTurnSpeak("m1", "Something else entirely."));
+    expect(calls).toHaveLength(2); // the flush of an abandoned session adds nothing either
+
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish());
+    await flush();
+    await act(async () => lastAudio.finish()); // the queue drains and ENDS — no stuck latch
+    await flush();
+    expect(result.current.status).toBe("paused");
+    expect(lastAudio.src).toBe("blob:1");
+  });
+
+  it("a partly-failed read-along PARKS, and the replay re-requests the hole it kept", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", WHOLE));
+    await act(async () => calls[0].resolve(errRes(500))); // chunk 0 fails: the hole is at the TOP
+    await flush();
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    expect(lastAudio.src).toBe("blob:1"); // "Two." — the skip, exactly as S1 does it
+
+    await act(async () => void endTurnSpeak("m1", WHOLE));
+    await act(async () => calls[2].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish());
+    await flush();
+    await act(async () => lastAudio.finish());
+    await flush();
+    // S1 drops a partly-failed queue here; a read-along session has minutes of audio to keep.
+    expect(result.current.id).toBe("m1");
+    expect(result.current.status).toBe("paused");
+
+    act(() => togglePlay()); // replay: the failed slot is re-armed and the cursor rewinds onto it
+    expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two.", "Three.", "One."]);
+    expect(result.current.status).toBe("playing"); // latched on the re-request
+    await act(async () => calls[3].resolve(okRes()));
+    await flush();
+    expect(lastAudio.src).toBe("blob:3"); // ...and the retried chunk 0 is what plays
+  });
+
+  it("delegates a turn with no fed session to the ordinary play path (D17 buffered)", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    await act(async () => {
+      await endTurnSpeak("m1", WHOLE); // nothing was ever fed — this is today's turn-end path
+    });
+    await flush();
+    expect(result.current.id).toBe("m1");
+    expect(result.current.status).toBe("playing");
+  });
+
+  it("never PAUSES the reply it is flushing (the `toggle` hazard MED-3 closes)", async () => {
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", HALF));
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    expect(result.current.status).toBe("playing");
+
+    await act(async () => void endTurnSpeak("m1", WHOLE));
+    expect(result.current.status).toBe("playing"); // `toggle` here would have paused it mid-sentence
   });
 });

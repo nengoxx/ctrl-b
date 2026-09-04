@@ -2270,6 +2270,18 @@ export function ConfTab({ active }: Props) {
               onPick={(v) => setTts("chunking", v)}
             />
           </SettingRow>
+          {/* C3 S2 — read-along. Rides the same `tts_chunking` payload to the playback queue, which
+              is what feeds it while the reply streams; inert under `chunking: "off"`. */}
+          <SettingRow
+            label="Read along"
+            desc="start speaking as the reply is written, sentence by sentence — off → speak it once it finishes"
+          >
+            <Switch
+              on={!!vtts?.chunk_read_along}
+              onToggle={() => setTts("chunk_read_along", !vtts?.chunk_read_along)}
+              label="Read along"
+            />
+          </SettingRow>
           <SettingRow
             label="Chunk format"
             desc="per-chunk container — opus is gapless from a pipe; mp3 adds dead air at every seam"
