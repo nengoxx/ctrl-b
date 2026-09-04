@@ -12,7 +12,51 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-03, FINAL — PUSHED: origin = local `main` = `a478bb6` (+ the menu commit); THE RELEASE IS HELD; supersedes below where it speaks)
+## Current state (2026-09-04 — THE TWO PRE-RELEASE FEATURES: C3-S2 read-along + the D2-C LAN wake trigger, BOTH BUILT + REVIEW-CLOSED; supersedes below where it speaks)
+
+- **The owner picked from the menu: two features ride before v1.7.8** — the C3 S2 read-along
+  ("research it again, make sure the plan is solid") and their own new idea, the **LAN-arrival
+  wake trigger + quiet hours** (reopening ROADMAP D2's rejected option C). Both went the whole
+  road in one session: research (**R63** bought + committed; the read-along got a fit-verification
+  pass against HEAD instead — R48/R50 stand) → plans of record → **blind Emma design rounds (both
+  BUILD WITH CHANGES, every finding folded, confirm + micro-confirm to explicit closes)** → owner
+  rulings taken in conversation → Opus builds → main-seat audits → **blind Emma CODE rounds (both
+  SHIP WITH FIXES → fix waves → the LAN confirm round)**. Full records: **[`D69`](./DECISIONS.md)**
+  (the LAN trigger) + **D63's 2026-09-04 amendment** (read-along as-built); plans + all review
+  records archived at `~/.cache/ctrl-b-plans-20260904/`.
+- **8 commits, LOCAL over origin `04769d9`, NOTHING PUSHED:** `968d18d` R63 docs · `5277da2` S2a ·
+  `e0dcaed` the S1-shipped strikethrough-`$2` fix (builder-found) · `7de0e98` S2b · `53bc104` the
+  read-along fix wave · `165fe63` L1 · `318d4d6` L2 · `996b872` the LAN fix wave (+ this docs
+  commit). **Gate at tip: 6/6 green — BE 2,189 · FE 2,906/168** (independently re-run by the main
+  seat after a two-builder git-index collision, recovered + verified intact).
+- **⚠ v1.7.8 NOW CARRIES A CONFIG MIGRATION (step 3, config_version 2→3** — `presence_device_ips`
+  → `presence_devices` objects): menu item E's "NO config/DB migration" line is STALE — **rollback
+  off v1.7.8 = restore the config backup FIRST, then v1.7.7** (the proven §Rollback order). No DB
+  migration.
+- **Dev units RUNNING on tip; the dev config MIGRATED to shape 3** (backup
+  `~/.ctrl-b-dev/backups/config.yaml.20260904T200408Z`; **prod untouched: v1.7.7 @ `578ffa7`**,
+  still config_version 2) and pre-loaded for the owner: device `phone`
+  (tailnet 100.64.151.87 · **LAN 192.168.1.143**) · `lan_health_ip: 192.168.1.1` (the router,
+  read from emma's routing table) · quiet hours 23:00–08:00 · **no host has `wake_on_presence`,
+  so nothing can fire — observation only**; `chunk_read_along` is OFF (the owner flips it in Conf
+  to hear read-along).
+- **Owed the owner (their word, no build):** ① the read-along feel round on dev :5173 (flip the
+  Conf toggle; long replies show the win) · ② **set the DHCP RESERVATION for the phone at .143 on
+  the router** (a lease can drift; the journal's presence lines are the only stale-address
+  diagnostic) · ③ after 2–3 nights, read the presence journal's gap picture, then flip
+  `wake_on_presence` on the chosen hosts (and tune `lan_offline_after_s` from evidence) ·
+  ④ the Dependabot D1 lockfile bump (5 HIGH, all transitive dev-toolchain — fast-uri via
+  stylelint, browserslist via babel/vite; one `npm audit fix`-class commit, triaged 2026-09-04) is
+  the one hygiene item still owed before E.
+- **Then the menu's E — the v1.7.8 release** (runbook §Release, Opus-operated · **the 2→3 config
+  migration rides it** · rollback = config backup then v1.7.7 · pre-tag LOCAL e2e MANDATORY + the
+  stale-pin sweep now covering THREE waves' strings: the fleet wave's labels, the
+  attachments/expand strings, AND this session's Conf wake-group renames) → stop the dev units.
+- Residuals recorded in D69/D63 (none owed): the fleet sweep's plain-gather exposure → Phase 19 ·
+  no automated stale-reservation warning · the read-along device-round pair (autoplay grants ·
+  TTS-vs-dictation on speakerphone).
+
+## Prior state (2026-09-03, FINAL — PUSHED: origin = local `main` = `a478bb6` (+ the menu commit); THE RELEASE IS HELD; supersedes below where it speaks)
 
 - **The batch is on origin** (43 commits over `a558d43`, pre-push full gate green; the fleet-wave
   polish + the whole Phase 22 ladder + the S6 fix wave + re-rounds №1–№4b). **The v1.7.8 candidate

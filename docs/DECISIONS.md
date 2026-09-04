@@ -4636,6 +4636,33 @@ unseekable) and the cumulative-blob rebuild (mp3-bound + per-seam reload) stay n
 amendment replaces only "per-chunk is the v1 scrubber contract". Read-along (S2) composes: an
 appended chunk is one more estimated entry on a timeline that already grows.
 
+**AMENDED 2026-09-04 — S2 read-along BUILT (owner go "let's do these two features… before
+release"; plan of record = the fit-verified v2.1 rewrite of the S2 block above, council-closed
+over three rounds; build = `5277da2` S2a + `7de0e98` S2b + `53bc104` fix wave; blind code round
+SHIP WITH FIXES, 2 MED folded; rider `e0dcaed` fixed the S1-shipped strikethrough `$2`
+literal).** What the lock's S2 text gained on the way to code, all council-caught: **the
+controller OWNS the pipeline** — `feedReadAlong(id, markdown)` / `endTurnSpeak(id, markdown)`
+run `stableMarkdownPrefix → toSpeech → chunkPlanFrom` against a per-session POLICY SNAPSHOT of
+the split config (`pump`'s `lookahead`/`format` deliberately stay live — they can't change plan
+identity), with `srcFed` (the fed stable prefix, an IDENTITY) guarding BOTH ways in: a reconnect
+overlay that shrinks/rewrites the message abandons the turn, and the flush never replans a
+mismatched buffer. **`Session.open`**: playback catching up mid-stream takes the existing
+waiting latch — `finish()` runs only after the flush clears it. **The last chunk of an
+incremental plan is never enqueued** (the trailing merge buffer is the one growth-rewritable
+piece) and `stableMarkdownPrefix` withholds from the earliest unclosed destructive construct
+(fence · `![`/`[` · backtick · `<`tag · `**`/`__`/`~~`; single `*`/`_` = owner-accepted
+residual — cutting on them would stall prose). **Terminal edges** are `streaming → idle` OR `→
+error`, deduped, both FLUSH the tail (owner: "everything that has been generated should be
+read"); a turn whose last message never becomes text-bearing flushes the owned session; a
+mid-turn `ttsOk` loss dismisses instead of stranding the open latch. **Per-message superseding**
+on multi-message turns (owner-confirmed; TEXT parts only — never reasoning, never tool content,
+pinned by test). **A partly-failed read-along PARKS instead of dropping** (S1 untouched) and
+every replay path re-arms its failed slots with the cursor rewound through `playNext`. The
+toggle = `chunk_read_along` on `TtsServiceCfg` beside the other `chunk_*` fields → one Conf
+Switch; **ships OFF** (the `auto_stop` precedent — flip after the owner's device round).
+Device-round items riding S6-style live use: autoplay-grant persistence over a multi-minute
+session · TTS-on-speakerphone vs the dictation auto-stop energy detector.
+
 ## D64 — Core Memory honest reads: paged `read` + server-side delete guard (the model carries no tokens) ✏️ LOCKED 2026-08-21 (owner directive "fix it forever, lean, no model overload" + full council: Emma lane correctness BUILD WITH CHANGES [3 HIGH · 5 MED · 1 LOW] and an adversarial Opus architecture round BUILD WITH CHANGES [F1–F9] + BUILD confirm pass — every finding folded, none overruled; evidence = the 2026-08-21 incident forensics [Emma audit], R53, and the owner's Maia vault: the Claude Code memory source specification + the Hermes Core Memory v1 contract; design of record = the session's d64-design.md v2.1, to be transcribed as CORE_MEMORY_PLAN §17 with the build)
 
 **Amends D60:** the guarded-soft-delete CLAUSE that made the model carry `content_hash` is
@@ -4937,3 +4964,70 @@ whole-content injection, capped and paged.
 its landing; its multipart-POST safelisted-class design gets its own moment) · HEIC = S0 device
 check then refusal copy · no OCR · no cross-thread reads (memory's job) · prefix-cache churn when
 the per-request image ceiling binds = accepted residual with the `cached_tokens` telemetry trigger.
+
+## D69 — The LAN-arrival wake trigger (D2-C): per-source arming, the health-gated ICMP probe, quiet hours ✏️ RULED + BUILT 2026-09-04 (owner, in conversation — "when my phone connects to the Wi-Fi… when I get home my computers will turn on… maybe we could put some hours where it doesn't work"; evidence = [R63](./research/R63-lan-presence-trigger.md); council = blind Emma design round BUILD WITH CHANGES [5 MED, all folded, both contested rulings ENDORSED] → confirm + micro-confirm to explicit close → build `165fe63`+`318d4d6` → blind code round SHIP WITH FIXES [2 MED + 2 LOW, all folded `996b872`])
+
+**What.** A SECOND wake-on-presence source beside D50's tailnet trigger: the owner's phone holds a
+DHCP-reserved IP on the home LAN (`192.168.1.143`); the same 30 s monitor tick probes it; a
+confirmed away→home edge wakes every host flagged `wake_on_presence`. Plus **quiet hours** — a
+wall-clock window in which the LAN arrival never wakes anything.
+
+**This REVERSES ROADMAP D2's option-C rejection on R63's evidence:** Android does NOT suppress
+ping/ARP while idle (AOSP `ApfFilter` passes unicast ARP-for-us/ICMP-for-us screen-off; APFv6
+firmware answers them without waking the CPU — Doze suspends APPS' network, not the IP stack); the
+reserved IP + persistent per-SSID MAC randomisation closes the churn objection; and "strictly worse
+than A" was only true of a REPLACEMENT — as a second signal it answers the question D50
+deliberately cannot ("the owner is HOME" vs "the owner WANTS the servers").
+
+**The locked shape (all owner-confirmed 2026-09-04):**
+- **Probe = ICMP via `fleet.ping_addr(ip, count, timeout_s)`**, extracted from `ping_host` so the
+  OS-branch allowlist keeps ONE ping site; presence uses `lan_probe_count: 3` × per-echo
+  `lan_probe_timeout_s: 1` with a COUNT-AWARE subprocess deadline; the fleet sweep is unchanged.
+  ARP/`ip neigh` was REJECTED as ruled: three new mechanisms against one parameter on a mechanism
+  we own, for a marginal gain (R63 §1.4). Probes gather concurrently with per-slot exception
+  isolation (a raising probe = that address `unknown`, never a dead tick).
+- **Per-(device, source) arming machines, edges OR'd at the fan-out** — a deliberate,
+  council-endorsed DIVERGENCE from R63 §4.2's HA-`person` ladder: with Tailscale habitually OFF at
+  home, one combined machine would sit online on the LAN all day and an at-home TS connect would
+  fire NOTHING, silently breaking the live-proven D50 workflow. `wake.presence_devices` =
+  `[{name, tailnet_ip?, lan_ip?, lan_offline_after_s?=900}]` (the unified-object rule; the legacy
+  `presence_device_ips` folds via **config_migration step 3, config_version 2→3**, old key
+  retired); monitor state keys by device NAME with an address FINGERPRINT (change or rename
+  re-baselines both machines); `arm()` is reused verbatim per source; the per-HOST action cooldown
+  and D50's M3 coalescing are unchanged and shared across sources. No new per-host field.
+- **The health gate:** `wake.lan_health_ip` (the router, `192.168.1.1`) probed beside the devices —
+  while it does not answer (or its probe raises), every LAN no-reply that tick is `unknown`, never
+  `offline` (an unplugged server link must not arm the fleet); definite subprocess/no-route errors
+  are `unknown` (which also gives the fleet sweep D50 M1's stated down-link property, a declared
+  behavior change). A health IP equal to a watched `lan_ip` is REFUSED at validation (the
+  self-gating trap). Unset = no gate.
+- **Quiet hours:** `wake.quiet_hours: {start, end}` — "HH:MM" STRINGS (an unquoted `23:00` is
+  sexagesimal 1380 in YAML), strict full-match validation, `start == end` refused (unset already
+  means disabled); wall-clock wrap-midnight comparison in server-local time via the A3
+  `server_tz_key` seam (NOT cronsim — a window is an interval, not an instant; no DST machinery, a
+  window is well-defined across folds). **The edge is ALWAYS consumed; only the invoke fan-out is
+  skipped** (checked at the acting boundary in `_wake_on_presence` AFTER `_tick_presence` wrote the
+  disarmed state — R63 §4.4's trap: any earlier and a suppressed 03:00 arrival detonates at
+  08:00:00 sharp). NEITHER cooldown map is stamped on suppression; suppression applies only when
+  EVERY coalesced edge is LAN (a simultaneous tailnet connect is deliberate intent and keeps the
+  fan-out eligible); **LAN-only gating is owner-confirmed** (gating tailnet fires too = recorded
+  YAGNI, no field). A blocked-window arrival wakes nothing that night BY DESIGN — the morning paths
+  are D2-B and A3.
+- **Observation-first rollout:** the per-device presence state-transition journal lines are
+  PERMANENT (the only diagnostic for a stranded DHCP reservation — v1 ships no automated
+  stale-address warning, a recorded residual); per-host switches stay OFF until 2–3 nights of the
+  journal size `lan_offline_after_s` on real Doze-gap evidence (the one number R63 could not buy
+  from any document).
+
+**L2 (Conf):** the wake group edits `presence_devices` as a Providers-model-row list (add/remove
+device; name · tailnet IP · LAN IP · per-device threshold), quiet hours as a Switch (OFF = `null`;
+ON seeds 23:00–08:00) + two native time inputs, and three plain rows for the probe knobs; the save
+seam mirrors exactly the three structural refusals (blank name with address · name without address
+· duplicate names) and leaves IP syntax/bounds server-owned.
+
+**Residuals (recorded, not owed):** the fleet sweep's own plain `gather` keeps its pre-existing
+exception exposure (pre-D2-C class → Phase 19) · no stale-reservation warning (above) · a LAN gap
+longer than the device threshold while TS happens to be online can still manufacture an arrival
+(bounded by quiet hours + the per-host cooldown; suppressing it would contradict the two-questions
+model) · positional device-row keys in Conf (a reorder remounts inputs — the SectionRefEditor
+precedent).

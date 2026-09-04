@@ -533,8 +533,15 @@ one — only the browser binary can). That splits C2 into two features that must
   every later chunk; then AllTalk swapped to PRIMARY via the product PUT — 5/5 chunks served
   `vault-alltalk/tts-1`, pinned — and the config restored byte-identical). R50's addendum holds
   the AllTalk envelope (opus ✓, ~1.5–2× realtime → recommend `chunk_lookahead: 2` when AllTalk
-  is primary). OWED: the owner's phone round (Android seam audibility). **S2 —
-  read-along-while-streaming and the single turn-end ownership entry point — is still open.**
+  is primary). OWED: the owner's phone round (Android seam audibility). ~~**S2 —
+  read-along-while-streaming and the single turn-end ownership entry point — is still open.**~~
+- **S2 ✅ BUILT 2026-09-04** (owner go; the D63 entry's 2026-09-04 amendment = the as-built record):
+  `5277da2` (the pure layer: `chunkPlanFrom` + `stableMarkdownPrefix` + the pipeline property
+  test) + `7de0e98` (open sessions, `feedReadAlong`/`endTurnSpeak` — the single turn-end ownership
+  entry point — the thin feeder, the Conf toggle) + `53bc104` (the review round's 2 MED folded);
+  rider `e0dcaed` fixed the S1-shipped strikethrough-`$2` literal. **`chunk_read_along` ships OFF**
+  — the owner flips it in Conf; the device round (autoplay-grant persistence over long sessions ·
+  TTS-vs-dictation-auto-stop on speakerphone) rides live use.
 
 ---
 
@@ -613,11 +620,18 @@ one — only the browser binary can). That splits C2 into two features that must
   - **B (near-free MVP, can ship first) — PWA-connect trigger.** When the owner's client opens its SSE
     stream (existing connect path), an endpoint wakes the configured hosts. Trivial, no new deps; weaker
     semantics ("wake when I *open the dashboard*," not "when I get home"). Not mutually exclusive with A.
-  - **Rejected — C, LAN ARP/ping presence:** Android suppresses ping (battery), phone IPs churn,
-    LAN-only. Strictly worse than A.
-- **Timing:** ~~post-v1; the **A** build pairs with the A3 scheduler / monitor subsystem~~ → **BOTH
-  SHIPPED: B 2026-07-29, A (D50/Phase 15) live in v1.4.6 2026-07-31** (per-host switches OFF pending
-  the owner's daily-use round). Detection (A) reuses the tailnet locally, never a public surface.
+  - ~~**Rejected — C, LAN ARP/ping presence:** Android suppresses ping (battery), phone IPs churn,
+    LAN-only. Strictly worse than A.~~ → **REVERSED + BUILT 2026-09-04 as C = [`D69`](./DECISIONS.md)
+    (D2-C).** [R63](./research/R63-lan-presence-trigger.md) refuted the rejection at the mechanism
+    level (AOSP answers ARP/ping-for-us while dozing, firmware-offloaded; the reserved IP closes the
+    churn objection), and "strictly worse" was only true of a replacement — as a SECOND signal it
+    answers "the owner is home", which A deliberately cannot. Shipped: per-(device,source) arming on
+    the same monitor tick, `wake.presence_devices` objects (migration 2→3), the router health gate,
+    and **quiet hours** (LAN-only, edge-consumed). Per-host switches still gate everything.
+- **Timing:** ~~post-v1; the **A** build pairs with the A3 scheduler / monitor subsystem~~ → **ALL
+  THREE SHIPPED: B 2026-07-29, A (D50/Phase 15) live in v1.4.6 2026-07-31, C (D69/D2-C) built
+  2026-09-04** (per-host switches OFF pending the owner's daily-use round + the 2–3-night LAN
+  observation window). Detection (A) reuses the tailnet locally, never a public surface.
 
 ### D3. Multi-homed host addressing (LAN + VPN) — **designed 2026-06-30 (external_audit: Corsair shutdown)**
 
