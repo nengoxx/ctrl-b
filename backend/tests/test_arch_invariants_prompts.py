@@ -58,8 +58,10 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
     "config + migration refusals and their remedies — CLI/startup text for the owner": (
         ("app/config.py", "Settings._known_media_namespaces_roles_and_slots"),
         ("app/config.py", "Settings._monitor_interval_covers_the_fleet_cache"),
-        ("app/config.py", "WakeCfg._normalize_device_ips"),
+        ("app/config.py", "QuietHoursCfg._hhmm"),
+        ("app/config.py", "QuietHoursCfg._not_the_whole_day"),
         ("app/config.py", "_apply_env_overrides"),
+        ("app/config.py", "_presence_address"),
         ("app/config_migration/__init__.py", "_assert_unchanged"),
         ("app/config_migration/__init__.py", "_call_step"),
         ("app/config_migration/__init__.py", "_parse"),
@@ -70,6 +72,7 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/config_migration/__init__.py", "validate"),
         ("app/config_migration/steps.py", "_refuse_unmappable"),
         ("app/config_migration/steps.py", "media_v2_apply"),
+        ("app/config_migration/steps.py", "presence_devices_apply"),
         ("app/main.py", "_preflight_config"),
     ),
     "diagnostics — log lines and operator-facing HTTP/exception detail": (

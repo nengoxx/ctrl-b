@@ -28,7 +28,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from _async import run_async
-from test_monitor_15a import _IP, _scripted_presence, _sweep
+from test_monitor_15a import _IP, _device, _scripted_presence, _sweep
 
 from app.adapters import tailnet
 from app.config import Settings, load_settings
@@ -36,7 +36,7 @@ from app.domain.enums import Actor, OSType
 from app.domain.event import Origin
 from app.domain.host import Host
 from app.services import wake_on_connect
-from app.services.monitor import ArmState, MonitorService
+from app.services.monitor import TAILNET, ArmState, DeviceState, MonitorService
 
 _IP2 = "100.64.0.9"
 
@@ -104,7 +104,7 @@ def _service(
     *,
     online: set[str] | None = None,
     explode: set[str] | None = None,
-    devices: list[str] | None = None,
+    devices: list[dict[str, str]] | None = None,
     **wake: Any,
 ) -> tuple[MonitorService, _FakeActions, Any]:
     """A monitor wired to fake fleet/actions, with the arming threshold at 0 so ONE offline tick arms
@@ -112,7 +112,13 @@ def _service(
     `state` exactly as the lifespan does, so the D2-B trigger can be driven against the SAME app —
     which is what makes the shared-cooldown assertion real rather than a mock handshake."""
     settings = Settings.model_validate(
-        {"wake": {"presence_device_ips": devices or [_IP], "presence_offline_after_s": 0, **wake}}
+        {
+            "wake": {
+                "presence_devices": devices or [_device(_IP)],
+                "presence_offline_after_s": 0,
+                **wake,
+            }
+        }
     )
     fleet = _FakeFleet(hosts, online)
     actions = _FakeActions(explode=explode)
@@ -353,10 +359,14 @@ def test_two_devices_arriving_in_one_tick_are_one_fan_out() -> None:
     """The owner walking in with a phone AND a laptop is ONE arrival (D50 M3): the presence cooldown
     is per-HOST, shared across devices, so the coalescing is what keeps it from writing a duplicate
     wake — a per-device fan-out would fire twice before either stamp could be read."""
-    svc, actions, _ = _service([_h("alpha")], devices=[_IP, _IP2], presence_cooldown_s=3600)
+    svc, actions, _ = _service(
+        [_h("alpha")],
+        devices=[_device(_IP), _device(_IP2, "laptop")],
+        presence_cooldown_s=3600,
+    )
     _arrive(svc)
     assert actions.woken == ["alpha"]
-    assert [svc.state.devices[ip].armed for ip in (_IP, _IP2)] == [False, False]
+    assert [svc.state.devices[n].arms[TAILNET].armed for n in ("phone", "laptop")] == [False, False]
 
 
 def test_disabling_the_monitor_keeps_the_cooldown_stamps() -> None:
@@ -381,7 +391,9 @@ def test_a_disable_landing_mid_read_fires_nothing() -> None:
     import app.services.monitor as monitor_module
 
     svc, actions, _ = _service([_h("alpha")])
-    svc.state.devices[_IP] = ArmState(armed=True, offline_since=0.0)
+    svc.state.devices["phone"] = DeviceState(
+        fingerprint=(_IP, None), arms={TAILNET: ArmState(armed=True, offline_since=0.0)}
+    )
 
     async def read_then_disable(socket_path, ips, **kw):
         svc._settings.monitor.enabled = False

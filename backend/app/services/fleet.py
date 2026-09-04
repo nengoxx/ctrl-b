@@ -16,6 +16,7 @@ import asyncio
 import platform
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.domain.host import Host, HostStatus
@@ -30,40 +31,81 @@ _DEFAULT_TIMEOUT_S = 2.0
 _MAX_CONCURRENT = 16
 
 
-def _ping_cmd(ip: str, timeout_s: float) -> list[str]:
+@dataclass(frozen=True)
+class PingResult:
+    """One probe's answer, said in the vocabulary every caller can map onto its own.
+
+    Three-way on purpose: `error` is set iff the check could not be MADE (the binary missing, the
+    subprocess wedged, `ping` itself refusing with a diagnostic), which is a different fact from "no
+    reply". The fleet sweep maps it onto `HostStatus`; the D2-C LAN presence read maps it onto a
+    `PresenceState`, where a miss ARMS a wake and a failed check must not. One shape, so neither
+    caller re-decides what a ping means.
+    """
+
+    online: bool
+    ping_ms: float | None = None
+    error: str | None = None
+
+
+def _ping_cmd(ip: str, count: int, timeout_s: float) -> list[str]:
+    n = str(max(1, count))
     sysname = platform.system().lower()
     secs = str(max(1, int(timeout_s)))
     if sysname == "windows":
-        return ["ping", ip, "-n", "1", "-w", str(max(1, int(timeout_s * 1000)))]
-    if sysname == "darwin":  # BSD ping: -t is the total timeout in seconds (-W would be ms here)
-        return ["ping", "-c", "1", "-t", secs, ip]
-    return ["ping", "-c", "1", "-W", secs, ip]  # Linux/other iputils: -W is per-reply wait in seconds
+        return ["ping", ip, "-n", n, "-w", str(max(1, int(timeout_s * 1000)))]
+    if sysname == "darwin":
+        # BSD ping: -t is the TOTAL timeout in seconds (-W would be ms here), so unlike Linux's
+        # per-reply -W it has to cover every echo — or a multi-echo probe would be cut short.
+        return ["ping", "-c", n, "-t", str(max(1, int(timeout_s * max(1, count)))), ip]
+    return ["ping", "-c", n, "-W", secs, ip]  # Linux/other iputils: -W is per-reply wait in seconds
 
 
-async def ping_host(host: Host, timeout_s: float = _DEFAULT_TIMEOUT_S) -> HostStatus:
-    """One ICMP echo → HostStatus. Never raises: failures become a status with `error`."""
-    now = datetime.now(timezone.utc)
-    cmd = _ping_cmd(host.ip, timeout_s)
+async def ping_addr(ip: str, *, count: int = 1, timeout_s: float = _DEFAULT_TIMEOUT_S) -> PingResult:
+    """`count` ICMP echoes to one address → the three-way answer. Never raises.
+
+    **The one ping site.** `ping_host` is a thin mapping over this, so the server-OS branch stays a
+    single allowlisted file (ARCHITECTURE §6) while the D2-C presence probe gets its own `count`: the
+    fleet sweep asks once, the LAN probe asks three times so 802.11 DTIM buffering on a dozing phone
+    cannot read as an absence (R63 §2.2). Linux's partial-success semantics are what make that work —
+    any echo answered is a reply.
+
+    Two riders, both load-bearing and neither obvious:
+
+    * **The subprocess deadline is COUNT-AWARE.** `timeout_s + 1` is right for one echo and would kill
+      a 3-echo probe at ~2 s (measured: `-c 3 -W 1` against a silent address takes ~3.1 s). Every
+      absent LAN device would then come back as a `ping timeout` ERROR rather than `offline`, and a
+      device that never reports offline never arms — the feature would silently never fire.
+    * **`stderr` and the exit code are read.** `ping` distinguishes "asked and got nothing" (exit 1)
+      from "could not ask" (exit ≥ 2: no route, unresolvable name), and only the first is evidence of
+      absence. Exit 0 without a TTL stays a MISS, not an error: Windows answers 0 for "Destination
+      host unreachable", which the TTL test already covers.
+    """
+    cmd = _ping_cmd(ip, count, timeout_s)
     try:
         proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
     except FileNotFoundError:
-        return HostStatus(host_id=host.id, online=False, checked_at=now, error="ping not found")
+        return PingResult(online=False, error="ping not found")
     except Exception as exc:  # noqa: BLE001 — surface, don't crash the sweep
-        return HostStatus(host_id=host.id, online=False, checked_at=now, error=str(exc))
+        return PingResult(online=False, error=str(exc))
 
     try:
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_s + 1.0)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=max(1, count) * timeout_s + 1.0)
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
-        return HostStatus(host_id=host.id, online=False, checked_at=now, error="ping timeout")
+        return PingResult(online=False, error="ping timeout")
 
     text = stdout.decode(errors="replace")
     # A genuine reply contains a TTL on every platform; this is more reliable than the exit code
     # (Windows can return 0 for "Destination host unreachable").
     online = proc.returncode == 0 and "ttl=" in text.lower()
+    if not online and (proc.returncode or 0) > 1:
+        diagnostic = stderr.decode(errors="replace").strip().splitlines()
+        return PingResult(
+            online=False, error=diagnostic[0] if diagnostic else f"ping exited {proc.returncode}"
+        )
     ping_ms: float | None = None
     if online:
         m = _PING_TIME_RE.search(text)
@@ -73,12 +115,26 @@ async def ping_host(host: Host, timeout_s: float = _DEFAULT_TIMEOUT_S) -> HostSt
             # would lie that loopback (~0ms) is the same as a 1ms LAN hop. Report sub-ms as half
             # the threshold so the UI can show the gradient.
             ping_ms = value / 2 if m.group(1) == "<" else value
+    return PingResult(online=online, ping_ms=ping_ms)
+
+
+async def ping_host(host: Host, timeout_s: float = _DEFAULT_TIMEOUT_S) -> HostStatus:
+    """One ICMP echo → HostStatus. Never raises: failures become a status with `error`.
+
+    The sweep's own parameters are unchanged (one echo, 2 s). What it gained with the D2-C extraction
+    is `ping`'s diagnostic exits: a server whose link is down now reports UNKNOWN for the whole fleet
+    instead of a fleet-wide `down` — which is D50 M1's stated property ("a check that could not be
+    MADE is not a down") reaching the one failure that used to slip past it.
+    """
+    now = datetime.now(timezone.utc)
+    result = await ping_addr(host.ip, timeout_s=timeout_s)
     return HostStatus(
         host_id=host.id,
-        online=online,
-        ping_ms=ping_ms,
-        last_seen=now if online else None,
+        online=result.online,
+        ping_ms=result.ping_ms,
+        last_seen=now if result.online else None,
         checked_at=now,
+        error=result.error,
     )
 
 

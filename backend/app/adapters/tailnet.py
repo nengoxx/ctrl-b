@@ -139,7 +139,7 @@ async def _whois(client: httpx.AsyncClient, ip: str) -> DeviceReading:
             # Only reached with a HEALTHY gate (the caller returns early otherwise), so this really is
             # a config entry pointing at a peer that no longer exists — worth saying out loud once a
             # tick rather than leaving the owner with a wake that silently never fires.
-            log.warning("tailnet: no peer at %s — wake.presence_device_ips looks stale", ip)
+            log.warning("tailnet: no peer at %s — a wake.presence_devices tailnet_ip looks stale", ip)
         return DeviceReading(ip=ip, state="unknown", reason=reason or "no answer")
     node = body.get("Node")
     if not isinstance(node, dict):

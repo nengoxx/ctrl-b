@@ -172,9 +172,9 @@ def _load_steps() -> tuple[Step, ...]:
     knowledge in one package while letting the legacy half be deleted wholesale; the alternative
     (types in a third module) buys nothing but a file.
     """
-    from app.config_migration.steps import A11, MEDIA_V2
+    from app.config_migration.steps import A11, MEDIA_V2, PRESENCE_DEVICES
 
-    return (A11, MEDIA_V2)
+    return (A11, MEDIA_V2, PRESENCE_DEVICES)
 
 
 STEPS: tuple[Step, ...] = _load_steps()

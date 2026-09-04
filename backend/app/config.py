@@ -1056,6 +1056,158 @@ class NotificationsCfg(BaseModel):
     events: NotificationEventsCfg = Field(default_factory=NotificationEventsCfg)
 
 
+def _presence_address(raw: str | None, where: str) -> str | None:
+    """One watched address, validated and normalized — or `None` when it was not given.
+
+    A typo'd address must 422 at the config boundary rather than become a device that is permanently
+    UNKNOWN (tailnet) or permanently absent (LAN): neither reader can tell a bad address from a quiet
+    one, and a wake that silently never fires is the worst failure mode this feature has. Normalizing
+    through `ipaddress` also makes the monitor's address FINGERPRINT canonical, so ` 192.168.1.143 `
+    and `192.168.1.143` cannot read as an edit that re-baselines the device every load.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        return str(ipaddress.ip_address(text))
+    except ValueError:
+        raise ValueError(
+            f"{where} {raw!r} is not an IP address — give a numeric address (a tailnet 100.x.y.z, a "
+            "LAN 192.168.x.y), never a node key or a MagicDNS/host name"
+        ) from None
+
+
+class PresenceDeviceCfg(BaseModel):
+    """ONE watched owner device — the unified object BOTH presence sources read (D2-C).
+
+    One list of device objects rather than `presence_device_ips` plus a `presence_lan_ips` beside it:
+    that is the parallel-sibling shape the extend-don't-migrate directive bans, and it is the version
+    that gets expensive — every further dimension (this per-device damping constant, a friendly name,
+    a per-device enable) would be another top-level list and another merge site. Here the next
+    dimension is an additive optional field. The pre-D2-C `presence_device_ips` folds into it in
+    `config_migration/steps.py`; no reader of the old key survives (the no-legacy-seams rule).
+
+    - `name`: what the journal calls this device, and the KEY the monitor's per-device state is held
+      under — so it is stripped, non-empty and unique across the list. A rename re-baselines, which is
+      correct: the state was evidence about whatever that name used to mean.
+    - `tailnet_ip` / `lan_ip`: the two sources' addresses, at least one required. The tailnet one is
+      what the LocalAPI `whois` takes and the only stable-enough handle there (a node key rotates on
+      re-auth, a NodeID changes on re-registration; R12 §4); the LAN one should be a DHCP RESERVATION
+      on the router, because a lease-assigned address can drift after a router restart and v1 has no
+      automated stale-address warning — the presence transition journal is the diagnostic.
+    - `lan_offline_after_s`: how long this device must be CONTINUOUSLY unreachable on the LAN (on
+      probes we could actually make) before its next reply counts as an arrival. Per-DEVICE because
+      the constant is a property of the radio and its power management, not of the server: 900 s is
+      five times the field's 180 s floor (HA's `consider_home`, whose ceiling is 21600 s) because the
+      unknown here is the Doze gap — a phone that drops its Wi-Fi association while idle looks exactly
+      like a phone that left the house, and the damping constant is the only thing that separates them.
+      Deliberately NOT floor-validated, for D50 overrule ①'s reason: a single-owner app prefers
+      configurable over a 422, and the owner sizes this from their own journal.
+
+    Nothing here is a per-HOST dimension: `wake_on_presence` already means "wake when the owner
+    arrives" and does not care which radio noticed.
+    """
+
+    model_config = {"extra": "allow"}
+
+    name: str
+    tailnet_ip: str | None = None
+    lan_ip: str | None = None
+    lan_offline_after_s: int = Field(default=900, ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def _named(cls, v: str) -> str:
+        name = v.strip()
+        if not name:
+            raise ValueError("a wake.presence_devices entry needs a name — it keys the device's state")
+        return name
+
+    @field_validator("tailnet_ip")
+    @classmethod
+    def _tailnet_address(cls, v: str | None) -> str | None:
+        return _presence_address(v, "wake.presence_devices tailnet_ip")
+
+    @field_validator("lan_ip")
+    @classmethod
+    def _lan_address(cls, v: str | None) -> str | None:
+        return _presence_address(v, "wake.presence_devices lan_ip")
+
+    @model_validator(mode="after")
+    def _has_an_address(self) -> "PresenceDeviceCfg":
+        """A device with no address is a device nothing can observe — an entry that looks configured
+        and is inert, which is precisely the silent failure the address validation above exists to
+        prevent."""
+        if self.tailnet_ip is None and self.lan_ip is None:
+            raise ValueError(
+                f"wake.presence_devices entry {self.name!r} needs at least one of `tailnet_ip` or `lan_ip`"
+            )
+        return self
+
+    @property
+    def addresses(self) -> tuple[str | None, str | None]:
+        """`(tailnet_ip, lan_ip)` — the monitor's re-baselining fingerprint (D50 M2, generalized)."""
+        return (self.tailnet_ip, self.lan_ip)
+
+
+class QuietHoursCfg(BaseModel):
+    """`wake.quiet_hours` — the local-time window in which a LAN arrival wakes nothing (D2-C).
+
+    ONE nested object rather than flat `quiet_start`/`quiet_end` keys, so the dimensions this will
+    grow (weekdays, an explicit zone, per-source scope) are additive fields here.
+
+    Both times are `"HH:MM"` STRINGS: a bare `23:00` in YAML is a number (1.1 sexagesimal), and a
+    `datetime.time` field would happily read that number as seconds-since-midnight — 00:23, silently.
+    So the value stays text, quoted, and is parsed here where a bad one is a 422 with a sentence.
+
+    **`start == end` is REFUSED.** Under the wrap-midnight inversion it would mean all-day suppression,
+    so an accidental `08:00`–`08:00` would silently kill every LAN wake; "unset" already expresses
+    disabled, which is also the default.
+    """
+
+    model_config = {"extra": "allow"}
+
+    start: str
+    end: str
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def _hhmm(cls, v: Any) -> str:
+        """`"23:00"` → `"23:00"`, anything else → a 422 that says what to write. `mode="before"` so an
+        unquoted `23:00` (an int, to YAML) is caught HERE with its own explanation rather than by
+        pydantic's generic "input should be a valid string"."""
+        if not isinstance(v, str):
+            raise ValueError(
+                f'a quiet-hours time must be a quoted 24h clock time like "23:00" — {v!r} is not a '
+                "string (an unquoted 23:00 is a NUMBER in YAML)"
+            )
+        parts = v.strip().split(":")
+        try:
+            hour, minute = int(parts[0]), int(parts[1])
+        except IndexError, ValueError:
+            raise ValueError(f'quiet-hours time {v!r} is not a 24h clock time like "23:00"') from None
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError(f"quiet-hours time {v!r} is outside 00:00–23:59")
+        return f"{hour:02d}:{minute:02d}"
+
+    @model_validator(mode="after")
+    def _not_the_whole_day(self) -> "QuietHoursCfg":
+        if self.start == self.end:
+            raise ValueError(
+                f"wake.quiet_hours start and end are both {self.start!r} — that would suppress every "
+                "LAN wake, all day. Remove the `quiet_hours` block to disable quiet hours"
+            )
+        return self
+
+    @property
+    def start_minutes(self) -> int:
+        return int(self.start[:2]) * 60 + int(self.start[3:])
+
+    @property
+    def end_minutes(self) -> int:
+        return int(self.end[:2]) * 60 + int(self.end[3:])
+
+
 class WakeCfg(BaseModel):
     """Fleet wake automation (ROADMAP D2) — BOTH triggers' tunables, as this section's original
     docstring planned.
@@ -1064,27 +1216,44 @@ class WakeCfg(BaseModel):
     for each flagged, offline host, and `cooldown_s` bounds how often one host can be re-woken by
     reconnects (a phone walking in and out of wifi range reopens the stream constantly).
 
-    **D2-A wake-on-presence** (D50, `ComputerCfg.wake_on_presence`): the monitor loop watches the
-    owner's device(s) on the tailnet and fires on their confirmed OFFLINE→ONLINE edge — the connect
-    itself carries the intent, since the phone keeps Tailscale off until the owner wants their
-    servers. The `presence_*` fields below are that trigger's half; they are additional optional
-    fields on THIS object rather than a second wake-ish section.
+    **D2-A/D2-C wake-on-presence** (D50 + the LAN-arrival trigger, `ComputerCfg.wake_on_presence`):
+    the monitor loop watches the owner's device(s) on TWO sources and fires on a confirmed
+    away→home edge. The tailnet source answers "the owner WANTS the servers" (the connect itself
+    carries the intent, since the phone keeps Tailscale off until then); the LAN source answers "the
+    owner is HOME" (their phone reappearing on the home Wi-Fi). The `presence_*`/`lan_*`/`quiet_hours`
+    fields below are that trigger's half; they are additional optional fields on THIS object rather
+    than a second wake-ish section.
 
-    - `presence_device_ips`: the watched devices, keyed on their **tailnet IP** — what the LocalAPI
-      `whois` call takes, and the only stable-enough handle (a node key rotates on re-auth, a NodeID
-      changes on re-registration; R12 §4). Validated, normalized and de-duplicated below. Empty ⇒ the
-      whole tailnet half of the monitor is inert and costs nothing.
-    - `presence_offline_after_s`: how long a device must be CONTINUOUSLY observed offline (healthy
-      reads only) before its next online tick counts as a genuine arrival. This is what makes a
-      one-tick radio blip unable to fire a wake, and 120 s is R12's watchdog floor. Deliberately NOT
-      floor-validated (D50 overrule ①) — a single-owner app prefers configurable over a 422; `0`
-      means "arm on the first offline observation", which is a blip away from firing.
-    - `presence_cooldown_s`: per-HOST seconds between presence-driven wakes. Distinct from
-      `cooldown_s` because the two triggers mean different things: a dashboard open is cheap and
-      frequent, a fresh tailnet connect is rare and deliberate.
+    - `presence_devices`: the watched devices, one `PresenceDeviceCfg` each carrying both addresses
+      and its own LAN damping constant. Empty ⇒ the whole presence half of the monitor is inert and
+      costs nothing.
+    - `presence_offline_after_s`: how long a device must be CONTINUOUSLY observed offline ON THE
+      TAILNET (healthy reads only) before its next online tick counts as a genuine arrival. This is
+      what makes a one-tick radio blip unable to fire a wake, and 120 s is R12's watchdog floor. The
+      LAN source keeps its own, per-device constant — an OFF tailnet is a deliberate act, an absent
+      LAN reply is a radio, and one number cannot mean both. Deliberately NOT floor-validated (D50
+      overrule ①) — a single-owner app prefers configurable over a 422; `0` means "arm on the first
+      offline observation", which is a blip away from firing.
+    - `presence_cooldown_s`: per-HOST seconds between presence-driven wakes, shared across every
+      device AND both sources. Distinct from `cooldown_s` because the two triggers mean different
+      things: a dashboard open is cheap and frequent, an arrival is rare and deliberate.
     - `tailscale_socket_path`: where tailscaled's LocalAPI socket lives. **Config, not an OS branch**
       (ARCHITECTURE §6): the default is the Linux path, and Synology/QNAP/macOS simply set their own
       (R12 §4 lists them) instead of this file growing a server-OS-sniffing ladder.
+    - `lan_probe_count` / `lan_probe_timeout_s`: how the LAN source asks — 3 echoes at 1 s per echo
+      (HA's `ICMP_TIMEOUT`), deliberately distinct from the fleet sweep's single 2 s echo. Several
+      echoes ride out 802.11 DTIM buffering on a dozing phone, which is the difference between a
+      damping constant and a coin flip.
+    - `lan_health_ip`: an address on the same LAN — normally the router — probed alongside the
+      devices. `ping` reports an unreachable device and a dead LOCAL link identically, so without a
+      health gate an unplugged server would arm every device and wake the whole fleet on reconnect
+      (the LAN analogue of D50 H2). While this address does not answer, every LAN no-reply that tick
+      is UNKNOWN instead of offline. Unset ⇒ no gate: a documented posture, and setting it is the
+      recommended one.
+    - `quiet_hours`: the local-time window in which a LAN arrival wakes nothing. Unset by default.
+      **LAN fires only** — a Tailscale connect is a deliberate act ("I want the servers"), and
+      silencing that at night would be user-hostile; the LAN arrival is automatic and is exactly what
+      the owner asked to silence.
 
     `cooldown_s=0` disables the connect cooldown (every connect may wake). WOL is idempotent, so a
     cooldown is Event-log noise reduction, not a safety property."""
@@ -1092,34 +1261,40 @@ class WakeCfg(BaseModel):
     model_config = {"extra": "allow"}
 
     cooldown_s: int = Field(default=300, ge=0)  # per-host seconds between wake-on-connect fires
-    presence_device_ips: list[str] = Field(default_factory=list)
+    presence_devices: list[PresenceDeviceCfg] = Field(default_factory=list)
     presence_offline_after_s: int = Field(default=120, ge=0)
     presence_cooldown_s: int = Field(default=3600, ge=0)
     tailscale_socket_path: str = "/var/run/tailscale/tailscaled.sock"
+    lan_probe_count: int = Field(default=3, ge=1)
+    lan_probe_timeout_s: int = Field(default=1, ge=1)  # per ECHO, not per probe
+    lan_health_ip: str | None = None
+    quiet_hours: QuietHoursCfg | None = None
 
-    @field_validator("presence_device_ips")
+    @field_validator("lan_health_ip")
     @classmethod
-    def _normalize_device_ips(cls, v: list[str]) -> list[str]:
-        """Valid, normalized, unique (D50 M4/L1). A typo'd address must 422 at the config boundary
-        rather than become a device that is permanently UNKNOWN — the reader cannot tell the two
-        apart, and a wake that silently never fires is the worst failure mode this feature has.
-        Normalizing through `ipaddress` also makes the monitor's per-device state key canonical, so
-        `100.64.0.5` and ` 100.64.0.5 ` cannot become two entries with two arming machines."""
-        out: list[str] = []
-        for raw in v:
-            text = (raw or "").strip()
-            if not text:
-                continue
-            try:
-                normalized = str(ipaddress.ip_address(text))
-            except ValueError:
-                raise ValueError(
-                    f"wake.presence_device_ips entry {raw!r} is not an IP address — use the device's "
-                    "tailnet IP (100.x.y.z), never a node key or MagicDNS name"
-                ) from None
-            if normalized not in out:
-                out.append(normalized)
-        return out
+    def _health_address(cls, v: str | None) -> str | None:
+        return _presence_address(v, "wake.lan_health_ip")
+
+    @field_validator("presence_devices")
+    @classmethod
+    def _distinct_devices(cls, v: list[PresenceDeviceCfg]) -> list[PresenceDeviceCfg]:
+        """Names and addresses are both UNIQUE across the list.
+
+        Two devices sharing a name would share one state entry and silently halve the fleet's
+        evidence; two sharing an address are one device counted twice, which double-probes it and
+        makes a single arrival look like two. Neither is representable rather than merely unlikely —
+        the pre-D2-C list validator de-duplicated silently, and a silent de-dup on a NAMED object
+        would delete an entry the owner can see in their config."""
+        for what, values in (
+            ("name", [d.name for d in v]),
+            ("address", [a for d in v for a in d.addresses if a is not None]),
+        ):
+            seen: set[str] = set()
+            for value in values:
+                if value in seen:
+                    raise ValueError(f"wake.presence_devices: {what} {value!r} is used by two devices")
+                seen.add(value)
+        return v
 
 
 class MonitorCfg(BaseModel):
@@ -1131,7 +1306,7 @@ class MonitorCfg(BaseModel):
     so we damp down hard and recover fast (Gatus's 3/2, R13 §1.3).
 
     `enabled=True` is a safe default because it arms nothing: 15a only records host transitions, and
-    the presence half stays inert until `wake.presence_device_ips` is populated. Turning it OFF is the
+    the presence half stays inert until `wake.presence_devices` is populated. Turning it OFF is the
     master switch — the loop keeps idling and applies the change with no restart (and clears its
     counters, so re-enabling re-baselines silently instead of replaying a stale incident).
 

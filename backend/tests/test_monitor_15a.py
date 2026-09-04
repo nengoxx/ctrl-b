@@ -38,11 +38,13 @@ import pytest
 from _async import run_async
 
 from app.adapters import tailnet
-from app.config import MonitorCfg, Settings
+from app.config import MonitorCfg, PresenceDeviceCfg, Settings
 from app.domain.enums import Actor, RunState
 from app.domain.host import HostStatus
 from app.services.monitor import (
+    TAILNET,
     ArmState,
+    DeviceState,
     MonitorService,
     TargetState,
     arm,
@@ -51,6 +53,18 @@ from app.services.monitor import (
 )
 
 _NOW = "2026-07-31T12:00:00+00:00"
+
+
+def _device(ip: str, name: str = "phone") -> dict[str, str]:
+    """One `wake.presence_devices` entry watched on the TAILNET — this file's only source (the LAN
+    one arrived with D2-C and is pinned in `test_monitor_lan_d2c.py`)."""
+    return {"name": name, "tailnet_ip": ip}
+
+
+def _armed(svc: MonitorService, name: str = "phone", source: str = TAILNET) -> bool:
+    """Whether one device's arming machine FOR ONE SOURCE is armed — state is keyed by device name
+    since D2-C, and each source has its own machine under it."""
+    return svc.state.devices[name].arms[source].armed
 
 
 def _ts() -> datetime:
@@ -96,19 +110,25 @@ def test_the_wake_section_gains_the_presence_tunables_without_moving_the_old_one
     wake-ish section — and the D2-B cooldown keeps its own value and meaning."""
     w = Settings().wake
     assert w.cooldown_s == 300  # D2-B, unchanged
-    assert w.presence_device_ips == []
+    assert w.presence_devices == []
     assert (w.presence_offline_after_s, w.presence_cooldown_s) == (120, 3600)
     assert w.tailscale_socket_path == "/var/run/tailscale/tailscaled.sock"
 
 
-def test_device_ips_are_validated_normalized_and_deduplicated() -> None:
+def test_device_addresses_are_validated_and_normalized() -> None:
     """A typo'd address must 422 at the boundary rather than become a device that is permanently
     UNKNOWN — the reader cannot tell those apart, and a wake that silently never fires is this
-    feature's worst failure mode. Normalizing also keys the arming state canonically."""
-    ok = Settings.model_validate({"wake": {"presence_device_ips": [" 100.64.0.5 ", "100.64.0.5", ""]}})
-    assert ok.wake.presence_device_ips == ["100.64.0.5"]
+    feature's worst failure mode. Normalizing also keeps the monitor's re-baselining fingerprint
+    canonical. (The device OBJECT's own rules — unique names, at least one address — arrived with
+    D2-C and are pinned in `test_monitor_lan_d2c.py`.)"""
+    ok = Settings.model_validate(
+        {"wake": {"presence_devices": [{"name": "phone", "tailnet_ip": " 100.64.0.5 "}]}}
+    )
+    assert ok.wake.presence_devices[0].tailnet_ip == "100.64.0.5"
     with pytest.raises(Exception) as exc:  # noqa: PT011 — pydantic wraps it; the message is the assert
-        Settings.model_validate({"wake": {"presence_device_ips": ["phone.tailnet.ts.net"]}})
+        Settings.model_validate(
+            {"wake": {"presence_devices": [{"name": "phone", "tailnet_ip": "phone.tailnet.ts.net"}]}}
+        )
     assert "not an IP address" in str(exc.value)
 
 
@@ -594,13 +614,13 @@ def test_the_presence_half_drives_the_arming_machine_end_to_end() -> None:
     record (the WAKE the edge fires is 15b's, and has its own file)."""
     svc, events = _service(
         [_sweep()],
-        wake={"presence_device_ips": [_IP], "presence_offline_after_s": 0},
+        wake={"presence_devices": [_device(_IP)], "presence_offline_after_s": 0},
     )
     armed: list[bool] = []
     with _scripted_presence(["offline", "offline", "online", "online"]):
         for _ in range(4):
             run_async(svc.tick())
-            armed.append(svc.state.devices[_IP].armed)
+            armed.append(_armed(svc))
     # Armed by the offline run, consumed by the edge on the third tick, and NOT re-armed by the
     # steady online that follows — one edge per absence.
     assert armed == [True, True, False, False]
@@ -613,8 +633,10 @@ def _presence_fence_service(mutate) -> MonitorService:
     and its result being consumed — exactly the Conf-save window the fence guards."""
     import app.services.monitor as monitor_module
 
-    svc, _ = _service([_sweep()], wake={"presence_device_ips": [_IP], "presence_offline_after_s": 0})
-    svc.state.devices[_IP] = ArmState(armed=True, offline_since=0.0)
+    svc, _ = _service([_sweep()], wake={"presence_devices": [_device(_IP)], "presence_offline_after_s": 0})
+    svc.state.devices["phone"] = DeviceState(
+        fingerprint=(_IP, None), arms={TAILNET: ArmState(armed=True, offline_since=0.0)}
+    )
 
     async def read_then_mutate(socket_path, ips, **kw):
         mutate(svc)
@@ -639,20 +661,20 @@ def test_a_disable_landing_mid_read_fences_the_stale_edge() -> None:
 def test_a_device_removed_mid_read_cannot_be_resurrected_by_its_stale_reading() -> None:
     """Same window, other edit: the reading came back for a device the config no longer names, and
     consuming it would re-create the pruned state (and its armed flag) from beyond the grave."""
-    svc = _presence_fence_service(lambda s: s._settings.wake.presence_device_ips.clear())
+    svc = _presence_fence_service(lambda s: s._settings.wake.presence_devices.clear())
     assert svc.state.devices == {}
 
 
 def test_a_device_removed_from_the_config_loses_its_state() -> None:
-    """State keys on the NORMALIZED ip and is never reused across different ones (D50 M2) — an owner
-    swapping the watched device must not inherit the old one's armed flag."""
-    svc, _ = _service([_sweep()], wake={"presence_device_ips": [_IP, "100.64.0.9"]})
-    svc.state.devices[_IP] = ArmState(armed=True)
-    svc._settings.wake.presence_device_ips = ["100.64.0.9"]
+    """State keys on the device NAME and is never reused across different devices (D50 M2, D2-C) — an
+    owner swapping the watched device must not inherit the old one's armed flag."""
+    svc, _ = _service([_sweep()], wake={"presence_devices": [_device(_IP), _device("100.64.0.9", "laptop")]})
+    svc.state.devices["phone"] = DeviceState(fingerprint=(_IP, None), arms={TAILNET: ArmState(armed=True)})
+    svc._settings.wake.presence_devices = [PresenceDeviceCfg(name="laptop", tailnet_ip="100.64.0.9")]
     with _scripted_presence(["offline"]):
         run_async(svc.tick())
-    assert _IP not in svc.state.devices
-    assert svc.state.devices["100.64.0.9"].armed is False  # the new device starts from nothing
+    assert "phone" not in svc.state.devices
+    assert _armed(svc, "laptop") is False  # the new device starts from nothing
 
 
 def test_disabling_the_monitor_clears_its_state() -> None:
@@ -660,7 +682,7 @@ def test_disabling_the_monitor_clears_its_state() -> None:
     reporting a transition against a state observed before an unknown stretch of blindness."""
     svc, _ = _service([_sweep(alpha=True)])
     svc.state.hosts["alpha"] = TargetState(reported="up", up_streak=2)
-    svc.state.devices[_IP] = ArmState(armed=True)
+    svc.state.devices["phone"] = DeviceState(fingerprint=(_IP, None), arms={TAILNET: ArmState(armed=True)})
     svc.reset()
     assert svc.state.hosts == {} and svc.state.devices == {}
 

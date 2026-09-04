@@ -1,5 +1,5 @@
-"""The config-shape migration steps (`docs/UPDATE_PLAN.md` §3) — today: the A11 fold (step 1) and
-D65's media fold (step 2).
+"""The config-shape migration steps (`docs/UPDATE_PLAN.md` §3) — today: the A11 fold (step 1),
+D65's media fold (step 2) and D2-C's presence-device fold (step 3).
 
 **This file is the deletable part.** It holds every piece of knowledge about the legacy config shapes:
 the `inference.local`/`cloud`/`fallbacks` slots, the `voice.stt`/`voice.tts` `primary`/`fallback` pairs,
@@ -719,3 +719,81 @@ def media_v2_apply(ctx: Context) -> Plan:
 #: Step 2 — D65's media fold. Retires no env override: `media` was never a one-level scalar path, so
 #: `CTRLB_MEDIA__…` never reached anything (the A11 list's rule ① — only what the grammar can address).
 MEDIA_V2 = Step(version=2, applies=media_v2_applies, apply=media_v2_apply)
+
+
+# ── step 3: D2-C's presence-device fold (`config_version` 2 → 3) ─────────────────────────────────
+#
+# `wake.presence_device_ips: [ip, …]` → `wake.presence_devices: [{name, tailnet_ip}, …]`.
+#
+# The list grew a second dimension — the LAN-arrival source's address, and then that source's own
+# damping constant — and a `presence_lan_ips:` beside the old list is exactly the parallel sibling
+# shape the 2026-06-24 extend-don't-migrate directive bans. One list of device OBJECTS makes every
+# further dimension an additive optional field instead of a third top-level list plus a third merge
+# site (R63 §4.3, accepted verbatim).
+#
+# The fold is deterministic and needs nothing this step cannot see: each legacy entry was a tailnet
+# IP, so it becomes `{name: "<ip>", tailnet_ip: "<ip>"}`. The IP is the name because it is the only
+# identity the old shape carried — a name the owner will want to change is better than a name this
+# step invents from nothing, and renaming one in Conf simply re-baselines that device.
+
+
+def _wake_block(config: Mapping[str, Any]) -> dict[str, Any]:
+    """The `wake:` mapping, or `{}` when it is absent or some other shape — in which case there is no
+    legacy key to fold and `applies` correctly answers False."""
+    wake = config.get("wake")
+    return wake if isinstance(wake, dict) else {}
+
+
+def presence_devices_applies(ctx: Context) -> bool:
+    """True while the pre-D2-C `wake.presence_device_ips` key is still on disk — present in ANY shape,
+    including `null` and empty: the postcondition IS `applies`, so a key this step strips but does not
+    trigger on would survive under a "verified" stamp."""
+    return "presence_device_ips" in _wake_block(ctx.config)
+
+
+def presence_devices_apply(ctx: Context) -> Plan:
+    """Fold the legacy ip list into `presence_devices` and consume the old key.
+
+    New-wins on a collision, the house rule every fold above follows: a document holding BOTH keys
+    keeps `presence_devices` untouched and still declares the old one consumed, so the write-back
+    deletes it and a half-migrated file converges instead of accreting.
+
+    Two details carry weight. Duplicates are dropped, because the pre-D2-C field validator
+    de-duplicated on LOAD — a config that was valid yesterday must not become a `422` for two devices
+    sharing a name. And a value that is not a list is REFUSED rather than silently discarded (the
+    `order:` precedent): it could never have loaded under the old model either, and deleting the
+    owner's line while reporting success is the one outcome worth refusing over.
+    """
+    raw: dict[str, Any] = copy.deepcopy(dict(ctx.config))
+    wake = _wake_block(raw)
+    if "presence_device_ips" not in wake:  # pragma: no cover — `applies` already refused this
+        return Plan(config=raw)
+    legacy = wake.pop("presence_device_ips")
+    if "presence_devices" not in wake:
+        if legacy is not None and not isinstance(legacy, list):
+            raise MigrationRefused(
+                "`wake.presence_device_ips` must be a list of tailnet IPs — this build cannot fold "
+                f"{type(legacy).__name__} into the new `wake.presence_devices` list",
+                remedy="make it a list (or delete the key and re-add the device in Conf), then re-run",
+            )
+        devices: list[dict[str, Any]] = []
+        for entry in legacy or []:
+            ip = str(entry).strip()
+            if not ip or any(d["tailnet_ip"] == ip for d in devices):
+                continue
+            devices.append({"name": ip, "tailnet_ip": ip})
+        if devices:  # never introduce an empty `presence_devices:` key
+            wake["presence_devices"] = devices
+    return Plan(config=raw, consumes=[("wake", "presence_device_ips")])
+
+
+#: Step 3 — the D2-C presence-device fold. `wake.presence_device_ips` IS addressable by the one-level
+#: env grammar (`CTRLB_WAKE__PRESENCE_DEVICE_IPS`) and the new schema no longer declares it, so it
+#: meets both membership rules of the A11 retired list and a stale variable is refused at the attended
+#: gate rather than silently supplying nothing.
+PRESENCE_DEVICES = Step(
+    version=3,
+    applies=presence_devices_applies,
+    apply=presence_devices_apply,
+    retires=(("wake", "presence_device_ips"),),
+)

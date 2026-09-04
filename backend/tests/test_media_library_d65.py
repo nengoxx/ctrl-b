@@ -512,7 +512,7 @@ def test_the_migration_is_idempotent_and_stamps_the_marker(tmp_path, monkeypatch
     before = (home / "config.yaml").read_bytes()
     fresh = cm.context_from_env()
     assert cm.needs_migration(fresh) is False
-    assert cm.read_marker(fresh.config) == cm.CONFIG_VERSION == 2
+    assert cm.read_marker(fresh.config) == cm.CONFIG_VERSION
     assert cm.apply(cm.context_from_env()).wrote is False
     assert (home / "config.yaml").read_bytes() == before
 

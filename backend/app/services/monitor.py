@@ -1,8 +1,9 @@
-"""MonitorService — the backend's own periodic watcher (D2-A / D50, research R12 + R13).
+"""MonitorService — the backend's own periodic watcher (D2-A / D50 + D2-C, research R12 + R13 + R63).
 
-ONE lifespan loop doing two cheap reads per tick and feeding two consumers: confirmed fleet up/down
-transitions become Events, and the owner-device tailnet edge fires the D2-A wake (15b) for every host
-flagged `wake_on_presence`. The loop is `AutomationRunner.loop()`'s shape verbatim
+ONE lifespan loop doing a few cheap reads per tick and feeding two consumers: confirmed fleet up/down
+transitions become Events, and an owner-device ARRIVAL — on the tailnet (D50/15b) or on the home LAN
+(D2-C) — fires the wake for every host flagged `wake_on_presence`. The loop is
+`AutomationRunner.loop()`'s shape verbatim
 — sleep-then-work so overlap is structurally impossible, config re-read per tick so the master switch
 is live, blanket guard per tick, cancelled and awaited at shutdown. None of A3's arbiter/claim/shield
 machinery is copied: that solves durable run ownership, which monitoring does not have.
@@ -18,18 +19,28 @@ Four properties are load-bearing and easy to break:
      state without an Event: a restart is not an incident, and the alternative replays the whole
      fleet into the audit log every deploy. The baseline still has to MEET the threshold, so a single
      packet cannot install a state either.
-  3. **The phone has its own arming machine, not the fleet's counters** (D50 H1). Continuous healthy
-     OFFLINE for `wake.presence_offline_after_s` ARMS; the next healthy ONLINE is the edge; any
-     UNKNOWN tick, a disable, or a reconfig DISARMS. That pairing is what makes "a tailscaled restart
-     fires nothing" and "a genuine reconnect fires" simultaneously true — the fleet's 3/2 damping
-     alone would fire on recovery from a daemon outage.
+  3. **The phone has its own arming machine, not the fleet's counters** (D50 H1) — one PER SOURCE
+     (D2-C). Continuous healthy OFFLINE for that source's threshold ARMS; the next healthy ONLINE is
+     the edge; any UNKNOWN tick, a disable, or a reconfig DISARMS. That pairing is what makes "a
+     tailscaled restart fires nothing" and "a genuine reconnect fires" simultaneously true — the
+     fleet's 3/2 damping alone would fire on recovery from a daemon outage.
   4. **State is per-instance and per-target-key.** Counters live on the service object (never a module
      global — two `TestClient` apps in one process must not share them), keyed by host id and by
-     NORMALIZED device ip. Every tick prunes targets that left the config and silently baselines the
-     ones that arrived, so an edit cannot leave a ghost counter behind.
+     device NAME. Every tick prunes targets that left the config and silently baselines the ones that
+     arrived, so an edit cannot leave a ghost counter behind.
+
+The two presence sources keep SEPARATE machines and are OR'd at the fan-out — deliberately not
+R63 §4.2's recommendation of OR'ing them at the observation into one machine per device. That ladder
+assumes the steady source is UP at home; here the owner keeps Tailscale OFF until they want the
+servers, so a combined state would sit `online` on the LAN continuously, the device would never
+re-arm, and turning Tailscale on AT HOME would fire nothing — silently breaking the live-proven D50
+workflow. The two sources answer different questions ("the owner is home" vs "the owner wants the
+servers"), so they carry different constants and their own evidence.
 
 The fleet read is `FleetService.status_all()`, never `ping_host`: one sweep shared with the UI, which
-is also why `monitor.poll_seconds >= server.poll_seconds` is validated at the config boundary.
+is also why `monitor.poll_seconds >= server.poll_seconds` is validated at the config boundary. The
+LAN presence probe is the one exception — it is `fleet.ping_addr` directly, because it asks a
+different question (this address, three echoes) of an address that is not a fleet host at all.
 """
 
 from __future__ import annotations
@@ -37,18 +48,22 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal
+from zoneinfo import ZoneInfo
 
 from app.adapters.tailnet import DeviceReading, PresenceState, read_presence
-from app.config import MonitorCfg, Settings
+from app.config import MonitorCfg, PresenceDeviceCfg, QuietHoursCfg, Settings
 from app.domain.enums import Actor, RunState
 from app.domain.event import Event, Origin
 from app.domain.host import HostStatus
 from app.services import wake_on_connect
 from app.services.action_service import ActionService
+from app.services.automations.schedule import server_tz_key
 from app.services.events import EventService
-from app.services.fleet import FleetService
+from app.services.fleet import FleetService, ping_addr
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -151,12 +166,111 @@ def arm(state: ArmState, seen: PresenceState, *, now: float, offline_after_s: fl
     return ArmState(), state.armed
 
 
+#: The presence SOURCES, and the names the journal calls them by. A source is a name plus its own
+#: arming machine per device (D2-C): adding a third is an entry here and a reading, never a new field
+#: on every state object.
+TAILNET = "tailnet"
+LAN = "lan"
+
+
+@dataclass
+class DeviceState:
+    """One watched device's presence state: the addresses it was baselined against, plus an
+    INDEPENDENT arming machine per source (D2-C).
+
+    `fingerprint` generalizes D50 M2's "never reuse state across ips" from the ip key to the device
+    object: an edited address is a different device as far as evidence goes, so BOTH machines start
+    over rather than inheriting an armed flag observed against something else. A rename is the same
+    rule from the other side — the name is the state key, so it prunes and re-baselines.
+
+    `seen` is the last observation LOGGED per source. It is what keeps the permanent
+    state-transition journal to a line per CHANGE rather than a line per device per source per tick.
+    """
+
+    fingerprint: tuple[str | None, str | None] = (None, None)
+    arms: dict[str, ArmState] = field(default_factory=dict)
+    seen: dict[str, PresenceState] = field(default_factory=dict)
+
+
+async def read_lan_presence(
+    ips: Sequence[str], *, count: int, timeout_s: float, health_ip: str | None
+) -> dict[str, DeviceReading]:
+    """Probe the owner's devices on the home LAN → the SAME reading-per-address contract the tailnet
+    reader returns. Never raises; always answers for every ip.
+
+    `DeviceReading` is reused rather than mirrored: it says nothing about tailscaled (R63 §4.1), and
+    one presence vocabulary is what lets `arm()` stay source-agnostic. The mapping is `ping`'s own
+    three-way answer — a reply is ONLINE, a check that could not be made is UNKNOWN, a miss is
+    OFFLINE — with one gate over the last row.
+
+    **The health gate** (the LAN analogue of D50 H2, and the reason this is not two lines): `ping`
+    reports an unreachable address and a dead LOCAL link identically — no reply, no error — so an
+    unplugged server would read as every device leaving at once, arm them all, and wake the whole
+    fleet on the next reconnect. `wake.lan_health_ip` (normally the router) is probed alongside the
+    devices in the same `gather`; while it does not answer, every no-reply that tick is UNKNOWN, which
+    disarms rather than arms. Unset ⇒ no gate, which is a documented posture rather than an oversight.
+
+    Probes run concurrently for the same reason the fleet sweep does: an absent device costs
+    `count × timeout_s` (~3 s at the defaults), and sequential probes would eat the 30 s tick.
+    """
+    if not ips:
+        return {}  # nothing to ask about: the LAN half costs literally nothing, health address included
+    targets = [*ips, health_ip] if health_ip else list(ips)
+    results = await asyncio.gather(*(ping_addr(ip, count=count, timeout_s=timeout_s) for ip in targets))
+    healthy = results[-1].online if health_ip else True
+    out: dict[str, DeviceReading] = {}
+    for ip, result in zip(ips, results[: len(ips)], strict=True):
+        if result.online:
+            out[ip] = DeviceReading(ip=ip, state="online")
+        elif result.error:
+            out[ip] = DeviceReading(ip=ip, state="unknown", reason=result.error)
+        elif healthy:
+            out[ip] = DeviceReading(ip=ip, state="offline")
+        else:
+            out[ip] = DeviceReading(
+                ip=ip, state="unknown", reason=f"no reply, and {health_ip} did not answer either"
+            )
+    return out
+
+
+def _arrivals(arrived: Sequence[tuple[str, str]]) -> str:
+    """`[("phone", "lan")]` → `"phone (lan)"` — one arrival rendered for the journal. Which SOURCE
+    noticed is the first thing the owner needs when asking why something did or did not wake."""
+    return ", ".join(f"{name} ({source})" for name, source in arrived)
+
+
+def in_quiet_hours(window: QuietHoursCfg | None, *, now: datetime | None = None) -> bool:
+    """Is the wall clock inside the owner's quiet window (D2-C)? Pure, with an injectable `now`.
+
+    A window is an INTERVAL, not an instant, so this is deliberately not a cron: `cronsim` answers
+    "when does this next match", which is the wrong question and would drag A3's fire-time machinery
+    in to answer it. HA's `time_condition` shape instead — `start <= t < end`, INVERTED when the
+    window wraps midnight (23:00–08:00 means "at or after 23:00, OR before 08:00"). `start == end` is
+    refused at the config boundary, so those two cases are the whole space.
+
+    Local time comes from the A3 seam (`server_tz_key`), the same zone an automation saved without an
+    explicit `tz` runs in — so "23:00" means one thing across both features. No DST machinery is
+    needed or wanted: a wall-clock window is well defined across a fold (23:30 is inside 23:00–08:00
+    on both passes of an ambiguous hour) and across a spring gap (the missing hour is simply never
+    observed). That is precisely why the comparison is a wall clock and not a pair of instants.
+    """
+    if window is None:
+        return False
+    zone = ZoneInfo(server_tz_key())
+    local = datetime.now(zone) if now is None else (now.astimezone(zone) if now.tzinfo else now)
+    minutes = local.hour * 60 + local.minute
+    start, end = window.start_minutes, window.end_minutes
+    if start < end:
+        return start <= minutes < end
+    return minutes >= start or minutes < end
+
+
 @dataclass
 class MonitorState:
     """Everything the loop remembers between ticks — one object so a disable/re-enable clears it all."""
 
     hosts: dict[str, TargetState] = field(default_factory=dict)
-    devices: dict[str, ArmState] = field(default_factory=dict)
+    devices: dict[str, DeviceState] = field(default_factory=dict)
 
 
 class MonitorService:
@@ -222,11 +336,11 @@ class MonitorService:
             self._state = MonitorState()
 
     async def tick(self) -> None:
-        """One observation of everything watched: the shared fleet sweep, then the tailnet devices.
+        """One observation of everything watched: the shared fleet sweep, then the owner's devices.
 
-        The two halves are independent by construction — a tailnet that cannot be read must not cost
-        the fleet its transition Events, so the presence half runs after the fleet half and its own
-        failures are already UNKNOWN readings rather than exceptions.
+        The two halves are independent by construction — a tailnet (or a LAN) that cannot be read must
+        not cost the fleet its transition Events, so the presence half runs after the fleet half and
+        its own failures are already UNKNOWN readings rather than exceptions.
         """
         await self._tick_fleet()
         await self._tick_presence()
@@ -293,64 +407,112 @@ class MonitorService:
 
     # ── the presence half ─────────────────────────────────────────────────────────────────────────
 
-    async def _tick_presence(self) -> None:
-        """Observe the owner's devices, drive their arming machines, and wake the flagged hosts on an
-        arrival.
+    def _reconcile_devices(self, devices: Sequence[PresenceDeviceCfg]) -> None:
+        """Drop the state of every device the config no longer names AS IT NAMED IT (D50 M2, D2-C).
 
-        Edges are COLLECTED across the device loop and fanned out ONCE (D50 M3): the owner walking in
-        with a phone and a laptop is one arrival, and a fan-out per device would write duplicate wake
-        Events for it. The device loop only OBSERVES; every decision about hosts lives in the fan-out.
+        One rule covers both edits, because they are the same rule: state is evidence about a
+        (name, addresses) pair, so a device that left, a device that was renamed, and a device whose
+        address the owner corrected all lose it and re-baseline. Keeping it would let an armed flag
+        earned by one address fire a wake for another.
+        """
+        live = {d.name: d.addresses for d in devices}
+        for name, state in list(self._state.devices.items()):
+            if live.get(name) != state.fingerprint:
+                del self._state.devices[name]
+
+    async def _tick_presence(self) -> None:
+        """Observe the owner's devices on BOTH sources, drive their arming machines, and wake the
+        flagged hosts on an arrival.
+
+        Two sources, one machine EACH per device (D2-C — see the module docstring for why they are not
+        combined at the observation), read concurrently: the tailnet read is a 0.16 ms socket call and
+        the LAN probe is up to `count × timeout_s` of ICMP, so serializing them would spend the
+        cheap one's latency waiting for the expensive one.
+
+        Edges are COLLECTED across the whole device loop and fanned out ONCE (D50 M3): the owner
+        walking in with a phone and a laptop is one arrival, and a fan-out per device — or per source
+        — would write duplicate wake Events for it. Each edge carries its SOURCE, because quiet hours
+        suppress an arrival only when every edge in it is LAN. The device loop only OBSERVES; every
+        decision about hosts lives in the fan-out.
         """
         wake = self._settings.wake
-        ips = wake.presence_device_ips
-        for gone in [ip for ip in self._state.devices if ip not in ips]:
-            del self._state.devices[gone]  # reconfigured away: never reuse state across ips (D50 M2)
-        if not ips:
+        self._reconcile_devices(wake.presence_devices)
+        if not wake.presence_devices:
             return
-        readings = await read_presence(wake.tailscale_socket_path, ips)
+        readings, lan_readings = await asyncio.gather(
+            read_presence(
+                wake.tailscale_socket_path, [d.tailnet_ip for d in wake.presence_devices if d.tailnet_ip]
+            ),
+            read_lan_presence(
+                [d.lan_ip for d in wake.presence_devices if d.lan_ip],
+                count=wake.lan_probe_count,
+                timeout_s=wake.lan_probe_timeout_s,
+                health_ip=wake.lan_health_ip,
+            ),
+        )
         # The await above is a reconfiguration window (15a review, MED): a Conf save lands between the
-        # read starting and returning, so re-check the LIVE config before the readings drive anything.
+        # reads starting and returning, so re-check the LIVE config before they drive anything.
         # Without this, a stale reading could emit the edge 15b fires behind DESPITE the master switch,
         # or resurrect state for a device the prune above just removed — and a disable/re-enable inside
         # one window would then keep that ghost armed indefinitely.
         if not self.cfg.enabled:
             self.reset()
             return
-        fresh = self._settings.wake.presence_device_ips
-        for gone in [ip for ip in self._state.devices if ip not in fresh]:
-            del self._state.devices[gone]
+        wake = self._settings.wake
+        self._reconcile_devices(wake.presence_devices)
         now = time.monotonic()
-        arrived: list[str] = []
-        for ip in fresh:
-            # A device ADDED mid-window has no reading yet — an UNKNOWN tick, which correctly
-            # baselines it disarmed rather than trusting a read it was not part of.
-            reading = readings.get(ip) or DeviceReading(ip=ip, state="unknown", reason="not read")
-            state, edge = arm(
-                self._state.devices.get(ip, ArmState()),
-                reading.state,
-                now=now,
-                offline_after_s=wake.presence_offline_after_s,
-            )
-            self._state.devices[ip] = state
-            if edge:
-                arrived.append(ip)
-            self._log_presence(reading, state)
+        arrived: list[tuple[str, str]] = []
+        for device in wake.presence_devices:
+            state = self._state.devices.setdefault(device.name, DeviceState(fingerprint=device.addresses))
+            for source, ip, source_readings, offline_after_s in (
+                (TAILNET, device.tailnet_ip, readings, wake.presence_offline_after_s),
+                (LAN, device.lan_ip, lan_readings, device.lan_offline_after_s),
+            ):
+                if ip is None:
+                    continue  # an address the owner did not give is a source that cannot say anything
+                # A device ADDED mid-window has no reading yet — an UNKNOWN tick, which correctly
+                # baselines it disarmed rather than trusting a read it was not part of.
+                reading = source_readings.get(ip) or DeviceReading(ip=ip, state="unknown", reason="not read")
+                armed, edge = arm(
+                    state.arms.get(source, ArmState()),
+                    reading.state,
+                    now=now,
+                    offline_after_s=offline_after_s,
+                )
+                state.arms[source] = armed
+                if edge:
+                    arrived.append((device.name, source))
+                self._log_presence(device.name, source, reading, armed, state)
         if arrived:
             await self._wake_on_presence(arrived)
 
-    def _log_presence(self, reading: DeviceReading, state: ArmState) -> None:
-        """The per-device observation trail, DEBUG: a line per device per 30 s at INFO would drown the
-        journal. An arrival gets its own INFO line from the fan-out, which is where the interesting
-        part — what it actually did — is known."""
-        log.debug(
-            "tailnet: %s is %s%s (armed=%s)",
-            reading.ip,
-            reading.state,
-            f" — {reading.reason}" if reading.reason else "",
-            state.armed,
-        )
+    def _log_presence(
+        self, name: str, source: str, reading: DeviceReading, armed: ArmState, state: DeviceState
+    ) -> None:
+        """The observation trail, at two levels deliberately.
 
-    async def _wake_on_presence(self, arrived: list[str]) -> None:
+        Every tick at DEBUG: a line per device per source per 30 s at INFO would drown the journal.
+
+        Every state CHANGE at INFO, **permanently** — not a rollout aid. It is the diagnostic for a
+        stranded DHCP reservation, which v1 has no automated warning for: a LAN source pinned
+        `offline` while the owner is demonstrably home is what a drifted lease looks like, and it is
+        only visible if the journal says so. An arrival gets its own line from the fan-out, which is
+        where the interesting part — what it actually did — is known.
+        """
+        detail = f" — {reading.reason}" if reading.reason else ""
+        log.debug("presence: %s/%s is %s%s (armed=%s)", name, source, reading.state, detail, armed.armed)
+        if state.seen.get(source) != reading.state:
+            log.info(
+                "presence: %s/%s %s -> %s%s",
+                name,
+                source,
+                state.seen.get(source) or "unseen",
+                reading.state,
+                detail,
+            )
+            state.seen[source] = reading.state
+
+    async def _wake_on_presence(self, arrived: list[tuple[str, str]]) -> None:
         """Fan ONE owner arrival out over the hosts flagged `wake_on_presence` (D50, 15b).
 
         Deliberately the D2-B `wake_flagged_hosts` shape, because it is the same decision with a
@@ -374,6 +536,7 @@ class MonitorService:
           mode it exists to prevent.
         * **One bad host must not cost the others their wake**, so a failing invoke is logged and the
           fan-out continues (the fleet loop's `_record` rule, applied to actions).
+        * **Quiet hours gate the LAN source only** (D2-C), here and nowhere else — see below.
         """
         # The LAST gate before anything is invoked (D50 M2 — recheck before ACTING). The tick's read
         # fence above covers the reconfiguration window around the LocalAPI read; this one covers the
@@ -383,6 +546,26 @@ class MonitorService:
         if not self.cfg.enabled:
             return
         wake = self._settings.wake
+        # QUIET HOURS, at the acting boundary and AFTER the edge was consumed (D2-C; R63 §4.4's trap).
+        # `_tick_presence` has already written the disarmed state, so suppressing here DROPS the
+        # arrival — which is the whole meaning of the feature. Checking any earlier would leave the
+        # device armed and detonate it at 08:00:00 sharp, converting a suppressed 03:00 arrival into a
+        # scheduled fleet wake. A blocked-window arrival produces no wake that night BY DESIGN; the
+        # morning paths are D2-B (open the dashboard) and A3 schedules, both shipped.
+        #
+        # Two rules, both deliberate. Only when EVERY coalesced edge is LAN: a tailnet connect in the
+        # same tick is a deliberate act ("I want the servers") and keeps the whole fan-out eligible.
+        # And NEITHER cooldown map is stamped — nothing was attempted, and a stamp would wrongly
+        # suppress a genuine arrival after the window or a deliberate connect inside it.
+        window = wake.quiet_hours
+        if all(source == LAN for _name, source in arrived) and in_quiet_hours(window):
+            log.info(
+                "presence: %s arrived, suppressed by quiet hours (%s–%s)",
+                _arrivals(arrived),
+                window.start if window else "",  # never empty here; `in_quiet_hours(None)` is False
+                window.end if window else "",
+            )
+            return
         # D2-B's map — READ and stamped (15b verify round): the stamp alone only covered the
         # presence-first interleaving. Dashboard-first — D2-B stamps a host and parks at its invoke,
         # THEN the presence edge lands — needs the read too, or this pass re-wakes the host D2-B is
@@ -433,7 +616,7 @@ class MonitorService:
             except Exception:  # noqa: BLE001 — one host's failure is not the arrival's failure
                 log.exception("presence wake failed for host %s", host_id)
         log.info(
-            "tailnet: %s arrived — %s",
-            ", ".join(arrived),
+            "presence: %s arrived — %s",
+            _arrivals(arrived),
             f"firing wake for {len(eligible)} host(s)" if eligible else "no eligible hosts",
         )
