@@ -147,8 +147,10 @@ interface Session {
   /** The reply is still being written. `playNext` catching up to the last-arrived chunk takes the
    *  waiting latch instead of `finish()`; the turn-end flush is what clears this. */
   open: boolean;
-  /** The policy SNAPSHOT this session plans from: the module-level `policy` is replaced by any Conf
-   *  voice save, and a mid-turn re-split would leave the enqueued chunks and the cursor disagreeing. */
+  /** The SPLIT config this session plans from, snapshotted at its start: the module-level `policy` is
+   *  replaced by any Conf voice save, and a mid-turn re-split would leave the enqueued chunks and the
+   *  cursor disagreeing. Only the chunker's fields are frozen this way — `pump` deliberately reads
+   *  `lookahead`/`format` live, because neither changes the identity of a planned chunk. */
   cfg: ChunkPolicy;
   /** The stable markdown prefix already planned — the identity, not just its length: a reconnect
    *  overlays the open message's text WHOLESALE, and a buffer that no longer EXTENDS this one must
@@ -431,8 +433,8 @@ async function playWhole(
 // ── chunked: split → synth-ahead → src-swap on `ended` ───────────────────────────────────────────
 
 /** A fresh queue over an ordered chunk list — the five index-parallel arrays and the flags that ride
- *  them, in one place for both entry points (a tap and the read-along feed). `cfg` is the policy as it
- *  stands right now: only read-along re-plans, and it must not see a Conf save land mid-turn. */
+ *  them, in one place for both entry points (a tap and the read-along feed). `cfg` freezes the SPLIT
+ *  config as it stands right now: only read-along re-plans, and it must not see a Conf save mid-turn. */
 function newSession(id: string, seq: number, chunks: string[], readAlong: boolean): Session {
   return {
     id,
@@ -722,9 +724,9 @@ function finish(s: Session, a: HTMLAudioElement): void {
 //
 // The feeder (hooks/useAutoTts) owns the gates and hands over RAW MARKDOWN; the pipeline —
 // `stableMarkdownPrefix` (cut the buffer where `toSpeech` can still rewrite it) → `toSpeech` →
-// `chunkPlanFrom` against the session's policy SNAPSHOT — is owned here, so the queue, its cursor and
-// its bookkeeping have exactly one writer. Feeds are idempotent: a re-feed that closes no new chunk is
-// a couple of pure passes over a few KB and appends nothing.
+// `chunkPlanFrom` against the session's snapshotted SPLIT config — is owned here, so the queue, its
+// cursor and its bookkeeping have exactly one writer. Feeds are idempotent: a re-feed that closes no
+// new chunk is a couple of pure passes over a few KB and appends nothing.
 
 /** Plan the part of `markdown` this queue has not enqueued yet and append it. `final` = the turn-end
  *  flush: it plans from the FULL buffer (a construct that never closed must still be spoken) and takes
@@ -762,6 +764,20 @@ function resetFailedSlots(s: Session): number {
   return first;
 }
 
+/** Nothing more will ever be fed to this queue: re-enter it if it is holding the open latch, so that
+ *  with `open` cleared it either plays what is left or ends the message. Both closers need this — the
+ *  latch is released by `synthChunk` and by `playNext`, and neither of them is coming. */
+function drainClosed(s: Session): void {
+  if (s.waiting || s.playIdx < 0) playNext(s);
+}
+
+/** The buffer must still EXTEND what this session planned from. A reconnect overlays the open
+ *  message's text WHOLESALE (`overlaySyncMessage`) and it can be shorter, or simply different: nothing
+ *  spoken can be un-spoken and the cursor can no longer address the new text, so read-along is
+ *  abandoned for the turn rather than re-planned. Checked on BOTH ways in — the feeder's un-fed-suffix
+ *  test can skip straight from the last good feed to the flush. */
+const extendsFed = (s: Session, markdown: string): boolean => markdown.startsWith(s.srcFed);
+
 /**
  * Start — or extend — the read-along queue for the message currently streaming. Called per boundary
  * by the feeder; everything about "what is safe to speak yet" is decided here.
@@ -770,12 +786,9 @@ export function feedReadAlong(id: string, markdown: string): void {
   const s = liveSession();
   if (s && s.id === id) {
     if (!s.open || s.dropped) return; // flushed, abandoned, or capped — this turn has said its piece
-    if (!markdown.startsWith(s.srcFed)) {
-      // A reconnect overlays the open message's text WHOLESALE (`overlaySyncMessage`) and it can be
-      // SHORTER than what was fed. Nothing spoken can be un-spoken and the cursor can no longer be
-      // aligned, so close the session where it stands and let the queue drain what it holds.
-      s.open = false;
-      if (s.waiting || s.playIdx < 0) playNext(s);
+    if (!extendsFed(s, markdown)) {
+      s.open = false; // close it where it stands and let the queue drain what it holds
+      drainClosed(s);
       return;
     }
     planInto(s, markdown, false);
@@ -807,15 +820,19 @@ export async function endTurnSpeak(id: string, markdown: string): Promise<void> 
   const s = liveSession();
   if (s && s.id === id && s.readAlong) {
     if (!s.open) return; // abandoned mid-turn (a reload rewrote the text) — it keeps what it has
-    s.open = false;
-    planInto(s, markdown, true);
-    if (s.dropped) {
-      // Deferred to here on purpose: the copy assumes a finished reply, and one toast per message.
-      pushToast("Reply too long to read in full — the tail was skipped", "info");
+    s.open = false; // no more feeding, whatever the buffer turns out to be
+    // The identity guard applies HERE too, and not only in the feed path: a reconnect that replaced
+    // the text carries no new un-fed suffix, so the feeder can go straight from the last good feed to
+    // this flush. Planning the tail from a buffer the cursor cannot address would speak the stale
+    // queue AND omit the replacement text (review MED-1) — so plan nothing and let the queue drain.
+    if (extendsFed(s, markdown)) {
+      planInto(s, markdown, true);
+      if (s.dropped) {
+        // Deferred to here on purpose: the copy assumes a finished reply, and one toast per message.
+        pushToast("Reply too long to read in full — the tail was skipped", "info");
+      }
     }
-    // The queue may be latched at the end of what was fed; nothing else will call back into it now.
-    // With `open` cleared this either plays the tail or ends the message.
-    if (s.waiting || s.playIdx < 0) playNext(s);
+    drainClosed(s);
     return;
   }
   await toggle(id, markdown);

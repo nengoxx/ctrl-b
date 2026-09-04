@@ -22,7 +22,15 @@ const h = vi.hoisted(() => {
   const chat: { messages: ChatMessage[]; status: Status } = { messages: [], status: "idle" };
   const voice: VoiceProbe = {};
   const player: { id: string | null } = { id: null };
-  return { chat, voice, player, ui: { ttsAuto: true }, feed: vi.fn(), endTurn: vi.fn() };
+  return {
+    chat,
+    voice,
+    player,
+    ui: { ttsAuto: true },
+    feed: vi.fn(),
+    endTurn: vi.fn(),
+    dismiss: vi.fn(),
+  };
 });
 
 vi.mock("../../src/store/chat", () => ({ useChat: () => h.chat }));
@@ -33,6 +41,7 @@ vi.mock("../../src/hooks/useVoiceStatus", () => ({ useVoiceStatus: () => ({ data
 vi.mock("../../src/lib/audioController", () => ({
   feedReadAlong: h.feed,
   endTurnSpeak: h.endTurn,
+  dismiss: h.dismiss,
   usePlayback: (sel: (p: { id: string | null }) => unknown) => sel(h.player),
 }));
 
@@ -75,6 +84,7 @@ beforeEach(() => {
   h.player.id = null;
   h.feed.mockClear();
   h.endTurn.mockClear();
+  h.dismiss.mockClear();
 });
 
 describe("useAutoTts — the read-along feed (C3 S2)", () => {
@@ -207,6 +217,25 @@ describe("useAutoTts — the per-turn abandon latch", () => {
 
     step("idle", [user, said("a1", "One sentence. Two sentences. Three.")]);
     expect(h.endTurn).not.toHaveBeenCalled(); // and the turn end does not restart it
+  });
+
+  it("losing TTS mid-turn stops the open session instead of stranding it", () => {
+    // The `ttsOk` gate skips the terminal flush as well as the feed, so without this the queue would
+    // sit on the read-along latch showing "playing" forever (review MED-2).
+    const step = mount();
+    step("streaming", [user, said("a1", "One sentence.")]);
+    h.player.id = "a1";
+    step("streaming", [user, said("a1", "One sentence. Two sentences.")]);
+    expect(h.feed).toHaveBeenCalledTimes(2);
+
+    h.voice = { tts: false, tts_chunking: { mode: "sentence", read_along: true } };
+    step("streaming", [user, said("a1", "One sentence. Two sentences. Three.")]);
+    expect(h.dismiss).toHaveBeenCalledTimes(1);
+    expect(h.feed).toHaveBeenCalledTimes(2); // nothing more is fed
+
+    h.player.id = null; // the dismiss undocked it
+    step("idle", [user, said("a1", "One sentence. Two sentences. Three.")]);
+    expect(h.endTurn).not.toHaveBeenCalled(); // ...and the turn end does not try to speak it either
   });
 
   it("a pause (the player stays docked) is not an abandon", () => {

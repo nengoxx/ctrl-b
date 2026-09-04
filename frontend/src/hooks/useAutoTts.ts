@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { endTurnSpeak, feedReadAlong, usePlayback } from "../lib/audioController";
+import { dismiss, endTurnSpeak, feedReadAlong, usePlayback } from "../lib/audioController";
 import { useChat } from "../store/chat";
 import type { ChatMessage } from "../types";
 import { useUISlice } from "../store/ui";
@@ -59,6 +59,7 @@ export function useAutoTts(): void {
    *  after that is the "user stopped" gate D63 named but no controller flag expresses. */
   const fed = useRef<{ id: string; text: string; docked: boolean } | null>(null);
   const abandoned = useRef(false);
+  const prevTtsOk = useRef(ttsOk);
 
   useEffect(() => {
     const was = prevStatus.current;
@@ -70,6 +71,16 @@ export function useAutoTts(): void {
     if (fed.current) {
       if (dockedId === fed.current.id) fed.current.docked = true;
       else if (fed.current.docked) abandoned.current = true;
+    }
+    // TTS going away mid-turn (a Conf save disabling it, a provider edit) would otherwise strand an
+    // OPEN session: the gate below skips the flush as well as the feed, so the queue would sit on the
+    // read-along latch showing "playing" forever. Stop it the way every other stop does — muting
+    // auto-TTS already dismisses (`toggleAutoTts`), which is why only the `ttsOk` edge is handled.
+    const lostTts = prevTtsOk.current && !ttsOk;
+    prevTtsOk.current = ttsOk;
+    if (lostTts && fed.current && dockedId === fed.current.id) {
+      abandoned.current = true;
+      dismiss();
     }
     if (!ttsAuto || !ttsOk) return;
 

@@ -26,7 +26,7 @@ import {
 //   • the D63-amendment VIRTUAL TIMELINE — the estimator, the whole-message position/duration, and the
 //     global seek's three landings (synthesized / pending / failed).
 //   • C3 S2 READ-ALONG — the same queue fed while the reply streams: the `open` latch, the incremental
-//     plan's cursor, the policy snapshot, the prefix guard, the flush, and the parked replay's re-arm.
+//     plan's cursor, the split-config snapshot, the identity guard, the flush, and the parked replay.
 
 let lastAudio: FakeAudio;
 let probes: FakeAudio[] = [];
@@ -1238,7 +1238,7 @@ describe("audioController — read-along (C3 S2)", () => {
     expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]); // the tail never went out
   });
 
-  it("plans the whole turn from the policy SNAPSHOT — a Conf save mid-reply can't re-split it", async () => {
+  it("plans the whole turn from the SPLIT config it started with — a Conf save can't re-split it", async () => {
     setChunkPolicy(chunked({ lookahead: 3 })); // so every appended chunk reaches the wire at once
     const calls = deferredFetch();
     act(() => feedReadAlong("m1", HALF));
@@ -1271,6 +1271,30 @@ describe("audioController — read-along (C3 S2)", () => {
     await act(async () => lastAudio.finish());
     await flush();
     await act(async () => lastAudio.finish()); // the queue drains and ENDS — no stuck latch
+    await flush();
+    expect(result.current.status).toBe("paused");
+    expect(lastAudio.src).toBe("blob:1");
+  });
+
+  it("the FLUSH honours the identity guard too — a rewrite reaching it directly plans nothing", async () => {
+    // The feeder tests the UN-FED SUFFIX, so an overlay that REPLACED the text can carry no new suffix
+    // at all: the last thing this session ever sees is the flush, and planning the tail from a buffer
+    // its cursor cannot address would speak the stale queue and omit the replacement (review MED-1).
+    const { result } = renderHook(() => usePlayback((p) => p));
+    const calls = deferredFetch();
+    act(() => feedReadAlong("m1", WHOLE)); // "One." + "Two." enqueued
+    await act(async () => calls[0].resolve(okRes()));
+    await flush();
+    expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]);
+
+    await act(async () => void endTurnSpeak("m1", "A. B. C.")); // the reload's text, straight to the flush
+    expect(calls.map((c) => c.body.text)).toEqual(["One.", "Two."]); // "C." was never planned
+
+    await act(async () => calls[1].resolve(okRes()));
+    await flush();
+    await act(async () => lastAudio.finish());
+    await flush();
+    await act(async () => lastAudio.finish()); // ...and the session still ENDS, it is not left open
     await flush();
     expect(result.current.status).toBe("paused");
     expect(lastAudio.src).toBe("blob:1");
