@@ -40,14 +40,20 @@
   read from emma's routing table) · quiet hours 23:00–08:00 · **no host has `wake_on_presence`,
   so nothing can fire — observation only**; `chunk_read_along` is OFF (the owner flips it in Conf
   to hear read-along).
-- **Owed the owner (their word, no build):** ① the read-along feel round on dev :5173 (flip the
-  Conf toggle; long replies show the win) · ② **set the DHCP RESERVATION for the phone at .143 on
-  the router** (a lease can drift; the journal's presence lines are the only stale-address
-  diagnostic) · ③ after 2–3 nights, read the presence journal's gap picture, then flip
-  `wake_on_presence` on the chosen hosts (and tune `lan_offline_after_s` from evidence) ·
-  ④ the Dependabot D1 lockfile bump (5 HIGH, all transitive dev-toolchain — fast-uri via
-  stylelint, browserslist via babel/vite; one `npm audit fix`-class commit, triaged 2026-09-04) is
-  the one hygiene item still owed before E.
+- **Owed the owner (their word, no build) — session-close update 2026-09-04:** ① the read-along
+  feel round on dev :5173 — **the owner tests TOMORROW MORNING (2026-09-05)**; flip the Conf
+  toggle, long replies show the win · ② ~~set the DHCP reservation~~ → **DONE — the owner
+  confirmed .143 is already reserved on the router** · ③ after 2–3 nights, read the presence
+  journal's gap picture (`journalctl --user -u ctrl-b-dashboard-dev | grep presence:` — the
+  INFO transition lines), then flip `wake_on_presence` on the chosen hosts (and tune
+  `lan_offline_after_s` from evidence) · ④ the Dependabot D1 lockfile bump (5 HIGH, all
+  transitive dev-toolchain — fast-uri via stylelint, browserslist via babel/vite; one
+  `npm audit fix`-class commit, triaged 2026-09-04) is the one hygiene item still owed before E.
+- **The next session opens on the owner's round results** (read-along feel · anything the LAN
+  observation logged overnight): findings → fix waves per the standing cadence; then the
+  Dependabot bump · the PUSH ruling (now 10 commits) · **E, the v1.7.8 release** per the
+  corrected line below. Dev units stay RUNNING for the owner's round — do not stop them at
+  session start.
 - **Then the menu's E — the v1.7.8 release** (runbook §Release, Opus-operated · **the 2→3 config
   migration rides it** · rollback = config backup then v1.7.7 · pre-tag LOCAL e2e MANDATORY + the
   stale-pin sweep now covering THREE waves' strings: the fleet wave's labels, the
