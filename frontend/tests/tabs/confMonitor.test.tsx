@@ -1,12 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// D2-A / D50 (15c) — the monitor + presence-wake knobs live INSIDE the Server group (owner ruling:
-// no new section). Three things worth pinning: they really render in that group (the placement is
-// the ruling, and `monitor.poll_seconds` is cross-field validated against `server.poll_seconds`
-// right above it), the numeric fields coerce like their Server-group siblings, and the one field
-// with a shape of its own — the comma/space-separated device IPs — parses to the wire list (blank
-// → `[]`, i.e. the presence trigger is inert) without dragging untouched sections into the patch.
+// D2-A / D50 (15c) + D2-C (L2) — the monitor + presence-wake knobs live INSIDE the Server group
+// (owner ruling: no new section). Four things worth pinning: they really render in that group (the
+// placement is the ruling, and `monitor.poll_seconds` is cross-field validated against
+// `server.poll_seconds` right above it), the numeric fields coerce like their Server-group siblings,
+// the watched-device LIST saves as wire OBJECTS (trimmed, empty rows dropped, and never the retired
+// `presence_device_ips`) without dragging untouched sections into the patch, and quiet hours save
+// `null` when the window is empty / are blocked when start equals end.
 //
 // Sub-editors + data hooks are stubbed exactly as in confNotifications.test.tsx so only the real
 // Server group is live.
@@ -87,10 +88,14 @@ const makeSettings = () => ({
   monitor: { enabled: true, poll_seconds: 30, down_after_checks: 3, up_after_checks: 2 },
   wake: {
     cooldown_s: 300,
-    presence_device_ips: [] as string[],
+    presence_devices: [] as { name: string; tailnet_ip?: string | null; lan_ip?: string | null }[],
     presence_offline_after_s: 120,
     presence_cooldown_s: 3600,
     tailscale_socket_path: "/var/run/tailscale/tailscaled.sock",
+    lan_probe_count: 3,
+    lan_probe_timeout_s: 1,
+    lan_health_ip: null as string | null,
+    quiet_hours: null as { start: string; end: string } | null,
   },
   mcp_servers: [],
   openapi_servers: [],
@@ -194,6 +199,7 @@ const serverGroup = () => {
   return within(el);
 };
 const field = (name: string) => serverGroup().getByLabelText<HTMLInputElement>(name);
+const addDeviceButton = () => serverGroup().getByRole("button", { name: "+ add device" });
 const saveButton = () =>
   screen.getAllByRole<HTMLButtonElement>("button", { name: /Save changes|Saved|Saving/ })[0];
 const patchOf = (call = 0) =>
@@ -212,13 +218,36 @@ describe("ConfTab · monitor + presence wake (15c / D50)", () => {
     expect(field("Down after").value).toBe("3");
     expect(field("Up after").value).toBe("2");
     // the presence-wake half, incl. the cross-trigger floor that had no UI at all before 15c
-    expect(field("My device IPs").value).toBe("");
     expect(field("Arm after").value).toBe("120");
     expect(field("Presence cooldown").value).toBe("3600");
     expect(field("Wake cooldown").value).toBe("300");
     expect(field("tailscaled socket").value).toBe("/var/run/tailscale/tailscaled.sock");
+    // D2-C — the LAN source's rows sit beside them, and an empty device list renders NO row (the
+    // add foot is the only affordance) with quiet hours off.
+    expect(field("LAN health IP").value).toBe("");
+    expect(field("LAN probe echoes").value).toBe("3");
+    expect(field("LAN probe timeout").value).toBe("1");
+    expect(serverGroup().queryByLabelText("Device 1 name")).toBeNull();
+    expect(addDeviceButton()).toBeTruthy();
+    expect(serverGroup().getByLabelText("Quiet hours").getAttribute("aria-checked")).toBe("false");
+    expect(serverGroup().queryByLabelText("Quiet from")).toBeNull();
     // the cadence it is cross-field validated against is the neighbour, which is the whole point
     expect(field("Poll cadence").value).toBe("5");
+  });
+
+  it("renders one editable row per configured device", () => {
+    h.settings = {
+      ...makeSettings(),
+      wake: {
+        ...makeSettings().wake,
+        presence_devices: [{ name: "phone", tailnet_ip: "100.64.0.5", lan_ip: "192.168.1.143" }],
+      },
+    };
+    render(<ConfTab active />);
+    expect(field("Device 1 name").value).toBe("phone");
+    expect(field("Device 1 tailnet IP").value).toBe("100.64.0.5");
+    expect(field("Device 1 LAN IP").value).toBe("192.168.1.143");
+    expect(field("Device 1 LAN arm after").value).toBe(""); // unset → the model's own 900 s default
   });
 
   it("saves the monitor section as NUMBERS, and leaves untouched sections out of the patch", () => {
@@ -240,51 +269,133 @@ describe("ConfTab · monitor + presence wake (15c / D50)", () => {
     expect(patch.server).toBeUndefined();
   });
 
-  it("the device IPs parse to a list on save (comma/space separated), everything else untouched", () => {
+  it("the device rows save as wire OBJECTS — trimmed, empty rows dropped, never the retired key", () => {
     render(<ConfTab active />);
-    fireEvent.change(field("My device IPs"), {
-      target: { value: "100.64.0.5, 100.64.0.9  100.64.0.12" },
-    });
-    // the raw text survives a keystroke — a `join(", ")` round-trip would eat the separator
-    expect(field("My device IPs").value).toBe("100.64.0.5, 100.64.0.9  100.64.0.12");
+    fireEvent.click(addDeviceButton());
+    fireEvent.change(field("Device 1 name"), { target: { value: "  phone  " } });
+    fireEvent.change(field("Device 1 tailnet IP"), { target: { value: "100.64.0.5" } });
+    fireEvent.change(field("Device 1 LAN IP"), { target: { value: "192.168.1.143" } });
+    fireEvent.change(field("Device 1 LAN arm after"), { target: { value: "1800" } });
+    // a second row the owner opened and never filled in: not a device, and sending it would 422
+    fireEvent.click(addDeviceButton());
     fireEvent.click(saveButton());
 
     const patch = patchOf();
     expect(patch.wake).toEqual({
       cooldown_s: 300,
-      presence_device_ips: ["100.64.0.5", "100.64.0.9", "100.64.0.12"],
+      presence_devices: [
+        {
+          name: "phone", // trimmed — a trailing space keys a DIFFERENT device server-side
+          tailnet_ip: "100.64.0.5",
+          lan_ip: "192.168.1.143",
+          lan_offline_after_s: 1800, // coerced, not the typed "1800"
+        },
+      ],
       presence_offline_after_s: 120,
       presence_cooldown_s: 3600,
       tailscale_socket_path: "/var/run/tailscale/tailscaled.sock",
+      lan_probe_count: 3,
+      lan_probe_timeout_s: 1,
+      lan_health_ip: null,
+      quiet_hours: null,
     });
+    expect(patch.wake).not.toHaveProperty("presence_device_ips"); // the D2-C fold retired it
     expect(patch.monitor).toBeUndefined();
   });
 
-  it("a success echo re-baselines typed IPs to the normalized list; the next save omits wake", () => {
-    // The 15c review's named missing test: the draft holds a raw STRING once edited, the PUT echo
-    // holds the normalized ARRAY — the per-call onSuccess must converge the two, or the section
-    // reads dirty forever and every later save drags `wake` back into the patch.
+  it("a blank arm-after OMITS the key (the model's own default), and a removed row leaves", () => {
+    // `lan_offline_after_s` is optional WITH a default — `null` would 422 on an int field, and a
+    // silent 0 would arm the device on its first missed ping. Absent is the only correct wire shape.
+    h.settings = {
+      ...makeSettings(),
+      wake: {
+        ...makeSettings().wake,
+        presence_devices: [
+          { name: "phone", lan_ip: "192.168.1.143" },
+          { name: "tablet", lan_ip: "192.168.1.144" },
+        ],
+      },
+    };
     render(<ConfTab active />);
-    fireEvent.change(field("My device IPs"), { target: { value: "100.64.0.5 100.64.0.9" } });
+    fireEvent.click(serverGroup().getByLabelText("remove device 2"));
+    fireEvent.click(saveButton());
+    expect(patchOf().wake?.presence_devices).toEqual([
+      { name: "phone", tailnet_ip: null, lan_ip: "192.168.1.143" },
+    ]);
+  });
+
+  it("a success echo re-baselines the typed device row; the next save omits wake", () => {
+    // The 15c review's named missing test, carried to the object shape: the draft holds the TYPED
+    // damping override (a string) once edited, the PUT echo holds the coerced number — the per-call
+    // onSuccess must converge the two, or the section reads dirty forever and every later save drags
+    // `wake` back into the patch.
+    render(<ConfTab active />);
+    fireEvent.click(addDeviceButton());
+    fireEvent.change(field("Device 1 name"), { target: { value: "phone" } });
+    fireEvent.change(field("Device 1 LAN IP"), { target: { value: "192.168.1.143" } });
+    fireEvent.change(field("Device 1 LAN arm after"), { target: { value: "1800" } });
     fireEvent.click(saveButton());
     const [patch, opts] = h.save.mock.calls[0] as [
-      { wake?: { presence_device_ips?: unknown } },
+      { wake?: { presence_devices?: unknown } },
       { onSuccess: (res: unknown) => void; onSettled: () => void },
     ];
-    expect(patch.wake?.presence_device_ips).toEqual(["100.64.0.5", "100.64.0.9"]);
+    expect(patch.wake?.presence_devices).toEqual([
+      { name: "phone", tailnet_ip: null, lan_ip: "192.168.1.143", lan_offline_after_s: 1800 },
+    ]);
     const echoed = makeSettings();
-    echoed.wake.presence_device_ips = ["100.64.0.5", "100.64.0.9"];
+    echoed.wake.presence_devices = patch.wake
+      ?.presence_devices as typeof echoed.wake.presence_devices;
     // drive the callbacks the way the real mutation does: success, then the settled release
     act(() => {
       opts.onSuccess({ settings: echoed, providers_rev: "revA" });
       opts.onSettled();
     });
-    // the echo is now the baseline: rendered joined, and clean
-    expect(field("My device IPs").value).toBe("100.64.0.5, 100.64.0.9");
+    expect(field("Device 1 LAN arm after").value).toBe("1800"); // the echoed number, rendered back
     fireEvent.change(field("Monitor cadence"), { target: { value: "60" } });
     fireEvent.click(saveButton());
     expect(patchOf(1).monitor?.poll_seconds).toBe(60);
     expect(patchOf(1).wake).toBeUndefined(); // the echoed baseline diffs equal — wake stays home
+  });
+
+  it("quiet hours: the switch seeds a window, and an emptied window saves null", () => {
+    render(<ConfTab active />);
+    fireEvent.click(serverGroup().getByLabelText("Quiet hours"));
+    expect(field("Quiet from").value).toBe("23:00");
+    expect(field("Quiet until").value).toBe("08:00");
+    fireEvent.click(saveButton());
+    expect(patchOf().wake?.quiet_hours).toEqual({ start: "23:00", end: "08:00" });
+
+    // both times cleared means what the switch's OFF position means — `null`, not a `{"", ""}` 422
+    cleanup();
+    h.save.mockClear();
+    h.settings = {
+      ...makeSettings(),
+      wake: { ...makeSettings().wake, quiet_hours: { start: "23:00", end: "08:00" } },
+    };
+    render(<ConfTab active />);
+    fireEvent.change(field("Quiet from"), { target: { value: "" } });
+    fireEvent.change(field("Quiet until"), { target: { value: "" } });
+    fireEvent.click(saveButton());
+    expect(patchOf().wake?.quiet_hours).toBeNull();
+  });
+
+  it("quiet hours with start === end BLOCKS the save (all-day suppression, refused server-side)", () => {
+    h.settings = {
+      ...makeSettings(),
+      wake: { ...makeSettings().wake, quiet_hours: { start: "23:00", end: "08:00" } },
+    };
+    render(<ConfTab active />);
+    fireEvent.change(field("Quiet until"), { target: { value: "23:00" } });
+    expect(saveButton().disabled).toBe(true);
+    expect(serverGroup().getByText(/suppress every LAN wake, all day/)).toBeTruthy();
+    fireEvent.click(saveButton());
+    expect(h.save).not.toHaveBeenCalled();
+
+    // fixing the window releases the block
+    fireEvent.change(field("Quiet until"), { target: { value: "08:30" } });
+    expect(saveButton().disabled).toBe(false);
+    fireEvent.click(saveButton());
+    expect(patchOf().wake?.quiet_hours).toEqual({ start: "23:00", end: "08:30" });
   });
 
   it("a CLEARED wake timing saves null (a visible 422), never a silent zero", () => {
@@ -304,26 +415,33 @@ describe("ConfTab · monitor + presence wake (15c / D50)", () => {
     expect(patchOf().wake?.cooldown_s).toBe(0); // a TYPED zero stays a real zero
   });
 
-  it("clearing the device IPs saves an EMPTY list — the feature's off switch", () => {
+  it("removing the last device saves an EMPTY list — the feature's off switch", () => {
     h.settings = {
       ...makeSettings(),
-      wake: { ...makeSettings().wake, presence_device_ips: ["100.64.0.5"] },
+      wake: {
+        ...makeSettings().wake,
+        presence_devices: [{ name: "phone", tailnet_ip: "100.64.0.5" }],
+      },
     };
     render(<ConfTab active />);
-    expect(field("My device IPs").value).toBe("100.64.0.5");
-    fireEvent.change(field("My device IPs"), { target: { value: "" } });
+    expect(field("Device 1 name").value).toBe("phone");
+    fireEvent.click(serverGroup().getByLabelText("remove device 1"));
     fireEvent.click(saveButton());
 
-    expect(patchOf().wake?.presence_device_ips).toEqual([]);
+    expect(patchOf().wake?.presence_devices).toEqual([]);
   });
 
-  it("a bad entry is NOT swallowed client-side — it rides to the backend validator verbatim", () => {
-    // `WakeCfg._normalize_device_ips` is the single source of truth for what an IP is (a typo must
-    // 422, never become a device that is permanently UNKNOWN). The form must not silently drop it.
+  it("a bad address is NOT swallowed client-side — it rides to the backend validator verbatim", () => {
+    // `PresenceDeviceCfg` is the single source of truth for what an address is (a typo must 422,
+    // never become a device that is permanently UNKNOWN). The form must not silently drop it.
     render(<ConfTab active />);
-    fireEvent.change(field("My device IPs"), { target: { value: "100.64.0.5, phone" } });
+    fireEvent.click(addDeviceButton());
+    fireEvent.change(field("Device 1 name"), { target: { value: "phone" } });
+    fireEvent.change(field("Device 1 tailnet IP"), { target: { value: "phone.local" } });
     fireEvent.click(saveButton());
-    expect(patchOf().wake?.presence_device_ips).toEqual(["100.64.0.5", "phone"]);
+    expect(patchOf().wake?.presence_devices).toEqual([
+      { name: "phone", tailnet_ip: "phone.local", lan_ip: null },
+    ]);
   });
 
   it("raising the poll cadence past the monitor cadence still saves (the 422 comes from the server)", () => {

@@ -107,6 +107,29 @@ export interface MediaFileEntry {
   [k: string]: unknown;
 }
 
+/** One watched owner device — `wake.presence_devices[]` (`PresenceDeviceCfg`, D2-C). ONE object
+ *  carrying BOTH sources' addresses plus its own LAN damping constant, never a `presence_device_ips`
+ *  list with a sibling LAN list beside it. At least one address is required and `lan_offline_after_s`
+ *  is optional (the model's own 900 s default applies when the key is absent) — both rules belong to
+ *  the backend validator, whose 422 surfaces on the save. The open index keeps a field a later slice
+ *  adds (the model is `extra="allow"`) intact through the Conf read-modify-write. */
+export interface PresenceDevice {
+  name: string;
+  tailnet_ip?: string | null;
+  lan_ip?: string | null;
+  lan_offline_after_s?: number | null;
+  [k: string]: unknown;
+}
+
+/** `wake.quiet_hours` (`QuietHoursCfg`, D2-C) — the local-time window in which a LAN arrival wakes
+ *  nothing; `null` is "no quiet hours", which is also the default. Both times are `"HH:MM"` STRINGS
+ *  (a bare 23:00 is a number to YAML), and `start === end` is refused by the backend. */
+export interface QuietHours {
+  start: string;
+  end: string;
+  [k: string]: unknown;
+}
+
 export interface SettingsDoc {
   server: {
     host: string;
@@ -171,15 +194,20 @@ export interface SettingsDoc {
     down_after_checks: number;
     up_after_checks: number;
   };
-  // ROADMAP D2 / D50 — fleet wake automation (`WakeCfg`): BOTH triggers' global tunables on the one
-  // object (never a sibling `presence:` map). `cooldown_s` is the shared automatic-wake floor;
-  // the `presence_*` fields are the D2-A owner-device edge's half.
+  // ROADMAP D2 / D50 / D2-C — fleet wake automation (`WakeCfg`): BOTH triggers' global tunables on
+  // the one object (never a sibling `presence:` map). `cooldown_s` is the shared automatic-wake
+  // floor; the `presence_*` fields are the owner-device edge's half, and the `lan_*`/`quiet_hours`
+  // fields are the LAN-arrival source's (D2-C).
   wake: {
     cooldown_s: number;
-    presence_device_ips: string[];
+    presence_devices: PresenceDevice[];
     presence_offline_after_s: number;
     presence_cooldown_s: number;
     tailscale_socket_path: string;
+    lan_probe_count: number;
+    lan_probe_timeout_s: number;
+    lan_health_ip: string | null;
+    quiet_hours: QuietHours | null;
   };
   // Owner media (D52/D53 + D65's fold): the per-operation `write` tunables plus the per-namespace
   // libraries. Declared because the gallery's reorder is a READ-MODIFY-WRITE over `files` — an entry

@@ -42,7 +42,9 @@ import {
   useSettings,
   useSettingsProvidersRev,
   type ModelDoc,
+  type PresenceDevice,
   type ProviderDoc,
+  type QuietHours,
   type SavePatch,
   type SectionRef,
   type SettingsDoc,
@@ -140,14 +142,20 @@ function TailscaleAccessCard() {
   );
 }
 
-/** A labelled text/password input row (vapor `.confrow` + `.k`). `desc` is the small caps subtitle;
- * pass `restart` to mark a field that only applies after a server restart. */
+/** A labelled text/password/time input row (vapor `.confrow` + `.k`). `desc` is the small caps
+ * subtitle; pass `restart` to mark a field that only applies after a server restart.
+ *
+ * `time` (D2-C quiet hours) is this row with the platform's own clock control — on the owner's phone
+ * that is the Android time picker, and its value is already the `"HH:MM"` string the config wants. It
+ * is a TYPE on the existing row, not a new widget: everything else (the label association, the desc,
+ * the group's draft/save flow) is identical, and a bespoke pair of hour/minute fields would be a
+ * second style for a value the platform already edits better. */
 function Field(props: {
   label: string;
   desc: string;
   value: string;
   onChange: (v: string) => void;
-  type?: "text" | "password";
+  type?: "text" | "password" | "time";
   placeholder?: string;
   restart?: boolean;
 }) {
@@ -726,10 +734,14 @@ const MONITOR_FALLBACK: SettingsDoc["monitor"] = {
 };
 const WAKE_FALLBACK: SettingsDoc["wake"] = {
   cooldown_s: 300,
-  presence_device_ips: [],
+  presence_devices: [],
   presence_offline_after_s: 120,
   presence_cooldown_s: 3600,
   tailscale_socket_path: "/var/run/tailscale/tailscaled.sock",
+  lan_probe_count: 3,
+  lan_probe_timeout_s: 1,
+  lan_health_ip: null,
+  quiet_hours: null,
 };
 
 function pickDraft(s: SettingsDoc): Draft {
@@ -755,19 +767,47 @@ function pickDraft(s: SettingsDoc): Draft {
   };
 }
 
-/** The watched-device list renders as ONE comma/space-separated text field, and the draft carries
- *  the RAW text while the user types — the same shape this form already uses for numbers (the draft
- *  holds the typed string, `onSave` coerces). Round-tripping through `join(", ")` on every keystroke
- *  instead would eat a separator the moment it's typed. Untouched, the draft still holds the doc's
- *  own array, so the coerced section diffs equal and stays out of the patch. */
-function ipsText(v: string[] | string | undefined): string {
-  return Array.isArray(v) ? v.join(", ") : (v ?? "");
+/** D2-C — the watched-device list coerces at save the way the numbers beside it do: the draft rows
+ *  carry what was TYPED (a device's damping override is text while it is being edited), and this
+ *  turns them into the wire list. Three rules, and deliberately no more:
+ *
+ *  - a row whose every field is blank is DROPPED — that is an "+ add device" the owner opened and
+ *    left alone, not a device, and sending it would 422 on a missing name;
+ *  - names are trimmed, because a trailing space keys a DIFFERENT device in the monitor's state map;
+ *  - a blank damping override OMITS the key (`PresenceDeviceCfg.lan_offline_after_s` is optional with
+ *    its own 900 s default — unlike the section's own timings, where a cleared field must earn its
+ *    visible 422 rather than silently mean something else).
+ *
+ *  Everything else — the address syntax, ≥1 address per device, unique names/addresses — belongs to
+ *  `PresenceDeviceCfg`/`WakeCfg`, the single source of truth, whose 422 surfaces on the save. Each row
+ *  is rebuilt from the draft's own object so a field a later slice adds (the model is `extra="allow"`)
+ *  round-trips untouched. */
+function parseDevices(v: PresenceDevice[] | undefined): PresenceDevice[] {
+  const out: PresenceDevice[] = [];
+  for (const d of v ?? []) {
+    const name = String(d.name ?? "").trim();
+    const tailnet = String(d.tailnet_ip ?? "").trim();
+    const lan = String(d.lan_ip ?? "").trim();
+    const after = String(d.lan_offline_after_s ?? "").trim();
+    if (!name && !tailnet && !lan && !after) continue;
+    const row: PresenceDevice = { ...d, name, tailnet_ip: tailnet || null, lan_ip: lan || null };
+    if (after === "") delete row.lan_offline_after_s;
+    else row.lan_offline_after_s = Number(after);
+    out.push(row);
+  }
+  return out;
 }
-/** Parse that text back to the wire list: split on commas/whitespace, drop the empties (so a blank
- *  field is `[]` — "the presence trigger is off"). Entries are NOT validated here — `WakeCfg`
- *  normalizes and rejects them at the config boundary, and its 422 surfaces on the save. */
-function parseIps(v: string[] | string | undefined): string[] {
-  return Array.isArray(v) ? v : (v ?? "").split(/[\s,]+/).filter(Boolean);
+/** D2-C — the quiet-hours window on the wire: `null` (no window) or both times as typed. Two empty
+ *  time inputs mean the same thing the switch's OFF position does, so they save `null` rather than a
+ *  `{start: "", end: ""}` the backend would 422 on; ONE empty side is a half-finished window and does
+ *  ride to the validator, which is the only place that knows what a clock time is. `start === end` is
+ *  refused there too — and blocked before the save here, since the sentence names a control the owner
+ *  can see. */
+function parseQuietHours(q: QuietHours | null | undefined): QuietHours | null {
+  if (!q) return null;
+  const start = String(q.start ?? "").trim();
+  const end = String(q.end ?? "").trim();
+  return start === "" && end === "" ? null : { ...q, start, end };
 }
 /** Blank-aware numeric coercion for fields where `0` is a MEANINGFUL saved value (the wake timings:
  *  "no cooldown", "arm immediately"). Blank/whitespace → `null` on the wire → the backend's 422 with
@@ -777,6 +817,11 @@ function numOrNull(v: number | string): number | null {
   const t = String(v).trim();
   return t === "" ? null : Number(t);
 }
+
+/** The window a freshly enabled Quiet hours starts from — the plan's own example (23:00–08:00), i.e.
+ *  the night the feature exists for. Not a tunable: it is the seed the owner immediately edits, and
+ *  the saved value is `wake.quiet_hours` itself. */
+const QUIET_HOURS_SEED: QuietHours = { start: "23:00", end: "08:00" };
 
 const RISKS = [
   { val: "low", label: "Low" },
@@ -1327,6 +1372,35 @@ export function ConfTab({ active }: Props) {
   const mon = draft?.monitor;
   const wk = draft?.wake;
 
+  // D2-C — the watched devices are edited IN PLACE on the wake draft (one row per device, positional
+  // like the fallback rows), so they ride the same per-section diff and the same PUT as every other
+  // wake knob; `parseDevices` coerces at save. A fresh row starts blank in EVERY field, which is also
+  // what makes it droppable if the owner never fills it in.
+  const devices = wk?.presence_devices ?? [];
+  const setDevices = (next: PresenceDevice[]) => setWake("presence_devices", next);
+  const setDevice = (i: number, patch: Partial<PresenceDevice>) =>
+    setDevices(devices.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  const addDevice = () => setDevices([...devices, { name: "", tailnet_ip: "", lan_ip: "" }]);
+  const removeDevice = (i: number) => setDevices(devices.filter((_, j) => j !== i));
+
+  // Quiet hours. The switch IS the clear/unset affordance — `null` is the config's own "no window",
+  // so turning it off writes exactly that instead of leaving two blanked fields to be interpreted.
+  // Turning it ON seeds the window rather than opening two empty inputs whose save the backend would
+  // refuse: an empty window is not a state worth being able to save.
+  const quiet = wk?.quiet_hours ?? null;
+  // Read through `String(… ?? "")` for the same reason the section fallbacks exist: a doc from an
+  // older/mismatched build can carry a half-written block, and a missing side must render as an empty
+  // (still controlled) input rather than crash the tab.
+  const quietStart = String(quiet?.start ?? "");
+  const quietEnd = String(quiet?.end ?? "");
+  const setQuiet = (key: "start" | "end", v: string) =>
+    setWake("quiet_hours", { ...(quiet ?? QUIET_HOURS_SEED), [key]: v });
+  const toggleQuiet = () => setWake("quiet_hours", quiet ? null : { ...QUIET_HOURS_SEED });
+  // `start === end` inverts into all-day suppression, so `QuietHoursCfg` refuses it — mirrored here as
+  // a save BLOCK (the group's existing block-reason row) rather than a silent 422, because the fix is
+  // one visible field away. Same rule, one source of truth for what it means.
+  const quietSame = !!quietStart.trim() && quietStart.trim() === quietEnd.trim();
+
   // A11/D48 B2 + R19 — the reference-guard. Collect every config-held ModelRef (the draft's inference
   // primary/fallbacks + the settings doc's agent.defaults.model / summarizer[s] / routing.lead), resolve
   // its provider through the queued renames, and check it still points at a live provider + model in the
@@ -1507,6 +1581,14 @@ export function ConfTab({ active }: Props) {
   const blockReasons = [
     ...referenceReport.dangling,
     ...(jsonBlocked ? ["fix the invalid provider fields highlighted above"] : []),
+    // D2-C — `QuietHoursCfg`'s own refusal, worded for the control that fixes it: an equal start and
+    // end inverts into all-day suppression, which would silently kill every LAN wake.
+    ...(quietSame
+      ? [
+          `quiet hours start and end are both “${quietStart.trim()}” — that would suppress every LAN ` +
+            `wake, all day; switch Quiet hours off to disable them`,
+        ]
+      : []),
   ];
   const saveDisabled = !dirty || save.isPending || blockReasons.length > 0;
 
@@ -1558,8 +1640,9 @@ export function ConfTab({ active }: Props) {
         },
       },
       notifications: draft.notifications, // all booleans — nothing to coerce
-      // D2-A/D50 (15c). `presence_device_ips` coerces like the numbers beside it: the draft holds what
-      // was typed, this turns it into the wire list (blank → `[]` = the presence trigger is inert).
+      // D2-A/D50 (15c) + D2-C. `presence_devices`/`quiet_hours` coerce like the numbers beside them:
+      // the draft holds what was typed, these turn it into the wire shape (no devices = the presence
+      // trigger is inert; no window = no quiet hours).
       // The numerics coerce through `numOrNull`, NOT bare `Number` (15c review, MED): `Number("")` is
       // 0, and for the wake timings 0 is a MEANINGFUL value ("no cooldown"/"arm immediately") the
       // backend accepts — a cleared field would silently disable a cooldown instead of earning the
@@ -1574,9 +1657,14 @@ export function ConfTab({ active }: Props) {
       wake: {
         ...draft.wake,
         cooldown_s: numOrNull(draft.wake.cooldown_s),
-        presence_device_ips: parseIps(draft.wake.presence_device_ips),
+        presence_devices: parseDevices(draft.wake.presence_devices),
         presence_offline_after_s: numOrNull(draft.wake.presence_offline_after_s),
         presence_cooldown_s: numOrNull(draft.wake.presence_cooldown_s),
+        // D2-C — the LAN probe's own numbers, same blank → null → visible 422 as their neighbours
+        // (both are floored `>= 1` server-side, so a cleared field has no meaning to swallow).
+        lan_probe_count: numOrNull(draft.wake.lan_probe_count),
+        lan_probe_timeout_s: numOrNull(draft.wake.lan_probe_timeout_s),
+        quiet_hours: parseQuietHours(draft.wake.quiet_hours),
       },
     };
     // Send ONLY the sections that actually changed. Sending everything made every scalar save a
@@ -1922,20 +2010,85 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setMon("up_after_checks", v as unknown as number)}
           />
         </div>
-        {/* The presence-wake half of the same loop: which device's arrival on the tailnet counts as
-            "I want my servers", and how often that may act. WHICH machines answer it is per-host
-            (Computers → "Wake when my phone connects"); these are the global tunables. */}
+        {/* The presence-wake half of the same loop: whose arrival wakes the fleet, on which of the two
+            sources, and how often that may act. WHICH machines answer it is per-host (Computers →
+            "Wake when my phone connects"); these are the global tunables.
+
+            D2-C — a device is now an OBJECT, not an IP: it carries both sources' addresses and its own
+            LAN damping constant, so the list renders on the tab's own multi-field row idiom (the
+            Providers group's model rows: `.mform` grid + a `.mfoot` remove + one `+ add` foot), NOT
+            the one-line `.fb-remove` row a single-value list uses. Nothing is validated here — the
+            typed values ride to `PresenceDeviceCfg`, whose 422 surfaces on the save. */}
         <div className="conf-card">
-          <Field
-            label="My device IPs"
-            desc="your phone's tailnet IP (100.x…) · comma-separated · blank = no presence wake · bad entries are rejected on save"
-            value={ipsText(wk?.presence_device_ips)}
-            onChange={(v) => setWake("presence_device_ips", v as unknown as string[])}
-            placeholder="100.64.0.5"
-          />
+          <div className="fallback-section">
+            <span className="label">My devices</span>
+            <span className="desc">one row per device · none = no presence wake</span>
+          </div>
+          {devices.map((d, i) => (
+            <div className="model-row" key={i}>
+              <div className="mform">
+                <label>Name</label>
+                <input
+                  aria-label={`Device ${i + 1} name`}
+                  value={String(d.name ?? "")}
+                  placeholder="phone"
+                  onChange={(e) => setDevice(i, { name: e.target.value })}
+                />
+                <label>Tailnet IP</label>
+                <input
+                  aria-label={`Device ${i + 1} tailnet IP`}
+                  value={String(d.tailnet_ip ?? "")}
+                  placeholder="100.64.0.5"
+                  onChange={(e) => setDevice(i, { tailnet_ip: e.target.value })}
+                />
+                <label>LAN IP</label>
+                <input
+                  aria-label={`Device ${i + 1} LAN IP`}
+                  value={String(d.lan_ip ?? "")}
+                  placeholder="192.168.1.143"
+                  onChange={(e) => setDevice(i, { lan_ip: e.target.value })}
+                />
+                <p className="mform-note">
+                  the home-network address — pin it as a DHCP reservation, a drifting lease looks
+                  exactly like a device that left
+                </p>
+                <label>LAN arm after</label>
+                <input
+                  aria-label={`Device ${i + 1} LAN arm after`}
+                  value={String(d.lan_offline_after_s ?? "")}
+                  placeholder="900"
+                  // The group's numeric convention (the draft holds the typed text, `onSave`
+                  // coerces), so the cast is the same one every numeric row here makes.
+                  onChange={(e) =>
+                    setDevice(i, { lan_offline_after_s: e.target.value as unknown as number })
+                  }
+                />
+                <p className="mform-note">
+                  seconds continuously unreachable on the LAN before the next reply counts as an
+                  arrival · blank = 900
+                </p>
+              </div>
+              {/* remove-idiom (P13): a device is a card ENTITY → `.mfoot` text-danger button. */}
+              <div className="mfoot">
+                <button
+                  type="button"
+                  className="danger"
+                  aria-label={`remove device ${i + 1}`}
+                  onClick={() => removeDevice(i)}
+                >
+                  remove device
+                </button>
+              </div>
+            </div>
+          ))}
+          <div className="fallback-add">
+            <button type="button" className="svc-add" onClick={addDevice}>
+              + add device
+            </button>
+          </div>
           <Field
             label="Arm after"
-            desc="seconds continuously offline before the next connect counts as an arrival"
+            desc="seconds continuously offline ON THE TAILNET before the next connect counts as an arrival"
             value={String(wk?.presence_offline_after_s ?? "")}
             onChange={(v) => setWake("presence_offline_after_s", v as unknown as number)}
           />
@@ -1960,6 +2113,54 @@ export function ConfTab({ active }: Props) {
             onChange={(v) => setWake("tailscale_socket_path", v)}
             placeholder="/var/run/tailscale/tailscaled.sock"
           />
+          {/* D2-C — the LAN source's own knobs: how the probe asks, and the health address that tells
+              a quiet device apart from a dead local link (without it, an unplugged server would arm
+              every device and wake the fleet on reconnect). */}
+          <Field
+            label="LAN health IP"
+            desc="an address on the home network — normally the router · blank = no health gate"
+            value={wk?.lan_health_ip ?? ""}
+            onChange={(v) => setWake("lan_health_ip", v || null)}
+            placeholder="192.168.1.1"
+          />
+          <Field
+            label="LAN probe echoes"
+            desc="pings per device per check — several ride out a dozing phone's wifi buffering"
+            value={String(wk?.lan_probe_count ?? "")}
+            onChange={(v) => setWake("lan_probe_count", v as unknown as number)}
+          />
+          <Field
+            label="LAN probe timeout"
+            desc="seconds to wait per echo"
+            value={String(wk?.lan_probe_timeout_s ?? "")}
+            onChange={(v) => setWake("lan_probe_timeout_s", v as unknown as number)}
+          />
+          {/* Quiet hours — the switch is the unset affordance (off writes `null`, the config's own
+              "no window"). LAN arrivals only: a Tailscale connect is a deliberate act. */}
+          <SettingRow
+            label="Quiet hours"
+            desc="a window in which a LAN arrival wakes nothing · a tailnet connect is never silenced"
+          >
+            <Switch on={!!quiet} onToggle={toggleQuiet} label="Quiet hours" />
+          </SettingRow>
+          {quiet && (
+            <>
+              <Field
+                label="Quiet from"
+                desc="the window opens"
+                type="time"
+                value={quietStart}
+                onChange={(v) => setQuiet("start", v)}
+              />
+              <Field
+                label="Quiet until"
+                desc="the window closes — it may wrap past midnight"
+                type="time"
+                value={quietEnd}
+                onChange={(v) => setQuiet("end", v)}
+              />
+            </>
+          )}
         </div>
         {/* HTTPS access (Tailscale Serve) — a live toggle (acts immediately, not part of the saved
             fields). Sits above the save bar so it reads as a control, not an afterthought (6c-2). */}
