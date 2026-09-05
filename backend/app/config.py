@@ -35,6 +35,7 @@ from dotenv import dotenv_values
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator, model_validator
 from ruamel.yaml import YAML
 from ruamel.yaml.error import CommentMark
+from ruamel.yaml.scalarstring import SingleQuotedScalarString
 from ruamel.yaml.tokens import CommentToken
 
 from app.core.media import MEDIA_NAMESPACES, MediaItem, MediaPin, is_addressable_name
@@ -2289,6 +2290,29 @@ def yaml_rt() -> YAML:
     return y
 
 
+def _yaml11_safe(v: Any) -> Any:
+    """Quote incoming strings the loader would misread. The writer is ruamel in YAML 1.2, where
+    `23:00` / `no` / `on` are plain strings and dump unquoted — but `load_settings` reads with
+    PyYAML's YAML 1.1 resolver, which takes them back as int 1380 / bool / bool. Any NEW string
+    landing in the doc must therefore be single-quoted unless a 1.1 read returns it verbatim
+    (strings already in the file keep their own quoting via `preserve_quotes`). Multiline strings
+    are left alone: ruamel emits them in a style both resolvers agree on, and quoting would churn
+    prompt-override blocks. Recurses into dicts/lists so sequence entries (e.g. a presence-device
+    map inside a list) get the same guard."""
+    if isinstance(v, dict):
+        return {k: _yaml11_safe(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_yaml11_safe(x) for x in v]
+    if isinstance(v, str) and "\n" not in v:
+        try:
+            loaded = yaml.safe_load(v)
+        except yaml.YAMLError:
+            return SingleQuotedScalarString(v)
+        if not isinstance(loaded, str) or loaded != v:
+            return SingleQuotedScalarString(v)
+    return v
+
+
 def deep_set(node: Any, patch: dict[str, Any]) -> None:
     """Recursively write `patch`'s leaves into the ruamel `node`, descending into existing maps so
     sibling keys + their comments survive. A scalar/list value replaces in place; a dict value
@@ -2302,7 +2326,7 @@ def deep_set(node: Any, patch: dict[str, Any]) -> None:
                 child = node[k]
             deep_set(child, v)
         else:
-            node[k] = v
+            node[k] = _yaml11_safe(v)
 
 
 # ── Comment-preserving key removal ───────────────────────────────────────────────────────────────
@@ -2497,7 +2521,7 @@ def _sync_mapping(node: Any, target: dict[str, Any]) -> str:
             if orphan:
                 unplaced += _place_comment_after(node, k, orphan)
         elif cur != v or k not in node:
-            node[k] = v
+            node[k] = _yaml11_safe(v)
     for k in [k for k in node if k not in target]:
         unplaced += _delete_key(node, k)
     return unplaced

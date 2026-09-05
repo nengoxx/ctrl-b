@@ -73,6 +73,49 @@ def test_fx_a_save_settings_lands_0600() -> None:
     assert stat.S_IMODE(cfg.stat().st_mode) == 0o600
 
 
+# ── YAML 1.1/1.2 resolver split: new strings the loader would misread must land quoted ────────────
+# The live regression (2026-09-04): the Conf editor saved quiet-hours "23:00" as a plain scalar
+# (ruamel, YAML 1.2 — a string), which `load_settings`' PyYAML 1.1 read took back as sexagesimal
+# int 1380, and the config preflight refused every boot until the file was hand-quoted.
+
+
+def test_new_ambiguous_strings_land_quoted_and_read_back_verbatim() -> None:
+    import yaml as pyyaml
+
+    tmp = Path(tempfile.mkdtemp())
+    cfg = tmp / "config.yaml"
+    cfg.write_text("server:\n  poll_seconds: 5\n", encoding="utf-8")
+    config.apply_patch_to_yaml(
+        {
+            "wake": {
+                "quiet_hours": {"start": "23:00", "end": "08:00"},
+                "presence_devices": [{"name": "no", "lan_ip": "192.168.1.143"}],
+            },
+            "note": "on",
+        },
+        path=cfg,
+    )
+    loaded = pyyaml.safe_load(cfg.read_text(encoding="utf-8"))
+    assert loaded["wake"]["quiet_hours"] == {"start": "23:00", "end": "08:00"}
+    assert loaded["wake"]["presence_devices"][0] == {"name": "no", "lan_ip": "192.168.1.143"}
+    assert loaded["note"] == "on"
+
+
+def test_sync_mapping_quotes_ambiguous_strings_too() -> None:
+    import yaml as pyyaml
+
+    out = _rewrite(
+        "host:\n  a: 1\n",
+        lambda doc: config.sync_mapping(doc["host"], {"a": 1, "window": "12:30"}),
+    )
+    assert pyyaml.safe_load(out)["host"]["window"] == "12:30"
+
+
+def test_plain_safe_strings_stay_unquoted() -> None:
+    out = _rewrite("x: 1\n", lambda doc: config.deep_set(doc, {"name": "corsair"}))
+    assert "name: corsair\n" in out
+
+
 # ── comment-preserving key removal (the orphaned-comment bug) ─────────────────────────────────────
 # ruamel parks a key's trailing comment on the PRECEDING entry, so a bare `del` destroys the
 # operator's prose for whatever came after the deleted region. Verified live before the fix: the
