@@ -11,7 +11,7 @@
 > fields, the Voice/Duties prompt assembly, card import, agent art + the visual agents surface)
 > **and the lorebook subsystem** (deliberately roleplay-independent). `MEDIA_MANAGER_PLAN.md`
 > keeps the media write path and libraries; `PROMPTS_PLAN.md` keeps the registry;
-> `CORE_MEMORY_PLAN.md` keeps Core Memory — §6.7 records why lorebooks stay a sibling.
+> `CORE_MEMORY_PLAN.md` keeps Core Memory — §6.8 records why lorebooks stay a sibling.
 
 ## 0. Evidence base + verified seams
 
@@ -46,13 +46,34 @@ YAML-1.1-safe after the 2026-09-05 quoting fix).
 6. **A roleplay Conf toggle** governs *presentation only* (reveals the optional fields/forms
    and the import surface); fields marked with a small icon + description, populated fields
    always visible.
-7. **User persona**: yes, optional.
+7. **User persona**: yes, optional. **`{{user}}` = the persona's name when one is set, the
+   generic "User" otherwise** (third round: "if there is a persona, you should address the user
+   by the name — that's pretty much it").
 8. **Tools on imported/new characters default MINIMAL** (configurable; "only web search maybe"),
    widenable to everything.
 9. **Lorebooks are their own first-class feature, useful beyond roleplay**, specified deeply
-   here — not a rider.
+   here — not a rider. Third round: the owner isn't thinking about lorebook CONTENT yet but
+   wants the SYSTEM designed — "even if it's not for lorebooks but for instruction chains, a
+   system like that could be useful" (the constant-entry logic-engine pattern R65 §7 documents
+   in the field) — **and wants a test book**: author or download an interesting one (§6.7).
 10. Everything is **optional** — an agent that sets none of the new fields keeps working
     unchanged, and both kinds coexist "with the least friction possible."
+11. **Greeting seeds every new thread** (third round: yes) — and the owner floated a possible
+    future command that resets "not just the conversation but the whole character… a new
+    roleplay kind of thing", flagged by them as needing careful design → recorded as the §4.4
+    seam, NOT v1 (its destructive half needs its own court).
+12. **Containers locked: PNG + JSON + CHARX** — "I don't want to overload or overcomplicate
+    the system."
+13. **The background-behind-the-chat ships IN THIS PHASE, default ON**, as a THREE-STATE
+    control (third round, verbatim intent): ① *operator* — the agent's background art takes
+    the operator-image place "the one we use right now in the gacha theme… with the focus in
+    mind", current treatment; ② *full background* — same art as the full backdrop "without as
+    much blur or no blur at all — just the blur, I'm not talking about the dimming"; ③ *off* —
+    "neither the operator image and the background." Integration with the existing operator
+    switch designed in §8.3.
+14. **Crop + focal-point functionality is REUSED for agent art uploads** (§8.2).
+15. The spec should be exhaustive — "every nuance, every potential issue, every design
+    decision" — and the main seat asks clarifications rather than assumes.
 
 ## 2. Design principles
 
@@ -159,9 +180,15 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   one-shot reflection nudge; macro-substituted. Recency is the point (R64 §3); cache cost ~nil
   (everything after the newest message re-prefills anyway). Lorebook `tail` entries share the
   slot, `post_history` last (closest to generation).
-- **`greeting`** — a REAL seeded assistant message persisted at thread creation (the 4/4 field
-  shape; an empty-state render never reaches the wire and anchors nothing). Macro-substituted
-  at seed time. `alt_greetings` stored; a new-thread greeting picker is a recorded FE seam.
+- **`greeting`** — a REAL seeded assistant message persisted at creation of EVERY new thread
+  with that agent (ruling 11; the 4/4 field shape — an empty-state render never reaches the
+  wire and anchors nothing). Macro-substituted at seed time. `alt_greetings` stored; a
+  new-thread greeting picker is a recorded FE seam.
+  **The "reset the whole character" command (ruling 11's float) — recorded seam, NOT v1:** a
+  fresh thread already re-seeds the greeting, so the only thing a stronger reset could add is
+  wiping the character's accumulated state — its memory dir and/or Core Memory topics — which
+  is DESTRUCTIVE and owner-flagged as needing careful design. When designed, it rides the D44
+  destructive-op conventions (typed confirm, the R53/D64 guard class); v1 ships nothing here.
 
 ### 4.3 Macros
 
@@ -280,7 +307,17 @@ A Lorebooks manager (books + entries CRUD, enable toggles) + an attachment picke
 editor. Visible regardless of `roleplay.enabled` (ruling 9); only the card-import auto-attach
 surface carries the roleplay marking.
 
-### 6.7 Why not Core Memory (explicit, held from v1)
+### 6.7 The test book (ruling 9)
+
+S3 ships with a small AUTHORED book exercising every v1 mechanism (constant entry ·
+plain keys · secondary `and_any` · `not_any` · a `tail` entry · an eviction-forcing pair) as a
+test fixture, and the S7 device round imports a real public ST-format book of the owner's
+choosing (or a curated interesting one) to prove the import path on field-authored data. The
+"instruction chains" use the owner named — constant entries as standing behavioral blocks, the
+R65 §7 logic-engine pattern — needs no extra mechanism: `constant: true` + `position` already
+express it; the test book demonstrates one.
+
+### 6.8 Why not Core Memory (explicit, held from v1)
 
 The two complementary lanes R65 §9 delineates stay separate: lorebooks are **code-decided,
 pre-first-token, invisible-in-transcript, recomputed per turn** over an owner-authored corpus;
@@ -306,35 +343,71 @@ loader. Shared ground they DO get: the fallible-data framing convention + regist
 - **No new execution paths, no privilege changes**: minimal tools + CONFIRM on import; lorebook
   activation adds TEXT only (v1 non-goal pins it).
 
-## 8. Agent art + the visual agents surface (rulings 4 + the background idea)
+## 8. Agent art: libraries, upload reuse, and the three-state backdrop
 
-**The gacha pattern, copied exactly — no media-model change needed.** A new `agents` namespace
-in `MEDIA_NAMESPACES` with two static role POOLS: `avatars` and `backgrounds`. Each is an
-ordinary D65 library (upload, crop, focal point, reorder, retire — all inherited from the
-media manager for free). The per-agent BINDING is agent data: `AgentDef.avatar`/`.background`
-name a library entry — precisely how gacha's roster deals `characters` portraits to hosts and
-how the `wallpaper` slot pins one to the backdrop. The namespace row is additive;
-`MEDIA_PLAN`/`MEDIA_MANAGER_PLAN` authority ratifies it as an ordinary new namespace.
+### 8.1 Libraries + bindings (the gacha pattern, copied exactly — no media-model change)
 
-**Upload/crop/focus are REUSED, not rebuilt (owner ruling, 2026-09-06).** Setting an avatar or
-background from the agent editor drives the same standalone `useImageJob` machine the media
-manager ships (W10: admit→guard→crop→export with delivery injected — built precisely so a new
-surface could inject its own delivery tail), landing the file in the role's library via the
-existing media write path, then writing the `AgentDef` binding. The focal-point editor and
-re-crop work on these entries exactly as on any library entry because they ARE ordinary library
-entries. Zero new upload/crop/focus code; the aspect defaults differ per role (avatar ~square,
-background tall — config-shaped like the existing per-role crop settings, not hardcoded).
+A new `agents` namespace in `MEDIA_NAMESPACES` with two static role POOLS: `avatars` and
+`backgrounds`. Each is an ordinary D65 library (upload, crop, focal point, reorder, retire —
+inherited from the media manager). The per-agent BINDING is agent data:
+`AgentDef.avatar`/`.background` name a library entry — precisely how gacha's roster deals
+`characters` portraits to hosts and how the `wallpaper` slot pins one to the backdrop. Avatar
+and background are **independent images** (owner: "which might be different"). The namespace
+row is additive; `MEDIA_PLAN`/`MEDIA_MANAGER_PLAN` authority ratifies it as an ordinary new
+namespace.
 
-**The agents surface becomes the showcase** (ruling 4): ONE surface — the existing agents
-editor/list restyled visual-first (avatar cards, background preview), not a second gallery
-beside it. The chat agent picker gets small avatars. Styling per `VAPOR_PATTERNS.md`; any
-theme-specific dressing rides the theme engine's existing surface rules (D31).
+### 8.2 Upload/crop/focus are REUSED, not rebuilt (ruling 14)
 
-**The background's consumption** — the agent's background rendered behind the chat/agent
-surface for the active agent — is a THEME-ENGINE question (themes own backdrops today; gacha's
-`wallpaper` slot is the precedent that media-sourced backdrops work). Specified as its own
-slice (S7): kit-level layer honoring the binding, themes may tint/override, `""` ⇒ today's
-theme default everywhere. Not load-bearing for import (avatars land in the library regardless).
+Setting an avatar or background from the agent editor drives the same standalone `useImageJob`
+machine the media manager ships (W10: admit→guard→crop→export with delivery injected — built
+precisely so a new surface could inject its own delivery tail), landing the file in the role's
+library via the existing media write path, then writing the `AgentDef` binding. Focal-point
+editing and re-crop work on these entries as on any library entry because they ARE ordinary
+library entries. Zero new upload/crop/focus code; per-role aspect defaults (avatar ~square,
+background tall) are config-shaped like the existing per-role crop settings, not hardcoded.
+
+### 8.3 The three-state backdrop (ruling 13 — in-phase, default ON)
+
+**One appearance setting, three states: `operator` (default) · `full` · `off`.**
+
+- **What paints:** the ACTIVE agent's `background` entry; when the agent has none, the theme's
+  own operator art (in gacha: the `oracle:` pin / `media/gacha/oracle/` library, today's
+  ladder) — so a fresh install and every agent without art look exactly like today. `off`
+  beats the ladder entirely.
+- **`operator`** — the art takes the operator-image place with the CURRENT treatment: gacha's
+  oracle surface as-is (name plate, scrim, scanline, the sticky ghost under `gacha.oracle`
+  fade mode), focal position honored via the existing `useFocalPosition` path. The agent's
+  background simply wins the art resolution for that surface while that agent is active.
+- **`full`** — the same art as the full chat backdrop, **no blur, dimming kept**: the owner's
+  distinction ("just the blur, I'm not talking about the dimming") maps onto layers that are
+  ALREADY separate in the oracle mechanism — the soft face's static blur is one layer, the
+  scrim/opacity walk another — so `full` renders the sharp art full-bleed behind the thread
+  with the readability scrim retained and the blur layer absent. §14.11 discipline holds:
+  static art, opacity-only animation, no animated `filter`.
+- **`off`** — no operator image, no background. **This state IS the missing hide switch**: the
+  only controls today are gacha's "Sticky operator art" toggle (scroll BEHAVIOR, not
+  visibility) and the media in-use switches (which retire ART, not the surface) — verified, no
+  overlapping on/off exists, so the three-state subsumes rather than duplicates
+  (`GachaAgent.tsx` keeps plate/scrim/scanline when art resolves null today; `off` hides the
+  art surface itself — the delta is designed in S6, including what happens to the name plate).
+- **Orthogonality kept:** `gacha.oracle` (sticky vs scroll) stays a gacha refinement of HOW
+  `operator` mode scrolls; the three-state picks WHAT/WHERE. The media in-use switches keep
+  governing the theme-fallback tier only.
+- **Where it lives:** a theme-engine-level appearance setting (the theme-settings surface,
+  beside the existing oracle toggle on gacha), global — the ART is per-agent, the MODE is the
+  owner's viewing preference. Per-agent mode overrides = recorded seam, not v1.
+- **Theme scope (proposed, owner to confirm):** v1 implements gacha (the operator surface
+  exists there) + the kit family (the `KitBackground` wallpaper layer is the mounting point);
+  vapor/cosmos are bespoke surfaces and adopt in a recorded follow-up. `""`/absent art ⇒
+  today's look on every theme regardless of state.
+
+### 8.4 The visual agents surface (ruling 4)
+
+ONE surface — the existing agents editor/list restyled visual-first ("the character
+showcase"): each agent renders as a card carrying its avatar (background preview on the
+detail), replacing today's text rows; no second gallery page exists beside it. The chat
+agent picker gets small avatars. Styling per `VAPOR_PATTERNS.md`; theme dressing rides the
+existing surface rules (D31). Import lands here (§5.1), under the §9 visibility predicate.
 
 ## 9. Editor + Conf presentation
 
@@ -370,19 +443,32 @@ theme default everywhere. Not load-bearing for import (avatars land in the libra
   the new marked fields + visibility predicate · the duties toggle · Conf group + persona
   editor · import UI + report · agent-picker avatars.
 - **S5 — the lorebook FE:** manager + attachment picker.
-- **S6 — the owner device round** (the phase gate): import a real card, talk to it on the
-  phone, tools-in-character on both duties settings, lorebook triggers live, the showcase +
-  picker feel, read-along on a character reply.
-- **S7 — background consumption (post-ratification follow-on):** the kit backdrop layer +
-  theme interplay (§8), riding the media/theme authorities' ruling.
+- **S6 — the three-state backdrop (FE/theme):** the appearance setting + gacha oracle
+  integration + the kit backdrop layer + the `off`-state surface behavior (§8.3) — in-phase
+  per ruling 13, default `operator`.
+- **S7 — the owner device round** (the phase gate): import a real card, talk to it on the
+  phone, tools-in-character on both duties settings, all three backdrop states on the real
+  phone (blur/dim legibility), a field-authored lorebook imported + triggering live (§6.7),
+  the showcase + picker feel, read-along on a character reply.
 
-## 11. Open questions for the owner (the court)
+## 11. Open questions for the owner (the court — third-round leftovers only)
 
-1. **Greeting scope:** seed on EVERY new thread with that agent? (Plan assumes yes; "" opts out.)
-2. **`{{user}}` fallback** when no persona is set: the literal "User", or your name as a seed?
-3. **Import containers:** PNG + JSON + CHARX enough for your collection?
-4. **Imported cards default `duties: conversational`** (flip per agent any time) — confirm?
-5. **Lorebook v1 non-goals** (§6.2) — anything you want day one?
-6. **The showcase = the agents surface restyled** (one surface, no second gallery) — confirm?
-7. **S7 timing:** design the background-behind-the-chat consumption with this phase, or park
-   until the core ships?
+*(Resolved in the third round: greeting=yes (ruling 11) · `{{user}}` chain (ruling 7) ·
+containers (ruling 12) · lorebook v1 subset + test book (ruling 9/§6.7) · backdrop = ruling 13,
+in-phase, default ON.)*
+
+1. **The character-reset command** (your float): a new thread already re-seeds the greeting —
+   should a stronger "new roleplay" reset also wipe the character's MEMORY (its memory dir /
+   Core Memory topics)? That half is destructive and needs your ruling before it is ever
+   designed; v1 ships nothing (§4.2).
+2. **`full` mode reading — confirm:** no blur, but the readability DIMMING/scrim stays. (§8.3
+   is written that way from your words.)
+3. **Backdrop theme scope:** v1 = gacha + the kit-family themes; vapor/cosmos adopt later
+   (§8.3's proposal) — OK?
+4. **Imported cards start on the conversational duties option** (the same per-agent toggle
+   from ruling 5 — the question is only its STARTING position after an import; flip any agent
+   any time) — confirm.
+5. **The showcase, spelled out (§8.4):** no new page — the EXISTING agents list in the config
+   becomes visual cards (avatar art on each agent, background preview in the detail), and the
+   chat agent picker gets small avatars. One surface. Veto if you wanted a separate gallery
+   page instead.
