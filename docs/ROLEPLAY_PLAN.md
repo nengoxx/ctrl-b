@@ -20,6 +20,7 @@
 | [R64](./research/R64-roleplay-character-prompting.md) | Card anatomy (V2/V3) · ST's assembly order · the five-field RP delta · formatting field-wisdom (W++ dead, third-person prose) · the measured Voice/Action result (arXiv 2509.00482: +0.052 vs +0.004 for naive persona) · wire shapes · ST's #4250 fragmentation defect we do NOT inherit |
 | [R65](./research/R65-lorebook-systems.md) | Full WI semantics at ST 1.18.0 (40-field entry model, 4-state scan, 8 positions, refusal-not-eviction budget) · V3 `character_book` + 19 decorators · Risu/Agnai/Lite contrast · peer-class cousins (Claude Code/Cline `paths:` = same mechanism, different key) · the Core Memory contrast, precisely stated |
 | [R66](./research/R66-card-import-and-editor-ux.md) | Containers (PNG `chara`/`ccv3` tEXt · CHARX zip incl. the normative `embeded://` typo · JPEG-glued zips · magic-byte sniffing) · importer normalization + unknown-field preservation · **cards can carry CODE** (Risu scripts) and the field's strip-don't-gate answer · the Risu `showUnrecommended \|\| populated` editor predicate · tools-on-import field posture |
+| [R67](./research/R67-character-gallery-ux.md) | Gallery/list surfaces (nobody defaults to a grid; grids trade info for density; 0/3 virtualize) · selection (3/3: primary tap = TALK, edit = second gesture; ST's 2500ms long-press = the cautionary tale) · the priced organization ladder · mobile reflow · **transcript avatars 3/3 both sides, toggleable at three different scopes** · **per-character TTS voice 3/3** (on-the-object Risu/Agnai vs ST's rename-fragile name-keyed map that THROWS on unmapped) · in-house: gacha's 3/4 card grid + `FocalImg`/`art.focus` beat the field's crop hacks |
 
 Seams verified in this repo: `AgentDef` + `extra="allow"` (`domain/agent.py:181-226`) ·
 `_system_prompt`/`_appends`/`_static_prefix`/`_assemble` (`session.py`) · the Phase 18 registry +
@@ -488,17 +489,35 @@ background tall) are config-shaped like the existing per-role crop settings, not
   integration lands as a separate follow-up cleanup after the phase. `""`/absent art ⇒
   today's look on every theme regardless of state.
 
-### 8.4 The agent gallery — its own settings section (rulings 4 + 17)
+### 8.4 The agent gallery — its own settings section (rulings 4 + 17; design evidence = R67)
 
-The agents editor MOVES out of ConfTab (where it is one collapsible section today,
-`ConfTab.tsx:2699`) into a **dedicated settings section: the agent/character gallery** — one
-home for ALL agents regardless of kind (ruling 17), riding the existing `useSections`
-navigation like any section. Each agent renders as a visual card carrying its avatar
-(background previewed in the detail); opening a card is the full agent editor (fields +
-SOUL.md + art + duties toggle + lorebook picker). Import lands here (§5.1) under the §9
-visibility predicate. Still ONE surface — the gallery IS the editor's list; no duplicate
-list remains in Conf (the `agent.defaults` GLOBALS keep their Conf home — they are settings,
-not agents; the council refines the exact cut). The chat agent picker gets small avatars.
+The agents editor MOVES out of ConfTab (one collapsible section today, `ConfTab.tsx:2699`)
+into a **dedicated settings section: the agent/character gallery** — one home for ALL agents
+regardless of kind (ruling 17), a `useSections` registry entry like any section (R67 ①: no
+new nav concept). No duplicate list remains in Conf; the `agent.defaults` GLOBALS keep their
+Conf home (settings, not agents; council refines the cut).
+
+- **Layout: a card grid IS our default — a stated, priced divergence.** The field defaults to
+  LIST everywhere and treats grids as info-shedding density modes (R67 §1) — but that serves
+  catalogs of hundreds; ctrl-b is single-user with a handful of agents, and the owner asked
+  for a showcase. So: a 2-column grid of 3/4 cards at phone width (gacha's `.gc-track` is the
+  structural precedent, rebuilt kit-level with tokens per VAPOR_PATTERNS §5–§7/§11–§13 —
+  never copied from the theme), each card = `FocalImg` + `art.focus` (D65's real framing —
+  the field hand-tunes `object-position` hacks for lack of it) + a name/sub plate. No
+  list/grid toggle at v1 (nothing to organize at N<20); the R67 §4 organization ladder
+  (search · count line · favorites-group · tags · folders · soft-delete · bulk) is the
+  priced seam list, adopted only when the count ever hurts. 0/3 peers virtualize — nor do we.
+- **Selection: gallery tap = the agent's card/editor; a prominent TALK affordance jumps to
+  chat with that agent pinned.** This INVERTS the field's 3/3 primary-tap-talks convention —
+  deliberately (R67 ⑤ demands it be stated): our "talk to" verb already lives in the chat
+  agent picker (which gets avatars), and the gallery is a settings surface — two homes, two
+  verbs, no duplication. The Talk button keeps the owner's "selecting them" wish one tap
+  away. NO long-press semantics anywhere (ST's 2500ms bulk-select escalation is the
+  cautionary tale); every affordance is visible (the Agnai posture).
+- **Entry points**: New + Import live on the section header (import under the §9 predicate).
+  Empty state: a fresh install shows the default agent's card.
+- **Avatar smalls**: circle at list/picker sizes (the field's 50px circle convention); the
+  card shows the portrait through its focal point.
 Styling per `VAPOR_PATTERNS.md`; theme dressing rides the existing surface rules (D31).
 
 ## 9. Editor + Conf presentation
@@ -584,9 +603,24 @@ code-verified: kit layer covers cosmos/vapor/minimal, gacha integrates, frontier
 (16) · the gallery becomes its OWN settings section (17) · frontier v1-unchanged, follow-up
 cleanup (18).)*
 
-1. **The two duties texts (§4.1a)** — the owner reads both drafts and tunes words at will
-   (they are registry defaults; every later edit is a Conf edit, no code). Standing until the
-   owner has read them; not blocking the Emma round.
+1. **The two duties texts (§4.1a)** — read + agreed round 6; the owner tunes words at will
+   forever (registry defaults). CLOSED as a question.
+2. **Avatar on chat bubbles (R67-informed proposal — rule it):** the agent's avatar as a
+   small circle beside assistant bubbles (the field is 3/3 both-sides, toggleable). Proposed:
+   ONE global Appearance toggle (the Agnai scope — our `ui`-store/Appearance-Switch pattern;
+   a per-agent hide flag would be the "different code for similar things" trap), default ON
+   when the agent has an avatar; the per-bubble read-aloud toggle STAYS in the who-line (the
+   field parks TTS controls in the avatar slot — ours is already placed, we don't move it);
+   the USER side gets nothing in v1 (the persona has no image in this design — recorded seam).
+3. **Per-agent TTS voice (R67-informed proposal — rule v1 vs seam):** one optional
+   `voice: str = ""` on `AgentDef` beside `avatar`/`background` (the Risu/Agnai
+   on-the-object shape; NOT ST's rename-fragile name-keyed settings map), resolved against
+   the existing `voice.tts` chain; empty/unknown ⇒ the global default, a silent no-op —
+   NEVER an error (ST throws on unmapped; the cautionary tale). The field treats this as
+   table stakes and voice is central to how you use ctrl-b — the main seat recommends **v1**.
+4. **The gallery tap inversion (§8.4)** — gallery tap opens the card/editor, TALK is the
+   explicit button, while the chat picker owns tap-to-talk. A deliberate divergence from the
+   field's 3/3; veto if you want tap-to-talk in the gallery too.
 
 ## 12. Evidence coverage map (the owner's round-6 audit: every section → its backing, gaps named)
 
@@ -609,18 +643,17 @@ cleanup (18).)*
 | §7 security/strip | R66 §3 [V] (script classes, the virtualscript precedent) + SECURITY_MODEL | **Covered** |
 | §8.1/8.2 libraries + upload reuse | Code-verified in-house (gacha pattern, W10 `useImageJob`) | **Covered** |
 | §8.3 three-state backdrop | Owner-specified UX + the oracle mechanism code read + round-4 theme-scope verification | **Covered by rulings** — deliberately NOT field-researched: the owner specified the behavior; ST's background system is adjacent prior art, not an authority over an owner ruling |
-| §8.4 the gallery | R66 §5 covers EDITOR forms only | **GAP → R67 commissioned** (2026-09-06): list/gallery surfaces in ST/Risu/Agnai + peers, organization at scale, selection model, mobile reflow — plus the two adjacent unruled conventions below |
+| §8.4 the gallery | **R67 [V]** (landed 2026-09-06: layouts, selection, the organization ladder, mobile, in-house precedents) | **Covered** — the two deliberate divergences (grid default at our scale; tap = edit) are stated in-section with their rationale |
+| Bubble avatars + per-agent voice | R67 §6–§8 [V] | **Covered — pending the owner's two rulings** (§11 items 2–3) |
 | §9 editor presentation | R66 §5 [V] (Risu predicate, marked help, token counters) | **Covered** |
 | §10 ladder / cadence | House method (D-entry precedents) | n/a |
 
 **Nuances the audit surfaced (now recorded in place):** the S1 named-system probe (§4.2) ·
 the greeting-vs-compaction note (§4.2) · router description empty on import + model-per-
-character free (§5.3) · **two conventions pending R67, then the owner's ruling: the agent
-avatar ON chat bubbles (every RP frontend shows it; ours shows none) and a per-agent TTS
-VOICE override (the field binds voice per character; we have one global voice)** — both land
-as court items when R67 reports.
+character free (§5.3) · **bubble avatars + per-agent voice: R67 landed, both now proposed
+with evidence at §11 items 2–3 — the owner's two rulings are the last open items.**
 
-**Double-checking the data itself:** the three dossiers quote file:line at pinned SHAs and
+**Double-checking the data itself:** the four dossiers quote file:line at pinned SHAs and
 were main-seat-audited at landing (implications sections verified against our real seams).
 The blind Emma design round's brief will additionally instruct her to spot-check the plan's
 load-bearing citations against the dossiers — an adversarial second read of the evidence, not
