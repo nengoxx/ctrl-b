@@ -102,6 +102,12 @@ async def stt(request: Request, file: UploadFile) -> Response:
 class TtsRequest(BaseModel):
     text: str
     voice: str | None = None
+    #: D70 §8.5 (ruling 21) — WHOSE turn is being read. The agent identity of the message/thread this
+    #: speech belongs to; the server turns it into that agent's `AgentDef.voice`. The NAME rather than
+    #: a message/thread id on purpose: read-along speaks a reply that is not persisted yet (there is no
+    #: row to look up mid-stream), and a chunked reply would otherwise pay a DB read per chunk. `None`
+    #: (every pre-D70 client) ⇒ the global `voice.tts` chain, exactly as before.
+    agent: str | None = None
     #: D63 — the container this call wants (chunked playback asks for `chunk_format`). Bounded by the
     #: closed `AUDIO_FORMATS` allowlist (adapters/voice); precedence at the wire is request > model >
     #: service.
@@ -111,9 +117,29 @@ class TtsRequest(BaseModel):
     prefer: str | None = None
 
 
+def _voice_id(request: Request, body: TtsRequest) -> str | None:
+    """The voice this call speaks in (D70 §8.5, ruling 21, F6-corrected): an explicit request `voice`
+    (the pre-D70 override, the most specific thing a caller can say) → the named agent's
+    `AgentDef.voice` when it set one → `None`, i.e. the global `voice.tts` chain's own voice.
+
+    ABSENT ⇒ the global default is the WHOLE fallback contract. A non-empty-but-invalid id is passed
+    through and reports via the existing TTS error path (a 502 off the upstream reject) exactly as a
+    bad global voice does — nothing here validates: no registry can enumerate a voice server's ids, so
+    an unknown→default promise would be an allowlist we cannot build (Emma F6).
+
+    Resolution is graceful like every other agent lookup: a since-deleted name lands on the default
+    agent — the same agent the session would have run as."""
+    if body.voice:
+        return body.voice
+    if not body.agent:
+        return None
+    return request.app.state.settings.resolve_agent(body.agent).voice.strip() or None
+
+
 @router.post("/tts")
 async def tts(body: TtsRequest, request: Request) -> Response:
-    """Synthesize speech for `text` → the full audio clip (buffered, seekable). Optional `voice`
+    """Synthesize speech for `text` → the full audio clip (buffered, seekable). Optional `agent` names
+    whose voice to read in (D70 §8.5); optional `voice`
     overrides the configured endpoint voice; optional `format` overrides the container; optional
     `prefer` pins which target the failover chain tries first. `X-Voice-Served-By` names the provider
     that served (display); `X-Voice-Target` is its full `provider/model` identity — the value the
@@ -137,7 +163,10 @@ async def tts(body: TtsRequest, request: Request) -> Response:
         )
     try:
         audio, media_type, served = await voice.synthesize(
-            text=body.text, voice=body.voice, audio_format=body.format, prefer=body.prefer
+            text=body.text,
+            voice=_voice_id(request, body),
+            audio_format=body.format,
+            prefer=body.prefer,
         )
     except VoiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

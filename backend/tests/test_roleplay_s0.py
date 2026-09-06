@@ -17,7 +17,7 @@ What's exercised:
                     the history); each empty ⇒ absent (ruling 10).
   6. Macros       — `{{char}}`, the three `{{user}}` rungs, `{{original}}`'s once-rule + duties
                     consumption + its empty post-history meaning; unmatched tokens pass through.
-  7. Data model   — the new `AgentDef` fields persist + round-trip; the ones S1+ owns stay inert.
+  7. Data model   — the new `AgentDef` fields persist + round-trip; the ones S2+ owns stay inert.
   8. Config       — `roleplay:` defaults, round-trip, and validation.
 
 Writes go through the APIs on a **temp** workspace; the real `config.yaml` is never touched.
@@ -480,9 +480,14 @@ def test_a_bare_agent_defaults_every_new_field() -> None:
         assert a["alt_greetings"] == [] and a["lorebooks"] == [] and a["card"] == {}
 
 
-def test_the_fields_s1_owns_stay_inert_in_s0() -> None:
-    """Greeting/example dialogue/voice/avatar/background/lorebooks/card are STORED in S0 and fed to
-    nothing — the assembled prompt is identical with and without them."""
+def test_the_fields_later_slices_own_stay_out_of_the_prompt() -> None:
+    """`alt_greetings`/avatar/background/voice/lorebooks/card are STORED and fed to NO prompt — the
+    assembled payload is identical with and without them.
+
+    S1 narrowed this: `greeting` and `example_dialogue` were on the list until S1 gave them their
+    behaviour (a seeded message and the few-shot pseudo-messages, pinned in `test_roleplay_s1.py`).
+    Everything left here belongs to S2–S4, and `voice` never joins a prompt at all — it is read at
+    the TTS request, not at assembly."""
     with _workspace(), _client() as c:
         _agent(c, "nyx")
         _soul(c, "nyx", "You are Nyx.")
@@ -491,9 +496,7 @@ def test_the_fields_s1_owns_stay_inert_in_s0() -> None:
         _agent(
             c,
             "nyx",
-            greeting="Hello, traveller.",
             alt_greetings=["Mm?"],
-            example_dialogue="<START>\n{{user}}: hi\n{{char}}: mm.",
             avatar="nyx-portrait",
             background="nyx-stacks",
             voice="af_nova",

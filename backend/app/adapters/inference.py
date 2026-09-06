@@ -568,7 +568,13 @@ def normalize_system_messages(messages: list[dict]) -> list[dict]:
     reason — R42), so this runs for every provider, no config axis.
 
     (1) The LEADING RUN of system messages coalesces into one, contents joined by blank lines, order
-    preserved. The run is whatever assembly put there — today the static head (system prompt → appends
+    preserved. **A `name`-carrying system message TERMINATES that run** (D70 §4.2, Emma F1): the head
+    coalesces up to the first named message, and the named ones — the example-dialogue pseudo-messages,
+    whose whole point is the `example_user`/`example_assistant` side they carry — fall through to (2)
+    instead of being merged name-droppingly into the head. Positional, not per-dialect: a named message
+    in FIRST position leaves no head to coalesce and is downgraded like any other, which keeps (2)
+    unconditional (there is no shape our own assembly produces where the head is named).
+    The run is whatever assembly put there — today the static head (system prompt → appends
     → roster → memory → core index → skills note) and, after a compaction, the persisted fold-summary
     system message that sorts to the head's tail (compaction.py `role="system"`; it coalesces with the
     run — model-generated summary text thereby shares the one privileged system block, an adjacency
@@ -589,7 +595,7 @@ def normalize_system_messages(messages: list[dict]) -> list[dict]:
     i = 0
     lead: list[str] = []
     lead_src: dict | None = None  # the sole CONTRIBUTOR when len(lead) == 1 — empty siblings don't count
-    while i < len(messages) and messages[i].get("role") == "system":
+    while i < len(messages) and messages[i].get("role") == "system" and not messages[i].get("name"):
         text = _content_text(messages[i].get("content"))
         if text:
             lead.append(text)

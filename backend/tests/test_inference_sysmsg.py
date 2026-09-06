@@ -1,7 +1,8 @@
 """Wire-level system-message normalization (R41/R42, 2026-08-19). Strict chat templates (Qwen3.6)
 accept exactly ONE system message, first — `normalize_system_messages` coalesces the leading run and
 re-roles later system messages to marked `user` text, unconditionally, at the two adapter entry
-points. Pure-function contract here, plus the two call-site pins (the review's F1: a normalization
+points. D70 §4.2 adds ONE rule: a `name`-carrying system message (an example-dialogue pseudo-message)
+TERMINATES the leading run, so the few-shot side markers survive instead of merging into the head. Pure-function contract here, plus the two call-site pins (the review's F1: a normalization
 that runs in `complete()` but not `stream_chat()`, or lands after the kwargs snapshot, ships green
 without them — and the failover chain masks the 400 in production).
 
@@ -107,17 +108,51 @@ def test_text_part_array_content_flattens_not_crashes():
 def test_metadata_survives_reuse_and_downgrade_but_not_merge():
     # co-review LOW: a single-message leading run is reused BY REFERENCE (everything survives);
     # a downgrade spread-copies (name/extensions survive); only a genuine merge drops extras.
-    named = {"role": "system", "content": "solo", "name": "policy"}
-    out = normalize_system_messages([named, _u("q")])
-    assert out[0] is named
-    out2 = normalize_system_messages([_s("h"), _u("q"), {**named, "content": "late"}])
+    # The carrier here is a NON-`name` extension: under D70 §4.2 `name` is the example-dialogue
+    # boundary marker (see below), so it can no longer stand for "arbitrary metadata" in the
+    # leading run. The property being pinned is unchanged.
+    tagged = {"role": "system", "content": "solo", "identifier": "policy"}
+    out = normalize_system_messages([tagged, _u("q")])
+    assert out[0] is tagged
+    out2 = normalize_system_messages(
+        [_s("h"), _u("q"), {"role": "system", "content": "late", "name": "policy"}]
+    )
     assert out2[-1]["role"] == "user" and out2[-1]["name"] == "policy"
-    out3 = normalize_system_messages([named, _s("b"), _u("q")])
-    assert "name" not in out3[0] and out3[0]["content"] == "solo\n\nb"
+    out3 = normalize_system_messages([tagged, _s("b"), _u("q")])
+    assert "identifier" not in out3[0] and out3[0]["content"] == "solo\n\nb"
     # confirm-round edge: an EMPTY sibling in the run is not a merge — the sole contributor is
     # still reused by reference, metadata intact.
-    out4 = normalize_system_messages([named, _s(""), _u("q")])
-    assert out4[0] is named
+    out4 = normalize_system_messages([tagged, _s(""), _u("q")])
+    assert out4[0] is tagged
+
+
+def test_a_named_system_message_terminates_the_leading_run():
+    """D70 §4.2 (Emma F1) — the focused boundary test: head + two named examples + user history.
+
+    Without the rule the examples sit in the LEADING run and merge into the head name-droppingly,
+    which is exactly the side information (`example_user` vs `example_assistant`) they exist to
+    carry. With it the head coalesces up to the first named message and the examples fall through
+    to the unconditional later-system branch: marked `user` text, position preserved, `name` intact.
+    """
+    ex_u = {"role": "system", "name": "example_user", "content": "hi"}
+    ex_a = {"role": "system", "name": "example_assistant", "content": "mm."}
+    out = normalize_system_messages([_s("head"), _s("roster"), ex_u, ex_a, _u("real question")])
+    assert [m["role"] for m in out] == ["system", "user", "user", "user"]
+    assert out[0] == _s("head\n\nroster")  # the head still coalesces — up to the first named one
+    assert out[1]["name"] == "example_user"
+    assert out[1]["content"] == "<system-update>\nhi\n</system-update>"
+    assert out[2]["name"] == "example_assistant"
+    assert out[2]["content"] == "<system-update>\nmm.\n</system-update>"
+    assert out[3] == _u("real question")
+
+
+def test_a_named_system_message_in_first_position_leaves_no_head():
+    """The rule is positional and the later branch stays unconditional (no per-dialect switch): a
+    named message FIRST simply ends an empty run and downgrades like any other. Our own assembly
+    never emits that shape — the head's Voice/Duties message is always first and never named."""
+    out = normalize_system_messages([{"role": "system", "name": "example_user", "content": "hi"}, _u("q")])
+    assert out[0]["role"] == "user" and out[0]["name"] == "example_user"
+    assert out[0]["content"] == "<system-update>\nhi\n</system-update>"
 
 
 def test_idempotent():

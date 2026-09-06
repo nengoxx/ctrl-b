@@ -46,6 +46,7 @@ from app.runtime import clear_reasoning_demotions, rediscover_integrations
 from app.services.agent.attachments import claim_attachments
 from app.services.agent.compaction import compaction_state_for, prune_compaction_state
 from app.services.agent.exec import run_user_exec
+from app.services.agent.greeting import seed_greeting
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.proposals import apply_proposal
 from app.services.agent.routing import prune_routing_state, routing_state_for
@@ -146,6 +147,15 @@ class ChatRequest(BaseModel):
         if not self.text and not self.attachments:
             raise ValueError("a message needs text, an attachment, or both")
         return self
+
+
+class NewThreadRequest(BaseModel):
+    """Optional body for `POST /threads` (D70 §4.2, creation seam ①). `agent` is the agent the owner
+    SELECTED for this conversation: it is persisted on the thread (so every turn in it runs as that
+    agent, and the per-turn auto-router stays out of the way) and it is what the greeting is seeded
+    from. Omitted / no body at all ⇒ exactly the pre-D70 endpoint: an unpinned, unseeded thread."""
+
+    agent: str | None = None
 
 
 class ExecRequest(BaseModel):
@@ -1121,8 +1131,16 @@ async def list_threads(request: Request) -> list[dict[str, Any]]:
 
 
 @router.post("/threads")
-async def create_thread(request: Request) -> dict[str, Any]:
-    thread = await request.app.state.threads.create(Thread())
+async def create_thread(request: Request, body: NewThreadRequest | None = None) -> dict[str, Any]:
+    """Create an empty thread. With a selected `agent` (D70 §4.2 seam ①) the thread is PINNED to it
+    and its greeting is seeded as the opening assistant turn — the RESOLVED agent's name is what gets
+    persisted, so a since-deleted name lands on the same agent the session would have run as instead
+    of pinning the thread to something that isn't there."""
+    state = request.app.state
+    agent = state.settings.resolve_agent(body.agent) if body is not None and body.agent else None
+    thread = await state.threads.create(Thread(agent=agent.name if agent else None))
+    if agent is not None:
+        await seed_greeting(state.messages, state.settings, thread, agent)
     return thread.model_dump(mode="json")
 
 
@@ -1230,6 +1248,13 @@ async def chat(body: ChatRequest, request: Request) -> Response:
                 # is untouched: it is the owner's, not this request's.
                 await threads.delete(thread.id)
             raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+        if created_here:
+            # D70 §4.2 seam ②: an auto-created chat thread seeds its agent's greeting BEFORE the
+            # owner's first message is persisted, and only now — after `_auto_route_agent` above
+            # resolved WHO the turn belongs to, so a routed specialist opens in its own voice rather
+            # than the default agent's. An existing thread is never seeded (it already has history).
+            greeter = state.settings.resolve_agent(agent_name)
+            await seed_greeting(state.messages, state.settings, thread, greeter)
         session = _session(request, thread, agent_name=agent_name, privilege=body.privilege)
         stream = _effective_stream(request.app.state.settings.agent.streaming, body.stream)
         handle.mode = body.mode  # the turn's inference mode — the snapshot carries it (D39)

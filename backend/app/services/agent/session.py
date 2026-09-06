@@ -104,6 +104,7 @@ from app.services.agent.compaction import (
 )
 from app.services.agent.core_memory import CORE_MEMORY_TOOL, CoreMemoryCorpus, RecallState
 from app.services.agent.core_memory_tool import RECALL_RECEIPT, is_recall_call
+from app.services.agent.examples import example_messages
 from app.services.agent.exec import run_user_exec
 from app.services.agent.macros import Macros, consumes_original, macros_for
 from app.services.agent.prompts import resolve
@@ -815,7 +816,8 @@ class AgentSession:
     def _static_prefix(self) -> list[dict]:
         """The INVARIANT system head for this turn — the Voice/Duties message + the scenario +
         appends + fleet roster + the owner's persona + durable-memory block + core-memory index +
-        active-skill note, in that fixed order (7e-a/7e-d/D15 #4, AMENDED 2026-07-20: memory moved
+        active-skill note + the example-dialogue pseudo-messages,
+        in that fixed order (7e-a/7e-d/D15 #4, AMENDED 2026-07-20: memory moved
         AFTER the roster; D57: the tier-2 index joins it; D70: the two character blocks join it —
         the scenario with the persona it belongs to, the owner's persona with the roster, both
         config/AgentDef-projected and as static as their neighbours). Every prefix cache — llama.cpp
@@ -862,6 +864,11 @@ class AgentSession:
                 head.append({"role": "system", "content": core_index})
             if self._skills_note:  # active skills' instructions (4.5)
                 head.append({"role": "system", "content": self._skills_note})
+            # Example dialogue (D70 §4.2) — the few-shot pseudo-messages, LAST in the head so they sit
+            # between it and the live history. Last is structural, not cosmetic: their `name` is what
+            # terminates `normalize_system_messages`' leading coalescing run (Emma F1), so a head block
+            # appended after them would fall out of the coalesced head and be re-roled as an update.
+            head += example_messages(self._agent.example_dialogue, self._macros())
             self._static_head = head
         return self._static_head
 
