@@ -1136,6 +1136,18 @@ disabled to show them load-bearing.
 ACCEPTED (she verified the stt parity herself) · the `deep_set` third key-writing site
 ACCEPTED as LOW · diff-introduced problems "none" · 137 focused+adjacent tests green.**
 
+**The live probe RAN on a REAL card (owner-picked: the SillyTavern install's
+`Lynette.png`, 727KB, 512×768, a genuine dual-chunk ccv3+chara V3 card): 201 on the
+first shot** — the V3 chunk won with the precedence warning in the report ·
+name/description/personality/first_mes/alternate_greetings(4) mapped, SOUL 2.7KB ·
+14 keys stashed (`spec`/`talkativeness: '0.4'`/`extensions`/… — ambiguous values
+QUOTED in agent.yaml, file at 0600, `tools: [web_search]` explicit, `duties:
+conversational`, `title: Lynette`) · stripped "none" (a clean card) · the avatar
+landed as `agents/avatars/lynette.png` and bound · a pinned `POST /threads
+{"agent":"lynette"}` seeded her greeting as a real assistant turn, `actor=agent`,
+`{{user}}`→"User" rendered at seed time — the S1 seam working on an imported
+character end-to-end.
+
 **Residuals recorded, none owed now:** the multipart-spool ingress class (stt +
 import) → Phase 19 · `deep_set`'s unquoted-key site (schema/slug keys only, LOW) ·
 `UploadPart.open`'s bare `FileNotFoundError` on a vanished role dir (the media PUT
