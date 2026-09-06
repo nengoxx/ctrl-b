@@ -1619,6 +1619,35 @@ class RoleplayCfg(BaseModel):
     card_import: CardImportCfg = Field(default_factory=CardImportCfg)
 
 
+class LorebooksCfg(BaseModel):
+    """`lorebooks` — the lorebook subsystem's globals (D70 / ROLEPLAY_PLAN §3.2/§6).
+
+    A TOP-LEVEL section, not a key under `roleplay`: books are roleplay-INDEPENDENT (§6, ruling 9) —
+    the manager is visible whether or not the character UI is, and an ordinary agent may carry one.
+
+    - `books`: globally-attached book slugs — every agent, every turn. Unioned with the agent's own
+      `lorebooks` list and slug-deduped, so binding a book twice counts once (§6.3).
+    - `scan_depth`: how many prior chat messages join the incoming one in the haystack. ST's shipped
+      default (2). `0` scans only what the owner just said.
+    - `budget_chars`: the ceiling on ACTIVATED entry content for one turn. Over it, entries are
+      evicted lowest-`priority`-first (§6.4's V3 model, not ST's refusal). The framing does not
+      count — the budget bounds the owner's text, and the framing is a constant.
+    - `max_import_bytes`: the book-import body cap, on the same cap+1/413 posture every other
+      upload here uses (`CardImportCfg`). A book is JSON the owner exported from another app, so it
+      is bounded by the same reasoning a card is: read one byte past the limit, never materialise
+      the excess.
+
+    Additive with defaults ⇒ no config migration (the D68 precedent); `extra="allow"` so a config
+    written by a later slice round-trips through this build."""
+
+    model_config = {"extra": "allow"}
+
+    books: list[str] = Field(default_factory=list)
+    scan_depth: int = Field(default=2, ge=0)
+    budget_chars: int = Field(default=4000, gt=0)
+    max_import_bytes: int = Field(default=15_000_000, gt=0)
+
+
 class Settings(BaseModel):
     """Typed view over `config.yaml`.
 
@@ -1668,6 +1697,10 @@ class Settings(BaseModel):
     #: owner's own persona. A sibling of `agent`, not a key inside it: the per-agent half of this
     #: feature lives on `AgentDef` (flat fields, P1), and this section holds only what is GLOBAL.
     roleplay: RoleplayCfg = Field(default_factory=RoleplayCfg)
+    #: The lorebook subsystem (D70 §6). Its own top-level section rather than a key under
+    #: `roleplay`, because books are roleplay-INDEPENDENT: any agent may carry one and the manager
+    #: is visible with the character UI switched off (ruling 9).
+    lorebooks: LorebooksCfg = Field(default_factory=LorebooksCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`
@@ -1905,6 +1938,12 @@ class Settings(BaseModel):
     def agents_dir_path(self) -> Path:
         """`$CTRLB_HOME/agents/` — scanned for specialist `<name>/` folders."""
         return self.home_dir() / "agents"
+
+    def lorebooks_dir_path(self) -> Path:
+        """`$CTRLB_HOME/lorebooks/` — one `<slug>.yaml` per book (D70 §6.1). A sibling of `agents/`
+        and `skills/` under the one workspace root, for the same reason they are: a book is
+        owner-authored, diffable, editable in place, and discovered by scanning."""
+        return self.home_dir() / "lorebooks"
 
     def memories_dir_path(self) -> Path:
         """The **memory directory** (D26): the default agent's `MEMORY.md` + the global `USER.md`, the
@@ -2626,9 +2665,11 @@ def dealias_mapping(doc: Any) -> Any:
     that key, and the anchor is simply expanded on save.
 
     NOT wired into `edit_config_yaml`: expanding an operator's anchors is only acceptable where the
-    caller owns the whole file and the write is a full replace (`_scaffold_agent`'s `agent.yaml`).
-    `config.yaml`'s anchors belong to the operator and every other `sync_mapping` caller edits a
-    subtree of a file it does not own."""
+    caller owns the whole file and the write is a full replace — `_scaffold_agent`'s `agent.yaml`
+    and (D70 S3, the same class) a lorebook's `<slug>.yaml`, both of which are dumped whole from an
+    editor submission or from imported JSON, where one shared dict object reached by two keys is an
+    accident of the parse rather than something the file said. `config.yaml`'s anchors belong to the
+    operator and every other `sync_mapping` caller edits a subtree of a file it does not own."""
     seen: set[int] = set()
 
     def walk(node: Any) -> Any:

@@ -104,8 +104,14 @@ _ALLOWED: dict[str, tuple[tuple[str, str], ...]] = {
         ("app/services/agent/card_import.py", "_check_zip_bounds"),
         ("app/services/agent/card_import.py", "_decode_card_json"),
         ("app/services/agent/card_import.py", "_read_json"),
-        ("app/services/agent/card_import.py", "import_card"),
         ("app/services/agent/card_import.py", "normalize"),
+        # D70 S3 book import: the same class one subsystem over — the position-downgrade table's
+        # "what was collapsed" phrases, the non-selective-entry note, and the line the card route
+        # adds to its report when it lands an embedded book. Every one is a sentence about what THIS
+        # import did, written for the owner reading the report; no model sees any of them.
+        ("app/api/agent.py", "_import_agent_card"),
+        ("app/services/agent/lorebook_import.py", "<module>"),
+        ("app/services/agent/lorebook_import.py", "_entry"),
         ("app/services/agent/compaction.py", "_warn_degenerate_trigger"),
         ("app/services/agent/session.py", "AgentSession._log_context_cost"),
         ("app/services/agent/session.py", "AgentSession._run_calls._complete"),

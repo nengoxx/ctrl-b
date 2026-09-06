@@ -507,9 +507,11 @@ def test_the_full_mapping_lands_on_the_agent(home: Path) -> None:
     # "when to pick me", so an imported character is reached by an explicit pick until the owner
     # writes a routing line themselves.
     assert agent["description"] == ""
-    # The embedded lorebook is STASHED verbatim and SAID so — the subsystem that consumes it is S3.
+    # The embedded lorebook is STASHED verbatim — the stash is its permanent provenance home — AND
+    # landed as a real attached book (S3 §6.5; the end-to-end hook is pinned in test_roleplay_s3).
     assert agent["card"]["character_book"]["entries"][0]["keys"] == ["archive"]
-    assert any("lorebook is stashed" in w for w in body["report"]["warnings"])
+    assert agent["lorebooks"] == ["nyx-the-archivist-book"]
+    assert any("lorebook was imported as" in w for w in body["report"]["warnings"])
     assert body["report"]["post_history"] == "Stay in character."  # verbatim in the report (§7)
     assert body["report"]["fields_mapped"] == [
         "name",

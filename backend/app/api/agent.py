@@ -51,10 +51,26 @@ from app.domain.plan import Plan
 from app.domain.result import ToolResult
 from app.runtime import clear_reasoning_demotions, rediscover_integrations
 from app.services.agent.attachments import claim_attachments
-from app.services.agent.card_import import CardImportError, ImportedCard, import_card, land_avatar
+from app.services.agent.card_import import (
+    _JSON_REFUSALS,
+    CardImportError,
+    ImportedCard,
+    import_card,
+    land_avatar,
+    mint_slug,
+)
 from app.services.agent.compaction import compaction_state_for, prune_compaction_state
 from app.services.agent.exec import run_user_exec
 from app.services.agent.greeting import seed_greeting
+from app.services.agent.lorebook_import import ImportedBook, import_book
+from app.services.agent.lorebooks import (
+    Lorebook,
+    book_slugs,
+    delete_book,
+    list_books,
+    load_book,
+    save_book,
+)
 from app.services.agent.planning import TaskPlanInput
 from app.services.agent.proposals import apply_proposal
 from app.services.agent.routing import prune_routing_state, routing_state_for
@@ -1737,6 +1753,13 @@ def _import_agent_card(s: Settings, body: bytes, *, avatars_ok: bool) -> dict[st
 
     fields = dict(card.fields)
     warnings = list(card.warnings)
+    book = _character_book(s, card, warnings)
+    if book is not None:
+        # The attachment is written BEFORE the validation below, because `lorebooks` is an `AgentDef`
+        # field like any other: a card must not be able to attach a book the loader would refuse.
+        # The book FILE lands after it, beside the SOUL — nothing is written until the agent is known
+        # to be valid, so a refused card leaves no orphan book behind.
+        fields["lorebooks"] = [book[0]]
     if card.image is not None:
         if not avatars_ok:
             warnings.append("the agents media namespace is disabled, so no avatar was imported")
@@ -1765,8 +1788,51 @@ def _import_agent_card(s: Settings, body: bytes, *, avatars_ok: bool) -> dict[st
 
     folder = s.agents_dir_path() / card.slug
     _write_soul(folder, card.soul, require_folder=False)
+    if book is not None:
+        slug, imported = book
+        try:
+            _write_book(s.lorebooks_dir_path(), slug, imported.book)
+        except CardImportError as exc:  # §5.4's trade again — a bad extra never refuses the card
+            warnings.append(f"the card's embedded lorebook was not imported: {exc.detail}")
+            fields.pop("lorebooks", None)
+        else:
+            warnings.append(
+                f"the card's embedded lorebook was imported as '{slug}' "
+                f"({len(imported.book.entries)} entries) and attached to this agent"
+            )
+            warnings += imported.warnings
     payload = _scaffold_agent(s, card.slug, folder, fields, DEFAULT_SYSTEM_PROMPT)
     return {**payload, "report": _import_report(card, warnings)}
+
+
+def _character_book(s: Settings, card: ImportedCard, warnings: list[str]) -> tuple[str, ImportedBook] | None:
+    """The card's embedded `character_book`, mapped — `(slug, imported)`, or `None` when the card
+    carried none (§6.5). Nothing is written here; the caller writes once the agent validates, and
+    reports what landed only once it actually has.
+
+    The book comes off the STASH rather than off a second field, because the stash is where it lives
+    permanently (the S2 ruling: provenance stays, so a re-export is still the card the owner
+    imported). Landing it is additive, not a move.
+
+    It goes through the SAME importer a standalone book does: a V3 embedded book uses the spec entry
+    shape — position strings, sometimes `extensions.position` — so a second mapping here would be a
+    second position-downgrade table to keep in step with the first. The name defaults to the
+    character's, and the slug is `<agent slug>-book`, suffix-walked on collision by the same mint.
+
+    A book that will not map is a WARNING, never a refusal — the same trade the avatar gets (§5.4):
+    the character is the text, and refusing a whole import over a malformed extra would be wrong."""
+    raw = (card.fields.get("card") or {}).get("character_book")
+    if not raw:
+        return None
+    try:
+        imported = import_book(raw, default_name=card.name)
+    except (CardImportError, RecursionError) as exc:
+        detail = exc.detail if isinstance(exc, CardImportError) else "it is nested too deeply"
+        warnings.append(f"the card's embedded lorebook was not imported: {detail}")
+        return None
+    directory = s.lorebooks_dir_path()
+    slug = mint_slug(f"{card.slug}-book", book_slugs(directory), fallback="lorebook", collection="lorebooks")
+    return slug, imported
 
 
 @router.post("/agents/import", status_code=201)
@@ -1852,6 +1918,167 @@ async def put_agent_soul(name: str, body: SoulContent, request: Request) -> dict
     if not ok:
         raise HTTPException(status_code=404, detail=f"unknown agent '{name}'")
     return {"name": name, "content": body.content}
+
+
+# ── Lorebooks file API (Phase 23 / D70 §6.1) ──────────────────────────────────────────────────
+# One `<slug>.yaml` per book under `$CTRLB_HOME/lorebooks/` — the skills/agents file-API pattern,
+# third time: list by scanning, read/replace/delete by slug, and one import endpoint for the three
+# shapes the field circulates. Slugs reuse `valid_skill_slug` (the ONE grammar) and writes reuse
+# `save_book` → `edit_config_yaml` (the ONE YAML chokepoint), so nothing here is a second copy of
+# either rule.
+
+
+class LorebookBody(BaseModel):
+    """A whole book, validated against `Lorebook` so a bad value 422s — the `AgentBody` guarantee,
+    for the same reason: the editor's PUT is a FULL REPLACE, and a file the loader would then refuse
+    must never be writable through it."""
+
+    book: dict[str, Any] = Field(default_factory=dict)
+
+
+def _lorebooks_dir(request: Request, slug: str) -> Path:
+    """The lorebooks dir, after validating the slug (422 on a bad/unsafe name). `_skill_root`'s
+    shape, sharing its guard: a book file is addressed exactly like a skill folder."""
+    if not valid_skill_slug(slug):
+        raise HTTPException(
+            status_code=422, detail="invalid lorebook name (lowercase letters, digits, '-' or '_')"
+        )
+    return request.app.state.settings.lorebooks_dir_path()
+
+
+def _book_payload(slug: str, book: Lorebook) -> dict[str, Any]:
+    return {"slug": slug, "book": book.model_dump(mode="json")}
+
+
+def _write_book(directory: Path, slug: str, book: Lorebook) -> None:
+    """`save_book` with the one hostile property no reader owns folded into a REFUSAL: depth.
+
+    A book whose stashed extras nest thousands deep parses as JSON, validates as a model, and then
+    exhausts the stack on the way to disk — as a `RecursionError` in the YAML quoting walk or as
+    pydantic's own depth guard, which raises `ValueError`. Both mean the same thing and both would
+    otherwise be a 500 on owner input (the card route's `RecursionError` note, one subsystem over).
+    Nothing is torn by either: `edit_config_yaml` serialises into a buffer before it writes, so a
+    dump that raises never starts the atomic replace."""
+    try:
+        save_book(directory, slug, book)
+    except (RecursionError, ValueError) as exc:
+        raise CardImportError(422, "the lorebook is nested too deeply") from exc
+
+
+def _save_and_load(directory: Path, slug: str, book: Lorebook) -> dict[str, Any]:
+    """The whole blocking write side of a book PUT/import in one `to_thread` hop (SYS-16)."""
+    _write_book(directory, slug, book)
+    return _book_payload(slug, book)
+
+
+@router.get("/lorebooks")
+async def list_lorebooks(request: Request) -> dict[str, Any]:
+    """Every readable book, for the manager list (§6.6). A file that will not parse is omitted, not
+    raised — one broken book must not take the whole surface down (the same tolerance the turn path
+    has, and for the same reason)."""
+    directory = request.app.state.settings.lorebooks_dir_path()
+    books = await asyncio.to_thread(list_books, directory)
+    return {
+        "lorebooks": [
+            {"slug": slug, "name": b.name, "enabled": b.enabled, "entries": len(b.entries)}
+            for slug, b in books
+        ]
+    }
+
+
+@router.get("/lorebooks/{slug}")
+async def get_lorebook(slug: str, request: Request) -> dict[str, Any]:
+    """One whole book for the editor. 404 when the file is absent OR unreadable — the reader logs
+    which of the two it was, and the API says the one thing the client can act on."""
+    book = await asyncio.to_thread(load_book, _lorebooks_dir(request, slug), slug)
+    if book is None:
+        raise HTTPException(status_code=404, detail=f"unknown or unreadable lorebook '{slug}'")
+    return _book_payload(slug, book)
+
+
+@router.put("/lorebooks/{slug}")
+async def put_lorebook(slug: str, body: LorebookBody, request: Request) -> dict[str, Any]:
+    """Create or overwrite a book. Validated first, then written whole; loaded fresh per turn, so a
+    save is live with no restart (the agents/skills contract)."""
+    directory = _lorebooks_dir(request, slug)
+    try:
+        book = Lorebook.model_validate(body.book)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=f"invalid lorebook: {e.errors()[0]['msg']}") from e
+    try:
+        return await asyncio.to_thread(_save_and_load, directory, slug, book)
+    except CardImportError as exc:  # the depth refusal — the one write failure that is owner input
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+
+
+@router.delete("/lorebooks/{slug}")
+async def delete_lorebook(slug: str, request: Request) -> dict[str, Any]:
+    """Delete a book file. Idempotent: 404 if absent. Any agent still listing the slug simply stops
+    getting its entries (§6.3's missing-file tolerance) — a dangling attachment never fails a turn."""
+    if not await asyncio.to_thread(delete_book, _lorebooks_dir(request, slug), slug):
+        raise HTTPException(status_code=404, detail=f"unknown lorebook '{slug}'")
+    return {"slug": slug, "deleted": True}
+
+
+def _book_report(imported: ImportedBook) -> dict[str, Any]:
+    """What a book import DID, for the owner to read — the `_import_report` shape, one level
+    simpler: which source keys were read, which were kept verbatim as stash, and every approximation
+    (a collapsed position, an approximated key logic). The warnings are the half that matters: they
+    are the record that v1 changed something the author wrote."""
+    return {
+        "mapped": imported.mapped,
+        "stashed_keys": imported.stashed,
+        "warnings": imported.warnings,
+    }
+
+
+def _import_lorebook(s: Settings, body: bytes) -> dict[str, Any]:
+    """The whole blocking side of `POST /lorebooks/import` in one `to_thread` hop (SYS-16): parse →
+    map → mint a slug → write. The slug is minted from the book's own NAME through the card
+    importer's mint (one grammar, one walk), falling back to `lorebook` for a name that slugifies to
+    nothing."""
+    try:
+        parsed = json.loads(body.decode("utf-8"))
+    except _JSON_REFUSALS as exc:
+        raise CardImportError(422, "the lorebook is not valid JSON") from exc
+    imported = import_book(parsed)
+    directory = s.lorebooks_dir_path()
+    slug = mint_slug(imported.book.name, book_slugs(directory), fallback="lorebook", collection="lorebooks")
+    return {**_save_and_load(directory, slug, imported.book), "report": _book_report(imported)}
+
+
+@router.post("/lorebooks/import", status_code=201)
+async def import_lorebook(request: Request, file: UploadFile) -> dict[str, Any]:
+    """Import a lorebook (D70 §6.5). Multipart, one JSON file field — the V3 envelope, ST's raw
+    standalone export, or a bare entries list; the shape is read off the parsed value, never off the
+    filename.
+
+    `201` with the created book plus a `report`: what mapped, what was stashed, and every
+    approximation made (every collapsed position, every approximated key logic). `413` past
+    `lorebooks.max_import_bytes` · `422` JSON we cannot read as a book · `409` a slug that could not
+    be minted.
+
+    The body is read at most `max_bytes + 1` — the card route's posture, which is the `stt` posture:
+    the least that still proves "over the cap" without ever materialising the excess. `RecursionError`
+    is caught for the same reason it is there: depth is the one hostile property no single reader
+    owns, and a JSON the parser accepted can still exhaust the stack in the YAML dump."""
+    s: Settings = request.app.state.settings
+    cap = s.lorebooks.max_import_bytes
+    body = await file.read(cap + 1)
+    if not body:
+        raise HTTPException(status_code=422, detail="empty upload")
+    if len(body) > cap:
+        # The true size is deliberately NOT reported — we stopped reading at cap+1.
+        raise HTTPException(
+            status_code=413,
+            detail=f"the lorebook is larger than lorebooks.max_import_bytes ({cap} bytes)",
+        )
+    try:
+        return await asyncio.to_thread(_import_lorebook, s, body)
+    except CardImportError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from None
+    except RecursionError:
+        raise HTTPException(status_code=422, detail="the lorebook is nested too deeply") from None
 
 
 # ── Memory file API (Phase 7e-d-3, D14/D15 #4) ────────────────────────────────────────────────

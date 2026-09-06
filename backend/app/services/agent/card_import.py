@@ -30,8 +30,9 @@ AND on export is the field's own precedent.
 **Every cap is config** (§5.3, Emma F8 → `roleplay.card_import`): no magic numbers here.
 
 Non-goals, recorded so they are not mistaken for gaps: WEBP-EXIF cards (one importer in the field),
-`.byaf`, V3 multi-asset routing (sprites/emotions/user icons — the extras are stashed with a report
-line), and the embedded `character_book`, which rides the `card` stash until S3's book import lands.
+`.byaf`, and V3 multi-asset routing (sprites/emotions/user icons — the extras are stashed with a
+report line). The embedded `character_book` is NOT one of them: it rides the `card` stash as
+permanent provenance AND is landed as a real lorebook by the route, through `lorebook_import` (§6.5).
 """
 
 from __future__ import annotations
@@ -496,21 +497,28 @@ _MAX_SLUG = 64
 FALLBACK_SLUG = "character"
 
 
-def mint_slug(name: str, taken: Collection[str]) -> str:
+def mint_slug(
+    name: str, taken: Collection[str], *, fallback: str = FALLBACK_SLUG, collection: str = "agents"
+) -> str:
     """A folder slug for this card's name: casefolded, everything outside the grammar collapsed to
     `-`, runs collapsed, edges trimmed — then suffix-walked past anything already taken (existing
-    agents AND the default agent's own name, which is not a folder but is not free either)."""
+    agents AND the default agent's own name, which is not a folder but is not free either).
+
+    `fallback`/`collection` exist for the ONE other thing minted from author-chosen text: a lorebook
+    file (D70 §6.5). They change the two words the function says about itself — what an unusable
+    name becomes and what the 409 calls the crowd — because the grammar, the collapse and the walk
+    are the same rules, and a second copy of them is how the two would drift apart."""
     base = _slugify(name)
     if not valid_skill_slug(base):
-        base = FALLBACK_SLUG
+        base = fallback
     if base not in taken:
         return base
     for n in range(2, 1000):
-        stem = base[: _MAX_SLUG - len(str(n)) - 1].strip("-_") or FALLBACK_SLUG
+        stem = base[: _MAX_SLUG - len(str(n)) - 1].strip("-_") or fallback
         candidate = f"{stem}-{n}"
         if candidate not in taken:
             return candidate
-    raise CardImportError(409, f"too many agents are already named like {base!r}")
+    raise CardImportError(409, f"too many {collection} are already named like {base!r}")
 
 
 def _slugify(name: str) -> str:
@@ -590,12 +598,10 @@ def import_card(
         if value:
             fields[key] = value
 
+    # The embedded `character_book` needs nothing here: it is already in the stash (which stays its
+    # permanent provenance home), and the CALLER lands it as a real book through the book importer —
+    # the same division every other write keeps (§5.1: this function composes nothing).
     warnings = [*container.notes, *card.notes]
-    if "character_book" in stash:
-        warnings.append(
-            "the card's embedded lorebook is stashed on `card.character_book`; it becomes a real "
-            "lorebook when book import lands"
-        )
     return ImportedCard(
         container=container.kind,
         slug=slug,

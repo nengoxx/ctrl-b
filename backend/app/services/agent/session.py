@@ -106,6 +106,7 @@ from app.services.agent.core_memory import CORE_MEMORY_TOOL, CoreMemoryCorpus, R
 from app.services.agent.core_memory_tool import RECALL_RECEIPT, is_recall_call
 from app.services.agent.examples import example_messages
 from app.services.agent.exec import run_user_exec
+from app.services.agent.lorebooks import Haystack, active_slugs, block, load_books, scan
 from app.services.agent.macros import Macros, consumes_original, macros_for
 from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
@@ -527,6 +528,14 @@ class AgentSession:
         #: server-owned turn snapshot (and the terminal-linger record behind it) can hand the exact set
         #: back on resume instead of trusting whatever the client still remembers.
         self._active_skills: list[str] = []
+        #: Per-turn lorebook state (D70 §6.4), computed ONCE by `_activate_lorebooks` at turn start —
+        #: the two framed blocks this turn's scan produced, or `None` where nothing activated. Two
+        #: fields rather than one because they live in two different layers: the head block rides the
+        #: CACHED static prefix, the tail block is appended per assembly beside `post_history`. Both
+        #: are strings, not entry lists: the scan, the budget and the framing all happen at turn start,
+        #: so a `_drive` iteration can never re-run any of it and jitter the cached prefix.
+        self._lorebook_head: str | None = None
+        self._lorebook_tail: str | None = None
         #: Per-turn periodic-reflection flag (D27-C), armed by `_maybe_arm_reflection` at turn start
         #: when the thread's user-turn count hits the interval; `_assemble` injects a one-shot nudge
         #: while set. Default off (also the resume path, which doesn't re-arm — reflection is a
@@ -816,10 +825,55 @@ class AgentSession:
         self._tool_allow = narrow_tools(active, self._agent.tools)
         self._active_skills = [s.name for s in active]  # M2/C-12 — captured right after selection
 
+    async def _activate_lorebooks(self, thread: Thread, user_text: str) -> None:
+        """Resolve the lorebook entries active for this turn (§6.3/§6.4) and stash the two framed
+        blocks `_static_prefix`/`_assemble` emit. The `_activate_skills` precedent, one layer over:
+        a turn-start pre-pass that decides once and leaves strings behind, so the loop reads state
+        instead of recomputing it.
+
+        **Called BEFORE the user message is persisted (Emma F11).** `run_turn` persists first and
+        assembles second, so a scan run at assembly time would have to EXCLUDE the row it had just
+        written — and a naive `history[-scan_depth:]` + the incoming text would scan the current
+        message twice while dropping one real prior message. Reading here, ahead of the write, makes
+        the haystack exactly what §6.3 says it is: the incoming message ONCE plus the last
+        `scan_depth` prior chat messages, with no exclusion dance to get wrong.
+
+        The haystack is CHAT TEXT ONLY — the text of user/assistant turns. No tool outputs, no
+        attachment bodies: the field's corpus is what was said, and a book whose keys matched a
+        `ping_host` result would fire on the machinery rather than on the conversation.
+
+        `_static_head` is reset because the head block is cached inside it: the session is per-turn
+        today, but a second turn on one session must re-scan, and the cheapest way to guarantee that
+        is to invalidate here rather than to rely on the field being untouched. It does NOT make the
+        head unstable within a turn — this runs once per turn, before `_drive`, and no `_drive`
+        iteration reaches it (pinned by `test_static_head_byte_stable_across_drain`).
+
+        No books attached ⇒ nothing is read at all: no directory scan, no history query, no prompt
+        bytes. That is what keeps a deployment that never opens the subsystem byte-identical."""
+        self._lorebook_head = self._lorebook_tail = None
+        self._static_head = None
+        slugs = active_slugs(self._settings.lorebooks.books, self._agent.lorebooks)
+        if not slugs:
+            return
+        cfg = self._settings.lorebooks
+        books = load_books(self._settings.lorebooks_dir_path(), slugs)
+        if not books:
+            return
+        texts = [user_text]
+        if cfg.scan_depth:
+            history = await self._messages.list(thread.id, include_compacted=False)
+            prior = [t for m in history if m.role in ("user", "assistant") and (t := m.text())]
+            texts += prior[-cfg.scan_depth :]
+        head, tail = scan(books, Haystack.of(texts), self._macros(), budget_chars=cfg.budget_chars)
+        if not (head or tail):
+            return  # a scan miss costs nothing — not even the framing's stamp (the `_core_index_block` rule)
+        intro = resolve("lorebook_intro", self._settings, stamps=self._stamps)
+        self._lorebook_head, self._lorebook_tail = block(intro, head), block(intro, tail)
+
     def _static_prefix(self) -> list[dict]:
         """The INVARIANT system head for this turn — the Voice/Duties message + the scenario +
         appends + fleet roster + the owner's persona + durable-memory block + core-memory index +
-        active-skill note + the example-dialogue pseudo-messages,
+        active-skill note + the turn's `head` lorebook block + the example-dialogue pseudo-messages,
         in that fixed order (7e-a/7e-d/D15 #4, AMENDED 2026-07-20: memory moved
         AFTER the roster; D57: the tier-2 index joins it; D70: the two character blocks join it —
         the scenario with the persona it belongs to, the owner's persona with the roster, both
@@ -836,8 +890,8 @@ class AgentSession:
         appended in `_assemble`, so it never perturbs this cached head.
 
         Turn-invariant WITHIN ONE UNINTERRUPTED TURN: the system prompt / appends / roster project
-        from per-turn-stable config + AgentDef, `_skills_note` is fixed at turn start by
-        `_activate_skills`, and both memory blocks are read ONCE here — so a mid-turn `memory`- or
+        from per-turn-stable config + AgentDef, `_skills_note` and `_lorebook_head` are fixed at turn
+        start by `_activate_skills`/`_activate_lorebooks`, and both memory blocks are read ONCE here — so a mid-turn `memory`- or
         `core_memory`-tool write does NOT land on the next loop iteration, which is what keeps the
         prefix byte-stable across iterations (the model sees that write in its own tool result). It is
         NOT frozen across a suspend/resume, though (ACA-15e): a confirm/question resume builds a
@@ -867,6 +921,14 @@ class AgentSession:
                 head.append({"role": "system", "content": core_index})
             if self._skills_note:  # active skills' instructions (4.5)
                 head.append({"role": "system", "content": self._skills_note})
+            if self._lorebook_head:
+                # The turn's activated `head` lorebook entries (D70 §6.4) — LAST among the plain
+                # system blocks, because it is the most volatile one here: it is recomputed from the
+                # scan every turn, so a cache that re-prefills from it onward loses the least
+                # (R65 §9's analysis; the same reasoning that put the memory blocks after the roster).
+                # "Last" means last of THESE, not of the head: the named example messages below must
+                # stay final — their `name` is what terminates the coalescing run (see just below).
+                head.append({"role": "system", "content": self._lorebook_head})
             # Example dialogue (D70 §4.2) — the few-shot pseudo-messages, LAST in the head so they sit
             # between it and the live history. Last is structural, not cosmetic: their `name` is what
             # terminates `normalize_system_messages`' leading coalescing run (Emma F1), so a head block
@@ -877,8 +939,8 @@ class AgentSession:
 
     async def _assemble(self, thread: Thread, *, clearing: ClearingPlan | None = None) -> list[dict]:
         """Build the OpenAI `messages` array: the cached static system head (`_static_prefix`) + the
-        non-compacted history + the agent's post-history instructions + a one-shot reflection nudge
-        at the tail (in that order — D70 §4.2). Reasoning is dropped (the model's scratchpad); tool
+        non-compacted history + the turn's `tail` lorebook block + the agent's post-history
+        instructions + a one-shot reflection nudge at the tail (in that order — D70 §4.2/§6.4). Reasoning is dropped (the model's scratchpad); tool
         calls + results round-trip as `assistant.tool_calls` followed by
         `tool` messages keyed by `call_id`. Any tool call left unresolved gets a synthesized
         result so the context is always valid for the API: a persisted-CANCELLED call (A11/D39) →
@@ -975,6 +1037,11 @@ class AgentSession:
                         out.append({"role": "system", "content": notice})
                 elif text:
                     out.append({"role": m.role, "content": text})
+        # The turn's activated `tail` lorebook entries (D70 §6.4), sharing the tail slot with
+        # `post_history` and sitting AHEAD of it: the agent's own last word stays closest to
+        # generation (§4.2), and reference material never displaces an instruction from that spot.
+        if self._lorebook_tail:
+            out.append({"role": "system", "content": self._lorebook_tail})
         # Post-history instructions (D70 §4.2) as a TAIL layer — the operational last word, after the
         # history so recency carries it (R64 §3). Cache cost ~nil: everything after the newest message
         # re-prefills anyway. It sits ahead of the reflection nudge, which is the ephemeral one-shot.
@@ -1247,6 +1314,10 @@ class AgentSession:
         ARE part of what the owner said; an attachment-only send therefore persists a message with no
         `TextPart` at all (the model-facing wire text for that case is S2's)."""
         self._activate_skills(user_text, skills)
+        # …and the lorebook scan, which must run BEFORE the persist below (§6.3, Emma F11): the
+        # haystack is the incoming text plus the last `scan_depth` PRIOR messages, and reading the
+        # history after the write would need an exclusion rule to say the same thing.
+        await self._activate_lorebooks(thread, user_text)
         # `actor` is the session's `message_actor` (§D-3), not a hardcoded USER: the text is the owner's
         # for every interactive path (the default) and the AUTOMATION's for an unattended run. `role`
         # stays "user" — that is the model's turn-taking slot, not a claim about who wrote it.
@@ -1399,6 +1470,11 @@ class AgentSession:
         # Re-activate the carried skills BEFORE `_drive` reads `_tool_allow`/`_skills_note` (via
         # `_tools`/`_static_prefix`) — mirrors `run_turn`'s `_activate_skills`, minus the selector.
         self._activate_skills("", skills, select=False)
+        # …and re-scan the lorebooks, for the same reason and with the same caveat the memory blocks
+        # carry (ACA-15e): a resume builds a FRESH session, so the head would otherwise carry no book
+        # at all. There is no incoming user text here — the turn's message is already history — so the
+        # haystack is the last `scan_depth` messages, which is where that text now lives.
+        await self._activate_lorebooks(thread, "")
         # …and re-seed the recall budget for the same reason: the resumed half belongs to the LOGICAL
         # turn that suspended, so it must inherit what that turn already spent (D57 §4).
         await self._seed_recall(thread)
