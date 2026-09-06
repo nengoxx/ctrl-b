@@ -105,6 +105,7 @@ from app.services.agent.compaction import (
 from app.services.agent.core_memory import CORE_MEMORY_TOOL, CoreMemoryCorpus, RecallState
 from app.services.agent.core_memory_tool import RECALL_RECEIPT, is_recall_call
 from app.services.agent.exec import run_user_exec
+from app.services.agent.macros import Macros, consumes_original, macros_for
 from app.services.agent.prompts import resolve
 from app.services.agent.routing import RoutingState
 from app.services.agent.skills import available_skills, narrow_tools, resolve_skills, skills_prompt
@@ -127,27 +128,24 @@ _SUSPEND_CALL_STATES = (RunState.AWAITING_CONFIRM, RunState.AWAITING_ANSWER)
 #: phrased so the composer reads it as "nothing to do" rather than a failure (A5-x, v1.3.1).
 COMPACT_TOO_SMALL = "thread too small to compact — nothing to do"
 
+#: The baked VOICE default — the last rung of the Class-A persona chain (SOUL.md →
+#: `inference.system_prompt` → this) and the text the `default-prompt` endpoint serves + a new
+#: agent's SOUL.md is scaffolded with.
+#:
+#: **D70 shrank it to the identity half.** It used to fuse identity and tool discipline into one
+#: constant that SOUL.md then *replaced* wholesale — the exact failure R64 §5.4 measured (a
+#: specialist persona silently costing the agent every technical instruction it had). The
+#: discipline half now lives in the `duties_agent` registry prompt and rides the head's second
+#: section for EVERY agent, persona or not (ROLEPLAY_PLAN §4.1, P3).
 DEFAULT_SYSTEM_PROMPT = (
     "You are ctrl-b, a concise assistant embedded in a single-user homelab control panel. "
-    "You help the owner wake, monitor, and manage a small fleet of PCs over their tailnet/LAN. "
-    "You can call the provided tools to inspect and control the fleet (wake/ping hosts, start/stop "
-    "services, etc.). Prefer a tool over guessing. Risky actions (shutdown, stop/restart a service) "
-    "will ask the owner to confirm before running — propose them when appropriate. Resolve a host "
-    "or service the owner names to its stable `id` yourself using the fleet roster provided below — "
-    "never ask the owner for an id. For a multi-step request, call `task_plan` first to lay out the "
-    "steps, then update it (re-send the whole list) as you complete each — keep one step `active`. "
-    "Skip the plan for a single quick action. "
-    "Carry the task through to completion in this turn: keep calling tools until every step is done. "
-    "Do NOT stop to narrate progress or ask whether to continue when the next step is already clear — "
-    "the system pauses the turn for you whenever a risky action needs confirmation, so you never have "
-    "to ask permission yourself. When the same action applies to several targets (e.g. pinging every "
-    "host), issue all of those tool calls together in one step rather than one at a time. "
-    "Tool routing: for fleet/host/service requests use the fleet tools (wake/ping/start/stop/restart/"
-    "shutdown) and `task_plan` — do NOT use web search or crawling for fleet operations. Use "
-    "`web_search`/crawl tools ONLY when the owner asks for information from the internet. Never repeat "
-    "the same tool call with the same arguments; if a result didn't help, change approach or answer. "
-    "Answer directly and briefly; after the final tool runs, summarize the outcome in one or two lines."
+    "You help the owner wake, monitor, and manage a small fleet of PCs over their tailnet/LAN."
 )
+
+#: `AgentDef.duties` → the registry id of the text that rides the head's Duties section (§4.1,
+#: ruling 5). A map rather than an f-string: the ids are registry keys, so the set of legal duties
+#: values and the prompts that back them are stated in one place.
+_DUTIES_PROMPTS = {"agent": "duties_agent", "conversational": "duties_conversational"}
 
 #: Every agent invocation is audited as `Actor.AGENT`; the privilege (which decides gating) is now
 #: per-`AgentDef` (4.5) — `CONFIRM` (the default agent's) auto-runs low-risk tools while med/high
@@ -573,14 +571,97 @@ class AgentSession:
         #: `_attachment_wire` — and per-turn like the caches above, so it needs no eviction.
         self._attachment_cache: dict[str, str] = {}
 
-    def _system_prompt(self) -> str:
-        """The agent's own prompt wins; then the global `inference.system_prompt` override; then the
-        built-in default. So the default agent (empty prompt) inherits today's behaviour exactly."""
+    def _macros(self) -> Macros:
+        """This agent's `{{char}}`/`{{user}}` vocabulary (§4.3). Projected from the AgentDef +
+        settings the turn already holds fixed, so it is rebuilt rather than cached."""
+        return macros_for(self._agent, self._settings)
+
+    def _section(self, heading_id: str, body: str) -> str:
+        """One `## `-labelled head section: the registry-owned heading, then the body (L-8 — an
+        override reframes the section, it can never drop the text underneath)."""
+        return resolve(heading_id, self._settings, stamps=self._stamps) + "\n" + body
+
+    def _voice(self) -> str:
+        """The VOICE — who the agent is. The Class-A chain is unchanged in mechanism: the agent's own
+        prompt (SOUL.md) wins, then the global `inference.system_prompt`, then the baked default.
+
+        Its MEANING shifted with D70 (§4.1, Emma F13, recorded): `inference.system_prompt` used to
+        replace the whole fused prompt, and is now the fallback VOICE only — the selected duties text
+        is appended after it. An existing override that already carries tool discipline therefore
+        sees that discipline stated twice until the owner trims it. No compatibility branch (the
+        no-legacy-seams rule)."""
         return (
             self._agent.prompt.strip()
             or self._settings.inference.system_prompt.strip()
             or DEFAULT_SYSTEM_PROMPT
         )
+
+    def _duties(self) -> str:
+        """The DUTIES text this agent runs under — `duties_agent` or `duties_conversational`, chosen
+        by `AgentDef.duties` (ruling 5). Never a capability lever (ruling 16): both texts assume
+        whatever toolset the agent was granted."""
+        return resolve(_DUTIES_PROMPTS[self._agent.duties], self._settings, stamps=self._stamps)
+
+    def _no_card_head(self) -> str:
+        """What `{{original}}` stands for in a persona text (§4.1): the head this chain would have
+        produced WITHOUT this agent's own persona — the no-card Voice (`inference.system_prompt`
+        when the owner configured one, else the baked default: a configured fallback override IS
+        the no-card Voice, the baked text is only the last rung) plus the whole Duties section it
+        consumes.
+
+        It carries the Duties HEADING but not a second Voice heading: the substitution lands INSIDE
+        the head's Voice section, which is already labelled, so re-labelling there would print
+        `## Voice` twice and leave the head with three headings instead of §4.1's two.
+
+        Rendered with `original=""` so a fallback override that itself contains the token cannot
+        leave a literal `{{original}}` sitting in the head (`safe_substitute` makes one pass and
+        never re-scans what it substituted)."""
+        voice = self._macros().render(self._settings.inference.system_prompt.strip() or DEFAULT_SYSTEM_PROMPT)
+        return voice + "\n\n" + self._section("duties_heading", self._duties())
+
+    def _system_prompt(self) -> str:
+        """The ONE leading system message: the Voice section, then the Duties section (D70 §4.1).
+
+        Universal — every agent gets both, persona or not (P3). The two `## `-labelled sections are
+        R64 §5.4's measured shape (+0.052 on a roleplay-plus-tools benchmark, where naive persona
+        prompting bought +0.004); the labels themselves are registry framings, never literals here.
+
+        `{{original}}` in the persona CONSUMES the separate Duties emission: the substituted no-card
+        head already carries a Duties section, and stating it twice is what an author asking for
+        "the original prompt, plus this" never meant. The head still ends up with exactly the two
+        labelled sections either way."""
+        source = self._voice()
+        embeds_head = consumes_original(source)
+        voice = self._macros().render(source, original=self._no_card_head() if embeds_head else "")
+        sections = [self._section("voice_heading", voice)]
+        if not embeds_head:
+            sections.append(self._section("duties_heading", self._duties()))
+        return "\n\n".join(sections)
+
+    def _scenario(self) -> str | None:
+        """The agent's scenario as its own head block (§4.2) — as static as the prompt, so it sits
+        with the head rather than at the tail. Macro-substituted; empty ⇒ absent (ruling 10) —
+        including a field that only becomes empty once its macros render (a lone `{{original}}`)."""
+        text = self._macros().render(self._agent.scenario.strip()).strip()
+        return text or None
+
+    def _persona_block(self) -> str | None:
+        """The OWNER's persona block (§3.2/§4.2), injected after the roster when
+        `roleplay.persona.description` is non-empty — the same block for every agent, because it
+        describes the owner rather than any one character. The registry framing, then the owner's
+        text (L-8). Empty ⇒ absent."""
+        description = self._settings.roleplay.persona.description.strip()
+        if not description:
+            return None
+        return resolve("persona_intro", self._settings, stamps=self._stamps) + "\n\n" + description
+
+    def _post_history(self) -> str | None:
+        """The agent's post-history instructions (§4.2) — the operational last word, emitted AFTER
+        the history where recency makes it bite (R64 §3). Macro-substituted, with `{{original}}`
+        standing for ctrl-b's own default post-history text, which is empty: the token renders as
+        nothing here and never drags the Duties section down to the tail. Empty ⇒ absent."""
+        text = self._macros().render(self._agent.post_history.strip()).strip()
+        return text or None
 
     def _appends(self) -> list[str]:
         """The additive append axis (7e-a). Returns 0-2 non-empty strings to emit as separate
@@ -732,10 +813,13 @@ class AgentSession:
         self._active_skills = [s.name for s in active]  # M2/C-12 — captured right after selection
 
     def _static_prefix(self) -> list[dict]:
-        """The INVARIANT system head for this turn — system prompt + appends + fleet roster +
-        durable-memory block + core-memory index + active-skill note, in that fixed order
-        (7e-a/7e-d/D15 #4, AMENDED 2026-07-20: memory moved AFTER the roster; D57: the tier-2 index
-        joins it). Every prefix cache — llama.cpp KV, cloud prefix — invalidates from the first
+        """The INVARIANT system head for this turn — the Voice/Duties message + the scenario +
+        appends + fleet roster + the owner's persona + durable-memory block + core-memory index +
+        active-skill note, in that fixed order (7e-a/7e-d/D15 #4, AMENDED 2026-07-20: memory moved
+        AFTER the roster; D57: the tier-2 index joins it; D70: the two character blocks join it —
+        the scenario with the persona it belongs to, the owner's persona with the roster, both
+        config/AgentDef-projected and as static as their neighbours). Every prefix cache — llama.cpp
+        KV, cloud prefix — invalidates from the first
         changed byte ONWARD, and the two memory blocks are the only ones here that routinely change
         across a session's turns (a `memory`-tool write; an index-affecting corpus write or edit); the
         roster is config-projected and ~static. Keeping both last-among-stable-blocks, and adjacent,
@@ -759,11 +843,17 @@ class AgentSession:
         freeze is A9."""
         if self._static_head is None:
             head: list[dict] = [{"role": "system", "content": self._system_prompt()}]
+            scenario = self._scenario()  # the scene, with the persona it belongs to (D70 §4.2)
+            if scenario:
+                head.append({"role": "system", "content": scenario})
             for extra in self._appends():  # additive guidance, base-first (7e-a)
                 head.append({"role": "system", "content": extra})
             roster = self._roster()  # config-projected, ~static — ahead of the mutable memory block
             if roster:
                 head.append({"role": "system", "content": roster})
+            persona = self._persona_block()  # who the OWNER is — config-projected, ~static (D70 §4.2)
+            if persona:
+                head.append({"role": "system", "content": persona})
             memory = self._memory_block()  # durable memory, after the roster (7e-d, D15 #4 AMENDED)
             if memory:
                 head.append({"role": "system", "content": memory})
@@ -777,8 +867,9 @@ class AgentSession:
 
     async def _assemble(self, thread: Thread, *, clearing: ClearingPlan | None = None) -> list[dict]:
         """Build the OpenAI `messages` array: the cached static system head (`_static_prefix`) + the
-        non-compacted history + a one-shot reflection nudge at the tail. Reasoning is dropped (the
-        model's scratchpad); tool calls + results round-trip as `assistant.tool_calls` followed by
+        non-compacted history + the agent's post-history instructions + a one-shot reflection nudge
+        at the tail (in that order — D70 §4.2). Reasoning is dropped (the model's scratchpad); tool
+        calls + results round-trip as `assistant.tool_calls` followed by
         `tool` messages keyed by `call_id`. Any tool call left unresolved gets a synthesized
         result so the context is always valid for the API: a persisted-CANCELLED call (A11/D39) →
         `cancelled`; any other abandoned call (e.g. a dropped confirm) → `skipped`.
@@ -874,6 +965,12 @@ class AgentSession:
                         out.append({"role": "system", "content": notice})
                 elif text:
                     out.append({"role": m.role, "content": text})
+        # Post-history instructions (D70 §4.2) as a TAIL layer — the operational last word, after the
+        # history so recency carries it (R64 §3). Cache cost ~nil: everything after the newest message
+        # re-prefills anyway. It sits ahead of the reflection nudge, which is the ephemeral one-shot.
+        post_history = self._post_history()
+        if post_history:
+            out.append({"role": "system", "content": post_history})
         # Periodic reflection nudge (D27-C) as an EPHEMERAL TAIL layer — appended AFTER history so it
         # never sits inside the cached static head (Hermes ephemeral-layer pattern; volatile content goes
         # after the stable prefix). One-shot: emit in exactly ONE model call per armed turn, not on every

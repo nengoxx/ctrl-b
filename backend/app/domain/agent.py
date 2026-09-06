@@ -203,6 +203,41 @@ class AgentDef(BaseModel):
     #: mirrors Claude Code's CLAUDE.md model (always added) — flip it for an agent that needs to
     #: escape the global guidance (e.g. a sandboxed/clean-room persona).
     inherit_append: bool = True
+    # ── Phase 23 / D70 (ROLEPLAY_PLAN §3.1) — flat, optional, defaulted: what kind of agent
+    # something IS emerges from which of these it uses (P1), never from a type flag or a nested
+    # "character" object. S0 lands the schema + persistence; the behaviour behind greeting /
+    # example_dialogue / voice / avatar / background / lorebooks / card arrives in S1–S4.
+    #: Which duties prompt rides along in the head's second section (§4.1, ruling 5). `agent` is
+    #: today's tool discipline (`duties_agent`); `conversational` is the talking-shaped text
+    #: (`duties_conversational`). NEVER a capability lever (ruling 16): both texts assume whatever
+    #: toolset the agent was granted — `tools`/`skills`/`privilege` are the only gates.
+    duties: Literal["agent", "conversational"] = "agent"
+    greeting: str = ""  # first_mes — the seeded opening message (S1); "" → no seeded message
+    #: `alternate_greetings` — stored in v1 so an imported card round-trips losslessly; the
+    #: new-thread picker that chooses between them is a recorded FE seam (§4.2).
+    alt_greetings: list[str] = Field(default_factory=list)
+    #: `mes_example` — `<START>`-delimited example turns, kept in the ST format VERBATIM so an
+    #: import is byte-faithful. Parsed into pseudo-messages by S1.
+    example_dialogue: str = ""
+    #: The scene/situation. Its own head block after the Voice/Duties message (§4.2) — as static as
+    #: the prompt, so it sits ahead of the roster rather than at the tail.
+    scenario: str = ""
+    #: `post_history_instructions` — the operational last word, emitted AFTER the history (§4.2).
+    #: Recency is the point; empty ⇒ nothing is emitted.
+    post_history: str = ""
+    #: Per-agent `{{user}}` override; "" → `roleplay.persona.name` → the literal "User" (ruling 7).
+    user_name: str = ""
+    avatar: str = ""  # media id in the agents/avatars library (§8); "" → none
+    background: str = ""  # media id in agents/backgrounds (§8); "" → the theme default
+    #: TTS voice id for this agent (ruling 21); "" → the global `voice.tts` chain. A NON-empty id is
+    #: used as-is: no registry can validate voice ids, so a bad one reports through the existing TTS
+    #: error path exactly like a bad global voice (Emma F6 — the earlier unknown→default promise
+    #: required an allowlist nothing can provide; absent→default is the whole fallback contract).
+    voice: str = ""
+    lorebooks: list[str] = Field(default_factory=list)  # attached book slugs (§6.5)
+    #: Import stash: the card's unmapped spec fields + extensions, post-strip (§7) — export-ready
+    #: provenance, and the as-imported restore point. NEVER prompt-facing.
+    card: dict[str, Any] = Field(default_factory=dict)
     model: ModelRef = Field(default_factory=ModelRef)  # backend+model; inherits chat default when unset
     #: This agent's memory subdirectory (D26), resolved **relative to** `MemoryCfg.memory_dir` (the
     #: memory-directory git repo root). `None` → the default `agents/<slug>`. Absolute paths and `..`

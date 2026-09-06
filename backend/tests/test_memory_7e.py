@@ -26,6 +26,7 @@ import tempfile
 from pathlib import Path
 
 from _async import run_async
+from test_roleplay_s0 import head  # the D70 head shape, derived in ONE place (§4.1)
 
 
 def _client():
@@ -104,12 +105,10 @@ def _assemble(c, thread, agent_name: str | None = None) -> list[dict]:
 def test_memory_injected_after_base_with_usage_header() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
-            from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
-
             _write(tmp / "memories" / "MEMORY.md", "Owner prefers dark mode.")
             thread = _make_thread(c)
             systems = _systems(_assemble(c, thread))
-            assert systems[0] == DEFAULT_SYSTEM_PROMPT
+            assert systems[0] == head()
             assert len(systems) == 2  # base + memory (no roster — no hosts)
             block = systems[1]
             assert "Owner prefers dark mode." in block
@@ -157,19 +156,15 @@ def test_user_profile_disabled_drops_user_keeps_agent() -> None:
 def test_master_switch_off_injects_nothing() -> None:
     with _workspace() as (tmp, _cfg):
         with _client() as c:
-            from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
-
             _write(tmp / "memories" / "MEMORY.md", "agent note")
             assert c.put("/api/settings", json={"memory": {"enabled": False}}).status_code == 200
-            assert _systems(_assemble(c, _make_thread(c))) == [DEFAULT_SYSTEM_PROMPT]
+            assert _systems(_assemble(c, _make_thread(c))) == [head()]
 
 
 def test_no_files_no_memory_block() -> None:
     with _workspace():
         with _client() as c:
-            from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
-
-            assert _systems(_assemble(c, _make_thread(c))) == [DEFAULT_SYSTEM_PROMPT]
+            assert _systems(_assemble(c, _make_thread(c))) == [head()]
 
 
 def test_specialist_memory_is_isolated_from_root() -> None:

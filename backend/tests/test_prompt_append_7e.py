@@ -34,6 +34,7 @@ import tempfile
 from pathlib import Path
 
 from _async import run_async
+from test_roleplay_s0 import head  # the D70 head shape, derived in ONE place (§4.1)
 
 
 def _client():
@@ -124,26 +125,24 @@ def test_prompt_append_round_trip() -> None:
     """The canonical happy path: each step shifts the system-message prefix as predicted, in order."""
     with _workspace("# homelab\nserver:\n  port: 5433\n"):
         with _client() as c:
-            from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
-
             thread = _make_thread(c)
 
             # 1. empty config → exactly one system message (the baked default)
-            assert _systems(_assemble(c, thread)) == [DEFAULT_SYSTEM_PROMPT]
+            assert _systems(_assemble(c, thread)) == [head()]
 
             # 2. global append → emitted as a second system message, after the base
             r = c.put("/api/settings", json={"inference": {"system_prompt_append": "GLOBAL-X"}})
             assert r.status_code == 200, r.text
-            assert _systems(_assemble(c, thread)) == [DEFAULT_SYSTEM_PROMPT, "GLOBAL-X"]
+            assert _systems(_assemble(c, thread)) == [head(), "GLOBAL-X"]
 
             # 3. add a folder agent with prompt_append → three system messages (base, global, per-agent)
             _put_agent(c, "writer", prompt_append="AGENT-Y")
             c.put("/api/settings", json={"agent": {"default_agent": "writer"}})
-            assert _systems(_assemble(c, thread, "writer")) == [DEFAULT_SYSTEM_PROMPT, "GLOBAL-X", "AGENT-Y"]
+            assert _systems(_assemble(c, thread, "writer")) == [head(), "GLOBAL-X", "AGENT-Y"]
 
             # 4. flip inherit_append=False → global is skipped; only per-agent appears
             _put_agent(c, "writer", prompt_append="AGENT-Y", inherit_append=False)
-            assert _systems(_assemble(c, thread, "writer")) == [DEFAULT_SYSTEM_PROMPT, "AGENT-Y"]
+            assert _systems(_assemble(c, thread, "writer")) == [head(), "AGENT-Y"]
 
             # 5. replace axis (inference.system_prompt) coexists with the append — base becomes the
             #    override; the append still appears as its own message after it
@@ -156,7 +155,7 @@ def test_prompt_append_round_trip() -> None:
                 },
             )
             assert r.status_code == 200, r.text
-            assert _systems(_assemble(c, thread)) == ["REPLACED-BASE", "GLOBAL-X"]
+            assert _systems(_assemble(c, thread)) == [head("REPLACED-BASE"), "GLOBAL-X"]
 
 
 def test_whitespace_only_append_treated_as_empty() -> None:
@@ -164,15 +163,13 @@ def test_whitespace_only_append_treated_as_empty() -> None:
     be silently treated as unset rather than emitting a useless blank system message."""
     with _workspace():
         with _client() as c:
-            from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
-
             thread = _make_thread(c)
             r = c.put("/api/settings", json={"inference": {"system_prompt_append": "   \n\t  "}})
             assert r.status_code == 200, r.text
             _put_agent(c, "writer", prompt_append="\n  \n")
             c.put("/api/settings", json={"agent": {"default_agent": "writer"}})
             # neither whitespace-only value should produce a system message
-            assert _systems(_assemble(c, thread, "writer")) == [DEFAULT_SYSTEM_PROMPT]
+            assert _systems(_assemble(c, thread, "writer")) == [head()]
 
 
 def test_clear_global_append_falls_back() -> None:
@@ -180,15 +177,13 @@ def test_clear_global_append_falls_back() -> None:
     the editor's `[Restore default]` flow on the inline append field."""
     with _workspace():
         with _client() as c:
-            from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
-
             thread = _make_thread(c)
             c.put("/api/settings", json={"inference": {"system_prompt_append": "X"}})
-            assert _systems(_assemble(c, thread)) == [DEFAULT_SYSTEM_PROMPT, "X"]
+            assert _systems(_assemble(c, thread)) == [head(), "X"]
 
             r = c.put("/api/settings", json={"inference": {"system_prompt_append": ""}})
             assert r.status_code == 200, r.text
-            assert _systems(_assemble(c, thread)) == [DEFAULT_SYSTEM_PROMPT]
+            assert _systems(_assemble(c, thread)) == [head()]
 
 
 def test_builtin_default_agent_inherits_global_append() -> None:
@@ -196,13 +191,11 @@ def test_builtin_default_agent_inherits_global_append() -> None:
     box, no folder agent needed."""
     with _workspace():
         with _client() as c:
-            from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
-
             thread = _make_thread(c)
             c.put("/api/settings", json={"inference": {"system_prompt_append": "GLOBAL"}})
             # no folder agents → default_agent_def() → the default/root agent
             assert c.app.state.settings.resolve_agent(None).name == "default"
-            assert _systems(_assemble(c, thread)) == [DEFAULT_SYSTEM_PROMPT, "GLOBAL"]
+            assert _systems(_assemble(c, thread)) == [head(), "GLOBAL"]
 
 
 def test_per_agent_append_is_isolated() -> None:
@@ -210,13 +203,11 @@ def test_per_agent_append_is_isolated() -> None:
     string never leaks across agents (a regression-guard for any future global-state shortcut)."""
     with _workspace():
         with _client() as c:
-            from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
-
             thread = _make_thread(c)
             _put_agent(c, "a1", prompt_append="FROM-A1")
             _put_agent(c, "a2", prompt_append="FROM-A2")
-            assert _systems(_assemble(c, thread, "a1")) == [DEFAULT_SYSTEM_PROMPT, "FROM-A1"]
-            assert _systems(_assemble(c, thread, "a2")) == [DEFAULT_SYSTEM_PROMPT, "FROM-A2"]
+            assert _systems(_assemble(c, thread, "a1")) == [head(), "FROM-A1"]
+            assert _systems(_assemble(c, thread, "a2")) == [head(), "FROM-A2"]
 
 
 def test_get_settings_reflects_new_fields() -> None:
@@ -257,16 +248,17 @@ def test_multiline_append_yaml_roundtrip() -> None:
             reloaded = load_settings(cfg)
             assert reloaded.inference.system_prompt_append == text
             # And the loop sees the exact stored content in the assembled messages
-            from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
-
             thread = _make_thread(c)
-            assert _systems(_assemble(c, thread)) == [DEFAULT_SYSTEM_PROMPT, text]
+            assert _systems(_assemble(c, thread)) == [head(), text]
 
 
 def test_default_prompt_endpoint() -> None:
-    """The endpoint that backs `[Load default]` / `[Restore default]` in the editor."""
+    """The endpoint that backs `[Load default]` / `[Restore default]` in the editor. D70: what it
+    serves is the baked VOICE — the persona half alone, which is also what a new agent's SOUL.md is
+    scaffolded with; the duties half is a registry prompt with its own editor row."""
     with _workspace():
         with _client() as c:
+            from app.services.agent.prompts import REGISTRY
             from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
 
             r = c.get("/api/agent/default-prompt")
@@ -274,8 +266,9 @@ def test_default_prompt_endpoint() -> None:
             body = r.json()
             assert body == {"text": DEFAULT_SYSTEM_PROMPT}
             # Sanity-check the baked text actually contains something recognizable so a regression
-            # to an empty/wrong constant is caught.
-            assert "ctrl-b" in body["text"] and len(body["text"]) > 200
+            # to an empty/wrong constant is caught — and that it is the identity half only.
+            assert "ctrl-b" in body["text"] and len(body["text"]) > 100
+            assert REGISTRY["duties_agent"].default not in body["text"]
 
 
 def test_static_prefix_is_cached_per_turn() -> None:

@@ -1552,6 +1552,41 @@ class AttachmentsCfg(BaseModel):
         return self.staging_orphan_hours * 3600.0
 
 
+class RoleplayPersonaCfg(BaseModel):
+    """`roleplay.persona` — the OWNER's persona (ROLEPLAY_PLAN §3.2), global across agents; the
+    per-agent override of the NAME half is `AgentDef.user_name`.
+
+    - `name`: what `{{user}}` renders as. "" → the literal `"User"` (ruling 7's last rung).
+    - `description`: who the owner is, injected as its own head block after the roster when
+      non-empty (§4.2) — the same block for every agent, because the persona is a fact about the
+      owner rather than about any one character.
+    """
+
+    model_config = {"extra": "allow"}
+
+    name: str = ""
+    description: str = ""
+
+
+class RoleplayCfg(BaseModel):
+    """`roleplay` — the character-agent globals (D70 / ROLEPLAY_PLAN §3.2).
+
+    - `enabled` is PRESENTATION ONLY (P2): it shows/hides the UI clutter of the character fields.
+      Nothing server-side branches on it — the §4 assembly is universal, so a character keeps
+      working with the switch off.
+    - `default_tools` is the explicit allowlist written to a newly created/imported character (§5.5,
+      consumed by S2): a minimal starting set the owner freely widens, never a capability ceiling.
+
+    Additive with defaults throughout ⇒ no config migration (the D68 precedent); `extra="allow"` so
+    a config written by a later slice round-trips through this build instead of being dropped."""
+
+    model_config = {"extra": "allow"}
+
+    enabled: bool = False
+    default_tools: list[str] = Field(default_factory=lambda: ["web_search"])
+    persona: RoleplayPersonaCfg = Field(default_factory=RoleplayPersonaCfg)
+
+
 class Settings(BaseModel):
     """Typed view over `config.yaml`.
 
@@ -1597,6 +1632,10 @@ class Settings(BaseModel):
     #: attachment knobs under `media.write` would make one cap answer for the owner's art library and
     #: for whatever the phone attaches to a chat.
     attachments: AttachmentsCfg = Field(default_factory=AttachmentsCfg)
+    #: Character agents (D70) — the UI-visibility switch, the import-time minimal toolset, and the
+    #: owner's own persona. A sibling of `agent`, not a key inside it: the per-agent half of this
+    #: feature lives on `AgentDef` (flat fields, P1), and this section holds only what is GLOBAL.
+    roleplay: RoleplayCfg = Field(default_factory=RoleplayCfg)
     openapi_servers: list[OpenApiServerCfg] = Field(default_factory=list)
     mcp_servers: list[McpServerCfg] = Field(default_factory=list)
     #: Agents are **folder-only** (D14/D15 #3): discovered by scanning `$CTRLB_HOME/agents/<name>/`

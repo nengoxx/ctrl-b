@@ -643,8 +643,9 @@ def test_an_off_slot_never_creates_the_corpus_root(tmp_path):
 def test_the_index_block_sits_between_memory_and_the_skills_note(tmp_path):
     """§4: system → appends → roster → tier-1 memory → **core index** → skills note. Asserted as the
     whole rendered sequence, since a minimal fixture has no roster and each block is optional."""
+    from test_roleplay_s0 import head  # the D70 head shape, derived in ONE place (§4.1)
+
     from app.services.agent.prompts import resolve
-    from app.services.agent.session import DEFAULT_SYSTEM_PROMPT
 
     corpus = _seeded(tmp_path)
     settings = corpus._settings
@@ -654,7 +655,7 @@ def test_the_index_block_sits_between_memory_and_the_skills_note(tmp_path):
     index = corpus.render_index()
     expected = resolve("core_memory_policy", settings) + "\n\n" + index
     assert [m["content"] for m in session._static_prefix()] == [
-        DEFAULT_SYSTEM_PROMPT,
+        head(),
         provider.load_context(settings.resolve_agent(None)),
         expected,
         "Skill instructions.",

@@ -301,6 +301,20 @@ agent:
 #     # them — so this caps its WRITES.
 #     max_calls: 12
 
+# Character agents (D70) — the GLOBAL half of the feature; the per-agent half lives on each
+# `agents/<slug>/agent.yaml` as ordinary flat fields (duties, greeting, scenario, post_history, …).
+# `enabled` is presentation only — it shows/hides the character fields in the UI; nothing on the
+# server branches on it, so a character keeps working with the switch off. `default_tools` is the
+# minimal allowlist written to a newly imported character (widen it freely per agent). `persona` is
+# who YOU are: `name` is what `{{user}}` renders as, and a non-empty `description` is injected as
+# its own block after the fleet roster, for every agent.
+# roleplay:
+#   enabled: false
+#   default_tools: [web_search]
+#   persona:
+#     name: ""
+#     description: ""
+
 # Voice subsystem (Phase 6; A11/D48 Slice 2) — push-to-talk STT + read-aloud TTS. Each service POINTS at
 # the `providers` map above: a flat `provider` primary (+ `model`, omittable iff the catalog has exactly
 # one model) and an ordered `fallbacks` chain that ALWAYS walks on any failure (a down endpoint degrades;

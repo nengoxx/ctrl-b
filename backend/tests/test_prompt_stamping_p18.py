@@ -161,6 +161,16 @@ def _default_hash(prompt_id: str) -> str:
     return template_hash(REGISTRY[prompt_id].default)
 
 
+#: The stamps EVERY head carries since D70 (ROLEPLAY_PLAN §4.1): the two section framings plus the
+#: duties text the agent's `duties` setting selected. They ride the same `_static_prefix` resolve
+#: pass `fleet_roster` does, so every turn below expects them beside whatever it is really testing.
+_HEAD = ("voice_heading", "duties_heading", "duties_agent")
+
+
+def _head_stamps(**extra: str) -> dict[str, str]:
+    return {pid: _default_hash(pid) for pid in _HEAD} | extra
+
+
 def _tiny_compaction():
     """Floors low enough that a short seeded thread actually folds (the `test_compaction_w3` idiom) —
     these tests are about what the summary MESSAGE carries, not about the trigger."""
@@ -178,7 +188,7 @@ def test_a_turn_stamps_the_prompts_that_reached_the_model() -> None:
         _run(session, thread)
 
         (assistant,) = _assistants(c, thread.id)
-        assert assistant.prompt_stamps == {"fleet_roster": _default_hash("fleet_roster")}
+        assert assistant.prompt_stamps == _head_stamps(fleet_roster=_default_hash("fleet_roster"))
         # …and ONLY that: a prompt whose text never reached this call (the wrap-up nudge, the C2
         # steering texts, the summarizer) is not in the set.
         assert "wrapup_nudge" not in assistant.prompt_stamps
@@ -203,7 +213,7 @@ def test_an_override_changes_the_hash_to_its_own_template() -> None:
         _run(session, thread)
 
         (assistant,) = _assistants(c, thread.id)
-        assert assistant.prompt_stamps == {"fleet_roster": template_hash("My machines:")}
+        assert assistant.prompt_stamps == _head_stamps(fleet_roster=template_hash("My machines:"))
 
 
 def test_an_append_hashes_the_composed_template_not_either_half() -> None:
@@ -218,7 +228,7 @@ def test_an_append_hashes_the_composed_template_not_either_half() -> None:
 
         (assistant,) = _assistants(c, thread.id)
         composed = REGISTRY["fleet_roster"].default + "\n\nPrefer the desktop."
-        assert assistant.prompt_stamps == {"fleet_roster": template_hash(composed)}
+        assert assistant.prompt_stamps == _head_stamps(fleet_roster=template_hash(composed))
 
 
 # ── 2. C-17: a mid-turn edit is represented, not hidden ─────────────────────────────────────────
@@ -456,7 +466,7 @@ def test_an_update_keeps_the_metadata_the_message_was_written_with() -> None:
         _run(session, thread)
 
         with_calls = next(m for m in _assistants(c, thread.id) if m.tool_calls())
-        assert with_calls.prompt_stamps == {"fleet_roster": _default_hash("fleet_roster")}
+        assert with_calls.prompt_stamps == _head_stamps(fleet_roster=_default_hash("fleet_roster"))
         assert with_calls.tool_calls()[0].state.value == "denied"  # the flip landed too
 
 
@@ -479,7 +489,7 @@ def test_metadata_lives_in_its_own_column_and_parts_stays_content() -> None:
 
         (row,) = run_async(_query())
         assert json.loads(row["parts"]) == [{"type": "text", "text": "done"}]
-        assert json.loads(row["stamps"]) == {"fleet_roster": _default_hash("fleet_roster")}
+        assert json.loads(row["stamps"]) == _head_stamps(fleet_roster=_default_hash("fleet_roster"))
 
 
 def test_migration_6_adds_the_column_to_a_legacy_database_and_old_rows_read_null() -> None:
@@ -602,7 +612,7 @@ def test_a_subagent_turn_stamps_its_own_messages() -> None:
         run_async(_drain(child, thread))
 
         (assistant,) = _assistants(c, thread.id)
-        assert assistant.prompt_stamps == {"fleet_roster": _default_hash("fleet_roster")}
+        assert assistant.prompt_stamps == _head_stamps(fleet_roster=_default_hash("fleet_roster"))
 
 
 async def _drain(session, thread, text: str = "do it"):
