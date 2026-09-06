@@ -70,6 +70,12 @@ export interface UIState {
   // the resting state and this switch is how the subtitle comes back. A theme that fills no subtitle shows
   // nothing in either state: there is no default text (the kit's old "dashboard" literal is dead).
   appbarSubtitleVisible: boolean;
+  // The transcript AVATARS (D70 §8.5, ruling 20) — whether an assistant who-line leads with the message
+  // agent's avatar instead of the 6px role dot. SYNCED with the rest of appearance, and GLOBAL rather
+  // than per-agent: it is one answer to "do I want faces in my transcript" (the Agnai scope), and a
+  // per-agent hide flag would be the similar-things trap. Default ON — an agent with no avatar renders
+  // the dot either way, so the switch does nothing until the owner gives one a picture.
+  chatAvatarsVisible: boolean;
   // The INSTALLED home-screen icon's baked-in backdrop (D59 / W5) — one id from the backend's
   // `PWA_ICON_VARIANTS` (`app/core/pwa.py`), which is what `/manifest.webmanifest` turns into the maskable
   // icon's `src`. Nothing in the running app reads it: the value's only consumer is the manifest the
@@ -119,6 +125,7 @@ const DEFAULTS: UIState = {
   perf: "full", // default to the full glass look; the owner opts into "lite" on a slow device
   kitBackgroundVisible: true, // a dropped background shows without a second step (it is off until one exists)
   appbarSubtitleVisible: false, // G6.3's icon + title only stands as the default; the switch opts back in
+  chatAvatarsVisible: true, // an agent given a picture wears it without a second step (dot until then)
   pwaIconBackground: null, // unpicked → the backend's DEFAULT_PWA_ICON_BG (the unchanged transparent icon)
   themeSettings: {}, // per-theme overrides resolve against each ThemeDef.settings default
   appbarMode: "visible", // global per-device chrome lever; every theme's Root honors it

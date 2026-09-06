@@ -187,6 +187,17 @@ describe("audioController — whole-message path (chunking: off)", () => {
     expect(JSON.parse(String(init.body))).toEqual({ text: "hello" });
   });
 
+  // D70 §8.5 (ruling 21) — WHOSE turn is being read. The server turns the name into that agent's
+  // `AgentDef.voice`; ABSENT is the whole fallback contract, so a turn with no agent must send NO field
+  // (the case pinned by the request-shape assertion just above).
+  it("names the message's agent when it has one, in the same one request the text rides", async () => {
+    await act(async () => {
+      await toggle("m1", "hello", "lynette");
+    });
+    const init = vi.mocked(globalThis.fetch).mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({ text: "hello", agent: "lynette" });
+  });
+
   it("toggling the same message pauses then resumes — no re-synth (cache hit)", async () => {
     const { result } = renderHook(() => usePlayback((p) => p));
     await act(async () => {
@@ -328,6 +339,29 @@ describe("audioController — the chunk queue (D63)", () => {
     expect(lastAudio.src).toBe("blob:1");
     // chunk 1 playing + chunk 2 in flight; chunk 3 is NOT requested yet (depth 1).
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("carries the agent on EVERY chunk — one reply is read in one voice (D70 §8.5)", async () => {
+    await act(async () => {
+      await toggle("m1", REPLY, "lynette");
+    });
+    await flush();
+    const bodies = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.map((c) => JSON.parse(String((c[1] as RequestInit).body)) as { agent?: string });
+    expect(bodies.length).toBeGreaterThan(1);
+    expect(bodies.every((b) => b.agent === "lynette")).toBe(true);
+  });
+
+  it("omits the field entirely on a turn with no agent — the pre-D70 request shape", async () => {
+    await act(async () => {
+      await toggle("m1", REPLY);
+    });
+    await flush();
+    const bodies = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.map((c) => JSON.parse(String((c[1] as RequestInit).body)) as object);
+    expect(bodies.every((b) => !("agent" in b))).toBe(true);
   });
 
   it("advances on `ended` by swapping src, and rewinds to the top when the queue drains", async () => {

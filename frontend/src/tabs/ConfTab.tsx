@@ -865,6 +865,7 @@ export function ConfTab({ active }: Props) {
   const perf = useUISlice((s) => s.perf);
   const kitBackgroundVisible = useUISlice((s) => s.kitBackgroundVisible); // the shared kit background switch
   const appbarSubtitleVisible = useUISlice((s) => s.appbarSubtitleVisible); // the app bar's brand-subtitle switch
+  const chatAvatarsVisible = useUISlice((s) => s.chatAvatarsVisible); // the transcript-avatar switch (D70 §8.5)
   const pwaIconBackground = useUISlice((s) => s.pwaIconBackground); // the installed-icon backdrop (D59)
   const appbarMode = useUISlice((s) => s.appbarMode); // global, per-device (local) — every theme honors it
   const layout = useUISlice((s) => s.layout); // the RAW section-layout lever (auto/4/3/2) — device-local like App bar
@@ -952,6 +953,7 @@ export function ConfTab({ active }: Props) {
     perf?: typeof perf;
     kitBackgroundVisible?: boolean;
     appbarSubtitleVisible?: boolean;
+    chatAvatarsVisible?: boolean;
     pwaIconBackground?: string | null;
   }) => {
     setUI(patch);
@@ -2857,6 +2859,20 @@ export function ConfTab({ active }: Props) {
               on={kitBackgroundVisible}
               label="Shared background"
               onToggle={() => setGlobal({ kitBackgroundVisible: !kitBackgroundVisible })}
+            />
+          </SettingRow>
+          {/* D70 §8.5 (ruling 20) — the transcript avatars. Synced like the switches above: it is one
+              answer to "do I want faces in my chat", not a per-screen choice. The copy has to stay
+              truthful for an owner who has given nobody a picture yet — with the switch ON and no
+              avatars set, the transcript looks exactly as it does now. */}
+          <SettingRow
+            label="Chat avatars"
+            desc="an agent's picture leads its replies · off keeps the plain dot"
+          >
+            <Switch
+              on={chatAvatarsVisible}
+              label="Chat avatars"
+              onToggle={() => setGlobal({ chatAvatarsVisible: !chatAvatarsVisible })}
             />
           </SettingRow>
           {/* Global, per-device (local — not synced like motion/perf): every theme's Root honors it.

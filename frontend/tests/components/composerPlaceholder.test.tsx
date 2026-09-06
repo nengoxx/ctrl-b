@@ -23,6 +23,15 @@ import type { ComposerVariant } from "../../src/theme-engine/kit/composer/types"
 //
 // The suggest popover's react-query consumers aren't needed: the variants render the textarea directly.
 
+vi.mock("../../src/hooks/useAgentArt", () => ({
+  // D70 §8.5/§8.4 — the agent-art resolver is a QUERY PAIR (roster + media index), so it is mocked to the
+  // NO-ART answer here (which is the state every assertion in this file is about) rather than dragging a
+  // QueryClient in — the same reason `useActionSpecs` is mocked in these suites.
+  useAgentArt: () => (name: string | null) => ({
+    name: name ?? "default",
+    title: name ?? "default",
+  }),
+}));
 vi.mock("../../src/hooks/useComposer", () => ({
   useComposer: () => ({
     draft: "",

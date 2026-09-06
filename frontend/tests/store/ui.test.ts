@@ -106,6 +106,7 @@ describe("ui store", () => {
     themeSettings: {},
     kitBackgroundVisible: true,
     appbarSubtitleVisible: false,
+    chatAvatarsVisible: true,
     pwaIconBackground: null,
     appbarMode: "visible",
     layout: "auto",

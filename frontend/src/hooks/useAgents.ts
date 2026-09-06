@@ -52,6 +52,22 @@ export interface AgentDef {
   prompt: string; // persona = SOUL.md (read-only here; edited via the soul endpoint)
   prompt_append: string;
   inherit_append: boolean;
+  // ── Phase 23 / D70 (ROLEPLAY_PLAN §3.1) — the roleplay half of an agent, flat and all optional on
+  // the backend. Declared here so the editor's draft is TYPED over them; they already round-tripped
+  // through the index signature below, and `pickFields` spreads the rest, so every one of them reaches
+  // `PUT /agents/{name}` whether or not a form edits it yet.
+  duties: "agent" | "conversational"; // which duties prompt rides in the head (§4.1)
+  greeting: string; // `first_mes` — the seeded opening message; "" → none
+  alt_greetings: string[]; // `alternate_greetings`, stored so an imported card round-trips losslessly
+  example_dialogue: string; // `mes_example` — `<START>`-delimited turns, kept in the ST format verbatim
+  scenario: string;
+  post_history: string; // `post_history_instructions` — emitted AFTER the history (§4.2)
+  user_name: string; // per-agent `{{user}}` override; "" → the persona name → "User"
+  avatar: string; // an entry name in the `agents/avatars` library (§8.1); "" → none
+  background: string; // an entry name in `agents/backgrounds`; "" → the theme default
+  voice: string; // TTS voice id (ruling 21); "" → the global `voice.tts` chain
+  lorebooks: string[]; // attached book slugs (§6.5)
+  card: Record<string, unknown>; // the import stash — provenance, NEVER prompt-facing (§5.3)
   model: ModelRef;
   tools: string[] | "*";
   skills: string[] | "*";
@@ -132,9 +148,35 @@ export function pickFields(a: AgentDef): AgentFields {
   return rest;
 }
 
+/** One agent's SHOWCASE facts, as `GET /agents` publishes them (D70 §10-S4 — the backend's
+ *  `_SUMMARY_FIELDS`). Everything else about an agent stays behind `GET /agents/{name}`.
+ *
+ *  `avatar`/`background` are library ENTRY NAMES in the `agents` media namespace, not URLs: turning
+ *  one into a URL + focal point is the media index's join, and `hooks/useAgentArt` is where it
+ *  happens — once, for the picker, the who-line and the gallery alike. */
+export interface AgentSummary {
+  title: string;
+  description: string;
+  avatar: string;
+  background: string;
+  voice: string;
+}
+
+/** `GET /api/agents` — the names, the resolved default, and one summary per agent (the default
+ *  included, so `default` can be looked up in the map).
+ *
+ *  `summaries` is declared OPTIONAL for the reason the media wire fields are: a client can be handed a
+ *  pre-D70 response (a service-worker cache from before an update, an e2e mock) and every consumer
+ *  degrades to the name-only rendering rather than throwing. The server always sends it. */
+export interface AgentListing {
+  agents: string[];
+  default: string;
+  summaries?: Record<string, AgentSummary>;
+}
+
 /** Discovered specialist names + the resolved default slug (tab-scoped — Conf-only data). */
 export function useAgentList() {
-  return useScopedQuery<{ agents: string[]; default: string }>("conf", {
+  return useScopedQuery<AgentListing>("conf", {
     queryKey: ["agentlist"],
     queryFn: () => getJSON("/api/agents"),
     staleTime: 30_000,
@@ -145,7 +187,7 @@ export function useAgentList() {
  *  uses `default` to attribute per-turn agents on assistant bubbles (7e-c) — a turn is labelled only
  *  when its `agent` differs from this. Reuses the `["agents"]` key the agent mutations invalidate. */
 export function useAgentRoster() {
-  return useQuery<{ agents: string[]; default: string }>({
+  return useQuery<AgentListing>({
     queryKey: ["agents"],
     queryFn: () => getJSON("/api/agents"),
     staleTime: 30_000,

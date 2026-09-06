@@ -7,13 +7,14 @@
 // (`useSaveAppearance`, used by the Conf picker).
 //
 // The synced unit is {theme, mode, accent, motion, perf, themeSettings, kitBackgroundVisible,
-// appbarSubtitleVisible, pwaIconBackground} — one LWW stamp covers all of them (owner directive 2026-06-26: motion + perf are
+// appbarSubtitleVisible, chatAvatarsVisible, pwaIconBackground} — one LWW stamp covers all of them (owner directive 2026-06-26: motion + perf are
 // device levers but kept consistent across devices; themeSettings carries each theme's namespaced options;
 // the kit background switch governs one SHARED image, so it is not a per-device choice either; the app-bar
 // brand-subtitle switch is one answer to "how much text do I want in my bar", not a per-screen layout
-// choice — unlike `ui.appbarMode`, which stays device-local). The WIRE uses snake_case `theme_settings` /
-// `kit_background_visible` / `appbar_subtitle_visible` / `pwa_icon_background` (matching the existing
-// `updated_at`); the store uses camelCase — bridged here.
+// choice — unlike `ui.appbarMode`, which stays device-local; the transcript-avatar switch is one answer to
+// "do I want faces in my chat", D70 §8.5). The WIRE uses snake_case `theme_settings` /
+// `kit_background_visible` / `appbar_subtitle_visible` / `chat_avatars_visible` / `pwa_icon_background`
+// (matching the existing `updated_at`); the store uses camelCase — bridged here.
 
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,6 +46,7 @@ export interface AppearanceDoc {
   theme_settings: ThemeSettingsMap | null; // snake on the wire (mirrors AppearanceCfg); → store `themeSettings`
   kit_background_visible: boolean | null; // the Kit Art System's shared-background switch; → store `kitBackgroundVisible`
   appbar_subtitle_visible: boolean | null; // the app bar's brand-subtitle switch; → store `appbarSubtitleVisible`
+  chat_avatars_visible: boolean | null; // the transcript avatar switch (D70 §8.5); → store `chatAvatarsVisible`
   pwa_icon_background: string | null; // the installed-icon backdrop id (D59); → store `pwaIconBackground`
   updated_at: string | null; // server-stamped; carried for a future conflict check (none built — LWW)
 }
@@ -59,6 +61,7 @@ export interface AppearanceLocal {
   themeSettings: ThemeSettingsMap;
   kitBackgroundVisible: boolean;
   appbarSubtitleVisible: boolean;
+  chatAvatarsVisible: boolean;
   pwaIconBackground: string | null;
 }
 
@@ -73,6 +76,7 @@ export interface AppearanceApply {
   themeSettings: ThemeSettingsMap;
   kitBackgroundVisible: boolean;
   appbarSubtitleVisible: boolean;
+  chatAvatarsVisible: boolean;
   pwaIconBackground: string | null;
 }
 
@@ -113,6 +117,7 @@ export function reconcileAppearance(
   const perf = server.perf ?? local.perf;
   const kitBackgroundVisible = server.kit_background_visible ?? local.kitBackgroundVisible;
   const appbarSubtitleVisible = server.appbar_subtitle_visible ?? local.appbarSubtitleVisible;
+  const chatAvatarsVisible = server.chat_avatars_visible ?? local.chatAvatarsVisible;
   const pwaIconBackground = server.pwa_icon_background ?? local.pwaIconBackground;
   // Strip the dead per-theme `hideAppbar` (now the global appbarMode) so a stale SYNCED copy can't re-dirty
   // local each load (it's already stripped from local by the migration → compares clean, no spurious apply;
@@ -133,6 +138,7 @@ export function reconcileAppearance(
     perf === local.perf &&
     kitBackgroundVisible === local.kitBackgroundVisible &&
     appbarSubtitleVisible === local.appbarSubtitleVisible &&
+    chatAvatarsVisible === local.chatAvatarsVisible &&
     pwaIconBackground === local.pwaIconBackground &&
     stableStringify(themeSettings) === stableStringify(local.themeSettings)
   ) {
@@ -147,6 +153,7 @@ export function reconcileAppearance(
     themeSettings,
     kitBackgroundVisible,
     appbarSubtitleVisible,
+    chatAvatarsVisible,
     pwaIconBackground,
   };
 }
@@ -176,6 +183,7 @@ export function useAppearanceSync(): void {
       themeSettings: ui.themeSettings,
       kitBackgroundVisible: ui.kitBackgroundVisible,
       appbarSubtitleVisible: ui.appbarSubtitleVisible,
+      chatAvatarsVisible: ui.chatAvatarsVisible,
       pwaIconBackground: ui.pwaIconBackground,
     };
     // Real registry predicate for the reconcile skin door (item ⑥). Importing `registry` here is fine —
@@ -208,6 +216,7 @@ export function useAppearanceSync(): void {
         themeSettings: next.themeSettings,
         kitBackgroundVisible: next.kitBackgroundVisible,
         appbarSubtitleVisible: next.appbarSubtitleVisible,
+        chatAvatarsVisible: next.chatAvatarsVisible,
         pwaIconBackground: next.pwaIconBackground,
       });
     } else {
@@ -219,6 +228,7 @@ export function useAppearanceSync(): void {
         themeSettings: next.themeSettings,
         kitBackgroundVisible: next.kitBackgroundVisible,
         appbarSubtitleVisible: next.appbarSubtitleVisible,
+        chatAvatarsVisible: next.chatAvatarsVisible,
         pwaIconBackground: next.pwaIconBackground,
       });
     }
@@ -234,6 +244,7 @@ export interface AppearancePatch {
   themeSettings: ThemeSettingsMap;
   kitBackgroundVisible: boolean;
   appbarSubtitleVisible: boolean;
+  chatAvatarsVisible: boolean;
   pwaIconBackground: string | null;
 }
 
@@ -250,6 +261,7 @@ export function currentAppearancePatch(): AppearancePatch {
     themeSettings: ui.themeSettings,
     kitBackgroundVisible: ui.kitBackgroundVisible,
     appbarSubtitleVisible: ui.appbarSubtitleVisible,
+    chatAvatarsVisible: ui.chatAvatarsVisible,
     pwaIconBackground: ui.pwaIconBackground,
   };
 }
@@ -273,6 +285,7 @@ export function useSaveAppearance() {
           theme_settings: patch.themeSettings, // camel store → snake wire
           kit_background_visible: patch.kitBackgroundVisible,
           appbar_subtitle_visible: patch.appbarSubtitleVisible,
+          chat_avatars_visible: patch.chatAvatarsVisible,
           pwa_icon_background: patch.pwaIconBackground,
         },
       }),
@@ -288,6 +301,7 @@ export function useSaveAppearance() {
         theme_settings: patch.themeSettings,
         kit_background_visible: patch.kitBackgroundVisible,
         appbar_subtitle_visible: patch.appbarSubtitleVisible,
+        chat_avatars_visible: patch.chatAvatarsVisible,
         pwa_icon_background: patch.pwaIconBackground,
         updated_at: old?.updated_at ?? null,
       }));

@@ -14,6 +14,15 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 //   · an attachment-only turn renders NO empty caption bubble (that message has no text part at all).
 
 vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: [] }) }));
+vi.mock("../../src/hooks/useAgentArt", () => ({
+  // D70 §8.5/§8.4 — the agent-art resolver is a QUERY PAIR (roster + media index), so it is mocked to the
+  // NO-ART answer here (which is the state every assertion in this file is about) rather than dragging a
+  // QueryClient in — the same reason `useActionSpecs` is mocked in these suites.
+  useAgentArt: () => (name: string | null) => ({
+    name: name ?? "default",
+    title: name ?? "default",
+  }),
+}));
 
 import { ChatThread } from "../../src/components/ChatThread";
 import type { AgentChat } from "../../src/hooks/useAgentChat";

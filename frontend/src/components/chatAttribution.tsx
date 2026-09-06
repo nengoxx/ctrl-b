@@ -141,6 +141,7 @@ export function BotWhoLine({
   m,
   label,
   time,
+  avatar,
   children,
 }: {
   m: ChatMessage;
@@ -148,6 +149,12 @@ export function BotWhoLine({
   label: string;
   /** The already-formatted `hh:mm` (ChatThread owns the clock format). */
   time: string;
+  /** D70 §8.5 (ruling 20) — the message agent's avatar, when the Appearance switch is on AND that
+   *  agent has one. Present ⇒ the line leads with it as a small circle IN THE DOT'S POSITION; absent ⇒
+   *  the `.who::before` dot renders exactly as it always has (switch off, no art, retired art). The
+   *  RESOLUTION is the caller's (ChatThread holds the one resolver for the whole log) — this component
+   *  only decides which of the two it draws. */
+  avatar?: string;
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -156,7 +163,13 @@ export function BotWhoLine({
   const toggle = () => setOpen((o) => !o);
   return (
     <>
-      <div className="who" onClick={rows.length ? toggle : undefined}>
+      <div
+        className={"who" + (avatar ? " has-avatar" : "")}
+        onClick={rows.length ? toggle : undefined}
+      >
+        {/* Decoration: the speaker is already the label right beside it, so an `alt` here would make AT
+            announce the same turn twice. */}
+        {avatar && <img className="who-face" src={avatar} alt="" draggable={false} />}
         {label} ·{" "}
         {source && (
           <>

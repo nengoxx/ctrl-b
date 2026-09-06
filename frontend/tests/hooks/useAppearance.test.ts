@@ -12,7 +12,8 @@ import type { ThemeSettingField } from "../../src/theme-engine/types";
 
 // Phase 11 / D28 §9.11 + M3 §14.3 — the cross-device reconcile decision (compare-then-set, server-wins,
 // but only when the server has a recorded preference). The synced unit is
-// {theme,mode,accent,motion,perf,themeSettings,kitBackgroundVisible,appbarSubtitleVisible,pwaIconBackground}.
+// {theme,mode,accent,motion,perf,themeSettings,kitBackgroundVisible,appbarSubtitleVisible,
+// chatAvatarsVisible,pwaIconBackground}.
 // Pure function
 // → tested directly.
 
@@ -25,6 +26,7 @@ const local: AppearanceLocal = {
   themeSettings: { vapor: { heroOn: true } },
   kitBackgroundVisible: true,
   appbarSubtitleVisible: false,
+  chatAvatarsVisible: true,
   pwaIconBackground: null,
 };
 const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
@@ -36,6 +38,7 @@ const server = (o: Partial<AppearanceDoc>): AppearanceDoc => ({
   theme_settings: { vapor: { heroOn: true } },
   kit_background_visible: true,
   appbar_subtitle_visible: false,
+  chat_avatars_visible: true,
   pwa_icon_background: null,
   updated_at: "2026-06-26T12:00:00Z",
   ...o,
@@ -66,6 +69,7 @@ describe("reconcileAppearance", () => {
       themeSettings: { vapor: { heroOn: true } },
       kitBackgroundVisible: true,
       appbarSubtitleVisible: false,
+      chatAvatarsVisible: true,
       pwaIconBackground: null,
     });
   });
@@ -206,6 +210,7 @@ describe("reconcileAppearance", () => {
       themeSettings: { vapor: { heroOn: true } },
       kitBackgroundVisible: true,
       appbarSubtitleVisible: false,
+      chatAvatarsVisible: true,
       pwaIconBackground: null,
     });
   });
@@ -238,6 +243,7 @@ describe("reconcileAppearance", () => {
         themeSettings: { vapor: { heroOn: false } }, // namespaced settings still applied
         kitBackgroundVisible: true, // global lever, unchanged here — still carried whole
         appbarSubtitleVisible: false, // ditto — the subtitle switch rides the same whole-doc apply
+        chatAvatarsVisible: true, // ditto — the transcript-avatar switch (D70 §8.5)
         pwaIconBackground: null, // ditto — the installed-icon backdrop rides it too
       });
     });

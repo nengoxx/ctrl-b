@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 
+import { FocalImg } from "../../../../components/FocalImg";
+import { useAgentArt, type AgentArt } from "../../../../hooks/useAgentArt";
 import {
   getDefaultAgent,
   getKnownAgents,
@@ -61,6 +63,9 @@ export function ToolsMenuSheet() {
 
   const agents = getKnownAgents();
   const skills = getKnownSkills();
+  // D70 §8.4 — the picker's rows lead with the agent's avatar where it has one. Resolved ONCE here and
+  // threaded down: the rows are a `.map()`, and one resolver serves the whole group (`useAgentArt`).
+  const art = useAgentArt();
   const armed = scope.agent !== undefined || scope.skills.length > 0;
   // The radio group must tell the TRUTH about where the next message goes: the armed pick if the menu armed
   // one, else the sticky `/agent <name>` a plain send would use, else the configured default. Reading the
@@ -101,9 +106,10 @@ export function ToolsMenuSheet() {
             tag="default"
             on={effectiveAgent === null}
             value={null}
+            art={art}
           />
           {agents.map((n) => (
-            <AgentRow key={n} name={n} on={effectiveAgent === n} value={n} />
+            <AgentRow key={n} name={n} on={effectiveAgent === n} value={n} art={art} />
           ))}
         </div>
       </div>
@@ -150,6 +156,9 @@ export function ToolsMenuSheet() {
 
 /** One agent radio row. `value` is what gets armed — `null` for the default/root agent.
  *
+ *  D70 §8.4 — the name is LED by the agent's avatar as a small circle when it has one; an agent with no
+ *  art (every agent before this phase) renders exactly the row it always did.
+ *
  *  A NATIVE `<input type="radio">` (Codex, round 2), not a `role="radio"` button: the ARIA role promises
  *  arrow-key selection within the group, and hand-rolling that (roving tabindex + Home/End + wrap) is a
  *  widget the browser already ships. Same-`name` inputs give it for free, along with checked state and the
@@ -161,12 +170,15 @@ function AgentRow({
   tag,
   on,
   value,
+  art,
 }: {
   name: string;
   tag?: string;
   on: boolean;
   value: string | null;
+  art: (name: string | null) => AgentArt;
 }) {
+  const avatar = art(value).avatar;
   return (
     <label className={"tools-row" + (on ? " on" : "")}>
       <input
@@ -179,6 +191,18 @@ function AgentRow({
       <span className="tools-tick" aria-hidden>
         {on ? "•" : ""}
       </span>
+      {/* ADDITIVE, never a swap: the tick keeps the selection gutter (which is what lines the names
+          up), and the picture leads the name. A row for an agent with no avatar is byte-identical to
+          today's. `alt=""` — the name is right beside it, so the image is decoration. */}
+      {avatar && (
+        <FocalImg
+          className="tools-face"
+          src={avatar.url}
+          art={avatar.focus}
+          alt=""
+          draggable={false}
+        />
+      )}
       <span className="tools-name">{name}</span>
       {tag && <span className="tools-tag">{tag}</span>}
     </label>

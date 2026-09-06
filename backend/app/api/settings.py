@@ -57,8 +57,9 @@ async def get_settings(request: Request, response: Response) -> dict[str, Any]:
 async def get_appearance(request: Request) -> dict[str, Any]:
     """The active appearance selection only (Phase 11 / D28 §9.11, extended M3 §14.3):
     `{theme, mode, accent, motion, perf, theme_settings, kit_background_visible,
-    appbar_subtitle_visible, updated_at}` (the M3 fields, the Kit Art System's shared-background switch and
-    the app-bar brand-subtitle switch null until seeded).
+    appbar_subtitle_visible, chat_avatars_visible, updated_at}` (the M3 fields, the Kit Art System's
+    shared-background switch, the app-bar brand-subtitle switch and the transcript-avatar switch null
+    until seeded).
 
     A lightweight always-on read — the `ui` store reconciles against it on mount (the full
     `GET /api/settings` is Conf-tab-scoped on the client, so it can't drive first-paint/reconcile).

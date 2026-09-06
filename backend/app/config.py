@@ -991,6 +991,13 @@ class AppearanceCfg(BaseModel):
     #: shows nothing in EITHER state: there is no default text, the kit's retired "dashboard" literal
     #: included. Same unseeded-until-written contract as the fields above.
     appbar_subtitle_visible: bool | None = None
+    #: The TRANSCRIPT AVATARS switch (D70 §8.5, ruling 20) — whether an assistant who-line leads with the
+    #: message agent's avatar instead of the role dot. Synced rather than per-device for the same reason as
+    #: the two switches above: it is one answer to "do I want faces in my chat", not a per-screen layout
+    #: choice, and the art it governs is per-AGENT (shared) while the mode is the owner's viewing
+    #: preference. The client default is **on** — an agent with no avatar draws the dot either way, so the
+    #: switch does nothing until one is given a picture. Same unseeded-until-written contract.
+    chat_avatars_visible: bool | None = None
     #: The installed home-screen icon's baked-in backdrop (D59 / W5) — one id from `PWA_ICON_VARIANTS`,
     #: which `/manifest.webmanifest` turns into that variant's maskable `src`. Synced like the switches
     #: above rather than device-local: it is one answer to "what does my app icon look like", and the

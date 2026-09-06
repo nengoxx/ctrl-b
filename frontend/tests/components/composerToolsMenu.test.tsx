@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadAgents, loadSkills } from "../../src/lib/composer";
@@ -17,7 +17,39 @@ import { kitToolsMenuSlots } from "../../src/theme-engine/kit/composer/toolsMenu
 // contract, the one-shot arming the rows write, and the shared overlay slot (opening the menu closes the
 // plan sheet). The store mechanics live in tests/store/composerScope|composerOverlay.test.ts.
 
-const AGENTS = { agents: ["ops", "research"], default: "default" };
+// D70 §10-S4 — `GET /agents` now also carries the SUMMARY map. Only `ops` binds an avatar here, so the
+// avatar assertions below read a mixed list (the shape the picker actually meets).
+const AGENTS = {
+  agents: ["ops", "research"],
+  default: "default",
+  summaries: {
+    default: { title: "", description: "", avatar: "", background: "", voice: "" },
+    ops: { title: "Ops Bot", description: "", avatar: "ops.png", background: "", voice: "" },
+    research: { title: "", description: "", avatar: "", background: "", voice: "" },
+  },
+};
+const AGENT_MEDIA = {
+  ns: "agents",
+  collation: "library-v1",
+  slots: {},
+  roles: {
+    avatars: [
+      {
+        name: "ops",
+        file: "ops.png",
+        url: "/api/media/agents/files/avatars/ops.png",
+        format: "png",
+        size_bytes: 100,
+        revision: "r1",
+        width: 64,
+        height: 64,
+        unusable: false,
+        unusable_reason: null,
+      },
+    ],
+    backgrounds: [],
+  },
+};
 const SKILLS = [{ name: "deploy" }, { name: "backups" }];
 
 beforeEach(async () => {
@@ -30,6 +62,8 @@ beforeEach(async () => {
     const u = String(url);
     if (u.includes("/api/agents"))
       return Promise.resolve({ ok: true, json: () => Promise.resolve(AGENTS) } as Response);
+    if (u.includes("/api/media/agents"))
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(AGENT_MEDIA) } as Response);
     if (u.includes("/api/skills"))
       return Promise.resolve({ ok: true, json: () => Promise.resolve(SKILLS) } as Response);
     return Promise.resolve({ ok: false } as Response);
@@ -241,5 +275,25 @@ describe("tools menu — the shared composer-overlay slot", () => {
     expect(getComposerOverlay()).toBe("suggest");
     unmount();
     expect(getComposerOverlay()).toBe(null);
+  });
+});
+
+// ── D70 §8.4 — the picker's agent AVATARS. Additive: the tick keeps the selection gutter (that is what
+// lines the names up) and the picture leads the name, so a row for an agent with no avatar is the row
+// this panel has always drawn.
+describe("tools menu — agent avatars (D70 §8.4)", () => {
+  it("shows the avatar only on the row whose agent binds one, and keeps the rest unchanged", async () => {
+    const { container } = renderComposer();
+    fireEvent.click(trigger(container));
+    // the two queries behind the resolver (roster + media index) settle asynchronously
+    await waitFor(() => expect(container.querySelectorAll("img.tools-face").length).toBe(1));
+    const rows = radios(container);
+    expect(rows.map(rowName)).toEqual(["default", "ops", "research"]); // the list itself is untouched
+    const withFace = rows.filter((r) => r.closest("label")?.querySelector("img.tools-face"));
+    expect(withFace.map(rowName)).toEqual(["ops"]);
+    const face = container.querySelector<HTMLImageElement>("img.tools-face")!;
+    expect(face.getAttribute("src")).toBe("/api/media/agents/files/avatars/ops.png?rev=r1");
+    // the tick is still there beside it — the avatar never displaces the selection gutter
+    expect(withFace[0].closest("label")?.querySelector(".tools-tick")).not.toBe(null);
   });
 });

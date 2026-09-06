@@ -1213,6 +1213,17 @@ body[data-perf="lite"] .kit .tools-sheet {
   color: var(--accent);
   font-size: 11px;
 }
+/* the agent rows' AVATAR (D70 §8.4) — the field's circle convention at picker size. `flex-shrink: 0`
+ * beside the `flex: 1` name, and a token border so a dark portrait still reads as a disc on a dark row. */
+.kit .tools-sheet .tools-face {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  object-fit: cover;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+}
 .kit .tools-sheet .tools-empty {
   margin: 0;
   padding: 4px 10px 8px;
@@ -3610,6 +3621,25 @@ body[data-motion="reduced"] .kit .mini-player .mp-wave i {
 }
 .kit .b.user .who::before {
   background: var(--text-2);
+}
+/* D70 §8.5 (ruling 20) — the transcript AVATAR is a SWAP of that dot, in its exact position: when the
+ * Appearance switch is on and the message's agent has an avatar, the who-line leads with the picture
+ * instead of the 6px disc. A class, never an inline style, so the two states are one rule apart — and
+ * every other case (switch off, no agent art, art the owner retired) keeps the dot byte-identically.
+ * Nothing else in the line moves: the avatar takes the dot's slot in the same flex row, so the label,
+ * the endpoint chip, the time and the read-aloud toggle all keep their space. */
+.kit .b .who.has-avatar::before {
+  display: none;
+}
+.kit .b .who .who-face {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  object-fit: cover; /* centred: a framing point is not legible at 18px, and honoring one would cost a
+                      * ResizeObserver per BUBBLE (`useFocalPosition` is per-window) for no visible gain */
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
 }
 .kit .b .body {
   font-size: 14px;

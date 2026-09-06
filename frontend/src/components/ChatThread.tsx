@@ -1,6 +1,7 @@
 import { memo, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { useActionSpecs } from "../hooks/useActions";
+import { useAgentArt, type AgentArt } from "../hooks/useAgentArt";
 import type { AgentChat } from "../hooks/useAgentChat";
 import { AUTOMATIONS_GROUP_ID, fmtWhen } from "../hooks/useAutomations";
 import { useOverlayBackGuard } from "../hooks/useOverlayBackGuard";
@@ -18,6 +19,7 @@ import {
   retryLastTurn,
 } from "../store/chat";
 import { openConfGroup } from "../store/groupScroll";
+import { useUISlice } from "../store/ui";
 import type {
   AttachmentPart,
   ChatMessage,
@@ -347,7 +349,7 @@ function ThinkBlock({ text, open }: { text: string; open?: boolean }) {
  *
  *  D62/D25: the who-line around it is now tap-to-disclose, so this stops propagation — a nested
  *  control must not fire the row's toggle too (the DeviceRow breakout rule). */
-function TtsButton({ id, text }: { id: string; text: string }) {
+function TtsButton({ id, text, agent }: { id: string; text: string; agent: string | null }) {
   const mine = usePlayback((p) => (p.id === id ? p.status : "idle"));
   const playing = mine === "playing";
   const loading = mine === "loading";
@@ -359,7 +361,9 @@ function TtsButton({ id, text }: { id: string; text: string }) {
       title={playing ? "pause" : "read aloud"}
       onClick={(e) => {
         e.stopPropagation();
-        void playMessage(id, text);
+        // D70 §8.5 — read it in the turn's OWN agent's voice; null ⇒ the global chain (voice.py's
+        // `_voice_id` resolves the default on an absent agent, so the field is simply omitted).
+        void playMessage(id, text, agent);
       }}
     />
   );
@@ -597,6 +601,7 @@ const Bubbles = memo(function Bubbles({
   onRetry,
   resolvedDefault,
   ttsOn,
+  agentArt,
 }: {
   m: ChatMessage;
   streaming: boolean;
@@ -611,6 +616,10 @@ const Bubbles = memo(function Bubbles({
   resolvedDefault: string | undefined;
   /** Whether TTS is configured (6b-2) — gates the per-bubble read-aloud toggle. */
   ttsOn: boolean;
+  /** D70 §8.5 — the who-line avatar resolver, or `undefined` while the Appearance switch is off (which
+   *  is how the whole feature turns into today's dot: nothing to resolve, nothing to draw). Stable like
+   *  `resultFor` above, so threading it costs the memo nothing. */
+  agentArt?: (name: string | null) => AgentArt;
 }) {
   if (m.role === "tool") return null; // results render inside their command bubble (paired by id)
 
@@ -684,10 +693,15 @@ const Bubbles = memo(function Bubbles({
             m={m}
             label={m.agent && m.agent !== resolvedDefault ? m.agent : "assistant"}
             time={hm(m.ts)}
+            // A null `agent` is a turn the DEFAULT agent ran (7e-c), so that is whose avatar it wears —
+            // the resolver's own `null` contract.
+            avatar={agentArt?.(m.agent ?? null).avatar?.url}
           >
             {working && <span className="status-tag">{reasoning ? "thinking" : "working"}</span>}
             {/* Read-aloud toggle (6b-2): only on a settled text reply, and only when TTS is configured. */}
-            {ttsOn && !streaming && text && <TtsButton id={m.id} text={text} />}
+            {ttsOn && !streaming && text && (
+              <TtsButton id={m.id} text={text} agent={m.agent ?? null} />
+            )}
           </BotWhoLine>
           <div className="body">
             {reasoningInBot && <ThinkBlock text={reasoning} open={working} />}
@@ -754,6 +768,12 @@ export function ChatThread({ active, chat, emptyState }: Props) {
   // for plan placement, so this avoids a second O(n) pairing. `resultByCall` is memoized there;
   // `resolvedDefault` attributes per-turn agents (7e-c); `ttsOn` gates the per-bubble read-aloud.
   const { messages, status, streamingId, resultByCall, resolvedDefault, ttsOn } = chat;
+  // D70 §8.5 — the who-line avatar. ONE resolver for the whole log (a per-bubble hook would be two
+  // query observers per message), and the Appearance switch is honored HERE by not handing one down at
+  // all: off ⇒ every bubble takes the `.who::before` dot path with nothing resolved for it.
+  const chatAvatars = useUISlice((s) => s.chatAvatarsVisible);
+  const resolveArt = useAgentArt();
+  const agentArt = chatAvatars ? resolveArt : undefined;
   // A STABLE result lookup so it doesn't break `Bubbles`' memo each token (`resultByCall` is re-derived
   // per delta → new identity). A ref holds the latest map; the callback identity never changes, and a
   // bubble re-renders (reading the fresh map) exactly when its own message identity changes — which
@@ -844,6 +864,7 @@ export function ChatThread({ active, chat, emptyState }: Props) {
           onRetry={onRetry}
           resolvedDefault={resolvedDefault}
           ttsOn={ttsOn}
+          agentArt={agentArt}
         />
       ))}
     </div>

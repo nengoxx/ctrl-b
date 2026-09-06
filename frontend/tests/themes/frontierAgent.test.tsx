@@ -16,6 +16,15 @@ const chat = vi.hoisted(() => {
 });
 vi.mock("../../src/hooks/useAgentChat", () => ({ useAgentChat: () => chat.view }));
 vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: [] }) }));
+vi.mock("../../src/hooks/useAgentArt", () => ({
+  // D70 §8.5/§8.4 — the agent-art resolver is a QUERY PAIR (roster + media index), so it is mocked to the
+  // NO-ART answer here (which is the state every assertion in this file is about) rather than dragging a
+  // QueryClient in — the same reason `useActionSpecs` is mocked in these suites.
+  useAgentArt: () => (name: string | null) => ({
+    name: name ?? "default",
+    title: name ?? "default",
+  }),
+}));
 // D53 M2 — the rig-stack's layers now come from `GET /api/media/frontier`. The index hook is mocked
 // rather than wrapped in a QueryClientProvider (the `useAgentChat` precedent above); the default —
 // no owner files — is also the assertion that the F4 stack is unchanged on a fresh install.

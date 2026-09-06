@@ -97,6 +97,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
                 "theme_settings": None,
                 "kit_background_visible": None,  # unseeded too — a pre-slice config is not "turned off"
                 "appbar_subtitle_visible": None,  # ditto: unseeded ≠ "the owner hid the subtitle"
+                "chat_avatars_visible": None,  # ditto (D70 §8.5): unseeded ≠ "avatars off"
                 "pwa_icon_background": None,  # D59: unseeded → `/manifest.webmanifest` serves the default
                 "updated_at": None,
             }
@@ -114,6 +115,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
                         "theme_settings": {"minimal": {"hideAppbar": True}},
                         "kit_background_visible": False,
                         "appbar_subtitle_visible": True,
+                        "chat_avatars_visible": False,
                     }
                 },
             )
@@ -127,6 +129,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
             assert saved["theme_settings"] == {"minimal": {"hideAppbar": True}}
             assert saved["kit_background_visible"] is False
             assert saved["appbar_subtitle_visible"] is True
+            assert saved["chat_avatars_visible"] is False
             assert saved["updated_at"] is not None  # server-stamped
 
             # GET reflects it (the cheap always-on read the ui store reconciles against).
@@ -140,6 +143,7 @@ def test_api_appearance_get_and_put_roundtrip() -> None:
             assert reloaded.appearance.accent == "indigo"
             assert reloaded.appearance.kit_background_visible is False
             assert reloaded.appearance.appbar_subtitle_visible is True
+            assert reloaded.appearance.chat_avatars_visible is False
             assert reloaded.appearance.updated_at is not None
 
             # A second write re-stamps a newer time (monotonic-ish; at least not older).

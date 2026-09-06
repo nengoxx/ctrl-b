@@ -12,6 +12,17 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 // jsdom lacks it (mirrors themeContract.test.ts).
 
 vi.mock("../../src/hooks/useActions", () => ({ useActionSpecs: () => ({ data: [] }) }));
+// D70 §8.5 — the agent-art resolver is a QUERY PAIR (roster + media index), so it is mocked rather than
+// dragging a QueryClient in (the same reason `useActionSpecs` is mocked above). `art` is the mutable
+// answer: NO ART by default, which is the state every pre-D70 assertion in this file is about.
+const art = vi.hoisted(() => ({ url: undefined as string | undefined }));
+vi.mock("../../src/hooks/useAgentArt", () => ({
+  useAgentArt: () => (name: string | null) => ({
+    name: name ?? "default",
+    title: name ?? "default",
+    avatar: art.url === undefined ? undefined : { url: art.url },
+  }),
+}));
 
 import { ChatThread } from "../../src/components/ChatThread";
 import type { AgentChat } from "../../src/hooks/useAgentChat";
@@ -39,6 +50,8 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   setPlanSheetOpen(false); // module state — reset between cases
+  art.url = undefined; // ...and the mocked agent art (D70 §8.5)
+  setUI({ chatAvatarsVisible: true });
 });
 
 /** A minimal empty AgentChat (no messages) — enough to render ChatThread's empty state. */
@@ -594,5 +607,56 @@ describe("D62 · the review fix wave", () => {
     act(() => button.click());
     expect(container.querySelector(".who-meta")).toBeNull();
     expect(button.getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+// ── D70 §8.5 (ruling 20) — the who-line AVATAR: a SWAP of the 6px role dot, in its exact position, and
+// only when the Appearance switch is on AND the message's agent has one. Everything else about the line
+// is untouched, which is what the last case here pins.
+describe("D70 · the who-line avatar swap", () => {
+  const AVATAR = "/api/media/agents/files/avatars/lynette.png?rev=r1";
+
+  it("leads the line with the avatar, and marks the line so the dot is suppressed", () => {
+    art.url = AVATAR;
+    const { container } = render(<ChatThread active chat={botChat({ agent: "lynette" })} />);
+    const who = container.querySelector(".b.bot .who") as HTMLElement;
+    expect(who.className).toContain("has-avatar"); // the CSS class is what hides `::before`
+    const img = who.querySelector("img.who-face") as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe(AVATAR);
+    expect(img.getAttribute("alt")).toBe(""); // decoration — the speaker is the label beside it
+    expect(who.firstElementChild).toBe(img); // the DOT'S position, ahead of the label
+  });
+
+  it("keeps today's dot for an agent with no avatar", () => {
+    const { container } = render(<ChatThread active chat={botChat({ agent: "ops" })} />);
+    const who = container.querySelector(".b.bot .who") as HTMLElement;
+    expect(who.className).toBe("who");
+    expect(who.querySelector("img.who-face")).toBeNull();
+  });
+
+  it("keeps today's dot with the Appearance switch off, even when the agent HAS one", () => {
+    art.url = AVATAR;
+    setUI({ chatAvatarsVisible: false });
+    const { container } = render(<ChatThread active chat={botChat({ agent: "lynette" })} />);
+    const who = container.querySelector(".b.bot .who") as HTMLElement;
+    expect(who.className).toBe("who");
+    expect(who.querySelector("img.who-face")).toBeNull();
+  });
+
+  it("moves nothing else in the line — label, endpoint chip and time keep their space", () => {
+    art.url = AVATAR;
+    const { container } = render(
+      <ChatThread active chat={botChat({ agent: "lynette", ...FULL })} />,
+    );
+    const who = container.querySelector(".b.bot .who") as HTMLElement;
+    expect(who.querySelector(".who-ep")?.textContent).toContain("corsair");
+    expect(who.textContent).toMatch(/^lynette · .*corsair · \d\d:\d\d/);
+  });
+
+  it("wears the DEFAULT agent's avatar on a turn with no agent of its own (7e-c)", () => {
+    art.url = AVATAR;
+    const { container } = render(<ChatThread active chat={botChat()} />);
+    expect(container.querySelector(".b.bot .who img.who-face")).not.toBeNull();
+    expect(container.querySelector(".b.bot .who")?.textContent).toMatch(/^assistant · /);
   });
 });

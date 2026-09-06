@@ -159,6 +159,11 @@ interface Session {
   /** The per-message budget dropped a tail. Said once, at the flush — the copy assumes a finished
    *  reply — and feeding stops there (re-planning a capped prefix per boundary buys nothing). */
   dropped: boolean;
+  /** WHOSE turn this queue is reading (D70 §8.5) — the message's agent, rendered in that agent's voice.
+   *  On the SESSION because the chunks reach the wire long after the entry point returned (`pump` calls
+   *  `synthChunk` as the cursor advances), and every chunk of one reply must speak in one voice. `null`
+   *  ⇒ no field on the wire ⇒ the global chain, which is every pre-D70 turn. */
+  agent: string | null;
   abort: AbortController;
 }
 let session: Session | null = null;
@@ -344,14 +349,18 @@ type TtsOutcome =
   | { ok: true; blob: Blob; target: string; degraded: boolean }
   | { ok: false; aborted: boolean; message: string | null };
 
-/** The single `POST /api/voice/tts` call site, shared by both paths. `format`/`prefer` are omitted
- *  entirely when unset, so the `off` path's request body is byte-identical to the pre-D63 one.
+/** The single `POST /api/voice/tts` call site, shared by both paths. `agent`/`format`/`prefer` are
+ *  omitted entirely when unset, so a message with no agent sends the body it always did.
  *  Never throws: a failure comes back as the toast text the caller decides what to do with. */
 async function requestTts(
   text: string,
-  opts: { format?: string; prefer?: string | null; signal?: AbortSignal },
+  opts: { agent?: string | null; format?: string; prefer?: string | null; signal?: AbortSignal },
 ): Promise<TtsOutcome> {
   const body: Record<string, string> = { text };
+  // D70 §8.5 (ruling 21) — WHOSE turn is being read. The server resolves it to that agent's
+  // `AgentDef.voice`; ABSENT is the whole fallback contract (the global `voice.tts` chain answers), so a
+  // turn with no agent must send no field rather than a null the wire would have to special-case.
+  if (opts.agent) body.agent = opts.agent;
   if (opts.format) body.format = opts.format;
   if (opts.prefer) body.prefer = opts.prefer;
   let res: Response;
@@ -391,12 +400,20 @@ async function requestTts(
 
 /** Synthesize (or reuse the cached clip for) a message. Returns the object URL, or null on failure
  *  (a toast is shown). 502 = the whole TTS failover chain is unreachable. */
-async function synthWhole(id: string, markdown: string): Promise<string | null> {
+async function synthWhole(
+  id: string,
+  markdown: string,
+  agent?: string | null,
+): Promise<string | null> {
+  // Keyed by MESSAGE id, unchanged: a message's agent never changes, so the clip cached for it is the
+  // clip its agent's voice produces. (A voice BINDING edited mid-session still serves the cached clip —
+  // exactly the posture the global voice setting has today; a re-synthesis on a settings change is a
+  // different feature, and this one is not it.)
   const cached = cache.get(id);
   if (cached) return cached;
   const text = toSpeech(markdown);
   if (!text) return null;
-  const out = await requestTts(text, {});
+  const out = await requestTts(text, { agent });
   if (!out.ok) {
     if (out.message) pushToast(out.message, "err");
     return null;
@@ -411,8 +428,9 @@ async function playWhole(
   markdown: string,
   seq: number,
   a: HTMLAudioElement,
+  agent?: string | null,
 ): Promise<void> {
-  const url = await synthWhole(id, markdown);
+  const url = await synthWhole(id, markdown, agent);
   if (seq !== reqSeq) return; // superseded by a newer toggle while we awaited the synth
   if (!url) {
     reset();
@@ -435,7 +453,13 @@ async function playWhole(
 /** A fresh queue over an ordered chunk list — the five index-parallel arrays and the flags that ride
  *  them, in one place for both entry points (a tap and the read-along feed). `cfg` freezes the SPLIT
  *  config as it stands right now: only read-along re-plans, and it must not see a Conf save mid-turn. */
-function newSession(id: string, seq: number, chunks: string[], readAlong: boolean): Session {
+function newSession(
+  id: string,
+  seq: number,
+  chunks: string[],
+  readAlong: boolean,
+  agent: string | null,
+): Session {
   return {
     id,
     seq,
@@ -459,6 +483,7 @@ function newSession(id: string, seq: number, chunks: string[], readAlong: boolea
     cfg: policy,
     srcFed: "",
     dropped: false,
+    agent,
     abort: new AbortController(),
   };
 }
@@ -479,7 +504,7 @@ function beginMessage(id: string, a: HTMLAudioElement): number {
 
 /** Start (or replay) the chunk queue for a message. Returns immediately — the first chunk's synth
  *  releases the latch and starts playback. */
-function startChunked(id: string, markdown: string, seq: number): void {
+function startChunked(id: string, markdown: string, seq: number, agent: string | null): void {
   let s = session;
   if (s && s.id === id) {
     // A replay / resume of the retained message: keep every blob already synthesized, re-arm the rest.
@@ -514,7 +539,7 @@ function startChunked(id: string, markdown: string, seq: number): void {
       // D63 moved the per-MESSAGE bound here from the per-request 422: the tail is dropped, said once.
       pushToast("Reply too long to read in full — the tail was skipped", "info");
     }
-    s = newSession(id, seq, plan.chunks, false);
+    s = newSession(id, seq, plan.chunks, false, agent);
     session = s;
   }
   publishTimeline(s); // the bar spans the whole reply from the first frame (estimated until it isn't)
@@ -542,6 +567,7 @@ function pump(s: Session): void {
 
 async function synthChunk(s: Session, i: number): Promise<void> {
   const out = await requestTts(s.texts[i], {
+    agent: s.agent,
     format: policy.format,
     // The failover pin: chunk 1 discovers who served, the rest ask for that target FIRST. A vanished
     // pin is a silent miss server-side, so a mid-reply death still falls over instead of erroring.
@@ -782,7 +808,7 @@ const extendsFed = (s: Session, markdown: string): boolean => markdown.startsWit
  * Start — or extend — the read-along queue for the message currently streaming. Called per boundary
  * by the feeder; everything about "what is safe to speak yet" is decided here.
  */
-export function feedReadAlong(id: string, markdown: string): void {
+export function feedReadAlong(id: string, markdown: string, agent?: string | null): void {
   const s = liveSession();
   if (s && s.id === id) {
     if (!s.open || s.dropped) return; // flushed, abandoned, or capped — this turn has said its piece
@@ -801,7 +827,7 @@ export function feedReadAlong(id: string, markdown: string): void {
   const plan = chunkPlanFrom(toSpeech(src), policy, 0);
   if (!plan.chunks.length) return; // nothing has closed yet — no session, no docked player
   const a = ensureEl();
-  const next = newSession(id, beginMessage(id, a), plan.chunks, true);
+  const next = newSession(id, beginMessage(id, a), plan.chunks, true, agent ?? null);
   next.srcFed = src;
   next.dropped = plan.dropped;
   session = next;
@@ -816,7 +842,11 @@ export function feedReadAlong(id: string, markdown: string): void {
  * turn (D17: no deltas were ever fed) needs. The feeder must never call `toggle` itself: for a message
  * that IS the docked one, `pb.id === id` reads as a tap and PAUSES the reply mid-sentence.
  */
-export async function endTurnSpeak(id: string, markdown: string): Promise<void> {
+export async function endTurnSpeak(
+  id: string,
+  markdown: string,
+  agent?: string | null,
+): Promise<void> {
   const s = liveSession();
   if (s && s.id === id && s.readAlong) {
     if (!s.open) return; // abandoned mid-turn (a reload rewrote the text) — it keeps what it has
@@ -835,7 +865,7 @@ export async function endTurnSpeak(id: string, markdown: string): Promise<void> 
     drainClosed(s);
     return;
   }
-  await toggle(id, markdown);
+  await toggle(id, markdown, agent);
 }
 
 // ── the public surface ───────────────────────────────────────────────────────────────────────────
@@ -885,8 +915,11 @@ function transport(): void {
  * Per-bubble button + auto-TTS entry point. Tapping a message's speaker:
  *   - if it's the active message → pause/resume in place,
  *   - otherwise → load it (synth-on-first-play, cached after), stopping any other, and play.
+ *
+ * `agent` is whose turn this is (D70 §8.5) — it picks the voice. Omitted/null ⇒ the global chain. A
+ * REPLAY keeps the retained queue's own agent: it is the same message, so it is the same speaker.
  */
-export async function toggle(id: string, markdown: string): Promise<void> {
+export async function toggle(id: string, markdown: string, agent?: string | null): Promise<void> {
   const a = ensureEl();
   if (pb.id === id) {
     transport(); // pause/resume in place (a re-tap while loading is ignored)
@@ -895,10 +928,10 @@ export async function toggle(id: string, markdown: string): Promise<void> {
   // Single-message retention (D63): a different message starting is what reaps the previous queue.
   const seq = beginMessage(id, a);
   if (policy.mode === "off") {
-    await playWhole(id, markdown, seq, a);
+    await playWhole(id, markdown, seq, a, agent);
     return;
   }
-  startChunked(id, markdown, seq);
+  startChunked(id, markdown, seq, agent ?? null);
 }
 
 /** The docked player's play/pause (acts on whatever's active). */

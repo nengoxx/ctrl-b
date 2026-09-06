@@ -28,7 +28,9 @@ const BOUNDARY = /[.!?…\n]/;
  *  This keeps auto-TTS from speaking a stale reply when the completion fires before the reload lands.
  *  Mid-stream it is the same answer one delta at a time, and its TEXT-part filter is what keeps
  *  reasoning and tool output out of the synth (the store keeps those as separate parts). */
-function finalReply(messages: ChatMessage[]): { id: string; text: string } | null {
+function finalReply(
+  messages: ChatMessage[],
+): { id: string; text: string; agent: string | null } | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (m.role === "user") return null; // reached the turn start with no assistant text
@@ -38,7 +40,9 @@ function finalReply(messages: ChatMessage[]): { id: string; text: string } | nul
       .map((p) => (p.type === "text" ? p.text : ""))
       .join("")
       .trim();
-    return text ? { id: m.id, text } : null;
+    // D70 §8.5 — the turn's agent rides along so the read is spoken in ITS voice; null on a default
+    // turn, which is what makes the request omit the field and fall back to the global chain.
+    return text ? { id: m.id, text, agent: m.agent ?? null } : null;
   }
   return null;
 }
@@ -57,7 +61,9 @@ export function useAutoTts(): void {
   /** What this turn has fed: the message id, the exact markdown (the flush's fallback when the turn's
    *  last message never becomes text-bearing), and whether the player ever docked it — an undock
    *  after that is the "user stopped" gate D63 named but no controller flag expresses. */
-  const fed = useRef<{ id: string; text: string; docked: boolean } | null>(null);
+  const fed = useRef<{ id: string; text: string; agent: string | null; docked: boolean } | null>(
+    null,
+  );
   const abandoned = useRef(false);
   const prevTtsOk = useRef(ttsOk);
 
@@ -96,7 +102,7 @@ export function useAutoTts(): void {
       const target = reply ?? fed.current;
       if (!target || target.id === spokenId.current) return;
       spokenId.current = target.id;
-      void endTurnSpeak(target.id, target.text);
+      void endTurnSpeak(target.id, target.text, target.agent);
       return;
     }
     if (status !== "streaming") return;
@@ -110,8 +116,9 @@ export function useAutoTts(): void {
     fed.current = {
       id: live.id,
       text: live.text,
+      agent: live.agent,
       docked: fed.current?.id === live.id && fed.current.docked,
     };
-    feedReadAlong(live.id, live.text);
+    feedReadAlong(live.id, live.text, live.agent);
   }, [status, messages, ttsAuto, ttsOk, chunking, dockedId]);
 }
