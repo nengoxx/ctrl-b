@@ -92,6 +92,12 @@ YAML-1.1-safe after the 2026-09-05 quoting fix).
     replaced when you click" — ② customized prompts get a small visual highlight on the field
     box ("you should be able to see the ones that have changed") — ③ the growing catalog gets
     ORGANIZED: ordered, grouped into sections with small separators. Design in §9a.
+20. **Bubble avatar = the who-line DOT swap** (round 8): an agent WITH an avatar shows it as
+    a small circle exactly where the who-line dot sits today ("so we don't lose text space");
+    no avatar — an agent, or a character whose avatar was removed — keeps "the simple dot…
+    simple and clean"; ONE toggle enables/disables avatars, falling back to the dot. §8.5.
+21. **Per-agent TTS voice IS v1** (round 8): optional, falls back to the default voice when
+    unset. §3.1's `voice` field.
 
 ## 2. Design principles
 
@@ -125,6 +131,10 @@ post_history: str = ""              # post_history_instructions → the tail slo
 user_name: str = ""                 # per-agent {{user}} override; "" → roleplay.persona.name
 avatar: str = ""                    # media id in the agents/avatars library (§8); "" → none
 background: str = ""                # media id in agents/backgrounds; "" → theme default
+voice: str = ""                     # TTS voice id for this agent (ruling 21); "" → the global
+                                    # voice.tts chain; unknown ids resolve to the default too —
+                                    # a silent no-op, NEVER an error (R67: ST throws; Risu/Agnai
+                                    # fall back — we copy the on-the-object fallback shape)
 lorebooks: list[str] = []           # attached book slugs (§6.5)
 card: dict[str, Any] = {}           # import stash: unmapped spec fields + extensions, post-strip
                                     # (§7) — export-ready provenance, never prompt-facing
@@ -520,6 +530,28 @@ Conf home (settings, not agents; council refines the cut).
   card shows the portrait through its focal point.
 Styling per `VAPOR_PATTERNS.md`; theme dressing rides the existing surface rules (D31).
 
+### 8.5 The transcript avatar — the who-line dot swap (ruling 20)
+
+Anchor verified: the message header's "dot" is `.who::before` — a 6px accent circle
+(`kit.css:3601-3613`, role-colored). The design is a SWAP in that exact position: when the
+avatars toggle is ON and the message's agent has an avatar, the who-line leads with the
+avatar as a small circle (sized to the who-line, ~18px — the exact value rides
+VAPOR_PATTERNS tokens at build); otherwise — toggle OFF, an agent with no avatar, a
+character whose avatar was removed — the 6px dot renders exactly as today. Nothing else in
+the who-line moves: the label/endpoint-chip/time text keeps its space, the read-aloud toggle
+stays where it is (we do NOT adopt the field's avatar-as-TTS-transport slot — ours is
+placed), and the user side is untouched in v1 (the persona has no image; recorded seam).
+The toggle is ONE global Appearance setting in the `ui` store beside its siblings (the Agnai
+scope; a per-agent hide flag would be the similar-things trap). Bubble geometry is otherwise
+untouched — this is a who-line ornament, not a gutter column, which is exactly why it costs
+no text width (the owner's stated constraint).
+
+**Per-agent voice resolution (ruling 21):** the TTS request path resolves
+`AgentDef.voice` → the global `voice.tts` chain, at the point the existing chain resolves
+today (`provider_registry`'s voice resolution) — the agent identity of the message/thread
+picks the voice for read-aloud, read-along, and auto-TTS alike. Empty or unknown ⇒ the
+global default, silently.
+
 ## 9. Editor + Conf presentation
 
 - **No Character pane** (ruling 1). The new fields sit in the agent form among the existing
@@ -573,15 +605,17 @@ Phase 18 doc stays truthful.
   `duties_conversational` text) + scenario/persona blocks + the post-history tail slot.
   Golden-fixture assembly tests re-pin the new universal shape; a no-new-fields agent's diff
   vs today = exactly the restructured head, nothing else.
-- **S1 — greeting + example dialogue (BE):** thread seeding, `<START>` parsing, pseudo-message
-  emission, normalize-seam behavior on strict templates.
+- **S1 — greeting + example dialogue + voice (BE):** thread seeding, `<START>` parsing,
+  pseudo-message emission, normalize-seam behavior on strict templates (the §4.2 named-system
+  probe), the per-agent voice resolution (§8.5).
 - **S2 — card import (BE):** containers + sniffing + normalization + mapping + strip pass +
   avatar into the library + explicit minimal tools + the import report.
 - **S3 — lorebooks (BE):** storage/CRUD + scan + render/budget + bindings + book import.
 - **S4 — the agents FE:** the gallery section (the AgentsEditor relocation + visual cards,
   §8.4) · avatar/background set-from-editor via the reused `useImageJob` crop/focus machine
   (§8.2) · the new marked fields + visibility predicate · the duties toggle · Conf group +
-  persona editor · import UI + report · agent-picker avatars.
+  persona editor · import UI + report · agent-picker avatars · the who-line avatar swap +
+  its Appearance toggle (§8.5) · the §9a prompt-editor refinements.
 - **S5 — the lorebook FE:** manager + attachment picker.
 - **S6 — the three-state backdrop (FE/theme):** the appearance setting + gacha oracle
   integration + the kit backdrop layer + the `off`-state surface behavior (§8.3) — in-phase
@@ -603,24 +637,15 @@ code-verified: kit layer covers cosmos/vapor/minimal, gacha integrates, frontier
 (16) · the gallery becomes its OWN settings section (17) · frontier v1-unchanged, follow-up
 cleanup (18).)*
 
-1. **The two duties texts (§4.1a)** — read + agreed round 6; the owner tunes words at will
-   forever (registry defaults). CLOSED as a question.
-2. **Avatar on chat bubbles (R67-informed proposal — rule it):** the agent's avatar as a
-   small circle beside assistant bubbles (the field is 3/3 both-sides, toggleable). Proposed:
-   ONE global Appearance toggle (the Agnai scope — our `ui`-store/Appearance-Switch pattern;
-   a per-agent hide flag would be the "different code for similar things" trap), default ON
-   when the agent has an avatar; the per-bubble read-aloud toggle STAYS in the who-line (the
-   field parks TTS controls in the avatar slot — ours is already placed, we don't move it);
-   the USER side gets nothing in v1 (the persona has no image in this design — recorded seam).
-3. **Per-agent TTS voice (R67-informed proposal — rule v1 vs seam):** one optional
-   `voice: str = ""` on `AgentDef` beside `avatar`/`background` (the Risu/Agnai
-   on-the-object shape; NOT ST's rename-fragile name-keyed settings map), resolved against
-   the existing `voice.tts` chain; empty/unknown ⇒ the global default, a silent no-op —
-   NEVER an error (ST throws on unmapped; the cautionary tale). The field treats this as
-   table stakes and voice is central to how you use ctrl-b — the main seat recommends **v1**.
-4. **The gallery tap inversion (§8.4)** — gallery tap opens the card/editor, TALK is the
-   explicit button, while the chat picker owns tap-to-talk. A deliberate divergence from the
-   field's 3/3; veto if you want tap-to-talk in the gallery too.
+**THE COURT IS CLOSED (round 8).** Every question is ruled: duties texts (round 6) · bubble
+avatar = the who-line dot swap, toggleable, dot fallback (ruling 20 → §8.5) · per-agent TTS
+voice IS v1 with silent fallback (ruling 21 → §3.1/§8.5). The one standing owner-overridable:
+the gallery tap inversion (§8.4 — tap=edit, Talk=button; presented round 8, not vetoed;
+the S7 device round re-tests the feel either way).
+
+**Next:** the blind Emma design round over this plan + the four dossiers (brief includes the
+§12 citation spot-check) → main-seat rulings on findings → fix wave → owner ratification →
+**D70** → the S0 build brief.
 
 ## 12. Evidence coverage map (the owner's round-6 audit: every section → its backing, gaps named)
 
@@ -644,14 +669,14 @@ cleanup (18).)*
 | §8.1/8.2 libraries + upload reuse | Code-verified in-house (gacha pattern, W10 `useImageJob`) | **Covered** |
 | §8.3 three-state backdrop | Owner-specified UX + the oracle mechanism code read + round-4 theme-scope verification | **Covered by rulings** — deliberately NOT field-researched: the owner specified the behavior; ST's background system is adjacent prior art, not an authority over an owner ruling |
 | §8.4 the gallery | **R67 [V]** (landed 2026-09-06: layouts, selection, the organization ladder, mobile, in-house precedents) | **Covered** — the two deliberate divergences (grid default at our scale; tap = edit) are stated in-section with their rationale |
-| Bubble avatars + per-agent voice | R67 §6–§8 [V] | **Covered — pending the owner's two rulings** (§11 items 2–3) |
+| §8.5 bubble avatar + per-agent voice | R67 §6–§8 [V] + rulings 20–21 + the `.who::before` anchor verified | **Covered** |
 | §9 editor presentation | R66 §5 [V] (Risu predicate, marked help, token counters) | **Covered** |
 | §10 ladder / cadence | House method (D-entry precedents) | n/a |
 
 **Nuances the audit surfaced (now recorded in place):** the S1 named-system probe (§4.2) ·
 the greeting-vs-compaction note (§4.2) · router description empty on import + model-per-
-character free (§5.3) · **bubble avatars + per-agent voice: R67 landed, both now proposed
-with evidence at §11 items 2–3 — the owner's two rulings are the last open items.**
+character free (§5.3) · **bubble avatars + per-agent voice: RULED round 8 (20/21) — designed
+at §8.5, the court is closed.**
 
 **Double-checking the data itself:** the four dossiers quote file:line at pinned SHAs and
 were main-seat-audited at landing (implications sections verified against our real seams).
