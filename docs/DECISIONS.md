@@ -4659,7 +4659,9 @@ on multi-message turns (owner-confirmed; TEXT parts only — never reasoning, ne
 pinned by test). **A partly-failed read-along PARKS instead of dropping** (S1 untouched) and
 every replay path re-arms its failed slots with the cursor rewound through `playNext`. The
 toggle = `chunk_read_along` on `TtsServiceCfg` beside the other `chunk_*` fields → one Conf
-Switch; **ships OFF** (the `auto_stop` precedent — flip after the owner's device round).
+Switch; **ships ON — flipped 2026-09-06 on the owner's device-round pass** ("I tried the
+read along, and it works. And I would like to have it as default"; shipped OFF 09-04 per the
+`auto_stop` precedent, awaiting exactly that round).
 Device-round items riding S6-style live use: autoplay-grant persistence over a multi-minute
 session · TTS-on-speakerphone vs the dictation auto-stop energy detector.
 

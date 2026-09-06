@@ -617,9 +617,9 @@ class TtsServiceCfg(VoiceServiceCfg):
     chunk_lookahead: int = Field(default=1, ge=1, le=4)  # synth-ahead depth (1 = synth N+1 while N plays)
     # C3 S2 — read-along: auto-TTS starts speaking WHILE the reply streams, a sentence at a time, instead
     # of waiting for turn end. Meaningless under `chunking: "off"` (one chunk of the whole message is
-    # unknowable mid-stream), which is why it lives beside `mode`. OFF by default — a new interaction
-    # behavior earns its device round first (the `auto_stop` precedent).
-    chunk_read_along: bool = False
+    # unknowable mid-stream), which is why it lives beside `mode`. ON by default — owner ruling
+    # 2026-09-06 after the device round passed (shipped OFF pending that round, the `auto_stop` precedent).
+    chunk_read_along: bool = True
 
     @model_validator(mode="after")
     def _chunk_bounds(self) -> "TtsServiceCfg":

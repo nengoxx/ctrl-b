@@ -505,12 +505,12 @@ def test_chunk_config_bounds_validate_at_load() -> None:
     from app.config import VoiceCfg
 
     ok = VoiceCfg.model_validate({"tts": {"chunk_min_chars": 400, "chunk_max_chars": 400}}).tts
-    # shipped defaults — read-along stays OFF until it has had its device round (C3 S2)
+    # shipped defaults — read-along ON since the 2026-09-06 owner ruling (its device round passed)
     assert (ok.chunking, ok.chunk_format, ok.chunk_lookahead, ok.chunk_read_along) == (
         "sentence",
         "opus",
         1,
-        False,
+        True,
     )
     for bad in (
         {"tts": {"chunk_min_chars": 401, "chunk_max_chars": 400}},  # floor above the cap
