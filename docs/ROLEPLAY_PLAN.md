@@ -184,11 +184,13 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   with that agent (ruling 11; the 4/4 field shape — an empty-state render never reaches the
   wire and anchors nothing). Macro-substituted at seed time. `alt_greetings` stored; a
   new-thread greeting picker is a recorded FE seam.
-  **The "reset the whole character" command (ruling 11's float) — recorded seam, NOT v1:** a
-  fresh thread already re-seeds the greeting, so the only thing a stronger reset could add is
-  wiping the character's accumulated state — its memory dir and/or Core Memory topics — which
-  is DESTRUCTIVE and owner-flagged as needing careful design. When designed, it rides the D44
-  destructive-op conventions (typed confirm, the R53/D64 guard class); v1 ships nothing here.
+  **The "reset the whole character" command — SEMANTICS RULED round 4, feature NOT v1:** a
+  red button on the character's own detail that resets the agent to its default/as-imported
+  values, **wipes THAT agent's memory files** (its memory dir; the specific agent's, nothing
+  global), and opens a fresh thread (greeting re-seeds). Destructive ⇒ when built it rides the
+  destructive-op conventions (typed confirm, the R53/D64 guard class). The owner explicitly
+  ruled OUT folding memories deeper into the roleplay system ("too complicated"). v1 ships
+  nothing here; the as-imported restore is what the `card` stash (§3.1) already makes possible.
 
 ### 4.3 Macros
 
@@ -378,12 +380,13 @@ background tall) are config-shaped like the existing per-role crop settings, not
   oracle surface as-is (name plate, scrim, scanline, the sticky ghost under `gacha.oracle`
   fade mode), focal position honored via the existing `useFocalPosition` path. The agent's
   background simply wins the art resolution for that surface while that agent is active.
-- **`full`** — the same art as the full chat backdrop, **no blur, dimming kept**: the owner's
-  distinction ("just the blur, I'm not talking about the dimming") maps onto layers that are
-  ALREADY separate in the oracle mechanism — the soft face's static blur is one layer, the
-  scrim/opacity walk another — so `full` renders the sharp art full-bleed behind the thread
-  with the readability scrim retained and the blur layer absent. §14.11 discipline holds:
-  static art, opacity-only animation, no animated `filter`.
+- **`full`** — the same art as the full chat backdrop, **no blur; dimming AND the scroll fade
+  kept** (owner-confirmed round 4: "same fade out as the operator image… just the blur" is
+  what changes). The distinction maps onto layers ALREADY separate in the oracle mechanism —
+  the soft face's static blur is one layer, the scrim + the 1→0.28 opacity walk another — so
+  `full` renders the sharp art full-bleed behind the thread with the readability scrim and the
+  ghost-on-scroll opacity walk retained and the blur crossfade absent. §14.11 discipline
+  holds: static art, opacity-only animation, no animated `filter`.
 - **`off`** — no operator image, no background. **This state IS the missing hide switch**: the
   only controls today are gacha's "Sticky operator art" toggle (scroll BEHAVIOR, not
   visibility) and the media in-use switches (which retire ART, not the surface) — verified, no
@@ -396,10 +399,15 @@ background tall) are config-shaped like the existing per-role crop settings, not
 - **Where it lives:** a theme-engine-level appearance setting (the theme-settings surface,
   beside the existing oracle toggle on gacha), global — the ART is per-agent, the MODE is the
   owner's viewing preference. Per-agent mode overrides = recorded seam, not v1.
-- **Theme scope (proposed, owner to confirm):** v1 implements gacha (the operator surface
-  exists there) + the kit family (the `KitBackground` wallpaper layer is the mounting point);
-  vapor/cosmos are bespoke surfaces and adopt in a recorded follow-up. `""`/absent art ⇒
-  today's look on every theme regardless of state.
+- **Theme scope (CODE-VERIFIED round 4 — the bespoke assumption was wrong, in our favor):**
+  cosmos and vapor have bespoke FLEET views only; both wrap `DefaultRoot` and their agent
+  chat IS the shared kit `AgentTab` (`CosmosRoot.tsx:24`, `VaporRoot.tsx:57` — cosmos passes
+  `kitBackground={false}` for its root starfield, which is why the backdrop layer mounts
+  INSIDE the shared agent tab, not on the root `KitBackground`). So ONE kit-level layer
+  covers cosmos, vapor, and minimal at once; **gacha** integrates via its oracle surface
+  (§8.3 above); **frontier** is the one remaining bespoke agent surface (`FrontierAgent.tsx`)
+  and adopts in a recorded follow-up. `""`/absent art ⇒ today's look on every theme
+  regardless of state.
 
 ### 8.4 The visual agents surface (ruling 4)
 
@@ -451,24 +459,20 @@ existing surface rules (D31). Import lands here (§5.1), under the §9 visibilit
   phone (blur/dim legibility), a field-authored lorebook imported + triggering live (§6.7),
   the showcase + picker feel, read-along on a character reply.
 
-## 11. Open questions for the owner (the court — third-round leftovers only)
+## 11. Open questions for the owner (the court)
 
-*(Resolved in the third round: greeting=yes (ruling 11) · `{{user}}` chain (ruling 7) ·
-containers (ruling 12) · lorebook v1 subset + test book (ruling 9/§6.7) · backdrop = ruling 13,
-in-phase, default ON.)*
+*(Resolved rounds 3–4: greeting=yes (11) · `{{user}}` chain (7) · containers (12) · lorebook
+subset + test book (9/§6.7) · backdrop in-phase default ON (13) · full mode = no blur, dim +
+scroll fade kept (§8.3) · reset semantics ruled, feature deferred (§4.2) · theme scope
+code-verified: kit layer covers cosmos/vapor/minimal, gacha integrates, frontier follows
+(§8.3).)*
 
-1. **The character-reset command** (your float): a new thread already re-seeds the greeting —
-   should a stronger "new roleplay" reset also wipe the character's MEMORY (its memory dir /
-   Core Memory topics)? That half is destructive and needs your ruling before it is ever
-   designed; v1 ships nothing (§4.2).
-2. **`full` mode reading — confirm:** no blur, but the readability DIMMING/scrim stays. (§8.3
-   is written that way from your words.)
-3. **Backdrop theme scope:** v1 = gacha + the kit-family themes; vapor/cosmos adopt later
-   (§8.3's proposal) — OK?
-4. **Imported cards start on the conversational duties option** (the same per-agent toggle
+1. **Imported cards start on the conversational duties option** (the same per-agent toggle
    from ruling 5 — the question is only its STARTING position after an import; flip any agent
    any time) — confirm.
-5. **The showcase, spelled out (§8.4):** no new page — the EXISTING agents list in the config
+2. **The showcase, spelled out (§8.4):** no new page — the EXISTING agents list in the config
    becomes visual cards (avatar art on each agent, background preview in the detail), and the
    chat agent picker gets small avatars. One surface. Veto if you wanted a separate gallery
    page instead.
+3. **Frontier's backdrop adoption** rides as a recorded follow-up (§8.3) — fine, or must it
+   land in-phase too?
