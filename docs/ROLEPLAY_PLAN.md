@@ -1152,6 +1152,14 @@ landed as `agents/avatars/lynette.png` and bound · a pinned `POST /threads
 `{{user}}`→"User" rendered at seed time — the S1 seam working on an imported
 character end-to-end.
 
+**Session tail (owner-driven):** the owner's own ST persona ("Ari", the short entry)
+was imported into `roleplay.persona` via the Conf settings API — and it surfaced the
+S0 hold-out with field evidence: the description opens with `{{user}}`, which ST
+renders in personas. **Owner ruling: fold it — `roleplay.persona.description` joins
+the macro pass** (`3b63b24`, `_scenario`'s exact idiom + a pinned test; §4.3 and the
+§13-S0 note amended; BE 2,316). A fresh Lynette thread now seeds "Ari is sitting
+across from me…" and the persona head block renders its own `{{user}}` as "Ari".
+
 **Residuals recorded, none owed now:** the multipart-spool ingress class (stt +
 import) → Phase 19 · `deep_set`'s unquoted-key site (schema/slug keys only, LOW) ·
 `UploadPart.open`'s bare `FileNotFoundError` on a vanished role dir (the media PUT

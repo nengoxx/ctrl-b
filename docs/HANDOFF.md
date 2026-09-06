@@ -36,15 +36,24 @@
   opens it. The ⚠ S4 obligation (FE sends `message.agent` on TTS) and the ops note
   (hermes emma rounds run FOREGROUND-detached — `setsid nohup` from a foreground call;
   beware `pgrep hermes_cli.main` matching the unrelated gateway daemons) both stand.
-- **The dev backend was restarted onto the S2 tip** so the owner can import a real card
-  from :5173 (the FE import UI is S4 — until then `curl -F file=@card.png
-  http://127.0.0.1:5434/api/agents/import` is the probe path). Dev units stay RUNNING
-  (D69 presence observation continues; the restart keeps the logging fix live).
-- **Git: 41 commits unpushed over origin `04769d9`** (the 38 at session open +
-  `f6aa640` S2 + `6d0711d` its fix wave + this docs commit); working tree clean; the
-  PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8
-  pipeline (Dependabot D1 → push → release E, config migration 2→3, rollback = config
-  backup FIRST then v1.7.7) is unchanged and still owed; sequencing is the owner's.
+- **The session tail ran three owner-driven items (all in plan §13-S2's tail):**
+  ① **the live probe on a REAL card PASSED** — the owner picked the ST install's
+  `Lynette.png` (dual-chunk ccv3+chara): 201 first shot, V3 precedence + warning, full
+  mapping, quoted stash, 0600 agent.yaml, avatar bound, pinned thread seeded her
+  greeting rendered (record `475c1b9`; **Lynette is LIVE on dev — the owner can pick
+  her from :5173 and talk**). ② **the owner's ST persona "Ari" imported** into
+  `roleplay.persona` via the Conf settings API (dev config). ③ It surfaced the S0
+  macro hold-out with field evidence (the description opens with `{{user}}`) —
+  **owner-ruled FOLD `3b63b24`: `roleplay.persona.description` joins the macro pass**
+  (one line, `_scenario`'s idiom, pinned test; §4.3 + §13-S0 amended; **BE 2,316**,
+  gate 6/6). The dev backend runs the fold tip; dev units stay RUNNING (D69 presence
+  observation continues).
+- **Git: 44 commits unpushed over origin `04769d9`** (the 38 at session open +
+  `f6aa640` S2 + `6d0711d` its fix wave + `2892adf` S2 docs + `475c1b9` probe docs +
+  `3b63b24` the persona fold + this docs commit); working tree clean; the PUSH ruling
+  stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline
+  (Dependabot D1 → push → release E, config migration 2→3, rollback = config backup
+  FIRST then v1.7.7) is unchanged and still owed; sequencing is the owner's.
 
 ## Prior state (2026-09-06, SECOND session — D70 RATIFIED · S0 BUILT + COUNCIL-CLOSED · the app-logging fix; superseded above where it speaks)
 
