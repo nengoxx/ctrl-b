@@ -1,11 +1,11 @@
 # Characters are agents — the conversational-agents + lorebook plan of record
 
-> **Status: ✏️ DESIGN v2 — COUNCIL-CLOSED 2026-09-06 (§13: blind Emma round BUILD WITH
-> CHANGES → all 15 findings folded → confirm → micro-confirm CONFIRMED). Awaiting the owner's
-> ratification → D70 → the S0 build brief.** Eight owner design rounds are folded (§1 rulings
-> 1–21); evidence = R64–R67 (§0/§12).
+> **Status: ✏️ DESIGN v2 — RATIFIED 2026-09-06 ([`D70`](./DECISIONS.md); owner, in
+> conversation). COUNCIL-CLOSED same day (§13: blind Emma round BUILD WITH CHANGES → all 15
+> findings folded → confirm → micro-confirm CONFIRMED). Build = S0–S7 per §10, in progress.**
+> Eight owner design rounds are folded (§1 rulings 1–21); evidence = R64–R67 (§0/§12).
 >
-> **Authority when ratified:** this doc owns the agent-feature expansion (the new AgentDef
+> **Authority:** this doc owns the agent-feature expansion (the new AgentDef
 > fields, the Voice/Duties prompt assembly, card import, agent art + the visual agents surface)
 > **and the lorebook subsystem** (deliberately roleplay-independent). `MEDIA_MANAGER_PLAN.md`
 > keeps the media write path and libraries; `PROMPTS_PLAN.md` keeps the registry;

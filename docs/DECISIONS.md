@@ -5033,3 +5033,48 @@ longer than the device threshold while TS happens to be online can still manufac
 (bounded by quiet hours + the per-host cooldown; suppressing it would contradict the two-questions
 model) · positional device-row keys in Conf (a reorder remounts inputs — the SectionRefEditor
 precedent).
+
+## D70 — Characters ARE agents: the conversational-agent expansion + the lorebook subsystem ✏️ RATIFIED 2026-09-06 (owner, in conversation — 8 design rounds 2026-09-05/06, all 21 rulings locked in the plan's §1; spec of record = [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md); evidence = [R64](./research/R64-roleplay-character-prompting.md)–[R67](./research/R67-character-gallery-ux.md) + the §12 coverage map; council = blind Emma design round BUILD WITH CHANGES [15 findings, ALL folded — her citation check killed 4 plan overreaches] → confirm 13/15 → the 4 residuals fixed → micro-confirm CONFIRMED [plan §13 verbatim])
+
+**What.** ctrl-b becomes usable with SillyTavern-class conversational characters — **characters
+ARE agents, one flat system** (ruling 1: no character type, section, or predicate anywhere).
+Optional, defaulted `AgentDef` fields beside `prompt`/`prompt_append`: greeting · example
+dialogue · scenario · post-history tail · user persona · avatar · background · per-agent TTS
+voice · the imported-card stash · lorebook attachments. An agent that sets none keeps working
+unchanged (ruling 10). The `roleplay.enabled` Conf toggle is **presentation only** — nothing
+server-side branches on it (P2).
+
+**The one deliberate restructure (universal, not character-gated):** the prompt head becomes
+two labelled sections, **Voice + Duties** (R64 §5.4's measured result; today's
+SOUL.md-replaces-everything ladder is the measured failure shape). Duties = the registry pair
+`duties_agent`/`duties_conversational` with a per-agent selector; **voice differs, capability
+NEVER does** (ruling 16) — tools/skills/privilege stay the only capability levers; imported
+cards start conversational with minimal default tools (rulings 8/16). Greeting seeds every new
+thread; example dialogue emits as named system pseudo-messages through the R42 normalize seam.
+
+**Card import (rulings 3/12):** V2/V3 · PNG + JSON + CHARX containers, magic-byte sniffed ·
+prompt-vs-metadata semantics honored · unknown fields preserved round-trippable · **executable
+content stripped, never gated** (R66: cards can carry code) · avatar lands in the agent's media
+library · an import report says what mapped.
+
+**Lorebooks (ruling 9):** a first-class, roleplay-INDEPENDENT subsystem — own YAML-file
+storage, V3-aligned entry subset, 4-state scan + refusal-not-eviction budget (R65),
+attachable to any agent; **a sibling of Core Memory, never merged** (plan §6.8 records why).
+Ships with a real test book (§6.7).
+
+**The visual surface:** the agents list leaves Conf for its **own settings section — the
+gallery** (ruling 17; card grid, tap=edit + Talk button, the inversion owner-overridable at the
+S7 device round) · agent art reuses the gacha library/binding pattern + the Phase 21 crop/focus
+machine wholesale (rulings 4/14, no media-model change) · the **three-state chat backdrop**
+operator/full/off ships in-phase default ON (ruling 13; gacha oracle + kit layer; frontier v1
+unchanged, follow-up cleanup per ruling 18) · the who-line **dot-swap avatar** with one
+Appearance toggle + dot fallback (ruling 20) · per-agent TTS voice with global-default
+fallback (ruling 21) · the §9a prompt-editor refinements ride the phase (ruling 19: grayed
+editable defaults without the R27 freeze trap, customized-field highlight, registry-owned
+grouping).
+
+**Authority split:** ROLEPLAY_PLAN owns the agent-feature expansion + lorebooks;
+`MEDIA_MANAGER_PLAN` keeps media writes/libraries; `PROMPTS_PLAN` keeps the registry;
+`CORE_MEMORY_PLAN` keeps Core Memory. Build = **S0–S7 per plan §10**, one slice per session
+under the standing cadence (pinned Opus build → main-seat audit → blind Emma round → fix wave
+→ close); S7 = the owner device round gates the phase.

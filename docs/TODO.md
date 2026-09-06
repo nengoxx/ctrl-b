@@ -1527,6 +1527,38 @@ build from a pinned brief → main-seat audit → Emma-lane review; each passes 
       vision on OpenRouter · no-vision on qwen (expect the in-band ERROR) · a real PDF · a
       compacted-thread re-read via the manifest · the expand control on the phone's line composer.
 
+## Phase 23 — Characters are agents: the conversational-agent expansion · lorebooks · the visual agents surface — **✏️ DESIGN RATIFIED 2026-09-06 ([`D70`](./DECISIONS.md)) · spec = [`ROLEPLAY_PLAN.md`](./ROLEPLAY_PLAN.md) (council-closed §13; §10 = the slice ladder; build against the plan, NOT this list)**
+
+SillyTavern-class conversational characters as ordinary agents (one flat system, ruling 1) +
+lorebooks as a roleplay-independent subsystem. Standing cadence per slice: pinned Opus build →
+main-seat audit → blind Emma round → fix wave → close; each passes `tools/check.py`.
+
+- [ ] S0 — Assembly core (BE): AgentDef fields + config section + macro pass + the Voice/Duties
+      split (`DEFAULT_SYSTEM_PROMPT` → persona default + `duties_agent`; the new
+      `duties_conversational`) + scenario/persona blocks + the post-history tail slot ·
+      golden-fixture assembly pins (a no-new-fields agent's diff = exactly the restructured
+      head, nothing else).
+- [ ] S1 — Greeting + example dialogue + voice (BE): thread seeding · `<START>` parsing ·
+      pseudo-message emission · the normalize-seam probe on strict templates · per-agent voice
+      resolution.
+- [ ] S2 — Card import (BE): PNG/JSON/CHARX containers + sniffing · normalization + mapping ·
+      the strip pass · avatar into the library · explicit minimal tools · the import report.
+- [ ] S3 — Lorebooks (BE): storage/CRUD · scan · render/budget · bindings · book import.
+- [ ] S4 — The agents surface (FE + summary API): the `GET /agents` per-agent summary map
+      FIRST (Emma F12) · the gallery section (AgentsEditor relocation + visual cards) ·
+      avatar/background via the reused crop/focus machine · marked fields + visibility
+      predicate · duties toggle · Conf group + persona editor · import UI + report ·
+      agent-picker avatars · the who-line avatar swap + toggle · the §9a prompt-editor
+      refinements.
+- [ ] S5 — Lorebook FE: manager + attachment picker.
+- [ ] S6 — The three-state backdrop (FE/theme): appearance setting + gacha oracle integration +
+      the kit backdrop layer + `off`-state surface behavior (default `operator`; frontier
+      unchanged v1).
+- [ ] S7 — Owner device round (the phase gate): import a real card · talk to it on the phone ·
+      tools-in-character on both duties settings · all three backdrop states (blur/dim
+      legibility) · a field-authored lorebook triggering live · showcase + picker feel ·
+      read-along on a character reply.
+
 ## Cross-cutting / don't-forget
 
 - [ ] Secrets: gitignore YAML + `*.db`; mask in API; never log SSH passwords / keys.
