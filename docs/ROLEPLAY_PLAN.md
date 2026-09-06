@@ -1261,3 +1261,81 @@ positions (`1.0`) now take the unknown-position warning where pre-fix they hash-
 the table silently — honest, recorded here · the multipart-spool ingress class
 covers `/lorebooks/import` too (Phase 19, the standing K3 posture). **S3 is CLOSED;
 S4 (the agents surface, §10-S4) is next per §10.**
+
+### S4 — the agents surface: BUILT + main-seat AUDITED 2026-09-07 (fifth session) — ⚠ the blind Emma round is OWED (the next session's first move)
+
+**Two pinned Opus builds, five commits, gate green throughout** (the slice split BE-half-first
+per §10-S4/F12, then the FE in two coherent halves):
+
+**Build 1 — `e6cd1d9` (BE) + `52eb52f` (FE chat half).** `GET /agents` gains `summaries`
+(title · description · avatar · background · voice; EVERY agent incl. the root default; one
+`to_thread` hop; a specialist that fails to load degrades to a name-only row + WARN rather
+than 500ing or vanishing — `resolve_agent`'s posture applied to a list; the resolved default
+is `setdefault`-ed in) · `PromptDef.group` + the closed `PROMPT_GROUPS` vocabulary, emitted
+by `GET /prompts` (30 entries labelled; declaration order stays the ONE ordering authority) ·
+`hooks/useAgentArt` = the ONE summary-map × media-index join (W9 identity via
+`entryId`/`rowId`, the shipped `shown`/`orderedUsable` predicates; a function resolver, not a
+per-bubble hook) · picker avatars (ADDITIVE beside the tick — the swap semantics are §8.5's)
+· the who-line avatar swap in the dot's exact position (class-suppressed `::before`, plain
+`object-fit: cover` at ~18px — `FocalImg` would cost a ResizeObserver per bubble on an
+unvirtualized log) governed by the synced `chatAvatarsVisible` Appearance switch (default ON;
+OFF ⇒ no resolver handed down, zero cost) · `agent` on every TTS request, carried on the
+SESSION so chunked reads keep one voice; null omits the field (the server's absent⇒default
+chain IS the contract); the live streaming bubble carries its agent from the stream seed
+(`store/chat.ts` `emptyAssistant(id, agent)`), so the S1 unpersisted-reply obligation is
+truly closed. **All 4 declared deviations ACCEPTED** (the synced toggle's additive BE
+appearance field — no migration; the `voice & duties` group name; the additive picker circle;
+the closed vocabulary). The frontier who-line being live is CONFIRMED intentional (ruling
+18's carve-out is the §8.3 backdrop; frontier renders the shared ChatThread). The always-on
+`["media","agents"]` observer is accepted (F12's shared read; the gallery wants it) — Phase
+19 register if it ever measures.
+
+**Build 2 — `a191839` (the gallery section) + `5e4e0e0` (fields + Conf groups) + `b84e39e`
+(import UI + §9a).** The agents gallery as its OWN section (`agents` TabDef, lazy body;
+OFF-BAR under all three presets — the ruled Axis-A fall-through renders it as a direct docked
+appbar button, keeping the layout pickers' literal "N on the bar" labels true) · 2-col card
+grid at 390px, `FocalImg` + focus, initial-tile placeholder, default-first · tap = in-place
+detail swap to the SAME `AgentRow` form (no second form, no overlay machinery) · TALK pins
+via the extracted `pinSessionAgent` (the `/agent` verb's own seam) + navigate · Conf keeps
+ONLY the `agent.*` globals (`AgentGlobals`), no duplicate list · the §9 marked fields on the
+form under the per-field predicate (`roleplay.enabled` OR populated; duties always;
+`alt_greetings`/`lorebooks` round-trip only; `card` = a read-only stash line), persistent
+one-line help per field · the `agents` MEDIA_NS row (alwaysOn; both roles FULL_ART, framable,
+avatars aspect 1 with one square preview, backgrounds 9/16; NO active resolver and NO slots —
+bindings on the AGENT decide, the gallery says nothing about "in use") · avatar/background
+binding rows driving the untouched `useImageJob` machine through `useMediaUpload`'s new
+`onStored` hop (fires only on `written`) · Conf `roleplay` group (enabled · default_tools ·
+persona) + `lorebooks` numeric globals (`books` editing deferred to S5 with the picker) · the
+import UI on the gallery header under `roleplay.enabled` (`postForm` = the app's one
+multipart POST; the shared `refuse()` dedup — three pre-existing copies folded), the report
+INLINE with warnings leading, errors via the mutation toast with the server's detail · §9a:
+the modal pre-fills the shipped default muted-until-edited, the freeze trap closed at the
+SAVE end (`foldEqualDefault`: exact equality after ONLY the shipped whitespace-only→empty
+norm — F15 honored; equal base clears only `override`, `append` survives; the two-fact
+design also folds a hand-retyped default) · the customized accent (tcat-mod border) · grouped
+sections derived from the API's row order, unplaced rows trailing title-less.
+**All 9 declared deviations ACCEPTED** — headline rulings: the off-bar placement; the inline
+report; the `LongField`/`refuse()`/`useAgentToolGrid`/`pinSessionAgent`/`useRoleplay`
+extractions (each killed a duplication or an import cycle); the Conf renumbering 15–23; the
+e2e premise changes recorded honestly (gacha's appbar ~43→~50px — the docked nav action now
+exists in every layout; bar-less chrome takes the 34px launcher inset).
+
+**Gate at tip: 6/6 green — BE 2,372 (+7) · FE 2,954/173 (+32/+4) · local e2e 319 passed
+(both projects, incl. the new gallery spec)**; counts in QUALITY.md; the main seat re-ran the
+full gate independently at the tip. Dev backend restarted onto `b84e39e`; both dev units
+RUNNING (:5434 + :5173) for the owner's poke.
+
+**OWNER-FEEL items riding the owner round (not defects):** the gacha appbar height (+~7px)
+and the bar-less-chrome scroll inset (10→34px) from the always-present docked nav action —
+exits recorded (slimmer docked variant, or on-bar + preset renames) · the import report does
+not persist across a tab switch (re-import re-renders it) · toast-verbatim import errors.
+**Recorded residuals:** eslint backlog 72→97 (F13-attributed in QUALITY.md) · the
+crop→upload→bind round trip is pinned only at the `onStored` hop (the machine itself keeps
+its own suite); a real-card import through the UI = S7's device round.
+
+**⚠ THE SLICE IS NOT CLOSED: the blind Emma round (R46 brief, `--ignore-rules`, the five
+commits `e6cd1d9`..`b84e39e` against plan §8/§9/§9a/§10-S4) + fix wave + confirm are the next
+session's FIRST move** (the S1 precedent — build+audit one session, review the next; ruled
+here for context discipline, the owner's standing handoff directive). The ⚠ S4 TTS obligation
+is MET pending her verification; S5 still owes the collapsed-entry lorebook editor (§6.6) and
+the `lorebooks.books` global editor.

@@ -12,7 +12,52 @@
 > `tmux display-message -p '#S'`, and CHECK THE EFFORT — a supervising seat at low effort is the
 > failure mode.)*
 
-## Current state (2026-09-06, FOURTH session — S3 LOREBOOKS BUILT + COUNCIL-CLOSED; supersedes below where it speaks)
+## Current state (2026-09-07, FIFTH session — S4 BUILT + MAIN-SEAT AUDITED; ⚠ the blind Emma round is OWED and opens the next session; supersedes below where it speaks)
+
+- **S4 (the agents surface, §10-S4) is BUILT across two pinned Opus builds — five commits,
+  gate green throughout — and MAIN-SEAT AUDITED (all 13 declared deviations across both
+  builds ACCEPTED), but NOT council-closed:** the blind Emma round did not run this
+  session (ruled deliberately — the S1 precedent, the owner's standing clean-handoff
+  directive; build+audit one session, review the next). **Full record = plan §13-S4.**
+  - **Build 1 `e6cd1d9`+`52eb52f`:** the F12 `GET /agents` summary map (every agent incl.
+    the root default, name-only degrade, one `to_thread`) · `PromptDef.group` + the closed
+    `PROMPT_GROUPS` vocabulary · `hooks/useAgentArt` (the ONE summary×media-index join) ·
+    picker avatars (additive) · the who-line avatar swap + the synced `chatAvatarsVisible`
+    Appearance switch (default ON) · **the standing S1 TTS obligation MET**: `agent` rides
+    every TTS request, session-carried for chunked reads, and the live streaming bubble
+    already carries its agent — the unpersisted-reply case is covered.
+  - **Build 2 `a191839`+`5e4e0e0`+`b84e39e`:** the agents gallery as its OWN section
+    (off-bar → a direct docked appbar button in every layout; 2-col card grid; tap =
+    in-place detail swap to the SAME AgentRow form; TALK via the extracted
+    `pinSessionAgent`) · Conf keeps only the `agent.*` globals · the §9 marked fields under
+    the per-field predicate (duties always visible; `alt_greetings`/`lorebooks` round-trip
+    only) · the `agents` MEDIA_NS row (FULL_ART, framable, avatars 1:1 / backgrounds 9:16,
+    no active resolver — bindings decide) · avatar/background binding rows through the
+    untouched `useImageJob` machine (`useMediaUpload.onStored`) · Conf `roleplay` +
+    `lorebooks` groups (`books` editor deferred to S5) · the import UI + INLINE report
+    (`postForm` + the `refuse()` dedup) · §9a complete (muted pre-fill, `foldEqualDefault`
+    at the save end — F15-exact, append survives; customized accent; API-derived groups).
+- **Gate at tip `b84e39e`: 6/6 green — BE 2,372 · FE 2,954/173 · local e2e 319 passed both
+  projects** (counts in QUALITY.md; the main seat re-ran the full gate independently).
+  **Dev backend RESTARTED onto the tip; BOTH dev units RUNNING** (:5434 + :5173 — the
+  owner can poke the gallery; D69 presence observation continues, do NOT stop the units).
+- **▶▶ THE NEXT SESSION'S FIRST MOVE = the blind Emma round on S4** (R46 brief,
+  `--ignore-rules`, commits `e6cd1d9`..`b84e39e` against plan §8/§9/§9a/§10-S4; hermes emma
+  lane, `setsid nohup` + a Monitor — the launcher PID dies BY DESIGN, find the real PID;
+  `pgrep hermes_cli.main` matches her gateway daemons) → main-seat rulings → fix wave →
+  her confirm → THEN the owner's word closes S4 and opens S5 (lorebook FE: manager +
+  attachment picker + the §6.6 collapsed-entry editor + the `lorebooks.books` editor).
+  **Owner-feel items riding the owner's next dev round:** the gacha appbar +~7px and the
+  bar-less-chrome 34px scroll inset (the always-present docked nav action; exits recorded
+  in plan §13-S4) · the gallery/report feel · a real card imported through the UI.
+- **Git: 55 commits unpushed over origin `04769d9`** (the 49 at session open + the five S4
+  commits + this docs commit); working tree clean; the PUSH ruling stays the owner's.
+  **Prod untouched: v1.7.7 @ `578ffa7`.** The v1.7.8 pipeline (Dependabot D1 → push →
+  release E, config migration 2→3, rollback = config backup FIRST then v1.7.7) is unchanged
+  and still owed; sequencing is the owner's. **NEXT-NEXT (owner): LIVE VOICE/CALL MODE —
+  start at R51, buy only the delta.**
+
+## Prior state (2026-09-06, FOURTH session — S3 LOREBOOKS BUILT + COUNCIL-CLOSED; superseded above where it speaks)
 
 - **S3 (lorebooks, §10-S3) is BUILT + COUNCIL-CLOSED, the full standing cadence in one
   session:** pinned Opus build **`cc1f069`** (the whole plan-§6 subsystem: file-per-book
