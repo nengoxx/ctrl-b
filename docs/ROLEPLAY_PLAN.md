@@ -1248,7 +1248,12 @@ landing), every `selectiveLogic: 0` → `and_any` cleanly, `matchWholeWords` abs
 true, priorities carried, 16 field-classes stashed verbatim (`depth`, `probability`,
 `extensions`, …). Landed as `personality-traits` (0600, YAML-1.1-quoted, 38KB) and
 **ATTACHED to Lynette on dev via the editor PUT** — the S7 device round finds it
-live; a trait word in chat triggers it.
+live; a trait word in chat triggers it. **The ACTIVATION chain was then proven live
+too (owner ask at session close): a canary probe book (key `zanzibar` → "the
+passphrase is CRELLOFAX") was attached beside it, one real chat turn on the trigger
+word made the model answer CRELLOFAX — a fact that exists ONLY in the lorebook — and
+the probe was cleaned up (book deleted, attachment restored). Scan → activation →
+framed head block → wire → live model, end-to-end on dev.**
 
 **Residuals recorded, none owed:** genuinely user-less histories degrade the resume
 window to empty-incoming over the plain tail (best-effort, documented) · float

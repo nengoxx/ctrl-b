@@ -36,8 +36,12 @@
   Traits.json` imported 201 with ZERO warnings (all position 1 = the exact head
   landing; all 36 gates → `and_any` cleanly), landed as `personality-traits`
   (0600, 38KB) and **ATTACHED TO LYNETTE on dev via the editor PUT** — a trait word
-  ("groomed", "tidy", …) in a chat with her triggers it live. Dev backend RUNNING on
-  the `39237be` tip (D69 presence observation continues — units stay RUNNING).
+  ("groomed", "tidy", …) in a chat with her triggers it live. **The activation chain
+  is ALSO proven live (owner ask at close): a canary probe book made the model answer
+  a passphrase that exists ONLY in a lorebook entry — one real chat turn on dev,
+  probe cleaned up after.** Dev backend RUNNING on
+  the `39237be` tip (D69 presence observation continues — units stay RUNNING; two
+  harmless probe threads remain in the dev thread list, removable from the UI).
 - **Next slice = S4 (the agents surface, §10-S4)**, one slice per session, the owner's
   word opens it — the BE summary-map half FIRST (Emma F12), and it carries the standing
   **⚠ S4 obligation: the FE sends `message.agent` on TTS calls.** The S5 collapsed-entry
