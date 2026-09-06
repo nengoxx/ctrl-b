@@ -1037,3 +1037,50 @@ no asymmetric half-consumption (exhaustive 0–7 leading/trailing-brace checks i
 `consumes_original` × once-rule), and swept registry defaults for reliance on the old
 matching: none. **S0 is CLOSED; S1 (greeting + example dialogue + voice resolution) is
 next per §10.**
+
+### S1 — greeting + example dialogue + voice: BUILT + council-CLOSED 2026-09-06 (same session)
+
+**Build `cdf2ccb`** (Opus 5, pinned brief): `greeting.py` (one shared seeder — real
+assistant turn, `actor=AGENT` + resolved name, macros at seed time) wired to exactly the
+two interactive seams (`POST /threads` gains the optional selected agent + thread PIN;
+the chat endpoint seeds only AFTER `_auto_route_agent`, before the user's first message
+persists; automations/subagents reach it from nowhere — pinned) · `examples.py`
+(`<START>` parsing to ST's named-pseudo-message wire shape; no-marker field = one block;
+a speakerless block survives as the character's turn where ST silently drops it) · the
+one-line normalizer boundary rule (a `name`-carrying system message terminates the
+leading coalescing run) · `POST /voice/tts` gains `agent` and `_voice_id` (explicit
+voice > agent voice > global chain; NAME not message-id — read-along speaks an
+unpersisted reply, recorded as the S4 obligation: the FE must send `message.agent`).
+Gate 6/6; BE 2,226→2,248. **Main-seat audit: all 10 declared deviations ACCEPTED.**
+
+**The live probe (the §4.2 S1 verification item) RAN on dev against the real primary**
+(qwen3.6/corsair, the strict-template path): pinned thread seeded its greeting rendered
+(`{{user}}`→"User"); the reply came back in character, honest under `tools: []` ("I
+don't have direct access to check the fleet, so I'm just trusting the vibes!"), no
+example-frame echoes; qwen's reasoning landed in its `reasoning` part. Probe agent
+deleted (the thread remains — no thread-delete route exists).
+
+**Blind Emma round: SHIP WITH FIXES — 3 MED, sweep "none"** (she cleared the greeting
+seams — no double-seed, pinned threads defeat the auto-router, seam ③ structurally
+unreachable — the cache lifetime, the boundary rule's blast radius, and the pin
+narrowing). **MED-1** (conf 1.0): strict templates render role+content only (R41's
+pinned qwen template ignores JSON `name`) — both example sides reached the primary as
+identical generic frames, erasing the side distinction. **MED-2** (0.99,
+reviewer-REPRODUCED): user-first prefix matching misfiled `Ann:archivist:` lines under
+`example_user`. **MED-3** (0.99): `_voice_id`'s `.strip() or None` silently defaulted a
+whitespace voice — the F6-forbidden promise.
+
+**Fix wave `b26657d`** (main-seat, leanest forms): the downgraded frame states its name
+(`<system-update name="example_user">`, attribute-escaped; hostile-name pin) · longest
+resolved prefix wins (identical names stay user-first, pinned as the documented limit) ·
+`voice or None`, as-is (whitespace pin). Two of her fix-halves TRIMMED as
+over-engineered: the rendered-jinja-template test (the frame IS what the template
+renders) and the pre-expansion label-hint fallback (inverts ST's macro-then-parse order
+for a pathology with no real-card shape). Rider: httpx → WARNING beside the new
+`basicConfig` (journal noise). BE **2,251**.
+
+**Confirm round: all three RESOLVED, BOTH TRIMS ACCEPTED** (her own checks: no
+exact-format consumer of the old opener repo-wide; identical names carry no recoverable
+side information; named-frame normalization idempotent; empty-name prefixes are `":"`,
+never match-everything), **new findings NONE. S1 is CLOSED; S2 (card import) is next
+per §10.**

@@ -1539,9 +1539,12 @@ main-seat audit → blind Emma round → fix wave → close; each passes `tools/
       golden-fixture assembly pins (a no-new-fields agent's diff = exactly the restructured
       head, nothing else). **CLOSED 2026-09-06**: build `786698c` + fix wave `fc3901d` (the
       malformed-brace-run MED); Emma confirm RESOLVED, zero new; full record = plan §13-S0.
-- [ ] S1 — Greeting + example dialogue + voice (BE): thread seeding · `<START>` parsing ·
+- [x] S1 — Greeting + example dialogue + voice (BE): thread seeding · `<START>` parsing ·
       pseudo-message emission · the normalize-seam probe on strict templates · per-agent voice
-      resolution.
+      resolution. **CLOSED 2026-09-06**: build `cdf2ccb` + fix wave `b26657d` (3 Emma MEDs:
+      name-in-frame · longest-prefix · voice-as-is); live probe on qwen PASSED; Emma confirm
+      RESOLVED, zero new; **S4 obligation: the FE must send `message.agent` on TTS calls**;
+      full record = plan §13-S1.
 - [ ] S2 — Card import (BE): PNG/JSON/CHARX containers + sniffing · normalization + mapping ·
       the strip pass · avatar into the library · explicit minimal tools · the import report.
 - [ ] S3 — Lorebooks (BE): storage/CRUD · scan · render/budget · bindings · book import.

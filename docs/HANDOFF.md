@@ -28,10 +28,23 @@
   fix wave **`fc3901d`** (pattern lookarounds + `_first_only` re-driven off the exported
   `TOKENS` pattern — one token definition everywhere; the ruling also caught and fixed the
   once-rule's literal-substring first-slot steal) → **confirm RESOLVED conf 0.99, zero new
-  findings.** Gate green throughout; **BE 2,226** (counts in QUALITY.md). Full record =
-  **plan §13-S0**. **Next slice = S1** (greeting seeding + `<START>` example dialogue +
-  the normalizer named-boundary rule + per-agent voice resolution; §10-S1 + the §4.2 S1
-  probe items), one slice per session, the owner's word opens it.
+  findings.** Gate green throughout. Full record = **plan §13-S0**.
+- **S1 (greeting + example dialogue + voice) is ALSO BUILT + COUNCIL-CLOSED, same
+  cadence, same session:** Opus build **`cdf2ccb`** (the shared seeder on exactly the
+  two interactive seams — `POST /threads` agent pin + post-route chat seeding; `<START>`
+  parsing to ST's named pseudo-messages; the one-line normalizer boundary rule;
+  `POST /voice/tts` `agent` param) → audit (all 10 deviations ACCEPTED) → **the live
+  probe on the real primary PASSED** (qwen/corsair: greeting seeded + an in-character,
+  honest-under-no-tools reply — the conversational duties text behaving exactly as
+  designed) → blind Emma **SHIP WITH FIXES: 3 MED** (name-in-frame on strict templates ·
+  longest-prefix speaker matching · voice passed as-is) → fix wave **`b26657d`** (+ the
+  httpx→WARNING journal rider) → **confirm: all RESOLVED, both trims accepted, zero
+  new.** **BE 2,251** (counts in QUALITY.md). Full record = **plan §13-S1**.
+  **⚠ S4 obligation recorded: the FE must send `message.agent` on TTS calls** — until
+  then per-agent voice is wired but unexercised end-to-end. **Next slice = S2 (card
+  import, §10-S2)**, one slice per session, the owner's word opens it. *(Ops note: the
+  hermes emma lane's BACKGROUNDED runs died instantly-killed several times this session;
+  foreground runs succeed — run her rounds foreground until diagnosed.)*
 - **The 09-06 opening item CLOSED — the presence mystery was a LOGGING bug, not the
   phone:** the backend NEVER configured Python logging (no `basicConfig` anywhere), so
   every app-level INFO line — the whole D69 presence trail, the D2-A monitor lines — was
@@ -43,9 +56,10 @@
   at 10:51 while the owner was home — watch whether LAN pins offline (Android ICMP
   power-save class vs a reservation problem). ⚠ Prod (v1.7.7) still has the blindness —
   the fix rides v1.7.8.
-- **Git: 35 commits unpushed over origin `04769d9`** (the 30 at session open + `c79d9f4`
-  logging + `f328d9f` D70 + `786698c` S0 + `fc3901d` fix + this docs commit); working
-  tree clean; the PUSH ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.**
+- **Git: 38 commits unpushed over origin `04769d9`** (the 30 at session open + `c79d9f4`
+  logging + `f328d9f` D70 + `786698c` S0 + `fc3901d` its fix + `e662da1` its record +
+  `cdf2ccb` S1 + `b26657d` its fix + this docs commit); working tree clean; the PUSH
+  ruling stays the owner's. **Prod untouched: v1.7.7 @ `578ffa7`.**
   The v1.7.8 pipeline is unchanged and still owed (Dependabot D1 bump → push → release E
   per the corrected 09-04 line: config migration 2→3 rides it, rollback = config backup
   FIRST then v1.7.7, pre-tag LOCAL e2e + the three-wave stale-pin sweep) — the roleplay
