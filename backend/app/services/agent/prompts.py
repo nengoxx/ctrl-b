@@ -56,10 +56,17 @@ class PromptDef:
 #: a typo is visible, never silently blanked). `escaped`/`braced` have no form in this syntax but must
 #: exist, so both are made unmatchable — every `{` outside a `{{name}}` pair (a JSON example in a
 #: prompt, a shell brace) passes through untouched.
+#:
+#: The lookarounds keep a token OUT of a longer malformed brace run (S0 Emma round, MED): without
+#: them the `invalid` branch eats the first `{{` of `{{{{char}}` and the scan then finds a "valid"
+#: token inside what the owner wrote as one literal blob — half-substituting it (and, via
+#: `{{original}}`, injecting a whole prompt head the author never asked for). A run with extra
+#: braces on either side is not a token; it survives verbatim, visibly (the same typo-is-visible
+#: rule the miss case follows).
 _PLACEHOLDER_PATTERN = r"""
-    \{\{(?:
+    (?<!\{)\{\{(?:
         (?P<escaped>(?!))|
-        (?P<named>[A-Za-z_][A-Za-z0-9_]*)\}\}|
+        (?P<named>[A-Za-z_][A-Za-z0-9_]*)\}\}(?!\})|
         (?P<braced>(?!))|
         (?P<invalid>)
     )
@@ -77,6 +84,13 @@ class _Placeholders(string.Template):
     # `Template.__init_subclass__` compiles this str into the `Pattern` the base class declares;
     # assigning an already-compiled pattern raises, so a str is the only way to override it.
     pattern = _PLACEHOLDER_PATTERN  # type: ignore[assignment]
+
+
+#: The compiled token pattern — THE definition of what a `{{name}}` token is, exported so a
+#: consumer that must walk tokens positionally (the macro pass's once-rule) shares it instead of
+#: re-deriving tokenhood from literal substrings, which is how a malformed run and a real token
+#: get conflated. Matches carry the same named groups `convert()` dispatches on.
+TOKENS: re.Pattern[str] = _Placeholders.pattern
 
 
 def render(text: str, values: Mapping[str, str]) -> str:

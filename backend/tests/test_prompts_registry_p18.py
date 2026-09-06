@@ -589,6 +589,14 @@ def test_renderer_edges() -> None:
     assert render("{{a}}{{b}}", a="1", b="2") == "12"  # adjacent tokens
     assert render("${x} and $x", x="1") == "${x} and $x"  # `$` is not our delimiter
     assert render("{{a}}", a="{{b}}", b="2") == "{{b}}"  # values are data, never re-rendered
+    # A token inside a longer malformed brace run is NOT a token (S0 Emma round, MED): without the
+    # pattern's lookarounds, `invalid` ate the first `{{` and the scan then half-substituted what
+    # the owner wrote as one literal blob. Runs stay verbatim — visible, like any other typo.
+    assert render("{{{{a}}", a="1") == "{{{{a}}"  # extra leading braces
+    assert render("{{a}}}", a="1") == "{{a}}}"  # extra trailing brace
+    assert render("x{{{{a}}y", a="1") == "x{{{{a}}y"  # mid-text run
+    assert render("{{{a}}", a="1") == "{{{a}}"  # triple brace — was literal before, stays literal
+    assert render("{{{{a}} {{a}}", a="1") == "{{{{a}} 1"  # the REAL token beside a run still renders
 
 
 # ── 6. the config read path ─────────────────────────────────────────────────────────────────────

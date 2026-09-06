@@ -22,10 +22,11 @@ head itself? If so the Duties section is NOT emitted a second time beside it.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.services.agent.prompts import placeholders, render
+from app.services.agent.prompts import TOKENS, placeholders, render
 
 if TYPE_CHECKING:
     from app.config import Settings
@@ -74,8 +75,21 @@ def consumes_original(text: str) -> bool:
 
 
 def _first_only(text: str, name: str) -> str:
-    """`text` with every `{{name}}` past the FIRST removed — the explicit once-rule (`safe_substitute`
-    replaces all occurrences, so blanking the repeats is what makes "once" true)."""
-    token = "{{" + name + "}}"
-    head, sep, tail = text.partition(token)
-    return text if not sep else head + token + tail.replace(token, "")
+    """`text` with every `{{name}}` TOKEN past the FIRST removed — the explicit once-rule
+    (`safe_substitute` replaces all occurrences, so blanking the repeats is what makes "once" true).
+
+    Walks `TOKENS`, the renderer's own pattern — never literal substrings: a `{{name}}` inside a
+    longer malformed brace run is not a token, and counting it as the "first" here would blank the
+    real token later in the text (deleting owner content the renderer would have substituted)."""
+    seen = False
+
+    def _keep_first(m: re.Match[str]) -> str:
+        nonlocal seen
+        if m["named"] != name:
+            return m[0]
+        if seen:
+            return ""
+        seen = True
+        return m[0]
+
+    return TOKENS.sub(_keep_first, text)

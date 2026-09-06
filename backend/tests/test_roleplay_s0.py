@@ -394,6 +394,22 @@ def test_original_is_substituted_once() -> None:
         assert block.endswith("And again: ")
 
 
+def test_a_malformed_brace_run_is_not_a_token() -> None:
+    """The S0 Emma round's MED, both halves. A `{{original}}` inside a longer brace run must not
+    trigger head consumption (the run is a literal, not a token) — and it must not count as the
+    once-rule's "first", which would blank a REAL token later in the text and silently delete the
+    head the owner asked for there."""
+    from app.services.agent.macros import Macros, consumes_original
+
+    assert not consumes_original("{{{{original}}")
+    m = Macros(char="Nyx", user="User")
+    assert m.render("{{{{original}}", original="HEAD") == "{{{{original}}"
+    assert m.render("{{{{char}}") == "{{{{char}}"
+    # The run does not steal "first": the real token still substitutes, a second real one blanks.
+    assert m.render("{{{{original}} {{original}}", original="HEAD") == "{{{{original}} HEAD"
+    assert m.render("{{original}} {{original}}", original="HEAD") == "HEAD "
+
+
 def test_original_is_the_configured_fallback_voice_when_one_is_set() -> None:
     """The confirm-round F3 correction: a configured `inference.system_prompt` IS the no-card
     Voice; the baked persona is only the last rung."""
