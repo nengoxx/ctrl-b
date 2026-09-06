@@ -129,6 +129,12 @@ from app.services.svc import ServiceService
 # backend/app/main.py -> repo-root/frontend/dist
 _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
+# The app's log sink. Uvicorn's default config wires only its own `uvicorn.*` loggers
+# (propagate=False); without this, every app logger falls through to a handler-less root and
+# Python's last-resort handler drops INFO — the D69 presence trail and the D2-A monitor lines
+# were never emitted. No-op when root already has handlers (pytest); journald stamps timestamps.
+logging.basicConfig(level=logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 
