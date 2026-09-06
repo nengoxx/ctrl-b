@@ -247,8 +247,11 @@ package, which is exactly why they survive here.)
 Head shape: ONE leading system message, two `## `-labelled sections (labels are registry-owned
 framings). **`{{original}}` semantics — field-specific, per the V2 contract (Emma F3):** the
 spec defines it as "the prompt that would have been used WITHOUT the card". So in the
-persona/SOUL text it substitutes **the complete no-card head** (the default Voice text + the
-selected duties text) and CONSUMES the separate Duties-section emission — substituted once at
+persona/SOUL text it substitutes **the complete no-card head**: the Voice the CHAIN would have
+resolved without this persona — `inference.system_prompt` when configured, else the baked
+default persona (confirm-round F3 correction: a configured fallback override IS the no-card
+Voice; the baked text is only the last rung) — plus the selected duties text; and it CONSUMES
+the separate Duties-section emission — substituted once at
 its FIRST occurrence, later occurrences render empty (`safe_substitute` replaces all, so the
 once-rule must be explicit). In `post_history` it substitutes ctrl-b's default post-history
 text — which is empty — so it renders as nothing there; it never injects Duties at the tail.
@@ -276,9 +279,12 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
   LEADING system run, which `normalize_system_messages` merges name-droppingly. The fix is a
   one-line boundary rule in the normalizer: **a `name`-carrying system message TERMINATES the
   leading coalescing run** — the head coalesces up to the first named message, and the named
-  examples fall through to the existing later-system branch, which preserves `name` and
-  re-roles per dialect (marked `user` on strict templates). One focused normalize test: head +
-  two named examples + user history, both dialects. Turn-stable, cached with the head.
+  examples fall through to the existing later-system branch, whose behavior is UNCONDITIONAL
+  (confirm-round correction — there is no per-dialect switch and none is added): every later
+  system message re-roles to marked `user` text, position preserved, with the example's
+  name/side carried in the rendered frame. Uniform across every provider — the 5–6/7 peer
+  convention for non-leading instruction content (R42). One focused normalize test: head +
+  two named examples + user history. Turn-stable, cached with the head.
   **S1 verification item (coverage audit):** probe that the cloud dialects we actually use
   accept `name` on system messages, and that the qwen/llama.cpp path renders the normalized
   form sanely — R41/R42 cover strict-template systems generally, but named example
@@ -474,10 +480,15 @@ loader. Shared ground they DO get: the fallible-data framing convention + regist
   execute none and warehouse none. **The strip is a concrete normalized-key DENYLIST applied
   RECURSIVELY before stashing (Emma F7 — prose categories can't drive a sanitizer, and the
   live Risu key is `customScripts`, not the older `regex_scripts` name):** at minimum
-  `extensions.risuai.customScripts` · `triggerscript` · `virtualscript` · the low-level-access
-  flags (`lowLevelAccess`) · CHARX module/code members — one function, walking every V1/V2/V3/
-  raw-extension shape, reporting the EXACT removed paths in the import report, and reused
-  verbatim on any future export (the field's strip-on-import-AND-export precedent). Inert
+  the keys `customScripts` · `triggerscript` · `virtualscript` · `lowLevelAccess`, matched at
+  ANY depth of the `extensions` tree (V3 permits nesting; the canonical home is
+  `extensions.risuai.*`). **CHARX's code carrier is handled structurally, not by key
+  (confirm-round F7 correction): our CHARX reader ingests `card.json` and asset entries
+  ONLY — the Risu MODULE zip member (the thing whose scripts Risu's own importer folds into
+  `triggerscript`/`customScripts`, R66 §3.1) is never read or stashed at all.** One function,
+  walking every V1/V2/V3/raw-extension shape, reporting the EXACT removed paths in the import
+  report, and reused verbatim on any future export (the field's strip-on-import-AND-export
+  precedent). Inert
   unknown extension data stays (P4).
 - **Zip handling**: `card.json` size cap, per-asset + total caps, normalized paths (reject
   traversal), bounded entry count — the media 413 conventions applied to a new container.
@@ -714,7 +725,8 @@ cleanup (18).)*
 
 **THE COURT IS CLOSED (round 8).** Every question is ruled: duties texts (round 6) · bubble
 avatar = the who-line dot swap, toggleable, dot fallback (ruling 20 → §8.5) · per-agent TTS
-voice IS v1 with silent fallback (ruling 21 → §3.1/§8.5). The one standing owner-overridable:
+voice IS v1 — absent ⇒ the global default; an invalid non-empty id reports through the
+existing TTS error path (ruling 21 as F6-narrowed → §3.1/§8.5). The one standing owner-overridable:
 the gallery tap inversion (§8.4 — tap=edit, Talk=button; presented round 8, not vetoed;
 the S7 device round re-tests the feel either way).
 
@@ -926,3 +938,57 @@ VERDICT: BUILD WITH CHANGES
 
 Fix the findings above in the plan before S0. The highest-value corrections are the normalize-system boundary, operationally complete conversational Duties, field-correct `{{original}}`, explicit greeting path coverage, truthful TTS fallback, concrete import caps/strip paths, two-block lore rendering, and the agent-summary endpoint. After those, the slice ladder is buildable without a redesign.
 ```
+
+### Round 2 — the confirm round (2026-09-06, resumed session): 13/15 RESOLVED · F3+F7 residual · 2 fold-introduced problems → NOT CONFIRMED; all four fixed same-turn
+
+Her verbatim confirm result:
+
+```
+F1 — RESOLVED: “a `name`-carrying system message TERMINATES the leading coalescing run” (§4.2, lines 277–280), with the requested focused two-dialect test.
+
+F2 — RESOLVED: conversational duties retain tool-over-guessing, carry-through, batching, fleet/web routing, confirmation handling, ID resolution, and repeat-call avoidance (§4.1a, lines 224–245).
+
+F3 — NOT RESOLVED: §4.1 defines `{{original}}` as “the default Voice text + the selected duties text” (lines 249–254), but the no-card Voice can be `inference.system_prompt`; a configured fallback override would incorrectly be replaced by the baked default.
+
+F4 — RESOLVED: “SOUL.md = `system_prompt` … + blank line + `description` + blank line + `personality`,” with empty fields skipped, no labels, and two golden imports (§5.3, lines 339–345).
+
+F5 — RESOLVED: all creation paths are explicitly ruled—selected-agent `POST /threads`, post-auto-route seeding, and no automation/subagent seeding—through one shared helper (§4.2, lines 290–298).
+
+F6 — RESOLVED: “ABSENT ⇒ the global default. A non-empty-but-invalid id reports through the existing TTS error path” (§8.5, lines 613–619), implementing option A.
+
+F7 — NOT RESOLVED: the recursive denylist now names Risu keys, but “CHARX module/code members” remains a prose category rather than exact normalized keys/paths (§7, lines 474–480), so that portion is still not directly implementable.
+
+F8 — RESOLVED: “one upload byte cap … and one decoded-card JSON cap, enforced for EVERY container,” plus CHARX-specific limits (§5.3, lines 348–350).
+
+F9 — RESOLVED: the common agent write path is routed through `edit_config_yaml(..., path=agent.yaml)` for imports and manual edits, providing atomic 0600 writes and safe YAML handling (§7, lines 490–495).
+
+F10 — RESOLVED: §6.4 now specifies one global budget pass, partition after eviction, at most one head and one tail block, and excludes framing from `budget_chars` (lines 424–436).
+
+F11 — RESOLVED: the scan explicitly excludes the just-persisted incoming message from history and adds it once, before the cached head build (§6.3, lines 412–422).
+
+F12 — RESOLVED: S4 now owns the backend extension of `GET /agents` with title, avatar, background, and voice summaries, including the resolved default (§10-S4, lines 684–693).
+
+F13 — RESOLVED: `inference.system_prompt` is explicitly redefined as fallback Voice; duplication is disclosed, release-note/UI help is required, and a golden assembly case is assigned (§4.1, lines 255–263).
+
+F14 — RESOLVED: `off` suppresses both agent and fallback art while retaining gacha’s name plate and scanline with no picture; absent-art fallback is restricted to `operator`/`full` (§8.3, lines 540–564).
+
+F15 — RESOLVED: equality is exact after whitespace-only→empty normalization; comparison uses modal `default_text`, clears only `override`, and preserves `append` (§9a, lines 644–656).
+
+NEW problems introduced by the folds:
+
+1. §4.2 says named examples use the “existing later-system branch” which “re-roles per dialect” (lines 277–280), but that branch currently runs for every provider and unconditionally re-roles later system messages to `user`; the fold must either specify a new dialect-aware change or say they are always re-roled.
+
+2. §11 still says per-agent voice has “silent fallback” (line 717), contradicting F6’s accepted option-A contract that an invalid non-empty voice reports the existing TTS error.
+
+NOT CONFIRMED
+```
+
+Main-seat fixes on the four: **F3** — `{{original}}`'s Voice half is the CHAIN's no-card
+resolution (`inference.system_prompt` when configured, else the baked default), not the baked
+text unconditionally (§4.1). **F7** — the CHARX code carrier is handled STRUCTURALLY: the
+reader ingests `card.json` + assets only and never reads the Risu module zip member; the key
+denylist (`customScripts`/`triggerscript`/`virtualscript`/`lowLevelAccess`) matches at any
+depth of `extensions` (§7). **New-1** — the later-system branch is UNCONDITIONAL: named
+examples always re-role to marked `user` with the side carried in the frame; no per-dialect
+switch exists or is added (§4.2). **New-2** — §11's stale "silent fallback" wording aligned
+to the F6 contract.
