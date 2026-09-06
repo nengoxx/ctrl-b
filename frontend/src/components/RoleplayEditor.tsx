@@ -4,6 +4,7 @@ import { TickGrid } from "./AgentsEditor";
 import { SettingRow } from "./SettingRow";
 import { Switch } from "./Switch";
 import { useAgentToolGrid } from "../hooks/useActions";
+import { pickLorebooks, pickRoleplay } from "../hooks/useRoleplay";
 import { useSaveSettings, useSettings } from "../hooks/useSettings";
 import { promptPreview } from "../lib/promptPreview";
 import { useRegisterDirty } from "../store/dirty";
@@ -21,39 +22,6 @@ import { requestPrompt } from "../store/prompt";
 // The save posture is MemoryEditor's, verbatim: the master switch saves IMMEDIATELY (the SkillsEditor
 // idiom — a mode is not a draft), everything else rides a small local draft reseeded from the doc,
 // with one Save under it.
-
-/** The `roleplay` section as this editor reads it — defaults mirroring the backend's `RoleplayCfg`. */
-export interface RoleplayCfg {
-  enabled: boolean;
-  default_tools: string[];
-  persona: { name: string; description: string };
-}
-
-export function pickRoleplay(section: unknown): RoleplayCfg {
-  const s = (section ?? {}) as Partial<RoleplayCfg> & { persona?: Partial<RoleplayCfg["persona"]> };
-  return {
-    enabled: s.enabled ?? false,
-    default_tools: s.default_tools ?? ["web_search"],
-    persona: { name: s.persona?.name ?? "", description: s.persona?.description ?? "" },
-  };
-}
-
-/** The `lorebooks` section's NUMERIC globals. `books` (the global attach list) is deliberately absent:
- *  its editor is the S5 lorebook-manager slice's, and a partial PUT leaves the stored list alone. */
-export interface LorebooksCfg {
-  scan_depth: number;
-  budget_chars: number;
-  max_import_bytes: number;
-}
-
-export function pickLorebooks(section: unknown): LorebooksCfg {
-  const s = (section ?? {}) as Partial<LorebooksCfg>;
-  return {
-    scan_depth: s.scan_depth ?? 2,
-    budget_chars: s.budget_chars ?? 4000,
-    max_import_bytes: s.max_import_bytes ?? 15_000_000,
-  };
-}
 
 export function RoleplayEditor() {
   const { data: settings } = useSettings();

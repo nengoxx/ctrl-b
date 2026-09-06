@@ -118,8 +118,17 @@ describe("PromptsEditor · the prompt registry section", () => {
     // tail = a warning line
     expect(modal.getByText("Caps repeats.")).toBeTruthy();
     expect(modal.getByText(/Coupling: same loop-guard budget/)).toBeTruthy();
-    // the shipped default is readable beside the editor
-    expect(modal.getByText("{{tool}} ran {{count}} times.")).toBeTruthy();
+    // the shipped default is readable beside the editor…
+    expect(document.querySelector(".pm-defbody")?.textContent).toBe(
+      "{{tool}} ran {{count}} times.",
+    );
+    // …and since D70 §9a-1 it is ALSO the override field's own content, muted until it is edited: the
+    // owner tweaks real words instead of writing into a void beside a read-only copy of them.
+    const override = modal.getByLabelText<HTMLTextAreaElement>("Override");
+    expect(override.value).toBe("{{tool}} ran {{count}} times.");
+    expect(override.className).toContain("muted");
+    fireEvent.change(override, { target: { value: "{{tool}} ran too often." } });
+    expect(modal.getByLabelText("Override").className).not.toContain("muted"); // an edit turns it live
   });
 
   it("an edit saves the RAW pair for the changed id only", async () => {
@@ -140,18 +149,93 @@ describe("PromptsEditor · the prompt registry section", () => {
     expect(savedPayload()).toEqual({ memory_intro: { override: "my framing", append: "  " } });
   });
 
-  it("[Load default] seeds the override from the shipped text", async () => {
+  // ── D70 §9a-1 — THE FREEZE TRAP, closed at the SAVE end. The field opens holding the shipped
+  //    default; storing that default AS an override would pin the prompt to today's wording forever.
+  it("saving the untouched pre-filled default stores NOTHING", async () => {
     doc = { prompts: [row()], warnings: [] };
     renderEditor();
     await openRow("Memory Intro");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    });
+    expect((saveBtn() as HTMLButtonElement).disabled).toBe(true); // nothing staged, nothing to save
+    expect(saveBtn().textContent).toBe("Saved");
+  });
+
+  it("[Load default] after an edit is the same rule — back to the default stores nothing", async () => {
+    doc = { prompts: [row()], warnings: [] };
+    renderEditor();
+    await openRow("Memory Intro");
+    fireEvent.change(screen.getByLabelText("Override"), { target: { value: "my own words" } });
     fireEvent.click(screen.getByRole("button", { name: "Load default" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    });
+    expect((saveBtn() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a WHITESPACE delta on the default is a real edit and IS stored (no trimming compare)", async () => {
+    doc = { prompts: [row()], warnings: [] };
+    renderEditor();
+    await openRow("Memory Intro");
+    // The shipped `norm` posture preserves a deliberate leading/trailing-whitespace delta; a `.trim()`
+    // comparison here would silently discard it (Emma F15).
+    fireEvent.change(screen.getByLabelText("Override"), {
+      target: { value: "Context you carry across sessions. " },
+    });
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Set" }));
     });
     fireEvent.click(saveBtn());
     expect(savedPayload()).toEqual({
-      memory_intro: { override: "Context you carry across sessions.", append: "" },
+      memory_intro: { override: "Context you carry across sessions. ", append: "" },
     });
+  });
+
+  it("an equal BASE clears only the override — a set append survives it", async () => {
+    doc = { prompts: [row()], warnings: [] };
+    renderEditor();
+    await openRow("Memory Intro");
+    fireEvent.change(screen.getByLabelText("Append"), { target: { value: "and be brief" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    });
+    fireEvent.click(saveBtn());
+    expect(savedPayload()).toEqual({ memory_intro: { override: "", append: "and be brief" } });
+  });
+
+  // ── §9a-2/§9a-3 — the customized accent and the registry's own group sections.
+  it("marks the customized row's field box, and only that one", () => {
+    doc = {
+      prompts: [row({ override: "mine", is_customized: true }), row({ id: "b", label: "B" })],
+      warnings: [],
+    };
+    renderEditor();
+    const marked = [...document.querySelectorAll(".prow-preview.mod")];
+    expect(marked).toHaveLength(1);
+    expect(marked[0].closest(".prow")?.textContent).toContain("Memory Intro");
+  });
+
+  it("renders the rows under the registry's groups, in the order it first names them", () => {
+    doc = {
+      prompts: [
+        row({ id: "a", label: "A", group: "turn steering" }),
+        row({ id: "b", label: "B", group: "memory" }),
+        row({ id: "c", label: "C", group: "turn steering" }),
+        row({ id: "d", label: "D" }), // unplaced → the trailing, title-less section
+      ],
+      warnings: [],
+    };
+    renderEditor();
+    expect([...document.querySelectorAll(".pgroup-head")].map((n) => n.textContent)).toEqual([
+      "turn steering",
+      "memory",
+    ]);
+    const sections = [...document.querySelectorAll(".pgroup")].map((g) =>
+      [...g.querySelectorAll(".prow-name")].map((n) => n.textContent),
+    );
+    // Declaration order WITHIN a group, groups in first-appearance order, the unplaced rows last.
+    expect(sections).toEqual([["A", "C"], ["B"], ["D"]]);
   });
 
   it("Restore stages a both-blank pair and rides the same batched save", () => {

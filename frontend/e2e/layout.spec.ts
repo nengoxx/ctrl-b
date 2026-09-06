@@ -172,7 +172,10 @@ test("gacha · 4-tab: the pick is honored — utils returns to the bar WITH its 
 
   await expect(page.locator("#tabbtn-utils")).toBeVisible(); // back on the bar, off its 3-tab default
   await expect(page.locator(".kit-tabbar [role='tab']")).toHaveCount(4);
-  await expect(page.locator(".navmenu")).toHaveCount(0);
+  // The agents gallery is off-bar under every preset (D70 §8.4), so the affordance that carries it
+  // DOCKS into the appbar — the floating launcher stays unmounted while a bar exists.
+  await expect(page.locator(".kit-appbar .navmenu-launch")).toHaveCount(1);
+  await expect(page.locator(".navmenu:not(.docked)")).toHaveCount(0);
   // All four sub-labels render (the exact-copy claim, driven in the real built app).
   await expect(page.locator(".kit-tabbtn .sub")).toHaveCount(4);
   await expect(page.locator("#tabbtn-utils .sub")).toHaveText("ツール");
@@ -276,11 +279,14 @@ test("gacha · 2-tab: conf via the DOCKED direct button; utils still hosted", as
   await expect(page.locator("#tabbtn-utils")).toHaveCount(0);
   await expect(page.locator("#tabbtn-conf")).toHaveCount(0); // off-bar → the docked affordance
 
+  // TWO off-bar sections here (conf + the D70 agents gallery) → the launcher form, and conf is the
+  // first item in def order.
   const launch = page.locator(".kit-appbar .navmenu-launch");
   await expect(launch).toBeVisible();
-  await expect(page.locator(".kit-appbar .navmenu-launch[aria-haspopup]")).toHaveCount(0);
+  await expect(page.locator(".kit-appbar .navmenu-launch[aria-haspopup]")).toHaveCount(1);
 
   await launch.click();
+  await page.locator(".navmenu-pop [role='menuitem']").first().click();
   await expect(page.locator("#tab-conf")).toBeVisible();
   await expect(page.locator("#utils-hosted")).toBeVisible();
   expect(pageErrors).toEqual([]);
@@ -511,7 +517,10 @@ test("vapor · 3-tab: the pick is HONORED — utils leaves the bar, hosted in Co
   await expect(page.locator("#tabbtn-agent")).toBeVisible();
   await expect(page.locator("#tabbtn-conf")).toBeVisible();
   await expect(page.locator("#tabbtn-utils")).toHaveCount(0);
-  await expect(page.locator(".navmenu")).toHaveCount(0); // menu empty in 3-tab
+  // The menu is not empty in 3-tab any more: the agents gallery is off-bar under every preset (D70
+  // §8.4), and its affordance DOCKS into the appbar rather than floating.
+  await expect(page.locator(".kit-appbar .navmenu-launch")).toHaveCount(1);
+  await expect(page.locator(".navmenu:not(.docked)")).toHaveCount(0);
 
   // vapor's Root-pinned bespoke Fleet still owns the primary section under the narrowed bar.
   await expect(page.locator("#tab-fleet .hero")).toBeVisible();
@@ -542,11 +551,13 @@ test("vapor · 2-tab: conf via the DOCKED direct button; utils hosted; pinned Fl
   await expect(page.locator(".kit-appbar .kit-brand .vapor-mark")).toBeVisible();
   const launch = page.locator(".kit-appbar .navmenu-launch");
   await expect(launch).toBeVisible();
-  await expect(page.locator(".kit-appbar .navmenu-launch[aria-haspopup]")).toHaveCount(0); // direct form
+  // TWO off-bar sections (conf + the agents gallery) → the launcher + popover form.
+  await expect(page.locator(".kit-appbar .navmenu-launch[aria-haspopup]")).toHaveCount(1);
 
   await expect(page.locator("#tab-fleet .hero")).toBeVisible();
 
   await launch.click();
+  await page.locator(".navmenu-pop [role='menuitem']").first().click(); // conf, in def order
   await expect(page.locator("#tab-conf")).toBeVisible();
   await expect(page.locator("#utils-hosted")).toBeVisible();
   expect(pageErrors).toEqual([]);
@@ -789,8 +800,13 @@ test("gacha · appbar: prototype padding in the default mode; a dissolve + no in
     return { pad: s.padding, height: el.getBoundingClientRect().height };
   });
   expect(bar.pad).toBe("8px 16px 6px");
-  // ~57px at the prototype pads; ~43 at the slim ones (the 28.8px brand block + 14px of padding).
-  expect(bar.height).toBeLessThanOrEqual(46);
+  // ~57px at the prototype pads; ~43 at the slim ones (the 28.8px brand block + 14px of padding) — and
+  // ~50 SINCE D70 §8.4, because the bar now carries a docked nav action in EVERY layout: the agents
+  // gallery is off-bar under all three presets, so the affordance that reaches it is a `.kit-iconbtn`
+  // trailing action (34px) and IT is the bar's tallest child. The PADS — what this arm is actually
+  // about, and what the owner ruled — are unchanged; the assertion tracks the taller child rather than
+  // pretending the button is not there.
+  expect(bar.height).toBeLessThanOrEqual(52);
   // `--appbar-h` is MEASURED, so everything anchored to it (the M7 oracle math, toasts, the mini-player)
   // follows the trim rather than assuming the old number.
   const appbarH = await page.evaluate(() =>
@@ -1437,9 +1453,12 @@ test("the pinned plan header and the mini-player never overlap — in every chro
   ]);
 
   // The bar-less content insets the two `:has()` token rules declare (safe-area is 0 on these devices):
-  // visible = a real bar in flow → no inset; minimal = the floating launcher's clearance; off = breathing
-  // room. Nothing else in the suite pins them, and the band is now built from them.
-  const INSET = { visible: 0, minimal: 34, off: 10 } as const;
+  // visible = a real bar in flow → no inset; a FLOATING launcher → its clearance; otherwise breathing
+  // room. `off` used to take the 10px breathing room because the 4-tab menu was empty and nothing
+  // floated; since D70 §8.4 the agents gallery is off-bar under every preset, so a launcher floats in
+  // BOTH bar-less modes and both take its clearance — which is the rule doing exactly what it says.
+  // Nothing else in the suite pins these, and the band is built from them.
+  const INSET = { visible: 0, minimal: 34, off: 34 } as const;
   const ACCENT = { cosmos: "violet", vapor: "dark" } as const;
 
   for (const theme of ["cosmos", "vapor"] as const) {
@@ -2054,4 +2073,35 @@ test("kit shell: restoration does not eat the scroll-to-group handoff (utils hos
   });
   expect(seen, "the Tools group is not inside the scroller's viewport").toBe(true);
   expect(pageErrors).toEqual([]);
+});
+
+// D70 §8.4 — the agents GALLERY is off-bar under every preset (no preset's bar names it), so the nav
+// menu carries it: at the default 4-tab + visible chrome the menu holds exactly one section, which the
+// collapse ladder renders as a DIRECT button docked in the appbar. One tap, and the section's own grid
+// is what renders — at the 390px project width, which is the viewport this whole surface is for.
+test("minimal · 4-tab: the agents gallery is one docked tap away and renders its card grid", async ({
+  page,
+}) => {
+  await seedUI(page, { theme: "minimal", mode: "dark", accent: "cyan", layout: "4-tab", v: 1 });
+  await page.goto("/");
+
+  // The curated four stay on the bar; the gallery is the menu's lone item → the direct button.
+  await expect(page.locator("#tabbtn-conf")).toBeVisible();
+  await expect(page.locator("#tabbtn-agents")).toHaveCount(0);
+  const launch = page.locator(".kit-appbar .navmenu-launch");
+  await expect(launch).toHaveAttribute("aria-label", "agents");
+  await launch.click();
+
+  await expect(page.locator("#tab-agents")).toBeVisible();
+  // A fresh install (the fixture lists no specialists) shows the DEFAULT agent's card — never an
+  // empty grid — with its Talk affordance beside it.
+  const cards = page.locator(".agal-grid .agal-cell");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first().getByRole("button", { name: /^Talk to/ })).toBeVisible();
+  // Two columns at phone width: the card is about half the grid's own width.
+  const [grid, card] = await Promise.all([
+    page.locator(".agal-grid").boundingBox(),
+    cards.first().boundingBox(),
+  ]);
+  expect(card!.width).toBeLessThan(grid!.width * 0.6);
 });

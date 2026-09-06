@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { AgentRow, NewAgentRow } from "../components/AgentsEditor";
 import { FocalImg } from "../components/FocalImg";
 import { useAgentArt, type AgentArt } from "../hooks/useAgentArt";
-import { DEFAULT_AGENT, useAgentList } from "../hooks/useAgents";
+import { DEFAULT_AGENT, useAgentList, useImportAgent, type ImportReport } from "../hooks/useAgents";
 import { useAgentToolGrid } from "../hooks/useActions";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useSections } from "../hooks/useSections";
+import { pickRoleplay } from "../hooks/useRoleplay";
+import { useSettings } from "../hooks/useSettings";
 import { useSkills } from "../hooks/useSkills";
 import { pinSessionAgent } from "../lib/composer";
 
@@ -92,6 +94,59 @@ function AgentCard(props: {
   );
 }
 
+/** WHAT THE ACCEPTED FILE CONTAINED, and it is deliberately the whole of it (§5.1/§7): what MAPPED is
+ *  the reassurance, and what was STASHED, STRIPPED or warned about is the part the owner can learn no
+ *  other way. Warnings lead, because a lorebook that did not import — or an avatar that did not — is
+ *  the one thing here that changes what the owner does next.
+ *
+ *  Rendered INLINE on the section rather than as an overlay: it is a report to read, not a decision to
+ *  make, so it needs no focus trap and no Escape contract, and it survives on screen while the owner
+ *  looks at the card it created. */
+function ImportReportCard({
+  report,
+  name,
+  onDismiss,
+}: {
+  report: ImportReport;
+  name: string;
+  onDismiss: () => void;
+}) {
+  const line = (label: string, items: readonly string[]) =>
+    items.length === 0 ? null : (
+      <div className="agrep-row" key={label}>
+        <b>{label}</b>
+        <span>{items.join(" · ")}</span>
+      </div>
+    );
+  return (
+    <div className="conf-card agrep">
+      <div className="agrep-head">
+        <b>imported {name}</b>
+        <span className="path">{report.container}</span>
+        <button type="button" className="agrep-x" onClick={onDismiss}>
+          dismiss
+        </button>
+      </div>
+      {report.warnings.length > 0 && (
+        <ul className="agrep-warn">
+          {report.warnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      )}
+      {line("mapped", report.fields_mapped)}
+      {line("stashed", report.stashed_keys)}
+      {line("stripped", report.stripped_paths)}
+      {report.post_history.trim() !== "" && (
+        <div className="agrep-row">
+          <b>post-history</b>
+          <span className="agrep-post">{report.post_history}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AgentsTab({ active }: { active: boolean }) {
   const { data: list } = useAgentList();
   const art = useAgentArt();
@@ -100,6 +155,13 @@ export function AgentsTab({ active }: { active: boolean }) {
   const { data: skillList = [] } = useSkills();
   const { data: defaultPrompt = "" } = useDefaultPrompt();
   const [open, setOpen] = useState<string | null>(null);
+  const importAgent = useImportAgent();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [report, setReport] = useState<{ name: string; report: ImportReport } | null>(null);
+  const { data: settings } = useSettings();
+  // §9's predicate applied to the ENTRY POINT (the ruling): the FIELDS light up per-field whatever the
+  // mode says, but the button that creates a character only shows when the owner is in that mode.
+  const roleplayOn = pickRoleplay(settings?.roleplay).enabled;
 
   const specialists = (list?.agents ?? []).filter((n) => n !== DEFAULT_AGENT);
   const resolvedDefault = list?.default ?? DEFAULT_AGENT;
@@ -151,8 +213,45 @@ export function AgentsTab({ active }: { active: boolean }) {
         </div>
       ) : (
         <>
+          {report !== null && (
+            <ImportReportCard
+              report={report.report}
+              name={report.name}
+              onDismiss={() => setReport(null)}
+            />
+          )}
           <div className="conf-card agal-actions">
             <NewAgentRow taken={specialists} onCreated={setOpen} />
+            {roleplayOn && (
+              <div className="agal-import">
+                {/* HIDDEN input + a styled button — the gallery Add-row shell. `input.value` is reset
+                    in the handler so picking the SAME file twice still fires `change`. */}
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".png,.json,.charx,image/png,application/json"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    importAgent.mutate(file, {
+                      onSuccess: (res) => {
+                        setReport({ name: res.name, report: res.report });
+                        setOpen(null);
+                      },
+                    });
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={importAgent.isPending}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {importAgent.isPending ? "importing…" : "import a character card"}
+                </button>
+              </div>
+            )}
           </div>
           <ul className="agal-grid">
             {names.map((name) => (

@@ -48,6 +48,12 @@ export function PromptModal() {
   const triggerRef = useRef<HTMLElement | null>(null);
   const [text, setText] = useState("");
   const [pair, setPair] = useState<PromptPair>({ override: "", append: "" });
+  // D70 §9a-1 — whether the override field is still showing the SHIPPED DEFAULT it was pre-filled
+  // with. It drives the muted style and nothing else: what gets STORED is decided by the caller, which
+  // folds text equal to the default back to "" (`lib/promptText#foldEqualDefault`). Two facts, not
+  // one, deliberately — the owner may retype the default word for word, and the storage rule must
+  // still refuse to pin it, while the field must still read as edited.
+  const [baseUntouched, setBaseUntouched] = useState(false);
 
   // Seed the local draft synchronously the first render a new request opens — setting state during
   // render (React's "adjust state when a prop changes" pattern) re-runs before paint, so there's no
@@ -55,8 +61,16 @@ export function PromptModal() {
   const seededFor = useRef<unknown>(null);
   if (req && seededFor.current !== req) {
     seededFor.current = req;
-    if (req.kind === "pair") setPair({ override: req.override, append: req.append });
-    else setText(req.value);
+    if (req.kind === "pair") {
+      // THE PRE-FILL (§9a-1): with no override stored, the field opens holding the shipped words, so
+      // the owner tweaks real text instead of writing into a void beside a read-only copy of it. The
+      // freeze trap R27 warns about is closed at the SAVE end, not by keeping the field empty.
+      setPair({
+        override: req.override === "" ? req.defaultText : req.override,
+        append: req.append,
+      });
+      setBaseUntouched(req.override === "");
+    } else setText(req.value);
   }
 
   // Capture the opening trigger, focus the textarea, restore focus on close. The panel's FIRST
@@ -101,7 +115,16 @@ export function PromptModal() {
           </button>
         </div>
         {req.kind === "pair" ? (
-          <PairBody fieldId={fieldId} req={req} pair={pair} onChange={setPair} />
+          <PairBody
+            fieldId={fieldId}
+            req={req}
+            pair={pair}
+            muted={baseUntouched}
+            onChange={(next) => {
+              if (next.override !== pair.override) setBaseUntouched(false);
+              setPair(next);
+            }}
+          />
         ) : (
           <div className="pm-body">
             <textarea
@@ -122,7 +145,10 @@ export function PromptModal() {
             <div className="pm-defaults">
               <button
                 className="pm-alt"
-                onClick={() => setPair((p) => ({ ...p, override: req.defaultText }))}
+                onClick={() => {
+                  setBaseUntouched(false);
+                  setPair((p) => ({ ...p, override: req.defaultText }));
+                }}
               >
                 Load default
               </button>
@@ -163,6 +189,8 @@ function PairBody(props: {
   fieldId: string;
   req: { defaultText: string; description?: string | null; placeholders?: string[] };
   pair: PromptPair;
+  /** The override field is still the untouched pre-filled default — render it as reference text. */
+  muted: boolean;
   onChange: (next: PromptPair) => void;
 }) {
   const { fieldId, req, pair } = props;
@@ -185,7 +213,7 @@ function PairBody(props: {
         </label>
         <textarea
           id={`${fieldId}-o`}
-          className="pm-text mono"
+          className={"pm-text mono" + (props.muted ? " muted" : "")}
           value={pair.override}
           spellCheck={false}
           placeholder="(empty → the shipped default)"

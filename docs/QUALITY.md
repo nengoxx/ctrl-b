@@ -39,7 +39,7 @@ Quality is not one linter — it is a set of complementary layers, each catching
 | **FE type safety** | `tsc` **strict** (already on) | type errors, unused locals/params | ✅ |
 | **FE lint** | **ESLint** flat + **typescript-eslint `recommended-type-checked`** + `eslint-plugin-react-hooks` + `-react-refresh` | floating promises, misused async/await, unsafe `any`, hook-deps, rules-of-hooks, React-Compiler diags | ✅ (1b) |
 | **FE format** | **Prettier** + `eslint-config-prettier` | style drift (deterministic) | ✅ (1b) |
-| **FE unit tests** | **Vitest** (D21 — 2,943 across 172 files, 2026-09-07 post-D70 S4 Build 2 commit 2: the agents gallery section + the roleplay half of the agent form — the per-field visibility predicate, the art-binding row, the `agents` media namespace) | logic regressions | ✅ |
+| **FE unit tests** | **Vitest** (D21 — 2,954 across 173 files, 2026-09-07 post-D70 S4 Build 2: the agents gallery section · the roleplay half of the agent form (visibility predicate · art binding · the `agents` media namespace) · the multipart import + its report · the §9a prompt-editor refinements) | logic regressions | ✅ |
 | **FE e2e / a11y** | **Playwright** + `@axe-core/playwright` (D24) | broken user paths, a11y | ✅ (Phase 9 wires the suite) |
 | **BE lint + format** | **ruff** (`E,F,I,ASYNC,B` — `backend/pyproject.toml:87`; formatter) | style, imports, dead code, async footguns, bugbear | ✅ |
 | **BE type check** | **`pyright[nodejs]`** (pinned `==1.1.409`; `basic` → ratchet `strict`) | type errors across the FastAPI service | ✅ (1c) |
@@ -201,8 +201,17 @@ because those helpers are unit-tested on their own.
 > flagging that subtree. **Incidental, not a fix**: no warning was addressed, no rule was touched, and
 > the wave's three new modules (`useImageJob`, `useMediaEdit`, `components/icons.tsx`) added none.
 > Recorded on the same principle as the note above — the delta is attributed, in both directions.
+>
+> **And up 25 at D70 S4 Build 2 (2026-09-07)**, `72 → 97` (`refs` 48 · `set-state-in-effect` 23 ·
+> `only-export-components` 25 · `exhaustive-deps` 1). It is the same two shapes the media manager's own
+> surfaces carry, on the surfaces that REUSE them: `AgentArtRow.tsx` spreads the upload hook's handles
+> in JSX exactly as `GalleryModal.tsx` does (its `inputRef` makes the compiler read the whole object as
+> ref-ish), and the new component modules export their pure helpers beside their components because
+> those helpers are unit-tested on their own (`roleplayFieldVisible`, `useAgentArtStudio`) — the same
+> deliberate trade `FramingSheet`/`CropModal` made. **No warning was fixed and no rule was touched;
+> F13 stays trigger-gated.** Attributed here on the standing principle rather than absorbed silently.
 
-Deferral status unchanged: all 72 stay in the F13 backlog. **This paragraph is the ONLY home for the
+Deferral status unchanged: all 97 stay in the F13 backlog. **This paragraph is the ONLY home for the
 count** (doc-truth ruling 2026-08-17) — other docs point here, no numbers.
 
 **Why deferred (assessed thoroughly 2026-07-02, all ~19 sites reviewed):**

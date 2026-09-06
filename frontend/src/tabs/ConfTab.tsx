@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { AgentGlobals } from "../components/AgentGlobals";
-import { LorebookGlobals, RoleplayEditor, pickRoleplay } from "../components/RoleplayEditor";
+import { LorebookGlobals, RoleplayEditor } from "../components/RoleplayEditor";
 import { AutomationsPanel } from "../components/AutomationsPanel";
 import { ConfGroup } from "../components/ConfGroup";
 import { JsonField } from "../components/JsonField";
@@ -28,6 +28,7 @@ import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearanc
 import { disclosureToggle } from "../lib/disclosure";
 import { pickAgentSection, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
+import { pickRoleplay } from "../hooks/useRoleplay";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import {
   notificationPermission,

@@ -247,6 +247,15 @@ const ROUTES: Record<string, unknown> = {
     roles: { services: [], "service-banners": [], hosts: [], background: [], brand: [] },
     slots: {},
   },
+  // D70 §8.1 — the agents namespace, read under EVERY theme (it is always-on, like `kit`): the who-line
+  // avatar, the composer picker, the gallery cards and the editor's binding rows all join against it.
+  // Empty for the same reason the others are: the specs assert the EMPTY states.
+  "/api/media/agents": {
+    ns: "agents",
+    collation: "library-v1",
+    roles: { avatars: [], backgrounds: [] },
+    slots: {},
+  },
   "/api/actions": ACTIONS,
   "/api/tools": TOOLS,
   "/api/settings": SETTINGS,

@@ -6575,7 +6575,9 @@ body[data-perf="lite"] .kit .navmenu-pop {
   text-transform: uppercase;
   color: var(--text);
 }
-.kit .mgal .path {
+.kit .mgal .path,
+/* …and the import report's container id, which is the same kind of literal (D70 §5). */
+.kit .agrep .path {
   /* A literal folder path, and it reads as one ("W10" audit): the card comments always SAID mono, but
    * no rule ever set the face — the same stack every other literal-value surface here uses. */
   font-family: ui-monospace, "JetBrains Mono", monospace;
@@ -7832,4 +7834,126 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
 .kit .mconf .mform .agart-tile:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ── D70 §5 — the card-import affordance + its REPORT, on the agents section. The report is an inline
+ * card rather than an overlay: it is a report to READ (no decision, no focus trap), and it stays on
+ * screen beside the card it created. Built from `.conf-card` + the `.mgal .path` mono line. ── */
+.kit .agal-import {
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+}
+.kit .agal-import button {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  text-align: center;
+  padding: 9px 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+}
+.kit .agal-import button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.kit .agal-import button:not(:disabled):active {
+  background: var(--surface-2);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.kit .agal-import button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .agrep {
+  padding: 12px 14px;
+}
+.kit .agrep-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.kit .agrep-head b {
+  font-size: 12px;
+  color: var(--text);
+}
+.kit .agrep-x {
+  all: unset;
+  margin-inline-start: auto;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.kit .agrep-x:hover,
+.kit .agrep-x:active {
+  color: var(--text);
+}
+.kit .agrep-x:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* WARNINGS LEAD — the one part of a report that changes what the owner does next. */
+.kit .agrep-warn {
+  margin: 8px 0 0;
+  padding-inline-start: 18px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--warn);
+}
+.kit .agrep-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.kit .agrep-row b {
+  flex: none;
+  width: 74px;
+  color: var(--text-3);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+  padding-top: 1px;
+}
+.kit .agrep-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kit .agrep-post {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  white-space: pre-wrap;
+}
+
+/* ── D70 §9a — the prompt editor's refinements: the registry's own GROUP sections, the customized
+ * field's quiet accent, and the muted style the modal's override field wears while it is still
+ * showing the shipped default. All three are token-only; nothing animates. ── */
+.kit .pgroup-head {
+  padding: 12px 12px 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border-top: 1px solid var(--line);
+}
+.kit .pgroup:first-child .pgroup-head {
+  border-top: 0;
+}
+/* The `tcat-mod` family's accent, as a left border on the field box rather than a badge — the badge is
+ * still there beside the name; this is what makes the CHANGED rows findable by eye. */
+.kit .prow-preview.mod {
+  border-inline-start: 2px solid var(--accent);
+  padding-inline-start: 8px;
+}
+/* The pre-filled default, before it is edited: reference text, not the owner's words (§9a-1). */
+.kit .pm-text.muted {
+  color: var(--text-3);
 }

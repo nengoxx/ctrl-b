@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { del, getJSON, putJSON } from "../api/client";
+import { del, getJSON, postForm, putJSON } from "../api/client";
 import { loadAgents } from "../lib/composer";
 import type { Privilege } from "../lib/privilege";
 import { pushToast } from "../store/toast";
@@ -227,6 +227,50 @@ export function useSaveAgent() {
       pushToast("Agent saved", "ok");
     },
     onError: (e: Error) => pushToast(e.message || "Save failed", "err"),
+  });
+}
+
+/** What an import DID, as `POST /api/agents/import` reports it (D70 §5.1 — the backend's
+ *  `_import_report`). Every field is shown: what mapped is the reassurance, and what was STASHED,
+ *  STRIPPED or warned about is the part the owner cannot discover any other way.
+ *
+ *  `post_history` rides verbatim on purpose: it is the highest-leverage text a card can inject — it
+ *  lands closest to generation — so the one place it must not be invisible is the report of the import
+ *  that accepted it. */
+export interface ImportReport {
+  container: string;
+  fields_mapped: string[];
+  stashed_keys: string[];
+  stripped_paths: string[];
+  warnings: string[];
+  post_history: string;
+}
+
+/** The created agent plus its report — the `201` body. */
+export interface ImportResult extends AgentFull {
+  report: ImportReport;
+}
+
+/** Import a character card as a new agent (§5). MULTIPART, one `file` field — a card is a FILE the
+ *  owner picks, and `postForm` is the one helper that sends one.
+ *
+ *  It invalidates exactly what a create does, PLUS the `agents` media index: a card's embedded avatar
+ *  lands in the `agents/avatars` library on the way in, so the gallery that is about to paint the new
+ *  card has to re-read it or the picture would appear only after a reload. No success toast — the
+ *  REPORT is the outcome, and a toast over it would say less at the same moment. */
+export function useImportAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return postForm<ImportResult>("/api/agents/import", form);
+    },
+    onSuccess: (res) => {
+      invalidateAgents(qc, res.name);
+      void qc.invalidateQueries({ queryKey: ["media", "agents"] });
+    },
+    onError: (e: Error) => pushToast(e.message || "Import failed", "err"),
   });
 }
 

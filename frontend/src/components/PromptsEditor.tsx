@@ -3,6 +3,7 @@ import { useState } from "react";
 import { WarnRow } from "./WarnRow";
 import { useSavePromptOverrides, usePrompts } from "../hooks/usePrompts";
 import { promptPreview } from "../lib/promptPreview";
+import { foldEqualDefault, groupPrompts, normPrompt } from "../lib/promptText";
 import { useRegisterDirty } from "../store/dirty";
 import { requestPromptPair } from "../store/prompt";
 import type { PromptInfo, PromptPair } from "../types";
@@ -27,11 +28,6 @@ function composeTemplate(pair: PromptPair, defaultText: string): string {
   return pair.append.trim() ? `${base}\n\n${pair.append}` : base;
 }
 
-/** How the server will read a field: blank (or whitespace-only) is unset (§7 L-5). Comparing through
- *  this is what makes a whitespace-only edit "unchanged" WITHOUT trimming meaningful text — a stored
- *  override ending in a newline must not read as changed the moment its row is opened. */
-const norm = (s: string): string => (s.trim() ? s : "");
-
 export function PromptsEditor() {
   const { data } = usePrompts();
   const save = useSavePromptOverrides();
@@ -43,7 +39,8 @@ export function PromptsEditor() {
   const isChanged = (p: PromptInfo): boolean => {
     const d = draft[p.id];
     return (
-      d != null && (norm(d.override) !== (p.override ?? "") || norm(d.append) !== (p.append ?? ""))
+      d != null &&
+      (normPrompt(d.override) !== (p.override ?? "") || normPrompt(d.append) !== (p.append ?? ""))
     );
   };
   const changed = rows.filter(isChanged);
@@ -62,7 +59,11 @@ export function PromptsEditor() {
       placeholders: p.placeholders,
       saveLabel: "Set",
     });
-    if (next != null) stage(p.id, next);
+    // THE FREEZE-TRAP RULE (§9a-1), applied where save semantics live — the modal's own note says they
+    // are the caller's. The field opens pre-filled with the shipped default; text that is STILL that
+    // default folds back to "", so `isChanged` sees nothing to store for an untouched prompt while a
+    // set `append` still saves.
+    if (next != null) stage(p.id, foldEqualDefault(next, p.default_text));
   };
 
   const onSave = () => {
@@ -77,36 +78,47 @@ export function PromptsEditor() {
       {/* Ids config.yaml carries that the registry doesn't know — preserved on disk, read by nothing,
           so the owner is TOLD rather than shown an editor for a prompt that doesn't exist (C-18). */}
       <WarnRow warnings={data?.warnings ?? []} />
-      {rows.map((p) => (
-        <div className="prow" key={p.id}>
-          <div className="prow-head">
-            <span className="prow-name">{p.label}</span>
-            {p.is_customized && <span className="tcat-mod">customized</span>}
-            {p.is_customized && (
+      {groupPrompts(rows).map((section) => (
+        <div className="pgroup" key={section.group || "#"}>
+          {/* The section TITLE is the registry's own group label — no client-side vocabulary, so a
+              group added on the backend appears here with no FE change (§9a-3). An unplaced row's
+              section has no title and simply trails the named ones. */}
+          {section.group !== "" && <div className="pgroup-head">{section.group}</div>}
+          {section.rows.map((p) => (
+            <div className="prow" key={p.id}>
+              <div className="prow-head">
+                <span className="prow-name">{p.label}</span>
+                {p.is_customized && <span className="tcat-mod">customized</span>}
+                {p.is_customized && (
+                  <button
+                    type="button"
+                    className="prow-restore"
+                    onClick={() => stage(p.id, { override: "", append: "" })}
+                  >
+                    restore
+                  </button>
+                )}
+              </div>
+              {p.description && <div className="prow-desc tcat-faint">{p.description}</div>}
+              {/* A real <button> (Codex MED): the editor opener must be keyboard-reachable, and a real
+              trigger is what the modal's close-focus restore lands back on. */}
+              {/* §9a-2 — a QUIET persistent accent on the field box beside the existing badge: with the
+              duties pair in the catalog, "which prompts did I change" has to be legible at a glance.
+              A border, not a transition (§14.11 has nothing to animate here). */}
               <button
                 type="button"
-                className="prow-restore"
-                onClick={() => stage(p.id, { override: "", append: "" })}
+                className={"prow-preview" + (p.is_customized ? " mod" : "")}
+                onClick={() => void edit(p)}
+                title="Edit prompt"
               >
-                restore
+                {promptPreview(
+                  draft[p.id] ? composeTemplate(draft[p.id], p.default_text) : p.current,
+                  "empty",
+                )}
+                <span className="tcat-edit"> ✎</span>
               </button>
-            )}
-          </div>
-          {p.description && <div className="prow-desc tcat-faint">{p.description}</div>}
-          {/* A real <button> (Codex MED): the editor opener must be keyboard-reachable, and a real
-              trigger is what the modal's close-focus restore lands back on. */}
-          <button
-            type="button"
-            className="prow-preview"
-            onClick={() => void edit(p)}
-            title="Edit prompt"
-          >
-            {promptPreview(
-              draft[p.id] ? composeTemplate(draft[p.id], p.default_text) : p.current,
-              "empty",
-            )}
-            <span className="tcat-edit"> ✎</span>
-          </button>
+            </div>
+          ))}
         </div>
       ))}
       <div className="conf-savebar">

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { useProviders, useSaveSettings, useSettings } from "../hooks/useSettings";
 import { AVATARS_ROLE, BACKGROUNDS_ROLE } from "../hooks/useAgentArt";
+import { pickRoleplay } from "../hooks/useRoleplay";
 import {
   DEFAULT_AGENT,
   pickFields,
@@ -238,7 +239,7 @@ function AgentFieldsForm(props: {
   // D70 §9 — the roleplay MODE, and the per-field predicate it is half of (`roleplayFieldVisible`).
   // Read off the settings doc rather than threaded as a prop: it is one global boolean and this form
   // has exactly one other consumer of it.
-  const rpEnabled = (settings?.roleplay as { enabled?: boolean } | undefined)?.enabled === true;
+  const rpEnabled = pickRoleplay(settings?.roleplay).enabled;
   const rpShow = (v: unknown) => roleplayFieldVisible(rpEnabled, v);
   // The stash (§5.3): provenance the import keeps, NEVER prompt-facing. It gets a read-only line
   // rather than an editor — ST's "(not sent to the AI)" scope-subtitle pattern.

@@ -74,6 +74,21 @@ export function formatDetail(detail: unknown): string | null {
   return lines.length ? lines.join(" · ") : null;
 }
 
+/** A refused response, as the ONE `ApiError` every write path throws — FastAPI's `detail` when the body
+ *  carries one, the status line when it does not (a 204, a proxy's HTML page). It was three identical
+ *  copies of this block; the fourth (the multipart POST, D70 §5.1) is what made it a function. `getJSON`
+ *  keeps its bare status line deliberately — a GET carries no validation detail worth rendering. */
+async function refuse(res: Response): Promise<never> {
+  let detail = `${res.status} ${res.statusText}`;
+  try {
+    const j = (await res.json()) as { detail?: unknown };
+    detail = formatDetail(j?.detail) ?? detail;
+  } catch {
+    /* non-JSON / empty error body — keep the status line */
+  }
+  throw new ApiError(detail, res.status);
+}
+
 /** Send JSON with `method`, surfacing FastAPI's `detail` (string or validation list) on error. */
 async function sendJSON<T>(method: string, path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -81,16 +96,27 @@ async function sendJSON<T>(method: string, path: string, body: unknown): Promise
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = (await res.json()) as { detail?: unknown };
-      detail = formatDetail(j?.detail) ?? detail;
-    } catch {
-      /* non-JSON error body — keep the status line */
-    }
-    throw new ApiError(detail, res.status);
-  }
+  if (!res.ok) await refuse(res);
+  return (await res.json()) as T;
+}
+
+/** POST a MULTIPART form — the app's one non-JSON POST body (D70 §5.1: a character card is a FILE the
+ *  owner picks out of their downloads, and `POST /api/agents/import` takes it as one `file` field).
+ *
+ *  Note what is NOT set: `Content-Type`. The browser writes it, WITH the multipart boundary — setting
+ *  it by hand produces a body the server cannot parse.
+ *
+ *  It shares `refuse` with `postJSON`, deliberately, because the statuses this route answers with are
+ *  ones the caller renders verbatim (413 the cap · 415 not a card · 422 unusable · 409 the slug), and
+ *  a second error renderer here would be a second set of words for the same refusals.
+ *
+ *  On the security posture: a raw-body PUT is preflight-defended by its very shape (see `putBytes`),
+ *  and a multipart POST is not — but this route is an ordinary authenticated-by-tailnet action that
+ *  ANSWERS with the created agent, the same class as every other `POST /api/…` the panel exposes, and
+ *  the backend says so at the route (SECURITY_MODEL §2.7). */
+export async function postForm<T>(path: string, body: FormData): Promise<T> {
+  const res = await fetch(path, { method: "POST", headers: { Accept: "application/json" }, body });
+  if (!res.ok) await refuse(res);
   return (await res.json()) as T;
 }
 
@@ -138,30 +164,12 @@ export async function putBytes<T>(
     },
     body,
   });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = (await res.json()) as { detail?: unknown };
-      detail = formatDetail(j?.detail) ?? detail;
-    } catch {
-      /* non-JSON error body — keep the status line */
-    }
-    throw new ApiError(detail, res.status);
-  }
+  if (!res.ok) await refuse(res);
   return (await res.json()) as T;
 }
 
 /** DELETE a resource. Surfaces FastAPI `detail` on error; tolerates an empty 204 body. */
 export async function del(path: string): Promise<void> {
   const res = await fetch(path, { method: "DELETE", headers: { Accept: "application/json" } });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const j = (await res.json()) as { detail?: unknown };
-      detail = formatDetail(j?.detail) ?? detail;
-    } catch {
-      /* 204 / non-JSON — keep the status line */
-    }
-    throw new ApiError(detail, res.status);
-  }
+  if (!res.ok) await refuse(res);
 }

@@ -53,8 +53,14 @@ test("Conf · Prompts — the registry list + the two-field editor", async ({ pa
   await expect(modal.getByLabel("Append")).toBeVisible();
   await expect(modal.getByText("{{tool}}", { exact: true })).toBeVisible();
   await expect(modal.getByText(/Coupling: the loop guard counts it/)).toBeVisible();
-  // the shipped default: folded behind the disclosure at 390px, already open at desk width
-  const defBody = modal.getByText(/vary the call or move on/).first();
+  // D70 §9a-1 — the override field OPENS holding the shipped default, muted until it is edited.
+  await expect(modal.getByLabel("Override")).toHaveValue(
+    "{{tool}} already ran {{count}} times — vary the call or move on.",
+  );
+  await expect(modal.locator("textarea.pm-text.muted")).toHaveCount(1);
+  // the shipped default is ALSO readable beside the editor: folded behind the disclosure at 390px,
+  // already open at desk width. Scoped to the read-only body — the same words are in the field above.
+  const defBody = modal.locator(".pm-defbody");
   if (!(await defBody.isVisible())) await modal.getByText("Default text").click();
   await expect(defBody).toBeVisible();
 

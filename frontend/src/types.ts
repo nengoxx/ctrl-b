@@ -156,6 +156,12 @@ export interface PromptInfo {
   id: string;
   label: string;
   description: string | null;
+  /** The editor's SECTION for this row (D70 §9a-3) — one of the registry's own `PROMPT_GROUPS`, or
+   *  `""`/absent for a row the registry has not placed yet. The REGISTRY is the one ordering authority:
+   *  the groups appear in the order it first names them and the rows in declaration order within one,
+   *  so there is no client-side grouping map free to drift from it. Optional on the wire like every
+   *  other additive field — a pre-D70 response degrades to one ungrouped list. */
+  group?: string;
   default_text: string;
   override: string | null;
   append: string | null;

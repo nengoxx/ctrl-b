@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as rtlRender, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The agents GALLERY (D70 §8.4) — the section the per-agent editor moved out of Conf into. Drives the
 // REAL component over mocked hook boundaries (the composerSteer/chatThread posture) plus the REAL `ui`
 // and `chat` stores, because what "Talk" does is a fact about those two and not about this component.
+
+const h = vi.hoisted(() => ({ importMutate: vi.fn(), importPending: false, roleplayOn: false }));
 
 const list = {
   agents: [] as string[],
@@ -53,6 +55,7 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => {
     useSaveAgent: () => ({ mutate: vi.fn(), isPending: false }),
     useDeleteAgent: () => ({ mutate: vi.fn(), isPending: false }),
     useSaveAgentSoul: () => ({ mutate: vi.fn() }),
+    useImportAgent: () => ({ mutate: h.importMutate, isPending: h.importPending }),
   };
 });
 vi.mock("../../src/hooks/useMedia", () => ({
@@ -67,8 +70,9 @@ vi.mock("../../src/hooks/useDefaultPrompt", () => ({ useDefaultPrompt: () => ({ 
 vi.mock("../../src/hooks/useSettings", () => ({
   useProviders: () => ({ data: { providers: {}, verbs: [], warnings: [] } }),
   useSaveSettings: () => ({ mutate: vi.fn(), isPending: false }),
-  // The form reads the roleplay MODE off the settings doc (§9's visibility predicate).
-  useSettings: () => ({ data: { roleplay: { enabled: false } } }),
+  // The form reads the roleplay MODE off the settings doc (§9's visibility predicate) — and so does
+  // the IMPORT entry point (§9's ruling: the fields are per-field, the button follows the mode).
+  useSettings: () => ({ data: { roleplay: { enabled: h.roleplayOn } } }),
 }));
 // The art rows' machinery: the library resolves to nothing here (no `agents` index in this harness),
 // which is exactly the fresh-install state — the rows render "none" and an empty picker.
@@ -90,6 +94,9 @@ beforeEach(() => {
   list.default = "default";
   list.summaries = {};
   setSessionAgent(null);
+  h.importMutate.mockReset();
+  h.importPending = false;
+  h.roleplayOn = false;
   setUI({ theme: "minimal", tab: "agents", layout: "auto", appbarMode: "visible" });
 });
 afterEach(cleanup);
@@ -160,5 +167,58 @@ describe("AgentsTab · the two verbs", () => {
     expect(screen.getByLabelText("Max output tokens")).toBeTruthy(); // AgentFieldsForm is up
     fireEvent.click(screen.getByRole("button", { name: "‹ all agents" }));
     expect(screen.queryByLabelText("Max output tokens")).toBeNull(); // back to the grid
+  });
+});
+
+describe("AgentsTab · card import (§5)", () => {
+  const REPORT = {
+    container: "png-v2",
+    fields_mapped: ["greeting", "scenario"],
+    stashed_keys: ["creator_notes", "character_book"],
+    stripped_paths: ["data.extensions.risuai"],
+    warnings: ["the card's embedded lorebook was imported as 'lyra-book'"],
+    post_history: "Stay in character.",
+  };
+  const pick = () => {
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(input, {
+      target: { files: [new File(["x"], "lyra.png", { type: "image/png" })] },
+    });
+    return input;
+  };
+
+  it("the ENTRY POINT follows the roleplay mode, even though the FIELDS do not", () => {
+    render(<AgentsTab active />);
+    expect(screen.queryByRole("button", { name: /import a character card/ })).toBeNull();
+    cleanup();
+    h.roleplayOn = true;
+    render(<AgentsTab active />);
+    expect(screen.getByRole("button", { name: /import a character card/ })).toBeTruthy();
+  });
+
+  it("sends the picked FILE and renders the report the server answered with", () => {
+    h.roleplayOn = true;
+    render(<AgentsTab active />);
+    const input = pick();
+    expect(input.value).toBe(""); // reset, so picking the SAME file twice still fires `change`
+    const [file, opts] = h.importMutate.mock.calls[0] as [
+      File,
+      { onSuccess: (r: unknown) => void },
+    ];
+    expect(file.name).toBe("lyra.png");
+
+    act(() => opts.onSuccess({ name: "lyra", report: REPORT }));
+    // Every half of the report is on screen — what mapped is the reassurance, what was stashed,
+    // stripped or warned about is what the owner can learn no other way.
+    expect(screen.getByText(/imported lyra/)).toBeTruthy();
+    expect(screen.getByText("png-v2")).toBeTruthy();
+    expect(screen.getByText(/lorebook was imported as 'lyra-book'/)).toBeTruthy();
+    expect(screen.getByText("greeting · scenario")).toBeTruthy();
+    expect(screen.getByText("creator_notes · character_book")).toBeTruthy();
+    expect(screen.getByText("data.extensions.risuai")).toBeTruthy();
+    expect(screen.getByText("Stay in character.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "dismiss" }));
+    expect(screen.queryByText(/imported lyra/)).toBeNull();
   });
 });
