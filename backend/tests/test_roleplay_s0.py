@@ -288,6 +288,19 @@ def test_the_owner_persona_follows_the_roster_and_carries_its_framing() -> None:
         assert systems[2] == REGISTRY["persona_intro"].default + "\n\nI am Emma."
 
 
+def test_the_owner_persona_renders_its_macros() -> None:
+    """`{{user}}` in the description reads as the persona NAME (the ST convention; the S0 hold-out
+    was reversed on the owner's real persona, which opens with the token). Rendered with the same
+    pass as every other field — unknown tokens still pass through literally."""
+    with _workspace(_ROSTER_CONFIG), _client() as c:
+        from app.services.agent.prompts import REGISTRY
+
+        persona = {"name": "Ari", "description": "{{user}} is tall. {{unknown}} stays."}
+        assert c.put("/api/settings", json={"roleplay": {"persona": persona}}).status_code == 200
+        systems = _systems(_assemble(c, _make_thread(c)))
+        assert systems[2] == REGISTRY["persona_intro"].default + "\n\nAri is tall. {{unknown}} stays."
+
+
 def test_an_empty_owner_persona_emits_nothing() -> None:
     with _workspace(_ROSTER_CONFIG), _client() as c:
         systems = _systems(_assemble(c, _make_thread(c)))

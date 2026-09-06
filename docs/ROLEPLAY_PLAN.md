@@ -318,7 +318,10 @@ no-legacy-seams rule applies — no compat flag for the old fused prompt).
 Reuse `_Placeholders` (R32; leave-literal-on-miss). v1 vocabulary: `{{char}}` (title or name) ·
 `{{user}}` (`user_name` → `roleplay.persona.name` → `"User"`) · `{{original}}` (§4.1). The pass
 runs over: SOUL.md, greeting(s), example dialogue, scenario, post_history, lorebook keys +
-content. It runs for every agent (the universal assembly) — safe because unknown/unmatched
+content, and `roleplay.persona.description` (the S0 hold-out, reversed 2026-09-06 on field
+evidence — the owner's real ST persona opens with `{{user}}`, which ST renders there; in one's
+own description it reads as the persona name). It runs for every agent (the universal assembly)
+— safe because unknown/unmatched
 tokens pass through literally, so existing SOUL.md text without macros is untouched.
 
 ## 5. Card import
@@ -1012,7 +1015,8 @@ helper, none weakened. Gate 6/6; BE 2,192→2,225.
 section (heading included) but NOT a second `## Voice` heading — the §4.1a two-heading
 head shape dominates a byte-literal "complete no-card head" (three headings otherwise).
 Also recorded: scenario emits unframed (plan names a framing only for the persona) and
-sits before the appends; `roleplay.persona.description` is not macro-substituted in v1.
+sits before the appends; `roleplay.persona.description` is not macro-substituted in v1
+*(reversed 2026-09-06, owner's word on field evidence — see §4.3 and the §13-S2 tail)*.
 
 **Blind Emma round (hermes emma lane, sol high, `--ignore-rules`): SHIP WITH FIXES —
 exactly 1 MED (conf 0.98), seven areas explicitly CONFIRMED SOUND, open sweep "none"**

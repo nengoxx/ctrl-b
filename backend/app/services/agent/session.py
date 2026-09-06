@@ -650,8 +650,11 @@ class AgentSession:
         """The OWNER's persona block (§3.2/§4.2), injected after the roster when
         `roleplay.persona.description` is non-empty — the same block for every agent, because it
         describes the owner rather than any one character. The registry framing, then the owner's
-        text (L-8). Empty ⇒ absent."""
-        description = self._settings.roleplay.persona.description.strip()
+        text (L-8). Macro-substituted like every other card-convention field (the S0 hold-out was
+        reversed on field evidence — the owner's real ST persona opens with `{{user}}`, and ST
+        renders macros there); `{{user}}` in one's own description reads as the persona NAME.
+        Empty ⇒ absent — including a description that empties only once its macros render."""
+        description = self._macros().render(self._settings.roleplay.persona.description.strip()).strip()
         if not description:
             return None
         return resolve("persona_intro", self._settings, stamps=self._stamps) + "\n\n" + description
