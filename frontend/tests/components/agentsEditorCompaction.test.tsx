@@ -1,11 +1,17 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// AgentsEditor — the D42 Slice-6 additions: the GLOBAL compaction block (Auto-compact Switch +
-// the % ×100/÷100 round-trip + clamp + the two token knobs, saved via the globals bar) and the
-// per-agent ModelRef call-config block (Max output tokens / Reasoning-effort Seg unset-state /
+// The agent settings surface — the D42 Slice-6 additions: the GLOBAL compaction block (Auto-compact
+// Switch + the % ×100/÷100 round-trip + clamp + the two token knobs, saved via the globals bar) and
+// the per-agent ModelRef call-config block (Max output tokens / Reasoning-effort Seg unset-state /
 // Reasoning tokens, round-tripped through the save payload). We mock the hook boundaries (like
-// composerSteer/chatThread do) and drive the REAL component through its DOM.
+// composerSteer/chatThread do) and drive the REAL components through their DOM.
+//
+// D70 §8.4 split the old single `AgentsEditor` in two — the globals kept their Conf home
+// (`AgentGlobals`) and the per-agent row moved to the agents gallery (`AgentRow`, opened by the card
+// the owner taps). Every assertion below is the one it always was; what changed is which component
+// each half renders, and that the row is rendered OPEN (the gallery opens it, rather than the list's
+// disclosure header being clicked).
 
 const h = vi.hoisted(() => ({
   saveSettings: vi.fn(),
@@ -65,7 +71,7 @@ vi.mock("../../src/hooks/useSettings", () => ({
       isPending: false,
     };
   },
-  // AgentsEditor's backend picker (A11/D48 C7-b) reads the registry catalog from GET /api/providers.
+  // The form's backend picker (A11/D48 C7-b) reads the registry catalog from GET /api/providers.
   useProviders: () => ({ data: { providers: {}, verbs: [], warnings: [] } }),
 }));
 vi.mock("../../src/hooks/useDefaultPrompt", () => ({
@@ -86,7 +92,8 @@ vi.mock("../../src/hooks/useAgents", async (importActual) => {
   };
 });
 
-import { AgentsEditor } from "../../src/components/AgentsEditor";
+import { AgentGlobals } from "../../src/components/AgentGlobals";
+import { AgentRow } from "../../src/components/AgentsEditor";
 import type { AgentSectionCfg } from "../../src/hooks/useAgents";
 
 const baseCfg: AgentSectionCfg = {
@@ -108,9 +115,24 @@ const baseCfg: AgentSectionCfg = {
   },
 };
 
-function renderEditor(cfg: AgentSectionCfg = baseCfg) {
-  return render(<AgentsEditor cfg={cfg} toolNames={[]} toolModes={{}} skillNames={[]} />);
+function renderGlobals(cfg: AgentSectionCfg = baseCfg) {
+  return render(<AgentGlobals cfg={cfg} />);
 }
+
+/** The default agent's row as the GALLERY mounts it: already open on the card that was tapped. */
+const defaultRow = (
+  <AgentRow
+    name="default"
+    isDefault
+    isResolvedDefault
+    open
+    onToggle={() => undefined}
+    toolNames={[]}
+    toolModes={{}}
+    skillNames={[]}
+    defaultPrompt=""
+  />
+);
 
 afterEach(() => {
   cleanup();
@@ -144,16 +166,16 @@ type SavedAgent = {
 const lastAgentPayload = () => h.saveSettings.mock.calls[0][0] as SavedAgent;
 const value = (label: string) => screen.getByLabelText<HTMLInputElement>(label).value;
 
-describe("AgentsEditor · global compaction block (D42)", () => {
+describe("AgentGlobals · global compaction block (D42)", () => {
   it("renders the threshold as a whole percent (frac ×100)", () => {
-    renderEditor();
+    renderGlobals();
     expect(value("Compact at % of context")).toBe("85");
     expect(value("Keep recent (tokens)")).toBe("4096");
     expect(value("Tool output trim floor (tokens)")).toBe("500");
   });
 
   it("round-trips the % (÷100) + token knobs + the Auto-compact Switch into the save payload", () => {
-    renderEditor();
+    renderGlobals();
     fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "70" } });
     fireEvent.change(screen.getByLabelText("Keep recent (tokens)"), { target: { value: "2000" } });
     fireEvent.change(screen.getByLabelText("Tool output trim floor (tokens)"), {
@@ -176,7 +198,7 @@ describe("AgentsEditor · global compaction block (D42)", () => {
 
   // D60 — the Tier-1 clearing gate rides the same globals draft/savebar.
   it("round-trips the clearing gate: % ÷100, the reclaim floor, and the never-clear list", () => {
-    renderEditor();
+    renderGlobals();
     expect(value("Clear tool outputs above % of context")).toBe("50");
     expect(value("Minimum tokens reclaimed by a trim")).toBe("1024");
     expect(value("Tools never cleared")).toBe("task_plan, memory, core_memory");
@@ -199,7 +221,7 @@ describe("AgentsEditor · global compaction block (D42)", () => {
   });
 
   it("keeps a separator the owner just typed in the never-clear list", () => {
-    renderEditor();
+    renderGlobals();
     fireEvent.change(screen.getByLabelText("Tools never cleared"), {
       target: { value: "memory, " },
     });
@@ -209,14 +231,14 @@ describe("AgentsEditor · global compaction block (D42)", () => {
   });
 
   it("clamps the % to the schema bounds (50–95) at save", () => {
-    renderEditor();
+    renderGlobals();
     fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "99" } });
     fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
     expect(lastAgentPayload().agent.compaction.threshold_frac).toBe(0.95);
 
     cleanup();
     h.saveSettings.mockClear();
-    renderEditor();
+    renderGlobals();
     fireEvent.change(screen.getByLabelText("Compact at % of context"), { target: { value: "30" } });
     fireEvent.click(screen.getByRole("button", { name: "Save agent settings" }));
     expect(lastAgentPayload().agent.compaction.threshold_frac).toBe(0.5);
@@ -225,7 +247,7 @@ describe("AgentsEditor · global compaction block (D42)", () => {
   // P3 (D42 post-build audit): the token knobs are `ge=0` (0 is a valid degenerate setting), but a
   // garbage keystroke must never WRITE 0 — `numOrKeep` leaves the last valid value untouched.
   it("garbage input on a token knob keeps the last valid value (never writes 0)", () => {
-    renderEditor();
+    renderGlobals();
     const keep = screen.getByLabelText("Keep recent (tokens)");
     fireEvent.change(keep, { target: { value: "2000" } }); // valid write
     fireEvent.change(keep, { target: { value: "20x" } }); // junk → keep 2000, not 0/2000-collapse
@@ -242,10 +264,8 @@ describe("AgentsEditor · global compaction block (D42)", () => {
   });
 });
 
-describe("AgentsEditor · draft reseed value-guard (Codex FIX B)", () => {
-  const propsFor = (cfg: AgentSectionCfg) => (
-    <AgentsEditor cfg={cfg} toolNames={[]} toolModes={{}} skillNames={[]} />
-  );
+describe("AgentGlobals · draft reseed value-guard (Codex FIX B)", () => {
+  const propsFor = (cfg: AgentSectionCfg) => <AgentGlobals cfg={cfg} />;
 
   it("a value-identical parent re-render does NOT clobber an unsaved edit", () => {
     const { rerender } = render(propsFor(baseCfg));
@@ -368,18 +388,16 @@ describe("AgentsEditor · draft reseed value-guard (Codex FIX B)", () => {
 
   it("an identical-value detail refresh does not reset a dirty agent draft", () => {
     h.cloneDetail = true; // every render yields a new (value-identical) detail object
-    const { rerender } = render(propsFor(baseCfg));
-    fireEvent.click(screen.getByText(/workspace root/)); // open the default agent's row
+    const { rerender } = render(defaultRow);
     fireEvent.change(screen.getByLabelText("Max output tokens"), { target: { value: "2048" } });
-    rerender(propsFor(baseCfg));
+    rerender(defaultRow);
     expect(value("Max output tokens")).toBe("2048");
   });
 });
 
-describe("AgentsEditor · per-agent ModelRef call config (D42 A10)", () => {
+describe("AgentRow · per-agent ModelRef call config (D42 A10)", () => {
   function openDefaultRow() {
-    renderEditor();
-    fireEvent.click(screen.getByText(/workspace root/)); // the default row's disclosure header
+    render(defaultRow);
   }
 
   it("renders the call-config fields in their unset state", () => {

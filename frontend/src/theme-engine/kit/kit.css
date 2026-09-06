@@ -7561,3 +7561,149 @@ body[data-motion="off"] .kit .mgal-frame-thirds {
   gap: 8px;
   padding: 12px 14px 16px;
 }
+
+/* ── D70 §8.4 — the AGENTS GALLERY (`tabs/AgentsTab.tsx`), the settings section the per-agent editor
+ * moved out of Conf into. Two columns at phone width, each card a portrait through its framing point
+ * over a name plate, with TALK as its own visible affordance beside the card.
+ *
+ * Built from the recipes already here — the `.conf-card` frame, the `.mgal-grid` tile geometry, the
+ * `.badge` pill — on the semantic tokens only. gacha's `.gc-track` is the STRUCTURAL precedent for a
+ * showcase grid and nothing of its CSS is copied (D31): a theme that wants its own look overrides
+ * these hooks in `@layer theme`. §14.11: transform/opacity only. ── */
+.kit .agal-grid {
+  list-style: none;
+  margin: 14px 16px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+/* The positioning context for Talk, which is the card's SIBLING rather than its child: a button
+ * inside a button is invalid HTML (the media grid's own lesson), and the card has to stay the plain
+ * editor-opening button. */
+.kit .agal-cell {
+  position: relative;
+}
+.kit .agal-card {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+  position: relative;
+  transition: transform var(--dur-fast) var(--ease-std);
+}
+.kit .agal-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.kit .agal-card:active {
+  transform: scale(0.98);
+}
+/* SQUARE — an avatar's own shape, and the one its library offers at the crop step, so what the owner
+ * framed is what this tile shows. */
+.kit .agal-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--surface-2);
+  overflow: hidden;
+  /* An off-screen card is neither laid out nor painted (the gallery grid's decode budget). */
+  content-visibility: auto;
+  contain-intrinsic-size: 200px;
+}
+.kit .agal-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* NO AVATAR — the initial, big and quiet, in the tile the picture would have filled. */
+.kit .agal-mono {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: 34px;
+  font-weight: 300;
+  color: var(--text-3);
+}
+.kit .agal-plate {
+  display: block;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line);
+}
+.kit .agal-name {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+/* Two lines, then ellipsis: a routing description is a sentence and a card is not the place to read
+ * one — the form is. */
+.kit .agal-sub {
+  display: -webkit-box;
+  margin-top: 2px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-3);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.kit .agal-badge {
+  position: absolute;
+  top: 6px;
+  inset-inline-start: 6px;
+}
+.kit .agal-talk {
+  all: unset;
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+  cursor: pointer;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.kit .agal-talk:hover,
+.kit .agal-talk:active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.kit .agal-talk:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The section header's affordances (New, Import) and the open agent's form share the `.conf-card`
+ * frame every settings surface here uses. */
+.kit .agal-actions,
+.kit .agal-detail {
+  padding-bottom: 2px;
+}
+.kit .agal-back {
+  all: unset;
+  display: block;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.kit .agal-back:hover,
+.kit .agal-back:active {
+  color: var(--text);
+}
+.kit .agal-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

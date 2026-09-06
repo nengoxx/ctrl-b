@@ -29,13 +29,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("gacha tab set (data)", () => {
-  it("declares the standard four sections, each with a Japanese sub-label from the frozen copy", () => {
+  it("declares the four BAR sections with their frozen Japanese sub-labels, plus the gallery", () => {
     const tabs = tabsFor("gacha");
-    expect(tabs.map((t) => t.id)).toEqual(["fleet", "agent", "utils", "conf"]);
-    expect(tabs.map((t) => t.subLabel)).toEqual(SUBLABELS.map(([, jp]) => jp));
-    // Composer visibility + the Conf lazy latch are unchanged from the standard set.
-    expect(tabs.map((t) => t.hasComposer)).toEqual([true, true, false, false]);
+    expect(tabs.map((t) => t.id)).toEqual(["fleet", "agent", "utils", "conf", "agents"]);
+    expect(tabs.slice(0, 4).map((t) => t.subLabel)).toEqual(SUBLABELS.map(([, jp]) => jp));
+    // D70 §8.4 — the agents gallery carries NO sub-label: `GACHA_COPY` is a frozen module that also
+    // derives the theme's committed font subset, and the section never stands on the bar.
+    expect(tabs.find((t) => t.id === "agents")?.subLabel).toBeUndefined();
+    // Composer visibility + the lazy latch are unchanged from the standard set.
+    expect(tabs.map((t) => t.hasComposer)).toEqual([true, true, false, false, false]);
     expect(tabs.find((t) => t.id === "conf")?.lazy).toBe(true);
+    expect(tabs.find((t) => t.id === "agents")?.lazy).toBe(true);
   });
 
   it("defaults to the 3-tab preset (the prototype's Fleet/Agent/Settings shape), utils hosted in Conf", () => {
@@ -47,7 +51,7 @@ describe("gacha tab set (data)", () => {
       false,
     );
     expect(bar.map((d) => d.id)).toEqual(["fleet", "agent", "conf"]);
-    expect(menu).toEqual([]);
+    expect(menu.map((d) => d.id)).toEqual(["agents"]); // off-bar under every preset (D70 §8.4)
     expect(hosted).toEqual({ utils: "conf" });
   });
 

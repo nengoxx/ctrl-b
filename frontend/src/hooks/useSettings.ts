@@ -6,7 +6,7 @@ import { pushToast } from "../store/toast";
 import type { McpServer, OpenApiServer } from "./useIntegrations";
 import type { NotificationEvents } from "./useNotificationPrefs";
 import { withEventDefaults } from "./useNotificationPrefs";
-import { useScopedQuery } from "./useScopedQuery";
+import { CONF_SECTIONS, useScopedQuery } from "./useScopedQuery";
 
 // Phase 7a. The settings doc is the whole masked config; the Conf forms read/write the slices they
 // expose (server + inference here). Typed loosely — only the edited groups are modelled; the rest
@@ -270,7 +270,7 @@ export interface ProvidersInfo {
  *  useScopedQuery), so the cache stays fresh whenever the user actually looks at it. */
 export function useSettings() {
   const qc = useQueryClient();
-  return useScopedQuery<SettingsDoc>("conf", {
+  return useScopedQuery<SettingsDoc>(CONF_SECTIONS, {
     queryKey: ["settings"],
     queryFn: async ({ signal }) => {
       // FR2-1 — read the providers fingerprint off the SAME response (the `X-Providers-Rev` header) and
@@ -311,7 +311,7 @@ export function useSettingsProvidersRev(): string | null {
  *  Inference sections (pickers, warnings, base rev) and the AgentsEditor picker. The composer keeps
  *  its own module-level `knownProviders` (refreshed on save), so verbs work from any tab. */
 export function useProviders() {
-  return useScopedQuery<ProvidersInfo>("conf", {
+  return useScopedQuery<ProvidersInfo>(CONF_SECTIONS, {
     queryKey: ["providers"],
     queryFn: () => getJSON<ProvidersInfo>("/api/providers"),
     staleTime: 30_000,

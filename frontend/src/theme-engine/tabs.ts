@@ -31,6 +31,16 @@ export const STANDARD_TABS: TabDef[] = [
   // `lazy`: Conf is the one code-split section (its editor chunk). DefaultRoot mounts it after first
   // activation, then keeps it mounted (drafts survive) — the generalized latch (was a bespoke Conf-only flag).
   { id: "conf", glyph: "●", lbl: "conf", hasComposer: false, lazy: true },
+  // The agents/characters gallery (D70 §8.4) — a settings-class section like `conf`, code-split for the
+  // same reason (it carries the whole agent form plus the media library machinery).
+  //
+  // It is deliberately NOT added to any `LAYOUT_PRESETS` bar: those presets are named for how many
+  // sections stand ON THE BAR and the Conf picker labels them with that literal number ("4"/"3"/"2"), so
+  // a fifth on-bar section would make the owner-facing control say something untrue. Off-bar and
+  // unhosted is an existing, ruled position (D35 §F0, Axis A) — the section falls to the nav menu, whose
+  // collapse ladder renders a lone item as a DIRECT button, so the gallery is one appbar tap away under
+  // the default chrome and joins the popover under `minimal`.
+  { id: "agents", glyph: "◉", lbl: "agents", hasComposer: false, lazy: true },
 ];
 
 // Per-theme tab sets. T0 = vapor only; unregistered themes fall back to the standard set.
@@ -43,6 +53,7 @@ const TAB_SETS: Partial<Record<ThemeId, TabDef[]>> = {
     { id: "agent", glyph: "▲", lbl: "comms", hasComposer: true },
     { id: "utils", glyph: "◆", lbl: "tools", hasComposer: false },
     { id: "conf", glyph: "●", lbl: "settings", hasComposer: false, lazy: true },
+    { id: "agents", glyph: "◉", lbl: "cast", hasComposer: false, lazy: true },
   ],
   // gacha (D52 / Q8.6b) — themed labels PLUS the ruled Japanese `subLabel` line (the kit seam landed with
   // G0's seams unit). All four are real words, kanji-first: 編成 hensei "formation" · 案内 annai "guidance" ·
@@ -62,6 +73,11 @@ const TAB_SETS: Partial<Record<ThemeId, TabDef[]>> = {
       hasComposer: false,
       lazy: true,
     },
+    // No `subLabel`: gacha's Japanese nav copy is a FROZEN module that also derives the theme's
+    // committed font subset (see the header note), so minting a new word here would enlarge a
+    // committed asset for a section that never stands on the bar. The row renders label-only, which
+    // `TabDef.subLabel` being optional already means everywhere else.
+    { id: "agents", glyph: "◉", lbl: "cast", hasComposer: false, lazy: true },
   ],
 };
 

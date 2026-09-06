@@ -173,27 +173,31 @@ describe("resolveLayout — nearest-supported math (isolated module, mocked regi
 });
 
 describe("partitionSections (pure)", () => {
-  const defs = STANDARD_TABS; // fleet, agent, utils, conf
+  // fleet, agent, utils, conf + `agents` — which no preset's bar names (D70 §8.4: the presets are
+  // the CURATED bar and the Conf picker labels them with that literal count), so the gallery is
+  // off-bar-and-unhosted under every one of them and lands in the menu. That is the assertion each
+  // case below carries now.
+  const defs = STANDARD_TABS;
   const ids = (list: TabDef[]) => list.map((d) => d.id);
 
   it("4-tab / not-minimal → the full bar, empty menu, no hosting", () => {
     const { bar, menu, hosted } = partitionSections(defs, LAYOUT_PRESETS["4-tab"], false);
     expect(ids(bar)).toEqual(["fleet", "agent", "utils", "conf"]);
-    expect(menu).toEqual([]);
+    expect(ids(menu)).toEqual(["agents"]); // the gallery: off-bar under every preset
     expect(hosted).toEqual({});
   });
 
-  it("3-tab → bar of three, empty menu, utils hosted in conf", () => {
+  it("3-tab → bar of three, utils hosted in conf, the gallery in the menu", () => {
     const { bar, menu, hosted } = partitionSections(defs, LAYOUT_PRESETS["3-tab"], false);
     expect(ids(bar)).toEqual(["fleet", "agent", "conf"]);
-    expect(menu).toEqual([]); // utils is hosted (not menu); conf is on-bar
+    expect(ids(menu)).toEqual(["agents"]); // utils is hosted (not menu); conf is on-bar
     expect(hosted).toEqual({ utils: "conf" });
   });
 
-  it("2-tab → bar of two, conf in the menu, utils hosted in conf", () => {
+  it("2-tab → bar of two, conf + the gallery in the menu, utils hosted in conf", () => {
     const { bar, menu, hosted } = partitionSections(defs, LAYOUT_PRESETS["2-tab"], false);
     expect(ids(bar)).toEqual(["fleet", "agent"]);
-    expect(ids(menu)).toEqual(["conf"]); // off-bar AND unhosted
+    expect(ids(menu)).toEqual(["conf", "agents"]); // off-bar AND unhosted, in def order
     expect(hosted).toEqual({ utils: "conf" });
   });
 
@@ -201,13 +205,13 @@ describe("partitionSections (pure)", () => {
     // 4-tab preset + minimal: nothing hosted → all four in the menu.
     const four = partitionSections(defs, LAYOUT_PRESETS["4-tab"], true);
     expect(four.bar).toEqual([]);
-    expect(ids(four.menu)).toEqual(["fleet", "agent", "utils", "conf"]);
+    expect(ids(four.menu)).toEqual(["fleet", "agent", "utils", "conf", "agents"]);
     expect(four.hosted).toEqual({});
 
     // 3-tab preset + minimal: the effective bar is [] but hosting still supersedes the menu → utils excluded.
     const three = partitionSections(defs, LAYOUT_PRESETS["3-tab"], true);
     expect(three.bar).toEqual([]);
-    expect(ids(three.menu)).toEqual(["fleet", "agent", "conf"]); // utils hosted → not in the menu
+    expect(ids(three.menu)).toEqual(["fleet", "agent", "conf", "agents"]); // utils hosted → not in the menu
     expect(three.hosted).toEqual({ utils: "conf" }); // passthrough
   });
 
@@ -227,6 +231,6 @@ describe("partitionSections (pure)", () => {
     const onlyFleet: LayoutPreset = { bar: ["fleet"] };
     const { bar, menu } = partitionSections(defs, onlyFleet, false);
     expect(ids(bar)).toEqual(["fleet"]);
-    expect(ids(menu)).toEqual(["agent", "utils", "conf"]); // everything the bar omits, in def order
+    expect(ids(menu)).toEqual(["agent", "utils", "conf", "agents"]); // everything the bar omits, in def order
   });
 });

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getJSON } from "../api/client";
 import type { PinRef } from "../lib/mediaLibrary";
-import { useScopedQuery } from "./useScopedQuery";
+import { CONF_SECTIONS, useScopedQuery } from "./useScopedQuery";
 
 // The owner MEDIA index (D52/G5, GACHA_PLAN §5.4 + §10.4) — `GET /api/media/{ns}`: what the owner has
 // dropped into `$CTRLB_HOME/media/<ns>/<role>/`, per role, already in the order the server rules.
@@ -155,5 +155,5 @@ export function readMediaIndex(ns: string): Promise<MediaIndex> {
  *  keeps whatever cadence its RENDER-path observers ask for — the theme surfaces' long staleTime — and
  *  the gallery contributes nothing. */
 export function useMediaGalleryIndex(ns: string) {
-  return useScopedQuery<MediaIndex>("conf", { ...mediaQuery(ns), staleTime: 0 });
+  return useScopedQuery<MediaIndex>(CONF_SECTIONS, { ...mediaQuery(ns), staleTime: 0 });
 }

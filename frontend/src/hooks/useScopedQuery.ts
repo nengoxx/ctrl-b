@@ -36,13 +36,22 @@ import { useTabActive, type Tab } from "../store/ui";
 //   Function form (TanStack v5) → coerced to truthy; if you need conditional `enabled` *and*
 //     tab scoping, gate the callsite instead (`if (cond) useScopedQuery(...)` won't work due to
 //     hook rules — instead lift the condition into a boolean and AND it with the active tab).
+/** The sections that read the CONFIG-side data (D70 §10-S4). The agents gallery is a second settings
+ *  surface over the SAME reads Conf makes — the settings doc, the agent list, the discovered skills,
+ *  the provider catalog, the media index — so those queries name this set instead of `"conf"` and are
+ *  paused only while the owner is on neither. One constant, so the set cannot drift per hook. */
+export const CONF_SECTIONS: readonly Tab[] = ["conf", "agents"];
+
 export function useScopedQuery<
   TQueryFnData = unknown,
   TError = Error,
   TData = TQueryFnData,
   TQueryKey extends QueryKey = QueryKey,
 >(
-  tab: Tab,
+  // A SET of sections is the same statement about the same data (D70 §10-S4): the agent list, the
+  // skills, the settings doc and the media index are read from Conf AND from the agents gallery, so
+  // they are paused only while the owner is on neither. `useTabActive` owns the membership test.
+  tab: Tab | readonly Tab[],
   options: UseQueryOptions<TQueryFnData, TError, TData, TQueryKey>,
 ): UseQueryResult<TData, TError> {
   const active = useTabActive(tab);

@@ -20,6 +20,7 @@ import { useSections } from "../../hooks/useSections";
 import { getGroupScrollTarget } from "../../store/groupScroll";
 import { prefetchOnIdle } from "../../lib/prefetch";
 import { AgentTab } from "../../tabs/AgentTab";
+import { AgentsTabLazy } from "../../tabs/AgentsTab.lazy";
 import { ConfTabLazy, preloadConfTab } from "../../tabs/ConfTab.lazy";
 import { UtilsTab } from "../../tabs/UtilsTab";
 import { useScrollKeep } from "../scrollKeep";
@@ -105,6 +106,10 @@ const DEFAULT_BODIES: Record<TabId, ComponentType<{ active: boolean }>> = {
   agent: AgentTab,
   utils: UtilsTab,
   conf: ConfTabLazy,
+  // D70 §8.4 — the agents gallery, code-split like Conf (it carries the agent form plus the media
+  // library machinery). No idle PREFETCH: Conf's is warmed because it is the section every owner
+  // opens; this one is reached deliberately from the nav menu.
+  agents: AgentsTabLazy,
 };
 
 export function DefaultRoot({

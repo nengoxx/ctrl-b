@@ -203,28 +203,34 @@ interface BuiltinVerb {
 /** The built-in verbs — ONE table driving dispatch (`routeSlash`), the `/help` listing, and the composer's
  *  first-token suggestions, so the three can't drift. Adding a verb is one row. Skills and providers are
  *  DISCOVERED (the sets above), so they stay out of the table and keep their own dynamic `/help` lines. */
+/** PIN THE SESSION AGENT — the whole body of the `/agent` verb, extracted so a SECOND affordance can
+ *  drive the same seam rather than mint one (D70 §8.4: the agents gallery's Talk button).
+ *
+ *  `name` is a slug, or `""` for "back to the configured default" — the bare-`/agent` case, which is a
+ *  session-agent CLEAR rather than a pin at the default's name. The name is validated against the
+ *  configured set (best-effort): an unknown one still pins, the backend resolves it gracefully, and
+ *  the note says so, so a typo is visible. */
+export function pinSessionAgent(name: string): void {
+  if (!name) {
+    setSessionAgent(null);
+    pushSystemNote(`// agent → ${defaultAgent} (default)`);
+    return;
+  }
+  setSessionAgent(name);
+  pushSystemNote(
+    knownAgents.has(name)
+      ? `// agent → ${name}`
+      : `// agent → ${name} (not configured — will fall back to default)`,
+  );
+}
+
 const BUILTIN_VERBS: readonly BuiltinVerb[] = [
   {
     verb: "agent",
     args: "[name]",
     help: "switch the active agent (bare = back to default)",
-    run: (rest) => {
-      // `/agent <name>` sets a sticky session agent; bare `/agent` resets to the default. The name
-      // is validated against the configured set (best-effort) — an unknown one still routes, the
-      // backend resolves gracefully, but we warn so a typo is visible.
-      const name = rest.split(/\s+/)[0] || "";
-      if (!name) {
-        setSessionAgent(null);
-        pushSystemNote(`// agent → ${defaultAgent} (default)`);
-        return;
-      }
-      setSessionAgent(name);
-      pushSystemNote(
-        knownAgents.has(name)
-          ? `// agent → ${name}`
-          : `// agent → ${name} (not configured — will fall back to default)`,
-      );
-    },
+    // `/agent <name>` sets a sticky session agent; bare `/agent` resets to the default.
+    run: (rest) => pinSessionAgent(rest.split(/\s+/)[0] || ""),
   },
   {
     verb: "privilege",

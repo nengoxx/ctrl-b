@@ -13,7 +13,7 @@ import { expect, seedUI, test } from "./fixtures";
 // since D51 V6 retired its `layouts:["4-tab"]` waiver (R13/Codex #11: the waiver's replacement had to be
 // real 2-/3-tab navigation+hosting tests, not a forced-coercion assertion).
 
-test("minimal · 3-tab: utils leaves the bar and is hosted in Conf; no NavMenu (menu empty)", async ({
+test("minimal · 3-tab: utils leaves the bar and is hosted in Conf; the menu carries the gallery", async ({
   page,
 }) => {
   await seedUI(page, { theme: "minimal", mode: "dark", accent: "cyan", layout: "3-tab", v: 1 });
@@ -24,8 +24,11 @@ test("minimal · 3-tab: utils leaves the bar and is hosted in Conf; no NavMenu (
   await expect(page.locator("#tabbtn-agent")).toBeVisible();
   await expect(page.locator("#tabbtn-conf")).toBeVisible();
   await expect(page.locator("#tabbtn-utils")).toHaveCount(0);
-  // Menu is empty in 3-tab (conf is on the bar) → the floating launcher is not rendered.
-  await expect(page.locator(".navmenu")).toHaveCount(0);
+  // D70 §8.4 — no preset's bar names `agents`, so the gallery is the menu's ONE item under every
+  // layout: the affordance DOCKS into the appbar (chrome is "visible" here) as the direct form, and
+  // the floating launcher stays unmounted.
+  await expect(page.locator(".kit-appbar .navmenu-launch")).toHaveCount(1);
+  await expect(page.locator(".navmenu:not(.docked)")).toHaveCount(0);
 
   // Conf hosts the Tools group.
   await page.locator("#tabbtn-conf").click();
@@ -37,8 +40,8 @@ test("minimal · 2-tab (visible chrome): conf reached via the DOCKED DIRECT butt
 }) => {
   // Default appbarMode is "visible" → the docking rule (D35 §F0 fixup): the nav affordance is an appbar
   // trailing action, NOT a floating launcher. It coexists with the tab bar (bar = fleet+agent, menu = conf).
-  // Collapse ladder (F0 follow-up): with a lone off-bar section the docked trigger is a DIRECT button — no
-  // popover — that navigates straight to conf.
+  // Collapse ladder (F0 follow-up): with TWO off-bar sections (conf + the D70 agents gallery) the docked
+  // trigger is the orbit LAUNCHER with a popover, and conf is picked from it.
   await seedUI(page, { theme: "minimal", mode: "dark", accent: "cyan", layout: "2-tab", v: 1 });
   await page.goto("/");
 
@@ -48,25 +51,24 @@ test("minimal · 2-tab (visible chrome): conf reached via the DOCKED DIRECT butt
   await expect(page.locator("#tabbtn-utils")).toHaveCount(0);
   await expect(page.locator("#tabbtn-conf")).toHaveCount(0); // conf is off-bar → the menu, not the bar
 
-  // The trigger is DOCKED inside the appbar (not floating), alongside the tab bar — and it's the DIRECT form:
-  // a labelled button with NO popover semantics.
+  // The trigger is DOCKED inside the appbar (not floating), alongside the tab bar.
   await expect(page.locator(".kit-tabbar")).toBeVisible();
   const launch = page.locator(".kit-appbar .navmenu-launch");
   await expect(launch).toBeVisible();
-  await expect(page.locator(".kit-appbar .navmenu-launch[aria-label]")).toHaveCount(1); // conf's label
-  await expect(page.locator(".kit-appbar .navmenu-launch[aria-haspopup]")).toHaveCount(0); // not a menu
+  await expect(page.locator(".kit-appbar .navmenu-launch[aria-haspopup]")).toHaveCount(1); // a menu
 
-  // Clicking it lands directly on Conf, where the Tools group is hosted (no popover to open).
+  // Open it and pick Conf, where the Tools group is hosted.
   await launch.click();
+  await page.locator(".navmenu-pop [role='menuitem']").first().click(); // conf (def order)
   await expect(page.locator("#tab-conf")).toBeVisible();
   await expect(page.locator("#utils-hosted")).toBeVisible();
 });
 
-test("minimal · 2-tab (appbar off): conf reached via the FLOATING DIRECT button (no appbar to dock into)", async ({
+test("minimal · 2-tab (appbar off): conf reached via the FLOATING launcher (no appbar to dock into)", async ({
   page,
 }) => {
   // appbarMode "off" → there's no appbar, so the affordance can't dock: DefaultRoot mounts the standalone
-  // floating trigger. Lone off-bar section → the DIRECT form again (floating this time). bar = fleet+agent.
+  // floating trigger. Two off-bar sections (conf + the agents gallery) → the launcher form. bar = fleet+agent.
   await seedUI(page, {
     theme: "minimal",
     mode: "dark",
@@ -81,14 +83,14 @@ test("minimal · 2-tab (appbar off): conf reached via the FLOATING DIRECT button
   await expect(page.locator(".kit-appbar")).toHaveCount(0);
   await expect(page.locator(".kit-tabbar")).toBeVisible();
 
-  // The FLOATING direct button (not inside an appbar — there is none) navigates straight to conf; no popover.
+  // The FLOATING launcher (not inside an appbar — there is none) opens the popover conf is picked from.
   const launch = page.locator(".navmenu-launch");
   await expect(launch).toBeVisible();
   await expect(page.locator(".navmenu.docked")).toHaveCount(0);
-  await expect(page.locator(".navmenu-launch[aria-label]")).toHaveCount(1);
-  await expect(page.locator(".navmenu-launch[aria-haspopup]")).toHaveCount(0);
+  await expect(page.locator(".navmenu-launch[aria-haspopup]")).toHaveCount(1);
 
   await launch.click();
+  await page.locator(".navmenu-pop [role='menuitem']").first().click(); // conf (def order)
   await expect(page.locator("#tab-conf")).toBeVisible();
   await expect(page.locator("#utils-hosted")).toBeVisible();
 });
@@ -97,7 +99,7 @@ test("minimal · appbarMode minimal (4-tab): the floating menu carries ALL nav +
   page,
 }) => {
   // The all-off-bar endpoint ("1-tab mode IS minimal"): no appbar, no tab bar — the floating orbit menu
-  // lists every unhosted section (all four under the default 4-tab; menu>1 → still the launcher+popover).
+  // lists every unhosted section (all five under the default 4-tab; menu>1 → still the launcher+popover).
   // F0 follow-up: the top-left NavHome quick-jump appears when you're OFF the primary section (fleet).
   await seedUI(page, {
     theme: "minimal",
@@ -118,10 +120,10 @@ test("minimal · appbarMode minimal (4-tab): the floating menu carries ALL nav +
   // where you stand is clutter).
   await expect(page.locator(".navhome")).toHaveCount(0);
 
-  // Open the orbit menu → all four unhosted sections (menu>1, unchanged by the collapse ladder).
+  // Open the orbit menu → every unhosted section (menu>1, unchanged by the collapse ladder).
   await launch.click();
   const items = page.locator(".navmenu-pop [role='menuitem']");
-  await expect(items).toHaveCount(4); // fleet · agent · utils · conf — nothing hosted in 4-tab
+  await expect(items).toHaveCount(5); // fleet · agent · utils · conf · agents — nothing hosted in 4-tab
 
   // Navigate OFF the primary (to chat/agent) → NavHome now appears.
   await items.nth(1).click(); // agent (def order)

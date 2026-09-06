@@ -33,6 +33,22 @@ export function agentModeOf(s: ActionSpec): AgentMode {
   return s.core ? "core" : s.agent_exposed ? "enabled" : "disabled";
 }
 
+/** The tool half of the per-agent form's allow-lists, derived once (D70 §8.4 — the form renders in the
+ *  agents gallery AND its globals still live in Conf, so the derivation had to stop being one tab's
+ *  inline expression).
+ *
+ *  The grid mirrors the global tri-state (8b, D22): every tool that is an agent tool BY DEFAULT is
+ *  listed — so a globally-disabled one still appears, locked-off, rather than vanishing — and each
+ *  carries its effective mode so the grid can lock core (on) / disabled (off). */
+export function useAgentToolGrid(): { toolNames: string[]; toolModes: Record<string, AgentMode> } {
+  const { data: specs = [] } = useActionSpecs();
+  const governed = specs.filter((s) => (s.default_agent_mode ?? agentModeOf(s)) !== "disabled");
+  return {
+    toolNames: governed.map((s) => s.name),
+    toolModes: Object.fromEntries(governed.map((s) => [s.name, agentModeOf(s)])),
+  };
+}
+
 /** The action registry. Rarely changes — long stale time. */
 export function useActionSpecs() {
   return useQuery({

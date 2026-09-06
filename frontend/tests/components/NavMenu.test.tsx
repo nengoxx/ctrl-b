@@ -17,13 +17,15 @@ afterEach(cleanup);
 
 describe("NavMenu collapse ladder", () => {
   it("menu of one → a DIRECT section button (no popover semantics), labelled by the section", () => {
-    setUI({ layout: "2-tab" }); // bar = fleet+agent, utils hosted, menu = [conf] (length 1)
+    // 4-tab: the curated four stand on the bar and the agents gallery is the one off-bar section
+    // (D70 §8.4) — so the DEFAULT layout is now what exercises the menu-of-one rung.
+    setUI({ layout: "4-tab" });
     const { container } = render(<NavMenu />);
 
     const btn = container.querySelector<HTMLButtonElement>(".navmenu-launch");
     expect(btn).not.toBeNull();
     expect(btn?.classList.contains("navmenu-direct")).toBe(true);
-    expect(btn?.getAttribute("aria-label")).toBe("conf"); // the section's lbl, not "Navigation menu"
+    expect(btn?.getAttribute("aria-label")).toBe("agents"); // the section's lbl, not "Navigation menu"
     // The direct form is NOT a menu: no popover affordances, no popover node.
     expect(container.querySelector("[aria-haspopup]")).toBeNull();
     expect(btn?.getAttribute("aria-expanded")).toBeNull();
@@ -31,7 +33,7 @@ describe("NavMenu collapse ladder", () => {
   });
 
   it("menu of one, active ON that section → marked as the current location", () => {
-    setUI({ layout: "2-tab", tab: "conf" }); // standing on the lone off-bar section
+    setUI({ layout: "4-tab", tab: "agents" }); // standing on the lone off-bar section
     const { container } = render(<NavMenu />);
 
     const btn = container.querySelector<HTMLButtonElement>(".navmenu-direct");
@@ -40,15 +42,15 @@ describe("NavMenu collapse ladder", () => {
   });
 
   it("menu of one → clicking navigates straight to the section", () => {
-    setUI({ layout: "2-tab" });
+    setUI({ layout: "4-tab" });
     const { container } = render(<NavMenu />);
     fireEvent.click(container.querySelector<HTMLButtonElement>(".navmenu-direct")!);
-    // conf is OFF-BAR (not hosted — it's the HOST) under 2-tab → the plain navigate branch, no coercion.
-    expect(getUI().tab).toBe("conf");
+    // `agents` is off-bar and UNHOSTED → the plain navigate branch, no coercion.
+    expect(getUI().tab).toBe("agents");
   });
 
   it("menu of many → the orbit LAUNCHER with popover semantics (unchanged by the ladder)", () => {
-    setUI({ appbarMode: "minimal" }); // bar = [], menu = all four sections (length 4)
+    setUI({ appbarMode: "minimal" }); // bar = [], menu = every section (length 5)
     const { container } = render(<NavMenu />);
 
     const btn = container.querySelector<HTMLButtonElement>(".navmenu-launch");

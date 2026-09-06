@@ -15,11 +15,11 @@ import { createStore } from "./createStore";
 import { loadPersistedVersioned, savePersisted } from "./persist";
 
 export type { Mode, ThemeId } from "../theme-engine/types";
-export type Tab = "fleet" | "agent" | "utils" | "conf";
+export type Tab = "fleet" | "agent" | "utils" | "conf" | "agents";
 /** The `Tab` union as a runtime allowlist — a DOCUMENTED MIRROR, kept on the line below the type it
  *  mirrors so the two can't drift unseen (TS types are erased; there is nothing to iterate at runtime).
  *  Its only consumer is `consumeTabParam`, which must never trust a URL. */
-const TABS: readonly string[] = ["fleet", "agent", "utils", "conf"];
+const TABS: readonly string[] = ["fleet", "agent", "utils", "conf", "agents"];
 export type Motion = "full" | "reduced";
 export type Perf = "full" | "lite";
 /** Top-bar / navigation chrome mode (global, per-device). `visible` = appbar + bottom tab bar; `transparent`
@@ -368,6 +368,10 @@ export function useUI(): UIState {
  * over `useUISlice` — kept as a named primitive because it appears in many hook files
  * and the call-site reads more clearly than the equivalent inline selector.
  */
-export function useTabActive(tab: Tab): boolean {
-  return useUISlice((s) => s.tab === tab);
+export function useTabActive(tab: Tab | readonly Tab[]): boolean {
+  // ONE surface, two arities (D70 §10-S4): the agents gallery reads the same Conf-scoped data the Conf
+  // tab does — the settings doc, the agent list, the skills, the media index — so those queries are
+  // scoped to a SET of sections rather than to one. An array is compared by membership; the selector
+  // still yields a boolean, so subscribers re-render exactly as before.
+  return useUISlice((s) => (typeof tab === "string" ? s.tab === tab : tab.includes(s.tab)));
 }

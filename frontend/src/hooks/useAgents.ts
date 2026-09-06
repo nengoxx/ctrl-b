@@ -4,7 +4,7 @@ import { del, getJSON, putJSON } from "../api/client";
 import { loadAgents } from "../lib/composer";
 import type { Privilege } from "../lib/privilege";
 import { pushToast } from "../store/toast";
-import { useScopedQuery } from "./useScopedQuery";
+import { CONF_SECTIONS, useScopedQuery } from "./useScopedQuery";
 
 export type { Privilege }; // re-export so existing `import { Privilege } from "../hooks/useAgents"` keeps working
 
@@ -96,7 +96,7 @@ export interface AgentSectionCfg {
 }
 
 /** Project the settings doc's `agent` section onto the editor's view model (the defaults mirror the
- *  backend's). ONE source of truth for that projection: ConfTab builds the AgentsEditor's `cfg` prop
+ *  backend's). ONE source of truth for that projection: ConfTab builds `AgentGlobals`'s `cfg` prop
  *  with it, and the editor re-projects a save ECHO (`res.settings.agent`) through the same function so
  *  its draft-epoch seed is byte-comparable with the prop that lands a render later (v1.3.1). */
 export function pickAgentSection(section: Partial<AgentSectionCfg> | undefined): AgentSectionCfg {
@@ -176,7 +176,7 @@ export interface AgentListing {
 
 /** Discovered specialist names + the resolved default slug (tab-scoped — Conf-only data). */
 export function useAgentList() {
-  return useScopedQuery<AgentListing>("conf", {
+  return useScopedQuery<AgentListing>(CONF_SECTIONS, {
     queryKey: ["agentlist"],
     queryFn: () => getJSON("/api/agents"),
     staleTime: 30_000,

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 
-import { AgentsEditor } from "../components/AgentsEditor";
+import { AgentGlobals } from "../components/AgentGlobals";
 import { AutomationsPanel } from "../components/AutomationsPanel";
 import { ConfGroup } from "../components/ConfGroup";
 import { JsonField } from "../components/JsonField";
@@ -23,9 +23,9 @@ import { useAppChrome } from "../hooks/useAppChrome";
 import { AUTOMATIONS_GROUP_ID, automationsSummary, useAutomations } from "../hooks/useAutomations";
 import { useSections } from "../hooks/useSections";
 import { currentAppearancePatch, useSaveAppearance } from "../hooks/useAppearance";
-import { agentModeOf, useActionSpecs } from "../hooks/useActions";
+
 import { disclosureToggle } from "../lib/disclosure";
-import { pickAgentSection, useAgentList, type AgentSectionCfg } from "../hooks/useAgents";
+import { pickAgentSection, type AgentSectionCfg } from "../hooks/useAgents";
 import { useDefaultPrompt } from "../hooks/useDefaultPrompt";
 import { useHosts, useServerInfo } from "../hooks/useFleet";
 import {
@@ -1001,7 +1001,6 @@ export function ConfTab({ active }: Props) {
   }, [save.isPending]);
   const { data: integrations } = useIntegrationsStatus();
   const rediscover = useRediscover();
-  const { data: actionSpecs = [] } = useActionSpecs();
   const { data: skillList = [] } = useSkills();
   const { data: defaultPrompt = "" } = useDefaultPrompt();
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -1041,10 +1040,6 @@ export function ConfTab({ active }: Props) {
   // resubmits the OLD base (loud, no silent clobber) until a reload/navigate reseeds the draft.
   const capturedBaseRef = useRef<string | null>(null);
 
-  // Agents are folder-discovered (D14) — the list comes from /api/agents; the agent-section scalars
-  // (default agent, default title, subagent limits) come off the settings doc.
-  const { data: agentList } = useAgentList();
-  const agentCount = (agentList?.agents.length ?? 0) + 1; // specialists + the default/root agent
   // A3 — the Automations group's header summary. Reads the SAME `["automations"]` query the panel
   // does (TanStack dedupes it), so the count can't disagree with the list underneath; the text itself
   // is a pure function of the envelope (`automationsSummary`), tested without rendering this tab.
@@ -1055,17 +1050,9 @@ export function ConfTab({ active }: Props) {
   const { data: promptsDoc } = usePrompts();
   const promptsRight = promptsSummary(promptsDoc);
   const agentSection = settings?.agent as Partial<AgentSectionCfg> | undefined;
-  // v1.3.1 — the projection is shared with the AgentsEditor (`pickAgentSection`), which re-uses it to
+  // v1.3.1 — the projection is shared with `AgentGlobals` (`pickAgentSection`), which re-uses it to
   // project its own save echo into the exact shape this prop takes.
   const agentCfg: AgentSectionCfg = pickAgentSection(agentSection);
-  // The per-agent tool grid mirrors the global tri-state (8b, D22): show every tool that's an agent
-  // tool *by default* (so a globally-disabled tool still appears, locked-off, rather than vanishing)
-  // and pass each one's effective mode so the grid can lock core (on) / disabled (off).
-  const governedTools = actionSpecs.filter(
-    (s) => (s.default_agent_mode ?? agentModeOf(s)) !== "disabled",
-  );
-  const agentToolNames = governedTools.map((s) => s.name);
-  const agentToolModes = Object.fromEntries(governedTools.map((s) => [s.name, agentModeOf(s)]));
   const skillNames = skillList.map((s) => s.name);
 
   // Memory caps/toggles come off the settings doc (config.yaml `memory.*`); the MemoryEditor edits
@@ -2691,19 +2678,11 @@ export function ConfTab({ active }: Props) {
         </div>
       </ConfGroup>
 
-      <ConfGroup
-        id="agents"
-        num="14"
-        title="Agents"
-        right={`${agentCount} agent${agentCount === 1 ? "" : "s"}`}
-        defaultCollapsed
-      >
-        <AgentsEditor
-          cfg={agentCfg}
-          toolNames={agentToolNames}
-          toolModes={agentToolModes}
-          skillNames={skillNames}
-        />
+      {/* D70 §8.4 — the GLOBALS only. The per-agent list, its form and the add disclosure moved to the
+          agents gallery (its own section), so this group is `agent.*` config and nothing else; the
+          header summary says what it now holds rather than counting agents that are no longer here. */}
+      <ConfGroup id="agents" num="14" title="Agents" right="defaults · routing" defaultCollapsed>
+        <AgentGlobals cfg={agentCfg} />
       </ConfGroup>
 
       {/* A3 / D49 §D-6 — scheduled automations. The group is the LIST; the editor opens in a sheet the

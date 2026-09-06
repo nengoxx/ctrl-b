@@ -22,11 +22,17 @@ function mockFetch(body: unknown, headers: Record<string, string>) {
   );
 }
 
-// `useSettings` is tab-scoped (`useScopedQuery("conf", …)`) — the gate is `useTabActive`, so that is
-// what has to report Conf as active, or the query never runs and this test would prove nothing.
+// `useSettings` is section-scoped (`useScopedQuery(CONF_SECTIONS, …)`) — the gate is `useTabActive`,
+// so that is what has to report Conf as active, or the query never runs and this test would prove
+// nothing. Since D70 §10-S4 the scope is a SET (Conf + the agents gallery share these reads), so the
+// stub answers for either arity.
 vi.mock("../../src/store/ui", async (importActual) => {
   const actual = await importActual<typeof import("../../src/store/ui")>();
-  return { ...actual, useTabActive: (tab: string) => tab === "conf" };
+  return {
+    ...actual,
+    useTabActive: (tab: string | readonly string[]) =>
+      typeof tab === "string" ? tab === "conf" : tab.includes("conf"),
+  };
 });
 
 import { useSaveSettings, useSettings, useSettingsProvidersRev } from "../../src/hooks/useSettings";

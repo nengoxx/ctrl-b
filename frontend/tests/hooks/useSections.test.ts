@@ -23,18 +23,28 @@ beforeEach(() => {
 });
 
 describe("useSections", () => {
-  it("exposes vapor's 4 sections + the active one + its composer flag", () => {
+  it("exposes vapor's sections + the active one + its composer flag", () => {
     const { result } = renderHook(() => useSections());
-    expect(result.current.sections.map((s) => s.id)).toEqual(["fleet", "agent", "utils", "conf"]);
+    // Five since D70 §8.4 — the agents gallery is a section like any other; it simply stands off-bar.
+    expect(result.current.sections.map((s) => s.id)).toEqual([
+      "fleet",
+      "agent",
+      "utils",
+      "conf",
+      "agents",
+    ]);
     expect(result.current.active).toBe("fleet");
     expect(result.current.hasComposer).toBe(true); // fleet has a composer
   });
 
-  it("defaults (vapor, layout auto) are render-identical to the old shape: bar = all four, menu/hosted empty", () => {
+  it("defaults (vapor, layout auto): the bar is the curated four; the gallery is the menu's one item", () => {
     const { result } = renderHook(() => useSections());
     expect(result.current.layout).toBe("4-tab"); // vapor's declared DEFAULT (not a restriction — D51 V6)
     expect(result.current.bar.map((s) => s.id)).toEqual(["fleet", "agent", "utils", "conf"]);
-    expect(result.current.menu).toEqual([]);
+    // D70 §8.4 — no preset's bar names `agents` (the preset NAMES are the bar count the Conf picker
+    // prints), so it is off-bar-and-unhosted and the menu affordance carries it. A menu of one renders
+    // as a DIRECT button, so the gallery is one appbar tap away.
+    expect(result.current.menu.map((s) => s.id)).toEqual(["agents"]);
     expect(result.current.hosted).toEqual({});
   });
 
@@ -47,7 +57,7 @@ describe("useSections", () => {
     const { result } = renderHook(() => useSections());
     expect(result.current.layout).toBe("3-tab"); // ← the waiver would have bounced this to "4-tab"
     expect(result.current.bar.map((s) => s.id)).toEqual(["fleet", "agent", "conf"]);
-    expect(result.current.menu).toEqual([]); // utils is hosted, conf is on-bar
+    expect(result.current.menu.map((s) => s.id)).toEqual(["agents"]); // utils is hosted, conf is on-bar
     expect(result.current.hosted).toEqual({ utils: "conf" });
   });
 
@@ -65,7 +75,7 @@ describe("useSections", () => {
     const { result } = renderHook(() => useSections());
     expect(result.current.layout).toBe("2-tab");
     expect(result.current.bar.map((s) => s.id)).toEqual(["fleet", "agent"]);
-    expect(result.current.menu.map((s) => s.id)).toEqual(["conf"]); // off-bar AND unhosted
+    expect(result.current.menu.map((s) => s.id)).toEqual(["conf", "agents"]); // off-bar AND unhosted
     expect(result.current.hosted).toEqual({ utils: "conf" });
     // The Root-pinned VaporFleet's section is on the bar under EVERY preset — the reason vapor's bespoke
     // body override is preset-independent and needed no waiver.
@@ -144,6 +154,12 @@ describe("useSections", () => {
     setUI({ appbarMode: "minimal" }); // vapor, 4-tab → nothing hosted
     const { result } = renderHook(() => useSections());
     expect(result.current.bar).toEqual([]);
-    expect(result.current.menu.map((s) => s.id)).toEqual(["fleet", "agent", "utils", "conf"]);
+    expect(result.current.menu.map((s) => s.id)).toEqual([
+      "fleet",
+      "agent",
+      "utils",
+      "conf",
+      "agents",
+    ]);
   });
 });
