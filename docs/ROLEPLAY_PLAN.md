@@ -1,11 +1,9 @@
 # Characters are agents — the conversational-agents + lorebook plan of record
 
-> **Status: ✏️ DESIGN DRAFT v2 (2026-09-06)** — v1 rewritten same-day on the owner's second
-> design round ("don't separate characters from agents — expand the agent feature; the agents
-> surface becomes visual; a toggle swaps the hardcoded agent instructions for a conversational
-> prompt"). **Not yet council-reviewed, not yet a D-entry.** The path: owner reads → blind Emma
-> design round → fix wave → owner ratifies → D70 → the slice ladder builds under the standing
-> cadence.
+> **Status: ✏️ DESIGN v2 — COUNCIL-CLOSED 2026-09-06 (§13: blind Emma round BUILD WITH
+> CHANGES → all 15 findings folded → confirm → micro-confirm CONFIRMED). Awaiting the owner's
+> ratification → D70 → the S0 build brief.** Eight owner design rounds are folded (§1 rulings
+> 1–21); evidence = R64–R67 (§0/§12).
 >
 > **Authority when ratified:** this doc owns the agent-feature expansion (the new AgentDef
 > fields, the Voice/Duties prompt assembly, card import, agent art + the visual agents surface)
@@ -992,3 +990,10 @@ depth of `extensions` (§7). **New-1** — the later-system branch is UNCONDITIO
 examples always re-role to marked `user` with the side carried in the frame; no per-dialect
 switch exists or is added (§4.2). **New-2** — §11's stale "silent fallback" wording aligned
 to the F6 contract.
+
+### Round 3 — micro-confirm (2026-09-06, resumed session): **F3 · F7 · New-1 · New-2 all RESOLVED — CONFIRMED.**
+
+**The council is CLOSED on this design.** Trail: blind round (BUILD WITH CHANGES, 15 findings,
+all accepted) → fix wave folded → confirm (13/15 + 4 residuals) → residual fixes → micro-confirm
+CONFIRMED. Awaiting the owner's ratification → D70 (which also lands: the DECISIONS entry, the
+CLAUDE.md doc-map row, the TODO phase wiring) → the S0 build brief.
